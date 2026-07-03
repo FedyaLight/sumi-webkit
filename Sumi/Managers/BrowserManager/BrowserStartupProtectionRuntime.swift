@@ -141,10 +141,10 @@ extension BrowserStartupProtectionRuntime.Dependencies {
                 browserManager?.tabLifecycleService.opening.prepareBackgroundTabIfNeeded(tab, in: nil)
             },
             schedulePrepareVisibleWebViews: { [weak browserManager] windowState in
-                browserManager?.schedulePrepareVisibleWebViews(for: windowState)
+                browserManager?.windowVisualMutationOwner.schedulePrepareVisibleWebViews(for: windowState)
             },
             refreshCompositor: { [weak browserManager] windowState in
-                browserManager?.refreshCompositor(for: windowState)
+                browserManager?.windowVisualMutationOwner.refreshCompositor(for: windowState)
             }
         )
     }

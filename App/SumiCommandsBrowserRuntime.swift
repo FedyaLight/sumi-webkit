@@ -68,7 +68,7 @@ private final class SumiCommandsBrowserManagerAdapter:
     }
 
     func openSettingsTab(selecting pane: SettingsTabs, in windowState: BrowserWindowState?) {
-        browserManager?.openSettingsTab(selecting: pane, in: windowState)
+        browserManager?.settingsSurfaceRoutingOwner.openSettingsTab(selecting: pane, in: windowState)
     }
 
     func setAsDefaultBrowser() {
@@ -90,11 +90,11 @@ private final class SumiCommandsBrowserManagerAdapter:
     }
 
     func closeCurrentTab() {
-        browserManager?.closeCurrentTab()
+        browserManager?.tabLifecycleService.closeOrchestration.closeCurrentTab()
     }
 
     func closeCurrentTab(in windowState: BrowserWindowState) {
-        browserManager?.closeCurrentTab(in: windowState)
+        browserManager?.tabLifecycleService.closeOrchestration.closeCurrentTab(in: windowState)
     }
 
     func closeActiveWindow() {
@@ -138,11 +138,11 @@ private final class SumiCommandsBrowserManagerAdapter:
     }
 
     func toggleSidebar() {
-        browserManager?.toggleSidebar()
+        browserManager?.sidebarPresentationOwner.toggleSidebar()
     }
 
     func showFindBar() {
-        browserManager?.showFindBar()
+        browserManager?.findBarRoutingOwner.showFindBar()
     }
 
     func refreshCurrentTabInActiveWindow() {

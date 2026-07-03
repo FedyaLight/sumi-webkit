@@ -12,7 +12,7 @@ final class RecentlyClosedShortcutUndoTests: XCTestCase {
         )
         harness.windowState.currentTabId = tab.id
 
-        harness.browserManager.closeTab(tab, in: harness.windowState)
+        harness.browserManager.tabLifecycleService.closeOrchestration.closeTab(tab, in: harness.windowState)
         XCTAssertTrue(harness.browserManager.tabManager.tabs(in: harness.space).isEmpty)
 
         harness.browserManager.recentlyClosedRestoreOwner.reopenMostRecentClosedItem()
@@ -39,7 +39,7 @@ final class RecentlyClosedShortcutUndoTests: XCTestCase {
         harness.windowState.currentShortcutPinId = pin.id
         harness.windowState.currentShortcutPinRole = pin.role
 
-        harness.browserManager.closeTab(liveTab, in: harness.windowState)
+        harness.browserManager.tabLifecycleService.closeOrchestration.closeTab(liveTab, in: harness.windowState)
         XCTAssertNil(harness.browserManager.tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pin.id, in: harness.windowState.id))
 
         harness.browserManager.recentlyClosedRestoreOwner.reopenMostRecentClosedItem()
@@ -67,7 +67,7 @@ final class RecentlyClosedShortcutUndoTests: XCTestCase {
         harness.windowState.currentShortcutPinId = pin.id
         harness.windowState.currentShortcutPinRole = pin.role
 
-        harness.browserManager.closeTab(liveTab, in: harness.windowState)
+        harness.browserManager.tabLifecycleService.closeOrchestration.closeTab(liveTab, in: harness.windowState)
         harness.browserManager.tabManager.shortcutPinCommandOwner.removeShortcutPin(pin)
         XCTAssertNil(harness.browserManager.tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: pin.id))
 
@@ -129,7 +129,7 @@ final class RecentlyClosedShortcutUndoTests: XCTestCase {
             ]
         )
 
-        harness.browserManager.closeTab(regularTab, in: harness.windowState)
+        harness.browserManager.tabLifecycleService.closeOrchestration.closeTab(regularTab, in: harness.windowState)
 
         XCTAssertEqual(harness.windowState.currentTabId, essentialLiveTab.id)
         XCTAssertEqual(harness.windowState.currentShortcutPinId, pin.id)
@@ -158,7 +158,7 @@ final class RecentlyClosedShortcutUndoTests: XCTestCase {
         )
         harness.browserManager.selectTab(currentRegularTab, in: harness.windowState)
 
-        harness.browserManager.closeTab(currentRegularTab, in: harness.windowState)
+        harness.browserManager.tabLifecycleService.closeOrchestration.closeTab(currentRegularTab, in: harness.windowState)
 
         XCTAssertEqual(harness.windowState.currentTabId, essentialLiveTab.id)
         XCTAssertEqual(harness.windowState.currentShortcutPinId, pin.id)
@@ -190,7 +190,7 @@ final class RecentlyClosedShortcutUndoTests: XCTestCase {
             neighborTab.id,
         ]
 
-        harness.browserManager.closeTab(closingTab, in: harness.windowState)
+        harness.browserManager.tabLifecycleService.closeOrchestration.closeTab(closingTab, in: harness.windowState)
 
         XCTAssertEqual(harness.windowState.currentTabId, recentTab.id)
         XCTAssertNil(harness.browserManager.tabManager.tab(for: closingTab.id))
@@ -223,7 +223,7 @@ final class RecentlyClosedShortcutUndoTests: XCTestCase {
             UUID(),
         ]
 
-        harness.browserManager.closeTab(closingTab, in: harness.windowState)
+        harness.browserManager.tabLifecycleService.closeOrchestration.closeTab(closingTab, in: harness.windowState)
 
         XCTAssertEqual(harness.windowState.currentTabId, nextTab.id)
         XCTAssertNotNil(harness.browserManager.tabManager.tab(for: previousTab.id))
@@ -248,7 +248,7 @@ final class RecentlyClosedShortcutUndoTests: XCTestCase {
         )
         harness.browserManager.selectTab(spacePinnedLiveTab, in: harness.windowState)
 
-        harness.browserManager.closeTab(spacePinnedLiveTab, in: harness.windowState)
+        harness.browserManager.tabLifecycleService.closeOrchestration.closeTab(spacePinnedLiveTab, in: harness.windowState)
 
         XCTAssertEqual(harness.windowState.currentTabId, essentialLiveTab.id)
         XCTAssertEqual(harness.windowState.currentShortcutPinId, essentialPin.id)

@@ -15,7 +15,7 @@ extension TabCompositorRuntime {
                     .noteSuspensionAccess()
             },
             isTabDisplayedInAnyWindow: { [weak browserManager] tabId in
-                browserManager?.isTabDisplayedInAnyWindow(tabId) ?? false
+                browserManager?.windowTabContextOwner.isTabDisplayedInAnyWindow(tabId) ?? false
             },
             registeredCompositorWindows: { [weak browserManager] in
                 guard let browserManager,
@@ -28,7 +28,7 @@ extension TabCompositorRuntime {
                 }
             },
             refreshCompositor: { [weak browserManager] windowState in
-                browserManager?.refreshCompositor(for: windowState)
+                browserManager?.windowVisualMutationOwner.refreshCompositor(for: windowState)
             }
         )
     }

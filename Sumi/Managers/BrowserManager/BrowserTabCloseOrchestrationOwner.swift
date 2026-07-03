@@ -113,7 +113,7 @@ extension BrowserTabCloseOrchestrationOwner.Dependencies {
         return Self(
             activeWindow: { [weak browserManager] in browserManager?.windowRegistry?.activeWindow },
             currentTab: { [weak browserManager] windowState in
-                browserManager?.currentTab(for: windowState)
+                browserManager?.windowTabContextOwner.currentTab(for: windowState)
             },
             glanceManager: browserManager.glanceManager,
             tabManager: { [weak browserManager, tabManager = browserManager.tabManager] in
@@ -125,13 +125,13 @@ extension BrowserTabCloseOrchestrationOwner.Dependencies {
                 browserManager?.selectTab(tab, in: windowState)
             },
             performImmediateVisualHandoffIfPossible: { [weak browserManager] windowState in
-                _ = browserManager?.performImmediateVisualHandoffIfPossible(in: windowState)
+                _ = browserManager?.windowVisualMutationOwner.performImmediateVisualHandoffIfPossible(in: windowState)
             },
             showEmptyState: { [weak browserManager] windowState in
                 browserManager?.showEmptyState(in: windowState)
             },
             persistWindowSession: { [weak browserManager] windowState in
-                browserManager?.persistWindowSession(for: windowState)
+                browserManager?.windowSessionActivationOwner.persistWindowSession(for: windowState)
             }
         )
     }

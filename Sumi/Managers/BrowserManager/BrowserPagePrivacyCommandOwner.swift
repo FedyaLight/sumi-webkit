@@ -56,7 +56,7 @@ extension BrowserPagePrivacyCommandOwner.Dependencies {
                         browserManager?.windowRegistry?.activeWindow?.id
                     },
                     webViewLookup: { [weak browserManager] tab, windowId in
-                        browserManager?.windowOwnedWebView(for: tab, in: windowId)
+                        browserManager?.webViewRoutingService.windowOwnedWebView(for: tab, in: windowId)
                     },
                     reloadWindowScopedPage: { [weak browserManager] tab, windowId, reason in
                         guard let browserManager,

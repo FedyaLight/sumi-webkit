@@ -6,7 +6,7 @@ enum BrowserBoostRuntimeFactory {
     static func runtime(for browserManager: BrowserManager) -> SumiBoostsModule.Runtime {
         SumiBoostsModule.Runtime(
             windowOwnedWebView: { [weak browserManager] tab, windowId in
-                browserManager?.windowOwnedWebView(for: tab, in: windowId)
+                browserManager?.webViewRoutingService.windowOwnedWebView(for: tab, in: windowId)
             },
             matchingLivePages: { [weak browserManager] profileId, host in
                 guard let browserManager else { return [] }
@@ -63,8 +63,8 @@ enum BrowserBoostRuntimeFactory {
         }
 
         for windowState in browserManager.windowRegistry?.allWindows ?? [] {
-            for tab in browserManager.tabsForDisplay(in: windowState) where tabMatches(tab) {
-                if let webView = browserManager.windowOwnedWebView(for: tab, in: windowState.id) {
+            for tab in browserManager.windowTabContextOwner.tabsForDisplay(in: windowState) where tabMatches(tab) {
+                if let webView = browserManager.webViewRoutingService.windowOwnedWebView(for: tab, in: windowState.id) {
                     visit(tab, webView)
                 }
             }

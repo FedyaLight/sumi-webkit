@@ -9,16 +9,16 @@ enum BrowserSplitViewRuntimeFactory {
                 browserManager?.tabManager ?? fallbackTabManager
             },
             currentTab: { [weak browserManager] windowState in
-                browserManager?.currentTab(for: windowState)
+                browserManager?.windowTabContextOwner.currentTab(for: windowState)
             },
             selectTab: { [weak browserManager] tab, windowState in
                 browserManager?.selectTab(tab, in: windowState)
             },
             refreshCompositor: { [weak browserManager] windowState in
-                browserManager?.refreshCompositor(for: windowState)
+                browserManager?.windowVisualMutationOwner.refreshCompositor(for: windowState)
             },
             schedulePersistWindowSession: { [weak browserManager] windowState in
-                browserManager?.schedulePersistWindowSession(for: windowState)
+                browserManager?.windowSessionActivationOwner.schedulePersistWindowSession(for: windowState)
             },
             focusFloatingBar: { [weak browserManager] windowState, reason in
                 browserManager?.floatingBarRoutingOwner.focusFloatingBar(

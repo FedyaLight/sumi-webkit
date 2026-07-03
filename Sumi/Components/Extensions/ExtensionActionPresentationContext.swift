@@ -31,7 +31,7 @@ struct ExtensionActionBrowserContext {
             windowState: windowState,
             currentTab: { [weak browserManager, weak windowState] in
                 guard let browserManager, let windowState else { return nil }
-                return browserManager.currentTab(for: windowState)
+                return browserManager.windowTabContextOwner.currentTab(for: windowState)
                     ?? windowState.currentTabId.flatMap { browserManager.tabManager.tab(for: $0) }
                     ?? browserManager.shellSelectionService.currentTab(
                         for: windowState,
@@ -48,12 +48,12 @@ struct ExtensionActionBrowserContext {
                 guard let browserManager, let windowState else {
                     return tab.existingWebView
                 }
-                return browserManager.getWebView(for: tab.id, in: windowState.id)
+                return browserManager.webViewRoutingService.webView(for: tab.id, in: windowState.id)
                     ?? tab.existingWebView
             },
             openSettingsTab: { [weak browserManager, weak windowState] tab in
                 guard let browserManager, let windowState else { return }
-                browserManager.openSettingsTab(selecting: tab, in: windowState)
+                browserManager.settingsSurfaceRoutingOwner.openSettingsTab(selecting: tab, in: windowState)
             },
             showExtensionUnavailableAlert: { extensionName, message in
                 BrowserExtensionUnavailableAlert.present(

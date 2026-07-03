@@ -78,7 +78,7 @@ class BrowserManager: ObservableObject {
         return self.splitManager.visibleTabIds(for: windowId)
     }
     lazy var tabLifecycleService = BrowserTabLifecycleService(browserManager: self)
-    private lazy var windowTabContextOwner = BrowserWindowTabContextOwner(
+    lazy var windowTabContextOwner = BrowserWindowTabContextOwner(
         dependencies: BrowserWindowTabContextOwner.Dependencies(
             selectionService: { [weak self] in
                 self?.shellSelectionService
@@ -108,7 +108,7 @@ class BrowserManager: ObservableObject {
     lazy var nativeSurfaceRoutingOwner = BrowserNativeSurfaceRoutingOwner(
         dependencies: .live(browserManager: self)
     )
-    private lazy var settingsSurfaceRoutingOwner = BrowserSettingsSurfaceRoutingOwner(
+    lazy var settingsSurfaceRoutingOwner = BrowserSettingsSurfaceRoutingOwner(
         dependencies: .live(browserManager: self)
     )
     private lazy var permissionSidebarPinningOwner = BrowserPermissionSidebarPinningOwner(
@@ -130,7 +130,7 @@ class BrowserManager: ObservableObject {
                     displayingPermissionPageId: pageId,
                     in: self.windowRegistry,
                     tabsForDisplay: { windowState in
-                        self.tabsForDisplay(in: windowState)
+                        self.windowTabContextOwner.tabsForDisplay(in: windowState)
                     }
                 )
             }
@@ -168,13 +168,13 @@ class BrowserManager: ObservableObject {
     lazy var activePageRoutingOwner = BrowserActivePageRoutingOwner(
         dependencies: .live(browserManager: self)
     )
-    private lazy var findBarRoutingOwner = BrowserFindBarRoutingOwner(
+    lazy var findBarRoutingOwner = BrowserFindBarRoutingOwner(
         dependencies: .live(browserManager: self)
     )
     private(set) lazy var zoomCommandOwner = BrowserZoomCommandOwner(
         dependencies: .live(browserManager: self)
     )
-    private lazy var sidebarActionOwner = BrowserSidebarActionOwner(
+    lazy var sidebarActionOwner = BrowserSidebarActionOwner(
         dependencies: .live(browserManager: self)
     )
     lazy var windowShellCommandOwner = BrowserWindowShellCommandOwner(
@@ -261,7 +261,7 @@ class BrowserManager: ObservableObject {
         set { shellRuntime.windowShellContentViewFactory = newValue }
     }
 
-    private lazy var sidebarPresentationOwner = BrowserSidebarPresentationOwner(
+    lazy var sidebarPresentationOwner = BrowserSidebarPresentationOwner(
         dependencies: .live(browserManager: self)
     )
     private lazy var initializationWiringOwner = BrowserManagerInitializationWiringOwner(
@@ -289,14 +289,14 @@ class BrowserManager: ObservableObject {
             }
         )
     )
-    private var startupProtectionRuntime: BrowserStartupProtectionRuntime!
-    private lazy var windowVisualMutationOwner = BrowserWindowVisualMutationOwner(
+    private(set) var startupProtectionRuntime: BrowserStartupProtectionRuntime!
+    lazy var windowVisualMutationOwner = BrowserWindowVisualMutationOwner(
         dependencies: BrowserWindowVisualMutationOwner.Dependencies(
             hasActiveHistorySwipe: { [weak self] windowId in
                 self?.webViewCoordinator?.hasActiveHistorySwipe(in: windowId) == true
             },
             currentTab: { [weak self] windowState in
-                self?.currentTab(for: windowState)
+                self?.windowTabContextOwner.currentTab(for: windowState)
             },
             performImmediateVisualHandoffIfPossible: { [weak self] windowId in
                 self?.webViewCoordinator?.performImmediateVisualHandoffIfPossible(
@@ -334,10 +334,10 @@ class BrowserManager: ObservableObject {
             },
             windowDisplayTitle: { [weak self] windowState in
                 guard let self else { return "" }
-                if let currentTab = self.currentTab(for: windowState) {
+                if let currentTab = self.windowTabContextOwner.currentTab(for: windowState) {
                     return currentTab.name
                 }
-                if let currentSpace = self.space(for: windowState.currentSpaceId) {
+                if let currentSpace = self.windowSpaceStateOwner.space(for: windowState.currentSpaceId) {
                     return currentSpace.name
                 }
                 return "Window"
@@ -650,22 +650,6 @@ class BrowserManager: ObservableObject {
         }
     #endif
 
-    var hasFinishedStartupProtectionRestore: Bool {
-        startupProtectionRuntime.hasFinishedProtectionRestore
-    }
-
-    var shouldDeferNormalTabMaterializationDuringStartup: Bool {
-        startupProtectionRuntime.shouldDeferNormalTabMaterializationDuringStartup
-    }
-
-    func canMaterializeWebViewDuringStartup(_ tab: Tab) -> Bool {
-        startupProtectionRuntime.canMaterializeWebViewDuringStartup(tab)
-    }
-
-    func deferBackgroundTabUntilStartupReady(_ tab: Tab) {
-        startupProtectionRuntime.deferBackgroundTabUntilStartupReady(tab)
-    }
-
     enum ProfileSwitchContext {
         case userInitiated
         case spaceChange
@@ -684,144 +668,20 @@ class BrowserManager: ObservableObject {
         )
     }
 
-    func updateSidebarWidth(
-        _ width: CGFloat,
-        for windowState: BrowserWindowState,
-        persist: Bool = true
-    ) {
-        sidebarPresentationOwner.updateSidebarWidth(
-            width,
-            for: windowState,
-            persist: persist
-        )
-    }
-
-    func updateSavedSidebarWidth(_ width: CGFloat) {
-        sidebarPresentationOwner.updateSavedSidebarWidth(width)
-    }
-
-    func toggleSidebar() {
-        sidebarPresentationOwner.toggleSidebar()
-    }
-
-    func toggleSidebar(for windowState: BrowserWindowState) {
-        sidebarPresentationOwner.toggleSidebar(for: windowState)
-    }
-
-    // MARK: - Sidebar width access for overlays
-    /// Returns the last saved sidebar width (used when sidebar is collapsed to size hover overlay)
-    func getSavedSidebarWidth(for windowState: BrowserWindowState? = nil) -> CGFloat {
-        sidebarPresentationOwner.savedSidebarWidth(for: windowState)
-    }
-
     private var tabSelectionActions: BrowserTabSelectionOwner.Actions {
         BrowserTabSelectionOwner.liveActions(for: self)
     }
 
-    func spaceForSidebarActions(in windowState: BrowserWindowState) -> Space? {
-        sidebarActionOwner.spaceForSidebarActions(in: windowState)
-    }
-
-    func createFolderInCurrentSpace(in windowState: BrowserWindowState) {
-        sidebarActionOwner.createFolderInCurrentSpace(in: windowState)
-    }
-
-    func createRSSLiveFolderInCurrentSpace(in windowState: BrowserWindowState) {
-        sidebarActionOwner.createRSSLiveFolderInCurrentSpace(in: windowState)
-    }
-
-    func createGitHubPRFolderInCurrentSpace(in windowState: BrowserWindowState) {
-        sidebarActionOwner.createGitHubPRFolderInCurrentSpace(in: windowState)
-    }
-
-    func createGitHubIssuesFolderInCurrentSpace(in windowState: BrowserWindowState) {
-        sidebarActionOwner.createGitHubIssuesFolderInCurrentSpace(in: windowState)
-    }
-
-    func showFindBar() {
-        findBarRoutingOwner.showFindBar()
-    }
-
-    func updateFindManagerCurrentTab() {
-        findBarRoutingOwner.updateCurrentTab()
-    }
-
     typealias TabOpenContext = BrowserTabOpenContext
-
-    // MARK: - Tab Management (delegates to TabManager)
-    func createNewTab() {
-        tabLifecycleService.opening.createNewTab()
-    }
-
-    /// Create a new tab and set it as active in the specified window
-    func createNewTab(in windowState: BrowserWindowState, url: String = SumiSurface.emptyTabURL.absoluteString) {
-        tabLifecycleService.opening.createNewTab(in: windowState, url: url)
-    }
-
-    @discardableResult
-    func createNewTabAfterSidebarInsertion(
-        in windowState: BrowserWindowState,
-        url: String = SumiSurface.emptyTabURL.absoluteString
-    ) -> Tab {
-        tabLifecycleService.opening.createNewTabAfterSidebarInsertion(in: windowState, url: url)
-    }
-
-    @discardableResult
-    func openNewTab(
-        url: String = SumiSurface.emptyTabURL.absoluteString,
-        context: TabOpenContext
-    ) -> Tab {
-        tabLifecycleService.opening.openNewTab(url: url, context: context)
-    }
-
-    @discardableResult
-    func createPopupTab(
-        from sourceTab: Tab,
-        webViewConfigurationOverride: WKWebViewConfiguration? = nil,
-        activate: Bool = true
-    ) -> Tab? {
-        tabLifecycleService.opening.createPopupTab(
-            from: sourceTab,
-            webViewConfigurationOverride: webViewConfigurationOverride,
-            activate: activate
-        )
-    }
-
-    /// Opens Sumi settings as a normal browser tab (one per space), optionally focusing a pane.
-    func openSettingsTab(selecting pane: SettingsTabs, in windowState: BrowserWindowState? = nil) {
-        settingsSurfaceRoutingOwner.openSettingsTab(selecting: pane, in: windowState)
-    }
-
-    func openSiteSettingsTab(
-        focusing tab: Tab? = nil,
-        in windowState: BrowserWindowState? = nil
-    ) {
-        settingsSurfaceRoutingOwner.openSiteSettingsTab(focusing: tab, in: windowState)
-    }
 
     func duplicateCurrentTab() {
         guard let activeWindow = windowRegistry?.activeWindow,
               let currentTab = activePageRoutingOwner.currentTabForActiveWindow() else {
             return
         }
-        duplicateTab(currentTab, in: activeWindow)
+        tabLifecycleService.opening.duplicateTab(currentTab, in: activeWindow)
     }
 
-    func duplicateTab(_ tab: Tab, in windowState: BrowserWindowState) {
-        tabLifecycleService.opening.duplicateTab(tab, in: windowState)
-    }
-
-    func closeCurrentTab() {
-        tabLifecycleService.closeOrchestration.closeCurrentTab()
-    }
-
-    func closeCurrentTab(in windowState: BrowserWindowState) {
-        tabLifecycleService.closeOrchestration.closeCurrentTab(in: windowState)
-    }
-
-    func closeTab(_ tab: Tab, in windowState: BrowserWindowState) {
-        tabLifecycleService.closeOrchestration.closeTab(tab, in: windowState)
-    }
     isolated deinit {
         permissionRuntime.cancelPermissionEventObservation()
         startupProtectionRuntime.cancelProtectionRestoreTask()
@@ -832,31 +692,7 @@ class BrowserManager: ObservableObject {
 
     // MARK: - Window State Management
 
-    /// Register a new window state and attach browser services (`WindowSessionService`, extensions).
-    /// Window ↔ `NSWindow` association is owned by `BrowserWindowBridge` for SwiftUI scene windows
-    /// and by `BrowserWindowShellService` for BrowserManager-created windows.
-    func setupWindowState(_ windowState: BrowserWindowState) {
-        windowSessionActivationOwner.setupWindowState(windowState)
-    }
-
-    /// Set the active window state (called when a window gains focus)
-    /// NOTE: This is called BY the WindowRegistry callback, so we don't call setActive again
-    func setActiveWindowState(_ windowState: BrowserWindowState) {
-        // DO NOT call windowRegistry?.setActive(windowState) here - that would cause infinite recursion!
-        // This method is called FROM the onActiveWindowChange callback
-        windowSessionActivationOwner.setActiveWindowState(windowState)
-    }
-
     // MARK: - Window-Aware Tab Operations
-
-    /// Get the current tab for a specific window
-    func currentTab(for windowState: BrowserWindowState) -> Tab? {
-        windowTabContextOwner.currentTab(for: windowState)
-    }
-
-    func windowState(containing tab: Tab) -> BrowserWindowState? {
-        windowTabContextOwner.windowState(containing: tab)
-    }
 
     /// Select a tab in the active window (convenience method for sidebar clicks)
     func selectTab(_ tab: Tab) {
@@ -947,117 +783,6 @@ class BrowserManager: ObservableObject {
         )
     }
 
-    /// Get tabs that should be displayed in a specific window
-    func tabsForDisplay(in windowState: BrowserWindowState) -> [Tab] {
-        windowTabContextOwner.tabsForDisplay(in: windowState)
-    }
-
-    func isTabDisplayedInAnyWindow(_ tabId: UUID) -> Bool {
-        windowTabContextOwner.isTabDisplayedInAnyWindow(tabId)
-    }
-
-    func windowScopedMediaCandidateTabs(in windowState: BrowserWindowState) -> [Tab] {
-        windowTabContextOwner.windowScopedMediaCandidateTabs(in: windowState)
-    }
-
-    /// Refresh compositor for a specific window
-    func refreshCompositor(for windowState: BrowserWindowState) {
-        windowVisualMutationOwner.refreshCompositor(for: windowState)
-    }
-
-    @discardableResult
-    func performImmediateVisualHandoffIfPossible(in windowState: BrowserWindowState) -> Bool {
-        windowVisualMutationOwner.performImmediateVisualHandoffIfPossible(in: windowState)
-    }
-
-    @discardableResult
-    func prepareVisibleWebViews(for windowState: BrowserWindowState) -> Bool {
-        windowVisualMutationOwner.prepareVisibleWebViews(for: windowState)
-    }
-
-    func schedulePrepareVisibleWebViews(for windowState: BrowserWindowState) {
-        windowVisualMutationOwner.schedulePrepareVisibleWebViews(for: windowState)
-    }
-
-    func space(for spaceId: UUID?) -> Space? {
-        windowSpaceStateOwner.space(for: spaceId)
-    }
-
-    func syncWindowSpaceContext(
-        in windowState: BrowserWindowState,
-        animateTheme: Bool
-    ) {
-        windowSpaceStateOwner.syncWindowSpaceContext(
-            in: windowState,
-            animateTheme: animateTheme
-        )
-    }
-
-    func selectionTargetForSpaceActivation(
-        in space: Space,
-        windowState: BrowserWindowState
-    ) -> Tab? {
-        windowSpaceStateOwner.selectionTargetForSpaceActivation(
-            in: space,
-            windowState: windowState
-        )
-    }
-
-    func enqueueWindowMutationDuringHistorySwipe(
-        _ kind: HistorySwipeDeferredWindowMutationKind,
-        for windowState: BrowserWindowState
-    ) {
-        windowVisualMutationOwner.enqueueWindowMutationDuringHistorySwipe(kind, for: windowState)
-    }
-
-    func flushWindowMutationsAfterHistorySwipe(in windowId: UUID) {
-        windowVisualMutationOwner.flushWindowMutationsAfterHistorySwipe(in: windowId)
-    }
-
-    func cancelWindowMutationsAfterHistorySwipe(in windowId: UUID) {
-        windowVisualMutationOwner.cancelWindowMutationsAfterHistorySwipe(in: windowId)
-    }
-
-    func hasValidCurrentSelection(in windowState: BrowserWindowState) -> Bool {
-        windowSpaceStateOwner.hasValidCurrentSelection(in: windowState)
-    }
-
-    /// Set active space for a specific window
-    func setActiveSpace(
-        _ space: Space,
-        in windowState: BrowserWindowState,
-        completingTransition identity: SpaceTransitionIdentity? = nil
-    ) {
-        windowSpaceStateOwner.setActiveSpace(
-            space,
-            in: windowState,
-            completingTransition: identity
-        )
-    }
-
-    /// Validate and fix window states after tab/space mutations
-    func validateWindowStates() {
-        windowSpaceStateOwner.validateWindowStates()
-    }
-
-    func persistWindowSession(for windowState: BrowserWindowState) {
-        windowSessionActivationOwner.persistWindowSession(for: windowState)
-    }
-
-    func schedulePersistWindowSession(
-        for windowState: BrowserWindowState,
-        delayNanoseconds: UInt64 = 450_000_000
-    ) {
-        windowSessionActivationOwner.schedulePersistWindowSession(
-            for: windowState,
-            delayNanoseconds: delayNanoseconds
-        )
-    }
-
-    func flushPendingWindowSessionPersistence() {
-        windowSessionActivationOwner.flushPendingWindowSessionPersistence()
-    }
-
     func syncShortcutSelectionState(for windowState: BrowserWindowState) {
         tabLifecycleService.selection.syncShortcutSelectionState(
             for: windowState,
@@ -1072,43 +797,9 @@ class BrowserManager: ObservableObject {
         )
     }
 
-    func syncSidebarPresentationState(from windowState: BrowserWindowState) {
-        sidebarPresentationOwner.syncFromWindow(windowState)
-    }
 }
 
 extension BrowserManager: SumiProfileRoutingSupport {}
-
-// MARK: - WebView routing (delegates to BrowserWebViewRoutingService / WebViewCoordinator)
-
-extension BrowserManager {
-    func getWebView(for tabId: UUID, in windowId: UUID) -> WKWebView? {
-        webViewRoutingService.webView(for: tabId, in: windowId)
-    }
-
-    func windowOwnedWebView(for tab: Tab, in windowId: UUID) -> WKWebView? {
-        webViewRoutingService.windowOwnedWebView(for: tab, in: windowId)
-    }
-
-    func syncTabAcrossWindows(_ tabId: UUID, originatingWebView: WKWebView? = nil) {
-        webViewRoutingService.syncTabAcrossWindows(
-            tabId,
-            originatingWebView: originatingWebView
-        )
-    }
-
-    func reloadTabAcrossWindows(_ tabId: UUID) {
-        webViewRoutingService.reloadTabAcrossWindows(tabId)
-    }
-
-    func reloadTab(_ tabId: UUID, in windowId: UUID) {
-        webViewRoutingService.reloadTab(tabId, in: windowId)
-    }
-
-    func setMuteState(_ muted: Bool, for tabId: UUID) {
-        webViewRoutingService.setMuteState(muted, for: tabId)
-    }
-}
 
 extension Array {
     subscript(safe index: Int) -> Element? {

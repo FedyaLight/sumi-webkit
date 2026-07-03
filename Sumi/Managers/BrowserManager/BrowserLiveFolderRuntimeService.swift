@@ -20,7 +20,7 @@ enum BrowserLiveFolderRuntimeService {
                 browserManager?.tabManager.folderMutationOwner.renameFolder(folderId, newName: name)
             },
             openNewTab: { [weak browserManager] urlString, windowState, preferredSpaceId in
-                browserManager?.openNewTab(
+                browserManager?.tabLifecycleService.opening.openNewTab(
                     url: urlString,
                     context: .foreground(
                         windowState: windowState,

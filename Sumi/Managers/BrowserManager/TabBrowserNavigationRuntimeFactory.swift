@@ -72,10 +72,10 @@ enum TabBrowserNavigationRuntimeFactory {
                 browserManager?.webViewCoordinator
             },
             cancelWindowMutationsAfterHistorySwipe: { [weak browserManager] windowId in
-                browserManager?.cancelWindowMutationsAfterHistorySwipe(in: windowId)
+                browserManager?.windowVisualMutationOwner.cancelWindowMutationsAfterHistorySwipe(in: windowId)
             },
             flushWindowMutationsAfterHistorySwipe: { [weak browserManager] windowId in
-                browserManager?.flushWindowMutationsAfterHistorySwipe(in: windowId)
+                browserManager?.windowVisualMutationOwner.flushWindowMutationsAfterHistorySwipe(in: windowId)
             }
         )
     }
@@ -98,7 +98,7 @@ enum TabBrowserNavigationRuntimeFactory {
     ) -> TabFindInPageRuntime {
         .live(
             webView: { [weak browserManager] tabId, windowId in
-                browserManager?.getWebView(for: tabId, in: windowId)
+                browserManager?.webViewRoutingService.webView(for: tabId, in: windowId)
             }
         )
     }

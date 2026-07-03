@@ -11,10 +11,10 @@ final class BrowserManagerSidebarActionRoutingTests: XCTestCase {
         let harness = makeHarness()
         harness.browserManager.tabManager.currentSpace = harness.secondarySpace
 
-        harness.browserManager.createFolderInCurrentSpace(in: harness.windowState)
+        harness.browserManager.sidebarActionOwner.createFolderInCurrentSpace(in: harness.windowState)
 
         XCTAssertEqual(
-            harness.browserManager.spaceForSidebarActions(in: harness.windowState)?.id,
+            harness.browserManager.sidebarActionOwner.spaceForSidebarActions(in: harness.windowState)?.id,
             harness.primarySpace.id
         )
         XCTAssertEqual(harness.browserManager.tabManager.folderCollectionStateOwner.folders(for: harness.primarySpace.id).count, 1)
@@ -30,8 +30,8 @@ final class BrowserManagerSidebarActionRoutingTests: XCTestCase {
         XCTAssertNil(harness.windowRegistry.activeWindowId)
         XCTAssertTrue(harness.windowState.isSidebarVisible)
 
-        harness.browserManager.toggleSidebar()
-        harness.browserManager.flushPendingWindowSessionPersistence()
+        harness.browserManager.sidebarPresentationOwner.toggleSidebar()
+        harness.browserManager.windowSessionActivationOwner.flushPendingWindowSessionPersistence()
 
         XCTAssertEqual(harness.windowRegistry.activeWindowId, harness.windowState.id)
         XCTAssertFalse(harness.windowState.isSidebarVisible)

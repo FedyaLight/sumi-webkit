@@ -69,7 +69,7 @@ enum TabBrowserActionServiceFactory {
         fallback: NSAppearance?,
         browserManager: BrowserManager
     ) -> NSAppearance? {
-        guard let windowState = browserManager.windowState(containing: tab),
+        guard let windowState = browserManager.windowTabContextOwner.windowState(containing: tab),
               let settings = browserManager.sumiSettings
         else {
             return fallback
@@ -111,9 +111,9 @@ enum TabBrowserActionServiceFactory {
         from tab: Tab,
         browserManager: BrowserManager
     ) {
-        guard let windowState = browserManager.windowState(containing: tab) else { return }
+        guard let windowState = browserManager.windowTabContextOwner.windowState(containing: tab) else { return }
 
-        _ = browserManager.openNewTab(
+        _ = browserManager.tabLifecycleService.opening.openNewTab(
             url: url.absoluteString,
             context: .foreground(
                 windowState: windowState,
@@ -123,7 +123,7 @@ enum TabBrowserActionServiceFactory {
     }
 
     private static func isCurrentTab(_ tab: Tab, browserManager: BrowserManager) -> Bool {
-        guard let windowState = browserManager.windowState(containing: tab) else { return false }
-        return browserManager.currentTab(for: windowState)?.id == tab.id
+        guard let windowState = browserManager.windowTabContextOwner.windowState(containing: tab) else { return false }
+        return browserManager.windowTabContextOwner.currentTab(for: windowState)?.id == tab.id
     }
 }

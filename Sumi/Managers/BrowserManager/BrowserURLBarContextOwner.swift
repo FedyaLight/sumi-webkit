@@ -108,7 +108,7 @@ extension BrowserURLBarContextOwner.Dependencies {
         let navigationToolbarContextOwner = BrowserNavigationToolbarContextOwner(
             dependencies: BrowserNavigationToolbarContextOwner.Dependencies(
                 currentTab: { [weak browserManager] windowState in
-                    browserManager?.currentTab(for: windowState)
+                    browserManager?.windowTabContextOwner.currentTab(for: windowState)
                 },
                 webView: { tab, windowState in
                     webViewRoutingService.windowOwnedWebView(for: tab, in: windowState.id)
@@ -127,7 +127,7 @@ extension BrowserURLBarContextOwner.Dependencies {
                     )
                 },
                 openNewTab: { [weak browserManager] urlString, context in
-                    browserManager?.openNewTab(url: urlString, context: context)
+                    browserManager?.tabLifecycleService.opening.openNewTab(url: urlString, context: context)
                 },
                 openHistoryURLsInNewWindow: { [weak browserManager] urls in
                     browserManager?.historyNavigationOwner.openHistoryURLsInNewWindow(urls)
@@ -198,13 +198,13 @@ extension BrowserURLBarContextOwner.Dependencies {
                 browserManager?.bookmarkEditorPresentationRequest
             },
             currentTab: { [weak browserManager] windowState in
-                browserManager?.currentTab(for: windowState)
+                browserManager?.windowTabContextOwner.currentTab(for: windowState)
             },
             tabForID: { [weak browserManager] tabId in
                 browserManager?.tabManager.tab(for: tabId)
             },
             webView: { [weak browserManager] tab, windowState in
-                browserManager?.windowOwnedWebView(for: tab, in: windowState.id)
+                browserManager?.webViewRoutingService.windowOwnedWebView(for: tab, in: windowState.id)
             },
             profiles: { [weak browserManager] in
                 browserManager?.profileManager.profiles ?? []
@@ -250,7 +250,7 @@ extension BrowserURLBarContextOwner.Dependencies {
                 browserManager?.toastPresenter.presentToast(toast, in: windowState)
             },
             toggleSidebar: { [weak browserManager] windowState in
-                browserManager?.toggleSidebar(for: windowState)
+                browserManager?.sidebarPresentationOwner.toggleSidebar(for: windowState)
             },
             navigationToolbarContext: { windowState in
                 navigationToolbarContextOwner.navigationToolbarContext(for: windowState)

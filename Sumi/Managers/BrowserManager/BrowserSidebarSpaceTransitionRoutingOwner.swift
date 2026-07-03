@@ -56,10 +56,10 @@ extension BrowserSpaceTransitionRoutingOwner.Dependencies {
                 )
             },
             setActiveSpace: { [weak browserManager] space, windowState in
-                browserManager?.setActiveSpace(space, in: windowState)
+                browserManager?.windowSpaceStateOwner.setActiveSpace(space, in: windowState)
             },
             setActiveSpaceFromTransition: { [weak browserManager] space, windowState, identity in
-                browserManager?.setActiveSpace(
+                browserManager?.windowSpaceStateOwner.setActiveSpace(
                     space,
                     in: windowState,
                     completingTransition: identity

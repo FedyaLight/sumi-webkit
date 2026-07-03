@@ -153,16 +153,16 @@ extension BrowserKeyboardShortcutCommandOwner.Dependencies {
                 browserManager?.windowRegistry?.activeWindow
             },
             createNewTab: { [weak browserManager] in
-                browserManager?.createNewTab()
+                browserManager?.tabLifecycleService.opening.createNewTab()
             },
             openNewTabOrFloatingBar: { [weak browserManager] windowState in
                 browserManager?.floatingBarRoutingOwner.openNewTabOrFloatingBar(in: windowState)
             },
             tabsForDisplay: { [weak browserManager] windowState in
-                browserManager?.tabsForDisplay(in: windowState) ?? []
+                browserManager?.windowTabContextOwner.tabsForDisplay(in: windowState) ?? []
             },
             currentTab: { [weak browserManager] windowState in
-                browserManager?.currentTab(for: windowState)
+                browserManager?.windowTabContextOwner.currentTab(for: windowState)
             },
             selectTab: { [weak browserManager] tab, windowState in
                 browserManager?.selectTab(tab, in: windowState)
@@ -186,13 +186,13 @@ extension BrowserKeyboardShortcutCommandOwner.Dependencies {
                 browserManager?.tabManager.spaces ?? []
             },
             setActiveSpace: { [weak browserManager] space, windowState in
-                browserManager?.setActiveSpace(space, in: windowState)
+                browserManager?.windowSpaceStateOwner.setActiveSpace(space, in: windowState)
             },
             setAllFoldersOpen: { [weak browserManager] isOpen, spaceId in
                 browserManager?.tabManager.folderMutationOwner.setAllFolders(open: isOpen, in: spaceId)
             },
             persistWindowSession: { [weak browserManager] windowState in
-                browserManager?.persistWindowSession(for: windowState)
+                browserManager?.windowSessionActivationOwner.persistWindowSession(for: windowState)
             },
             activePageTab: { [weak browserManager] in
                 browserManager?.activePageRoutingOwner.activePageTabForActiveWindow()
@@ -201,7 +201,7 @@ extension BrowserKeyboardShortcutCommandOwner.Dependencies {
                 browserManager?.activePageRoutingOwner.activePageWebViewForActiveWindow()
             },
             webView: { [weak browserManager] tabId, windowId in
-                browserManager?.getWebView(for: tabId, in: windowId)
+                browserManager?.webViewRoutingService.webView(for: tabId, in: windowId)
             },
             toggleReaderMode: { webView, tab in
                 try? await SumiReaderModeService.toggleReaderMode(on: webView, tab: tab)

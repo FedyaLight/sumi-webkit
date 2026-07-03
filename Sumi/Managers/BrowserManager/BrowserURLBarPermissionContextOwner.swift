@@ -75,7 +75,7 @@ extension BrowserURLBarPermissionContextOwner.Dependencies {
             },
             updateIndicator: { [weak browserManager] viewModel, tab, windowState in
                 guard let browserManager else { return }
-                let webView = browserManager.windowOwnedWebView(for: tab, in: windowState.id)
+                let webView = browserManager.webViewRoutingService.windowOwnedWebView(for: tab, in: windowState.id)
                 viewModel.update(
                     tab: tab,
                     webView: webView

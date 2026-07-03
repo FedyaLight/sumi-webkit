@@ -16,13 +16,13 @@ extension BrowserTabOpeningOwner.Dependencies {
             settings: { [weak browserManager] in browserManager?.sumiSettings },
             activeWindow: { [weak browserManager] in browserManager?.windowRegistry?.activeWindow },
             windowStateContainingTab: { [weak browserManager] tab in
-                browserManager?.windowState(containing: tab)
+                browserManager?.windowTabContextOwner.windowState(containing: tab)
             },
             canMaterializeBackgroundTab: { [weak browserManager] tab in
-                browserManager?.canMaterializeWebViewDuringStartup(tab) ?? true
+                browserManager?.startupProtectionRuntime.canMaterializeWebViewDuringStartup(tab) ?? true
             },
             deferBackgroundTabUntilStartupReady: { [weak browserManager] tab in
-                browserManager?.deferBackgroundTabUntilStartupReady(tab)
+                browserManager?.startupProtectionRuntime.deferBackgroundTabUntilStartupReady(tab)
             },
             selectTab: { [weak browserManager] tab, windowState, loadPolicy in
                 browserManager?.selectTab(tab, in: windowState, loadPolicy: loadPolicy)

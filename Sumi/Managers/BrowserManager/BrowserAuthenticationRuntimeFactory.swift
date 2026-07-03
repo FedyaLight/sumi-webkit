@@ -8,7 +8,7 @@ enum BrowserAuthenticationRuntimeFactory {
                 guard let browserManager else { return false }
                 return browserManager.nativeDialogPresentationOwner.presentBasicAuthSheet(
                     session,
-                    in: browserManager.windowState(containing: tab)
+                    in: browserManager.windowTabContextOwner.windowState(containing: tab)
                 )
             },
             dismissNativeModalPresentation: { [weak browserManager] in

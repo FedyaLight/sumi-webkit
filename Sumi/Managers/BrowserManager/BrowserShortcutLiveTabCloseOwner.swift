@@ -116,10 +116,10 @@ extension BrowserShortcutLiveTabCloseOwner.Dependencies {
                 browserManager?.selectTab(tab, in: windowState)
             },
             performImmediateVisualHandoffIfPossible: { [weak browserManager] windowState in
-                _ = browserManager?.performImmediateVisualHandoffIfPossible(in: windowState)
+                _ = browserManager?.windowVisualMutationOwner.performImmediateVisualHandoffIfPossible(in: windowState)
             },
             persistWindowSession: { [weak browserManager] windowState in
-                browserManager?.persistWindowSession(for: windowState)
+                browserManager?.windowSessionActivationOwner.persistWindowSession(for: windowState)
             },
             showEmptyState: { [weak browserManager] windowState in
                 browserManager?.showEmptyState(in: windowState)

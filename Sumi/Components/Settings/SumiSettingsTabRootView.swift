@@ -385,7 +385,7 @@ struct SumiSettingsTabRootView: View {
 
     private func syncSettingsURLToActiveTab(sumiSettings: SumiSettingsService) {
         guard let windowState,
-              let tab = browserManager.currentTab(for: windowState),
+              let tab = browserManager.windowTabContextOwner.currentTab(for: windowState),
               tab.representsSumiSettingsSurface
         else { return }
         let newURL = sumiSettings.settingsSurfaceURLForCurrentNavigation()
@@ -403,7 +403,7 @@ struct SumiSettingsTabRootView: View {
                let profile = browserManager.profileManager.profiles.first(where: { $0.id == currentProfileId }) {
                 return profile
             }
-            if let currentTab = browserManager.currentTab(for: windowState),
+            if let currentTab = browserManager.windowTabContextOwner.currentTab(for: windowState),
                let profileId = currentTab.profileId,
                let profile = browserManager.profileManager.profiles.first(where: { $0.id == profileId }) {
                 return profile

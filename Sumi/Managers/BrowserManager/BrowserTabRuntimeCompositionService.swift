@@ -218,7 +218,7 @@ extension BrowserTabRuntimeCompositionService.Dependencies {
         var visibleTabIDsByWindow: [UUID: Set<UUID>] = [:]
         for windowState in windowRegistry.windows.values where windowState.windowVisibilityState.isEffectivelyVisible {
             let tabIDs = VisibleTabPreparationPlan.visibleTabIDs(
-                currentTabId: browserManager.currentTab(for: windowState)?.id,
+                currentTabId: browserManager.windowTabContextOwner.currentTab(for: windowState)?.id,
                 splitTabIds: browserManager.splitManager.visibleTabIds(for: windowState.id)
             )
             visibleTabIDsByWindow[windowState.id] = Set(tabIDs)
@@ -231,7 +231,7 @@ extension BrowserTabRuntimeCompositionService.Dependencies {
     ) -> Set<UUID> {
         var selectedIDs = Set<UUID>()
         for windowState in browserManager.windowRegistry.map({ Array($0.windows.values) }) ?? [] {
-            if let current = browserManager.currentTab(for: windowState) {
+            if let current = browserManager.windowTabContextOwner.currentTab(for: windowState) {
                 selectedIDs.insert(current.id)
             }
         }
@@ -244,7 +244,7 @@ extension BrowserTabRuntimeCompositionService.Dependencies {
         var visible: [UUID: Set<UUID>] = [:]
         for windowState in browserManager.windowRegistry.map({ Array($0.windows.values) }) ?? [] {
             let tabIDs = VisibleTabPreparationPlan.visibleTabIDs(
-                currentTabId: browserManager.currentTab(for: windowState)?.id,
+                currentTabId: browserManager.windowTabContextOwner.currentTab(for: windowState)?.id,
                 splitTabIds: browserManager.splitManager.visibleTabIds(for: windowState.id)
             )
             visible[windowState.id] = Set(tabIDs)
@@ -269,7 +269,7 @@ extension BrowserTabRuntimeCompositionService.Dependencies {
                 return lhs.id.uuidString < rhs.id.uuidString
             }
             .compactMap { windowState in
-                let currentTab = browserManager.currentTab(for: windowState)
+                let currentTab = browserManager.windowTabContextOwner.currentTab(for: windowState)
                 return browserManager.tabManager.opportunisticRestoreAnchor(
                     in: windowState,
                     currentTab: currentTab

@@ -259,7 +259,7 @@ extension BrowserActivePageRoutingOwner.Dependencies {
                 browserManager?.windowRegistry?.activeWindow
             },
             currentTab: { [weak browserManager] windowState in
-                browserManager?.currentTab(for: windowState)
+                browserManager?.windowTabContextOwner.currentTab(for: windowState)
             },
             activePreviewTab: { [weak browserManager] windowState in
                 browserManager?.glanceManager.activePreviewTab(for: windowState)
@@ -271,7 +271,7 @@ extension BrowserActivePageRoutingOwner.Dependencies {
                 browserManager?.glanceManager.activeSession(for: windowState)?.currentURL
             },
             windowOwnedWebView: { [weak browserManager] tab, windowId in
-                browserManager?.windowOwnedWebView(for: tab, in: windowId)
+                browserManager?.webViewRoutingService.windowOwnedWebView(for: tab, in: windowId)
             },
             refreshActivePage: { [weak browserManager] tab, windowState in
                 browserManager?.windowScopedNavigationOwner.refreshWindowScopedPage(
@@ -281,10 +281,10 @@ extension BrowserActivePageRoutingOwner.Dependencies {
                 )
             },
             createNewTab: { [weak browserManager] windowState, urlString in
-                browserManager?.createNewTab(in: windowState, url: urlString)
+                browserManager?.tabLifecycleService.opening.createNewTab(in: windowState, url: urlString)
             },
             openNewTab: { [weak browserManager] urlString, context in
-                browserManager?.openNewTab(url: urlString, context: context)
+                browserManager?.tabLifecycleService.opening.openNewTab(url: urlString, context: context)
             },
             containsSpace: { [weak browserManager] spaceId in
                 browserManager?.tabManager.spaces.contains { $0.id == spaceId } == true

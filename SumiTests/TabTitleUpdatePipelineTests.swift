@@ -182,7 +182,7 @@ final class TabTitleUpdatePipelineTests: XCTestCase {
     func testDeferredForegroundURLTabStartsLoadingPresentationImmediately() {
         let (browserManager, windowState) = makeBrowserSelectionHarness()
 
-        let tab = browserManager.openNewTab(
+        let tab = browserManager.tabLifecycleService.opening.openNewTab(
             url: "https://example.com",
             context: .foreground(windowState: windowState, loadPolicy: .deferred)
         )
@@ -194,7 +194,7 @@ final class TabTitleUpdatePipelineTests: XCTestCase {
     func testDeferredEmptyNewTabDoesNotStartLoadingPresentation() {
         let (browserManager, windowState) = makeBrowserSelectionHarness()
 
-        let tab = browserManager.openNewTab(
+        let tab = browserManager.tabLifecycleService.opening.openNewTab(
             context: .foreground(windowState: windowState, loadPolicy: .deferred)
         )
 

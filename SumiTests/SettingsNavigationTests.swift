@@ -291,7 +291,7 @@ final class SettingsNavigationTests: XCTestCase {
     func testOpenSettingsTabSelectsAboutSurface() {
         let (browserManager, _, settings, windowState, space) = makeHarness()
 
-        browserManager.openSettingsTab(selecting: .about, in: windowState)
+        browserManager.settingsSurfaceRoutingOwner.openSettingsTab(selecting: .about, in: windowState)
 
         let settingsTabs = browserManager.tabManager.tabs(in: space).filter(\.representsSumiSettingsSurface)
         XCTAssertEqual(settingsTabs.count, 1)
@@ -308,7 +308,7 @@ final class SettingsNavigationTests: XCTestCase {
             activate: false
         )
 
-        browserManager.openSettingsTab(selecting: .about, in: windowState)
+        browserManager.settingsSurfaceRoutingOwner.openSettingsTab(selecting: .about, in: windowState)
 
         let settingsTabs = browserManager.tabManager.tabs(in: space).filter(\.representsSumiSettingsSurface)
         XCTAssertEqual(settingsTabs.count, 1)
@@ -325,7 +325,7 @@ final class SettingsNavigationTests: XCTestCase {
         windowState.ephemeralProfile = ephemeralProfile
         windowState.currentProfileId = ephemeralProfile.id
 
-        browserManager.openSettingsTab(selecting: .privacy, in: windowState)
+        browserManager.settingsSurfaceRoutingOwner.openSettingsTab(selecting: .privacy, in: windowState)
 
         let firstSettingsTab = try XCTUnwrap(
             windowState.ephemeralTabs.first(where: \.representsSumiSettingsSurface)
@@ -337,7 +337,7 @@ final class SettingsNavigationTests: XCTestCase {
         XCTAssertEqual(settings.currentSettingsTab, .privacy)
         XCTAssertFalse(browserManager.tabManager.tabs(in: space).contains(where: \.representsSumiSettingsSurface))
 
-        browserManager.openSettingsTab(selecting: .about, in: windowState)
+        browserManager.settingsSurfaceRoutingOwner.openSettingsTab(selecting: .about, in: windowState)
 
         let settingsTabs = windowState.ephemeralTabs.filter(\.representsSumiSettingsSurface)
         XCTAssertEqual(settingsTabs.count, 1)

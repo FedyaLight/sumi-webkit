@@ -138,10 +138,10 @@ struct SidebarBrowserContext {
                 browserManager?.currentProfile
             },
             currentTab: { [weak browserManager] windowState in
-                browserManager?.currentTab(for: windowState)
+                browserManager?.windowTabContextOwner.currentTab(for: windowState)
             },
             space: { [weak browserManager] spaceId in
-                browserManager?.space(for: spaceId)
+                browserManager?.windowSpaceStateOwner.space(for: spaceId)
             },
             extensionToolbarSlots: { [weak browserManager] enabledExtensions, profileId in
                 guard let browserManager else { return [] }
@@ -158,7 +158,7 @@ struct SidebarBrowserContext {
                 )
             },
             savedSidebarWidth: { [weak browserManager] windowState in
-                browserManager?.getSavedSidebarWidth(for: windowState) ?? BrowserWindowState.sidebarDefaultWidth
+                browserManager?.sidebarPresentationOwner.savedSidebarWidth(for: windowState) ?? BrowserWindowState.sidebarDefaultWidth
             },
             performDrop: { [weak browserManager] pasteboard, resolution, windowState in
                 guard let browserManager else { return false }

@@ -29,10 +29,10 @@ enum BrowserExtensionManagerRuntimeFactory {
                 browserManager?.windowRegistry?.allWindows ?? []
             },
             windowStateContainingTab: { [weak browserManager] tab in
-                browserManager?.windowState(containing: tab)
+                browserManager?.windowTabContextOwner.windowState(containing: tab)
             },
             windowOwnedWebView: { [weak browserManager] tab, windowId in
-                browserManager?.windowOwnedWebView(for: tab, in: windowId)
+                browserManager?.webViewRoutingService.windowOwnedWebView(for: tab, in: windowId)
             },
             trackedWebViews: { [weak browserManager] tabId in
                 browserManager?.webViewCoordinator?.getAllWebViews(for: tabId) ?? []

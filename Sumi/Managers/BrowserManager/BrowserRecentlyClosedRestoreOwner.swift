@@ -337,7 +337,7 @@ extension BrowserRecentlyClosedRestoreOwner.Dependencies {
                 browserManager?.profileManager ?? profileManager
             },
             space: { [weak browserManager] spaceId in
-                browserManager?.space(for: spaceId)
+                browserManager?.windowSpaceStateOwner.space(for: spaceId)
             },
             selectTab: { [weak browserManager] tab, windowState in
                 browserManager?.selectTab(tab, in: windowState)

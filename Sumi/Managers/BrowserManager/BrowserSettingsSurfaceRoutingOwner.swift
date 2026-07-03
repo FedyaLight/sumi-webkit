@@ -50,7 +50,7 @@ extension BrowserSettingsSurfaceRoutingOwner.Dependencies {
                 browserManager?.windowRegistry?.activeWindow
             },
             currentTab: { [weak browserManager] windowState in
-                browserManager?.currentTab(for: windowState)
+                browserManager?.windowTabContextOwner.currentTab(for: windowState)
             },
             settingsSurfaceURL: { [weak browserManager] pane in
                 browserManager?.permissionSiteSettingsRoutingOwner.settingsSurfaceURL(for: pane)

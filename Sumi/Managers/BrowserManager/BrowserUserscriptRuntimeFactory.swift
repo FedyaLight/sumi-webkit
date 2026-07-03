@@ -92,7 +92,7 @@ enum BrowserUserscriptRuntimeFactory {
             )
             return
         }
-        browserManager.openNewTab(url: url, context: openContext)
+        browserManager.tabLifecycleService.opening.openNewTab(url: url, context: openContext)
     }
 
     private static func closeUserscriptTab(
@@ -113,8 +113,8 @@ enum BrowserUserscriptRuntimeFactory {
             closeUserscriptTab(sourceContext.tab, sourceContext.windowState, browserManager)
         } else if sourceWebView == nil,
                   let activeWindow = browserManager.windowRegistry?.activeWindow,
-                  let activeTab = browserManager.currentTab(for: activeWindow) {
-            browserManager.closeTab(activeTab, in: activeWindow)
+                  let activeTab = browserManager.windowTabContextOwner.currentTab(for: activeWindow) {
+            browserManager.tabLifecycleService.closeOrchestration.closeTab(activeTab, in: activeWindow)
         }
     }
 
@@ -162,7 +162,7 @@ enum BrowserUserscriptRuntimeFactory {
             for: sourceWebView,
             browserManager: browserManager
         )?.windowState
-        let windowState = browserManager.windowState(containing: tab) ?? sourceWindow
+        let windowState = browserManager.windowTabContextOwner.windowState(containing: tab) ?? sourceWindow
         closeUserscriptTab(tab, windowState, browserManager)
     }
 
@@ -177,7 +177,7 @@ enum BrowserUserscriptRuntimeFactory {
         }
 
         if let windowState {
-            browserManager.closeTab(tab, in: windowState)
+            browserManager.tabLifecycleService.closeOrchestration.closeTab(tab, in: windowState)
         } else {
             browserManager.tabManager.removeTab(tab.id)
         }

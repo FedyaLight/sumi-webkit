@@ -58,7 +58,7 @@ extension BrowserSidebarTabCommandOwner.Dependencies {
                 browserManager?.requestUserTabActivation(tab, in: windowState)
             },
             closeTab: { [weak browserManager] tab, windowState in
-                browserManager?.closeTab(tab, in: windowState)
+                browserManager?.tabLifecycleService.closeOrchestration.closeTab(tab, in: windowState)
             },
             moveTabUp: { [weak browserManager] tabId in
                 browserManager?.tabManager.moveTabUp(tabId)
@@ -67,7 +67,7 @@ extension BrowserSidebarTabCommandOwner.Dependencies {
                 browserManager?.tabManager.moveTabDown(tabId)
             },
             openForegroundTab: { [weak browserManager] url, windowState, preferredSpaceId in
-                browserManager?.openNewTab(
+                browserManager?.tabLifecycleService.opening.openNewTab(
                     url: url,
                     context: .foreground(
                         windowState: windowState,
@@ -79,7 +79,7 @@ extension BrowserSidebarTabCommandOwner.Dependencies {
                 browserManager?.floatingBarRoutingOwner.openNewTabOrFloatingBar(in: windowState)
             },
             duplicateTab: { [weak browserManager] tab, windowState in
-                browserManager?.duplicateTab(tab, in: windowState)
+                browserManager?.tabLifecycleService.opening.duplicateTab(tab, in: windowState)
             }
         )
     }

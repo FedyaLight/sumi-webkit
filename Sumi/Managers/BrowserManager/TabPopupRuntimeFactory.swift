@@ -20,7 +20,7 @@ enum TabPopupRuntimeFactory {
                     return TabPopupHandlingRuntime.targetSpace(
                         for: openerTab,
                         tabManager: browserManager.tabManager,
-                        windowState: browserManager.windowState(containing: openerTab)
+                        windowState: browserManager.windowTabContextOwner.windowState(containing: openerTab)
                     )
                 },
                 createNewTab: { [weak browserManager] url, space, activate in
@@ -53,13 +53,13 @@ enum TabPopupRuntimeFactory {
                     )
                 },
                 createPopupTab: { [weak browserManager] openerTab, activate in
-                    browserManager?.createPopupTab(
+                    browserManager?.tabLifecycleService.opening.createPopupTab(
                         from: openerTab,
                         activate: activate
                     )
                 },
                 windowStateContainingTab: { [weak browserManager] tab in
-                    browserManager?.windowState(containing: tab)
+                    browserManager?.windowTabContextOwner.windowState(containing: tab)
                 },
                 selectTab: { [weak browserManager] tab, windowState in
                     browserManager?.selectTab(tab, in: windowState)

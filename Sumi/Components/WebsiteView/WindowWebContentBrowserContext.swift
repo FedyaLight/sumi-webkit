@@ -41,7 +41,7 @@ final class BrowserManagerWindowWebContentContext: WindowWebContentBrowserContex
     }
 
     func currentTab(for windowState: BrowserWindowState) -> Tab? {
-        browserManager.currentTab(for: windowState)
+        browserManager.windowTabContextOwner.currentTab(for: windowState)
     }
 
     func tab(for tabId: UUID) -> Tab? {
@@ -71,14 +71,14 @@ final class BrowserManagerWindowWebContentContext: WindowWebContentBrowserContex
     }
 
     func schedulePrepareVisibleWebViews(for windowState: BrowserWindowState) {
-        browserManager.schedulePrepareVisibleWebViews(for: windowState)
+        browserManager.windowVisualMutationOwner.schedulePrepareVisibleWebViews(for: windowState)
     }
 
     func enqueueWindowMutationDuringHistorySwipe(
         _ kind: HistorySwipeDeferredWindowMutationKind,
         for windowState: BrowserWindowState
     ) {
-        browserManager.enqueueWindowMutationDuringHistorySwipe(kind, for: windowState)
+        browserManager.windowVisualMutationOwner.enqueueWindowMutationDuringHistorySwipe(kind, for: windowState)
     }
 
     func configureSplitDropCapture(_ view: SplitDropCaptureView, windowId: UUID) {

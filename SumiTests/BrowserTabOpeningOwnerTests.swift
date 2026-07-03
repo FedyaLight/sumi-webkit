@@ -8,7 +8,7 @@ final class BrowserTabOpeningOwnerTests: XCTestCase {
         let harness = makeHarness()
         harness.windowState.currentSpaceId = harness.primarySpace.id
 
-        let opened = harness.browserManager.openNewTab(
+        let opened = harness.browserManager.tabLifecycleService.opening.openNewTab(
             context: .foreground(
                 windowState: harness.windowState,
                 preferredSpaceId: harness.secondarySpace.id
@@ -32,7 +32,7 @@ final class BrowserTabOpeningOwnerTests: XCTestCase {
         )
         harness.windowState.currentTabId = source.id
 
-        let opened = harness.browserManager.openNewTab(
+        let opened = harness.browserManager.tabLifecycleService.opening.openNewTab(
             context: .background(
                 windowState: harness.windowState,
                 sourceTab: source
@@ -55,7 +55,7 @@ final class BrowserTabOpeningOwnerTests: XCTestCase {
         source.name = "Source"
         harness.windowState.currentSpaceId = harness.primarySpace.id
 
-        harness.browserManager.duplicateTab(source, in: harness.windowState)
+        harness.browserManager.tabLifecycleService.opening.duplicateTab(source, in: harness.windowState)
 
         let duplicated = harness.browserManager.tabManager.tabs(in: harness.primarySpace).first
         XCTAssertEqual(duplicated?.name, "Source")
@@ -79,7 +79,7 @@ final class BrowserTabOpeningOwnerTests: XCTestCase {
         harness.windowRegistry.activeWindowId = nil
         harness.browserManager.tabManager.currentSpace = harness.secondarySpace
 
-        let opened = harness.browserManager.openNewTab(context: .background())
+        let opened = harness.browserManager.tabLifecycleService.opening.openNewTab(context: .background())
 
         XCTAssertEqual(opened.spaceId, harness.primarySpace.id)
     }
@@ -92,7 +92,7 @@ final class BrowserTabOpeningOwnerTests: XCTestCase {
 
         let source = Tab(name: "Detached Source")
 
-        harness.browserManager.duplicateTab(source, in: harness.windowState)
+        harness.browserManager.tabLifecycleService.opening.duplicateTab(source, in: harness.windowState)
 
         let duplicated = harness.browserManager.tabManager.tabs(in: harness.primarySpace).first
         XCTAssertEqual(duplicated?.name, "Detached Source")

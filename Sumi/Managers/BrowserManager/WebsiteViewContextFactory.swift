@@ -11,10 +11,10 @@ enum WebsiteViewContextFactory {
     ) -> WebsiteViewBrowserContext {
         WebsiteViewBrowserContext(
             currentTab: { [weak browserManager] windowState in
-                browserManager?.currentTab(for: windowState)
+                browserManager?.windowTabContextOwner.currentTab(for: windowState)
             },
             workspaceTheme: { [weak browserManager] spaceId in
-                browserManager?.space(for: spaceId)?.workspaceTheme
+                browserManager?.windowSpaceStateOwner.space(for: spaceId)?.workspaceTheme
             },
             makeWebContentContext: {
                 BrowserManagerWindowWebContentContext(
@@ -83,7 +83,7 @@ enum WebsiteViewContextFactory {
                     .isNativeModalPresented(in: windowId) ?? false
             },
             currentTab: { [weak browserManager] windowState in
-                browserManager?.currentTab(for: windowState)
+                browserManager?.windowTabContextOwner.currentTab(for: windowState)
             },
             openHistoryURL: { [weak browserManager] url, windowState, preferredOpenMode in
                 browserManager?.historyNavigationOwner.openHistoryURL(
@@ -120,7 +120,7 @@ enum WebsiteViewContextFactory {
             },
             currentProfileUpdates: browserManager.$currentProfile.eraseToAnyPublisher(),
             currentTab: { [weak browserManager] windowState in
-                browserManager?.currentTab(for: windowState)
+                browserManager?.windowTabContextOwner.currentTab(for: windowState)
             },
             openHistoryURLsInNewTabs: { [weak browserManager] urls, windowState in
                 browserManager?.historyNavigationOwner.openHistoryURLsInNewTabs(

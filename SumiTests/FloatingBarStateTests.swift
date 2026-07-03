@@ -53,7 +53,7 @@ final class FloatingBarStateTests: XCTestCase {
         }
 
         let (browserManager, _, windowState, space) = makeHarness()
-        let currentTab = browserManager.openNewTab(
+        let currentTab = browserManager.tabLifecycleService.opening.openNewTab(
             url: "https://example.com/start",
             context: .foreground(windowState: windowState)
         )
@@ -72,7 +72,7 @@ final class FloatingBarStateTests: XCTestCase {
 
         XCTAssertFalse(windowState.floatingBarDraftNavigatesCurrentTab)
         XCTAssertEqual(browserManager.tabManager.tabs(in: space).count, 1)
-        XCTAssertEqual(browserManager.currentTab(for: windowState)?.id, currentTab.id)
+        XCTAssertEqual(browserManager.windowTabContextOwner.currentTab(for: windowState)?.id, currentTab.id)
         XCTAssertEqual(currentTab.url.absoluteString, "https://example.com/replaced")
     }
 
@@ -83,7 +83,7 @@ final class FloatingBarStateTests: XCTestCase {
         }
 
         let (browserManager, _, windowState, space) = makeHarness()
-        let currentTab = browserManager.openNewTab(
+        let currentTab = browserManager.tabLifecycleService.opening.openNewTab(
             url: "https://example.com/start",
             context: .foreground(windowState: windowState)
         )
@@ -95,7 +95,7 @@ final class FloatingBarStateTests: XCTestCase {
         )
 
         XCTAssertEqual(browserManager.tabManager.tabs(in: space).count, 2)
-        XCTAssertEqual(browserManager.currentTab(for: windowState)?.id, currentTab.id)
+        XCTAssertEqual(browserManager.windowTabContextOwner.currentTab(for: windowState)?.id, currentTab.id)
     }
 
     func testDismissFloatingBarForActiveWindowPreservesDraftWhenRequested() {

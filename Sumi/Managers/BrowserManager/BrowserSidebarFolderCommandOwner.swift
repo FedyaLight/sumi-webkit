@@ -41,19 +41,19 @@ extension BrowserSidebarFolderCommandOwner.Dependencies {
     static func live(browserManager: BrowserManager) -> Self {
         Self(
             spaceForSidebarActions: { [weak browserManager] windowState in
-                browserManager?.spaceForSidebarActions(in: windowState)
+                browserManager?.sidebarActionOwner.spaceForSidebarActions(in: windowState)
             },
             createFolderInCurrentSpace: { [weak browserManager] windowState in
-                browserManager?.createFolderInCurrentSpace(in: windowState)
+                browserManager?.sidebarActionOwner.createFolderInCurrentSpace(in: windowState)
             },
             createRSSLiveFolderInCurrentSpace: { [weak browserManager] windowState in
-                browserManager?.createRSSLiveFolderInCurrentSpace(in: windowState)
+                browserManager?.sidebarActionOwner.createRSSLiveFolderInCurrentSpace(in: windowState)
             },
             createGitHubPRFolderInCurrentSpace: { [weak browserManager] windowState in
-                browserManager?.createGitHubPRFolderInCurrentSpace(in: windowState)
+                browserManager?.sidebarActionOwner.createGitHubPRFolderInCurrentSpace(in: windowState)
             },
             createGitHubIssuesFolderInCurrentSpace: { [weak browserManager] windowState in
-                browserManager?.createGitHubIssuesFolderInCurrentSpace(in: windowState)
+                browserManager?.sidebarActionOwner.createGitHubIssuesFolderInCurrentSpace(in: windowState)
             }
         )
     }

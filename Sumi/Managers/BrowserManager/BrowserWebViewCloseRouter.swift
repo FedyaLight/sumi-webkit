@@ -110,10 +110,10 @@ extension BrowserWebViewCloseRouter.Dependencies {
                         browserManager?.windowRegistry?.windows[windowID]
                     },
                     windowContaining: { [weak browserManager] tab in
-                        browserManager?.windowState(containing: tab)
+                        browserManager?.windowTabContextOwner.windowState(containing: tab)
                     },
                     closeTab: { [weak browserManager] tab, windowState in
-                        browserManager?.closeTab(tab, in: windowState)
+                        browserManager?.tabLifecycleService.closeOrchestration.closeTab(tab, in: windowState)
                     },
                     removeTab: { [weak browserManager] tabID in
                         browserManager?.tabManager.removeTab(tabID)

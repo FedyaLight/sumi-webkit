@@ -29,10 +29,10 @@ enum BrowserWebViewRuntimeFactory {
                 requireWindowRegistry(browserManager, operation: "resolve window").windows[windowId]
             },
             windowContaining: { [weak browserManager] tab in
-                requireBrowserManager(browserManager, operation: "resolve tab window").windowState(containing: tab)
+                requireBrowserManager(browserManager, operation: "resolve tab window").windowTabContextOwner.windowState(containing: tab)
             },
             currentTab: { [weak browserManager] windowState in
-                requireBrowserManager(browserManager, operation: "resolve current tab").currentTab(for: windowState)
+                requireBrowserManager(browserManager, operation: "resolve current tab").windowTabContextOwner.currentTab(for: windowState)
             },
             handleUnprotectedWebViewDidClose: { [weak browserManager] webView in
                 requireBrowserManager(
@@ -44,7 +44,7 @@ enum BrowserWebViewRuntimeFactory {
                 requireBrowserManager(
                     browserManager,
                     operation: "refresh compositor"
-                ).refreshCompositor(for: windowState)
+                ).windowVisualMutationOwner.refreshCompositor(for: windowState)
             },
             notifyTabActivatedIfLoaded: { [weak browserManager] tab in
                 requireBrowserManager(
@@ -82,7 +82,7 @@ enum BrowserWebViewRuntimeFactory {
                 guard let browserManager = browserManager,
                       let windowState = browserManager.windowRegistry?.windows[windowId]
                 else { return }
-                browserManager.refreshCompositor(for: windowState)
+                browserManager.windowVisualMutationOwner.refreshCompositor(for: windowState)
             }
         )
     }
@@ -112,7 +112,7 @@ enum BrowserWebViewRuntimeFactory {
             },
             currentTabId: { [weak browserManager] windowState in
                 requireBrowserManager(browserManager, operation: "resolve visible current tab")
-                    .currentTab(for: windowState)?.id
+                    .windowTabContextOwner.currentTab(for: windowState)?.id
             },
             splitVisibleTabIds: { [weak browserManager] windowId in
                 requireBrowserManager(browserManager, operation: "resolve split visible tabs")
@@ -130,7 +130,7 @@ enum BrowserWebViewRuntimeFactory {
                 requireBrowserManager(
                     browserManager,
                     operation: "check visible WebView startup materialization"
-                ).canMaterializeWebViewDuringStartup(tab)
+                ).startupProtectionRuntime.canMaterializeWebViewDuringStartup(tab)
             },
             markTabAccessed: { [weak browserManager] tabId in
                 requireBrowserManager(browserManager, operation: "mark visible tab accessed")
@@ -152,7 +152,7 @@ enum BrowserWebViewRuntimeFactory {
             },
             refreshCompositor: { [weak browserManager] windowState in
                 requireBrowserManager(browserManager, operation: "refresh visible compositor")
-                    .refreshCompositor(for: windowState)
+                    .windowVisualMutationOwner.refreshCompositor(for: windowState)
             }
         )
     }

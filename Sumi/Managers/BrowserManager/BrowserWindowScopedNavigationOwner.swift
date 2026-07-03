@@ -195,10 +195,10 @@ extension BrowserWindowScopedNavigationOwner.Dependencies {
                 browserManager?.webViewCoordinator
             },
             windowOwnedWebView: { [weak browserManager] tab, windowId in
-                browserManager?.windowOwnedWebView(for: tab, in: windowId)
+                browserManager?.webViewRoutingService.windowOwnedWebView(for: tab, in: windowId)
             },
             reloadTab: { [weak browserManager] tabId, windowId in
-                browserManager?.reloadTab(tabId, in: windowId)
+                browserManager?.webViewRoutingService.reloadTab(tabId, in: windowId)
             },
             resolvedSearchEngineTemplate: { [weak browserManager] in
                 browserManager?.sumiSettings?.resolvedSearchEngineTemplate

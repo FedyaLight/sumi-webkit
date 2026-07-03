@@ -1624,7 +1624,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
 
     private func waitForStartupProtectionRestore(on browserManager: BrowserManager) async {
         for _ in 0..<100 {
-            if browserManager.hasFinishedStartupProtectionRestore { return }
+            if browserManager.startupProtectionRuntime.hasFinishedProtectionRestore { return }
             await Task.yield()
         }
         XCTFail("Timed out waiting for initial startup protection restore")

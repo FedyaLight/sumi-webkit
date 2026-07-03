@@ -283,10 +283,10 @@ extension BrowserHistoryNavigationOwner.Dependencies {
                 browserManager?.tabManager.scheduleRuntimeStatePersistence(for: tab)
             },
             schedulePrepareVisibleWebViews: { [weak browserManager] windowState in
-                browserManager?.schedulePrepareVisibleWebViews(for: windowState)
+                browserManager?.windowVisualMutationOwner.schedulePrepareVisibleWebViews(for: windowState)
             },
             refreshCompositor: { [weak browserManager] windowState in
-                browserManager?.refreshCompositor(for: windowState)
+                browserManager?.windowVisualMutationOwner.refreshCompositor(for: windowState)
             },
             navigateBack: { webView in
                 SumiWebViewNavigator.goBack(on: webView)

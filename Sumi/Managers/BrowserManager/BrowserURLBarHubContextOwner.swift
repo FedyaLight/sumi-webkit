@@ -168,10 +168,10 @@ extension BrowserURLBarHubContextOwner.Dependencies {
             },
             siteControlsSnapshot: siteControlsSnapshot,
             openExtensionSettings: { [weak browserManager] windowState in
-                browserManager?.openSettingsTab(selecting: .extensions, in: windowState)
+                browserManager?.settingsSurfaceRoutingOwner.openSettingsTab(selecting: .extensions, in: windowState)
             },
             openSiteSettings: { [weak browserManager] tab, windowState in
-                browserManager?.openSiteSettingsTab(focusing: tab, in: windowState)
+                browserManager?.settingsSurfaceRoutingOwner.openSiteSettingsTab(focusing: tab, in: windowState)
             },
             setSafariContentBlockerSiteOverride: { override, url in
                 extensionsModule.setSafariContentBlockerSiteOverride(

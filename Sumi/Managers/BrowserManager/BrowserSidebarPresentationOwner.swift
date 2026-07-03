@@ -70,7 +70,7 @@ final class BrowserSidebarPresentationOwner {
         )
     }
 
-    func savedSidebarWidth(for windowState: BrowserWindowState?) -> CGFloat {
+    func savedSidebarWidth(for windowState: BrowserWindowState? = nil) -> CGFloat {
         stateOwner.savedSidebarWidth(
             for: windowState,
             activeWindow: dependencies.activeWindow()
@@ -129,7 +129,7 @@ extension BrowserSidebarPresentationOwner.Dependencies {
                 }
             },
             schedulePersistWindowSession: { [weak browserManager] windowState, delayNanoseconds in
-                browserManager?.schedulePersistWindowSession(
+                browserManager?.windowSessionActivationOwner.schedulePersistWindowSession(
                     for: windowState,
                     delayNanoseconds: delayNanoseconds
                 )

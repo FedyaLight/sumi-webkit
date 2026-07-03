@@ -6,7 +6,7 @@ enum BrowserGlanceRuntimeService {
     static func runtime(for browserManager: BrowserManager) -> GlanceManager.Runtime {
         GlanceManager.Runtime(
             windowStateContainingTab: { [weak browserManager] tab in
-                browserManager?.windowState(containing: tab)
+                browserManager?.windowTabContextOwner.windowState(containing: tab)
             },
             hasLoadedInitialTabData: { [weak browserManager] in
                 browserManager?.tabManager.hasLoadedInitialData ?? false
@@ -31,7 +31,7 @@ enum BrowserGlanceRuntimeService {
                 )
             },
             currentTab: { [weak browserManager] windowState in
-                browserManager?.currentTab(for: windowState)
+                browserManager?.windowTabContextOwner.currentTab(for: windowState)
             },
             restoreSourceSelection: { [weak browserManager] tab, windowState in
                 browserManager?.applyTabSelection(
@@ -63,10 +63,10 @@ enum BrowserGlanceRuntimeService {
                 browserManager?.findManager.hideFindBar()
             },
             updateFindManagerCurrentTab: { [weak browserManager] in
-                browserManager?.updateFindManagerCurrentTab()
+                browserManager?.findBarRoutingOwner.updateCurrentTab()
             },
             persistWindowSession: { [weak browserManager] windowState in
-                browserManager?.persistWindowSession(for: windowState)
+                browserManager?.windowSessionActivationOwner.persistWindowSession(for: windowState)
             },
             makePreviewTab: { [weak browserManager] url, sourceTab, windowState in
                 guard let browserManager else {

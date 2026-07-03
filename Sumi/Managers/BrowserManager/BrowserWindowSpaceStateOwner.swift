@@ -324,7 +324,7 @@ extension BrowserWindowSpaceStateOwner.Dependencies {
                 )
             },
             performImmediateVisualHandoffIfPossible: { [weak browserManager] windowState in
-                _ = browserManager?.performImmediateVisualHandoffIfPossible(in: windowState)
+                _ = browserManager?.windowVisualMutationOwner.performImmediateVisualHandoffIfPossible(in: windowState)
             },
             showEmptyState: { [weak browserManager] windowState in
                 browserManager?.showEmptyState(in: windowState)
@@ -333,7 +333,7 @@ extension BrowserWindowSpaceStateOwner.Dependencies {
                 browserManager?.adoptProfileIfNeeded(for: windowState, context: .spaceChange)
             },
             persistWindowSession: { [weak browserManager] windowState in
-                browserManager?.persistWindowSession(for: windowState)
+                browserManager?.windowSessionActivationOwner.persistWindowSession(for: windowState)
             },
             completePendingSplitGroupFocusIfReady: { [weak browserManager] windowState, spaceId in
                 browserManager?.sidebarCommandService.splitShortcutRouting.completePendingSplitGroupFocusIfReady(
@@ -342,7 +342,7 @@ extension BrowserWindowSpaceStateOwner.Dependencies {
                 )
             },
             refreshCompositor: { [weak browserManager] windowState in
-                browserManager?.refreshCompositor(for: windowState)
+                browserManager?.windowVisualMutationOwner.refreshCompositor(for: windowState)
             }
         )
     }

@@ -49,11 +49,11 @@ extension WindowViewBrowserRuntime {
                 )
             },
             currentTab: { [weak browserManager] windowState in
-                browserManager?.currentTab(for: windowState)
+                browserManager?.windowTabContextOwner.currentTab(for: windowState)
             },
             workspaceTheme: { [weak browserManager] spaceId in
                 guard let spaceId else { return nil }
-                return browserManager?.space(for: spaceId)?.workspaceTheme
+                return browserManager?.windowSpaceStateOwner.space(for: spaceId)?.workspaceTheme
             },
             isNativeModalPresented: { [weak browserManager] windowId in
                 browserManager?.nativeDialogPresentationOwner.isNativeModalPresented(in: windowId) ?? false
@@ -73,10 +73,10 @@ extension WindowViewBrowserRuntime {
     private static func sidebarHostActions(browserManager: BrowserManager) -> SidebarHostActions {
         SidebarHostActions(
             updateSidebarWidth: { [weak browserManager] width, windowState, persist in
-                browserManager?.updateSidebarWidth(width, for: windowState, persist: persist)
+                browserManager?.sidebarPresentationOwner.updateSidebarWidth(width, for: windowState, persist: persist)
             },
             persistWindowSession: { [weak browserManager] windowState in
-                browserManager?.persistWindowSession(for: windowState)
+                browserManager?.windowSessionActivationOwner.persistWindowSession(for: windowState)
             },
             dismissThemePickerCommittingIfNeeded: { [weak browserManager] in
                 browserManager?.workspaceThemeEditorOwner.dismissThemePickerCommittingIfNeeded()

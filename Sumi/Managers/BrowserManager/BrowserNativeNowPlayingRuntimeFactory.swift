@@ -19,17 +19,17 @@ enum BrowserNativeNowPlayingRuntimeFactory {
                 browserManager?.windowRegistry?.windows[windowId]
             },
             currentTab: { [weak browserManager] windowState in
-                browserManager?.currentTab(for: windowState)
+                browserManager?.windowTabContextOwner.currentTab(for: windowState)
             },
             mediaCandidateTabs: { [weak browserManager] windowState in
-                browserManager?.windowScopedMediaCandidateTabs(in: windowState) ?? []
+                browserManager?.windowTabContextOwner.windowScopedMediaCandidateTabs(in: windowState) ?? []
             },
             tab: { [weak browserManager] tabId in
                 browserManager?.tabManager.tab(for: tabId)
             },
             resolvedNowPlayingWebView: { [weak browserManager] tab, windowState in
                 guard let browserManager else { return nil }
-                return browserManager.windowOwnedWebView(for: tab, in: windowState.id)
+                return browserManager.webViewRoutingService.windowOwnedWebView(for: tab, in: windowState.id)
             },
             selectTab: { [weak browserManager] tab, windowState in
                 browserManager?.selectTab(tab, in: windowState)

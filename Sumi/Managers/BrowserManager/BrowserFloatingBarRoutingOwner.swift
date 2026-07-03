@@ -230,7 +230,7 @@ extension BrowserFloatingBarRoutingOwner.Dependencies {
                 browserManager?.activePageRoutingOwner.activePageTab(for: windowState)
             },
             hasValidCurrentSelection: { [weak browserManager] windowState in
-                browserManager?.hasValidCurrentSelection(in: windowState) ?? false
+                browserManager?.windowSpaceStateOwner.hasValidCurrentSelection(in: windowState) ?? false
             },
             cancelEmptySplitPlaceholder: { [weak browserManager] windowState in
                 browserManager?.splitManager.cancelEmptySplitPlaceholder(in: windowState)
@@ -262,10 +262,10 @@ extension BrowserFloatingBarRoutingOwner.Dependencies {
                 browserManager?.workspaceThemeEditorOwner.dismissThemePickerDiscardingIfNeeded()
             },
             persistWindowSession: { [weak browserManager] windowState in
-                browserManager?.persistWindowSession(for: windowState)
+                browserManager?.windowSessionActivationOwner.persistWindowSession(for: windowState)
             },
             schedulePersistWindowSession: { [weak browserManager] windowState, delayNanoseconds in
-                browserManager?.schedulePersistWindowSession(
+                browserManager?.windowSessionActivationOwner.schedulePersistWindowSession(
                     for: windowState,
                     delayNanoseconds: delayNanoseconds
                 )

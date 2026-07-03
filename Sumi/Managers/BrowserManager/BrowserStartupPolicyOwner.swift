@@ -199,7 +199,7 @@ extension BrowserStartupPolicyOwner.Dependencies {
                 browserManager?.sumiSettings?.resolvedStartupPageURL
             },
             space: { [weak browserManager] spaceId in
-                browserManager?.space(for: spaceId)
+                browserManager?.windowSpaceStateOwner.space(for: spaceId)
             },
             splitManager: { [weak browserManager] in
                 guard let browserManager else {

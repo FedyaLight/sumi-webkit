@@ -406,13 +406,13 @@ extension BrowserExtensionBridgeAdapter.Dependencies {
                 )
             },
             currentTab: { [weak browserManager] windowState in
-                browserManager?.currentTab(for: windowState)
+                browserManager?.windowTabContextOwner.currentTab(for: windowState)
             },
             currentTabForActiveWindow: { [weak browserManager] in
                 browserManager?.activePageRoutingOwner.currentTabForActiveWindow()
             },
             windowStateContainingTab: { [weak browserManager] tab in
-                browserManager?.windowState(containing: tab)
+                browserManager?.windowTabContextOwner.windowState(containing: tab)
             },
             selectTab: { [weak browserManager] tab, windowState in
                 browserManager?.selectTab(tab, in: windowState)
@@ -421,7 +421,7 @@ extension BrowserExtensionBridgeAdapter.Dependencies {
                 browserManager?.materializeVisibleTabWebViewIfNeeded(tab, in: windowState)
             },
             windowOwnedWebView: { [weak browserManager] tab, windowId in
-                browserManager?.windowOwnedWebView(for: tab, in: windowId)
+                browserManager?.webViewRoutingService.windowOwnedWebView(for: tab, in: windowId)
             },
             createNewWindow: { [weak browserManager] in
                 browserManager?.windowShellCommandOwner.createNewWindow()

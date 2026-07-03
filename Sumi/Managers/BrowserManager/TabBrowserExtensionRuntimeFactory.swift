@@ -21,7 +21,7 @@ enum TabBrowserExtensionRuntimeFactory {
                 browserManager?.windowRegistry?.windows[windowId]
             },
             currentTab: { [weak browserManager] windowState in
-                browserManager?.currentTab(for: windowState)
+                browserManager?.windowTabContextOwner.currentTab(for: windowState)
             }
         )
     }

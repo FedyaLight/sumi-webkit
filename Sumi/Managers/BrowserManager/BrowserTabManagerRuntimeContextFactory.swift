@@ -67,10 +67,10 @@ enum BrowserTabManagerRuntimeContextFactory {
                 browserManager?.toastPresenter.presentTabClosureToast(tabCount: tabCount)
             },
             validateWindowStates: { [weak browserManager] in
-                browserManager?.validateWindowStates()
+                browserManager?.windowSpaceStateOwner.validateWindowStates()
             },
             persistWindowSession: { [weak browserManager] windowState in
-                browserManager?.persistWindowSession(for: windowState)
+                browserManager?.windowSessionActivationOwner.persistWindowSession(for: windowState)
             },
             syncWorkspaceThemeAcrossWindows: { [weak browserManager] space, animate in
                 browserManager?.workspaceThemeTransitionOwner.syncWorkspaceThemeAcrossWindows(for: space, animate: animate)

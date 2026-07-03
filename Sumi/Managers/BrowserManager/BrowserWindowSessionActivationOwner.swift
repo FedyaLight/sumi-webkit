@@ -115,7 +115,7 @@ enum WindowSessionRuntimeFactory {
             glanceManager: browserManager.glanceManager,
             shellSelectionService: browserManager.shellSelectionService,
             hasValidCurrentSelection: { [weak browserManager] windowState in
-                browserManager?.hasValidCurrentSelection(in: windowState) ?? false
+                browserManager?.windowSpaceStateOwner.hasValidCurrentSelection(in: windowState) ?? false
             },
             applyTabSelection: { [weak browserManager] tab, windowState, updateSpaceFromTab, updateTheme, rememberSelection, persistSelection in
                 browserManager?.applyTabSelection(
@@ -143,10 +143,10 @@ enum WindowSessionRuntimeFactory {
                 )
             },
             space: { [weak browserManager] spaceId in
-                browserManager?.space(for: spaceId)
+                browserManager?.windowSpaceStateOwner.space(for: spaceId)
             },
             syncSidebarPresentationState: { [weak browserManager] windowState in
-                browserManager?.syncSidebarPresentationState(from: windowState)
+                browserManager?.sidebarPresentationOwner.syncFromWindow( windowState)
             },
             focusSplitGroup: { [weak browserManager] group, windowState in
                 browserManager?.sidebarCommandService.splitShortcutRouting.focusSplitGroup(
@@ -175,7 +175,7 @@ extension BrowserWindowSessionActivationOwner.Dependencies {
                 browserManager?.splitManager.refreshPublishedState(for: windowId)
             },
             updateFindManagerCurrentTab: { [weak browserManager] in
-                browserManager?.updateFindManagerCurrentTab()
+                browserManager?.findBarRoutingOwner.updateCurrentTab()
             },
             notifyExtensionWindowOpened: { [weak browserManager] windowState in
                 browserManager?.extensionsModule.notifyWindowOpenedIfLoaded(windowState)

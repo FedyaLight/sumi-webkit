@@ -248,7 +248,7 @@ extension BrowserShortcutActionRouter.Dependencies {
                 browserManager?.findManager
             },
             showFindBar: { [weak browserManager] in
-                browserManager?.showFindBar()
+                browserManager?.findBarRoutingOwner.showFindBar()
             },
             closeCurrentTab: { [weak browserManager] in
                 browserManager?.tabLifecycleService.closeOrchestration.closeCurrentTab()
@@ -257,7 +257,7 @@ extension BrowserShortcutActionRouter.Dependencies {
                 browserManager?.duplicateCurrentTab()
             },
             toggleSidebar: { [weak browserManager] in
-                browserManager?.toggleSidebar()
+                browserManager?.sidebarPresentationOwner.toggleSidebar()
             }
         )
     }

@@ -21,14 +21,14 @@ final class WindowSessionServiceTests: XCTestCase {
         windowState.savedSidebarWidth = 312
         windowState.sidebarContentWidth = BrowserWindowState.sidebarContentWidth(for: 312)
 
-        browserManager.schedulePersistWindowSession(
+        browserManager.windowSessionActivationOwner.schedulePersistWindowSession(
             for: windowState,
             delayNanoseconds: 60_000_000_000
         )
 
         XCTAssertNil(UserDefaults.standard.data(forKey: sessionKey))
 
-        browserManager.flushPendingWindowSessionPersistence()
+        browserManager.windowSessionActivationOwner.flushPendingWindowSessionPersistence()
 
         let data = try XCTUnwrap(UserDefaults.standard.data(forKey: sessionKey))
         let snapshot = try JSONDecoder().decode(WindowSessionSnapshot.self, from: data)
@@ -247,11 +247,11 @@ final class WindowSessionServiceTests: XCTestCase {
         let windowState = BrowserWindowState(awaitsInitialSessionResolution: true)
         windowState.currentSpaceId = space.id
 
-        XCTAssertNil(browserManager.currentTab(for: windowState))
+        XCTAssertNil(browserManager.windowTabContextOwner.currentTab(for: windowState))
 
         windowState.isAwaitingInitialSessionResolution = false
 
-        XCTAssertNil(browserManager.currentTab(for: windowState))
+        XCTAssertNil(browserManager.windowTabContextOwner.currentTab(for: windowState))
         XCTAssertEqual(
             browserManager.shellSelectionService.preferredTabForSpace(
                 space,
@@ -578,7 +578,7 @@ final class WindowSessionServiceTests: XCTestCase {
         browserManager.windowRegistry = windowRegistry
         windowRegistry.register(windowState)
 
-        browserManager.validateWindowStates()
+        browserManager.windowSpaceStateOwner.validateWindowStates()
 
         XCTAssertEqual(windowState.currentSpaceId, windowSpace.id)
         XCTAssertEqual(windowState.currentProfileId, windowProfile.id)
@@ -610,7 +610,7 @@ final class WindowSessionServiceTests: XCTestCase {
         browserManager.windowRegistry = windowRegistry
         windowRegistry.register(windowState)
 
-        browserManager.validateWindowStates()
+        browserManager.windowSpaceStateOwner.validateWindowStates()
 
         XCTAssertEqual(windowState.currentSpaceId, windowSpace.id)
         XCTAssertEqual(windowState.currentProfileId, windowProfile.id)
@@ -638,7 +638,7 @@ final class WindowSessionServiceTests: XCTestCase {
         browserManager.windowRegistry = windowRegistry
         windowRegistry.register(windowState)
 
-        browserManager.validateWindowStates()
+        browserManager.windowSpaceStateOwner.validateWindowStates()
 
         XCTAssertNil(windowState.currentSpaceId)
         XCTAssertNil(windowState.currentProfileId)
@@ -655,7 +655,7 @@ final class WindowSessionServiceTests: XCTestCase {
         browserManager.currentProfile = processProfile
         browserManager.tabManager.spaces = []
 
-        browserManager.syncWindowSpaceContext(in: windowState, animateTheme: false)
+        browserManager.windowSpaceStateOwner.syncWindowSpaceContext(in: windowState, animateTheme: false)
 
         XCTAssertNil(windowState.currentProfileId)
     }
@@ -669,7 +669,7 @@ final class WindowSessionServiceTests: XCTestCase {
         let windowState = BrowserWindowState()
         browserManager.currentProfile = processProfile
 
-        browserManager.setActiveWindowState(windowState)
+        browserManager.windowSessionActivationOwner.setActiveWindowState(windowState)
 
         XCTAssertNil(windowState.currentProfileId)
     }

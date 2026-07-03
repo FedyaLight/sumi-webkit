@@ -581,7 +581,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         windowRegistry.register(windowState)
         windowRegistry.setActive(windowState)
 
-        XCTAssertTrue(browserManager.prepareVisibleWebViews(for: windowState))
+        XCTAssertTrue(browserManager.windowVisualMutationOwner.prepareVisibleWebViews(for: windowState))
         XCTAssertNotNil(coordinator.getWebView(for: tab.id, in: windowState.id))
     }
 

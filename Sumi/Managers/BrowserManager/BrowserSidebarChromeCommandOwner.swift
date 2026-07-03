@@ -44,10 +44,10 @@ extension BrowserSidebarChromeCommandOwner.Dependencies {
                 browserManager?.workspaceThemeEditorOwner.showGradientEditor(source: source)
             },
             toggleSidebar: { [weak browserManager] windowState in
-                browserManager?.toggleSidebar(for: windowState)
+                browserManager?.sidebarPresentationOwner.toggleSidebar(for: windowState)
             },
             openAppearanceSettings: { [weak browserManager] windowState in
-                browserManager?.openSettingsTab(selecting: .appearance, in: windowState)
+                browserManager?.settingsSurfaceRoutingOwner.openSettingsTab(selecting: .appearance, in: windowState)
             },
             closeDownloadsPopover: { [weak browserManager] windowState in
                 browserManager?.chromePopoverRoutingOwner.closeDownloadsPopover(in: windowState)

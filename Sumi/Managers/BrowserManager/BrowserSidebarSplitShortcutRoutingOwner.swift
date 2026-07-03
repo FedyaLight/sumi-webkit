@@ -343,22 +343,22 @@ extension BrowserSidebarSplitShortcutRoutingOwner.Dependencies {
                 browserManager?.splitManager ?? splitManager
             },
             space: { [weak browserManager] spaceId in
-                browserManager?.space(for: spaceId)
+                browserManager?.windowSpaceStateOwner.space(for: spaceId)
             },
             setActiveSpace: { [weak browserManager] space, windowState in
-                browserManager?.setActiveSpace(space, in: windowState)
+                browserManager?.windowSpaceStateOwner.setActiveSpace(space, in: windowState)
             },
             selectTab: { [weak browserManager] tab, windowState in
                 browserManager?.selectTab(tab, in: windowState)
             },
             refreshCompositor: { [weak browserManager] windowState in
-                browserManager?.refreshCompositor(for: windowState)
+                browserManager?.windowVisualMutationOwner.refreshCompositor(for: windowState)
             },
             performImmediateVisualHandoffIfPossible: { [weak browserManager] windowState in
-                _ = browserManager?.performImmediateVisualHandoffIfPossible(in: windowState)
+                _ = browserManager?.windowVisualMutationOwner.performImmediateVisualHandoffIfPossible(in: windowState)
             },
             persistWindowSession: { [weak browserManager] windowState in
-                browserManager?.persistWindowSession(for: windowState)
+                browserManager?.windowSessionActivationOwner.persistWindowSession(for: windowState)
             },
             showEmptyState: { [weak browserManager] windowState in
                 browserManager?.showEmptyState(in: windowState)

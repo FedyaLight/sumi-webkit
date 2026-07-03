@@ -45,7 +45,7 @@ enum TabBrowserWebViewRuntimeFactory {
                 browserManager?.windowRegistry?.windows[windowId]
             },
             refreshCompositor: { [weak browserManager] windowState in
-                browserManager?.refreshCompositor(for: windowState)
+                browserManager?.windowVisualMutationOwner.refreshCompositor(for: windowState)
             }
         )
     }

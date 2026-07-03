@@ -104,7 +104,7 @@ extension BrowserWindowLifecycleOwner.Dependencies {
                 browserManager != nil
             },
             setupWindowState: { [weak browserManager] windowState in
-                browserManager?.setupWindowState(windowState)
+                browserManager?.windowSessionActivationOwner.setupWindowState(windowState)
             },
             handleWindowWillClose: { [weak browserManager] windowId in
                 browserManager?.windowHistorySessionOwner.handleWindowWillClose(windowId)
@@ -134,7 +134,7 @@ extension BrowserWindowLifecycleOwner.Dependencies {
                 await browserManager?.windowShellCommandOwner.closeIncognitoWindow(windowState)
             },
             setActiveWindowState: { [weak browserManager] windowState in
-                browserManager?.setActiveWindowState(windowState)
+                browserManager?.windowSessionActivationOwner.setActiveWindowState(windowState)
             },
             handleWindowVisibilityChanged: { [weak browserManager] windowState in
                 browserManager?.windowSessionActivationOwner.handleWindowVisibilityChanged(windowState)

@@ -420,7 +420,7 @@ extension BrowserBookmarkCommandOwner.Dependencies {
                 )
             },
             space: { [weak browserManager] spaceId in
-                browserManager?.space(for: spaceId)
+                browserManager?.windowSpaceStateOwner.space(for: spaceId)
             },
             tabsInSpace: { [weak browserManager] space in
                 browserManager?.tabManager.tabs(in: space) ?? []

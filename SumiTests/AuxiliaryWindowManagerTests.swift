@@ -974,7 +974,7 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
             .count
 
         let popupTab = try XCTUnwrap(
-            harness.browserManager.createPopupTab(
+            harness.browserManager.tabLifecycleService.opening.createPopupTab(
                 from: sourceTab,
                 activate: false
             )
