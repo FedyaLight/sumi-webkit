@@ -1,6 +1,213 @@
 # Sumi Safari Web Extension Compatibility
 
-Last updated: 2026-07-03 (Safari runtime identifier + Bitwarden biometric parity)
+Last updated: 2026-07-03 (popup-path fork e2e + live fork diagnostics)
+
+## Cycle 22 Popup-Path Fork E2E + Live Fork Diagnostics (2026-07-03)
+
+Field report after Cycle 21: storage stays intact (no more `vnode unlinked`),
+companion messaging healthy, Proton onboarding login **works**, but re-login
+from the popup still ends in the account page showing "Invalid selector".
+
+### What was established
+
+- **Server semantics confirmed against the real API**:
+  `GET https://account.proton.me/api/auth/v4/sessions/forks/<garbage>` (with
+  only `x-pm-appversion` set, no cookies) → HTTP 422
+  `{"Code":2001,"Error":"Invalid selector"}`. The message is produced solely by
+  selector state (unknown/consumed/expired) — cookie problems yield different
+  errors. So the field failure means the single-use selector was already dead
+  at the extension's *first observable pull*.
+- **The real account app broadcasts the fork message to all four Pass
+  extension IDs in parallel** (`broadcastMessage`,
+  `packages/shared/lib/browser/extension.ts`): three Chromium/Edge store IDs
+  plus the composed Safari identifier. WebKit resolves the target context by
+  exact `uniqueIdentifier` match in both the web process
+  (`WebExtensionAPIWebPageRuntime::sendMessage`) and the UI process
+  (`WebExtensionContext::runtimeWebPageSendMessage`); unknown IDs get an empty
+  response after a random delay. Verified: the broadcast cannot double-deliver.
+- **The popup login path is exactly-once in Sumi**
+  (`testAccountForkPipelineFromExtensionCreatedTabWithAccountBroadcast`): the
+  probe worker opens the account tab through `browser.tabs.create` (the same
+  call Pass's `useRequestFork` makes), the page dispatches the fork via the
+  4-ID broadcast, and across two sequential login attempts each selector is
+  pulled exactly once, `fork.js` is injected exactly once per page, and the
+  page is served exactly once per tab.
+
+### Remaining unknown + the instrument for it
+
+Sumi's own messaging/tab machinery is proven exactly-once for every scenario
+we can synthesize, so the selector must be dying server-side between the
+page's fork **produce** (`POST /auth/v4/sessions/forks`) and the content
+script's **pull**. Leading candidates: a second page instance producing a
+newer fork for the same `state` (invalidating the first selector), an SPA
+re-produce/retry, or a dropped first exchange followed by a same-selector
+retry.
+
+`SafariExtensionAccountForkDiagnosticsUserScript` (DEBUG /
+`SUMI_DIAGNOSTICS` builds) now instruments `account.proton.*` pages in the
+page world and mirrors events to the unified log, category
+`ProtonForkDiagnostics`, marker `ProtonForkDiag`:
+
+- `pageStart` / `pageHide` / `pageShow` with a per-instance ID — detects
+  zombie double page instances for one tab;
+- `forkApiRequest` / `forkApiResponse` for `/auth/v4/sessions/forks` produce
+  and pull calls issued by the page (8-char selector prefixes only);
+- `extensionSend` / `extensionResponse` for every page→extension
+  `runtime.sendMessage` with elapsed time and response summary — a silent
+  WebKit drop shows up as `{"raw":"undefined"}` after a random delay.
+
+One failing login with these logs identifies the broken hop unambiguously:
+compare the number of `pageStart` events per tab, the produced selector
+prefixes, and which selector prefix the final error response corresponds to.
+
+### Test-harness facts learned (Cycle 22)
+
+- Keep the in-memory SwiftData `ModelContainer` alive in the harness struct:
+  `tabs.create` → `openNewTabUsing` → `enabledPersistedExtensionEntities()`
+  traps inside SwiftData if the container was deallocated.
+- In the windowless test environment, an extension-created normal tab
+  materializes its web view but the deferred initial-document handoff never
+  issues the navigation (no window coordinator). The e2e drives
+  `tab.loadURL(...)` manually after a generous wait and then asserts the page
+  was served exactly once, which still catches double-load regressions.
+
+## Cycle 21 Storage Adoption Safety + Test Isolation (2026-07-03)
+
+Field report after Cycle 19/20: clean rebuild still reproduced
+`LocalStorage.db … vnode unlinked while in use` under the composed-identifier
+directory plus `runtime.sendNativeMessage(): The companion application secure
+store operation failed` during Proton login. On-disk inspection of the real
+WebKit root proved three distinct defects:
+
+### Root causes
+
+1. **Legacy storage adoption silently no-opped, then stayed armed as a
+   directory deleter.** The adoption resolver depended on
+   `manager.installedExtensions`, which is empty during early startup loads —
+   so the one-time legacy→composed migration never ran (evidence: Bitwarden's
+   725 KB `LocalStorage.db` still in the bare-id directory next to a fresh
+   empty composed one). Worse, the destructive branch
+   (`removeItem(currentDirectory)`) re-armed on **every** context load while a
+   data-bearing legacy directory existed, and deleting the composed directory
+   in place unlinks SQLite stores WebKit may already hold open — the exact
+   "vnode unlinked while in use" corruption.
+2. **Unit tests share the user's real WebKit storage root.** Tests are hosted
+   inside Sumi.app, so every test-created `WKWebExtensionController` (profile
+   XOR-derived identifier) wrote into the user's real
+   `~/Library/WebKit/<bundle-id>/WebExtensions/` — one day of test runs leaked
+   ~35 controller directories there, and a test that loads a real profile
+   would operate on (and clean up) the user's live extension storage while the
+   browser is running.
+3. **Companion keychain items orphaned by ad-hoc re-signing.** Debug rebuilds
+   change the code signature; the Proton companion keychain item written by
+   the previous build then fails reads/updates with authorization errors,
+   surfacing as `secure store operation failed` on every
+   `runtime.sendNativeMessage`.
+
+### Fixed
+
+- `WebExtensionStorageCleanupStore.adoptLegacyStorageDirectoryIfNeeded`:
+  - never deletes the composed directory — when it must yield to legacy data
+    it is atomically **renamed aside** (`.sumi-replaced-*`), so file
+    descriptors WebKit opened after the emptiness check stay valid;
+  - always **retires the legacy directory** after the decision (moved into
+    place, removed when state-only, or renamed to `.sumi-legacy-retired-*`
+    with bytes preserved), so the destructive branch can never re-arm;
+  - resolves the storage identity from the load request's
+    `sourceKind`/`sourceBundlePath` (`ExtensionRuntimeContextLoadOwner` →
+    `adoptLegacyWebExtensionStorageIfNeeded`), not from possibly-unloaded
+    `installedExtensions`.
+- `ExtensionControllerProvisioningOwner.extensionControllerIdentifier(for:)`
+  returns a process-stable **random** identifier in test runs (registered via
+  `ExtensionControllerIdentifierOwner` for cross-process cleanup), so tests
+  can never collide with a production controller storage root even when they
+  load real profiles.
+- `KeychainProtonPassSafariCompanionStore` self-heals across code-signature
+  changes: authorization-family failures on read are treated as "no stored
+  state", and update failures replace the orphaned item (delete + add); all
+  failures now log the raw `OSStatus`.
+
+### Tests
+
+- `WebExtensionStorageCleanupPlannerTests`: new
+  `testAdoptLegacyRemovesStateOnlyLegacyDirectory`,
+  `testAdoptLegacyReplaceSetsComposedDirectoryAsideInsteadOfDeleting`; updated
+  `testAdoptLegacyStorageNeverReplacesComposedDirectoryWithData` to assert the
+  legacy directory is retired with bytes preserved.
+- Regression: fork pipeline E2E, profile isolation, Proton companion adapter,
+  message router, site access, runtime identity, import auto-enable,
+  Bitwarden adapter, inline overlay suites pass.
+
+### Operational notes
+
+- Old leaked test directories under
+  `~/Library/WebKit/<bundle-id>/WebExtensions/` (UUID-only contents) are inert
+  but unowned; remove manually while the browser is closed. The real
+  controller root is recognizable by bundle-id-named extension directories.
+- A user whose pre-migration session still sits in a bare-id legacy directory
+  next to an already-used composed directory keeps the composed state (legacy
+  is retired, bytes preserved); re-login once in the extension.
+
+## Cycle 20 Account Fork Pipeline Automated E2E (2026-07-03)
+
+Automated end-to-end proof of the Proton Pass Safari login-fork pipeline against
+a synthetic MV3 extension and a loopback "account" server
+(`SafariExtensionAccountForkPipelineTests`). The probe mirrors Proton's exact
+shape: `externally_connectable` page → `runtime.sendMessage(extensionId, …)` →
+background broker registered on **both** `runtime.onMessage` and
+`runtime.onMessageExternal` (as Proton does, `worker/index.ts`) →
+`AUTH_PULL_FORK` relayed via `tabs.sendMessage` to a top-frame content script →
+cookie-attached fetch of a **single-use** fork selector.
+
+### Proven (test asserts all of these on Sumi's runtime)
+
+- Page-originated external messages fire **only**
+  `runtime.onMessageExternal` — WebKit does not double-dispatch to
+  `runtime.onMessage`, so Proton's dual-registered broker handles each fork
+  message exactly once (no double consumption of the single-use selector).
+- `sender.tab` and `sender.url` are populated for external page messages, so
+  Proton's `handleAccountFork` can relay `AUTH_PULL_FORK` back to the sender
+  tab.
+- The content-script fork pull attaches the account page's session cookie.
+- Each selector is pulled from the server exactly once; a replayed selector
+  propagates the server's 422 "Invalid selector" back to the page (Proton
+  parity for the user-visible failure), and a fresh selector still succeeds
+  afterwards.
+- `sendResponse` payloads cross the page ↔ extension external boundary in both
+  directions (dedicated echo probe).
+
+### WebKit behavior contract captured while diagnosing
+
+`WebExtensionContext::runtimeWebPageSendMessage` (page → extension) resolves
+the sending page to a known open tab (`getTab(pageProxyIdentifier)`) and checks
+host permission for the page URL **before** dispatching. When the tab is not
+resolvable, WebKit answers the page with an **empty response after a random
+delay and no error** — the extension never sees the message. On the Sumi side
+that resolution runs through `ExtensionTabAdapter.webView(for:)` →
+`browserContext.extensionTab(for:)` → `tabManager.tab(for:)`, so any live page
+whose tab drops out of the structural tab lookup silently loses
+externally-connectable messaging while its content-script one-shot messages
+fail with "Tab not found". Keep this in mind for any change to tab
+lookup/registration lifecycles.
+
+### Test-harness rules learned
+
+- Wait for `TabManager`'s startup restore
+  (`storeRestore.startupRestoreTask`) before creating harness tabs: the restore
+  replaces the structural tab state when it lands, and a tab created before
+  that point is dropped from the lookup mid-test — reproducing exactly the
+  silent external-message loss above (initially misread as a WebKit dispatch
+  bug).
+- Use `makeSafariExtensionTestBrowserManager` (in-memory startup persistence),
+  never a raw `BrowserManager()`, which restores the developer's real session
+  asynchronously.
+
+### Proven Remaining Gaps
+
+- Manual Proton Pass login E2E on the real `.appex` + `account.proton.me`
+  (single-use selector: an interrupted attempt requires a fresh login from the
+  popup). The messaging, storage-identity, and runtime-identifier layers it
+  depends on are now all covered by automated tests (Cycles 18–20).
 
 ## Cycle 18 Safari Runtime Identifier + Bitwarden Biometric Parity (2026-07-03)
 
