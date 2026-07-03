@@ -40,7 +40,8 @@ struct SidebarHeader: View {
             )
             .environment(windowState)
         }
-        .padding(.horizontal, SidebarChromeMetrics.horizontalPadding)
+        .padding(.leading, SidebarChromeMetrics.controlLeadingPadding)
+        .padding(.trailing, SidebarChromeMetrics.contentHorizontalPadding)
         .frame(maxWidth: .infinity)
         .frame(height: SidebarChromeMetrics.controlStripHeight)
     }
@@ -51,7 +52,7 @@ struct SidebarHeader: View {
             presentationMode: .sidebar
         )
         .environment(windowState)
-        .padding(.horizontal, 8)
+        .padding(.horizontal, SidebarChromeMetrics.contentHorizontalPadding)
     }
 }
 

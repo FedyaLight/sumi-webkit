@@ -66,12 +66,10 @@ struct SumiWindowProgressBar: View {
     }
 
     private var isSpaceThemeDark: Bool {
-        guard !activeWorkspaceTheme.gradientTheme.normalizedColors.isEmpty else {
-            return globalColorScheme == .dark
-        }
-
-        let hex = activeWorkspaceTheme.gradientTheme.primaryColorHex
-        return NSColor(Color(hex: hex)).themePerceivedLightness < 0.5
+        ChromePageLoadingIndicatorStyle.isDarkTheme(
+            workspaceTheme: activeWorkspaceTheme,
+            fallbackColorScheme: globalColorScheme
+        )
     }
 
     private func syncLoadingState() {
@@ -249,8 +247,10 @@ private final class SumiProgressBarView: NSView {
     }
 
     private var fillColor: NSColor {
-        let contrastColor: NSColor = isDarkTheme ? .white : .black
-        return currentAccentColor.blended(withFraction: 0.65, of: contrastColor) ?? contrastColor
+        ChromePageLoadingIndicatorStyle.fillColor(
+            accentColor: currentAccentColor,
+            isDarkTheme: isDarkTheme
+        )
     }
 
     private var railColor: NSColor {

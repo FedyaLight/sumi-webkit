@@ -42,7 +42,7 @@ struct SidebarBottomBar: View {
                 newSpaceButton
             }
         }.fixedSize(horizontal: false, vertical: true)
-        .padding(.horizontal, 8)
+        .padding(.horizontal, SidebarChromeMetrics.contentHorizontalPadding)
     }
 
     private var newSpaceButton: some View {

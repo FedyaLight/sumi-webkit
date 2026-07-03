@@ -39,6 +39,47 @@ struct ChromeThemeTokens {
     let floatingBarRowHover: Color
 }
 
+enum ChromePageLoadingIndicatorStyle {
+    private static let contrastBlendAmount: CGFloat = 0.65
+
+    static func fillColor(
+        tokens: ChromeThemeTokens,
+        workspaceTheme: WorkspaceTheme,
+        fallbackColorScheme: ColorScheme
+    ) -> Color {
+        Color(nsColor: fillColor(
+            accentColor: nsColor(tokens.accent),
+            isDarkTheme: isDarkTheme(
+                workspaceTheme: workspaceTheme,
+                fallbackColorScheme: fallbackColorScheme
+            )
+        ))
+    }
+
+    static func fillColor(accentColor: NSColor, isDarkTheme: Bool) -> NSColor {
+        let contrastColor: NSColor = isDarkTheme ? .white : .black
+        return accentColor.blended(withFraction: contrastBlendAmount, of: contrastColor) ?? contrastColor
+    }
+
+    static func isDarkTheme(
+        workspaceTheme: WorkspaceTheme,
+        fallbackColorScheme: ColorScheme
+    ) -> Bool {
+        guard !workspaceTheme.gradientTheme.normalizedColors.isEmpty else {
+            return fallbackColorScheme == .dark
+        }
+
+        return NSColor(Color(hex: workspaceTheme.gradientTheme.primaryColorHex))
+            .themePerceivedLightness < 0.5
+    }
+
+    private static func nsColor(_ color: Color) -> NSColor {
+        NSColor(color).usingColorSpace(.displayP3)
+            ?? NSColor(color).usingColorSpace(.sRGB)
+            ?? .controlAccentColor
+    }
+}
+
 private struct ChromeThemeTokenRecipeKey: Equatable {
     let context: ResolvedThemeContext
     let settingsFingerprint: Int

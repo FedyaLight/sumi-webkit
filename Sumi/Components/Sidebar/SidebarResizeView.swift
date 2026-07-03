@@ -47,6 +47,14 @@ struct SidebarResizeView: View {
         themeContext.tokens(settings: sumiSettings)
     }
 
+    private var loadingIndicatorFillColor: Color {
+        ChromePageLoadingIndicatorStyle.fillColor(
+            tokens: tokens,
+            workspaceTheme: themeContext.workspaceTheme,
+            fallbackColorScheme: themeContext.globalColorScheme
+        )
+    }
+
     var body: some View {
         ZStack {
             indicator
@@ -113,7 +121,7 @@ struct SidebarResizeView: View {
                     .frame(maxHeight: .infinity)
 
                 Capsule(style: .continuous)
-                    .fill(tokens.accent.opacity(isResizing ? 0.82 : 0.46))
+                    .fill(loadingIndicatorFillColor)
                     .frame(
                         width: SidebarResizeMetrics.grabberWidth,
                         height: SidebarResizeMetrics.grabberHeight
