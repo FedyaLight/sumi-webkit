@@ -42,7 +42,7 @@ final class SidebarRegularTabDragService {
         case .moveToEssentials
             where operation.fromContainer == .spaceRegular(operation.scope.spaceId)
                 || operation.fromContainer == .spacePinned(operation.scope.spaceId):
-            guard let profileId = tabManager.resolvedEssentialsProfileId(for: operation) else { return false }
+            guard let profileId = tabManager.essentialsShortcutPlacementOwner.resolvedProfileId(for: operation) else { return false }
             didMutate = tabManager.convertTabToShortcutPin(
                 tab,
                 role: .essential,
@@ -83,7 +83,7 @@ final class SidebarRegularTabDragService {
             ) != nil
 
         case .moveToEssentials where isFolderContainer(operation.fromContainer):
-            guard let profileId = tabManager.resolvedEssentialsProfileId(for: operation) else { return false }
+            guard let profileId = tabManager.essentialsShortcutPlacementOwner.resolvedProfileId(for: operation) else { return false }
             didMutate = tabManager.convertTabToShortcutPin(
                 tab,
                 role: .essential,
@@ -160,7 +160,7 @@ final class SidebarRegularTabDragService {
     func reorderSpacePinnedTabs(_ tab: Tab, in spaceId: UUID, to index: Int) -> Bool {
         if let shortcutId = tab.shortcutPinId,
            let pin = tabManager.shortcutPin(by: shortcutId) {
-            return tabManager.reorderSpacePinned(pin, in: spaceId, to: index)
+            return tabManager.shortcutPinCommandOwner.reorderSpacePinned(pin, in: spaceId, to: index)
         }
 
         return tabManager.convertTabToShortcutPin(
@@ -199,14 +199,14 @@ final class SidebarRegularTabDragService {
             pins.remove(at: currentIndex)
             let safeIndex = max(0, min(index, pins.count))
             pins.insert(pin, at: safeIndex)
-            tabManager.setPinnedTabs(tabManager.reindexed(pins), for: profileId)
+            tabManager.setPinnedTabs(tabManager.shortcutPinStoreOwner.reindexed(pins), for: profileId)
             tabManager.scheduleStructuralPersistence()
             return true
         }
     }
 
     private func moveTabIntoRegularSection(_ tab: Tab, spaceId: UUID, index: Int) -> Bool {
-        tabManager.removeFromCurrentContainer(tab)
+        tabManager.shortcutLiveTabOwner.removeFromCurrentContainer(tab)
         tabManager.regularTabCollectionOwner.insert(tab, in: spaceId, at: index)
         tabManager.scheduleStructuralPersistence()
         return true

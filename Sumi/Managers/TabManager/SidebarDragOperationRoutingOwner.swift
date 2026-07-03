@@ -119,7 +119,7 @@ final class SidebarDragOperationRoutingOwner {
             return
         }
 
-        tabManager.removeFromCurrentContainer(tab)
+        tabManager.shortcutLiveTabOwner.removeFromCurrentContainer(tab)
         tabManager.regularTabCollectionOwner.insert(tab, in: toSpaceId, at: toIndex)
         tabManager.scheduleStructuralPersistence()
     }

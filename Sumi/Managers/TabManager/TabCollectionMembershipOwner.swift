@@ -38,7 +38,7 @@ final class TabCollectionMembershipOwner {
             return allTabs()
         }
         let spaceIds = Set(tabManager.spaces.filter { $0.profileId == profileId }.map(\.id))
-        let pinned = tabManager.activeEssentialTabs(for: profileId)
+        let pinned = tabManager.shortcutPresentationOwner.activeEssentialTabs(for: profileId)
         let spacePinned = transientTabRegistryOwner.transientShortcutTabs
             .filter { tab in
                 guard tab.shortcutPinRole == .spacePinned, let spaceId = tab.spaceId else {
@@ -52,7 +52,7 @@ final class TabCollectionMembershipOwner {
     }
 
     func contains(_ tab: Tab) -> Bool {
-        if tabManager.activeShortcutTabs().contains(where: { $0.id == tab.id }) {
+        if tabManager.shortcutPresentationOwner.activeShortcutTabs().contains(where: { $0.id == tab.id }) {
             return true
         }
         if tabManager.allPinnedTabsAllProfiles.contains(where: { $0.id == tab.id }) {

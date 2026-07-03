@@ -68,12 +68,12 @@ final class TabSpaceLifecycleOwner {
             }
 
             tabManager.setTabs([], for: id)
-            tabManager.markSpaceStructurallyDeleted(id)
+            tabManager.structuralPersistence.markSpaceStructurallyDeleted(id)
             tabManager.objectWillChange.send()
             tabManager.folderCollectionStateOwner.removeFolders(for: id)
             tabManager.spacePinnedShortcuts.removeValue(forKey: id)
-            tabManager.markFoldersSnapshotDirty(for: id)
-            tabManager.markSpacePinnedSnapshotDirty(for: id)
+            tabManager.structuralPersistence.markFoldersSnapshotDirty(for: id)
+            tabManager.structuralPersistence.markSpacePinnedSnapshotDirty(for: id)
             tabManager.transientTabRegistryOwner.removeTransientShortcutTabs(inSpace: id)
             tabManager.notifyTransientShortcutStateChanged()
 
@@ -139,7 +139,7 @@ final class TabSpaceLifecycleOwner {
 
         if let previousSpace, let previousTab {
             previousSpace.activeTabId = previousTab.id
-            tabManager.markSpacesSnapshotDirty()
+            tabManager.structuralPersistence.markSpacesSnapshotDirty()
         }
 
         tabManager.currentSpace = space
@@ -195,9 +195,9 @@ final class TabSpaceLifecycleOwner {
         }
 
         if targetTab?.id == space.activeTabId {
-            tabManager.markSpacesSnapshotDirty()
+            tabManager.structuralPersistence.markSpacesSnapshotDirty()
         }
-        tabManager.persistSelection()
+        tabManager.structuralPersistence.persistSelection()
     }
 
     func renameSpace(spaceId: UUID, newName: String) throws {

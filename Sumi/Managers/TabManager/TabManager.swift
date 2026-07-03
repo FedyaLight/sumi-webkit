@@ -55,7 +55,7 @@ class TabManager: ObservableObject {
     lazy var lastSessionRestoreOwner = TabLastSessionRestoreOwner(tabManager: self)
     lazy var shortcutPinCommandOwner = ShortcutPinCommandOwner(tabManager: self)
     lazy var sidebarDragRoutingOwner = SidebarDragOperationRoutingOwner(tabManager: self)
-    private lazy var essentialsShortcutPlacementOwner = EssentialsShortcutPlacementOwner(
+    lazy var essentialsShortcutPlacementOwner = EssentialsShortcutPlacementOwner(
         dependencies: EssentialsShortcutPlacementOwner.Dependencies(
             spaces: { [weak self] in
                 self?.spaces ?? []
@@ -68,7 +68,7 @@ class TabManager: ObservableObject {
             }
         )
     )
-    private lazy var shortcutPinStoreOwner = ShortcutPinStoreOwner(
+    lazy var shortcutPinStoreOwner = ShortcutPinStoreOwner(
         dependencies: ShortcutPinStoreOwner.Dependencies(
             runtimeContext: { [weak self] in
                 self?.runtimeContext
@@ -97,7 +97,7 @@ class TabManager: ObservableObject {
                 self?.spacePinnedPins(for: spaceId) ?? []
             },
             openFolderIfNeeded: { [weak self] folderId in
-                self?.openFolderIfNeeded(folderId)
+                self?.folderMutationOwner.openFolderIfNeeded(folderId)
             },
             adjustedSameContainerInsertionIndex: { [weak self] currentIndex, proposedIndex in
                 guard let self else { return proposedIndex }
@@ -129,7 +129,7 @@ class TabManager: ObservableObject {
                 return self.insertRegularTabFromShortcut(pin, into: spaceId, at: targetIndex)
             },
             removeShortcutPinFromContainers: { [weak self] pin in
-                self?.removeShortcutPinFromContainers(pin)
+                self?.shortcutPinStoreOwner.removeFromContainers(pin)
             },
             scheduleStructuralPersistence: { [weak self] in
                 self?.scheduleStructuralPersistence()
@@ -167,7 +167,7 @@ class TabManager: ObservableObject {
     private lazy var shortcutDragOperationOwner = ShortcutDragOperationOwner(
         dependencies: ShortcutDragOperationOwner.Dependencies(
             reorderEssential: { [weak self] pin, index in
-                self?.reorderEssential(pin, to: index) ?? false
+                self?.shortcutPinCommandOwner.reorderEssential(pin, to: index) ?? false
             },
             moveShortcutPin: { [weak self] pin, role, profileId, spaceId, folderId, index, openTargetFolder in
                 self?.moveShortcutPin(
@@ -184,13 +184,13 @@ class TabManager: ObservableObject {
                 self?.folderSpaceId(for: folderId)
             },
             resolvedEssentialsProfileId: { [weak self] operation in
-                self?.resolvedEssentialsProfileId(for: operation)
+                self?.essentialsShortcutPlacementOwner.resolvedProfileId(for: operation)
             },
             convertShortcutPinToRegularTab: { [weak self] pin, spaceId, targetIndex in
                 self?.convertShortcutPinToRegularTab(pin, in: spaceId, at: targetIndex) ?? false
             },
             removeShortcutPinFromContainers: { [weak self] pin in
-                self?.removeShortcutPinFromContainers(pin)
+                self?.shortcutPinStoreOwner.removeFromContainers(pin)
             },
             insertRegularTabFromShortcut: { [weak self] pin, spaceId, targetIndex in
                 guard let self else { preconditionFailure("TabManager dependency used after deallocation") }
@@ -201,7 +201,7 @@ class TabManager: ObservableObject {
             }
         )
     )
-    private lazy var shortcutPresentationOwner = TabShortcutPresentationOwner(
+    lazy var shortcutPresentationOwner = TabShortcutPresentationOwner(
         dependencies: TabShortcutPresentationOwner.Dependencies(
             transientShortcutTabsByWindow: { [weak self] in
                 self?.transientTabRegistryOwner.transientShortcutTabsByWindow ?? [:]
@@ -232,7 +232,7 @@ class TabManager: ObservableObject {
             }
         )
     )
-    private lazy var shortcutLiveTabOwner = ShortcutLiveTabOwner(
+    lazy var shortcutLiveTabOwner = ShortcutLiveTabOwner(
         dependencies: ShortcutLiveTabOwner.Dependencies(
             runtimeContext: { [weak self] in
                 self?.runtimeContext
@@ -271,7 +271,7 @@ class TabManager: ObservableObject {
                 self?.notifyTransientShortcutStateChanged()
             },
             cancelRuntimeStatePersistence: { [weak self] tabId in
-                self?.cancelRuntimeStatePersistence(for: tabId)
+                self?.structuralPersistence.cancelRuntimeStatePersistence(for: tabId)
             },
             pinnedByProfile: { [weak self] in
                 self?.pinnedByProfile ?? [:]
@@ -438,7 +438,7 @@ class TabManager: ObservableObject {
         structuralLookupOwner: structuralLookupOwner,
         transientTabRegistryOwner: transientTabRegistryOwner
     )
-    private lazy var transientWebKitTabLifecycleOwner = TabTransientWebKitTabLifecycleOwner(
+    lazy var transientWebKitTabLifecycleOwner = TabTransientWebKitTabLifecycleOwner(
         dependencies: TabTransientWebKitTabLifecycleOwner.Dependencies(
             settings: { [weak self] in self?.sumiSettings ?? self?.runtimeContext?.settings },
             runtimeContext: { [weak self] in self?.runtimeContext },
@@ -507,11 +507,7 @@ class TabManager: ObservableObject {
 
     // Live essentials API for shell views that still read a tab-backed collection.
     var pinnedTabs: [Tab] {
-        activeEssentialTabs(for: runtimeContext?.currentProfileId)
-    }
-
-    func essentialTabs(for profileId: UUID?) -> [Tab] {
-        activeEssentialTabs(for: profileId)
+        shortcutPresentationOwner.activeEssentialTabs(for: runtimeContext?.currentProfileId)
     }
 
     func essentialPins(for profileId: UUID?) -> [ShortcutPin] {
@@ -543,10 +539,6 @@ class TabManager: ObservableObject {
         essentialsShortcutPlacementOwner.resolveInsertion(using: context)
     }
 
-    func resolvedEssentialsProfileId(for operation: DragOperation) -> UUID? {
-        essentialsShortcutPlacementOwner.resolvedProfileId(for: operation)
-    }
-
     func logEssentialsTargetMismatchIfNeeded(
         resolution: EssentialsTargetResolution,
         context: EssentialsTargetContext?
@@ -555,14 +547,6 @@ class TabManager: ObservableObject {
             resolution: resolution,
             context: context
         )
-    }
-
-    func withPinnedArray(for profileId: UUID, _ mutate: (inout [ShortcutPin]) -> Void) {
-        shortcutPinStoreOwner.withPinnedArray(for: profileId, mutate)
-    }
-
-    func reindexed(_ pins: [ShortcutPin]) -> [ShortcutPin] {
-        shortcutPinStoreOwner.reindexed(pins)
     }
 
     @discardableResult
@@ -599,15 +583,11 @@ class TabManager: ObservableObject {
                 openTargetFolder: openTargetFolder
             )
             if let inserted {
-                updateTransientShortcutBindings(for: inserted)
+                shortcutLiveTabOwner.updateTransientShortcutBindings(for: inserted)
             }
             scheduleStructuralPersistence()
             return inserted
         }
-    }
-
-    func removeShortcutPinFromContainers(_ pin: ShortcutPin) {
-        shortcutPinStoreOwner.removeFromContainers(pin)
     }
 
     func makeShortcutPin(
@@ -729,7 +709,7 @@ class TabManager: ObservableObject {
                 return liveTab
             }
 
-        return activeEssentialTabs(for: contextProfileId) + (activeLauncherTab.map { [$0] } ?? []) + regularTabs
+        return shortcutPresentationOwner.activeEssentialTabs(for: contextProfileId) + (activeLauncherTab.map { [$0] } ?? []) + regularTabs
     }
 
     func folderPinnedPins(for folderId: UUID, in spaceId: UUID) -> [ShortcutPin] {
@@ -783,7 +763,7 @@ class TabManager: ObservableObject {
 
     // Flattened pinned across all profiles for internal ops
     var allPinnedTabsAllProfiles: [Tab] {
-        activeShortcutTabs(role: .essential)
+        shortcutPresentationOwner.activeShortcutTabs(role: .essential)
     }
 
     // Currently active tab
@@ -822,7 +802,7 @@ class TabManager: ObservableObject {
         faviconPresentationRefreshOwner.startObserving()
         if loadPersistedState {
             Task { @MainActor in
-                loadFromStore()
+                storeRestore.loadFromStore()
             }
         }
     }
@@ -1011,14 +991,6 @@ class TabManager: ObservableObject {
         shortcutPresentationOwner.shortcutPresentationState(for: pin, in: windowState)
     }
 
-    func activeShortcutTabs(role: ShortcutPinRole? = nil) -> [Tab] {
-        shortcutPresentationOwner.activeShortcutTabs(role: role)
-    }
-
-    func activeEssentialTabs(for profileId: UUID?) -> [Tab] {
-        shortcutPresentationOwner.activeEssentialTabs(for: profileId)
-    }
-
     func launcherProjection(
         for spaceId: UUID,
         in windowId: UUID? = nil
@@ -1062,10 +1034,6 @@ class TabManager: ObservableObject {
         shortcutLiveTabOwner.rebindLiveShortcutTab(tab, from: sourcePin, to: insertedPin)
     }
 
-    func updateTransientShortcutBindings(for pin: ShortcutPin) {
-        shortcutLiveTabOwner.updateTransientShortcutBindings(for: pin)
-    }
-
     @discardableResult
     func activateShortcutPin(_ pin: ShortcutPin, in windowId: UUID, currentSpaceId: UUID?) -> Tab {
         withStructuralUpdateTransaction {
@@ -1084,40 +1052,6 @@ class TabManager: ObservableObject {
         withStructuralUpdateTransaction {
             shortcutLiveTabOwner.deactivateShortcutLiveTab(pinId: pinId, in: windowId)
         }
-    }
-
-    @discardableResult
-    func removeLiveShortcutTabs(forDeletedPinId pinId: UUID) -> ShortcutPinSelectionCleanupResult {
-        shortcutLiveTabOwner.removeLiveShortcutTabs(forDeletedPinId: pinId)
-    }
-
-    @discardableResult
-    func clearDeletedShortcutPinSelectionReferences(_ pinId: UUID) -> ShortcutPinSelectionCleanupResult {
-        shortcutLiveTabOwner.clearDeletedShortcutPinSelectionReferences(pinId)
-    }
-
-    func persistWindowSessionsForShortcutSelectionCleanup(_ cleanupResult: ShortcutPinSelectionCleanupResult) {
-        shortcutLiveTabOwner.persistWindowSessionsForShortcutSelectionCleanup(cleanupResult)
-    }
-
-    func windowIdDisplaying(tabId: UUID, preferredWindowId: UUID? = nil) -> UUID? {
-        shortcutLiveTabOwner.windowIdDisplaying(tabId: tabId, preferredWindowId: preferredWindowId)
-    }
-
-    func windowIdsSelecting(tabId: UUID, preferredWindowId: UUID? = nil) -> [UUID] {
-        shortcutLiveTabOwner.windowIdsSelecting(tabId: tabId, preferredWindowId: preferredWindowId)
-    }
-
-    func windowIdsDisplaying(tabId: UUID, preferredWindowId: UUID? = nil) -> [UUID] {
-        shortcutLiveTabOwner.windowIdsDisplaying(tabId: tabId, preferredWindowId: preferredWindowId)
-    }
-
-    func windowStateDisplaying(tabId: UUID) -> BrowserWindowState? {
-        shortcutLiveTabOwner.windowStateDisplaying(tabId: tabId)
-    }
-
-    func removeFromCurrentContainer(_ tab: Tab) {
-        shortcutLiveTabOwner.removeFromCurrentContainer(tab)
     }
 
     @discardableResult
@@ -1225,10 +1159,6 @@ class TabManager: ObservableObject {
         folderCollectionStateOwner.folders(for: spaceId)
     }
 
-    func openFolderIfNeeded(_ folderId: UUID) {
-        folderMutationOwner.openFolderIfNeeded(folderId)
-    }
-
     func setAllFolders(open isOpen: Bool, in spaceId: UUID) {
         folderMutationOwner.setAllFolders(open: isOpen, in: spaceId)
     }
@@ -1318,11 +1248,6 @@ class TabManager: ObservableObject {
     @discardableResult
     func removeTransientExtensionTab(id: UUID) -> Bool {
         transientWebKitTabLifecycleOwner.removeTransientExtensionTab(id: id)
-    }
-
-    @discardableResult
-    func closeAuxiliaryMiniWindowTabIfPresent(id: UUID) -> Bool {
-        transientWebKitTabLifecycleOwner.closeAuxiliaryMiniWindowTabIfPresent(id: id)
     }
 
     @discardableResult
@@ -1536,16 +1461,6 @@ class TabManager: ObservableObject {
         shortcutPinCommandOwner.removeShortcutPin(pin)
     }
 
-    @discardableResult
-    func reorderEssential(_ pin: ShortcutPin, to index: Int) -> Bool {
-        shortcutPinCommandOwner.reorderEssential(pin, to: index)
-    }
-
-    @discardableResult
-    func reorderSpacePinned(_ pin: ShortcutPin, in spaceId: UUID, to index: Int) -> Bool {
-        shortcutPinCommandOwner.reorderSpacePinned(pin, in: spaceId, to: index)
-    }
-
     func pinTabToSpace(_ tab: Tab, spaceId: UUID) {
         shortcutPinCommandOwner.pinTabToSpace(tab, spaceId: spaceId)
     }
@@ -1570,11 +1485,6 @@ class TabManager: ObservableObject {
 
     func alphabetizeFolderPins(_ folderId: UUID, in spaceId: UUID) {
         folderMutationOwner.alphabetizeFolderPins(folderId, in: spaceId)
-    }
-
-    @discardableResult
-    func reorderSpacePinnedTabs(_ tab: Tab, in spaceId: UUID, to index: Int) -> Bool {
-        regularTabDragService.reorderSpacePinnedTabs(tab, in: spaceId, to: index)
     }
 
     @discardableResult
@@ -1613,10 +1523,6 @@ class TabManager: ObservableObject {
         profileAssignmentOwner.handleProfileSwitch(contextWindowId: contextWindowId)
     }
 
-    func reconcileSpaceProfilesIfNeeded() {
-        profileAssignmentOwner.reconcileSpaceProfilesIfNeeded()
-    }
-
     func assign(spaceId: UUID, toProfile profileId: UUID) {
         profileAssignmentOwner.assign(spaceId: spaceId, toProfile: profileId)
     }
@@ -1635,18 +1541,10 @@ class TabManager: ObservableObject {
         profileAssignmentOwner.assignProfile(profileId, to: tab)
     }
 
-    func profileExists(_ profileId: UUID) -> Bool {
-        profileAssignmentOwner.profileExists(profileId)
-    }
-
     // MARK: - Tab Closure Undo and Bulk Removal
 
     func tabs(in space: Space) -> [Tab] {
         regularTabCollectionOwner.tabs(in: space)
-    }
-
-    func captureRecentlyClosedTab(_ tab: Tab, spaceId: UUID?) {
-        tabRemovalOwner.captureRecentlyClosedTab(tab, spaceId: spaceId)
     }
 
     func updateTabNavigationState(_ tab: Tab) {
@@ -1677,28 +1575,12 @@ class TabManager: ObservableObject {
         splitGroupStructureOwner.splitGroup(containingPinId: pinId)
     }
 
-    func splitGroupVisualOrderingResolver(for spaceId: UUID) -> SplitGroupVisualOrderingResolver {
-        splitGroupStructureOwner.visualOrderingResolver(for: spaceId)
-    }
-
     func shortcutHostedSplitGroups(for spaceId: UUID) -> [SplitGroup] {
         splitGroupStructureOwner.visualOrderingResolver(for: spaceId).shortcutHostedGroups()
     }
 
-    func shortcutHostedSplitGroup(containingPinId pinId: UUID, in spaceId: UUID? = nil) -> SplitGroup? {
-        splitGroupStructureOwner.shortcutHostedSplitGroup(containingPinId: pinId, in: spaceId)
-    }
-
-    func regularHostedSplitGroup(containingPinId pinId: UUID) -> SplitGroup? {
-        splitGroupStructureOwner.regularHostedSplitGroup(containingPinId: pinId)
-    }
-
     func regularHostedSplitPlaceholderGroup(for pin: ShortcutPin) -> SplitGroup? {
         splitGroupStructureOwner.regularHostedSplitGroup(containingPinId: pin.id)
-    }
-
-    func shortcutHostedSplitGroupVisualIndex(_ group: SplitGroup, in spaceId: UUID) -> Int {
-        splitGroupStructureOwner.visualOrderingResolver(for: spaceId).visualIndex(for: group)
     }
 
     func shortcutHostedSplitGroupFolderId(_ group: SplitGroup, in spaceId: UUID) -> UUID? {
@@ -1707,10 +1589,6 @@ class TabManager: ObservableObject {
 
     func shortcutHostedSplitGroups(for spaceId: UUID, inFolder folderId: UUID?) -> [SplitGroup] {
         splitGroupStructureOwner.visualOrderingResolver(for: spaceId).shortcutHostedGroups(inFolder: folderId)
-    }
-
-    func shortcutHostedSplitHiddenPinIds(for spaceId: UUID) -> Set<UUID> {
-        splitGroupStructureOwner.visualOrderingResolver(for: spaceId).hiddenPinIds()
     }
 
     func topLevelSpacePinnedVisualItems(for spaceId: UUID) -> [SpacePinnedVisualItem] {
@@ -1740,10 +1618,6 @@ class TabManager: ObservableObject {
 
     func replaceSplitGroups(_ groups: [SplitGroup], schedulePersistence shouldPersist: Bool = true) {
         splitGroupStructureOwner.replaceSplitGroups(groups, schedulePersistence: shouldPersist)
-    }
-
-    func sanitizedRepairedSplitGroups(_ groups: [SplitGroup]) -> [SplitGroup] {
-        splitGroupStructureOwner.sanitizedRepairedSplitGroups(groups)
     }
 
     static func sanitizedSplitGroups(_ groups: [SplitGroup]) -> [SplitGroup] {
@@ -1865,16 +1739,8 @@ class TabManager: ObservableObject {
         await runtimeStateCoalescer.flushImmediately()
     }
 
-    func persistSelection() {
-        structuralPersistence.persistSelection()
-    }
-
     func scheduleRuntimeStatePersistence(for tab: Tab) {
         structuralPersistence.scheduleRuntimeStatePersistence(for: tab)
-    }
-
-    func cancelRuntimeStatePersistence(for tabId: UUID) {
-        structuralPersistence.cancelRuntimeStatePersistence(for: tabId)
     }
 
     func shouldPersistRegularTab(_ tab: Tab) -> Bool {
@@ -1893,60 +1759,12 @@ class TabManager: ObservableObject {
         structuralPersistence.markSnapshotCacheDirty()
     }
 
-    func markSpacesSnapshotDirty() {
-        structuralPersistence.markSpacesSnapshotDirty()
-    }
-
     func markAllSpacesStructurallyDirty() {
         structuralPersistence.markAllSpacesStructurallyDirty()
     }
 
-    func markSpaceStructurallyDeleted(_ spaceId: UUID) {
-        structuralPersistence.markSpaceStructurallyDeleted(spaceId)
-    }
-
-    func markPinnedSnapshotDirty(for profileId: UUID) {
-        structuralPersistence.markPinnedSnapshotDirty(for: profileId)
-    }
-
-    func markSpacePinnedSnapshotDirty(for spaceId: UUID) {
-        structuralPersistence.markSpacePinnedSnapshotDirty(for: spaceId)
-    }
-
-    func markRegularTabsSnapshotDirty(for spaceId: UUID) {
-        structuralPersistence.markRegularTabsSnapshotDirty(for: spaceId)
-    }
-
-    func markRegularTabsStructurallyDirty(for spaceId: UUID) {
-        structuralPersistence.markRegularTabsStructurallyDirty(for: spaceId)
-    }
-
-    func markFoldersSnapshotDirty(for spaceId: UUID) {
-        structuralPersistence.markFoldersSnapshotDirty(for: spaceId)
-    }
-
-    func markFoldersStructurallyDirty(for spaceId: UUID) {
-        structuralPersistence.markFoldersStructurallyDirty(for: spaceId)
-    }
-
     func resetStructuralDirtySet() {
         structuralPersistence.resetDirtySet()
-    }
-
-    func recordRegularTabsStructuralChange(previous: [Tab], current: [Tab]) {
-        structuralPersistence.recordRegularTabsStructuralChange(previous: previous, current: current)
-    }
-
-    func recordFoldersStructuralChange(previous: [TabFolder], current: [TabFolder]) {
-        structuralPersistence.recordFoldersStructuralChange(previous: previous, current: current)
-    }
-
-    func recordShortcutPinsStructuralChange(previous: [ShortcutPin], current: [ShortcutPin]) {
-        structuralPersistence.recordShortcutPinsStructuralChange(previous: previous, current: current)
-    }
-
-    func loadFromStore() {
-        storeRestore.loadFromStore()
     }
 
     func resetRegularTabsAndShortcutLiveInstancesForStartup() {
@@ -2019,7 +1837,7 @@ extension TabManager {
         // Assign any pinned tabs that were loaded without a profile once currentProfile is known
         if let currentProfileId = runtimeContext?.currentProfileId,
            !pendingPinnedWithoutProfile.isEmpty {
-            withPinnedArray(for: currentProfileId) { arr in
+            shortcutPinStoreOwner.withPinnedArray(for: currentProfileId) { arr in
                 arr.append(contentsOf: pendingPinnedWithoutProfile)
             }
             pendingPinnedWithoutProfile.removeAll()
@@ -2036,6 +1854,6 @@ extension TabManager {
         }
 
         // After attaching runtime, backfill any missing space.profileId.
-        reconcileSpaceProfilesIfNeeded()
+        profileAssignmentOwner.reconcileSpaceProfilesIfNeeded()
     }
 }

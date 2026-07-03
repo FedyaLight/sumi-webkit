@@ -47,8 +47,8 @@ final class TabProfileAssignmentOwner {
 
         if let removedPins = tabManager.pinnedByProfile.removeValue(forKey: deletedProfileId),
            !removedPins.isEmpty {
-            tabManager.recordShortcutPinsStructuralChange(previous: removedPins, current: [])
-            tabManager.markPinnedSnapshotDirty(for: deletedProfileId)
+            tabManager.structuralPersistence.recordShortcutPinsStructuralChange(previous: removedPins, current: [])
+            tabManager.structuralPersistence.markPinnedSnapshotDirty(for: deletedProfileId)
             didChange = true
         }
 
@@ -57,7 +57,7 @@ final class TabProfileAssignmentOwner {
         }
         for (profileId, pins) in pinnedProfilesWithDeletedExecution {
             tabManager.setPinnedTabs(
-                tabManager.reindexed(
+                tabManager.shortcutPinStoreOwner.reindexed(
                     pins.map { pin in
                         pin.executionProfileId == deletedProfileId
                             ? pin.updated(executionProfileId: .some(nil))
@@ -89,7 +89,7 @@ final class TabProfileAssignmentOwner {
         if didChange {
             tabManager.markAllSpacesStructurallyDirty()
             for spaceId in dirtySpaceIds {
-                tabManager.markRegularTabsStructurallyDirty(for: spaceId)
+                tabManager.structuralPersistence.markRegularTabsStructurallyDirty(for: spaceId)
             }
             tabManager.scheduleStructuralPersistence()
         }
@@ -115,7 +115,7 @@ final class TabProfileAssignmentOwner {
             || !(visible.contains { $0.id == tabManager.currentTab!.id }) {
             tabManager.currentTab = visible.first
             tabManager.runtimeContext?.updateTabVisibility()
-            tabManager.persistSelection()
+            tabManager.structuralPersistence.persistSelection()
         } else {
             tabManager.runtimeContext?.updateTabVisibility()
         }
@@ -184,7 +184,7 @@ final class TabProfileAssignmentOwner {
         guard tab.profileId != profileId else { return false }
         assignProfile(profileId, to: tab)
         if let spaceId = tab.spaceId {
-            tabManager.markRegularTabsStructurallyDirty(for: spaceId)
+            tabManager.structuralPersistence.markRegularTabsStructurallyDirty(for: spaceId)
         }
         tabManager.scheduleStructuralPersistence()
         tabManager.requestStructuralPublish()

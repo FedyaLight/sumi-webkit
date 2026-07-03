@@ -61,7 +61,7 @@ final class TabFolderMutationOwner {
     func renameFolder(_ folderId: UUID, newName: String) {
         guard let folder = tabManager.folder(by: folderId) else { return }
         folder.name = newName
-        tabManager.markFoldersStructurallyDirty(for: folder.spaceId)
+        tabManager.structuralPersistence.markFoldersStructurallyDirty(for: folder.spaceId)
         tabManager.requestStructuralPublish()
         tabManager.scheduleStructuralPersistence()
     }
@@ -71,7 +71,7 @@ final class TabFolderMutationOwner {
         guard let folder = tabManager.folder(by: folderId) else { return }
 
         folder.icon = SumiZenFolderIconCatalog.normalizedFolderIconValue(trimmedIcon)
-        tabManager.markFoldersStructurallyDirty(for: folder.spaceId)
+        tabManager.structuralPersistence.markFoldersStructurallyDirty(for: folder.spaceId)
         tabManager.requestStructuralPublish()
         tabManager.scheduleStructuralPersistence()
     }
@@ -84,7 +84,7 @@ final class TabFolderMutationOwner {
             }
 
             folder.isOpen = isOpen
-            tabManager.markFoldersStructurallyDirty(for: folder.spaceId)
+            tabManager.structuralPersistence.markFoldersStructurallyDirty(for: folder.spaceId)
             tabManager.requestStructuralPublish()
             tabManager.scheduleStructuralPersistence()
         }
@@ -157,7 +157,7 @@ final class TabFolderMutationOwner {
                         cleanupResult.recordCurrentSelectionCleared(in: windowState)
                     }
                 }
-                cleanupResult.merge(tabManager.clearDeletedShortcutPinSelectionReferences(pin.id))
+                cleanupResult.merge(tabManager.shortcutLiveTabOwner.clearDeletedShortcutPinSelectionReferences(pin.id))
             }
 
             for tabId in liveTabsToRemove {
@@ -167,7 +167,7 @@ final class TabFolderMutationOwner {
             if cleanupResult.didClearCurrentSelection {
                 tabManager.runtimeContext?.validateWindowStates()
             }
-            tabManager.persistWindowSessionsForShortcutSelectionCleanup(cleanupResult)
+            tabManager.shortcutLiveTabOwner.persistWindowSessionsForShortcutSelectionCleanup(cleanupResult)
             tabManager.runtimeContext?.deleteLiveFolderState(forFolderIds: deletedFolderIds)
             tabManager.scheduleStructuralPersistence()
         }
@@ -203,7 +203,7 @@ final class TabFolderMutationOwner {
                 movedLiveTabsCount += 1
             }
             if movedLiveTabsCount > 0 {
-                tabManager.markRegularTabsStructurallyDirty(for: spaceId)
+                tabManager.structuralPersistence.markRegularTabsStructurallyDirty(for: spaceId)
             }
 
             tabManager.runtimeContext?.deleteLiveFolderState(forFolderIds: [folderId])
@@ -223,7 +223,7 @@ final class TabFolderMutationOwner {
             }
 
             if didChange {
-                tabManager.markFoldersStructurallyDirty(for: spaceId)
+                tabManager.structuralPersistence.markFoldersStructurallyDirty(for: spaceId)
                 tabManager.requestStructuralPublish()
                 tabManager.scheduleStructuralPersistence()
             }
@@ -240,7 +240,7 @@ final class TabFolderMutationOwner {
             guard tabManager.runtimeContext?.isLiveFolder(folderId) != true else { return }
 
             targetFolder.isOpen = true
-            tabManager.markFoldersStructurallyDirty(for: targetFolder.spaceId)
+            tabManager.structuralPersistence.markFoldersStructurallyDirty(for: targetFolder.spaceId)
             let targetIndex = tabManager.folderPinnedPins(for: folderId, in: targetFolder.spaceId).count
 
             if let shortcutId = tab.shortcutPinId,
@@ -433,7 +433,7 @@ final class TabFolderMutationOwner {
         tabManager.setSpacePinnedShortcuts(normalizedPins, for: spaceId)
         for pinId in touchedPinIds {
             if let updatedPin = normalizedPins.first(where: { $0.id == pinId }) {
-                tabManager.updateTransientShortcutBindings(for: updatedPin)
+                tabManager.shortcutLiveTabOwner.updateTransientShortcutBindings(for: updatedPin)
             }
         }
     }

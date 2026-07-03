@@ -125,25 +125,25 @@ extension TabStructuralCollectionMutationOwner.Dependencies {
                 tabManager?.faviconService.syncShortcutPins(shortcutPins)
             },
             markRegularTabsSnapshotDirty: { [weak tabManager] spaceId in
-                tabManager?.markRegularTabsSnapshotDirty(for: spaceId)
+                tabManager?.structuralPersistence.markRegularTabsSnapshotDirty(for: spaceId)
             },
             markFoldersSnapshotDirty: { [weak tabManager] spaceId in
-                tabManager?.markFoldersSnapshotDirty(for: spaceId)
+                tabManager?.structuralPersistence.markFoldersSnapshotDirty(for: spaceId)
             },
             markPinnedSnapshotDirty: { [weak tabManager] profileId in
-                tabManager?.markPinnedSnapshotDirty(for: profileId)
+                tabManager?.structuralPersistence.markPinnedSnapshotDirty(for: profileId)
             },
             markSpacePinnedSnapshotDirty: { [weak tabManager] spaceId in
-                tabManager?.markSpacePinnedSnapshotDirty(for: spaceId)
+                tabManager?.structuralPersistence.markSpacePinnedSnapshotDirty(for: spaceId)
             },
             recordRegularTabsStructuralChange: { [weak tabManager] previous, current in
-                tabManager?.recordRegularTabsStructuralChange(previous: previous, current: current)
+                tabManager?.structuralPersistence.recordRegularTabsStructuralChange(previous: previous, current: current)
             },
             recordFoldersStructuralChange: { [weak tabManager] previous, current in
-                tabManager?.recordFoldersStructuralChange(previous: previous, current: current)
+                tabManager?.structuralPersistence.recordFoldersStructuralChange(previous: previous, current: current)
             },
             recordShortcutPinsStructuralChange: { [weak tabManager] previous, current in
-                tabManager?.recordShortcutPinsStructuralChange(previous: previous, current: current)
+                tabManager?.structuralPersistence.recordShortcutPinsStructuralChange(previous: previous, current: current)
             },
             queueTabLookupEntries: { [weak tabManager] previous, current in
                 tabManager?.queueTabLookupEntries(removing: previous, with: current)

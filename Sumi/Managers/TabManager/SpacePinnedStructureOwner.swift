@@ -16,7 +16,7 @@ final class SpacePinnedStructureOwner {
     }
 
     func folderChildVisualItems(for folderId: UUID, in spaceId: UUID) -> [TabManager.FolderChildVisualItem] {
-        tabManager.splitGroupVisualOrderingResolver(for: spaceId).folderItems(for: folderId).map { item in
+        tabManager.splitGroupStructureOwner.visualOrderingResolver(for: spaceId).folderItems(for: folderId).map { item in
             switch item {
             case .folder(let id):
                 return .folder(id)

@@ -96,7 +96,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         var context = ModelContext(container)
         XCTAssertEqual(try fetchTab(tab.id, in: context)?.urlString, "https://example.com/start")
 
-        tabManager.markRegularTabsStructurallyDirty(for: space.id)
+        tabManager.structuralPersistence.markRegularTabsStructurallyDirty(for: space.id)
         tabManager.scheduleStructuralPersistence()
 
         try await waitForStore(in: container) { context in

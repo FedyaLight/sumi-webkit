@@ -105,13 +105,13 @@ final class ShortcutPinCommandOwner {
                 tabManager.runtimeContext?.captureDeletedShortcutLauncher(pin)
             }
 
-            tabManager.removeShortcutPinFromContainers(pin)
+            tabManager.shortcutPinStoreOwner.removeFromContainers(pin)
 
-            let cleanupResult = tabManager.removeLiveShortcutTabs(forDeletedPinId: pin.id)
+            let cleanupResult = tabManager.shortcutLiveTabOwner.removeLiveShortcutTabs(forDeletedPinId: pin.id)
             if cleanupResult.didClearCurrentSelection {
                 tabManager.runtimeContext?.validateWindowStates()
             }
-            tabManager.persistWindowSessionsForShortcutSelectionCleanup(cleanupResult)
+            tabManager.shortcutLiveTabOwner.persistWindowSessionsForShortcutSelectionCleanup(cleanupResult)
             tabManager.scheduleStructuralPersistence()
         }
     }
@@ -141,10 +141,10 @@ final class ShortcutPinCommandOwner {
                 }
 
                 pins[index] = updatedPin.refreshed(index: pin.index)
-                tabManager.setPinnedTabs(tabManager.reindexed(pins), for: profileId)
+                tabManager.setPinnedTabs(tabManager.shortcutPinStoreOwner.reindexed(pins), for: profileId)
                 if let inserted = tabManager.pinnedByProfile[profileId]?
                     .first(where: { $0.id == pin.id }) {
-                    tabManager.updateTransientShortcutBindings(for: inserted)
+                    tabManager.shortcutLiveTabOwner.updateTransientShortcutBindings(for: inserted)
                     tabManager.scheduleStructuralPersistence()
                     return inserted
                 }
@@ -168,7 +168,7 @@ final class ShortcutPinCommandOwner {
                 }
 
                 if let inserted = tabManager.shortcutPin(by: pin.id) {
-                    tabManager.updateTransientShortcutBindings(for: inserted)
+                    tabManager.shortcutLiveTabOwner.updateTransientShortcutBindings(for: inserted)
                     tabManager.scheduleStructuralPersistence()
                     return inserted
                 }
@@ -260,7 +260,7 @@ final class ShortcutPinCommandOwner {
             guard adjustedIndex != currentIndex else { return false }
             if currentIndex < arr.count { arr.remove(at: currentIndex) }
             arr.insert(pin, at: max(0, min(adjustedIndex, arr.count)))
-            tabManager.setPinnedTabs(tabManager.reindexed(arr), for: pid)
+            tabManager.setPinnedTabs(tabManager.shortcutPinStoreOwner.reindexed(arr), for: pid)
             tabManager.scheduleStructuralPersistence()
             return true
         }

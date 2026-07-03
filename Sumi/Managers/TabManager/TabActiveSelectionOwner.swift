@@ -27,7 +27,7 @@ final class TabActiveSelectionOwner {
             )
         }
 
-        tabManager.persistSelection()
+        tabManager.structuralPersistence.persistSelection()
     }
 
     /// Update only the global tab state without triggering UI operations.
@@ -39,7 +39,7 @@ final class TabActiveSelectionOwner {
         tabManager.currentTab = tab
         updateActiveTabSpaceSelectionState(for: tab, refreshCurrentSpaceReference: true)
 
-        tabManager.persistSelection()
+        tabManager.structuralPersistence.persistSelection()
     }
 
     private func updateActiveSplitSelection(for tab: Tab) {
@@ -75,7 +75,7 @@ final class TabActiveSelectionOwner {
             }
         }
         if didChangeSpacePersistenceState {
-            tabManager.markSpacesSnapshotDirty()
+            tabManager.structuralPersistence.markSpacesSnapshotDirty()
         }
     }
 }

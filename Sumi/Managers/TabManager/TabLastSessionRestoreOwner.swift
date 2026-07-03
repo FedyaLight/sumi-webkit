@@ -19,7 +19,7 @@ final class TabLastSessionRestoreOwner {
             let liveShortcutTabs = tabManager.transientTabRegistryOwner.transientShortcutTabs
             if !liveShortcutTabs.isEmpty {
                 for tab in liveShortcutTabs {
-                    tabManager.cancelRuntimeStatePersistence(for: tab.id)
+                    tabManager.structuralPersistence.cancelRuntimeStatePersistence(for: tab.id)
                     tab.performComprehensiveWebViewCleanup()
                     runtimeContext.webViewLifecycle.unloadTab(tab)
                     runtimeContext.webViewLifecycle.requireRemoveAllWebViews(
@@ -35,7 +35,7 @@ final class TabLastSessionRestoreOwner {
             for space in tabManager.spaces {
                 let regularTabs = tabManager.regularTabCollectionOwner.tabs(in: space)
                 for tab in regularTabs {
-                    tabManager.cancelRuntimeStatePersistence(for: tab.id)
+                    tabManager.structuralPersistence.cancelRuntimeStatePersistence(for: tab.id)
                     runtimeContext.webViewLifecycle.unloadTab(tab)
                     runtimeContext.webViewLifecycle.requireRemoveAllWebViews(
                         for: tab,
@@ -46,7 +46,7 @@ final class TabLastSessionRestoreOwner {
                 tabManager.setTabs([], for: space.id)
                 if space.activeTabId != nil {
                     space.activeTabId = nil
-                    tabManager.markSpacesSnapshotDirty()
+                    tabManager.structuralPersistence.markSpacesSnapshotDirty()
                 }
             }
 
@@ -186,7 +186,7 @@ final class TabLastSessionRestoreOwner {
                 )
             }
             tabManager.setPinnedTabs(
-                tabManager.reindexed(pins.sorted(by: sortPins)),
+                tabManager.shortcutPinStoreOwner.reindexed(pins.sorted(by: sortPins)),
                 for: profileId
             )
         }

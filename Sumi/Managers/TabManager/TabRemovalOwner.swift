@@ -11,7 +11,7 @@ final class TabRemovalOwner {
     func removeTab(_ id: UUID) {
         tabManager.withStructuralUpdateTransaction {
             tabManager.runtimeContext?.handleTabClosure(id)
-            tabManager.cancelRuntimeStatePersistence(for: id)
+            tabManager.structuralPersistence.cancelRuntimeStatePersistence(for: id)
 
             let wasCurrent = (tabManager.currentTab?.id == id)
             var removed: Tab?
@@ -22,7 +22,7 @@ final class TabRemovalOwner {
                 return
             }
 
-            if tabManager.closeAuxiliaryMiniWindowTabIfPresent(id: id) {
+            if tabManager.transientWebKitTabLifecycleOwner.closeAuxiliaryMiniWindowTabIfPresent(id: id) {
                 return
             }
 
@@ -53,7 +53,7 @@ final class TabRemovalOwner {
                 windowState.removeFromRegularTabHistory(tab.id)
             }
 
-            tabManager.captureRecentlyClosedTab(tab, spaceId: removedSpaceId)
+            captureRecentlyClosedTab(tab, spaceId: removedSpaceId)
 
             runtimeContext.webViewLifecycle.unloadTab(tab)
             runtimeContext.webViewLifecycle.requireRemoveAllWebViews(
@@ -166,7 +166,7 @@ final class TabRemovalOwner {
     }
 
     private func closeTabWithoutTracking(_ id: UUID) {
-        tabManager.cancelRuntimeStatePersistence(for: id)
+        tabManager.structuralPersistence.cancelRuntimeStatePersistence(for: id)
         let wasCurrent = tabManager.currentTab?.id == id
         var removed: Tab?
         var removedIndexInCurrentSpace: Int?
@@ -204,7 +204,7 @@ final class TabRemovalOwner {
 
         if wasCurrent {
             if tab.spaceId == nil {
-                let tabs = tabManager.essentialTabs(for: runtimeContext.currentProfileId)
+                let tabs = tabManager.shortcutPresentationOwner.activeEssentialTabs(for: runtimeContext.currentProfileId)
                 if let first = tabs.first {
                     tabManager.setActiveTab(first)
                 }

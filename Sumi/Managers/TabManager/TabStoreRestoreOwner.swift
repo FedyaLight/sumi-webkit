@@ -343,7 +343,7 @@ extension TabStoreRestoreOwner.Dependencies {
             },
             installRepairedSplitGroups: { [weak tabManager] splitGroups in
                 guard let tabManager else { return }
-                tabManager.splitGroups = tabManager.sanitizedRepairedSplitGroups(splitGroups)
+                tabManager.splitGroups = tabManager.splitGroupStructureOwner.sanitizedRepairedSplitGroups(splitGroups)
             },
             prepareTabForRuntime: { [weak tabManager] tab in
                 tabManager?.prepareTabForRuntime(tab)
