@@ -64,6 +64,16 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
         let settings = SumiSettingsService(userDefaults: settingsHarness.defaults)
         let dragState = SidebarDragState()
         let coordinator = SpaceSidebarTransitionCoordinator()
+        let sourceViewport = SpaceSidebarSnapshotViewport(
+            contentOffsetY: 36,
+            contentHeight: 360,
+            viewportHeight: 140
+        )
+        let destinationViewport = SpaceSidebarSnapshotViewport(
+            contentOffsetY: 64,
+            contentHeight: 420,
+            viewportHeight: 160
+        )
 
         defer {
             coordinator.cancelPendingSpaceTransition()
@@ -86,7 +96,15 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
             reduceMotion: true
         )
 
+        coordinator.recordScrollViewport(sourceViewport, for: source.id)
+        coordinator.recordScrollViewport(destinationViewport, for: destination.id)
         coordinator.switchSpace(to: destination, context: context)
+        let activeSnapshot = try XCTUnwrap(coordinator.transitionSnapshot)
+        XCTAssertTrue(activeSnapshot.matches(coordinator.transitionState))
+        XCTAssertEqual(activeSnapshot.source.spaceId, source.id)
+        XCTAssertEqual(activeSnapshot.destination.spaceId, destination.id)
+        XCTAssertEqual(activeSnapshot.source.scrollViewport, sourceViewport)
+        XCTAssertEqual(activeSnapshot.destination.scrollViewport, destinationViewport)
 
         try await Task.sleep(
             nanoseconds: UInt64((SpaceSidebarRenderPolicy.completionDelay + 0.15) * 1_000_000_000)
@@ -130,6 +148,78 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
             ]?.renderMode,
             .interactive
         )
+    }
+
+    func testSwipeTransitionCapturesMatchingSnapshotAndClearsAfterCommit() async throws {
+        let windowState = BrowserWindowState()
+        let sourceProfileId = UUID()
+        let destinationProfileId = UUID()
+        let source = Space(name: "Source", profileId: sourceProfileId)
+        let destination = Space(name: "Destination", profileId: destinationProfileId)
+        let browserHarness = try TestSidebarBrowserContextHarness(spaces: [source, destination])
+        let settingsHarness = TestDefaultsHarness()
+        let settings = SumiSettingsService(userDefaults: settingsHarness.defaults)
+        let dragState = SidebarDragState()
+        let coordinator = SpaceSidebarTransitionCoordinator()
+        let sourceViewport = SpaceSidebarSnapshotViewport(
+            contentOffsetY: 48,
+            contentHeight: 390,
+            viewportHeight: 150
+        )
+        let destinationViewport = SpaceSidebarSnapshotViewport(
+            contentOffsetY: 96,
+            contentHeight: 520,
+            viewportHeight: 180
+        )
+
+        defer {
+            coordinator.cancelPendingSpaceTransition()
+            settingsHarness.reset()
+        }
+
+        windowState.tabManager = browserHarness.tabManager
+        windowState.currentProfileId = sourceProfileId
+        windowState.currentSpaceId = source.id
+        browserHarness.commitWorkspaceTheme(source.workspaceTheme, for: windowState)
+
+        let context = SpaceSidebarTransitionCoordinator.Context(
+            spaces: [source, destination],
+            currentSpaces: { browserHarness.tabManager.spaces },
+            windowState: windowState,
+            browserContext: browserHarness.context,
+            dragState: dragState,
+            settings: settings,
+            allowsInteractiveWork: true,
+            reduceMotion: true
+        )
+
+        coordinator.recordScrollViewport(sourceViewport, for: source.id)
+        coordinator.recordScrollViewport(destinationViewport, for: destination.id)
+        coordinator.handleSwipeEvent(
+            .init(phase: .changed, direction: 1, progress: 0.35),
+            context: context
+        )
+
+        XCTAssertEqual(coordinator.transitionState.trigger, .swipe)
+        XCTAssertEqual(coordinator.transitionState.sourceSpaceId, source.id)
+        XCTAssertEqual(coordinator.transitionState.destinationSpaceId, destination.id)
+        let activeSnapshot = try XCTUnwrap(coordinator.transitionSnapshot)
+        XCTAssertTrue(activeSnapshot.matches(coordinator.transitionState))
+        XCTAssertEqual(activeSnapshot.source.scrollViewport, sourceViewport)
+        XCTAssertEqual(activeSnapshot.destination.scrollViewport, destinationViewport)
+
+        coordinator.handleSwipeEvent(
+            .init(phase: .ended, direction: 1, progress: 0.35),
+            context: context
+        )
+
+        try await Task.sleep(
+            nanoseconds: UInt64((SpaceSidebarRenderPolicy.completionDelay + 0.15) * 1_000_000_000)
+        )
+
+        XCTAssertEqual(windowState.currentSpaceId, destination.id)
+        XCTAssertNil(coordinator.transitionSnapshot)
+        XCTAssertFalse(coordinator.transitionState.hasDestination)
     }
 
     func testCommittedSpaceChangeCancelsScheduledCompletion() async throws {

@@ -70,6 +70,33 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         XCTAssertEqual(bottomMetrics.thumbOffsetY, 72, accuracy: 0.001)
     }
 
+    func testSnapshotViewportClampsOffsetToRenderedViewport() {
+        let viewport = SpaceSidebarSnapshotViewport(
+            contentOffsetY: 160,
+            contentHeight: 240,
+            viewportHeight: 100
+        )
+
+        XCTAssertEqual(viewport.clampedOffset(), 140, accuracy: 0.001)
+        XCTAssertEqual(viewport.clampedOffset(for: 80), 160, accuracy: 0.001)
+    }
+
+    func testSnapshotViewportClampsElasticOffsets() {
+        let topViewport = SpaceSidebarSnapshotViewport(
+            contentOffsetY: -30,
+            contentHeight: 500,
+            viewportHeight: 100
+        )
+        let bottomViewport = SpaceSidebarSnapshotViewport(
+            contentOffsetY: 999,
+            contentHeight: 500,
+            viewportHeight: 100
+        )
+
+        XCTAssertEqual(topViewport.clampedOffset(), 0, accuracy: 0.001)
+        XCTAssertEqual(bottomViewport.clampedOffset(), 400, accuracy: 0.001)
+    }
+
     func testNativeScrollBoundariesTrackVisibleRect() {
         let top = SidebarScrollBoundaryState(
             visibleRect: CGRect(x: 0, y: 0, width: 100, height: 100),
@@ -100,6 +127,19 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
 
         XCTAssertFalse(state.hasContentAbove)
         XCTAssertFalse(state.hasContentBelow)
+    }
+
+    func testNativeScrollBoundariesExposeSnapshotViewport() {
+        let state = SidebarScrollBoundaryState(
+            contentOffsetY: 42,
+            visibleRect: CGRect(x: 0, y: 42, width: 100, height: 120),
+            contentHeight: 360
+        )
+
+        XCTAssertEqual(state.scrollViewport.contentOffsetY, 42, accuracy: 0.001)
+        XCTAssertEqual(state.scrollViewport.viewportHeight, 120, accuracy: 0.001)
+        XCTAssertEqual(state.scrollViewport.contentHeight, 360, accuracy: 0.001)
+        XCTAssertEqual(state.scrollViewport.clampedOffset(), 42, accuracy: 0.001)
     }
 
     func testSameSpaceClickIsNoOp() {
@@ -202,6 +242,44 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         )
 
         XCTAssertTrue(SpaceSidebarRenderPolicy.shouldUseTransitionLayers(for: state))
+    }
+
+    func testTransitionSnapshotMatchesOnlyActiveSourceDestination() {
+        let sourceId = UUID()
+        let destinationId = UUID()
+        let unrelatedId = UUID()
+        let orderedSpaceIds = [sourceId, destinationId, unrelatedId]
+        let snapshot = SpaceSidebarTransitionSnapshot(
+            source: makePageSnapshot(spaceId: sourceId, title: "Source", iconValue: "square.grid.2x2"),
+            destination: makePageSnapshot(spaceId: destinationId, title: "Destination", iconValue: "star"),
+            stationaryEssentials: nil
+        )
+        var activeState = SpaceSidebarTransitionState()
+        var unresolvedState = SpaceSidebarTransitionState()
+        var staleDestinationState = SpaceSidebarTransitionState()
+
+        XCTAssertTrue(
+            activeState.beginClick(
+                from: sourceId,
+                to: destinationId,
+                orderedSpaceIds: orderedSpaceIds
+            )
+        )
+        XCTAssertTrue(snapshot.matches(activeState))
+        XCTAssertFalse(snapshot.matches(unresolvedState))
+
+        XCTAssertTrue(
+            staleDestinationState.beginClick(
+                from: sourceId,
+                to: unrelatedId,
+                orderedSpaceIds: orderedSpaceIds
+            )
+        )
+        XCTAssertFalse(snapshot.matches(staleDestinationState))
+
+        unresolvedState = activeState
+        _ = unresolvedState.finishTransition(commit: false)
+        XCTAssertFalse(snapshot.matches(unresolvedState))
     }
 
     func testSwipeTransitionBeginsOnlyAfterHorizontalDirectionLatches() {
@@ -347,6 +425,114 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         XCTAssertEqual(snapshot.stationaryEssentials?.items.map(\.id), [essential.id])
     }
 
+    func testSnapshotBuilderCapturesSpaceTitleNameIconAndCornerRadius() {
+        let browserManager = BrowserManager()
+        let windowState = BrowserWindowState()
+        let settings = makeIsolatedSettings()
+        let profileId = UUID()
+        let source = Space(name: "Source Space", icon: "sparkles", profileId: profileId)
+        let destination = Space(name: "Destination Space", icon: "star.fill", profileId: profileId)
+
+        browserManager.tabManager.spaces = [source, destination]
+        windowState.currentProfileId = profileId
+        windowState.currentSpaceId = source.id
+
+        let snapshot = makeTransitionSnapshot(
+            sourceSpace: source,
+            destinationSpace: destination,
+            browserManager: browserManager,
+            windowState: windowState,
+            settings: settings
+        )
+
+        XCTAssertEqual(snapshot.source.title, "Source Space")
+        XCTAssertEqual(snapshot.source.iconValue, "sparkles")
+        XCTAssertEqual(snapshot.destination.title, "Destination Space")
+        XCTAssertEqual(snapshot.destination.iconValue, "star.fill")
+        XCTAssertEqual(
+            snapshot.source.rowCornerRadius,
+            settings.resolvedCornerRadius(SpaceTitleRowLayout.defaultCornerRadius),
+            accuracy: 0.0001
+        )
+    }
+
+    func testSnapshotBuilderStoresSourceAndDestinationViewportOffsets() {
+        let browserManager = BrowserManager()
+        let windowState = BrowserWindowState()
+        let settings = makeIsolatedSettings()
+        let profileId = UUID()
+        let source = Space(name: "Source", profileId: profileId)
+        let destination = Space(name: "Destination", profileId: profileId)
+        let sourceViewport = SpaceSidebarSnapshotViewport(
+            contentOffsetY: 44,
+            contentHeight: 480,
+            viewportHeight: 160
+        )
+        let destinationViewport = SpaceSidebarSnapshotViewport(
+            contentOffsetY: 88,
+            contentHeight: 520,
+            viewportHeight: 180
+        )
+
+        browserManager.tabManager.spaces = [source, destination]
+        windowState.currentProfileId = profileId
+        windowState.currentSpaceId = source.id
+
+        let snapshot = makeTransitionSnapshot(
+            sourceSpace: source,
+            destinationSpace: destination,
+            browserManager: browserManager,
+            windowState: windowState,
+            settings: settings,
+            scrollViewportForSpace: { spaceId in
+                switch spaceId {
+                case source.id:
+                    sourceViewport
+                case destination.id:
+                    destinationViewport
+                default:
+                    nil
+                }
+            }
+        )
+
+        XCTAssertEqual(snapshot.source.scrollViewport, sourceViewport)
+        XCTAssertEqual(snapshot.destination.scrollViewport, destinationViewport)
+    }
+
+    func testSnapshotBuilderDefaultsMissingDestinationViewportToTop() {
+        let browserManager = BrowserManager()
+        let windowState = BrowserWindowState()
+        let settings = makeIsolatedSettings()
+        let profileId = UUID()
+        let source = Space(name: "Source", profileId: profileId)
+        let destination = Space(name: "Destination", profileId: profileId)
+        let sourceViewport = SpaceSidebarSnapshotViewport(
+            contentOffsetY: 72,
+            contentHeight: 420,
+            viewportHeight: 140
+        )
+
+        browserManager.tabManager.spaces = [source, destination]
+        windowState.currentProfileId = profileId
+        windowState.currentSpaceId = source.id
+
+        let snapshot = makeTransitionSnapshot(
+            sourceSpace: source,
+            destinationSpace: destination,
+            browserManager: browserManager,
+            windowState: windowState,
+            settings: settings,
+            scrollViewportForSpace: { spaceId in
+                spaceId == source.id ? sourceViewport : nil
+            }
+        )
+
+        XCTAssertEqual(snapshot.source.scrollViewport, sourceViewport)
+        XCTAssertEqual(snapshot.destination.scrollViewport, .zero)
+        XCTAssertEqual(snapshot.destination.scrollViewport.clampedOffset(), 0, accuracy: 0.001)
+    }
+
     func testSnapshotBuilderEmbedsEssentialsForCrossProfileTransition() {
         let browserManager = BrowserManager()
         let windowState = BrowserWindowState()
@@ -457,11 +643,17 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
     }
 
     func testSnapshotTitleKeepsLiveSpaceTitleControlHeight() {
-        XCTAssertEqual(SpaceSidebarSnapshotTitleLayout.trailingControlSize, 28)
-        XCTAssertEqual(SpaceSidebarSnapshotTitleLayout.verticalPadding, 5)
+        XCTAssertEqual(
+            SpaceSidebarSnapshotTitleLayout.trailingControlSize,
+            SpaceTitleRowLayout.trailingControlSize
+        )
+        XCTAssertEqual(
+            SpaceSidebarSnapshotTitleLayout.verticalPadding,
+            SpaceTitleRowLayout.verticalPadding
+        )
         XCTAssertEqual(
             SpaceSidebarSnapshotTitleLayout.minimumHeight,
-            38,
+            SpaceTitleRowLayout.minimumHeight,
             accuracy: 0.0001
         )
     }
@@ -849,14 +1041,38 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         destinationSpace: Space,
         browserManager: BrowserManager,
         windowState: BrowserWindowState,
-        settings: SumiSettingsService
+        settings: SumiSettingsService,
+        scrollViewportForSpace: (UUID) -> SpaceSidebarSnapshotViewport? = { _ in nil }
     ) -> SpaceSidebarTransitionSnapshot {
         SpaceSidebarTransitionSnapshotBuilder.make(
             sourceSpace: sourceSpace,
             destinationSpace: destinationSpace,
             browserContext: SidebarBrowserContext.live(browserManager: browserManager),
             windowState: windowState,
-            settings: settings
+            settings: settings,
+            scrollViewportForSpace: scrollViewportForSpace
+        )
+    }
+
+    private func makePageSnapshot(
+        spaceId: UUID,
+        title: String,
+        iconValue: String
+    ) -> SpaceSidebarPageSnapshot {
+        SpaceSidebarPageSnapshot(
+            spaceId: spaceId,
+            title: title,
+            iconValue: iconValue,
+            extensionActions: nil,
+            essentials: nil,
+            pinnedItems: [],
+            regularItems: [],
+            regularTabs: [],
+            showsNewTabButtonInList: true,
+            showsTopNewTabButton: false,
+            rowCornerRadius: SpaceTitleRowLayout.defaultCornerRadius,
+            pinnedTabsConfiguration: .large,
+            scrollViewport: .zero
         )
     }
 

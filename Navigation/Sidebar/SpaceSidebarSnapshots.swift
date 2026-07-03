@@ -10,12 +10,52 @@ enum SpaceSidebarSnapshotFolderLayout {
     static let contentLeadingPadding: CGFloat = 14
     static let contentVerticalPadding: CGFloat = 4
 }
+
 enum SpaceSidebarSnapshotTitleLayout {
-    static let trailingControlSize: CGFloat = 28
-    static let verticalPadding: CGFloat = 5
+    static var trailingControlSize: CGFloat {
+        SpaceTitleRowLayout.trailingControlSize
+    }
+
+    static var verticalPadding: CGFloat {
+        SpaceTitleRowLayout.verticalPadding
+    }
 
     static var minimumHeight: CGFloat {
-        trailingControlSize + verticalPadding * 2
+        SpaceTitleRowLayout.minimumHeight
+    }
+}
+
+struct SpaceSidebarSnapshotViewport: Equatable {
+    static let zero = SpaceSidebarSnapshotViewport(
+        contentOffsetY: 0,
+        contentHeight: 0,
+        viewportHeight: 0
+    )
+
+    let contentOffsetY: CGFloat
+    let contentHeight: CGFloat
+    let viewportHeight: CGFloat
+
+    init(
+        contentOffsetY: CGFloat,
+        contentHeight: CGFloat,
+        viewportHeight: CGFloat
+    ) {
+        self.contentOffsetY = contentOffsetY.isFinite ? contentOffsetY : 0
+        self.contentHeight = max(contentHeight.isFinite ? contentHeight : 0, 0)
+        self.viewportHeight = max(viewportHeight.isFinite ? viewportHeight : 0, 0)
+    }
+
+    func clampedOffset(for renderedViewportHeight: CGFloat? = nil) -> CGFloat {
+        let resolvedViewportHeight: CGFloat
+        if let renderedViewportHeight {
+            resolvedViewportHeight = max(renderedViewportHeight.isFinite ? renderedViewportHeight : 0, 0)
+        } else {
+            resolvedViewportHeight = viewportHeight
+        }
+
+        let maximumOffset = max(contentHeight - resolvedViewportHeight, 0)
+        return min(max(contentOffsetY, 0), maximumOffset)
     }
 }
 
@@ -144,6 +184,7 @@ struct SpaceSidebarPageSnapshot {
     let showsTopNewTabButton: Bool
     let rowCornerRadius: CGFloat
     let pinnedTabsConfiguration: PinnedTabsConfiguration
+    let scrollViewport: SpaceSidebarSnapshotViewport
 }
 
 struct SpaceSidebarTransitionSnapshot {
@@ -164,6 +205,14 @@ struct SpaceSidebarTransitionSnapshot {
     func matches(sourceSpaceId: UUID, destinationSpaceId: UUID) -> Bool {
         source.spaceId == sourceSpaceId && destination.spaceId == destinationSpaceId
     }
+
+    func matches(_ transitionState: SpaceSidebarTransitionState) -> Bool {
+        guard let sourceSpaceId = transitionState.sourceSpaceId,
+              let destinationSpaceId = transitionState.destinationSpaceId else {
+            return false
+        }
+        return matches(sourceSpaceId: sourceSpaceId, destinationSpaceId: destinationSpaceId)
+    }
 }
 
 @MainActor
@@ -173,7 +222,8 @@ enum SpaceSidebarTransitionSnapshotBuilder {
         destinationSpace: Space,
         browserContext: SidebarBrowserContext,
         windowState: BrowserWindowState,
-        settings: SumiSettingsService
+        settings: SumiSettingsService,
+        scrollViewportForSpace: (UUID) -> SpaceSidebarSnapshotViewport? = { _ in nil }
     ) -> SpaceSidebarTransitionSnapshot {
         let sourceProfileId = resolvedProfileId(
             for: sourceSpace,
@@ -195,14 +245,16 @@ enum SpaceSidebarTransitionSnapshotBuilder {
             profileId: sourceProfileId,
             browserContext: browserContext,
             windowState: windowState,
-            settings: settings
+            settings: settings,
+            scrollViewport: scrollViewportForSpace(sourceSpace.id) ?? .zero
         )
         let destinationPage = pageSnapshot(
             for: destinationSpace,
             profileId: destinationProfileId,
             browserContext: browserContext,
             windowState: windowState,
-            settings: settings
+            settings: settings,
+            scrollViewport: scrollViewportForSpace(destinationSpace.id) ?? .zero
         )
         let stationaryEssentials = sharedEssentials && !windowState.isIncognito
             ? essentialsSnapshot(
@@ -224,7 +276,8 @@ enum SpaceSidebarTransitionSnapshotBuilder {
         profileId: UUID?,
         browserContext: SidebarBrowserContext,
         windowState: BrowserWindowState,
-        settings: SumiSettingsService
+        settings: SumiSettingsService,
+        scrollViewport: SpaceSidebarSnapshotViewport
     ) -> SpaceSidebarPageSnapshot {
         let projection = windowState.isIncognito
             ? nil
@@ -261,7 +314,8 @@ enum SpaceSidebarTransitionSnapshotBuilder {
             showsNewTabButtonInList: settings.showNewTabButtonInTabList,
             showsTopNewTabButton: settings.tabListNewTabButtonPosition == .top,
             rowCornerRadius: settings.resolvedCornerRadius(12),
-            pinnedTabsConfiguration: .large
+            pinnedTabsConfiguration: .large,
+            scrollViewport: scrollViewport
         )
     }
 

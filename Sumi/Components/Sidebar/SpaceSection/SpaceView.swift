@@ -50,6 +50,7 @@ struct SpaceView: View {
     let onMoveTabUp: (Tab) -> Void
     let onMoveTabDown: (Tab) -> Void
     let onMuteTab: (Tab) -> Void
+    let onScrollViewportChange: (UUID, SpaceSidebarSnapshotViewport) -> Void
     @EnvironmentObject var splitManager: SplitViewManager
 
     var outerWidth: CGFloat {
@@ -184,7 +185,7 @@ extension SpaceView {
         SidebarMotionTransaction.withoutAnimation {
             update()
             shortcutRestoreGaps.removeAll { $0.id == existingGap.id }
-            let _ = shortcutRestoreAppearingGapIds.remove(existingGap.id)
+            _ = shortcutRestoreAppearingGapIds.remove(existingGap.id)
         }
     }
 

@@ -12,7 +12,10 @@ extension SpaceView {
             isInteractive: isInteractive,
             spaceId: space.id,
             scrollHoverCoordinator: scrollHoverCoordinator,
-            outerWidth: outerWidth
+            outerWidth: outerWidth,
+            onViewportChange: { viewport in
+                onScrollViewportChange(space.id, viewport)
+            }
         ) {
             VStack(spacing: 8) {
                 pinnedTabsSection
@@ -33,12 +36,29 @@ struct SidebarPassiveScrollIndicatorMetrics: Equatable {
 struct SidebarScrollBoundaryState: Equatable {
     let hasContentAbove: Bool
     let hasContentBelow: Bool
+    let scrollViewport: SpaceSidebarSnapshotViewport
 
     init(visibleRect: CGRect, contentHeight: CGFloat) {
+        self.init(
+            contentOffsetY: visibleRect.minY,
+            visibleRect: visibleRect,
+            contentHeight: contentHeight
+        )
+    }
+
+    init(contentOffsetY: CGFloat, visibleRect: CGRect, contentHeight: CGFloat) {
+        scrollViewport = SpaceSidebarSnapshotViewport(
+            contentOffsetY: contentOffsetY,
+            contentHeight: contentHeight,
+            viewportHeight: visibleRect.height
+        )
+
         let tolerance: CGFloat = 0.5
-        let hasOverflow = contentHeight > visibleRect.height + tolerance
-        hasContentAbove = hasOverflow && visibleRect.minY > tolerance
-        hasContentBelow = hasOverflow && visibleRect.maxY < contentHeight - tolerance
+        let hasOverflow = scrollViewport.contentHeight > scrollViewport.viewportHeight + tolerance
+        let maximumOffset = max(scrollViewport.contentHeight - scrollViewport.viewportHeight, 0)
+        let clampedOffset = scrollViewport.clampedOffset()
+        hasContentAbove = hasOverflow && clampedOffset > tolerance
+        hasContentBelow = hasOverflow && clampedOffset < maximumOffset - tolerance
     }
 }
 
@@ -87,6 +107,7 @@ private struct SpaceScrollView<Content: View>: View {
     let spaceId: UUID
     @ObservedObject var scrollHoverCoordinator: NativeSurfaceScrollHoverCoordinator
     let outerWidth: CGFloat
+    let onViewportChange: (SpaceSidebarSnapshotViewport) -> Void
     @ViewBuilder let content: () -> Content
 
     @State private var hasContentAbove = false
@@ -119,12 +140,14 @@ private struct SpaceScrollView<Content: View>: View {
         .scrollIndicators(.hidden, axes: .vertical)
         .onScrollGeometryChange(for: SidebarScrollBoundaryState.self) { geometry in
             SidebarScrollBoundaryState(
+                contentOffsetY: geometry.contentOffset.y,
                 visibleRect: geometry.visibleRect,
                 contentHeight: geometry.contentSize.height
             )
         } action: { _, state in
             hasContentAbove = state.hasContentAbove
             hasContentBelow = state.hasContentBelow
+            onViewportChange(state.scrollViewport)
         }
         .contentShape(Rectangle())
         .clipped() // Hardware-accelerated viewport-bound clipping

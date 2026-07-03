@@ -337,7 +337,9 @@ struct SpacesSideBarView: View {
         ZStack(alignment: .topLeading) {
             if SpaceSidebarRenderPolicy.shouldUseTransitionLayers(for: transitionState),
                let sourceSpace = space(for: transitionState.sourceSpaceId, in: spaces),
-               let destinationSpace = space(for: transitionState.destinationSpaceId, in: spaces) {
+               let destinationSpace = space(for: transitionState.destinationSpaceId, in: spaces),
+               let snapshot = transitionSnapshot,
+               snapshot.matches(transitionState) {
                 if usesSharedPinnedGrid(
                     sourceSpace: sourceSpace,
                     destinationSpace: destinationSpace
@@ -345,35 +347,31 @@ struct SpacesSideBarView: View {
                     sameProfileTransitionContainer(
                         sourceSpace: sourceSpace,
                         destinationSpace: destinationSpace,
+                        snapshot: snapshot,
                         width: width,
                         travelProgress: travelProgress
                     )
                 } else {
                     transitionLayer(
                         for: sourceSpace,
-                        pageRenderMode: SpaceSidebarRenderPolicy.pageRenderMode(for: .transitionLayer),
+                        snapshot: snapshot,
                         width: width,
                         offsetX: sourceOffsetX(width: width),
                         opacity: sourceOpacity(for: travelProgress),
                         zIndex: 0,
-                        includesPinnedGrid: true,
-                        isVisuallyActive: false
+                        includesPinnedGrid: true
                     )
 
                     transitionLayer(
                         for: destinationSpace,
-                        pageRenderMode: SpaceSidebarRenderPolicy.pageRenderMode(for: .transitionLayer),
+                        snapshot: snapshot,
                         width: width,
                         offsetX: destinationOffsetX(width: width),
                         opacity: destinationOpacity(for: travelProgress),
                         zIndex: 1,
-                        includesPinnedGrid: true,
-                        isVisuallyActive: true
+                        includesPinnedGrid: true
                     )
                 }
-            } else if transitionState.isGestureActive,
-                      transitionState.destinationSpaceId == nil {
-                committedSidebarPage(spaces: spaces, width: width)
             } else {
                 committedSidebarPage(spaces: spaces, width: width)
             }
@@ -402,43 +400,29 @@ struct SpacesSideBarView: View {
     private func sameProfileTransitionContainer(
         sourceSpace: Space,
         destinationSpace: Space,
+        snapshot: SpaceSidebarTransitionSnapshot,
         width: CGFloat,
         travelProgress: Double
     ) -> some View {
-        let pageRenderMode = SpaceSidebarRenderPolicy.pageRenderMode(for: .transitionLayer)
-
         VStack(spacing: 8) {
             if !windowState.isIncognito {
-                if let extensionActions = transitionSnapshot?.source.extensionActions {
+                if let extensionActions = snapshot.source.extensionActions {
                     ExtensionActionSnapshotGrid(
                         snapshot: extensionActions,
                         tokens: themeContext.tokens(settings: sumiSettings)
                     )
                     .padding(.horizontal, 8)
                     .allowsHitTesting(false)
-                } else {
-                    makeSidebarExtensionGrid(
-                        profileId: resolvedPageProfileId(for: sourceSpace),
-                        pageRenderMode: pageRenderMode
-                    )
-                    .allowsHitTesting(false)
                 }
 
-                if let essentials = transitionSnapshot?.stationaryEssentials {
+                if let essentials = snapshot.stationaryEssentials {
                     EssentialsSnapshotGrid(
                         snapshot: essentials,
                         width: max(width - BrowserWindowState.sidebarHorizontalPadding, 0),
-                        configuration: transitionSnapshot?.source.pinnedTabsConfiguration ?? .large,
+                        configuration: snapshot.source.pinnedTabsConfiguration,
                         tokens: themeContext.tokens(settings: sumiSettings)
                     )
                     .padding(.horizontal, 8)
-                    .allowsHitTesting(false)
-                } else {
-                    makePinnedGrid(
-                        spaceId: sourceSpace.id,
-                        profileId: resolvedPageProfileId(for: sourceSpace),
-                        pageRenderMode: pageRenderMode
-                    )
                     .allowsHitTesting(false)
                 }
             }
@@ -446,24 +430,22 @@ struct SpacesSideBarView: View {
             ZStack(alignment: .topLeading) {
                 transitionLayer(
                     for: sourceSpace,
-                    pageRenderMode: pageRenderMode,
+                    snapshot: snapshot,
                     width: width,
                     offsetX: sourceOffsetX(width: width),
                     opacity: sourceOpacity(for: travelProgress),
                     zIndex: 0,
-                    includesPinnedGrid: false,
-                    isVisuallyActive: false
+                    includesPinnedGrid: false
                 )
 
                 transitionLayer(
                     for: destinationSpace,
-                    pageRenderMode: pageRenderMode,
+                    snapshot: snapshot,
                     width: width,
                     offsetX: destinationOffsetX(width: width),
                     opacity: destinationOpacity(for: travelProgress),
                     zIndex: 1,
-                    includesPinnedGrid: false,
-                    isVisuallyActive: true
+                    includesPinnedGrid: false
                 )
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -474,17 +456,16 @@ struct SpacesSideBarView: View {
 
     private func transitionLayer(
         for space: Space,
-        pageRenderMode: SidebarPageRenderMode,
+        snapshot: SpaceSidebarTransitionSnapshot,
         width: CGFloat,
         offsetX: CGFloat,
         opacity: Double,
         zIndex: Double,
-        includesPinnedGrid: Bool,
-        isVisuallyActive _: Bool
+        includesPinnedGrid: Bool
     ) -> some View {
         transitionLayerContent(
             for: space,
-            pageRenderMode: pageRenderMode,
+            snapshot: snapshot,
             width: width,
             includesPinnedGrid: includesPinnedGrid
         )
@@ -499,12 +480,11 @@ struct SpacesSideBarView: View {
     @ViewBuilder
     private func transitionLayerContent(
         for space: Space,
-        pageRenderMode: SidebarPageRenderMode,
+        snapshot: SpaceSidebarTransitionSnapshot,
         width: CGFloat,
         includesPinnedGrid: Bool
     ) -> some View {
-        if pageRenderMode == .transitionSnapshot,
-           let pageSnapshot = transitionSnapshot?.page(for: space.id) {
+        if let pageSnapshot = snapshot.page(for: space.id) {
             EquatableView(content: SpaceTransitionSnapshotPageView(
                 snapshot: pageSnapshot,
                 includesEssentials: includesPinnedGrid,
@@ -517,12 +497,6 @@ struct SpacesSideBarView: View {
                     isIncognito: windowState.isIncognito
                 )
             ))
-        } else {
-            makeSidebarPage(
-                for: space,
-                pageRenderMode: pageRenderMode,
-                includesPinnedGrid: includesPinnedGrid
-            )
         }
     }
 
@@ -693,7 +667,10 @@ struct SpacesSideBarView: View {
             onCloseTab: { browserContext.commands.closeTab($0, windowState) },
             onMoveTabUp: { browserContext.commands.moveTabUp($0.id) },
             onMoveTabDown: { browserContext.commands.moveTabDown($0.id) },
-            onMuteTab: { $0.toggleMute() }
+            onMuteTab: { $0.toggleMute() },
+            onScrollViewportChange: { spaceId, viewport in
+                runtimeOwner.recordScrollViewport(viewport, for: spaceId)
+            }
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .environmentObject(browserContext.glanceManager)

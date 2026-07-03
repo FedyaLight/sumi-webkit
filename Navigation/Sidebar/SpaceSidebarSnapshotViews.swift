@@ -17,6 +17,9 @@ struct SpaceTransitionSnapshotPageView: View, @preconcurrency Equatable {
     static func == (lhs: SpaceTransitionSnapshotPageView, rhs: SpaceTransitionSnapshotPageView) -> Bool {
         lhs.snapshot.spaceId == rhs.snapshot.spaceId &&
                lhs.snapshot.title == rhs.snapshot.title &&
+               lhs.snapshot.iconValue == rhs.snapshot.iconValue &&
+               lhs.snapshot.rowCornerRadius == rhs.snapshot.rowCornerRadius &&
+               lhs.snapshot.scrollViewport == rhs.snapshot.scrollViewport &&
                lhs.includesEssentials == rhs.includesEssentials &&
                lhs.width == rhs.width &&
                lhs.themeContext.chromeColorScheme == rhs.themeContext.chromeColorScheme
@@ -167,26 +170,36 @@ private struct SpaceSnapshotContentView: View {
     let themeContext: ResolvedThemeContext
 
     var body: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            LazyVStack(spacing: 8) {
-                SpaceSnapshotPinnedSectionView(
-                    items: snapshot.pinnedItems,
-                    rowCornerRadius: snapshot.rowCornerRadius,
-                    tokens: tokens,
-                    themeContext: themeContext
-                )
+        GeometryReader { geometry in
+            let viewportHeight = max(geometry.size.height, 0)
+            let contentOffsetY = snapshot.scrollViewport.clampedOffset(for: viewportHeight)
 
-                SpaceSnapshotRegularTabsSectionView(
-                    snapshot: snapshot,
-                    innerWidth: innerWidth,
-                    tokens: tokens
-                )
-            }
-            .frame(minWidth: 0, maxWidth: innerWidth, alignment: .leading)
+            contentStack
+                .frame(width: innerWidth, alignment: .topLeading)
+                .offset(y: -contentOffsetY)
+                .frame(width: innerWidth, alignment: .topLeading)
         }
-        .scrollIndicators(.hidden)
-        .accessibilityIdentifier("space-transition-snapshot-scroll-\(snapshot.spaceId.uuidString)")
+        .clipped()
+        .accessibilityIdentifier("space-transition-snapshot-content-\(snapshot.spaceId.uuidString)")
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
+    private var contentStack: some View {
+        VStack(spacing: 8) {
+            SpaceSnapshotPinnedSectionView(
+                items: snapshot.pinnedItems,
+                rowCornerRadius: snapshot.rowCornerRadius,
+                tokens: tokens,
+                themeContext: themeContext
+            )
+
+            SpaceSnapshotRegularTabsSectionView(
+                snapshot: snapshot,
+                innerWidth: innerWidth,
+                tokens: tokens
+            )
+        }
+        .frame(minWidth: 0, maxWidth: innerWidth, alignment: .leading)
     }
 }
 
@@ -196,48 +209,29 @@ private struct SpaceSnapshotTitleView: View {
     let rowCornerRadius: CGFloat
     let tokens: ChromeThemeTokens
 
-    private var spaceIconFontSize: CGFloat {
-        SidebarRowLayout.faviconSize * 0.78
-    }
-
     var body: some View {
-        HStack(spacing: SidebarRowLayout.iconTrailingSpacing) {
-            Group {
-                if SumiPersistentGlyph.presentsAsEmoji(iconValue) {
-                    Text(iconValue)
-                        .font(.system(size: spaceIconFontSize))
-                } else {
-                    Image(systemName: SumiPersistentGlyph.resolvedSpaceSystemImageName(iconValue))
-                        .font(.system(size: spaceIconFontSize, weight: .medium))
-                        .foregroundStyle(tokens.primaryText)
-                        .accessibilityHidden(true)
-                }
-            }
-            .frame(width: SidebarRowLayout.faviconSize, height: SidebarRowLayout.faviconSize)
-
+        SpaceTitleRowChrome(
+            backgroundColor: .clear,
+            cornerRadius: rowCornerRadius
+        ) {
+            SpaceTitleIconView(
+                iconValue: iconValue,
+                textColor: tokens.primaryText,
+                hidesAccessibility: true
+            )
+        } title: {
             Text(title)
-                .font(.system(size: 14, weight: .semibold))
+                .font(.system(size: SpaceTitleRowLayout.titleFontSize, weight: SpaceTitleRowLayout.titleFontWeight))
                 .foregroundStyle(tokens.primaryText)
                 .lineLimit(1)
                 .truncationMode(.tail)
-
-            Spacer(minLength: 0)
-
+        } trailing: {
             Image(systemName: "ellipsis")
                 .font(.body.weight(.semibold))
-                .frame(
-                    width: SpaceSidebarSnapshotTitleLayout.trailingControlSize,
-                    height: SpaceSidebarSnapshotTitleLayout.trailingControlSize
-                )
                 .opacity(0)
                 .accessibilityHidden(true)
         }
-        .padding(.leading, SidebarRowLayout.leadingInset)
-        .padding(.trailing, SidebarRowLayout.trailingInset)
-        .padding(.vertical, SpaceSidebarSnapshotTitleLayout.verticalPadding)
-        .frame(maxWidth: .infinity)
-        .frame(minHeight: SpaceSidebarSnapshotTitleLayout.minimumHeight)
-        .clipShape(RoundedRectangle(cornerRadius: rowCornerRadius, style: .continuous))
+        .allowsHitTesting(false)
         .accessibilityIdentifier("space-transition-snapshot-title")
     }
 }
@@ -320,7 +314,7 @@ private struct SpaceSnapshotPinnedSectionView: View {
                     .frame(height: 6)
                     .frame(maxWidth: .infinity)
             } else {
-                LazyVStack(spacing: 0) {
+                VStack(spacing: 0) {
                     Color.clear
                         .frame(height: SidebarInsertionGuide.visualCenterY)
 
@@ -545,7 +539,7 @@ private struct SpaceSnapshotRegularTabsSectionView: View {
                         .padding(.top, 4)
                 }
 
-                LazyVStack(spacing: 2) {
+                VStack(spacing: 2) {
                     ForEach(snapshot.regularItems) { tab in
                         SpaceSnapshotRegularTabRowView(
                             tab: tab,

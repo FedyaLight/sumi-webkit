@@ -33,6 +33,13 @@ final class SpaceSidebarTransitionCoordinator {
     private var pendingCompletionContext: CompletionContext?
     @ObservationIgnored
     private var pendingCompletionToken: UUID?
+    @ObservationIgnored
+    private var scrollViewportsBySpaceId: [UUID: SpaceSidebarSnapshotViewport] = [:]
+
+    func recordScrollViewport(_ viewport: SpaceSidebarSnapshotViewport, for spaceId: UUID) {
+        guard scrollViewportsBySpaceId[spaceId] != viewport else { return }
+        scrollViewportsBySpaceId[spaceId] = viewport
+    }
 
     func committedSpaceId(in context: Context) -> UUID? {
         committedSpaceId(spaces: context.spaces, windowState: context.windowState)
@@ -581,7 +588,10 @@ final class SpaceSidebarTransitionCoordinator {
             destinationSpace: destinationSpace,
             browserContext: context.browserContext,
             windowState: context.windowState,
-            settings: context.settings
+            settings: context.settings,
+            scrollViewportForSpace: { [scrollViewportsBySpaceId] spaceId in
+                scrollViewportsBySpaceId[spaceId]
+            }
         )
     }
 

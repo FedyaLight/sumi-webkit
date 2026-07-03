@@ -23,6 +23,10 @@ final class SpacesSidebarRuntimeOwner {
         transitionCoordinator.transitionSnapshot
     }
 
+    func recordScrollViewport(_ viewport: SpaceSidebarSnapshotViewport, for spaceId: UUID) {
+        transitionCoordinator.recordScrollViewport(viewport, for: spaceId)
+    }
+
     func sourceOpacity(for travelProgress: Double) -> Double {
         transitionCoordinator.sourceOpacity(for: travelProgress)
     }
