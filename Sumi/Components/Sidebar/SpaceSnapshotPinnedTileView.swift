@@ -59,10 +59,6 @@ struct SpaceSnapshotPinnedTileView: View {
             radius: item.presentationState.isSelected ? 2 : 0,
             y: item.presentationState.isSelected ? 1 : 0
         )
-        .transaction { transaction in
-            transaction.animation = nil
-            transaction.disablesAnimations = true
-        }
         .accessibilityIdentifier("essential-shortcut-snapshot-\(item.id.uuidString)")
     }
 

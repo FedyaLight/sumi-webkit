@@ -289,10 +289,6 @@ struct EssentialsSnapshotGrid: View, @preconcurrency Equatable {
         }
         .frame(width: width, alignment: .leading)
         .frame(height: rows.isEmpty ? 6 : nil, alignment: .top)
-        .transaction { transaction in
-            transaction.animation = nil
-            transaction.disablesAnimations = true
-        }
     }
 
     private func visualTileSize(visualColumnCount: Int) -> CGSize {
