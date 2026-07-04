@@ -109,23 +109,6 @@ enum SumiNativeMessagingErrorMapper {
         )
     }
 
-    static func messagePortNotConnectedError(
-        diagnostic: SafariExtensionNativeMessagingDiagnostic?
-    ) -> NSError {
-        let relayError = relayError(
-            code: .companionAppProtocolUnknown,
-            diagnostic: diagnostic
-        )
-        return NSError(
-            domain: SumiWebExtensionCallbackErrorMapper.webExtensionMessagePortErrorDomain,
-            code: 2,
-            userInfo: relayError.userInfo.merging(
-                [NSLocalizedDescriptionKey: relayError.localizedDescription],
-                uniquingKeysWith: { _, new in new }
-            )
-        )
-    }
-
     static func webExtensionCallbackError(from error: any Error) -> NSError {
         SumiWebExtensionCallbackErrorMapper.webExtensionCallbackError(from: error)
     }

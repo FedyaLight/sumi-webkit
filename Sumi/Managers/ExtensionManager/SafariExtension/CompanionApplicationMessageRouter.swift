@@ -49,10 +49,6 @@ final class CompanionApplicationBackendRegistry {
         backends.first { $0.supports(context: context) }
     }
 
-    var registeredBackendIdentifiers: [String] {
-        backends.map(\.backendIdentifier).sorted()
-    }
-
     static func production() -> CompanionApplicationBackendRegistry {
         CompanionApplicationBackendRegistry(backends: defaultBackends())
     }

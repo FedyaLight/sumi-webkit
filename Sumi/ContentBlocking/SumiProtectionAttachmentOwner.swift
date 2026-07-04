@@ -745,14 +745,6 @@ final class SumiProtectionAttachmentOwner {
         }
     }
 
-    private static func urlFilterTokens(in encodedContentRuleList: String) -> [String] {
-        do {
-            return try urlFilterTokensOrThrow(encodedContentRuleList)
-        } catch {
-            return []
-        }
-    }
-
     private static func canonicalWebKitJSONResult(
         for planned: PlannedRuleDefinition
     ) -> (hash: String?, failure: RuleListJSONDiagnosticsFailure?) {

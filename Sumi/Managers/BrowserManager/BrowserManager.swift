@@ -685,8 +685,6 @@ class BrowserManager: ObservableObject {
         BrowserTabSelectionOwner.liveActions(for: self)
     }
 
-    typealias TabOpenContext = BrowserTabOpenContext
-
     func duplicateCurrentTab() {
         guard let activeWindow = windowRegistry?.activeWindow,
               let currentTab = activePageRoutingOwner.currentTabForActiveWindow() else {

@@ -371,32 +371,6 @@ final class AuxiliaryWindowManager {
         return webView
     }
 
-    @discardableResult
-    func presentExtensionExternalWebPopupSession(
-        configuration: WKWebViewConfiguration,
-        request: URLRequest?,
-        windowFeatures: WKWindowFeatures,
-        openerTab: Tab,
-        shouldActivateApp: Bool = true,
-        nestedDepth: Int = 0,
-        extensionOwnedSourceURL: URL? = nil,
-        ownerExtensionID: String? = nil
-    ) -> AuxiliaryWindowSession? {
-        guard let webView = presentExtensionExternalWebPopup(
-            configuration: configuration,
-            request: request,
-            windowFeatures: windowFeatures,
-            openerTab: openerTab,
-            shouldActivateApp: shouldActivateApp,
-            nestedDepth: nestedDepth,
-            extensionOwnedSourceURL: extensionOwnedSourceURL,
-            ownerExtensionID: ownerExtensionID
-        ) else {
-            return nil
-        }
-        return session(for: webView)
-    }
-
     func presentExtensionPopupWindow(
         configuration: WKWebExtension.WindowConfiguration,
         controller: WKWebExtensionController,

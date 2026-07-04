@@ -475,13 +475,6 @@ struct SplitGroup: Identifiable, Codable, Equatable, Hashable, Sendable {
         )
     }
 
-    func isMovingTabNoOpAtRootEdge(_ tabId: UUID, side: SplitDropSide) -> Bool {
-        guard let moved = movingTabToRootEdge(tabId, side: side) else {
-            return true
-        }
-        return moved.layoutTree.hasSameStructure(as: layoutTree)
-    }
-
     func resolvingDrop(
         draggedTabId: UUID,
         target: SplitDropTarget,

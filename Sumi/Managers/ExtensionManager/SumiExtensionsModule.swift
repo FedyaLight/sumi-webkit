@@ -93,10 +93,6 @@ final class SumiExtensionsModule {
         cachedManager != nil
     }
 
-    var hasLoadedWebExtensionController: Bool {
-        cachedManager?.extensionController != nil
-    }
-
     func attach(runtime: SumiExtensionsModuleRuntime) {
         self.runtime = runtime
         if let cachedManager {
@@ -295,12 +291,6 @@ final class SumiExtensionsModule {
         )
     }
 
-    func ensureContentScriptContextsLoadedIfNeeded(profileId: UUID) async {
-        guard isEnabled else { return }
-        await managerIfNeededForNormalTabRuntime()?
-            .ensureContentScriptContextsLoaded(for: profileId)
-    }
-
     func ensureInitialExtensionContextsIfNeeded(profileId: UUID) async {
         guard isEnabled else { return }
         await managerIfNeededForNormalTabRuntime()?
@@ -318,10 +308,6 @@ final class SumiExtensionsModule {
         managerIfLoadedAndEnabled()?.requestedTabLifecycleOwner.consumeRecentlyOpenedTabRequest(
             for: url
         ) ?? false
-    }
-
-    func recordRecentlyOpenedExtensionTabRequestIfLoaded(for url: URL?) {
-        managerIfLoadedAndEnabled()?.requestedTabLifecycleOwner.recordRecentlyOpenedTabRequest(for: url)
     }
 
     func registerExtensionCreatedTabWithExtensionRuntimeIfLoaded(

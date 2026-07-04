@@ -180,10 +180,6 @@ extension Tab {
         navigationTransactionOwner.cancelPendingMainFrameNavigation()
     }
 
-    func clearPendingMainFrameNavigationState() {
-        navigationTransactionOwner.clearRelatedNavigationState()
-    }
-
     @available(macOS 15.5, *)
     func performMainFrameNavigationAfterHydrationIfNeeded(
         on webView: WKWebView,

@@ -403,10 +403,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         browserActionService = service
     }
 
-    func detachBrowserRuntime() {
-        attachBrowserRuntime(.inactive)
-    }
-
     var sumiSettings: SumiSettingsService? {
         get { dependencyStateOwner.sumiSettings }
         set { dependencyStateOwner.sumiSettings = newValue }

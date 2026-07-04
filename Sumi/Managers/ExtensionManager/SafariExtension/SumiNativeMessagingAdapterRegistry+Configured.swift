@@ -16,9 +16,6 @@ enum SumiNativeMessagingConfiguredAdapters {
     static let all: [SumiNativeMessagingProtocolAdapter] = [
         BitwardenNativeMessagingAdapter(),
     ]
-
-    static let registeredHostBundleKeys: [String] =
-        BitwardenNativeMessagingIdentifiers.registryHostBundleKeys
 }
 
 @MainActor

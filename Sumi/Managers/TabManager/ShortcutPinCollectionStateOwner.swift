@@ -14,10 +14,6 @@ final class ShortcutPinCollectionStateOwner {
         self.spacePinnedShortcuts = spacePinnedShortcuts
     }
 
-    func replacePendingPinnedWithoutProfile(_ pendingPinnedWithoutProfile: [ShortcutPin]) {
-        self.pendingPinnedWithoutProfile = pendingPinnedWithoutProfile
-    }
-
     func pinnedByProfileSnapshot() -> [UUID: [ShortcutPin]] {
         pinnedByProfile
     }
@@ -81,10 +77,6 @@ final class ShortcutPinCollectionStateOwner {
     @discardableResult
     func removePinnedPins(for profileId: UUID) -> [ShortcutPin] {
         pinnedByProfile.removeValue(forKey: profileId) ?? []
-    }
-
-    func clearSpacePinnedShortcuts(for spaceId: UUID) {
-        spacePinnedShortcuts.removeValue(forKey: spaceId)
     }
 
     func drainPendingPinnedWithoutProfile() -> [ShortcutPin] {

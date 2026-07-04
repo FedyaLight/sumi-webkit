@@ -239,49 +239,4 @@ enum SumiWebExtensionCallbackRelay {
         }
     }
 
-    static func wrapTabResultCompletionHandler(
-        api: SafariExtensionWebExtensionCallbackAPI,
-        extensionId: String?,
-        _ handler: @escaping ((any WKWebExtensionTab)?, (any Error)?) -> Void
-    ) -> ((any WKWebExtensionTab)?, (any Error)?) -> Void {
-        var fulfilled = false
-        return { tab, error in
-            guard fulfilled == false else {
-                SafariExtensionWebExtensionCallbackDiagnostics.record(
-                    .callbackCalledTwice,
-                    api: api,
-                    extensionId: extensionId
-                )
-                return
-            }
-            fulfilled = true
-
-            if let error {
-                let mapped = SumiWebExtensionCallbackErrorMapper.webExtensionCallbackError(from: error)
-                SafariExtensionWebExtensionCallbackDiagnostics.recordFailure(
-                    api: api,
-                    extensionId: extensionId,
-                    error: mapped
-                )
-                handler(nil, mapped)
-                return
-            }
-
-            if tab == nil {
-                SafariExtensionWebExtensionCallbackDiagnostics.record(
-                    .errorReturnedWhereSuccessExpected,
-                    api: api,
-                    extensionId: extensionId,
-                    note: "nilTab"
-                )
-            } else {
-                SafariExtensionWebExtensionCallbackDiagnostics.recordSuccess(
-                    api: api,
-                    extensionId: extensionId,
-                    value: tab
-                )
-            }
-            handler(tab, nil)
-        }
-    }
 }

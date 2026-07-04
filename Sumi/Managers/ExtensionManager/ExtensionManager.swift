@@ -235,10 +235,6 @@ final class ExtensionManager: NSObject, ObservableObject {
         get { profileRuntimeOwner.contextsByProfile }
         set { profileRuntimeOwner.replaceContexts(newValue) }
     }
-    var extensionContextBindingGenerationByProfile: [UUID: UInt64] {
-        get { profileRuntimeOwner.contextBindingGenerationsByProfile }
-        set { profileRuntimeOwner.replaceContextBindingGenerations(newValue) }
-    }
     let runtimeSessionOwner = ExtensionRuntimeSessionOwner()
     let installCapabilityOwner = SafariExtensionInstallCapabilityOwner()
     let backgroundRuntimeStateOwner = ExtensionBackgroundRuntimeStateOwner()
@@ -299,8 +295,6 @@ final class ExtensionManager: NSObject, ObservableObject {
         set { profileRuntimeOwner.currentProfileId = newValue }
     }
 
-    nonisolated static let profileExtensionStoreLimit =
-        ExtensionProfileWebsiteDataStoreCache.defaultLimit
     nonisolated static let maxLiveExtensionContexts = 8
     init(
         context: ModelContext,
@@ -466,19 +460,6 @@ final class ExtensionManager: NSObject, ObservableObject {
     }
 
     // MARK: - Extension Window Facades
-
-    func focusedOwnerMiniWindowAdapter(
-        for extensionContext: WKWebExtensionContext
-    ) -> ExtensionMiniWindowAdapter? {
-        guard let ownerExtensionID = extensionID(for: extensionContext) else {
-            return nil
-        }
-
-        return windowFocusResolutionOwner.miniWindowAdapters(
-            ownerExtensionID: ownerExtensionID,
-            profileId: profileId(for: extensionContext)
-        ).first
-    }
 
     // MARK: - Runtime Session State
 

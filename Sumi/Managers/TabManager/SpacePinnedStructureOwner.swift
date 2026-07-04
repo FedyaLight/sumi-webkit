@@ -56,10 +56,6 @@ final class SpacePinnedStructureOwner {
         }
     }
 
-    func folderDirectChildCount(for folderId: UUID, in spaceId: UUID) -> Int {
-        folderChildVisualItems(for: folderId, in: spaceId).count
-    }
-
     func folderRecursiveChildCount(for folderId: UUID, in spaceId: UUID) -> Int {
         func countChildren(of parentId: UUID, visited: Set<UUID>) -> Int {
             guard visited.contains(parentId) == false else { return 0 }

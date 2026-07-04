@@ -777,7 +777,7 @@ struct TabCompositorWrapper: NSViewControllerRepresentable {
         )
     }
 
-    static func dismantleNSViewController(_ controller: WindowWebContentController, coordinator: ()) {
+    static func dismantleNSViewController(_ controller: WindowWebContentController, coordinator: Coordinator) {
         controller.tearDownController()
     }
 

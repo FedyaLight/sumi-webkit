@@ -20,14 +20,6 @@ final class TabTransientTabRegistryOwner {
         transientShortcutTabsByWindow = tabsByWindow
     }
 
-    func replaceTransientExtensionTabsByID(_ tabsByID: [UUID: Tab]) {
-        transientExtensionTabsByID = tabsByID
-    }
-
-    func replaceAuxiliaryMiniWindowTabsByID(_ tabsByID: [UUID: Tab]) {
-        auxiliaryMiniWindowTabsByID = tabsByID
-    }
-
     func updateTransientShortcutTabsByWindow(
         _ update: (inout [UUID: [UUID: Tab]]) -> Void
     ) {

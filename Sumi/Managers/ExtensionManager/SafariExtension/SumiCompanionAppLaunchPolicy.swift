@@ -85,10 +85,6 @@ final class SumiCompanionAppLaunchPolicy {
         clearSessionKeys(forExtensionId: extensionId, profileId: profileId)
     }
 
-    func clearAllSessions() {
-        sessionStateByKey.removeAll()
-    }
-
     static func sessionKey(
         profileId: UUID?,
         extensionId: String,
@@ -199,10 +195,6 @@ final class SumiCompanionAppLaunchPolicy {
             state.launchAttempted = true
         }
         sessionStateByKey[sessionKey] = state
-    }
-
-    func sessionLaunchAttempted(sessionKey: SumiCompanionAppLaunchSessionKey) -> Bool {
-        sessionStateByKey[sessionKey]?.launchAttempted ?? false
     }
 
     func launchCooldownBucket(

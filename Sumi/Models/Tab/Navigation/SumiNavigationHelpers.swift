@@ -152,10 +152,6 @@ enum SumiNewWindowPolicy: Equatable {
         return false
     }
 
-    func preferringSelectedTabs(_ prefersSelectedTabs: Bool) -> SumiNewWindowPolicy {
-        guard prefersSelectedTabs, case .tab(false) = self else { return self }
-        return .tab(selected: true)
-    }
 }
 
 extension SumiLinkOpenBehavior {

@@ -89,7 +89,6 @@ enum SafariExtensionAutofillFillDiagnostics {
     static var deferredFillCompletionHandler: (@MainActor (String?) -> Void)?
 
     static var isFillSessionActive: Bool { fillSessionActive }
-    static var isInlineUISessionActive: Bool { inlineUISessionActive }
 
     /// Returns true when an extension popup close should return first responder to the tab web view.
     static func shouldRestoreInlineUIHostingFocusAfterPopupClose() -> Bool {
@@ -407,13 +406,6 @@ enum SafariExtensionAutofillFillDiagnostics {
         }
     }
 
-    static func recordContentScriptInlineError(
-        extensionId: String?,
-        reason: String
-    ) {
-        record(.contentScriptInlineError, extensionId: extensionId, note: reason)
-    }
-
     static func recordExtensionResourceNavigation(
         url: URL,
         isMainFrame: Bool,
@@ -475,13 +467,6 @@ enum SafariExtensionAutofillFillDiagnostics {
         let note =
             "clipsToBounds=\(clipsToBounds) masksToBounds=\(masksToBounds) roundedContainer=\(inRoundedViewportContainer) inPageOverlaysUnaffected=true"
         record(.appKitLayerClippingSuspected, note: note)
-    }
-
-    static func recordWebKitPlatformLimitation(
-        extensionId: String?,
-        reason: String
-    ) {
-        record(.webKitPlatformLimitation, extensionId: extensionId, note: reason)
     }
 
     static func recordInfrastructureProbeIfNeeded() {

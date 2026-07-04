@@ -292,25 +292,6 @@ struct ExtensionUtils {
         return object
     }
 
-    @discardableResult
-    static func writeJSONObjectIfChanged(_ object: [String: Any], to url: URL) throws -> Bool {
-        guard JSONSerialization.isValidJSONObject(object) else {
-            throw ExtensionError.invalidManifest("Manifest is not a valid JSON object")
-        }
-        let data = try JSONSerialization.data(
-            withJSONObject: object,
-            options: [.prettyPrinted, .sortedKeys]
-        )
-        if FileManager.default.fileExists(atPath: url.path) {
-            let existing = try Data(contentsOf: url)
-            if existing == data {
-                return false
-            }
-        }
-        try data.write(to: url, options: [.atomic])
-        return true
-    }
-
     static func localizedString(
         _ rawValue: String?,
         in extensionRoot: URL

@@ -239,10 +239,6 @@ extension ExtensionManager {
         resolvedProfileId(explicitProfileId: nil)
     }
 
-    func rememberPrivateExtensionRuntimeProfileIfNeeded(_ profile: Profile) {
-        profileRuntimeOwner.rememberPrivateRuntimeProfileIfNeeded(profile)
-    }
-
     func isPrivateExtensionRuntimeProfile(_ profileId: UUID?) -> Bool {
         profileRuntimeOwner.isPrivateRuntimeProfile(profileId)
     }

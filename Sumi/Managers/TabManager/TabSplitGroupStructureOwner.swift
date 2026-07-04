@@ -73,16 +73,6 @@ final class TabSplitGroupStructureOwner {
         }
     }
 
-    func shortcutHostedSplitGroup(containingPinId pinId: UUID, in spaceId: UUID?) -> SplitGroup? {
-        dependencies.splitGroups().first { group in
-            guard group.isShortcutHosted,
-                  splitGroup(group, containsShortcutPinId: pinId)
-            else { return false }
-            guard let spaceId else { return true }
-            return group.hostSpaceId == spaceId
-        }
-    }
-
     func regularHostedSplitGroup(containingPinId pinId: UUID) -> SplitGroup? {
         dependencies.splitGroups().first { group in
             guard !group.isShortcutHosted else { return false }
