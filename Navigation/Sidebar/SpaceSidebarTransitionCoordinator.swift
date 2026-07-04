@@ -246,28 +246,33 @@ final class SpaceSidebarTransitionCoordinator {
         startInteractiveThemeTransition(from: sourceSpace, to: destinationSpace, context: context)
         updateInteractiveThemeTransitionProgress(0, context: context)
 
-        // The transition layers are inserted by this state change; animating
-        // progress in the same transaction would mount them already at the
-        // final offset and the pages (including essentials) would swap with no
-        // slide. Let the layers commit at progress 0 first, then animate.
-        let sourceSpaceId = transitionState.sourceSpaceId
-        let destinationSpaceId = transitionState.destinationSpaceId
-        DispatchQueue.main.async { [weak self] in
-            guard let self,
-                  self.transitionState.phase == .clickAnimating,
-                  self.transitionState.sourceSpaceId == sourceSpaceId,
-                  self.transitionState.destinationSpaceId == destinationSpaceId
-            else { return }
+        // Leave `progress` at 0 here so the transition layers mount at the
+        // source position. The slide is kicked off from the layers' `onAppear`
+        // via `startPendingClickAnimation(context:)` once SwiftUI has committed
+        // that 0-progress frame — animating inline would collapse the mount and
+        // the animation into one transaction and the pages (including
+        // essentials) would swap with no slide.
+        scheduleTransitionCompletion(
+            after: SpaceSidebarRenderPolicy.completionDelay,
+            commit: true,
+            context: context
+        )
+    }
 
-            withAnimation(self.spaceSwitchAnimation(reduceMotion: context.reduceMotion)) {
-                self.transitionState.updateProgress(1)
-            }
+    /// Starts the click-transition slide once the freshly-mounted transition
+    /// layers have appeared. Called from the layers' `onAppear`; no-ops for
+    /// swipe (which drives `progress` from the gesture) and once the slide has
+    /// already begun (`progress` moved off 0).
+    func startPendingClickAnimation(context: Context) {
+        guard transitionState.trigger == .click,
+              transitionState.phase == .clickAnimating,
+              transitionState.progress == 0
+        else {
+            return
+        }
 
-            self.scheduleTransitionCompletion(
-                after: SpaceSidebarRenderPolicy.completionDelay,
-                commit: true,
-                context: context
-            )
+        withAnimation(spaceSwitchAnimation(reduceMotion: context.reduceMotion)) {
+            transitionState.updateProgress(1)
         }
     }
 

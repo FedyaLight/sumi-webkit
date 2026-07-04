@@ -88,17 +88,18 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
 
         coordinator.switchSpace(to: destination, context: context)
 
-        // The transition layers must mount at progress 0 in this same runloop
-        // turn so SwiftUI has a starting offset to animate from; otherwise the
-        // newly-inserted pages (and their essentials) appear already at the
-        // committed position and swap without sliding.
+        // The transition layers must mount at progress 0 so SwiftUI has a
+        // starting offset to animate from; otherwise the newly-inserted pages
+        // (and their essentials) appear already at the committed position and
+        // swap without sliding.
         XCTAssertEqual(coordinator.transitionState.phase, .clickAnimating)
         XCTAssertTrue(coordinator.transitionState.hasDestination)
         XCTAssertEqual(coordinator.transitionState.progress, 0)
         XCTAssertNotNil(coordinator.transitionSnapshot)
 
-        // The animation is dispatched to the next runloop tick.
-        try await Task.sleep(nanoseconds: UInt64(0.05 * 1_000_000_000))
+        // The slide is started from the layers' `onAppear` once the 0-progress
+        // frame is committed (simulated here since there is no live view).
+        coordinator.startPendingClickAnimation(context: context)
         XCTAssertGreaterThan(coordinator.transitionState.progress, 0)
     }
 

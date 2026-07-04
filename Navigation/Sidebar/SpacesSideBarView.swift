@@ -341,33 +341,43 @@ struct SpacesSideBarView: View {
                 // it exposes that as `stationaryEssentials`. Branch on it here
                 // instead of recomputing the profile comparison so the render
                 // path can't diverge from the captured snapshot.
-                if snapshot.stationaryEssentials != nil {
-                    sharedEssentialsTransitionContainer(
-                        sourceSpace: sourceSpace,
-                        destinationSpace: destinationSpace,
-                        snapshot: snapshot,
-                        width: width,
-                        travelProgress: travelProgress
-                    )
-                } else {
-                    transitionLayer(
-                        for: sourceSpace,
-                        snapshot: snapshot,
-                        width: width,
-                        offsetX: sourceOffsetX(width: width),
-                        opacity: sourceOpacity(for: travelProgress),
-                        zIndex: 0,
-                        includesPinnedGrid: true
-                    )
+                Group {
+                    if snapshot.stationaryEssentials != nil {
+                        sharedEssentialsTransitionContainer(
+                            sourceSpace: sourceSpace,
+                            destinationSpace: destinationSpace,
+                            snapshot: snapshot,
+                            width: width,
+                            travelProgress: travelProgress
+                        )
+                    } else {
+                        transitionLayer(
+                            for: sourceSpace,
+                            snapshot: snapshot,
+                            width: width,
+                            offsetX: sourceOffsetX(width: width),
+                            opacity: sourceOpacity(for: travelProgress),
+                            zIndex: 0,
+                            includesPinnedGrid: true
+                        )
 
-                    transitionLayer(
-                        for: destinationSpace,
-                        snapshot: snapshot,
-                        width: width,
-                        offsetX: destinationOffsetX(width: width),
-                        opacity: destinationOpacity(for: travelProgress),
-                        zIndex: 1,
-                        includesPinnedGrid: true
+                        transitionLayer(
+                            for: destinationSpace,
+                            snapshot: snapshot,
+                            width: width,
+                            offsetX: destinationOffsetX(width: width),
+                            opacity: destinationOpacity(for: travelProgress),
+                            zIndex: 1,
+                            includesPinnedGrid: true
+                        )
+                    }
+                }
+                // The transition layers just mounted at progress 0; kick off the
+                // click slide now that SwiftUI has a committed frame to animate
+                // from. No-op for swipe and after the slide has started.
+                .onAppear {
+                    transitionCoordinator.startPendingClickAnimation(
+                        context: makeTransitionContext(spaces: spaces)
                     )
                 }
             } else {
