@@ -102,6 +102,7 @@ private struct SidebarPassiveScrollIndicatorState: Equatable {
 }
 
 enum SidebarTabListScrollChromeConfiguration {
+    @MainActor
     static func apply(to scrollView: NSScrollView) {
         scrollView.drawsBackground = false
         scrollView.automaticallyAdjustsContentInsets = false

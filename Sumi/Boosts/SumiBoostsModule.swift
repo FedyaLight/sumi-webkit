@@ -467,9 +467,8 @@ final class SumiBoostsModule: ObservableObject {
                     on: webView.configuration.userContentController,
                     for: tab.url
                 )
-                webView.evaluateJavaScript(
-                    SumiBoostCSSBuilder.removalJavaScript(),
-                    completionHandler: nil
+                _ = try? await webView.evaluateJavaScript(
+                    SumiBoostCSSBuilder.removalJavaScript()
                 )
                 self.runtime.applyBoostAwareZoom(tab, webView)
             }

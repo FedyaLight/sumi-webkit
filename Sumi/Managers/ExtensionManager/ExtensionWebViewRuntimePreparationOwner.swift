@@ -197,7 +197,7 @@ extension ExtensionWebViewRuntimePreparationOwner.Dependencies {
                 manager?.extensionRuntimeUserContentControllerDescription(userContentController)
                     ?? "nil"
             },
-            webViewDescription: { [weak manager] webView in
+            webViewDescription: { webView in
                 ExtensionRuntimeDiagnosticsOwner.objectDescription(webView)
             },
             trace: { [weak manager] message in

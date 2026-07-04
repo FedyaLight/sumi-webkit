@@ -352,7 +352,7 @@ final class SumiNativeMessagingRelay {
                 ?? "The companion application secure state is missing."
         }
 
-        var userInfo: [String: Any] = [NSLocalizedDescriptionKey: message]
+        let userInfo: [String: Any] = [NSLocalizedDescriptionKey: message]
         return NSError(domain: errorDomain, code: code.rawValue, userInfo: userInfo)
     }
 

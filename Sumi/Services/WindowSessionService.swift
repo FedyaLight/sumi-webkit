@@ -368,7 +368,7 @@ final class WindowSessionService {
 
         for (_, windowState) in windowRegistry.windows {
             if windowState.currentSpaceId == nil
-                || runtime.tabManager.spaces.contains { $0.id == windowState.currentSpaceId } == false {
+                || runtime.tabManager.spaces.contains(where: { $0.id == windowState.currentSpaceId }) == false {
                 windowState.currentSpaceId = resolvedFallbackSpaceId(
                     for: windowState,
                     runtime: runtime

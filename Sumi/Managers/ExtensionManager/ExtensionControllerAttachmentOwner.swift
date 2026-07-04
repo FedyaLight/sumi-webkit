@@ -350,7 +350,7 @@ extension ExtensionControllerAttachmentOwner.Dependencies {
             tabDescription: { [weak manager] tab in
                 manager?.runtimeDiagnosticsOwner.tabDescription(tab) ?? "tab=\(tab.id.uuidString.prefix(8))"
             },
-            webViewDescription: { [weak manager] webView in
+            webViewDescription: { webView in
                 ExtensionRuntimeDiagnosticsOwner.objectDescription(webView)
             },
             recordFrameResolution: { [weak manager] resolved, context, reason in
