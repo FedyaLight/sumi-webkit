@@ -19,14 +19,6 @@ class TabManager: ObservableObject {
         }
     }
 
-    typealias SpaceLauncherProjection = SpaceLauncherProjectionSnapshot
-    typealias EssentialsCapacityPolicy = EssentialsShortcutPlacementOwner.CapacityPolicy
-    typealias EssentialsTargetContext = EssentialsShortcutPlacementOwner.TargetContext
-    typealias EssentialsTargetSource = EssentialsShortcutPlacementOwner.TargetSource
-    typealias EssentialsTargetResolution = EssentialsShortcutPlacementOwner.TargetResolution
-    typealias EssentialsInsertionContext = EssentialsShortcutPlacementOwner.InsertionContext
-    typealias EssentialsInsertionPlan = EssentialsShortcutPlacementOwner.InsertionPlan
-
     private(set) var runtimeContext: TabManagerRuntimeContext?
     weak var sumiSettings: SumiSettingsService?
     let context: ModelContext
@@ -36,624 +28,111 @@ class TabManager: ObservableObject {
     let faviconImageService: any BrowserFaviconImageServicing
     let visitedLinkStore: any BrowserVisitedLinkStoreManaging
 
-    lazy var runtimeStore = DefaultTabRuntimeStore(tabManager: self)
-    lazy var folderMutationOwner = TabFolderMutationOwner(tabManager: self)
-    let spaceCollectionStateOwner = TabSpaceCollectionStateOwner()
+    lazy var runtimeStore = DefaultTabRuntimeStore(dependencies: .live(tabManager: self))
+    lazy var folderMutationOwner = TabFolderMutationOwner(dependencies: .live(tabManager: self))
+    private let spaceCollectionStateOwner = TabSpaceCollectionStateOwner()
+    var spaceStateOwner: TabSpaceCollectionStateOwner { spaceCollectionStateOwner }
     let regularTabCollectionStateOwner = RegularTabCollectionStateOwner()
-    lazy var regularTabCollectionOwner = RegularTabCollectionOwner(
-        tabManager: self,
-        stateOwner: regularTabCollectionStateOwner
+    let selectionStateOwner = TabSelectionStateOwner()
+    lazy var profileRuntimeStateOwner = TabProfileRuntimeStateOwner(dependencies: .live(tabManager: self))
+    lazy var runtimePreparationOwner = TabRuntimePreparationOwner(dependencies: .live(tabManager: self))
+    lazy var runtimeContextAttachmentOwner = TabRuntimeContextAttachmentOwner(
+        dependencies: .live(tabManager: self)
     )
-    lazy var regularTabLifecycleOwner = TabRegularLifecycleOwner(tabManager: self)
-    lazy var tabRemovalOwner = TabRemovalOwner(tabManager: self)
-    lazy var activeSelectionOwner = TabActiveSelectionOwner(tabManager: self)
-    lazy var regularTabDragService = SidebarRegularTabDragService(tabManager: self)
-    lazy var lazyRestoreCoordinator = TabLazyRestoreCoordinator(tabManager: self)
-    lazy var spacePinnedStructureOwner = SpacePinnedStructureOwner(tabManager: self)
-    lazy var spaceLifecycleOwner = TabSpaceLifecycleOwner(tabManager: self)
-    lazy var profileAssignmentOwner = TabProfileAssignmentOwner(tabManager: self)
-    lazy var lastSessionRestoreOwner = TabLastSessionRestoreOwner(tabManager: self)
-    lazy var shortcutPinCommandOwner = ShortcutPinCommandOwner(tabManager: self)
-    lazy var sidebarDragRoutingOwner = SidebarDragOperationRoutingOwner(tabManager: self)
+    lazy var regularTabCollectionOwner = RegularTabCollectionOwner(
+        stateOwner: regularTabCollectionStateOwner,
+        dependencies: .live(tabManager: self)
+    )
+    lazy var regularTabLifecycleOwner = TabRegularLifecycleOwner(
+        dependencies: .live(tabManager: self)
+    )
+    lazy var tabRemovalOwner = TabRemovalOwner(dependencies: .live(tabManager: self))
+    lazy var activeSelectionOwner = TabActiveSelectionOwner(
+        dependencies: .live(tabManager: self)
+    )
+    lazy var regularTabDragService = SidebarRegularTabDragService(dependencies: .live(tabManager: self))
+    lazy var lazyRestoreCoordinator = TabLazyRestoreCoordinator(
+        dependencies: .live(tabManager: self)
+    )
+    lazy var spacePinnedStructureOwner = SpacePinnedStructureOwner(dependencies: .live(tabManager: self))
+    lazy var spaceLifecycleOwner = TabSpaceLifecycleOwner(dependencies: .live(tabManager: self))
+    lazy var profileAssignmentOwner = TabProfileAssignmentOwner(dependencies: .live(tabManager: self))
+    lazy var lastSessionRestoreOwner = TabLastSessionRestoreOwner(dependencies: .live(tabManager: self))
+    lazy var shortcutPinCommandOwner = ShortcutPinCommandOwner(dependencies: .live(tabManager: self))
+    lazy var sidebarDragRoutingOwner = SidebarDragOperationRoutingOwner(dependencies: .live(tabManager: self))
     lazy var essentialsShortcutPlacementOwner = EssentialsShortcutPlacementOwner(
-        dependencies: EssentialsShortcutPlacementOwner.Dependencies(
-            spaces: { [weak self] in
-                self?.spaces ?? []
-            },
-            runtimeContext: { [weak self] in
-                self?.runtimeContext
-            },
-            essentialPins: { [weak self] profileId in
-                self?.shortcutPinCollectionStateOwner.essentialPins(for: profileId) ?? []
-            }
-        )
+        dependencies: .live(tabManager: self)
     )
     lazy var shortcutPinStoreOwner = ShortcutPinStoreOwner(
-        dependencies: ShortcutPinStoreOwner.Dependencies(
-            runtimeContext: { [weak self] in
-                self?.runtimeContext
-            },
-            pinnedByProfile: { [weak self] in
-                self?.pinnedByProfile ?? [:]
-            },
-            setPinnedTabs: { [weak self] pins, profileId in
-                self?.setPinnedTabs(pins, for: profileId)
-            },
-            topLevelSpacePinnedItems: { [weak self] spaceId in
-                self?.spacePinnedStructureOwner.topLevelSpacePinnedItems(for: spaceId) ?? []
-            },
-            applyTopLevelSpacePinnedOrder: { [weak self] items, spaceId in
-                self?.spacePinnedStructureOwner.applyTopLevelSpacePinnedOrder(items, for: spaceId)
-            },
-            insertTopLevelSpacePinnedShortcut: { [weak self] pin, spaceId, targetIndex in
-                self?.spacePinnedStructureOwner.insertTopLevelSpacePinnedShortcut(pin, in: spaceId, at: targetIndex)
-            },
-            withSpacePinnedShortcutGroup: { [weak self] spaceId, folderId, mutate in
-                self?.spacePinnedStructureOwner.withSpacePinnedShortcutGroup(for: spaceId, folderId: folderId) { pins in
-                    mutate(&pins)
-                }
-            },
-            spacePinnedPins: { [weak self] spaceId in
-                self?.shortcutPinCollectionStateOwner.spacePinnedPins(for: spaceId) ?? []
-            },
-            openFolderIfNeeded: { [weak self] folderId in
-                self?.folderMutationOwner.openFolderIfNeeded(folderId)
-            },
-            adjustedSameContainerInsertionIndex: { [weak self] currentIndex, proposedIndex in
-                guard let self else { return proposedIndex }
-                return self.spacePinnedStructureOwner.adjustedSameContainerInsertionIndex(
-                    currentIndex: currentIndex,
-                    proposedIndex: proposedIndex
-                )
-            }
-        )
+        dependencies: .live(tabManager: self)
     )
     lazy var shortcutPinRuntimeResolutionOwner = ShortcutPinRuntimeResolutionOwner(
-        dependencies: ShortcutPinRuntimeResolutionOwner.Dependencies(
-            spaces: { [weak self] in
-                self?.spaces ?? []
-            },
-            runtimeContext: { [weak self] in
-                self?.runtimeContext
-            },
-            faviconService: { [weak self] in
-                guard let self else { preconditionFailure("TabManager dependency used after deallocation") }
-                return self.faviconService
-            }
-        )
+        dependencies: .live(tabManager: self)
     )
-    private lazy var shortcutPinConversionOwner = ShortcutPinConversionOwner(
-        dependencies: ShortcutPinConversionOwner.Dependencies(
-            insertRegularTabFromShortcut: { [weak self] pin, spaceId, targetIndex in
-                guard let self else { preconditionFailure("TabManager dependency used after deallocation") }
-                return self.shortcutLiveTabOwner.insertRegularTabFromShortcut(pin, into: spaceId, at: targetIndex)
-            },
-            removeShortcutPinFromContainers: { [weak self] pin in
-                self?.shortcutPinStoreOwner.removeFromContainers(pin)
-            },
-            scheduleStructuralPersistence: { [weak self] in
-                self?.scheduleStructuralPersistence()
-            },
-            makeShortcutPin: { [weak self] tab, role, profileId, spaceId, folderId, index in
-                guard let self else { preconditionFailure("TabManager dependency used after deallocation") }
-                return self.shortcutPinRuntimeResolutionOwner.makeShortcutPin(
-                    from: tab,
-                    role: role,
-                    profileId: profileId,
-                    spaceId: spaceId,
-                    folderId: folderId,
-                    index: index
-                )
-            },
-            insertShortcutPin: { [weak self] pin, targetIndex, openTargetFolder in
-                self?.shortcutPinStoreOwner.insert(
-                    pin,
-                    at: targetIndex,
-                    openTargetFolder: openTargetFolder
-                )
-            },
-            convertDisplayedTabToShortcutLiveInstances: { [weak self] tab, pin, preferredWindowId in
-                self?.shortcutLiveTabOwner.convertDisplayedTabToShortcutLiveInstances(
-                    tab,
-                    pin: pin,
-                    preferredWindowId: preferredWindowId
-                ) ?? false
-            },
-            removeTab: { [weak self] tabId in
-                self?.removeTab(tabId)
-            }
-        )
+    lazy var shortcutPinConversionOwner = ShortcutPinConversionOwner(
+        dependencies: .live(tabManager: self)
     )
-    private lazy var shortcutDragOperationOwner = ShortcutDragOperationOwner(
-        dependencies: ShortcutDragOperationOwner.Dependencies(
-            reorderEssential: { [weak self] pin, index in
-                self?.shortcutPinCommandOwner.reorderEssential(pin, to: index) ?? false
-            },
-            moveShortcutPin: { [weak self] pin, role, profileId, spaceId, folderId, index, openTargetFolder in
-                self?.moveShortcutPin(
-                    pin,
-                    to: role,
-                    profileId: profileId,
-                    spaceId: spaceId,
-                    folderId: folderId,
-                    index: index,
-                    openTargetFolder: openTargetFolder
-                )
-            },
-            folderSpaceId: { [weak self] folderId in
-                self?.folderCollectionStateOwner.spaceId(for: folderId)
-            },
-            resolvedEssentialsProfileId: { [weak self] operation in
-                self?.essentialsShortcutPlacementOwner.resolvedProfileId(for: operation)
-            },
-            convertShortcutPinToRegularTab: { [weak self] pin, spaceId, targetIndex in
-                self?.convertShortcutPinToRegularTab(pin, in: spaceId, at: targetIndex) ?? false
-            },
-            removeShortcutPinFromContainers: { [weak self] pin in
-                self?.shortcutPinStoreOwner.removeFromContainers(pin)
-            },
-            insertRegularTabFromShortcut: { [weak self] pin, spaceId, targetIndex in
-                guard let self else { preconditionFailure("TabManager dependency used after deallocation") }
-                return self.shortcutLiveTabOwner.insertRegularTabFromShortcut(pin, into: spaceId, at: targetIndex)
-            },
-            scheduleStructuralPersistence: { [weak self] in
-                self?.scheduleStructuralPersistence()
-            }
-        )
+    lazy var shortcutDragOperationOwner = ShortcutDragOperationOwner(
+        dependencies: .live(tabManager: self)
     )
     lazy var shortcutPresentationOwner = TabShortcutPresentationOwner(
-        dependencies: TabShortcutPresentationOwner.Dependencies(
-            transientShortcutTabsByWindow: { [weak self] in
-                self?.transientTabRegistryOwner.transientShortcutTabsByWindow ?? [:]
-            },
-            windowState: { [weak self] windowId in
-                self?.runtimeContext?.windowState(for: windowId)
-            },
-            shortcutPin: { [weak self] pinId in
-                self?.shortcutPinCollectionStateOwner.shortcutPin(by: pinId)
-            },
-            resolvedExecutionProfileId: { [weak self] pin, currentSpaceId in
-                self?.shortcutPinRuntimeResolutionOwner.resolvedExecutionProfileId(for: pin, currentSpaceId: currentSpaceId)
-            },
-            faviconService: { [weak self] in
-                guard let self else { preconditionFailure("TabManager dependency used after deallocation") }
-                return self.faviconService
-            },
-            faviconImageService: { [weak self] in
-                guard let self else { preconditionFailure("TabManager dependency used after deallocation") }
-                return self.faviconImageService
-            },
-            visitedLinkStore: { [weak self] in
-                guard let self else { preconditionFailure("TabManager dependency used after deallocation") }
-                return self.visitedLinkStore
-            },
-            prepareTabForRuntime: { [weak self] tab in
-                self?.prepareTabForRuntime(tab)
-            }
-        )
+        dependencies: .live(tabManager: self)
     )
     lazy var shortcutLiveTabOwner = ShortcutLiveTabOwner(
-        dependencies: ShortcutLiveTabOwner.Dependencies(
-            runtimeContext: { [weak self] in
-                self?.runtimeContext
-            },
-            transientShortcutTabsByWindow: { [weak self] in
-                self?.transientTabRegistryOwner.transientShortcutTabsByWindow ?? [:]
-            },
-            updateTransientShortcutTabsByWindow: { [weak self] update in
-                self?.transientTabRegistryOwner.updateTransientShortcutTabsByWindow(update)
-            },
-            currentSpaceId: { [weak self] in
-                self?.currentSpace?.id
-            },
-            firstRegularTabId: { [weak self] spaceId in
-                self?.regularTabCollectionOwner.tabs(in: spaceId).first?.id
-            },
-            tab: { [weak self] tabId in
-                self?.tab(for: tabId)
-            },
-            resolvedLiveSpaceId: { [weak self] pin, currentSpaceId in
-                self?.shortcutPinRuntimeResolutionOwner.resolvedLiveSpaceId(for: pin, currentSpaceId: currentSpaceId)
-            },
-            resolvedExecutionProfileId: { [weak self] pin, currentSpaceId in
-                self?.shortcutPinRuntimeResolutionOwner.resolvedExecutionProfileId(for: pin, currentSpaceId: currentSpaceId)
-            },
-            assignProfile: { [weak self] profileId, tab in
-                self?.profileAssignmentOwner.assignProfile(profileId, to: tab)
-            },
-            attach: { [weak self] tab in
-                self?.attach(tab)
-            },
-            detach: { [weak self] tab in
-                self?.detach(tab)
-            },
-            notifyTransientShortcutStateChanged: { [weak self] in
-                self?.notifyTransientShortcutStateChanged()
-            },
-            cancelRuntimeStatePersistence: { [weak self] tabId in
-                self?.structuralPersistence.cancelRuntimeStatePersistence(for: tabId)
-            },
-            pinnedByProfile: { [weak self] in
-                self?.pinnedByProfile ?? [:]
-            },
-            setPinnedTabs: { [weak self] pins, profileId in
-                self?.setPinnedTabs(pins, for: profileId)
-            },
-            removeRegularTab: { [weak self] tabId, spaceId, currentSpaceId in
-                _ = self?.regularTabCollectionOwner.remove(
-                    tabId,
-                    from: spaceId,
-                    currentSpaceId: currentSpaceId
-                )
-            },
-            insertRegularTab: { [weak self] tab, spaceId, insertionIndex in
-                self?.regularTabCollectionOwner.insert(tab, in: spaceId, at: insertionIndex)
-            },
-            faviconService: { [weak self] in
-                guard let self else { preconditionFailure("TabManager dependency used after deallocation") }
-                return self.faviconService
-            },
-            faviconImageService: { [weak self] in
-                guard let self else { preconditionFailure("TabManager dependency used after deallocation") }
-                return self.faviconImageService
-            },
-            visitedLinkStore: { [weak self] in
-                guard let self else { preconditionFailure("TabManager dependency used after deallocation") }
-                return self.visitedLinkStore
-            }
-        )
+        dependencies: .live(tabManager: self)
     )
     lazy var spaceLauncherProjectionOwner = SpaceLauncherProjectionOwner(
-        dependencies: SpaceLauncherProjectionOwner.Dependencies(
-            regularTabs: { [weak self] spaceId in
-                self?.regularTabCollectionOwner.tabs(in: spaceId) ?? []
-            },
-            spacePinnedPins: { [weak self] spaceId in
-                self?.shortcutPinCollectionStateOwner.spacePinnedPins(for: spaceId) ?? []
-            },
-            folders: { [weak self] spaceId in
-                self?.foldersBySpace[spaceId] ?? []
-            },
-            shortcutHostedSplitGroups: { [weak self] spaceId in
-                self?.splitGroupStructureOwner.shortcutHostedSplitGroups(for: spaceId) ?? []
-            },
-            liveShortcutTabs: { [weak self] windowId in
-                self?.shortcutPresentationOwner.liveShortcutTabs(in: windowId) ?? []
-            },
-            transientShortcutTabsByWindow: { [weak self] in
-                self?.transientTabRegistryOwner.transientShortcutTabsByWindow ?? [:]
-            }
-        )
+        dependencies: .live(tabManager: self)
     )
 
-    // Spaces
-    var spaces: [Space] {
-        get { spaceCollectionStateOwner.spaces }
-        set {
-            objectWillChange.send()
-            spaceCollectionStateOwner.replaceSpaces(newValue)
-        }
-    }
-
-    var currentSpace: Space? {
-        get { spaceCollectionStateOwner.currentSpace }
-        set {
-            objectWillChange.send()
-            spaceCollectionStateOwner.replaceCurrentSpace(newValue)
-        }
-    }
-
-    // Normal tabs per space
-    var tabsBySpace: [UUID: [Tab]] {
-        get { regularTabCollectionStateOwner.tabsBySpace }
-        set {
-            objectWillChange.send()
-            regularTabCollectionStateOwner.replaceTabsBySpace(newValue)
-        }
-    }
-
-    var tabsBySpacePublisher: AnyPublisher<[UUID: [Tab]], Never> {
-        regularTabCollectionStateOwner.tabsBySpacePublisher
-    }
-
     let splitGroupCollectionStateOwner = SplitGroupCollectionStateOwner()
-
-    // Structural split groups, restored and persisted with the tab model.
-    var splitGroups: [SplitGroup] {
-        get { splitGroupCollectionStateOwner.splitGroups }
-        set {
-            objectWillChange.send()
-            splitGroupCollectionStateOwner.replaceSplitGroups(newValue)
-        }
-    }
     lazy var splitGroupRepairOwner = TabManagerSplitGroupRepairOwner(
         dependencies: .live(tabManager: self)
     )
-    lazy var splitGroupStructureOwner = TabSplitGroupStructureOwner(tabManager: self)
+    lazy var splitGroupStructureOwner = TabSplitGroupStructureOwner(
+        dependencies: .live(tabManager: self)
+    )
 
     let folderCollectionStateOwner = TabFolderCollectionStateOwner()
 
-    // Folders per space
-    var foldersBySpace: [UUID: [TabFolder]] {
-        get { folderCollectionStateOwner.foldersBySpace }
-        set {
-            objectWillChange.send()
-            folderCollectionStateOwner.replaceFoldersBySpace(newValue)
-        }
-    }
-
     let shortcutPinCollectionStateOwner = ShortcutPinCollectionStateOwner()
 
-    // Global pinned launchers (essentials), isolated per profile
-    var pinnedByProfile: [UUID: [ShortcutPin]] {
-        get { shortcutPinCollectionStateOwner.pinnedByProfile }
-        set {
-            objectWillChange.send()
-            shortcutPinCollectionStateOwner.replacePinnedByProfile(newValue)
-        }
-    }
-
-    // Space-level shortcut launchers
-    var spacePinnedShortcuts: [UUID: [ShortcutPin]] {
-        get { shortcutPinCollectionStateOwner.spacePinnedShortcuts }
-        set {
-            objectWillChange.send()
-            shortcutPinCollectionStateOwner.replaceSpacePinnedShortcuts(newValue)
-        }
-    }
-
-    // Pinned launchers encountered during load that have no profile assignment yet
-    var pendingPinnedWithoutProfile: [ShortcutPin] {
-        get { shortcutPinCollectionStateOwner.pendingPinnedWithoutProfile }
-        set {
-            objectWillChange.send()
-            shortcutPinCollectionStateOwner.replacePendingPinnedWithoutProfile(newValue)
-        }
-    }
-
     let transientTabRegistryOwner = TabTransientTabRegistryOwner()
-    // Transient shortcut-backed live tabs per window, keyed by shortcut pin id.
-    var transientShortcutTabsByWindow: [UUID: [UUID: Tab]] {
-        get { transientTabRegistryOwner.transientShortcutTabsByWindow }
-        set { transientTabRegistryOwner.replaceTransientShortcutTabsByWindow(newValue) }
-    }
-
-    // Transient extension-owned tabs created for internal extension pages that
-    // WebKit may close immediately during install/onboarding handshakes.
-    var transientExtensionTabsByID: [UUID: Tab] {
-        get { transientTabRegistryOwner.transientExtensionTabsByID }
-        set { transientTabRegistryOwner.replaceTransientExtensionTabsByID(newValue) }
-    }
-
-    var auxiliaryMiniWindowTabsByID: [UUID: Tab] {
-        get { transientTabRegistryOwner.auxiliaryMiniWindowTabsByID }
-        set { transientTabRegistryOwner.replaceAuxiliaryMiniWindowTabsByID(newValue) }
-    }
-    private let structuralLookupOwner = TabStructuralLookupOwner()
-    private lazy var structuralCollectionMutationOwner = TabStructuralCollectionMutationOwner(
+    lazy var structuralCollectionMutationOwner = TabStructuralCollectionMutationOwner(
         dependencies: .live(tabManager: self)
     )
-    private lazy var tabCollectionMembershipOwner = TabCollectionMembershipOwner(
-        tabManager: self,
-        structuralLookupOwner: structuralLookupOwner,
-        transientTabRegistryOwner: transientTabRegistryOwner
+    lazy var structuralInstallOwner = TabStructuralInstallOwner(
+        dependencies: .live(tabManager: self)
+    )
+    lazy var tabCollectionMembershipOwner = TabCollectionMembershipOwner(
+        structuralLookupOwner: structuralLookupCoordinator.lookupOwner,
+        transientTabRegistryOwner: transientTabRegistryOwner,
+        dependencies: .live(tabManager: self)
     )
     lazy var transientWebKitTabLifecycleOwner = TabTransientWebKitTabLifecycleOwner(
-        dependencies: TabTransientWebKitTabLifecycleOwner.Dependencies(
-            settings: { [weak self] in self?.sumiSettings ?? self?.runtimeContext?.settings },
-            runtimeContext: { [weak self] in self?.runtimeContext },
-            membershipOwner: { [weak self] in
-                guard let self else { preconditionFailure("TabManager dependency used after deallocation") }
-                return self.tabCollectionMembershipOwner
-            },
-            regularTabCollectionOwner: { [weak self] in
-                guard let self else { preconditionFailure("TabManager dependency used after deallocation") }
-                return self.regularTabCollectionOwner
-            },
-            attach: { [weak self] tab in self?.attach(tab) },
-            detach: { [weak self] tab in self?.detach(tab) },
-            targetSpace: { [weak self] space in
-                guard let self else { preconditionFailure("TabManager dependency used after deallocation") }
-                return self.resolvedTargetSpace(preferred: space)
-            },
-            spaceForID: { [weak self] spaceId in
-                self?.spaces.first { $0.id == spaceId }
-            },
-            backfillTargetSpaceProfileIfNeeded: { [weak self] space, profileId in
-                guard let self else { return false }
-                return self.backfillTargetSpaceProfileIfNeeded(space, profileId: profileId)
-            },
-            insertRegularTab: { [weak self] tab, spaceId, insertionIndex in
-                self?.regularTabLifecycleOwner.insertRegularTab(tab, in: spaceId, at: insertionIndex)
-            },
-            scheduleStructuralPersistence: { [weak self] in self?.scheduleStructuralPersistence() },
-            setActiveTab: { [weak self] tab in self?.setActiveTab(tab) },
-            tabForID: { [weak self] id in self?.tab(for: id) },
-            faviconService: { [weak self] in
-                guard let self else { preconditionFailure("TabManager dependency used after deallocation") }
-                return self.faviconService
-            },
-            faviconImageService: { [weak self] in
-                guard let self else { preconditionFailure("TabManager dependency used after deallocation") }
-                return self.faviconImageService
-            },
-            visitedLinkStore: { [weak self] in
-                guard let self else { preconditionFailure("TabManager dependency used after deallocation") }
-                return self.visitedLinkStore
-            }
-        )
+        dependencies: .live(tabManager: self)
+    )
+    lazy var ephemeralLifecycleOwner = TabEphemeralLifecycleOwner(
+        dependencies: .live(tabManager: self)
     )
     /// Emitted when tab structure changes without a corresponding `@Published` update (e.g. transient shortcut live tabs). Not used for persistence completion—`scheduleStructuralPersistence()` does not send this.
     let structuralChanges = PassthroughSubject<Void, Never>()
-    private lazy var structuralPublishOwner = TabStructuralPublishOwner(structuralChanges: structuralChanges)
-    var structuralLookupBatchFlushCount: Int { structuralLookupOwner.batchFlushCount }
-    var structuralLookupImmediateFlushCount: Int { structuralLookupOwner.immediateFlushCount }
+    lazy var structuralLookupCoordinator = TabStructuralLookupCoordinator(
+        structuralChanges: structuralChanges,
+        dependencies: .live(tabManager: self)
+    )
+    var structuralLookupBatchFlushCount: Int { structuralLookupCoordinator.batchFlushCount }
+    var structuralLookupImmediateFlushCount: Int { structuralLookupCoordinator.immediateFlushCount }
     private lazy var faviconPresentationRefreshOwner = TabFaviconPresentationRefreshOwner(
-        dependencies: TabFaviconPresentationRefreshOwner.Dependencies(
+        dependencies: .live(
+            tabManager: self,
             notificationCenter: .default,
-            debounceNanoseconds: Self.faviconPresentationRefreshDebounceNanoseconds,
-            tabsNeedingRefresh: { [weak self] in
-                guard let self else { return [] }
-                return regularTabCollectionStateOwner.allTabs()
-                    + transientTabRegistryOwner.transientShortcutTabs
-            },
-            requestStructuralPublish: { [weak self] in
-                self?.requestStructuralPublish()
-            }
+            debounceNanoseconds: Self.faviconPresentationRefreshDebounceNanoseconds
         )
     )
     // Space activation to resume after a deferred profile switch
     var pendingSpaceActivation: UUID?
 
-    // Live essentials API for shell views that still read a tab-backed collection.
-    var pinnedTabs: [Tab] {
-        shortcutPresentationOwner.activeEssentialTabs(for: runtimeContext?.currentProfileId)
-    }
-
-    @discardableResult
-    func moveShortcutPin(
-        _ pin: ShortcutPin,
-        to role: ShortcutPinRole,
-        profileId: UUID?,
-        spaceId: UUID?,
-        folderId: UUID?,
-        index: Int,
-        openTargetFolder: Bool = true
-    ) -> ShortcutPin? {
-        withStructuralUpdateTransaction {
-            let inserted = shortcutPinStoreOwner.move(
-                pin,
-                to: role,
-                profileId: profileId,
-                spaceId: spaceId,
-                folderId: folderId,
-                index: index,
-                openTargetFolder: openTargetFolder
-            )
-            if let inserted {
-                shortcutLiveTabOwner.updateTransientShortcutBindings(for: inserted)
-            }
-            scheduleStructuralPersistence()
-            return inserted
-        }
-    }
-
-    @discardableResult
-    func convertShortcutPinToRegularTab(
-        _ pin: ShortcutPin,
-        in targetSpaceId: UUID,
-        at targetIndex: Int? = nil
-    ) -> Bool {
-        withStructuralUpdateTransaction {
-            shortcutPinConversionOwner.convertShortcutPinToRegularTab(
-                pin,
-                in: targetSpaceId,
-                at: targetIndex
-            )
-        }
-    }
-
-    @discardableResult
-    func convertTabToShortcutPin(
-        _ tab: Tab,
-        role: ShortcutPinRole,
-        profileId: UUID?,
-        spaceId: UUID?,
-        folderId: UUID?,
-        at targetIndex: Int,
-        openTargetFolder: Bool = true,
-        preferredWindowId: UUID? = nil
-    ) -> ShortcutPin? {
-        withStructuralUpdateTransaction {
-            shortcutPinConversionOwner.convertTabToShortcutPin(
-                tab,
-                role: role,
-                profileId: profileId,
-                spaceId: spaceId,
-                folderId: folderId,
-                at: targetIndex,
-                openTargetFolder: openTargetFolder,
-                preferredWindowId: preferredWindowId
-            )
-        }
-    }
-
-    @discardableResult
-    func handleShortcutDragOperation(_ pin: ShortcutPin, operation: DragOperation) -> Bool {
-        withStructuralUpdateTransaction {
-            shortcutDragOperationOwner.handleShortcutDragOperation(pin, operation: operation)
-        }
-    }
-
-    func liveSpacePinnedTabs(for spaceId: UUID) -> [Tab] {
-        transientTabRegistryOwner.transientShortcutTabs
-            .filter { $0.spaceId == spaceId && $0.shortcutPinRole == .spacePinned }
-            .sorted { lhs, rhs in
-                let lhsIndex = lhs.shortcutPinId.flatMap { shortcutPinCollectionStateOwner.shortcutPin(by: $0)?.index } ?? lhs.index
-                let rhsIndex = rhs.shortcutPinId.flatMap { shortcutPinCollectionStateOwner.shortcutPin(by: $0)?.index } ?? rhs.index
-                if lhsIndex != rhsIndex { return lhsIndex < rhsIndex }
-                return lhs.id.uuidString < rhs.id.uuidString
-            }
-    }
-
-    func selectionTabsForCurrentContext(in windowId: UUID? = nil) -> [Tab] {
-        let contextWindowState = windowId.flatMap { runtimeContext?.windowState(for: $0) }
-        let contextSpaceId = contextWindowState?.currentSpaceId ?? currentSpace?.id
-        let contextProfileId =
-            contextWindowState?.currentProfileId
-            ?? contextSpaceId.flatMap { spaceId in
-                spaceCollectionStateOwner.profileId(for: spaceId)
-            }
-            ?? runtimeContext?.currentProfileId
-        let regularTabs = contextSpaceId.map { regularTabCollectionOwner.tabs(in: $0) } ?? []
-        let activeLauncherTab = windowId
-            .flatMap { shortcutPresentationOwner.activeShortcutTab(for: $0) }
-            .flatMap { liveTab -> Tab? in
-                guard liveTab.shortcutPinRole != .essential else { return nil }
-                guard liveTab.spaceId == nil || liveTab.spaceId == contextSpaceId else { return nil }
-                return liveTab
-            }
-
-        return shortcutPresentationOwner.activeEssentialTabs(for: contextProfileId) + (activeLauncherTab.map { [$0] } ?? []) + regularTabs
-    }
-
-    func folderPinnedPins(for folderId: UUID, in spaceId: UUID) -> [ShortcutPin] {
-        shortcutPinCollectionStateOwner.spacePinnedPins(for: spaceId)
-            .filter { $0.folderId == folderId }
-            .sorted { $0.index < $1.index }
-    }
-
-    func resolveDragTab(for id: UUID) -> Tab? {
-        if let live = tab(for: id) {
-            return live
-        }
-        if let pin = shortcutPinCollectionStateOwner.shortcutPin(by: id) {
-            return shortcutPresentationOwner.dragProxyTab(for: pin)
-        }
-        return nil
-    }
-
-    func resolveSidebarDragPayload(for item: SumiDragItem) -> DragOperation.Payload? {
-        switch item.kind {
-        case .tab:
-            if let pin = shortcutPinCollectionStateOwner.shortcutPin(by: item.tabId) {
-                return .pin(pin)
-            }
-            return resolveDragTab(for: item.tabId).map { .tab($0) }
-        case .folder:
-            return folderCollectionStateOwner.folder(by: item.tabId).map { .folder($0) }
-        case .splitGroup:
-            return splitGroupCollectionStateOwner.group(with: item.tabId).map { .splitGroup($0) }
-        }
-    }
-
-    // Flattened pinned across all profiles for internal ops
-    var allPinnedTabsAllProfiles: [Tab] {
-        shortcutPresentationOwner.activeShortcutTabs(role: .essential)
-    }
-
-    // Currently active tab
-    var currentTab: Tab?
     private(set) var hasLoadedInitialData = false
 
     func markInitialDataLoadStarted() {
@@ -704,509 +183,34 @@ class TabManager: ObservableObject {
             folderCollectionStateOwner.removeAll()
             shortcutPinCollectionStateOwner.removeAll()
             transientTabRegistryOwner.removeAll()
-            structuralLookupOwner.removeAll()
+            structuralLookupCoordinator.removeAll()
             spaceCollectionStateOwner.removeAll()
-            currentTab = nil
+            selectionStateOwner.replaceCurrentTab(nil)
             runtimeContext = nil
         }
 
         RuntimeDiagnostics.debug("Cleaned up all tab resources.", category: "TabManager")
     }
 
-    // MARK: - Convenience
-
-    var tabs: [Tab] {
-        guard let s = currentSpace else { return [] }
-        // `setTabs` keeps each space’s array sorted by index (and id tie-break); copy for callers that mutate.
-        return regularTabCollectionOwner.tabs(in: s)
-    }
-
-    func setTabs(_ items: [Tab], for spaceId: UUID) {
-        structuralCollectionMutationOwner.setTabs(items, for: spaceId)
-    }
-
-    func setFolders(_ items: [TabFolder], for spaceId: UUID) {
-        structuralCollectionMutationOwner.setFolders(items, for: spaceId)
-    }
-
-    func setPinnedTabs(_ items: [ShortcutPin], for profileId: UUID) {
-        structuralCollectionMutationOwner.setPinnedTabs(items, for: profileId)
-    }
-
-    func setSpacePinnedShortcuts(_ items: [ShortcutPin], for spaceId: UUID) {
-        structuralCollectionMutationOwner.setSpacePinnedShortcuts(items, for: spaceId)
-    }
-
     func notifyTransientShortcutStateChanged() {
-        queueTransientTabLookupRefresh()
-        requestStructuralPublish()
+        structuralLookupCoordinator.notifyTransientShortcutStateChanged()
     }
 
-    private var structuralLookupSnapshot: TabStructuralLookupSnapshot {
-        TabStructuralLookupSnapshot(
-            tabsBySpace: tabsBySpace,
-            transientShortcutTabsByWindow: transientTabRegistryOwner.transientShortcutTabsByWindow,
-            transientExtensionTabsByID: transientTabRegistryOwner.transientExtensionTabsByID,
-            auxiliaryMiniWindowTabsByID: transientTabRegistryOwner.auxiliaryMiniWindowTabsByID
-        )
-    }
-
-    func tab(for id: UUID) -> Tab? {
-        structuralLookupOwner.tab(for: id, snapshot: structuralLookupSnapshot)
-    }
-
-    private func rebuildTabLookup() {
-        structuralLookupOwner.rebuild(with: structuralLookupSnapshot)
-    }
-
-    func rebuildTabLookupForRestore() {
-        rebuildTabLookup()
+    func rebuildTabLookup() {
+        structuralLookupCoordinator.rebuild()
     }
 
     @discardableResult
     func withStructuralUpdateTransaction<T>(_ operation: () throws -> T) rethrows -> T {
-        try structuralPublishOwner.withTransaction(
-            flushPendingLookupBatch: { flushPendingStructuralLookupBatchIfNeeded() },
-            operation
-        )
+        try structuralLookupCoordinator.withTransaction(operation)
     }
 
     func requestStructuralPublish() {
-        structuralPublishOwner.requestPublish()
+        structuralLookupCoordinator.requestPublish()
     }
 
     func queueTabLookupEntries(removing previousTabs: [Tab], with currentTabs: [Tab]) {
-        structuralLookupOwner.queueEntries(
-            removing: previousTabs,
-            with: currentTabs,
-            batching: structuralPublishOwner.isBatching
-        )
-    }
-
-    private func queueTransientTabLookupRefresh() {
-        structuralLookupOwner.queueTransientRefresh(
-            snapshot: structuralLookupSnapshot,
-            batching: structuralPublishOwner.isBatching
-        )
-    }
-
-    private func flushPendingStructuralLookupBatchIfNeeded() {
-        structuralLookupOwner.flushBatchIfNeeded(snapshot: structuralLookupSnapshot)
-    }
-    func attach(_ tab: Tab) {
-        tabCollectionMembershipOwner.attach(tab)
-    }
-
-    func detach(_ tab: Tab) {
-        tabCollectionMembershipOwner.detach(tab)
-    }
-
-    // Public accessor for managers that need to iterate tabs (e.g., privacy, rules updates)
-    func allTabs() -> [Tab] {
-        tabCollectionMembershipOwner.allTabs()
-    }
-
-    /// Profile-filtered union of pinned, space-pinned and regular tabs.
-    func allTabsForCurrentProfile() -> [Tab] {
-        tabCollectionMembershipOwner.allTabsForCurrentProfile()
-    }
-
-    func contains(_ tab: Tab) -> Bool {
-        tabCollectionMembershipOwner.contains(tab)
-    }
-
-    func prepareTabForRuntime(_ tab: Tab) {
-        runtimeContext?.webViewLifecycle.prepareTab(tab)
-        if tab.sumiSettings == nil {
-            tab.sumiSettings = sumiSettings ?? runtimeContext?.settings
-        }
-    }
-
-    // MARK: - Shortcut Live-Tab Lifecycle (transactional entry points)
-
-    @discardableResult
-    func activateShortcutPin(_ pin: ShortcutPin, in windowId: UUID, currentSpaceId: UUID?) -> Tab {
-        withStructuralUpdateTransaction {
-            shortcutLiveTabOwner.activateShortcutPin(pin, in: windowId, currentSpaceId: currentSpaceId)
-        }
-    }
-
-    @discardableResult
-    func deactivateShortcutLiveTab(in windowId: UUID) -> Bool {
-        guard let pinId = shortcutPresentationOwner.activeShortcutTab(for: windowId)?.shortcutPinId else { return false }
-        return deactivateShortcutLiveTab(pinId: pinId, in: windowId)
-    }
-
-    @discardableResult
-    func deactivateShortcutLiveTab(pinId: UUID, in windowId: UUID) -> Bool {
-        withStructuralUpdateTransaction {
-            shortcutLiveTabOwner.deactivateShortcutLiveTab(pinId: pinId, in: windowId)
-        }
-    }
-
-    // MARK: - Container Membership Helpers
-    /// True if the tab is globally pinned (Essentials) in any profile.
-    func isGlobalPinned(_ tab: Tab) -> Bool {
-        allPinnedTabsAllProfiles.contains { $0.id == tab.id }
-    }
-
-    /// True if the tab is pinned at the space level within its space.
-    func isSpacePinned(_ tab: Tab) -> Bool {
-        if tab.shortcutPinRole == .spacePinned {
-            return true
-        }
-        guard let shortcutId = tab.shortcutPinId,
-              let pin = shortcutPinCollectionStateOwner.shortcutPin(by: shortcutId) else { return false }
-        return pin.role == .spacePinned
-    }
-
-    func regularChildInsertionIndex(openedFrom sourceTab: Tab?, in targetSpace: Space?) -> Int? {
-        regularTabCollectionOwner.childInsertionIndex(openedFrom: sourceTab, in: targetSpace)
-    }
-
-    /// Create a new regular tab duplicating the source tab's URL/name and insert near an anchor tab.
-    /// - Parameters:
-    ///   - source: The tab to duplicate (pinned/space-pinned or regular).
-    ///   - anchor: A regular tab used to decide target space and placement.
-    ///   - placeAfterAnchor: If true, insert right after the anchor's index; otherwise at the anchor's index.
-    /// - Returns: The newly created regular Tab.
-    @discardableResult
-    func duplicateAsRegularForSplit(from source: Tab, anchor: Tab, placeAfterAnchor: Bool = true) -> Tab {
-        withStructuralUpdateTransaction {
-            let targetSpace = anchor.spaceId.flatMap { sid in
-                spaceCollectionStateOwner.space(with: sid)
-            } ?? ensureDefaultSpaceIfNeeded()
-
-            // Build the duplicate with the same URL/name; favicon will refresh from URL.
-            let newTab = Tab(
-                url: source.url,
-                name: source.name,
-                favicon: "globe",
-                spaceId: targetSpace.id,
-                index: 0,
-                faviconService: faviconService,
-                faviconImageService: faviconImageService,
-                visitedLinkStore: visitedLinkStore
-            )
-
-            let insertionIndex = regularTabCollectionOwner.firstIndex(of: anchor, in: targetSpace.id)
-                .map { $0 + (placeAfterAnchor ? 1 : 0) }
-            addTab(newTab, regularInsertionIndex: insertionIndex)
-
-            return newTab
-        }
-    }
-
-    // MARK: - Tab Management (Normal within current space)
-
-    func addTab(_ tab: Tab, regularInsertionIndex: Int? = nil) {
-        regularTabLifecycleOwner.addTab(tab, regularInsertionIndex: regularInsertionIndex)
-    }
-
-    @discardableResult
-    func adoptGlanceTab(
-        _ tab: Tab,
-        sourceTab: Tab?,
-        in space: Space? = nil
-    ) -> Tab {
-        regularTabLifecycleOwner.adoptGlanceTab(tab, sourceTab: sourceTab, in: space)
-    }
-
-    func resolvedTargetSpace(preferred space: Space?, fallbackSpaceId: UUID? = nil) -> Space {
-        space
-            ?? fallbackSpaceId.flatMap { spaceId in
-                spaceCollectionStateOwner.space(with: spaceId)
-            }
-            ?? ensureDefaultSpaceIfNeeded()
-    }
-
-    var defaultProfileIdForSpaceBootstrap: UUID? {
-        runtimeContext?.currentProfileId ?? runtimeContext?.defaultProfileId
-    }
-
-    @discardableResult
-    func backfillTargetSpaceProfileIfNeeded(
-        _ targetSpace: Space,
-        profileId: UUID?
-    ) -> Bool {
-        guard targetSpace.profileId == nil, let profileId else { return false }
-        targetSpace.profileId = profileId
-        markAllSpacesStructurallyDirty()
-        return true
-    }
-
-    func isTransientExtensionTab(_ tab: Tab) -> Bool {
-        transientWebKitTabLifecycleOwner.isTransientExtensionTab(tab)
-    }
-
-    @discardableResult
-    func createTransientExtensionTab(
-        url: String,
-        in space: Space? = nil,
-        webExtensionContextOverride: WKWebExtensionContext?
-    ) -> Tab {
-        transientWebKitTabLifecycleOwner.createTransientExtensionTab(
-            url: url,
-            in: space,
-            webExtensionContextOverride: webExtensionContextOverride
-        )
-    }
-
-    @discardableResult
-    func createAuxiliaryMiniWindowTab(
-        openerTab: Tab?,
-        profileId: UUID? = nil,
-        urlString: String? = nil,
-        webExtensionContextOverride: WKWebExtensionContext? = nil
-    ) -> Tab {
-        transientWebKitTabLifecycleOwner.createAuxiliaryMiniWindowTab(
-            openerTab: openerTab,
-            profileId: profileId,
-            urlString: urlString,
-            webExtensionContextOverride: webExtensionContextOverride
-        )
-    }
-
-    func removeAuxiliaryMiniWindowTab(_ tab: Tab) {
-        transientWebKitTabLifecycleOwner.removeAuxiliaryMiniWindowTab(tab)
-    }
-
-    func isAuxiliaryMiniWindowTab(_ tab: Tab) -> Bool {
-        transientWebKitTabLifecycleOwner.isAuxiliaryMiniWindowTab(tab)
-    }
-
-    @discardableResult
-    func removeTransientExtensionTab(id: UUID) -> Bool {
-        transientWebKitTabLifecycleOwner.removeTransientExtensionTab(id: id)
-    }
-
-    @discardableResult
-    func promoteTransientExtensionTab(
-        _ tab: Tab,
-        in space: Space? = nil,
-        activate: Bool = false
-    ) -> Bool {
-        transientWebKitTabLifecycleOwner.promoteTransientExtensionTab(
-            tab,
-            in: space,
-            activate: activate
-        )
-    }
-
-    func removeTab(_ id: UUID) {
-        tabRemovalOwner.removeTab(id)
-    }
-
-    func setActiveTab(_ tab: Tab) {
-        activeSelectionOwner.setActiveTab(tab)
-    }
-
-    /// Update only the global tab state without triggering UI operations
-    /// Used when BrowserManager.selectTab() has already handled all UI concerns
-    func updateActiveTabState(_ tab: Tab) {
-        activeSelectionOwner.updateActiveTabState(tab)
-    }
-
-    @discardableResult
-    func createNewTab(
-        url: String = SumiSurface.emptyTabURL.absoluteString,
-        in space: Space? = nil,
-        activate: Bool = true,
-        webViewConfigurationOverride: WKWebViewConfiguration? = nil,
-        webExtensionContextOverride: WKWebExtensionContext? = nil,
-        regularInsertionIndex: Int? = nil
-    ) -> Tab {
-        regularTabLifecycleOwner.createNewTab(
-            url: url,
-            in: space,
-            activate: activate,
-            webViewConfigurationOverride: webViewConfigurationOverride,
-            webExtensionContextOverride: webExtensionContextOverride,
-            regularInsertionIndex: regularInsertionIndex
-        )
-    }
-
-    // MARK: - Ephemeral Tab Creation (Incognito)
-
-    /// Create a new ephemeral tab in an incognito window
-    /// These tabs are NOT persisted and are stored in window state
-    @discardableResult
-    func createEphemeralTab(
-        url: URL,
-        in windowState: BrowserWindowState,
-        profile: Profile
-    ) -> Tab {
-        let nextIndex = windowState.ephemeralTabs.map(\.index).max().map { $0 + 1 } ?? 0
-        let newTab = Tab(
-            url: url,
-            name: url.host ?? "New Tab",
-            favicon: "globe",
-            spaceId: nil,
-            index: nextIndex,
-            faviconService: faviconService,
-            faviconImageService: faviconImageService,
-            visitedLinkStore: visitedLinkStore
-        )
-        newTab.profileId = profile.id
-        prepareTabForRuntime(newTab)
-
-        // Add to window's ephemeral tabs (NOT to persistent tabs)
-        windowState.ephemeralTabs.append(newTab)
-        windowState.currentTabId = newTab.id
-
-        RuntimeDiagnostics.emit("🔒 [TabManager] Created ephemeral tab: \(newTab.id) in window: \(windowState.id)")
-
-        return newTab
-    }
-
-    // Create a new tab with an existing WebView (used for Glance transfers)
-    @discardableResult
-    func createNewTabWithWebView(
-        url: String = SumiSurface.emptyTabURL.absoluteString,
-        in space: Space? = nil,
-        existingWebView: WKWebView? = nil
-    ) -> Tab {
-        regularTabLifecycleOwner.createNewTabWithWebView(
-            url: url,
-            in: space,
-            existingWebView: existingWebView
-        )
-    }
-
-    // Create a new blank tab intended to host a popup window. The returned tab's
-    // WKWebView is returned to WebKit so it can load popup content. No initial
-    // navigation is performed to preserve window.opener scripting semantics.
-    @discardableResult
-    func createPopupTab(
-        in space: Space? = nil,
-        activate: Bool = true,
-        webViewConfigurationOverride: WKWebViewConfiguration? = nil,
-        regularInsertionIndex: Int? = nil
-    ) -> Tab {
-        regularTabLifecycleOwner.createPopupTab(
-            in: space,
-            activate: activate,
-            webViewConfigurationOverride: webViewConfigurationOverride,
-            regularInsertionIndex: regularInsertionIndex
-        )
-    }
-
-    // Ensure a deterministic default target space exists without inheriting process-global selection.
-    private func ensureDefaultSpaceIfNeeded() -> Space {
-        let profileId = defaultProfileIdForSpaceBootstrap
-        if let profileId,
-           let profileSpace = spaceCollectionStateOwner.first(where: { $0.profileId == profileId }) {
-            return profileSpace
-        }
-
-        if let profileId,
-           let unassignedSpace = spaceCollectionStateOwner.first(where: { $0.profileId == nil }) {
-            objectWillChange.send()
-            spaceCollectionStateOwner.assignProfile(spaceId: unassignedSpace.id, profileId: profileId)
-            markAllSpacesStructurallyDirty()
-            scheduleStructuralPersistence()
-            return unassignedSpace
-        }
-
-        if profileId == nil,
-           let firstSpace = spaceCollectionStateOwner.firstSpace {
-            return firstSpace
-        }
-
-        let personal = Space(
-            name: "Personal",
-            icon: "🏠",
-            workspaceTheme: .default,
-            profileId: profileId
-        )
-        objectWillChange.send()
-        spaceCollectionStateOwner.append(personal)
-        markAllSpacesStructurallyDirty()
-        setTabs([], for: personal.id)
-        if spaceCollectionStateOwner.currentSpace == nil {
-            spaceCollectionStateOwner.replaceCurrentSpace(personal)
-        }
-        scheduleStructuralPersistence()
-        return personal
-    }
-
-    // MARK: - Sidebar Drag Routing and Tab Moves
-
-    @discardableResult
-    func performSidebarDragOperation(_ operation: DragOperation) -> Bool {
-        withStructuralUpdateTransaction {
-            sidebarDragRoutingOwner.handleDragOperation(operation)
-        }
-    }
-
-    @discardableResult
-    func handleDragOperation(_ operation: DragOperation) -> Bool {
-        sidebarDragRoutingOwner.handleDragOperation(operation)
-    }
-
-    @discardableResult
-    func reorderRegularTabs(_ tab: Tab, in spaceId: UUID, to index: Int) -> Bool {
-        regularTabDragService.reorderRegularTabs(tab, in: spaceId, to: index)
-    }
-
-    func moveTab(_ tabId: UUID, to targetSpaceId: UUID) {
-        sidebarDragRoutingOwner.moveTab(tabId, to: targetSpaceId)
-    }
-
-    func moveTabUp(_ tabId: UUID) {
-        withStructuralUpdateTransaction {
-            guard regularTabCollectionOwner.moveUp(tabId) else { return }
-            scheduleStructuralPersistence()
-        }
-    }
-
-    func moveTabDown(_ tabId: UUID) {
-        withStructuralUpdateTransaction {
-            guard regularTabCollectionOwner.moveDown(tabId) else { return }
-            scheduleStructuralPersistence()
-        }
-    }
-
-    // MARK: - Tab Closure Undo and Bulk Removal
-
-    func tabs(in space: Space) -> [Tab] {
-        regularTabCollectionOwner.tabs(in: space)
-    }
-
-    func updateTabNavigationState(_ tab: Tab) {
-        scheduleRuntimeStatePersistence(for: tab)
-    }
-
-    func closeAllTabsBelow(_ tab: Tab) {
-        tabRemovalOwner.closeAllTabsBelow(tab)
-    }
-
-    // MARK: - Split Group Structure
-
-    typealias SpacePinnedVisualItem = TabSplitGroupStructureOwner.SpacePinnedVisualItem
-
-    // MARK: - Space Lifecycle
-
-    func clearRegularTabs(for spaceId: UUID) {
-        withStructuralUpdateTransaction {
-            let tabs = regularTabCollectionOwner.tabs(in: spaceId)
-            guard !tabs.isEmpty else { return }
-
-            RuntimeDiagnostics.emit("🧹 [TabManager] Clearing \(tabs.count) regular tabs for space \(spaceId)")
-
-            let inactiveRegular = tabs.filter { $0.id != currentTab?.id }
-            if !inactiveRegular.isEmpty {
-                for tab in inactiveRegular {
-                    removeTab(tab.id)
-                }
-                return
-            }
-            if let active = currentTab,
-               active.spaceId == spaceId,
-               tabs.contains(where: { $0.id == active.id }) {
-                removeTab(active.id)
-            }
-        }
+        structuralLookupCoordinator.queueEntries(removing: previousTabs, with: currentTabs)
     }
 
     static let defaultRuntimeStatePersistDebounceNanoseconds: UInt64 = 250_000_000
@@ -1248,84 +252,17 @@ class TabManager: ObservableObject {
         await runtimeStateCoalescer.flushImmediately()
     }
 
-    func scheduleRuntimeStatePersistence(for tab: Tab) {
-        structuralPersistence.scheduleRuntimeStatePersistence(for: tab)
-    }
-
-    func shouldPersistRegularTab(_ tab: Tab) -> Bool {
-        structuralPersistence.shouldPersistRegularTab(tab)
-    }
-
-    func persistableCurrentTabID() -> UUID? {
-        structuralPersistence.persistableCurrentTabID()
-    }
-
-    func _buildSnapshot() -> TabSnapshotRepository.Snapshot {
-        structuralPersistence.buildSnapshot()
-    }
-
-    func markSnapshotCacheDirty() {
-        structuralPersistence.markSnapshotCacheDirty()
-    }
-
-    func markAllSpacesStructurallyDirty() {
-        structuralPersistence.markAllSpacesStructurallyDirty()
-    }
-
-    func resetStructuralDirtySet() {
-        structuralPersistence.resetDirtySet()
-    }
-
-    func resetRegularTabsAndShortcutLiveInstancesForStartup() {
-        lastSessionRestoreOwner.resetRegularTabsAndShortcutLiveInstancesForStartup()
-    }
-
-    func mergeSnapshotForLastSessionRestore(_ snapshot: TabSnapshotRepository.Snapshot) {
-        lastSessionRestoreOwner.mergeSnapshotForLastSessionRestore(snapshot)
-    }
-
-    @discardableResult
-    func loadFromStoreAwaitingResult() async -> Bool {
-        await storeRestore.loadFromStoreAwaitingResult()
-    }
-
-    func installRestoredCollections(_ restoredState: TabRestoreRuntimeState) {
-        spaces = restoredState.spaces
-        tabsBySpace = restoredState.tabsBySpace
-        foldersBySpace = restoredState.foldersBySpace
-        objectWillChange.send()
-        shortcutPinCollectionStateOwner.replaceAll(
-            pinnedByProfile: restoredState.pinnedByProfile,
-            spacePinnedShortcuts: restoredState.spacePinnedShortcuts,
-            pendingPinnedWithoutProfile: restoredState.pendingPinnedWithoutProfile
-        )
-    }
-
-    func hasLiveRuntimeContent(in space: Space) -> Bool {
-        let spaceId = space.id
-
-        if regularTabCollectionStateOwner.hasTabs(in: spaceId) { return true }
-        if shortcutPinCollectionStateOwner.hasSpacePinnedShortcuts(in: spaceId) { return true }
-        if folderCollectionStateOwner.hasFolders(in: spaceId) { return true }
-
-        return transientTabRegistryOwner.transientShortcutTabs
-            .contains { $0.spaceId == spaceId }
-    }
-
-    func reconcileProfileRuntimeStates(activeSpaceId: UUID?) {
-        for space in spaces {
-            let hasRuntimeContent = hasLiveRuntimeContent(in: space)
-
-            if space.id == activeSpaceId {
-                space.profileRuntimeState = hasRuntimeContent ? .active : .dormant
-            } else {
-                space.profileRuntimeState = hasRuntimeContent ? .loadedInactive : .dormant
-            }
-        }
-    }
 }
 
 extension TabManager {
+    /// Single controlled write path for the `private(set)` `runtimeContext`, used by
+    /// `runtimeContextAttachmentOwner`'s wiring. Keeping this a named method (rather than
+    /// widening the property setter to `internal`) preserves the invariant that only the
+    /// attachment flow reassigns the runtime context.
+    func installRuntimeContext(_ context: TabManagerRuntimeContext) {
+        runtimeContext = context
+    }
+
     func requireRuntimeContext() -> TabManagerRuntimeContext {
         guard let runtimeContext else {
             preconditionFailure(
@@ -1335,34 +272,4 @@ extension TabManager {
         return runtimeContext
     }
 
-    func attachRuntimeContext(_ context: TabManagerRuntimeContext) {
-        runtimeContext = context
-
-        let knownTabs = allTabs()
-        for tab in knownTabs {
-            prepareTabForRuntime(tab)
-        }
-
-        // Assign any pinned tabs that were loaded without a profile once currentProfile is known
-        if let currentProfileId = runtimeContext?.currentProfileId,
-           !pendingPinnedWithoutProfile.isEmpty {
-            shortcutPinStoreOwner.withPinnedArray(for: currentProfileId) { arr in
-                arr.append(contentsOf: pendingPinnedWithoutProfile)
-            }
-            pendingPinnedWithoutProfile.removeAll()
-            scheduleStructuralPersistence()
-        }
-        if let current = self.currentTab {
-            if let match = knownTabs.first(where: { $0.id == current.id }) {
-                self.currentTab = match
-            }
-        }
-        // After attaching runtime, ensure gradient matches the restored current space.
-        if let space = self.currentSpace {
-            runtimeContext?.syncWorkspaceThemeAcrossWindows(for: space, animate: false)
-        }
-
-        // After attaching runtime, backfill any missing space.profileId.
-        profileAssignmentOwner.reconcileSpaceProfilesIfNeeded()
-    }
 }

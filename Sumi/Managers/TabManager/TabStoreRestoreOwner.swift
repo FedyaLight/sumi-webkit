@@ -155,15 +155,11 @@ final class TabStoreRestoreOwner {
         let defaultProfileId: @MainActor () -> UUID?
         let markInitialDataLoadStarted: @MainActor () -> Void
         let markInitialDataLoadFinished: @MainActor () -> Void
-        let installRestoredCollections: @MainActor (TabRestoreRuntimeState) -> Void
-        let installRepairedSplitGroups: @MainActor ([SplitGroup]) -> Void
+        let installRestoredCollections: @MainActor (TabRestoreRuntimeState, [SplitGroup], Space?, Tab?) -> Void
+        let sanitizedRepairedSplitGroups: @MainActor ([SplitGroup]) -> [SplitGroup]
         let prepareTabForRuntime: @MainActor (Tab) -> Void
-        let setCurrentSpace: @MainActor (Space?) -> Void
-        let setCurrentTab: @MainActor (Tab?) -> Void
-        let rebuildTabLookupForRestore: @MainActor () -> Void
         let resetLazyRestore: @MainActor (Set<UUID>) -> Void
         let prepareStructuralPersistenceForRestoredState: @MainActor () -> Void
-        let requestStructuralPublish: @MainActor () -> Void
         let syncWorkspaceTheme: @MainActor (Space) -> Void
         let buildSnapshot: @MainActor () -> TabSnapshotRepository.Snapshot
         let reservePersistenceGeneration: @MainActor () -> Int
@@ -249,17 +245,9 @@ final class TabStoreRestoreOwner {
         )
             .makeState(from: payload)
 
-        dependencies.installRestoredCollections(restoredState)
-        dependencies.installRepairedSplitGroups(payload.splitGroups)
-
-        for tab in restoredState.tabsBySpace.values.flatMap(\.self) {
-            dependencies.prepareTabForRuntime(tab)
-        }
-
         let restoredCurrentSpace = payload.currentSpaceId.flatMap { currentSpaceId in
             restoredState.spaces.first(where: { $0.id == currentSpaceId })
         } ?? restoredState.spaces.first
-        dependencies.setCurrentSpace(restoredCurrentSpace)
 
         let selectionTabs = restoredCurrentSpace.flatMap { restoredState.tabsBySpace[$0.id] } ?? []
         let restoredCurrentTab: Tab?
@@ -269,14 +257,22 @@ final class TabStoreRestoreOwner {
         } else {
             restoredCurrentTab = selectionTabs.first
         }
-        dependencies.setCurrentTab(restoredCurrentTab)
 
-        dependencies.rebuildTabLookupForRestore()
+        dependencies.installRestoredCollections(
+            restoredState,
+            dependencies.sanitizedRepairedSplitGroups(payload.splitGroups),
+            restoredCurrentSpace,
+            restoredCurrentTab
+        )
+
+        for tab in restoredState.tabsBySpace.values.flatMap(\.self) {
+            dependencies.prepareTabForRuntime(tab)
+        }
+
         dependencies.resetLazyRestore(
             Set(restoredState.tabsBySpace.values.flatMap { $0.map(\.id) })
         )
         dependencies.prepareStructuralPersistenceForRestoredState()
-        dependencies.requestStructuralPublish()
 
         RuntimeDiagnostics.debug(
             "Current Space: \(restoredCurrentSpace?.name ?? "None"), Tab: \(restoredCurrentTab?.name ?? "None")",
@@ -338,33 +334,27 @@ extension TabStoreRestoreOwner.Dependencies {
             markInitialDataLoadFinished: { [weak tabManager] in
                 tabManager?.markInitialDataLoadFinished()
             },
-            installRestoredCollections: { [weak tabManager] restoredState in
-                tabManager?.installRestoredCollections(restoredState)
-            },
-            installRepairedSplitGroups: { [weak tabManager] splitGroups in
+            installRestoredCollections: { [weak tabManager] restoredState, splitGroups, currentSpace, currentTab in
                 guard let tabManager else { return }
-                tabManager.splitGroups = tabManager.splitGroupStructureOwner.sanitizedRepairedSplitGroups(splitGroups)
+                tabManager.structuralInstallOwner.installRestoredCollections(
+                    restoredState,
+                    splitGroups: splitGroups,
+                    currentSpace: currentSpace,
+                    currentTab: currentTab
+                )
+            },
+            sanitizedRepairedSplitGroups: { [weak tabManager] splitGroups in
+                tabManager?.splitGroupStructureOwner.sanitizedRepairedSplitGroups(splitGroups)
+                    ?? SplitGroup.sanitized(splitGroups)
             },
             prepareTabForRuntime: { [weak tabManager] tab in
-                tabManager?.prepareTabForRuntime(tab)
-            },
-            setCurrentSpace: { [weak tabManager] space in
-                tabManager?.currentSpace = space
-            },
-            setCurrentTab: { [weak tabManager] tab in
-                tabManager?.currentTab = tab
-            },
-            rebuildTabLookupForRestore: { [weak tabManager] in
-                tabManager?.rebuildTabLookupForRestore()
+                tabManager?.runtimePreparationOwner.prepare(tab)
             },
             resetLazyRestore: { [weak tabManager] restoredTabIDs in
                 tabManager?.lazyRestoreCoordinator.reset(restoredTabIDs: restoredTabIDs)
             },
             prepareStructuralPersistenceForRestoredState: { [weak tabManager] in
                 tabManager?.structuralPersistence.prepareForRestoredState()
-            },
-            requestStructuralPublish: { [weak tabManager] in
-                tabManager?.requestStructuralPublish()
             },
             syncWorkspaceTheme: { [weak tabManager] space in
                 tabManager?.runtimeContext?.syncWorkspaceThemeAcrossWindows(for: space, animate: false)

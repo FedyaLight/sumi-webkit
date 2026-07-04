@@ -45,7 +45,7 @@ final class BrowserStartupPolicyOwner {
         archiveLoadedStartupSessionForManualRestore()
 
         let tabManager = dependencies.tabManager()
-        tabManager.resetRegularTabsAndShortcutLiveInstancesForStartup()
+        tabManager.lastSessionRestoreOwner.resetRegularTabsAndShortcutLiveInstancesForStartup()
 
         guard let windowState = firstRegularWindowForStartupPolicy else { return }
         resetWindowStatesForCleanStartup(selectedWindow: windowState)
@@ -58,7 +58,7 @@ final class BrowserStartupPolicyOwner {
                 dependencies.showEmptyState(windowState)
                 return
             }
-            let tab = tabManager.createNewTab(
+            let tab = tabManager.regularTabLifecycleOwner.createNewTab(
                 url: startupURL.absoluteString,
                 in: targetSpace,
                 activate: false
@@ -133,7 +133,7 @@ final class BrowserStartupPolicyOwner {
         for profileId: UUID,
         tabManager: TabManager
     ) -> Space? {
-        tabManager.spaces.first(where: { $0.profileId == profileId })
+        tabManager.spaceStateOwner.spaces.first(where: { $0.profileId == profileId })
     }
 
     private func restoreAdditionalStartupWindowsIfNeeded() {
@@ -226,7 +226,7 @@ extension BrowserStartupPolicyOwner.Dependencies {
                 guard let browserManager else {
                     preconditionFailure("BrowserStartupPolicyOwner used after BrowserManager deallocation")
                 }
-                return browserManager.tabManager._buildSnapshot()
+                return browserManager.tabManager.structuralPersistence.buildSnapshot()
             },
             applyWindowSessionSnapshot: { [weak browserManager] snapshot, windowState in
                 guard let browserManager else { return }

@@ -335,7 +335,7 @@ struct PinnedGrid: View {
     }
 
     private func activate(_ pin: ShortcutPin) {
-        let tab = browserContext.tabManager.activateShortcutPin(
+        let tab = browserContext.tabManager.shortcutLiveTabOwner.activateShortcutPin(
             pin,
             in: windowState.id,
             currentSpaceId: windowState.currentSpaceId
@@ -352,7 +352,7 @@ struct PinnedGrid: View {
             return
         }
 
-        browserContext.tabManager.deactivateShortcutLiveTab(pinId: pin.id, in: windowState.id)
+        browserContext.tabManager.shortcutLiveTabOwner.deactivateShortcutLiveTab(pinId: pin.id, in: windowState.id)
     }
 
     private func duplicateAsRegularTab(_ pin: ShortcutPin) {
@@ -424,7 +424,7 @@ struct PinnedGrid: View {
             windowSpaceId: windowState.currentSpaceId
         )
         guard let targetSpaceId else { return nil }
-        return browserContext.tabManager.spaces.first { $0.id == targetSpaceId }
+        return browserContext.tabManager.spaceStateOwner.spaces.first { $0.id == targetSpaceId }
     }
 
     private var essentialFolderChoices: [SidebarContextMenuChoice] {
@@ -436,7 +436,7 @@ struct PinnedGrid: View {
 
     private var essentialSpaceChoices: [SidebarContextMenuChoice] {
         makeSidebarContextMenuSpaceChoices(
-            spaces: browserContext.tabManager.spaces
+            spaces: browserContext.tabManager.spaceStateOwner.spaces
         )
     }
 
@@ -452,13 +452,13 @@ struct PinnedGrid: View {
 
     private func moveEssential(_ pin: ShortcutPin, toFolder folderId: UUID) {
         guard let targetFolder = browserContext.tabManager.folderCollectionStateOwner.folder(by: folderId) else { return }
-        let targetIndex = browserContext.tabManager.folderPinnedPins(
+        let targetIndex = browserContext.tabManager.shortcutPinCollectionStateOwner.folderPinnedPins(
             for: folderId,
             in: targetFolder.spaceId
         ).count
 
         mutateContentLayout {
-            _ = browserContext.tabManager.moveShortcutPin(
+            _ = browserContext.tabManager.shortcutPinCommandOwner.moveShortcutPin(
                 pin,
                 to: .spacePinned,
                 profileId: nil,
@@ -473,7 +473,7 @@ struct PinnedGrid: View {
         let targetIndex = browserContext.tabManager.spacePinnedStructureOwner.topLevelSpacePinnedItems(for: targetSpaceId).count
 
         mutateContentLayout {
-            _ = browserContext.tabManager.moveShortcutPin(
+            _ = browserContext.tabManager.shortcutPinCommandOwner.moveShortcutPin(
                 pin,
                 to: .spacePinned,
                 profileId: nil,

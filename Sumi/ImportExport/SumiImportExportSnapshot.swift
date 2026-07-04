@@ -16,7 +16,7 @@ enum SumiImportExportSnapshot {
             )
         }
 
-        let spaces = tabManager.spaces.enumerated().map { index, space in
+        let spaces = tabManager.spaceStateOwner.spaces.enumerated().map { index, space in
             SumiPortableSpace(
                 id: space.id.uuidString,
                 name: space.name,
@@ -28,9 +28,8 @@ enum SumiImportExportSnapshot {
             )
         }
 
-        let folders = tabManager.spaces.flatMap { space -> [SumiPortableFolder] in
-            (tabManager.foldersBySpace[space.id] ?? [])
-                .sorted { $0.index < $1.index }
+        let folders = tabManager.spaceStateOwner.spaces.flatMap { space -> [SumiPortableFolder] in
+            tabManager.folderCollectionStateOwner.folders(for: space.id)
                 .map { folder in
                     SumiPortableFolder(
                         id: folder.id.uuidString,
@@ -46,7 +45,7 @@ enum SumiImportExportSnapshot {
                 }
         }
 
-        let essentials = tabManager.pinnedByProfile
+        let essentials = tabManager.shortcutPinCollectionStateOwner.pinnedByProfileSnapshot()
             .sorted { $0.key.uuidString < $1.key.uuidString }
             .flatMap { profileId, pins -> [SumiPortableLauncher] in
                 pins.sorted { $0.index < $1.index }.map { pin in
@@ -65,9 +64,8 @@ enum SumiImportExportSnapshot {
                 }
             }
 
-        let pinnedLaunchers = tabManager.spaces.flatMap { space -> [SumiPortableLauncher] in
-            (tabManager.spacePinnedShortcuts[space.id] ?? [])
-                .sorted { $0.index < $1.index }
+        let pinnedLaunchers = tabManager.spaceStateOwner.spaces.flatMap { space -> [SumiPortableLauncher] in
+            tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: space.id)
                 .map { pin in
                     SumiPortableLauncher(
                         id: pin.id.uuidString,
@@ -84,8 +82,8 @@ enum SumiImportExportSnapshot {
                 }
         }
 
-        let regularTabs = tabManager.spaces.flatMap { space -> [SumiPortableRegularTab] in
-            (tabManager.tabsBySpace[space.id] ?? [])
+        let regularTabs = tabManager.spaceStateOwner.spaces.flatMap { space -> [SumiPortableRegularTab] in
+            (tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[space.id] ?? [])
                 .sorted { $0.index < $1.index }
                 .map { tab in
                     SumiPortableRegularTab(

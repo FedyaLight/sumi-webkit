@@ -201,7 +201,7 @@ extension BrowserURLBarContextOwner.Dependencies {
                 browserManager?.windowTabContextOwner.currentTab(for: windowState)
             },
             tabForID: { [weak browserManager] tabId in
-                browserManager?.tabManager.tab(for: tabId)
+                browserManager?.tabManager.tabCollectionMembershipOwner.tab(for: tabId)
             },
             webView: { [weak browserManager] tab, windowState in
                 browserManager?.webViewRoutingService.windowOwnedWebView(for: tab, in: windowState.id)

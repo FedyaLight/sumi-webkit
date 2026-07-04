@@ -371,16 +371,16 @@ extension TabStructuralPersistenceOwner.Dependencies {
     @MainActor
     static func live(tabManager: TabManager) -> Self {
         Self(
-            spaces: { [weak tabManager] in tabManager?.spaces ?? [] },
-            splitGroups: { [weak tabManager] in tabManager?.splitGroups ?? [] },
-            pinnedByProfile: { [weak tabManager] in tabManager?.pinnedByProfile ?? [:] },
-            spacePinnedShortcuts: { [weak tabManager] in tabManager?.spacePinnedShortcuts ?? [:] },
-            tabsBySpace: { [weak tabManager] in tabManager?.tabsBySpace ?? [:] },
-            foldersBySpace: { [weak tabManager] in tabManager?.foldersBySpace ?? [:] },
-            currentSpaceId: { [weak tabManager] in tabManager?.currentSpace?.id },
-            currentTab: { [weak tabManager] in tabManager?.currentTab },
+            spaces: { [weak tabManager] in tabManager?.spaceStateOwner.spaces ?? [] },
+            splitGroups: { [weak tabManager] in tabManager?.splitGroupCollectionStateOwner.splitGroups ?? [] },
+            pinnedByProfile: { [weak tabManager] in tabManager?.shortcutPinCollectionStateOwner.pinnedByProfileSnapshot() ?? [:] },
+            spacePinnedShortcuts: { [weak tabManager] in tabManager?.shortcutPinCollectionStateOwner.spacePinnedShortcutsSnapshot() ?? [:] },
+            tabsBySpace: { [weak tabManager] in tabManager?.regularTabCollectionStateOwner.tabsBySpaceSnapshot() ?? [:] },
+            foldersBySpace: { [weak tabManager] in tabManager?.folderCollectionStateOwner.foldersBySpaceSnapshot() ?? [:] },
+            currentSpaceId: { [weak tabManager] in tabManager?.spaceStateOwner.currentSpace?.id },
+            currentTab: { [weak tabManager] in tabManager?.selectionStateOwner.currentTab },
             reconcileProfileRuntimeStates: { [weak tabManager] activeSpaceId in
-                tabManager?.reconcileProfileRuntimeStates(activeSpaceId: activeSpaceId)
+                tabManager?.profileRuntimeStateOwner.reconcile(activeSpaceId: activeSpaceId)
             }
         )
     }

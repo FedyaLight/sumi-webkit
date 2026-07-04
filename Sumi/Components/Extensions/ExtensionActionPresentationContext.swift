@@ -32,7 +32,7 @@ struct ExtensionActionBrowserContext {
             currentTab: { [weak browserManager, weak windowState] in
                 guard let browserManager, let windowState else { return nil }
                 return browserManager.windowTabContextOwner.currentTab(for: windowState)
-                    ?? windowState.currentTabId.flatMap { browserManager.tabManager.tab(for: $0) }
+                    ?? windowState.currentTabId.flatMap { browserManager.tabManager.tabCollectionMembershipOwner.tab(for: $0) }
                     ?? browserManager.shellSelectionService.currentTab(
                         for: windowState,
                         tabStore: browserManager.tabManager.runtimeStore

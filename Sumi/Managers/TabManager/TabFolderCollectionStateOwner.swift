@@ -8,6 +8,14 @@ final class TabFolderCollectionStateOwner {
         self.foldersBySpace = foldersBySpace
     }
 
+    func foldersBySpaceSnapshot() -> [UUID: [TabFolder]] {
+        foldersBySpace
+    }
+
+    func allFolders() -> [TabFolder] {
+        foldersBySpace.values.flatMap { sortedFolders($0) }
+    }
+
     func removeFolders(for spaceId: UUID) {
         foldersBySpace.removeValue(forKey: spaceId)
     }

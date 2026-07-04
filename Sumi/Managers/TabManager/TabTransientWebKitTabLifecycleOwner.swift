@@ -12,7 +12,7 @@ final class TabTransientWebKitTabLifecycleOwner {
         let detach: (Tab) -> Void
         let targetSpace: (Space?) -> Space
         let spaceForID: (UUID) -> Space?
-        let backfillTargetSpaceProfileIfNeeded: (Space, UUID?) -> Bool
+        let backfillTargetSpaceBootstrapProfileIfNeeded: (Space) -> Bool
         let insertRegularTab: (Tab, UUID, Int?) -> Void
         let scheduleStructuralPersistence: () -> Void
         let setActiveTab: (Tab) -> Void
@@ -42,7 +42,7 @@ final class TabTransientWebKitTabLifecycleOwner {
         let validURL = URL(string: normalizedUrl) ?? SumiSurface.emptyTabURL
 
         let targetSpace = dependencies.targetSpace(space)
-        if dependencies.backfillTargetSpaceProfileIfNeeded(targetSpace, defaultProfileIdForSpaceBootstrap) {
+        if dependencies.backfillTargetSpaceBootstrapProfileIfNeeded(targetSpace) {
             dependencies.scheduleStructuralPersistence()
         }
 
@@ -151,10 +151,6 @@ final class TabTransientWebKitTabLifecycleOwner {
         dependencies.settings()?.resolvedSearchEngineTemplate ?? SearchProvider.google.queryTemplate
     }
 
-    private var defaultProfileIdForSpaceBootstrap: UUID? {
-        dependencies.runtimeContext()?.currentProfileId ?? dependencies.runtimeContext()?.defaultProfileId
-    }
-
     private func unloadAndDetach(_ tab: Tab, notifyExtensionClose: Bool) {
         guard let runtimeContext = dependencies.runtimeContext() else {
             preconditionFailure(
@@ -174,6 +170,54 @@ final class TabTransientWebKitTabLifecycleOwner {
         NotificationCenter.default.post(
             name: .sumiTabLifecycleDidChange,
             object: tab
+        )
+    }
+}
+
+extension TabTransientWebKitTabLifecycleOwner.Dependencies {
+    @MainActor
+    static func live(tabManager: TabManager) -> Self {
+        Self(
+            settings: { [weak tabManager] in tabManager?.sumiSettings ?? tabManager?.runtimeContext?.settings },
+            runtimeContext: { [weak tabManager] in tabManager?.runtimeContext },
+            membershipOwner: { [weak tabManager] in
+                guard let tabManager else { preconditionFailure("TabManager dependency used after deallocation") }
+                return tabManager.tabCollectionMembershipOwner
+            },
+            regularTabCollectionOwner: { [weak tabManager] in
+                guard let tabManager else { preconditionFailure("TabManager dependency used after deallocation") }
+                return tabManager.regularTabCollectionOwner
+            },
+            attach: { [weak tabManager] tab in tabManager?.tabCollectionMembershipOwner.attach(tab) },
+            detach: { [weak tabManager] tab in tabManager?.tabCollectionMembershipOwner.detach(tab) },
+            targetSpace: { [weak tabManager] space in
+                guard let tabManager else { preconditionFailure("TabManager dependency used after deallocation") }
+                return tabManager.spaceLifecycleOwner.resolvedTargetSpace(preferred: space)
+            },
+            spaceForID: { [weak tabManager] spaceId in
+                tabManager?.spaceStateOwner.space(with: spaceId)
+            },
+            backfillTargetSpaceBootstrapProfileIfNeeded: { [weak tabManager] space in
+                tabManager?.spaceLifecycleOwner.backfillTargetSpaceBootstrapProfileIfNeeded(space) ?? false
+            },
+            insertRegularTab: { [weak tabManager] tab, spaceId, insertionIndex in
+                tabManager?.regularTabLifecycleOwner.insertRegularTab(tab, in: spaceId, at: insertionIndex)
+            },
+            scheduleStructuralPersistence: { [weak tabManager] in tabManager?.scheduleStructuralPersistence() },
+            setActiveTab: { [weak tabManager] tab in tabManager?.activeSelectionOwner.setActiveTab(tab) },
+            tabForID: { [weak tabManager] id in tabManager?.tabCollectionMembershipOwner.tab(for: id) },
+            faviconService: { [weak tabManager] in
+                guard let tabManager else { preconditionFailure("TabManager dependency used after deallocation") }
+                return tabManager.faviconService
+            },
+            faviconImageService: { [weak tabManager] in
+                guard let tabManager else { preconditionFailure("TabManager dependency used after deallocation") }
+                return tabManager.faviconImageService
+            },
+            visitedLinkStore: { [weak tabManager] in
+                guard let tabManager else { preconditionFailure("TabManager dependency used after deallocation") }
+                return tabManager.visitedLinkStore
+            }
         )
     }
 }

@@ -290,7 +290,7 @@ enum SpaceSidebarTransitionSnapshotBuilder {
             : browserContext.tabManager.spaceLauncherProjectionOwner.projection(for: space.id, in: windowState.id)
         let tabs = windowState.isIncognito
             ? windowState.ephemeralTabs.sorted { $0.index < $1.index }
-            : (projection?.regularTabs ?? browserContext.tabManager.tabs(in: space))
+            : (projection?.regularTabs ?? browserContext.tabManager.regularTabCollectionOwner.tabs(in: space))
         let regularTabs = tabs.map { tabSnapshot($0, currentTabId: windowState.currentTabId) }
 
         return SpaceSidebarPageSnapshot(
@@ -405,7 +405,7 @@ enum SpaceSidebarTransitionSnapshotBuilder {
     }
 
     private static func pinnedItemsSnapshot(
-        projection: TabManager.SpaceLauncherProjection?,
+        projection: SpaceLauncherProjectionSnapshot?,
         browserContext: SidebarBrowserContext,
         windowState: BrowserWindowState
     ) -> [SpacePinnedItemSnapshot] {

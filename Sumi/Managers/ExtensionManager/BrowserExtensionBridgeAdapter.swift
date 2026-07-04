@@ -67,7 +67,7 @@ extension BrowserExtensionBridgeAdapter: ExtensionBrowserBridgeContext {
     }
 
     func extensionTab(for tabId: UUID) -> Tab? {
-        if let tab = tabManager?.tab(for: tabId) {
+        if let tab = tabManager?.tabCollectionMembershipOwner.tab(for: tabId) {
             return tab
         }
 
@@ -108,7 +108,7 @@ extension BrowserExtensionBridgeAdapter: ExtensionBrowserBridgeContext {
 
     func extensionSpace(for spaceId: UUID?) -> Space? {
         guard let spaceId else { return nil }
-        return tabManager?.spaces.first { $0.id == spaceId }
+        return tabManager?.spaceStateOwner.space(with: spaceId)
     }
 
     func extensionTargetSpace(for windowState: BrowserWindowState?) -> Space? {
@@ -121,7 +121,7 @@ extension BrowserExtensionBridgeAdapter: ExtensionBrowserBridgeContext {
         }
 
         if let profileId = windowState.currentProfileId,
-           let profileSpace = tabManager?.spaces.first(where: { $0.profileId == profileId }) {
+           let profileSpace = tabManager?.spaceStateOwner.firstSpace(forProfile: profileId) {
             return profileSpace
         }
 
@@ -133,7 +133,7 @@ extension BrowserExtensionBridgeAdapter: ExtensionBrowserBridgeContext {
     }
 
     func extensionTargetSpace(matchingProfile profileId: UUID) -> Space? {
-        tabManager?.spaces.first { $0.profileId == profileId }
+        tabManager?.spaceStateOwner.firstSpace(forProfile: profileId)
     }
 
     func preferredExtensionWindowState(containing tab: Tab) -> BrowserWindowState? {
@@ -197,7 +197,7 @@ extension BrowserExtensionBridgeAdapter: ExtensionBrowserBridgeContext {
     ) -> Tab {
         let tabManager = requireTabManager(operation: "create a tab")
         if let url {
-            return tabManager.createNewTab(
+            return tabManager.regularTabLifecycleOwner.createNewTab(
                 url: url.absoluteString,
                 in: space,
                 activate: activate,
@@ -205,7 +205,7 @@ extension BrowserExtensionBridgeAdapter: ExtensionBrowserBridgeContext {
             )
         }
 
-        return tabManager.createNewTab(
+        return tabManager.regularTabLifecycleOwner.createNewTab(
             in: space,
             activate: activate,
             webExtensionContextOverride: webExtensionContextOverride
@@ -217,7 +217,7 @@ extension BrowserExtensionBridgeAdapter: ExtensionBrowserBridgeContext {
         in space: Space?,
         webExtensionContextOverride: WKWebExtensionContext?
     ) -> Tab {
-        requireTabManager(operation: "create a transient tab").createTransientExtensionTab(
+        requireTabManager(operation: "create a transient tab").transientWebKitTabLifecycleOwner.createTransientExtensionTab(
             url: url.absoluteString,
             in: space,
             webExtensionContextOverride: webExtensionContextOverride
@@ -237,22 +237,22 @@ extension BrowserExtensionBridgeAdapter: ExtensionBrowserBridgeContext {
     }
 
     func isTransientExtensionTab(_ tab: Tab) -> Bool {
-        tabManager?.isTransientExtensionTab(tab) ?? false
+        tabManager?.transientWebKitTabLifecycleOwner.isTransientExtensionTab(tab) ?? false
     }
 
     @discardableResult
     func promoteTransientExtensionTab(_ tab: Tab) -> Bool {
-        guard let tabManager, tabManager.isTransientExtensionTab(tab) else {
+        guard let tabManager, tabManager.transientWebKitTabLifecycleOwner.isTransientExtensionTab(tab) else {
             return false
         }
 
         guard let targetSpace = tab.spaceId.flatMap({ spaceId in
-            tabManager.spaces.first(where: { $0.id == spaceId })
+            tabManager.spaceStateOwner.spaces.first(where: { $0.id == spaceId })
         }) else {
             return false
         }
 
-        return tabManager.promoteTransientExtensionTab(
+        return tabManager.transientWebKitTabLifecycleOwner.promoteTransientExtensionTab(
             tab,
             in: targetSpace,
             activate: false
@@ -260,11 +260,11 @@ extension BrowserExtensionBridgeAdapter: ExtensionBrowserBridgeContext {
     }
 
     func isAuxiliaryMiniWindowTab(_ tab: Tab) -> Bool {
-        tabManager?.isAuxiliaryMiniWindowTab(tab) ?? false
+        tabManager?.transientWebKitTabLifecycleOwner.isAuxiliaryMiniWindowTab(tab) ?? false
     }
 
     func isPinnedExtensionTab(_ tab: Tab) -> Bool {
-        tab.isPinned || tabManager?.pinnedTabs.contains(where: { $0.id == tab.id }) == true
+        tab.isPinned || tabManager?.shortcutPresentationOwner.activeShortcutTabs().contains(where: { $0.id == tab.id }) == true
     }
 
     func selectExtensionTab(_ tab: Tab, in windowState: BrowserWindowState) {

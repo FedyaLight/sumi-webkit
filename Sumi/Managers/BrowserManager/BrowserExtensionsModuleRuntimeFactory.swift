@@ -12,7 +12,7 @@ enum BrowserExtensionsModuleRuntimeFactory {
                 manager.attach(browserManager: browserManager)
             },
             liveTabs: { [weak browserManager] in
-                browserManager?.tabManager.allTabs() ?? []
+                browserManager?.tabManager.tabCollectionMembershipOwner.allTabs() ?? []
             },
             invalidateTabStructuralRevision: { [weak browserManager] in
                 browserManager?.tabStructuralRevision &+= 1

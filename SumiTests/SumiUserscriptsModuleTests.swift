@@ -309,7 +309,7 @@ final class SumiUserscriptsModuleTests: XCTestCase {
         browserManager.webViewCoordinator = WebViewCoordinator()
         let sourceSpace = browserManager.tabManager.spaceLifecycleOwner.createSpace(name: "Userscripts Source")
         let globalSpace = browserManager.tabManager.spaceLifecycleOwner.createSpace(name: "Userscripts Global")
-        browserManager.tabManager.currentSpace = globalSpace
+        browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(globalSpace)
         let sourceWindow = BrowserWindowState()
         sourceWindow.currentSpaceId = sourceSpace.id
         let globalWindow = BrowserWindowState()
@@ -319,13 +319,13 @@ final class SumiUserscriptsModuleTests: XCTestCase {
         windowRegistry.register(globalWindow)
         windowRegistry.setActive(globalWindow)
         browserManager.windowRegistry = windowRegistry
-        let sourceTab = browserManager.tabManager.createNewTab(
+        let sourceTab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://example.com/source",
             in: sourceSpace,
             activate: false
         )
         sourceWindow.currentTabId = sourceTab.id
-        let globalTab = browserManager.tabManager.createNewTab(
+        let globalTab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://example.com/global",
             in: globalSpace,
             activate: false
@@ -333,8 +333,8 @@ final class SumiUserscriptsModuleTests: XCTestCase {
         globalWindow.currentTabId = globalTab.id
         let sourceWebView = WKWebView()
         browserManager.webViewCoordinator?.setWebView(sourceWebView, for: sourceTab.id, in: sourceWindow.id)
-        let initialSourceTabCount = browserManager.tabManager.tabs(in: sourceSpace).count
-        let initialGlobalTabCount = browserManager.tabManager.tabs(in: globalSpace).count
+        let initialSourceTabCount = browserManager.tabManager.regularTabCollectionOwner.tabs(in: sourceSpace).count
+        let initialGlobalTabCount = browserManager.tabManager.regularTabCollectionOwner.tabs(in: globalSpace).count
 
         module.attach(runtime: BrowserUserscriptRuntimeFactory.runtime(for: browserManager))
         let manager = try XCTUnwrap(module.managerIfEnabled())
@@ -346,7 +346,7 @@ final class SumiUserscriptsModuleTests: XCTestCase {
         )
 
         let openedTab = try XCTUnwrap(
-            browserManager.tabManager.tabs(in: sourceSpace).first {
+            browserManager.tabManager.regularTabCollectionOwner.tabs(in: sourceSpace).first {
                 $0.url.absoluteString == "https://example.com/userscript-open"
             }
         )
@@ -354,15 +354,15 @@ final class SumiUserscriptsModuleTests: XCTestCase {
         XCTAssertEqual(openedTab.spaceId, sourceSpace.id)
         XCTAssertEqual(sourceWindow.currentTabId, openedTab.id)
         XCTAssertEqual(globalWindow.currentTabId, globalTab.id)
-        XCTAssertEqual(browserManager.tabManager.tabs(in: sourceSpace).count, initialSourceTabCount + 1)
-        XCTAssertEqual(browserManager.tabManager.tabs(in: globalSpace).count, initialGlobalTabCount)
+        XCTAssertEqual(browserManager.tabManager.regularTabCollectionOwner.tabs(in: sourceSpace).count, initialSourceTabCount + 1)
+        XCTAssertEqual(browserManager.tabManager.regularTabCollectionOwner.tabs(in: globalSpace).count, initialGlobalTabCount)
 
         manager.closeTab(tabId: openedTab.id.uuidString)
 
-        XCTAssertNil(browserManager.tabManager.tab(for: openedTab.id))
+        XCTAssertNil(browserManager.tabManager.tabCollectionMembershipOwner.tab(for: openedTab.id))
         manager.closeTab(tabId: nil, sourceWebView: sourceWebView)
-        XCTAssertNil(browserManager.tabManager.tab(for: sourceTab.id))
-        XCTAssertNotNil(browserManager.tabManager.tab(for: globalTab.id))
+        XCTAssertNil(browserManager.tabManager.tabCollectionMembershipOwner.tab(for: sourceTab.id))
+        XCTAssertNotNil(browserManager.tabManager.tabCollectionMembershipOwner.tab(for: globalTab.id))
     }
 
     private func makeModule(

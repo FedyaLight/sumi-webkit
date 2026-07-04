@@ -5,7 +5,7 @@ extension TabCompositorRuntime {
     static func live(browserManager: BrowserManager) -> Self {
         Self(
             markTabAccessed: { [weak browserManager] tabId in
-                if let tab = browserManager?.tabManager.tab(for: tabId) {
+                if let tab = browserManager?.tabManager.tabCollectionMembershipOwner.tab(for: tabId) {
                     tab.suspensionStateOwner.noteAccess()
                     return
                 }

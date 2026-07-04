@@ -9,9 +9,9 @@ final class TabNormalWebViewSetupOwnerTests: XCTestCase {
     func testSetupWebViewReusesCompatibleParkedNormalWebView() async throws {
         let browserManager = BrowserManager()
         await waitForInitialTabManagerDataLoad(on: browserManager)
-        let tab = browserManager.tabManager.createNewTab(
+        let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://example.com/reuse-compatible-normal-webview",
-            in: browserManager.tabManager.currentSpace,
+            in: browserManager.tabManager.spaceStateOwner.currentSpace,
             activate: false
         )
         let parkedWebView = try XCTUnwrap(

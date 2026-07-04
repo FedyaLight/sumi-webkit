@@ -6,57 +6,83 @@ import Foundation
 /// space/folder/pin/tab collections.
 @MainActor
 final class TabLastSessionRestoreOwner {
-    unowned let tabManager: TabManager
+    struct Dependencies {
+        let requireRuntimeContext: @MainActor () -> TabManagerRuntimeContext
+        let withStructuralUpdateTransactionVoid: @MainActor (@MainActor () -> Void) -> Void
+        let lazyRestoreCoordinator: TabLazyRestoreCoordinator
+        let transientTabRegistryOwner: TabTransientTabRegistryOwner
+        let cancelRuntimeStatePersistence: @MainActor (UUID) -> Void
+        let tabCollectionMembershipOwner: TabCollectionMembershipOwner
+        let notifyTransientShortcutStateChanged: @MainActor () -> Void
+        let spaceStateOwner: TabSpaceCollectionStateOwner
+        let regularTabCollectionOwner: RegularTabCollectionOwner
+        let regularTabCollectionStateOwner: RegularTabCollectionStateOwner
+        let structuralCollectionMutationOwner: TabStructuralCollectionMutationOwner
+        let markSpacesSnapshotDirty: @MainActor () -> Void
+        let selectionStateOwner: TabSelectionStateOwner
+        let scheduleStructuralPersistence: @MainActor () -> Void
+        let objectWillChange: @MainActor () -> Void
+        let markAllSpacesStructurallyDirty: @MainActor () -> Void
+        let folderCollectionStateOwner: TabFolderCollectionStateOwner
+        let shortcutPinCollectionStateOwner: ShortcutPinCollectionStateOwner
+        let shortcutPinStoreOwner: ShortcutPinStoreOwner
+        let spacePinnedStructureOwner: SpacePinnedStructureOwner
+        let faviconService: any BrowserFaviconServicing
+        let faviconImageService: any BrowserFaviconImageServicing
+        let visitedLinkStore: any BrowserVisitedLinkStoreManaging
+    }
 
-    init(tabManager: TabManager) {
-        self.tabManager = tabManager
+    private let dependencies: Dependencies
+
+    init(dependencies: Dependencies) {
+        self.dependencies = dependencies
     }
 
     func resetRegularTabsAndShortcutLiveInstancesForStartup() {
-        let runtimeContext = tabManager.requireRuntimeContext()
-        tabManager.withStructuralUpdateTransaction {
-            tabManager.lazyRestoreCoordinator.clear()
-            let liveShortcutTabs = tabManager.transientTabRegistryOwner.transientShortcutTabs
+        let runtimeContext = dependencies.requireRuntimeContext()
+        dependencies.withStructuralUpdateTransactionVoid {
+            dependencies.lazyRestoreCoordinator.clear()
+            let liveShortcutTabs = dependencies.transientTabRegistryOwner.transientShortcutTabs
             if !liveShortcutTabs.isEmpty {
                 for tab in liveShortcutTabs {
-                    tabManager.structuralPersistence.cancelRuntimeStatePersistence(for: tab.id)
+                    dependencies.cancelRuntimeStatePersistence(tab.id)
                     tab.performComprehensiveWebViewCleanup()
                     runtimeContext.webViewLifecycle.unloadTab(tab)
                     runtimeContext.webViewLifecycle.requireRemoveAllWebViews(
                         for: tab,
                         closeActiveFullscreenMedia: true
                     )
-                    tabManager.detach(tab)
+                    dependencies.tabCollectionMembershipOwner.detach(tab)
                 }
-                tabManager.transientTabRegistryOwner.replaceTransientShortcutTabsByWindow([:])
-                tabManager.notifyTransientShortcutStateChanged()
+                dependencies.transientTabRegistryOwner.replaceTransientShortcutTabsByWindow([:])
+                dependencies.notifyTransientShortcutStateChanged()
             }
 
-            for space in tabManager.spaces {
-                let regularTabs = tabManager.regularTabCollectionOwner.tabs(in: space)
+            for space in dependencies.spaceStateOwner.spaces {
+                let regularTabs = dependencies.regularTabCollectionOwner.tabs(in: space)
                 for tab in regularTabs {
-                    tabManager.structuralPersistence.cancelRuntimeStatePersistence(for: tab.id)
+                    dependencies.cancelRuntimeStatePersistence(tab.id)
                     runtimeContext.webViewLifecycle.unloadTab(tab)
                     runtimeContext.webViewLifecycle.requireRemoveAllWebViews(
                         for: tab,
                         closeActiveFullscreenMedia: true
                     )
-                    tabManager.detach(tab)
+                    dependencies.tabCollectionMembershipOwner.detach(tab)
                 }
-                tabManager.setTabs([], for: space.id)
+                dependencies.structuralCollectionMutationOwner.setTabs([], for: space.id)
                 if space.activeTabId != nil {
                     space.activeTabId = nil
-                    tabManager.structuralPersistence.markSpacesSnapshotDirty()
+                    dependencies.markSpacesSnapshotDirty()
                 }
             }
 
-            tabManager.currentTab = nil
-            tabManager.scheduleStructuralPersistence()
+            dependencies.selectionStateOwner.replaceCurrentTab(nil)
+            dependencies.scheduleStructuralPersistence()
         }
     }
 
     func mergeSnapshotForLastSessionRestore(_ snapshot: TabSnapshotRepository.Snapshot) {
-        tabManager.withStructuralUpdateTransaction {
+        dependencies.withStructuralUpdateTransactionVoid {
             mergeSpaces(from: snapshot.spaces)
             mergeFolders(from: snapshot.folders)
             mergeShortcutPins(from: snapshot.tabs.filter { $0.isPinned })
@@ -64,25 +90,25 @@ final class TabLastSessionRestoreOwner {
             mergeRegularTabs(from: snapshot.tabs.filter { !$0.isPinned && !$0.isSpacePinned })
 
             if let currentSpaceId = snapshot.state.currentSpaceID,
-               let restoredSpace = tabManager.spaceCollectionStateOwner.space(with: currentSpaceId) {
-                tabManager.currentSpace = restoredSpace
-            } else if tabManager.spaceCollectionStateOwner.currentSpace == nil {
-                tabManager.currentSpace = tabManager.spaceCollectionStateOwner.firstSpace
+               let restoredSpace = dependencies.spaceStateOwner.space(with: currentSpaceId) {
+                dependencies.spaceStateOwner.replaceCurrentSpace(restoredSpace)
+            } else if dependencies.spaceStateOwner.currentSpace == nil {
+                dependencies.spaceStateOwner.replaceCurrentSpace(dependencies.spaceStateOwner.firstSpace)
             }
 
             if let currentTabId = snapshot.state.currentTabID,
-               let restoredTab = tabManager.tab(for: currentTabId) {
-                tabManager.currentTab = restoredTab
+               let restoredTab = dependencies.tabCollectionMembershipOwner.tab(for: currentTabId) {
+                dependencies.selectionStateOwner.replaceCurrentTab(restoredTab)
             }
 
-            tabManager.lazyRestoreCoordinator.reset(
+            dependencies.lazyRestoreCoordinator.reset(
                 restoredTabIDs: Set(
                     snapshot.tabs
                         .filter { !$0.isPinned && !$0.isSpacePinned }
                         .map(\.id)
                 )
             )
-            tabManager.scheduleStructuralPersistence()
+            dependencies.scheduleStructuralPersistence()
         }
     }
 
@@ -90,7 +116,7 @@ final class TabLastSessionRestoreOwner {
         var didAddSpace = false
         for snapshotSpace in snapshotSpaces.sorted(by: sortSnapshotSpaces) {
             let restoredTheme = restoredWorkspaceTheme(from: snapshotSpace)
-            if let existing = tabManager.spaceCollectionStateOwner.space(with: snapshotSpace.id) {
+            if let existing = dependencies.spaceStateOwner.space(with: snapshotSpace.id) {
                 existing.name = snapshotSpace.name
                 existing.icon = SumiPersistentGlyph.normalizedSpaceIconValue(snapshotSpace.icon)
                 existing.workspaceTheme = restoredTheme
@@ -98,8 +124,8 @@ final class TabLastSessionRestoreOwner {
                 continue
             }
 
-            tabManager.objectWillChange.send()
-            tabManager.spaceCollectionStateOwner.append(
+            dependencies.objectWillChange()
+            dependencies.spaceStateOwner.append(
                 Space(
                     id: snapshotSpace.id,
                     name: snapshotSpace.name,
@@ -112,8 +138,8 @@ final class TabLastSessionRestoreOwner {
         }
 
         let order = Dictionary(uniqueKeysWithValues: snapshotSpaces.map { ($0.id, $0.index) })
-        tabManager.objectWillChange.send()
-        tabManager.spaceCollectionStateOwner.sort {
+        dependencies.objectWillChange()
+        dependencies.spaceStateOwner.sort {
             let lhs = order[$0.id] ?? Int.max
             let rhs = order[$1.id] ?? Int.max
             if lhs != rhs { return lhs < rhs }
@@ -121,19 +147,19 @@ final class TabLastSessionRestoreOwner {
         }
 
         if didAddSpace {
-            for space in tabManager.spaces
-            where tabManager.regularTabCollectionStateOwner.tabsBySpace[space.id] == nil {
-                tabManager.setTabs([], for: space.id)
+            for space in dependencies.spaceStateOwner.spaces
+            where dependencies.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[space.id] == nil {
+                dependencies.structuralCollectionMutationOwner.setTabs([], for: space.id)
             }
         }
-        tabManager.markAllSpacesStructurallyDirty()
+        dependencies.markAllSpacesStructurallyDirty()
     }
 
     private func mergeFolders(from snapshotFolders: [TabSnapshotRepository.SnapshotFolder]) {
         let foldersBySnapshotSpace = Dictionary(grouping: snapshotFolders, by: \.spaceId)
         for (spaceId, snapshotFolders) in foldersBySnapshotSpace {
-            guard tabManager.spaceCollectionStateOwner.contains(spaceId: spaceId) else { continue }
-            var existingFolders = tabManager.foldersBySpace[spaceId] ?? []
+            guard dependencies.spaceStateOwner.contains(spaceId: spaceId) else { continue }
+            var existingFolders = dependencies.folderCollectionStateOwner.folders(for: spaceId)
             for snapshotFolder in snapshotFolders.sorted(by: sortSnapshotFolders) {
                 if let index = existingFolders.firstIndex(where: { $0.id == snapshotFolder.id }) {
                     existingFolders[index].name = snapshotFolder.name
@@ -157,7 +183,7 @@ final class TabLastSessionRestoreOwner {
                 }
             }
             existingFolders.sort(by: sortFolders)
-            tabManager.setFolders(existingFolders, for: spaceId)
+            dependencies.structuralCollectionMutationOwner.setFolders(existingFolders, for: spaceId)
         }
     }
 
@@ -165,7 +191,7 @@ final class TabLastSessionRestoreOwner {
         let pinsByProfile = Dictionary(grouping: snapshotTabs, by: \.profileId)
         for (profileId, snapshotTabs) in pinsByProfile {
             guard let profileId else { continue }
-            var pins = tabManager.pinnedByProfile[profileId] ?? []
+            var pins = dependencies.shortcutPinCollectionStateOwner.essentialPins(for: profileId)
             for snapshotTab in snapshotTabs.sorted(by: sortSnapshotTabs) {
                 guard pins.contains(where: { $0.id == snapshotTab.id }) == false,
                       let url = URL(string: snapshotTab.urlString)
@@ -185,8 +211,8 @@ final class TabLastSessionRestoreOwner {
                     )
                 )
             }
-            tabManager.setPinnedTabs(
-                tabManager.shortcutPinStoreOwner.reindexed(pins.sorted(by: sortPins)),
+            dependencies.structuralCollectionMutationOwner.setPinnedTabs(
+                dependencies.shortcutPinStoreOwner.reindexed(pins.sorted(by: sortPins)),
                 for: profileId
             )
         }
@@ -199,8 +225,8 @@ final class TabLastSessionRestoreOwner {
         }, by: \.0)
 
         for (spaceId, entries) in pinsBySpace {
-            guard tabManager.spaceCollectionStateOwner.contains(spaceId: spaceId) else { continue }
-            var pins = tabManager.spacePinnedShortcuts[spaceId] ?? []
+            guard dependencies.spaceStateOwner.contains(spaceId: spaceId) else { continue }
+            var pins = dependencies.shortcutPinCollectionStateOwner.spacePinnedPins(for: spaceId)
             for snapshotTab in entries.map(\.1).sorted(by: sortSnapshotTabs) {
                 guard pins.contains(where: { $0.id == snapshotTab.id }) == false,
                       let url = URL(string: snapshotTab.urlString)
@@ -221,8 +247,8 @@ final class TabLastSessionRestoreOwner {
                     )
                 )
             }
-            tabManager.setSpacePinnedShortcuts(
-                tabManager.spacePinnedStructureOwner.normalizedSpacePinnedShortcuts(pins),
+            dependencies.structuralCollectionMutationOwner.setSpacePinnedShortcuts(
+                dependencies.spacePinnedStructureOwner.normalizedSpacePinnedShortcuts(pins),
                 for: spaceId
             )
         }
@@ -235,8 +261,8 @@ final class TabLastSessionRestoreOwner {
         }, by: \.0)
 
         for (spaceId, entries) in tabsBySnapshotSpace {
-            guard tabManager.spaceCollectionStateOwner.contains(spaceId: spaceId) else { continue }
-            var tabs = tabManager.regularTabCollectionOwner.tabs(in: spaceId)
+            guard dependencies.spaceStateOwner.contains(spaceId: spaceId) else { continue }
+            var tabs = dependencies.regularTabCollectionOwner.tabs(in: spaceId)
             for snapshotTab in entries.map(\.1).sorted(by: sortSnapshotTabs) {
                 guard tabs.contains(where: { $0.id == snapshotTab.id }) == false,
                       let url = URL(string: snapshotTab.currentURLString ?? snapshotTab.urlString)
@@ -253,19 +279,19 @@ final class TabLastSessionRestoreOwner {
                     spaceId: spaceId,
                     index: snapshotTab.index,
                     loadsCachedFaviconOnInit: false,
-                    faviconService: tabManager.faviconService,
-                    faviconImageService: tabManager.faviconImageService,
-                    visitedLinkStore: tabManager.visitedLinkStore
+                    faviconService: dependencies.faviconService,
+                    faviconImageService: dependencies.faviconImageService,
+                    visitedLinkStore: dependencies.visitedLinkStore
                 )
                 tab.canGoBack = snapshotTab.canGoBack
                 tab.canGoForward = snapshotTab.canGoForward
                 tab.profileId = snapshotTab.profileId
-                    ?? tabManager.spaceCollectionStateOwner.profileId(for: spaceId)
-                tabManager.attach(tab)
+                    ?? dependencies.spaceStateOwner.profileId(for: spaceId)
+                dependencies.tabCollectionMembershipOwner.attach(tab)
                 tabs.append(tab)
             }
             tabs.sort(by: sortTabs)
-            tabManager.setTabs(tabs, for: spaceId)
+            dependencies.structuralCollectionMutationOwner.setTabs(tabs, for: spaceId)
         }
     }
 
@@ -316,5 +342,59 @@ final class TabLastSessionRestoreOwner {
             return theme
         }
         return .default
+    }
+}
+
+extension TabLastSessionRestoreOwner.Dependencies {
+    @MainActor
+    static func live(tabManager: TabManager) -> Self {
+        Self(
+            requireRuntimeContext: { [weak tabManager] in
+                guard let tabManager else {
+                    preconditionFailure("TabManager dependency used after deallocation")
+                }
+                return tabManager.requireRuntimeContext()
+            },
+            withStructuralUpdateTransactionVoid: { [weak tabManager] operation in
+                guard let tabManager else {
+                    operation()
+                    return
+                }
+                tabManager.withStructuralUpdateTransaction(operation)
+            },
+            lazyRestoreCoordinator: tabManager.lazyRestoreCoordinator,
+            transientTabRegistryOwner: tabManager.transientTabRegistryOwner,
+            cancelRuntimeStatePersistence: { [weak tabManager] tabId in
+                tabManager?.structuralPersistence.cancelRuntimeStatePersistence(for: tabId)
+            },
+            tabCollectionMembershipOwner: tabManager.tabCollectionMembershipOwner,
+            notifyTransientShortcutStateChanged: { [weak tabManager] in
+                tabManager?.notifyTransientShortcutStateChanged()
+            },
+            spaceStateOwner: tabManager.spaceStateOwner,
+            regularTabCollectionOwner: tabManager.regularTabCollectionOwner,
+            regularTabCollectionStateOwner: tabManager.regularTabCollectionStateOwner,
+            structuralCollectionMutationOwner: tabManager.structuralCollectionMutationOwner,
+            markSpacesSnapshotDirty: { [weak tabManager] in
+                tabManager?.structuralPersistence.markSpacesSnapshotDirty()
+            },
+            selectionStateOwner: tabManager.selectionStateOwner,
+            scheduleStructuralPersistence: { [weak tabManager] in
+                tabManager?.scheduleStructuralPersistence()
+            },
+            objectWillChange: { [weak tabManager] in
+                tabManager?.objectWillChange.send()
+            },
+            markAllSpacesStructurallyDirty: { [weak tabManager] in
+                tabManager?.structuralPersistence.markAllSpacesStructurallyDirty()
+            },
+            folderCollectionStateOwner: tabManager.folderCollectionStateOwner,
+            shortcutPinCollectionStateOwner: tabManager.shortcutPinCollectionStateOwner,
+            shortcutPinStoreOwner: tabManager.shortcutPinStoreOwner,
+            spacePinnedStructureOwner: tabManager.spacePinnedStructureOwner,
+            faviconService: tabManager.faviconService,
+            faviconImageService: tabManager.faviconImageService,
+            visitedLinkStore: tabManager.visitedLinkStore
+        )
     }
 }

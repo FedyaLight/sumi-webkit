@@ -294,7 +294,7 @@ struct SpacesSideBarView: View {
     private var availableSpaces: [Space] {
         windowState.isIncognito
             ? windowState.ephemeralSpaces
-            : browserContext.tabManager.spaces
+            : browserContext.tabManager.spaceStateOwner.spaces
     }
 
     private var sidebarInteractionState: SidebarInteractionState {
@@ -311,7 +311,7 @@ struct SpacesSideBarView: View {
             currentSpaces: { [windowState, browserContext] in
                 windowState.isIncognito
                     ? windowState.ephemeralSpaces
-                    : browserContext.tabManager.spaces
+                    : browserContext.tabManager.spaceStateOwner.spaces
             },
             windowState: windowState,
             browserContext: browserContext,
@@ -607,7 +607,7 @@ struct SpacesSideBarView: View {
             : {
                 browserContext.commands.createFolderInCurrentSpace(windowState)
             }
-        let changeThemeAction: (() -> Void)? = browserContext.tabManager.currentSpace == nil
+        let changeThemeAction: (() -> Void)? = browserContext.tabManager.spaceStateOwner.currentSpace == nil
             ? nil
             : {
                 browserContext.commands.showGradientEditor(windowState.resolveSidebarPresentationSource())
@@ -834,7 +834,7 @@ struct SpacesSideBarView: View {
             icon: session.resolvedIcon,
             profileId: profileId
         )
-        if let resolvedSpace = browserContext.tabManager.spaces.first(where: { $0.id == newSpace.id }) {
+        if let resolvedSpace = browserContext.tabManager.spaceStateOwner.space(with: newSpace.id) {
             browserContext.spaceTransitions.setActiveSpace(resolvedSpace, windowState)
         }
 

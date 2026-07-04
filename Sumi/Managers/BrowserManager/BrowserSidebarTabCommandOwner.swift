@@ -61,10 +61,10 @@ extension BrowserSidebarTabCommandOwner.Dependencies {
                 browserManager?.tabLifecycleService.closeOrchestration.closeTab(tab, in: windowState)
             },
             moveTabUp: { [weak browserManager] tabId in
-                browserManager?.tabManager.moveTabUp(tabId)
+                browserManager?.tabManager.regularTabCollectionOwner.moveTabUp(tabId)
             },
             moveTabDown: { [weak browserManager] tabId in
-                browserManager?.tabManager.moveTabDown(tabId)
+                browserManager?.tabManager.regularTabCollectionOwner.moveTabDown(tabId)
             },
             openForegroundTab: { [weak browserManager] url, windowState, preferredSpaceId in
                 browserManager?.tabLifecycleService.opening.openNewTab(

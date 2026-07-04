@@ -71,10 +71,10 @@ extension BrowserShutdownCleanupOwner.Dependencies {
                 browserManager?.glanceManager.dismissGlance(persistsWindowSession: false)
             },
             pinnedTabs: { [weak browserManager] in
-                browserManager?.tabManager.allPinnedTabsAllProfiles ?? []
+                browserManager?.tabManager.shortcutPresentationOwner.activeShortcutTabs(role: .essential) ?? []
             },
             regularTabs: { [weak browserManager] in
-                browserManager?.tabManager.allTabs() ?? []
+                browserManager?.tabManager.tabCollectionMembershipOwner.allTabs() ?? []
             },
             ephemeralTabs: { [weak browserManager] in
                 browserManager?.windowRegistry?.allWindows.flatMap(\.ephemeralTabs) ?? []

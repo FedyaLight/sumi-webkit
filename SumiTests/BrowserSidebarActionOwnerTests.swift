@@ -6,7 +6,7 @@ import XCTest
 final class BrowserSidebarActionOwnerTests: XCTestCase {
     func testSpaceForSidebarActionsPrefersWindowSpaceBeforeCurrentSpace() {
         let harness = makeHarness()
-        harness.tabManager.currentSpace = harness.secondarySpace
+        harness.tabManager.spaceStateOwner.replaceCurrentSpace(harness.secondarySpace)
 
         XCTAssertEqual(
             harness.owner.spaceForSidebarActions(in: harness.windowState)?.id,
@@ -16,7 +16,7 @@ final class BrowserSidebarActionOwnerTests: XCTestCase {
 
     func testCreateFolderInCurrentSpaceUsesResolvedWindowSpace() {
         let harness = makeHarness()
-        harness.tabManager.currentSpace = harness.secondarySpace
+        harness.tabManager.spaceStateOwner.replaceCurrentSpace(harness.secondarySpace)
 
         harness.owner.createFolderInCurrentSpace(in: harness.windowState)
 
@@ -28,7 +28,7 @@ final class BrowserSidebarActionOwnerTests: XCTestCase {
         let harness = makeHarness()
         harness.windowState.currentSpaceId = UUID()
         harness.windowState.currentProfileId = harness.primaryProfile.id
-        harness.tabManager.currentSpace = harness.secondarySpace
+        harness.tabManager.spaceStateOwner.replaceCurrentSpace(harness.secondarySpace)
 
         XCTAssertNil(harness.owner.spaceForSidebarActions(in: harness.windowState))
     }
@@ -37,7 +37,7 @@ final class BrowserSidebarActionOwnerTests: XCTestCase {
         let harness = makeHarness()
         harness.windowState.currentSpaceId = UUID()
         harness.windowState.currentProfileId = nil
-        harness.tabManager.currentSpace = harness.secondarySpace
+        harness.tabManager.spaceStateOwner.replaceCurrentSpace(harness.secondarySpace)
 
         XCTAssertNil(harness.owner.spaceForSidebarActions(in: harness.windowState))
 
@@ -57,8 +57,8 @@ final class BrowserSidebarActionOwnerTests: XCTestCase {
         let windowState = BrowserWindowState()
         let liveFolderManager = SumiLiveFolderManager()
 
-        tabManager.spaces = [primarySpace, secondarySpace]
-        tabManager.currentSpace = primarySpace
+        tabManager.spaceStateOwner.replaceSpaces([primarySpace, secondarySpace])
+        tabManager.spaceStateOwner.replaceCurrentSpace(primarySpace)
         windowState.currentSpaceId = primarySpace.id
         windowState.currentProfileId = primaryProfile.id
         windowState.tabManager = tabManager

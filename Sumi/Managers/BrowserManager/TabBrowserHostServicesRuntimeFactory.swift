@@ -41,7 +41,7 @@ enum TabBrowserHostServicesRuntimeFactory {
                 browserManager?.compositorManager.updateTabVisibility()
             },
             removeTab: { [weak browserManager] tabId in
-                browserManager?.tabManager.removeTab(tabId)
+                browserManager?.tabManager.tabRemovalOwner.removeTab(tabId)
             }
         )
     }
@@ -107,10 +107,10 @@ extension TabRuntimePersistenceCallbacks {
     static func live(tabManager: TabManager) -> Self {
         Self(
             updateNavigationState: { [weak tabManager] tab in
-                tabManager?.updateTabNavigationState(tab)
+                tabManager?.structuralPersistence.scheduleRuntimeStatePersistence(for: tab)
             },
             scheduleRuntimeStatePersistence: { [weak tabManager] tab in
-                tabManager?.scheduleRuntimeStatePersistence(for: tab)
+                tabManager?.structuralPersistence.scheduleRuntimeStatePersistence(for: tab)
             }
         )
     }

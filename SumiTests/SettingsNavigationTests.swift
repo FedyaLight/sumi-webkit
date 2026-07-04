@@ -293,7 +293,7 @@ final class SettingsNavigationTests: XCTestCase {
 
         browserManager.settingsSurfaceRoutingOwner.openSettingsTab(selecting: .about, in: windowState)
 
-        let settingsTabs = browserManager.tabManager.tabs(in: space).filter(\.representsSumiSettingsSurface)
+        let settingsTabs = browserManager.tabManager.regularTabCollectionOwner.tabs(in: space).filter(\.representsSumiSettingsSurface)
         XCTAssertEqual(settingsTabs.count, 1)
         XCTAssertEqual(settingsTabs.first?.url, SettingsTabs.about.settingsSurfaceURL)
         XCTAssertEqual(windowState.currentTabId, settingsTabs.first?.id)
@@ -302,7 +302,7 @@ final class SettingsNavigationTests: XCTestCase {
 
     func testOpenSettingsTabReusesExistingSettingsSurfaceForAbout() {
         let (browserManager, _, settings, windowState, space) = makeHarness()
-        let existing = browserManager.tabManager.createNewTab(
+        let existing = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: SettingsTabs.general.settingsSurfaceURL.absoluteString,
             in: space,
             activate: false
@@ -310,7 +310,7 @@ final class SettingsNavigationTests: XCTestCase {
 
         browserManager.settingsSurfaceRoutingOwner.openSettingsTab(selecting: .about, in: windowState)
 
-        let settingsTabs = browserManager.tabManager.tabs(in: space).filter(\.representsSumiSettingsSurface)
+        let settingsTabs = browserManager.tabManager.regularTabCollectionOwner.tabs(in: space).filter(\.representsSumiSettingsSurface)
         XCTAssertEqual(settingsTabs.count, 1)
         XCTAssertEqual(settingsTabs.first?.id, existing.id)
         XCTAssertEqual(existing.url, SettingsTabs.about.settingsSurfaceURL)
@@ -335,7 +335,7 @@ final class SettingsNavigationTests: XCTestCase {
         XCTAssertEqual(firstSettingsTab.name, "Settings")
         XCTAssertEqual(windowState.currentTabId, firstSettingsTab.id)
         XCTAssertEqual(settings.currentSettingsTab, .privacy)
-        XCTAssertFalse(browserManager.tabManager.tabs(in: space).contains(where: \.representsSumiSettingsSurface))
+        XCTAssertFalse(browserManager.tabManager.regularTabCollectionOwner.tabs(in: space).contains(where: \.representsSumiSettingsSurface))
 
         browserManager.settingsSurfaceRoutingOwner.openSettingsTab(selecting: .about, in: windowState)
 
@@ -345,12 +345,12 @@ final class SettingsNavigationTests: XCTestCase {
         XCTAssertEqual(firstSettingsTab.url, SettingsTabs.about.settingsSurfaceURL)
         XCTAssertEqual(windowState.currentTabId, firstSettingsTab.id)
         XCTAssertEqual(settings.currentSettingsTab, .about)
-        XCTAssertFalse(browserManager.tabManager.tabs(in: space).contains(where: \.representsSumiSettingsSurface))
+        XCTAssertFalse(browserManager.tabManager.regularTabCollectionOwner.tabs(in: space).contains(where: \.representsSumiSettingsSurface))
     }
 
     func testFloatingBarCurrentSettingsURLCommitAppliesPaneNavigation() {
         let (browserManager, _, settings, windowState, space) = makeHarness()
-        let existing = browserManager.tabManager.createNewTab(
+        let existing = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: SettingsTabs.general.settingsSurfaceURL.absoluteString,
             in: space,
             activate: false
@@ -395,8 +395,8 @@ final class SettingsNavigationTests: XCTestCase {
         browserManager.windowRegistry = windowRegistry
         browserManager.sumiSettings = settings
         browserManager.tabManager.sumiSettings = settings
-        browserManager.tabManager.spaces = [space]
-        browserManager.tabManager.currentSpace = space
+        browserManager.tabManager.spaceStateOwner.replaceSpaces([space])
+        browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(space)
 
         windowState.tabManager = browserManager.tabManager
         windowState.currentSpaceId = space.id

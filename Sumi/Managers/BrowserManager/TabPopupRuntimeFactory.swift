@@ -24,7 +24,7 @@ enum TabPopupRuntimeFactory {
                     )
                 },
                 createNewTab: { [weak browserManager] url, space, activate in
-                    browserManager?.tabManager.createNewTab(
+                    browserManager?.tabManager.regularTabLifecycleOwner.createNewTab(
                         url: url,
                         in: space,
                         activate: activate
@@ -49,7 +49,7 @@ enum TabPopupRuntimeFactory {
                         for: openerTab,
                         windowRegistry: browserManager.windowRegistry,
                         profiles: browserManager.profileManager.profiles,
-                        spaces: browserManager.tabManager.spaces
+                        spaces: browserManager.tabManager.spaceStateOwner.spaces
                     )
                 },
                 createPopupTab: { [weak browserManager] openerTab, activate in
@@ -163,26 +163,26 @@ extension TabPopupHandlingRuntime {
         windowState: BrowserWindowState?
     ) -> Space? {
         if let openerSpaceId = openerTab.spaceId,
-           let openerSpace = tabManager.spaces.first(where: { $0.id == openerSpaceId }) {
+           let openerSpace = tabManager.spaceStateOwner.spaces.first(where: { $0.id == openerSpaceId }) {
             return openerSpace
         }
 
         if let windowSpaceId = windowState?.currentSpaceId,
-           let windowSpace = tabManager.spaces.first(where: { $0.id == windowSpaceId }) {
+           let windowSpace = tabManager.spaceStateOwner.spaces.first(where: { $0.id == windowSpaceId }) {
             return windowSpace
         }
 
         if let windowProfileId = windowState?.currentProfileId,
-           let windowProfileSpace = tabManager.spaces.first(where: { $0.profileId == windowProfileId }) {
+           let windowProfileSpace = tabManager.spaceStateOwner.spaces.first(where: { $0.profileId == windowProfileId }) {
             return windowProfileSpace
         }
 
         if let openerProfileId = openerTab.profileId,
-           let openerProfileSpace = tabManager.spaces.first(where: { $0.profileId == openerProfileId }) {
+           let openerProfileSpace = tabManager.spaceStateOwner.spaces.first(where: { $0.profileId == openerProfileId }) {
             return openerProfileSpace
         }
 
-        return tabManager.spaces.first
+        return tabManager.spaceStateOwner.spaces.first
     }
 
     static func explicitPopupOpenerProfile(

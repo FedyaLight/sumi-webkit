@@ -132,7 +132,7 @@ extension BrowserStartupProtectionRuntime.Dependencies {
                 _ = try await browserManager.protectionCoordinator.restoreAppliedLevelForStartup()
             },
             tab: { [weak browserManager] tabId in
-                browserManager?.tabManager.tab(for: tabId)
+                browserManager?.tabManager.tabCollectionMembershipOwner.tab(for: tabId)
             },
             allWindows: { [weak browserManager] in
                 browserManager?.windowRegistry?.allWindows ?? []

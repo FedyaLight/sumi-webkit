@@ -17,7 +17,7 @@ final class SplitEmptyPlaceholderOwnerTests: XCTestCase {
     private func makeHarness() throws -> Harness {
         let container = try makeInMemoryStartupModelContainer()
         let tabManager = TabManager(context: container.mainContext, loadPersistedState: false)
-        tabManager.attachRuntimeContext(TabManagerRuntimeContext())
+        tabManager.runtimeContextAttachmentOwner.attach(TabManagerRuntimeContext())
         let windowState = BrowserWindowState()
         windowState.tabManager = tabManager
 
@@ -47,8 +47,8 @@ final class SplitEmptyPlaceholderOwnerTests: XCTestCase {
         in harness: Harness
     ) throws -> (current: Tab, placeholder: Tab, group: SplitGroup) {
         let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Split")
-        let current = harness.tabManager.createNewTab(url: "https://current.example", in: space)
-        let placeholder = harness.tabManager.createNewTab(
+        let current = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://current.example", in: space)
+        let placeholder = harness.tabManager.regularTabLifecycleOwner.createNewTab(
             url: SumiSurface.emptyTabURL.absoluteString,
             in: space,
             activate: false
@@ -69,9 +69,9 @@ final class SplitEmptyPlaceholderOwnerTests: XCTestCase {
     func testReplacePlaceholderSwapsPaneAndRemovesPlaceholderTab() throws {
         let harness = try makeHarness()
         let (current, placeholder, group) = try makePlaceholderSplit(in: harness)
-        let incoming = harness.tabManager.createNewTab(
+        let incoming = harness.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://incoming.example",
-            in: harness.tabManager.currentSpace,
+            in: harness.tabManager.spaceStateOwner.currentSpace,
             activate: false
         )
 
@@ -80,7 +80,7 @@ final class SplitEmptyPlaceholderOwnerTests: XCTestCase {
         let updated = try XCTUnwrap(harness.tabManager.splitGroupCollectionStateOwner.group(with: group.id))
         XCTAssertEqual(updated.tabIds, [current.id, incoming.id])
         XCTAssertEqual(updated.activeTabId, incoming.id)
-        XCTAssertNil(harness.tabManager.tab(for: placeholder.id))
+        XCTAssertNil(harness.tabManager.tabCollectionMembershipOwner.tab(for: placeholder.id))
         XCTAssertEqual(harness.selectedTabIds(), [incoming.id])
         XCTAssertEqual(harness.notifiedWindowIds(), [harness.windowState.id])
     }
@@ -88,24 +88,24 @@ final class SplitEmptyPlaceholderOwnerTests: XCTestCase {
     func testCommitPlaceholderStopsLaterReplacement() throws {
         let harness = try makeHarness()
         let (_, placeholder, _) = try makePlaceholderSplit(in: harness)
-        let incoming = harness.tabManager.createNewTab(
+        let incoming = harness.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://incoming.example",
-            in: harness.tabManager.currentSpace,
+            in: harness.tabManager.spaceStateOwner.currentSpace,
             activate: false
         )
 
         harness.owner.commitPlaceholder(tabId: placeholder.id, in: harness.windowState)
 
         XCTAssertFalse(harness.owner.replacePlaceholder(with: incoming, in: harness.windowState))
-        XCTAssertNotNil(harness.tabManager.tab(for: placeholder.id))
+        XCTAssertNotNil(harness.tabManager.tabCollectionMembershipOwner.tab(for: placeholder.id))
     }
 
     func testCommitPlaceholderIgnoresMismatchedTabId() throws {
         let harness = try makeHarness()
         _ = try makePlaceholderSplit(in: harness)
-        let incoming = harness.tabManager.createNewTab(
+        let incoming = harness.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://incoming.example",
-            in: harness.tabManager.currentSpace,
+            in: harness.tabManager.spaceStateOwner.currentSpace,
             activate: false
         )
 
@@ -120,7 +120,7 @@ final class SplitEmptyPlaceholderOwnerTests: XCTestCase {
 
         XCTAssertTrue(harness.owner.cancelPlaceholder(in: harness.windowState))
 
-        XCTAssertNil(harness.tabManager.tab(for: placeholder.id))
+        XCTAssertNil(harness.tabManager.tabCollectionMembershipOwner.tab(for: placeholder.id))
         XCTAssertEqual(harness.notifiedWindowIds(), [harness.windowState.id])
         XCTAssertFalse(harness.owner.cancelPlaceholder(in: harness.windowState))
     }
@@ -132,6 +132,6 @@ final class SplitEmptyPlaceholderOwnerTests: XCTestCase {
         harness.owner.cleanupWindow(harness.windowState.id)
 
         XCTAssertFalse(harness.owner.cancelPlaceholder(in: harness.windowState))
-        XCTAssertNotNil(harness.tabManager.tab(for: placeholder.id))
+        XCTAssertNotNil(harness.tabManager.tabCollectionMembershipOwner.tab(for: placeholder.id))
     }
 }

@@ -102,3 +102,29 @@ final class SpaceLauncherProjectionOwner {
         )
     }
 }
+
+extension SpaceLauncherProjectionOwner.Dependencies {
+    @MainActor
+    static func live(tabManager: TabManager) -> Self {
+        Self(
+            regularTabs: { [weak tabManager] spaceId in
+                tabManager?.regularTabCollectionOwner.tabs(in: spaceId) ?? []
+            },
+            spacePinnedPins: { [weak tabManager] spaceId in
+                tabManager?.shortcutPinCollectionStateOwner.spacePinnedPins(for: spaceId) ?? []
+            },
+            folders: { [weak tabManager] spaceId in
+                tabManager?.folderCollectionStateOwner.folders(for: spaceId) ?? []
+            },
+            shortcutHostedSplitGroups: { [weak tabManager] spaceId in
+                tabManager?.splitGroupStructureOwner.shortcutHostedSplitGroups(for: spaceId) ?? []
+            },
+            liveShortcutTabs: { [weak tabManager] windowId in
+                tabManager?.shortcutPresentationOwner.liveShortcutTabs(in: windowId) ?? []
+            },
+            transientShortcutTabsByWindow: { [weak tabManager] in
+                tabManager?.transientTabRegistryOwner.transientShortcutTabsByWindow ?? [:]
+            }
+        )
+    }
+}

@@ -18,16 +18,35 @@ final class TabSplitGroupStructureOwner {
         }
     }
 
-    unowned let tabManager: TabManager
+    struct Dependencies {
+        let splitGroupStateOwner: SplitGroupCollectionStateOwner
+        let splitGroups: () -> [SplitGroup]
+        let replaceSplitGroups: ([SplitGroup]) -> Void
+        let folders: (UUID) -> [TabFolder]
+        let spacePinnedPins: (UUID) -> [ShortcutPin]
+        let adjustedSameContainerInsertionIndex: (Int, Int) -> Int
+        let withStructuralUpdateTransaction: (@MainActor () -> Void) -> Void
+        let setFolders: ([TabFolder], UUID) -> Void
+        let normalizedSpacePinnedShortcuts: ([ShortcutPin]) -> [ShortcutPin]
+        let setSpacePinnedShortcuts: ([ShortcutPin], UUID) -> Void
+        let repairShortcutBackedMembers: (SplitGroup) -> SplitGroup
+        let requestStructuralPublish: () -> Void
+        let markSplitGroupsStructurallyDirty: () -> Void
+        let scheduleStructuralPersistence: () -> Void
+        let tab: (UUID) -> Tab?
+        let shortcutPin: (UUID) -> ShortcutPin?
+    }
 
-    init(tabManager: TabManager) {
-        self.tabManager = tabManager
+    private let dependencies: Dependencies
+
+    init(dependencies: Dependencies) {
+        self.dependencies = dependencies
     }
 
     // MARK: - Lookup
 
     func splitGroup(containing tabId: UUID) -> SplitGroup? {
-        if let indexed = tabManager.splitGroupCollectionStateOwner.group(containingMemberId: tabId) {
+        if let indexed = dependencies.splitGroupStateOwner.group(containingMemberId: tabId) {
             return indexed
         }
         if let pinId = shortcutPinId(forSplitLookupId: tabId) {
@@ -37,7 +56,7 @@ final class TabSplitGroupStructureOwner {
     }
 
     func splitGroupIds(containing tabId: UUID) -> [UUID] {
-        if let groupId = tabManager.splitGroupCollectionStateOwner.groupId(containingMemberId: tabId) {
+        if let groupId = dependencies.splitGroupStateOwner.groupId(containingMemberId: tabId) {
             return [groupId]
         }
         guard let pinId = shortcutPinId(forSplitLookupId: tabId),
@@ -49,13 +68,13 @@ final class TabSplitGroupStructureOwner {
     }
 
     func splitGroup(containingPinId pinId: UUID) -> SplitGroup? {
-        tabManager.splitGroupCollectionStateOwner.indexedGroups.first {
+        dependencies.splitGroupStateOwner.indexedGroups.first {
             splitGroup($0, containsShortcutPinId: pinId)
         }
     }
 
     func shortcutHostedSplitGroup(containingPinId pinId: UUID, in spaceId: UUID?) -> SplitGroup? {
-        tabManager.splitGroups.first { group in
+        dependencies.splitGroups().first { group in
             guard group.isShortcutHosted,
                   splitGroup(group, containsShortcutPinId: pinId)
             else { return false }
@@ -65,7 +84,7 @@ final class TabSplitGroupStructureOwner {
     }
 
     func regularHostedSplitGroup(containingPinId pinId: UUID) -> SplitGroup? {
-        tabManager.splitGroups.first { group in
+        dependencies.splitGroups().first { group in
             guard !group.isShortcutHosted else { return false }
             return splitGroup(group, containsShortcutPinId: pinId)
         }
@@ -81,9 +100,9 @@ final class TabSplitGroupStructureOwner {
     func visualOrderingResolver(for spaceId: UUID) -> SplitGroupVisualOrderingResolver {
         SplitGroupVisualOrderingResolver(
             spaceId: spaceId,
-            splitGroups: tabManager.splitGroups,
-            folders: tabManager.foldersBySpace[spaceId] ?? [],
-            spacePinnedPins: tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: spaceId)
+            splitGroups: dependencies.splitGroups(),
+            folders: dependencies.folders(spaceId),
+            spacePinnedPins: dependencies.spacePinnedPins(spaceId)
         )
     }
 
@@ -125,7 +144,7 @@ final class TabSplitGroupStructureOwner {
             return false
         })
         let adjustedIndex = currentIndex.map {
-            tabManager.spacePinnedStructureOwner.adjustedSameContainerInsertionIndex(currentIndex: $0, proposedIndex: index)
+            dependencies.adjustedSameContainerInsertionIndex($0, index)
         } ?? index
         var reorderedItems = visualItems
         let movingItem: SpacePinnedVisualItem
@@ -146,13 +165,13 @@ final class TabSplitGroupStructureOwner {
         _ items: [SpacePinnedVisualItem],
         for spaceId: UUID
     ) {
-        tabManager.withStructuralUpdateTransaction {
+        dependencies.withStructuralUpdateTransaction {
             let folderMap = Dictionary(
-                uniqueKeysWithValues: (tabManager.foldersBySpace[spaceId] ?? []).map { ($0.id, $0) }
+                uniqueKeysWithValues: dependencies.folders(spaceId).map { ($0.id, $0) }
             )
-            let pins = tabManager.spacePinnedShortcuts[spaceId] ?? []
+            let pins = dependencies.spacePinnedPins(spaceId)
             let pinMap = Dictionary(uniqueKeysWithValues: pins.map { ($0.id, $0) })
-            let groupMap = tabManager.splitGroupCollectionStateOwner.groupMap
+            let groupMap = dependencies.splitGroupStateOwner.groupMap
             var orderedFolders: [TabFolder] = []
             var orderedVisiblePins: [ShortcutPin] = []
             var orderedVisiblePinIds = Set<UUID>()
@@ -190,13 +209,13 @@ final class TabSplitGroupStructureOwner {
                 }
             }
 
-            let remainingFolders = (tabManager.foldersBySpace[spaceId] ?? [])
+            let remainingFolders = dependencies.folders(spaceId)
                 .filter { folder in orderedFolders.contains(where: { $0.id == folder.id }) == false }
             let finalFolders = (orderedFolders + remainingFolders).sorted { lhs, rhs in
                 if lhs.index != rhs.index { return lhs.index < rhs.index }
                 return lhs.id.uuidString < rhs.id.uuidString
             }
-            tabManager.setFolders(finalFolders, for: spaceId)
+            dependencies.setFolders(finalFolders, spaceId)
 
             let folderPins = pins.filter { $0.folderId != nil }
             let hiddenOrUnorderedTopLevelPins = pins.filter { pin in
@@ -207,17 +226,17 @@ final class TabSplitGroupStructureOwner {
             let hiddenSplitPins = pins
                 .filter { pin in pin.folderId == nil && hiddenSplitPinIds.contains(pin.id) }
                 .map { pin in pin.refreshed(index: Int.max) }
-            let finalPins = tabManager.spacePinnedStructureOwner.normalizedSpacePinnedShortcuts(
+            let finalPins = dependencies.normalizedSpacePinnedShortcuts(
                 folderPins + hiddenOrUnorderedTopLevelPins + orderedVisiblePins + hiddenSplitPins
             )
-            tabManager.setSpacePinnedShortcuts(finalPins, for: spaceId)
+            dependencies.setSpacePinnedShortcuts(finalPins, spaceId)
 
             if !updatedGroupsById.isEmpty {
-                let updatedSplitGroups = tabManager.splitGroups.map { group in
+                let updatedSplitGroups = dependencies.splitGroups().map { group in
                     updatedGroupsById[group.id] ?? group
                 }
-                if updatedSplitGroups != tabManager.splitGroups {
-                    tabManager.splitGroups = updatedSplitGroups
+                if updatedSplitGroups != dependencies.splitGroups() {
+                    dependencies.replaceSplitGroups(updatedSplitGroups)
                     markSplitGroupsStructurallyDirty(schedulePersistence: true)
                 }
             }
@@ -227,65 +246,70 @@ final class TabSplitGroupStructureOwner {
     // MARK: - Mutation
 
     func upsertSplitGroup(_ group: SplitGroup, schedulePersistence shouldPersist: Bool = true) {
-        let repairedGroup = tabManager.splitGroupRepairOwner.repairingShortcutBackedMembers(in: group)
+        let repairedGroup = dependencies.repairShortcutBackedMembers(group)
         guard let canonicalGroup = repairedGroup.canonicalizedForTiles(),
               canonicalGroup.isValid
         else {
             return
         }
-        let sanitized = tabManager.splitGroupRepairOwner.repairingShortcutBackedMembers(
-            in: canonicalGroup.settingActiveTab(canonicalGroup.activeTabId ?? canonicalGroup.tabIds.last)
+        let sanitized = dependencies.repairShortcutBackedMembers(
+            canonicalGroup.settingActiveTab(canonicalGroup.activeTabId ?? canonicalGroup.tabIds.last)
         )
-        if let index = tabManager.splitGroupCollectionStateOwner.index(of: sanitized.id) {
-            tabManager.splitGroups[index] = sanitized
+        var splitGroups = dependencies.splitGroups()
+        if let index = dependencies.splitGroupStateOwner.index(of: sanitized.id) {
+            splitGroups[index] = sanitized
         } else {
             let memberIds = Set(sanitized.tabIds).union(sanitized.shortcutPinIds)
-            tabManager.splitGroups.removeAll { existing in
+            splitGroups.removeAll { existing in
                 guard existing.id != sanitized.id else { return false }
                 let existingMemberIds = Set(existing.tabIds).union(existing.shortcutPinIds)
                 return existingMemberIds.contains { memberIds.contains($0) }
             }
-            tabManager.splitGroups.append(sanitized)
+            splitGroups.append(sanitized)
         }
+        dependencies.replaceSplitGroups(splitGroups)
         markSplitGroupsStructurallyDirty(schedulePersistence: shouldPersist)
-        tabManager.requestStructuralPublish()
+        dependencies.requestStructuralPublish()
     }
 
     func removeSplitGroup(id: UUID, schedulePersistence shouldPersist: Bool = true) {
-        guard let index = tabManager.splitGroupCollectionStateOwner.index(of: id) else { return }
-        tabManager.splitGroups.remove(at: index)
+        guard let index = dependencies.splitGroupStateOwner.index(of: id) else { return }
+        var splitGroups = dependencies.splitGroups()
+        splitGroups.remove(at: index)
+        dependencies.replaceSplitGroups(splitGroups)
         markSplitGroupsStructurallyDirty(schedulePersistence: shouldPersist)
-        tabManager.requestStructuralPublish()
+        dependencies.requestStructuralPublish()
     }
 
     func removeSplitGroups(containing tabId: UUID, schedulePersistence shouldPersist: Bool = true) {
-        let updated = tabManager.splitGroups.compactMap { group in
+        let current = dependencies.splitGroups()
+        let updated = current.compactMap { group in
             group.contains(tabId) ? group.removing(tabId: tabId) : group
         }
-        guard updated != tabManager.splitGroups else { return }
-        tabManager.splitGroups = updated
+        guard updated != current else { return }
+        dependencies.replaceSplitGroups(updated)
         markSplitGroupsStructurallyDirty(schedulePersistence: shouldPersist)
-        tabManager.requestStructuralPublish()
+        dependencies.requestStructuralPublish()
     }
 
     func replaceSplitGroups(_ groups: [SplitGroup], schedulePersistence shouldPersist: Bool = true) {
         let validGroups = sanitizedRepairedSplitGroups(groups)
-        guard validGroups != tabManager.splitGroups else { return }
-        tabManager.splitGroups = validGroups
+        guard validGroups != dependencies.splitGroups() else { return }
+        dependencies.replaceSplitGroups(validGroups)
         markSplitGroupsStructurallyDirty(schedulePersistence: shouldPersist)
-        tabManager.requestStructuralPublish()
+        dependencies.requestStructuralPublish()
     }
 
     func sanitizedRepairedSplitGroups(_ groups: [SplitGroup]) -> [SplitGroup] {
         SplitGroup.sanitized(groups.map {
-            tabManager.splitGroupRepairOwner.repairingShortcutBackedMembers(in: $0)
+            dependencies.repairShortcutBackedMembers($0)
         })
     }
 
     func markSplitGroupsStructurallyDirty(schedulePersistence shouldPersist: Bool = true) {
-        tabManager.structuralPersistence.markSplitGroupsStructurallyDirty()
+        dependencies.markSplitGroupsStructurallyDirty()
         if shouldPersist {
-            tabManager.scheduleStructuralPersistence()
+            dependencies.scheduleStructuralPersistence()
         }
     }
 
@@ -296,14 +320,76 @@ final class TabSplitGroupStructureOwner {
             return true
         }
         return group.tabIds.contains { leafId in
-            tabManager.tab(for: leafId)?.shortcutPinId == pinId
+            dependencies.tab(leafId)?.shortcutPinId == pinId
         }
     }
 
     private func shortcutPinId(forSplitLookupId id: UUID) -> UUID? {
-        if tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: id) != nil {
+        if dependencies.shortcutPin(id) != nil {
             return id
         }
-        return tabManager.tab(for: id)?.shortcutPinId
+        return dependencies.tab(id)?.shortcutPinId
+    }
+}
+
+extension TabSplitGroupStructureOwner.Dependencies {
+    @MainActor
+    static func live(tabManager: TabManager) -> Self {
+        Self(
+            splitGroupStateOwner: tabManager.splitGroupCollectionStateOwner,
+            splitGroups: { [weak tabManager] in
+                tabManager?.splitGroupCollectionStateOwner.splitGroups ?? []
+            },
+            replaceSplitGroups: { [weak tabManager] splitGroups in
+                tabManager?.objectWillChange.send()
+                tabManager?.splitGroupCollectionStateOwner.replaceSplitGroups(splitGroups)
+            },
+            folders: { [weak tabManager] spaceId in
+                tabManager?.folderCollectionStateOwner.folders(for: spaceId) ?? []
+            },
+            spacePinnedPins: { [weak tabManager] spaceId in
+                tabManager?.shortcutPinCollectionStateOwner.spacePinnedPins(for: spaceId) ?? []
+            },
+            adjustedSameContainerInsertionIndex: { [weak tabManager] currentIndex, proposedIndex in
+                tabManager?.spacePinnedStructureOwner.adjustedSameContainerInsertionIndex(
+                    currentIndex: currentIndex,
+                    proposedIndex: proposedIndex
+                ) ?? proposedIndex
+            },
+            withStructuralUpdateTransaction: { [weak tabManager] operation in
+                guard let tabManager else {
+                    operation()
+                    return
+                }
+                tabManager.withStructuralUpdateTransaction(operation)
+            },
+            setFolders: { [weak tabManager] folders, spaceId in
+                tabManager?.structuralCollectionMutationOwner.setFolders(folders, for: spaceId)
+            },
+            normalizedSpacePinnedShortcuts: { [weak tabManager] pins in
+                tabManager?.spacePinnedStructureOwner.normalizedSpacePinnedShortcuts(pins) ?? pins
+            },
+            setSpacePinnedShortcuts: { [weak tabManager] pins, spaceId in
+                tabManager?.structuralCollectionMutationOwner.setSpacePinnedShortcuts(pins, for: spaceId)
+            },
+            repairShortcutBackedMembers: { [weak tabManager] group in
+                tabManager?.splitGroupRepairOwner.repairingShortcutBackedMembers(in: group) ?? group
+            },
+            requestStructuralPublish: { [weak tabManager] in
+                tabManager?.requestStructuralPublish()
+            },
+            markSplitGroupsStructurallyDirty: { [weak tabManager] in
+                tabManager?.structuralPersistence.markSplitGroupsStructurallyDirty()
+            },
+            scheduleStructuralPersistence: { [weak tabManager] in
+                tabManager?.scheduleStructuralPersistence()
+            },
+            tab: { [weak tabManager] tabId in
+                tabManager?.tabCollectionMembershipOwner.tab(for: tabId)
+            },
+            shortcutPin: { [weak tabManager] pinId in
+                tabManager?.shortcutPinCollectionStateOwner.shortcutPin(by: pinId)
+            }
+        )
     }
 }

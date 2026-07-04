@@ -3,34 +3,57 @@ import WebKit
 
 @MainActor
 final class TabRegularLifecycleOwner {
-    private unowned let tabManager: TabManager
-
-    init(tabManager: TabManager) {
-        self.tabManager = tabManager
+    struct Dependencies {
+        let withStructuralUpdateTransaction: @MainActor (@MainActor () -> Tab?) -> Tab?
+        let withStructuralUpdateTransactionVoid: @MainActor (@MainActor () -> Void) -> Void
+        let settings: @MainActor () -> SumiSettingsService?
+        let runtimeContext: @MainActor () -> TabManagerRuntimeContext?
+        let contains: @MainActor (Tab) -> Bool
+        let attach: @MainActor (Tab) -> Void
+        let insertRegularTab: @MainActor (Tab, UUID, Int?) -> Void
+        let currentTab: @MainActor () -> Tab?
+        let windowStateDisplaying: @MainActor (UUID) -> BrowserWindowState?
+        let resolvedTargetSpace: @MainActor (Space?, UUID?) -> Space
+        let backfillTargetSpaceProfileIfNeeded: @MainActor (Space, UUID?) -> Bool
+        let backfillTargetSpaceBootstrapProfileIfNeeded: @MainActor (Space) -> Bool
+        let firstIndex: @MainActor (Tab, UUID) -> Int?
+        let appendIndex: @MainActor (UUID) -> Int
+        let clampedInsertionIndex: @MainActor (Int, UUID) -> Int
+        let scheduleStructuralPersistence: @MainActor () -> Void
+        let setActiveTab: @MainActor (Tab) -> Void
+        let faviconService: @MainActor () -> any BrowserFaviconServicing
+        let faviconImageService: @MainActor () -> any BrowserFaviconImageServicing
+        let visitedLinkStore: @MainActor () -> any BrowserVisitedLinkStoreManaging
     }
 
-    func addTab(_ tab: Tab, regularInsertionIndex: Int?) {
-        tabManager.withStructuralUpdateTransaction {
+    private let dependencies: Dependencies
+
+    init(dependencies: Dependencies) {
+        self.dependencies = dependencies
+    }
+
+    func addTab(_ tab: Tab, regularInsertionIndex: Int? = nil) {
+        dependencies.withStructuralUpdateTransactionVoid {
             guard let sid = tab.spaceId else {
                 RuntimeDiagnostics.debug("Skipping addTab for '\(tab.name)' because no spaceId was resolved.", category: "TabManager")
                 return
             }
 
-            if tabManager.contains(tab) { return }
-            tabManager.attach(tab)
+            if dependencies.contains(tab) { return }
+            dependencies.attach(tab)
             insertRegularTab(tab, in: sid, at: regularInsertionIndex)
 
             // Load the tab in compositor if it's the current tab.
-            if tab.id == tabManager.currentTab?.id {
-                if let windowState = tabManager.shortcutLiveTabOwner.windowStateDisplaying(tabId: tab.id) {
-                    tabManager.runtimeContext?.webViewLifecycle.materializeVisibleTabWebViewIfNeeded(tab, in: windowState)
+            if tab.id == dependencies.currentTab()?.id {
+                if let windowState = dependencies.windowStateDisplaying(tab.id) {
+                    dependencies.runtimeContext()?.webViewLifecycle.materializeVisibleTabWebViewIfNeeded(tab, in: windowState)
                 } else {
-                    tabManager.runtimeContext?.webViewLifecycle.loadTab(tab)
+                    dependencies.runtimeContext()?.webViewLifecycle.loadTab(tab)
                 }
             }
 
             RuntimeDiagnostics.debug("Added regular tab '\(tab.name)' to space \(sid.uuidString).", category: "TabManager")
-            tabManager.scheduleStructuralPersistence()
+            dependencies.scheduleStructuralPersistence()
         }
     }
 
@@ -38,25 +61,22 @@ final class TabRegularLifecycleOwner {
     func adoptGlanceTab(
         _ tab: Tab,
         sourceTab: Tab?,
-        in space: Space?
+        in space: Space? = nil
     ) -> Tab {
-        tabManager.withStructuralUpdateTransaction {
-            tabManager.attach(tab)
-            if tabManager.contains(tab) { return tab }
+        dependencies.withStructuralUpdateTransaction {
+            dependencies.attach(tab)
+            if dependencies.contains(tab) { return tab }
 
-            let targetSpace = tabManager.resolvedTargetSpace(
-                preferred: space,
-                fallbackSpaceId: sourceTab?.spaceId
-            )
-            tabManager.backfillTargetSpaceProfileIfNeeded(
+            let targetSpace = dependencies.resolvedTargetSpace(space, sourceTab?.spaceId)
+            _ = dependencies.backfillTargetSpaceProfileIfNeeded(
                 targetSpace,
-                profileId: tab.profileId ?? tabManager.runtimeContext?.currentProfileId
+                tab.profileId ?? dependencies.runtimeContext()?.currentProfileId
             )
 
             let insertionIndex: Int? = {
                 if let sourceTab,
                    sourceTab.spaceId == targetSpace.id,
-                   let sourceIndex = tabManager.regularTabCollectionOwner.firstIndex(of: sourceTab, in: targetSpace.id) {
+                   let sourceIndex = dependencies.firstIndex(sourceTab, targetSpace.id) {
                     return sourceIndex + 1
                 }
                 if sourceTab?.isPinned == true || sourceTab?.shortcutPinRole == .essential {
@@ -69,22 +89,22 @@ final class TabRegularLifecycleOwner {
                 tab.url = currentURL
             }
             insertRegularTab(tab, in: targetSpace.id, at: insertionIndex)
-            tabManager.scheduleStructuralPersistence()
+            dependencies.scheduleStructuralPersistence()
             return tab
-        }
+        } ?? tab
     }
 
     @discardableResult
     func createNewTab(
-        url: String,
-        in space: Space?,
-        activate: Bool,
-        webViewConfigurationOverride: WKWebViewConfiguration?,
-        webExtensionContextOverride: WKWebExtensionContext?,
-        regularInsertionIndex: Int?
+        url: String = SumiSurface.emptyTabURL.absoluteString,
+        in space: Space? = nil,
+        activate: Bool = true,
+        webViewConfigurationOverride: WKWebViewConfiguration? = nil,
+        webExtensionContextOverride: WKWebExtensionContext? = nil,
+        regularInsertionIndex: Int? = nil
     ) -> Tab {
-        tabManager.withStructuralUpdateTransaction {
-            let settings = tabManager.sumiSettings ?? tabManager.runtimeContext?.settings
+        dependencies.withStructuralUpdateTransaction {
+            let settings = dependencies.settings() ?? dependencies.runtimeContext()?.settings
             let template = settings?.resolvedSearchEngineTemplate ?? SearchProvider.google.queryTemplate
             let normalizedUrl = normalizeURL(url, queryTemplate: template)
             guard let validURL = URL(string: normalizedUrl)
@@ -100,17 +120,14 @@ final class TabRegularLifecycleOwner {
                 )
             }
 
-            let targetSpace = tabManager.resolvedTargetSpace(preferred: space)
-            if tabManager.backfillTargetSpaceProfileIfNeeded(
-                targetSpace,
-                profileId: tabManager.defaultProfileIdForSpaceBootstrap
-            ) {
-                tabManager.scheduleStructuralPersistence()
+            let targetSpace = dependencies.resolvedTargetSpace(space, nil)
+            if dependencies.backfillTargetSpaceBootstrapProfileIfNeeded(targetSpace) {
+                dependencies.scheduleStructuralPersistence()
             }
             let sid = targetSpace.id
 
             let nextIndex = regularInsertionIndex
-                ?? tabManager.regularTabCollectionOwner.appendIndex(in: sid)
+                ?? dependencies.appendIndex(sid)
 
             let newTab = Tab(
                 url: validURL,
@@ -118,9 +135,9 @@ final class TabRegularLifecycleOwner {
                 favicon: "globe",
                 spaceId: sid,
                 index: nextIndex,
-                faviconService: tabManager.faviconService,
-                faviconImageService: tabManager.faviconImageService,
-                visitedLinkStore: tabManager.visitedLinkStore
+                faviconService: dependencies.faviconService(),
+                faviconImageService: dependencies.faviconImageService(),
+                visitedLinkStore: dependencies.visitedLinkStore()
             )
             newTab.profileId = targetSpace.profileId
             newTab.webExtensionContextOverride = webExtensionContextOverride
@@ -129,20 +146,20 @@ final class TabRegularLifecycleOwner {
             }
             addTab(newTab, regularInsertionIndex: regularInsertionIndex)
             if activate {
-                tabManager.setActiveTab(newTab)
+                dependencies.setActiveTab(newTab)
             }
             return newTab
-        }
+        } ?? makeFallbackTab()
     }
 
     @discardableResult
     func createNewTabWithWebView(
         url: String,
-        in space: Space?,
-        existingWebView: WKWebView?
+        in space: Space? = nil,
+        existingWebView: WKWebView? = nil
     ) -> Tab {
-        tabManager.withStructuralUpdateTransaction {
-            let settings = tabManager.sumiSettings ?? tabManager.runtimeContext?.settings
+        dependencies.withStructuralUpdateTransaction {
+            let settings = dependencies.settings() ?? dependencies.runtimeContext()?.settings
             let template = settings?.resolvedSearchEngineTemplate ?? SearchProvider.google.queryTemplate
             let normalizedUrl = normalizeURL(url, queryTemplate: template)
             guard let validURL = URL(string: normalizedUrl)
@@ -158,16 +175,13 @@ final class TabRegularLifecycleOwner {
                 )
             }
 
-            let targetSpace = tabManager.resolvedTargetSpace(preferred: space)
-            if tabManager.backfillTargetSpaceProfileIfNeeded(
-                targetSpace,
-                profileId: tabManager.defaultProfileIdForSpaceBootstrap
-            ) {
-                tabManager.scheduleStructuralPersistence()
+            let targetSpace = dependencies.resolvedTargetSpace(space, nil)
+            if dependencies.backfillTargetSpaceBootstrapProfileIfNeeded(targetSpace) {
+                dependencies.scheduleStructuralPersistence()
             }
             let sid = targetSpace.id
 
-            let nextIndex = tabManager.regularTabCollectionOwner.appendIndex(in: sid)
+            let nextIndex = dependencies.appendIndex(sid)
 
             let newTab = Tab(
                 url: validURL,
@@ -176,35 +190,32 @@ final class TabRegularLifecycleOwner {
                 spaceId: sid,
                 index: nextIndex,
                 existingWebView: existingWebView,
-                faviconService: tabManager.faviconService,
-                faviconImageService: tabManager.faviconImageService,
-                visitedLinkStore: tabManager.visitedLinkStore
+                faviconService: dependencies.faviconService(),
+                faviconImageService: dependencies.faviconImageService(),
+                visitedLinkStore: dependencies.visitedLinkStore()
             )
             addTab(newTab, regularInsertionIndex: nil)
-            tabManager.setActiveTab(newTab)
+            dependencies.setActiveTab(newTab)
             return newTab
-        }
+        } ?? makeFallbackTab()
     }
 
     @discardableResult
     func createPopupTab(
-        in space: Space?,
-        activate: Bool,
-        webViewConfigurationOverride: WKWebViewConfiguration?,
-        regularInsertionIndex: Int?
+        in space: Space? = nil,
+        activate: Bool = true,
+        webViewConfigurationOverride: WKWebViewConfiguration? = nil,
+        regularInsertionIndex: Int? = nil
     ) -> Tab {
-        tabManager.withStructuralUpdateTransaction {
-            let targetSpace = tabManager.resolvedTargetSpace(preferred: space)
-            if tabManager.backfillTargetSpaceProfileIfNeeded(
-                targetSpace,
-                profileId: tabManager.defaultProfileIdForSpaceBootstrap
-            ) {
-                tabManager.scheduleStructuralPersistence()
+        dependencies.withStructuralUpdateTransaction {
+            let targetSpace = dependencies.resolvedTargetSpace(space, nil)
+            if dependencies.backfillTargetSpaceBootstrapProfileIfNeeded(targetSpace) {
+                dependencies.scheduleStructuralPersistence()
             }
             let sid = targetSpace.id
             let resolvedIndex = regularInsertionIndex
-                .map { tabManager.regularTabCollectionOwner.clampedInsertionIndex($0, in: sid) }
-                ?? tabManager.regularTabCollectionOwner.appendIndex(in: sid)
+                .map { dependencies.clampedInsertionIndex($0, sid) }
+                ?? dependencies.appendIndex(sid)
 
             guard let blankURL = URL(string: "about:blank") else {
                 preconditionFailure("TabManager: invalid about:blank URL")
@@ -215,25 +226,151 @@ final class TabRegularLifecycleOwner {
                 favicon: "globe",
                 spaceId: sid,
                 index: resolvedIndex,
-                faviconService: tabManager.faviconService,
-                faviconImageService: tabManager.faviconImageService,
-                visitedLinkStore: tabManager.visitedLinkStore
+                faviconService: dependencies.faviconService(),
+                faviconImageService: dependencies.faviconImageService(),
+                visitedLinkStore: dependencies.visitedLinkStore()
             )
             newTab.isPopupHost = true
             if let webViewConfigurationOverride {
                 newTab.applyWebViewConfigurationOverride(webViewConfigurationOverride)
             }
-            tabManager.attach(newTab)
+            dependencies.attach(newTab)
             insertRegularTab(newTab, in: sid, at: resolvedIndex)
-            tabManager.scheduleStructuralPersistence()
+            dependencies.scheduleStructuralPersistence()
             if activate {
-                tabManager.setActiveTab(newTab)
+                dependencies.setActiveTab(newTab)
             }
             return newTab
-        }
+        } ?? makeFallbackTab()
     }
 
     func insertRegularTab(_ tab: Tab, in spaceId: UUID, at insertionIndex: Int?) {
-        tabManager.regularTabCollectionOwner.insert(tab, in: spaceId, at: insertionIndex)
+        dependencies.insertRegularTab(tab, spaceId, insertionIndex)
+    }
+
+    @discardableResult
+    func duplicateAsRegularForSplit(
+        from source: Tab,
+        anchor: Tab,
+        placeAfterAnchor: Bool = true
+    ) -> Tab {
+        dependencies.withStructuralUpdateTransaction {
+            let targetSpace = dependencies.resolvedTargetSpace(nil, anchor.spaceId)
+
+            let newTab = Tab(
+                url: source.url,
+                name: source.name,
+                favicon: "globe",
+                spaceId: targetSpace.id,
+                index: 0,
+                faviconService: dependencies.faviconService(),
+                faviconImageService: dependencies.faviconImageService(),
+                visitedLinkStore: dependencies.visitedLinkStore()
+            )
+
+            let insertionIndex = dependencies.firstIndex(anchor, targetSpace.id)
+                .map { $0 + (placeAfterAnchor ? 1 : 0) }
+            addTab(newTab, regularInsertionIndex: insertionIndex)
+
+            return newTab
+        } ?? makeFallbackTab()
+    }
+
+    private func makeFallbackTab() -> Tab {
+        Tab(
+            url: SumiSurface.emptyTabURL,
+            name: "New Tab",
+            favicon: "globe",
+            spaceId: nil,
+            index: 0,
+            faviconService: dependencies.faviconService(),
+            faviconImageService: dependencies.faviconImageService(),
+            visitedLinkStore: dependencies.visitedLinkStore()
+        )
+    }
+}
+
+extension TabRegularLifecycleOwner.Dependencies {
+    @MainActor
+    static func live(tabManager: TabManager) -> Self {
+        Self(
+            withStructuralUpdateTransaction: { [weak tabManager] operation in
+                guard let tabManager else { return operation() }
+                return tabManager.withStructuralUpdateTransaction(operation)
+            },
+            withStructuralUpdateTransactionVoid: { [weak tabManager] operation in
+                guard let tabManager else {
+                    operation()
+                    return
+                }
+                tabManager.withStructuralUpdateTransaction(operation)
+            },
+            settings: { [weak tabManager] in
+                tabManager?.sumiSettings
+            },
+            runtimeContext: { [weak tabManager] in
+                tabManager?.runtimeContext
+            },
+            contains: { [weak tabManager] tab in
+                tabManager?.tabCollectionMembershipOwner.contains(tab) ?? false
+            },
+            attach: { [weak tabManager] tab in
+                tabManager?.tabCollectionMembershipOwner.attach(tab)
+            },
+            insertRegularTab: { [weak tabManager] tab, spaceId, insertionIndex in
+                tabManager?.regularTabCollectionOwner.insert(tab, in: spaceId, at: insertionIndex)
+            },
+            currentTab: { [weak tabManager] in
+                tabManager?.selectionStateOwner.currentTab
+            },
+            windowStateDisplaying: { [weak tabManager] tabId in
+                tabManager?.shortcutLiveTabOwner.windowStateDisplaying(tabId: tabId)
+            },
+            resolvedTargetSpace: { [weak tabManager] space, fallbackSpaceId in
+                guard let tabManager else {
+                    preconditionFailure("TabManager dependency used after deallocation")
+                }
+                return tabManager.spaceLifecycleOwner.resolvedTargetSpace(
+                    preferred: space,
+                    fallbackSpaceId: fallbackSpaceId
+                )
+            },
+            backfillTargetSpaceProfileIfNeeded: { [weak tabManager] space, profileId in
+                tabManager?.spaceLifecycleOwner.backfillTargetSpaceProfileIfNeeded(
+                    space,
+                    profileId: profileId
+                ) ?? false
+            },
+            backfillTargetSpaceBootstrapProfileIfNeeded: { [weak tabManager] space in
+                tabManager?.spaceLifecycleOwner.backfillTargetSpaceBootstrapProfileIfNeeded(space) ?? false
+            },
+            firstIndex: { [weak tabManager] tab, spaceId in
+                tabManager?.regularTabCollectionOwner.firstIndex(of: tab, in: spaceId)
+            },
+            appendIndex: { [weak tabManager] spaceId in
+                tabManager?.regularTabCollectionOwner.appendIndex(in: spaceId) ?? 0
+            },
+            clampedInsertionIndex: { [weak tabManager] index, spaceId in
+                tabManager?.regularTabCollectionOwner.clampedInsertionIndex(index, in: spaceId) ?? index
+            },
+            scheduleStructuralPersistence: { [weak tabManager] in
+                tabManager?.scheduleStructuralPersistence()
+            },
+            setActiveTab: { [weak tabManager] tab in
+                tabManager?.activeSelectionOwner.setActiveTab(tab)
+            },
+            faviconService: { [weak tabManager] in
+                guard let tabManager else { preconditionFailure("TabManager dependency used after deallocation") }
+                return tabManager.faviconService
+            },
+            faviconImageService: { [weak tabManager] in
+                guard let tabManager else { preconditionFailure("TabManager dependency used after deallocation") }
+                return tabManager.faviconImageService
+            },
+            visitedLinkStore: { [weak tabManager] in
+                guard let tabManager else { preconditionFailure("TabManager dependency used after deallocation") }
+                return tabManager.visitedLinkStore
+            }
+        )
     }
 }

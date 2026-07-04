@@ -11,7 +11,7 @@ enum BrowserManagerRuntimeWiring {
         browserManager.splitManager.attach(
             runtime: BrowserSplitViewRuntimeFactory.runtime(for: browserManager)
         )
-        browserManager.tabManager.attachRuntimeContext(
+        browserManager.tabManager.runtimeContextAttachmentOwner.attach(
             BrowserTabManagerRuntimeContextFactory.runtime(for: browserManager)
         )
         browserManager.liveFolderManager.attach(

@@ -73,6 +73,14 @@ final class TabSpaceCollectionStateOwner {
         spaces.first { $0.id == id }
     }
 
+    func spaces(forProfile profileId: UUID) -> [Space] {
+        spaces.filter { $0.profileId == profileId }
+    }
+
+    func firstSpace(forProfile profileId: UUID) -> Space? {
+        spaces.first { $0.profileId == profileId }
+    }
+
     func first(where predicate: (Space) throws -> Bool) rethrows -> Space? {
         try spaces.first(where: predicate)
     }

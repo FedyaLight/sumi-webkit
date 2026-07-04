@@ -97,3 +97,21 @@ private extension ShortcutPinRuntimeResolutionOwner {
         return tabProfileId == containerProfileId ? nil : tabProfileId
     }
 }
+
+extension ShortcutPinRuntimeResolutionOwner.Dependencies {
+    @MainActor
+    static func live(tabManager: TabManager) -> Self {
+        Self(
+            spaces: { [weak tabManager] in
+                tabManager?.spaceStateOwner.spaces ?? []
+            },
+            runtimeContext: { [weak tabManager] in
+                tabManager?.runtimeContext
+            },
+            faviconService: { [weak tabManager] in
+                guard let tabManager else { preconditionFailure("TabManager dependency used after deallocation") }
+                return tabManager.faviconService
+            }
+        )
+    }
+}

@@ -20,7 +20,7 @@ extension WindowViewBrowserContext {
             },
             browsingDataDialogContext: browsingDataDialogContext(browserManager: browserManager),
             hasCurrentSpace: { [weak browserManager] in
-                browserManager?.tabManager.currentSpace != nil
+                browserManager?.tabManager.spaceStateOwner.currentSpace != nil
             },
             showGradientEditor: { [weak browserManager] source in
                 browserManager?.workspaceThemeEditorOwner.showGradientEditor(source: source)

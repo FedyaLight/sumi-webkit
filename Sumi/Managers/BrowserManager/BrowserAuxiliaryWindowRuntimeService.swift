@@ -17,13 +17,13 @@ enum BrowserAuxiliaryWindowRuntimeService {
                 browserManager?.currentProfile?.id
             },
             currentSpace: { [weak browserManager] in
-                browserManager?.tabManager.currentSpace
+                browserManager?.tabManager.spaceStateOwner.currentSpace
             },
             windowContainingTab: { [weak browserManager] tab in
                 browserManager?.windowTabContextOwner.windowState(containing: tab)
             },
             createMiniWindowTab: { [weak browserManager] openerTab, profileId, urlString, contextOverride in
-                browserManager?.tabManager.createAuxiliaryMiniWindowTab(
+                browserManager?.tabManager.transientWebKitTabLifecycleOwner.createAuxiliaryMiniWindowTab(
                     openerTab: openerTab,
                     profileId: profileId,
                     urlString: urlString,
@@ -31,7 +31,7 @@ enum BrowserAuxiliaryWindowRuntimeService {
                 )
             },
             removeMiniWindowTab: { [weak browserManager] tab in
-                browserManager?.tabManager.removeAuxiliaryMiniWindowTab(tab)
+                browserManager?.tabManager.transientWebKitTabLifecycleOwner.removeAuxiliaryMiniWindowTab(tab)
             },
             notifyTabClosedIfLoaded: { [weak browserManager] tab in
                 browserManager?.extensionsModule.notifyTabClosedIfLoaded(tab)

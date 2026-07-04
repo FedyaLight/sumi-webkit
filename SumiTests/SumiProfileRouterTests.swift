@@ -71,8 +71,8 @@ final class SumiProfileRouterTests: XCTestCase {
         browserManager.profileManager.profiles = [currentProfile, targetProfile]
         let currentSpace = Space(name: "Current", profileId: currentProfile.id)
         let targetSpace = Space(name: "Target", profileId: targetProfile.id)
-        browserManager.tabManager.spaces = [currentSpace, targetSpace]
-        browserManager.tabManager.currentSpace = currentSpace
+        browserManager.tabManager.spaceStateOwner.replaceSpaces([currentSpace, targetSpace])
+        browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(currentSpace)
         let requestedWindow = BrowserWindowState()
         let activeWindow = BrowserWindowState()
         requestedWindow.currentProfileId = currentProfile.id
@@ -108,8 +108,8 @@ final class SumiProfileRouterTests: XCTestCase {
         browserManager.profileManager.profiles = [currentProfile, targetProfile]
         let currentSpace = Space(name: "Current", profileId: currentProfile.id)
         let targetSpace = Space(name: "Target", profileId: targetProfile.id)
-        browserManager.tabManager.spaces = [currentSpace, targetSpace]
-        browserManager.tabManager.currentSpace = currentSpace
+        browserManager.tabManager.spaceStateOwner.replaceSpaces([currentSpace, targetSpace])
+        browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(currentSpace)
         let requestedWindow = BrowserWindowState()
         let activeWindow = BrowserWindowState()
         requestedWindow.currentProfileId = currentProfile.id

@@ -166,3 +166,177 @@ final class TabStructuralCollectionMutationOwnerTests: XCTestCase {
         }
     }
 }
+
+@MainActor
+final class TabStructuralInstallOwnerTests: XCTestCase {
+    func testInstallReplacesAllCollectionsAndRunsSingleStructuralSideEffectPass() throws {
+        let harness = Harness()
+        let owner = harness.makeOwner()
+        let space = Space(name: "Workspace")
+        let tab = Self.makeTab(index: 0, spaceId: space.id)
+        let siblingTabId = UUID()
+        let folder = TabFolder(name: "Folder", spaceId: space.id, index: 0)
+        let essentialPin = Self.makePin(role: .essential, profileId: UUID(), index: 0)
+        let spacePin = Self.makePin(role: .spacePinned, spaceId: space.id, index: 0)
+        let pendingPin = Self.makePin(role: .essential, index: 1)
+        let group = try XCTUnwrap(
+            SplitGroup.make(tabIds: [tab.id, siblingTabId], layoutKind: .vertical, activeTabId: tab.id)
+        )
+
+        owner.install(
+            spaces: [space],
+            tabsBySpace: [space.id: [tab]],
+            foldersBySpace: [space.id: [folder]],
+            pinnedByProfile: [essentialPin.profileId!: [essentialPin]],
+            spacePinnedShortcuts: [space.id: [spacePin]],
+            pendingPinnedWithoutProfile: [pendingPin],
+            splitGroups: [group],
+            currentSpace: space,
+            currentTab: tab
+        )
+
+        XCTAssertEqual(harness.transactionCount, 1)
+        XCTAssertEqual(harness.objectWillChangeCount, 1)
+        XCTAssertEqual(harness.spaces.map(\.id), [space.id])
+        XCTAssertEqual(harness.tabsBySpace[space.id]?.map(\.id), [tab.id])
+        XCTAssertEqual(harness.foldersBySpace[space.id]?.map(\.id), [folder.id])
+        XCTAssertEqual(harness.splitGroups.map(\.id), [group.id])
+        XCTAssertEqual(harness.pinnedByProfile[essentialPin.profileId!]?.map(\.id), [essentialPin.id])
+        XCTAssertEqual(harness.spacePinnedShortcuts[space.id]?.map(\.id), [spacePin.id])
+        XCTAssertEqual(harness.pendingPinnedWithoutProfile.map(\.id), [pendingPin.id])
+        XCTAssertEqual(harness.currentSpace?.id, space.id)
+        XCTAssertEqual(harness.currentTab?.id, tab.id)
+        XCTAssertEqual(harness.syncedShortcutPinIds, [[essentialPin.id, spacePin.id]])
+        XCTAssertEqual(harness.rebuildTabLookupCount, 1)
+        XCTAssertEqual(harness.markSnapshotCacheDirtyCount, 1)
+        XCTAssertEqual(harness.resetStructuralDirtySetCount, 1)
+        XCTAssertEqual(harness.publishCount, 1)
+    }
+
+    func testInstallRestoredCollectionsDoesNotResetStructuralDirtyState() {
+        let harness = Harness()
+        let owner = harness.makeOwner()
+        let space = Space(name: "Restored")
+        let restoredState = TabRestoreRuntimeState(
+            spaces: [space],
+            tabsBySpace: [space.id: []],
+            foldersBySpace: [:],
+            pinnedByProfile: [:],
+            pendingPinnedWithoutProfile: [],
+            spacePinnedShortcuts: [:],
+            repairReasons: []
+        )
+
+        owner.installRestoredCollections(
+            restoredState,
+            splitGroups: [],
+            currentSpace: space,
+            currentTab: nil
+        )
+
+        XCTAssertEqual(harness.transactionCount, 1)
+        XCTAssertEqual(harness.spaces.map(\.id), [space.id])
+        XCTAssertEqual(harness.currentSpace?.id, space.id)
+        XCTAssertEqual(harness.resetStructuralDirtySetCount, 0)
+        XCTAssertEqual(harness.publishCount, 1)
+    }
+
+    private static func makeTab(index: Int, spaceId: UUID) -> Tab {
+        Tab(
+            url: URL(string: "https://example.com/install-\(index)")!,
+            name: "Install \(index)",
+            spaceId: spaceId,
+            index: index,
+            loadsCachedFaviconOnInit: false
+        )
+    }
+
+    private static func makePin(
+        role: ShortcutPinRole,
+        profileId: UUID? = nil,
+        spaceId: UUID? = nil,
+        index: Int
+    ) -> ShortcutPin {
+        ShortcutPin(
+            id: UUID(),
+            role: role,
+            profileId: profileId,
+            spaceId: spaceId,
+            index: index,
+            launchURL: URL(string: "https://example.com/install-pin-\(index)")!,
+            title: "Install Pin \(index)"
+        )
+    }
+
+    @MainActor
+    private final class Harness {
+        var transactionCount = 0
+        var objectWillChangeCount = 0
+        var spaces: [Space] = []
+        var tabsBySpace: [UUID: [Tab]] = [:]
+        var foldersBySpace: [UUID: [TabFolder]] = [:]
+        var splitGroups: [SplitGroup] = []
+        var pinnedByProfile: [UUID: [ShortcutPin]] = [:]
+        var spacePinnedShortcuts: [UUID: [ShortcutPin]] = [:]
+        var pendingPinnedWithoutProfile: [ShortcutPin] = []
+        var currentSpace: Space?
+        var currentTab: Tab?
+        var syncedShortcutPinIds: [[UUID]] = []
+        var rebuildTabLookupCount = 0
+        var markSnapshotCacheDirtyCount = 0
+        var resetStructuralDirtySetCount = 0
+        var publishCount = 0
+
+        func makeOwner() -> TabStructuralInstallOwner {
+            TabStructuralInstallOwner(
+                dependencies: TabStructuralInstallOwner.Dependencies(
+                    withStructuralUpdateTransaction: {
+                        self.transactionCount += 1
+                        $0()
+                    },
+                    objectWillChange: {
+                        self.objectWillChangeCount += 1
+                    },
+                    replaceSpaces: {
+                        self.spaces = $0
+                    },
+                    replaceTabsBySpace: {
+                        self.tabsBySpace = $0
+                    },
+                    replaceFoldersBySpace: {
+                        self.foldersBySpace = $0
+                    },
+                    replaceSplitGroups: {
+                        self.splitGroups = $0
+                    },
+                    replaceShortcutPins: {
+                        self.pinnedByProfile = $0
+                        self.spacePinnedShortcuts = $1
+                        self.pendingPinnedWithoutProfile = $2
+                    },
+                    replaceCurrentSpace: {
+                        self.currentSpace = $0
+                    },
+                    replaceCurrentTab: {
+                        self.currentTab = $0
+                    },
+                    syncShortcutPins: {
+                        self.syncedShortcutPinIds.append($0.map(\.id))
+                    },
+                    rebuildTabLookup: {
+                        self.rebuildTabLookupCount += 1
+                    },
+                    markSnapshotCacheDirty: {
+                        self.markSnapshotCacheDirtyCount += 1
+                    },
+                    resetStructuralDirtySet: {
+                        self.resetStructuralDirtySetCount += 1
+                    },
+                    requestStructuralPublish: {
+                        self.publishCount += 1
+                    }
+                )
+            )
+        }
+    }
+}

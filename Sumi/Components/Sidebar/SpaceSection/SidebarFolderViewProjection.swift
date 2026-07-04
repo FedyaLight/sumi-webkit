@@ -432,7 +432,7 @@ struct SidebarFolderViewProjection {
     private static func makeBaseItems(
         liveFolderItems: [SumiLiveFolderItem],
         isLiveFolder: Bool,
-        visualItems: [TabManager.FolderChildVisualItem]
+        visualItems: [SpacePinnedStructureOwner.FolderChildVisualItem]
     ) -> [SidebarFolderListItem] {
         if isLiveFolder {
             return liveFolderItems.map { .liveItem($0.id) }

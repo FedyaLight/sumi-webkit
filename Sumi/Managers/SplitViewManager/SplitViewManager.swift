@@ -161,7 +161,7 @@ final class SplitViewManager: ObservableObject {
 
     func expandSplitPane(tabId: UUID, in windowState: BrowserWindowState) {
         guard let tabManager,
-              let tab = tabManager.tab(for: tabId),
+              let tab = tabManager.tabCollectionMembershipOwner.tab(for: tabId),
               let group = tabManager.splitGroupStructureOwner.splitGroup(containing: tabId)
         else { return }
 
@@ -187,9 +187,9 @@ final class SplitViewManager: ObservableObject {
               current.representsSumiNativeSurface == false
         else { return }
         let targetSpace =
-            windowState.currentSpaceId.flatMap { id in tabManager.spaces.first(where: { $0.id == id }) }
-            ?? tabManager.currentSpace
-        let tab = tabManager.createNewTab(
+            windowState.currentSpaceId.flatMap { id in tabManager.spaceStateOwner.spaces.first(where: { $0.id == id }) }
+            ?? tabManager.spaceStateOwner.currentSpace
+        let tab = tabManager.regularTabLifecycleOwner.createNewTab(
             url: SumiSurface.emptyTabURL.absoluteString,
             in: targetSpace,
             activate: false
@@ -227,7 +227,7 @@ final class SplitViewManager: ObservableObject {
         guard let current = runtime?.currentTab(windowState), current.representsSumiNativeSurface == false else { return }
 
         let anchorGroup = tabManager.splitGroupStructureOwner.splitGroup(containing: current.id)
-        let anchorTab = anchorGroup?.activeTabId.flatMap { tabManager.tab(for: $0) } ?? current
+        let anchorTab = anchorGroup?.activeTabId.flatMap { tabManager.tabCollectionMembershipOwner.tab(for: $0) } ?? current
         dropTab(tab, placeOn: side, relativeTo: anchorTab.id, in: windowState)
     }
 
@@ -239,7 +239,7 @@ final class SplitViewManager: ObservableObject {
         in windowState: BrowserWindowState
     ) -> Bool {
         guard let tabManager else { return false }
-        guard let targetTab = targetTabId.flatMap({ tabManager.tab(for: $0) }) ?? runtime?.currentTab(windowState),
+        guard let targetTab = targetTabId.flatMap({ tabManager.tabCollectionMembershipOwner.tab(for: $0) }) ?? runtime?.currentTab(windowState),
               targetTab.representsSumiNativeSurface == false else { return false }
         return dropTab(
             tab,
@@ -257,7 +257,7 @@ final class SplitViewManager: ObservableObject {
         guard let tabManager else { return false }
         let side = target.side
         guard tab.representsSumiNativeSurface == false else { return false }
-        guard let targetTab = tabManager.tab(for: target.tabId) ?? runtime?.currentTab(windowState),
+        guard let targetTab = tabManager.tabCollectionMembershipOwner.tab(for: target.tabId) ?? runtime?.currentTab(windowState),
               targetTab.representsSumiNativeSurface == false
         else { return false }
 
@@ -429,7 +429,7 @@ final class SplitViewManager: ObservableObject {
             )
         }
 
-        guard let currentTab = windowState.currentTabId.flatMap({ tabManager.tab(for: $0) })
+        guard let currentTab = windowState.currentTabId.flatMap({ tabManager.tabCollectionMembershipOwner.tab(for: $0) })
                 ?? runtime?.currentTab(windowState),
               currentTab.representsSumiNativeSurface == false else {
             return nil

@@ -183,7 +183,7 @@ extension BrowserZoomCommandOwner.Dependencies {
                 browserManager?.activePageRoutingOwner.activePageWebView(for: windowState)
             },
             tab: { [weak browserManager] tabId in
-                browserManager?.tabManager.tab(for: tabId)
+                browserManager?.tabManager.tabCollectionMembershipOwner.tab(for: tabId)
             },
             windowStateContainingTab: { [weak browserManager] tab in
                 browserManager?.windowTabContextOwner.windowState(containing: tab)

@@ -369,9 +369,9 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         let browserManager = makeBrowserManager(profile: profile)
         manager.attach(browserManager: browserManager)
 
-        let tab = browserManager.tabManager.createNewTab(
+        let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://example.com",
-            in: browserManager.tabManager.currentSpace,
+            in: browserManager.tabManager.spaceStateOwner.currentSpace,
             activate: false
         )
         tab.profileId = profile.id
@@ -423,9 +423,9 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         _ = try await manager.enableExtension(installed.id)
         manager.extensionsLoaded = true
 
-        let tab = browserManager.tabManager.createNewTab(
+        let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "about:blank",
-            in: browserManager.tabManager.currentSpace,
+            in: browserManager.tabManager.spaceStateOwner.currentSpace,
             activate: false
         )
         tab.profileId = profile.id
@@ -483,7 +483,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         XCTAssertFalse(manager.profileHasLoadedContentScriptContexts(profileId: profile.id))
 
         let pageURL = URL(string: "https://example.com/login")!
-        let tab = browserManager.tabManager.createNewTab(
+        let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: pageURL.absoluteString,
             in: space,
             activate: false
@@ -588,7 +588,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         }
 
         let pageURL = URL(string: "https://example.com/login")!
-        let tab = browserManager.tabManager.createNewTab(
+        let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: pageURL.absoluteString,
             in: space,
             activate: false
@@ -707,10 +707,10 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             "Extension-created internal tabs must keep the matching context for WebKit page configuration"
         )
         XCTAssertFalse(
-            browserManager.tabManager.shouldPersistRegularTab(tab),
+            browserManager.tabManager.structuralPersistence.shouldPersistRegularTab(tab),
             "Extension-created internal tabs are runtime-owned, not browser session tabs"
         )
-        XCTAssertNil(browserManager.tabManager.persistableCurrentTabID())
+        XCTAssertNil(browserManager.tabManager.structuralPersistence.persistableCurrentTabID())
     }
 
     func testExtensionRequestedBackgroundInternalTabMaterializesWithContext() async throws {
@@ -780,10 +780,10 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         )
 
         XCTAssertIdentical(tab.webExtensionContextOverride, extensionContext)
-        XCTAssertTrue(browserManager.tabManager.isTransientExtensionTab(tab))
-        XCTAssertIdentical(browserManager.tabManager.tab(for: tab.id), tab)
+        XCTAssertTrue(browserManager.tabManager.transientWebKitTabLifecycleOwner.isTransientExtensionTab(tab))
+        XCTAssertIdentical(browserManager.tabManager.tabCollectionMembershipOwner.tab(for: tab.id), tab)
         XCTAssertFalse(
-            browserManager.tabManager.tabsBySpace[space.id]?.contains(where: { $0.id == tab.id }) ?? false,
+            browserManager.tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[space.id]?.contains(where: { $0.id == tab.id }) ?? false,
             "Inactive internal extension pages should not appear in the visible regular tab list"
         )
         XCTAssertFalse(
@@ -799,7 +799,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         XCTAssertGreaterThan(metrics.elementCount, 0, metrics.debugSummary)
         XCTAssertGreaterThan(metrics.scriptCount, 0, metrics.debugSummary)
         XCTAssertEqual(metrics.marker, "rendered", metrics.debugSummary)
-        XCTAssertFalse(browserManager.tabManager.shouldPersistRegularTab(tab))
+        XCTAssertFalse(browserManager.tabManager.structuralPersistence.shouldPersistRegularTab(tab))
 
         let adapter = try XCTUnwrap(manager.adapterResolutionOwner.stableAdapter(for: tab))
         let closed = expectation(description: "transient extension tab closed")
@@ -810,10 +810,10 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         }
         await fulfillment(of: [closed], timeout: 1.0)
         XCTAssertNil(closeError)
-        XCTAssertNil(browserManager.tabManager.tab(for: tab.id))
-        XCTAssertFalse(browserManager.tabManager.isTransientExtensionTab(tab))
+        XCTAssertNil(browserManager.tabManager.tabCollectionMembershipOwner.tab(for: tab.id))
+        XCTAssertFalse(browserManager.tabManager.transientWebKitTabLifecycleOwner.isTransientExtensionTab(tab))
         XCTAssertFalse(
-            browserManager.tabManager.tabsBySpace[space.id]?.contains(where: { $0.id == tab.id }) ?? false
+            browserManager.tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[space.id]?.contains(where: { $0.id == tab.id }) ?? false
         )
     }
 
@@ -849,12 +849,12 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             name: "Hidden",
             profileId: profile.id
         )
-        let selectedTab = browserManager.tabManager.createNewTab(
+        let selectedTab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://example.com/selected",
             in: visibleSpace,
             activate: true
         )
-        let targetTab = browserManager.tabManager.createNewTab(
+        let targetTab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://example.com/hidden",
             in: hiddenSpace,
             activate: false
@@ -891,7 +891,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             "No browser window is available for this tab"
         )
         XCTAssertEqual(windowState.currentTabId, selectedTab.id)
-        XCTAssertEqual(browserManager.tabManager.currentTab?.id, selectedTab.id)
+        XCTAssertEqual(browserManager.tabManager.selectionStateOwner.currentTab?.id, selectedTab.id)
     }
 
     func testExtensionRequestedSafariURLUsesNativeWebKitContext() async throws {
@@ -969,7 +969,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             extensionContext,
             "Safari-public extension URLs must be loaded through the matching WebKit context"
         )
-        XCTAssertFalse(browserManager.tabManager.shouldPersistRegularTab(tab))
+        XCTAssertFalse(browserManager.tabManager.structuralPersistence.shouldPersistRegularTab(tab))
     }
 
     func testExtensionRequestedWindowTabUsesContextConfigurationAndRuntimeLifecycle() async throws {
@@ -1067,7 +1067,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         XCTAssertNotNil(completionWindow)
 
         let tab = try XCTUnwrap(
-            browserManager.tabManager.tabsBySpace[space.id]?.first(where: {
+            browserManager.tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[space.id]?.first(where: {
                 $0.url == extensionURL
             })
         )
@@ -1077,7 +1077,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             tab.webExtensionContextOverride,
             extensionContext
         )
-        XCTAssertFalse(browserManager.tabManager.shouldPersistRegularTab(tab))
+        XCTAssertFalse(browserManager.tabManager.structuralPersistence.shouldPersistRegularTab(tab))
     }
 
     func testExtensionRequestedInternalTabRendersThroughSumiWebViewPath() async throws {
@@ -1293,7 +1293,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
 
         var didOpenCount = 0
         manager.testHooks.didOpenTab = { tabID in
-            if browserManager.tabManager.tab(for: tabID)?.url == extensionURL {
+            if browserManager.tabManager.tabCollectionMembershipOwner.tab(for: tabID)?.url == extensionURL {
                 didOpenCount += 1
             }
         }
@@ -1750,7 +1750,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         await manager.ensureContentScriptContextsLoaded(for: profile.id)
 
         let pageURL = URL(string: "https://example.com/login")!
-        let tab = browserManager.tabManager.createNewTab(
+        let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: pageURL.absoluteString,
             in: space,
             activate: false
@@ -2051,7 +2051,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         XCTAssertTrue(manager.profileHasLoadedContentScriptContexts(profileId: profile.id))
 
         let tab = try XCTUnwrap(
-            browserManager.tabManager.allTabs().first { $0.url == pageURL }
+            browserManager.tabManager.tabCollectionMembershipOwner.allTabs().first { $0.url == pageURL }
         )
         XCTAssertNotNil(tab.assignedWebView ?? tab.existingWebView)
         XCTAssertEqual(
@@ -2372,7 +2372,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         )
         manager.extensionsLoaded = true
 
-        let tabWithController = browserManager.tabManager.createNewTab(
+        let tabWithController = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://example.com/with-controller",
             in: space,
             activate: false
@@ -2392,7 +2392,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         webViewWithController.owningTab = tabWithController
         tabWithController._webView = webViewWithController
 
-        let tabWithoutController = browserManager.tabManager.createNewTab(
+        let tabWithoutController = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://example.com/without-controller",
             in: space,
             activate: false

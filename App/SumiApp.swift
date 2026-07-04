@@ -156,7 +156,7 @@ struct SumiApp: App {
         let contentView = makeRootContentView(
             dependencies: dependencies,
             windowState: windowState,
-            initialWorkspaceTheme: dependencies.browserManager.tabManager.currentSpace?.workspaceTheme
+            initialWorkspaceTheme: dependencies.browserManager.tabManager.spaceStateOwner.currentSpace?.workspaceTheme
         )
 
         return NSHostingView(rootView: contentView)

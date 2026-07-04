@@ -183,7 +183,7 @@ extension BrowserKeyboardShortcutCommandOwner.Dependencies {
                 browserManager?.splitManager.createEmptySplit(side: .right, in: windowState)
             },
             spaces: { [weak browserManager] in
-                browserManager?.tabManager.spaces ?? []
+                browserManager?.tabManager.spaceStateOwner.spaces ?? []
             },
             setActiveSpace: { [weak browserManager] space, windowState in
                 browserManager?.windowSpaceStateOwner.setActiveSpace(space, in: windowState)

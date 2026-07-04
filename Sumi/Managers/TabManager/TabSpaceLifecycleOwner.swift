@@ -4,10 +4,42 @@ import Foundation
 /// icon updates, and current-space activation with tab selection handoff.
 @MainActor
 final class TabSpaceLifecycleOwner {
-    unowned let tabManager: TabManager
+    struct Dependencies {
+        let withStructuralUpdateTransactionReturningSpace: (@MainActor () -> Space) -> Space
+        let withStructuralUpdateTransactionVoid: (@MainActor () -> Void) -> Void
+        let withStructuralUpdateTransactionBool: (@MainActor () -> Bool) -> Bool
+        let withStructuralUpdateTransactionThrowingVoid: (@MainActor () throws -> Void) throws -> Void
+        let defaultProfileId: () -> UUID?
+        let spaceStateOwner: TabSpaceCollectionStateOwner
+        let sendObjectWillChange: () -> Void
+        let markAllSpacesStructurallyDirty: () -> Void
+        let setTabs: ([Tab], UUID) -> Void
+        let scheduleStructuralPersistence: () -> Void
+        let regularTabs: (UUID) -> [Tab]
+        let transientShortcutTabs: (UUID) -> [Tab]
+        let currentTab: () -> Tab?
+        let replaceCurrentTab: (Tab?) -> Void
+        let markSpaceStructurallyDeleted: (UUID) -> Void
+        let removeFolders: (UUID) -> Void
+        let setSpacePinnedShortcuts: ([ShortcutPin], UUID) -> Void
+        let markFoldersSnapshotDirty: (UUID) -> Void
+        let markSpacePinnedSnapshotDirty: (UUID) -> Void
+        let removeTransientShortcutTabs: (UUID) -> Void
+        let notifyTransientShortcutStateChanged: () -> Void
+        let validateWindowStates: () -> Void
+        let assignSpaceProfile: (UUID, UUID) -> Void
+        let markSpacesSnapshotDirty: () -> Void
+        let projection: (UUID, UUID?) -> SpaceLauncherProjectionSnapshot
+        let spacePinnedPins: (UUID) -> [ShortcutPin]
+        let activeEssentialTabs: (UUID?) -> [Tab]
+        let currentProfileId: () -> UUID?
+        let persistSelection: () -> Void
+    }
 
-    init(tabManager: TabManager) {
-        self.tabManager = tabManager
+    private let dependencies: Dependencies
+
+    init(dependencies: Dependencies) {
+        self.dependencies = dependencies
     }
 
     @discardableResult
@@ -17,11 +49,11 @@ final class TabSpaceLifecycleOwner {
         workspaceTheme: WorkspaceTheme? = nil,
         profileId: UUID? = nil
     ) -> Space {
-        tabManager.withStructuralUpdateTransaction {
+        dependencies.withStructuralUpdateTransactionReturningSpace {
             let resolvedProfileId = profileId
-                ?? tabManager.runtimeContext?.defaultProfileId
+                ?? dependencies.defaultProfileId()
             let defaultTheme = SumiWorkspaceThemePresets.rotatingTheme(
-                at: tabManager.spaceCollectionStateOwner.count
+                at: dependencies.spaceStateOwner.count
             )
             let resolvedTheme = workspaceTheme ?? defaultTheme
 
@@ -39,78 +71,77 @@ final class TabSpaceLifecycleOwner {
                 )
             }
 
-            tabManager.objectWillChange.send()
-            tabManager.spaceCollectionStateOwner.append(space)
-            tabManager.markAllSpacesStructurallyDirty()
-            tabManager.setTabs([], for: space.id)
+            dependencies.sendObjectWillChange()
+            dependencies.spaceStateOwner.append(space)
+            dependencies.markAllSpacesStructurallyDirty()
+            dependencies.setTabs([], space.id)
 
-            if tabManager.spaceCollectionStateOwner.currentSpace == nil {
-                tabManager.spaceCollectionStateOwner.replaceCurrentSpace(space)
+            if dependencies.spaceStateOwner.currentSpace == nil {
+                dependencies.spaceStateOwner.replaceCurrentSpace(space)
             } else {
                 setActiveSpace(space, preferredTab: nil, contextWindowId: nil)
             }
-            tabManager.scheduleStructuralPersistence()
+            dependencies.scheduleStructuralPersistence()
             return space
         }
     }
 
     func removeSpace(_ id: UUID) {
-        tabManager.withStructuralUpdateTransaction {
-            guard tabManager.spaceCollectionStateOwner.count > 1 else { return }
-            guard let idx = tabManager.spaceCollectionStateOwner.index(of: id) else { return }
+        dependencies.withStructuralUpdateTransactionVoid {
+            guard dependencies.spaceStateOwner.count > 1 else { return }
+            guard let idx = dependencies.spaceStateOwner.index(of: id) else { return }
 
-            let closing = tabManager.regularTabCollectionOwner.tabs(in: id)
-            let transientClosing = tabManager.transientTabRegistryOwner
-                .transientShortcutTabs(inSpace: id)
+            let closing = dependencies.regularTabs(id)
+            let transientClosing = dependencies.transientShortcutTabs(id)
 
-            for tab in closing + transientClosing where tabManager.currentTab?.id == tab.id {
-                tabManager.currentTab = nil
+            for tab in closing + transientClosing where dependencies.currentTab()?.id == tab.id {
+                dependencies.replaceCurrentTab(nil)
             }
 
-            tabManager.setTabs([], for: id)
-            tabManager.structuralPersistence.markSpaceStructurallyDeleted(id)
-            tabManager.objectWillChange.send()
-            tabManager.folderCollectionStateOwner.removeFolders(for: id)
-            tabManager.spacePinnedShortcuts.removeValue(forKey: id)
-            tabManager.structuralPersistence.markFoldersSnapshotDirty(for: id)
-            tabManager.structuralPersistence.markSpacePinnedSnapshotDirty(for: id)
-            tabManager.transientTabRegistryOwner.removeTransientShortcutTabs(inSpace: id)
-            tabManager.notifyTransientShortcutStateChanged()
+            dependencies.setTabs([], id)
+            dependencies.markSpaceStructurallyDeleted(id)
+            dependencies.sendObjectWillChange()
+            dependencies.removeFolders(id)
+            dependencies.setSpacePinnedShortcuts([], id)
+            dependencies.markFoldersSnapshotDirty(id)
+            dependencies.markSpacePinnedSnapshotDirty(id)
+            dependencies.removeTransientShortcutTabs(id)
+            dependencies.notifyTransientShortcutStateChanged()
 
-            if idx < tabManager.spaceCollectionStateOwner.count {
-                tabManager.objectWillChange.send()
-                tabManager.spaceCollectionStateOwner.remove(at: idx)
-                tabManager.markAllSpacesStructurallyDirty()
+            if idx < dependencies.spaceStateOwner.count {
+                dependencies.sendObjectWillChange()
+                dependencies.spaceStateOwner.remove(at: idx)
+                dependencies.markAllSpacesStructurallyDirty()
             }
 
-            if tabManager.spaceCollectionStateOwner.currentSpaceId == id {
-                tabManager.currentSpace = tabManager.spaceCollectionStateOwner.firstSpace
+            if dependencies.spaceStateOwner.currentSpaceId == id {
+                dependencies.spaceStateOwner.replaceCurrentSpace(dependencies.spaceStateOwner.firstSpace)
             }
 
-            tabManager.scheduleStructuralPersistence()
-            tabManager.runtimeContext?.validateWindowStates()
+            dependencies.scheduleStructuralPersistence()
+            dependencies.validateWindowStates()
         }
     }
 
     @discardableResult
     func reorderSpace(spaceId: UUID, to targetIndex: Int) -> Bool {
-        tabManager.withStructuralUpdateTransaction {
-            guard tabManager.spaceCollectionStateOwner.count > 1,
-                  tabManager.spaceCollectionStateOwner.index(of: spaceId) != nil
+        dependencies.withStructuralUpdateTransactionBool {
+            guard dependencies.spaceStateOwner.count > 1,
+                  dependencies.spaceStateOwner.index(of: spaceId) != nil
             else {
                 return false
             }
 
-            tabManager.objectWillChange.send()
-            guard tabManager.spaceCollectionStateOwner.reorderSpace(
+            dependencies.sendObjectWillChange()
+            guard dependencies.spaceStateOwner.reorderSpace(
                 spaceId: spaceId,
                 to: targetIndex
             ) else {
                 return false
             }
 
-            tabManager.markAllSpacesStructurallyDirty()
-            tabManager.scheduleStructuralPersistence()
+            dependencies.markAllSpacesStructurallyDirty()
+            dependencies.scheduleStructuralPersistence()
             return true
         }
     }
@@ -120,12 +151,12 @@ final class TabSpaceLifecycleOwner {
         preferredTab: Tab? = nil,
         contextWindowId: UUID? = nil
     ) {
-        guard tabManager.spaceCollectionStateOwner.contains(spaceId: space.id) else { return }
+        guard dependencies.spaceStateOwner.contains(spaceId: space.id) else { return }
 
         if space.profileId == nil {
-            let defaultProfileId = tabManager.runtimeContext?.defaultProfileId
+            let defaultProfileId = dependencies.defaultProfileId()
             if let profileId = defaultProfileId {
-                tabManager.profileAssignmentOwner.assign(spaceId: space.id, toProfile: profileId)
+                dependencies.assignSpaceProfile(space.id, profileId)
             } else {
                 RuntimeDiagnostics.debug(
                     "No profiles available to assign to a space switch target; reconciliation deferred.",
@@ -134,22 +165,19 @@ final class TabSpaceLifecycleOwner {
             }
         }
 
-        let previousTab = tabManager.currentTab
-        let previousSpace = tabManager.currentSpace
+        let previousTab = dependencies.currentTab()
+        let previousSpace = dependencies.spaceStateOwner.currentSpace
 
         if let previousSpace, let previousTab {
             previousSpace.activeTabId = previousTab.id
-            tabManager.structuralPersistence.markSpacesSnapshotDirty()
+            dependencies.markSpacesSnapshotDirty()
         }
 
-        tabManager.currentSpace = space
+        dependencies.spaceStateOwner.replaceCurrentSpace(space)
 
-        let projection = tabManager.spaceLauncherProjectionOwner.projection(
-            for: space.id,
-            in: contextWindowId
-        )
+        let projection = dependencies.projection(space.id, contextWindowId)
         let regularTabs = projection.regularTabs
-        let persistedPins = tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: space.id)
+        let persistedPins = dependencies.spacePinnedPins(space.id)
         let spacePinnedTabs = projection.liveTabsByPinId.values.sorted { lhs, rhs in
             let leftOrder = lhs.shortcutPinId.flatMap { pinId in
                 persistedPins.first(where: { $0.id == pinId })?.index
@@ -172,57 +200,233 @@ final class TabSpaceLifecycleOwner {
         }
 
         if let activeId = space.activeTabId {
+            let pinnedTabs = dependencies.activeEssentialTabs(dependencies.currentProfileId())
             if targetTab == nil, let match = regularTabs.first(where: { $0.id == activeId }) {
                 targetTab = match
             } else if targetTab == nil, let match = spacePinnedTabs.first(where: { $0.id == activeId }) {
                 targetTab = match
-            } else if targetTab == nil, let match = tabManager.pinnedTabs.first(where: { $0.id == activeId }) {
+            } else if targetTab == nil, let match = pinnedTabs.first(where: { $0.id == activeId }) {
                 targetTab = match
             }
         }
 
         if targetTab == nil {
-            if let currentTab = tabManager.currentTab, currentTab.spaceId == space.id {
+            if let currentTab = dependencies.currentTab(), currentTab.spaceId == space.id {
                 targetTab = currentTab
             } else {
-                targetTab = regularTabs.first ?? spacePinnedTabs.first ?? tabManager.pinnedTabs.first
+                let pinnedTabs = dependencies.activeEssentialTabs(dependencies.currentProfileId())
+                targetTab = regularTabs.first ?? spacePinnedTabs.first ?? pinnedTabs.first
             }
         }
 
-        let isTabChanging = targetTab?.id != tabManager.currentTab?.id
+        let isTabChanging = targetTab?.id != dependencies.currentTab()?.id
         if isTabChanging {
-            tabManager.currentTab = targetTab
+            dependencies.replaceCurrentTab(targetTab)
         }
 
         if targetTab?.id == space.activeTabId {
-            tabManager.structuralPersistence.markSpacesSnapshotDirty()
+            dependencies.markSpacesSnapshotDirty()
         }
-        tabManager.structuralPersistence.persistSelection()
+        dependencies.persistSelection()
+    }
+
+    func resolvedTargetSpace(preferred space: Space?, fallbackSpaceId: UUID? = nil) -> Space {
+        space
+            ?? fallbackSpaceId.flatMap { spaceId in
+                dependencies.spaceStateOwner.space(with: spaceId)
+            }
+            ?? ensureDefaultSpaceIfNeeded()
+    }
+
+    @discardableResult
+    func backfillTargetSpaceProfileIfNeeded(
+        _ targetSpace: Space,
+        profileId: UUID?
+    ) -> Bool {
+        guard targetSpace.profileId == nil, let profileId else { return false }
+        targetSpace.profileId = profileId
+        dependencies.markAllSpacesStructurallyDirty()
+        return true
+    }
+
+    @discardableResult
+    func backfillTargetSpaceBootstrapProfileIfNeeded(_ targetSpace: Space) -> Bool {
+        backfillTargetSpaceProfileIfNeeded(
+            targetSpace,
+            profileId: defaultProfileIdForSpaceBootstrap
+        )
     }
 
     func renameSpace(spaceId: UUID, newName: String) throws {
-        try tabManager.withStructuralUpdateTransaction {
-            guard tabManager.spaceCollectionStateOwner.space(with: spaceId) != nil else {
+        try dependencies.withStructuralUpdateTransactionThrowingVoid {
+            guard dependencies.spaceStateOwner.space(with: spaceId) != nil else {
                 throw TabManager.TabManagerError.spaceNotFound(spaceId)
             }
 
-            tabManager.objectWillChange.send()
-            tabManager.spaceCollectionStateOwner.renameSpace(spaceId: spaceId, to: newName)
-            tabManager.markAllSpacesStructurallyDirty()
-            tabManager.scheduleStructuralPersistence()
+            dependencies.sendObjectWillChange()
+            dependencies.spaceStateOwner.renameSpace(spaceId: spaceId, to: newName)
+            dependencies.markAllSpacesStructurallyDirty()
+            dependencies.scheduleStructuralPersistence()
         }
     }
 
     func updateSpaceIcon(spaceId: UUID, icon: String) throws {
-        try tabManager.withStructuralUpdateTransaction {
-            guard tabManager.spaceCollectionStateOwner.space(with: spaceId) != nil else {
+        try dependencies.withStructuralUpdateTransactionThrowingVoid {
+            guard dependencies.spaceStateOwner.space(with: spaceId) != nil else {
                 throw TabManager.TabManagerError.spaceNotFound(spaceId)
             }
 
-            tabManager.objectWillChange.send()
-            tabManager.spaceCollectionStateOwner.updateIcon(spaceId: spaceId, to: icon)
-            tabManager.markAllSpacesStructurallyDirty()
-            tabManager.scheduleStructuralPersistence()
+            dependencies.sendObjectWillChange()
+            dependencies.spaceStateOwner.updateIcon(spaceId: spaceId, to: icon)
+            dependencies.markAllSpacesStructurallyDirty()
+            dependencies.scheduleStructuralPersistence()
         }
+    }
+
+    private var defaultProfileIdForSpaceBootstrap: UUID? {
+        dependencies.currentProfileId() ?? dependencies.defaultProfileId()
+    }
+
+    // Ensure a deterministic default target space exists without inheriting process-global selection.
+    private func ensureDefaultSpaceIfNeeded() -> Space {
+        let profileId = defaultProfileIdForSpaceBootstrap
+        if let profileId,
+           let profileSpace = dependencies.spaceStateOwner.first(where: { $0.profileId == profileId }) {
+            return profileSpace
+        }
+
+        if let profileId,
+           let unassignedSpace = dependencies.spaceStateOwner.first(where: { $0.profileId == nil }) {
+            dependencies.sendObjectWillChange()
+            dependencies.spaceStateOwner.assignProfile(spaceId: unassignedSpace.id, profileId: profileId)
+            dependencies.markAllSpacesStructurallyDirty()
+            dependencies.scheduleStructuralPersistence()
+            return unassignedSpace
+        }
+
+        if profileId == nil,
+           let firstSpace = dependencies.spaceStateOwner.firstSpace {
+            return firstSpace
+        }
+
+        let personal = Space(
+            name: "Personal",
+            icon: "🏠",
+            workspaceTheme: .default,
+            profileId: profileId
+        )
+        dependencies.sendObjectWillChange()
+        dependencies.spaceStateOwner.append(personal)
+        dependencies.markAllSpacesStructurallyDirty()
+        dependencies.setTabs([], personal.id)
+        if dependencies.spaceStateOwner.currentSpace == nil {
+            dependencies.spaceStateOwner.replaceCurrentSpace(personal)
+        }
+        dependencies.scheduleStructuralPersistence()
+        return personal
+    }
+}
+
+extension TabSpaceLifecycleOwner.Dependencies {
+    @MainActor
+    static func live(tabManager: TabManager) -> Self {
+        Self(
+            withStructuralUpdateTransactionReturningSpace: { [weak tabManager] operation in
+                guard let tabManager else { return operation() }
+                return tabManager.withStructuralUpdateTransaction(operation)
+            },
+            withStructuralUpdateTransactionVoid: { [weak tabManager] operation in
+                guard let tabManager else {
+                    operation()
+                    return
+                }
+                tabManager.withStructuralUpdateTransaction(operation)
+            },
+            withStructuralUpdateTransactionBool: { [weak tabManager] operation in
+                guard let tabManager else { return operation() }
+                return tabManager.withStructuralUpdateTransaction(operation)
+            },
+            withStructuralUpdateTransactionThrowingVoid: { [weak tabManager] operation in
+                guard let tabManager else {
+                    try operation()
+                    return
+                }
+                try tabManager.withStructuralUpdateTransaction(operation)
+            },
+            defaultProfileId: { [weak tabManager] in
+                tabManager?.runtimeContext?.defaultProfileId
+            },
+            spaceStateOwner: tabManager.spaceStateOwner,
+            sendObjectWillChange: { [weak tabManager] in
+                tabManager?.objectWillChange.send()
+            },
+            markAllSpacesStructurallyDirty: { [weak tabManager] in
+                tabManager?.structuralPersistence.markAllSpacesStructurallyDirty()
+            },
+            setTabs: { [weak tabManager] tabs, spaceId in
+                tabManager?.structuralCollectionMutationOwner.setTabs(tabs, for: spaceId)
+            },
+            scheduleStructuralPersistence: { [weak tabManager] in
+                tabManager?.scheduleStructuralPersistence()
+            },
+            regularTabs: { [weak tabManager] spaceId in
+                tabManager?.regularTabCollectionOwner.tabs(in: spaceId) ?? []
+            },
+            transientShortcutTabs: { [weak tabManager] spaceId in
+                tabManager?.transientTabRegistryOwner.transientShortcutTabs(inSpace: spaceId) ?? []
+            },
+            currentTab: { [weak tabManager] in
+                tabManager?.selectionStateOwner.currentTab
+            },
+            replaceCurrentTab: { [weak tabManager] tab in
+                tabManager?.selectionStateOwner.replaceCurrentTab(tab)
+            },
+            markSpaceStructurallyDeleted: { [weak tabManager] spaceId in
+                tabManager?.structuralPersistence.markSpaceStructurallyDeleted(spaceId)
+            },
+            removeFolders: { [weak tabManager] spaceId in
+                tabManager?.folderCollectionStateOwner.removeFolders(for: spaceId)
+            },
+            setSpacePinnedShortcuts: { [weak tabManager] pins, spaceId in
+                tabManager?.structuralCollectionMutationOwner.setSpacePinnedShortcuts(pins, for: spaceId)
+            },
+            markFoldersSnapshotDirty: { [weak tabManager] spaceId in
+                tabManager?.structuralPersistence.markFoldersSnapshotDirty(for: spaceId)
+            },
+            markSpacePinnedSnapshotDirty: { [weak tabManager] spaceId in
+                tabManager?.structuralPersistence.markSpacePinnedSnapshotDirty(for: spaceId)
+            },
+            removeTransientShortcutTabs: { [weak tabManager] spaceId in
+                tabManager?.transientTabRegistryOwner.removeTransientShortcutTabs(inSpace: spaceId)
+            },
+            notifyTransientShortcutStateChanged: { [weak tabManager] in
+                tabManager?.notifyTransientShortcutStateChanged()
+            },
+            validateWindowStates: { [weak tabManager] in
+                tabManager?.runtimeContext?.validateWindowStates()
+            },
+            assignSpaceProfile: { [weak tabManager] spaceId, profileId in
+                tabManager?.profileAssignmentOwner.assign(spaceId: spaceId, toProfile: profileId)
+            },
+            markSpacesSnapshotDirty: { [weak tabManager] in
+                tabManager?.structuralPersistence.markSpacesSnapshotDirty()
+            },
+            projection: { [weak tabManager] spaceId, windowId in
+                guard let tabManager else { preconditionFailure("TabManager dependency used after deallocation") }
+                return tabManager.spaceLauncherProjectionOwner.projection(for: spaceId, in: windowId)
+            },
+            spacePinnedPins: { [weak tabManager] spaceId in
+                tabManager?.shortcutPinCollectionStateOwner.spacePinnedPins(for: spaceId) ?? []
+            },
+            activeEssentialTabs: { [weak tabManager] profileId in
+                tabManager?.shortcutPresentationOwner.activeEssentialTabs(for: profileId) ?? []
+            },
+            currentProfileId: { [weak tabManager] in
+                tabManager?.runtimeContext?.currentProfileId
+            },
+            persistSelection: { [weak tabManager] in
+                tabManager?.structuralPersistence.persistSelection()
+            }
+        )
     }
 }

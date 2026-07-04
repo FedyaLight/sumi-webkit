@@ -28,7 +28,7 @@ final class BrowserWindowSpaceStateOwner {
 
     func space(for spaceId: UUID?) -> Space? {
         guard let spaceId else { return nil }
-        return dependencies.tabManager().spaces.first(where: { $0.id == spaceId })
+        return dependencies.tabManager().spaceStateOwner.space(with: spaceId)
     }
 
     func hasValidCurrentSelection(in windowState: BrowserWindowState) -> Bool {
@@ -129,7 +129,7 @@ final class BrowserWindowSpaceStateOwner {
         for (_, windowState) in dependencies.windowRegistry()?.windows ?? [:] {
             var needsUpdate = false
             if let currentTabId = windowState.currentTabId,
-               tabManager.tab(for: currentTabId) == nil {
+               tabManager.tabCollectionMembershipOwner.tab(for: currentTabId) == nil {
                 windowState.currentTabId = nil
                 needsUpdate = true
             }
@@ -201,9 +201,9 @@ final class BrowserWindowSpaceStateOwner {
         let focusedWindow = activeWindowState ?? dependencies.windowRegistry()?.activeWindow
         let focusedWindowId = focusedWindow?.id
 
-        for space in tabManager.spaces {
+        for space in tabManager.spaceStateOwner.spaces {
             let isFocusedSpace = focusedWindow?.currentSpaceId == space.id
-            let hasRegularTabs = !tabManager.tabs(in: space).isEmpty
+            let hasRegularTabs = !tabManager.regularTabCollectionOwner.tabs(in: space).isEmpty
             let hasPinnedLiveShortcut: Bool
             if let windowId = focusedWindowId {
                 hasPinnedLiveShortcut = tabManager.shortcutPresentationOwner.liveShortcutTabs(in: windowId)
@@ -257,13 +257,13 @@ final class BrowserWindowSpaceStateOwner {
         }
 
         if let currentTabId = windowState.currentTabId,
-           let tabSpaceId = tabManager.tab(for: currentTabId)?.spaceId,
+           let tabSpaceId = tabManager.tabCollectionMembershipOwner.tab(for: currentTabId)?.spaceId,
            let tabSpace = space(for: tabSpaceId) {
             return tabSpace
         }
 
         if let profileId = windowState.currentProfileId {
-            return tabManager.spaces.first(where: { $0.profileId == profileId })
+            return tabManager.spaceStateOwner.spaces.first(where: { $0.profileId == profileId })
         }
 
         return nil

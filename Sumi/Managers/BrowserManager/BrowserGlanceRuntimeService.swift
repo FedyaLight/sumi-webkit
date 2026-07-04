@@ -12,7 +12,7 @@ enum BrowserGlanceRuntimeService {
                 browserManager?.tabManager.hasLoadedInitialData ?? false
             },
             tab: { [weak browserManager] tabId in
-                browserManager?.tabManager.tab(for: tabId)
+                browserManager?.tabManager.tabCollectionMembershipOwner.tab(for: tabId)
             },
             shortcutPin: { [weak browserManager] pinId in
                 browserManager?.tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: pinId)
@@ -24,7 +24,7 @@ enum BrowserGlanceRuntimeService {
                 guard let browserManager else {
                     return Tab(url: pin.launchURL, name: pin.title)
                 }
-                return browserManager.tabManager.activateShortcutPin(
+                return browserManager.tabManager.shortcutLiveTabOwner.activateShortcutPin(
                     pin,
                     in: windowId,
                     currentSpaceId: currentSpaceId
@@ -86,7 +86,7 @@ enum BrowserGlanceRuntimeService {
             },
             adoptPreviewTab: { [weak browserManager] previewTab, sourceTab, windowState in
                 guard let browserManager else { return previewTab }
-                return browserManager.tabManager.adoptGlanceTab(
+                return browserManager.tabManager.regularTabLifecycleOwner.adoptGlanceTab(
                     previewTab,
                     sourceTab: sourceTab,
                     in: targetSpace(
@@ -155,10 +155,10 @@ enum BrowserGlanceRuntimeService {
         browserManager: BrowserManager
     ) -> Space? {
         windowState?.currentSpaceId.flatMap { spaceId in
-            browserManager.tabManager.spaces.first(where: { $0.id == spaceId })
+            browserManager.tabManager.spaceStateOwner.spaces.first(where: { $0.id == spaceId })
         }
         ?? sourceTab?.spaceId.flatMap { spaceId in
-            browserManager.tabManager.spaces.first(where: { $0.id == spaceId })
+            browserManager.tabManager.spaceStateOwner.spaces.first(where: { $0.id == spaceId })
         }
     }
 }

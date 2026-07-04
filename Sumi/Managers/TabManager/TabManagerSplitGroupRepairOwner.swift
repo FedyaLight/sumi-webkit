@@ -143,13 +143,13 @@ extension TabManagerSplitGroupRepairOwner.Dependencies {
                 tabManager?.shortcutPinCollectionStateOwner.shortcutPin(by: id)
             },
             tab: { [weak tabManager] id in
-                tabManager?.tab(for: id)
+                tabManager?.tabCollectionMembershipOwner.tab(for: id)
             },
             folderSpaceId: { [weak tabManager] folderId in
                 tabManager?.folderCollectionStateOwner.spaceId(for: folderId)
             },
             spaceExists: { [weak tabManager] spaceId in
-                tabManager?.spaces.contains(where: { $0.id == spaceId }) ?? false
+                tabManager?.spaceStateOwner.contains(spaceId: spaceId) ?? false
             }
         )
     }

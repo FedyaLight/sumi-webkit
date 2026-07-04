@@ -14,7 +14,7 @@ final class SidebarSplitShortcutRoutingOwnerTests: XCTestCase {
         let tabManager = browserManager.tabManager
         let splitManager = browserManager.splitManager
         let otherSpace = tabManager.spaceLifecycleOwner.createSpace(name: "Other")
-        let globalFirstTab = tabManager.createNewTab(
+        let globalFirstTab = tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://other.example",
             in: otherSpace,
             activate: false
@@ -27,7 +27,7 @@ final class SidebarSplitShortcutRoutingOwnerTests: XCTestCase {
             launchURL: URL(string: "https://shortcut.example")!,
             title: "Shortcut"
         )
-        tabManager.setSpacePinnedShortcuts([shortcutPin], for: otherSpace.id)
+        tabManager.structuralCollectionMutationOwner.setSpacePinnedShortcuts([shortcutPin], for: otherSpace.id)
         let companionTabId = UUID()
         let group = try XCTUnwrap(
             SplitGroup.make(
@@ -62,7 +62,7 @@ final class SidebarSplitShortcutRoutingOwnerTests: XCTestCase {
                 splitManager: { splitManager },
                 space: { spaceId in
                     spaceId.flatMap { requested in
-                        tabManager.spaces.first { $0.id == requested }
+                        tabManager.spaceStateOwner.spaces.first { $0.id == requested }
                     }
                 },
                 setActiveSpace: { _, _ in /* No-op. */ },

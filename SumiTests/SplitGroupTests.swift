@@ -73,7 +73,7 @@ final class SplitGroupTests: XCTestCase {
         let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let visiblePin = makeSpacePin(spaceId: space.id, index: 0, title: "Visible")
         let groupedPin = makeSpacePin(spaceId: space.id, index: 1, title: "Grouped")
-        harness.tabManager.setSpacePinnedShortcuts([visiblePin, groupedPin], for: space.id)
+        harness.tabManager.structuralCollectionMutationOwner.setSpacePinnedShortcuts([visiblePin, groupedPin], for: space.id)
 
         let otherId = UUID()
         let group = try XCTUnwrap(SplitGroup.make(
@@ -116,7 +116,7 @@ final class SplitGroupTests: XCTestCase {
             launchURL: URL(string: "https://grouped.example")!,
             title: "Grouped"
         )
-        harness.tabManager.setSpacePinnedShortcuts([visiblePin, groupedPin], for: space.id)
+        harness.tabManager.structuralCollectionMutationOwner.setSpacePinnedShortcuts([visiblePin, groupedPin], for: space.id)
 
         let otherId = UUID()
         let group = try XCTUnwrap(SplitGroup.make(
@@ -165,7 +165,7 @@ final class SplitGroupTests: XCTestCase {
         )
         let groupedTopLevelPin = makeSpacePin(spaceId: space.id, index: 1, title: "GroupedTop")
         let visibleTopLevelPin = makeSpacePin(spaceId: space.id, index: 2, title: "VisibleTop")
-        harness.tabManager.setSpacePinnedShortcuts(
+        harness.tabManager.structuralCollectionMutationOwner.setSpacePinnedShortcuts(
             [folderPin, groupedTopLevelPin, visibleTopLevelPin],
             for: space.id
         )
@@ -230,7 +230,7 @@ final class SplitGroupTests: XCTestCase {
         )
         let topLevelHostPin = makeSpacePin(spaceId: space.id, index: 1, title: "TopHost")
         let visibleTopLevelPin = makeSpacePin(spaceId: space.id, index: 2, title: "VisibleTop")
-        harness.tabManager.setSpacePinnedShortcuts(
+        harness.tabManager.structuralCollectionMutationOwner.setSpacePinnedShortcuts(
             [folderPin, topLevelHostPin, visibleTopLevelPin],
             for: space.id
         )
@@ -347,7 +347,7 @@ final class SplitGroupTests: XCTestCase {
         let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let folder = harness.tabManager.folderMutationOwner.createFolder(for: space.id, name: "Docs")
         let visiblePin = makeSpacePin(spaceId: space.id, index: 0, title: "Visible")
-        harness.tabManager.setSpacePinnedShortcuts([visiblePin], for: space.id)
+        harness.tabManager.structuralCollectionMutationOwner.setSpacePinnedShortcuts([visiblePin], for: space.id)
 
         let firstEssentialId = UUID()
         let secondEssentialId = UUID()
@@ -383,7 +383,7 @@ final class SplitGroupTests: XCTestCase {
         let firstPin = makeSpacePin(spaceId: space.id, index: 0, title: "First")
         let groupedPin = makeSpacePin(spaceId: space.id, index: 1, title: "Grouped")
         let lastPin = makeSpacePin(spaceId: space.id, index: 2, title: "Last")
-        harness.tabManager.setSpacePinnedShortcuts([firstPin, groupedPin, lastPin], for: space.id)
+        harness.tabManager.structuralCollectionMutationOwner.setSpacePinnedShortcuts([firstPin, groupedPin, lastPin], for: space.id)
 
         let otherId = UUID()
         let group = try XCTUnwrap(SplitGroup.make(
@@ -430,13 +430,13 @@ final class SplitGroupTests: XCTestCase {
         harness.windowState.currentProfileId = profileId
 
         let essentialPin = makeEssentialPin(profileId: profileId, index: 0, title: "Essential")
-        harness.tabManager.setPinnedTabs([essentialPin], for: profileId)
-        let liveEssential = harness.tabManager.activateShortcutPin(
+        harness.tabManager.structuralCollectionMutationOwner.setPinnedTabs([essentialPin], for: profileId)
+        let liveEssential = harness.tabManager.shortcutLiveTabOwner.activateShortcutPin(
             essentialPin,
             in: harness.windowState.id,
             currentSpaceId: space.id
         )
-        let regular = harness.tabManager.createNewTab(url: "https://regular.example", in: space, activate: false)
+        let regular = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://regular.example", in: space, activate: false)
         let sourceGroup = try XCTUnwrap(SplitGroup.make(
             tabIds: [liveEssential.id, regular.id],
             layoutKind: .vertical,
@@ -459,13 +459,13 @@ final class SplitGroupTests: XCTestCase {
 
         let firstPinned = makeSpacePin(spaceId: space.id, index: 0, title: "PinnedA")
         let secondPinned = makeSpacePin(spaceId: space.id, index: 1, title: "PinnedB")
-        harness.tabManager.setSpacePinnedShortcuts([firstPinned, secondPinned], for: space.id)
-        let liveFirstPinned = harness.tabManager.activateShortcutPin(
+        harness.tabManager.structuralCollectionMutationOwner.setSpacePinnedShortcuts([firstPinned, secondPinned], for: space.id)
+        let liveFirstPinned = harness.tabManager.shortcutLiveTabOwner.activateShortcutPin(
             firstPinned,
             in: harness.windowState.id,
             currentSpaceId: space.id
         )
-        let liveSecondPinned = harness.tabManager.activateShortcutPin(
+        let liveSecondPinned = harness.tabManager.shortcutLiveTabOwner.activateShortcutPin(
             secondPinned,
             in: harness.windowState.id,
             currentSpaceId: space.id
@@ -513,14 +513,14 @@ final class SplitGroupTests: XCTestCase {
         harness.windowState.currentProfileId = profileId
 
         let movedPin = makeSpacePin(spaceId: space.id, index: 0, title: "Moved")
-        harness.tabManager.setSpacePinnedShortcuts([movedPin], for: space.id)
-        let liveMovedPin = harness.tabManager.activateShortcutPin(
+        harness.tabManager.structuralCollectionMutationOwner.setSpacePinnedShortcuts([movedPin], for: space.id)
+        let liveMovedPin = harness.tabManager.shortcutLiveTabOwner.activateShortcutPin(
             movedPin,
             in: harness.windowState.id,
             currentSpaceId: space.id
         )
-        let firstRegular = harness.tabManager.createNewTab(url: "https://first.example", in: space, activate: false)
-        let secondRegular = harness.tabManager.createNewTab(url: "https://second.example", in: space, activate: false)
+        let firstRegular = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://first.example", in: space, activate: false)
+        let secondRegular = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://second.example", in: space, activate: false)
         let sourceGroup = try XCTUnwrap(SplitGroup.make(
             tabIds: [liveMovedPin.id, firstRegular.id, secondRegular.id],
             layoutKind: .vertical,
@@ -548,13 +548,13 @@ final class SplitGroupTests: XCTestCase {
 
         let firstEssential = makeEssentialPin(profileId: profileId, index: 0, title: "EssentialA")
         let secondEssential = makeEssentialPin(profileId: profileId, index: 1, title: "EssentialB")
-        harness.tabManager.setPinnedTabs([firstEssential, secondEssential], for: profileId)
-        let liveFirstEssential = harness.tabManager.activateShortcutPin(
+        harness.tabManager.structuralCollectionMutationOwner.setPinnedTabs([firstEssential, secondEssential], for: profileId)
+        let liveFirstEssential = harness.tabManager.shortcutLiveTabOwner.activateShortcutPin(
             firstEssential,
             in: harness.windowState.id,
             currentSpaceId: space.id
         )
-        let liveSecondEssential = harness.tabManager.activateShortcutPin(
+        let liveSecondEssential = harness.tabManager.shortcutLiveTabOwner.activateShortcutPin(
             secondEssential,
             in: harness.windowState.id,
             currentSpaceId: space.id
@@ -607,13 +607,13 @@ final class SplitGroupTests: XCTestCase {
         harness.windowState.currentProfileId = profileId
 
         let essentialPin = makeEssentialPin(profileId: profileId, index: 0, title: "Essential")
-        harness.tabManager.setPinnedTabs([essentialPin], for: profileId)
-        let liveEssential = harness.tabManager.activateShortcutPin(
+        harness.tabManager.structuralCollectionMutationOwner.setPinnedTabs([essentialPin], for: profileId)
+        let liveEssential = harness.tabManager.shortcutLiveTabOwner.activateShortcutPin(
             essentialPin,
             in: harness.windowState.id,
             currentSpaceId: space.id
         )
-        let regular = harness.tabManager.createNewTab(url: "https://regular.example", in: space, activate: false)
+        let regular = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://regular.example", in: space, activate: false)
         let malformedGroup = try XCTUnwrap(SplitGroup.make(
             tabIds: [liveEssential.id, regular.id],
             layoutKind: .vertical,
@@ -650,20 +650,20 @@ final class SplitGroupTests: XCTestCase {
         harness.windowState.currentProfileId = profileId
 
         let essentialPin = makeEssentialPin(profileId: profileId, index: 0, title: "Essential")
-        harness.tabManager.setPinnedTabs([essentialPin], for: profileId)
+        harness.tabManager.structuralCollectionMutationOwner.setPinnedTabs([essentialPin], for: profileId)
         let spacePin = makeSpacePin(spaceId: space.id, index: 1, title: "Pinned")
-        harness.tabManager.setSpacePinnedShortcuts([spacePin], for: space.id)
-        let liveEssential = harness.tabManager.activateShortcutPin(
+        harness.tabManager.structuralCollectionMutationOwner.setSpacePinnedShortcuts([spacePin], for: space.id)
+        let liveEssential = harness.tabManager.shortcutLiveTabOwner.activateShortcutPin(
             essentialPin,
             in: harness.windowState.id,
             currentSpaceId: space.id
         )
-        let livePinned = harness.tabManager.activateShortcutPin(
+        let livePinned = harness.tabManager.shortcutLiveTabOwner.activateShortcutPin(
             spacePin,
             in: harness.windowState.id,
             currentSpaceId: space.id
         )
-        let regular = harness.tabManager.createNewTab(url: "https://regular.example", in: space, activate: false)
+        let regular = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://regular.example", in: space, activate: false)
         let malformedGroup = try XCTUnwrap(SplitGroup.make(
             tabIds: [livePinned.id, liveEssential.id, regular.id],
             layoutKind: .vertical,
@@ -697,7 +697,7 @@ final class SplitGroupTests: XCTestCase {
         let harness = try makeHarness()
         let storageSpace = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Storage")
         let globalCurrentSpace = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Global Current")
-        harness.tabManager.currentSpace = globalCurrentSpace
+        harness.tabManager.spaceStateOwner.replaceCurrentSpace(globalCurrentSpace)
         let malformedPin = ShortcutPin(
             id: UUID(),
             role: .spacePinned,
@@ -706,8 +706,8 @@ final class SplitGroupTests: XCTestCase {
             launchURL: URL(string: "https://malformed.example")!,
             title: "Malformed"
         )
-        harness.tabManager.setSpacePinnedShortcuts([malformedPin], for: storageSpace.id)
-        let regular = harness.tabManager.createNewTab(
+        harness.tabManager.structuralCollectionMutationOwner.setSpacePinnedShortcuts([malformedPin], for: storageSpace.id)
+        let regular = harness.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://regular.example",
             in: storageSpace,
             activate: false
@@ -739,7 +739,7 @@ final class SplitGroupTests: XCTestCase {
         let harness = try makeHarness()
         let hostSpace = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Host")
         let globalCurrentSpace = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Global Current")
-        harness.tabManager.currentSpace = globalCurrentSpace
+        harness.tabManager.spaceStateOwner.replaceCurrentSpace(globalCurrentSpace)
         let malformedPin = ShortcutPin(
             id: UUID(),
             role: .spacePinned,
@@ -748,7 +748,7 @@ final class SplitGroupTests: XCTestCase {
             launchURL: URL(string: "https://malformed.example")!,
             title: "Malformed"
         )
-        harness.tabManager.setSpacePinnedShortcuts([malformedPin], for: hostSpace.id)
+        harness.tabManager.structuralCollectionMutationOwner.setSpacePinnedShortcuts([malformedPin], for: hostSpace.id)
         let companionId = UUID()
         let malformedGroup = try XCTUnwrap(SplitGroup.make(
             tabIds: [malformedPin.id, companionId],
@@ -773,13 +773,13 @@ final class SplitGroupTests: XCTestCase {
         harness.windowState.currentProfileId = profileId
 
         let essentialPin = makeEssentialPin(profileId: profileId, index: 0, title: "Essential")
-        harness.tabManager.setPinnedTabs([essentialPin], for: profileId)
-        let liveEssential = harness.tabManager.activateShortcutPin(
+        harness.tabManager.structuralCollectionMutationOwner.setPinnedTabs([essentialPin], for: profileId)
+        let liveEssential = harness.tabManager.shortcutLiveTabOwner.activateShortcutPin(
             essentialPin,
             in: harness.windowState.id,
             currentSpaceId: space.id
         )
-        let regular = harness.tabManager.createNewTab(url: "https://regular.example", in: space, activate: false)
+        let regular = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://regular.example", in: space, activate: false)
         harness.browserManager.selectTab(liveEssential, in: harness.windowState)
 
         let group = try XCTUnwrap(SplitGroup.make(
@@ -813,7 +813,7 @@ final class SplitGroupTests: XCTestCase {
             harness.tabManager.shortcutPresentationOwner.shortcutLiveTab(for: essentialPin.id, in: harness.windowState.id)?.id,
             liveEssential.id
         )
-        XCTAssertEqual(harness.tabManager.tab(for: liveEssential.id)?.id, liveEssential.id)
+        XCTAssertEqual(harness.tabManager.tabCollectionMembershipOwner.tab(for: liveEssential.id)?.id, liveEssential.id)
         XCTAssertEqual(harness.windowState.currentTabId, liveEssential.id)
         XCTAssertEqual(harness.windowState.currentShortcutPinId, essentialPin.id)
         XCTAssertEqual(harness.tabManager.shortcutPinCollectionStateOwner.essentialPins(for: profileId).map(\.id), [essentialPin.id])
@@ -827,13 +827,13 @@ final class SplitGroupTests: XCTestCase {
         harness.windowState.currentProfileId = profileId
 
         let essentialPin = makeEssentialPin(profileId: profileId, index: 0, title: "Essential")
-        harness.tabManager.setPinnedTabs([essentialPin], for: profileId)
-        let liveEssential = harness.tabManager.activateShortcutPin(
+        harness.tabManager.structuralCollectionMutationOwner.setPinnedTabs([essentialPin], for: profileId)
+        let liveEssential = harness.tabManager.shortcutLiveTabOwner.activateShortcutPin(
             essentialPin,
             in: harness.windowState.id,
             currentSpaceId: space.id
         )
-        let regular = harness.tabManager.createNewTab(url: "https://regular.example", in: space, activate: false)
+        let regular = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://regular.example", in: space, activate: false)
         harness.browserManager.selectTab(regular, in: harness.windowState)
 
         let group = try XCTUnwrap(SplitGroup.make(
@@ -872,8 +872,8 @@ final class SplitGroupTests: XCTestCase {
         let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         harness.windowState.currentSpaceId = space.id
 
-        let first = harness.tabManager.createNewTab(url: "https://one.example", in: space, activate: false)
-        let second = harness.tabManager.createNewTab(url: "https://two.example", in: space, activate: false)
+        let first = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://one.example", in: space, activate: false)
+        let second = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://two.example", in: space, activate: false)
         harness.browserManager.selectTab(second, in: harness.windowState)
         let group = try XCTUnwrap(SplitGroup.make(
             tabIds: [first.id, second.id],
@@ -898,13 +898,13 @@ final class SplitGroupTests: XCTestCase {
         harness.windowState.currentProfileId = profileId
 
         let essentialPin = makeEssentialPin(profileId: profileId, index: 0, title: "Essential")
-        harness.tabManager.setPinnedTabs([essentialPin], for: profileId)
-        let liveEssential = harness.tabManager.activateShortcutPin(
+        harness.tabManager.structuralCollectionMutationOwner.setPinnedTabs([essentialPin], for: profileId)
+        let liveEssential = harness.tabManager.shortcutLiveTabOwner.activateShortcutPin(
             essentialPin,
             in: harness.windowState.id,
             currentSpaceId: space.id
         )
-        let regular = harness.tabManager.createNewTab(url: "https://regular.example", in: space, activate: false)
+        let regular = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://regular.example", in: space, activate: false)
         harness.browserManager.selectTab(liveEssential, in: harness.windowState)
 
         let group = try XCTUnwrap(SplitGroup.make(
@@ -936,7 +936,7 @@ final class SplitGroupTests: XCTestCase {
 
         XCTAssertNil(harness.tabManager.splitGroupStructureOwner.splitGroup(containingPinId: essentialPin.id))
         XCTAssertNil(harness.tabManager.shortcutPresentationOwner.shortcutLiveTab(for: essentialPin.id, in: harness.windowState.id))
-        XCTAssertNil(harness.tabManager.tab(for: liveEssential.id))
+        XCTAssertNil(harness.tabManager.tabCollectionMembershipOwner.tab(for: liveEssential.id))
         XCTAssertEqual(harness.windowState.currentTabId, regular.id)
         XCTAssertNil(harness.windowState.currentShortcutPinId)
         XCTAssertEqual(harness.tabManager.shortcutPinCollectionStateOwner.essentialPins(for: profileId).map(\.id), [essentialPin.id])
@@ -1141,8 +1141,8 @@ final class SplitGroupTests: XCTestCase {
     func testDropTargetInsertionAlongExistingAxisUsesEqualRootThirds() throws {
         let harness = try makeHarness()
         let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
-        let top = harness.tabManager.createNewTab(url: "https://top.example", in: space)
-        let bottom = harness.tabManager.createNewTab(url: "https://bottom.example", in: space, activate: false)
+        let top = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://top.example", in: space)
+        let bottom = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://bottom.example", in: space, activate: false)
         harness.windowState.currentSpaceId = space.id
         harness.windowState.currentTabId = top.id
 
@@ -1166,8 +1166,8 @@ final class SplitGroupTests: XCTestCase {
     func testFirstSplitPreviewRectMatchesIncomingHalf() throws {
         let harness = try makeHarness()
         let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
-        let current = harness.tabManager.createNewTab(url: "https://current.example", in: space)
-        let incoming = harness.tabManager.createNewTab(url: "https://incoming.example", in: space, activate: false)
+        let current = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://current.example", in: space)
+        let incoming = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://incoming.example", in: space, activate: false)
         harness.windowState.currentSpaceId = space.id
         harness.windowState.currentTabId = current.id
 
@@ -1187,9 +1187,9 @@ final class SplitGroupTests: XCTestCase {
     func testThirdVerticalSplitPreviewUsesOneThirdOfWindow() throws {
         let harness = try makeHarness()
         let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
-        let left = harness.tabManager.createNewTab(url: "https://left.example", in: space)
-        let right = harness.tabManager.createNewTab(url: "https://right.example", in: space, activate: false)
-        let incoming = harness.tabManager.createNewTab(url: "https://incoming.example", in: space, activate: false)
+        let left = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://left.example", in: space)
+        let right = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://right.example", in: space, activate: false)
+        let incoming = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://incoming.example", in: space, activate: false)
         harness.windowState.currentSpaceId = space.id
         harness.windowState.currentTabId = left.id
 
@@ -1213,9 +1213,9 @@ final class SplitGroupTests: XCTestCase {
     func testThirdSplitCanSplitOneVerticalPaneHorizontally() throws {
         let harness = try makeHarness()
         let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
-        let left = harness.tabManager.createNewTab(url: "https://left.example", in: space)
-        let right = harness.tabManager.createNewTab(url: "https://right.example", in: space, activate: false)
-        let incoming = harness.tabManager.createNewTab(url: "https://incoming.example", in: space, activate: false)
+        let left = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://left.example", in: space)
+        let right = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://right.example", in: space, activate: false)
+        let incoming = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://incoming.example", in: space, activate: false)
         harness.windowState.currentSpaceId = space.id
         harness.windowState.currentTabId = left.id
 
@@ -1256,13 +1256,13 @@ final class SplitGroupTests: XCTestCase {
         let harness = try makeHarness()
         let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let tabs = (0..<3).map { index in
-            harness.tabManager.createNewTab(
+            harness.tabManager.regularTabLifecycleOwner.createNewTab(
                 url: "https://tab\(index).example",
                 in: space,
                 activate: index == 0
             )
         }
-        let incoming = harness.tabManager.createNewTab(url: "https://incoming.example", in: space, activate: false)
+        let incoming = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://incoming.example", in: space, activate: false)
         harness.windowState.currentSpaceId = space.id
         harness.windowState.currentTabId = tabs[0].id
 
@@ -1287,13 +1287,13 @@ final class SplitGroupTests: XCTestCase {
         let harness = try makeHarness()
         let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let tabs = (0..<3).map { index in
-            harness.tabManager.createNewTab(
+            harness.tabManager.regularTabLifecycleOwner.createNewTab(
                 url: "https://vertical\(index).example",
                 in: space,
                 activate: index == 0
             )
         }
-        let incoming = harness.tabManager.createNewTab(url: "https://incoming.example", in: space, activate: false)
+        let incoming = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://incoming.example", in: space, activate: false)
         harness.windowState.currentSpaceId = space.id
         harness.windowState.currentTabId = tabs[0].id
 
@@ -1318,13 +1318,13 @@ final class SplitGroupTests: XCTestCase {
         let harness = try makeHarness()
         let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let tabs = (0..<3).map { index in
-            harness.tabManager.createNewTab(
+            harness.tabManager.regularTabLifecycleOwner.createNewTab(
                 url: "https://three-pair\(index).example",
                 in: space,
                 activate: index == 0
             )
         }
-        let incoming = harness.tabManager.createNewTab(url: "https://incoming-pair.example", in: space, activate: false)
+        let incoming = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://incoming-pair.example", in: space, activate: false)
         harness.windowState.currentSpaceId = space.id
         harness.windowState.currentTabId = tabs[0].id
 
@@ -1367,7 +1367,7 @@ final class SplitGroupTests: XCTestCase {
         let harness = try makeHarness()
         let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let tabs = (0..<3).map { index in
-            harness.tabManager.createNewTab(
+            harness.tabManager.regularTabLifecycleOwner.createNewTab(
                 url: "https://three-internal-vertical\(index).example",
                 in: space,
                 activate: index == 0
@@ -1414,7 +1414,7 @@ final class SplitGroupTests: XCTestCase {
         let harness = try makeHarness()
         let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let tabs = (0..<3).map { index in
-            harness.tabManager.createNewTab(
+            harness.tabManager.regularTabLifecycleOwner.createNewTab(
                 url: "https://three-internal-horizontal\(index).example",
                 in: space,
                 activate: index == 0
@@ -1460,10 +1460,10 @@ final class SplitGroupTests: XCTestCase {
     func testFourthRootPreviewCanonicalizesMixedColumnToEqualQuarter() throws {
         let harness = try makeHarness()
         let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
-        let left = harness.tabManager.createNewTab(url: "https://left.example", in: space)
-        let right = harness.tabManager.createNewTab(url: "https://right.example", in: space, activate: false)
-        let top = harness.tabManager.createNewTab(url: "https://top.example", in: space, activate: false)
-        let incoming = harness.tabManager.createNewTab(url: "https://incoming.example", in: space, activate: false)
+        let left = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://left.example", in: space)
+        let right = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://right.example", in: space, activate: false)
+        let top = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://top.example", in: space, activate: false)
+        let incoming = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://incoming.example", in: space, activate: false)
         harness.windowState.currentSpaceId = space.id
         harness.windowState.currentTabId = left.id
 
@@ -1489,7 +1489,7 @@ final class SplitGroupTests: XCTestCase {
         let harness = try makeHarness()
         let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let tabs = (0..<4).map { index in
-            harness.tabManager.createNewTab(
+            harness.tabManager.regularTabLifecycleOwner.createNewTab(
                 url: "https://vertical\(index).example",
                 in: space,
                 activate: index == 0
@@ -1540,7 +1540,7 @@ final class SplitGroupTests: XCTestCase {
         let harness = try makeHarness()
         let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let tabs = (0..<4).map { index in
-            harness.tabManager.createNewTab(
+            harness.tabManager.regularTabLifecycleOwner.createNewTab(
                 url: "https://horizontal\(index).example",
                 in: space,
                 activate: index == 0
@@ -1591,7 +1591,7 @@ final class SplitGroupTests: XCTestCase {
         let harness = try makeHarness()
         let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let tabs = (0..<4).map { index in
-            harness.tabManager.createNewTab(
+            harness.tabManager.regularTabLifecycleOwner.createNewTab(
                 url: "https://vertical-pair\(index).example",
                 in: space,
                 activate: index == 0
@@ -1643,7 +1643,7 @@ final class SplitGroupTests: XCTestCase {
         let harness = try makeHarness()
         let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let tabs = (0..<4).map { index in
-            harness.tabManager.createNewTab(
+            harness.tabManager.regularTabLifecycleOwner.createNewTab(
                 url: "https://horizontal-pair\(index).example",
                 in: space,
                 activate: index == 0
@@ -1695,7 +1695,7 @@ final class SplitGroupTests: XCTestCase {
         let harness = try makeHarness()
         let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let tabs = (0..<4).map { index in
-            harness.tabManager.createNewTab(
+            harness.tabManager.regularTabLifecycleOwner.createNewTab(
                 url: "https://flat-reorder\(index).example",
                 in: space,
                 activate: index == 0
@@ -1730,7 +1730,7 @@ final class SplitGroupTests: XCTestCase {
         let harness = try makeHarness()
         let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let tabs = (0..<4).map { index in
-            harness.tabManager.createNewTab(
+            harness.tabManager.regularTabLifecycleOwner.createNewTab(
                 url: "https://flat-middle\(index).example",
                 in: space,
                 activate: index == 0
@@ -1760,7 +1760,7 @@ final class SplitGroupTests: XCTestCase {
         let harness = try makeHarness()
         let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let tabs = (0..<4).map { index in
-            harness.tabManager.createNewTab(
+            harness.tabManager.regularTabLifecycleOwner.createNewTab(
                 url: "https://flat-third\(index).example",
                 in: space,
                 activate: index == 0
@@ -1790,7 +1790,7 @@ final class SplitGroupTests: XCTestCase {
         let harness = try makeHarness()
         let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let tabs = (0..<4).map { index in
-            harness.tabManager.createNewTab(
+            harness.tabManager.regularTabLifecycleOwner.createNewTab(
                 url: "https://tile\(index).example",
                 in: space,
                 activate: index == 0
@@ -1853,7 +1853,7 @@ final class SplitGroupTests: XCTestCase {
         let harness = try makeHarness()
         let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let tabs = (0..<4).map { index in
-            harness.tabManager.createNewTab(
+            harness.tabManager.regularTabLifecycleOwner.createNewTab(
                 url: "https://reverse-tile\(index).example",
                 in: space,
                 activate: index == 0
@@ -1916,7 +1916,7 @@ final class SplitGroupTests: XCTestCase {
         let harness = try makeHarness()
         let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let tabs = (0..<4).map { index in
-            harness.tabManager.createNewTab(
+            harness.tabManager.regularTabLifecycleOwner.createNewTab(
                 url: "https://mixed-two-by-two\(index).example",
                 in: space,
                 activate: index == 0
@@ -1983,7 +1983,7 @@ final class SplitGroupTests: XCTestCase {
         let harness = try makeHarness()
         let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let tabs = (0..<4).map { index in
-            harness.tabManager.createNewTab(
+            harness.tabManager.regularTabLifecycleOwner.createNewTab(
                 url: "https://one-two-one-vertical\(index).example",
                 in: space,
                 activate: index == 0
@@ -2040,7 +2040,7 @@ final class SplitGroupTests: XCTestCase {
         let harness = try makeHarness()
         let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let tabs = (0..<4).map { index in
-            harness.tabManager.createNewTab(
+            harness.tabManager.regularTabLifecycleOwner.createNewTab(
                 url: "https://one-two-one-horizontal\(index).example",
                 in: space,
                 activate: index == 0
@@ -2097,7 +2097,7 @@ final class SplitGroupTests: XCTestCase {
         let harness = try makeHarness()
         let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let tabs = (0..<4).map { index in
-            harness.tabManager.createNewTab(
+            harness.tabManager.regularTabLifecycleOwner.createNewTab(
                 url: "https://two-by-two-to-three\(index).example",
                 in: space,
                 activate: index == 0
@@ -2166,7 +2166,7 @@ final class SplitGroupTests: XCTestCase {
         let harness = try makeHarness()
         let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let tabs = (0..<4).map { index in
-            harness.tabManager.createNewTab(
+            harness.tabManager.regularTabLifecycleOwner.createNewTab(
                 url: "https://topology\(index).example",
                 in: space,
                 activate: index == 0
@@ -2284,13 +2284,13 @@ final class SplitGroupTests: XCTestCase {
         let harness = try makeHarness()
         let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let tabs = (0..<3).map { index in
-            harness.tabManager.createNewTab(
+            harness.tabManager.regularTabLifecycleOwner.createNewTab(
                 url: "https://three-bottom-pair\(index).example",
                 in: space,
                 activate: index == 0
             )
         }
-        let incoming = harness.tabManager.createNewTab(url: "https://incoming-bottom-pair.example", in: space, activate: false)
+        let incoming = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://incoming-bottom-pair.example", in: space, activate: false)
         harness.windowState.currentSpaceId = space.id
         harness.windowState.currentTabId = tabs[0].id
 
@@ -2344,8 +2344,8 @@ final class SplitGroupTests: XCTestCase {
     func testExistingSplitTabUsesGroupEdgeTarget() throws {
         let harness = try makeHarness()
         let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
-        let left = harness.tabManager.createNewTab(url: "https://left.example", in: space)
-        let right = harness.tabManager.createNewTab(url: "https://right.example", in: space, activate: false)
+        let left = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://left.example", in: space)
+        let right = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://right.example", in: space, activate: false)
         harness.windowState.currentSpaceId = space.id
         harness.windowState.currentTabId = left.id
 
@@ -2371,8 +2371,8 @@ final class SplitGroupTests: XCTestCase {
     func testExistingSplitTabHoveringOwnPaneAndOwnRootEdgeDoesNotShowDuplicateTarget() throws {
         let harness = try makeHarness()
         let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
-        let left = harness.tabManager.createNewTab(url: "https://left.example", in: space)
-        let right = harness.tabManager.createNewTab(url: "https://right.example", in: space, activate: false)
+        let left = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://left.example", in: space)
+        let right = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://right.example", in: space, activate: false)
         harness.windowState.currentSpaceId = space.id
         harness.windowState.currentTabId = left.id
 
@@ -2400,8 +2400,8 @@ final class SplitGroupTests: XCTestCase {
     func testExistingSplitTabCenterHoverDoesNotShowGapPreview() throws {
         let harness = try makeHarness()
         let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
-        let left = harness.tabManager.createNewTab(url: "https://left.example", in: space)
-        let right = harness.tabManager.createNewTab(url: "https://right.example", in: space, activate: false)
+        let left = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://left.example", in: space)
+        let right = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://right.example", in: space, activate: false)
         harness.windowState.currentSpaceId = space.id
         harness.windowState.currentTabId = left.id
 
@@ -2421,8 +2421,8 @@ final class SplitGroupTests: XCTestCase {
     func testExistingSplitTabSkipsNoOpEdgeAndUsesNextValidEdgeAtCorner() throws {
         let harness = try makeHarness()
         let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
-        let left = harness.tabManager.createNewTab(url: "https://left.example", in: space)
-        let right = harness.tabManager.createNewTab(url: "https://right.example", in: space, activate: false)
+        let left = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://left.example", in: space)
+        let right = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://right.example", in: space, activate: false)
         harness.windowState.currentSpaceId = space.id
         harness.windowState.currentTabId = left.id
 
@@ -2447,8 +2447,8 @@ final class SplitGroupTests: XCTestCase {
     func testGroupEdgeDropMovesExistingSplitTabAtRoot() throws {
         let harness = try makeHarness()
         let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
-        let left = harness.tabManager.createNewTab(url: "https://left.example", in: space)
-        let right = harness.tabManager.createNewTab(url: "https://right.example", in: space, activate: false)
+        let left = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://left.example", in: space)
+        let right = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://right.example", in: space, activate: false)
         harness.windowState.currentSpaceId = space.id
         harness.windowState.currentTabId = left.id
 
@@ -2472,9 +2472,9 @@ final class SplitGroupTests: XCTestCase {
     func testExternalTabGroupEdgeDropInsertsAtRoot() throws {
         let harness = try makeHarness()
         let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
-        let left = harness.tabManager.createNewTab(url: "https://left.example", in: space)
-        let right = harness.tabManager.createNewTab(url: "https://right.example", in: space, activate: false)
-        let incoming = harness.tabManager.createNewTab(url: "https://incoming.example", in: space, activate: false)
+        let left = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://left.example", in: space)
+        let right = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://right.example", in: space, activate: false)
+        let incoming = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://incoming.example", in: space, activate: false)
         harness.windowState.currentSpaceId = space.id
         harness.windowState.currentTabId = left.id
 
@@ -2511,13 +2511,13 @@ final class SplitGroupTests: XCTestCase {
         let harness = try makeHarness()
         let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let tabs = (0..<4).map { index in
-            harness.tabManager.createNewTab(
+            harness.tabManager.regularTabLifecycleOwner.createNewTab(
                 url: "https://tab\(index).example",
                 in: space,
                 activate: index == 0
             )
         }
-        let incoming = harness.tabManager.createNewTab(url: "https://incoming.example", in: space, activate: false)
+        let incoming = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://incoming.example", in: space, activate: false)
         harness.windowState.currentSpaceId = space.id
         harness.windowState.currentTabId = tabs[0].id
 
@@ -2663,9 +2663,9 @@ final class SplitGroupTests: XCTestCase {
     func testSelectingNativeSurfaceAwayFromSplitDoesNotDeleteGroup() throws {
         let harness = try makeHarness()
         let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
-        let left = harness.tabManager.createNewTab(url: "https://left.example", in: space)
-        let right = harness.tabManager.createNewTab(url: "https://right.example", in: space, activate: false)
-        let native = harness.tabManager.createNewTab(url: SumiSurface.emptyTabURL.absoluteString, in: space, activate: false)
+        let left = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://left.example", in: space)
+        let right = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://right.example", in: space, activate: false)
+        let native = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: SumiSurface.emptyTabURL.absoluteString, in: space, activate: false)
         harness.windowState.currentSpaceId = space.id
         harness.windowState.currentTabId = left.id
 
@@ -2709,11 +2709,11 @@ final class SplitGroupTests: XCTestCase {
     func testLegacyDuplicateAsRegularHelperCreatesRegularCopy() throws {
         let harness = try makeHarness()
         let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
-        let regular = harness.tabManager.createNewTab(url: "https://anchor.example", in: space)
-        let pinned = harness.tabManager.createNewTab(url: "https://pinned.example", in: space, activate: false)
+        let regular = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://anchor.example", in: space)
+        let pinned = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://pinned.example", in: space, activate: false)
         pinned.isPinned = true
 
-        let duplicate = harness.tabManager.duplicateAsRegularForSplit(from: pinned, anchor: regular)
+        let duplicate = harness.tabManager.regularTabLifecycleOwner.duplicateAsRegularForSplit(from: pinned, anchor: regular)
 
         XCTAssertNotEqual(duplicate.id, pinned.id)
         XCTAssertEqual(duplicate.url, pinned.url)
@@ -2725,7 +2725,7 @@ final class SplitGroupTests: XCTestCase {
     func testEmptySplitCancelRemovesPlaceholderPane() throws {
         let harness = try makeHarness()
         let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
-        let current = harness.tabManager.createNewTab(url: "https://current.example", in: space)
+        let current = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://current.example", in: space)
         harness.windowState.currentSpaceId = space.id
         harness.windowState.currentTabId = current.id
 
@@ -2739,7 +2739,7 @@ final class SplitGroupTests: XCTestCase {
             cancelEmptySplitPlaceholder: true
         )
 
-        XCTAssertNil(harness.tabManager.tab(for: placeholderId))
+        XCTAssertNil(harness.tabManager.tabCollectionMembershipOwner.tab(for: placeholderId))
         XCTAssertNil(harness.tabManager.splitGroupStructureOwner.splitGroup(containing: current.id))
     }
 
@@ -2759,7 +2759,7 @@ final class SplitGroupTests: XCTestCase {
         windowRegistry.setActive(windowState)
 
         let space = tabManager.spaceLifecycleOwner.createSpace(name: "Runtime")
-        let current = tabManager.createNewTab(url: "https://current.example", in: space)
+        let current = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://current.example", in: space)
         windowState.currentSpaceId = space.id
         windowState.currentTabId = current.id
 
@@ -2771,7 +2771,7 @@ final class SplitGroupTests: XCTestCase {
             runtime: SplitViewRuntime(
                 tabManager: { tabManager },
                 currentTab: { windowState in
-                    windowState.currentTabId.flatMap { tabManager.tab(for: $0) }
+                    windowState.currentTabId.flatMap { tabManager.tabCollectionMembershipOwner.tab(for: $0) }
                 },
                 selectTab: { tab, windowState in
                     selectedTabIds.append(tab.id)
@@ -2788,7 +2788,7 @@ final class SplitGroupTests: XCTestCase {
 
         let group = try XCTUnwrap(tabManager.splitGroupStructureOwner.splitGroup(containing: current.id))
         let placeholderId = try XCTUnwrap(group.tabIds.first { $0 != current.id })
-        XCTAssertNotNil(tabManager.tab(for: placeholderId))
+        XCTAssertNotNil(tabManager.tabCollectionMembershipOwner.tab(for: placeholderId))
         XCTAssertEqual(selectedTabIds.last, placeholderId)
         XCTAssertGreaterThanOrEqual(refreshCount, 1)
         XCTAssertGreaterThanOrEqual(persistCount, 1)
@@ -2798,8 +2798,8 @@ final class SplitGroupTests: XCTestCase {
     func testEmptySplitExistingTabCommitReplacesPlaceholderPane() throws {
         let harness = try makeHarness()
         let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
-        let current = harness.tabManager.createNewTab(url: "https://current.example", in: space)
-        let existing = harness.tabManager.createNewTab(url: "https://existing.example", in: space, activate: false)
+        let current = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://current.example", in: space)
+        let existing = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://existing.example", in: space, activate: false)
         harness.windowState.currentSpaceId = space.id
         harness.windowState.currentTabId = current.id
 
@@ -2815,7 +2815,7 @@ final class SplitGroupTests: XCTestCase {
         let group = try XCTUnwrap(harness.tabManager.splitGroupStructureOwner.splitGroup(containing: existing.id))
         XCTAssertEqual(group.tabIds, [current.id, existing.id])
         XCTAssertEqual(group.activeTabId, existing.id)
-        XCTAssertNil(harness.tabManager.tab(for: placeholderId))
+        XCTAssertNil(harness.tabManager.tabCollectionMembershipOwner.tab(for: placeholderId))
     }
 
     private func assertSplit(
@@ -3067,7 +3067,7 @@ final class SplitGroupTests: XCTestCase {
                     windowRegistry?.windows[windowId]
                 },
                 resolveDragTab: { [weak tabManager = harness.tabManager] tabId in
-                    tabManager?.resolveDragTab(for: tabId)
+                    tabManager?.sidebarDragRoutingOwner.resolveDragTab(for: tabId)
                 }
             ),
             windowId: harness.windowState.id

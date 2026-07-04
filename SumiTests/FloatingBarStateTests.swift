@@ -71,7 +71,7 @@ final class FloatingBarStateTests: XCTestCase {
         )
 
         XCTAssertFalse(windowState.floatingBarDraftNavigatesCurrentTab)
-        XCTAssertEqual(browserManager.tabManager.tabs(in: space).count, 1)
+        XCTAssertEqual(browserManager.tabManager.regularTabCollectionOwner.tabs(in: space).count, 1)
         XCTAssertEqual(browserManager.windowTabContextOwner.currentTab(for: windowState)?.id, currentTab.id)
         XCTAssertEqual(currentTab.url.absoluteString, "https://example.com/replaced")
     }
@@ -94,7 +94,7 @@ final class FloatingBarStateTests: XCTestCase {
             in: windowState
         )
 
-        XCTAssertEqual(browserManager.tabManager.tabs(in: space).count, 2)
+        XCTAssertEqual(browserManager.tabManager.regularTabCollectionOwner.tabs(in: space).count, 2)
         XCTAssertEqual(browserManager.windowTabContextOwner.currentTab(for: windowState)?.id, currentTab.id)
     }
 
@@ -132,8 +132,8 @@ final class FloatingBarStateTests: XCTestCase {
         browserManager.profileManager.profiles = [profile]
         browserManager.currentProfile = profile
         browserManager.windowRegistry = windowRegistry
-        browserManager.tabManager.spaces = [space]
-        browserManager.tabManager.currentSpace = space
+        browserManager.tabManager.spaceStateOwner.replaceSpaces([space])
+        browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(space)
 
         windowState.tabManager = browserManager.tabManager
         windowState.currentSpaceId = space.id

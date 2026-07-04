@@ -177,10 +177,10 @@ extension BrowserWorkspaceThemeEditorOwner.Dependencies {
                 browserManager?.workspaceThemePickerSession = session
             },
             currentSpace: { [weak browserManager] in
-                browserManager?.tabManager.currentSpace
+                browserManager?.tabManager.spaceStateOwner.currentSpace
             },
             spaceLookup: { [weak browserManager] spaceID in
-                browserManager?.tabManager.spaces.first(where: { $0.id == spaceID })
+                browserManager?.tabManager.spaceStateOwner.spaces.first(where: { $0.id == spaceID })
             },
             windowRegistry: { [weak browserManager] in
                 browserManager?.windowRegistry
@@ -198,7 +198,7 @@ extension BrowserWorkspaceThemeEditorOwner.Dependencies {
                 )
             },
             scheduleStructuralPersistence: { [weak browserManager] in
-                browserManager?.tabManager.markAllSpacesStructurallyDirty()
+                browserManager?.tabManager.structuralPersistence.markAllSpacesStructurallyDirty()
                 browserManager?.tabManager.scheduleStructuralPersistence()
             },
             presentNotice: { [weak browserManager] notice, source in

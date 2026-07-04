@@ -6,7 +6,7 @@ import XCTest
 final class BrowserNativeSurfaceRoutingOwnerTests: XCTestCase {
     func testNativeSurfaceReusesWindowSpaceSurfaceBeforeGlobalCurrentSpaceSurface() {
         let harness = NativeSurfaceRoutingHarness()
-        harness.tabManager.currentSpace = harness.secondarySpace
+        harness.tabManager.spaceStateOwner.replaceCurrentSpace(harness.secondarySpace)
         let primarySurface = harness.makeSurfaceTab(in: harness.primarySpace)
         let secondarySurface = harness.makeSurfaceTab(in: harness.secondarySpace)
 
@@ -26,9 +26,9 @@ final class BrowserNativeSurfaceRoutingOwnerTests: XCTestCase {
         let harness = NativeSurfaceRoutingHarness()
         harness.windowState.currentSpaceId = UUID()
         harness.windowState.currentProfileId = nil
-        harness.tabManager.currentSpace = harness.secondarySpace
+        harness.tabManager.spaceStateOwner.replaceCurrentSpace(harness.secondarySpace)
         let secondarySurface = harness.makeSurfaceTab(in: harness.secondarySpace)
-        let initialSecondaryCount = harness.tabManager.tabs(in: harness.secondarySpace).count
+        let initialSecondaryCount = harness.tabManager.regularTabCollectionOwner.tabs(in: harness.secondarySpace).count
 
         harness.owner.openNativeBrowserSurface(
             .settings,
@@ -40,7 +40,7 @@ final class BrowserNativeSurfaceRoutingOwnerTests: XCTestCase {
         XCTAssertNotIdentical(openedTab, secondarySurface)
         XCTAssertEqual(openedTab.spaceId, harness.primarySpace.id)
         XCTAssertEqual(harness.openedContexts.map(\.preferredSpaceId), [harness.primarySpace.id])
-        XCTAssertEqual(harness.tabManager.tabs(in: harness.secondarySpace).count, initialSecondaryCount)
+        XCTAssertEqual(harness.tabManager.regularTabCollectionOwner.tabs(in: harness.secondarySpace).count, initialSecondaryCount)
         XCTAssertEqual(harness.focusCount, 1)
     }
 }
@@ -65,9 +65,9 @@ private final class NativeSurfaceRoutingHarness {
             openNewTab: { [self] url, context in
                 openedContexts.append(context)
                 let targetSpace = context.preferredSpaceId.flatMap { preferredSpaceId in
-                    tabManager.spaces.first { $0.id == preferredSpaceId }
+                    tabManager.spaceStateOwner.spaces.first { $0.id == preferredSpaceId }
                 }
-                let tab = tabManager.createNewTab(
+                let tab = tabManager.regularTabLifecycleOwner.createNewTab(
                     url: url,
                     in: targetSpace,
                     activate: false
@@ -94,15 +94,15 @@ private final class NativeSurfaceRoutingHarness {
         primarySpace = Space(name: "Primary", profileId: primaryProfile.id)
         secondarySpace = Space(name: "Secondary", profileId: secondaryProfile.id)
 
-        tabManager.spaces = [primarySpace, secondarySpace]
-        tabManager.currentSpace = primarySpace
+        tabManager.spaceStateOwner.replaceSpaces([primarySpace, secondarySpace])
+        tabManager.spaceStateOwner.replaceCurrentSpace(primarySpace)
         windowState.tabManager = tabManager
         windowState.currentSpaceId = primarySpace.id
         windowState.currentProfileId = primaryProfile.id
     }
 
     func makeSurfaceTab(in space: Space) -> Tab {
-        let tab = tabManager.createNewTab(
+        let tab = tabManager.regularTabLifecycleOwner.createNewTab(
             url: SettingsTabs.general.settingsSurfaceURL.absoluteString,
             in: space,
             activate: false

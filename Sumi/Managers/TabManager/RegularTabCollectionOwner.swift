@@ -8,12 +8,24 @@ final class RegularTabCollectionOwner {
         let indexInCurrentSpace: Int?
     }
 
-    private unowned let tabManager: TabManager
-    private let stateOwner: RegularTabCollectionStateOwner
+    struct Dependencies {
+        let setTabs: @MainActor ([Tab], UUID) -> Void
+        let adjustedSameContainerInsertionIndex: @MainActor (_ currentIndex: Int, _ proposedIndex: Int) -> Int
+        let isGlobalPinned: @MainActor (Tab) -> Bool
+        let isSpacePinned: @MainActor (Tab) -> Bool
+        let withStructuralUpdateTransaction: @MainActor (@MainActor () -> Bool) -> Bool
+        let scheduleStructuralPersistence: @MainActor () -> Void
+    }
 
-    init(tabManager: TabManager, stateOwner: RegularTabCollectionStateOwner) {
-        self.tabManager = tabManager
+    private let stateOwner: RegularTabCollectionStateOwner
+    private let dependencies: Dependencies
+
+    init(
+        stateOwner: RegularTabCollectionStateOwner,
+        dependencies: Dependencies
+    ) {
         self.stateOwner = stateOwner
+        self.dependencies = dependencies
     }
 
     func tabs(in space: Space) -> [Tab] {
@@ -50,8 +62,8 @@ final class RegularTabCollectionOwner {
         if sourceTab.isPinned
             || sourceTab.isSpacePinned
             || sourceTab.shortcutPinRole != nil
-            || tabManager.isGlobalPinned(sourceTab)
-            || tabManager.isSpacePinned(sourceTab) {
+            || dependencies.isGlobalPinned(sourceTab)
+            || dependencies.isSpacePinned(sourceTab) {
             return 0
         }
 
@@ -73,7 +85,7 @@ final class RegularTabCollectionOwner {
         tab.folderId = nil
         regularTabs.insert(tab, at: safeIndex)
         reindex(regularTabs)
-        tabManager.setTabs(regularTabs, for: spaceId)
+        dependencies.setTabs(regularTabs, spaceId)
     }
 
     func remove(_ tabId: UUID, in spaces: [Space], currentSpaceId: UUID?) -> Removal? {
@@ -94,7 +106,7 @@ final class RegularTabCollectionOwner {
         }
 
         let removed = regularTabs.remove(at: index)
-        tabManager.setTabs(regularTabs, for: spaceId)
+        dependencies.setTabs(regularTabs, spaceId)
         return Removal(
             tab: removed,
             spaceId: spaceId,
@@ -108,18 +120,26 @@ final class RegularTabCollectionOwner {
               let currentIndex = regularTabs.firstIndex(where: { $0.id == tab.id }) else {
             return false
         }
-        let adjustedIndex = tabManager.spacePinnedStructureOwner.adjustedSameContainerInsertionIndex(
-            currentIndex: currentIndex,
-            proposedIndex: proposedIndex
-        )
+        let adjustedIndex = dependencies.adjustedSameContainerInsertionIndex(currentIndex, proposedIndex)
         guard adjustedIndex != currentIndex else { return false }
 
         regularTabs.remove(at: currentIndex)
         let safeIndex = max(0, min(adjustedIndex, regularTabs.count))
         regularTabs.insert(tab, at: safeIndex)
         reindex(regularTabs)
-        tabManager.setTabs(regularTabs, for: spaceId)
+        dependencies.setTabs(regularTabs, spaceId)
         return true
+    }
+
+    @discardableResult
+    func reorderRegularTabs(_ tab: Tab, in spaceId: UUID, to index: Int) -> Bool {
+        dependencies.withStructuralUpdateTransaction {
+            guard reorder(tab, in: spaceId, to: index) else {
+                return false
+            }
+            dependencies.scheduleStructuralPersistence()
+            return true
+        }
     }
 
     func moveUp(_ tabId: UUID) -> Bool {
@@ -131,7 +151,7 @@ final class RegularTabCollectionOwner {
         }
 
         swapIndexes(in: regularTabs, firstIndex: currentIndex, secondIndex: currentIndex - 1)
-        tabManager.setTabs(regularTabs, for: spaceId)
+        dependencies.setTabs(regularTabs, spaceId)
         return true
     }
 
@@ -144,8 +164,24 @@ final class RegularTabCollectionOwner {
         }
 
         swapIndexes(in: regularTabs, firstIndex: currentIndex, secondIndex: currentIndex + 1)
-        tabManager.setTabs(regularTabs, for: spaceId)
+        dependencies.setTabs(regularTabs, spaceId)
         return true
+    }
+
+    func moveTabUp(_ tabId: UUID) {
+        _ = dependencies.withStructuralUpdateTransaction {
+            guard moveUp(tabId) else { return false }
+            dependencies.scheduleStructuralPersistence()
+            return true
+        }
+    }
+
+    func moveTabDown(_ tabId: UUID) {
+        _ = dependencies.withStructuralUpdateTransaction {
+            guard moveDown(tabId) else { return false }
+            dependencies.scheduleStructuralPersistence()
+            return true
+        }
     }
 
     func findSpace(for tabId: UUID) -> UUID? {
@@ -168,5 +204,40 @@ final class RegularTabCollectionOwner {
         let originalIndex = first.index
         first.index = second.index
         second.index = originalIndex
+    }
+}
+
+extension RegularTabCollectionOwner.Dependencies {
+    @MainActor
+    static func live(tabManager: TabManager) -> Self {
+        Self(
+            setTabs: { [weak tabManager] tabs, spaceId in
+                tabManager?.structuralCollectionMutationOwner.setTabs(tabs, for: spaceId)
+            },
+            adjustedSameContainerInsertionIndex: { [weak tabManager] currentIndex, proposedIndex in
+                tabManager?.spacePinnedStructureOwner.adjustedSameContainerInsertionIndex(
+                    currentIndex: currentIndex,
+                    proposedIndex: proposedIndex
+                ) ?? proposedIndex
+            },
+            isGlobalPinned: { [weak tabManager] tab in
+                tabManager?.shortcutPresentationOwner.activeShortcutTabs(role: .essential).contains { $0.id == tab.id } ?? false
+            },
+            isSpacePinned: { [weak tabManager] tab in
+                if tab.shortcutPinRole == .spacePinned {
+                    return true
+                }
+                guard let shortcutId = tab.shortcutPinId,
+                      let pin = tabManager?.shortcutPinCollectionStateOwner.shortcutPin(by: shortcutId) else { return false }
+                return pin.role == .spacePinned
+            },
+            withStructuralUpdateTransaction: { [weak tabManager] operation in
+                guard let tabManager else { return operation() }
+                return tabManager.withStructuralUpdateTransaction(operation)
+            },
+            scheduleStructuralPersistence: { [weak tabManager] in
+                tabManager?.scheduleStructuralPersistence()
+            }
+        )
     }
 }

@@ -91,7 +91,7 @@ final class BrowserSidebarSplitShortcutRoutingOwner {
         }
 
         if !preserveLiveInstance, let pinId = member.pinId {
-            tabManager.deactivateShortcutLiveTab(pinId: pinId, in: windowState.id)
+            tabManager.shortcutLiveTabOwner.deactivateShortcutLiveTab(pinId: pinId, in: windowState.id)
         }
 
         if remainingGroup == nil, preserveLiveInstance, let restoredLiveTab {
@@ -132,7 +132,7 @@ final class BrowserSidebarSplitShortcutRoutingOwner {
             if group.tabIds.contains(member.tabId) {
                 updatedGroup = updatedGroup.replacingMemberTab(member.tabId, with: pinId)
             }
-            tabManager.deactivateShortcutLiveTab(pinId: pinId, in: windowState.id)
+            tabManager.shortcutLiveTabOwner.deactivateShortcutLiveTab(pinId: pinId, in: windowState.id)
         }
 
         tabManager.splitGroupStructureOwner.upsertSplitGroup(updatedGroup.settingActiveTab(updatedGroup.tabIds.first))
@@ -158,7 +158,7 @@ final class BrowserSidebarSplitShortcutRoutingOwner {
 
         let targetTabId = resolvedGroup.activeTabId.flatMap { resolvedGroup.contains($0) ? $0 : nil }
             ?? resolvedGroup.tabIds.first
-        guard let targetTab = targetTabId.flatMap({ tabManager.tab(for: $0) }) else {
+        guard let targetTab = targetTabId.flatMap({ tabManager.tabCollectionMembershipOwner.tab(for: $0) }) else {
             dependencies.refreshCompositor(windowState)
             return
         }
@@ -181,7 +181,7 @@ final class BrowserSidebarSplitShortcutRoutingOwner {
         var didChange = false
 
         for leafId in group.tabIds {
-            if tabManager.tab(for: leafId) != nil {
+            if tabManager.tabCollectionMembershipOwner.tab(for: leafId) != nil {
                 continue
             }
 
@@ -192,7 +192,7 @@ final class BrowserSidebarSplitShortcutRoutingOwner {
                 continue
             }
 
-            let liveTab = tabManager.activateShortcutPin(
+            let liveTab = tabManager.shortcutLiveTabOwner.activateShortcutPin(
                 pin,
                 in: windowState.id,
                 currentSpaceId: group.hostSpaceId ?? pin.spaceId ?? windowState.currentSpaceId
@@ -204,13 +204,13 @@ final class BrowserSidebarSplitShortcutRoutingOwner {
         for member in updatedGroup.members where member.isShortcutBacked {
             guard let pinId = member.pinId,
                   updatedGroup.tabIds.contains(member.tabId),
-                  tabManager.tab(for: member.tabId) == nil,
+                  tabManager.tabCollectionMembershipOwner.tab(for: member.tabId) == nil,
                   let pin = tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: pinId)
             else {
                 continue
             }
 
-            let liveTab = tabManager.activateShortcutPin(
+            let liveTab = tabManager.shortcutLiveTabOwner.activateShortcutPin(
                 pin,
                 in: windowState.id,
                 currentSpaceId: group.hostSpaceId ?? pin.spaceId ?? windowState.currentSpaceId
@@ -230,7 +230,7 @@ final class BrowserSidebarSplitShortcutRoutingOwner {
         if let direct = group.member(for: itemId) {
             return direct
         }
-        if let tab = tabManager.tab(for: itemId), let pinId = tab.shortcutPinId {
+        if let tab = tabManager.tabCollectionMembershipOwner.tab(for: itemId), let pinId = tab.shortcutPinId {
             return group.member(forPinId: pinId)
         }
         return nil
@@ -259,10 +259,10 @@ final class BrowserSidebarSplitShortcutRoutingOwner {
         in windowState: BrowserWindowState
     ) -> Tab? {
         let tabManager = dependencies.tabManager()
-        if let tab = tabManager.tab(for: member.tabId) {
+        if let tab = tabManager.tabCollectionMembershipOwner.tab(for: member.tabId) {
             return tab
         }
-        if let tab = tabManager.tab(for: itemId) {
+        if let tab = tabManager.tabCollectionMembershipOwner.tab(for: itemId) {
             return tab
         }
         if let pinId = member.pinId {
@@ -282,7 +282,7 @@ final class BrowserSidebarSplitShortcutRoutingOwner {
         switch member.origin {
         case .essential(let profileId, let index):
             guard let targetProfileId = profileId ?? pin.profileId else { return }
-            _ = tabManager.moveShortcutPin(
+            _ = tabManager.shortcutPinCommandOwner.moveShortcutPin(
                 pin,
                 to: .essential,
                 profileId: targetProfileId,
@@ -295,7 +295,7 @@ final class BrowserSidebarSplitShortcutRoutingOwner {
             let targetFolderId = folderId.flatMap { folderId in
                 tabManager.folderCollectionStateOwner.spaceId(for: folderId) == spaceId ? folderId : nil
             }
-            _ = tabManager.moveShortcutPin(
+            _ = tabManager.shortcutPinCommandOwner.moveShortcutPin(
                 pin,
                 to: .spacePinned,
                 profileId: nil,
@@ -305,7 +305,7 @@ final class BrowserSidebarSplitShortcutRoutingOwner {
                 openTargetFolder: targetFolderId != nil
             )
         case .generatedSpacePinnedFromRegular(let spaceId, _):
-            _ = tabManager.moveShortcutPin(
+            _ = tabManager.shortcutPinCommandOwner.moveShortcutPin(
                 pin,
                 to: .spacePinned,
                 profileId: nil,
@@ -326,7 +326,7 @@ final class BrowserSidebarSplitShortcutRoutingOwner {
         else {
             return nil
         }
-        return tabManager.tabs(in: currentSpace).first
+        return tabManager.regularTabCollectionOwner.tabs(in: currentSpace).first
     }
 }
 

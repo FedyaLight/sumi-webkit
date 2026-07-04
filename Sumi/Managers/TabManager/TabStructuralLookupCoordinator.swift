@@ -1,0 +1,110 @@
+import Combine
+import Foundation
+
+/// Coordinates the structural-lookup index and structural-publish batching that used to
+/// live directly on `TabManager`. It owns the `TabStructuralLookupOwner` (the id→tab index)
+/// and the `TabStructuralPublishOwner` (transaction depth + coalesced `structuralChanges`
+/// emission), and rebuilds the lookup snapshot from the live tab collections supplied via
+/// `Dependencies`. `TabManager` keeps thin facades (`withStructuralUpdateTransaction`,
+/// `requestStructuralPublish`, `rebuildTabLookup`, `notifyTransientShortcutStateChanged`,
+/// `queueTabLookupEntries`) that delegate here so existing callers are unchanged.
+@MainActor
+final class TabStructuralLookupCoordinator {
+    struct Dependencies {
+        let tabsBySpace: @MainActor () -> [UUID: [Tab]]
+        let transientShortcutTabsByWindow: @MainActor () -> [UUID: [UUID: Tab]]
+        let transientExtensionTabsByID: @MainActor () -> [UUID: Tab]
+        let auxiliaryMiniWindowTabsByID: @MainActor () -> [UUID: Tab]
+    }
+
+    /// Exposed so `TabManager` can hand the same lookup index to
+    /// `TabCollectionMembershipOwner` and tear it down in `deinit`.
+    let lookupOwner: TabStructuralLookupOwner
+    private let publishOwner: TabStructuralPublishOwner
+    private let dependencies: Dependencies
+
+    init(
+        structuralChanges: PassthroughSubject<Void, Never>,
+        dependencies: Dependencies
+    ) {
+        self.lookupOwner = TabStructuralLookupOwner()
+        self.publishOwner = TabStructuralPublishOwner(structuralChanges: structuralChanges)
+        self.dependencies = dependencies
+    }
+
+    var batchFlushCount: Int { lookupOwner.batchFlushCount }
+    var immediateFlushCount: Int { lookupOwner.immediateFlushCount }
+
+    private var structuralLookupSnapshot: TabStructuralLookupSnapshot {
+        TabStructuralLookupSnapshot(
+            tabsBySpace: dependencies.tabsBySpace(),
+            transientShortcutTabsByWindow: dependencies.transientShortcutTabsByWindow(),
+            transientExtensionTabsByID: dependencies.transientExtensionTabsByID(),
+            auxiliaryMiniWindowTabsByID: dependencies.auxiliaryMiniWindowTabsByID()
+        )
+    }
+
+    func rebuild() {
+        lookupOwner.rebuild(with: structuralLookupSnapshot)
+    }
+
+    @discardableResult
+    func withTransaction<T>(_ operation: () throws -> T) rethrows -> T {
+        try publishOwner.withTransaction(
+            flushPendingLookupBatch: { self.flushPendingBatchIfNeeded() },
+            operation
+        )
+    }
+
+    func requestPublish() {
+        publishOwner.requestPublish()
+    }
+
+    func notifyTransientShortcutStateChanged() {
+        queueTransientRefresh()
+        requestPublish()
+    }
+
+    func queueEntries(removing previousTabs: [Tab], with currentTabs: [Tab]) {
+        lookupOwner.queueEntries(
+            removing: previousTabs,
+            with: currentTabs,
+            batching: publishOwner.isBatching
+        )
+    }
+
+    func removeAll() {
+        lookupOwner.removeAll()
+    }
+
+    private func queueTransientRefresh() {
+        lookupOwner.queueTransientRefresh(
+            snapshot: structuralLookupSnapshot,
+            batching: publishOwner.isBatching
+        )
+    }
+
+    private func flushPendingBatchIfNeeded() {
+        lookupOwner.flushBatchIfNeeded(snapshot: structuralLookupSnapshot)
+    }
+}
+
+extension TabStructuralLookupCoordinator.Dependencies {
+    @MainActor
+    static func live(tabManager: TabManager) -> Self {
+        Self(
+            tabsBySpace: { [weak tabManager] in
+                tabManager?.regularTabCollectionStateOwner.tabsBySpaceSnapshot() ?? [:]
+            },
+            transientShortcutTabsByWindow: { [weak tabManager] in
+                tabManager?.transientTabRegistryOwner.transientShortcutTabsByWindow ?? [:]
+            },
+            transientExtensionTabsByID: { [weak tabManager] in
+                tabManager?.transientTabRegistryOwner.transientExtensionTabsByID ?? [:]
+            },
+            auxiliaryMiniWindowTabsByID: { [weak tabManager] in
+                tabManager?.transientTabRegistryOwner.auxiliaryMiniWindowTabsByID ?? [:]
+            }
+        )
+    }
+}

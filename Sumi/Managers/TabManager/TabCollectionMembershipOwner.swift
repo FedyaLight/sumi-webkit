@@ -2,22 +2,33 @@ import Foundation
 
 @MainActor
 final class TabCollectionMembershipOwner {
-    private unowned let tabManager: TabManager
+    struct Dependencies {
+        let prepareTabForRuntime: @MainActor (Tab) -> Void
+        let regularTabsBySpace: @MainActor () -> [UUID: [Tab]]
+        let allRegularTabs: @MainActor () -> [Tab]
+        let containsRegularTab: @MainActor (Tab) -> Bool
+        let spaces: @MainActor () -> [Space]
+        let currentProfileId: @MainActor () -> UUID?
+        let activeShortcutTabs: @MainActor () -> [Tab]
+        let activeEssentialTabs: @MainActor (UUID?) -> [Tab]
+    }
+
     private let structuralLookupOwner: TabStructuralLookupOwner
     private let transientTabRegistryOwner: TabTransientTabRegistryOwner
+    private let dependencies: Dependencies
 
     init(
-        tabManager: TabManager,
         structuralLookupOwner: TabStructuralLookupOwner,
-        transientTabRegistryOwner: TabTransientTabRegistryOwner
+        transientTabRegistryOwner: TabTransientTabRegistryOwner,
+        dependencies: Dependencies
     ) {
-        self.tabManager = tabManager
         self.structuralLookupOwner = structuralLookupOwner
         self.transientTabRegistryOwner = transientTabRegistryOwner
+        self.dependencies = dependencies
     }
 
     func attach(_ tab: Tab) {
-        tabManager.prepareTabForRuntime(tab)
+        dependencies.prepareTabForRuntime(tab)
         structuralLookupOwner.attach(tab)
     }
 
@@ -28,17 +39,18 @@ final class TabCollectionMembershipOwner {
     func allTabs() -> [Tab] {
         structuralLookupOwner.rebuildIfEmpty(with: structuralLookupSnapshot)
 
-        let normals = tabManager.regularTabCollectionStateOwner.allTabs()
+        let normals = dependencies.allRegularTabs()
         return transientTabRegistryOwner.allTransientTabs
             + normals
     }
 
     func allTabsForCurrentProfile() -> [Tab] {
-        guard let profileId = tabManager.runtimeContext?.currentProfileId else {
+        guard let profileId = dependencies.currentProfileId() else {
             return allTabs()
         }
-        let spaceIds = Set(tabManager.spaces.filter { $0.profileId == profileId }.map(\.id))
-        let pinned = tabManager.shortcutPresentationOwner.activeEssentialTabs(for: profileId)
+        let matchingSpaces = dependencies.spaces().filter { $0.profileId == profileId }
+        let spaceIds = Set(matchingSpaces.map(\.id))
+        let pinned = dependencies.activeEssentialTabs(profileId)
         let spacePinned = transientTabRegistryOwner.transientShortcutTabs
             .filter { tab in
                 guard tab.shortcutPinRole == .spacePinned, let spaceId = tab.spaceId else {
@@ -46,22 +58,22 @@ final class TabCollectionMembershipOwner {
                 }
                 return spaceIds.contains(spaceId)
             }
-        let regular = tabManager.regularTabCollectionOwner
-            .allTabs(in: tabManager.spaces.filter { spaceIds.contains($0.id) })
+        let regular = matchingSpaces.flatMap { dependencies.regularTabsBySpace()[$0.id] ?? [] }
         return pinned + spacePinned + regular
     }
 
     func contains(_ tab: Tab) -> Bool {
-        if tabManager.shortcutPresentationOwner.activeShortcutTabs().contains(where: { $0.id == tab.id }) {
+        if dependencies.activeShortcutTabs().contains(where: { $0.id == tab.id }) {
             return true
         }
-        if tabManager.allPinnedTabsAllProfiles.contains(where: { $0.id == tab.id }) {
-            return true
-        }
-        if tabManager.regularTabCollectionOwner.contains(tab) {
+        if dependencies.containsRegularTab(tab) {
             return true
         }
         return false
+    }
+
+    func tab(for id: UUID) -> Tab? {
+        structuralLookupOwner.tab(for: id, snapshot: structuralLookupSnapshot)
     }
 
     func isTransientExtensionTab(_ tab: Tab) -> Bool {
@@ -109,10 +121,42 @@ final class TabCollectionMembershipOwner {
 
     private var structuralLookupSnapshot: TabStructuralLookupSnapshot {
         TabStructuralLookupSnapshot(
-            tabsBySpace: tabManager.regularTabCollectionStateOwner.tabsBySpace,
+            tabsBySpace: dependencies.regularTabsBySpace(),
             transientShortcutTabsByWindow: transientTabRegistryOwner.transientShortcutTabsByWindow,
             transientExtensionTabsByID: transientTabRegistryOwner.transientExtensionTabsByID,
             auxiliaryMiniWindowTabsByID: transientTabRegistryOwner.auxiliaryMiniWindowTabsByID
+        )
+    }
+}
+
+extension TabCollectionMembershipOwner.Dependencies {
+    @MainActor
+    static func live(tabManager: TabManager) -> Self {
+        Self(
+            prepareTabForRuntime: { [weak tabManager] tab in
+                tabManager?.runtimePreparationOwner.prepare(tab)
+            },
+            regularTabsBySpace: { [weak tabManager] in
+                tabManager?.regularTabCollectionStateOwner.tabsBySpaceSnapshot() ?? [:]
+            },
+            allRegularTabs: { [weak tabManager] in
+                tabManager?.regularTabCollectionStateOwner.allTabsSnapshot() ?? []
+            },
+            containsRegularTab: { [weak tabManager] tab in
+                tabManager?.regularTabCollectionOwner.contains(tab) ?? false
+            },
+            spaces: { [weak tabManager] in
+                tabManager?.spaceStateOwner.spaces ?? []
+            },
+            currentProfileId: { [weak tabManager] in
+                tabManager?.runtimeContext?.currentProfileId
+            },
+            activeShortcutTabs: { [weak tabManager] in
+                tabManager?.shortcutPresentationOwner.activeShortcutTabs() ?? []
+            },
+            activeEssentialTabs: { [weak tabManager] profileId in
+                tabManager?.shortcutPresentationOwner.activeEssentialTabs(for: profileId) ?? []
+            }
         )
     }
 }

@@ -10,7 +10,7 @@ final class BrowserURLBarContextOwnerTests: XCTestCase {
         defer { removePersistedWindowSession() }
 
         let harness = makeHarness()
-        let source = harness.browserManager.tabManager.createNewTab(
+        let source = harness.browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://source.example",
             in: harness.primarySpace,
             activate: false
@@ -22,7 +22,7 @@ final class BrowserURLBarContextOwnerTests: XCTestCase {
             .navigationHistoryContext(for: harness.windowState)
             .openURLInNewTab(targetURL, true, source)
 
-        let opened = harness.browserManager.tabManager.tabs(in: harness.primarySpace)
+        let opened = harness.browserManager.tabManager.regularTabCollectionOwner.tabs(in: harness.primarySpace)
             .first { $0.url == targetURL }
         guard let opened else {
             XCTFail("Expected navigation history context to open selected URL")
@@ -38,12 +38,12 @@ final class BrowserURLBarContextOwnerTests: XCTestCase {
         defer { removePersistedWindowSession() }
 
         let harness = makeHarness()
-        let source = harness.browserManager.tabManager.createNewTab(
+        let source = harness.browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://source.example",
             in: harness.primarySpace,
             activate: false
         )
-        let trailing = harness.browserManager.tabManager.createNewTab(
+        let trailing = harness.browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://trailing.example",
             in: harness.primarySpace,
             activate: false
@@ -55,7 +55,7 @@ final class BrowserURLBarContextOwnerTests: XCTestCase {
             .navigationHistoryContext(for: harness.windowState)
             .openURLInNewTab(targetURL, false, source)
 
-        let tabs = harness.browserManager.tabManager.tabs(in: harness.primarySpace)
+        let tabs = harness.browserManager.tabManager.regularTabCollectionOwner.tabs(in: harness.primarySpace)
         let opened = tabs.first { $0.url == targetURL }
         guard let opened else {
             XCTFail("Expected navigation history context to open background URL")
@@ -70,7 +70,7 @@ final class BrowserURLBarContextOwnerTests: XCTestCase {
         defer { removePersistedWindowSession() }
 
         let harness = makeHarness()
-        let source = harness.browserManager.tabManager.createNewTab(
+        let source = harness.browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://source.example",
             in: harness.primarySpace,
             activate: false
@@ -117,7 +117,7 @@ final class BrowserURLBarContextOwnerTests: XCTestCase {
         defer { removePersistedWindowSession() }
 
         let harness = makeHarness()
-        let tab = harness.browserManager.tabManager.createNewTab(
+        let tab = harness.browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://reload.example",
             in: harness.primarySpace,
             activate: false
@@ -141,7 +141,7 @@ final class BrowserURLBarContextOwnerTests: XCTestCase {
         defer { removePersistedWindowSession() }
 
         let harness = makeHarness()
-        let tab = harness.browserManager.tabManager.createNewTab(
+        let tab = harness.browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://urlbar-reload.example",
             in: harness.primarySpace,
             activate: false
@@ -173,8 +173,8 @@ final class BrowserURLBarContextOwnerTests: XCTestCase {
         browserManager.currentProfile = profile
         browserManager.windowRegistry = windowRegistry
         browserManager.webViewCoordinator = WebViewCoordinator()
-        browserManager.tabManager.spaces = [primarySpace]
-        browserManager.tabManager.currentSpace = primarySpace
+        browserManager.tabManager.spaceStateOwner.replaceSpaces([primarySpace])
+        browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(primarySpace)
 
         windowState.tabManager = browserManager.tabManager
         windowState.currentSpaceId = primarySpace.id

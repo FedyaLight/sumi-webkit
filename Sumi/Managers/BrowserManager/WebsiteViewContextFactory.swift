@@ -104,7 +104,7 @@ enum WebsiteViewContextFactory {
                 )
             },
             scheduleRuntimeStatePersistence: { [weak browserManager] tab in
-                browserManager?.tabManager.scheduleRuntimeStatePersistence(for: tab)
+                browserManager?.tabManager.structuralPersistence.scheduleRuntimeStatePersistence(for: tab)
             }
         )
     }
@@ -145,7 +145,7 @@ enum WebsiteViewContextFactory {
                 browserManager?.bookmarkCommandOwner.exportBookmarksFromMenu()
             },
             scheduleRuntimeStatePersistence: { [weak browserManager] tab in
-                browserManager?.tabManager.scheduleRuntimeStatePersistence(for: tab)
+                browserManager?.tabManager.structuralPersistence.scheduleRuntimeStatePersistence(for: tab)
             }
         )
     }

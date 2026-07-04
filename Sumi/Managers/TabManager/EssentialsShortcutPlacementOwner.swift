@@ -137,3 +137,20 @@ final class EssentialsShortcutPlacementOwner {
         )
     }
 }
+
+extension EssentialsShortcutPlacementOwner.Dependencies {
+    @MainActor
+    static func live(tabManager: TabManager) -> Self {
+        Self(
+            spaces: { [weak tabManager] in
+                tabManager?.spaceStateOwner.spaces ?? []
+            },
+            runtimeContext: { [weak tabManager] in
+                tabManager?.runtimeContext
+            },
+            essentialPins: { [weak tabManager] profileId in
+                tabManager?.shortcutPinCollectionStateOwner.essentialPins(for: profileId) ?? []
+            }
+        )
+    }
+}

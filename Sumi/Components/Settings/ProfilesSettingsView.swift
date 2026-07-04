@@ -122,17 +122,17 @@ struct ProfilesSettingsView: View {
     }
 
     private func spacesCount(for profile: Profile) -> Int {
-        tabManager.spaces.filter { $0.profileId == profile.id }
+        tabManager.spaceStateOwner.spaces.filter { $0.profileId == profile.id }
             .count
     }
 
     private func tabsCount(for profile: Profile) -> Int {
         let spaceIds = Set(
-            tabManager.spaces.filter {
+            tabManager.spaceStateOwner.spaces.filter {
                 $0.profileId == profile.id
             }.map { $0.id }
         )
-        return tabManager.allTabs().filter { tab in
+        return tabManager.tabCollectionMembershipOwner.allTabs().filter { tab in
             if let sid = tab.spaceId { return spaceIds.contains(sid) }
             return false
         }.count

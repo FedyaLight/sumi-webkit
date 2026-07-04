@@ -66,7 +66,7 @@ final class WebViewWindowCleanupOwner {
         let runtimeContext = dependencies.browserRuntimeContext()
         return WebViewCleanupScopeOwner.Runtime(
             tabForID: { tabID in
-                runtimeContext?.tab(tabID) ?? tabManager.tab(for: tabID)
+                runtimeContext?.tab(tabID) ?? tabManager.tabCollectionMembershipOwner.tab(for: tabID)
             },
             isWebViewProtectedFromCompositorMutation: { [dependencies] webView in
                 dependencies.isWebViewProtectedFromCompositorMutation(webView)

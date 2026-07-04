@@ -68,7 +68,7 @@ final class TabProfileResolutionOwnerTests: XCTestCase {
             explicitProfile,
         ]
         harness.browserManager.currentProfile = currentProfile
-        harness.browserManager.tabManager.spaces = [space]
+        harness.browserManager.tabManager.spaceStateOwner.replaceSpaces([space])
         tab.spaceId = space.id
         tab.profileId = explicitProfile.id
 
@@ -87,7 +87,7 @@ final class TabProfileResolutionOwnerTests: XCTestCase {
 
         harness.browserManager.profileManager.profiles = [currentProfile, spaceProfile]
         harness.browserManager.currentProfile = currentProfile
-        harness.browserManager.tabManager.spaces = [space]
+        harness.browserManager.tabManager.spaceStateOwner.replaceSpaces([space])
         tab.spaceId = space.id
 
         XCTAssertIdentical(

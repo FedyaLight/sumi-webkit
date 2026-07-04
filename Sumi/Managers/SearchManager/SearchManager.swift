@@ -459,7 +459,7 @@ class SearchManager {
             append(SearchSuggestion(text: bookmark.title, type: .bookmark(bookmark)), url: bookmark.url)
         }
 
-        let tabs = tabManager?.allTabsForCurrentProfile() ?? []
+        let tabs = tabManager?.tabCollectionMembershipOwner.allTabsForCurrentProfile() ?? []
         for tab in tabs {
             append(SearchSuggestion(text: tab.name, type: .tab(tab)), url: tab.url)
         }
@@ -526,7 +526,7 @@ class SearchManager {
             candidates.append(tab)
         }
 
-        tabManager.allTabsForCurrentProfile()
+        tabManager.tabCollectionMembershipOwner.allTabsForCurrentProfile()
             .filter { $0.isShortcutLiveInstance == false }
             .forEach(append)
         tabManager.shortcutPresentationOwner.liveShortcutTabs(in: windowState.id)
@@ -625,7 +625,7 @@ class SearchManager {
         }
         let bookmarksByURL = Dictionary(grouping: bookmarks, by: { $0.url.absoluteString })
 
-        let tabs = tabManager?.allTabsForCurrentProfile() ?? []
+        let tabs = tabManager?.tabCollectionMembershipOwner.allTabsForCurrentProfile() ?? []
         let tabItems = tabs.map {
             SumiSuggestionEngine.TabItem(id: $0.id, url: $0.url, title: $0.name)
         }

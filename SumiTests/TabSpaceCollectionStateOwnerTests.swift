@@ -74,3 +74,67 @@ final class TabSpaceCollectionStateOwnerTests: XCTestCase {
         XCTAssertNil(owner.currentSpace)
     }
 }
+
+@MainActor
+final class TabSpaceLifecycleOwnerTests: XCTestCase {
+    func testResolvedTargetSpaceUsesCurrentProfileSpaceBeforeSelectedSpace() throws {
+        let tabManager = try makeInMemoryTabManager()
+        let defaultProfileId = UUID()
+        let currentProfileId = UUID()
+        let defaultProfileSpace = tabManager.spaceLifecycleOwner.createSpace(
+            name: "Default",
+            profileId: defaultProfileId
+        )
+        let currentProfileSpace = tabManager.spaceLifecycleOwner.createSpace(
+            name: "Current",
+            profileId: currentProfileId
+        )
+        tabManager.spaceStateOwner.replaceCurrentSpace(defaultProfileSpace)
+        tabManager.runtimeContextAttachmentOwner.attach(
+            TabManagerRuntimeContext(
+                currentProfileId: { currentProfileId },
+                defaultProfileId: { defaultProfileId }
+            )
+        )
+
+        let resolved = tabManager.spaceLifecycleOwner.resolvedTargetSpace(preferred: nil)
+
+        XCTAssertIdentical(resolved, currentProfileSpace)
+    }
+
+    func testResolvedTargetSpaceBackfillsUnassignedSpaceForCurrentProfile() throws {
+        let tabManager = try makeInMemoryTabManager()
+        let currentProfileId = UUID()
+        let unassigned = Space(name: "Unassigned")
+        tabManager.spaceStateOwner.replaceSpaces([unassigned])
+        tabManager.runtimeContextAttachmentOwner.attach(
+            TabManagerRuntimeContext(currentProfileId: { currentProfileId })
+        )
+
+        let resolved = tabManager.spaceLifecycleOwner.resolvedTargetSpace(preferred: nil)
+
+        XCTAssertIdentical(resolved, unassigned)
+        XCTAssertEqual(unassigned.profileId, currentProfileId)
+        XCTAssertEqual(tabManager.spaceStateOwner.spaces.count, 1)
+    }
+
+    func testResolvedTargetSpaceCreatesPersonalSpaceWhenNoSpaceExists() throws {
+        let tabManager = try makeInMemoryTabManager()
+        let currentProfileId = UUID()
+        tabManager.spaceStateOwner.removeAll()
+        tabManager.runtimeContextAttachmentOwner.attach(
+            TabManagerRuntimeContext(currentProfileId: { currentProfileId })
+        )
+
+        let resolved = tabManager.spaceLifecycleOwner.resolvedTargetSpace(preferred: nil)
+
+        XCTAssertEqual(resolved.name, "Personal")
+        XCTAssertEqual(resolved.profileId, currentProfileId)
+        XCTAssertIdentical(tabManager.spaceStateOwner.currentSpace, resolved)
+        XCTAssertEqual(tabManager.spaceStateOwner.spaces.map(\.id), [resolved.id])
+        XCTAssertEqual(
+            tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[resolved.id] ?? [],
+            []
+        )
+    }
+}

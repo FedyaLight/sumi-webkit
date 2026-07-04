@@ -48,7 +48,7 @@ final class SplitMembershipResolutionOwner {
                 return nil
             }
             let insertionIndex = tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: spaceId).count
-            guard let pin = tabManager.convertTabToShortcutPin(
+            guard let pin = tabManager.shortcutPinCommandOwner.convertTabToShortcutPin(
                 candidate,
                 role: .spacePinned,
                 profileId: nil,
@@ -167,7 +167,7 @@ final class SplitMembershipResolutionOwner {
 
         for candidateId in candidateIds {
             guard let candidateId else { continue }
-            if let tab = tabManager()?.tab(for: candidateId) {
+            if let tab = tabManager()?.tabCollectionMembershipOwner.tab(for: candidateId) {
                 return tab
             }
             if let pinId = group.member(for: candidateId)?.pinId,
@@ -246,13 +246,13 @@ final class SplitMembershipResolutionOwner {
         guard let tabManager = tabManager() else { return candidate }
         if candidate.isShortcutLiveInstance,
            candidate.shortcutPinId == pin.id,
-           tabManager.tab(for: candidate.id) != nil {
+           tabManager.tabCollectionMembershipOwner.tab(for: candidate.id) != nil {
             return candidate
         }
         if let liveTab = tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pin.id, in: windowState.id) {
             return liveTab
         }
-        return tabManager.activateShortcutPin(
+        return tabManager.shortcutLiveTabOwner.activateShortcutPin(
             pin,
             in: windowState.id,
             currentSpaceId: pin.spaceId ?? windowState.currentSpaceId

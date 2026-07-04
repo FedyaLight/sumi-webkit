@@ -7,7 +7,7 @@ enum SpaceDeletionConfirmationPresenter {
         browserManager: BrowserManager,
         window: NSWindow?
     ) {
-        guard browserManager.tabManager.spaces.count > 1 else {
+        guard browserManager.tabManager.spaceStateOwner.spaces.count > 1 else {
             NSSound.beep()
             return
         }

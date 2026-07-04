@@ -44,8 +44,8 @@ struct SidebarEssentialsProjectedLayout {
 
 @MainActor
 enum SidebarEssentialsProjectionPolicy {
-    static let maxColumns = TabManager.EssentialsCapacityPolicy.maxColumns
-    static let maxRows = TabManager.EssentialsCapacityPolicy.maxRows
+    static let maxColumns = EssentialsShortcutPlacementOwner.CapacityPolicy.maxColumns
+    static let maxRows = EssentialsShortcutPlacementOwner.CapacityPolicy.maxRows
     static let maxItems = maxColumns * maxRows
 
     static func make(

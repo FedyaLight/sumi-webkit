@@ -5,7 +5,7 @@ enum BrowserLiveFolderRuntimeService {
     static func runtime(for browserManager: BrowserManager) -> SumiLiveFolderRuntime {
         SumiLiveFolderRuntime(
             spaceContext: { [weak browserManager] spaceId in
-                guard let space = browserManager?.tabManager.spaces.first(where: { $0.id == spaceId }) else {
+                guard let space = browserManager?.tabManager.spaceStateOwner.spaces.first(where: { $0.id == spaceId }) else {
                     return nil
                 }
                 return SumiLiveFolderRuntime.SpaceContext(profileId: space.profileId)
@@ -34,7 +34,7 @@ enum BrowserLiveFolderRuntimeService {
                    let profile = browserManager.profileManager.profiles.first(where: { $0.id == profileId }) {
                     return profile
                 }
-                if let space = browserManager.tabManager.spaces.first(where: { $0.id == spaceId }),
+                if let space = browserManager.tabManager.spaceStateOwner.spaces.first(where: { $0.id == spaceId }),
                    let profileId = space.profileId {
                     return browserManager.profileManager.profiles.first { $0.id == profileId }
                 }
@@ -43,9 +43,7 @@ enum BrowserLiveFolderRuntimeService {
             folderIds: { [weak browserManager] in
                 guard let browserManager else { return [] }
                 return Set(
-                    browserManager.tabManager.foldersBySpace.values.flatMap { folders in
-                        folders.map(\.id)
-                    }
+                    browserManager.tabManager.folderCollectionStateOwner.allFolders().map(\.id)
                 )
             }
         )

@@ -29,7 +29,7 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
 
         let context = SpaceSidebarTransitionCoordinator.Context(
             spaces: [source, staleDestination],
-            currentSpaces: { browserHarness.tabManager.spaces },
+            currentSpaces: { browserHarness.tabManager.spaceStateOwner.spaces },
             windowState: windowState,
             browserContext: browserHarness.context,
             dragState: dragState,
@@ -39,14 +39,14 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
         )
 
         coordinator.switchSpace(to: staleDestination, context: context)
-        browserHarness.tabManager.spaces = [source, replacement]
+        browserHarness.tabManager.spaceStateOwner.replaceSpaces([source, replacement])
 
         try await Task.sleep(
             nanoseconds: UInt64((SpaceSidebarRenderPolicy.completionDelay + 0.15) * 1_000_000_000)
         )
 
         let activeSpaceId = try XCTUnwrap(windowState.currentSpaceId)
-        XCTAssertTrue(browserHarness.tabManager.spaces.contains { $0.id == activeSpaceId })
+        XCTAssertTrue(browserHarness.tabManager.spaceStateOwner.spaces.contains { $0.id == activeSpaceId })
         XCTAssertNotEqual(activeSpaceId, staleDestination.id)
         XCTAssertFalse(windowState.isInteractiveSpaceTransition)
         XCTAssertNil(coordinator.transitionSnapshot)
@@ -77,7 +77,7 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
 
         let context = SpaceSidebarTransitionCoordinator.Context(
             spaces: [source, destination],
-            currentSpaces: { browserHarness.tabManager.spaces },
+            currentSpaces: { browserHarness.tabManager.spaceStateOwner.spaces },
             windowState: windowState,
             browserContext: browserHarness.context,
             dragState: dragState,
@@ -137,7 +137,7 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
 
         let context = SpaceSidebarTransitionCoordinator.Context(
             spaces: [source, destination],
-            currentSpaces: { browserHarness.tabManager.spaces },
+            currentSpaces: { browserHarness.tabManager.spaceStateOwner.spaces },
             windowState: windowState,
             browserContext: browserHarness.context,
             dragState: dragState,
@@ -234,7 +234,7 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
 
         let context = SpaceSidebarTransitionCoordinator.Context(
             spaces: [source, destination],
-            currentSpaces: { browserHarness.tabManager.spaces },
+            currentSpaces: { browserHarness.tabManager.spaceStateOwner.spaces },
             windowState: windowState,
             browserContext: browserHarness.context,
             dragState: dragState,
@@ -317,7 +317,7 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
 
         let context = SpaceSidebarTransitionCoordinator.Context(
             spaces: [source, scheduledDestination, directDestination],
-            currentSpaces: { browserHarness.tabManager.spaces },
+            currentSpaces: { browserHarness.tabManager.spaceStateOwner.spaces },
             windowState: windowState,
             browserContext: browserHarness.context,
             dragState: dragState,
@@ -401,7 +401,7 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
 
         let context = SpaceSidebarTransitionCoordinator.Context(
             spaces: [source, scheduledDestination, directDestination],
-            currentSpaces: { browserHarness.tabManager.spaces },
+            currentSpaces: { browserHarness.tabManager.spaceStateOwner.spaces },
             windowState: windowState,
             browserContext: browserHarness.context,
             dragState: dragState,
@@ -481,7 +481,7 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
 
         let context = SpaceSidebarTransitionCoordinator.Context(
             spaces: [fallbackSpace, secondSpace],
-            currentSpaces: { browserHarness.tabManager.spaces },
+            currentSpaces: { browserHarness.tabManager.spaceStateOwner.spaces },
             windowState: windowState,
             browserContext: browserHarness.context,
             dragState: SidebarDragState(),
@@ -493,7 +493,7 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
         coordinator.handleSpacesCollectionChange(context)
 
         XCTAssertEqual(windowState.currentSpaceId, fallbackSpace.id)
-        XCTAssertEqual(browserHarness.tabManager.currentSpace?.id, fallbackSpace.id)
+        XCTAssertEqual(browserHarness.tabManager.spaceStateOwner.currentSpace?.id, fallbackSpace.id)
         XCTAssertEqual(browserHarness.transitionEvents, [.setActiveSpace(fallbackSpace.id)])
     }
 
@@ -595,7 +595,7 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
 
         windowState.tabManager = browserHarness.tabManager
         windowState.currentSpaceId = currentSpace.id
-        browserHarness.tabManager.currentSpace = currentSpace
+        browserHarness.tabManager.spaceStateOwner.replaceCurrentSpace(currentSpace)
         browserHarness.commitWorkspaceTheme(currentSpace.workspaceTheme, for: windowState)
 
         return RuntimeRelativeSwitchFixture(
@@ -628,7 +628,7 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
         func context(spaces contextSpaces: [Space]) -> SpaceSidebarTransitionCoordinator.Context {
             SpaceSidebarTransitionCoordinator.Context(
                 spaces: contextSpaces,
-                currentSpaces: { browserHarness.tabManager.spaces },
+                currentSpaces: { browserHarness.tabManager.spaceStateOwner.spaces },
                 windowState: windowState,
                 browserContext: browserHarness.context,
                 dragState: dragState,
@@ -777,8 +777,8 @@ private final class TestSidebarBrowserContextHarness {
             configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
         )
         tabManager = TabManager(context: container.mainContext, loadPersistedState: false)
-        tabManager.spaces = spaces
-        tabManager.currentSpace = spaces.first
+        tabManager.spaceStateOwner.replaceSpaces(spaces)
+        tabManager.spaceStateOwner.replaceCurrentSpace(spaces.first)
         tabManager.markInitialDataLoadFinished()
         profileManager = ProfileManager(context: container.mainContext)
         profileManager.ensureDefaultProfile()
@@ -819,7 +819,7 @@ private final class TestSidebarBrowserContextHarness {
             tabStructuralRevision: { 0 },
             isTransitioningProfile: { false },
             currentProfile: { profileManager.profiles.first },
-            currentTab: { _ in tabManager.currentTab },
+            currentTab: { _ in tabManager.selectionStateOwner.currentTab },
             extensionToolbarSlots: { _, _ in [] },
             extensionActionBrowserContext: { _ in
                 fatalError("Unused in SpaceSidebarTransitionCoordinatorTests")
@@ -831,7 +831,7 @@ private final class TestSidebarBrowserContextHarness {
                 completePendingSplitGroupFocusIfReady: { _, _ in /* No-op. */ },
                 setActiveSpace: { space, windowState in
                     transitionEventRecorder.events.append(.setActiveSpace(space.id))
-                    tabManager.currentSpace = space
+                    tabManager.spaceStateOwner.replaceCurrentSpace(space)
                     windowState.currentSpaceId = space.id
                     workspaceThemeCoordinator.update(
                         for: windowState,
@@ -846,7 +846,7 @@ private final class TestSidebarBrowserContextHarness {
                         return
                     }
                     transitionEventRecorder.events.append(.setActiveSpaceFromTransition(space.id, identity))
-                    tabManager.currentSpace = space
+                    tabManager.spaceStateOwner.replaceCurrentSpace(space)
                     windowState.currentSpaceId = space.id
                     workspaceThemeCoordinator.finishInteractiveTransition(
                         to: space.workspaceTheme,

@@ -113,3 +113,44 @@ final class ShortcutDragOperationOwner {
         }
     }
 }
+
+extension ShortcutDragOperationOwner.Dependencies {
+    @MainActor
+    static func live(tabManager: TabManager) -> Self {
+        Self(
+            reorderEssential: { [weak tabManager] pin, index in
+                tabManager?.shortcutPinCommandOwner.reorderEssential(pin, to: index) ?? false
+            },
+            moveShortcutPin: { [weak tabManager] pin, role, profileId, spaceId, folderId, index, openTargetFolder in
+                tabManager?.shortcutPinCommandOwner.moveShortcutPin(
+                    pin,
+                    to: role,
+                    profileId: profileId,
+                    spaceId: spaceId,
+                    folderId: folderId,
+                    index: index,
+                    openTargetFolder: openTargetFolder
+                )
+            },
+            folderSpaceId: { [weak tabManager] folderId in
+                tabManager?.folderCollectionStateOwner.spaceId(for: folderId)
+            },
+            resolvedEssentialsProfileId: { [weak tabManager] operation in
+                tabManager?.essentialsShortcutPlacementOwner.resolvedProfileId(for: operation)
+            },
+            convertShortcutPinToRegularTab: { [weak tabManager] pin, spaceId, targetIndex in
+                tabManager?.shortcutPinCommandOwner.convertShortcutPinToRegularTab(pin, in: spaceId, at: targetIndex) ?? false
+            },
+            removeShortcutPinFromContainers: { [weak tabManager] pin in
+                tabManager?.shortcutPinStoreOwner.removeFromContainers(pin)
+            },
+            insertRegularTabFromShortcut: { [weak tabManager] pin, spaceId, targetIndex in
+                guard let tabManager else { preconditionFailure("TabManager dependency used after deallocation") }
+                return tabManager.shortcutLiveTabOwner.insertRegularTabFromShortcut(pin, into: spaceId, at: targetIndex)
+            },
+            scheduleStructuralPersistence: { [weak tabManager] in
+                tabManager?.scheduleStructuralPersistence()
+            }
+        )
+    }
+}

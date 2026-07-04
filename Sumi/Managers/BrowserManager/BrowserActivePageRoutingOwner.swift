@@ -17,7 +17,7 @@ final class BrowserActivePageRoutingOwner {
         let containsSpace: @MainActor (UUID) -> Bool
         let folderSpaceId: @MainActor (UUID) -> UUID?
         let resolveEssentialsInsertion:
-            @MainActor (BrowserWindowState, Int) -> TabManager.EssentialsInsertionPlan?
+            @MainActor (BrowserWindowState, Int) -> EssentialsShortcutPlacementOwner.InsertionPlan?
         let convertTabToShortcutPin:
             @MainActor (Tab, ShortcutPinRole, UUID?, UUID?, UUID?, Int, Bool) -> ShortcutPin?
         let presentCopyToast: @MainActor (BrowserWindowState) -> Void
@@ -287,21 +287,21 @@ extension BrowserActivePageRoutingOwner.Dependencies {
                 browserManager?.tabLifecycleService.opening.openNewTab(url: urlString, context: context)
             },
             containsSpace: { [weak browserManager] spaceId in
-                browserManager?.tabManager.spaces.contains { $0.id == spaceId } == true
+                browserManager?.tabManager.spaceStateOwner.spaces.contains { $0.id == spaceId } == true
             },
             folderSpaceId: { [weak browserManager] folderId in
                 browserManager?.tabManager.folderCollectionStateOwner.spaceId(for: folderId)
             },
             resolveEssentialsInsertion: { [weak browserManager] windowState, index in
                 browserManager?.tabManager.essentialsShortcutPlacementOwner.resolveInsertion(
-                    using: TabManager.EssentialsInsertionContext(
-                        target: TabManager.EssentialsTargetContext(windowState: windowState),
+                    using: EssentialsShortcutPlacementOwner.InsertionContext(
+                        target: EssentialsShortcutPlacementOwner.TargetContext(windowState: windowState),
                         targetIndex: index
                     )
                 )
             },
             convertTabToShortcutPin: { [weak browserManager] tab, role, profileId, spaceId, folderId, index, openTargetFolder in
-                browserManager?.tabManager.convertTabToShortcutPin(
+                browserManager?.tabManager.shortcutPinCommandOwner.convertTabToShortcutPin(
                     tab,
                     role: role,
                     profileId: profileId,

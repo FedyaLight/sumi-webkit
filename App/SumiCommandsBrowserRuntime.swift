@@ -64,7 +64,7 @@ private final class SumiCommandsBrowserManagerAdapter:
     }
 
     func hasCustomizableSpaceForCommands() -> Bool {
-        browserManager?.tabManager.currentSpace != nil
+        browserManager?.tabManager.spaceStateOwner.currentSpace != nil
     }
 
     func openSettingsTab(selecting pane: SettingsTabs, in windowState: BrowserWindowState?) {

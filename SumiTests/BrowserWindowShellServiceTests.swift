@@ -106,12 +106,12 @@ final class BrowserWindowShellServiceTests: XCTestCase {
         }
 
         let profile = try XCTUnwrap(windowState.ephemeralProfile)
-        let firstTab = harness.tabManager.createEphemeralTab(
+        let firstTab = harness.tabManager.ephemeralLifecycleOwner.createEphemeralTab(
             url: try XCTUnwrap(URL(string: "https://example.com/one")),
             in: windowState,
             profile: profile
         )
-        let secondTab = harness.tabManager.createEphemeralTab(
+        let secondTab = harness.tabManager.ephemeralLifecycleOwner.createEphemeralTab(
             url: try XCTUnwrap(URL(string: "https://example.com/two")),
             in: windowState,
             profile: profile
@@ -149,7 +149,7 @@ final class BrowserWindowShellServiceTests: XCTestCase {
         windowState.ephemeralSpaces.append(ephemeralSpace)
         windowState.currentSpaceId = ephemeralSpace.id
 
-        _ = harness.tabManager.createEphemeralTab(
+        _ = harness.tabManager.ephemeralLifecycleOwner.createEphemeralTab(
             url: try XCTUnwrap(URL(string: "https://private.example")),
             in: windowState,
             profile: ephemeralProfile

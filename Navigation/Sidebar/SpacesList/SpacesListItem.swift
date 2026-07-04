@@ -98,7 +98,7 @@ struct SpacesListItem: View {
                     .onChange(of: emojiManager.selectedEmoji) { _, newValue in
                         guard !newValue.isEmpty else { return }
                         space.icon = SumiPersistentGlyph.normalizedSpaceIconValue(newValue)
-                        browserContext.tabManager.markAllSpacesStructurallyDirty()
+                        browserContext.tabManager.structuralPersistence.markAllSpacesStructurallyDirty()
                         browserContext.tabManager.scheduleStructuralPersistence()
                     }
             } else {
@@ -109,7 +109,7 @@ struct SpacesListItem: View {
                     .onChange(of: emojiManager.selectedEmoji) { _, newValue in
                         guard !newValue.isEmpty else { return }
                         space.icon = SumiPersistentGlyph.normalizedSpaceIconValue(newValue)
-                        browserContext.tabManager.markAllSpacesStructurallyDirty()
+                        browserContext.tabManager.structuralPersistence.markAllSpacesStructurallyDirty()
                         browserContext.tabManager.scheduleStructuralPersistence()
                     }
             }
@@ -131,7 +131,7 @@ struct SpacesListItem: View {
 
     private func spaceContextMenuEntries() -> [SidebarContextMenuEntry] {
         let deleteSpaceAction: (() -> Void)?
-        if browserContext.tabManager.spaces.count > 1 {
+        if browserContext.tabManager.spaceStateOwner.spaces.count > 1 {
             deleteSpaceAction = { showDeleteConfirmation() }
         } else {
             deleteSpaceAction = nil

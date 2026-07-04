@@ -11,16 +11,16 @@ enum BrowserWebViewRuntimeFactory {
                 requireBrowserManager(browserManager, operation: "resolve TabManager").tabManager
             },
             tab: { [weak browserManager] tabId in
-                requireBrowserManager(browserManager, operation: "resolve tab").tabManager.tab(for: tabId)
+                requireBrowserManager(browserManager, operation: "resolve tab").tabManager.tabCollectionMembershipOwner.tab(for: tabId)
             },
             regularTabs: { [weak browserManager] in
-                requireBrowserManager(browserManager, operation: "list regular tabs").tabManager.allTabs()
+                requireBrowserManager(browserManager, operation: "list regular tabs").tabManager.tabCollectionMembershipOwner.allTabs()
             },
             pinnedTabs: { [weak browserManager] in
                 requireBrowserManager(
                     browserManager,
                     operation: "list pinned tabs"
-                ).tabManager.allPinnedTabsAllProfiles
+                ).tabManager.shortcutPresentationOwner.activeShortcutTabs(role: .essential)
             },
             allWindows: { [weak browserManager] in
                 requireWindowRegistry(browserManager, operation: "list windows").allWindows
@@ -124,7 +124,7 @@ enum BrowserWebViewRuntimeFactory {
                     return ephemeralTab
                 }
                 return requireBrowserManager(browserManager, operation: "resolve visible tab")
-                    .tabManager.tab(for: tabId)
+                    .tabManager.tabCollectionMembershipOwner.tab(for: tabId)
             },
             canMaterializeWebViewDuringStartup: { [weak browserManager] tab in
                 requireBrowserManager(

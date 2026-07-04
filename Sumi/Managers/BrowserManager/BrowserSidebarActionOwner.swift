@@ -17,7 +17,7 @@ final class BrowserSidebarActionOwner {
     func spaceForSidebarActions(in windowState: BrowserWindowState) -> Space? {
         let tabManager = dependencies.tabManager()
         if let windowSpaceId = windowState.currentSpaceId,
-           let windowSpace = tabManager.spaces.first(where: { $0.id == windowSpaceId }) {
+           let windowSpace = tabManager.spaceStateOwner.spaces.first(where: { $0.id == windowSpaceId }) {
             return windowSpace
         }
 

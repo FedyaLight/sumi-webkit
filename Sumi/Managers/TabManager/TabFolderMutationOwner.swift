@@ -3,28 +3,50 @@ import Foundation
 
 @MainActor
 final class TabFolderMutationOwner {
-    unowned let tabManager: TabManager
+    struct Dependencies {
+        let withStructuralUpdateTransactionFolder: @MainActor (@MainActor () -> TabFolder) -> TabFolder
+        let withStructuralUpdateTransactionOptionalFolder: @MainActor (@MainActor () -> TabFolder?) -> TabFolder?
+        let withStructuralUpdateTransactionBool: @MainActor (@MainActor () -> Bool) -> Bool
+        let withStructuralUpdateTransactionVoid: @MainActor (@MainActor () -> Void) -> Void
+        let spaceStateOwner: TabSpaceCollectionStateOwner
+        let spacePinnedStructureOwner: SpacePinnedStructureOwner
+        let folderCollectionStateOwner: TabFolderCollectionStateOwner
+        let structuralCollectionMutationOwner: TabStructuralCollectionMutationOwner
+        let shortcutPinCollectionStateOwner: ShortcutPinCollectionStateOwner
+        let tabCollectionMembershipOwner: TabCollectionMembershipOwner
+        let transientTabRegistryOwner: TabTransientTabRegistryOwner
+        let shortcutLiveTabOwner: ShortcutLiveTabOwner
+        let tabRemovalOwner: TabRemovalOwner
+        let shortcutPinCommandOwner: ShortcutPinCommandOwner
+        let runtimeContext: @MainActor () -> TabManagerRuntimeContext?
+        let markFoldersStructurallyDirty: @MainActor (UUID) -> Void
+        let markRegularTabsStructurallyDirty: @MainActor (UUID) -> Void
+        let requestStructuralPublish: @MainActor () -> Void
+        let scheduleStructuralPersistence: @MainActor () -> Void
+    }
 
-    init(tabManager: TabManager) {
-        self.tabManager = tabManager
+    private let dependencies: Dependencies
+
+    init(dependencies: Dependencies) {
+        self.dependencies = dependencies
     }
 
     func createFolder(for spaceId: UUID, name: String = "New Folder") -> TabFolder {
-        tabManager.withStructuralUpdateTransaction {
+        dependencies.withStructuralUpdateTransactionFolder {
             RuntimeDiagnostics.emit("📁 Creating folder for spaceId: \(spaceId.uuidString)")
             let folder = TabFolder(
                 name: name,
                 spaceId: spaceId,
-                color: tabManager.spaces.first(where: { $0.id == spaceId })?.color ?? .controlAccentColor
+                color: dependencies.spaceStateOwner.spaces.first(where: { $0.id == spaceId })?.color ?? .controlAccentColor
             )
-            folder.index = tabManager.spacePinnedStructureOwner.topLevelSpacePinnedItems(for: spaceId).count
+            folder.index = dependencies.spacePinnedStructureOwner.topLevelSpacePinnedItems(for: spaceId).count
             RuntimeDiagnostics.emit("   Created folder: \(folder.name) (id: \(folder.id.uuidString.prefix(8))...)")
 
-            var folders = tabManager.folderCollectionStateOwner.folders(for: spaceId)
+            var folders = dependencies.folderCollectionStateOwner.folders(for: spaceId)
             folders.append(folder)
-            tabManager.setFolders(folders, for: spaceId)
+            dependencies.structuralCollectionMutationOwner.setFolders(folders, for: spaceId)
 
-            tabManager.scheduleStructuralPersistence()
+            dependencies.scheduleStructuralPersistence()
             return folder
         }
     }
@@ -35,9 +57,9 @@ final class TabFolderMutationOwner {
         parentFolderId: UUID?,
         name: String = "New Folder"
     ) -> TabFolder? {
-        tabManager.withStructuralUpdateTransaction {
+        dependencies.withStructuralUpdateTransactionOptionalFolder {
             if let parentFolderId {
-                guard tabManager.folderCollectionStateOwner.spaceId(for: parentFolderId) == spaceId else {
+                guard dependencies.folderCollectionStateOwner.spaceId(for: parentFolderId) == spaceId else {
                     return nil
                 }
             }
@@ -46,72 +68,72 @@ final class TabFolderMutationOwner {
                 name: name,
                 spaceId: spaceId,
                 parentFolderId: parentFolderId,
-                color: tabManager.spaces.first(where: { $0.id == spaceId })?.color ?? .controlAccentColor,
+                color: dependencies.spaceStateOwner.spaces.first(where: { $0.id == spaceId })?.color ?? .controlAccentColor,
                 index: childItems(in: parentFolderId, spaceId: spaceId).count
             )
 
-            var folders = tabManager.folderCollectionStateOwner.folders(for: spaceId)
+            var folders = dependencies.folderCollectionStateOwner.folders(for: spaceId)
             folders.append(folder)
-            tabManager.setFolders(folders, for: spaceId)
-            tabManager.scheduleStructuralPersistence()
+            dependencies.structuralCollectionMutationOwner.setFolders(folders, for: spaceId)
+            dependencies.scheduleStructuralPersistence()
             return folder
         }
     }
 
     func renameFolder(_ folderId: UUID, newName: String) {
-        guard let folder = tabManager.folderCollectionStateOwner.folder(by: folderId) else { return }
+        guard let folder = dependencies.folderCollectionStateOwner.folder(by: folderId) else { return }
         folder.name = newName
-        tabManager.structuralPersistence.markFoldersStructurallyDirty(for: folder.spaceId)
-        tabManager.requestStructuralPublish()
-        tabManager.scheduleStructuralPersistence()
+        dependencies.markFoldersStructurallyDirty(folder.spaceId)
+        dependencies.requestStructuralPublish()
+        dependencies.scheduleStructuralPersistence()
     }
 
     func updateFolderIcon(_ folderId: UUID, icon: String) {
         let trimmedIcon = icon.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let folder = tabManager.folderCollectionStateOwner.folder(by: folderId) else { return }
+        guard let folder = dependencies.folderCollectionStateOwner.folder(by: folderId) else { return }
 
         folder.icon = SumiZenFolderIconCatalog.normalizedFolderIconValue(trimmedIcon)
-        tabManager.structuralPersistence.markFoldersStructurallyDirty(for: folder.spaceId)
-        tabManager.requestStructuralPublish()
-        tabManager.scheduleStructuralPersistence()
+        dependencies.markFoldersStructurallyDirty(folder.spaceId)
+        dependencies.requestStructuralPublish()
+        dependencies.scheduleStructuralPersistence()
     }
 
     func setFolder(_ folderId: UUID, open isOpen: Bool) {
-        tabManager.withStructuralUpdateTransaction {
-            guard let folder = tabManager.folderCollectionStateOwner.folder(by: folderId),
+        dependencies.withStructuralUpdateTransactionVoid {
+            guard let folder = dependencies.folderCollectionStateOwner.folder(by: folderId),
                   folder.isOpen != isOpen else {
                 return
             }
 
             folder.isOpen = isOpen
-            tabManager.structuralPersistence.markFoldersStructurallyDirty(for: folder.spaceId)
-            tabManager.requestStructuralPublish()
-            tabManager.scheduleStructuralPersistence()
+            dependencies.markFoldersStructurallyDirty(folder.spaceId)
+            dependencies.requestStructuralPublish()
+            dependencies.scheduleStructuralPersistence()
         }
     }
 
     func toggleFolderOpenState(_ folderId: UUID) {
-        guard let folder = tabManager.folderCollectionStateOwner.folder(by: folderId) else { return }
+        guard let folder = dependencies.folderCollectionStateOwner.folder(by: folderId) else { return }
         setFolder(folderId, open: !folder.isOpen)
     }
 
     func deleteFolder(_ folderId: UUID) {
-        tabManager.withStructuralUpdateTransaction {
+        dependencies.withStructuralUpdateTransactionVoid {
             RuntimeDiagnostics.emit("🗑️ Deleting folder: \(folderId.uuidString)")
 
-            guard let spaceId = tabManager.folderCollectionStateOwner.spaceId(for: folderId) else { return }
-            var folders = tabManager.folderCollectionStateOwner.folders(for: spaceId)
+            guard let spaceId = dependencies.folderCollectionStateOwner.spaceId(for: folderId) else { return }
+            var folders = dependencies.folderCollectionStateOwner.folders(for: spaceId)
             guard let folder = folders.first(where: { $0.id == folderId }) else { return }
 
             let deletedFolderIds = descendantFolderIds(including: folder.id, spaceId: spaceId)
             let parentFolderId = folder.parentFolderId
-            let existingPins = tabManager.spacePinnedShortcuts[spaceId] ?? []
+            let existingPins = dependencies.shortcutPinCollectionStateOwner.spacePinnedPins(for: spaceId)
             let deletedPins = existingPins.filter { pin in
                 guard let pinFolderId = pin.folderId else { return false }
                 return deletedFolderIds.contains(pinFolderId)
             }
             let deletedPinIds = Set(deletedPins.map(\.id))
-            let liveTabsToRemove = tabManager.allTabs()
+            let liveTabsToRemove = dependencies.tabCollectionMembershipOwner.allTabs()
                 .filter { tab in
                     guard let tabFolderId = tab.folderId,
                           deletedFolderIds.contains(tabFolderId) else {
@@ -132,53 +154,53 @@ final class TabFolderMutationOwner {
             }
 
             folders.removeAll { deletedFolderIds.contains($0.id) }
-            tabManager.setFolders(folders, for: spaceId)
+            dependencies.structuralCollectionMutationOwner.setFolders(folders, for: spaceId)
             applyChildItems(parentItems, in: parentFolderId, spaceId: spaceId)
 
             let remainingPins = existingPins.filter { pin in
                 guard let pinFolderId = pin.folderId else { return true }
                 return deletedFolderIds.contains(pinFolderId) == false
             }
-            tabManager.setSpacePinnedShortcuts(
-                tabManager.spacePinnedStructureOwner.normalizedSpacePinnedShortcuts(remainingPins),
+            dependencies.structuralCollectionMutationOwner.setSpacePinnedShortcuts(
+                dependencies.spacePinnedStructureOwner.normalizedSpacePinnedShortcuts(remainingPins),
                 for: spaceId
             )
 
             var cleanupResult = ShortcutPinSelectionCleanupResult()
             for pin in deletedPins {
-                tabManager.runtimeContext?.captureDeletedShortcutLauncher(pin)
-                let liveWindowIds = tabManager.transientShortcutTabsByWindow.compactMap { windowId, tabsByPin in
+                dependencies.runtimeContext()?.captureDeletedShortcutLauncher(pin)
+                let liveWindowIds = dependencies.transientTabRegistryOwner.transientShortcutTabsByWindow.compactMap { windowId, tabsByPin in
                     tabsByPin[pin.id] == nil ? nil : windowId
                 }
                 for windowId in liveWindowIds {
-                    let windowState = tabManager.runtimeContext?.windowState(for: windowId)
-                    if tabManager.deactivateShortcutLiveTab(pinId: pin.id, in: windowId),
+                    let windowState = dependencies.runtimeContext()?.windowState(for: windowId)
+                    if dependencies.shortcutLiveTabOwner.deactivateShortcutLiveTab(pinId: pin.id, in: windowId),
                        let windowState {
                         cleanupResult.recordCurrentSelectionCleared(in: windowState)
                     }
                 }
-                cleanupResult.merge(tabManager.shortcutLiveTabOwner.clearDeletedShortcutPinSelectionReferences(pin.id))
+                cleanupResult.merge(dependencies.shortcutLiveTabOwner.clearDeletedShortcutPinSelectionReferences(pin.id))
             }
 
             for tabId in liveTabsToRemove {
-                tabManager.removeTab(tabId)
+                dependencies.tabRemovalOwner.removeTab(tabId)
             }
 
             if cleanupResult.didClearCurrentSelection {
-                tabManager.runtimeContext?.validateWindowStates()
+                dependencies.runtimeContext()?.validateWindowStates()
             }
-            tabManager.shortcutLiveTabOwner.persistWindowSessionsForShortcutSelectionCleanup(cleanupResult)
-            tabManager.runtimeContext?.deleteLiveFolderState(forFolderIds: deletedFolderIds)
-            tabManager.scheduleStructuralPersistence()
+            dependencies.shortcutLiveTabOwner.persistWindowSessionsForShortcutSelectionCleanup(cleanupResult)
+            dependencies.runtimeContext()?.deleteLiveFolderState(forFolderIds: deletedFolderIds)
+            dependencies.scheduleStructuralPersistence()
         }
     }
 
     func ungroupFolder(_ folderId: UUID) {
-        tabManager.withStructuralUpdateTransaction {
+        dependencies.withStructuralUpdateTransactionVoid {
             RuntimeDiagnostics.emit("🗂️ Ungrouping folder: \(folderId.uuidString)")
 
-            guard let spaceId = tabManager.folderCollectionStateOwner.spaceId(for: folderId) else { return }
-            var folders = tabManager.folderCollectionStateOwner.folders(for: spaceId)
+            guard let spaceId = dependencies.folderCollectionStateOwner.spaceId(for: folderId) else { return }
+            var folders = dependencies.folderCollectionStateOwner.folders(for: spaceId)
             guard let index = folders.firstIndex(where: { $0.id == folderId }) else { return }
 
             let folder = folders[index]
@@ -193,27 +215,27 @@ final class TabFolderMutationOwner {
             }
 
             folders.remove(at: index)
-            tabManager.setFolders(folders, for: spaceId)
+            dependencies.structuralCollectionMutationOwner.setFolders(folders, for: spaceId)
             applyChildItems(parentItems, in: parentFolderId, spaceId: spaceId)
 
             var movedLiveTabsCount = 0
-            for tab in tabManager.allTabs() where tab.folderId == folderId {
+            for tab in dependencies.tabCollectionMembershipOwner.allTabs() where tab.folderId == folderId {
                 tab.folderId = parentFolderId
                 tab.isSpacePinned = true
                 movedLiveTabsCount += 1
             }
             if movedLiveTabsCount > 0 {
-                tabManager.structuralPersistence.markRegularTabsStructurallyDirty(for: spaceId)
+                dependencies.markRegularTabsStructurallyDirty(spaceId)
             }
 
-            tabManager.runtimeContext?.deleteLiveFolderState(forFolderIds: [folderId])
-            tabManager.scheduleStructuralPersistence()
+            dependencies.runtimeContext()?.deleteLiveFolderState(forFolderIds: [folderId])
+            dependencies.scheduleStructuralPersistence()
         }
     }
 
     func setAllFolders(open isOpen: Bool, in spaceId: UUID) {
-        tabManager.withStructuralUpdateTransaction {
-            let folders = tabManager.folderCollectionStateOwner.folders(for: spaceId)
+        dependencies.withStructuralUpdateTransactionVoid {
+            let folders = dependencies.folderCollectionStateOwner.folders(for: spaceId)
             guard folders.isEmpty == false else { return }
 
             var didChange = false
@@ -223,9 +245,9 @@ final class TabFolderMutationOwner {
             }
 
             if didChange {
-                tabManager.structuralPersistence.markFoldersStructurallyDirty(for: spaceId)
-                tabManager.requestStructuralPublish()
-                tabManager.scheduleStructuralPersistence()
+                dependencies.markFoldersStructurallyDirty(spaceId)
+                dependencies.requestStructuralPublish()
+                dependencies.scheduleStructuralPersistence()
             }
         }
     }
@@ -235,17 +257,17 @@ final class TabFolderMutationOwner {
     }
 
     func moveTabToFolder(tab: Tab, folderId: UUID) {
-        tabManager.withStructuralUpdateTransaction {
-            guard let targetFolder = tabManager.folderCollectionStateOwner.folder(by: folderId) else { return }
-            guard tabManager.runtimeContext?.isLiveFolder(folderId) != true else { return }
+        dependencies.withStructuralUpdateTransactionVoid {
+            guard let targetFolder = dependencies.folderCollectionStateOwner.folder(by: folderId) else { return }
+            guard dependencies.runtimeContext()?.isLiveFolder(folderId) != true else { return }
 
             targetFolder.isOpen = true
-            tabManager.structuralPersistence.markFoldersStructurallyDirty(for: targetFolder.spaceId)
-            let targetIndex = tabManager.folderPinnedPins(for: folderId, in: targetFolder.spaceId).count
+            dependencies.markFoldersStructurallyDirty(targetFolder.spaceId)
+            let targetIndex = dependencies.shortcutPinCollectionStateOwner.folderPinnedPins(for: folderId, in: targetFolder.spaceId).count
 
             if let shortcutId = tab.shortcutPinId,
-               let pin = tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: shortcutId) {
-                _ = tabManager.moveShortcutPin(
+               let pin = dependencies.shortcutPinCollectionStateOwner.shortcutPin(by: shortcutId) {
+                _ = dependencies.shortcutPinCommandOwner.moveShortcutPin(
                     pin,
                     to: .spacePinned,
                     profileId: nil,
@@ -256,7 +278,7 @@ final class TabFolderMutationOwner {
                 return
             }
 
-            _ = tabManager.convertTabToShortcutPin(
+            _ = dependencies.shortcutPinCommandOwner.convertTabToShortcutPin(
                 tab,
                 role: .spacePinned,
                 profileId: nil,
@@ -271,12 +293,12 @@ final class TabFolderMutationOwner {
     func handleFolderDragOperation(_ folder: TabFolder, operation: DragOperation) -> Bool {
         switch (operation.fromContainer, operation.toContainer) {
         case (.spacePinned(let fromSpaceId), .spacePinned(let toSpaceId)) where fromSpaceId == toSpaceId:
-            return tabManager.spacePinnedStructureOwner.reorderFolderInTopLevelPinned(folder, in: toSpaceId, to: operation.toIndex)
+            return dependencies.spacePinnedStructureOwner.reorderFolderInTopLevelPinned(folder, in: toSpaceId, to: operation.toIndex)
         case (.spacePinned(let fromSpaceId), .folder(let targetFolderId)) where fromSpaceId == folder.spaceId:
-            guard tabManager.runtimeContext?.isLiveFolder(targetFolderId) != true else {
+            guard dependencies.runtimeContext()?.isLiveFolder(targetFolderId) != true else {
                 return false
             }
-            guard let targetSpaceId = tabManager.folderCollectionStateOwner.spaceId(for: targetFolderId),
+            guard let targetSpaceId = dependencies.folderCollectionStateOwner.spaceId(for: targetFolderId),
                   targetSpaceId == folder.spaceId else {
                 return false
             }
@@ -286,8 +308,8 @@ final class TabFolderMutationOwner {
             return moveFolder(folder, toParentFolderId: nil, in: toSpaceId, to: operation.toIndex)
         case (.folder(let sourceParentId), .folder(let targetFolderId)):
             guard folder.parentFolderId == sourceParentId,
-                  tabManager.runtimeContext?.isLiveFolder(targetFolderId) != true,
-                  let targetSpaceId = tabManager.folderCollectionStateOwner.spaceId(for: targetFolderId),
+                  dependencies.runtimeContext()?.isLiveFolder(targetFolderId) != true,
+                  let targetSpaceId = dependencies.folderCollectionStateOwner.spaceId(for: targetFolderId),
                   targetSpaceId == folder.spaceId else {
                 return false
             }
@@ -298,17 +320,17 @@ final class TabFolderMutationOwner {
     }
 
     func alphabetizeFolderPins(_ folderId: UUID, in spaceId: UUID) {
-        tabManager.withStructuralUpdateTransaction {
-            let folderPins = tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: spaceId)
+        dependencies.withStructuralUpdateTransactionVoid {
+            let folderPins = dependencies.shortcutPinCollectionStateOwner.spacePinnedPins(for: spaceId)
                 .filter { $0.folderId == folderId }
                 .sorted { lhs, rhs in
                     lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
                 }
             guard !folderPins.isEmpty else { return }
-            tabManager.spacePinnedStructureOwner.withSpacePinnedShortcutGroup(for: spaceId, folderId: folderId) { pins in
+            dependencies.spacePinnedStructureOwner.withSpacePinnedShortcutGroup(for: spaceId, folderId: folderId) { pins in
                 pins = folderPins
             }
-            tabManager.scheduleStructuralPersistence()
+            dependencies.scheduleStructuralPersistence()
         }
     }
 
@@ -319,9 +341,9 @@ final class TabFolderMutationOwner {
         in spaceId: UUID,
         to targetIndex: Int
     ) -> Bool {
-        tabManager.withStructuralUpdateTransaction {
+        dependencies.withStructuralUpdateTransactionBool {
             if let parentFolderId {
-                guard tabManager.folderCollectionStateOwner.spaceId(for: parentFolderId) == spaceId else {
+                guard dependencies.folderCollectionStateOwner.spaceId(for: parentFolderId) == spaceId else {
                     return false
                 }
             }
@@ -343,7 +365,7 @@ final class TabFolderMutationOwner {
             if sourceParentId == parentFolderId {
                 targetItems = sourceItems
                 adjustedIndex = sourceIndex.map {
-                    tabManager.spacePinnedStructureOwner.adjustedSameContainerInsertionIndex(
+                    dependencies.spacePinnedStructureOwner.adjustedSameContainerInsertionIndex(
                         currentIndex: $0,
                         proposedIndex: targetIndex
                     )
@@ -361,7 +383,7 @@ final class TabFolderMutationOwner {
             if let parentFolderId {
                 openFolderIfNeeded(parentFolderId)
             }
-            tabManager.scheduleStructuralPersistence()
+            dependencies.scheduleStructuralPersistence()
             return true
         }
     }
@@ -379,9 +401,9 @@ final class TabFolderMutationOwner {
     }
 
     private func childItems(in parentFolderId: UUID?, spaceId: UUID) -> [FolderContainerItem] {
-        let folders = tabManager.folderCollectionStateOwner.childFolders(of: parentFolderId, in: spaceId)
+        let folders = dependencies.folderCollectionStateOwner.childFolders(of: parentFolderId, in: spaceId)
             .map { ($0.index, 0, FolderContainerItem.folder($0.id)) }
-        let pins = tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: spaceId)
+        let pins = dependencies.shortcutPinCollectionStateOwner.spacePinnedPins(for: spaceId)
             .filter { $0.folderId == parentFolderId }
             .map { ($0.index, 1, FolderContainerItem.shortcut($0.id)) }
 
@@ -399,12 +421,12 @@ final class TabFolderMutationOwner {
         in parentFolderId: UUID?,
         spaceId: UUID
     ) {
-        let folders = tabManager.folderCollectionStateOwner.folders(for: spaceId)
+        let folders = dependencies.folderCollectionStateOwner.folders(for: spaceId)
         let folderMap = Dictionary(uniqueKeysWithValues: folders.map { ($0.id, $0) })
-        let pinMap = Dictionary(uniqueKeysWithValues: (tabManager.spacePinnedShortcuts[spaceId] ?? []).map { ($0.id, $0) })
+        let pinMap = Dictionary(uniqueKeysWithValues: dependencies.shortcutPinCollectionStateOwner.spacePinnedPins(for: spaceId).map { ($0.id, $0) })
 
         var touchedPinIds: Set<UUID> = []
-        var rebuiltPins = tabManager.spacePinnedShortcuts[spaceId] ?? []
+        var rebuiltPins = dependencies.shortcutPinCollectionStateOwner.spacePinnedPins(for: spaceId)
 
         for (index, item) in items.enumerated() {
             switch item {
@@ -428,12 +450,12 @@ final class TabFolderMutationOwner {
             }
         }
 
-        tabManager.setFolders(folders, for: spaceId)
-        let normalizedPins = tabManager.spacePinnedStructureOwner.normalizedSpacePinnedShortcuts(rebuiltPins)
-        tabManager.setSpacePinnedShortcuts(normalizedPins, for: spaceId)
+        dependencies.structuralCollectionMutationOwner.setFolders(folders, for: spaceId)
+        let normalizedPins = dependencies.spacePinnedStructureOwner.normalizedSpacePinnedShortcuts(rebuiltPins)
+        dependencies.structuralCollectionMutationOwner.setSpacePinnedShortcuts(normalizedPins, for: spaceId)
         for pinId in touchedPinIds {
             if let updatedPin = normalizedPins.first(where: { $0.id == pinId }) {
-                tabManager.shortcutLiveTabOwner.updateTransientShortcutBindings(for: updatedPin)
+                dependencies.shortcutLiveTabOwner.updateTransientShortcutBindings(for: updatedPin)
             }
         }
     }
@@ -444,7 +466,7 @@ final class TabFolderMutationOwner {
         var seen: Set<UUID> = []
         while let id = currentId {
             guard seen.insert(id).inserted else { return true }
-            guard let folder = tabManager.folderCollectionStateOwner.folders(for: spaceId).first(where: { $0.id == id }) else {
+            guard let folder = dependencies.folderCollectionStateOwner.folders(for: spaceId).first(where: { $0.id == id }) else {
                 return false
             }
             if folder.parentFolderId == ancestorId {
@@ -456,7 +478,7 @@ final class TabFolderMutationOwner {
     }
 
     private func descendantFolderIds(including rootFolderId: UUID, spaceId: UUID) -> Set<UUID> {
-        let folders = tabManager.folderCollectionStateOwner.folders(for: spaceId)
+        let folders = dependencies.folderCollectionStateOwner.folders(for: spaceId)
         let childrenByParentId = Dictionary(grouping: folders, by: \.parentFolderId)
 
         var result: Set<UUID> = []
@@ -466,5 +488,57 @@ final class TabFolderMutationOwner {
             stack.append(contentsOf: (childrenByParentId[folderId] ?? []).map(\.id))
         }
         return result
+    }
+}
+
+extension TabFolderMutationOwner.Dependencies {
+    @MainActor
+    static func live(tabManager: TabManager) -> Self {
+        Self(
+            withStructuralUpdateTransactionFolder: { [weak tabManager] operation in
+                guard let tabManager else { return operation() }
+                return tabManager.withStructuralUpdateTransaction(operation)
+            },
+            withStructuralUpdateTransactionOptionalFolder: { [weak tabManager] operation in
+                guard let tabManager else { return operation() }
+                return tabManager.withStructuralUpdateTransaction(operation)
+            },
+            withStructuralUpdateTransactionBool: { [weak tabManager] operation in
+                guard let tabManager else { return operation() }
+                return tabManager.withStructuralUpdateTransaction(operation)
+            },
+            withStructuralUpdateTransactionVoid: { [weak tabManager] operation in
+                guard let tabManager else {
+                    operation()
+                    return
+                }
+                tabManager.withStructuralUpdateTransaction(operation)
+            },
+            spaceStateOwner: tabManager.spaceStateOwner,
+            spacePinnedStructureOwner: tabManager.spacePinnedStructureOwner,
+            folderCollectionStateOwner: tabManager.folderCollectionStateOwner,
+            structuralCollectionMutationOwner: tabManager.structuralCollectionMutationOwner,
+            shortcutPinCollectionStateOwner: tabManager.shortcutPinCollectionStateOwner,
+            tabCollectionMembershipOwner: tabManager.tabCollectionMembershipOwner,
+            transientTabRegistryOwner: tabManager.transientTabRegistryOwner,
+            shortcutLiveTabOwner: tabManager.shortcutLiveTabOwner,
+            tabRemovalOwner: tabManager.tabRemovalOwner,
+            shortcutPinCommandOwner: tabManager.shortcutPinCommandOwner,
+            runtimeContext: { [weak tabManager] in
+                tabManager?.runtimeContext
+            },
+            markFoldersStructurallyDirty: { [weak tabManager] spaceId in
+                tabManager?.structuralPersistence.markFoldersStructurallyDirty(for: spaceId)
+            },
+            markRegularTabsStructurallyDirty: { [weak tabManager] spaceId in
+                tabManager?.structuralPersistence.markRegularTabsStructurallyDirty(for: spaceId)
+            },
+            requestStructuralPublish: { [weak tabManager] in
+                tabManager?.requestStructuralPublish()
+            },
+            scheduleStructuralPersistence: { [weak tabManager] in
+                tabManager?.scheduleStructuralPersistence()
+            }
+        )
     }
 }

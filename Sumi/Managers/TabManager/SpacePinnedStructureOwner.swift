@@ -2,21 +2,49 @@ import Foundation
 
 @MainActor
 final class SpacePinnedStructureOwner {
-    unowned let tabManager: TabManager
+    typealias SpacePinnedTopLevelItem = SpacePinnedShortcutOrderOwner.TopLevelItem
 
-    init(tabManager: TabManager) {
-        self.tabManager = tabManager
+    enum FolderChildVisualItem: Hashable {
+        case folder(UUID)
+        case shortcut(UUID)
+        case splitGroup(UUID)
+
+        var id: UUID {
+            switch self {
+            case .folder(let id), .shortcut(let id), .splitGroup(let id):
+                return id
+            }
+        }
+    }
+
+    struct Dependencies {
+        let foldersBySpaceSnapshot: () -> [UUID: [TabFolder]]
+        let visualOrderingResolver: (UUID) -> SplitGroupVisualOrderingResolver
+        let childFolders: (UUID, UUID) -> [TabFolder]
+        let folderPinnedPins: (UUID, UUID) -> [ShortcutPin]
+        let spacePinnedShortcutsSnapshot: () -> [UUID: [ShortcutPin]]
+        let withStructuralUpdateTransaction: (@MainActor () -> Void) -> Void
+        let setFolders: ([TabFolder], UUID) -> Void
+        let setSpacePinnedShortcuts: ([ShortcutPin], UUID) -> Void
+        let spacePinnedPins: (UUID) -> [ShortcutPin]
+        let scheduleStructuralPersistence: () -> Void
+    }
+
+    private let dependencies: Dependencies
+
+    init(dependencies: Dependencies) {
+        self.dependencies = dependencies
     }
 
     func normalizedSpacePinnedShortcuts(_ items: [ShortcutPin]) -> [ShortcutPin] {
         SpacePinnedShortcutOrderOwner.normalizedShortcuts(
             items,
-            foldersBySpace: tabManager.foldersBySpace
+            foldersBySpace: dependencies.foldersBySpaceSnapshot()
         )
     }
 
-    func folderChildVisualItems(for folderId: UUID, in spaceId: UUID) -> [TabManager.FolderChildVisualItem] {
-        tabManager.splitGroupStructureOwner.visualOrderingResolver(for: spaceId).folderItems(for: folderId).map { item in
+    func folderChildVisualItems(for folderId: UUID, in spaceId: UUID) -> [FolderChildVisualItem] {
+        dependencies.visualOrderingResolver(spaceId).folderItems(for: folderId).map { item in
             switch item {
             case .folder(let id):
                 return .folder(id)
@@ -38,8 +66,8 @@ final class SpacePinnedStructureOwner {
             var nextVisited = visited
             nextVisited.insert(parentId)
 
-            let childFolders = tabManager.folderCollectionStateOwner.childFolders(of: parentId, in: spaceId)
-            let directPinsCount = tabManager.folderPinnedPins(for: parentId, in: spaceId).count
+            let childFolders = dependencies.childFolders(parentId, spaceId)
+            let directPinsCount = dependencies.folderPinnedPins(parentId, spaceId).count
             let nestedCount = childFolders.reduce(0) { total, childFolder in
                 total + 1 + countChildren(of: childFolder.id, visited: nextVisited)
             }
@@ -49,24 +77,24 @@ final class SpacePinnedStructureOwner {
         return countChildren(of: folderId, visited: [])
     }
 
-    func topLevelSpacePinnedItems(for spaceId: UUID) -> [TabManager.SpacePinnedTopLevelItem] {
+    func topLevelSpacePinnedItems(for spaceId: UUID) -> [SpacePinnedTopLevelItem] {
         SpacePinnedShortcutOrderOwner.topLevelItems(
             for: spaceId,
-            foldersBySpace: tabManager.foldersBySpace,
-            spacePinnedShortcuts: tabManager.spacePinnedShortcuts
+            foldersBySpace: dependencies.foldersBySpaceSnapshot(),
+            spacePinnedShortcuts: dependencies.spacePinnedShortcutsSnapshot()
         )
     }
 
     func applyTopLevelSpacePinnedOrder(
-        _ items: [TabManager.SpacePinnedTopLevelItem],
+        _ items: [SpacePinnedTopLevelItem],
         for spaceId: UUID
     ) {
-        tabManager.withStructuralUpdateTransaction {
+        dependencies.withStructuralUpdateTransaction {
             let plan = SpacePinnedShortcutOrderOwner.topLevelOrderPlan(
                 items,
                 for: spaceId,
-                foldersBySpace: tabManager.foldersBySpace,
-                spacePinnedShortcuts: tabManager.spacePinnedShortcuts
+                foldersBySpace: dependencies.foldersBySpaceSnapshot(),
+                spacePinnedShortcuts: dependencies.spacePinnedShortcutsSnapshot()
             )
             for placement in plan.folderPlacements {
                 placement.folder.index = placement.index
@@ -77,10 +105,10 @@ final class SpacePinnedStructureOwner {
                 if lhs.index != rhs.index { return lhs.index < rhs.index }
                 return lhs.id.uuidString < rhs.id.uuidString
             }
-            tabManager.setFolders(finalFolders, for: spaceId)
+            dependencies.setFolders(finalFolders, spaceId)
 
             let finalPins = normalizedSpacePinnedShortcuts(plan.folderPins + plan.orderedTopLevelPins)
-            tabManager.setSpacePinnedShortcuts(finalPins, for: spaceId)
+            dependencies.setSpacePinnedShortcuts(finalPins, spaceId)
         }
     }
 
@@ -95,7 +123,7 @@ final class SpacePinnedStructureOwner {
             at: targetIndex
         )
         applyTopLevelSpacePinnedOrder(items, for: spaceId)
-        return tabManager.spacePinnedShortcuts[spaceId]?.first(where: { $0.id == pin.id })
+        return dependencies.spacePinnedPins(spaceId).first(where: { $0.id == pin.id })
     }
 
     func adjustedSameContainerInsertionIndex(
@@ -125,7 +153,7 @@ final class SpacePinnedStructureOwner {
             return pin
         case .moved(let items):
             applyTopLevelSpacePinnedOrder(items, for: spaceId)
-            return tabManager.spacePinnedShortcuts[spaceId]?.first(where: { $0.id == pin.id })
+            return dependencies.spacePinnedPins(spaceId).first(where: { $0.id == pin.id })
         }
     }
 
@@ -144,7 +172,7 @@ final class SpacePinnedStructureOwner {
             return false
         case .moved(let items):
             applyTopLevelSpacePinnedOrder(items, for: spaceId)
-            tabManager.scheduleStructuralPersistence()
+            dependencies.scheduleStructuralPersistence()
             return true
         }
     }
@@ -154,32 +182,56 @@ final class SpacePinnedStructureOwner {
         folderId: UUID?,
         _ mutate: (inout [ShortcutPin]) -> Void
     ) {
-        let allPins = tabManager.spacePinnedShortcuts[spaceId] ?? []
+        let allPins = dependencies.spacePinnedPins(spaceId)
         let rebuilt = SpacePinnedShortcutOrderOwner.mutatingShortcutGroup(
             in: allPins,
             folderId: folderId,
-            foldersBySpace: tabManager.foldersBySpace,
+            foldersBySpace: dependencies.foldersBySpaceSnapshot(),
             mutate
         )
-        tabManager.setSpacePinnedShortcuts(rebuilt, for: spaceId)
+        dependencies.setSpacePinnedShortcuts(rebuilt, spaceId)
     }
 }
 
-@MainActor
-extension TabManager {
-    typealias SpacePinnedTopLevelItem = SpacePinnedShortcutOrderOwner.TopLevelItem
-
-    enum FolderChildVisualItem: Hashable {
-        case folder(UUID)
-        case shortcut(UUID)
-        case splitGroup(UUID)
-
-        var id: UUID {
-            switch self {
-            case .folder(let id), .shortcut(let id), .splitGroup(let id):
-                return id
+extension SpacePinnedStructureOwner.Dependencies {
+    @MainActor
+    static func live(tabManager: TabManager) -> Self {
+        Self(
+            foldersBySpaceSnapshot: { [weak tabManager] in
+                tabManager?.folderCollectionStateOwner.foldersBySpaceSnapshot() ?? [:]
+            },
+            visualOrderingResolver: { [weak tabManager] spaceId in
+                guard let tabManager else { preconditionFailure("TabManager dependency used after deallocation") }
+                return tabManager.splitGroupStructureOwner.visualOrderingResolver(for: spaceId)
+            },
+            childFolders: { [weak tabManager] parentId, spaceId in
+                tabManager?.folderCollectionStateOwner.childFolders(of: parentId, in: spaceId) ?? []
+            },
+            folderPinnedPins: { [weak tabManager] folderId, spaceId in
+                tabManager?.shortcutPinCollectionStateOwner.folderPinnedPins(for: folderId, in: spaceId) ?? []
+            },
+            spacePinnedShortcutsSnapshot: { [weak tabManager] in
+                tabManager?.shortcutPinCollectionStateOwner.spacePinnedShortcutsSnapshot() ?? [:]
+            },
+            withStructuralUpdateTransaction: { [weak tabManager] operation in
+                guard let tabManager else {
+                    operation()
+                    return
+                }
+                tabManager.withStructuralUpdateTransaction(operation)
+            },
+            setFolders: { [weak tabManager] folders, spaceId in
+                tabManager?.structuralCollectionMutationOwner.setFolders(folders, for: spaceId)
+            },
+            setSpacePinnedShortcuts: { [weak tabManager] pins, spaceId in
+                tabManager?.structuralCollectionMutationOwner.setSpacePinnedShortcuts(pins, for: spaceId)
+            },
+            spacePinnedPins: { [weak tabManager] spaceId in
+                tabManager?.shortcutPinCollectionStateOwner.spacePinnedPins(for: spaceId) ?? []
+            },
+            scheduleStructuralPersistence: { [weak tabManager] in
+                tabManager?.scheduleStructuralPersistence()
             }
-        }
+        )
     }
-
 }

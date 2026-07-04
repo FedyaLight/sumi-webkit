@@ -68,7 +68,7 @@ struct SpaceView: View {
 
     var spaceTitleActions: SpaceTitleActions {
         SpaceTitleActions(
-            canDeleteSpace: browserContext.tabManager.spaces.count > 1,
+            canDeleteSpace: browserContext.tabManager.spaceStateOwner.spaces.count > 1,
             renameSpace: { newName in
                 do {
                     try browserContext.tabManager.spaceLifecycleOwner.renameSpace(
@@ -87,7 +87,7 @@ struct SpaceView: View {
                 }
             },
             persistCommittedEmoji: { _ in
-                browserContext.tabManager.markAllSpacesStructurallyDirty()
+                browserContext.tabManager.structuralPersistence.markAllSpacesStructurallyDirty()
                 browserContext.tabManager.scheduleStructuralPersistence()
             },
             editSpace: {

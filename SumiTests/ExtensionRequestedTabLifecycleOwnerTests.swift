@@ -116,13 +116,13 @@ final class ExtensionRequestedTabLifecycleOwnerTests: XCTestCase {
 
     func testPopupCurrentTabDoesNotFallbackToGlobalTabManagerCurrentTab() throws {
         let harness = try makeProfileRoutingHarness()
-        let tab = harness.browserManager.tabManager.createNewTab(
+        let tab = harness.browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://example.com/current",
             in: harness.spaceA,
             activate: true
         )
 
-        XCTAssertEqual(harness.browserManager.tabManager.currentTab?.id, tab.id)
+        XCTAssertEqual(harness.browserManager.tabManager.selectionStateOwner.currentTab?.id, tab.id)
         XCTAssertNil(harness.browserManager.extensionBridgeAdapter.currentExtensionTabForPopup())
     }
 
@@ -136,15 +136,15 @@ final class ExtensionRequestedTabLifecycleOwnerTests: XCTestCase {
         windowRegistry.register(windowState)
         windowRegistry.setActive(windowState)
 
-        let tab = harness.browserManager.tabManager.createTransientExtensionTab(
+        let tab = harness.browserManager.tabManager.transientWebKitTabLifecycleOwner.createTransientExtensionTab(
             url: "safari-web-extension://extension-id/popup.html",
             in: harness.spaceA,
             webExtensionContextOverride: nil
         )
 
-        XCTAssertTrue(harness.browserManager.tabManager.isTransientExtensionTab(tab))
+        XCTAssertTrue(harness.browserManager.tabManager.transientWebKitTabLifecycleOwner.isTransientExtensionTab(tab))
         XCTAssertFalse(
-            harness.browserManager.tabManager.tabsBySpace[harness.spaceA.id]?.contains { $0.id == tab.id }
+            harness.browserManager.tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[harness.spaceA.id]?.contains { $0.id == tab.id }
                 ?? false
         )
         XCTAssertEqual(
@@ -194,8 +194,8 @@ final class ExtensionRequestedTabLifecycleOwnerTests: XCTestCase {
 
         let spaceA = Space(name: "Space A", profileId: profileA.id)
         let spaceB = Space(name: "Space B", profileId: profileB.id)
-        browserManager.tabManager.spaces = [spaceA, spaceB]
-        browserManager.tabManager.currentSpace = spaceA
+        browserManager.tabManager.spaceStateOwner.replaceSpaces([spaceA, spaceB])
+        browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(spaceA)
         manager.attach(browserManager: browserManager)
 
         return ProfileRoutingHarness(

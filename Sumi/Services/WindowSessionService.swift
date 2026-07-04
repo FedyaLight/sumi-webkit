@@ -137,7 +137,7 @@ enum SidebarUITestShortcutDriftOverride {
         }
 
         let liveTab = runtime.tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pin.id, in: windowState.id)
-            ?? runtime.tabManager.activateShortcutPin(
+            ?? runtime.tabManager.shortcutLiveTabOwner.activateShortcutPin(
                 pin,
                 in: windowState.id,
                 currentSpaceId: pin.spaceId ?? windowState.currentSpaceId
@@ -368,7 +368,7 @@ final class WindowSessionService {
 
         for (_, windowState) in windowRegistry.windows {
             if windowState.currentSpaceId == nil
-                || runtime.tabManager.spaces.contains(where: { $0.id == windowState.currentSpaceId }) == false {
+                || runtime.tabManager.spaceStateOwner.spaces.contains(where: { $0.id == windowState.currentSpaceId }) == false {
                 windowState.currentSpaceId = resolvedFallbackSpaceId(
                     for: windowState,
                     runtime: runtime
@@ -381,7 +381,7 @@ final class WindowSessionService {
             } else if materializeRememberedSpaceShortcut(in: windowState, runtime: runtime) {
                 // Restored from the per-space launcher selection snapshot.
             } else if let currentTabId = windowState.currentTabId,
-                      runtime.tabManager.allTabs().contains(where: { $0.id == currentTabId }) == false {
+                      runtime.tabManager.tabCollectionMembershipOwner.allTabs().contains(where: { $0.id == currentTabId }) == false {
                 windowState.currentTabId = nil
             }
 
@@ -460,7 +460,7 @@ final class WindowSessionService {
         seededProfileId: UUID? = nil
     ) -> UUID? {
         if let windowSpaceId = windowState.currentSpaceId,
-           runtime.tabManager.spaces.contains(where: { $0.id == windowSpaceId }) {
+           runtime.tabManager.spaceStateOwner.spaces.contains(where: { $0.id == windowSpaceId }) {
             return windowSpaceId
         }
 
@@ -487,8 +487,8 @@ final class WindowSessionService {
         runtime: WindowSessionRuntime
     ) -> UUID? {
         guard let currentTabId = windowState.currentTabId,
-              let spaceId = runtime.tabManager.tab(for: currentTabId)?.spaceId,
-              runtime.tabManager.spaces.contains(where: { $0.id == spaceId })
+              let spaceId = runtime.tabManager.tabCollectionMembershipOwner.tab(for: currentTabId)?.spaceId,
+              runtime.tabManager.spaceStateOwner.spaces.contains(where: { $0.id == spaceId })
         else {
             return nil
         }
@@ -500,7 +500,7 @@ final class WindowSessionService {
         for profileId: UUID,
         runtime: WindowSessionRuntime
     ) -> UUID? {
-        runtime.tabManager.spaces.first(where: { $0.profileId == profileId })?.id
+        runtime.tabManager.spaceStateOwner.spaces.first(where: { $0.profileId == profileId })?.id
     }
 
     func applyWindowSessionSnapshot(
@@ -634,7 +634,7 @@ final class WindowSessionService {
         runtime: WindowSessionRuntime
     ) {
         let liveTab = runtime.tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pin.id, in: windowState.id)
-            ?? runtime.tabManager.activateShortcutPin(
+            ?? runtime.tabManager.shortcutLiveTabOwner.activateShortcutPin(
                 pin,
                 in: windowState.id,
                 currentSpaceId: windowState.currentSpaceId
@@ -657,7 +657,7 @@ final class WindowSessionService {
         source: String
     ) {
         if let spaceId = windowState.currentSpaceId,
-           let space = runtime.tabManager.spaces.first(where: { $0.id == spaceId }) {
+           let space = runtime.tabManager.spaceStateOwner.spaces.first(where: { $0.id == spaceId }) {
             windowState.currentProfileId = space.profileId
             runtime.commitWorkspaceTheme(space.workspaceTheme, for: windowState)
             return
@@ -826,7 +826,7 @@ final class WindowSessionService {
         guard let group = windowState.pendingSessionLegacySplitGroup else { return }
         guard runtime.tabManager.hasLoadedInitialData else { return }
 
-        guard group.tabIds.allSatisfy({ runtime.tabManager.tab(for: $0) != nil }) else {
+        guard group.tabIds.allSatisfy({ runtime.tabManager.tabCollectionMembershipOwner.tab(for: $0) != nil }) else {
             windowState.pendingSessionLegacySplitGroup = nil
             if windowState.pendingSessionSplitGroupId == group.id {
                 windowState.pendingSessionSplitGroupId = nil

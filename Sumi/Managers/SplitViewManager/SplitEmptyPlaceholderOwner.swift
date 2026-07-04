@@ -61,7 +61,7 @@ final class SplitEmptyPlaceholderOwner {
 
         tabManager.splitGroupStructureOwner.upsertSplitGroup(updated)
         if placeholderTabId != resolved.tab.id {
-            tabManager.removeTab(placeholderTabId)
+            tabManager.tabRemovalOwner.removeTab(placeholderTabId)
         }
         selectTab(resolved.tab, windowState)
         notifyChanged(windowState.id)
@@ -71,10 +71,10 @@ final class SplitEmptyPlaceholderOwner {
     @discardableResult
     func cancelPlaceholder(in windowState: BrowserWindowState) -> Bool {
         guard let placeholderTabId = placeholderTabIdsByWindow.removeValue(forKey: windowState.id),
-              tabManager()?.tab(for: placeholderTabId) != nil
+              tabManager()?.tabCollectionMembershipOwner.tab(for: placeholderTabId) != nil
         else { return false }
 
-        tabManager()?.removeTab(placeholderTabId)
+        tabManager()?.tabRemovalOwner.removeTab(placeholderTabId)
         notifyChanged(windowState.id)
         return true
     }

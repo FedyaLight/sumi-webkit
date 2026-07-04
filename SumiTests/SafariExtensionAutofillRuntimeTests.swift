@@ -145,9 +145,9 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
         await manager.ensureContentScriptContextsLoaded(for: profile.id)
         manager.extensionsLoaded = true
 
-        let tab = browserManager.tabManager.createNewTab(
+        let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://example.com",
-            in: browserManager.tabManager.currentSpace,
+            in: browserManager.tabManager.spaceStateOwner.currentSpace,
             activate: false
         )
         tab.profileId = profile.id

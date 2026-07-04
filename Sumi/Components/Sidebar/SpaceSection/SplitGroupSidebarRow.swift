@@ -70,7 +70,7 @@ enum SplitGroupSidebarModel {
     @MainActor
     static func items(for group: SplitGroup, tabManager: TabManager) -> [SplitGroupSidebarItem] {
         group.tabIds.compactMap { id in
-            if let tab = tabManager.tab(for: id) {
+            if let tab = tabManager.tabCollectionMembershipOwner.tab(for: id) {
                 return .tab(tab)
             }
             if let pinId = group.member(for: id)?.pinId,

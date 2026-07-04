@@ -19,13 +19,13 @@ final class BrowserRecentlyClosedRestoreOwnerTests: XCTestCase {
 
         harness.owner.reopenRecentlyClosedItem(.tab(tabState))
 
-        let restored = try XCTUnwrap(harness.tabManager.tabs(in: harness.currentProfileSpace).first)
+        let restored = try XCTUnwrap(harness.tabManager.regularTabCollectionOwner.tabs(in: harness.currentProfileSpace).first)
         XCTAssertEqual(restored.url, tabState.url)
         XCTAssertEqual(restored.name, "Closed")
         XCTAssertEqual(restored.restoredCanGoBack, true)
         XCTAssertEqual(restored.restoredCanGoForward, false)
-        XCTAssertTrue(harness.tabManager.tabs(in: harness.fallbackSpace).isEmpty)
-        XCTAssertEqual(harness.tabManager.currentTab?.id, restored.id)
+        XCTAssertTrue(harness.tabManager.regularTabCollectionOwner.tabs(in: harness.fallbackSpace).isEmpty)
+        XCTAssertEqual(harness.tabManager.selectionStateOwner.currentTab?.id, restored.id)
     }
 
     func testReopenClosedTabWithoutSourceOrWindowDoesNotUseGlobalFallback() throws {
@@ -45,9 +45,9 @@ final class BrowserRecentlyClosedRestoreOwnerTests: XCTestCase {
 
         harness.owner.reopenRecentlyClosedItem(item)
 
-        XCTAssertTrue(harness.tabManager.tabs(in: harness.currentProfileSpace).isEmpty)
-        XCTAssertTrue(harness.tabManager.tabs(in: harness.fallbackSpace).isEmpty)
-        XCTAssertNil(harness.tabManager.currentTab)
+        XCTAssertTrue(harness.tabManager.regularTabCollectionOwner.tabs(in: harness.currentProfileSpace).isEmpty)
+        XCTAssertTrue(harness.tabManager.regularTabCollectionOwner.tabs(in: harness.fallbackSpace).isEmpty)
+        XCTAssertNil(harness.tabManager.selectionStateOwner.currentTab)
         XCTAssertEqual(harness.recentlyClosedManager.mostRecentItem?.id, item.id)
         XCTAssertFalse(harness.startupRestore.didConsumeRestoreOffer)
     }
@@ -200,10 +200,10 @@ final class BrowserRecentlyClosedRestoreOwnerTests: XCTestCase {
 
         browserManager.profileManager.profiles = [fallbackProfile, currentProfile]
         browserManager.currentProfile = currentProfile
-        browserManager.tabManager.spaces = [fallbackSpace, currentProfileSpace]
-        browserManager.tabManager.setTabs([], for: fallbackSpace.id)
-        browserManager.tabManager.setTabs([], for: currentProfileSpace.id)
-        browserManager.tabManager.currentSpace = fallbackSpace
+        browserManager.tabManager.spaceStateOwner.replaceSpaces([fallbackSpace, currentProfileSpace])
+        browserManager.tabManager.structuralCollectionMutationOwner.setTabs([], for: fallbackSpace.id)
+        browserManager.tabManager.structuralCollectionMutationOwner.setTabs([], for: currentProfileSpace.id)
+        browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(fallbackSpace)
 
         let owner = BrowserRecentlyClosedRestoreOwner(
             dependencies: BrowserRecentlyClosedRestoreOwner.Dependencies(
@@ -219,7 +219,7 @@ final class BrowserRecentlyClosedRestoreOwnerTests: XCTestCase {
                 tabManager: { browserManager.tabManager },
                 profileManager: { browserManager.profileManager },
                 space: { spaceId in
-                    browserManager.tabManager.spaces.first { $0.id == spaceId }
+                    browserManager.tabManager.spaceStateOwner.spaces.first { $0.id == spaceId }
                 },
                 selectTab: { _, _ in /* No-op. */ }
             )

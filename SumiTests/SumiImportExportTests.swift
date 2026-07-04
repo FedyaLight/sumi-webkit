@@ -341,9 +341,9 @@ final class SumiImportExportTests: XCTestCase {
             launchURL: URL(string: "https://nested.example.com")!,
             title: "Nested"
         )
-        browserManager.tabManager.spaces = [space]
-        browserManager.tabManager.setFolders([parent, child], for: space.id)
-        browserManager.tabManager.setSpacePinnedShortcuts([pin], for: space.id)
+        browserManager.tabManager.spaceStateOwner.replaceSpaces([space])
+        browserManager.tabManager.structuralCollectionMutationOwner.setFolders([parent, child], for: space.id)
+        browserManager.tabManager.structuralCollectionMutationOwner.setSpacePinnedShortcuts([pin], for: space.id)
 
         let payload = try SumiTransferExportService().exportBrowser2ZenDocument(from: browserManager)
         let document = try JSONDecoder().decode(SumiBrowser2ZenDocument.self, from: payload)

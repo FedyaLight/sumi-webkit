@@ -219,7 +219,7 @@ class BrowserManager: ObservableObject {
     let shellRuntime = BrowserShellRuntime()
     lazy var webViewRoutingService = BrowserWebViewRoutingService(
         tabLookup: { [weak self] tabId in
-            self?.tabManager.tab(for: tabId)
+            self?.tabManager.tabCollectionMembershipOwner.tab(for: tabId)
         },
         coordinatorProvider: { [weak self] in
             guard let self else {

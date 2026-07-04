@@ -58,3 +58,35 @@ final class RegularTabCollectionStateOwnerTests: XCTestCase {
         )
     }
 }
+
+@MainActor
+final class TabSelectionStateOwnerTests: XCTestCase {
+    func testReplaceAndClearCurrentTabByIdentity() {
+        let owner = TabSelectionStateOwner()
+        let first = Self.makeTab(index: 0)
+        let second = Self.makeTab(index: 1)
+
+        owner.replaceCurrentTab(first)
+
+        XCTAssertEqual(owner.currentTab?.id, first.id)
+        XCTAssertEqual(owner.currentTabId, first.id)
+
+        owner.clearCurrentTabIfMatches(second.id)
+
+        XCTAssertEqual(owner.currentTab?.id, first.id)
+
+        owner.clearCurrentTabIfMatches(first.id)
+
+        XCTAssertNil(owner.currentTab)
+        XCTAssertNil(owner.currentTabId)
+    }
+
+    private static func makeTab(index: Int) -> Tab {
+        Tab(
+            url: URL(string: "https://example.com/selection-\(index)")!,
+            name: "Selection \(index)",
+            index: index,
+            loadsCachedFaviconOnInit: false
+        )
+    }
+}

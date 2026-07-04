@@ -185,9 +185,9 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         let windowRegistry = WindowRegistry()
         browserManager.windowRegistry = windowRegistry
 
-        let space = browserManager.tabManager.currentSpace
+        let space = browserManager.tabManager.spaceStateOwner.currentSpace
             ?? browserManager.tabManager.spaceLifecycleOwner.createSpace(name: "Detached Runtime Source")
-        let activeTab = browserManager.tabManager.createNewTab(
+        let activeTab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://active.example",
             in: space,
             activate: true
@@ -210,7 +210,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         detachedTab.openContextMenuURLInForegroundTab(targetURL)
 
         XCTAssertFalse(
-            browserManager.tabManager.allTabs().contains { $0.url == targetURL },
+            browserManager.tabManager.tabCollectionMembershipOwner.allTabs().contains { $0.url == targetURL },
             "Detached tab runtime actions must not retarget through the active window."
         )
         XCTAssertEqual(windowState.currentTabId, activeTab.id)
@@ -225,15 +225,15 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         let windowRegistry = WindowRegistry()
         browserManager.windowRegistry = windowRegistry
 
-        let selectedSpace = browserManager.tabManager.currentSpace
+        let selectedSpace = browserManager.tabManager.spaceStateOwner.currentSpace
             ?? browserManager.tabManager.spaceLifecycleOwner.createSpace(name: "Selected")
-        let selectedTab = browserManager.tabManager.createNewTab(
+        let selectedTab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://selected.example",
             in: selectedSpace,
             activate: true
         )
         let staleSpace = browserManager.tabManager.spaceLifecycleOwner.createSpace(name: "Stale")
-        let staleGlobalTab = browserManager.tabManager.createNewTab(
+        let staleGlobalTab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://stale.example",
             in: staleSpace,
             activate: false
@@ -245,7 +245,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         windowState.currentTabId = selectedTab.id
         windowRegistry.register(windowState)
         windowRegistry.setActive(windowState)
-        browserManager.tabManager.currentTab = staleGlobalTab
+        browserManager.tabManager.selectionStateOwner.replaceCurrentTab(staleGlobalTab)
 
         let context = browserManager.tabSuspensionService.suspensionEvaluationContext(
             policy: TabSuspensionPolicy(memoryMode: .balanced)
@@ -259,9 +259,9 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         let windowRegistry = WindowRegistry()
         browserManager.windowRegistry = windowRegistry
 
-        let space = browserManager.tabManager.currentSpace
+        let space = browserManager.tabManager.spaceStateOwner.currentSpace
             ?? browserManager.tabManager.spaceLifecycleOwner.createSpace(name: "Compositor Runtime Wiring")
-        let tab = browserManager.tabManager.createNewTab(
+        let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://example.com/compositor",
             in: space,
             activate: true
@@ -283,9 +283,9 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         let windowRegistry = WindowRegistry()
         browserManager.windowRegistry = windowRegistry
 
-        let space = browserManager.tabManager.currentSpace
+        let space = browserManager.tabManager.spaceStateOwner.currentSpace
             ?? browserManager.tabManager.spaceLifecycleOwner.createSpace(name: "Runtime Wiring")
-        let tab = browserManager.tabManager.createNewTab(
+        let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://example.com",
             in: space,
             activate: true
@@ -302,9 +302,9 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
     }
 
     private func tabManagerRuntimeCanPrepareCreatedTabs(_ browserManager: BrowserManager) -> Bool {
-        let space = browserManager.tabManager.currentSpace
+        let space = browserManager.tabManager.spaceStateOwner.currentSpace
             ?? browserManager.tabManager.spaceLifecycleOwner.createSpace(name: "TabManager Runtime Wiring")
-        let tab = browserManager.tabManager.createNewTab(
+        let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://example.com/tab-manager-runtime",
             in: space,
             activate: false
@@ -318,9 +318,9 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         browserManager.windowRegistry = windowRegistry
         browserManager.webViewCoordinator = coordinator
 
-        let space = browserManager.tabManager.currentSpace
+        let space = browserManager.tabManager.spaceStateOwner.currentSpace
             ?? browserManager.tabManager.spaceLifecycleOwner.createSpace(name: "Download Runtime Wiring")
-        let tab = browserManager.tabManager.createNewTab(
+        let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://example.com/download",
             in: space,
             activate: true
@@ -355,9 +355,9 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         browserManager.webViewCoordinator = coordinator
 
         let profileId = UUID()
-        let space = browserManager.tabManager.currentSpace
+        let space = browserManager.tabManager.spaceStateOwner.currentSpace
             ?? browserManager.tabManager.spaceLifecycleOwner.createSpace(name: "Boost Runtime Wiring", profileId: profileId)
-        let tab = browserManager.tabManager.createNewTab(
+        let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://example.com/boost",
             in: space,
             activate: true
@@ -389,9 +389,9 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         let windowRegistry = WindowRegistry()
         browserManager.windowRegistry = windowRegistry
 
-        let space = browserManager.tabManager.currentSpace
+        let space = browserManager.tabManager.spaceStateOwner.currentSpace
             ?? browserManager.tabManager.spaceLifecycleOwner.createSpace(name: "Auxiliary Runtime Wiring")
-        let sourceTab = browserManager.tabManager.createNewTab(
+        let sourceTab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://example.com/source",
             in: space,
             activate: true
@@ -425,9 +425,9 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
     }
 
     private func glanceRuntimeCanPreparePreviewTabs(_ browserManager: BrowserManager) -> Bool {
-        let space = browserManager.tabManager.currentSpace
+        let space = browserManager.tabManager.spaceStateOwner.currentSpace
             ?? browserManager.tabManager.spaceLifecycleOwner.createSpace(name: "Glance Runtime Wiring")
-        let sourceTab = browserManager.tabManager.createNewTab(
+        let sourceTab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://example.com/glance-source",
             in: space,
             activate: true
@@ -567,9 +567,9 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         browserManager.webViewCoordinator = coordinator
         await browserManager.drainProtectionRuntimeTasksForTests()
 
-        let space = browserManager.tabManager.currentSpace
+        let space = browserManager.tabManager.spaceStateOwner.currentSpace
             ?? browserManager.tabManager.spaceLifecycleOwner.createSpace(name: "Visible WebView Runtime")
-        let tab = browserManager.tabManager.createNewTab(
+        let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://example.com/visible-webview",
             in: space,
             activate: true

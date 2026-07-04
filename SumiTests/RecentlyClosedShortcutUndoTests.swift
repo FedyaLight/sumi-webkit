@@ -6,18 +6,18 @@ import XCTest
 final class RecentlyClosedShortcutUndoTests: XCTestCase {
     func testUndoCloseTabRestoresRegularTab() {
         let harness = makeHarness()
-        let tab = harness.browserManager.tabManager.createNewTab(
+        let tab = harness.browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://regular.example",
             in: harness.space
         )
         harness.windowState.currentTabId = tab.id
 
         harness.browserManager.tabLifecycleService.closeOrchestration.closeTab(tab, in: harness.windowState)
-        XCTAssertTrue(harness.browserManager.tabManager.tabs(in: harness.space).isEmpty)
+        XCTAssertTrue(harness.browserManager.tabManager.regularTabCollectionOwner.tabs(in: harness.space).isEmpty)
 
         harness.browserManager.recentlyClosedRestoreOwner.reopenMostRecentClosedItem()
 
-        let restored = harness.browserManager.tabManager.tabs(in: harness.space).first
+        let restored = harness.browserManager.tabManager.regularTabCollectionOwner.tabs(in: harness.space).first
         XCTAssertEqual(restored?.url, URL(string: "https://regular.example")!)
         XCTAssertEqual(harness.windowState.currentTabId, restored?.id)
     }
@@ -25,7 +25,7 @@ final class RecentlyClosedShortcutUndoTests: XCTestCase {
     func testUndoCloseTabRestoresSpacePinnedLiveInstanceWhenLauncherStillExists() throws {
         let harness = makeHarness()
         let pin = try insertSpacePinnedLauncher(in: harness)
-        let liveTab = harness.browserManager.tabManager.activateShortcutPin(
+        let liveTab = harness.browserManager.tabManager.shortcutLiveTabOwner.activateShortcutPin(
             pin,
             in: harness.windowState.id,
             currentSpaceId: harness.space.id
@@ -58,7 +58,7 @@ final class RecentlyClosedShortcutUndoTests: XCTestCase {
     func testUndoCloseTabRestoresLauncherWhenSpacePinnedLauncherWasDeletedAfterLiveClose() throws {
         let harness = makeHarness()
         let pin = try insertSpacePinnedLauncher(in: harness)
-        let liveTab = harness.browserManager.tabManager.activateShortcutPin(
+        let liveTab = harness.browserManager.tabManager.shortcutLiveTabOwner.activateShortcutPin(
             pin,
             in: harness.windowState.id,
             currentSpaceId: harness.space.id
@@ -106,7 +106,7 @@ final class RecentlyClosedShortcutUndoTests: XCTestCase {
     func testClosingLastRegularTabReturnsToPreviouslySelectedEssentialLiveInstance() throws {
         let harness = makeHarness()
         let pin = try insertEssentialLauncher(in: harness)
-        let essentialLiveTab = harness.browserManager.tabManager.activateShortcutPin(
+        let essentialLiveTab = harness.browserManager.tabManager.shortcutLiveTabOwner.activateShortcutPin(
             pin,
             in: harness.windowState.id,
             currentSpaceId: harness.space.id
@@ -114,7 +114,7 @@ final class RecentlyClosedShortcutUndoTests: XCTestCase {
 
         harness.browserManager.selectTab(essentialLiveTab, in: harness.windowState)
 
-        let regularTab = harness.browserManager.tabManager.createNewTab(
+        let regularTab = harness.browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://regular.example",
             in: harness.space
         )
@@ -138,21 +138,21 @@ final class RecentlyClosedShortcutUndoTests: XCTestCase {
 
     func testClosingRegularTabPrefersPreviousEssentialOverOlderRegularHistory() throws {
         let harness = makeHarness()
-        let olderRegularTab = harness.browserManager.tabManager.createNewTab(
+        let olderRegularTab = harness.browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://older-regular.example",
             in: harness.space
         )
         harness.browserManager.selectTab(olderRegularTab, in: harness.windowState)
 
         let pin = try insertEssentialLauncher(in: harness)
-        let essentialLiveTab = harness.browserManager.tabManager.activateShortcutPin(
+        let essentialLiveTab = harness.browserManager.tabManager.shortcutLiveTabOwner.activateShortcutPin(
             pin,
             in: harness.windowState.id,
             currentSpaceId: harness.space.id
         )
         harness.browserManager.selectTab(essentialLiveTab, in: harness.windowState)
 
-        let currentRegularTab = harness.browserManager.tabManager.createNewTab(
+        let currentRegularTab = harness.browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://current-regular.example",
             in: harness.space
         )
@@ -162,22 +162,22 @@ final class RecentlyClosedShortcutUndoTests: XCTestCase {
 
         XCTAssertEqual(harness.windowState.currentTabId, essentialLiveTab.id)
         XCTAssertEqual(harness.windowState.currentShortcutPinId, pin.id)
-        XCTAssertNotNil(harness.browserManager.tabManager.tab(for: olderRegularTab.id))
+        XCTAssertNotNil(harness.browserManager.tabManager.tabCollectionMembershipOwner.tab(for: olderRegularTab.id))
     }
 
     func testClosingRegularTabUsesRecentRegularFallbackBeforeIndexNeighbor() {
         let harness = makeHarness()
-        let closingTab = harness.browserManager.tabManager.createNewTab(
+        let closingTab = harness.browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://closing.example",
             in: harness.space,
             activate: false
         )
-        let neighborTab = harness.browserManager.tabManager.createNewTab(
+        let neighborTab = harness.browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://neighbor.example",
             in: harness.space,
             activate: false
         )
-        let recentTab = harness.browserManager.tabManager.createNewTab(
+        let recentTab = harness.browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://recent.example",
             in: harness.space,
             activate: false
@@ -193,22 +193,22 @@ final class RecentlyClosedShortcutUndoTests: XCTestCase {
         harness.browserManager.tabLifecycleService.closeOrchestration.closeTab(closingTab, in: harness.windowState)
 
         XCTAssertEqual(harness.windowState.currentTabId, recentTab.id)
-        XCTAssertNil(harness.browserManager.tabManager.tab(for: closingTab.id))
+        XCTAssertNil(harness.browserManager.tabManager.tabCollectionMembershipOwner.tab(for: closingTab.id))
     }
 
     func testClosingRegularTabUsesNextIndexNeighborWhenHistoryDoesNotMatch() {
         let harness = makeHarness()
-        let previousTab = harness.browserManager.tabManager.createNewTab(
+        let previousTab = harness.browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://previous.example",
             in: harness.space,
             activate: false
         )
-        let closingTab = harness.browserManager.tabManager.createNewTab(
+        let closingTab = harness.browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://closing.example",
             in: harness.space,
             activate: false
         )
-        let nextTab = harness.browserManager.tabManager.createNewTab(
+        let nextTab = harness.browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://next.example",
             in: harness.space,
             activate: false
@@ -226,14 +226,14 @@ final class RecentlyClosedShortcutUndoTests: XCTestCase {
         harness.browserManager.tabLifecycleService.closeOrchestration.closeTab(closingTab, in: harness.windowState)
 
         XCTAssertEqual(harness.windowState.currentTabId, nextTab.id)
-        XCTAssertNotNil(harness.browserManager.tabManager.tab(for: previousTab.id))
-        XCTAssertNil(harness.browserManager.tabManager.tab(for: closingTab.id))
+        XCTAssertNotNil(harness.browserManager.tabManager.tabCollectionMembershipOwner.tab(for: previousTab.id))
+        XCTAssertNil(harness.browserManager.tabManager.tabCollectionMembershipOwner.tab(for: closingTab.id))
     }
 
     func testUnloadingSpacePinnedLiveTabReturnsToPreviouslySelectedEssentialLiveInstance() throws {
         let harness = makeHarness()
         let essentialPin = try insertEssentialLauncher(in: harness)
-        let essentialLiveTab = harness.browserManager.tabManager.activateShortcutPin(
+        let essentialLiveTab = harness.browserManager.tabManager.shortcutLiveTabOwner.activateShortcutPin(
             essentialPin,
             in: harness.windowState.id,
             currentSpaceId: harness.space.id
@@ -241,7 +241,7 @@ final class RecentlyClosedShortcutUndoTests: XCTestCase {
         harness.browserManager.selectTab(essentialLiveTab, in: harness.windowState)
 
         let spacePinnedPin = try insertSpacePinnedLauncher(in: harness)
-        let spacePinnedLiveTab = harness.browserManager.tabManager.activateShortcutPin(
+        let spacePinnedLiveTab = harness.browserManager.tabManager.shortcutLiveTabOwner.activateShortcutPin(
             spacePinnedPin,
             in: harness.windowState.id,
             currentSpaceId: harness.space.id
@@ -266,8 +266,8 @@ final class RecentlyClosedShortcutUndoTests: XCTestCase {
         browserManager.currentProfile = profile
         browserManager.webViewCoordinator = WebViewCoordinator()
         browserManager.windowRegistry = windowRegistry
-        browserManager.tabManager.spaces = [space]
-        browserManager.tabManager.currentSpace = space
+        browserManager.tabManager.spaceStateOwner.replaceSpaces([space])
+        browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(space)
 
         windowState.tabManager = browserManager.tabManager
         windowState.currentSpaceId = space.id

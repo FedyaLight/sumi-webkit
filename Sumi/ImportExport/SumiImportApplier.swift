@@ -423,26 +423,21 @@ final class SumiImportApplier {
                 }
         }
 
-        browserManager.tabManager.withStructuralUpdateTransaction {
-            browserManager.tabManager.spaces = spaces
-            browserManager.tabManager.tabsBySpace = tabsBySpace
-            browserManager.tabManager.foldersBySpace = foldersBySpace
-            browserManager.tabManager.pinnedByProfile = pinnedByProfile
-            browserManager.tabManager.spacePinnedShortcuts = spacePinnedShortcuts
-            browserManager.tabManager.pendingPinnedWithoutProfile.removeAll()
-            browserManager.tabManager.splitGroups.removeAll()
-            browserManager.tabManager.currentSpace = browserManager.tabManager.currentSpace.flatMap { current in
-                spaces.first(where: { $0.id == current.id })
-            } ?? spaces.first
-            let currentSpaceId = browserManager.tabManager.currentSpace?.id
-            browserManager.tabManager.currentTab = currentSpaceId.flatMap { tabsBySpace[$0]?.first }
-            browserManager.tabManager.rebuildTabLookupForRestore()
-            browserManager.tabManager.markSnapshotCacheDirty()
-            browserManager.tabManager.resetStructuralDirtySet()
-            browserManager.tabManager.requestStructuralPublish()
-        }
-        browserManager.dataServices.faviconService.syncShortcutPins(
-            Array(pinnedByProfile.values.joined()) + Array(spacePinnedShortcuts.values.joined())
+        let currentSpace = browserManager.tabManager.spaceStateOwner.currentSpace.flatMap { current in
+            spaces.first(where: { $0.id == current.id })
+        } ?? spaces.first
+        let currentSpaceId = currentSpace?.id
+        let currentTab = currentSpaceId.flatMap { tabsBySpace[$0]?.first }
+        browserManager.tabManager.structuralInstallOwner.install(
+            spaces: spaces,
+            tabsBySpace: tabsBySpace,
+            foldersBySpace: foldersBySpace,
+            pinnedByProfile: pinnedByProfile,
+            spacePinnedShortcuts: spacePinnedShortcuts,
+            pendingPinnedWithoutProfile: [],
+            splitGroups: [],
+            currentSpace: currentSpace,
+            currentTab: currentTab
         )
     }
 

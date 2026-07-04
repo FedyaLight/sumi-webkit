@@ -69,3 +69,28 @@ final class TabFaviconPresentationRefreshOwner {
         dependencies.requestStructuralPublish()
     }
 }
+
+extension TabFaviconPresentationRefreshOwner.Dependencies {
+    /// The non-closure `notificationCenter` / `debounceNanoseconds` stay owned by
+    /// `TabManager` (the debounce constant is a `TabManager` private static), so they are
+    /// passed in explicitly while the collaborator closures are wired here.
+    @MainActor
+    static func live(
+        tabManager: TabManager,
+        notificationCenter: NotificationCenter,
+        debounceNanoseconds: UInt64
+    ) -> Self {
+        Self(
+            notificationCenter: notificationCenter,
+            debounceNanoseconds: debounceNanoseconds,
+            tabsNeedingRefresh: { [weak tabManager] in
+                guard let tabManager else { return [] }
+                return tabManager.regularTabCollectionStateOwner.allTabs()
+                    + tabManager.transientTabRegistryOwner.transientShortcutTabs
+            },
+            requestStructuralPublish: { [weak tabManager] in
+                tabManager?.requestStructuralPublish()
+            }
+        )
+    }
+}

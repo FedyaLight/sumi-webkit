@@ -32,7 +32,7 @@ enum TabBrowserNavigationRuntimeFactory {
             },
             spaceProfile: { [weak browserManager] spaceId in
                 guard let browserManager,
-                      let space = browserManager.tabManager.spaces.first(where: { $0.id == spaceId }),
+                      let space = browserManager.tabManager.spaceStateOwner.spaces.first(where: { $0.id == spaceId }),
                       let profileId = space.profileId
                 else {
                     return nil

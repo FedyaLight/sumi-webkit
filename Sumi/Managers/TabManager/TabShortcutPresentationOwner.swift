@@ -161,11 +161,57 @@ final class TabShortcutPresentationOwner {
         }
     }
 
+    func liveSpacePinnedTabs(for spaceId: UUID) -> [Tab] {
+        activeShortcutTabs(role: .spacePinned)
+            .filter { $0.spaceId == spaceId }
+            .sorted { lhs, rhs in
+                let lhsIndex = lhs.shortcutPinId.flatMap { dependencies.shortcutPin($0)?.index } ?? lhs.index
+                let rhsIndex = rhs.shortcutPinId.flatMap { dependencies.shortcutPin($0)?.index } ?? rhs.index
+                if lhsIndex != rhsIndex { return lhsIndex < rhsIndex }
+                return lhs.id.uuidString < rhs.id.uuidString
+            }
+    }
+
     private func normalizedShortcutComparisonURL(_ url: URL) -> String {
         guard var components = URLComponents(url: url, resolvingAgainstBaseURL: true) else {
             return url.absoluteString
         }
         components.fragment = nil
         return components.string?.lowercased() ?? url.absoluteString.lowercased()
+    }
+}
+
+extension TabShortcutPresentationOwner.Dependencies {
+    @MainActor
+    static func live(tabManager: TabManager) -> Self {
+        Self(
+            transientShortcutTabsByWindow: { [weak tabManager] in
+                tabManager?.transientTabRegistryOwner.transientShortcutTabsByWindow ?? [:]
+            },
+            windowState: { [weak tabManager] windowId in
+                tabManager?.runtimeContext?.windowState(for: windowId)
+            },
+            shortcutPin: { [weak tabManager] pinId in
+                tabManager?.shortcutPinCollectionStateOwner.shortcutPin(by: pinId)
+            },
+            resolvedExecutionProfileId: { [weak tabManager] pin, currentSpaceId in
+                tabManager?.shortcutPinRuntimeResolutionOwner.resolvedExecutionProfileId(for: pin, currentSpaceId: currentSpaceId)
+            },
+            faviconService: { [weak tabManager] in
+                guard let tabManager else { preconditionFailure("TabManager dependency used after deallocation") }
+                return tabManager.faviconService
+            },
+            faviconImageService: { [weak tabManager] in
+                guard let tabManager else { preconditionFailure("TabManager dependency used after deallocation") }
+                return tabManager.faviconImageService
+            },
+            visitedLinkStore: { [weak tabManager] in
+                guard let tabManager else { preconditionFailure("TabManager dependency used after deallocation") }
+                return tabManager.visitedLinkStore
+            },
+            prepareTabForRuntime: { [weak tabManager] tab in
+                tabManager?.runtimePreparationOwner.prepare(tab)
+            }
+        )
     }
 }

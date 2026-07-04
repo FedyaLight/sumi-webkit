@@ -15,6 +15,14 @@ final class RegularTabCollectionStateOwner {
         tabsBySpaceSubject.send(tabsBySpace)
     }
 
+    func tabsBySpaceSnapshot() -> [UUID: [Tab]] {
+        tabsBySpace
+    }
+
+    func allTabsSnapshot() -> [Tab] {
+        allTabs()
+    }
+
     func removeAll() {
         tabsBySpace.removeAll()
         tabsBySpaceSubject.send(tabsBySpace)

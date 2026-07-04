@@ -10,7 +10,7 @@ extension BrowserTabSelectionOwner {
                 browserManager?.windowRegistry?.windows[windowId]
             },
             tab: { [weak browserManager] tabId in
-                browserManager?.tabManager.tab(for: tabId)
+                browserManager?.tabManager.tabCollectionMembershipOwner.tab(for: tabId)
             },
             ephemeralTab: { tabId, windowState in
                 windowState.ephemeralTabs.first(where: { $0.id == tabId })
@@ -79,7 +79,7 @@ extension BrowserTabSelectionOwner {
                 for: browserManager
             ),
             updateActiveTabState: { [weak browserManager] tab in
-                browserManager?.tabManager.updateActiveTabState(tab)
+                browserManager?.tabManager.activeSelectionOwner.updateActiveTabState(tab)
             },
             persistWindowSession: { [weak browserManager] windowState in
                 browserManager?.windowSessionActivationOwner.persistWindowSession(for: windowState)

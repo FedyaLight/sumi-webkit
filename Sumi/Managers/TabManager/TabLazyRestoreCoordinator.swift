@@ -128,9 +128,15 @@ enum TabLazyRestorePlanner {
 
 @MainActor
 final class TabLazyRestoreCoordinator {
+    struct Dependencies {
+        let spaces: () -> [Space]
+        let tabsBySpaceSnapshot: () -> [UUID: [Tab]]
+        let tab: (UUID) -> Tab?
+    }
+
     let policy: TabLazyRestorePolicy
 
-    private unowned let tabManager: TabManager
+    private let dependencies: Dependencies
     private var eligibleTabIDs: Set<UUID> = []
     private var queuedTabIDs: [UUID] = []
     private var inFlightTabIDs: Set<UUID> = []
@@ -138,10 +144,10 @@ final class TabLazyRestoreCoordinator {
     private var loadingObserver: NSObjectProtocol?
 
     init(
-        tabManager: TabManager,
+        dependencies: Dependencies,
         policy: TabLazyRestorePolicy = .default
     ) {
-        self.tabManager = tabManager
+        self.dependencies = dependencies
         self.policy = policy
         self.loadingObserver = NotificationCenter.default.addObserver(
             forName: .sumiTabLoadingStateDidChange,
@@ -187,10 +193,14 @@ final class TabLazyRestoreCoordinator {
         }
 
         let remainingBudget = max(0, policy.maxTotalOpportunisticTabs - startedTabIDs.count)
+        let tabsBySpace = dependencies.tabsBySpaceSnapshot()
         queuedTabIDs = TabLazyRestorePlanner.plan(
             anchors: anchors,
-            tabsBySpace: tabManager.tabsBySpace,
-            fallbackAnchorTabIDsBySpace: tabManager.lazyRestoreFallbackAnchorTabIDsBySpace(),
+            tabsBySpace: tabsBySpace,
+            fallbackAnchorTabIDsBySpace: lazyRestoreFallbackAnchorTabIDsBySpace(
+                spaces: dependencies.spaces(),
+                tabsBySpace: tabsBySpace
+            ),
             eligibleTabIDs: eligibleTabIDs,
             selectedTabIDs: selectedTabIDs,
             visibleTabIDs: visibleTabIDs,
@@ -203,11 +213,11 @@ final class TabLazyRestoreCoordinator {
 
     private func pruneEligibility() {
         eligibleTabIDs = eligibleTabIDs.filter { tabID in
-            guard let tab = tabManager.tab(for: tabID) else { return false }
+            guard let tab = dependencies.tab(tabID) else { return false }
             return tab.requiresPrimaryWebView && (tab.suspensionStateOwner.isSuspended || tab.isUnloaded)
         }
-        inFlightTabIDs = inFlightTabIDs.filter { tabManager.tab(for: $0) != nil }
-        queuedTabIDs.removeAll { tabManager.tab(for: $0) == nil }
+        inFlightTabIDs = inFlightTabIDs.filter { dependencies.tab($0) != nil }
+        queuedTabIDs.removeAll { dependencies.tab($0) == nil }
     }
 
     private func startQueuedLoadsIfNeeded() {
@@ -215,7 +225,7 @@ final class TabLazyRestoreCoordinator {
               let nextTabID = queuedTabIDs.first {
             queuedTabIDs.removeFirst()
             guard startedTabIDs.insert(nextTabID).inserted else { continue }
-            guard let tab = tabManager.tab(for: nextTabID) else {
+            guard let tab = dependencies.tab(nextTabID) else {
                 continue
             }
 
@@ -249,20 +259,6 @@ final class TabLazyRestoreCoordinator {
         guard inFlightTabIDs.remove(tabID) != nil else { return }
         startQueuedLoadsIfNeeded()
     }
-}
-
-@MainActor
-extension TabManager {
-    func lazyRestoreFallbackAnchorTabIDsBySpace() -> [UUID: UUID] {
-        Dictionary(
-            uniqueKeysWithValues: spaces.compactMap { space in
-                guard let fallbackTabID = space.activeTabId ?? tabsBySpace[space.id]?.first?.id else {
-                    return nil
-                }
-                return (space.id, fallbackTabID)
-            }
-        )
-    }
 
     func opportunisticRestoreAnchor(
         in windowState: BrowserWindowState,
@@ -270,6 +266,9 @@ extension TabManager {
     ) -> TabLazyRestoreAnchor? {
         let spaceId = currentTab?.spaceId ?? windowState.currentSpaceId
         guard let spaceId else { return nil }
+
+        let tabsBySpace = dependencies.tabsBySpaceSnapshot()
+        let spaces = dependencies.spaces()
 
         let regularTabId: UUID?
         if let currentTab, currentTab.spaceId == spaceId {
@@ -285,5 +284,36 @@ extension TabManager {
         }
 
         return TabLazyRestoreAnchor(spaceId: spaceId, regularTabId: regularTabId)
+    }
+
+    private func lazyRestoreFallbackAnchorTabIDsBySpace(
+        spaces: [Space],
+        tabsBySpace: [UUID: [Tab]]
+    ) -> [UUID: UUID] {
+        Dictionary(
+            uniqueKeysWithValues: spaces.compactMap { space in
+                guard let fallbackTabID = space.activeTabId ?? tabsBySpace[space.id]?.first?.id else {
+                    return nil
+                }
+                return (space.id, fallbackTabID)
+            }
+        )
+    }
+}
+
+extension TabLazyRestoreCoordinator.Dependencies {
+    @MainActor
+    static func live(tabManager: TabManager) -> Self {
+        Self(
+            spaces: { [weak tabManager] in
+                tabManager?.spaceStateOwner.spaces ?? []
+            },
+            tabsBySpaceSnapshot: { [weak tabManager] in
+                tabManager?.regularTabCollectionStateOwner.tabsBySpaceSnapshot() ?? [:]
+            },
+            tab: { [weak tabManager] id in
+                tabManager?.tabCollectionMembershipOwner.tab(for: id)
+            }
+        )
     }
 }

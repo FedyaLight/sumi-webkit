@@ -31,10 +31,10 @@ struct SidebarRegularTabsController: SidebarRegularTabsControlling {
         let shortcutPin: @MainActor (UUID) -> ShortcutPin?
         let folders: @MainActor (UUID) -> [TabFolder]
         let isLiveFolder: @MainActor (UUID) -> Bool
-        let canAddURLToEssentials: @MainActor (URL, TabManager.EssentialsTargetContext) -> Bool
+        let canAddURLToEssentials: @MainActor (URL, EssentialsShortcutPlacementOwner.TargetContext) -> Bool
         let clearRegularTabs: @MainActor (UUID) -> Void
         let pinTabToSpace: @MainActor (Tab, UUID) -> Void
-        let pinTabToEssentials: @MainActor (Tab, TabManager.EssentialsTargetContext) -> Void
+        let pinTabToEssentials: @MainActor (Tab, EssentialsShortcutPlacementOwner.TargetContext) -> Void
         let closeAllTabsBelow: @MainActor (Tab) -> Void
         let moveTab: @MainActor (UUID, UUID) -> Void
         let moveTabToFolder: @MainActor (Tab, UUID) -> Void
@@ -83,7 +83,7 @@ struct SidebarRegularTabsController: SidebarRegularTabsControlling {
         guard !tab.isPinned && !tab.isSpacePinned else { return false }
         return dependencies.canAddURLToEssentials(
             tab.url,
-            TabManager.EssentialsTargetContext(windowState: windowState, spaceId: space.id)
+            EssentialsShortcutPlacementOwner.TargetContext(windowState: windowState, spaceId: space.id)
         )
     }
 
@@ -98,7 +98,7 @@ struct SidebarRegularTabsController: SidebarRegularTabsControlling {
     func addTabToEssentials(_ tab: Tab, in space: Space, windowState: BrowserWindowState) {
         dependencies.pinTabToEssentials(
             tab,
-            TabManager.EssentialsTargetContext(windowState: windowState, spaceId: space.id)
+            EssentialsShortcutPlacementOwner.TargetContext(windowState: windowState, spaceId: space.id)
         )
     }
 
@@ -141,13 +141,13 @@ extension SidebarRegularTabsController.Dependencies {
     ) -> Self {
         Self(
             spaces: { [weak tabManager] in
-                tabManager?.spaces ?? []
+                tabManager?.spaceStateOwner.spaces ?? []
             },
             tabs: { [weak tabManager] space in
-                tabManager?.tabs(in: space) ?? []
+                tabManager?.regularTabCollectionOwner.tabs(in: space) ?? []
             },
             tab: { [weak tabManager] id in
-                tabManager?.tab(for: id)
+                tabManager?.tabCollectionMembershipOwner.tab(for: id)
             },
             splitGroup: { [weak tabManager] tabId in
                 tabManager?.splitGroupStructureOwner.splitGroup(containing: tabId)
@@ -165,7 +165,7 @@ extension SidebarRegularTabsController.Dependencies {
                 tabManager?.essentialsShortcutPlacementOwner.canAddURL(url, using: context) ?? false
             },
             clearRegularTabs: { [weak tabManager] spaceId in
-                tabManager?.clearRegularTabs(for: spaceId)
+                tabManager?.tabRemovalOwner.clearRegularTabs(for: spaceId)
             },
             pinTabToSpace: { [weak tabManager] tab, spaceId in
                 tabManager?.shortcutPinCommandOwner.pinTabToSpace(tab, spaceId: spaceId)
@@ -174,10 +174,10 @@ extension SidebarRegularTabsController.Dependencies {
                 tabManager?.shortcutPinCommandOwner.pinTab(tab, context: context)
             },
             closeAllTabsBelow: { [weak tabManager] tab in
-                tabManager?.closeAllTabsBelow(tab)
+                tabManager?.tabRemovalOwner.closeAllTabsBelow(tab)
             },
             moveTab: { [weak tabManager] tabId, targetSpaceId in
-                tabManager?.moveTab(tabId, to: targetSpaceId)
+                tabManager?.sidebarDragRoutingOwner.moveTab(tabId, to: targetSpaceId)
             },
             moveTabToFolder: { [weak tabManager] tab, folderId in
                 tabManager?.folderMutationOwner.moveTabToFolder(tab: tab, folderId: folderId)

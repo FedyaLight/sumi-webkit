@@ -255,7 +255,7 @@ final class SafariExtensionAccountForkPipelineTests: XCTestCase {
         func adapterResolutionDiagnostics(for probedTab: Tab) -> String {
             let adapter = manager.adapterResolutionOwner.stableAdapter(for: probedTab)
             let adapterWebView = adapter?.webView(for: extensionContext)
-            let lookupTab = browserManager.tabManager.tab(for: probedTab.id)
+            let lookupTab = browserManager.tabManager.tabCollectionMembershipOwner.tab(for: probedTab.id)
             return "adapter=\(adapter == nil ? "nil" : "present") "
                 + "adapterTabMatches=\(adapter?.tab === probedTab) "
                 + "tabManagerLookup=\(lookupTab == nil ? "nil" : (lookupTab === probedTab ? "match" : "OTHER")) "
@@ -275,8 +275,8 @@ final class SafariExtensionAccountForkPipelineTests: XCTestCase {
             let adapterWebView = adapter?.webView(for: extensionContext)
             let eligible = manager.isTabEligibleForCurrentExtensionRuntime(tab)
             let adapterTab = adapter?.tab
-            let lookupTab = browserManager.tabManager.tab(for: tab.id)
-            let containingSpaces = browserManager.tabManager.tabsBySpace
+            let lookupTab = browserManager.tabManager.tabCollectionMembershipOwner.tab(for: tab.id)
+            let containingSpaces = browserManager.tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()
                 .filter { _, tabs in tabs.contains(where: { $0 === tab }) }
                 .keys
             return "adapter=\(adapter == nil ? "nil" : "present") "
@@ -284,8 +284,8 @@ final class SafariExtensionAccountForkPipelineTests: XCTestCase {
                 + "tabManagerLookup=\(lookupTab == nil ? "nil" : (lookupTab === tab ? "harnessTab" : "OTHER")) "
                 + "tabSpaceId=\(String(describing: tab.spaceId)) "
                 + "containingSpaces=\(Array(containingSpaces)) "
-                + "allSpaces=\(browserManager.tabManager.spaces.map { "\($0.id):profile=\(String(describing: $0.profileId))" }) "
-                + "currentSpaceId=\(String(describing: browserManager.tabManager.currentSpace?.id)) "
+                + "allSpaces=\(browserManager.tabManager.spaceStateOwner.spaces.map { "\($0.id):profile=\(String(describing: $0.profileId))" }) "
+                + "currentSpaceId=\(String(describing: browserManager.tabManager.spaceStateOwner.currentSpace?.id)) "
                 + "adapterWebView=\(adapterWebView == nil ? "nil" : (adapterWebView === webView ? "harnessWebView" : "OTHER webview \(String(describing: adapterWebView))")) "
                 + "tabEligible=\(eligible) "
                 + "tabWebViewIsHarness=\(tab._webView === webView) "
@@ -412,9 +412,9 @@ final class SafariExtensionAccountForkPipelineTests: XCTestCase {
         )
 
         let accountURL = server.accountPageURL
-        let tab = browserManager.tabManager.createNewTab(
+        let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: accountURL.absoluteString,
-            in: browserManager.tabManager.currentSpace,
+            in: browserManager.tabManager.spaceStateOwner.currentSpace,
             activate: false,
             webViewConfigurationOverride: configuration
         )
@@ -532,8 +532,10 @@ final class SafariExtensionAccountForkPipelineTests: XCTestCase {
 
         var createdTab: Tab?
         for _ in 0..<100 {
-            let allTabs = harness.browserManager.tabManager.allTabs()
-                + harness.browserManager.tabManager.pinnedTabs
+            let allTabs = harness.browserManager.tabManager.tabCollectionMembershipOwner.allTabs()
+                + harness.browserManager.tabManager.shortcutPresentationOwner.activeEssentialTabs(
+                    for: harness.browserManager.tabManager.runtimeContext?.currentProfileId
+                )
             if let match = allTabs.first(where: {
                 $0.url.absoluteString == accountURL.absoluteString
             }) {

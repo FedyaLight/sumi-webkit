@@ -448,8 +448,8 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         let destination = Space(name: "Destination", profileId: profileId)
         let essential = makeEssentialPin(profileId: profileId, title: "Pinned")
 
-        browserManager.tabManager.spaces = [source, destination]
-        browserManager.tabManager.pinnedByProfile[profileId] = [essential]
+        browserManager.tabManager.spaceStateOwner.replaceSpaces([source, destination])
+        browserManager.tabManager.structuralCollectionMutationOwner.setPinnedTabs([essential], for: profileId)
         windowState.currentProfileId = profileId
         windowState.currentSpaceId = source.id
 
@@ -474,11 +474,11 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         let destination = Space(name: "Destination", profileId: profileId)
         let essential = makeEssentialPin(profileId: profileId, title: "Pinned")
 
-        browserManager.tabManager.spaces = [source, destination]
-        browserManager.tabManager.pinnedByProfile[profileId] = [essential]
+        browserManager.tabManager.spaceStateOwner.replaceSpaces([source, destination])
+        browserManager.tabManager.structuralCollectionMutationOwner.setPinnedTabs([essential], for: profileId)
         windowState.currentProfileId = profileId
         windowState.currentSpaceId = source.id
-        _ = browserManager.tabManager.activateShortcutPin(
+        _ = browserManager.tabManager.shortcutLiveTabOwner.activateShortcutPin(
             essential,
             in: windowState.id,
             currentSpaceId: source.id
@@ -513,7 +513,7 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         let source = Space(name: "Source Space", icon: "sparkles", profileId: profileId)
         let destination = Space(name: "Destination Space", icon: "star.fill", profileId: profileId)
 
-        browserManager.tabManager.spaces = [source, destination]
+        browserManager.tabManager.spaceStateOwner.replaceSpaces([source, destination])
         windowState.currentProfileId = profileId
         windowState.currentSpaceId = source.id
 
@@ -554,7 +554,7 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
             viewportHeight: 180
         )
 
-        browserManager.tabManager.spaces = [source, destination]
+        browserManager.tabManager.spaceStateOwner.replaceSpaces([source, destination])
         windowState.currentProfileId = profileId
         windowState.currentSpaceId = source.id
 
@@ -593,7 +593,7 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
             viewportHeight: 140
         )
 
-        browserManager.tabManager.spaces = [source, destination]
+        browserManager.tabManager.spaceStateOwner.replaceSpaces([source, destination])
         windowState.currentProfileId = profileId
         windowState.currentSpaceId = source.id
 
@@ -624,9 +624,9 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         let sourceEssential = makeEssentialPin(profileId: sourceProfileId, title: "Source Pin")
         let destinationEssential = makeEssentialPin(profileId: destinationProfileId, title: "Destination Pin")
 
-        browserManager.tabManager.spaces = [source, destination]
-        browserManager.tabManager.pinnedByProfile[sourceProfileId] = [sourceEssential]
-        browserManager.tabManager.pinnedByProfile[destinationProfileId] = [destinationEssential]
+        browserManager.tabManager.spaceStateOwner.replaceSpaces([source, destination])
+        browserManager.tabManager.structuralCollectionMutationOwner.setPinnedTabs([sourceEssential], for: sourceProfileId)
+        browserManager.tabManager.structuralCollectionMutationOwner.setPinnedTabs([destinationEssential], for: destinationProfileId)
         windowState.currentProfileId = sourceProfileId
         windowState.currentSpaceId = source.id
 
@@ -665,9 +665,9 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         first.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
         second.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
 
-        browserManager.tabManager.spaces = [source, destination]
-        browserManager.tabManager.addTab(first)
-        browserManager.tabManager.addTab(second)
+        browserManager.tabManager.spaceStateOwner.replaceSpaces([source, destination])
+        browserManager.tabManager.regularTabLifecycleOwner.addTab(first)
+        browserManager.tabManager.regularTabLifecycleOwner.addTab(second)
         windowState.currentProfileId = profileId
         windowState.currentSpaceId = source.id
         windowState.currentTabId = second.id
@@ -699,8 +699,8 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         )
         unloadedTab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
 
-        browserManager.tabManager.spaces = [source, destination]
-        browserManager.tabManager.addTab(unloadedTab)
+        browserManager.tabManager.spaceStateOwner.replaceSpaces([source, destination])
+        browserManager.tabManager.regularTabLifecycleOwner.addTab(unloadedTab)
         windowState.currentProfileId = profileId
         windowState.currentSpaceId = source.id
         windowState.currentTabId = unloadedTab.id
@@ -783,13 +783,13 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         let firstPin = makeSpacePinnedPin(spaceId: source.id, folderId: folder.id, index: 0, title: "First")
         let secondPin = makeSpacePinnedPin(spaceId: source.id, folderId: folder.id, index: 1, title: "Second")
 
-        browserManager.tabManager.spaces = [source, destination]
-        browserManager.tabManager.setFolders([folder], for: source.id)
-        browserManager.tabManager.setSpacePinnedShortcuts([firstPin, secondPin], for: source.id)
+        browserManager.tabManager.spaceStateOwner.replaceSpaces([source, destination])
+        browserManager.tabManager.structuralCollectionMutationOwner.setFolders([folder], for: source.id)
+        browserManager.tabManager.structuralCollectionMutationOwner.setSpacePinnedShortcuts([firstPin, secondPin], for: source.id)
         windowState.currentProfileId = profileId
         windowState.currentSpaceId = source.id
 
-        _ = browserManager.tabManager.activateShortcutPin(
+        _ = browserManager.tabManager.shortcutLiveTabOwner.activateShortcutPin(
             secondPin,
             in: windowState.id,
             currentSpaceId: source.id
@@ -825,9 +825,9 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         child.isOpen = true
         let nestedPin = makeSpacePinnedPin(spaceId: source.id, folderId: child.id, index: 0, title: "Nested")
 
-        browserManager.tabManager.spaces = [source, destination]
-        browserManager.tabManager.setFolders([parent, child], for: source.id)
-        browserManager.tabManager.setSpacePinnedShortcuts([nestedPin], for: source.id)
+        browserManager.tabManager.spaceStateOwner.replaceSpaces([source, destination])
+        browserManager.tabManager.structuralCollectionMutationOwner.setFolders([parent, child], for: source.id)
+        browserManager.tabManager.structuralCollectionMutationOwner.setSpacePinnedShortcuts([nestedPin], for: source.id)
         windowState.currentProfileId = profileId
         windowState.currentSpaceId = source.id
 

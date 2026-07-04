@@ -63,9 +63,9 @@ final class BrowserShortcutLiveTabCloseOwner {
         }
 
         if let pinId = tab.shortcutPinId {
-            tabManager.deactivateShortcutLiveTab(pinId: pinId, in: windowState.id)
+            tabManager.shortcutLiveTabOwner.deactivateShortcutLiveTab(pinId: pinId, in: windowState.id)
         } else {
-            tabManager.deactivateShortcutLiveTab(in: windowState.id)
+            tabManager.shortcutLiveTabOwner.deactivateShortcutLiveTab(in: windowState.id)
         }
 
         guard wasCurrent else {

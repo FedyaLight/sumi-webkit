@@ -391,7 +391,7 @@ struct SumiSettingsTabRootView: View {
         let newURL = sumiSettings.settingsSurfaceURLForCurrentNavigation()
         guard tab.url != newURL else { return }
         tab.url = newURL
-        browserManager.tabManager.scheduleRuntimeStatePersistence(for: tab)
+        browserManager.tabManager.structuralPersistence.scheduleRuntimeStatePersistence(for: tab)
     }
 
     private var activePrivacyProfile: Profile? {

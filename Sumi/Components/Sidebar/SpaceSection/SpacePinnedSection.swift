@@ -5,7 +5,7 @@
 
 import SwiftUI
 
-private typealias SpacePinnedListItem = TabManager.SpacePinnedVisualItem
+private typealias SpacePinnedListItem = TabSplitGroupStructureOwner.SpacePinnedVisualItem
 
 private enum SpacePinnedRenderedItem: Hashable {
     case item(SpacePinnedListItem)
@@ -20,7 +20,7 @@ private struct SpacePinnedDisplayEntry: Identifiable {
 }
 
 extension SpaceView {
-    private var launcherProjection: TabManager.SpaceLauncherProjection? {
+    private var launcherProjection: SpaceLauncherProjectionSnapshot? {
         guard windowState.isIncognito == false else { return nil }
         return browserContext.tabManager.spaceLauncherProjectionOwner.projection(for: space.id, in: windowState.id)
     }
@@ -497,7 +497,7 @@ extension SpaceView {
             selectedFolderId: pin.folderId
         )
         let spaceChoices = makeSidebarContextMenuSpaceChoices(
-            spaces: browserContext.tabManager.spaces,
+            spaces: browserContext.tabManager.spaceStateOwner.spaces,
             selectedSpaceId: pin.spaceId
         )
         let profileChoices = makeSidebarContextMenuProfileChoices(
@@ -649,7 +649,7 @@ extension SpaceView {
     }
 
     private func activateShortcutPin(_ pin: ShortcutPin) {
-        let tab = browserContext.tabManager.activateShortcutPin(
+        let tab = browserContext.tabManager.shortcutLiveTabOwner.activateShortcutPin(
             pin,
             in: windowState.id,
             currentSpaceId: space.id
@@ -666,7 +666,7 @@ extension SpaceView {
             return
         }
 
-        browserContext.tabManager.deactivateShortcutLiveTab(pinId: pin.id, in: windowState.id)
+        browserContext.tabManager.shortcutLiveTabOwner.deactivateShortcutLiveTab(pinId: pin.id, in: windowState.id)
     }
 
     private func duplicateShortcutPin(_ pin: ShortcutPin) {
@@ -675,13 +675,13 @@ extension SpaceView {
 
     private func moveShortcutPin(_ pin: ShortcutPin, toFolder folderId: UUID) {
         guard let targetFolder = browserContext.tabManager.folderCollectionStateOwner.folder(by: folderId) else { return }
-        let targetIndex = browserContext.tabManager.folderPinnedPins(
+        let targetIndex = browserContext.tabManager.shortcutPinCollectionStateOwner.folderPinnedPins(
             for: folderId,
             in: targetFolder.spaceId
         ).count
 
         mutatePinnedContent {
-            _ = browserContext.tabManager.moveShortcutPin(
+            _ = browserContext.tabManager.shortcutPinCommandOwner.moveShortcutPin(
                 pin,
                 to: .spacePinned,
                 profileId: nil,
@@ -696,7 +696,7 @@ extension SpaceView {
         let targetIndex = browserContext.tabManager.spacePinnedStructureOwner.topLevelSpacePinnedItems(for: targetSpaceId).count
 
         mutatePinnedContent {
-            _ = browserContext.tabManager.moveShortcutPin(
+            _ = browserContext.tabManager.shortcutPinCommandOwner.moveShortcutPin(
                 pin,
                 to: .spacePinned,
                 profileId: nil,

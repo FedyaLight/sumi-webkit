@@ -2,10 +2,94 @@ import Foundation
 
 @MainActor
 final class SidebarRegularTabDragService {
-    unowned let tabManager: TabManager
+    struct Dependencies {
+        private let convertTabToShortcutPinBody: (
+            Tab,
+            ShortcutPinRole,
+            UUID?,
+            UUID?,
+            UUID?,
+            Int,
+            Bool,
+            UUID?
+        ) -> ShortcutPin?
 
-    init(tabManager: TabManager) {
-        self.tabManager = tabManager
+        let resolvedEssentialsProfileId: (DragOperation) -> UUID?
+        let folderSpaceId: (UUID) -> UUID?
+        let shortcutPin: (UUID) -> ShortcutPin?
+        let reorderSpacePinned: (ShortcutPin, UUID, Int) -> Bool
+        let withStructuralUpdateTransaction: (@MainActor () -> Bool) -> Bool
+        let reorderRegularTab: (Tab, UUID, Int) -> Bool
+        let scheduleStructuralPersistence: () -> Void
+        let reorderEssential: (ShortcutPin, Int) -> Bool
+        let removeFromCurrentContainer: (Tab) -> Void
+        let insertRegularTab: (Tab, UUID, Int) -> Void
+        let runtimeContext: () -> TabManagerRuntimeContext?
+
+        init(
+            convertTabToShortcutPin: @escaping (
+                Tab,
+                ShortcutPinRole,
+                UUID?,
+                UUID?,
+                UUID?,
+                Int,
+                Bool,
+                UUID?
+            ) -> ShortcutPin?,
+            resolvedEssentialsProfileId: @escaping (DragOperation) -> UUID?,
+            folderSpaceId: @escaping (UUID) -> UUID?,
+            shortcutPin: @escaping (UUID) -> ShortcutPin?,
+            reorderSpacePinned: @escaping (ShortcutPin, UUID, Int) -> Bool,
+            withStructuralUpdateTransaction: @escaping (@MainActor () -> Bool) -> Bool,
+            reorderRegularTab: @escaping (Tab, UUID, Int) -> Bool,
+            scheduleStructuralPersistence: @escaping () -> Void,
+            reorderEssential: @escaping (ShortcutPin, Int) -> Bool,
+            removeFromCurrentContainer: @escaping (Tab) -> Void,
+            insertRegularTab: @escaping (Tab, UUID, Int) -> Void,
+            runtimeContext: @escaping () -> TabManagerRuntimeContext?
+        ) {
+            self.convertTabToShortcutPinBody = convertTabToShortcutPin
+            self.resolvedEssentialsProfileId = resolvedEssentialsProfileId
+            self.folderSpaceId = folderSpaceId
+            self.shortcutPin = shortcutPin
+            self.reorderSpacePinned = reorderSpacePinned
+            self.withStructuralUpdateTransaction = withStructuralUpdateTransaction
+            self.reorderRegularTab = reorderRegularTab
+            self.scheduleStructuralPersistence = scheduleStructuralPersistence
+            self.reorderEssential = reorderEssential
+            self.removeFromCurrentContainer = removeFromCurrentContainer
+            self.insertRegularTab = insertRegularTab
+            self.runtimeContext = runtimeContext
+        }
+
+        func convertTabToShortcutPin(
+            _ tab: Tab,
+            role: ShortcutPinRole,
+            profileId: UUID?,
+            spaceId: UUID?,
+            folderId: UUID?,
+            at index: Int,
+            openTargetFolder: Bool = true,
+            preferredWindowId: UUID? = nil
+        ) -> ShortcutPin? {
+            convertTabToShortcutPinBody(
+                tab,
+                role,
+                profileId,
+                spaceId,
+                folderId,
+                index,
+                openTargetFolder,
+                preferredWindowId
+            )
+        }
+    }
+
+    private let dependencies: Dependencies
+
+    init(dependencies: Dependencies) {
+        self.dependencies = dependencies
     }
 
     @discardableResult
@@ -26,7 +110,7 @@ final class SidebarRegularTabDragService {
             didMutate = reorderRegularTabs(tab, in: spaceId, to: operation.toIndex)
 
         case .moveToPinned(let targetSpaceId) where operation.fromContainer == .spaceRegular(operation.scope.spaceId):
-            didMutate = tabManager.convertTabToShortcutPin(
+            didMutate = dependencies.convertTabToShortcutPin(
                 tab,
                 role: .spacePinned,
                 profileId: nil,
@@ -42,8 +126,8 @@ final class SidebarRegularTabDragService {
         case .moveToEssentials
             where operation.fromContainer == .spaceRegular(operation.scope.spaceId)
                 || operation.fromContainer == .spacePinned(operation.scope.spaceId):
-            guard let profileId = tabManager.essentialsShortcutPlacementOwner.resolvedProfileId(for: operation) else { return false }
-            didMutate = tabManager.convertTabToShortcutPin(
+            guard let profileId = dependencies.resolvedEssentialsProfileId(operation) else { return false }
+            didMutate = dependencies.convertTabToShortcutPin(
                 tab,
                 role: .essential,
                 profileId: profileId,
@@ -57,7 +141,7 @@ final class SidebarRegularTabDragService {
             didMutate = moveTabIntoRegularSection(tab, spaceId: spaceId, index: operation.toIndex)
 
         case .moveToPinned(let spaceId) where operation.fromContainer == .essentials:
-            didMutate = tabManager.convertTabToShortcutPin(
+            didMutate = dependencies.convertTabToShortcutPin(
                 tab,
                 role: .spacePinned,
                 profileId: nil,
@@ -71,7 +155,7 @@ final class SidebarRegularTabDragService {
             guard let spaceId = tab.spaceId else { return false }
             guard case .folder(let fromFolderId) = operation.fromContainer else { return false }
             let targetFolderId = fromFolderId == toFolderId ? fromFolderId : toFolderId
-            didMutate = tabManager.convertTabToShortcutPin(
+            didMutate = dependencies.convertTabToShortcutPin(
                 tab,
                 role: .spacePinned,
                 profileId: nil,
@@ -83,8 +167,8 @@ final class SidebarRegularTabDragService {
             ) != nil
 
         case .moveToEssentials where isFolderContainer(operation.fromContainer):
-            guard let profileId = tabManager.essentialsShortcutPlacementOwner.resolvedProfileId(for: operation) else { return false }
-            didMutate = tabManager.convertTabToShortcutPin(
+            guard let profileId = dependencies.resolvedEssentialsProfileId(operation) else { return false }
+            didMutate = dependencies.convertTabToShortcutPin(
                 tab,
                 role: .essential,
                 profileId: profileId,
@@ -95,7 +179,7 @@ final class SidebarRegularTabDragService {
             ) != nil
 
         case .moveToPinned(let spaceId) where isFolderContainer(operation.fromContainer):
-            didMutate = tabManager.convertTabToShortcutPin(
+            didMutate = dependencies.convertTabToShortcutPin(
                 tab,
                 role: .spacePinned,
                 profileId: nil,
@@ -110,10 +194,10 @@ final class SidebarRegularTabDragService {
 
         case .moveToFolder(let toFolderId) where operation.fromContainer == .spaceRegular(operation.scope.spaceId):
             guard case .spaceRegular(let spaceId) = operation.fromContainer else { return false }
-            guard let targetSpaceId = tabManager.folderCollectionStateOwner.spaceId(for: toFolderId), targetSpaceId == spaceId else {
+            guard let targetSpaceId = dependencies.folderSpaceId(toFolderId), targetSpaceId == spaceId else {
                 return false
             }
-            didMutate = tabManager.convertTabToShortcutPin(
+            didMutate = dependencies.convertTabToShortcutPin(
                 tab,
                 role: .spacePinned,
                 profileId: nil,
@@ -126,10 +210,10 @@ final class SidebarRegularTabDragService {
 
         case .moveToFolder(let toFolderId) where operation.fromContainer == .spacePinned(operation.scope.spaceId):
             guard case .spacePinned(let spaceId) = operation.fromContainer else { return false }
-            guard let targetSpaceId = tabManager.folderCollectionStateOwner.spaceId(for: toFolderId), targetSpaceId == spaceId else {
+            guard let targetSpaceId = dependencies.folderSpaceId(toFolderId), targetSpaceId == spaceId else {
                 return false
             }
-            didMutate = tabManager.convertTabToShortcutPin(
+            didMutate = dependencies.convertTabToShortcutPin(
                 tab,
                 role: .spacePinned,
                 profileId: nil,
@@ -159,11 +243,11 @@ final class SidebarRegularTabDragService {
     @discardableResult
     func reorderSpacePinnedTabs(_ tab: Tab, in spaceId: UUID, to index: Int) -> Bool {
         if let shortcutId = tab.shortcutPinId,
-           let pin = tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: shortcutId) {
-            return tabManager.shortcutPinCommandOwner.reorderSpacePinned(pin, in: spaceId, to: index)
+           let pin = dependencies.shortcutPin(shortcutId) {
+            return dependencies.reorderSpacePinned(pin, spaceId, index)
         }
 
-        return tabManager.convertTabToShortcutPin(
+        return dependencies.convertTabToShortcutPin(
             tab,
             role: .spacePinned,
             profileId: nil,
@@ -175,40 +259,31 @@ final class SidebarRegularTabDragService {
 
     @discardableResult
     func reorderRegularTabs(_ tab: Tab, in spaceId: UUID, to index: Int) -> Bool {
-        tabManager.withStructuralUpdateTransaction {
-            guard tabManager.regularTabCollectionOwner.reorder(tab, in: spaceId, to: index) else {
+        dependencies.withStructuralUpdateTransaction {
+            guard dependencies.reorderRegularTab(tab, spaceId, index) else {
                 return false
             }
-            tabManager.scheduleStructuralPersistence()
+            dependencies.scheduleStructuralPersistence()
             return true
         }
     }
 
     @discardableResult
     private func reorderGlobalPinnedTabs(_ tab: Tab, to index: Int) -> Bool {
-        tabManager.withStructuralUpdateTransaction {
+        dependencies.withStructuralUpdateTransaction {
             guard let shortcutId = tab.shortcutPinId,
-                  let pin = tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: shortcutId),
-                  let profileId = pin.profileId else {
+                  let pin = dependencies.shortcutPin(shortcutId),
+                  pin.profileId != nil else {
                 return false
             }
-            var pins = tabManager.pinnedByProfile[profileId] ?? []
-            guard let currentIndex = pins.firstIndex(where: { $0.id == pin.id }) else { return false }
-            guard index != currentIndex else { return false }
-
-            pins.remove(at: currentIndex)
-            let safeIndex = max(0, min(index, pins.count))
-            pins.insert(pin, at: safeIndex)
-            tabManager.setPinnedTabs(tabManager.shortcutPinStoreOwner.reindexed(pins), for: profileId)
-            tabManager.scheduleStructuralPersistence()
-            return true
+            return dependencies.reorderEssential(pin, index)
         }
     }
 
     private func moveTabIntoRegularSection(_ tab: Tab, spaceId: UUID, index: Int) -> Bool {
-        tabManager.shortcutLiveTabOwner.removeFromCurrentContainer(tab)
-        tabManager.regularTabCollectionOwner.insert(tab, in: spaceId, at: index)
-        tabManager.scheduleStructuralPersistence()
+        dependencies.removeFromCurrentContainer(tab)
+        dependencies.insertRegularTab(tab, spaceId, index)
+        dependencies.scheduleStructuralPersistence()
         return true
     }
 
@@ -221,12 +296,66 @@ final class SidebarRegularTabDragService {
 
     private func dissolveActiveSplitIfNeeded(for tab: Tab) {
         guard !tab.isShortcutLiveInstance else { return }
-        guard let runtimeContext = tabManager.runtimeContext else { return }
+        guard let runtimeContext = dependencies.runtimeContext() else { return }
 
         runtimeContext.forEachWindow { windowId, _ in
             if runtimeContext.visibleSplitTabIds(for: windowId).contains(tab.id) {
                 runtimeContext.handleTabClosure(tab.id)
             }
         }
+    }
+}
+
+extension SidebarRegularTabDragService.Dependencies {
+    @MainActor
+    static func live(tabManager: TabManager) -> Self {
+        Self(
+            convertTabToShortcutPin: { [weak tabManager] tab, role, profileId, spaceId, folderId, index, openTargetFolder, preferredWindowId in
+                tabManager?.shortcutPinCommandOwner.convertTabToShortcutPin(
+                    tab,
+                    role: role,
+                    profileId: profileId,
+                    spaceId: spaceId,
+                    folderId: folderId,
+                    at: index,
+                    openTargetFolder: openTargetFolder,
+                    preferredWindowId: preferredWindowId
+                )
+            },
+            resolvedEssentialsProfileId: { [weak tabManager] operation in
+                tabManager?.essentialsShortcutPlacementOwner.resolvedProfileId(for: operation)
+            },
+            folderSpaceId: { [weak tabManager] folderId in
+                tabManager?.folderCollectionStateOwner.spaceId(for: folderId)
+            },
+            shortcutPin: { [weak tabManager] shortcutId in
+                tabManager?.shortcutPinCollectionStateOwner.shortcutPin(by: shortcutId)
+            },
+            reorderSpacePinned: { [weak tabManager] pin, spaceId, index in
+                tabManager?.shortcutPinCommandOwner.reorderSpacePinned(pin, in: spaceId, to: index) ?? false
+            },
+            withStructuralUpdateTransaction: { [weak tabManager] operation in
+                guard let tabManager else { return operation() }
+                return tabManager.withStructuralUpdateTransaction(operation)
+            },
+            reorderRegularTab: { [weak tabManager] tab, spaceId, index in
+                tabManager?.regularTabCollectionOwner.reorder(tab, in: spaceId, to: index) ?? false
+            },
+            scheduleStructuralPersistence: { [weak tabManager] in
+                tabManager?.scheduleStructuralPersistence()
+            },
+            reorderEssential: { [weak tabManager] pin, index in
+                tabManager?.shortcutPinCommandOwner.reorderEssential(pin, to: index) ?? false
+            },
+            removeFromCurrentContainer: { [weak tabManager] tab in
+                tabManager?.shortcutLiveTabOwner.removeFromCurrentContainer(tab)
+            },
+            insertRegularTab: { [weak tabManager] tab, spaceId, index in
+                tabManager?.regularTabCollectionOwner.insert(tab, in: spaceId, at: index)
+            },
+            runtimeContext: { [weak tabManager] in
+                tabManager?.runtimeContext
+            }
+        )
     }
 }

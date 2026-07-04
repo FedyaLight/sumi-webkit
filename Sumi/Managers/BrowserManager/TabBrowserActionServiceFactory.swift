@@ -59,7 +59,7 @@ enum TabBrowserActionServiceFactory {
                 return isCurrentTab(tab, browserManager: browserManager)
             },
             activate: { [weak browserManager] tab in
-                browserManager?.tabManager.setActiveTab(tab)
+                browserManager?.tabManager.activeSelectionOwner.setActiveTab(tab)
             }
         )
     }

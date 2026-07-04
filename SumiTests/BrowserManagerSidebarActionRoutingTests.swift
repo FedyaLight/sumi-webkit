@@ -9,7 +9,7 @@ final class BrowserManagerSidebarActionRoutingTests: XCTestCase {
         defer { removePersistedWindowSession() }
 
         let harness = makeHarness()
-        harness.browserManager.tabManager.currentSpace = harness.secondarySpace
+        harness.browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(harness.secondarySpace)
 
         harness.browserManager.sidebarActionOwner.createFolderInCurrentSpace(in: harness.windowState)
 
@@ -48,8 +48,8 @@ final class BrowserManagerSidebarActionRoutingTests: XCTestCase {
         browserManager.profileManager.profiles = [profile]
         browserManager.currentProfile = profile
         browserManager.windowRegistry = windowRegistry
-        browserManager.tabManager.spaces = [primarySpace, secondarySpace]
-        browserManager.tabManager.currentSpace = primarySpace
+        browserManager.tabManager.spaceStateOwner.replaceSpaces([primarySpace, secondarySpace])
+        browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(primarySpace)
 
         windowState.tabManager = browserManager.tabManager
         windowState.currentSpaceId = primarySpace.id

@@ -95,7 +95,7 @@ final class BrowserTabOpeningOwner {
         }
 
         let tabManager = dependencies.tabManager()
-        return tabManager.createNewTab(in: tabManager.spaces.first)
+        return tabManager.regularTabLifecycleOwner.createNewTab(in: tabManager.spaceStateOwner.spaces.first)
     }
 
     @discardableResult
@@ -125,14 +125,16 @@ final class BrowserTabOpeningOwner {
         let targetSpace = resolvedTabOpenSpace(
             for: .foreground(windowState: windowState)
         )
-        let newTab = tabManager.createNewTab(
+        let newTab = tabManager.regularTabLifecycleOwner.createNewTab(
             url: url,
             in: targetSpace,
             activate: false
         )
 
         DispatchQueue.main.asyncAfter(deadline: .now() + SidebarDropMotion.contentLayoutDuration) { [weak self, weak newTab] in
-            guard let self, let newTab, self.dependencies.tabManager().tab(for: newTab.id) != nil else { return }
+            guard let self,
+                  let newTab,
+                  self.dependencies.tabManager().tabCollectionMembershipOwner.tab(for: newTab.id) != nil else { return }
             self.dependencies.selectTab(newTab, windowState, .deferred)
         }
 
@@ -153,7 +155,7 @@ final class BrowserTabOpeningOwner {
             let template = dependencies.settings()?.resolvedSearchEngineTemplate ?? SearchProvider.google.queryTemplate
             let normalizedURL = normalizeURL(url, queryTemplate: template)
             guard let resolvedUrl = URL(string: normalizedURL) else {
-                return tabManager.createEphemeralTab(
+                return tabManager.ephemeralLifecycleOwner.createEphemeralTab(
                     url: SumiSurface.emptyTabURL,
                     in: resolvedWindowState,
                     profile: profile
@@ -161,7 +163,7 @@ final class BrowserTabOpeningOwner {
             }
 
             let previousTabId = resolvedWindowState.currentTabId
-            let newTab = tabManager.createEphemeralTab(
+            let newTab = tabManager.ephemeralLifecycleOwner.createEphemeralTab(
                 url: resolvedUrl,
                 in: resolvedWindowState,
                 profile: profile
@@ -183,11 +185,11 @@ final class BrowserTabOpeningOwner {
 
         let targetSpace = resolvedTabOpenSpace(for: context)
         let regularInsertionIndex = context.regularInsertionIndex
-            ?? tabManager.regularChildInsertionIndex(
+            ?? tabManager.regularTabCollectionOwner.childInsertionIndex(
                 openedFrom: context.sourceTab,
                 in: targetSpace
             )
-        let newTab = tabManager.createNewTab(
+        let newTab = tabManager.regularTabLifecycleOwner.createNewTab(
             url: url,
             in: targetSpace,
             activate: false,
@@ -215,7 +217,7 @@ final class BrowserTabOpeningOwner {
                 sourceTab: tab
             )
         )
-        let insertIndex = tabManager.regularChildInsertionIndex(
+        let insertIndex = tabManager.regularTabCollectionOwner.childInsertionIndex(
             openedFrom: tab,
             in: targetSpace
         )
@@ -231,7 +233,7 @@ final class BrowserTabOpeningOwner {
         newTab.faviconIsTemplateGlobePlaceholder = tab.faviconIsTemplateGlobePlaceholder
         newTab.profileId = tab.profileId
 
-        tabManager.addTab(newTab, regularInsertionIndex: insertIndex)
+        tabManager.regularTabLifecycleOwner.addTab(newTab, regularInsertionIndex: insertIndex)
         dependencies.selectTab(newTab, windowState, .immediate)
     }
 
@@ -252,7 +254,7 @@ final class BrowserTabOpeningOwner {
             }
 
             let previousTabId = sourceWindowState.currentTabId
-            let popupTab = tabManager.createEphemeralTab(
+            let popupTab = tabManager.ephemeralLifecycleOwner.createEphemeralTab(
                 url: blankURL,
                 in: sourceWindowState,
                 profile: profile
@@ -273,11 +275,11 @@ final class BrowserTabOpeningOwner {
             preferredSpaceId: sourceTab.spaceId
         )
         let targetSpace = resolvedTabOpenSpace(for: context)
-        let insertionIndex = tabManager.regularChildInsertionIndex(
+        let insertionIndex = tabManager.regularTabCollectionOwner.childInsertionIndex(
             openedFrom: sourceTab,
             in: targetSpace
         )
-        return tabManager.createPopupTab(
+        return tabManager.regularTabLifecycleOwner.createPopupTab(
             in: targetSpace,
             activate: activate,
             webViewConfigurationOverride: webViewConfigurationOverride,
@@ -290,31 +292,31 @@ final class BrowserTabOpeningOwner {
         let resolvedWindowState = resolvedWindowState(for: context)
 
         if let preferredSpaceId = context.preferredSpaceId,
-           let preferredSpace = tabManager.spaces.first(where: { $0.id == preferredSpaceId }) {
+           let preferredSpace = tabManager.spaceStateOwner.spaces.first(where: { $0.id == preferredSpaceId }) {
             return preferredSpace
         }
 
         if let windowSpaceId = resolvedWindowState?.currentSpaceId,
-           let windowSpace = tabManager.spaces.first(where: { $0.id == windowSpaceId }) {
+           let windowSpace = tabManager.spaceStateOwner.spaces.first(where: { $0.id == windowSpaceId }) {
             return windowSpace
         }
 
         if let sourceSpaceId = context.sourceTab?.spaceId,
-           let sourceSpace = tabManager.spaces.first(where: { $0.id == sourceSpaceId }) {
+           let sourceSpace = tabManager.spaceStateOwner.spaces.first(where: { $0.id == sourceSpaceId }) {
             return sourceSpace
         }
 
         if let profileId = resolvedWindowState?.currentProfileId,
-           let profileSpace = tabManager.spaces.first(where: { $0.profileId == profileId }) {
+           let profileSpace = tabManager.spaceStateOwner.spaces.first(where: { $0.profileId == profileId }) {
             return profileSpace
         }
 
         if let sourceProfileId = context.sourceTab?.profileId,
-           let sourceProfileSpace = tabManager.spaces.first(where: { $0.profileId == sourceProfileId }) {
+           let sourceProfileSpace = tabManager.spaceStateOwner.spaces.first(where: { $0.profileId == sourceProfileId }) {
             return sourceProfileSpace
         }
 
-        return tabManager.spaces.first
+        return tabManager.spaceStateOwner.spaces.first
     }
 
     func prepareBackgroundTabIfNeeded(

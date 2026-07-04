@@ -77,10 +77,10 @@ extension BrowserWebViewCloseRouter.Dependencies {
                 browserManager?.auxiliaryWindowManager.session(for: tab)?.webView
             },
             isAuxiliaryMiniWindowTab: { [weak browserManager] tab in
-                browserManager?.tabManager.isAuxiliaryMiniWindowTab(tab) ?? false
+                browserManager?.tabManager.transientWebKitTabLifecycleOwner.isAuxiliaryMiniWindowTab(tab) ?? false
             },
             removeAuxiliaryMiniWindowTab: { [weak browserManager] tab in
-                browserManager?.tabManager.removeAuxiliaryMiniWindowTab(tab)
+                browserManager?.tabManager.transientWebKitTabLifecycleOwner.removeAuxiliaryMiniWindowTab(tab)
             },
             notifyExtensionTabClosed: { [weak browserManager] tab in
                 browserManager?.extensionsModule.notifyTabClosedIfLoaded(tab)
@@ -98,10 +98,10 @@ extension BrowserWebViewCloseRouter.Dependencies {
                         )
                     },
                     tab: { [weak browserManager] tabID in
-                        browserManager?.tabManager.tab(for: tabID)
+                        browserManager?.tabManager.tabCollectionMembershipOwner.tab(for: tabID)
                     },
                     regularTabs: { [weak browserManager] in
-                        browserManager?.tabManager.allTabs() ?? []
+                        browserManager?.tabManager.tabCollectionMembershipOwner.allTabs() ?? []
                     },
                     allWindows: { [weak browserManager] in
                         browserManager?.windowRegistry?.allWindows ?? []
@@ -116,7 +116,7 @@ extension BrowserWebViewCloseRouter.Dependencies {
                         browserManager?.tabLifecycleService.closeOrchestration.closeTab(tab, in: windowState)
                     },
                     removeTab: { [weak browserManager] tabID in
-                        browserManager?.tabManager.removeTab(tabID)
+                        browserManager?.tabManager.tabRemovalOwner.removeTab(tabID)
                     }
                 )
             }

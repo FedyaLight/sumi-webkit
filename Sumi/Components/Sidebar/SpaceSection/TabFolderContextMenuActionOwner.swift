@@ -28,7 +28,7 @@ struct TabFolderContextMenuActionOwner {
             selectedFolderId: pin.folderId
         )
         let spaceChoices = makeSidebarContextMenuSpaceChoices(
-            spaces: browserContext.tabManager.spaces,
+            spaces: browserContext.tabManager.spaceStateOwner.spaces,
             selectedSpaceId: pin.spaceId
         )
         let profileChoices = makeSidebarContextMenuProfileChoices(
@@ -173,7 +173,7 @@ struct TabFolderContextMenuActionOwner {
             return
         }
 
-        browserContext.tabManager.deactivateShortcutLiveTab(pinId: pin.id, in: windowState.id)
+        browserContext.tabManager.shortcutLiveTabOwner.deactivateShortcutLiveTab(pinId: pin.id, in: windowState.id)
     }
 
     func removeShortcutPin(_ pin: ShortcutPin) {
@@ -313,13 +313,13 @@ struct TabFolderContextMenuActionOwner {
 
     private func moveShortcutPin(_ pin: ShortcutPin, toFolder folderId: UUID) {
         guard let targetFolder = browserContext.tabManager.folderCollectionStateOwner.folder(by: folderId) else { return }
-        let targetIndex = browserContext.tabManager.folderPinnedPins(
+        let targetIndex = browserContext.tabManager.shortcutPinCollectionStateOwner.folderPinnedPins(
             for: folderId,
             in: targetFolder.spaceId
         ).count
 
         mutateFolderContent {
-            _ = browserContext.tabManager.moveShortcutPin(
+            _ = browserContext.tabManager.shortcutPinCommandOwner.moveShortcutPin(
                 pin,
                 to: .spacePinned,
                 profileId: nil,
@@ -334,7 +334,7 @@ struct TabFolderContextMenuActionOwner {
         let targetIndex = browserContext.tabManager.spacePinnedStructureOwner.topLevelSpacePinnedItems(for: targetSpaceId).count
 
         mutateFolderContent {
-            _ = browserContext.tabManager.moveShortcutPin(
+            _ = browserContext.tabManager.shortcutPinCommandOwner.moveShortcutPin(
                 pin,
                 to: .spacePinned,
                 profileId: nil,

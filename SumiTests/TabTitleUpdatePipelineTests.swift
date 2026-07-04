@@ -210,8 +210,8 @@ final class TabTitleUpdatePipelineTests: XCTestCase {
 
         browserManager.webViewCoordinator = WebViewCoordinator()
         browserManager.windowRegistry = windowRegistry
-        browserManager.tabManager.spaces = [space]
-        browserManager.tabManager.currentSpace = space
+        browserManager.tabManager.spaceStateOwner.replaceSpaces([space])
+        browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(space)
         windowState.tabManager = browserManager.tabManager
         windowState.currentSpaceId = space.id
 

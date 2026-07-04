@@ -213,3 +213,47 @@ private extension ShortcutPinStoreOwner {
         )
     }
 }
+
+extension ShortcutPinStoreOwner.Dependencies {
+    @MainActor
+    static func live(tabManager: TabManager) -> Self {
+        Self(
+            runtimeContext: { [weak tabManager] in
+                tabManager?.runtimeContext
+            },
+            pinnedByProfile: { [weak tabManager] in
+                tabManager?.shortcutPinCollectionStateOwner.pinnedByProfileSnapshot() ?? [:]
+            },
+            setPinnedTabs: { [weak tabManager] pins, profileId in
+                tabManager?.structuralCollectionMutationOwner.setPinnedTabs(pins, for: profileId)
+            },
+            topLevelSpacePinnedItems: { [weak tabManager] spaceId in
+                tabManager?.spacePinnedStructureOwner.topLevelSpacePinnedItems(for: spaceId) ?? []
+            },
+            applyTopLevelSpacePinnedOrder: { [weak tabManager] items, spaceId in
+                tabManager?.spacePinnedStructureOwner.applyTopLevelSpacePinnedOrder(items, for: spaceId)
+            },
+            insertTopLevelSpacePinnedShortcut: { [weak tabManager] pin, spaceId, targetIndex in
+                tabManager?.spacePinnedStructureOwner.insertTopLevelSpacePinnedShortcut(pin, in: spaceId, at: targetIndex)
+            },
+            withSpacePinnedShortcutGroup: { [weak tabManager] spaceId, folderId, mutate in
+                tabManager?.spacePinnedStructureOwner.withSpacePinnedShortcutGroup(for: spaceId, folderId: folderId) { pins in
+                    mutate(&pins)
+                }
+            },
+            spacePinnedPins: { [weak tabManager] spaceId in
+                tabManager?.shortcutPinCollectionStateOwner.spacePinnedPins(for: spaceId) ?? []
+            },
+            openFolderIfNeeded: { [weak tabManager] folderId in
+                tabManager?.folderMutationOwner.openFolderIfNeeded(folderId)
+            },
+            adjustedSameContainerInsertionIndex: { [weak tabManager] currentIndex, proposedIndex in
+                guard let tabManager else { return proposedIndex }
+                return tabManager.spacePinnedStructureOwner.adjustedSameContainerInsertionIndex(
+                    currentIndex: currentIndex,
+                    proposedIndex: proposedIndex
+                )
+            }
+        )
+    }
+}

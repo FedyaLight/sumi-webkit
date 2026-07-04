@@ -32,13 +32,13 @@ final class SumiBookmarksSurfaceTests: XCTestCase {
 
         harness.browserManager.bookmarkCommandOwner.openBookmarksTab(selecting: "first", in: harness.windowState)
         let firstBookmarksTab = try XCTUnwrap(
-            harness.browserManager.tabManager.tabs(in: harness.space).first(where: \.representsSumiBookmarksSurface)
+            harness.browserManager.tabManager.regularTabCollectionOwner.tabs(in: harness.space).first(where: \.representsSumiBookmarksSurface)
         )
         XCTAssertEqual(SumiSurface.bookmarksSelectedFolderID(from: firstBookmarksTab.url), "first")
 
         harness.browserManager.bookmarkCommandOwner.openBookmarksTab(selecting: "second", in: harness.windowState)
 
-        let bookmarksTabs = harness.browserManager.tabManager.tabs(in: harness.space)
+        let bookmarksTabs = harness.browserManager.tabManager.regularTabCollectionOwner.tabs(in: harness.space)
             .filter(\.representsSumiBookmarksSurface)
         XCTAssertEqual(bookmarksTabs.count, 1)
         XCTAssertEqual(bookmarksTabs.first?.id, firstBookmarksTab.id)
@@ -109,8 +109,8 @@ final class SumiBookmarksSurfaceTests: XCTestCase {
         browserManager.lastSessionWindowsStore = LastSessionWindowsStore()
         browserManager.bookmarkManager = makeBookmarkManager()
         browserManager.windowRegistry = windowRegistry
-        browserManager.tabManager.spaces = [space]
-        browserManager.tabManager.currentSpace = space
+        browserManager.tabManager.spaceStateOwner.replaceSpaces([space])
+        browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(space)
 
         windowState.tabManager = browserManager.tabManager
         windowState.currentSpaceId = space.id

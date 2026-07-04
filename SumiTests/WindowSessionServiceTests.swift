@@ -66,8 +66,8 @@ final class WindowSessionServiceTests: XCTestCase {
         let primaryProfile = Profile(name: "Primary")
         let primarySpace = Space(name: "Primary", profileId: primaryProfile.id)
         let secondarySpace = Space(name: "Secondary", profileId: primaryProfile.id)
-        tabManager.spaces = [primarySpace, secondarySpace]
-        tabManager.currentSpace = secondarySpace
+        tabManager.spaceStateOwner.replaceSpaces([primarySpace, secondarySpace])
+        tabManager.spaceStateOwner.replaceCurrentSpace(secondarySpace)
 
         let sessionKey = "SumiTests.windowSession.\(UUID().uuidString)"
         defer { UserDefaults.standard.removeObject(forKey: sessionKey) }
@@ -87,20 +87,20 @@ final class WindowSessionServiceTests: XCTestCase {
         let primaryProfile = Profile(name: "Primary")
         let windowSpace = Space(name: "Window", profileId: primaryProfile.id)
         let globalSpace = Space(name: "Global", profileId: primaryProfile.id)
-        tabManager.spaces = [windowSpace, globalSpace]
+        tabManager.spaceStateOwner.replaceSpaces([windowSpace, globalSpace])
 
-        let windowTab = tabManager.createNewTab(
+        let windowTab = tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://window.example",
             in: windowSpace,
             activate: false
         )
-        let globalTab = tabManager.createNewTab(
+        let globalTab = tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://global.example",
             in: globalSpace,
             activate: true
         )
-        tabManager.currentSpace = globalSpace
-        tabManager.currentTab = globalTab
+        tabManager.spaceStateOwner.replaceCurrentSpace(globalSpace)
+        tabManager.selectionStateOwner.replaceCurrentTab(globalTab)
 
         let sessionKey = "SumiTests.windowSession.\(UUID().uuidString)"
         defer { UserDefaults.standard.removeObject(forKey: sessionKey) }
@@ -113,7 +113,7 @@ final class WindowSessionServiceTests: XCTestCase {
 
         XCTAssertEqual(windowState.currentSpaceId, windowSpace.id)
         XCTAssertEqual(windowState.currentTabId, windowTab.id)
-        XCTAssertEqual(tabManager.currentTab?.id, globalTab.id)
+        XCTAssertEqual(tabManager.selectionStateOwner.currentTab?.id, globalTab.id)
     }
 
     func testHandleTabManagerDataLoadedRepairsStaleWindowSpaceFromWindowProfileInsteadOfGlobalCurrentSpace()
@@ -123,8 +123,8 @@ final class WindowSessionServiceTests: XCTestCase {
         let secondaryProfile = Profile(name: "Secondary")
         let primarySpace = Space(name: "Primary", profileId: primaryProfile.id)
         let secondarySpace = Space(name: "Secondary", profileId: secondaryProfile.id)
-        tabManager.spaces = [primarySpace, secondarySpace]
-        tabManager.currentSpace = secondarySpace
+        tabManager.spaceStateOwner.replaceSpaces([primarySpace, secondarySpace])
+        tabManager.spaceStateOwner.replaceCurrentSpace(secondarySpace)
 
         let sessionKey = "SumiTests.windowSession.\(UUID().uuidString)"
         defer { UserDefaults.standard.removeObject(forKey: sessionKey) }
@@ -152,8 +152,8 @@ final class WindowSessionServiceTests: XCTestCase {
         let currentProfile = Profile(name: "Current")
         let fallbackSpace = Space(name: "Fallback", profileId: fallbackProfile.id)
         let currentProfileSpace = Space(name: "Current", profileId: currentProfile.id)
-        tabManager.spaces = [fallbackSpace, currentProfileSpace]
-        tabManager.currentSpace = fallbackSpace
+        tabManager.spaceStateOwner.replaceSpaces([fallbackSpace, currentProfileSpace])
+        tabManager.spaceStateOwner.replaceCurrentSpace(fallbackSpace)
 
         let sessionKey = "SumiTests.windowSession.\(UUID().uuidString)"
         defer { UserDefaults.standard.removeObject(forKey: sessionKey) }
@@ -180,9 +180,9 @@ final class WindowSessionServiceTests: XCTestCase {
         let globalProfile = Profile(name: "Global")
         let windowSpace = Space(name: "Window", profileId: windowProfile.id)
         let globalSpace = Space(name: "Global", profileId: globalProfile.id)
-        tabManager.spaces = [globalSpace, windowSpace]
-        tabManager.currentSpace = globalSpace
-        let windowTab = tabManager.createNewTab(
+        tabManager.spaceStateOwner.replaceSpaces([globalSpace, windowSpace])
+        tabManager.spaceStateOwner.replaceCurrentSpace(globalSpace)
+        let windowTab = tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://window.example",
             in: windowSpace,
             activate: false
@@ -236,10 +236,10 @@ final class WindowSessionServiceTests: XCTestCase {
     func testBrowserManagerCurrentTabRequiresCommittedWindowSelection() {
         let browserManager = BrowserManager()
         let space = Space(id: UUID(), name: "Primary")
-        browserManager.tabManager.spaces = [space]
-        browserManager.tabManager.currentSpace = space
+        browserManager.tabManager.spaceStateOwner.replaceSpaces([space])
+        browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(space)
 
-        let fallbackTab = browserManager.tabManager.createNewTab(
+        let fallbackTab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://first.example",
             in: space,
             activate: true
@@ -289,7 +289,7 @@ final class WindowSessionServiceTests: XCTestCase {
         let tabManager = try makeInMemoryTabManager(loadPersistedState: false)
         let profileId = UUID()
         let space = tabManager.spaceLifecycleOwner.createSpace(name: "Snapshot", profileId: profileId)
-        let tab = tabManager.createNewTab(url: "https://snapshot.example", in: space, activate: true)
+        let tab = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://snapshot.example", in: space, activate: true)
         let shortcutPinId = UUID()
         let sessionKey = "SumiTests.windowSession.\(UUID().uuidString)"
         defer { UserDefaults.standard.removeObject(forKey: sessionKey) }
@@ -377,9 +377,9 @@ final class WindowSessionServiceTests: XCTestCase {
         XCTAssertEqual(windowState.currentShortcutPinRole, .essential)
         XCTAssertTrue(windowState.isAwaitingInitialSessionResolution)
 
-        tabManager.spaces = [space]
-        tabManager.currentSpace = space
-        tabManager.setPinnedTabs([pin], for: profileId)
+        tabManager.spaceStateOwner.replaceSpaces([space])
+        tabManager.spaceStateOwner.replaceCurrentSpace(space)
+        tabManager.structuralCollectionMutationOwner.setPinnedTabs([pin], for: profileId)
         tabManager.markInitialDataLoadFinished()
 
         service.handleTabManagerDataLoaded(runtime: delegate.runtime)
@@ -427,9 +427,9 @@ final class WindowSessionServiceTests: XCTestCase {
         XCTAssertEqual(windowState.selectedShortcutPinForSpace[space.id], pin.id)
         XCTAssertTrue(windowState.isAwaitingInitialSessionResolution)
 
-        tabManager.spaces = [space]
-        tabManager.currentSpace = space
-        tabManager.setSpacePinnedShortcuts([pin], for: space.id)
+        tabManager.spaceStateOwner.replaceSpaces([space])
+        tabManager.spaceStateOwner.replaceCurrentSpace(space)
+        tabManager.structuralCollectionMutationOwner.setSpacePinnedShortcuts([pin], for: space.id)
         tabManager.markInitialDataLoadFinished()
 
         service.handleTabManagerDataLoaded(runtime: delegate.runtime)
@@ -447,8 +447,8 @@ final class WindowSessionServiceTests: XCTestCase {
     func testActiveSplitGroupSnapshotRestoresGroupFocus() throws {
         let tabManager = try makeInMemoryTabManager(loadPersistedState: false)
         let space = tabManager.spaceLifecycleOwner.createSpace(name: "Split", profileId: UUID())
-        let first = tabManager.createNewTab(url: "https://one.example", in: space, activate: true)
-        let second = tabManager.createNewTab(url: "https://two.example", in: space, activate: false)
+        let first = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://one.example", in: space, activate: true)
+        let second = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://two.example", in: space, activate: false)
         let group = try XCTUnwrap(
             SplitGroup.make(
                 tabIds: [first.id, second.id],
@@ -492,8 +492,8 @@ final class WindowSessionServiceTests: XCTestCase {
     func testLegacySplitSessionSnapshotMigratesAfterTabLoad() throws {
         let tabManager = try makeInMemoryTabManager(loadPersistedState: false)
         let space = tabManager.spaceLifecycleOwner.createSpace(name: "Legacy Split", profileId: UUID())
-        let left = tabManager.createNewTab(url: "https://left.example", in: space, activate: true)
-        let right = tabManager.createNewTab(url: "https://right.example", in: space, activate: false)
+        let left = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://left.example", in: space, activate: true)
+        let right = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://right.example", in: space, activate: false)
         let sessionKey = try seedLegacySplitWindowSession(
             currentSpaceId: space.id,
             currentTabId: left.id,
@@ -534,11 +534,11 @@ final class WindowSessionServiceTests: XCTestCase {
 
     func testSetupWindowStateFallsBackToDefaultWhenLoadedSpaceIsMissing() async throws {
         let tabManager = try makeInMemoryTabManager(loadPersistedState: false)
-        await tabManager.loadFromStoreAwaitingResult()
+        await tabManager.storeRestore.loadFromStoreAwaitingResult()
         XCTAssertTrue(tabManager.hasLoadedInitialData)
-        tabManager.spaces = []
-        tabManager.currentSpace = nil
-        tabManager.currentTab = nil
+        tabManager.spaceStateOwner.replaceSpaces([])
+        tabManager.spaceStateOwner.replaceCurrentSpace(nil)
+        tabManager.selectionStateOwner.replaceCurrentTab(nil)
 
         let spaceId = UUID()
         let sessionKey = try seedWindowSession(currentSpaceId: spaceId)
@@ -574,7 +574,7 @@ final class WindowSessionServiceTests: XCTestCase {
 
         browserManager.currentProfile = globalProfile
         browserManager.profileManager.profiles = [globalProfile, windowProfile]
-        browserManager.tabManager.spaces = [globalSpace, windowSpace]
+        browserManager.tabManager.spaceStateOwner.replaceSpaces([globalSpace, windowSpace])
         browserManager.windowRegistry = windowRegistry
         windowRegistry.register(windowState)
 
@@ -596,8 +596,8 @@ final class WindowSessionServiceTests: XCTestCase {
         let windowSpace = Space(name: "Window", profileId: windowProfile.id)
         browserManager.currentProfile = globalProfile
         browserManager.profileManager.profiles = [globalProfile, windowProfile]
-        browserManager.tabManager.spaces = [globalSpace, windowSpace]
-        let windowTab = browserManager.tabManager.createNewTab(
+        browserManager.tabManager.spaceStateOwner.replaceSpaces([globalSpace, windowSpace])
+        let windowTab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://window.example",
             in: windowSpace,
             activate: false
@@ -634,7 +634,7 @@ final class WindowSessionServiceTests: XCTestCase {
 
         browserManager.currentProfile = globalProfile
         browserManager.profileManager.profiles = [globalProfile, otherProfile]
-        browserManager.tabManager.spaces = [globalSpace, otherSpace]
+        browserManager.tabManager.spaceStateOwner.replaceSpaces([globalSpace, otherSpace])
         browserManager.windowRegistry = windowRegistry
         windowRegistry.register(windowState)
 
@@ -653,7 +653,7 @@ final class WindowSessionServiceTests: XCTestCase {
         windowState.currentSpaceId = UUID()
         windowState.currentProfileId = staleProfileId
         browserManager.currentProfile = processProfile
-        browserManager.tabManager.spaces = []
+        browserManager.tabManager.spaceStateOwner.replaceSpaces([])
 
         browserManager.windowSpaceStateOwner.syncWindowSpaceContext(in: windowState, animateTheme: false)
 
@@ -828,7 +828,7 @@ private final class TestWindowSessionDelegate {
     }
 
     func hasValidCurrentSelection(in windowState: BrowserWindowState) -> Bool {
-        windowState.currentTabId.map { tabManager.tab(for: $0) != nil } ?? false
+        windowState.currentTabId.map { tabManager.tabCollectionMembershipOwner.tab(for: $0) != nil } ?? false
     }
 
     func applyTabSelection(
@@ -860,7 +860,7 @@ private final class TestWindowSessionDelegate {
 
     func space(for spaceId: UUID?) -> Space? {
         guard let spaceId else { return nil }
-        return tabManager.spaces.first { $0.id == spaceId }
+        return tabManager.spaceStateOwner.spaces.first { $0.id == spaceId }
     }
 
     func syncSidebarPresentationState(from _: BrowserWindowState) { /* no-op */ }
@@ -869,7 +869,7 @@ private final class TestWindowSessionDelegate {
         focusedSplitGroupIds.append(group.id)
         let targetTabId = group.activeTabId.flatMap { group.contains($0) ? $0 : nil }
             ?? group.tabIds.first
-        if let tab = targetTabId.flatMap({ tabManager.tab(for: $0) }) {
+        if let tab = targetTabId.flatMap({ tabManager.tabCollectionMembershipOwner.tab(for: $0) }) {
             applyTabSelection(
                 tab,
                 in: windowState,

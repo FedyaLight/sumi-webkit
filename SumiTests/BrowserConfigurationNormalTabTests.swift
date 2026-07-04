@@ -147,9 +147,9 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         _ = try await protectionCoordinator.restoreAppliedLevelForStartup()
 
         let profile = try XCTUnwrap(browserManager.currentProfile)
-        let tab = browserManager.tabManager.createNewTab(
+        let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://example.com/protection",
-            in: browserManager.tabManager.currentSpace,
+            in: browserManager.tabManager.spaceStateOwner.currentSpace,
             activate: false
         )
         let decision = protectionCoordinator.normalTabDecision(for: tab.url, profileId: profile.id)
@@ -232,9 +232,9 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         _ = try await protectionCoordinator.restoreAppliedLevelForStartup()
 
         let profile = try XCTUnwrap(browserManager.currentProfile)
-        let tab = browserManager.tabManager.createNewTab(
+        let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://example.com/protection-and-safari-content-blocker",
-            in: browserManager.tabManager.currentSpace,
+            in: browserManager.tabManager.spaceStateOwner.currentSpace,
             activate: false
         )
         let protectionDecision = protectionCoordinator.normalTabDecision(
@@ -383,7 +383,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         )
         let windowRegistry = WindowRegistry()
         harness.browserManager.windowRegistry = windowRegistry
-        let currentSpace = try XCTUnwrap(harness.browserManager.tabManager.currentSpace)
+        let currentSpace = try XCTUnwrap(harness.browserManager.tabManager.spaceStateOwner.currentSpace)
         let windowState = BrowserWindowState()
         windowState.currentProfileId = harness.browserManager.currentProfile?.id
         windowState.currentSpaceId = currentSpace.id
@@ -507,7 +507,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         )
         await controller.waitForContentBlockingAssetsInstalled()
         XCTAssertTrue(
-            harness.browserManager.tabManager.allTabs().contains { $0.id == tab.id }
+            harness.browserManager.tabManager.tabCollectionMembershipOwner.allTabs().contains { $0.id == tab.id }
         )
         XCTAssertEqual(tab.reloadPolicyStateOwner.safariContentBlockerAppliedAttachmentState?.isEnabled, true)
         XCTAssertFalse(tab.reloadPolicyStateOwner.isSafariContentBlockerReloadRequired)
@@ -792,9 +792,9 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             userscriptsModule: module
         )
         await waitForInitialTabManagerDataLoad(on: browserManager)
-        let tab = browserManager.tabManager.createNewTab(
+        let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://example.com/userscripts-disabled",
-            in: browserManager.tabManager.currentSpace,
+            in: browserManager.tabManager.spaceStateOwner.currentSpace,
             activate: false
         )
 
@@ -834,9 +834,9 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             extensionsModule: module
         )
         await waitForInitialTabManagerDataLoad(on: browserManager)
-        let tab = browserManager.tabManager.createNewTab(
+        let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://example.com/extensions-disabled",
-            in: browserManager.tabManager.currentSpace,
+            in: browserManager.tabManager.spaceStateOwner.currentSpace,
             activate: false
         )
 
@@ -872,9 +872,9 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             boostsModule: module
         )
         await waitForInitialTabManagerDataLoad(on: browserManager)
-        let tab = browserManager.tabManager.createNewTab(
+        let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://example.com/boosts-disabled",
-            in: browserManager.tabManager.currentSpace,
+            in: browserManager.tabManager.spaceStateOwner.currentSpace,
             activate: false
         )
 
@@ -1507,12 +1507,12 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         activate: Bool
     ) -> Tab {
         let tabManager = harness.browserManager.tabManager
-        let tab = tabManager.createNewTab(
+        let tab = tabManager.regularTabLifecycleOwner.createNewTab(
             url: url,
-            in: tabManager.currentSpace,
+            in: tabManager.spaceStateOwner.currentSpace,
             activate: activate
         )
-        XCTAssertTrue(tabManager.allTabs().contains { $0.id == tab.id })
+        XCTAssertTrue(tabManager.tabCollectionMembershipOwner.allTabs().contains { $0.id == tab.id })
         return tab
     }
 

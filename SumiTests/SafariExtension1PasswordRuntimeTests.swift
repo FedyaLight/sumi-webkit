@@ -114,9 +114,9 @@ final class SafariExtension1PasswordRuntimeTests: XCTestCase {
             profileId: profile.id,
             reason: "SafariExtension1PasswordRuntimeTests"
         )
-        let tab = browserManager.tabManager.createNewTab(
+        let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: server.loginBasicURL.absoluteString,
-            in: browserManager.tabManager.currentSpace,
+            in: browserManager.tabManager.spaceStateOwner.currentSpace,
             activate: false,
             webViewConfigurationOverride: configuration
         )

@@ -423,10 +423,10 @@ extension BrowserBookmarkCommandOwner.Dependencies {
                 browserManager?.windowSpaceStateOwner.space(for: spaceId)
             },
             tabsInSpace: { [weak browserManager] space in
-                browserManager?.tabManager.tabs(in: space) ?? []
+                browserManager?.tabManager.regularTabCollectionOwner.tabs(in: space) ?? []
             },
             allTabs: { [weak browserManager] in
-                browserManager?.tabManager.allTabs() ?? []
+                browserManager?.tabManager.tabCollectionMembershipOwner.allTabs() ?? []
             },
             detectedImportSources: {
                 SumiBookmarkImportSource.detectedBrowserSources()

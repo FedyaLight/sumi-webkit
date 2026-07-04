@@ -6,10 +6,37 @@ import Foundation
 /// between spaces triggered from menus.
 @MainActor
 final class SidebarDragOperationRoutingOwner {
-    unowned let tabManager: TabManager
+    struct Dependencies {
+        let withStructuralUpdateTransaction: (@MainActor () -> Bool) -> Bool
+        let shortcutPin: (UUID) -> ShortcutPin?
+        let handleFolderDragOperation: (TabFolder, DragOperation) -> Bool
+        let handleShortcutDragOperation: (ShortcutPin, DragOperation) -> Bool
+        let executeRegularTabDrag: (Tab, SidebarRegularTabDragOperationKind, DragOperation) -> Bool
+        let tab: (UUID) -> Tab?
+        let dragProxyTab: (ShortcutPin) -> Tab
+        let folder: (UUID) -> TabFolder?
+        let splitGroup: (UUID) -> SplitGroup?
+        let moveShortcutHostedSplitGroup: (SplitGroup, UUID, Int) -> Bool
+        let profileIdForSpace: (UUID) -> UUID?
+        let folderSpaceId: (UUID) -> UUID?
+        let regularTabs: (UUID) -> [Tab]
+        let convertTabToShortcutPin: (Tab, ShortcutPinRole, UUID?, UUID?, UUID?, Int) -> ShortcutPin?
+        let removeFromCurrentContainer: (Tab) -> Void
+        let insertRegularTab: (Tab, UUID, Int) -> Void
+        let scheduleStructuralPersistence: () -> Void
+    }
 
-    init(tabManager: TabManager) {
-        self.tabManager = tabManager
+    private let dependencies: Dependencies
+
+    init(dependencies: Dependencies) {
+        self.dependencies = dependencies
+    }
+
+    @discardableResult
+    func performSidebarDragOperation(_ operation: DragOperation) -> Bool {
+        dependencies.withStructuralUpdateTransaction {
+            handleDragOperation(operation)
+        }
     }
 
     @discardableResult
@@ -20,7 +47,7 @@ final class SidebarDragOperationRoutingOwner {
 
         let plan = SidebarDragOperationPlanner.plan(
             operation: operation,
-            shortcutPin: { tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: $0) }
+            shortcutPin: dependencies.shortcutPin
         )
 
         return executeSidebarDragPlan(plan, operation: operation)
@@ -33,23 +60,47 @@ final class SidebarDragOperationRoutingOwner {
         switch plan.kind {
         case .folderHeaderReorder(let folder, _),
              .folderHeaderUnsupported(let folder):
-            return tabManager.folderMutationOwner.handleFolderDragOperation(folder, operation: operation)
+            return dependencies.handleFolderDragOperation(folder, operation)
 
         case .shortcutSplitGroup(let group):
             return executeShortcutSplitGroupDragPlan(group, operation: operation)
 
         case .launcher(let pin, _):
-            return tabManager.handleShortcutDragOperation(pin, operation: operation)
+            return dependencies.handleShortcutDragOperation(pin, operation)
 
         case .regularTab(let tab, let regularOperation):
-            return tabManager.regularTabDragService.execute(
+            return dependencies.executeRegularTabDrag(
                 tab,
-                regularOperation: regularOperation,
-                dragOperation: operation
+                regularOperation,
+                operation
             )
 
         case .unsupported:
             return false
+        }
+    }
+
+    func resolveDragTab(for id: UUID) -> Tab? {
+        if let live = dependencies.tab(id) {
+            return live
+        }
+        if let pin = dependencies.shortcutPin(id) {
+            return dependencies.dragProxyTab(pin)
+        }
+        return nil
+    }
+
+    func resolveSidebarDragPayload(for item: SumiDragItem) -> DragOperation.Payload? {
+        switch item.kind {
+        case .tab:
+            if let pin = dependencies.shortcutPin(item.tabId) {
+                return .pin(pin)
+            }
+            return resolveDragTab(for: item.tabId).map { .tab($0) }
+        case .folder:
+            return dependencies.folder(item.tabId).map { .folder($0) }
+        case .splitGroup:
+            return dependencies.splitGroup(item.tabId).map { .splitGroup($0) }
         }
     }
 
@@ -59,7 +110,7 @@ final class SidebarDragOperationRoutingOwner {
     ) -> Bool {
         switch (operation.fromContainer, operation.toContainer) {
         case (.spacePinned(let fromSpaceId), .spacePinned(let toSpaceId)) where fromSpaceId == toSpaceId:
-            return tabManager.splitGroupStructureOwner.moveShortcutHostedSplitGroup(group, in: toSpaceId, to: operation.toIndex)
+            return dependencies.moveShortcutHostedSplitGroup(group, toSpaceId, operation.toIndex)
         default:
             return false
         }
@@ -68,10 +119,9 @@ final class SidebarDragOperationRoutingOwner {
     private func validateSidebarDragOperation(_ operation: DragOperation) -> Bool {
         let isCurrentContext = SidebarDragOperationContextValidator.validate(
             operation: operation,
-            spaceProfileId: tabManager.spaces
-                .first(where: { $0.id == operation.scope.spaceId })?.profileId,
-            folderSpaceId: { tabManager.folderCollectionStateOwner.spaceId(for: $0) },
-            shortcutPin: { tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: $0) }
+            spaceProfileId: dependencies.profileIdForSpace(operation.scope.spaceId),
+            folderSpaceId: dependencies.folderSpaceId,
+            shortcutPin: dependencies.shortcutPin
         )
         guard isCurrentContext else {
             RuntimeDiagnostics.emit("⚠️ Rejected sidebar drag outside current context: \(operation)")
@@ -84,20 +134,21 @@ final class SidebarDragOperationRoutingOwner {
     // MARK: - Explicit Tab Moves
 
     func moveTab(_ tabId: UUID, to targetSpaceId: UUID) {
-        tabManager.withStructuralUpdateTransaction {
-            guard let tab = tabManager.tab(for: tabId),
+        _ = dependencies.withStructuralUpdateTransaction {
+            guard let tab = dependencies.tab(tabId),
                   let currentSpaceId = tab.spaceId,
                   currentSpaceId != targetSpaceId else {
-                return
+                return false
             }
 
-            let targetTabs = tabManager.regularTabCollectionOwner.tabs(in: targetSpaceId)
+            let targetTabs = dependencies.regularTabs(targetSpaceId)
             moveTabBetweenSpaces(
                 tab,
                 to: targetSpaceId,
                 asSpacePinned: false,
                 toIndex: targetTabs.count
             )
+            return true
         }
     }
 
@@ -108,19 +159,94 @@ final class SidebarDragOperationRoutingOwner {
         toIndex: Int
     ) {
         if asSpacePinned {
-            _ = tabManager.convertTabToShortcutPin(
+            _ = dependencies.convertTabToShortcutPin(
                 tab,
-                role: .spacePinned,
-                profileId: nil,
-                spaceId: toSpaceId,
-                folderId: nil,
-                at: toIndex
+                .spacePinned,
+                nil,
+                toSpaceId,
+                nil,
+                toIndex
             )
             return
         }
 
-        tabManager.shortcutLiveTabOwner.removeFromCurrentContainer(tab)
-        tabManager.regularTabCollectionOwner.insert(tab, in: toSpaceId, at: toIndex)
-        tabManager.scheduleStructuralPersistence()
+        dependencies.removeFromCurrentContainer(tab)
+        dependencies.insertRegularTab(tab, toSpaceId, toIndex)
+        dependencies.scheduleStructuralPersistence()
+    }
+}
+
+extension SidebarDragOperationRoutingOwner.Dependencies {
+    @MainActor
+    static func live(tabManager: TabManager) -> Self {
+        Self(
+            withStructuralUpdateTransaction: { [weak tabManager] operation in
+                guard let tabManager else { return operation() }
+                return tabManager.withStructuralUpdateTransaction(operation)
+            },
+            shortcutPin: { [weak tabManager] id in
+                tabManager?.shortcutPinCollectionStateOwner.shortcutPin(by: id)
+            },
+            handleFolderDragOperation: { [weak tabManager] folder, operation in
+                tabManager?.folderMutationOwner.handleFolderDragOperation(folder, operation: operation) ?? false
+            },
+            handleShortcutDragOperation: { [weak tabManager] pin, operation in
+                guard let tabManager else { return false }
+                return tabManager.withStructuralUpdateTransaction {
+                    tabManager.shortcutDragOperationOwner.handleShortcutDragOperation(pin, operation: operation)
+                }
+            },
+            executeRegularTabDrag: { [weak tabManager] tab, regularOperation, dragOperation in
+                tabManager?.regularTabDragService.execute(
+                    tab,
+                    regularOperation: regularOperation,
+                    dragOperation: dragOperation
+                ) ?? false
+            },
+            tab: { [weak tabManager] id in
+                tabManager?.tabCollectionMembershipOwner.tab(for: id)
+            },
+            dragProxyTab: { [weak tabManager] pin in
+                guard let tabManager else { preconditionFailure("TabManager dependency used after deallocation") }
+                return tabManager.shortcutPresentationOwner.dragProxyTab(for: pin)
+            },
+            folder: { [weak tabManager] id in
+                tabManager?.folderCollectionStateOwner.folder(by: id)
+            },
+            splitGroup: { [weak tabManager] id in
+                tabManager?.splitGroupCollectionStateOwner.group(with: id)
+            },
+            moveShortcutHostedSplitGroup: { [weak tabManager] group, spaceId, index in
+                tabManager?.splitGroupStructureOwner.moveShortcutHostedSplitGroup(group, in: spaceId, to: index) ?? false
+            },
+            profileIdForSpace: { [weak tabManager] spaceId in
+                tabManager?.spaceStateOwner.profileId(for: spaceId)
+            },
+            folderSpaceId: { [weak tabManager] folderId in
+                tabManager?.folderCollectionStateOwner.spaceId(for: folderId)
+            },
+            regularTabs: { [weak tabManager] spaceId in
+                tabManager?.regularTabCollectionOwner.tabs(in: spaceId) ?? []
+            },
+            convertTabToShortcutPin: { [weak tabManager] tab, role, profileId, spaceId, folderId, index in
+                tabManager?.shortcutPinCommandOwner.convertTabToShortcutPin(
+                    tab,
+                    role: role,
+                    profileId: profileId,
+                    spaceId: spaceId,
+                    folderId: folderId,
+                    at: index
+                )
+            },
+            removeFromCurrentContainer: { [weak tabManager] tab in
+                tabManager?.shortcutLiveTabOwner.removeFromCurrentContainer(tab)
+            },
+            insertRegularTab: { [weak tabManager] tab, spaceId, index in
+                tabManager?.regularTabCollectionOwner.insert(tab, in: spaceId, at: index)
+            },
+            scheduleStructuralPersistence: { [weak tabManager] in
+                tabManager?.scheduleStructuralPersistence()
+            }
+        )
     }
 }

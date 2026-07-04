@@ -789,7 +789,7 @@ struct TabFolderView: View {
     }
 
     private func activateShortcutPin(_ pin: ShortcutPin) {
-        let tab = browserContext.tabManager.activateShortcutPin(
+        let tab = browserContext.tabManager.shortcutLiveTabOwner.activateShortcutPin(
             pin,
             in: windowState.id,
             currentSpaceId: space.id

@@ -270,7 +270,7 @@ extension BrowserTabRuntimeCompositionService.Dependencies {
             }
             .compactMap { windowState in
                 let currentTab = browserManager.windowTabContextOwner.currentTab(for: windowState)
-                return browserManager.tabManager.opportunisticRestoreAnchor(
+                return browserManager.tabManager.lazyRestoreCoordinator.opportunisticRestoreAnchor(
                     in: windowState,
                     currentTab: currentTab
                 )
@@ -294,7 +294,7 @@ extension BrowserTabRuntimeCompositionService.Dependencies {
             tabs.append(tab)
         }
 
-        browserManager.tabManager.allTabs().forEach(append)
+        browserManager.tabManager.tabCollectionMembershipOwner.allTabs().forEach(append)
         (browserManager.windowRegistry.map { Array($0.windows.values) } ?? [])
             .flatMap(\.ephemeralTabs)
             .forEach(append)

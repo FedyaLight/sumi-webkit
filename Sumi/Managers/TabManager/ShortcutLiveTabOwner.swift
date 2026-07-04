@@ -28,12 +28,15 @@ struct ShortcutPinSelectionCleanupResult {
 @MainActor
 final class ShortcutLiveTabOwner {
     struct Dependencies {
+        let withStructuralUpdateTransaction: @MainActor (@MainActor () -> Bool) -> Bool
+        let withStructuralUpdateTransactionReturningTab: @MainActor (@MainActor () -> Tab) -> Tab
         let runtimeContext: @MainActor () -> TabManagerRuntimeContext?
         let transientShortcutTabsByWindow: @MainActor () -> [UUID: [UUID: Tab]]
         let updateTransientShortcutTabsByWindow: @MainActor ((inout [UUID: [UUID: Tab]]) -> Void) -> Void
         let currentSpaceId: @MainActor () -> UUID?
         let firstRegularTabId: @MainActor (UUID) -> UUID?
         let tab: @MainActor (UUID) -> Tab?
+        let activeShortcutTab: @MainActor (UUID) -> Tab?
         let resolvedLiveSpaceId: @MainActor (ShortcutPin, UUID?) -> UUID?
         let resolvedExecutionProfileId: @MainActor (ShortcutPin, UUID?) -> UUID?
         let assignProfile: @MainActor (UUID?, Tab) -> Void
@@ -194,6 +197,13 @@ final class ShortcutLiveTabOwner {
 
     @discardableResult
     func activateShortcutPin(_ pin: ShortcutPin, in windowId: UUID, currentSpaceId: UUID?) -> Tab {
+        dependencies.withStructuralUpdateTransactionReturningTab {
+            activateShortcutPinWithoutStartingTransaction(pin, in: windowId, currentSpaceId: currentSpaceId)
+        }
+    }
+
+    @discardableResult
+    private func activateShortcutPinWithoutStartingTransaction(_ pin: ShortcutPin, in windowId: UUID, currentSpaceId: UUID?) -> Tab {
         let currentLiveTabsByWindow = dependencies.transientShortcutTabsByWindow()
         if let existing = currentLiveTabsByWindow[windowId]?[pin.id] {
             existing.bindToShortcutPin(pin)
@@ -233,7 +243,20 @@ final class ShortcutLiveTabOwner {
     }
 
     @discardableResult
+    func deactivateShortcutLiveTab(in windowId: UUID) -> Bool {
+        guard let pinId = dependencies.activeShortcutTab(windowId)?.shortcutPinId else { return false }
+        return deactivateShortcutLiveTab(pinId: pinId, in: windowId)
+    }
+
+    @discardableResult
     func deactivateShortcutLiveTab(pinId: UUID, in windowId: UUID) -> Bool {
+        dependencies.withStructuralUpdateTransaction {
+            deactivateShortcutLiveTabWithoutStartingTransaction(pinId: pinId, in: windowId)
+        }
+    }
+
+    @discardableResult
+    private func deactivateShortcutLiveTabWithoutStartingTransaction(pinId: UUID, in windowId: UUID) -> Bool {
         var removedTab: Tab?
         dependencies.updateTransientShortcutTabsByWindow { liveTabsByWindow in
             removedTab = liveTabsByWindow[windowId]?.removeValue(forKey: pinId)
@@ -532,5 +555,91 @@ final class ShortcutLiveTabOwner {
         }
         windowState.selectionHistory.removeFromShortcutLiveSelectionHistory(pinId)
         return cleanupResult
+    }
+}
+
+extension ShortcutLiveTabOwner.Dependencies {
+    @MainActor
+    static func live(tabManager: TabManager) -> Self {
+        Self(
+            withStructuralUpdateTransaction: { [weak tabManager] operation in
+                guard let tabManager else { return operation() }
+                return tabManager.withStructuralUpdateTransaction(operation)
+            },
+            withStructuralUpdateTransactionReturningTab: { [weak tabManager] operation in
+                guard let tabManager else { return operation() }
+                return tabManager.withStructuralUpdateTransaction(operation)
+            },
+            runtimeContext: { [weak tabManager] in
+                tabManager?.runtimeContext
+            },
+            transientShortcutTabsByWindow: { [weak tabManager] in
+                tabManager?.transientTabRegistryOwner.transientShortcutTabsByWindow ?? [:]
+            },
+            updateTransientShortcutTabsByWindow: { [weak tabManager] update in
+                tabManager?.transientTabRegistryOwner.updateTransientShortcutTabsByWindow(update)
+            },
+            currentSpaceId: { [weak tabManager] in
+                tabManager?.spaceStateOwner.currentSpace?.id
+            },
+            firstRegularTabId: { [weak tabManager] spaceId in
+                tabManager?.regularTabCollectionOwner.tabs(in: spaceId).first?.id
+            },
+            tab: { [weak tabManager] tabId in
+                tabManager?.tabCollectionMembershipOwner.tab(for: tabId)
+            },
+            activeShortcutTab: { [weak tabManager] windowId in
+                tabManager?.shortcutPresentationOwner.activeShortcutTab(for: windowId)
+            },
+            resolvedLiveSpaceId: { [weak tabManager] pin, currentSpaceId in
+                tabManager?.shortcutPinRuntimeResolutionOwner.resolvedLiveSpaceId(for: pin, currentSpaceId: currentSpaceId)
+            },
+            resolvedExecutionProfileId: { [weak tabManager] pin, currentSpaceId in
+                tabManager?.shortcutPinRuntimeResolutionOwner.resolvedExecutionProfileId(for: pin, currentSpaceId: currentSpaceId)
+            },
+            assignProfile: { [weak tabManager] profileId, tab in
+                tabManager?.profileAssignmentOwner.assignProfile(profileId, to: tab)
+            },
+            attach: { [weak tabManager] tab in
+                tabManager?.tabCollectionMembershipOwner.attach(tab)
+            },
+            detach: { [weak tabManager] tab in
+                tabManager?.tabCollectionMembershipOwner.detach(tab)
+            },
+            notifyTransientShortcutStateChanged: { [weak tabManager] in
+                tabManager?.notifyTransientShortcutStateChanged()
+            },
+            cancelRuntimeStatePersistence: { [weak tabManager] tabId in
+                tabManager?.structuralPersistence.cancelRuntimeStatePersistence(for: tabId)
+            },
+            pinnedByProfile: { [weak tabManager] in
+                tabManager?.shortcutPinCollectionStateOwner.pinnedByProfileSnapshot() ?? [:]
+            },
+            setPinnedTabs: { [weak tabManager] pins, profileId in
+                tabManager?.structuralCollectionMutationOwner.setPinnedTabs(pins, for: profileId)
+            },
+            removeRegularTab: { [weak tabManager] tabId, spaceId, currentSpaceId in
+                _ = tabManager?.regularTabCollectionOwner.remove(
+                    tabId,
+                    from: spaceId,
+                    currentSpaceId: currentSpaceId
+                )
+            },
+            insertRegularTab: { [weak tabManager] tab, spaceId, insertionIndex in
+                tabManager?.regularTabCollectionOwner.insert(tab, in: spaceId, at: insertionIndex)
+            },
+            faviconService: { [weak tabManager] in
+                guard let tabManager else { preconditionFailure("TabManager dependency used after deallocation") }
+                return tabManager.faviconService
+            },
+            faviconImageService: { [weak tabManager] in
+                guard let tabManager else { preconditionFailure("TabManager dependency used after deallocation") }
+                return tabManager.faviconImageService
+            },
+            visitedLinkStore: { [weak tabManager] in
+                guard let tabManager else { preconditionFailure("TabManager dependency used after deallocation") }
+                return tabManager.visitedLinkStore
+            }
+        )
     }
 }

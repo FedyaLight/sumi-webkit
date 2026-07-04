@@ -49,7 +49,7 @@ enum BrowserUserscriptRuntimeFactory {
                 browserManager?.permissionRuntime.notificationPermissionBridge
             },
             notificationTabContext: { [weak browserManager] webViewId, webView in
-                browserManager?.tabManager.tab(for: webViewId)?
+                browserManager?.tabManager.tabCollectionMembershipOwner.tab(for: webViewId)?
                     .webNotificationTabContext(for: webView)
             }
         )
@@ -83,9 +83,9 @@ enum BrowserUserscriptRuntimeFactory {
             )
         } else {
             guard let targetSpace = preferredSpaceId.flatMap({ spaceId in
-                browserManager.tabManager.spaces.first { $0.id == spaceId }
+                browserManager.tabManager.spaceStateOwner.spaces.first { $0.id == spaceId }
             }) else { return }
-            _ = browserManager.tabManager.createNewTab(
+            _ = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
                 url: url,
                 in: targetSpace,
                 activate: false
@@ -138,7 +138,7 @@ enum BrowserUserscriptRuntimeFactory {
         }
 
         guard let owner = browserManager.webViewRoutingService.trackedOwner(containing: sourceWebView),
-              let tab = browserManager.tabManager.tab(for: owner.tabID)
+              let tab = browserManager.tabManager.tabCollectionMembershipOwner.tab(for: owner.tabID)
         else {
             return nil
         }
@@ -157,7 +157,7 @@ enum BrowserUserscriptRuntimeFactory {
         sourceWebView: WKWebView?,
         browserManager: BrowserManager
     ) {
-        guard let tab = browserManager.tabManager.tab(for: tabId) else { return }
+        guard let tab = browserManager.tabManager.tabCollectionMembershipOwner.tab(for: tabId) else { return }
         let sourceWindow = userscriptSourceContext(
             for: sourceWebView,
             browserManager: browserManager
@@ -171,7 +171,7 @@ enum BrowserUserscriptRuntimeFactory {
         _ windowState: BrowserWindowState?,
         _ browserManager: BrowserManager
     ) {
-        if browserManager.tabManager.isAuxiliaryMiniWindowTab(tab) {
+        if browserManager.tabManager.transientWebKitTabLifecycleOwner.isAuxiliaryMiniWindowTab(tab) {
             browserManager.webViewCloseRouter.closeAuxiliaryMiniWindow(for: tab, reason: .extensionRequestedClose)
             return
         }
@@ -179,7 +179,7 @@ enum BrowserUserscriptRuntimeFactory {
         if let windowState {
             browserManager.tabLifecycleService.closeOrchestration.closeTab(tab, in: windowState)
         } else {
-            browserManager.tabManager.removeTab(tab.id)
+            browserManager.tabManager.tabRemovalOwner.removeTab(tab.id)
         }
     }
 }

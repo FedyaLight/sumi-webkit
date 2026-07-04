@@ -23,7 +23,7 @@ enum BrowserExtensionManagerRuntimeFactory {
                 browserManager?.windowRegistry?.activeWindow
             },
             allTabs: { [weak browserManager] in
-                browserManager?.tabManager.allTabs() ?? []
+                browserManager?.tabManager.tabCollectionMembershipOwner.allTabs() ?? []
             },
             allWindowStates: { [weak browserManager] in
                 browserManager?.windowRegistry?.allWindows ?? []

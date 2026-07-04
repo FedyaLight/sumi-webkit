@@ -280,7 +280,7 @@ extension BrowserHistoryNavigationOwner.Dependencies {
                 )
             },
             scheduleRuntimeStatePersistence: { [weak browserManager] tab in
-                browserManager?.tabManager.scheduleRuntimeStatePersistence(for: tab)
+                browserManager?.tabManager.structuralPersistence.scheduleRuntimeStatePersistence(for: tab)
             },
             schedulePrepareVisibleWebViews: { [weak browserManager] windowState in
                 browserManager?.windowVisualMutationOwner.schedulePrepareVisibleWebViews(for: windowState)

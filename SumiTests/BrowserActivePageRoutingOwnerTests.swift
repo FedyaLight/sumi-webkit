@@ -283,7 +283,7 @@ private final class BrowserActivePageRoutingOwnerHarness {
     var webViewsByKey: [String: WKWebView] = [:]
     var spaces: Set<UUID> = []
     var folderSpaceIds: [UUID: UUID] = [:]
-    var essentialsInsertion: TabManager.EssentialsInsertionPlan?
+    var essentialsInsertion: EssentialsShortcutPlacementOwner.InsertionPlan?
     var createdTabs: [CreatedTab] = []
     var openedTabs: [OpenedTab] = []
     var convertedPins: [ConvertedPin] = []

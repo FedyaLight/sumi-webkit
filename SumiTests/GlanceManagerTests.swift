@@ -43,7 +43,7 @@ final class GlanceManagerTests: XCTestCase {
         let browserManager = makeBrowserManager()
         let windowSpace = browserManager.tabManager.spaceLifecycleOwner.createSpace(name: "Window Space")
         let globalSpace = browserManager.tabManager.spaceLifecycleOwner.createSpace(name: "Global Space")
-        browserManager.tabManager.currentSpace = globalSpace
+        browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(globalSpace)
         let windowRegistry = WindowRegistry()
         let windowState = BrowserWindowState()
         windowState.currentSpaceId = windowSpace.id
@@ -128,7 +128,7 @@ final class GlanceManagerTests: XCTestCase {
 
         XCTAssertTrue(browserManager.webViewCloseRouter.handleWebViewDidClose(webView))
 
-        XCTAssertNil(browserManager.tabManager.tab(for: sourceTab.id))
+        XCTAssertNil(browserManager.tabManager.tabCollectionMembershipOwner.tab(for: sourceTab.id))
         XCTAssertNil(browserManager.webViewCoordinator?.getWebView(
             for: sourceTab.id,
             in: sourceWindow.id
@@ -151,7 +151,7 @@ final class GlanceManagerTests: XCTestCase {
 
         XCTAssertTrue(browserManager.webViewCloseRouter.handleWebViewDidClose(webView))
 
-        XCTAssertNotNil(browserManager.tabManager.tab(for: sourceTab.id))
+        XCTAssertNotNil(browserManager.tabManager.tabCollectionMembershipOwner.tab(for: sourceTab.id))
         XCTAssertEqual(visibleWindow.currentTabId, sourceTab.id)
         XCTAssertNil(browserManager.webViewCoordinator?.getWebView(
             for: sourceTab.id,
@@ -174,7 +174,7 @@ final class GlanceManagerTests: XCTestCase {
 
         XCTAssertNil(browserManager.glanceManager.currentSession)
         XCTAssertEqual(browserManager.glanceManager.phase, .idle)
-        XCTAssertIdentical(browserManager.tabManager.tab(for: previewTab.id), previewTab)
+        XCTAssertIdentical(browserManager.tabManager.tabCollectionMembershipOwner.tab(for: previewTab.id), previewTab)
         XCTAssertIdentical(previewTab.existingWebView, webView)
     }
 
@@ -197,7 +197,7 @@ final class GlanceManagerTests: XCTestCase {
 
         XCTAssertNil(browserManager.glanceManager.currentSession)
         XCTAssertEqual(browserManager.glanceManager.phase, .idle)
-        XCTAssertIdentical(browserManager.tabManager.tab(for: previewTab.id), previewTab)
+        XCTAssertIdentical(browserManager.tabManager.tabCollectionMembershipOwner.tab(for: previewTab.id), previewTab)
         XCTAssertIdentical(previewTab.existingWebView, webView)
         XCTAssertEqual(sourceWindow.currentTabId, previewTab.id)
         XCTAssertNotEqual(otherWindow.currentTabId, previewTab.id)
@@ -218,7 +218,7 @@ final class GlanceManagerTests: XCTestCase {
 
         XCTAssertIdentical(browserManager.glanceManager.currentSession, session)
         XCTAssertEqual(browserManager.glanceManager.phase, .promoting)
-        XCTAssertIdentical(browserManager.tabManager.tab(for: previewTab.id), previewTab)
+        XCTAssertIdentical(browserManager.tabManager.tabCollectionMembershipOwner.tab(for: previewTab.id), previewTab)
         XCTAssertNotNil(previewTab.existingWebView)
         XCTAssertEqual(sourceWindow.currentTabId, previewTab.id)
 
@@ -267,9 +267,9 @@ final class GlanceManagerTests: XCTestCase {
         let browserManager = makeBrowserManager()
         let sourceTab = makeSourceTab(in: browserManager)
         let sourceSpace = try XCTUnwrap(sourceTab.spaceId.flatMap { spaceId in
-            browserManager.tabManager.spaces.first { $0.id == spaceId }
+            browserManager.tabManager.spaceStateOwner.spaces.first { $0.id == spaceId }
         })
-        let olderTab = browserManager.tabManager.createNewTab(
+        let olderTab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://older.example/page",
             in: sourceSpace,
             activate: false
@@ -288,7 +288,7 @@ final class GlanceManagerTests: XCTestCase {
 
         let splitGroup = try XCTUnwrap(browserManager.tabManager.splitGroupStructureOwner.splitGroup(containing: previewTab.id))
         let placeholderId = try XCTUnwrap(splitGroup.tabIds.last)
-        let placeholderTab = try XCTUnwrap(browserManager.tabManager.tab(for: placeholderId))
+        let placeholderTab = try XCTUnwrap(browserManager.tabManager.tabCollectionMembershipOwner.tab(for: placeholderId))
         XCTAssertNil(browserManager.glanceManager.currentSession)
         XCTAssertEqual(browserManager.glanceManager.phase, .idle)
         XCTAssertEqual(splitGroup.tabIds, [previewTab.id, placeholderId])
@@ -322,7 +322,7 @@ final class GlanceManagerTests: XCTestCase {
         XCTAssertEqual(filledGroup.tabIds, [previewTab.id, sourceTab.id])
         XCTAssertEqual(filledGroup.activeTabId, sourceTab.id)
         XCTAssertEqual(sourceWindow.currentTabId, sourceTab.id)
-        XCTAssertNil(browserManager.tabManager.tab(for: placeholderId))
+        XCTAssertNil(browserManager.tabManager.tabCollectionMembershipOwner.tab(for: placeholderId))
         XCTAssertFalse(sourceWindow.isFloatingBarVisible)
         XCTAssertEqual(sourceWindow.floatingBarPresentationReason, .none)
     }
@@ -330,9 +330,9 @@ final class GlanceManagerTests: XCTestCase {
     func testGlancePresentationStaysPinnedToSourceTabSelection() {
         let browserManager = makeBrowserManager()
         let sourceTab = makeSourceTab(in: browserManager)
-        let otherTab = browserManager.tabManager.createNewTab(
+        let otherTab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://other.example/page",
-            in: browserManager.tabManager.currentSpace,
+            in: browserManager.tabManager.spaceStateOwner.currentSpace,
             activate: false
         )
         let windowState = BrowserWindowState()
@@ -441,9 +441,9 @@ final class GlanceManagerTests: XCTestCase {
     func testGlanceSessionRestoreRebindsToSourceTabSelection() throws {
         let browserManager = makeBrowserManager()
         let sourceTab = makeSourceTab(in: browserManager)
-        let otherTab = browserManager.tabManager.createNewTab(
+        let otherTab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://other.example/page",
-            in: browserManager.tabManager.currentSpace,
+            in: browserManager.tabManager.spaceStateOwner.currentSpace,
             activate: false
         )
         let (_, windowState) = makeRegisteredWindow(in: browserManager, selecting: otherTab)
@@ -568,9 +568,9 @@ final class GlanceManagerTests: XCTestCase {
     }
 
     private func makeSourceTab(in browserManager: BrowserManager) -> Tab {
-        let space = browserManager.tabManager.currentSpace
+        let space = browserManager.tabManager.spaceStateOwner.currentSpace
             ?? browserManager.tabManager.spaceLifecycleOwner.createSpace(name: "Glance Tests")
-        return browserManager.tabManager.createNewTab(
+        return browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://source.example/page",
             in: space,
             activate: true

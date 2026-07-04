@@ -29,7 +29,7 @@ final class BrowserNativeSurfaceRoutingOwner {
             if let existing = windowState.ephemeralTabs.first(where: { kind.matches($0) }) {
                 configureAndSelect(existing, kind: kind, url: url, in: windowState)
             } else {
-                let newTab = tabManager.createEphemeralTab(
+                let newTab = tabManager.ephemeralLifecycleOwner.createEphemeralTab(
                     url: url,
                     in: windowState,
                     profile: profile
@@ -49,7 +49,7 @@ final class BrowserNativeSurfaceRoutingOwner {
         if let sid = targetSpace?.id,
            let existing = tabManager.regularTabCollectionOwner.tabs(in: sid).first(where: { kind.matches($0) }) {
             configureAndSelect(existing, kind: kind, url: url, in: windowState)
-            tabManager.scheduleRuntimeStatePersistence(for: existing)
+            tabManager.structuralPersistence.scheduleRuntimeStatePersistence(for: existing)
             dependencies.focusWindow(windowState)
             return
         }
@@ -63,7 +63,7 @@ final class BrowserNativeSurfaceRoutingOwner {
             )
         )
         configureSurface(newTab, kind: kind, url: url)
-        tabManager.scheduleRuntimeStatePersistence(for: newTab)
+        tabManager.structuralPersistence.scheduleRuntimeStatePersistence(for: newTab)
         dependencies.focusWindow(windowState)
     }
 
@@ -73,21 +73,21 @@ final class BrowserNativeSurfaceRoutingOwner {
         preferredSpaceId: UUID?
     ) -> Space? {
         if let preferredSpaceId,
-           let preferredSpace = tabManager.spaces.first(where: { $0.id == preferredSpaceId }) {
+           let preferredSpace = tabManager.spaceStateOwner.spaces.first(where: { $0.id == preferredSpaceId }) {
             return preferredSpace
         }
 
         if let windowSpaceId = windowState.currentSpaceId,
-           let windowSpace = tabManager.spaces.first(where: { $0.id == windowSpaceId }) {
+           let windowSpace = tabManager.spaceStateOwner.spaces.first(where: { $0.id == windowSpaceId }) {
             return windowSpace
         }
 
         if let profileId = windowState.currentProfileId,
-           let profileSpace = tabManager.spaces.first(where: { $0.profileId == profileId }) {
+           let profileSpace = tabManager.spaceStateOwner.spaces.first(where: { $0.profileId == profileId }) {
             return profileSpace
         }
 
-        return tabManager.spaces.first
+        return tabManager.spaceStateOwner.spaces.first
     }
 
     private func configureAndSelect(

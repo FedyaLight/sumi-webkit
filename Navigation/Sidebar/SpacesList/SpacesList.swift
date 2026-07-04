@@ -41,7 +41,7 @@ struct SpacesList: View {
         if windowState.isIncognito {
             return windowState.ephemeralSpaces
         }
-        return browserContext.tabManager.spaces
+        return browserContext.tabManager.spaceStateOwner.spaces
     }
 
     private var displayedSpaces: [Space] {

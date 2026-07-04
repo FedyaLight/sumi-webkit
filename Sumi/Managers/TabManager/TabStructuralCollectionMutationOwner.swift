@@ -98,28 +98,32 @@ extension TabStructuralCollectionMutationOwner.Dependencies {
     static func live(tabManager: TabManager) -> Self {
         Self(
             tabsBySpace: { [weak tabManager] in
-                tabManager?.tabsBySpace ?? [:]
+                tabManager?.regularTabCollectionStateOwner.tabsBySpace ?? [:]
             },
             setTabsBySpace: { [weak tabManager] tabsBySpace in
-                tabManager?.tabsBySpace = tabsBySpace
+                tabManager?.objectWillChange.send()
+                tabManager?.regularTabCollectionStateOwner.replaceTabsBySpace(tabsBySpace)
             },
             foldersBySpace: { [weak tabManager] in
-                tabManager?.foldersBySpace ?? [:]
+                tabManager?.folderCollectionStateOwner.foldersBySpaceSnapshot() ?? [:]
             },
             setFoldersBySpace: { [weak tabManager] foldersBySpace in
-                tabManager?.foldersBySpace = foldersBySpace
+                tabManager?.objectWillChange.send()
+                tabManager?.folderCollectionStateOwner.replaceFoldersBySpace(foldersBySpace)
             },
             pinnedByProfile: { [weak tabManager] in
-                tabManager?.pinnedByProfile ?? [:]
+                tabManager?.shortcutPinCollectionStateOwner.pinnedByProfileSnapshot() ?? [:]
             },
             setPinnedByProfile: { [weak tabManager] pinnedByProfile in
-                tabManager?.pinnedByProfile = pinnedByProfile
+                tabManager?.objectWillChange.send()
+                tabManager?.shortcutPinCollectionStateOwner.replacePinnedByProfile(pinnedByProfile)
             },
             spacePinnedShortcuts: { [weak tabManager] in
-                tabManager?.spacePinnedShortcuts ?? [:]
+                tabManager?.shortcutPinCollectionStateOwner.spacePinnedShortcutsSnapshot() ?? [:]
             },
             setSpacePinnedShortcuts: { [weak tabManager] spacePinnedShortcuts in
-                tabManager?.spacePinnedShortcuts = spacePinnedShortcuts
+                tabManager?.objectWillChange.send()
+                tabManager?.shortcutPinCollectionStateOwner.replaceSpacePinnedShortcuts(spacePinnedShortcuts)
             },
             syncShortcutPins: { [weak tabManager] shortcutPins in
                 tabManager?.faviconService.syncShortcutPins(shortcutPins)

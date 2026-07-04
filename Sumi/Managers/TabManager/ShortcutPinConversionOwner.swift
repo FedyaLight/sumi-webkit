@@ -66,3 +66,49 @@ final class ShortcutPinConversionOwner {
         return insertedPin
     }
 }
+
+extension ShortcutPinConversionOwner.Dependencies {
+    @MainActor
+    static func live(tabManager: TabManager) -> Self {
+        Self(
+            insertRegularTabFromShortcut: { [weak tabManager] pin, spaceId, targetIndex in
+                guard let tabManager else { preconditionFailure("TabManager dependency used after deallocation") }
+                return tabManager.shortcutLiveTabOwner.insertRegularTabFromShortcut(pin, into: spaceId, at: targetIndex)
+            },
+            removeShortcutPinFromContainers: { [weak tabManager] pin in
+                tabManager?.shortcutPinStoreOwner.removeFromContainers(pin)
+            },
+            scheduleStructuralPersistence: { [weak tabManager] in
+                tabManager?.scheduleStructuralPersistence()
+            },
+            makeShortcutPin: { [weak tabManager] tab, role, profileId, spaceId, folderId, index in
+                guard let tabManager else { preconditionFailure("TabManager dependency used after deallocation") }
+                return tabManager.shortcutPinRuntimeResolutionOwner.makeShortcutPin(
+                    from: tab,
+                    role: role,
+                    profileId: profileId,
+                    spaceId: spaceId,
+                    folderId: folderId,
+                    index: index
+                )
+            },
+            insertShortcutPin: { [weak tabManager] pin, targetIndex, openTargetFolder in
+                tabManager?.shortcutPinStoreOwner.insert(
+                    pin,
+                    at: targetIndex,
+                    openTargetFolder: openTargetFolder
+                )
+            },
+            convertDisplayedTabToShortcutLiveInstances: { [weak tabManager] tab, pin, preferredWindowId in
+                tabManager?.shortcutLiveTabOwner.convertDisplayedTabToShortcutLiveInstances(
+                    tab,
+                    pin: pin,
+                    preferredWindowId: preferredWindowId
+                ) ?? false
+            },
+            removeTab: { [weak tabManager] tabId in
+                tabManager?.tabRemovalOwner.removeTab(tabId)
+            }
+        )
+    }
+}

@@ -25,7 +25,7 @@ enum BrowserNativeNowPlayingRuntimeFactory {
                 browserManager?.windowTabContextOwner.windowScopedMediaCandidateTabs(in: windowState) ?? []
             },
             tab: { [weak browserManager] tabId in
-                browserManager?.tabManager.tab(for: tabId)
+                browserManager?.tabManager.tabCollectionMembershipOwner.tab(for: tabId)
             },
             resolvedNowPlayingWebView: { [weak browserManager] tab, windowState in
                 guard let browserManager else { return nil }

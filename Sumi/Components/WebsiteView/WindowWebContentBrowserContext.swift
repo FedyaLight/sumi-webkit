@@ -45,7 +45,7 @@ final class BrowserManagerWindowWebContentContext: WindowWebContentBrowserContex
     }
 
     func tab(for tabId: UUID) -> Tab? {
-        browserManager.tabManager.tab(for: tabId)
+        browserManager.tabManager.tabCollectionMembershipOwner.tab(for: tabId)
     }
 
     func splitGroup(for windowId: UUID) -> SplitGroup? {
@@ -90,7 +90,7 @@ final class BrowserManagerWindowWebContentContext: WindowWebContentBrowserContex
                     browserManager?.windowRegistry?.windows[windowId]
                 },
                 resolveDragTab: { [weak browserManager] tabId in
-                    browserManager?.tabManager.resolveDragTab(for: tabId)
+                    browserManager?.tabManager.sidebarDragRoutingOwner.resolveDragTab(for: tabId)
                 }
             ),
             windowId: windowId

@@ -57,7 +57,7 @@ final class SidebarShortcutPromotionOwnerTests: XCTestCase {
             executionProfileId: executionProfileId,
             iconAsset: "star"
         )
-        harness.browserManager.tabManager.setSpacePinnedShortcuts([sourcePin], for: harness.space.id)
+        harness.browserManager.tabManager.structuralCollectionMutationOwner.setSpacePinnedShortcuts([sourcePin], for: harness.space.id)
 
         harness.browserManager.sidebarCommandService.shortcutPromotion.pinShortcutGlobally(
             sourcePin,
@@ -92,8 +92,8 @@ final class SidebarShortcutPromotionOwnerTests: XCTestCase {
             launchURL: sourcePin.launchURL,
             title: "Existing"
         )
-        harness.browserManager.tabManager.setSpacePinnedShortcuts([sourcePin], for: harness.space.id)
-        harness.browserManager.tabManager.setPinnedTabs([existingEssential], for: harness.profile.id)
+        harness.browserManager.tabManager.structuralCollectionMutationOwner.setSpacePinnedShortcuts([sourcePin], for: harness.space.id)
+        harness.browserManager.tabManager.structuralCollectionMutationOwner.setPinnedTabs([existingEssential], for: harness.profile.id)
 
         harness.browserManager.sidebarCommandService.shortcutPromotion.pinShortcutGlobally(
             sourcePin,
@@ -161,8 +161,8 @@ final class SidebarShortcutPromotionOwnerTests: XCTestCase {
 
         browserManager.profileManager.profiles = [profile]
         browserManager.currentProfile = profile
-        browserManager.tabManager.spaces = [space]
-        browserManager.tabManager.currentSpace = space
+        browserManager.tabManager.spaceStateOwner.replaceSpaces([space])
+        browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(space)
 
         windowState.tabManager = browserManager.tabManager
         windowState.currentSpaceId = space.id

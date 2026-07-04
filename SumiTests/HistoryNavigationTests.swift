@@ -10,7 +10,7 @@ final class HistoryNavigationTests: XCTestCase {
 
         browserManager.historyNavigationOwner.openHistoryTab(in: windowState)
 
-        let historyTabs = browserManager.tabManager.tabs(in: space).filter(\.representsSumiHistorySurface)
+        let historyTabs = browserManager.tabManager.regularTabCollectionOwner.tabs(in: space).filter(\.representsSumiHistorySurface)
         XCTAssertEqual(historyTabs.count, 1)
         XCTAssertEqual(
             historyTabs.first?.url,
@@ -39,12 +39,12 @@ final class HistoryNavigationTests: XCTestCase {
 
         browserManager.historyNavigationOwner.openHistoryTab(in: windowState)
         let firstHistoryTab = try XCTUnwrap(
-            browserManager.tabManager.tabs(in: space).first(where: \.representsSumiHistorySurface)
+            browserManager.tabManager.regularTabCollectionOwner.tabs(in: space).first(where: \.representsSumiHistorySurface)
         )
 
         browserManager.historyNavigationOwner.openHistoryTab(selecting: .older, in: windowState)
 
-        let historyTabs = browserManager.tabManager.tabs(in: space).filter(\.representsSumiHistorySurface)
+        let historyTabs = browserManager.tabManager.regularTabCollectionOwner.tabs(in: space).filter(\.representsSumiHistorySurface)
         XCTAssertEqual(historyTabs.count, 1)
         XCTAssertEqual(historyTabs.first?.id, firstHistoryTab.id)
         XCTAssertEqual(
@@ -151,8 +151,8 @@ final class HistoryNavigationTests: XCTestCase {
         browserManager.currentProfile = profile
         browserManager.historyManager.switchProfile(profile.id)
         browserManager.windowRegistry = windowRegistry
-        browserManager.tabManager.spaces = [space]
-        browserManager.tabManager.currentSpace = space
+        browserManager.tabManager.spaceStateOwner.replaceSpaces([space])
+        browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(space)
 
         windowState.tabManager = browserManager.tabManager
         windowState.currentSpaceId = space.id

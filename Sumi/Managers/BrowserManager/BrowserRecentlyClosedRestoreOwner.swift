@@ -97,7 +97,7 @@ final class BrowserRecentlyClosedRestoreOwner {
             return false
         }
 
-        let restoredTab = tabManager.createNewTab(
+        let restoredTab = tabManager.regularTabLifecycleOwner.createNewTab(
             url: (tabState.currentURL ?? tabState.url).absoluteString,
             in: targetSpace,
             activate: false
@@ -109,7 +109,7 @@ final class BrowserRecentlyClosedRestoreOwner {
         if let targetWindow {
             dependencies.selectTab(restoredTab, targetWindow)
         } else {
-            tabManager.setActiveTab(restoredTab)
+            tabManager.activeSelectionOwner.setActiveTab(restoredTab)
         }
         return true
     }
@@ -127,7 +127,7 @@ final class BrowserRecentlyClosedRestoreOwner {
             return restoreShortcutLauncher(from: shortcutState.pin, fallbackWindow: targetWindow) != nil
         }
 
-        let restoredTab = tabManager.activateShortcutPin(
+        let restoredTab = tabManager.shortcutLiveTabOwner.activateShortcutPin(
             pin,
             in: targetWindow.id,
             currentSpaceId: targetWindow.currentSpaceId
@@ -246,11 +246,11 @@ final class BrowserRecentlyClosedRestoreOwner {
     ) -> UUID? {
         let tabManager = dependencies.tabManager()
         if let spaceId = pinState.spaceId,
-           tabManager.spaces.contains(where: { $0.id == spaceId }) {
+           tabManager.spaceStateOwner.spaces.contains(where: { $0.id == spaceId }) {
             return spaceId
         }
         if let spaceId = fallbackWindow?.currentSpaceId,
-           tabManager.spaces.contains(where: { $0.id == spaceId }) {
+           tabManager.spaceStateOwner.spaces.contains(where: { $0.id == spaceId }) {
             return spaceId
         }
         if let profileId = fallbackWindow?.currentProfileId,
@@ -296,7 +296,7 @@ final class BrowserRecentlyClosedRestoreOwner {
         for profileId: UUID,
         tabManager: TabManager
     ) -> Space? {
-        tabManager.spaces.first(where: { $0.profileId == profileId })
+        tabManager.spaceStateOwner.spaces.first(where: { $0.profileId == profileId })
     }
 }
 
@@ -322,7 +322,7 @@ extension BrowserRecentlyClosedRestoreOwner.Dependencies {
                 await browserManager?.historyMenuOwner.reopenWindow(from: snapshot)
             },
             mergeSnapshotForLastSessionRestore: { [weak browserManager] snapshot in
-                browserManager?.tabManager.mergeSnapshotForLastSessionRestore(snapshot)
+                browserManager?.tabManager.lastSessionRestoreOwner.mergeSnapshotForLastSessionRestore(snapshot)
             },
             activeWindow: { [weak browserManager] in
                 browserManager?.windowRegistry?.activeWindow

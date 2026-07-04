@@ -6,7 +6,7 @@ final class BrowserSidebarShortcutPromotionOwner {
         let copyShortcutPinToEssentials: @MainActor (
             ShortcutPin,
             String,
-            TabManager.EssentialsTargetContext
+            EssentialsShortcutPlacementOwner.TargetContext
         ) -> Void
     }
 
@@ -25,7 +25,7 @@ final class BrowserSidebarShortcutPromotionOwner {
         dependencies.copyShortcutPinToEssentials(
             pin,
             pin.resolvedDisplayTitle(liveTab: liveTab),
-            TabManager.EssentialsTargetContext(
+            EssentialsShortcutPlacementOwner.TargetContext(
                 windowState: windowState,
                 spaceId: spaceId
             )
