@@ -14,7 +14,11 @@ final class SidebarInteractionState {
     private(set) var activePressedSourceID: String?
 
     var freezesSidebarHoverState: Bool {
-        activeKinds.contains(where: \.pinsCollapsedSidebar)
+        activeKinds.contains(where: \.freezesSidebarHoverState)
+    }
+
+    var allowsFolderSearchHoverTracking: Bool {
+        activeKinds.allSatisfy { $0 == .folderSearchPopover }
     }
 
     var allowsSidebarSwipeCapture: Bool {

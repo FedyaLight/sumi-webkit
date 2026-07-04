@@ -89,6 +89,57 @@ final class SidebarZenMotionTests: XCTestCase {
         XCTAssertEqual(state.activePressedSourceID, "tab-row-test")
     }
 
+    func testFolderSearchPopoverKeepsFolderSearchHoverTrackingAllowed() {
+        let state = SidebarInteractionState()
+        let tokenID = UUID()
+
+        state.beginSession(kind: .folderSearchPopover, tokenID: tokenID)
+
+        XCTAssertFalse(state.freezesSidebarHoverState)
+        XCTAssertTrue(state.allowsFolderSearchHoverTracking)
+    }
+
+    func testOtherTransientUIBlocksFolderSearchHoverTracking() {
+        let state = SidebarInteractionState()
+
+        state.beginSession(kind: .folderSearchPopover, tokenID: UUID())
+        state.beginSession(kind: .folderEditorPopover, tokenID: UUID())
+
+        XCTAssertTrue(state.freezesSidebarHoverState)
+        XCTAssertFalse(state.allowsFolderSearchHoverTracking)
+    }
+
+    func testStartingOtherTransientDismissesFolderSearchPopover() {
+        let state = SidebarInteractionState()
+        let coordinator = SidebarTransientSessionCoordinator(
+            windowID: UUID(),
+            interactionState: state
+        )
+        let source = SidebarTransientPresentationSource(
+            windowID: coordinator.windowID,
+            window: nil,
+            originOwnerView: nil,
+            coordinator: coordinator
+        )
+        var didDismissFolderSearch = false
+
+        _ = coordinator.beginSession(
+            kind: .folderSearchPopover,
+            source: source,
+            path: "test.folderSearch",
+            conflictDismiss: {
+                didDismissFolderSearch = true
+            }
+        )
+        _ = coordinator.beginSession(
+            kind: .dialog,
+            source: source,
+            path: "test.dialog"
+        )
+
+        XCTAssertTrue(didDismissFolderSearch)
+    }
+
     func testSidebarInteractiveItemUsesInjectedDragStateForArmedGeometry() {
         let injectedDragState = SidebarDragState()
         let sharedDragState = SidebarDragState.shared

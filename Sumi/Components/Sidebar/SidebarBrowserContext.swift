@@ -5,6 +5,8 @@ import SwiftUI
 struct SidebarBrowserPresentationActions {
     let showShortcutEditor: (ShortcutPin, BrowserWindowState, ResolvedThemeContext, SidebarTransientPresentationSource) -> Void
     let showFolderEditor: (TabFolder, BrowserWindowState, ResolvedThemeContext, SidebarTransientPresentationSource) -> Void
+    let showFolderSearchPopover: (FolderSearchPopoverRequest, BrowserWindowState, ResolvedThemeContext, SidebarTransientPresentationSource) -> Void
+    let folderSearchAnchorHoverChanged: (UUID, BrowserWindowState, Bool) -> Void
     let showSpaceEditor: (Space, BrowserWindowState, ResolvedThemeContext, SidebarTransientPresentationSource) -> Void
     let showGradientEditorForSpace: (Space, SidebarTransientPresentationSource) -> Void
     let confirmDeleteSpace: (Space, BrowserWindowState) -> Void
@@ -99,6 +101,21 @@ struct SidebarBrowserContext {
                         in: windowState,
                         themeContext: themeContext,
                         source: source
+                    )
+                },
+                showFolderSearchPopover: { [weak browserManager] request, windowState, themeContext, source in
+                    browserManager?.sidebarCommandService.editorPresentation.showFolderSearchPopover(
+                        request: request,
+                        in: windowState,
+                        themeContext: themeContext,
+                        source: source
+                    )
+                },
+                folderSearchAnchorHoverChanged: { [weak browserManager] folderID, windowState, hovering in
+                    browserManager?.sidebarCommandService.editorPresentation.setFolderSearchAnchorHovered(
+                        folderID: folderID,
+                        in: windowState,
+                        hovering: hovering
                     )
                 },
                 showSpaceEditor: { [weak browserManager] space, windowState, themeContext, source in

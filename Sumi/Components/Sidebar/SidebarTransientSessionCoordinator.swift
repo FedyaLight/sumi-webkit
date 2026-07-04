@@ -99,6 +99,7 @@ enum SidebarTransientUIKind: String, CaseIterable {
     case dialog
     case spaceCreation
     case folderEditorPopover
+    case folderSearchPopover
     case spaceEditorPopover
     case shortcutEditorPopover
     case themePicker
@@ -111,7 +112,7 @@ enum SidebarTransientUIKind: String, CaseIterable {
 
     var blocksSidebarDragSources: Bool {
         switch self {
-        case .contextMenu, .dialog, .spaceCreation, .folderEditorPopover, .spaceEditorPopover, .shortcutEditorPopover, .themePicker, .urlHubPopover, .emojiPopover, .sharingPicker, .downloadsPopover, .permissionPrompt:
+        case .contextMenu, .dialog, .spaceCreation, .folderEditorPopover, .folderSearchPopover, .spaceEditorPopover, .shortcutEditorPopover, .themePicker, .urlHubPopover, .emojiPopover, .sharingPicker, .downloadsPopover, .permissionPrompt:
             return true
         case .drag:
             return false
@@ -120,6 +121,15 @@ enum SidebarTransientUIKind: String, CaseIterable {
 
     var pinsCollapsedSidebar: Bool {
         switch self {
+        case .contextMenu, .dialog, .spaceCreation, .folderEditorPopover, .folderSearchPopover, .spaceEditorPopover, .shortcutEditorPopover, .themePicker, .urlHubPopover, .emojiPopover, .sharingPicker, .downloadsPopover, .permissionPrompt, .drag:
+            return true
+        }
+    }
+
+    var freezesSidebarHoverState: Bool {
+        switch self {
+        case .folderSearchPopover:
+            return false
         case .contextMenu, .dialog, .spaceCreation, .folderEditorPopover, .spaceEditorPopover, .shortcutEditorPopover, .themePicker, .urlHubPopover, .emojiPopover, .sharingPicker, .downloadsPopover, .permissionPrompt, .drag:
             return true
         }
@@ -211,6 +221,7 @@ final class SidebarTransientSessionCoordinator {
         let token: SidebarTransientSessionToken
         let source: SidebarTransientPresentationSource
         var handles: [SidebarTransientInteractionHandle]
+        var conflictDismiss: (() -> Void)?
     }
 
     let windowID: UUID
@@ -302,14 +313,17 @@ final class SidebarTransientSessionCoordinator {
         source: SidebarTransientPresentationSource,
         path: String,
         handles: [SidebarTransientInteractionHandle] = [],
+        conflictDismiss: (() -> Void)? = nil,
         preservePendingSource: Bool = false
     ) -> SidebarTransientSessionToken {
+        dismissConflictingSessions(beforeBeginning: kind)
         let token = SidebarTransientSessionToken(kind: kind)
         register(
             token: token,
             source: source,
             path: path,
             handles: handles,
+            conflictDismiss: conflictDismiss,
             preservePendingSource: preservePendingSource
         )
         return token
@@ -389,6 +403,7 @@ final class SidebarTransientSessionCoordinator {
         source: SidebarTransientPresentationSource,
         path _: String,
         handles: [SidebarTransientInteractionHandle],
+        conflictDismiss: (() -> Void)?,
         preservePendingSource: Bool
     ) {
         source.coordinator = self
@@ -396,7 +411,8 @@ final class SidebarTransientSessionCoordinator {
         sessions[token.id] = SessionRecord(
             token: token,
             source: source,
-            handles: handles
+            handles: handles,
+            conflictDismiss: conflictDismiss
         )
         sessionOrder.removeAll { $0 == token.id }
         sessionOrder.append(token.id)
@@ -406,6 +422,16 @@ final class SidebarTransientSessionCoordinator {
         }
         pendingCleanupScheduled = false
         reconcileInteractionState()
+    }
+
+    private func dismissConflictingSessions(beforeBeginning kind: SidebarTransientUIKind) {
+        guard kind != .folderSearchPopover else { return }
+
+        let dismissals = sessions.values.compactMap { record -> (() -> Void)? in
+            guard record.token.kind == .folderSearchPopover else { return nil }
+            return record.conflictDismiss
+        }
+        dismissals.forEach { $0() }
     }
 
     private func reconcileInteractionState() {
@@ -542,7 +568,7 @@ final class SidebarTransientSessionCoordinator {
         switch kind {
         case .contextMenu:
             return pendingMenuActionRecoveryTier
-        case .dialog, .spaceCreation, .folderEditorPopover, .spaceEditorPopover, .shortcutEditorPopover, .themePicker, .urlHubPopover, .emojiPopover, .sharingPicker, .downloadsPopover, .permissionPrompt, .drag:
+        case .dialog, .spaceCreation, .folderEditorPopover, .folderSearchPopover, .spaceEditorPopover, .shortcutEditorPopover, .themePicker, .urlHubPopover, .emojiPopover, .sharingPicker, .downloadsPopover, .permissionPrompt, .drag:
             return .soft
         }
     }

@@ -4,6 +4,7 @@
 //
 //
 
+import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -39,6 +40,8 @@ struct TabFolderView: View {
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
+    @Environment(\.sidebarPresentationContext) private var sidebarPresentationContext
+    @Environment(\.nativeSurfaceHoverUpdatesEnabled) private var nativeSurfaceHoverUpdatesEnabled
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @EnvironmentObject private var dragState: SidebarDragState
 
@@ -371,9 +374,36 @@ struct TabFolderView: View {
                 contextMenuActionOwner.folderHeaderContextMenuEntries()
             }
         )
+        .overlay {
+            folderSearchHoverAnchor(contentProjection: contentProjection)
+        }
         .accessibilityIdentifier("folder-header-\(folder.id.uuidString)")
         .accessibilityLabel(folder.name)
         .accessibilityValue(folder.isOpen ? "expanded" : "collapsed")
+    }
+
+    @ViewBuilder
+    private func folderSearchHoverAnchor(
+        contentProjection: SidebarFolderContentProjection
+    ) -> some View {
+        FolderSearchHoverAnchorBridge(
+            isEnabled: folderSearchHoverIsEnabled,
+            onOpen: { anchorView in
+                openFolderSearchPopover(
+                    anchorView: anchorView,
+                    contentProjection: contentProjection
+                )
+            },
+            onHoverChanged: { hovering in
+                browserContext.presentationActions.folderSearchAnchorHoverChanged(
+                    folder.id,
+                    windowState,
+                    hovering
+                )
+            }
+        )
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 
     private func folderBodyContent(
@@ -768,6 +798,71 @@ struct TabFolderView: View {
         browserContext.commands.requestUserTabActivation(
             tab,
             windowState
+        )
+    }
+
+    private var folderSearchHoverIsEnabled: Bool {
+        isInteractive
+            && sidebarPresentationContext.allowsInteractiveWork
+            && nativeSurfaceHoverUpdatesEnabled
+            && windowState.sidebarInteractionState.allowsFolderSearchHoverTracking
+            && !folder.isOpen
+            && !folderDragSnapshot.isDragging
+    }
+
+    private func openFolderSearchPopover(
+        anchorView: NSView,
+        contentProjection: SidebarFolderContentProjection
+    ) {
+        guard folderSearchHoverIsEnabled,
+              let request = folderSearchPopoverRequest(contentProjection: contentProjection)
+        else { return }
+
+        let source = windowState.sidebarTransientSessionCoordinator.preparedPresentationSource(
+            window: anchorView.window ?? windowState.window,
+            ownerView: anchorView
+        )
+        browserContext.presentationActions.showFolderSearchPopover(
+            request,
+            windowState,
+            themeContext,
+            source
+        )
+    }
+
+    private func folderSearchPopoverRequest(
+        contentProjection: SidebarFolderContentProjection
+    ) -> FolderSearchPopoverRequest? {
+        let builder = FolderSearchCandidateBuilder(
+            tabManager: browserContext.tabManager,
+            liveFolderProvider: browserContext.liveFolderManager,
+            actions: FolderSearchActivationActions(
+                activateShortcut: { pin in
+                    activateShortcutPin(pin)
+                },
+                activateLiveItem: { item in
+                    browserContext.liveFolderManager.open(item: item, in: windowState)
+                },
+                activateSplitGroupItem: { item, group in
+                    if let tab = item.tab {
+                        browserContext.commands.requestUserTabActivation(tab, windowState)
+                    } else {
+                        browserContext.commands.focusSplitGroup(group, windowState)
+                    }
+                }
+            )
+        )
+        let candidates = builder.candidates(
+            for: folder,
+            in: space,
+            excludingVisibleCollapsedProjectionIDs: Set(contentProjection.visibleCollapsedProjectionIDs)
+        )
+        guard !candidates.isEmpty else { return nil }
+
+        return FolderSearchPopoverRequest(
+            folderID: folder.id,
+            folderName: folder.name,
+            candidates: candidates
         )
     }
 

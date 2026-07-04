@@ -810,6 +810,8 @@ private final class TestSidebarBrowserContextHarness {
             presentationActions: SidebarBrowserPresentationActions(
                 showShortcutEditor: { _, _, _, _ in /* No-op. */ },
                 showFolderEditor: { _, _, _, _ in /* No-op. */ },
+                showFolderSearchPopover: { _, _, _, _ in /* No-op. */ },
+                folderSearchAnchorHoverChanged: { _, _, _ in /* No-op. */ },
                 showSpaceEditor: { _, _, _, _ in /* No-op. */ },
                 showGradientEditorForSpace: { _, _ in /* No-op. */ },
                 confirmDeleteSpace: { _, _ in /* No-op. */ },

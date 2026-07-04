@@ -16,17 +16,20 @@ final class BrowserSidebarEditorPresentationOwner {
 
     private let dependencies: Dependencies
     private let folderEditorPopoverPresenter: FolderEditorPopoverPresenter
+    private let folderSearchPopoverPresenter: FolderSearchPopoverPresenter
     private let spaceEditorPopoverPresenter: SpaceEditorPopoverPresenter
     private let shortcutEditorPopoverPresenter: ShortcutEditorPopoverPresenter
 
     init(
         dependencies: Dependencies,
         folderEditorPopoverPresenter: FolderEditorPopoverPresenter = FolderEditorPopoverPresenter(),
+        folderSearchPopoverPresenter: FolderSearchPopoverPresenter = FolderSearchPopoverPresenter(),
         spaceEditorPopoverPresenter: SpaceEditorPopoverPresenter = SpaceEditorPopoverPresenter(),
         shortcutEditorPopoverPresenter: ShortcutEditorPopoverPresenter = ShortcutEditorPopoverPresenter()
     ) {
         self.dependencies = dependencies
         self.folderEditorPopoverPresenter = folderEditorPopoverPresenter
+        self.folderSearchPopoverPresenter = folderSearchPopoverPresenter
         self.spaceEditorPopoverPresenter = spaceEditorPopoverPresenter
         self.shortcutEditorPopoverPresenter = shortcutEditorPopoverPresenter
     }
@@ -71,6 +74,36 @@ final class BrowserSidebarEditorPresentationOwner {
                 }
             ),
             source: source
+        )
+    }
+
+    func showFolderSearchPopover(
+        request: FolderSearchPopoverRequest,
+        in windowState: BrowserWindowState,
+        themeContext: ResolvedThemeContext,
+        source: SidebarTransientPresentationSource
+    ) {
+        folderSearchPopoverPresenter.present(
+            request: request,
+            in: windowState,
+            themeContext: themeContext,
+            presentationContext: FolderSearchPopoverPresentationContext(
+                sidebarPosition: dependencies.sidebarPosition(),
+                settings: dependencies.settings()
+            ),
+            source: source
+        )
+    }
+
+    func setFolderSearchAnchorHovered(
+        folderID: UUID,
+        in windowState: BrowserWindowState,
+        hovering: Bool
+    ) {
+        folderSearchPopoverPresenter.setAnchorHovered(
+            folderID: folderID,
+            in: windowState,
+            hovering: hovering
         )
     }
 
