@@ -710,12 +710,13 @@ final class SumiExtensionsModule {
 
     private func hasEnabledPersistedExtensions() -> Bool {
         guard let context else { return false }
-        do {
-            return try context.fetch(FetchDescriptor<ExtensionEntity>())
-                .contains { $0.isEnabled }
-        } catch {
-            return false
-        }
+        // Runs on the hot normal-tab WebView provisioning path (eager extension-controller
+        // provisioning), so push the `isEnabled` filter into the store and count rather than
+        // materializing every ExtensionEntity and scanning in memory.
+        let descriptor = FetchDescriptor<ExtensionEntity>(
+            predicate: #Predicate { $0.isEnabled }
+        )
+        return ((try? context.fetchCount(descriptor)) ?? 0) > 0
     }
 
     #if DEBUG
