@@ -2,13 +2,13 @@ import Combine
 import Foundation
 
 @MainActor
-extension WindowViewBrowserRuntime {
+extension WindowViewBrowserContext {
     static func live(
         browserManager: BrowserManager,
         updaterService: SumiUpdaterService,
         defaultBrowserService: SumiDefaultBrowserService
-    ) -> WindowViewBrowserRuntime {
-        WindowViewBrowserRuntime(
+    ) -> WindowViewBrowserContext {
+        WindowViewBrowserContext(
             splitManager: browserManager.splitManager,
             findManager: browserManager.findManager,
             floatingBarBrowserContext: browserManager.floatingBarBrowserContextOwner.context,
@@ -126,22 +126,6 @@ extension WindowViewBrowserRuntime {
             historyManager: browserManager.historyManager,
             profiles: browserManager.profileManager.profiles,
             websiteDataCleanupService: browserManager.dataServices.websiteDataCleanupService
-        )
-    }
-}
-
-extension WindowViewBrowserContext {
-    static func live(
-        browserManager: BrowserManager,
-        updaterService: SumiUpdaterService,
-        defaultBrowserService: SumiDefaultBrowserService
-    ) -> WindowViewBrowserContext {
-        WindowViewBrowserContext(
-            runtime: .live(
-                browserManager: browserManager,
-                updaterService: updaterService,
-                defaultBrowserService: defaultBrowserService
-            )
         )
     }
 }
