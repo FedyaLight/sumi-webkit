@@ -73,24 +73,21 @@ final class SumiContentRuleListMaterializer {
         compiledRules.reserveCapacity(definitions.count)
         var lookupSucceededIdentifiers = [String]()
         var lookupFailedIdentifiers = [String]()
-        var ruleListLookupDuration: TimeInterval = 0
         let storeIdentifiers = definitions.map { storeIdentifier(for: $0) }
 #if DEBUG
         SumiProtectionStartupRestoreDiagnostics.shared.recordLookupAttempt(identifiers: storeIdentifiers)
 #endif
 
-        for definition in definitions {
-            let lookupStart = Date()
-            let storeIdentifier = storeIdentifier(for: definition)
+        let lookupStart = Date()
+        for (index, definition) in definitions.enumerated() {
+            let storeIdentifier = storeIdentifiers[index]
             guard let ruleList = await compiler.lookUpContentRuleList(forIdentifier: storeIdentifier) else {
-                ruleListLookupDuration += Date().timeIntervalSince(lookupStart)
                 lookupFailedIdentifiers.append(storeIdentifier)
 #if DEBUG
                 SumiProtectionStartupRestoreDiagnostics.shared.recordLookupMiss(storeIdentifier)
 #endif
                 throw SumiContentBlockingCompilationError.missingCompiledRuleList(storeIdentifier)
             }
-            ruleListLookupDuration += Date().timeIntervalSince(lookupStart)
 #if DEBUG
             SumiProtectionStartupRestoreDiagnostics.shared.recordLookupHit(storeIdentifier)
 #endif
@@ -106,6 +103,7 @@ final class SumiContentRuleListMaterializer {
             compiledRules.append(rules)
             lookupSucceededIdentifiers.append(storeIdentifier)
         }
+        let ruleListLookupDuration = Date().timeIntervalSince(lookupStart)
 
         return Self.updateEvent(
             for: compiledRules,
