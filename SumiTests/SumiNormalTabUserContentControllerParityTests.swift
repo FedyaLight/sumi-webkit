@@ -212,6 +212,39 @@ final class SumiNormalTabUserContentControllerParityTests: XCTestCase {
         XCTAssertEqual(normalTabController.contentBlockingAssetSummary.updateRuleCount, 1)
     }
 
+    func testContentBlockingUpdateOnlyAttachesChangedRuleListsAsDelta() async throws {
+        let suffix = UUID().uuidString
+        let ruleA = Self.stableRuleListDefinition(name: "SumiDeltaA-\(suffix)")
+        let ruleB = Self.stableRuleListDefinition(name: "SumiDeltaB-\(suffix)")
+        let ruleC = Self.stableRuleListDefinition(name: "SumiDeltaC-\(suffix)")
+        let service = SumiContentBlockingService(policy: .enabled(ruleLists: [ruleA, ruleB]))
+        let controller: WKUserContentController = SumiNormalTabUserContentControllerFactory.makeController(
+            contentBlockingService: service
+        )
+        let normalTabController = try XCTUnwrap(controller.sumiNormalTabUserContentController)
+
+        await normalTabController.waitForContentBlockingAssetsInstalled()
+        let initialSummary = normalTabController.contentBlockingAssetSummary
+        XCTAssertEqual(initialSummary.globalRuleListCount, 2)
+        XCTAssertEqual(
+            Set(initialSummary.addedToUserContentControllerIdentifiers),
+            Set([ruleA, ruleB].map(\.webKitStoreIdentifier))
+        )
+
+        // Replace {A, B} with {A, C}: A is unchanged (identical store identifier), so it
+        // must stay attached untouched while only B is detached and only C is attached.
+        service.setPolicy(.enabled(ruleLists: [ruleA, ruleC]))
+        let updatedSummary = await waitForContentBlockingSummary(on: normalTabController) {
+            Set($0.globalRuleListIdentifiers) == Set([ruleA, ruleC].map(\.webKitStoreIdentifier))
+        }
+
+        XCTAssertEqual(
+            updatedSummary.addedToUserContentControllerIdentifiers,
+            [ruleC.webKitStoreIdentifier],
+            "Only the newly introduced rule list should be (re)attached; unchanged lists stay put."
+        )
+    }
+
     func testContentBlockingSummaryPublisherEmitsCurrentAndReplacementSummaries() async throws {
         let service = SumiContentBlockingService(policy: .disabled)
         let controller: WKUserContentController = SumiNormalTabUserContentControllerFactory.makeController(
@@ -466,6 +499,27 @@ final class SumiNormalTabUserContentControllerParityTests: XCTestCase {
     private static func validRuleListDefinition(name: String) -> SumiContentRuleListDefinition {
         SumiContentRuleListDefinition(
             name: "\(name)-\(UUID().uuidString)",
+            encodedContentRuleList: """
+            [
+              {
+                "trigger": {
+                  "url-filter": ".*sumi-parity-blocked\\\\.example/.*"
+                },
+                "action": {
+                  "type": "block"
+                }
+              }
+            ]
+            """
+        )
+    }
+
+    /// Like `validRuleListDefinition` but keeps the caller-provided name verbatim so the
+    /// derived WebKit store identifier is stable across policy updates (needed to prove
+    /// delta attach/detach behavior for unchanged rule lists).
+    private static func stableRuleListDefinition(name: String) -> SumiContentRuleListDefinition {
+        SumiContentRuleListDefinition(
+            name: name,
             encodedContentRuleList: """
             [
               {

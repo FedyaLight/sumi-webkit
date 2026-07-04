@@ -335,18 +335,35 @@ final class SumiNormalTabUserContentController: WKUserContentController, SumiNor
         }
 
         let start = Date()
-        let hadAttachedRuleLists = !globalContentRuleLists.isEmpty
-        removeAllContentRuleLists()
+
+        // Only detach/attach the delta between what is currently attached and the
+        // target set. WebKit's network process rebuilds its filter state whenever a
+        // WKContentRuleList is added or removed, so re-attaching unchanged shards on
+        // every update (as removeAll + re-add did) is pure overhead on every live tab.
+        //
+        // Content rule lists are immutable and content-addressed by store identifier
+        // (a changed shard produces a new identifier), so an identifier that is present
+        // both before and after an update refers to the same compiled payload and can
+        // stay attached untouched — even though WebKit hands back a fresh
+        // WKContentRuleList wrapper object on each store lookup.
+        let targetRuleLists = isContentBlockingFeatureEnabled ? update.globalRuleLists : [:]
+
+        var removedIdentifiers = [String]()
+        for (identifier, attachedRuleList) in globalContentRuleLists
+        where targetRuleLists[identifier] == nil {
+            remove(attachedRuleList)
+            globalContentRuleLists.removeValue(forKey: identifier)
+            removedIdentifiers.append(identifier)
+        }
 
         var addedIdentifiers = [String]()
-        if isContentBlockingFeatureEnabled {
-            for (identifier, ruleList) in update.globalRuleLists.sorted(by: { $0.key < $1.key }) {
-                add(ruleList)
-                globalContentRuleLists[identifier] = ruleList
-                addedIdentifiers.append(identifier)
-            }
+        for (identifier, ruleList) in targetRuleLists.sorted(by: { $0.key < $1.key })
+        where globalContentRuleLists[identifier] == nil {
+            add(ruleList)
+            globalContentRuleLists[identifier] = ruleList
+            addedIdentifiers.append(identifier)
         }
-        let didTouchRuleLists = hadAttachedRuleLists || !addedIdentifiers.isEmpty
+        let didTouchRuleLists = !addedIdentifiers.isEmpty || !removedIdentifiers.isEmpty
         contentBlockingAssets = ContentBlockingAssets(
             globalRuleLists: globalContentRuleLists,
             updateRuleCount: update.updateRuleCount,
