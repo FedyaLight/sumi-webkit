@@ -358,7 +358,7 @@ struct SpacesSideBarView: View {
                             offsetX: sourceOffsetX(width: width),
                             opacity: sourceOpacity(for: travelProgress),
                             zIndex: 0,
-                            includesPinnedGrid: true
+                            includesTopSidebarContent: true
                         )
 
                         transitionLayer(
@@ -368,7 +368,7 @@ struct SpacesSideBarView: View {
                             offsetX: destinationOffsetX(width: width),
                             opacity: destinationOpacity(for: travelProgress),
                             zIndex: 1,
-                            includesPinnedGrid: true
+                            includesTopSidebarContent: true
                         )
                     }
                 }
@@ -413,25 +413,23 @@ struct SpacesSideBarView: View {
         travelProgress: Double
     ) -> some View {
         VStack(spacing: 8) {
-            if !windowState.isIncognito {
-                if let extensionActions = snapshot.source.extensionActions {
-                    ExtensionActionSnapshotGrid(
-                        snapshot: extensionActions,
-                        tokens: themeContext.tokens(settings: sumiSettings)
-                    )
-                    .padding(.horizontal, 8)
-                    .allowsHitTesting(false)
-                }
+            if let extensionActions = snapshot.source.extensionActions {
+                ExtensionActionSnapshotGrid(
+                    snapshot: extensionActions,
+                    tokens: themeContext.tokens(settings: sumiSettings)
+                )
+                .padding(.horizontal, 8)
+                .allowsHitTesting(false)
+            }
 
-                if let essentials = snapshot.stationaryEssentials {
-                    EquatableView(content: EssentialsSnapshotGrid(
-                        snapshot: essentials,
-                        width: BrowserWindowState.sidebarContentWidth(for: width),
-                        tokens: themeContext.tokens(settings: sumiSettings)
-                    ))
-                    .padding(.horizontal, 8)
-                    .allowsHitTesting(false)
-                }
+            if let essentials = snapshot.stationaryEssentials {
+                EssentialsSnapshotGrid(
+                    snapshot: essentials,
+                    width: BrowserWindowState.sidebarContentWidth(for: width),
+                    tokens: themeContext.tokens(settings: sumiSettings)
+                )
+                .padding(.horizontal, 8)
+                .allowsHitTesting(false)
             }
 
             ZStack(alignment: .topLeading) {
@@ -442,7 +440,7 @@ struct SpacesSideBarView: View {
                     offsetX: sourceOffsetX(width: width),
                     opacity: sourceOpacity(for: travelProgress),
                     zIndex: 0,
-                    includesPinnedGrid: false
+                    includesTopSidebarContent: false
                 )
 
                 transitionLayer(
@@ -452,13 +450,16 @@ struct SpacesSideBarView: View {
                     offsetX: destinationOffsetX(width: width),
                     opacity: destinationOpacity(for: travelProgress),
                     zIndex: 1,
-                    includesPinnedGrid: false
+                    includesTopSidebarContent: false
                 )
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .frame(width: width, alignment: .top)
         .frame(maxHeight: .infinity, alignment: .top)
+        .transaction { transaction in
+            transaction.disablesAnimations = true
+        }
     }
 
     private func transitionLayer(
@@ -468,13 +469,13 @@ struct SpacesSideBarView: View {
         offsetX: CGFloat,
         opacity: Double,
         zIndex: Double,
-        includesPinnedGrid: Bool
+        includesTopSidebarContent: Bool
     ) -> some View {
         transitionLayerContent(
             for: space,
             snapshot: snapshot,
             width: width,
-            includesPinnedGrid: includesPinnedGrid
+            includesTopSidebarContent: includesTopSidebarContent
         )
             .frame(width: width, alignment: .top)
             .frame(maxHeight: .infinity, alignment: .top)
@@ -489,7 +490,7 @@ struct SpacesSideBarView: View {
         for space: Space,
         snapshot: SpaceSidebarTransitionSnapshot,
         width: CGFloat,
-        includesPinnedGrid: Bool
+        includesTopSidebarContent: Bool
     ) -> some View {
         if let pageSnapshot = snapshot.page(for: space.id) {
             // Resolve tokens from the page's own static theme so a sliding page
@@ -501,13 +502,13 @@ struct SpacesSideBarView: View {
                 settings: sumiSettings,
                 isIncognito: windowState.isIncognito
             )
-            EquatableView(content: SpaceTransitionSnapshotPageView(
+            SpaceTransitionSnapshotPageView(
                 snapshot: pageSnapshot,
-                includesEssentials: includesPinnedGrid,
+                includesTopSidebarContent: includesTopSidebarContent,
                 width: width,
                 tokens: pageThemeContext.tokens(settings: sumiSettings),
                 themeContext: pageThemeContext
-            ))
+            )
             .id(pageSnapshot.spaceId)
         }
     }

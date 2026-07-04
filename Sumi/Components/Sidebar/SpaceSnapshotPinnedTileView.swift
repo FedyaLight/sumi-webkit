@@ -75,26 +75,12 @@ struct SpaceSnapshotPinnedTileView: View {
 
     private var selectionAccentColor: Color {
         PinnedTileAccentResolver.resolve(
-            launchURL: item.accentSourceURL,
-            partition: item.accentSourcePartition,
-            glyphText: glyphText,
-            chromeTemplateSystemImageName: chromeTemplateSystemImageName,
+            launchURL: item.accentSource.launchURL,
+            partition: item.accentSource.partition,
+            glyphText: item.icon.accentGlyphText,
+            chromeTemplateSystemImageName: item.icon.accentSystemImageName,
             tokens: tokens
         )
-    }
-
-    private var glyphText: String? {
-        if case .emoji(let glyph) = item.icon {
-            return glyph
-        }
-        return nil
-    }
-
-    private var chromeTemplateSystemImageName: String? {
-        if case .system(let systemName) = item.icon {
-            return systemName
-        }
-        return nil
     }
 
     private var audioIndicator: some View {

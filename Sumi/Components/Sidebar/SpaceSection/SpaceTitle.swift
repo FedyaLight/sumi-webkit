@@ -41,9 +41,22 @@ struct SpaceTitleIconView: View {
                 Image(systemName: SumiPersistentGlyph.resolvedSpaceSystemImageName(iconValue))
                     .font(.system(size: SpaceTitleRowLayout.iconFontSize, weight: .medium))
                     .foregroundStyle(textColor)
-                    .accessibilityHidden(hidesAccessibility)
             }
         }
+        .accessibilityHidden(hidesAccessibility)
+    }
+}
+
+struct SpaceTitleTextLabel: View {
+    let title: String
+    let textColor: Color
+
+    var body: some View {
+        SidebarFadingRowTitleLabel(
+            title: title,
+            font: .system(size: SpaceTitleRowLayout.titleFontSize, weight: SpaceTitleRowLayout.titleFontWeight),
+            color: textColor
+        )
     }
 }
 
@@ -166,10 +179,9 @@ struct SpaceTitle: View {
                     cancelRename()
                 }
         } else {
-            SidebarFadingRowTitleLabel(
+            SpaceTitleTextLabel(
                 title: space.name,
-                font: .system(size: SpaceTitleRowLayout.titleFontSize, weight: SpaceTitleRowLayout.titleFontWeight),
-                color: textColor
+                textColor: textColor
             )
                 .onTapGesture(count: 2) {
                     startRenaming()

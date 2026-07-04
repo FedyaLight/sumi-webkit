@@ -7,23 +7,12 @@
 import SwiftUI
 
 @MainActor
-struct SpaceTransitionSnapshotPageView: View, @preconcurrency Equatable {
+struct SpaceTransitionSnapshotPageView: View {
     let snapshot: SpaceSidebarPageSnapshot
-    let includesEssentials: Bool
+    let includesTopSidebarContent: Bool
     let width: CGFloat
     let tokens: ChromeThemeTokens
     let themeContext: ResolvedThemeContext
-
-    static func == (lhs: SpaceTransitionSnapshotPageView, rhs: SpaceTransitionSnapshotPageView) -> Bool {
-        lhs.snapshot.spaceId == rhs.snapshot.spaceId &&
-               lhs.snapshot.title == rhs.snapshot.title &&
-               lhs.snapshot.iconValue == rhs.snapshot.iconValue &&
-               lhs.snapshot.rowCornerRadius == rhs.snapshot.rowCornerRadius &&
-               lhs.snapshot.scrollViewport == rhs.snapshot.scrollViewport &&
-               lhs.includesEssentials == rhs.includesEssentials &&
-               lhs.width == rhs.width &&
-               lhs.themeContext.chromeColorScheme == rhs.themeContext.chromeColorScheme
-    }
 
     private var innerWidth: CGFloat {
         BrowserWindowState.sidebarContentWidth(for: width)
@@ -31,7 +20,7 @@ struct SpaceTransitionSnapshotPageView: View, @preconcurrency Equatable {
 
     var body: some View {
         VStack(spacing: 8) {
-            if includesEssentials, let extensionActions = snapshot.extensionActions {
+            if includesTopSidebarContent, let extensionActions = snapshot.extensionActions {
                 ExtensionActionSnapshotGrid(
                     snapshot: extensionActions,
                     tokens: tokens
@@ -39,12 +28,12 @@ struct SpaceTransitionSnapshotPageView: View, @preconcurrency Equatable {
                 .padding(.horizontal, 8)
             }
 
-            if includesEssentials, let essentials = snapshot.essentials {
-                EquatableView(content: EssentialsSnapshotGrid(
+            if includesTopSidebarContent, let essentials = snapshot.essentials {
+                EssentialsSnapshotGrid(
                     snapshot: essentials,
                     width: innerWidth,
                     tokens: tokens
-                ))
+                )
                 .padding(.horizontal, 8)
             }
 
@@ -209,61 +198,43 @@ private struct SpaceSnapshotTitleView: View {
     let tokens: ChromeThemeTokens
 
     var body: some View {
-        HStack(spacing: SidebarRowLayout.iconTrailingSpacing) {
-            snapshotIcon
-                .frame(width: SidebarRowLayout.faviconSize, height: SidebarRowLayout.faviconSize)
-                .accessibilityHidden(true)
-
-            SidebarFadingRowTitleLabel(
-                title: title,
-                font: .system(size: SpaceTitleRowLayout.titleFontSize, weight: SpaceTitleRowLayout.titleFontWeight),
-                color: tokens.primaryText
+        SpaceTitleRowChrome(
+            backgroundColor: .clear,
+            cornerRadius: rowCornerRadius
+        ) {
+            SpaceTitleIconView(
+                iconValue: iconValue,
+                textColor: tokens.primaryText,
+                hidesAccessibility: true
             )
-
-            Spacer(minLength: 0)
-
+            .id(iconValue)
+        } title: {
+            SpaceTitleTextLabel(
+                title: title,
+                textColor: tokens.primaryText
+            )
+        } trailing: {
             Color.clear
                 .accessibilityHidden(true)
-                .frame(
-                    width: SpaceTitleRowLayout.trailingControlSize,
-                    height: SpaceTitleRowLayout.trailingControlSize
-                )
         }
-        .padding(.leading, SidebarRowLayout.leadingInset)
-        .padding(.trailing, SidebarRowLayout.trailingInset)
-        .padding(.vertical, SpaceTitleRowLayout.verticalPadding)
-        .frame(maxWidth: .infinity)
-        .frame(minHeight: SpaceTitleRowLayout.minimumHeight)
-        .clipShape(RoundedRectangle(cornerRadius: rowCornerRadius, style: .continuous))
+        .id(SpaceSnapshotTitleIdentity(title: title, iconValue: iconValue))
         .allowsHitTesting(false)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(title)
         .accessibilityIdentifier("space-transition-snapshot-title")
     }
+}
 
-    @ViewBuilder
-    private var snapshotIcon: some View {
-        if SumiPersistentGlyph.presentsAsEmoji(iconValue) {
-            Text(iconValue)
-                .font(.system(size: SpaceTitleRowLayout.iconFontSize))
-        } else {
-            Image(systemName: SumiPersistentGlyph.resolvedSpaceSystemImageName(iconValue))
-                .font(.system(size: SpaceTitleRowLayout.iconFontSize, weight: .medium))
-                .foregroundStyle(tokens.primaryText)
-        }
-    }
+private struct SpaceSnapshotTitleIdentity: Hashable {
+    let title: String
+    let iconValue: String
 }
 
 @MainActor
-struct EssentialsSnapshotGrid: View, @preconcurrency Equatable {
+struct EssentialsSnapshotGrid: View {
     let snapshot: EssentialsSnapshot
     let width: CGFloat
     let tokens: ChromeThemeTokens
-
-    static func == (lhs: EssentialsSnapshotGrid, rhs: EssentialsSnapshotGrid) -> Bool {
-        lhs.snapshot.renderIdentity == rhs.snapshot.renderIdentity &&
-            lhs.width == rhs.width
-    }
 
     private var rows: [EssentialsSnapshotRow] {
         let columns = capacityColumnCount

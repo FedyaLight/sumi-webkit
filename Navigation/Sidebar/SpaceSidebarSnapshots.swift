@@ -11,20 +11,6 @@ enum SpaceSidebarSnapshotFolderLayout {
     static let contentVerticalPadding: CGFloat = 4
 }
 
-enum SpaceSidebarSnapshotTitleLayout {
-    static var trailingControlSize: CGFloat {
-        SpaceTitleRowLayout.trailingControlSize
-    }
-
-    static var verticalPadding: CGFloat {
-        SpaceTitleRowLayout.verticalPadding
-    }
-
-    static var minimumHeight: CGFloat {
-        SpaceTitleRowLayout.minimumHeight
-    }
-}
-
 struct SpaceSidebarSnapshotViewport: Equatable {
     static let zero = SpaceSidebarSnapshotViewport(
         contentOffsetY: 0,
@@ -94,21 +80,19 @@ enum SpaceSidebarSnapshotIcon {
     case emoji(String)
 }
 
-struct SpaceSidebarSnapshotIconRenderIdentity: Equatable {
-    let kind: String
-    let value: String?
-}
-
 extension SpaceSidebarSnapshotIcon {
-    var renderIdentity: SpaceSidebarSnapshotIconRenderIdentity {
-        switch self {
-        case .image:
-            return SpaceSidebarSnapshotIconRenderIdentity(kind: "image", value: nil)
-        case .system(let systemName):
-            return SpaceSidebarSnapshotIconRenderIdentity(kind: "system", value: systemName)
-        case .emoji(let emoji):
-            return SpaceSidebarSnapshotIconRenderIdentity(kind: "emoji", value: emoji)
+    var accentGlyphText: String? {
+        if case .emoji(let glyph) = self {
+            return glyph
         }
+        return nil
+    }
+
+    var accentSystemImageName: String? {
+        if case .system(let systemName) = self {
+            return systemName
+        }
+        return nil
     }
 }
 
@@ -126,12 +110,16 @@ struct SpaceShortcutSnapshot: Identifiable {
     let id: UUID
     let title: String
     let icon: SpaceSidebarSnapshotIcon
-    let accentSourceURL: URL?
-    let accentSourcePartition: SumiFaviconPartition?
+    let accentSource: SpaceShortcutSnapshotAccentSource
     let presentationState: ShortcutPresentationState
     let showsAudioButton: Bool
     let isMuted: Bool
     let showsSplitOutline: Bool
+}
+
+struct SpaceShortcutSnapshotAccentSource: Equatable {
+    let launchURL: URL
+    let partition: SumiFaviconPartition
 }
 
 struct SpaceFolderSnapshot: Identifiable {
@@ -172,38 +160,6 @@ private extension Array where Element == SpacePinnedItemSnapshot {
 
 struct EssentialsSnapshot {
     let items: [SpaceShortcutSnapshot]
-
-    var renderIdentity: EssentialsSnapshotRenderIdentity {
-        EssentialsSnapshotRenderIdentity(items: items.map { item in
-            EssentialsSnapshotRenderIdentity.Item(
-                id: item.id,
-                title: item.title,
-                icon: item.icon.renderIdentity,
-                accentSourceURL: item.accentSourceURL,
-                accentSourcePartition: item.accentSourcePartition,
-                presentationState: item.presentationState,
-                showsAudioButton: item.showsAudioButton,
-                isMuted: item.isMuted,
-                showsSplitOutline: item.showsSplitOutline
-            )
-        })
-    }
-}
-
-struct EssentialsSnapshotRenderIdentity: Equatable {
-    struct Item: Equatable {
-        let id: UUID
-        let title: String
-        let icon: SpaceSidebarSnapshotIconRenderIdentity
-        let accentSourceURL: URL?
-        let accentSourcePartition: SumiFaviconPartition?
-        let presentationState: ShortcutPresentationState
-        let showsAudioButton: Bool
-        let isMuted: Bool
-        let showsSplitOutline: Bool
-    }
-
-    let items: [Item]
 }
 
 enum ExtensionActionSlotSnapshotKind {
@@ -730,8 +686,10 @@ enum SpaceSidebarTransitionSnapshotBuilder {
                 liveTab: liveTab,
                 faviconPartition: faviconPartition
             ),
-            accentSourceURL: pin.launchURL,
-            accentSourcePartition: faviconPartition,
+            accentSource: SpaceShortcutSnapshotAccentSource(
+                launchURL: pin.launchURL,
+                partition: faviconPartition
+            ),
             presentationState: presentationState,
             showsAudioButton: liveTab?.audioState.showsTabAudioButton ?? false,
             isMuted: liveTab?.audioState.isMuted ?? false,

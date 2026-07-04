@@ -39,7 +39,6 @@ struct SidebarFadingRowTitleLabel: View {
     let title: String
     let font: Font
     let color: Color
-    var trailingPadding: CGFloat = 0
     var height: CGFloat = SidebarRowLayout.titleHeight
 
     var body: some View {
@@ -48,7 +47,6 @@ struct SidebarFadingRowTitleLabel: View {
             .foregroundStyle(color)
             .lineLimit(1)
             .fixedSize(horizontal: true, vertical: false)
-            .padding(.trailing, trailingPadding)
             .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
             .frame(height: height, alignment: .leading)
             .clipped()
