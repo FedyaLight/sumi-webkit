@@ -465,70 +465,150 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         XCTAssertEqual(snapshot.stationaryEssentials?.items.map(\.id), [essential.id])
     }
 
+    func testSnapshotBuilderPreservesActiveStationaryEssentialsAccentSource() {
+        let browserManager = BrowserManager()
+        let windowState = BrowserWindowState()
+        let settings = makeIsolatedSettings()
+        let profileId = UUID()
+        let source = Space(name: "Source", profileId: profileId)
+        let destination = Space(name: "Destination", profileId: profileId)
+        let essential = makeEssentialPin(profileId: profileId, title: "Pinned")
+
+        browserManager.tabManager.spaces = [source, destination]
+        browserManager.tabManager.pinnedByProfile[profileId] = [essential]
+        windowState.currentProfileId = profileId
+        windowState.currentSpaceId = source.id
+        _ = browserManager.tabManager.activateShortcutPin(
+            essential,
+            in: windowState.id,
+            currentSpaceId: source.id
+        )
+        windowState.currentShortcutPinId = essential.id
+
+        let snapshot = makeTransitionSnapshot(
+            sourceSpace: source,
+            destinationSpace: destination,
+            browserManager: browserManager,
+            windowState: windowState,
+            settings: settings
+        )
+        let expectedPartition = browserManager.tabManager.shortcutPinRuntimeResolutionOwner.resolvedFaviconPartition(
+            for: essential,
+            currentSpaceId: windowState.currentSpaceId
+        )
+
+        guard let item = snapshot.stationaryEssentials?.items.first else {
+            return XCTFail("Expected stationary essentials snapshot item")
+        }
+        XCTAssertEqual(item.presentationState, .visuallySelected)
+        XCTAssertEqual(item.accentSourceURL, essential.launchURL)
+        XCTAssertEqual(item.accentSourcePartition, expectedPartition)
+    }
+
     func testEssentialsSnapshotRenderIdentityCapturesFirstTileVisualState() {
         let firstId = UUID()
         let secondId = UUID()
-        let first = SpaceShortcutSnapshot(
+        let firstURL = URL(string: "https://example.com/first")!
+        let updatedFirstURL = URL(string: "https://updated.example/first")!
+        let firstPartition = SumiFaviconPartition.regular(UUID())
+        let updatedFirstPartition = SumiFaviconPartition.regular(UUID())
+        func shortcut(
+            id: UUID,
+            title: String,
+            icon: SpaceSidebarSnapshotIcon,
+            accentSourceURL: URL?,
+            accentSourcePartition: SumiFaviconPartition?,
+            presentationState: ShortcutPresentationState,
+            showsAudioButton: Bool = false,
+            isMuted: Bool = false,
+            showsSplitOutline: Bool = false
+        ) -> SpaceShortcutSnapshot {
+            SpaceShortcutSnapshot(
+                id: id,
+                title: title,
+                icon: icon,
+                accentSourceURL: accentSourceURL,
+                accentSourcePartition: accentSourcePartition,
+                presentationState: presentationState,
+                showsAudioButton: showsAudioButton,
+                isMuted: isMuted,
+                showsSplitOutline: showsSplitOutline
+            )
+        }
+
+        let first = shortcut(
             id: firstId,
             title: "First",
             icon: .system("globe"),
-            presentationState: .liveBackgrounded,
-            showsAudioButton: false,
-            isMuted: false,
-            showsSplitOutline: false
+            accentSourceURL: firstURL,
+            accentSourcePartition: firstPartition,
+            presentationState: .liveBackgrounded
         )
-        let second = SpaceShortcutSnapshot(
+        let second = shortcut(
             id: secondId,
             title: "Second",
             icon: .emoji("S"),
-            presentationState: .launcherOnly,
-            showsAudioButton: false,
-            isMuted: false,
-            showsSplitOutline: false
+            accentSourceURL: nil,
+            accentSourcePartition: nil,
+            presentationState: .launcherOnly
         )
-        let selectedFirst = SpaceShortcutSnapshot(
+        let selectedFirst = shortcut(
             id: firstId,
             title: "First",
             icon: .system("globe"),
-            presentationState: .visuallySelected,
-            showsAudioButton: false,
-            isMuted: false,
-            showsSplitOutline: false
+            accentSourceURL: firstURL,
+            accentSourcePartition: firstPartition,
+            presentationState: .visuallySelected
         )
-        let retitledFirst = SpaceShortcutSnapshot(
+        let retitledFirst = shortcut(
             id: firstId,
             title: "First Updated",
             icon: .system("globe"),
-            presentationState: .liveBackgrounded,
-            showsAudioButton: false,
-            isMuted: false,
-            showsSplitOutline: false
+            accentSourceURL: firstURL,
+            accentSourcePartition: firstPartition,
+            presentationState: .liveBackgrounded
         )
-        let changedIconFirst = SpaceShortcutSnapshot(
+        let changedIconFirst = shortcut(
             id: firstId,
             title: "First",
             icon: .system("gearshape"),
-            presentationState: .liveBackgrounded,
-            showsAudioButton: false,
-            isMuted: false,
-            showsSplitOutline: false
+            accentSourceURL: firstURL,
+            accentSourcePartition: firstPartition,
+            presentationState: .liveBackgrounded
         )
-        let audioFirst = SpaceShortcutSnapshot(
+        let changedAccentURLFirst = shortcut(
             id: firstId,
             title: "First",
             icon: .system("globe"),
+            accentSourceURL: updatedFirstURL,
+            accentSourcePartition: firstPartition,
+            presentationState: .liveBackgrounded
+        )
+        let changedAccentPartitionFirst = shortcut(
+            id: firstId,
+            title: "First",
+            icon: .system("globe"),
+            accentSourceURL: firstURL,
+            accentSourcePartition: updatedFirstPartition,
+            presentationState: .liveBackgrounded
+        )
+        let audioFirst = shortcut(
+            id: firstId,
+            title: "First",
+            icon: .system("globe"),
+            accentSourceURL: firstURL,
+            accentSourcePartition: firstPartition,
             presentationState: .liveBackgrounded,
             showsAudioButton: true,
-            isMuted: true,
-            showsSplitOutline: false
+            isMuted: true
         )
-        let splitFirst = SpaceShortcutSnapshot(
+        let splitFirst = shortcut(
             id: firstId,
             title: "First",
             icon: .system("globe"),
+            accentSourceURL: firstURL,
+            accentSourcePartition: firstPartition,
             presentationState: .liveBackgrounded,
-            showsAudioButton: false,
-            isMuted: false,
             showsSplitOutline: true
         )
 
@@ -545,6 +625,14 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         XCTAssertNotEqual(
             baseline,
             EssentialsSnapshot(items: [changedIconFirst, second]).renderIdentity
+        )
+        XCTAssertNotEqual(
+            baseline,
+            EssentialsSnapshot(items: [changedAccentURLFirst, second]).renderIdentity
+        )
+        XCTAssertNotEqual(
+            baseline,
+            EssentialsSnapshot(items: [changedAccentPartitionFirst, second]).renderIdentity
         )
         XCTAssertNotEqual(
             baseline,

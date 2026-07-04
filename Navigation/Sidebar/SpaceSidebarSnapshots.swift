@@ -126,6 +126,8 @@ struct SpaceShortcutSnapshot: Identifiable {
     let id: UUID
     let title: String
     let icon: SpaceSidebarSnapshotIcon
+    let accentSourceURL: URL?
+    let accentSourcePartition: SumiFaviconPartition?
     let presentationState: ShortcutPresentationState
     let showsAudioButton: Bool
     let isMuted: Bool
@@ -177,6 +179,8 @@ struct EssentialsSnapshot {
                 id: item.id,
                 title: item.title,
                 icon: item.icon.renderIdentity,
+                accentSourceURL: item.accentSourceURL,
+                accentSourcePartition: item.accentSourcePartition,
                 presentationState: item.presentationState,
                 showsAudioButton: item.showsAudioButton,
                 isMuted: item.isMuted,
@@ -191,6 +195,8 @@ struct EssentialsSnapshotRenderIdentity: Equatable {
         let id: UUID
         let title: String
         let icon: SpaceSidebarSnapshotIconRenderIdentity
+        let accentSourceURL: URL?
+        let accentSourcePartition: SumiFaviconPartition?
         let presentationState: ShortcutPresentationState
         let showsAudioButton: Bool
         let isMuted: Bool
@@ -704,6 +710,10 @@ enum SpaceSidebarTransitionSnapshotBuilder {
             for: pin,
             in: windowState
         )
+        let faviconPartition = browserContext.tabManager.shortcutPinRuntimeResolutionOwner.resolvedFaviconPartition(
+            for: pin,
+            currentSpaceId: pin.spaceId ?? windowState.currentSpaceId
+        )
         let isInVisibleSplit = liveTab.map { browserContext.splitManager.isTabVisibleInSplit($0.id, in: windowState.id) } == true
         let essentialRuntimeState = browserContext.tabManager.shortcutPresentationOwner.essentialRuntimeState(
             for: pin,
@@ -718,9 +728,10 @@ enum SpaceSidebarTransitionSnapshotBuilder {
             icon: shortcutIcon(
                 for: pin,
                 liveTab: liveTab,
-                browserContext: browserContext,
-                windowState: windowState
+                faviconPartition: faviconPartition
             ),
+            accentSourceURL: pin.launchURL,
+            accentSourcePartition: faviconPartition,
             presentationState: presentationState,
             showsAudioButton: liveTab?.audioState.showsTabAudioButton ?? false,
             isMuted: liveTab?.audioState.isMuted ?? false,
@@ -765,8 +776,7 @@ enum SpaceSidebarTransitionSnapshotBuilder {
     private static func shortcutIcon(
         for pin: ShortcutPin,
         liveTab: Tab?,
-        browserContext: SidebarBrowserContext,
-        windowState: BrowserWindowState
+        faviconPartition: SumiFaviconPartition
     ) -> SpaceSidebarSnapshotIcon {
         if let iconAsset = pin.iconAsset {
             if SumiPersistentGlyph.presentsAsEmoji(iconAsset) {
@@ -774,11 +784,6 @@ enum SpaceSidebarTransitionSnapshotBuilder {
             }
             return .system(SumiPersistentGlyph.resolvedLauncherSystemImageName(iconAsset))
         }
-
-        let faviconPartition = browserContext.tabManager.shortcutPinRuntimeResolutionOwner.resolvedFaviconPartition(
-            for: pin,
-            currentSpaceId: pin.spaceId ?? windowState.currentSpaceId
-        )
 
         if let liveTab {
             if SumiSurface.isSettingsSurfaceURL(liveTab.url) {
