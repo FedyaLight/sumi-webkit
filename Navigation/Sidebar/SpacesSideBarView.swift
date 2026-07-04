@@ -508,6 +508,7 @@ struct SpacesSideBarView: View {
                 tokens: pageThemeContext.tokens(settings: sumiSettings),
                 themeContext: pageThemeContext
             ))
+            .id(pageSnapshot.spaceId)
         }
     }
 

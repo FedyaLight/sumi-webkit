@@ -166,16 +166,14 @@ struct SpaceTitle: View {
                     cancelRename()
                 }
         } else {
-            HStack(spacing: 0) {
-                Text(space.name)
-                    .font(.system(size: SpaceTitleRowLayout.titleFontSize, weight: SpaceTitleRowLayout.titleFontWeight))
-                    .foregroundStyle(textColor)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .onTapGesture(count: 2) {
-                        startRenaming()
-                    }
-            }
+            SidebarFadingRowTitleLabel(
+                title: space.name,
+                font: .system(size: SpaceTitleRowLayout.titleFontSize, weight: SpaceTitleRowLayout.titleFontWeight),
+                color: textColor
+            )
+                .onTapGesture(count: 2) {
+                    startRenaming()
+                }
         }
     }
 

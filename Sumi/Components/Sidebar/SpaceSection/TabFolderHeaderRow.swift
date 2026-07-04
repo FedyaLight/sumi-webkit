@@ -60,11 +60,11 @@ struct TabFolderHeaderRow: View {
     }
 
     private var titleView: some View {
-        Text(title)
-            .font(.system(size: 14, weight: .semibold))
-            .foregroundStyle(tokens.primaryText)
-            .lineLimit(1)
-            .truncationMode(.tail)
+        SidebarFadingRowTitleLabel(
+            title: title,
+            font: .system(size: 14, weight: .semibold),
+            color: tokens.primaryText
+        )
     }
 
     private var iconView: some View {

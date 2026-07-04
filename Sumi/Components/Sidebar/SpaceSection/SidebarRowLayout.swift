@@ -11,6 +11,7 @@ enum SidebarRowLayout {
     static let selectionShadowRadius: CGFloat = 1.5
     static let selectionShadowYOffset: CGFloat = 0.8
     static let selectionShadowBleed: CGFloat = 3
+    static let titleTrailingFadeWidth: CGFloat = 32
     static let titleLineBoxHeight: CGFloat = 16
     static let titleHeight: CGFloat = titleLineBoxHeight
     static let faviconSize: CGFloat = 18
@@ -32,6 +33,39 @@ enum SidebarRowLayout {
     static let changedLauncherResetHeight: CGFloat = rowHeight
     static let changedLauncherResetIconLeading: CGFloat = 12
     static let changedLauncherResetTrailingGap: CGFloat = 4
+}
+
+struct SidebarFadingRowTitleLabel: View {
+    let title: String
+    let font: Font
+    let color: Color
+    var trailingPadding: CGFloat = 0
+    var height: CGFloat = SidebarRowLayout.titleHeight
+
+    var body: some View {
+        Text(title)
+            .font(font)
+            .foregroundStyle(color)
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
+            .padding(.trailing, trailingPadding)
+            .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+            .frame(height: height, alignment: .leading)
+            .clipped()
+            .mask {
+                HStack(spacing: 0) {
+                    Rectangle()
+                    LinearGradient(
+                        colors: [.black, .clear],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                    .frame(width: SidebarRowLayout.titleTrailingFadeWidth)
+                }
+            }
+            .layoutPriority(1)
+            .accessibilityLabel(title)
+    }
 }
 
 enum SidebarSelectionElevation {

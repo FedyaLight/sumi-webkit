@@ -209,29 +209,48 @@ private struct SpaceSnapshotTitleView: View {
     let tokens: ChromeThemeTokens
 
     var body: some View {
-        SpaceTitleRowChrome(
-            backgroundColor: .clear,
-            cornerRadius: rowCornerRadius
-        ) {
-            SpaceTitleIconView(
-                iconValue: iconValue,
-                textColor: tokens.primaryText,
-                hidesAccessibility: true
-            )
-        } title: {
-            Text(title)
-                .font(.system(size: SpaceTitleRowLayout.titleFontSize, weight: SpaceTitleRowLayout.titleFontWeight))
-                .foregroundStyle(tokens.primaryText)
-                .lineLimit(1)
-                .truncationMode(.tail)
-        } trailing: {
-            Image(systemName: "ellipsis")
-                .font(.body.weight(.semibold))
-                .opacity(0)
+        HStack(spacing: SidebarRowLayout.iconTrailingSpacing) {
+            snapshotIcon
+                .frame(width: SidebarRowLayout.faviconSize, height: SidebarRowLayout.faviconSize)
                 .accessibilityHidden(true)
+
+            SidebarFadingRowTitleLabel(
+                title: title,
+                font: .system(size: SpaceTitleRowLayout.titleFontSize, weight: SpaceTitleRowLayout.titleFontWeight),
+                color: tokens.primaryText
+            )
+
+            Spacer(minLength: 0)
+
+            Color.clear
+                .accessibilityHidden(true)
+                .frame(
+                    width: SpaceTitleRowLayout.trailingControlSize,
+                    height: SpaceTitleRowLayout.trailingControlSize
+                )
         }
+        .padding(.leading, SidebarRowLayout.leadingInset)
+        .padding(.trailing, SidebarRowLayout.trailingInset)
+        .padding(.vertical, SpaceTitleRowLayout.verticalPadding)
+        .frame(maxWidth: .infinity)
+        .frame(minHeight: SpaceTitleRowLayout.minimumHeight)
+        .clipShape(RoundedRectangle(cornerRadius: rowCornerRadius, style: .continuous))
         .allowsHitTesting(false)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(title)
         .accessibilityIdentifier("space-transition-snapshot-title")
+    }
+
+    @ViewBuilder
+    private var snapshotIcon: some View {
+        if SumiPersistentGlyph.presentsAsEmoji(iconValue) {
+            Text(iconValue)
+                .font(.system(size: SpaceTitleRowLayout.iconFontSize))
+        } else {
+            Image(systemName: SumiPersistentGlyph.resolvedSpaceSystemImageName(iconValue))
+                .font(.system(size: SpaceTitleRowLayout.iconFontSize, weight: .medium))
+                .foregroundStyle(tokens.primaryText)
+        }
     }
 }
 
@@ -395,11 +414,11 @@ private struct SpaceSnapshotFolderView: View {
                 }
                 .frame(width: SidebarRowLayout.folderTitleLeading, alignment: .leading)
 
-                Text(folder.title)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(tokens.primaryText)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+                SidebarFadingRowTitleLabel(
+                    title: folder.title,
+                    font: .system(size: 14, weight: .semibold),
+                    color: tokens.primaryText
+                )
 
                 Spacer(minLength: 0)
             }
@@ -495,10 +514,11 @@ private struct SpaceSnapshotShortcutRowView: View {
                     .padding(.trailing, SidebarRowLayout.iconTrailingSpacing)
             }
 
-            SpaceSnapshotTitleLabel(
+            SidebarFadingRowTitleLabel(
                 title: shortcut.title,
                 font: .system(size: 13, weight: .medium),
-                color: tokens.primaryText
+                color: tokens.primaryText,
+                height: SidebarRowLayout.titleHeight
             )
                 .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
         }
@@ -589,10 +609,11 @@ private struct SpaceSnapshotRegularTabRowView: View {
                 SpaceSnapshotRowAudioGlyph(isMuted: tab.isMuted, tokens: tokens)
             }
 
-            SpaceSnapshotTitleLabel(
+            SidebarFadingRowTitleLabel(
                 title: tab.title,
                 font: .system(size: 13, weight: .medium),
-                color: tokens.primaryText
+                color: tokens.primaryText,
+                height: SidebarRowLayout.titleHeight
             )
                 .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
         }
@@ -628,25 +649,6 @@ private struct SpaceSnapshotRegularTabRowView: View {
                 foregroundColor: tokens.primaryText
             )
         }
-    }
-}
-
-private struct SpaceSnapshotTitleLabel: View {
-    let title: String
-    let font: Font
-    let color: Color
-    var trailingPadding: CGFloat = 0
-    var height: CGFloat = SidebarRowLayout.titleHeight
-
-    var body: some View {
-        Text(title)
-            .font(font)
-            .foregroundStyle(color)
-            .lineLimit(1)
-            .truncationMode(.tail)
-            .padding(.trailing, trailingPadding)
-            .frame(height: height, alignment: .leading)
-            .accessibilityLabel(title)
     }
 }
 
