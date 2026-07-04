@@ -325,8 +325,7 @@ private struct SumiWebNotificationMessageResponse: Encodable {
     }
 
     func toJSON() -> String? {
-        guard let jsonData = try? JSONEncoder().encode(self) else { return nil }
-        return String(data: jsonData, encoding: .utf8)
+        SumiUserScriptMessageJSON.optionalString(self, context: "webNotifications.result")
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -351,12 +350,11 @@ private struct SumiWebNotificationMessageErrorResponse: Encodable {
     }
 
     func toJSON() -> String {
-        guard let jsonData = try? JSONEncoder().encode(self),
-              let jsonString = String(data: jsonData, encoding: .utf8)
-        else {
-            return #"{"error":{"message":"could not convert result to json"}}"#
-        }
-        return jsonString
+        SumiUserScriptMessageJSON.string(
+            self,
+            context: "webNotifications.error",
+            fallback: #"{"error":{"message":"could not convert result to json"}}"#
+        )
     }
 
     private struct MessageError: Encodable {

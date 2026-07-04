@@ -69,6 +69,58 @@ final class SumiProtectionAttachmentOwnerTests: XCTestCase {
         )
     }
 
+    func testExpensiveOverlapDiagnosticsReportsInvalidRuleListJSONWithoutDroppingValidOverlap() {
+        let trackingRuleList = SumiContentRuleListDefinition(
+            name: "sumi.test.tracking.1",
+            encodedContentRuleList: Self.validRuleListJSON,
+            storeIdentifierOverride: "sumi.test.tracking.1"
+        )
+        let matchingAdblockRuleList = SumiContentRuleListDefinition(
+            name: "sumi.test.adblock.1",
+            encodedContentRuleList: Self.validRuleListJSON,
+            storeIdentifierOverride: "sumi.test.adblock.1"
+        )
+        let invalidAdblockRuleList = SumiContentRuleListDefinition(
+            name: "sumi.test.adblock.invalid",
+            encodedContentRuleList: "{",
+            storeIdentifierOverride: "sumi.test.adblock.invalid"
+        )
+        let provider = FakeProtectionAttachmentRuleProvider(
+            manifest: Self.makeManifest(
+                ruleLists: [
+                    (trackingRuleList, .trackingNetwork),
+                    (matchingAdblockRuleList, .adblockAdsPrivacyNetwork),
+                    (invalidAdblockRuleList, .adblockAdsPrivacyNetwork)
+                ]
+            ),
+            definitions: [
+                trackingRuleList,
+                matchingAdblockRuleList,
+                invalidAdblockRuleList
+            ]
+        )
+        let owner = SumiProtectionAttachmentOwner(ruleProvider: provider)
+
+        let plan = owner.globalAttachmentPlan(
+            for: .adblock,
+            includeExpensiveDiagnostics: true,
+            loadRuleDefinitions: true
+        )
+
+        XCTAssertEqual(plan.overlapSummary.exactCanonicalOverlapCount, 1)
+        XCTAssertFalse(plan.overlapSummary.exactComparisonAvailable)
+        XCTAssertTrue(
+            plan.overlapSummary.notes.contains {
+                $0.contains("cannot be safely canonicalized")
+            }
+        )
+        XCTAssertTrue(
+            plan.overlapSummary.notes.contains {
+                $0.contains("sumi.test.adblock.invalid")
+            }
+        )
+    }
+
     private static var validRuleListJSON: String {
         """
         [
@@ -87,26 +139,34 @@ final class SumiProtectionAttachmentOwnerTests: XCTestCase {
     private static func makeManifest(
         ruleList: SumiContentRuleListDefinition
     ) -> AdblockCompiledGenerationManifest {
-        let shard = NativeContentBlockingShardDescriptor(
-            id: "tracking-0001",
-            generationId: "generation-1",
-            kind: .network,
-            sourceListIdentifiers: ["tracking"],
-            sourceCategories: [.privacyOverlap],
-            protectionGroup: .trackingNetwork,
-            webKitIdentifier: ruleList.webKitStoreIdentifier,
-            contentHash: ruleList.contentHash,
-            approximateRuleCount: 1,
-            jsonByteCount: ruleList.encodedContentRuleList.utf8.count,
-            compilerIdentity: nil,
-            diagnosticsSummary: "test"
-        )
+        makeManifest(ruleLists: [(ruleList, .trackingNetwork)])
+    }
+
+    private static func makeManifest(
+        ruleLists: [(definition: SumiContentRuleListDefinition, group: SumiProtectionGroupKind)]
+    ) -> AdblockCompiledGenerationManifest {
+        let shards = ruleLists.enumerated().map { index, entry in
+            NativeContentBlockingShardDescriptor(
+                id: "\(entry.group.rawValue)-\(String(format: "%04d", index + 1))",
+                generationId: "generation-1",
+                kind: .network,
+                sourceListIdentifiers: [entry.group.rawValue],
+                sourceCategories: [.privacyOverlap],
+                protectionGroup: entry.group,
+                webKitIdentifier: entry.definition.webKitStoreIdentifier,
+                contentHash: entry.definition.contentHash,
+                approximateRuleCount: 1,
+                jsonByteCount: entry.definition.encodedContentRuleList.utf8.count,
+                compilerIdentity: nil,
+                diagnosticsSummary: "test"
+            )
+        }
         return AdblockCompiledGenerationManifest(
             schemaVersion: 1,
             activeGenerationId: "generation-1",
             createdDate: Date(timeIntervalSince1970: 0),
             selectedFilterLists: [],
-            networkShards: [shard],
+            networkShards: shards,
             nativeCSSShards: [],
             nativeCompiler: nil,
             nativeCompilerSourceLists: nil,

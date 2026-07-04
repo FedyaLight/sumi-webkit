@@ -96,12 +96,12 @@ struct URLBarSiteDataDetailsView: View {
 
             VStack(alignment: .leading, spacing: 1) {
                 Text("Cookies & Site Data")
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(URLBarHubTypography.detailHeaderTitle)
                     .foregroundStyle(URLBarHubNativeStyle.primaryText)
                     .lineLimit(1)
                 URLBarFadingText(
                     displayHost,
-                    font: .system(size: 12, weight: .medium),
+                    font: URLBarHubTypography.detailHeaderSubtitle,
                     color: URLBarHubNativeStyle.secondaryText
                 )
             }
@@ -118,10 +118,10 @@ struct URLBarSiteDataDetailsView: View {
     private var intro: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Site data stored on this device")
-                .font(.system(size: 18, weight: .semibold))
+                .font(URLBarHubTypography.introTitle)
                 .foregroundStyle(URLBarHubNativeStyle.primaryText)
             Text("Sites can store preferences, session data, and cached files on your device. This data is available to the site and its subdomains.")
-                .font(.system(size: 13))
+                .font(URLBarHubTypography.introBody)
                 .foregroundStyle(URLBarHubNativeStyle.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -131,7 +131,7 @@ struct URLBarSiteDataDetailsView: View {
     private var entriesSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Data from this site")
-                .font(.system(size: 13, weight: .semibold))
+                .font(URLBarHubTypography.sectionTitle)
                 .foregroundStyle(URLBarHubNativeStyle.primaryText)
 
             if model.isLoading && model.entries.isEmpty {
@@ -139,13 +139,13 @@ struct URLBarSiteDataDetailsView: View {
                     ProgressView()
                         .controlSize(.small)
                     Text("Loading site data...")
-                        .font(.system(size: 12))
+                        .font(URLBarHubTypography.secondaryRowText)
                         .foregroundStyle(URLBarHubNativeStyle.secondaryText)
                 }
                 .frame(maxWidth: .infinity, minHeight: 64, alignment: .center)
             } else if model.entries.isEmpty {
                 Text("No site data is stored for \(displayHost).")
-                    .font(.system(size: 12.5))
+                    .font(URLBarHubTypography.emptyRowText)
                     .foregroundStyle(URLBarHubNativeStyle.secondaryText)
                     .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
             } else {
@@ -216,26 +216,25 @@ struct URLBarSiteDataDeleteConfirmationView: View {
 
     var body: some View {
         ZStack {
-            Color.black
-                .opacity(colorScheme == .dark ? 0.28 : 0.12)
+            URLBarHubOverlayStyle.deleteBackdrop(for: colorScheme)
                 .contentShape(Rectangle())
                 .onTapGesture(perform: onCancel)
 
             VStack(spacing: 14) {
                 Image(systemName: "trash.fill")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .font(URLBarHubTypography.deleteIcon)
+                    .foregroundStyle(URLBarHubOverlayStyle.destructiveIconForeground)
                     .frame(width: 48, height: 48)
                     .background(URLBarHubNativeStyle.destructiveBackground)
                     .clipShape(Circle())
 
                 VStack(spacing: 6) {
                     Text("Delete cookies and site data?")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(URLBarHubTypography.confirmationTitle)
                         .foregroundStyle(URLBarHubNativeStyle.primaryText)
                         .multilineTextAlignment(.center)
                     Text("This will delete cookies and site data for \(domain).")
-                        .font(.system(size: 12.5))
+                        .font(URLBarHubTypography.emptyRowText)
                         .foregroundStyle(URLBarHubNativeStyle.secondaryText)
                         .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
@@ -257,7 +256,7 @@ struct URLBarSiteDataDeleteConfirmationView: View {
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
                     .stroke(URLBarHubNativeStyle.separator, lineWidth: 1)
             }
-            .shadow(color: .black.opacity(colorScheme == .dark ? 0.45 : 0.18), radius: 18, x: 0, y: 8)
+            .shadow(color: URLBarHubOverlayStyle.deleteShadow(for: colorScheme), radius: 18, x: 0, y: 8)
             .padding(16)
         }
     }
@@ -276,7 +275,7 @@ struct URLBarSiteDataConfirmationButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 13.5, weight: .semibold))
+            .font(URLBarHubTypography.confirmationButton)
             .foregroundStyle(foregroundColor)
             .frame(maxWidth: .infinity)
             .frame(height: 36)
@@ -295,7 +294,7 @@ struct URLBarSiteDataConfirmationButtonStyle: ButtonStyle {
         case .secondary:
             return URLBarHubNativeStyle.primaryText
         case .destructive:
-            return .white
+            return URLBarHubOverlayStyle.destructiveIconForeground
         }
     }
 
@@ -332,14 +331,14 @@ struct URLBarSiteDataEntryRow: View {
                 Button(action: onDelete) {
                     ZStack {
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(isDeleteHovered ? URLBarHubNativeStyle.hoveredControlBackground : Color.clear)
+                            .fill(isDeleteHovered ? URLBarHubNativeStyle.hoveredControlBackground : URLBarHubOverlayStyle.transparent)
 
                         if isDeleting {
                             ProgressView()
                                 .controlSize(.small)
                         } else {
                             Image(systemName: "trash")
-                                .font(.system(size: 13, weight: .semibold))
+                                .font(URLBarHubTypography.rowIcon)
                         }
                     }
                     .frame(width: 32, height: 32)
@@ -384,12 +383,12 @@ struct URLBarSiteDataEntryRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 URLBarFadingText(
                     entry.domain,
-                    font: .system(size: 13, weight: .medium),
+                    font: URLBarHubTypography.entryTitle,
                     color: URLBarHubNativeStyle.primaryText
                 )
                 URLBarFadingText(
                     summary,
-                    font: .system(size: 11.5),
+                    font: URLBarHubTypography.entrySummary,
                     color: URLBarHubNativeStyle.secondaryText
                 )
             }
@@ -401,7 +400,7 @@ struct URLBarSiteDataEntryRow: View {
         .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(isTitleHovered ? URLBarHubNativeStyle.hoveredControlBackground : Color.clear)
+                .fill(isTitleHovered ? URLBarHubNativeStyle.hoveredControlBackground : URLBarHubOverlayStyle.transparent)
         )
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.12)) {
@@ -422,10 +421,10 @@ struct URLBarSiteDataActionButton: View {
         Button(action: action) {
             HStack(spacing: 6) {
                 Image(systemName: systemName)
-                    .font(.system(size: 11.5, weight: .semibold))
+                    .font(URLBarHubTypography.actionIcon)
                     .frame(width: 14, height: 14)
                 Text(title)
-                    .font(.system(size: 11.5, weight: .medium))
+                    .font(URLBarHubTypography.actionTitle)
                     .lineLimit(1)
                 Spacer(minLength: 0)
             }
@@ -456,7 +455,7 @@ struct URLBarSiteDataFavicon: View {
                     .scaledToFit()
             } else {
                 Image(systemName: "globe")
-                    .font(.system(size: 17, weight: .medium))
+                    .font(URLBarHubTypography.faviconFallback)
                     .foregroundStyle(URLBarHubNativeStyle.secondaryText)
             }
         }
@@ -498,7 +497,7 @@ struct URLBarSiteDataIconButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: systemName)
-                .font(.system(size: 15, weight: .semibold))
+                .font(URLBarHubTypography.iconButton)
                 .foregroundStyle(URLBarHubNativeStyle.primaryText)
                 .frame(width: 34, height: 34)
                 .background(isHovered ? URLBarHubNativeStyle.hoveredControlBackground : URLBarHubNativeStyle.controlBackground)

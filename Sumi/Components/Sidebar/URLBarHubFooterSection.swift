@@ -18,7 +18,7 @@ struct SumiFooterSecurityStatus: View {
 
             Text(securityState.footerTitle)
                 .strikethrough(securityState.isFooterStruckThrough, color: strikethroughColor)
-                .font(.system(size: 13, weight: .semibold))
+                .font(URLBarHubTypography.footerStatusTitle)
                 .foregroundStyle(URLBarHubNativeStyle.primaryText)
                 .lineLimit(1)
                 .minimumScaleFactor(0.86)
@@ -53,7 +53,7 @@ struct SumiFooterSiteSettingsButton: View {
     var body: some View {
         Button(action: siteSettingsAction) {
             Image(systemName: "gearshape")
-                .font(.system(size: 15, weight: .semibold))
+                .font(URLBarHubTypography.iconButton)
                 .foregroundStyle(URLBarHubNativeStyle.primaryText)
                 .frame(maxWidth: .infinity)
                 .frame(height: 34)
@@ -95,7 +95,7 @@ struct SumiFooterBoostButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: isActive ? "paintbrush.pointed.fill" : "paintbrush.pointed")
-                .font(.system(size: 15, weight: .semibold))
+                .font(URLBarHubTypography.iconButton)
                 .foregroundStyle(isActive ? URLBarHubNativeStyle.accentBackground : URLBarHubNativeStyle.primaryText)
                 .frame(maxWidth: .infinity)
                 .frame(height: 34)

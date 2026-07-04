@@ -20,6 +20,7 @@ final class UserScriptGMBridge: NSObject {
     private weak var tabOpenHandler: SumiScriptsTabHandler?
     private weak var notificationPermissionBridge: SumiNotificationPermissionBridge?
     weak var downloadManager: DownloadManager?
+    let networkSession: URLSession
     private let notificationTabContextProvider: (@MainActor (WKWebView?) -> SumiWebNotificationTabContext?)?
 
     // Per-script persistent storage using UserDefaults suite
@@ -40,12 +41,14 @@ final class UserScriptGMBridge: NSObject {
         tabOpenHandler: SumiScriptsTabHandler?,
         downloadManager: DownloadManager?,
         notificationPermissionBridge: SumiNotificationPermissionBridge? = nil,
-        notificationTabContextProvider: (@MainActor (WKWebView?) -> SumiWebNotificationTabContext?)? = nil
+        notificationTabContextProvider: (@MainActor (WKWebView?) -> SumiWebNotificationTabContext?)? = nil,
+        networkSession: URLSession = SumiNonPersistentURLSession.shared
     ) {
         self.script = script
         self.contentWorld = contentWorld
         self.tabOpenHandler = tabOpenHandler
         self.downloadManager = downloadManager
+        self.networkSession = networkSession
         self.notificationPermissionBridge = notificationPermissionBridge
         self.notificationTabContextProvider = notificationTabContextProvider
 

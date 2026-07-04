@@ -179,7 +179,8 @@ extension Tab {
             existingWebView: existingWebView,
             webViewConfigurationOverride: webViewConfigurationOverride,
             isPopupHost: isPopupHost,
-            profile: resolveProfile()
+            profile: resolveProfile(),
+            runtime: reloadPolicyRuntime
         )
     }
 

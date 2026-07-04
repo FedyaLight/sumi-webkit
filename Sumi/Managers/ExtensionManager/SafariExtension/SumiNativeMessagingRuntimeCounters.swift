@@ -182,14 +182,15 @@ enum SumiNativeMessagingRuntimeCounters {
             guard RuntimeDiagnostics.isVerboseEnabled else { return }
             #if DEBUG
                 let report = buildPerformanceReport(context: context)
-                let encoder = JSONEncoder()
-                encoder.dateEncodingStrategy = .iso8601
-                encoder.outputFormatting = [.sortedKeys]
-                guard let data = try? encoder.encode(report),
-                      let json = String(data: data, encoding: .utf8)
-                else {
+                let json: String
+                do {
+                    json = try SafariExtensionDiagnosticJSON.encodedString(
+                        report,
+                        dateEncodingStrategy: .iso8601
+                    )
+                } catch {
                     RuntimeDiagnostics.debug(category: "SafariNativeMessagingMetrics") {
-                        "performanceReport encode failed context=\(context)"
+                        "performanceReport encode failed context=\(context) error=\(error.localizedDescription)"
                     }
                     return
                 }

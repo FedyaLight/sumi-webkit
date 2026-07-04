@@ -218,21 +218,18 @@ enum SafariExtensionPermissionLifecycleDiagnostics {
     private static func log<T: Encodable>(_ label: String, _ snapshot: T) {
         #if DEBUG || SUMI_DIAGNOSTICS
             guard RuntimeDiagnostics.isVerboseEnabled else { return }
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.sortedKeys]
-            guard let data = try? encoder.encode(snapshot),
-                  let json = String(data: data, encoding: .utf8)
-            else {
+            do {
+                let json = try SafariExtensionDiagnosticJSON.encodedString(snapshot)
                 RuntimeDiagnostics.debug(
-                    "SafariExtensionPermissionLifecycle \(label) encodeFailed",
+                    "SafariExtensionPermissionLifecycle \(label) \(json)",
                     category: category
                 )
-                return
+            } catch {
+                RuntimeDiagnostics.debug(
+                    "SafariExtensionPermissionLifecycle \(label) encodeFailed: \(error.localizedDescription)",
+                    category: category
+                )
             }
-            RuntimeDiagnostics.debug(
-                "SafariExtensionPermissionLifecycle \(label) \(json)",
-                category: category
-            )
         #else
             _ = label
             _ = snapshot

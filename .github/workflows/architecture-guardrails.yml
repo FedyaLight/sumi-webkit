@@ -47,8 +47,8 @@ jobs:
       - name: Run architecture guardrails
         run: scripts/check_architecture_guardrails.sh
 
-  xcode-smoke-tests:
-    name: Run Xcode smoke tests
+  xcode-unit-tests:
+    name: Run full SumiTests suite
     runs-on: macos-26
     steps:
       - name: Check out repository
@@ -59,13 +59,50 @@ jobs:
           scripts/bootstrap_vendor_binaries.sh
           scripts/verify_vendor_checksums.sh
 
-      - name: Run focused SumiTests subset
+      - name: Run SumiTests
         run: |
           set -euo pipefail
           xcodebuild test \
             -project Sumi.xcodeproj \
             -scheme Sumi \
             -destination 'platform=macOS' \
-            -derivedDataPath "${RUNNER_TEMP}/SumiDerivedData" \
-            -only-testing:SumiTests/BrowserManagerRuntimeWiringTests \
-            -only-testing:SumiTests/SumiStartupPersistenceTests
+            -derivedDataPath "${RUNNER_TEMP}/SumiDerivedData-unit" \
+            -resultBundlePath "${RUNNER_TEMP}/SumiTests.xcresult"
+
+      - name: Upload SumiTests result bundle
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SumiTests-xcresult
+          path: ${{ runner.temp }}/SumiTests.xcresult
+          if-no-files-found: ignore
+
+  xcode-smoke-tests:
+    name: Run SumiSmoke launch UI suite
+    runs-on: macos-26
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Bootstrap URLPredictor binary
+        run: |
+          scripts/bootstrap_vendor_binaries.sh
+          scripts/verify_vendor_checksums.sh
+
+      - name: Run SumiSmoke
+        run: |
+          set -euo pipefail
+          xcodebuild test \
+            -project Sumi.xcodeproj \
+            -scheme SumiSmoke \
+            -destination 'platform=macOS' \
+            -derivedDataPath "${RUNNER_TEMP}/SumiDerivedData-ui" \
+            -resultBundlePath "${RUNNER_TEMP}/SumiSmoke.xcresult"
+
+      - name: Upload SumiSmoke result bundle
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SumiSmoke-xcresult
+          path: ${{ runner.temp }}/SumiSmoke.xcresult
+          if-no-files-found: ignore

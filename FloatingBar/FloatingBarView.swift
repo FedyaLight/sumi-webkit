@@ -84,7 +84,7 @@ struct FloatingBarView: View {
         let isVisible = windowState.isFloatingBarVisible
         let tokens = self.tokens
         let urlBarPlaceholder = urlBarPlaceholderString
-        let textFieldFont = Font.system(size: 13, weight: .semibold)
+        let textFieldFont = ChromeThemeTypography.floatingBarInput
         let siteSearchMatchID = siteSearchMatch?.id
         let textBinding = Binding(
             get: { searchSession.text },
@@ -115,13 +115,13 @@ struct FloatingBarView: View {
                                 )
                                 .id(searchSession.activeSiteSearch != nil ? "magnifyingglass" : isLikelyURL(searchSession.text) ? "globe" : "magnifyingglass")
                                 .transition(FloatingBarMotionPolicy.chromeElementTransition(for: motionMode))
-                                .font(.system(size: 13, weight: .regular))
+                                .font(ChromeThemeTypography.floatingBarLeadingIcon)
                                 .foregroundStyle(tokens.secondaryText)
                                 .frame(width: 15)
 
                                 if let site = searchSession.activeSiteSearch {
                                     Text(site.name)
-                                        .font(.system(size: 13, weight: .semibold))
+                                        .font(ChromeThemeTypography.floatingBarToken)
                                         .foregroundStyle(siteSearchTokenForeground(for: site))
                                         .padding(.horizontal, 10)
                                         .padding(.vertical, 4)
@@ -145,7 +145,7 @@ struct FloatingBarView: View {
                                         FloatingBarInlineCompletionTextField(
                                             text: textBinding,
                                             isFocused: $isSearchFocused,
-                                            font: .systemFont(ofSize: 13, weight: .semibold),
+                                            font: ChromeThemeTypography.floatingBarInputNSFont,
                                             primaryColor: NSColor(tokens.primaryText),
                                             hidesCaret: searchSession.isSuggestionPreviewActive,
                                             movesInsertionPointToEnd: searchSession.isSuggestionPreviewActive,
@@ -216,7 +216,7 @@ struct FloatingBarView: View {
                                                 .truncationMode(.tail)
 
                                             Text("Tab")
-                                                .font(.system(size: 11, weight: .semibold))
+                                                .font(ChromeThemeTypography.floatingBarMicroLabel)
                                                 .foregroundStyle(tokens.secondaryText)
                                                 .padding(.horizontal, 6)
                                                 .padding(.vertical, 2)

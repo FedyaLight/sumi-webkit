@@ -369,6 +369,36 @@ final class UserScriptsRuntimeTests: XCTestCase {
         XCTAssertEqual(metadata.sumiCompat, ["webkit-media", "unknown-module"])
     }
 
+    func testMetadataSnapshotJSONSerializesStableMetadataObject() throws {
+        let source = """
+        // ==UserScript==
+        // @name Snapshot Test
+        // @namespace https://example.test
+        // @version 1.2.3
+        // @match https://example.test/*
+        // @grant GM_xmlhttpRequest
+        // @resource logo https://example.test/logo.png
+        // @sumi-compat webkit-media
+        // ==/UserScript==
+        void 0;
+        """
+        let metadata = try XCTUnwrap(UserScriptMetadataParser.parse(source))
+
+        let json = UserScriptStore.metadataSnapshotJSON(metadata)
+        let data = try XCTUnwrap(json.data(using: .utf8))
+        let object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: data) as? [String: Any]
+        )
+
+        XCTAssertEqual(object["name"] as? String, "Snapshot Test")
+        XCTAssertEqual(object["namespace"] as? String, "https://example.test")
+        XCTAssertEqual(object["version"] as? String, "1.2.3")
+        XCTAssertEqual(object["match"] as? [String], ["https://example.test/*"])
+        XCTAssertEqual(object["grant"] as? [String], ["GM_xmlhttpRequest"])
+        XCTAssertEqual(object["sumiCompat"] as? [String], ["webkit-media"])
+        XCTAssertEqual(object["resource"] as? [String: String], ["logo": "https://example.test/logo.png"])
+    }
+
     func testBundledWebkitMediaCompatSourceLoads() {
         let src = UserScriptBundledCompatScript.source(moduleID: "webkit-media")
         XCTAssertNotNil(src)

@@ -69,7 +69,10 @@ final class BrowserAppOrchestrationOwner {
         keyboardShortcutManager.attach(
             actionRouter: browserManager.shortcutActionRouter,
             chromeRouter: browserManager.shortcutActionRouter,
-            windowRegistry: windowRegistry
+            windowRegistry: windowRegistry,
+            extensionCommandHandler: { [weak browserManager] event in
+                browserManager?.extensionsModule.performExtensionKeyboardCommandIfLoaded(for: event) ?? false
+            }
         )
 
         windowLifecycleOwner.attachIfNeeded(

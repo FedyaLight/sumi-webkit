@@ -9,6 +9,7 @@
 import AppKit
 import Foundation
 import LocalAuthentication
+import OSLog
 
 @available(macOS 15.5, *)
 @MainActor
@@ -476,6 +477,39 @@ private enum BitwardenPublicBiometricsStatus: Int {
 
 @MainActor
 enum BitwardenSafariOneShotHandler {
+    struct DownloadFileRequest {
+        let fileName: String
+        let data: Data
+    }
+
+    enum DownloadFileDecodeError: LocalizedError {
+        case missingDataString
+        case malformedJSON(String)
+        case invalidPayloadObject
+        case missingFileName
+        case missingBlobData
+        case invalidBase64Blob
+
+        var errorDescription: String? {
+            switch self {
+            case .missingDataString:
+                return "downloadFile payload is missing its JSON data string."
+            case .malformedJSON(let reason):
+                return "downloadFile payload JSON is malformed: \(reason)"
+            case .invalidPayloadObject:
+                return "downloadFile payload JSON is not an object."
+            case .missingFileName:
+                return "downloadFile payload is missing fileName."
+            case .missingBlobData:
+                return "downloadFile payload is missing blobData."
+            case .invalidBase64Blob:
+                return "downloadFile payload blobData is not valid base64."
+            }
+        }
+    }
+
+    private static let log = Logger.sumi(category: "Extensions")
+
     /// Public `sleep` command delay from SafariWebExtensionHandler.
     static var sleepDelay: Duration = .seconds(10)
 
@@ -726,35 +760,64 @@ enum BitwardenSafariOneShotHandler {
     }
 
     private static func handleDownloadFile(payload: [String: Any]) -> Bool {
-        guard let jsonData = payload["data"] as? String,
-              let json = jsonData.data(using: .utf8),
-              let object = try? JSONSerialization.jsonObject(with: json) as? [String: Any],
-              let fileName = object["fileName"] as? String
-        else {
+        let request: DownloadFileRequest
+        do {
+            request = try downloadFileRequest(payload: payload)
+        } catch {
+            log.error("Bitwarden downloadFile payload decode failed: \(error.localizedDescription, privacy: .public)")
             return false
         }
 
-        var blobData: Data?
-        if let blobOptions = object["blobOptions"] as? [String: Any],
-           blobOptions["type"] as? String == "text/plain",
-           let blob = object["blobData"] as? String {
-            blobData = blob.data(using: .utf8)
-        } else if let blob = object["blobData"] as? String {
-            blobData = Data(base64Encoded: blob)
-        }
-        guard let data = blobData else { return false }
-
         let panel = NSSavePanel()
         panel.canCreateDirectories = true
-        panel.nameFieldStringValue = fileName
+        panel.nameFieldStringValue = request.fileName
         guard panel.runModal() == .OK, let url = panel.url else { return true }
 
         let fileManager = FileManager.default
         if fileManager.fileExists(atPath: url.path) == false {
             fileManager.createFile(atPath: url.path, contents: Data(), attributes: nil)
         }
-        try? data.write(to: url)
+        do {
+            try request.data.write(to: url)
+        } catch {
+            log.error("Bitwarden downloadFile write failed: \(error.localizedDescription, privacy: .public)")
+            return false
+        }
         return true
+    }
+
+    static func downloadFileRequest(payload: [String: Any]) throws -> DownloadFileRequest {
+        guard let jsonData = payload["data"] as? String else {
+            throw DownloadFileDecodeError.missingDataString
+        }
+
+        let json = Data(jsonData.utf8)
+        let rawObject: Any
+        do {
+            rawObject = try JSONSerialization.jsonObject(with: json)
+        } catch {
+            throw DownloadFileDecodeError.malformedJSON(error.localizedDescription)
+        }
+
+        guard let object = rawObject as? [String: Any] else {
+            throw DownloadFileDecodeError.invalidPayloadObject
+        }
+        guard let fileName = object["fileName"] as? String else {
+            throw DownloadFileDecodeError.missingFileName
+        }
+        guard let blob = object["blobData"] as? String else {
+            throw DownloadFileDecodeError.missingBlobData
+        }
+
+        if let blobOptions = object["blobOptions"] as? [String: Any],
+           blobOptions["type"] as? String == "text/plain" {
+            return DownloadFileRequest(fileName: fileName, data: Data(blob.utf8))
+        }
+
+        guard let data = Data(base64Encoded: blob) else {
+            throw DownloadFileDecodeError.invalidBase64Blob
+        }
+        return DownloadFileRequest(fileName: fileName, data: data)
     }
 
     static func publicCommandName(in message: Any) -> String? {

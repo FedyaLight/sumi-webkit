@@ -1,8 +1,5 @@
 import Foundation
 
-#if DEBUG
-import Darwin
-
 struct SumiProtectionStartupRestoreDiagnosticsSnapshot: Equatable, Sendable {
     let appliedProtectionLevel: String
     let activeGenerationId: String?
@@ -57,7 +54,29 @@ struct SumiProtectionStartupRestoreDiagnosticsSnapshot: Equatable, Sendable {
     }
 }
 
-final class SumiProtectionStartupRestoreDiagnostics: @unchecked Sendable {
+protocol SumiProtectionStartupRestoreDiagnosticsRecording: AnyObject, Sendable {
+    var latestSnapshot: SumiProtectionStartupRestoreDiagnosticsSnapshot? { get }
+
+    func begin(appliedLevel: SumiProtectionLevel, trackedGenerationId: String?) -> UUID
+    func finish(_ token: UUID) -> SumiProtectionStartupRestoreDiagnosticsSnapshot
+    func recordManifest(_ manifest: AdblockCompiledGenerationManifest?)
+    func recordExpectedShardIdentifiers(_ identifiers: [String])
+    func recordLookupAttempt(identifiers: [String])
+    func recordLookupHit(_ identifier: String)
+    func recordLookupMiss(_ identifier: String)
+    func recordMetadataOnlyRestoreUsed()
+    func recordPayloadBackedRestoreUsed(reason: String)
+    func recordRepairCompileUsed(reason: String)
+    func recordFallback(reason: String)
+    func recordShardJSONRead(identifier: String?, path: String, byteCount: Int, reason: String)
+    func recordGenerationStaleCheck(consideredStale: Bool, reason: String)
+    func recordCompiledRuleListRemoval(identifiers: [String], reason: String)
+}
+
+#if DEBUG
+import Darwin
+
+final class SumiProtectionStartupRestoreDiagnostics: SumiProtectionStartupRestoreDiagnosticsRecording, @unchecked Sendable {
     static let shared = SumiProtectionStartupRestoreDiagnostics()
 
     private struct MutableState {
@@ -282,6 +301,12 @@ final class SumiProtectionStartupRestoreDiagnostics: @unchecked Sendable {
     private func shouldRecord(reason: String, in state: MutableState) -> Bool {
         guard let trackedGenerationId = state.trackedGenerationId else { return true }
         return reason.contains(trackedGenerationId)
+    }
+}
+
+enum SumiProtectionStartupRestoreDiagnosticsDefaults {
+    static var recorder: any SumiProtectionStartupRestoreDiagnosticsRecording {
+        SumiProtectionStartupRestoreDiagnostics.shared
     }
 }
 

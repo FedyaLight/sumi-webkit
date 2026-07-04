@@ -152,24 +152,24 @@ private struct AdblockProtectionSettingsView: View {
     private var restartRequiredWarning: some View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(Color.red)
+                .font(SettingsTypography.protectionWarningIcon)
+                .foregroundStyle(SettingsSurfaceStyle.warningText)
                 .frame(width: 18, height: 18)
 
             Text("Restart Sumi to apply this change.")
                 .font(.callout.weight(.medium))
-                .foregroundStyle(Color.red)
+                .foregroundStyle(SettingsSurfaceStyle.warningText)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color.red.opacity(0.10))
+                .fill(SettingsSurfaceStyle.warningBackground)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(Color.red.opacity(0.35), lineWidth: 1)
+                .strokeBorder(SettingsSurfaceStyle.warningBorder, lineWidth: 1)
         )
         .accessibilityElement(children: .combine)
     }

@@ -68,7 +68,7 @@ final class SumiProtectionBundleLifecycle {
     init(
         preparedBundleManager: any SumiProtectionPreparedBundleManaging,
         remoteUpdater: any SumiProtectionBundleRemoteUpdating = SumiProtectionBundleRemoteUpdater(),
-        statusStore: SumiProtectionBundleUpdateStatusStore = .shared
+        statusStore: SumiProtectionBundleUpdateStatusStore
     ) {
         self.preparedBundleManager = preparedBundleManager
         self.remoteUpdater = remoteUpdater

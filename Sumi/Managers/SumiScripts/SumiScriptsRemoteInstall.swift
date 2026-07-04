@@ -47,8 +47,11 @@ enum SumiScriptsRemoteInstall {
         return false
     }
 
-    static func previewScript(from url: URL) async throws -> SumiScriptsInstallPreview {
-        let (data, _) = try await SumiNonPersistentURLSession.shared.data(from: url)
+    static func previewScript(
+        from url: URL,
+        session: URLSession = SumiNonPersistentURLSession.shared
+    ) async throws -> SumiScriptsInstallPreview {
+        let (data, _) = try await session.data(from: url)
         guard let content = String(data: data, encoding: .utf8),
               let metadata = UserScriptMetadataParser.parse(content)
         else {

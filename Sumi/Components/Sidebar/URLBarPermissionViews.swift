@@ -275,7 +275,7 @@ private struct SumiPermissionIndicatorActionPopover: View {
                 )
             } else {
                 Text("Manage this permission from site settings.")
-                    .font(.system(size: 11.5))
+                    .font(URLBarHubTypography.permissionHint)
                     .foregroundStyle(tokens.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -311,12 +311,12 @@ private struct SumiPermissionIndicatorActionPopover: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(headerTitle)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(URLBarHubTypography.permissionHeaderTitle)
                     .foregroundStyle(tokens.primaryText)
                     .lineLimit(1)
 
                 Text(state.displayDomain)
-                    .font(.system(size: 11.5))
+                    .font(URLBarHubTypography.permissionHeaderSubtitle)
                     .foregroundStyle(tokens.secondaryText)
                     .lineLimit(1)
             }
@@ -343,7 +343,7 @@ private struct SumiPermissionIndicatorFooterButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 12.5, weight: .medium))
+            .font(URLBarHubTypography.permissionFooterButton)
             .foregroundStyle(tokens.primaryText)
             .padding(.horizontal, 8)
             .frame(maxWidth: .infinity, minHeight: 30, alignment: .leading)
@@ -391,13 +391,13 @@ private struct SumiPermissionIndicatorButton: View {
 
                 if state.visualStyle == .systemWarning {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 7, weight: .bold))
+                        .font(URLBarHubTypography.permissionBadge)
                         .foregroundStyle(tokens.secondaryText)
                         .offset(x: 5, y: -5)
                         .accessibilityHidden(true)
                 } else if let badgeCount = state.badgeCount, badgeCount > 1 {
                     Text(min(badgeCount, 99).description)
-                        .font(.system(size: 7, weight: .bold))
+                        .font(URLBarHubTypography.permissionBadge)
                         .foregroundStyle(badgeTextColor)
                         .lineLimit(1)
                         .minimumScaleFactor(0.75)

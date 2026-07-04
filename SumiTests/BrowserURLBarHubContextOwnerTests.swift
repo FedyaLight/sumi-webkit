@@ -60,6 +60,7 @@ final class BrowserURLBarHubContextOwnerTests: XCTestCase {
 
         XCTAssertIdentical(context.bookmarkManager, browserManager.bookmarkManager)
         XCTAssertIdentical(context.extensionSurfaceStore, browserManager.extensionsModule.surfaceStore)
+        XCTAssertIdentical(context.adblockZapperStore, browserManager.adblockZapperStore)
         XCTAssertIdentical(context.permission.popupStore, browserManager.permissionRuntime.blockedPopupStore)
         XCTAssertIdentical(
             context.permissionDependencies.blockedPopupStore,

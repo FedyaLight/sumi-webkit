@@ -141,23 +141,18 @@ enum SafariExtensionAcceptanceMatrixBuilder {
         #if DEBUG || SUMI_DIAGNOSTICS
             guard RuntimeDiagnostics.isVerboseEnabled else { return }
 
-            let encoder = JSONEncoder()
-            encoder.dateEncodingStrategy = .iso8601
-            encoder.outputFormatting = [.sortedKeys, .prettyPrinted]
-            guard let data = try? encoder.encode(matrix),
-                  let json = String(data: data, encoding: .utf8)
-            else {
+            do {
+                let json = try SafariExtensionDiagnosticJSON.prettyPrintedString(matrix)
                 RuntimeDiagnostics.debug(
-                    "SafariExtensionAcceptanceMatrix encode failed",
+                    "SafariExtensionAcceptanceMatrix \(json)",
                     category: "SafariExtension"
                 )
-                return
+            } catch {
+                RuntimeDiagnostics.debug(
+                    "SafariExtensionAcceptanceMatrix encode failed: \(error.localizedDescription)",
+                    category: "SafariExtension"
+                )
             }
-
-            RuntimeDiagnostics.debug(
-                "SafariExtensionAcceptanceMatrix \(json)",
-                category: "SafariExtension"
-            )
         #else
             _ = matrix
         #endif

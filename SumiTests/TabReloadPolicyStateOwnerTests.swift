@@ -88,6 +88,7 @@ final class TabReloadPolicyStateOwnerTests: XCTestCase {
         var capturedState: SumiRuntimeAutoplayState?
         weak var capturedWebView: WKWebView?
         let runtime = makeRuntime(
+            autoplayPolicy: { _, _ in .blockAll },
             evaluateAutoplayPolicyChange: { requestedState, webView in
                 capturedState = requestedState
                 capturedWebView = webView
@@ -103,12 +104,12 @@ final class TabReloadPolicyStateOwnerTests: XCTestCase {
                 runtime: runtime
             )
         )
-        XCTAssertEqual(capturedState, SumiAutoplayPolicy.default.runtimeState)
+        XCTAssertEqual(capturedState, SumiAutoplayPolicy.blockAll.runtimeState)
         XCTAssertIdentical(capturedWebView, webView)
         XCTAssertEqual(
             owner.autoplayReloadRequirement,
             SumiAutoplayReloadRequirement(
-                desiredPolicy: .default,
+                desiredPolicy: .blockAll,
                 runtimeRequirement: runtimeRequirement
             )
         )
@@ -125,6 +126,7 @@ final class TabReloadPolicyStateOwnerTests: XCTestCase {
         protectionCurrentTabDiagnostics: @escaping (
             ReloadProtectionDiagnosticsContext
         ) -> SumiProtectionCurrentTabDiagnostics? = { _ in nil },
+        autoplayPolicy: @escaping (URL?, Profile?) -> SumiAutoplayPolicy = { _, _ in .default },
         evaluateAutoplayPolicyChange: @escaping (
             SumiRuntimeAutoplayState,
             WKWebView
@@ -135,6 +137,7 @@ final class TabReloadPolicyStateOwnerTests: XCTestCase {
             protectionAttachmentState: protectionAttachmentState,
             protectionSurfaceHost: protectionSurfaceHost,
             protectionCurrentTabDiagnostics: protectionCurrentTabDiagnostics,
+            autoplayPolicy: autoplayPolicy,
             evaluateAutoplayPolicyChange: evaluateAutoplayPolicyChange
         )
     }

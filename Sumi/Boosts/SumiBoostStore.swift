@@ -27,8 +27,6 @@ enum SumiBoostStoreError: LocalizedError, Equatable {
 
 @MainActor
 final class SumiBoostStore: ObservableObject {
-    static let shared = SumiBoostStore()
-
     private static let log = Logger.sumi(category: "BoostStore")
 
     private struct DiskState: Codable {
@@ -226,22 +224,7 @@ final class SumiBoostStore: ObservableObject {
             throw profileId == nil ? SumiBoostStoreError.missingProfile : SumiBoostStoreError.unboostableURL
         }
 
-        let importedData: SumiBoostData
-        if let package = try? jsonDecoder.decode(SumiBoostExportPackage.self, from: data) {
-            importedData = package.data
-        } else if let boostData = try? jsonDecoder.decode(SumiBoostData.self, from: data) {
-            importedData = boostData
-        } else if let boost = try? jsonDecoder.decode(SumiBoost.self, from: data) {
-            importedData = boost.data
-        } else {
-            // Surface why the import failed: record which shapes were attempted so
-            // the user-facing "invalid import" error is diagnosable. Payload bytes
-            // are not logged; only the attempted type names and sizes.
-            Self.log.error(
-                "Boost import rejected: none of SumiBoostExportPackage, SumiBoostData, or SumiBoost decoded (bytes=\(data.count, privacy: .public))."
-            )
-            throw SumiBoostStoreError.invalidImport
-        }
+        let importedData = try decodeImportedBoostData(from: data)
 
         loadIfNeeded()
         var data = importedData
@@ -265,6 +248,35 @@ final class SumiBoostStore: ObservableObject {
         persistImmediately(isEphemeral: entry.isEphemeral)
         notifyChanged()
         return boost
+    }
+
+    private func decodeImportedBoostData(from data: Data) throws -> SumiBoostData {
+        var failures: [String] = []
+
+        do {
+            return try jsonDecoder.decode(SumiBoostExportPackage.self, from: data).data
+        } catch {
+            failures.append("SumiBoostExportPackage: \(error.localizedDescription)")
+        }
+
+        do {
+            return try jsonDecoder.decode(SumiBoostData.self, from: data)
+        } catch {
+            failures.append("SumiBoostData: \(error.localizedDescription)")
+        }
+
+        do {
+            return try jsonDecoder.decode(SumiBoost.self, from: data).data
+        } catch {
+            failures.append("SumiBoost: \(error.localizedDescription)")
+        }
+
+        // Payload bytes are not logged; only attempted type names, failure
+        // descriptions, and payload size are recorded for diagnostics.
+        Self.log.error(
+            "Boost import rejected (bytes=\(data.count, privacy: .public)): \(failures.joined(separator: "; "), privacy: .public)"
+        )
+        throw SumiBoostStoreError.invalidImport
     }
 
     private func loadIfNeeded() {
@@ -322,7 +334,13 @@ final class SumiBoostStore: ObservableObject {
     private func preserveUnreadableBoostsPayload(_ data: Data) {
         let backupURL = jsonURL.appendingPathExtension("unreadable")
         guard !FileManager.default.fileExists(atPath: backupURL.path) else { return }
-        try? data.write(to: backupURL, options: [.atomic])
+        do {
+            try data.write(to: backupURL, options: [.atomic])
+        } catch {
+            Self.log.error(
+                "Failed to preserve unreadable boosts payload: \(error.localizedDescription, privacy: .public)"
+            )
+        }
     }
 
     private func loadBoost(_ diskBoost: DiskBoost) -> SumiBoost {
@@ -382,7 +400,11 @@ final class SumiBoostStore: ObservableObject {
     private func schedulePersist() {
         pendingWriteTask?.cancel()
         pendingWriteTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: Self.writeDebounceNanoseconds)
+            do {
+                try await Task.sleep(nanoseconds: Self.writeDebounceNanoseconds)
+            } catch {
+                return
+            }
             guard !Task.isCancelled else { return }
             await MainActor.run {
                 self?.pendingWriteTask = nil
@@ -460,7 +482,15 @@ final class SumiBoostStore: ObservableObject {
 
     private func removeCSSFile(for boostId: UUID) {
         let fileName = "\(boostId.uuidString.lowercased()).css"
-        try? fileManager.removeItem(at: cssDirectory.appendingPathComponent(fileName))
+        let url = cssDirectory.appendingPathComponent(fileName)
+        guard fileManager.fileExists(atPath: url.path) else { return }
+        do {
+            try fileManager.removeItem(at: url)
+        } catch {
+            Self.log.error(
+                "Failed to remove boost CSS file '\(fileName, privacy: .public)': \(error.localizedDescription, privacy: .public)"
+            )
+        }
     }
 
     private func notifyChanged() {

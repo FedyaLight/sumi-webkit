@@ -260,8 +260,7 @@ private struct SumiInstalledUserScriptMessageResponse: Encodable {
     }
 
     func toJSON() -> String? {
-        guard let jsonData = try? JSONEncoder().encode(self) else { return nil }
-        return String(data: jsonData, encoding: .utf8)
+        SumiUserScriptMessageJSON.optionalString(self, context: "installedUserscript.result")
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -286,12 +285,11 @@ private struct SumiInstalledUserScriptMessageErrorResponse: Encodable {
     }
 
     func toJSON() -> String {
-        guard let jsonData = try? JSONEncoder().encode(self),
-              let jsonString = String(data: jsonData, encoding: .utf8)
-        else {
-            return #"{"error":{"message":"could not convert result to json"}}"#
-        }
-        return jsonString
+        SumiUserScriptMessageJSON.string(
+            self,
+            context: "installedUserscript.error",
+            fallback: #"{"error":{"message":"could not convert result to json"}}"#
+        )
     }
 
     private struct MessageError: Encodable {

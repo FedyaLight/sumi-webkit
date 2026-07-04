@@ -16,24 +16,24 @@ struct SumiBoostActionButton: View {
             Group {
                 if valueText == nil && trailingSystemImage == nil && trailingText == nil {
                     Text(title)
-                        .font(.system(size: 14, weight: .medium))
+                        .font(SumiBoostEditorTypography.actionTitle)
                         .lineLimit(1)
                         .frame(maxWidth: .infinity)
                 } else {
                     HStack(spacing: 8) {
                         Text(title)
-                            .font(.system(size: 14, weight: .medium))
+                            .font(SumiBoostEditorTypography.actionTitle)
                             .lineLimit(1)
                         Spacer(minLength: 0)
                         if let valueText {
                             Text(valueText)
-                                .font(.system(size: 13, weight: .semibold))
+                                .font(SumiBoostEditorTypography.actionValue)
                         } else if let trailingSystemImage {
                             Image(systemName: trailingSystemImage)
-                                .font(.system(size: 16, weight: .medium))
+                                .font(SumiBoostEditorTypography.actionIcon)
                         } else if let trailingText {
                             Text(trailingText)
-                                .font(.system(size: 17, weight: .semibold, design: .monospaced))
+                                .font(SumiBoostEditorTypography.actionMonospaceTrailing)
                         }
                     }
                 }

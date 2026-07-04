@@ -104,7 +104,7 @@ private struct FloatingBarSuggestionsListView: View {
                                 : .clear
                         )
                         .clipShape(RoundedRectangle(cornerRadius: 6))
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(ChromeThemeTypography.floatingBarSuggestionRow)
                         .foregroundStyle(
                             selectedIndex == index
                                 ? tokens.primaryText

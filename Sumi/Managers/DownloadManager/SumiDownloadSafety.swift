@@ -56,7 +56,7 @@ enum SumiDownloadSafety {
     }
 
     private static func type(forFileAt url: URL) -> UTType? {
-        if let type = try? url.resourceValues(forKeys: [.contentTypeKey]).contentType {
+        if let type = DownloadFileUtilities.contentType(for: url) {
             return type
         }
         return type(forFilename: url.lastPathComponent)

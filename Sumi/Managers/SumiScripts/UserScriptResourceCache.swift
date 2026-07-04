@@ -22,13 +22,16 @@ final class UserScriptResourceCache {
 
     private let dependencies: Dependencies
     private let fileManager: FileManager
+    private let session: URLSession
 
     init(
         dependencies: Dependencies,
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default,
+        session: URLSession = SumiNonPersistentURLSession.shared
     ) {
         self.dependencies = dependencies
         self.fileManager = fileManager
+        self.session = session
     }
 
     func loadRequiredResources(for filename: String, requires: [String]) -> [String] {
@@ -111,7 +114,7 @@ final class UserScriptResourceCache {
                 continue
             }
             let url = try resolvedResourceURL(urlString, baseURL: installURL)
-            let (data, response) = try await SumiNonPersistentURLSession.shared.data(from: url)
+            let (data, response) = try await session.data(from: url)
             let content = String(data: data, encoding: .utf8) ?? ""
             let localFile = scriptRequireDir.appendingPathComponent(
                 UserScriptStore.sanitizeFilename(url.absoluteString)
@@ -146,7 +149,7 @@ final class UserScriptResourceCache {
         var result: [String: String] = [:]
         for (name, urlString) in resources {
             let url = try resolvedResourceURL(urlString, baseURL: installURL)
-            let (data, response) = try await SumiNonPersistentURLSession.shared.data(from: url)
+            let (data, response) = try await session.data(from: url)
             let content = String(data: data, encoding: .utf8) ?? data.base64EncodedString()
             let localFile = scriptResourceDir.appendingPathComponent(
                 UserScriptStore.sanitizeFilename(name)
@@ -170,7 +173,16 @@ final class UserScriptResourceCache {
 
     func clearCachedResources(for filename: String) {
         let directory = requireDirectory.appendingPathComponent(filename)
-        try? fileManager.removeItem(at: directory)
+        guard fileManager.fileExists(atPath: directory.path) else {
+            return
+        }
+        do {
+            try fileManager.removeItem(at: directory)
+        } catch {
+            Self.log.error(
+                "Failed to remove userscript resource cache at \(directory.path, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
+        }
     }
 
     private var requireDirectory: URL {

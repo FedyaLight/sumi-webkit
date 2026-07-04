@@ -19,17 +19,17 @@ struct SumiPermissionPromptSystemStateView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(SumiPermissionRuntimeControlsThemeTokens.Typography.promptSystemIcon)
                     .foregroundStyle(tokens.secondaryText)
                     .frame(width: 22, height: 22)
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(title)
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(SumiPermissionRuntimeControlsThemeTokens.Typography.promptSystemTitle)
                         .foregroundStyle(tokens.primaryText)
                         .fixedSize(horizontal: false, vertical: true)
                     Text(message)
-                        .font(.system(size: 12))
+                        .font(SumiPermissionRuntimeControlsThemeTokens.Typography.promptSystemMessage)
                         .foregroundStyle(tokens.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }

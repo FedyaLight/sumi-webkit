@@ -58,7 +58,7 @@ struct PinnedTabView: View {
                         Spacer()
                         Button(action: onUnload) {
                             Image(systemName: "minus")
-                                .font(.system(size: 11, weight: .bold))
+                                .font(SidebarThemeTokens.Typography.pinnedTileAction)
                                 .foregroundStyle(tokens.primaryText)
                                 .frame(width: 22, height: 22)
                                 .background(
@@ -387,13 +387,13 @@ struct PinnedTileVisual: View {
         Group {
             if let glyphText {
                 Text(glyphText)
-                    .font(.system(size: height * 0.72))
+                    .font(SidebarThemeTokens.Typography.pinnedTileGlyphText(size: height))
                     .lineLimit(1)
                     .minimumScaleFactor(0.45)
                     .multilineTextAlignment(.center)
             } else if let systemName = chromeTemplateSystemImageName {
                 Image(systemName: systemName)
-                    .font(.system(size: height * 0.78, weight: .medium))
+                    .font(SidebarThemeTokens.Typography.chromeTemplateIcon(size: height))
                     .symbolRenderingMode(.monochrome)
                     .foregroundStyle(tokens.primaryText)
             } else {
@@ -496,7 +496,7 @@ private struct PinnedTileAudioButton: View {
                     tab.toggleMute()
                 } label: {
                     Image(systemName: tab.audioState.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                        .font(.system(size: 11, weight: .bold))
+                        .font(SidebarThemeTokens.Typography.pinnedTileAction)
                         .foregroundStyle(tab.audioState.isMuted ? mutedForegroundColor : foregroundColor)
                         .frame(width: 22, height: 22)
                         .background(

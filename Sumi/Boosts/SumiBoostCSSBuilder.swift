@@ -1,9 +1,22 @@
 import Foundation
+import OSLog
 
 enum SumiBoostCSSBuilder {
     static let styleAttribute = "data-sumi-boost"
     static let filterStyleAttribute = "data-sumi-boost-filter"
     static let activeAttribute = "data-sumi-boost-active"
+    private static let log = Logger.sumi(category: "Boosts")
+
+    private enum PayloadEncodingError: LocalizedError {
+        case nonUTF8Payload
+
+        var errorDescription: String? {
+            switch self {
+            case .nonUTF8Payload:
+                "Boost CSS payload could not be represented as UTF-8 JSON"
+            }
+        }
+    }
 
     static func contentCSS(for data: SumiBoostData) -> String {
         var chunks: [String] = []
@@ -116,9 +129,7 @@ enum SumiBoostCSSBuilder {
             "contentCSS": contentCSS,
             "filterCSS": filterCSS,
         ]
-        let encoded = (try? JSONEncoder().encode(payload))
-            .flatMap { String(data: $0, encoding: .utf8) }
-            ?? #"{"boostId":"","contentCSS":"","filterCSS":""}"#
+        let encoded = encodedPayloadLiteral(payload)
 
         return """
         (function() {
@@ -142,6 +153,19 @@ enum SumiBoostCSSBuilder {
             document.documentElement.setAttribute('\(activeAttribute)', payload.boostId);
         })();
         """
+    }
+
+    private static func encodedPayloadLiteral(_ payload: [String: String]) -> String {
+        do {
+            let data = try JSONEncoder().encode(payload)
+            guard let encoded = String(data: data, encoding: .utf8) else {
+                throw PayloadEncodingError.nonUTF8Payload
+            }
+            return encoded
+        } catch {
+            log.error("Failed to encode boost CSS payload: \(error.localizedDescription, privacy: .public)")
+            return #"{"boostId":"","contentCSS":"","filterCSS":""}"#
+        }
     }
 
     static func removalJavaScript() -> String {

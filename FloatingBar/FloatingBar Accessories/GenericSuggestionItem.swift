@@ -51,7 +51,7 @@ struct GenericSuggestionItem: View {
 
             if let actionLabel {
                 Text(actionLabel.uppercased())
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(ChromeThemeTypography.floatingBarSuggestionChip)
                     .foregroundStyle(chipForeground)
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
@@ -90,7 +90,7 @@ extension FloatingBarSuggestionMetrics {
 struct FloatingBarFadingText: View {
     let text: String
     var foreground: Color
-    var font: Font = .system(size: 13, weight: .semibold)
+    var font: Font = ChromeThemeTypography.floatingBarSuggestionRow
     var height: CGFloat = 17
     var fadeWidth: CGFloat = 30
 

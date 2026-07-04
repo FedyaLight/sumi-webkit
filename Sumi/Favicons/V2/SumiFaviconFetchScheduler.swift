@@ -55,6 +55,9 @@ protocol SumiFaviconNetworkFetching: Sendable {
     func fetch(url: URL, context: SumiFaviconFetchContext) async -> SumiFaviconFetchResult
 }
 
+typealias SumiFaviconWebKitDownloadHandler =
+    @MainActor @Sendable (URL, WKWebView) async -> SumiFaviconFetchResult
+
 actor SumiFaviconFetchScheduler {
     struct Configuration: Sendable {
         var globalConcurrencyLimit = 6
@@ -276,9 +279,15 @@ actor SumiFaviconFetchLimiter {
 // Immutable URLSession-backed fetcher; WebKit fetches are delegated to a main-actor downloader.
 final class SumiFaviconNetworkClient: SumiFaviconNetworkFetching, @unchecked Sendable {
     private let publicSession: URLSession
+    private let webKitDownload: SumiFaviconWebKitDownloadHandler
 
-    init(publicSession: URLSession = URLSession(configuration: .ephemeral)) {
+    init(
+        publicSession: URLSession = URLSession(configuration: .ephemeral),
+        webKitDownload: @escaping SumiFaviconWebKitDownloadHandler =
+            SumiFaviconWebKitDownloaderDefaults.download
+    ) {
         self.publicSession = publicSession
+        self.webKitDownload = webKitDownload
     }
 
     func fetch(url: URL, context: SumiFaviconFetchContext) async -> SumiFaviconFetchResult {
@@ -296,7 +305,7 @@ final class SumiFaviconNetworkClient: SumiFaviconNetworkFetching, @unchecked Sen
                 if case .success = result {
                     return result
                 }
-                return await SumiFaviconWebKitDownloader.shared.download(url: url, webView: webView)
+                return await webKitDownload(url, webView)
             }
             return await fetchPublic(url: url)
         }
@@ -369,10 +378,18 @@ final class SumiFaviconNetworkClient: SumiFaviconNetworkFetching, @unchecked Sen
     }
 }
 
+private enum SumiFaviconWebKitDownloaderDefaults {
+    @MainActor
+    private static let downloader = SumiFaviconWebKitDownloader()
+
+    @MainActor
+    static func download(url: URL, webView: WKWebView) async -> SumiFaviconFetchResult {
+        await downloader.download(url: url, webView: webView)
+    }
+}
+
 @MainActor
 private final class SumiFaviconWebKitDownloader: NSObject, WKDownloadDelegate {
-    static let shared = SumiFaviconWebKitDownloader()
-
     private static let log = Logger.sumi(category: "FaviconFetchScheduler")
 
     private struct PendingDownload {

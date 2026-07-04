@@ -272,37 +272,70 @@ struct InstalledExtensionRecord {
         _ type: T.Type,
         from json: String
     ) -> T? {
-        guard let data = json.data(using: .utf8) else { return nil }
-        return try? JSONDecoder().decode(type, from: data)
+        guard let data = json.data(using: .utf8) else {
+            logSnapshotError("decode \(T.self)", reason: "invalidUTF8")
+            return nil
+        }
+        do {
+            return try JSONDecoder().decode(type, from: data)
+        } catch {
+            logSnapshotError("decode \(T.self)", error: error)
+            return nil
+        }
     }
 
     private static func decodeJSONObject(from json: String) -> [String: Any]? {
-        guard let data = json.data(using: .utf8) else { return nil }
-        return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        guard let data = json.data(using: .utf8) else {
+            logSnapshotError("decode manifest", reason: "invalidUTF8")
+            return nil
+        }
+        do {
+            guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                logSnapshotError("decode manifest", reason: "notDictionary")
+                return nil
+            }
+            return object
+        } catch {
+            logSnapshotError("decode manifest", error: error)
+            return nil
+        }
     }
 
     private static func encode<T: Encodable>(_ value: T) -> String {
-        guard
-            let data = try? JSONEncoder().encode(value),
-            let string = String(data: data, encoding: .utf8)
-        else {
+        do {
+            let data = try JSONEncoder().encode(value)
+            return String(decoding: data, as: UTF8.self)
+        } catch {
+            logSnapshotError("encode \(T.self)", error: error)
             return "{}"
         }
-        return string
     }
 
     private static func encodeJSONObject(_ value: [String: Any]) -> String {
-        guard
-            JSONSerialization.isValidJSONObject(value),
-            let data = try? JSONSerialization.data(
-                withJSONObject: value,
-                options: [.sortedKeys]
-            ),
-            let string = String(data: data, encoding: .utf8)
-        else {
+        guard JSONSerialization.isValidJSONObject(value) else {
+            logSnapshotError("encode manifest", reason: "invalidJSONObject")
             return "{}"
         }
-        return string
+        do {
+            let data = try JSONSerialization.data(
+                withJSONObject: value,
+                options: [.sortedKeys]
+            )
+            return String(decoding: data, as: UTF8.self)
+        } catch {
+            logSnapshotError("encode manifest", error: error)
+            return "{}"
+        }
+    }
+
+    private static func logSnapshotError(_ operation: String, error: Error) {
+        logSnapshotError(operation, reason: error.localizedDescription)
+    }
+
+    private static func logSnapshotError(_ operation: String, reason: String) {
+        RuntimeDiagnostics.debug(category: "Extensions") {
+            "Extension metadata snapshot \(operation) failed: \(reason)"
+        }
     }
 }
 

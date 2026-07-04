@@ -2,8 +2,14 @@ import Foundation
 
 @MainActor
 extension SumiCommandsBrowserRuntime {
-    static func live(browserManager: BrowserManager) -> SumiCommandsBrowserRuntime {
-        let adapter = SumiCommandsBrowserManagerAdapter(browserManager: browserManager)
+    static func live(
+        browserManager: BrowserManager,
+        defaultBrowserService: SumiDefaultBrowserService
+    ) -> SumiCommandsBrowserRuntime {
+        let adapter = SumiCommandsBrowserManagerAdapter(
+            browserManager: browserManager,
+            defaultBrowserService: defaultBrowserService
+        )
 #if DEBUG
         return SumiCommandsBrowserRuntime(
             pageState: adapter,
@@ -38,9 +44,14 @@ private final class SumiCommandsBrowserManagerAdapter:
     SumiCommandHistoryRouting,
     SumiCommandBookmarkRouting {
     private weak var browserManager: BrowserManager?
+    private let defaultBrowserService: SumiDefaultBrowserService
 
-    init(browserManager: BrowserManager) {
+    init(
+        browserManager: BrowserManager,
+        defaultBrowserService: SumiDefaultBrowserService
+    ) {
         self.browserManager = browserManager
+        self.defaultBrowserService = defaultBrowserService
     }
 
     var currentProfile: Profile? {
@@ -72,8 +83,9 @@ private final class SumiCommandsBrowserManagerAdapter:
     }
 
     func setAsDefaultBrowser() {
+        let defaultBrowserService = defaultBrowserService
         Task {
-            _ = await SumiDefaultBrowserService.shared.requestBecomeDefault()
+            _ = await defaultBrowserService.requestBecomeDefault()
         }
     }
 

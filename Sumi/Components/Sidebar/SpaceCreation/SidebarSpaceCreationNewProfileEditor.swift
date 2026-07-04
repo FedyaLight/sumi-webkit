@@ -27,7 +27,7 @@ struct SidebarSpaceCreationNewProfileEditor: View {
             Button(action: openEmojiPicker) {
                 SumiProfileIconView(
                     icon: session.resolvedNewProfileIcon,
-                    font: .system(size: 17, weight: .medium)
+                    font: SidebarSpaceCreationThemeTokens.Typography.profileIcon
                 )
                 .frame(
                     width: SidebarSpaceCreationMetrics.iconWellSize,
@@ -43,7 +43,7 @@ struct SidebarSpaceCreationNewProfileEditor: View {
 
             TextField("Profile name", text: $session.newProfileName)
                 .textFieldStyle(.plain)
-                .font(.system(size: 13, weight: .medium))
+                .font(SidebarSpaceCreationThemeTokens.Typography.rowLabel)
                 .foregroundStyle(tokens.primaryText)
                 .focused(focusedField, equals: .newProfileName)
                 .onSubmit(onSubmit)
@@ -64,8 +64,8 @@ struct SidebarSpaceCreationNewProfileEditor: View {
                 )
 
             Text(message)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.red)
+                .font(SidebarSpaceCreationThemeTokens.Typography.validation)
+                .foregroundStyle(SidebarSpaceCreationThemeTokens.Colors.validationText)
                 .lineLimit(1)
         }
         .padding(.leading, SidebarRowLayout.leadingInset)

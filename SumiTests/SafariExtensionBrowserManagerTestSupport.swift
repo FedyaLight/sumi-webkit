@@ -118,11 +118,15 @@ extension XCTestCase {
             preparedBundleResourceURL: nil,
             preparedBundleRemoteRootURL: nil
         )
+        let protectionDefaults = UserDefaults(suiteName: UUID().uuidString)!
         let protectionCoordinator = SumiProtectionCoordinator(
             settings: SumiProtectionSettings(
-                userDefaults: UserDefaults(suiteName: UUID().uuidString)!
+                userDefaults: protectionDefaults
             ),
-            adBlockingModule: adBlockingModule
+            adBlockingModule: adBlockingModule,
+            bundleUpdateStatusStore: SumiProtectionBundleUpdateStatusStore(
+                userDefaults: protectionDefaults
+            )
         )
         let browserManager = BrowserManager(
             moduleRegistry: moduleRegistry,

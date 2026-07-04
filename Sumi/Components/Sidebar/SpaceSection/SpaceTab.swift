@@ -46,7 +46,7 @@ struct SpaceTab: View {
                                 .frame(width: 22, height: 22)
                             ZStack {
                                 Image(systemName: tab.audioState.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                                    .font(.system(size: 12, weight: .medium))
+                                    .font(SidebarThemeTokens.Typography.rowAccessory)
                                     .foregroundColor(tab.audioState.isMuted ? tokens.secondaryText : textTab)
                                     .id(tab.audioState.isMuted)
                                     .transition(
@@ -80,7 +80,7 @@ struct SpaceTab: View {
 
                 if tab.isRenaming {
                     TextField("", text: $tab.editingName)
-                        .font(.system(size: 13, weight: .medium))
+                        .font(SidebarThemeTokens.Typography.rowTitle)
                         .foregroundStyle(tab.showsWebViewUnloadedIndicator ? tokens.secondaryText : textTab)
                         .textFieldStyle(.plain)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -104,7 +104,7 @@ struct SpaceTab: View {
                 } else {
                     SumiTabTitleLabel(
                         title: tab.name,
-                        font: .systemFont(ofSize: 13, weight: .medium),
+                        font: SidebarThemeTokens.Typography.rowTitleNSFont,
                         textColor: textTab,
                         trailingPadding: titleTrailingPadding
                     )
@@ -361,7 +361,7 @@ struct SpaceTab: View {
     private var closeButton: some View {
         Button(action: onClose) {
             Image(systemName: "xmark")
-                .font(.system(size: 12, weight: .heavy))
+                .font(SidebarThemeTokens.Typography.trailingAction)
                 .foregroundColor(textTab)
                 .frame(
                     width: SidebarRowLayout.trailingActionSize,
@@ -427,7 +427,7 @@ struct SidebarGlanceTrailingAccessory: View {
     private var closeButton: some View {
         Button(action: closeCurrentSession) {
             Image(systemName: "xmark")
-                .font(.system(size: 12, weight: .heavy))
+                .font(SidebarThemeTokens.Typography.trailingAction)
                 .foregroundColor(textColor)
                 .frame(
                     width: SidebarRowLayout.trailingActionSize,

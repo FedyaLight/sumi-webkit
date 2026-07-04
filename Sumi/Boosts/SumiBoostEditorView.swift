@@ -110,7 +110,7 @@ struct SumiBoostEditorView: View {
             HStack(spacing: 8) {
                 Button(action: session.dismiss) {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 19, weight: .semibold))
+                        .font(SumiBoostEditorTypography.headerIcon)
                         .foregroundStyle(SumiBoostEditorStyle.secondaryText(for: colorScheme))
                         .frame(width: 26, height: 26)
                 }
@@ -135,12 +135,12 @@ struct SumiBoostEditorView: View {
                 } label: {
                     HStack(spacing: 3) {
                         Text(session.boost.data.boostName.isEmpty ? "My Boost" : session.boost.data.boostName)
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(SumiBoostEditorTypography.headerTitle)
                             .lineLimit(1)
                             .truncationMode(.tail)
                             .foregroundStyle(SumiBoostEditorStyle.primaryText(for: colorScheme))
                         Image(systemName: "chevron.down")
-                            .font(.system(size: 8, weight: .semibold))
+                            .font(SumiBoostEditorTypography.headerChevron)
                             .foregroundStyle(SumiBoostEditorStyle.secondaryText(for: colorScheme))
                     }
                     .padding(.horizontal, 8)
@@ -158,7 +158,7 @@ struct SumiBoostEditorView: View {
 
                 Button(action: session.shuffleBoost) {
                     Image(systemName: "die.face.5")
-                        .font(.system(size: 18, weight: .semibold))
+                        .font(SumiBoostEditorTypography.shuffleIcon)
                         .foregroundStyle(SumiBoostEditorStyle.secondaryText(for: colorScheme))
                         .frame(width: 26, height: 26)
                 }
@@ -220,7 +220,7 @@ struct SumiBoostEditorView: View {
                             Image(systemName: "chevron.left")
                             Text("Back")
                         }
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(SumiBoostEditorTypography.codeBackButton)
                     }
                     .buttonStyle(.plain)
                     .padding(.horizontal, 10)
@@ -231,14 +231,14 @@ struct SumiBoostEditorView: View {
                     Spacer(minLength: 0)
 
                     Text("Code")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(SumiBoostEditorTypography.headerTitle)
                         .foregroundStyle(SumiBoostEditorStyle.primaryText(for: colorScheme))
 
                     Spacer(minLength: 0)
 
                     Button(action: session.dismiss) {
                         Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 19, weight: .semibold))
+                            .font(SumiBoostEditorTypography.headerIcon)
                             .foregroundStyle(SumiBoostEditorStyle.secondaryText(for: colorScheme))
                             .frame(width: 26, height: 26)
                     }
@@ -261,7 +261,7 @@ struct SumiBoostEditorView: View {
                     set: { session.setCustomCSS($0) }
                 )
             )
-            .font(.system(size: 12, design: .monospaced))
+            .font(SumiBoostEditorTypography.codeEditor)
             .padding(8)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
@@ -400,7 +400,7 @@ private struct SumiBoostHeaderMenu: View {
     ) -> some View {
         Button(role: role, action: action) {
             Text(title)
-                .font(.system(size: 13))
+                .font(SumiBoostEditorTypography.menuItem)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)

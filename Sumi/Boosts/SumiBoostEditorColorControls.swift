@@ -10,31 +10,19 @@ struct SumiBoostColorCanvas: View {
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .fill(
                         AngularGradient(
-                            gradient: Gradient(colors: [
-                                .red,
-                                .orange,
-                                .yellow,
-                                .green,
-                                .cyan,
-                                .blue,
-                                .purple,
-                                .pink,
-                                .red,
-                            ]),
+                            gradient: Gradient(colors: SumiBoostEditorStyle.colorSpectrum),
                             center: .center,
                             angle: .degrees(-100)
                         )
                     )
-                    .shadow(color: .black.opacity(0.14), radius: 10, y: 4)
+                    .shadow(color: SumiBoostEditorStyle.canvasShadow, radius: 10, y: 4)
                     .overlay {
                         RoundedRectangle(cornerRadius: 9, style: .continuous)
                             .fill(SumiBoostEditorStyle.primaryBackground(for: colorScheme).opacity(0.86))
                             .padding(8)
                             .overlay {
                                 SumiBoostDottedOverlay(
-                                    color: colorScheme == .dark
-                                        ? Color.white.opacity(0.12)
-                                        : Color(hex: "#DCE4DE").opacity(0.9)
+                                    color: SumiBoostEditorStyle.canvasDotPattern(for: colorScheme)
                                 )
                                 .padding(8)
                                 .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
@@ -44,7 +32,7 @@ struct SumiBoostColorCanvas: View {
                     .opacity(session.boost.data.enableColorBoost ? 1 : 0.55)
 
                 Circle()
-                    .stroke(Color.gray.opacity(0.28), lineWidth: 1)
+                    .stroke(SumiBoostEditorStyle.canvasGuideStroke, lineWidth: 1)
                     .frame(
                         width: max(12, CGFloat(session.boost.data.dotDistance) * proxy.size.width * 0.84),
                         height: max(12, CGFloat(session.boost.data.dotDistance) * proxy.size.height * 0.84)
@@ -52,12 +40,12 @@ struct SumiBoostColorCanvas: View {
 
                 Button(action: session.toggleMonochromeMode) {
                     Image(systemName: "sparkles")
-                        .font(.system(size: 12, weight: .bold))
+                        .font(SumiBoostEditorTypography.colorToolIcon)
                         .foregroundStyle(session.isMonochromeMode ? monochromeIconForeground : SumiBoostEditorStyle.primaryText(for: colorScheme))
                         .frame(width: 24, height: 24)
                         .background(monochromeButtonBackground)
                         .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-                        .shadow(color: .black.opacity(0.08), radius: 3, y: 2)
+                        .shadow(color: SumiBoostEditorStyle.colorToolShadow, radius: 3, y: 2)
                 }
                 .buttonStyle(.plain)
                 .position(x: proxy.size.width / 2, y: 24)
@@ -84,15 +72,15 @@ struct SumiBoostColorCanvas: View {
     /// light and dark schemes — never white-on-white.
     private var monochromeButtonBackground: Color {
         if session.isMonochromeMode {
-            return colorScheme == .dark ? Color.white : Color(hex: "#3a3a3a")
+            return SumiBoostEditorStyle.monochromeActiveBackground(for: colorScheme)
         }
-        return colorScheme == .dark ? Color(hex: "#3a3a3a") : Color.white
+        return SumiBoostEditorStyle.monochromeInactiveBackground(for: colorScheme)
     }
 
     private var monochromeIconForeground: Color {
         // When active the background is inverted, so the icon takes the
         // opposite tone to stay readable.
-        colorScheme == .dark ? Color(hex: "#3a3a3a") : Color.white
+        SumiBoostEditorStyle.monochromeIconForeground(for: colorScheme)
     }
 
     private func point(for dotPosition: SumiBoostDotPosition, in size: CGSize) -> CGPoint {
@@ -153,9 +141,9 @@ private struct SumiBoostColorDot: View {
             .frame(width: isPrimary ? 32 : 28, height: isPrimary ? 32 : 28)
             .overlay {
                 Circle()
-                    .stroke(Color.white, lineWidth: 3)
+                    .stroke(SumiBoostEditorStyle.colorDotBorder, lineWidth: 3)
             }
-            .shadow(color: .black.opacity(0.22), radius: 3, y: 2)
+            .shadow(color: SumiBoostEditorStyle.colorDotShadow, radius: 3, y: 2)
     }
 }
 
@@ -170,7 +158,7 @@ struct SumiBoostIconButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .font(.system(size: 17, weight: .medium))
+                .font(SumiBoostEditorTypography.iconButton)
                 .foregroundStyle(foreground)
                 .frame(maxWidth: .infinity)
                 .frame(height: 38)
@@ -249,7 +237,7 @@ private struct SumiBoostAdvancedColorPopover: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(title)
-                .font(.system(size: 13, weight: .medium))
+                .font(SumiBoostEditorTypography.advancedSliderLabel)
             Slider(
                 value: Binding(
                     get: { value },

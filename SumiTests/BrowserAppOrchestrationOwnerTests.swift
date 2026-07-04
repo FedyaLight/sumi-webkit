@@ -58,6 +58,16 @@ final class BrowserAppOrchestrationOwnerTests: XCTestCase {
         XCTAssertNotNil(harness.windowRegistry.onAllWindowsClosed)
     }
 
+    func testSetupReplacesShortcutManagerExtensionHandlerWithBrowserRuntimeHandler() throws {
+        let harness = makeHarness()
+        harness.keyboardShortcutManager.extensionCommandHandler = { _ in true }
+
+        harness.owner.setupIfNeeded(dependencies: harness.dependencies)
+
+        let event = try XCTUnwrap(Self.makeKeyDownEvent())
+        XCTAssertFalse(harness.keyboardShortcutManager.extensionCommandHandler(event))
+    }
+
     private func makeHarness() -> Harness {
         let owner = BrowserAppOrchestrationOwner()
         let appDelegate = AppDelegate()
@@ -97,6 +107,21 @@ final class BrowserAppOrchestrationOwnerTests: XCTestCase {
             keyboardShortcutManager: keyboardShortcutManager,
             dependencies: dependencies,
             startUpdaterCallCount: { startUpdaterCallCount }
+        )
+    }
+
+    private static func makeKeyDownEvent() -> NSEvent? {
+        NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: [.command],
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            characters: "x",
+            charactersIgnoringModifiers: "x",
+            isARepeat: false,
+            keyCode: 7
         )
     }
 }

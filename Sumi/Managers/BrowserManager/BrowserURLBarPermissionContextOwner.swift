@@ -37,7 +37,7 @@ final class BrowserURLBarPermissionContextOwner {
             coordinator: runtime.permissionCoordinator,
             systemPermissionService: runtime.systemPermissionService,
             runtimeController: runtime.runtimePermissionController,
-            autoplayStore: SumiAutoplayPolicyStoreAdapter.shared,
+            autoplayStore: runtime.autoplayStore,
             blockedPopupStore: runtime.blockedPopupStore,
             externalSchemeSessionStore: runtime.externalSchemeSessionStore,
             indicatorEventStore: runtime.permissionIndicatorEventStore,

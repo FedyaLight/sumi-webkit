@@ -4,6 +4,7 @@
 //
 
 import AppKit
+import OSLog
 import SwiftUI
 
 private final class SumiZenBundledIconCache: @unchecked Sendable {
@@ -40,6 +41,7 @@ private final class SumiZenBundledIconCache: @unchecked Sendable {
 
 enum SumiZenFolderIconCatalog {
     static let folderValuePrefix = "zen:"
+    private static let log = Logger.sumi(category: "ZenBundledIcons")
     private static let bundledFolderManifest: [String] = [
         "airplane",
         "american-football",
@@ -380,9 +382,15 @@ enum SumiZenFolderIconCatalog {
     }
 
     private static func loadImage(from url: URL) -> NSImage? {
-        if url.pathExtension.lowercased() == "svg",
-           let source = try? String(contentsOf: url, encoding: .utf8) {
-            return nsImageFromZenSVGSource(source)
+        if url.pathExtension.lowercased() == "svg" {
+            do {
+                let source = try String(contentsOf: url, encoding: .utf8)
+                return nsImageFromZenSVGSource(source)
+            } catch {
+                log.error(
+                    "Failed to read bundled Zen SVG at \(url.path, privacy: .public): \(error.localizedDescription, privacy: .public)"
+                )
+            }
         }
         return NSImage(contentsOf: url)
     }
@@ -406,10 +414,16 @@ enum SumiZenFolderIconCatalog {
     }
 
     private static func resourceNames(in directory: URL) -> [String] {
-        guard let urls = try? FileManager.default.contentsOfDirectory(
-            at: directory,
-            includingPropertiesForKeys: nil
-        ) else {
+        let urls: [URL]
+        do {
+            urls = try FileManager.default.contentsOfDirectory(
+                at: directory,
+                includingPropertiesForKeys: nil
+            )
+        } catch {
+            log.error(
+                "Failed to list bundled Zen icon directory \(directory.path, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
             return []
         }
 

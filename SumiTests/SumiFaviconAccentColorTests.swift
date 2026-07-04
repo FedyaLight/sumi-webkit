@@ -89,6 +89,71 @@ final class SumiFaviconAccentColorTests: XCTestCase {
         SumiFaviconAccentCache.shared.invalidate(forKey: "other.test")
     }
 
+    func testPinnedTileAccentResolverReadsInjectedPartitionCacheFirst() {
+        let cache = RecordingFaviconAccentCache()
+        let url = URL(string: "https://Example.com/path")!
+        let partition = SumiFaviconPartition(profileIdentifier: "Work", isPrivate: false)
+        let partitionKey = SumiFaviconAccentCache.cacheKey(
+            domain: "example.com",
+            faviconIdentity: partition.storageComponent
+        )
+        let domainKey = SumiFaviconAccentCache.cacheKey(domain: "example.com")
+        cache.store(color: .red, forKey: domainKey)
+        cache.store(color: .blue, forKey: partitionKey)
+
+        let color = PinnedTileAccentResolver.cachedAccent(
+            for: url,
+            partition: partition,
+            accentCache: cache
+        )
+
+        XCTAssertNotNil(color)
+        XCTAssertEqual(cache.requestedKeys, [partitionKey])
+    }
+
+    func testPinnedTileAccentResolverFallsBackToInjectedDomainCache() {
+        let cache = RecordingFaviconAccentCache()
+        let url = URL(string: "https://Example.com/path")!
+        let partition = SumiFaviconPartition(profileIdentifier: "Work", isPrivate: false)
+        let partitionKey = SumiFaviconAccentCache.cacheKey(
+            domain: "example.com",
+            faviconIdentity: partition.storageComponent
+        )
+        let domainKey = SumiFaviconAccentCache.cacheKey(domain: "example.com")
+        cache.store(color: .red, forKey: domainKey)
+
+        let color = PinnedTileAccentResolver.cachedAccent(
+            for: url,
+            partition: partition,
+            accentCache: cache
+        )
+
+        XCTAssertNotNil(color)
+        XCTAssertEqual(cache.requestedKeys, [partitionKey, domainKey])
+    }
+
+    func testPinnedTileAccentResolverStoresAndInvalidatesInjectedCache() {
+        let cache = RecordingFaviconAccentCache()
+        let url = URL(string: "https://Example.com/path")!
+        let partition = SumiFaviconPartition(profileIdentifier: "Work", isPrivate: false)
+        let partitionKey = SumiFaviconAccentCache.cacheKey(
+            domain: "example.com",
+            faviconIdentity: partition.storageComponent
+        )
+        let domainKey = SumiFaviconAccentCache.cacheKey(domain: "example.com")
+
+        PinnedTileAccentResolver.storeAccent(
+            .green,
+            for: url,
+            partition: partition,
+            accentCache: cache
+        )
+        PinnedTileAccentResolver.invalidateAccent(for: url, accentCache: cache)
+
+        XCTAssertEqual(Set(cache.storedKeys), [partitionKey, domainKey])
+        XCTAssertEqual(cache.invalidatedDomains, ["example.com"])
+    }
+
     private func makeSolidImage(color: NSColor) -> NSImage {
         let image = NSImage(size: NSSize(width: 32, height: 32))
         image.lockFocus()
@@ -124,5 +189,31 @@ final class SumiFaviconAccentColorTests: XCTestCase {
         NSBezierPath(ovalIn: NSRect(x: 6, y: 6, width: 20, height: 20)).fill()
         image.unlockFocus()
         return image
+    }
+}
+
+@MainActor
+private final class RecordingFaviconAccentCache: SumiFaviconAccentCaching {
+    private var colorsByKey: [String: Color] = [:]
+    private(set) var requestedKeys: [String] = []
+    private(set) var storedKeys: [String] = []
+    private(set) var invalidatedDomains: [String] = []
+
+    func color(forKey key: String) -> Color? {
+        requestedKeys.append(key)
+        return colorsByKey[key]
+    }
+
+    func store(color: Color, forKey key: String) {
+        storedKeys.append(key)
+        colorsByKey[key] = color
+    }
+
+    func invalidate(forKey key: String) {
+        colorsByKey.removeValue(forKey: key)
+    }
+
+    func invalidate(domain: String) {
+        invalidatedDomains.append(domain)
     }
 }

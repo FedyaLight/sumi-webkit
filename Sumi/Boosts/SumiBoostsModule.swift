@@ -5,7 +5,10 @@ import WebKit
 
 @MainActor
 final class SumiBoostsModule: ObservableObject {
-    static let shared = SumiBoostsModule()
+    static let shared = SumiBoostsModule(
+        moduleRegistry: .shared,
+        storeFactory: { SumiBoostStore() }
+    )
 
     struct LivePage {
         let tab: Tab
@@ -52,8 +55,8 @@ final class SumiBoostsModule: ObservableObject {
     private var activeZapSession: SumiElementZapperSession?
 
     init(
-        moduleRegistry: SumiModuleRegistry = .shared,
-        storeFactory: @escaping @MainActor () -> SumiBoostStore = { .shared }
+        moduleRegistry: SumiModuleRegistry,
+        storeFactory: @escaping @MainActor () -> SumiBoostStore
     ) {
         self.moduleRegistry = moduleRegistry
         self.storeFactory = storeFactory
@@ -467,9 +470,15 @@ final class SumiBoostsModule: ObservableObject {
                     on: webView.configuration.userContentController,
                     for: tab.url
                 )
-                _ = try? await webView.evaluateJavaScript(
-                    SumiBoostCSSBuilder.removalJavaScript()
-                )
+                do {
+                    _ = try await webView.evaluateJavaScript(
+                        SumiBoostCSSBuilder.removalJavaScript()
+                    )
+                } catch {
+                    RuntimeDiagnostics.debug(category: "Boosts") {
+                        "Failed to remove Boost CSS from live page: \(error.localizedDescription)"
+                    }
+                }
                 self.runtime.applyBoostAwareZoom(tab, webView)
             }
         }

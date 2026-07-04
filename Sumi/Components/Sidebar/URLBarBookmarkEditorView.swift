@@ -41,7 +41,7 @@ struct URLBarBookmarkEditorView: View {
 
             if let errorMessage {
                 Text(errorMessage)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(URLBarHubTypography.bookmarkEditorError)
                     .foregroundStyle(URLBarHubNativeStyle.destructiveText)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -59,13 +59,13 @@ struct URLBarBookmarkEditorView: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(editorTitle)
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(URLBarHubTypography.bookmarkEditorTitle)
                     .foregroundStyle(URLBarHubNativeStyle.primaryText)
                     .lineLimit(1)
 
                 if let pageSubtitle {
                     Text(pageSubtitle)
-                        .font(.system(size: 12.5, weight: .medium))
+                        .font(URLBarHubTypography.bookmarkEditorSubtitle)
                         .foregroundStyle(URLBarHubNativeStyle.secondaryText)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -127,7 +127,7 @@ struct URLBarBookmarkEditorView: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: 7) {
             Text(title)
-                .font(.system(size: 12, weight: .semibold))
+                .font(URLBarHubTypography.bookmarkEditorFieldLabel)
                 .foregroundStyle(URLBarHubNativeStyle.secondaryText)
 
             content()
@@ -145,11 +145,11 @@ struct URLBarBookmarkEditorView: View {
         } label: {
             HStack(spacing: 9) {
                 Image(systemName: "bookmark.fill")
-                    .font(.system(size: 13.5, weight: .semibold))
+                    .font(URLBarHubTypography.bookmarkEditorFolderIcon)
                     .foregroundStyle(URLBarHubNativeStyle.secondaryText)
 
                 Text(selectedFolderTitle)
-                    .font(.system(size: 13.5, weight: .semibold))
+                    .font(URLBarHubTypography.bookmarkEditorFolderTitle)
                     .foregroundStyle(URLBarHubNativeStyle.primaryText)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -157,7 +157,7 @@ struct URLBarBookmarkEditorView: View {
                 Spacer(minLength: 8)
 
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(URLBarHubTypography.bookmarkEditorFolderChevron)
                     .foregroundStyle(URLBarHubNativeStyle.secondaryText)
             }
             .padding(.horizontal, 12)
@@ -228,7 +228,7 @@ struct URLBarBookmarkEditorView: View {
         do {
             switch state.mode {
             case .add:
-                let _ = try bookmarkManager.createBookmark(
+                _ = try bookmarkManager.createBookmark(
                     url: url,
                     title: title,
                     folderID: folderID
@@ -237,7 +237,7 @@ struct URLBarBookmarkEditorView: View {
                 guard let bookmarkID = state.bookmarkID else {
                     throw SumiBookmarkError.missingBookmark
                 }
-                let _ = try bookmarkManager.updateBookmark(
+                _ = try bookmarkManager.updateBookmark(
                     id: bookmarkID,
                     title: title,
                     url: url,
@@ -281,7 +281,7 @@ private struct URLBarBookmarkTextFieldChrome: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .font(.system(size: 13.5))
+            .font(URLBarHubTypography.bookmarkEditorTextField)
             .foregroundStyle(URLBarHubNativeStyle.primaryText)
             .textFieldStyle(.roundedBorder)
             .frame(height: 38)
@@ -302,7 +302,7 @@ private struct URLBarBookmarkFooterButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 13, weight: .semibold))
+            .font(URLBarHubTypography.bookmarkEditorFooterButton)
             .foregroundStyle(foregroundColor)
             .padding(.horizontal, role == .primary ? 18 : 8)
             .frame(height: 34)
@@ -329,7 +329,7 @@ private struct URLBarBookmarkFooterButtonStyle: ButtonStyle {
         case .destructive:
             return isPressed || isHovering
                 ? URLBarHubNativeStyle.hoveredControlBackground
-                : Color.clear
+                : URLBarHubOverlayStyle.transparent
         }
     }
 }

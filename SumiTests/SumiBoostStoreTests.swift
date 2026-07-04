@@ -141,6 +141,75 @@ final class SumiBoostStoreTests: XCTestCase {
         XCTAssertEqual(targetStore.activeBoost(for: url, profileId: profileId)?.id, imported.id)
     }
 
+    func testImportAcceptsLegacyBoostDataPayload() throws {
+        let store = SumiBoostStore(rootDirectory: temporaryDirectory())
+        let profileId = UUID()
+        let url = URL(string: "https://example.test/")!
+        var legacyData = SumiBoostData.empty(named: "Legacy Data")
+        legacyData.customCSS = "main { color: blue; }"
+        let payload = try JSONEncoder().encode(legacyData)
+
+        let imported = try store.importBoost(
+            from: payload,
+            for: url,
+            profileId: profileId,
+            isEphemeral: false
+        )
+
+        XCTAssertEqual(imported.data.boostName, "Legacy Data")
+        XCTAssertEqual(imported.data.customCSS, "main { color: blue; }")
+        XCTAssertTrue(imported.data.changeWasMade)
+    }
+
+    func testImportAcceptsLegacyBoostPayload() throws {
+        let store = SumiBoostStore(rootDirectory: temporaryDirectory())
+        let profileId = UUID()
+        let url = URL(string: "https://example.test/")!
+        var legacyData = SumiBoostData.empty(named: "Legacy Boost")
+        legacyData.customCSS = "section { opacity: .8; }"
+        let legacyBoost = SumiBoost(
+            profileId: UUID(),
+            host: "legacy.example",
+            data: legacyData,
+            createdAt: Date(timeIntervalSince1970: 1_800_000_000),
+            updatedAt: Date(timeIntervalSince1970: 1_800_000_100)
+        )
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let payload = try encoder.encode(legacyBoost)
+
+        let imported = try store.importBoost(
+            from: payload,
+            for: url,
+            profileId: profileId,
+            isEphemeral: false
+        )
+
+        XCTAssertEqual(imported.profileId, profileId)
+        XCTAssertEqual(imported.host, "example.test")
+        XCTAssertEqual(imported.data.boostName, "Legacy Boost")
+        XCTAssertEqual(imported.data.customCSS, "section { opacity: .8; }")
+        XCTAssertTrue(imported.data.changeWasMade)
+    }
+
+    func testInvalidImportThrowsTypedErrorWithoutCreatingBoost() throws {
+        let store = SumiBoostStore(rootDirectory: temporaryDirectory())
+        let profileId = UUID()
+        let url = URL(string: "https://example.test/")!
+
+        XCTAssertThrowsError(
+            try store.importBoost(
+                from: Data("{ not a boost".utf8),
+                for: url,
+                profileId: profileId,
+                isEphemeral: false
+            )
+        ) { error in
+            XCTAssertEqual(error as? SumiBoostStoreError, .invalidImport)
+        }
+        XCTAssertTrue(store.boosts(for: url, profileId: profileId).isEmpty)
+    }
+
     private func temporaryDirectory() -> URL {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("SumiBoostStoreTests-\(UUID().uuidString)", isDirectory: true)

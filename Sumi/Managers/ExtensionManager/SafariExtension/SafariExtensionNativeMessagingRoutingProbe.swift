@@ -263,9 +263,21 @@ enum SafariExtensionNativeMessagingRoutingProbe {
     private nonisolated static func shapeForJSONString(
         _ string: String
     ) -> SafariExtensionNativeMessagingMessageShape {
-        guard let data = string.data(using: .utf8),
-              let object = try? JSONSerialization.jsonObject(with: data)
-        else {
+        guard let data = string.data(using: .utf8) else {
+            return SafariExtensionNativeMessagingMessageShape(
+                container: "string",
+                topLevelKeys: [],
+                typeKeys: []
+            )
+        }
+
+        let object: Any
+        do {
+            object = try JSONSerialization.jsonObject(with: data)
+        } catch {
+            RuntimeDiagnostics.debug(category: "SafariNativeMessagingRouting") {
+                "Could not parse native messaging string payload shape: bytes=\(data.count) error=\(error.localizedDescription)"
+            }
             return SafariExtensionNativeMessagingMessageShape(
                 container: "string",
                 topLevelKeys: [],

@@ -37,7 +37,7 @@ struct SidebarTabFaviconView: View {
         Group {
             if tab.usesChromeThemedTemplateFavicon {
                 Image(systemName: chromeSystemImageName)
-                    .font(.system(size: size * 0.78, weight: .medium))
+                    .font(SidebarThemeTokens.Typography.chromeTemplateIcon(size: size))
                     .symbolRenderingMode(.monochrome)
                     .foregroundStyle(tokens.primaryText)
                     .frame(width: size, height: size)

@@ -247,7 +247,7 @@ final class ProtonPassSafariApplicationIDAdapter: CompanionApplicationMessageBac
         _ string: String
     ) -> ProtonPassSafariCompanionMessageShape {
         guard let data = string.data(using: .utf8),
-              let object = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
+              let object = parseJSONString(data, options: [.fragmentsAllowed], label: "topLevel")
         else {
             return shape(
                 payloadClass: "String",
@@ -267,7 +267,7 @@ final class ProtonPassSafariApplicationIDAdapter: CompanionApplicationMessageBac
 
         if let encodedString = object as? String,
            let encodedData = encodedString.data(using: .utf8),
-           let nestedObject = try? JSONSerialization.jsonObject(with: encodedData),
+           let nestedObject = parseJSONString(encodedData, label: "nested"),
            let dictionary = nestedObject as? [String: Any] {
             return shape(
                 payloadClass: "String",
@@ -289,6 +289,21 @@ final class ProtonPassSafariApplicationIDAdapter: CompanionApplicationMessageBac
             encoding: "jsonStringScalar",
             keys: []
         )
+    }
+
+    private static func parseJSONString(
+        _ data: Data,
+        options: JSONSerialization.ReadingOptions = [],
+        label: String
+    ) -> Any? {
+        do {
+            return try JSONSerialization.jsonObject(with: data, options: options)
+        } catch {
+            RuntimeDiagnostics.debug(category: "SafariNativeMessagingRouting") {
+                "Could not parse Proton Pass companion message shape: label=\(label) bytes=\(data.count) error=\(error.localizedDescription)"
+            }
+            return nil
+        }
     }
 
     private static func shape(

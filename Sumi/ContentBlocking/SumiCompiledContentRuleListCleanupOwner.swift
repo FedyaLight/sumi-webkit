@@ -111,7 +111,21 @@ final class SumiCompiledContentRuleListCatalog: SumiCompiledContentRuleListCatal
 final class SumiCompiledContentRuleListCleanupOwner {
     private let compiler: any SumiContentRuleListCompiling
     private let catalog: SumiCompiledContentRuleListCataloging
+    #if DEBUG
+        private let startupDiagnostics: any SumiProtectionStartupRestoreDiagnosticsRecording
+    #endif
 
+    #if DEBUG
+        init(
+            compiler: any SumiContentRuleListCompiling,
+            catalog: SumiCompiledContentRuleListCataloging,
+            startupDiagnostics: any SumiProtectionStartupRestoreDiagnosticsRecording = SumiProtectionStartupRestoreDiagnosticsDefaults.recorder
+        ) {
+            self.compiler = compiler
+            self.catalog = catalog
+            self.startupDiagnostics = startupDiagnostics
+        }
+    #else
     init(
         compiler: any SumiContentRuleListCompiling,
         catalog: SumiCompiledContentRuleListCataloging
@@ -119,6 +133,7 @@ final class SumiCompiledContentRuleListCleanupOwner {
         self.compiler = compiler
         self.catalog = catalog
     }
+    #endif
 
     @discardableResult
     func cleanupOrphanedCompiledRuleLists(
@@ -151,12 +166,15 @@ final class SumiCompiledContentRuleListCleanupOwner {
         guard !uniqueIdentifiers.isEmpty else { return nil }
 
         #if DEBUG
-            SumiProtectionStartupRestoreDiagnostics.shared.recordCompiledRuleListRemoval(
+            startupDiagnostics.recordCompiledRuleListRemoval(
                 identifiers: uniqueIdentifiers,
                 reason: "\(reason) queued"
             )
         #endif
 
+        #if DEBUG
+            let diagnostics = startupDiagnostics
+        #endif
         return Task { @MainActor [compiler] in
             for identifier in uniqueIdentifiers {
                 do {
@@ -164,7 +182,7 @@ final class SumiCompiledContentRuleListCleanupOwner {
                 } catch {
                     Self.logStoreRemovalFailure(identifier: identifier, error: error)
                     #if DEBUG
-                        SumiProtectionStartupRestoreDiagnostics.shared.recordCompiledRuleListRemoval(
+                        diagnostics.recordCompiledRuleListRemoval(
                             identifiers: [identifier],
                             reason: "\(reason) failed for \(identifier): \(error.localizedDescription)"
                         )

@@ -264,7 +264,7 @@ private struct ShortcutSidebarRowChrome: View {
                 launcherGlyph(for: launcherIconAsset)
             } else if let systemName = chromeTemplateSystemImageName {
                 Image(systemName: systemName)
-                    .font(.system(size: SidebarRowLayout.faviconSize * 0.78, weight: .medium))
+                    .font(SidebarThemeTokens.Typography.chromeTemplateIcon(size: SidebarRowLayout.faviconSize))
                     .symbolRenderingMode(.monochrome)
                     .foregroundStyle(textColor)
             } else {
@@ -309,7 +309,7 @@ private struct ShortcutSidebarRowChrome: View {
     private func launcherGlyph(for iconAsset: String) -> some View {
         if SumiPersistentGlyph.presentsAsEmoji(iconAsset) {
             Text(iconAsset)
-                .font(.system(size: SidebarRowLayout.faviconSize * 0.75))
+                .font(SidebarThemeTokens.Typography.launcherEmoji(size: SidebarRowLayout.faviconSize))
                 .lineLimit(1)
                 .minimumScaleFactor(0.45)
                 .multilineTextAlignment(.center)
@@ -320,7 +320,7 @@ private struct ShortcutSidebarRowChrome: View {
                 )
         } else {
             Image(systemName: SumiPersistentGlyph.resolvedLauncherSystemImageName(iconAsset))
-                .font(.system(size: SidebarRowLayout.faviconSize * 0.78, weight: .medium))
+                .font(SidebarThemeTokens.Typography.chromeTemplateIcon(size: SidebarRowLayout.faviconSize))
                 .symbolRenderingMode(.monochrome)
                 .foregroundStyle(textColor)
         }
@@ -379,7 +379,7 @@ private struct ShortcutSidebarRowChrome: View {
     private var titleLabel: some View {
         SumiTabTitleLabel(
             title: resolvedTitle,
-            font: .systemFont(ofSize: 13, weight: .medium),
+            font: SidebarThemeTokens.Typography.rowTitleNSFont,
             textColor: textColor,
             trailingPadding: titleTrailingPadding,
             animated: liveTab != nil
@@ -404,7 +404,7 @@ private struct ShortcutSidebarRowChrome: View {
         } else {
             Button(action: performActionButton) {
                 Image(systemName: actionIconName)
-                    .font(.system(size: 12, weight: .heavy))
+                    .font(SidebarThemeTokens.Typography.trailingAction)
                     .foregroundColor(textColor)
                     .frame(
                         width: SidebarRowLayout.trailingActionSize,
@@ -768,7 +768,7 @@ private struct LauncherAudioButton: View {
                             .frame(width: 22, height: 22)
 
                         Image(systemName: tab.audioState.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                            .font(.system(size: 12, weight: .medium))
+                            .font(SidebarThemeTokens.Typography.rowAccessory)
                             .foregroundStyle(tab.audioState.isMuted ? mutedForegroundColor : foregroundColor)
                             .id(tab.audioState.isMuted)
                             .transition(

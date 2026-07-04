@@ -8,7 +8,8 @@ enum PinnedTileAccentResolver {
         partition: SumiFaviconPartition? = nil,
         glyphText: String?,
         chromeTemplateSystemImageName: String?,
-        tokens: ChromeThemeTokens
+        tokens: ChromeThemeTokens,
+        accentCache: any SumiFaviconAccentCaching = SumiFaviconAccentCacheDefaults.cache
     ) -> Color {
         if chromeTemplateSystemImageName != nil {
             return tokens.primaryText
@@ -16,14 +17,18 @@ enum PinnedTileAccentResolver {
         if glyphText != nil {
             return tokens.accent
         }
-        if let cached = cachedAccent(for: launchURL, partition: partition) {
+        if let cached = cachedAccent(for: launchURL, partition: partition, accentCache: accentCache) {
             return cached
         }
         return tokens.accent
     }
 
     @MainActor
-    static func cachedAccent(for launchURL: URL?, partition: SumiFaviconPartition?) -> Color? {
+    static func cachedAccent(
+        for launchURL: URL?,
+        partition: SumiFaviconPartition?,
+        accentCache: any SumiFaviconAccentCaching = SumiFaviconAccentCacheDefaults.cache
+    ) -> Color? {
         guard let host = normalizedHost(for: launchURL) else { return nil }
 
         if let partition {
@@ -31,22 +36,27 @@ enum PinnedTileAccentResolver {
                 domain: host,
                 faviconIdentity: partition.storageComponent
             )
-            if let cached = SumiFaviconAccentCache.shared.color(forKey: partitionKey) {
+            if let cached = accentCache.color(forKey: partitionKey) {
                 return cached
             }
         }
 
-        return SumiFaviconAccentCache.shared.color(
+        return accentCache.color(
             forKey: SumiFaviconAccentCache.cacheKey(domain: host)
         )
     }
 
     @MainActor
-    static func storeAccent(_ color: Color, for launchURL: URL, partition: SumiFaviconPartition?) {
+    static func storeAccent(
+        _ color: Color,
+        for launchURL: URL,
+        partition: SumiFaviconPartition?,
+        accentCache: any SumiFaviconAccentCaching = SumiFaviconAccentCacheDefaults.cache
+    ) {
         guard let host = normalizedHost(for: launchURL) else { return }
 
         if let partition {
-            SumiFaviconAccentCache.shared.store(
+            accentCache.store(
                 color: color,
                 forKey: SumiFaviconAccentCache.cacheKey(
                     domain: host,
@@ -54,16 +64,19 @@ enum PinnedTileAccentResolver {
                 )
             )
         }
-        SumiFaviconAccentCache.shared.store(
+        accentCache.store(
             color: color,
             forKey: SumiFaviconAccentCache.cacheKey(domain: host)
         )
     }
 
     @MainActor
-    static func invalidateAccent(for launchURL: URL?) {
+    static func invalidateAccent(
+        for launchURL: URL?,
+        accentCache: any SumiFaviconAccentCaching = SumiFaviconAccentCacheDefaults.cache
+    ) {
         guard let host = normalizedHost(for: launchURL) else { return }
-        SumiFaviconAccentCache.shared.invalidate(domain: host)
+        accentCache.invalidate(domain: host)
     }
 
     static func faviconUpdate(_ notification: Notification, matches launchURL: URL?) -> Bool {

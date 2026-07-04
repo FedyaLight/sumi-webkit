@@ -1,9 +1,11 @@
 import Combine
 import CryptoKit
 import Foundation
+import OSLog
 
 enum SumiRemoteAdblockBundleCache {
     static let metadataFileName = "remote-release.json"
+    private static let log = Logger.sumi(category: "ContentBlocking")
 
     static func defaultRootDirectory() -> URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
@@ -22,10 +24,16 @@ enum SumiRemoteAdblockBundleCache {
         fileManager: FileManager = .default
     ) -> SumiAdblockPreparedBundleRemoteMetadata? {
         let metadataURL = bundleURL.appendingPathComponent(metadataFileName)
-        guard fileManager.fileExists(atPath: metadataURL.path),
-              let data = try? Data(contentsOf: metadataURL)
-        else { return nil }
-        return try? JSONDecoder().decode(SumiAdblockPreparedBundleRemoteMetadata.self, from: data)
+        guard fileManager.fileExists(atPath: metadataURL.path) else { return nil }
+        do {
+            let data = try Data(contentsOf: metadataURL)
+            return try JSONDecoder().decode(SumiAdblockPreparedBundleRemoteMetadata.self, from: data)
+        } catch {
+            log.error(
+                "Failed to read remote adblock bundle metadata at \(metadataURL.path, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
+            return nil
+        }
     }
 }
 
@@ -305,6 +313,8 @@ protocol SumiProtectionBundleRemoteUpdating: AnyObject, Sendable {
 }
 
 actor SumiProtectionBundleRemoteUpdater: SumiProtectionBundleRemoteUpdating {
+    private static let log = Logger.sumi(category: "ContentBlocking")
+
     private let fetcher: SumiProtectionBundleReleaseFetching
     private let signatureVerifier: any SumiProtectionBundleManifestVerifying
     private let rootDirectory: URL
@@ -371,7 +381,7 @@ actor SumiProtectionBundleRemoteUpdater: SumiProtectionBundleRemoteUpdating {
 
         let stagingBundleURL = try stagingBundleDirectory()
         let stagingRoot = stagingBundleURL.deletingLastPathComponent()
-        defer { try? fileManager.removeItem(at: stagingRoot) }
+        defer { removeTemporaryDirectoryIfPresent(stagingRoot, context: "remote bundle staging") }
 
         for descriptor in bundleAssets {
             guard let releaseAsset = releaseAssets[descriptor.name] else {
@@ -556,12 +566,26 @@ actor SumiProtectionBundleRemoteUpdater: SumiProtectionBundleRemoteUpdating {
                 backupItemName: backupName,
                 options: []
             )
-            try? fileManager.removeItem(at: profileRoot.appendingPathComponent(backupName))
+            removeTemporaryDirectoryIfPresent(
+                profileRoot.appendingPathComponent(backupName),
+                context: "replaced remote bundle backup"
+            )
         } else {
             try fileManager.moveItem(at: stagedBundleURL, to: destination)
         }
         _ = try SumiAdblockNativeRuleBundle.load(directoryURL: destination, fileManager: fileManager)
         return destination
+    }
+
+    private func removeTemporaryDirectoryIfPresent(_ url: URL, context: String) {
+        guard fileManager.fileExists(atPath: url.path) else { return }
+        do {
+            try fileManager.removeItem(at: url)
+        } catch {
+            Self.log.error(
+                "Failed to remove \(context, privacy: .public) at \(url.path, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
+        }
     }
 
     private func verifiedData(

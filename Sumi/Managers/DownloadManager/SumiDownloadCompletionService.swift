@@ -21,7 +21,11 @@ enum SumiDownloadCompletionService {
             try fileManager.moveItem(at: temporaryURL, to: finalURL)
             return finalURL
         } catch {
-            try? fileManager.removeItem(at: temporaryURL)
+            DownloadFileUtilities.removeItemIfPresent(
+                at: temporaryURL,
+                fileManager: fileManager,
+                context: "remove failed finalized download temp file"
+            )
             throw error
         }
     }

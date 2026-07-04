@@ -183,10 +183,17 @@ final class SumiWKContentRuleListCompiler: SumiContentRuleListCompiling, @unchec
             let storeURL = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
                 .appendingPathComponent("SumiContentRuleListStore-XCTest", isDirectory: true)
                 .appendingPathComponent("\(processID)", isDirectory: true)
-            try? FileManager.default.createDirectory(
-                at: storeURL,
-                withIntermediateDirectories: true
-            )
+            do {
+                try FileManager.default.createDirectory(
+                    at: storeURL,
+                    withIntermediateDirectories: true
+                )
+            } catch {
+                RuntimeDiagnostics.debug(category: "SafariContentBlocker") {
+                    "Could not create isolated XCTest content rule list store: \(error.localizedDescription)"
+                }
+                return nil
+            }
             return WKContentRuleListStore(url: storeURL)
         }
     #endif
@@ -241,19 +248,57 @@ final class SumiContentBlockingService {
         latestUpdate?.rules.map(\.storeIdentifier).sorted() ?? []
     }
 
-    init(
+    #if DEBUG
+        convenience init(
+            policy: SumiContentBlockingPolicy = .defaultPolicy,
+            compiler: SumiContentRuleListCompiling = SumiWKContentRuleListCompiler(),
+            ruleListProvider: SumiContentRuleListSetProviding? = nil,
+            compiledRuleListCatalog: SumiCompiledContentRuleListCataloging = SumiContentBlockingService.defaultCompiledRuleListCatalog,
+            startupDiagnostics: any SumiProtectionStartupRestoreDiagnosticsRecording = SumiProtectionStartupRestoreDiagnosticsDefaults.recorder
+        ) {
+            self.init(
+                policy: policy,
+                ruleListProvider: ruleListProvider,
+                ruleListMaterializer: SumiContentRuleListMaterializer(
+                    compiler: compiler,
+                    startupDiagnostics: startupDiagnostics
+                ),
+                compiledRuleListCleanupOwner: SumiCompiledContentRuleListCleanupOwner(
+                    compiler: compiler,
+                    catalog: compiledRuleListCatalog,
+                    startupDiagnostics: startupDiagnostics
+                )
+            )
+        }
+    #else
+    convenience init(
         policy: SumiContentBlockingPolicy = .defaultPolicy,
         compiler: SumiContentRuleListCompiling = SumiWKContentRuleListCompiler(),
         ruleListProvider: SumiContentRuleListSetProviding? = nil,
-        compiledRuleListCatalog: SumiCompiledContentRuleListCataloging = SumiCompiledContentRuleListCatalog.shared
+        compiledRuleListCatalog: SumiCompiledContentRuleListCataloging = SumiContentBlockingService.defaultCompiledRuleListCatalog
+    ) {
+        self.init(
+            policy: policy,
+            ruleListProvider: ruleListProvider,
+            ruleListMaterializer: SumiContentRuleListMaterializer(compiler: compiler),
+            compiledRuleListCleanupOwner: SumiCompiledContentRuleListCleanupOwner(
+                compiler: compiler,
+                catalog: compiledRuleListCatalog
+            )
+        )
+    }
+    #endif
+
+    private init(
+        policy: SumiContentBlockingPolicy,
+        ruleListProvider: SumiContentRuleListSetProviding?,
+        ruleListMaterializer: SumiContentRuleListMaterializer,
+        compiledRuleListCleanupOwner: SumiCompiledContentRuleListCleanupOwner
     ) {
         currentPolicy = policy
-        self.ruleListMaterializer = SumiContentRuleListMaterializer(compiler: compiler)
+        self.ruleListMaterializer = ruleListMaterializer
         self.ruleListProvider = ruleListProvider
-        compiledRuleListCleanupOwner = SumiCompiledContentRuleListCleanupOwner(
-            compiler: compiler,
-            catalog: compiledRuleListCatalog
-        )
+        self.compiledRuleListCleanupOwner = compiledRuleListCleanupOwner
         privacyConfigurationManager = SumiContentBlockingPrivacyConfigurationManager(
             isContentBlockingEnabled: policy.shouldEnableContentBlockingFeature
         )
@@ -275,6 +320,10 @@ final class SumiContentBlockingService {
         } else if !policy.ruleLists.isEmpty {
             scheduleCompilation(for: policy)
         }
+    }
+
+    private static var defaultCompiledRuleListCatalog: SumiCompiledContentRuleListCataloging {
+        SumiCompiledContentRuleListCatalog.shared
     }
 
     isolated deinit {

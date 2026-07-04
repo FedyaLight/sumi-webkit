@@ -54,6 +54,7 @@ enum TabBrowserWebViewRuntimeFactory {
         for browserManager: BrowserManager
     ) -> TabWebViewConfigurationContext {
         .live(
+            browserConfiguration: browserManager.browserConfiguration,
             extensionsModule: { [weak browserManager] in
                 browserManager?.extensionsModule
             },
@@ -152,13 +153,14 @@ extension TabWebKitUIRuntime {
 @MainActor
 extension TabWebViewConfigurationContext {
     static func live(
+        browserConfiguration: BrowserConfiguration,
         extensionsModule: @escaping () -> SumiExtensionsModule?,
         userscriptsModule: @escaping () -> SumiUserscriptsModule?,
         boostsModule: @escaping () -> SumiBoostsModule?,
         protectionCoordinator: @escaping () -> SumiProtectionCoordinator?
     ) -> Self {
         Self(
-            browserConfiguration: .shared,
+            browserConfiguration: browserConfiguration,
             extensionNormalTabUserScripts: {
                 extensionsModule()?.normalTabUserScripts() ?? []
             },

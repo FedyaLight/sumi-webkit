@@ -139,7 +139,7 @@ enum UserScriptMetadataParser {
     // RE for key-value meta lines: // @key value
     private static let metaLineRE = compileRegex(
         label: "meta-line",
-        pattern: #"^(?:[ \t]*(?:\/\/)?[ \t]*@)([\w:-]+)[ \t]+([^\s]+[^\r\nt\v\f]*)"#,
+        pattern: #"^(?:[ \t]*(?:\/\/)?[ \t]*@)([\w:-]+)[ \t]+([^\r\n\v\f]+)"#,
         options: []
     )
 

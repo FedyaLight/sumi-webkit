@@ -6,11 +6,14 @@
 //
 
 import Foundation
+import OSLog
 
 /// Type anchor for `Bundle(for:)` — must live in the Sumi app target alongside `UserScriptCompat/*.js`.
 final class UserScriptBundledCompatBundleLocator {}
 
 enum UserScriptBundledCompatScript {
+    private static let log = Logger.sumi(category: "SumiScripts")
+
     private static var bundle: Bundle { Bundle(for: UserScriptBundledCompatBundleLocator.self) }
 
     /// Loads a file from the `UserScriptCompat` subdirectory (e.g. `webkit-media.js`).
@@ -25,7 +28,14 @@ enum UserScriptBundledCompatScript {
         else {
             return nil
         }
-        return try? String(contentsOf: url, encoding: .utf8)
+        do {
+            return try String(contentsOf: url, encoding: .utf8)
+        } catch {
+            log.error(
+                "Failed to load bundled userscript compat resource \(url.path, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
+            return nil
+        }
     }
 
     /// Maps `@sumi-compat webkit-media` → `UserScriptCompat/webkit-media.js`.

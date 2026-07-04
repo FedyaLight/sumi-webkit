@@ -14,11 +14,24 @@ final class SumiContentRuleListMaterializer {
     }
 
     private let compiler: SumiContentRuleListCompiling
+    #if DEBUG
+        private let startupDiagnostics: any SumiProtectionStartupRestoreDiagnosticsRecording
+    #endif
     private var compiledRulesByIdentifier: [String: SumiContentBlockerRules] = [:]
 
+    #if DEBUG
+        init(
+            compiler: SumiContentRuleListCompiling,
+            startupDiagnostics: any SumiProtectionStartupRestoreDiagnosticsRecording = SumiProtectionStartupRestoreDiagnosticsDefaults.recorder
+        ) {
+            self.compiler = compiler
+            self.startupDiagnostics = startupDiagnostics
+        }
+    #else
     init(compiler: SumiContentRuleListCompiling) {
         self.compiler = compiler
     }
+    #endif
 
     func updateEvent(
         for definitions: [SumiContentRuleListDefinition]
@@ -75,7 +88,7 @@ final class SumiContentRuleListMaterializer {
         var lookupFailedIdentifiers = [String]()
         let storeIdentifiers = definitions.map { storeIdentifier(for: $0) }
 #if DEBUG
-        SumiProtectionStartupRestoreDiagnostics.shared.recordLookupAttempt(identifiers: storeIdentifiers)
+        startupDiagnostics.recordLookupAttempt(identifiers: storeIdentifiers)
 #endif
 
         let lookupStart = Date()
@@ -84,12 +97,12 @@ final class SumiContentRuleListMaterializer {
             guard let ruleList = await compiler.lookUpContentRuleList(forIdentifier: storeIdentifier) else {
                 lookupFailedIdentifiers.append(storeIdentifier)
 #if DEBUG
-                SumiProtectionStartupRestoreDiagnostics.shared.recordLookupMiss(storeIdentifier)
+                startupDiagnostics.recordLookupMiss(storeIdentifier)
 #endif
                 throw SumiContentBlockingCompilationError.missingCompiledRuleList(storeIdentifier)
             }
 #if DEBUG
-            SumiProtectionStartupRestoreDiagnostics.shared.recordLookupHit(storeIdentifier)
+            startupDiagnostics.recordLookupHit(storeIdentifier)
 #endif
 
             let rules = SumiContentBlockerRules(
@@ -125,16 +138,16 @@ final class SumiContentRuleListMaterializer {
     private func canLookUpCompiledRuleList(forIdentifier identifier: String) async -> Bool {
         for _ in 0..<3 {
 #if DEBUG
-            SumiProtectionStartupRestoreDiagnostics.shared.recordLookupAttempt(identifiers: [identifier])
+            startupDiagnostics.recordLookupAttempt(identifiers: [identifier])
 #endif
             if await compiler.canLookUpContentRuleList(forIdentifier: identifier) {
 #if DEBUG
-                SumiProtectionStartupRestoreDiagnostics.shared.recordLookupHit(identifier)
+                startupDiagnostics.recordLookupHit(identifier)
 #endif
                 return true
             }
 #if DEBUG
-            SumiProtectionStartupRestoreDiagnostics.shared.recordLookupMiss(identifier)
+            startupDiagnostics.recordLookupMiss(identifier)
 #endif
             await Task.yield()
         }
@@ -155,18 +168,18 @@ final class SumiContentRuleListMaterializer {
         let ruleList: WKContentRuleList
         let storeReadiness: RuleStoreReadiness
 #if DEBUG
-        SumiProtectionStartupRestoreDiagnostics.shared.recordLookupAttempt(identifiers: [storeIdentifier])
+        startupDiagnostics.recordLookupAttempt(identifiers: [storeIdentifier])
 #endif
         if let cachedRuleList = await compiler.lookUpContentRuleList(forIdentifier: storeIdentifier) {
 #if DEBUG
-            SumiProtectionStartupRestoreDiagnostics.shared.recordLookupHit(storeIdentifier)
+            startupDiagnostics.recordLookupHit(storeIdentifier)
 #endif
             ruleList = cachedRuleList
             storeReadiness = .verifiedByStoreLookup
         } else {
 #if DEBUG
-            SumiProtectionStartupRestoreDiagnostics.shared.recordLookupMiss(storeIdentifier)
-            SumiProtectionStartupRestoreDiagnostics.shared.recordRepairCompileUsed(
+            startupDiagnostics.recordLookupMiss(storeIdentifier)
+            startupDiagnostics.recordRepairCompileUsed(
                 reason: "Compiled WebKit rule list missing for \(storeIdentifier); compiling payload-backed repair"
             )
 #endif

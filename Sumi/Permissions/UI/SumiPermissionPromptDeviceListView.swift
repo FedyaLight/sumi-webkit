@@ -13,12 +13,12 @@ struct SumiPermissionPromptDeviceListView: View {
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: "checkmark.circle")
-                .font(.system(size: 12, weight: .medium))
+                .font(SumiPermissionRuntimeControlsThemeTokens.Typography.promptDeviceIcon)
                 .foregroundStyle(tokens.secondaryText)
                 .frame(width: 14, height: 14)
 
             Text(text)
-                .font(.system(size: 12))
+                .font(SumiPermissionRuntimeControlsThemeTokens.Typography.promptDeviceText)
                 .foregroundStyle(tokens.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
         }

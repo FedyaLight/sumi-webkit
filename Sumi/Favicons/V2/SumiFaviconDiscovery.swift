@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 
 struct SumiFaviconDiscoveredLink: Codable, Equatable, Sendable {
     let href: String
@@ -23,6 +24,8 @@ struct SumiFaviconDiscoveredLink: Codable, Equatable, Sendable {
 }
 
 enum SumiFaviconDiscovery {
+    private static let log = Logger.sumi(category: "FaviconService")
+
     static func relTokens(from rel: String) -> [String] {
         rel
             .split { byte in
@@ -218,9 +221,22 @@ enum SumiFaviconDiscovery {
         partition: SumiFaviconPartition,
         discoveredAt: Date = Date()
     ) -> [SumiFaviconCandidate] {
-        guard let object = try? JSONSerialization.jsonObject(with: manifestData) as? [String: Any],
-              let icons = object["icons"] as? [[String: Any]]
-        else {
+        let object: [String: Any]
+        do {
+            guard let decodedObject = try JSONSerialization.jsonObject(
+                with: manifestData
+            ) as? [String: Any] else {
+                return []
+            }
+            object = decodedObject
+        } catch {
+            log.error(
+                "Failed to parse web app manifest for favicon discovery at \(manifestURL.absoluteString, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
+            return []
+        }
+
+        guard let icons = object["icons"] as? [[String: Any]] else {
             return []
         }
 

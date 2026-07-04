@@ -68,6 +68,23 @@ final class SumiProtectionBundleRemoteUpdateTests: XCTestCase {
         }
     }
 
+    func testRemoteBundleCacheMetadataReturnsNilForMalformedMetadata() throws {
+        let fileManager = FileManager.default
+        let root = fileManager.temporaryDirectory
+            .appendingPathComponent("SumiRemoteBundleMetadataTests-\(UUID().uuidString)", isDirectory: true)
+        defer { Self.removeDirectoryIfPresent(root, fileManager: fileManager) }
+        let bundleURL = root.appendingPathComponent("SumiAdblockBundle", isDirectory: true)
+        try fileManager.createDirectory(at: bundleURL, withIntermediateDirectories: true)
+        try Data(#"{"releaseVersion":42}"#.utf8).write(
+            to: bundleURL.appendingPathComponent(SumiRemoteAdblockBundleCache.metadataFileName),
+            options: .atomic
+        )
+
+        let metadata = SumiRemoteAdblockBundleCache.remoteMetadata(bundleURL: bundleURL, fileManager: fileManager)
+
+        XCTAssertNil(metadata)
+    }
+
     @MainActor
     func testBundleUpdateStatusStoreClassifiesTrustFailuresAndDowngrades() throws {
         let suiteName = "SumiProtectionBundleRemoteUpdateTests.\(UUID().uuidString)"
@@ -475,6 +492,15 @@ final class SumiProtectionBundleRemoteUpdateTests: XCTestCase {
 
     private static func canonicalTemporaryPath(_ path: String) -> String {
         path.replacingOccurrences(of: "/private/var/", with: "/var/")
+    }
+
+    private static func removeDirectoryIfPresent(_ url: URL, fileManager: FileManager) {
+        guard fileManager.fileExists(atPath: url.path) else { return }
+        do {
+            try fileManager.removeItem(at: url)
+        } catch {
+            XCTFail("Failed to remove temporary directory \(url.path): \(error)")
+        }
     }
 
     private static func signatureEnvelopeData(

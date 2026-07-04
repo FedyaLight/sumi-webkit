@@ -617,10 +617,15 @@ struct WorkspaceTheme: Codable, Hashable, Sendable {
     static func decode(_ data: Data) -> WorkspaceTheme? {
         guard !data.isEmpty else { return nil }
         let decoder = JSONDecoder()
-        if let theme = try? decoder.decode(WorkspaceTheme.self, from: data) {
-            return theme
+        do {
+            return try decoder.decode(WorkspaceTheme.self, from: data)
+        } catch {
+            RuntimeDiagnostics.debug(
+                "WorkspaceTheme decoding failed: \(error)",
+                category: "WorkspaceTheme"
+            )
+            return nil
         }
-        return nil
     }
 
     func interpolated(to other: WorkspaceTheme, progress: Double) -> WorkspaceTheme {

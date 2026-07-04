@@ -68,12 +68,12 @@ struct SidebarSpaceCreationView: View {
     private var titleRow: some View {
         HStack(spacing: SidebarRowLayout.iconTrailingSpacing) {
             Image(systemName: "square.grid.2x2")
-                .font(.system(size: SidebarRowLayout.faviconSize * 0.78, weight: .semibold))
+                .font(SidebarSpaceCreationThemeTokens.Typography.titleIcon)
                 .foregroundStyle(tokens.secondaryText)
                 .frame(width: SidebarRowLayout.faviconSize, height: SidebarRowLayout.faviconSize)
 
             Text("New space")
-                .font(.system(size: 14, weight: .semibold))
+                .font(SidebarSpaceCreationThemeTokens.Typography.title)
                 .foregroundStyle(tokens.primaryText)
                 .lineLimit(1)
 
@@ -144,7 +144,7 @@ struct SidebarSpaceCreationView: View {
 
             TextField("Name", text: $session.name)
                 .textFieldStyle(.plain)
-                .font(.system(size: 14, weight: .medium))
+                .font(SidebarSpaceCreationThemeTokens.Typography.field)
                 .foregroundStyle(tokens.primaryText)
                 .focused($focusedField, equals: .name)
                 .onSubmit(createIfPossible)
@@ -166,7 +166,7 @@ struct SidebarSpaceCreationView: View {
                 .accessibilityHidden(true)
 
             Text("Profile")
-                .font(.system(size: 13, weight: .medium))
+                .font(SidebarSpaceCreationThemeTokens.Typography.rowLabel)
                 .foregroundStyle(tokens.secondaryText)
 
             Spacer(minLength: 0)
@@ -207,20 +207,20 @@ struct SidebarSpaceCreationView: View {
         HStack(spacing: 6) {
             if session.createsNewProfile {
                 Image(systemName: "person.badge.plus")
-                    .font(.system(size: 13, weight: .medium))
+                    .font(SidebarSpaceCreationThemeTokens.Typography.profileMenuIcon)
             } else {
                 SumiProfileIconView(
                     icon: currentProfileIcon,
-                    font: .system(size: 13, weight: .medium)
+                    font: SidebarSpaceCreationThemeTokens.Typography.profileMenuIcon
                 )
             }
 
             Text(currentProfileName)
-                .font(.system(size: 13, weight: .medium))
+                .font(SidebarSpaceCreationThemeTokens.Typography.profileMenuText)
                 .lineLimit(1)
 
             Image(systemName: "chevron.up.chevron.down")
-                .font(.system(size: 9, weight: .semibold))
+                .font(SidebarSpaceCreationThemeTokens.Typography.profileMenuChevron)
                 .foregroundStyle(tokens.secondaryText)
         }
         .foregroundStyle(tokens.primaryText)
@@ -230,7 +230,7 @@ struct SidebarSpaceCreationView: View {
         VStack(spacing: 8) {
             Button(action: createIfPossible) {
                 Label("Create", systemImage: "plus")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(SidebarSpaceCreationThemeTokens.Typography.primaryButton)
                     .frame(maxWidth: .infinity, minHeight: 32)
                     .contentShape(Rectangle())
             }
@@ -241,7 +241,7 @@ struct SidebarSpaceCreationView: View {
 
             Button(action: cancel) {
                 Text("Cancel")
-                    .font(.system(size: 13, weight: .medium))
+                    .font(SidebarSpaceCreationThemeTokens.Typography.secondaryButton)
                     .frame(maxWidth: .infinity, minHeight: 28)
                     .contentShape(Rectangle())
             }
@@ -259,10 +259,10 @@ struct SidebarSpaceCreationView: View {
         let icon = session.resolvedIcon
         if SumiPersistentGlyph.presentsAsEmoji(icon) {
             Text(icon)
-                .font(.system(size: 18))
+                .font(SidebarSpaceCreationThemeTokens.Typography.spaceEmoji)
         } else {
             Image(systemName: SumiPersistentGlyph.resolvedSpaceSystemImageName(icon))
-                .font(.system(size: 16, weight: .medium))
+                .font(SidebarSpaceCreationThemeTokens.Typography.spaceSymbol)
                 .foregroundStyle(tokens.primaryText)
         }
     }

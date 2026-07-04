@@ -605,12 +605,25 @@ final class SumiExtensionsModule {
             profileId
             ?? manager.currentProfileId
             ?? runtime.currentProfile()?.id
-        guard let resolvedProfileId,
-              let context = try? await manager.ensureExtensionLoaded(
-                  extensionId: extensionId,
-                  profileId: resolvedProfileId
-              )
-        else {
+        guard let resolvedProfileId else {
+            return
+        }
+        let context: WKWebExtensionContext?
+        do {
+            context = try await manager.ensureExtensionLoaded(
+                extensionId: extensionId,
+                profileId: resolvedProfileId
+            )
+        } catch {
+            RuntimeDiagnostics.debug(category: "Extensions") {
+                "Unable to load extension context for options page \(extensionId): \(error.localizedDescription)"
+            }
+            return
+        }
+        guard let context else {
+            RuntimeDiagnostics.debug(category: "Extensions") {
+                "Extension context was unavailable for options page \(extensionId)"
+            }
             return
         }
 
@@ -716,7 +729,14 @@ final class SumiExtensionsModule {
         let descriptor = FetchDescriptor<ExtensionEntity>(
             predicate: #Predicate { $0.isEnabled }
         )
-        return ((try? context.fetchCount(descriptor)) ?? 0) > 0
+        do {
+            return try context.fetchCount(descriptor) > 0
+        } catch {
+            RuntimeDiagnostics.debug(category: "Extensions") {
+                "Could not count enabled persisted extensions: \(error.localizedDescription)"
+            }
+            return false
+        }
     }
 
     #if DEBUG
@@ -754,13 +774,11 @@ final class SumiExtensionsModule {
         }
 
         let matrix = safariExtensionAcceptanceMatrix()
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        encoder.outputFormatting = [.sortedKeys, .prettyPrinted]
-        guard let data = try? encoder.encode(matrix),
-              let json = String(data: data, encoding: .utf8)
-        else {
-            print("SafariExtensionAcceptanceMatrix: encode failed")
+        let json: String
+        do {
+            json = try SafariExtensionDiagnosticJSON.prettyPrintedString(matrix)
+        } catch {
+            print("SafariExtensionAcceptanceMatrix: encode failed: \(error.localizedDescription)")
             return
         }
 

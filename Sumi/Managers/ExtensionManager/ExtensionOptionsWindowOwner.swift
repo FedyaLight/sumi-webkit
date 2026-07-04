@@ -1,4 +1,5 @@
 import AppKit
+import OSLog
 import WebKit
 
 @available(macOS 15.5, *)
@@ -44,6 +45,8 @@ final class ExtensionOptionsWindowDelegate: NSObject, NSWindowDelegate, WKUIDele
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionOptionsWindowOwner {
+    private static let log = Logger.sumi(category: "Extensions")
+
     private(set) var windows: [String: NSWindow] = [:]
     private var delegates: [String: ExtensionOptionsWindowDelegate] = [:]
 
@@ -120,28 +123,14 @@ final class ExtensionOptionsWindowOwner {
 
         let sdkURL = extensionContext.optionsPageURL
         let manifestURL = manager.computeOptionsPageURL(for: extensionContext)
-        let sdkResolvedURL = (try? ExtensionUtils.resolvedOptionsPageURL(
+        let optionsURL = Self.preferredOptionsPageURL(
             sdkURL: sdkURL,
-            persistedPath: nil,
-            manifest: manifest,
-            extensionRoot: extensionRoot
-        ))
-        let diskResolvedURL = try? ExtensionUtils.resolvedOptionsPageURL(
-            sdkURL: nil,
+            manifestURL: manifestURL,
             persistedPath: installedExtension.optionsPagePath,
             manifest: manifest,
-            extensionRoot: extensionRoot
+            extensionRoot: extensionRoot,
+            extensionId: extensionId
         )
-        let optionsURL: URL?
-        if let sdkResolvedURL {
-            optionsURL = sdkResolvedURL
-        } else if let manifestURL {
-            optionsURL = manifestURL
-        } else if let diskResolvedURL {
-            optionsURL = diskResolvedURL
-        } else {
-            optionsURL = nil
-        }
 
         guard let optionsURL else {
             completionHandler(ExtensionUtils.optionsPageNotFoundError())
@@ -241,6 +230,63 @@ final class ExtensionOptionsWindowOwner {
     ) {
         windows[extensionId] = window
         delegates[extensionId] = delegate
+    }
+
+    static func preferredOptionsPageURL(
+        sdkURL: URL?,
+        manifestURL: URL?,
+        persistedPath: String?,
+        manifest: [String: Any],
+        extensionRoot: URL,
+        extensionId: String
+    ) -> URL? {
+        let sdkResolvedURL = resolveOptionsPageURLOrLog(
+            sdkURL: sdkURL,
+            persistedPath: nil,
+            manifest: manifest,
+            extensionRoot: extensionRoot,
+            extensionId: extensionId,
+            source: "SDK or manifest options page"
+        )
+        let diskResolvedURL = resolveOptionsPageURLOrLog(
+            sdkURL: nil,
+            persistedPath: persistedPath,
+            manifest: manifest,
+            extensionRoot: extensionRoot,
+            extensionId: extensionId,
+            source: "persisted or manifest options page"
+        )
+
+        if let sdkResolvedURL {
+            return sdkResolvedURL
+        }
+        if let manifestURL {
+            return manifestURL
+        }
+        return diskResolvedURL
+    }
+
+    private static func resolveOptionsPageURLOrLog(
+        sdkURL: URL?,
+        persistedPath: String?,
+        manifest: [String: Any],
+        extensionRoot: URL,
+        extensionId: String,
+        source: String
+    ) -> URL? {
+        do {
+            return try ExtensionUtils.resolvedOptionsPageURL(
+                sdkURL: sdkURL,
+                persistedPath: persistedPath,
+                manifest: manifest,
+                extensionRoot: extensionRoot
+            )
+        } catch {
+            log.error(
+                "Failed to resolve \(source, privacy: .public) for extension \(extensionId, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
+            return nil
+        }
     }
 
     private func firstWebView(in root: NSView) -> WKWebView? {

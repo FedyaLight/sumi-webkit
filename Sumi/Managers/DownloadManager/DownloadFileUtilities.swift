@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import OSLog
 import UniformTypeIdentifiers
 import WebKit
 
@@ -7,7 +8,11 @@ enum DownloadsDirectoryResolver {
     static func resolvedDownloadsDirectory(fileManager: FileManager = .default) -> URL {
         if usesIsolatedDirectory {
             let dir = isolatedRoot(fileManager: fileManager).appendingPathComponent("SumiDownloads", isDirectory: true)
-            try? fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
+            DownloadFileUtilities.ensureDirectoryExists(
+                dir,
+                fileManager: fileManager,
+                context: "isolated downloads directory"
+            )
             return dir
         }
         if let downloads = fileManager.urls(for: .downloadsDirectory, in: .userDomainMask).first {
@@ -48,6 +53,7 @@ enum DownloadsDirectoryResolver {
 
 enum DownloadFileUtilities {
     static let incompleteDownloadExtension = "sumiload"
+    private static let log = Logger.sumi(category: "Downloads")
 
     static func sanitizedFilename(_ filename: String, fallbackExtension: String? = nil) -> String {
         var clean = (filename.removingPercentEncoding ?? filename)
@@ -87,7 +93,7 @@ enum DownloadFileUtilities {
 
     static func uniqueDestination(for filename: String, fileManager: FileManager = .default) -> URL {
         let directory = DownloadsDirectoryResolver.resolvedDownloadsDirectory(fileManager: fileManager)
-        try? fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        ensureDirectoryExists(directory, fileManager: fileManager, context: "downloads destination")
 
         let cleanName = sanitizedFilename(filename)
         let desired = directory.appendingPathComponent(cleanName)
@@ -123,16 +129,34 @@ enum DownloadFileUtilities {
 
     static func removeOrphanedIncompleteDownloads(fileManager: FileManager = .default) {
         let directory = DownloadsDirectoryResolver.resolvedDownloadsDirectory(fileManager: fileManager)
-        guard let urls = try? fileManager.contentsOfDirectory(
-            at: directory,
-            includingPropertiesForKeys: [.isDirectoryKey],
-            options: [.skipsHiddenFiles]
-        ) else { return }
+        let urls: [URL]
+        do {
+            urls = try fileManager.contentsOfDirectory(
+                at: directory,
+                includingPropertiesForKeys: [.isDirectoryKey],
+                options: [.skipsHiddenFiles]
+            )
+        } catch {
+            logFileOperationFailure(
+                "list incomplete downloads",
+                url: directory,
+                error: error
+            )
+            return
+        }
 
         for url in urls where url.pathExtension == incompleteDownloadExtension {
-            let isDirectory = (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
-            guard !isDirectory else { continue }
-            try? fileManager.removeItem(at: url)
+            do {
+                let isDirectory = try url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory ?? false
+                guard !isDirectory else { continue }
+                try fileManager.removeItem(at: url)
+            } catch {
+                logFileOperationFailure(
+                    "remove orphaned incomplete download",
+                    url: url,
+                    error: error
+                )
+            }
         }
     }
 
@@ -144,6 +168,59 @@ enum DownloadFileUtilities {
             return
         }
         NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: folder.path)
+    }
+
+    static func ensureDirectoryExists(
+        _ directory: URL,
+        fileManager: FileManager = .default,
+        context: String
+    ) {
+        do {
+            try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        } catch {
+            logFileOperationFailure(context, url: directory, error: error)
+        }
+    }
+
+    static func removeItemIfPresent(
+        at url: URL,
+        fileManager: FileManager = .default,
+        context: String
+    ) {
+        guard fileManager.fileExists(atPath: url.path) else { return }
+        do {
+            try fileManager.removeItem(at: url)
+        } catch {
+            logFileOperationFailure(context, url: url, error: error)
+        }
+    }
+
+    static func fileSize(for url: URL) -> Int64? {
+        do {
+            return try url.resourceValues(forKeys: [.fileSizeKey]).fileSize.map(Int64.init)
+        } catch {
+            logFileOperationFailure("read downloaded file size", url: url, error: error)
+            return nil
+        }
+    }
+
+    static func contentType(for url: URL) -> UTType? {
+        do {
+            return try url.resourceValues(forKeys: [.contentTypeKey]).contentType
+        } catch {
+            logFileOperationFailure("read downloaded file content type", url: url, error: error)
+            return nil
+        }
+    }
+
+    static func logFileOperationFailure(
+        _ context: String,
+        url: URL,
+        error: Error
+    ) {
+        Self.log.error(
+            "Download file operation failed (\(context, privacy: .public), item=\(url.lastPathComponent, privacy: .public)): \(error.localizedDescription, privacy: .public)"
+        )
     }
 }
 

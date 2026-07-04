@@ -93,11 +93,18 @@ struct SumiSiteSettingsSearchField: View {
         .padding(.horizontal, 9)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color.secondary.opacity(0.08))
+                .fill(
+                    SumiPermissionRuntimeControlsThemeTokens.SiteSettingsColors
+                        .searchFieldBackground
+                )
         )
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(Color.secondary.opacity(0.18), lineWidth: 1)
+                .strokeBorder(
+                    SumiPermissionRuntimeControlsThemeTokens.SiteSettingsColors
+                        .searchFieldBorder,
+                    lineWidth: 1
+                )
         )
     }
 }

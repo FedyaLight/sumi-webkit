@@ -35,7 +35,7 @@ final class HistoryManager: ObservableObject {
         @MainActor
         static var production: Self {
             Dependencies(
-                faviconCleaner: SumiFaviconSystem.shared,
+                faviconCleaner: SumiFaviconProductionSystem.current,
                 visitedLinkStore: SharedVisitedLinkStoreProvider.shared
             )
         }

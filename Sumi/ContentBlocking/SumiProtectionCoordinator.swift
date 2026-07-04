@@ -300,12 +300,19 @@ final class SumiProtectionSettings: ObservableObject {
 
 @MainActor
 final class SumiProtectionCoordinator {
-    static let shared = SumiProtectionCoordinator()
+    static let shared = SumiProtectionCoordinator(
+        settings: .shared,
+        adBlockingModule: .shared,
+        bundleUpdateStatusStore: .shared
+    )
 
     let settings: SumiProtectionSettings
     private let adBlockingModule: SumiAdBlockingModule
     private let attachmentOwner: SumiProtectionAttachmentOwner
     private let bundleLifecycle: SumiProtectionBundleLifecycle
+    #if DEBUG
+        private let startupDiagnostics: any SumiProtectionStartupRestoreDiagnosticsRecording
+    #endif
 
     var bundleUpdateStatusStore: SumiProtectionBundleUpdateStatusStore {
         bundleLifecycle.statusStore
@@ -316,18 +323,33 @@ final class SumiProtectionCoordinator {
     private var runtimeAppliedLevel: SumiProtectionLevel
 
     init(
-        settings: SumiProtectionSettings = .shared,
-        adBlockingModule: SumiAdBlockingModule = .shared,
+        settings: SumiProtectionSettings,
+        adBlockingModule: SumiAdBlockingModule,
         siteNormalizer: SumiProtectionSiteNormalizer = SumiProtectionSiteNormalizer(),
         bundleRemoteUpdater: any SumiProtectionBundleRemoteUpdating = SumiProtectionBundleRemoteUpdater(),
-        bundleUpdateStatusStore: SumiProtectionBundleUpdateStatusStore = .shared
+        bundleUpdateStatusStore: SumiProtectionBundleUpdateStatusStore,
+        startupDiagnostics: (any SumiProtectionStartupRestoreDiagnosticsRecording)? = nil
     ) {
         self.settings = settings
         self.adBlockingModule = adBlockingModule
+        #if DEBUG
+            let startupDiagnostics = startupDiagnostics ?? SumiProtectionStartupRestoreDiagnosticsDefaults.recorder
+            self.startupDiagnostics = startupDiagnostics
+        #else
+            _ = startupDiagnostics
+        #endif
+        #if DEBUG
+        self.attachmentOwner = SumiProtectionAttachmentOwner(
+            ruleProvider: adBlockingModule,
+            siteNormalizer: siteNormalizer,
+            startupDiagnostics: startupDiagnostics
+        )
+        #else
         self.attachmentOwner = SumiProtectionAttachmentOwner(
             ruleProvider: adBlockingModule,
             siteNormalizer: siteNormalizer
         )
+        #endif
         self.bundleLifecycle = SumiProtectionBundleLifecycle(
             preparedBundleManager: adBlockingModule,
             remoteUpdater: bundleRemoteUpdater,
@@ -426,9 +448,12 @@ final class SumiProtectionCoordinator {
     func restoreAppliedLevelForStartup() async throws -> AdblockCompiledGenerationManifest? {
         let appliedLevel = settings.appliedLevel
 #if DEBUG
-        let startupDiagnosticsToken = SumiProtectionStartupRestoreDiagnostics.shared.begin(appliedLevel: appliedLevel)
+        let startupDiagnosticsToken = startupDiagnostics.begin(
+            appliedLevel: appliedLevel,
+            trackedGenerationId: nil
+        )
         defer {
-            let snapshot = SumiProtectionStartupRestoreDiagnostics.shared.finish(startupDiagnosticsToken)
+            let snapshot = startupDiagnostics.finish(startupDiagnosticsToken)
             Logger.sumi(category: "ProtectionStartupRestore").debug("\(snapshot.developerReport, privacy: .public)")
         }
 #endif
@@ -609,7 +634,7 @@ final class SumiProtectionCoordinator {
             requestingURL: requestingURL,
             contentBlockingServiceGenerationId: attachmentOwner.contentBlockingServiceGenerationId,
             bundleLookupDuration: bundleLifecycle.lastBundleLookupDuration,
-            startupSnapshot: SumiProtectionStartupRestoreDiagnostics.shared.latestSnapshot
+            startupSnapshot: startupDiagnostics.latestSnapshot
         )
     }
 #endif

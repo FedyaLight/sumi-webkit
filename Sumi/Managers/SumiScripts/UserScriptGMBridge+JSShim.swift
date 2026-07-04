@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import OSLog
 import WebKit
 
 extension UserScriptGMBridge {
@@ -16,22 +17,14 @@ extension UserScriptGMBridge {
 
         // Build GM.info / GM_info
         let scriptMeta = script.metadata
-        let grantsJSON = (try? JSONSerialization.data(withJSONObject: scriptMeta.grants))
-            .flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
-        let matchesJSON = (try? JSONSerialization.data(withJSONObject: scriptMeta.matches))
-            .flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
-        let excludesJSON = (try? JSONSerialization.data(withJSONObject: scriptMeta.excludeMatches))
-            .flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
-        let requiresJSON = (try? JSONSerialization.data(withJSONObject: scriptMeta.requires))
-            .flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
-        let resourcesJSON = (try? JSONSerialization.data(withJSONObject: scriptMeta.resources))
-            .flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
-        let excludesIncludeJSON = (try? JSONSerialization.data(withJSONObject: scriptMeta.excludes))
-            .flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
-        let antifeaturesJSON = (try? JSONSerialization.data(withJSONObject: scriptMeta.antifeatures))
-            .flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
-        let sumiCompatJSON = (try? JSONSerialization.data(withJSONObject: scriptMeta.sumiCompat))
-            .flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
+        let grantsJSON = UserScriptGMShimJSON.array(scriptMeta.grants, label: "grants")
+        let matchesJSON = UserScriptGMShimJSON.array(scriptMeta.matches, label: "matches")
+        let excludesJSON = UserScriptGMShimJSON.array(scriptMeta.excludeMatches, label: "excludeMatches")
+        let requiresJSON = UserScriptGMShimJSON.array(scriptMeta.requires, label: "requires")
+        let resourcesJSON = UserScriptGMShimJSON.dictionary(scriptMeta.resources, label: "resources")
+        let excludesIncludeJSON = UserScriptGMShimJSON.array(scriptMeta.excludes, label: "excludes")
+        let antifeaturesJSON = UserScriptGMShimJSON.array(scriptMeta.antifeatures, label: "antifeatures")
+        let sumiCompatJSON = UserScriptGMShimJSON.array(scriptMeta.sumiCompat, label: "sumiCompat")
         let scriptMetaStrEscaped = scriptMeta.metablock
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
@@ -564,5 +557,29 @@ extension UserScriptGMBridge {
             });
         })();
         """
+    }
+}
+
+private enum UserScriptGMShimJSON {
+    private static let log = Logger.sumi(category: "SumiScripts")
+
+    static func array(_ value: [String], label: String) -> String {
+        encodedString(value, fallback: "[]", label: label)
+    }
+
+    static func dictionary(_ value: [String: String], label: String) -> String {
+        encodedString(value, fallback: "{}", label: label)
+    }
+
+    private static func encodedString(_ value: Any, fallback: String, label: String) -> String {
+        do {
+            let data = try JSONSerialization.data(withJSONObject: value)
+            return String(decoding: data, as: UTF8.self)
+        } catch {
+            log.error(
+                "Failed to encode GM.info \(label, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
+            return fallback
+        }
     }
 }

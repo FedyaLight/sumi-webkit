@@ -187,8 +187,9 @@ enum ExtensionPermissionPromptRoutingOwner {
                           targetKind: .matchPattern,
                           target: patternString
                       ),
-                      let matchPattern = try? WKWebExtension.MatchPattern(
-                          string: patternString
+                      let matchPattern = SafariExtensionMatchPatternDiagnostics.make(
+                          patternString,
+                          purpose: "permissionPrompt.storedMatchPattern"
                       ) {
                 let storedStatus: WKWebExtensionContext.PermissionStatus =
                     stored.state == .allowed ? .grantedExplicitly : .deniedExplicitly

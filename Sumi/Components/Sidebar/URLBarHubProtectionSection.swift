@@ -101,12 +101,12 @@ struct URLBarHubProtectionSection: View {
 
             VStack(alignment: .leading, spacing: 1) {
                 Text("Adblock & Protection")
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(URLBarHubTypography.detailHeaderTitle)
                     .foregroundStyle(URLBarHubNativeStyle.primaryText)
                     .lineLimit(1)
                 URLBarFadingText(
                     displayHost,
-                    font: .system(size: 12, weight: .medium),
+                    font: URLBarHubTypography.detailHeaderSubtitle,
                     color: URLBarHubNativeStyle.secondaryText
                 )
             }
@@ -123,16 +123,16 @@ struct URLBarHubProtectionSection: View {
     private var protectionSection: some View {
         HStack(spacing: 12) {
             Image(systemName: isSiteEnabled ? "shield.fill" : "shield.slash")
-                .font(.system(size: 17, weight: .medium))
+                .font(URLBarHubTypography.protectionIcon)
                 .foregroundStyle(URLBarHubNativeStyle.primaryText)
                 .frame(width: 24, height: 24)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text("Protection on this site")
-                    .font(.system(size: 13, weight: .medium))
+                    .font(URLBarHubTypography.protectionTitle)
                     .foregroundStyle(URLBarHubNativeStyle.primaryText)
                 Text(isSiteEnabled ? "Active" : "Off")
-                    .font(.system(size: 11.5))
+                    .font(URLBarHubTypography.protectionSecondary)
                     .foregroundStyle(URLBarHubNativeStyle.secondaryText)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -151,11 +151,11 @@ struct URLBarHubProtectionSection: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text("Element rules")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(URLBarHubTypography.sectionTitle)
                     .foregroundStyle(URLBarHubNativeStyle.primaryText)
                 Spacer(minLength: 8)
                 Text("\(savedRules.count) saved")
-                    .font(.system(size: 11.5))
+                    .font(URLBarHubTypography.protectionSecondary)
                     .foregroundStyle(URLBarHubNativeStyle.secondaryText)
             }
 
@@ -183,15 +183,15 @@ struct URLBarHubProtectionSection: View {
                 Toggle("Apply saved rules", isOn: savedRulesEnabledBinding)
                     .toggleStyle(.switch)
                     .controlSize(.small)
-                    .font(.system(size: 11.5))
+                    .font(URLBarHubTypography.protectionSecondary)
                     .disabled(!isSiteEnabled)
                     .fixedSize()
             }
 
             if let errorMessage {
                 Text(errorMessage)
-                    .font(.system(size: 11.5, weight: .medium))
-                    .foregroundStyle(Color.red.opacity(0.9))
+                    .font(URLBarHubTypography.protectionError)
+                    .foregroundStyle(URLBarHubOverlayStyle.protectionErrorText)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -220,7 +220,7 @@ struct URLBarHubProtectionSection: View {
             LazyVStack(spacing: 6) {
                 if draftRules.isEmpty {
                     Text("No selectors saved for this site.")
-                        .font(.system(size: 12))
+                        .font(URLBarHubTypography.secondaryRowText)
                         .foregroundStyle(URLBarHubNativeStyle.secondaryText)
                         .frame(maxWidth: .infinity, minHeight: 54, alignment: .leading)
                 } else {
@@ -228,7 +228,7 @@ struct URLBarHubProtectionSection: View {
                         HStack(spacing: 6) {
                             TextField("CSS selector", text: $draftRules[index])
                                 .textFieldStyle(.roundedBorder)
-                                .font(.system(size: 12, design: .monospaced))
+                                .font(URLBarHubTypography.ruleEditor)
 
                             Button {
                                 draftRules.remove(at: index)

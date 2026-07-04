@@ -80,6 +80,9 @@ extension TabNormalWebViewExtensionRuntime {
                     .ensureInitialExtensionContextsIfNeeded(
                         profileId: profileId
                     )
+            },
+            pageContextMenuItems: { tab in
+                extensionsModule()?.pageContextMenuItemsIfLoaded(for: tab) ?? []
             }
         )
     }

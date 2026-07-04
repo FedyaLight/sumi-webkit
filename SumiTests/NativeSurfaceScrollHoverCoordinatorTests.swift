@@ -5,44 +5,44 @@ import XCTest
 @MainActor
 final class NativeSurfaceScrollHoverCoordinatorTests: XCTestCase {
     func testPhaseScrollKeepsHoverSuppressedAcrossActivityRestore() async {
-        let coordinator = NativeSurfaceScrollHoverCoordinator()
+        let coordinator = makeImmediateRestoreCoordinator()
 
         coordinator.setScrolling(true, region: "sidebar")
         coordinator.notifyScrollActivity(region: "sidebar")
-        await waitPastHoverRestoreDelay()
+        await waitForScheduledRestore()
 
         XCTAssertFalse(coordinator.hoverUpdatesEnabled)
 
         coordinator.setScrolling(false, region: "sidebar")
-        await waitPastHoverRestoreDelay()
+        await waitForScheduledRestore()
 
         XCTAssertTrue(coordinator.hoverUpdatesEnabled)
     }
 
     func testTransientActivityRestoresHoverWhenNoPhaseScrollIsActive() async {
-        let coordinator = NativeSurfaceScrollHoverCoordinator()
+        let coordinator = makeImmediateRestoreCoordinator()
 
         coordinator.notifyScrollActivity(region: "sidebar")
 
         XCTAssertFalse(coordinator.hoverUpdatesEnabled)
 
-        await waitPastHoverRestoreDelay()
+        await waitForScheduledRestore()
 
         XCTAssertTrue(coordinator.hoverUpdatesEnabled)
     }
 
     func testResetCancelsPendingRestoreAndEnablesHover() async {
-        let coordinator = NativeSurfaceScrollHoverCoordinator()
+        let coordinator = makeImmediateRestoreCoordinator()
 
         coordinator.notifyScrollActivity(region: "sidebar")
         coordinator.reset()
-        await waitPastHoverRestoreDelay()
+        await waitForScheduledRestore()
 
         XCTAssertTrue(coordinator.hoverUpdatesEnabled)
     }
 
     func testUnregisterScrollingRegionRestoresHoverAfterDelay() async {
-        let coordinator = NativeSurfaceScrollHoverCoordinator()
+        let coordinator = makeImmediateRestoreCoordinator()
         let token = coordinator.registerRegion("sidebar")
 
         coordinator.setScrolling(true, region: "sidebar")
@@ -50,30 +50,39 @@ final class NativeSurfaceScrollHoverCoordinatorTests: XCTestCase {
 
         XCTAssertFalse(coordinator.hoverUpdatesEnabled)
 
-        await waitPastHoverRestoreDelay()
+        await waitForScheduledRestore()
 
         XCTAssertTrue(coordinator.hoverUpdatesEnabled)
     }
 
     func testStaleRegionTokenCannotClearReplacementRegion() async {
-        let coordinator = NativeSurfaceScrollHoverCoordinator()
+        let coordinator = makeImmediateRestoreCoordinator()
         let staleToken = coordinator.registerRegion("sidebar")
 
         coordinator.setScrolling(true, region: "sidebar")
         let replacementToken = coordinator.registerRegion("sidebar")
         coordinator.unregisterRegion("sidebar", token: staleToken)
 
-        await waitPastHoverRestoreDelay()
+        await waitForScheduledRestore()
 
         XCTAssertFalse(coordinator.hoverUpdatesEnabled)
 
         coordinator.unregisterRegion("sidebar", token: replacementToken)
-        await waitPastHoverRestoreDelay()
+        await waitForScheduledRestore()
 
         XCTAssertTrue(coordinator.hoverUpdatesEnabled)
     }
 
-    private func waitPastHoverRestoreDelay() async {
-        try? await Task.sleep(nanoseconds: 320_000_000)
+    private func makeImmediateRestoreCoordinator() -> NativeSurfaceScrollHoverCoordinator {
+        NativeSurfaceScrollHoverCoordinator(
+            hoverRestoreDelayNanoseconds: 0,
+            sleepForNanoseconds: { _ in }
+        )
+    }
+
+    private func waitForScheduledRestore() async {
+        for _ in 0..<3 {
+            await Task.yield()
+        }
     }
 }

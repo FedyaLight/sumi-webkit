@@ -180,7 +180,10 @@ struct SafariExtensionSiteAccessPolicy: Codable, Equatable {
     static func normalizedMatchPatternString(_ rawValue: String) -> String {
         let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.isEmpty == false else { return "" }
-        guard let matchPattern = try? WKWebExtension.MatchPattern(string: trimmed) else {
+        guard let matchPattern = matchPattern(
+            from: trimmed,
+            purpose: "normalize"
+        ) else {
             return trimmed
         }
         return matchPattern.string
@@ -189,11 +192,10 @@ struct SafariExtensionSiteAccessPolicy: Codable, Equatable {
     @MainActor
     func accessLevel(for url: URL) -> SafariExtensionSiteAccessLevel {
         let matchingRules = siteRules.filter { rule in
-            guard let matchPattern = try? WKWebExtension.MatchPattern(
-                string: rule.matchPattern
-            ) else {
-                return false
-            }
+            guard let matchPattern = Self.matchPattern(
+                from: rule.matchPattern,
+                purpose: "urlAccess"
+            ) else { return false }
             return matchPattern.matches(url)
         }
         return Self.mostSpecificRule(in: matchingRules)?.access ?? defaultAccess
@@ -204,11 +206,10 @@ struct SafariExtensionSiteAccessPolicy: Codable, Equatable {
         for matchPattern: WKWebExtension.MatchPattern
     ) -> SafariExtensionSiteAccessLevel {
         let coveringRules = siteRules.filter { rule in
-            guard let rulePattern = try? WKWebExtension.MatchPattern(
-                string: rule.matchPattern
-            ) else {
-                return false
-            }
+            guard let rulePattern = Self.matchPattern(
+                from: rule.matchPattern,
+                purpose: "patternAccess"
+            ) else { return false }
             return rulePattern.matches(matchPattern)
         }
         return Self.mostSpecificRule(in: coveringRules)?.access ?? defaultAccess
@@ -249,7 +250,10 @@ struct SafariExtensionSiteAccessPolicy: Codable, Equatable {
 
     @MainActor
     private static func matchPatternSpecificityScore(_ patternString: String) -> Int {
-        guard let pattern = try? WKWebExtension.MatchPattern(string: patternString),
+        guard let pattern = matchPattern(
+                from: patternString,
+                purpose: "specificity"
+              ),
               pattern.matchesAllURLs == false
         else {
             return 0
@@ -271,5 +275,24 @@ struct SafariExtensionSiteAccessPolicy: Codable, Equatable {
             score += 1_000 + min(literalPath.count, 500)
         }
         return score
+    }
+
+    @MainActor
+    private static func matchPattern(
+        from value: String,
+        purpose: String
+    ) -> WKWebExtension.MatchPattern? {
+        do {
+            return try WKWebExtension.MatchPattern(string: value)
+        } catch {
+            RuntimeDiagnostics.debug(
+                category: SafariExtensionPermissionLifecycleDiagnostics.category
+            ) {
+                let bucket = SafariExtensionPermissionLifecycleDiagnostics.bucket(value)
+                    ?? "empty"
+                return "Ignoring invalid site access match pattern: purpose=\(purpose) patternBucket=\(bucket) error=\(error.localizedDescription)"
+            }
+            return nil
+        }
     }
 }

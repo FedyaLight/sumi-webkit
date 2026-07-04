@@ -34,7 +34,7 @@ struct TabSuggestionItem: View {
                 }
                 SumiTabTitleLabel(
                     title: tab.name,
-                    font: .systemFont(ofSize: 13, weight: .semibold),
+                    font: ChromeThemeTypography.floatingBarSuggestionRowNSFont,
                     textColor: foreground,
                     animated: false
                 )
@@ -42,13 +42,13 @@ struct TabSuggestionItem: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             HStack(spacing: 10) {
                 Text("Switch to Tab")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(ChromeThemeTypography.floatingBarSuggestionAction)
                     .foregroundStyle(isSelected ? foreground.opacity(0.86) : tokens.tertiaryText)
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
                 ZStack {
                     Image(systemName: "arrow.right")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(ChromeThemeTypography.floatingBarSuggestionControl)
                         .foregroundStyle(isSelected ? chipForeground : tokens.secondaryText)
                         .frame(width: 16, height: 16)
                         .accessibilityHidden(true)

@@ -2,7 +2,22 @@ import AppKit
 import SwiftUI
 
 @MainActor
-final class SumiFaviconAccentCache {
+protocol SumiFaviconAccentCaching: AnyObject {
+    func color(forKey key: String) -> Color?
+    func store(color: Color, forKey key: String)
+    func invalidate(forKey key: String)
+    func invalidate(domain: String)
+}
+
+@MainActor
+enum SumiFaviconAccentCacheDefaults {
+    static var cache: any SumiFaviconAccentCaching {
+        SumiFaviconAccentCache.shared
+    }
+}
+
+@MainActor
+final class SumiFaviconAccentCache: SumiFaviconAccentCaching {
     static let shared = SumiFaviconAccentCache()
 
     private var colorsByKey: [String: Color] = [:]

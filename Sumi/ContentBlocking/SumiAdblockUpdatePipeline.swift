@@ -243,14 +243,23 @@ actor AdblockUpdateManifestStore {
     private let fileManager: FileManager
     private let rootDirectory: URL
     private let manifestURL: URL
+    #if DEBUG
+        private let startupDiagnostics: any SumiProtectionStartupRestoreDiagnosticsRecording
+    #endif
 
     init(
         fileManager: FileManager = .default,
-        rootDirectory: URL? = nil
+        rootDirectory: URL? = nil,
+        startupDiagnostics: (any SumiProtectionStartupRestoreDiagnosticsRecording)? = nil
     ) {
         self.fileManager = fileManager
         self.rootDirectory = rootDirectory ?? Self.defaultRootDirectory()
         manifestURL = self.rootDirectory.appendingPathComponent("active-generation.json")
+        #if DEBUG
+            self.startupDiagnostics = startupDiagnostics ?? SumiProtectionStartupRestoreDiagnosticsDefaults.recorder
+        #else
+            _ = startupDiagnostics
+        #endif
     }
 
     nonisolated var storageRoot: URL { rootDirectory }
@@ -287,7 +296,7 @@ actor AdblockUpdateManifestStore {
                 }
                 let data = try Data(contentsOf: url)
 #if DEBUG
-                SumiProtectionStartupRestoreDiagnostics.shared.recordShardJSONRead(
+                startupDiagnostics.recordShardJSONRead(
                     identifier: shard.webKitIdentifier,
                     path: url.path,
                     byteCount: data.count,
@@ -471,9 +480,15 @@ final class AdblockManifestRuleListProvider: SumiContentRuleListSetProviding {
 
     static func diskBackedDefinitionLoader(
         storageRoot: URL,
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default,
+        startupDiagnostics: (any SumiProtectionStartupRestoreDiagnosticsRecording)? = nil
     ) -> (NativeContentBlockingShardDescriptor) throws -> SumiContentRuleListDefinition {
-        { shard in
+        #if DEBUG
+            let startupDiagnostics = startupDiagnostics ?? SumiProtectionStartupRestoreDiagnosticsDefaults.recorder
+        #else
+            _ = startupDiagnostics
+        #endif
+        return { shard in
             let url = storageRoot
                 .appendingPathComponent("Generated", isDirectory: true)
                 .appendingPathComponent(shard.generationId, isDirectory: true)
@@ -486,7 +501,7 @@ final class AdblockManifestRuleListProvider: SumiContentRuleListSetProviding {
             }
             let data = try Data(contentsOf: url)
 #if DEBUG
-            SumiProtectionStartupRestoreDiagnostics.shared.recordShardJSONRead(
+            startupDiagnostics.recordShardJSONRead(
                 identifier: shard.webKitIdentifier,
                 path: url.path,
                 byteCount: data.count,
@@ -562,15 +577,24 @@ actor AdblockGenerationGarbageCollector {
     private let manifestStore: AdblockUpdateManifestStore
     private let contentRuleListStore: any SumiContentRuleListCompiling
     private let fileManager: FileManager
+    #if DEBUG
+        private let startupDiagnostics: any SumiProtectionStartupRestoreDiagnosticsRecording
+    #endif
 
     init(
         manifestStore: AdblockUpdateManifestStore,
         contentRuleListStore: any SumiContentRuleListCompiling,
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default,
+        startupDiagnostics: (any SumiProtectionStartupRestoreDiagnosticsRecording)? = nil
     ) {
         self.manifestStore = manifestStore
         self.contentRuleListStore = contentRuleListStore
         self.fileManager = fileManager
+        #if DEBUG
+            self.startupDiagnostics = startupDiagnostics ?? SumiProtectionStartupRestoreDiagnosticsDefaults.recorder
+        #else
+            _ = startupDiagnostics
+        #endif
     }
 
     func cleanupAfterSuccessfulUpdate() async -> AdblockGenerationCleanupReport {
@@ -587,7 +611,7 @@ actor AdblockGenerationGarbageCollector {
                     try await contentRuleListStore.removeContentRuleList(forIdentifier: identifier)
                     report.removedWebKitIdentifiers.append(identifier)
 #if DEBUG
-                    SumiProtectionStartupRestoreDiagnostics.shared.recordCompiledRuleListRemoval(
+                    startupDiagnostics.recordCompiledRuleListRemoval(
                         identifiers: [identifier],
                         reason: "Adblock generation garbage collector removed stale WebKit rule list"
                     )
@@ -644,31 +668,42 @@ actor AdblockUpdateCoordinator {
     private let publisher: any AdblockRuleListPublishing
     private let contentRuleListStore: (any SumiContentRuleListCompiling)?
     private let garbageCollector: AdblockGenerationGarbageCollector?
+    #if DEBUG
+        private let startupDiagnostics: any SumiProtectionStartupRestoreDiagnosticsRecording
+    #endif
     private(set) var latestDiagnostics: AdblockUpdateDiagnostics?
 
     init(
         manifestStore: AdblockUpdateManifestStore,
         publisher: any AdblockRuleListPublishing,
         contentRuleListStore: (any SumiContentRuleListCompiling)? = nil,
-        garbageCollector: AdblockGenerationGarbageCollector? = nil
+        garbageCollector: AdblockGenerationGarbageCollector? = nil,
+        startupDiagnostics: (any SumiProtectionStartupRestoreDiagnosticsRecording)? = nil
     ) {
         self.manifestStore = manifestStore
         self.publisher = publisher
         self.contentRuleListStore = contentRuleListStore
         self.garbageCollector = garbageCollector
+        #if DEBUG
+            self.startupDiagnostics = startupDiagnostics ?? SumiProtectionStartupRestoreDiagnosticsDefaults.recorder
+        #else
+            _ = startupDiagnostics
+        #endif
     }
 
     static func production(
         manifestStore: AdblockUpdateManifestStore,
         publisher: any AdblockRuleListPublishing,
         contentRuleListStore: (any SumiContentRuleListCompiling)?,
-        garbageCollector: AdblockGenerationGarbageCollector?
+        garbageCollector: AdblockGenerationGarbageCollector?,
+        startupDiagnostics: (any SumiProtectionStartupRestoreDiagnosticsRecording)? = nil
     ) -> AdblockUpdateCoordinator {
         AdblockUpdateCoordinator(
             manifestStore: manifestStore,
             publisher: publisher,
             contentRuleListStore: contentRuleListStore,
-            garbageCollector: garbageCollector
+            garbageCollector: garbageCollector,
+            startupDiagnostics: startupDiagnostics
         )
     }
 
@@ -703,7 +738,7 @@ actor AdblockUpdateCoordinator {
             let activeMissingIdentifiers = await missingIdentifiers(in: activeManifest)
             guard !activeMissingIdentifiers.isEmpty else {
 #if DEBUG
-                SumiProtectionStartupRestoreDiagnostics.shared.recordGenerationStaleCheck(
+                startupDiagnostics.recordGenerationStaleCheck(
                     consideredStale: false,
                     reason: "Active generation WebKit smoke lookup succeeded"
                 )
@@ -719,7 +754,7 @@ actor AdblockUpdateCoordinator {
                   let previousManifest = try await manifestStore.archivedManifest(generationId: previousGenerationId)
             else {
 #if DEBUG
-                SumiProtectionStartupRestoreDiagnostics.shared.recordGenerationStaleCheck(
+                startupDiagnostics.recordGenerationStaleCheck(
                     consideredStale: true,
                     reason: "Active generation smoke lookup failed; no previous generation is available"
                 )
@@ -734,7 +769,7 @@ actor AdblockUpdateCoordinator {
             let previousMissing = await missingIdentifiers(in: previousManifest)
             guard previousMissing.isEmpty else {
 #if DEBUG
-                SumiProtectionStartupRestoreDiagnostics.shared.recordGenerationStaleCheck(
+                startupDiagnostics.recordGenerationStaleCheck(
                     consideredStale: true,
                     reason: "Active and previous Adblock generations failed smoke lookup"
                 )
@@ -749,13 +784,13 @@ actor AdblockUpdateCoordinator {
             try await manifestStore.replaceActiveManifest(previousManifest)
 #if DEBUG
             let rollbackReason = "Active generation smoke lookup failed; rolled back after missing identifiers: \(activeMissingIdentifiers.joined(separator: ","))"
-            SumiProtectionStartupRestoreDiagnostics.shared.recordGenerationStaleCheck(
+            startupDiagnostics.recordGenerationStaleCheck(
                 consideredStale: true,
                 reason: rollbackReason
             )
-            SumiProtectionStartupRestoreDiagnostics.shared.recordFallback(reason: rollbackReason)
-            SumiProtectionStartupRestoreDiagnostics.shared.recordPayloadBackedRestoreUsed(reason: rollbackReason)
-            SumiProtectionStartupRestoreDiagnostics.shared.recordRepairCompileUsed(reason: rollbackReason)
+            startupDiagnostics.recordFallback(reason: rollbackReason)
+            startupDiagnostics.recordPayloadBackedRestoreUsed(reason: rollbackReason)
+            startupDiagnostics.recordRepairCompileUsed(reason: rollbackReason)
 #endif
             let previousDefinitions = try await manifestStore.compiledShardDefinitions(for: previousManifest)
             let publication = try await publisher.preparePublication(
@@ -784,16 +819,16 @@ actor AdblockUpdateCoordinator {
         var missing = [String]()
         for identifier in manifest.webKitRuleListIdentifiers {
 #if DEBUG
-            SumiProtectionStartupRestoreDiagnostics.shared.recordLookupAttempt(identifiers: [identifier])
+            startupDiagnostics.recordLookupAttempt(identifiers: [identifier])
 #endif
             if await contentRuleListStore.canLookUpContentRuleList(forIdentifier: identifier) == false {
                 missing.append(identifier)
 #if DEBUG
-                SumiProtectionStartupRestoreDiagnostics.shared.recordLookupMiss(identifier)
+                startupDiagnostics.recordLookupMiss(identifier)
 #endif
             } else {
 #if DEBUG
-                SumiProtectionStartupRestoreDiagnostics.shared.recordLookupHit(identifier)
+                startupDiagnostics.recordLookupHit(identifier)
 #endif
             }
         }

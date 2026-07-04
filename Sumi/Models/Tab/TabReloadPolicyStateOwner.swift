@@ -38,6 +38,7 @@ struct TabReloadPolicyRuntime {
     let protectionAttachmentState: (URL?) -> SumiProtectionAttachmentState
     let protectionSurfaceHost: (URL?) -> String?
     let protectionCurrentTabDiagnostics: (ReloadProtectionDiagnosticsContext) -> SumiProtectionCurrentTabDiagnostics?
+    let autoplayPolicy: (URL?, Profile?) -> SumiAutoplayPolicy
     let evaluateAutoplayPolicyChange: (SumiRuntimeAutoplayState, WKWebView) -> SumiRuntimePermissionOperationResult
 }
 
@@ -47,6 +48,7 @@ extension TabReloadPolicyRuntime {
         protectionAttachmentState: { _ in .disabled(siteHost: nil) },
         protectionSurfaceHost: { _ in nil },
         protectionCurrentTabDiagnostics: { _ in nil },
+        autoplayPolicy: { _, _ in .default },
         evaluateAutoplayPolicyChange: { _, _ in .noOp }
     )
 }
@@ -430,7 +432,8 @@ final class TabReloadPolicyStateOwner {
             existingWebView: context.existingWebView(),
             webViewConfigurationOverride: context.webViewConfigurationOverride,
             isPopupHost: context.isPopupHost,
-            profile: context.profile
+            profile: context.profile,
+            runtime: runtime
         ), context.existingWebView() != nil
         else { return false }
 
@@ -483,7 +486,7 @@ final class TabReloadPolicyStateOwner {
             return clearAutoplayReloadRequirement()
         }
 
-        let desiredPolicy = desiredAutoplayPolicy(for: currentURL, profile: profile)
+        let desiredPolicy = runtime.autoplayPolicy(currentURL, profile)
         let result = runtime.evaluateAutoplayPolicyChange(
             desiredPolicy.runtimeState,
             webView
@@ -523,14 +526,15 @@ final class TabReloadPolicyStateOwner {
         existingWebView: WKWebView?,
         webViewConfigurationOverride: WKWebViewConfiguration?,
         isPopupHost: Bool,
-        profile: Profile?
+        profile: Profile?,
+        runtime: TabReloadPolicyRuntime
     ) -> Bool {
         guard let webView = existingWebView,
               webViewConfigurationOverride == nil,
               !isPopupHost
         else { return false }
 
-        let desiredPolicy = desiredAutoplayPolicy(for: targetURL, profile: profile)
+        let desiredPolicy = runtime.autoplayPolicy(targetURL, profile)
         let currentState = SumiRuntimePermissionController.autoplayState(
             from: webView.configuration.mediaTypesRequiringUserActionForPlayback
         )
@@ -559,13 +563,6 @@ final class TabReloadPolicyStateOwner {
             reason: reason,
             context: context.replacementContext,
             onTrackedWebViewRemovalFailure: onTrackedWebViewRemovalFailure
-        )
-    }
-
-    private func desiredAutoplayPolicy(for targetURL: URL?, profile: Profile?) -> SumiAutoplayPolicy {
-        SumiAutoplayPolicyStoreAdapter.shared.effectivePolicy(
-            for: targetURL,
-            profile: profile
         )
     }
 

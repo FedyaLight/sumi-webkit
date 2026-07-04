@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import OSLog
 
 @MainActor
 protocol SumiProtectionAttachmentRuleProviding: AnyObject {
@@ -16,23 +17,41 @@ extension SumiAdBlockingModule: SumiProtectionAttachmentRuleProviding {}
 
 @MainActor
 final class SumiProtectionAttachmentOwner {
+    nonisolated private static let log = Logger.sumi(category: "ContentBlocking")
+
     private let ruleProvider: any SumiProtectionAttachmentRuleProviding
     private let siteNormalizer: SumiProtectionSiteNormalizer
     private let rulePlanner: SumiProtectionRulePlanner
     private let contentBlockingServiceFactory: @MainActor () -> SumiContentBlockingService
     private let attachmentServiceCache = SumiProtectionAttachmentServiceCache()
+    #if DEBUG
+        private let startupDiagnostics: any SumiProtectionStartupRestoreDiagnosticsRecording
+    #endif
 
     init(
         ruleProvider: any SumiProtectionAttachmentRuleProviding,
         siteNormalizer: SumiProtectionSiteNormalizer = SumiProtectionSiteNormalizer(),
-        contentBlockingServiceFactory: @escaping @MainActor () -> SumiContentBlockingService = {
-            SumiContentBlockingService(policy: .disabled)
-        }
+        startupDiagnostics: (any SumiProtectionStartupRestoreDiagnosticsRecording)? = nil,
+        contentBlockingServiceFactory: (@MainActor () -> SumiContentBlockingService)? = nil
     ) {
         self.ruleProvider = ruleProvider
         self.siteNormalizer = siteNormalizer
         self.rulePlanner = SumiProtectionRulePlanner(siteNormalizer: siteNormalizer)
-        self.contentBlockingServiceFactory = contentBlockingServiceFactory
+        #if DEBUG
+            let startupDiagnostics = startupDiagnostics ?? SumiProtectionStartupRestoreDiagnosticsDefaults.recorder
+            self.startupDiagnostics = startupDiagnostics
+            self.contentBlockingServiceFactory = contentBlockingServiceFactory ?? {
+                SumiContentBlockingService(
+                    policy: .disabled,
+                    startupDiagnostics: startupDiagnostics
+                )
+            }
+        #else
+            _ = startupDiagnostics
+            self.contentBlockingServiceFactory = contentBlockingServiceFactory ?? {
+                SumiContentBlockingService(policy: .disabled)
+            }
+        #endif
     }
 
     var contentBlockingServiceGenerationId: UInt64 {
@@ -253,7 +272,7 @@ final class SumiProtectionAttachmentOwner {
             loadRuleDefinitions: false
         )
 #if DEBUG
-        SumiProtectionStartupRestoreDiagnostics.shared.recordExpectedShardIdentifiers(
+        startupDiagnostics.recordExpectedShardIdentifiers(
             metadataPlan.expectedRuleListIdentifiers
         )
 #endif
@@ -286,15 +305,15 @@ final class SumiProtectionAttachmentOwner {
                     service: service
                 )
 #if DEBUG
-                SumiProtectionStartupRestoreDiagnostics.shared.recordMetadataOnlyRestoreUsed()
+                startupDiagnostics.recordMetadataOnlyRestoreUsed()
 #endif
                 return
             } catch {
 #if DEBUG
                 let fallbackReason = "Protection attachment lookup-only restore failed: \(error.localizedDescription)"
-                SumiProtectionStartupRestoreDiagnostics.shared.recordFallback(reason: fallbackReason)
-                SumiProtectionStartupRestoreDiagnostics.shared.recordPayloadBackedRestoreUsed(reason: fallbackReason)
-                SumiProtectionStartupRestoreDiagnostics.shared.recordRepairCompileUsed(reason: fallbackReason)
+                startupDiagnostics.recordFallback(reason: fallbackReason)
+                startupDiagnostics.recordPayloadBackedRestoreUsed(reason: fallbackReason)
+                startupDiagnostics.recordRepairCompileUsed(reason: fallbackReason)
 #endif
                 // Repair-on-miss stays on the existing payload-backed path below.
             }
@@ -685,24 +704,26 @@ final class SumiProtectionAttachmentOwner {
             return .deferred
         }
 
-        let trackingCanonical = Set(tracking.compactMap {
-            canonicalWebKitJSONHash($0.definition.encodedContentRuleList)
-        })
-        let adblockCanonical = Set(adblock.compactMap {
-            canonicalWebKitJSONHash($0.definition.encodedContentRuleList)
-        })
-        let exactComparisonAvailable = trackingCanonical.count == tracking.count
-            && adblockCanonical.count == adblock.count
+        let trackingCanonicalResults = tracking.map(canonicalWebKitJSONResult)
+        let adblockCanonicalResults = adblock.map(canonicalWebKitJSONResult)
+        let trackingCanonical = Set(trackingCanonicalResults.compactMap(\.hash))
+        let adblockCanonical = Set(adblockCanonicalResults.compactMap(\.hash))
+        let canonicalFailures = (trackingCanonicalResults + adblockCanonicalResults).compactMap(\.failure)
+        let exactComparisonAvailable = canonicalFailures.isEmpty
 
-        let trackingDomains = Set(tracking.flatMap {
-            urlFilterTokens(in: $0.definition.encodedContentRuleList)
-        })
-        let adblockDomains = Set(adblock.flatMap {
-            urlFilterTokens(in: $0.definition.encodedContentRuleList)
-        })
+        let trackingTokenResults = tracking.map(urlFilterTokenResult)
+        let adblockTokenResults = adblock.map(urlFilterTokenResult)
+        let trackingDomains = Set(trackingTokenResults.flatMap(\.tokens))
+        let adblockDomains = Set(adblockTokenResults.flatMap(\.tokens))
+        let tokenFailures = (trackingTokenResults + adblockTokenResults).compactMap(\.failure)
         var notes = [String]()
         if !exactComparisonAvailable {
-            notes.append("Exact cross-source dedupe is unavailable for rule lists that cannot be safely canonicalized.")
+            notes.append("Exact cross-source dedupe is unavailable for \(canonicalFailures.count) rule list(s) that cannot be safely canonicalized.")
+            notes.append(contentsOf: canonicalFailures.prefix(3).map(\.reportLine))
+        }
+        if !tokenFailures.isEmpty {
+            notes.append("Domain/resource overlap is partial for \(tokenFailures.count) rule list(s) that cannot be parsed as WebKit rule-list arrays.")
+            notes.append(contentsOf: tokenFailures.prefix(3).map(\.reportLine))
         }
         if trackingDomains.isEmpty || adblockDomains.isEmpty {
             notes.append("Domain/resource overlap is heuristic because not every WebKit trigger exposes a host token.")
@@ -717,21 +738,78 @@ final class SumiProtectionAttachmentOwner {
     }
 
     private static func canonicalWebKitJSONHash(_ encodedContentRuleList: String) -> String? {
-        guard let data = encodedContentRuleList.data(using: .utf8),
-              let object = try? JSONSerialization.jsonObject(with: data),
-              JSONSerialization.isValidJSONObject(object),
-              let canonicalData = try? JSONSerialization.data(
-                withJSONObject: object,
-                options: [.sortedKeys]
-              )
-        else { return nil }
-        return sha256Hex(canonicalData)
+        do {
+            return try canonicalWebKitJSONHashOrThrow(encodedContentRuleList)
+        } catch {
+            return nil
+        }
     }
 
     private static func urlFilterTokens(in encodedContentRuleList: String) -> [String] {
-        guard let data = encodedContentRuleList.data(using: .utf8),
-              let array = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]
-        else { return [] }
+        do {
+            return try urlFilterTokensOrThrow(encodedContentRuleList)
+        } catch {
+            return []
+        }
+    }
+
+    private static func canonicalWebKitJSONResult(
+        for planned: PlannedRuleDefinition
+    ) -> (hash: String?, failure: RuleListJSONDiagnosticsFailure?) {
+        do {
+            return (try canonicalWebKitJSONHashOrThrow(planned.definition.encodedContentRuleList), nil)
+        } catch {
+            let failure = RuleListJSONDiagnosticsFailure(
+                identifier: planned.definition.webKitStoreIdentifier,
+                reason: error.localizedDescription
+            )
+            logRuleListJSONDiagnosticsFailure(
+                failure,
+                operation: "canonicalize"
+            )
+            return (nil, failure)
+        }
+    }
+
+    private static func urlFilterTokenResult(
+        for planned: PlannedRuleDefinition
+    ) -> (tokens: [String], failure: RuleListJSONDiagnosticsFailure?) {
+        do {
+            return (try urlFilterTokensOrThrow(planned.definition.encodedContentRuleList), nil)
+        } catch {
+            let failure = RuleListJSONDiagnosticsFailure(
+                identifier: planned.definition.webKitStoreIdentifier,
+                reason: error.localizedDescription
+            )
+            logRuleListJSONDiagnosticsFailure(
+                failure,
+                operation: "extract domain tokens from"
+            )
+            return ([], failure)
+        }
+    }
+
+    private static func canonicalWebKitJSONHashOrThrow(_ encodedContentRuleList: String) throws -> String {
+        let object = try webKitRuleListJSONObject(from: encodedContentRuleList)
+        guard JSONSerialization.isValidJSONObject(object) else {
+            throw RuleListJSONDiagnosticsError.invalidJSONObject
+        }
+        do {
+            let canonicalData = try JSONSerialization.data(
+                withJSONObject: object,
+                options: [.sortedKeys]
+            )
+            return sha256Hex(canonicalData)
+        } catch {
+            throw RuleListJSONDiagnosticsError.canonicalEncodingFailed(error.localizedDescription)
+        }
+    }
+
+    private static func urlFilterTokensOrThrow(_ encodedContentRuleList: String) throws -> [String] {
+        let object = try webKitRuleListJSONObject(from: encodedContentRuleList)
+        guard let array = object as? [[String: Any]] else {
+            throw RuleListJSONDiagnosticsError.ruleListTopLevelIsNotArray
+        }
 
         return array.compactMap { rule in
             guard let trigger = rule["trigger"] as? [String: Any],
@@ -739,6 +817,26 @@ final class SumiProtectionAttachmentOwner {
             else { return nil }
             return domainToken(from: filter)
         }
+    }
+
+    private static func webKitRuleListJSONObject(from encodedContentRuleList: String) throws -> Any {
+        guard let data = encodedContentRuleList.data(using: .utf8) else {
+            throw RuleListJSONDiagnosticsError.nonUTF8Content
+        }
+        do {
+            return try JSONSerialization.jsonObject(with: data)
+        } catch {
+            throw RuleListJSONDiagnosticsError.parseFailed(error.localizedDescription)
+        }
+    }
+
+    private static func logRuleListJSONDiagnosticsFailure(
+        _ failure: RuleListJSONDiagnosticsFailure,
+        operation: StaticString
+    ) {
+        Self.log.error(
+            "Protection overlap diagnostics could not \(operation, privacy: .public) rule list \(failure.identifier, privacy: .public): \(failure.reason, privacy: .public)"
+        )
     }
 
     private static func domainToken(from filter: String) -> String? {
@@ -760,6 +858,38 @@ final class SumiProtectionAttachmentOwner {
         SHA256.hash(data: data)
             .map { String(format: "%02x", $0) }
             .joined()
+    }
+
+    private enum RuleListJSONDiagnosticsError: LocalizedError {
+        case nonUTF8Content
+        case parseFailed(String)
+        case invalidJSONObject
+        case canonicalEncodingFailed(String)
+        case ruleListTopLevelIsNotArray
+
+        var errorDescription: String? {
+            switch self {
+            case .nonUTF8Content:
+                return "rule-list content is not valid UTF-8"
+            case .parseFailed(let reason):
+                return "rule-list JSON parsing failed: \(reason)"
+            case .invalidJSONObject:
+                return "rule-list JSON cannot be serialized as canonical JSON"
+            case .canonicalEncodingFailed(let reason):
+                return "rule-list canonical JSON encoding failed: \(reason)"
+            case .ruleListTopLevelIsNotArray:
+                return "rule-list top-level JSON value is not an array"
+            }
+        }
+    }
+
+    private struct RuleListJSONDiagnosticsFailure: Equatable {
+        let identifier: String
+        let reason: String
+
+        var reportLine: String {
+            "\(identifier): \(reason)"
+        }
     }
 }
 

@@ -62,7 +62,7 @@ final class SumiPermissionSettingsRepository {
     convenience init(
         permissionRuntime: BrowserManagerPermissionRuntime,
         dataServices: BrowserManagerDataServices,
-        autoplayStore: SumiAutoplayPolicyStoreAdapter = .shared,
+        autoplayStore: SumiAutoplayPolicyStoreAdapter,
         userDefaults: UserDefaults = .standard,
         now: @escaping () -> Date = Date.init
     ) {

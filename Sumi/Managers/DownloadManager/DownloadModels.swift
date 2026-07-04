@@ -202,11 +202,11 @@ final class DownloadItem: ObservableObject, Identifiable {
 
     private var completedSizeText: String {
         guard let url = destinationURL,
-              let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize
+              let size = DownloadFileUtilities.fileSize(for: url)
         else {
             return "Completed"
         }
-        return ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file)
+        return ByteCountFormatter.string(fromByteCount: size, countStyle: .file)
     }
 
     func icon(size: NSSize = NSSize(width: 32, height: 32)) -> NSImage {

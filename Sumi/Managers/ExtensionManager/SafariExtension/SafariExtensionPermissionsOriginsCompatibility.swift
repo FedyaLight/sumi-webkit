@@ -136,7 +136,10 @@ enum SafariExtensionPermissionsOriginsCompatibility {
         let trimmed = origin.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.isEmpty == false else { return origin }
 
-        if (try? WKWebExtension.MatchPattern(string: trimmed)) != nil {
+        if SafariExtensionMatchPatternDiagnostics.make(
+            trimmed,
+            purpose: "permissionsAPI.originNormalization"
+        ) != nil {
             return origin
         }
 

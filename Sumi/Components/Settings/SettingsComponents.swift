@@ -16,25 +16,63 @@ enum SettingsSurfaceStyle {
     static let compactCornerRadius: CGFloat = 8
 
     static var pageBackground: Color {
-        Color(nsColor: .windowBackgroundColor)
+        SettingsThemeTokens.Colors.pageBackground
     }
 
     static var groupedBackground: Color {
-        Color.primary.opacity(0.055)
+        SettingsThemeTokens.Colors.groupedBackground
     }
 
     static var fieldBackground: Color {
-        Color.primary.opacity(0.055)
+        SettingsThemeTokens.Colors.fieldBackground
     }
 
     static var separator: Color {
-        Color.primary.opacity(0.08)
+        SettingsThemeTokens.Colors.separator
     }
 
     static var stroke: Color {
-        Color.primary.opacity(0.06)
+        SettingsThemeTokens.Colors.stroke
+    }
+
+    static var selectedNavigationBackground: Color {
+        SettingsThemeTokens.Colors.selectedNavigationBackground
+    }
+
+    static var selectedNavigationForeground: Color {
+        SettingsThemeTokens.Colors.selectedNavigationForeground
+    }
+
+    static var compactSelectedNavigationBackground: Color {
+        SettingsThemeTokens.Colors.compactSelectedNavigationBackground
+    }
+
+    static var paneIconForeground: Color {
+        SettingsThemeTokens.Colors.paneIconForeground
+    }
+
+    static var paneIconShadow: Color {
+        SettingsThemeTokens.Colors.paneIconShadow
+    }
+
+    static var floatingRowShadow: Color {
+        SettingsThemeTokens.Colors.floatingRowShadow
+    }
+
+    static var warningText: Color {
+        SettingsThemeTokens.Colors.warningText
+    }
+
+    static var warningBackground: Color {
+        SettingsThemeTokens.Colors.warningBackground
+    }
+
+    static var warningBorder: Color {
+        SettingsThemeTokens.Colors.warningBorder
     }
 }
+
+typealias SettingsTypography = SettingsThemeTokens.Typography
 
 struct SettingsSection<Content: View>: View {
     let title: String
@@ -166,7 +204,7 @@ struct SettingsEmptyState: View {
     var body: some View {
         VStack(alignment: .center, spacing: 8) {
             Image(systemName: systemImage)
-                .font(.system(size: 26, weight: .medium))
+                .font(SettingsTypography.emptyStateIcon)
                 .foregroundStyle(.secondary)
 
             Text(title)

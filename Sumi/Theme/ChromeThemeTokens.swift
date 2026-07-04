@@ -39,6 +39,98 @@ struct ChromeThemeTokens {
     let floatingBarRowHover: Color
 }
 
+enum ChromeThemeTypography {
+    static let floatingBarInput = Font.system(size: 13, weight: .semibold)
+    static var floatingBarInputNSFont: NSFont { NSFont.systemFont(ofSize: 13, weight: .semibold) }
+    static let floatingBarLeadingIcon = Font.system(size: 13, weight: .regular)
+    static let floatingBarToken = Font.system(size: 13, weight: .semibold)
+    static let floatingBarMicroLabel = Font.system(size: 11, weight: .semibold)
+    static let floatingBarSuggestionRow = Font.system(size: 13, weight: .semibold)
+    static var floatingBarSuggestionRowNSFont: NSFont { NSFont.systemFont(ofSize: 13, weight: .semibold) }
+    static let floatingBarSuggestionAction = Font.system(size: 12, weight: .medium)
+    static let floatingBarSuggestionChip = Font.system(size: 10, weight: .semibold)
+    static let floatingBarSuggestionControl = Font.system(size: 13, weight: .semibold)
+    static let floatingBarDeleteControlSmall = Font.system(size: 10, weight: .bold)
+    static let floatingBarDeleteControl = Font.system(size: 11, weight: .bold)
+    static let floatingBarDeleteAction = Font.system(size: 11, weight: .semibold)
+}
+
+enum ThemeChromeRecipeColors {
+    enum Foreground {
+        static let preferredLight = Color.white.opacity(0.96)
+        static let preferredDark = Color.black.opacity(0.88)
+        static let primaryLight = Color.black.opacity(0.84)
+        static let primaryDark = Color.white.opacity(0.92)
+        static let primaryFallback = Color.primary
+        static let secondaryLight = Color.black.opacity(0.56)
+        static let secondaryDark = Color.white.opacity(0.68)
+        static let secondaryFallback = Color.secondary
+        static let tertiaryLight = Color.black.opacity(0.38)
+        static let tertiaryDark = Color.white.opacity(0.46)
+        static let tertiaryFallback = Color.secondary.opacity(0.6)
+    }
+
+    enum Sidebar {
+        static let activeLight = Color.white.opacity(0.85)
+        static let activeDark = Color.white.opacity(0.18)
+        static let activeFallback = Color.white.opacity(0.2)
+        static let hoverLight = Color.black.opacity(0.08)
+        static let hoverDark = Color.white.opacity(0.10)
+        static let hoverFallback = Color.primary.opacity(0.1)
+        static let selectionShadowLight = Color.black.opacity(0.15)
+        static let selectionShadowDark = Color.black.opacity(0.05)
+        static let selectionShadowFallback = Color.black.opacity(0.08)
+        static let separatorLight = Color.black.opacity(0.12)
+        static let separatorDark = Color.white.opacity(0.26)
+        static let separatorFallback = Color.primary.opacity(0.14)
+    }
+
+    enum Neutral {
+        static let lightBackground = Color.white
+        static let darkDefaultBackground = Color(hex: "12151A")
+        static let darkNightBackground = Color(hex: "0C1015")
+        static let darkColorfulBackground = Color(hex: "151A24")
+        static let elevatedDarkOverlay = Color.white.opacity(0.28)
+        static let toolbarLight = Color.black.opacity(0.08)
+        static let toolbarDark = Color.white.opacity(0.12)
+        static let toolbarFallback = Color.black.opacity(0.08)
+        static let toolbarHoverLight = Color.black.opacity(0.08)
+        static let toolbarHoverDark = Color.white.opacity(0.10)
+        static let toolbarHoverFallback = Color.black.opacity(0.08)
+    }
+
+    enum FloatingBar {
+        static let backgroundLight = Color.white
+        static let backgroundDark = Color(hex: "1C1C1E")
+        static let backgroundFallback = Color.white
+        static let chipLight = Color.black.opacity(0.06)
+        static let chipDark = Color.white.opacity(0.10)
+        static let chipFallback = Color.black.opacity(0.06)
+        static let selectedRowLight = Color.black.opacity(0.08)
+        static let selectedRowDark = Color.white.opacity(0.14)
+        static let selectedRowFallback = Color.black.opacity(0.08)
+        static let hoverRowLight = Color.black.opacity(0.05)
+        static let hoverRowDark = Color.white.opacity(0.08)
+        static let hoverRowFallback = Color.black.opacity(0.05)
+    }
+}
+
+enum SumiButtonThemeTokens {
+    enum Colors {
+        static let destructiveBackground = Color.red
+    }
+}
+
+enum FloatingBarThemeTokens {
+    enum Colors {
+        static let deleteConfirmationForeground = Color.white
+        static let reducedTransparencyShadow = Color.black.opacity(0.165)
+        static let localVignetteLightShadow = Color.black.opacity(0.16)
+        static let localVignetteDarkShadow = Color.black.opacity(0.30)
+        static let localVignetteFallbackShadow = Color.black.opacity(0.14)
+    }
+}
+
 enum ChromePageLoadingIndicatorStyle {
     private static let contrastBlendAmount: CGFloat = 0.65
 

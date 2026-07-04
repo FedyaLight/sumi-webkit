@@ -224,8 +224,9 @@ final class ExtensionSiteAccessPolicyCoordinator {
         persistPolicy: Bool = true
     ) {
         if let patternString = hostMatchPatternString(for: url),
-           let matchPattern = try? WKWebExtension.MatchPattern(
-               string: patternString
+           let matchPattern = SafariExtensionMatchPatternDiagnostics.make(
+               patternString,
+               purpose: "grantSiteAccess.hostPattern"
            ) {
             extensionContext.setPermissionStatus(
                 .grantedExplicitly,
@@ -257,8 +258,9 @@ final class ExtensionSiteAccessPolicyCoordinator {
         persistPolicy: Bool = true
     ) {
         if let patternString = hostMatchPatternString(for: url),
-           let matchPattern = try? WKWebExtension.MatchPattern(
-               string: patternString
+           let matchPattern = SafariExtensionMatchPatternDiagnostics.make(
+               patternString,
+               purpose: "denySiteAccess.hostPattern"
            ) {
             extensionContext.setPermissionStatus(
                 .deniedExplicitly,

@@ -54,8 +54,10 @@ final class UserScriptStore {
     /// `internal` for SwiftData persistence helpers in `UserScriptStore+SwiftData.swift`.
     internal let context: ModelContext?
     private let fileManager = FileManager.default
+    private let session: URLSession
     private lazy var resourceCache = UserScriptResourceCache(
-        dependencies: .live(store: self)
+        dependencies: .live(store: self),
+        session: session
     )
     private var dispatchSource: DispatchSourceFileSystemObject?
 
@@ -76,9 +78,14 @@ final class UserScriptStore {
 
     // MARK: - Init
 
-    init(directory: URL? = nil, context: ModelContext? = nil) {
+    init(
+        directory: URL? = nil,
+        context: ModelContext? = nil,
+        session: URLSession = SumiNonPersistentURLSession.shared
+    ) {
         self.scriptsDirectory = directory ?? Self.defaultScriptsDirectory()
         self.context = context
+        self.session = session
         ensureDirectoryExists(scriptsDirectory)
         loadManifest()
         reload()
@@ -155,7 +162,7 @@ final class UserScriptStore {
     /// writing the compiled source into the scripts directory.
     @discardableResult
     func installScript(from url: URL) async throws -> SumiInstalledUserScript {
-        let (data, _) = try await SumiNonPersistentURLSession.shared.data(from: url)
+        let (data, _) = try await session.data(from: url)
         guard let content = String(data: data, encoding: .utf8),
               let parsedMetadata = UserScriptMetadataParser.parse(content)
         else {
@@ -470,10 +477,18 @@ final class UserScriptStore {
             "unwrap": metadata.unwrap,
             "topLevelAwait": metadata.topLevelAwait,
         ]
-        guard let data = try? JSONSerialization.data(withJSONObject: snapshot, options: [.sortedKeys]),
-              let json = String(data: data, encoding: .utf8)
-        else { return "{}" }
-        return json
+        do {
+            let data = try JSONSerialization.data(
+                withJSONObject: snapshot,
+                options: [.sortedKeys]
+            )
+            return String(data: data, encoding: .utf8) ?? "{}"
+        } catch {
+            log.error(
+                "Failed to serialize userscript metadata snapshot for \(metadata.name, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
+            return "{}"
+        }
     }
 }
 

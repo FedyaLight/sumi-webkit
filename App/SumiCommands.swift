@@ -12,6 +12,7 @@ struct SumiCommands: Commands {
     let browserContext: SumiCommandsBrowserContext
     let windowRegistry: WindowRegistry
     let shortcutManager: KeyboardShortcutManager
+    private let updaterService: SumiUpdaterService
     @ObservedObject private var recentlyClosedManager: RecentlyClosedManager
     @Environment(\.sumiSettings) var sumiSettings
     private let menuCloseRoutingOwner = BrowserMenuCloseRoutingOwner()
@@ -19,11 +20,13 @@ struct SumiCommands: Commands {
     init(
         browserContext: SumiCommandsBrowserContext,
         windowRegistry: WindowRegistry,
-        shortcutManager: KeyboardShortcutManager
+        shortcutManager: KeyboardShortcutManager,
+        updaterService: SumiUpdaterService
     ) {
         self.browserContext = browserContext
         self.windowRegistry = windowRegistry
         self.shortcutManager = shortcutManager
+        self.updaterService = updaterService
         self.recentlyClosedManager = browserContext.recentlyClosedManager
     }
 
@@ -70,7 +73,7 @@ struct SumiCommands: Commands {
         }
 
         CommandGroup(after: .appInfo) {
-            SumiCheckForUpdatesCommand(updaterService: SumiUpdaterService.shared)
+            SumiCheckForUpdatesCommand(updaterService: updaterService)
             Divider()
             Button("Make Sumi Default Browser") {
                 browserContext.setAsDefaultBrowser()

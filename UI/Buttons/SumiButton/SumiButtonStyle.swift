@@ -76,7 +76,7 @@ struct SumiButtonStyle: ButtonStyle {
     private func backgroundColor() -> Color {
         // Destructive role overrides variant colors
         if role == .destructive {
-            return Color.red
+            return SumiButtonThemeTokens.Colors.destructiveBackground
         }
 
         switch variant {
@@ -93,7 +93,7 @@ struct SumiButtonStyle: ButtonStyle {
         case .secondary:
             return tokens.primaryText
         case .primary:
-            return Color.white
+            return tokens.buttonPrimaryText
         }
     }
 

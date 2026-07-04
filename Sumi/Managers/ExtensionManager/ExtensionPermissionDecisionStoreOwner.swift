@@ -131,8 +131,9 @@ final class ExtensionPermissionDecisionStoreOwner {
                 expirationDate: record.expiresAt
             )
         case .matchPattern:
-            guard let matchPattern = try? WKWebExtension.MatchPattern(
-                string: record.target
+            guard let matchPattern = SafariExtensionMatchPatternDiagnostics.make(
+                record.target,
+                purpose: "storedPermissionDecision.apply"
             ) else { return }
             extensionContext.setPermissionStatus(
                 status,
@@ -165,10 +166,10 @@ final class ExtensionPermissionDecisionStoreOwner {
         case .permission:
             return trimmed
         case .matchPattern:
-            guard let matchPattern = try? WKWebExtension.MatchPattern(string: trimmed) else {
-                return trimmed
-            }
-            return matchPattern.string
+            return SafariExtensionMatchPatternDiagnostics.normalizedStringOrOriginal(
+                trimmed,
+                purpose: "storedPermissionDecision.normalize"
+            )
         }
     }
 

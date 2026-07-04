@@ -36,17 +36,13 @@ extension SumiExtensionsModule {
         }
 
         let report = safariExtensionNativeMessagingProbe()
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        encoder.outputFormatting = [.sortedKeys, .prettyPrinted]
-        guard let data = try? encoder.encode(report),
-              let json = String(data: data, encoding: .utf8)
-        else {
-            print("SafariExtensionNativeMessagingProbe: encode failed")
-            return
+        do {
+            let json = try SafariExtensionDiagnosticJSON.prettyPrintedString(report)
+            print("SafariExtensionNativeMessagingProbe:\n\(json)")
+        } catch {
+            print("SafariExtensionNativeMessagingProbe: encode failed: \(error.localizedDescription)")
         }
 
-        print("SafariExtensionNativeMessagingProbe:\n\(json)")
         SafariExtensionNativeMessagingProbeBuilder.logIfDiagnosticsEnabled(report)
     }
     #endif

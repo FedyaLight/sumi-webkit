@@ -112,7 +112,7 @@ struct SumiBookmarksTabRootView: View {
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("Bookmarks")
-                .font(.system(size: 28, weight: .semibold))
+                .font(SumiBookmarksTabTypography.sidebarTitle)
                 .foregroundStyle(tokens.primaryText)
                 .padding(.horizontal, 22)
                 .padding(.top, 28)
@@ -152,7 +152,7 @@ struct SumiBookmarksTabRootView: View {
         .buttonStyle(.plain)
         .background(
             RoundedRectangle(cornerRadius: Layout.rowCornerRadius, style: .continuous)
-                .fill(selected ? selectionBackground : Color.clear)
+                .fill(selected ? selectionBackground : SumiBookmarksTabColors.transparent)
         )
         .foregroundStyle(tokens.primaryText)
         .onDrop(of: [.text], isTargeted: nil) { _ in
@@ -188,7 +188,7 @@ struct SumiBookmarksTabRootView: View {
             HStack(spacing: 0) {
                 // Invisible placeholder to perfectly balance the menu button on the right,
                 // ensuring the search field is mathematically centered in the space.
-                Color.clear
+                SumiBookmarksTabColors.transparent
                     .frame(width: 28, height: 28)
 
                 Spacer()
@@ -233,7 +233,7 @@ struct SumiBookmarksTabRootView: View {
                     }
                 } label: {
                     Image(systemName: "ellipsis")
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(SumiBookmarksTabTypography.moreActionsIcon)
                         .rotationEffect(.degrees(90))
                         .foregroundStyle(tokens.primaryText)
                         .frame(width: 28, height: 28)
@@ -345,7 +345,7 @@ struct SumiBookmarksTabRootView: View {
     private var emptyState: some View {
         VStack(alignment: .center, spacing: 12) {
             Image(systemName: "book.closed")
-                .font(.system(size: 42))
+                .font(SumiBookmarksTabTypography.emptyStateIcon)
                 .foregroundStyle(tokens.secondaryText)
             Text("No Bookmarks")
                 .font(.title3.weight(.semibold))
@@ -389,7 +389,7 @@ private struct SumiBookmarkEntityRow: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(entity.title)
                     .lineLimit(1)
-                    .font(.system(size: 14, weight: .medium))
+                    .font(SumiBookmarksTabTypography.rowTitle)
                     .foregroundStyle(tokens.primaryText)
                 if entity.isBookmark {
                     Text(entity.displayURL)
@@ -432,7 +432,7 @@ private struct SumiBookmarkEntityRow: View {
     private var icon: some View {
         if entity.isFolder {
             Image(systemName: "folder")
-                .font(.system(size: 18, weight: .medium))
+                .font(SumiBookmarksTabTypography.folderIcon)
                 .foregroundStyle(tokens.secondaryText)
                 .frame(width: 22, height: 22)
         } else if let image = faviconImage ?? cachedFaviconImage {
@@ -440,7 +440,7 @@ private struct SumiBookmarkEntityRow: View {
                 .frame(width: 22, height: 22)
         } else {
             Image(systemName: "globe")
-                .font(.system(size: 17, weight: .medium))
+                .font(SumiBookmarksTabTypography.bookmarkFallbackIcon)
                 .foregroundStyle(tokens.secondaryText)
                 .frame(width: 22, height: 22)
         }
@@ -521,7 +521,7 @@ private struct SumiBookmarkEntityRow: View {
         if isHovering {
             return tokens.fieldBackgroundHover
         }
-        return Color.clear
+        return SumiBookmarksTabColors.transparent
     }
 }
 

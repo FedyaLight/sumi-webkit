@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import OSLog
 
 enum SumiFaviconLookupKey {
     static func referenceKey(for url: URL) -> String? {
@@ -43,6 +44,7 @@ enum SumiFaviconLookupKey {
 
 @MainActor
 private enum SumiFaviconPersistence {
+    private static let log = Logger.sumi(category: "Favicons")
     private static var didRegisterTestDirectoryCleanup = false
 
     static func rootDirectoryURL() -> URL {
@@ -51,7 +53,7 @@ private enum SumiFaviconPersistence {
             registerCurrentTestDirectoryCleanupIfNeeded()
             let testURL = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
                 .appendingPathComponent("SumiFavicons-\(ProcessInfo.processInfo.processIdentifier)", isDirectory: true)
-            try? FileManager.default.createDirectory(at: testURL, withIntermediateDirectories: true)
+            createDirectoryIfNeeded(testURL)
             return testURL
         }
 
@@ -60,18 +62,30 @@ private enum SumiFaviconPersistence {
 
     static func directory(named component: String) -> URL {
         let directory = rootDirectoryURL().appendingPathComponent(component, isDirectory: true)
-        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        createDirectoryIfNeeded(directory)
         return directory
+    }
+
+    private static func createDirectoryIfNeeded(_ directory: URL) {
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        } catch {
+            log.error("Failed to create favicon directory \(directory.path, privacy: .public): \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     private static func removeStaleTestDirectories() {
         let fileManager = FileManager.default
         let temporaryDirectory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
-        guard let contents = try? fileManager.contentsOfDirectory(
-            at: temporaryDirectory,
-            includingPropertiesForKeys: nil,
-            options: [.skipsHiddenFiles]
-        ) else {
+        let contents: [URL]
+        do {
+            contents = try fileManager.contentsOfDirectory(
+                at: temporaryDirectory,
+                includingPropertiesForKeys: nil,
+                options: [.skipsHiddenFiles]
+            )
+        } catch {
+            log.error("Failed to enumerate stale favicon test directories: \(error.localizedDescription, privacy: .public)")
             return
         }
 
@@ -86,7 +100,11 @@ private enum SumiFaviconPersistence {
             else {
                 continue
             }
-            try? fileManager.removeItem(at: directory)
+            do {
+                try fileManager.removeItem(at: directory)
+            } catch {
+                log.error("Failed to remove stale favicon test directory \(directory.path, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            }
         }
     }
 
@@ -105,18 +123,25 @@ private enum SumiFaviconPersistence {
     private static func removeCurrentTestDirectory() {
         let directory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
             .appendingPathComponent("SumiFavicons-\(ProcessInfo.processInfo.processIdentifier)", isDirectory: true)
-        try? FileManager.default.removeItem(at: directory)
+        do {
+            try FileManager.default.removeItem(at: directory)
+        } catch {
+            log.error("Failed to remove current favicon test directory \(directory.path, privacy: .public): \(error.localizedDescription, privacy: .public)")
+        }
     }
 }
 
 @MainActor
-final class SumiFaviconSystem {
-    static let shared = SumiFaviconSystem()
+enum SumiFaviconProductionSystem {
+    static let current = SumiFaviconSystem()
+}
 
+@MainActor
+final class SumiFaviconSystem {
     let service: SumiFaviconService
     private var bookmarkHosts: Set<String> = []
 
-    private init() {
+    init() {
         service = SumiFaviconService(
             rootDirectory: SumiFaviconPersistence.directory(named: "Favicons/v2")
         )

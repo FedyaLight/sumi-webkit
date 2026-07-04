@@ -42,13 +42,19 @@ final class SafariExtensionAccountForkDiagnosticsUserScript: NSObject, SumiUserS
     ) {
         guard message.name == Self.messageName else { return }
         let line: String
-        if let body = message.body as? [String: Any],
-           let data = try? JSONSerialization.data(
-               withJSONObject: body,
-               options: [.sortedKeys]
-           ),
-           let json = String(data: data, encoding: .utf8) {
-            line = json
+        if let body = message.body as? [String: Any] {
+            do {
+                let data = try JSONSerialization.data(
+                    withJSONObject: body,
+                    options: [.sortedKeys]
+                )
+                line = String(decoding: data, as: UTF8.self)
+            } catch {
+                RuntimeDiagnostics.debug(category: "ProtonForkDiagnostics") {
+                    "ProtonForkDiag encode failed: \(error.localizedDescription)"
+                }
+                line = String(describing: message.body)
+            }
         } else {
             line = String(describing: message.body)
         }

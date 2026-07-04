@@ -20,12 +20,12 @@ struct SumiUpdateSidebarNoticeView: View {
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(notice.title)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(SumiUpdateSidebarNoticeThemeTokens.Typography.title)
                         .foregroundStyle(.primary)
                         .lineLimit(1)
 
                     Text(notice.detail)
-                        .font(.system(size: 12))
+                        .font(SumiUpdateSidebarNoticeThemeTokens.Typography.detail)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
@@ -64,27 +64,28 @@ struct SumiUpdateSidebarNoticeView: View {
         .contentShape(RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous))
         .background(
             RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
-                .fill(Color(nsColor: .controlBackgroundColor).opacity(isHovering ? 0.94 : 0.86))
+                .fill(SumiUpdateSidebarNoticeThemeTokens.Colors.cardBackground(isHovering: isHovering))
         )
         .overlay(
             RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
-                .strokeBorder(Color.primary.opacity(isHovering ? 0.18 : 0.12), lineWidth: 1)
+                .strokeBorder(
+                    SumiUpdateSidebarNoticeThemeTokens.Colors.cardBorder(isHovering: isHovering),
+                    lineWidth: 1
+                )
         )
-        .shadow(color: Color.black.opacity(isHovering ? 0.10 : 0.06), radius: 8, x: 0, y: 2)
+        .shadow(
+            color: SumiUpdateSidebarNoticeThemeTokens.Colors.cardShadow(isHovering: isHovering),
+            radius: 8,
+            x: 0,
+            y: 2
+        )
         .onHover { isHovering = $0 }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(notice.title), \(notice.detail)")
     }
 
     private var symbolColor: Color {
-        switch notice.visualStyle {
-        case .accent, .progress:
-            return .accentColor
-        case .success:
-            return .green
-        case .warning:
-            return .yellow
-        }
+        SumiUpdateSidebarNoticeThemeTokens.Colors.symbol(for: notice.visualStyle)
     }
 }
 
@@ -93,7 +94,7 @@ private struct SumiUpdateSidebarStatusIcon: View {
 
     var body: some View {
         Image(systemName: notice.systemImageName)
-            .font(.system(size: 15, weight: .semibold))
+            .font(SumiUpdateSidebarNoticeThemeTokens.Typography.statusIcon)
             .symbolRenderingMode(.monochrome)
             .foregroundStyle(symbolColor)
             .frame(width: 26, height: 26)
@@ -109,14 +110,7 @@ private struct SumiUpdateSidebarStatusIcon: View {
     }
 
     private var symbolColor: Color {
-        switch notice.visualStyle {
-        case .accent, .progress:
-            return .accentColor
-        case .success:
-            return .green
-        case .warning:
-            return .yellow
-        }
+        SumiUpdateSidebarNoticeThemeTokens.Colors.symbol(for: notice.visualStyle)
     }
 }
 
@@ -127,20 +121,23 @@ private struct SumiUpdateSidebarDismissButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: "xmark")
-                .font(.system(size: 11, weight: .bold))
+                .font(SumiUpdateSidebarNoticeThemeTokens.Typography.dismissIcon)
                 .symbolRenderingMode(.monochrome)
                 .frame(width: 24, height: 24)
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
-        .foregroundStyle(Color.primary.opacity(isHovering ? 0.86 : 0.68))
+        .foregroundStyle(SumiUpdateSidebarNoticeThemeTokens.Colors.dismissForeground(isHovering: isHovering))
         .background(
             Circle()
-                .fill(Color.primary.opacity(isHovering ? 0.12 : 0.075))
+                .fill(SumiUpdateSidebarNoticeThemeTokens.Colors.dismissBackground(isHovering: isHovering))
         )
         .overlay(
             Circle()
-                .strokeBorder(Color.primary.opacity(isHovering ? 0.16 : 0.10), lineWidth: 1)
+                .strokeBorder(
+                    SumiUpdateSidebarNoticeThemeTokens.Colors.dismissBorder(isHovering: isHovering),
+                    lineWidth: 1
+                )
             .frame(width: 24, height: 24)
         )
         .help("Dismiss update notice")
@@ -156,7 +153,7 @@ struct SumiUpdateSidebarCompactIndicator: View {
     var body: some View {
         Button(action: onUpdate) {
             Image(systemName: notice.systemImageName)
-                .font(.system(size: 17, weight: .semibold))
+                .font(SumiUpdateSidebarNoticeThemeTokens.Typography.compactIcon)
                 .symbolRenderingMode(.monochrome)
                 .frame(width: 30, height: 30)
         }
@@ -176,13 +173,6 @@ struct SumiUpdateSidebarCompactIndicator: View {
     }
 
     private var symbolColor: Color {
-        switch notice.visualStyle {
-        case .accent, .progress:
-            return .accentColor
-        case .success:
-            return .green
-        case .warning:
-            return .yellow
-        }
+        SumiUpdateSidebarNoticeThemeTokens.Colors.symbol(for: notice.visualStyle)
     }
 }

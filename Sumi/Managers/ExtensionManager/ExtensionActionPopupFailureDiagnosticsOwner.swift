@@ -12,6 +12,11 @@ import WebKit
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionActionPopupFailureDiagnosticsOwner {
+    private enum ResourcesRootState {
+        case available(URL)
+        case resolutionFailed(Error)
+    }
+
     struct Dependencies {
         let installedExtensions: @MainActor () -> [InstalledExtension]
         let controllerExists: @MainActor (UUID) -> Bool
@@ -56,14 +61,9 @@ final class ExtensionActionPopupFailureDiagnosticsOwner {
            hasOriginalAppex == false {
             return .originalAppExtensionBundleMissing
         }
-        let resourcesRoot = try? dependencies.extensionResourcesRoot(
-            installed.sourceKind,
-            installed.packagePath,
-            installed.sourceBundlePath
+        let resourcesExist = resourcesExist(
+            for: resourcesRootState(for: installed)
         )
-        let resourcesExist = resourcesRoot.map {
-            FileManager.default.fileExists(atPath: $0.path)
-        } ?? false
         if resourcesExist == false {
             return .sourceResourcesMissing
         }
@@ -128,14 +128,8 @@ final class ExtensionActionPopupFailureDiagnosticsOwner {
                 sourceKind: installedExtension.sourceKind,
                 sourceBundlePath: installedExtension.sourceBundlePath
             ) != nil
-        let resourcesRoot = try? dependencies.extensionResourcesRoot(
-            installedExtension.sourceKind,
-            installedExtension.packagePath,
-            installedExtension.sourceBundlePath
-        )
-        let resourcesExist = resourcesRoot.map {
-            FileManager.default.fileExists(atPath: $0.path)
-        } ?? false
+        let resourcesRootState = resourcesRootState(for: installedExtension)
+        let resourcesExist = resourcesExist(for: resourcesRootState)
 
         var lines = [
             "failureBucket=\(failureBucket.rawValue)",
@@ -172,7 +166,38 @@ final class ExtensionActionPopupFailureDiagnosticsOwner {
             lines.append("webKitErrorDescription=\(nsError.localizedDescription)")
         }
 
+        if case .resolutionFailed(let error) = resourcesRootState {
+            let nsError = error as NSError
+            lines.append("sourceResourcesErrorDomain=\(nsError.domain)")
+            lines.append("sourceResourcesErrorCode=\(nsError.code)")
+            lines.append("sourceResourcesErrorDescription=\(nsError.localizedDescription)")
+        }
+
         return lines
+    }
+
+    private func resourcesRootState(
+        for installedExtension: InstalledExtension
+    ) -> ResourcesRootState {
+        do {
+            let resourcesRoot = try dependencies.extensionResourcesRoot(
+                installedExtension.sourceKind,
+                installedExtension.packagePath,
+                installedExtension.sourceBundlePath
+            )
+            return .available(resourcesRoot)
+        } catch {
+            return .resolutionFailed(error)
+        }
+    }
+
+    private func resourcesExist(for state: ResourcesRootState) -> Bool {
+        switch state {
+        case .available(let resourcesRoot):
+            return FileManager.default.fileExists(atPath: resourcesRoot.path)
+        case .resolutionFailed:
+            return false
+        }
     }
 }
 

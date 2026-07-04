@@ -58,6 +58,9 @@ enum TabBrowserNavigationRuntimeFactory {
             protectionCoordinator: { [weak browserManager] in
                 browserManager?.protectionCoordinator
             },
+            browserConfiguration: { [weak browserManager] in
+                browserManager?.browserConfiguration
+            },
             runtimePermissionController: { [weak browserManager] in
                 browserManager?.permissionRuntime.runtimePermissionController
             }
@@ -318,6 +321,7 @@ extension TabReloadPolicyRuntime {
     static func live(
         extensionsModule: @escaping () -> SumiExtensionsModule?,
         protectionCoordinator: @escaping () -> SumiProtectionCoordinator?,
+        browserConfiguration: @escaping () -> BrowserConfiguration?,
         runtimePermissionController: @escaping () -> (any SumiRuntimePermissionControlling)?
     ) -> Self {
         Self(
@@ -357,6 +361,12 @@ extension TabReloadPolicyRuntime {
                     webViewRebuildDuration: context.webViewRebuildDuration,
                     urlHubSummaryDuration: context.urlHubSummaryDuration
                 )
+            },
+            autoplayPolicy: { url, profile in
+                guard let profile,
+                      let browserConfiguration = browserConfiguration()
+                else { return .default }
+                return browserConfiguration.resolvedAutoplayPolicy(for: url, profile: profile)
             },
             evaluateAutoplayPolicyChange: { requestedState, webView in
                 runtimePermissionController()?.evaluateAutoplayPolicyChange(

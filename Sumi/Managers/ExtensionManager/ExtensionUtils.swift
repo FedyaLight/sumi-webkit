@@ -7,6 +7,7 @@
 
 import CryptoKit
 import Foundation
+import OSLog
 import WebKit
 
 enum WebExtensionManifestValidationPolicy: Equatable, Sendable {
@@ -26,6 +27,8 @@ enum WebExtensionManifestValidationPolicy: Equatable, Sendable {
 }
 
 struct ExtensionUtils {
+    private static let log = Logger.sumi(category: "Extensions")
+
     static let extensionOwnedURLSchemes: Set<String> = [
         "webkit-extension",
         "safari-web-extension",
@@ -169,21 +172,28 @@ struct ExtensionUtils {
             SumiAppIdentity.runtimeBundleIdentifier,
             isDirectory: true
         )
-        try? FileManager.default.createDirectory(
-            at: root,
-            withIntermediateDirectories: true
-        )
+        createDirectoryIfNeeded(at: root)
         return root
     }
 
     static func extensionsDirectory() -> URL {
         let directory = applicationSupportRoot()
             .appendingPathComponent("Extensions", isDirectory: true)
-        try? FileManager.default.createDirectory(
-            at: directory,
-            withIntermediateDirectories: true
-        )
+        createDirectoryIfNeeded(at: directory)
         return directory
+    }
+
+    private static func createDirectoryIfNeeded(at directory: URL) {
+        do {
+            try FileManager.default.createDirectory(
+                at: directory,
+                withIntermediateDirectories: true
+            )
+        } catch {
+            log.error(
+                "Failed to create extension support directory \(directory.path, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
+        }
     }
 
     @discardableResult
@@ -291,8 +301,11 @@ struct ExtensionUtils {
             withJSONObject: object,
             options: [.prettyPrinted, .sortedKeys]
         )
-        if let existing = try? Data(contentsOf: url), existing == data {
-            return false
+        if FileManager.default.fileExists(atPath: url.path) {
+            let existing = try Data(contentsOf: url)
+            if existing == data {
+                return false
+            }
         }
         try data.write(to: url, options: [.atomic])
         return true
@@ -313,10 +326,18 @@ struct ExtensionUtils {
         }
 
         let preferredLocales = preferredLocaleDirectoryNames()
-        let candidateDirectories = (try? FileManager.default.contentsOfDirectory(
-            at: localesRoot,
-            includingPropertiesForKeys: nil
-        )) ?? []
+        let candidateDirectories: [URL]
+        do {
+            candidateDirectories = try FileManager.default.contentsOfDirectory(
+                at: localesRoot,
+                includingPropertiesForKeys: nil
+            )
+        } catch {
+            log.error(
+                "Failed to read extension locales directory \(localesRoot.path, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
+            return nil
+        }
 
         let localeDirectory = preferredLocales.lazy.compactMap { candidate in
             candidateDirectories.first {
@@ -326,7 +347,13 @@ struct ExtensionUtils {
 
         guard let directory = localeDirectory else { return nil }
         let messagesURL = directory.appendingPathComponent("messages.json")
-        guard let messages = try? loadJSONObject(at: messagesURL) else {
+        let messages: [String: Any]
+        do {
+            messages = try loadJSONObject(at: messagesURL)
+        } catch {
+            log.error(
+                "Failed to read extension locale messages \(messagesURL.path, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
             return nil
         }
 
@@ -356,10 +383,14 @@ struct ExtensionUtils {
     }
 
     static func fingerprint(fileAt url: URL) -> String {
-        guard let data = try? Data(contentsOf: url) else {
+        do {
+            return try fingerprint(data: Data(contentsOf: url))
+        } catch {
+            log.error(
+                "Failed to fingerprint extension file \(url.path, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
             return fingerprint(string: url.path)
         }
-        return fingerprint(data: data)
     }
 
     static func normalizePathFingerprint(_ url: URL) -> String {
@@ -587,13 +618,19 @@ struct ExtensionUtils {
         ) else {
             return nil
         }
-        guard
-            let validatedURL = try? validatedExtensionPageURL(
+        let validatedURL: URL
+        do {
+            validatedURL = try validatedExtensionPageURL(
                 candidateURL,
                 within: extensionRoot
-            ),
-            FileManager.default.fileExists(atPath: validatedURL.path)
-        else {
+            )
+        } catch {
+            log.error(
+                "Rejected extension options page path \(trimmedPath, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
+            return nil
+        }
+        guard FileManager.default.fileExists(atPath: validatedURL.path) else {
             return nil
         }
 

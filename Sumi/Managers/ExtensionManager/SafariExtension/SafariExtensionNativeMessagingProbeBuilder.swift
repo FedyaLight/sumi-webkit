@@ -205,23 +205,18 @@ enum SafariExtensionNativeMessagingProbeBuilder {
         #if DEBUG || SUMI_DIAGNOSTICS
             guard RuntimeDiagnostics.isVerboseEnabled else { return }
 
-            let encoder = JSONEncoder()
-            encoder.dateEncodingStrategy = .iso8601
-            encoder.outputFormatting = [.sortedKeys, .prettyPrinted]
-            guard let data = try? encoder.encode(report),
-                  let json = String(data: data, encoding: .utf8)
-            else {
+            do {
+                let json = try SafariExtensionDiagnosticJSON.prettyPrintedString(report)
                 RuntimeDiagnostics.debug(
-                    "SafariExtensionNativeMessagingProbe encode failed",
+                    "SafariExtensionNativeMessagingProbe \(json)",
                     category: "SafariNativeMessaging"
                 )
-                return
+            } catch {
+                RuntimeDiagnostics.debug(
+                    "SafariExtensionNativeMessagingProbe encode failed: \(error.localizedDescription)",
+                    category: "SafariNativeMessaging"
+                )
             }
-
-            RuntimeDiagnostics.debug(
-                "SafariExtensionNativeMessagingProbe \(json)",
-                category: "SafariNativeMessaging"
-            )
         #else
             _ = report
         #endif

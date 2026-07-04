@@ -4,6 +4,7 @@
 //
 
 import AppKit
+import OSLog
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -19,6 +20,8 @@ struct SumiDataRecoveryActions {
 }
 
 struct SumiDataRecoverySettingsPane: View {
+    private static let log = Logger.sumi(category: "DataRecovery")
+
     let actions: SumiDataRecoveryActions
     @State private var importPreview: SumiImportPreview?
     @State private var selectedCategories: Set<SumiImportCategory> = []
@@ -264,7 +267,15 @@ struct SumiDataRecoverySettingsPane: View {
         ).first else { return }
         let bundleId = SumiAppIdentity.runtimeBundleIdentifier
         let target = support.appendingPathComponent(bundleId, isDirectory: true)
-        try? FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+        do {
+            try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+        } catch {
+            Self.log.error(
+                "Failed to create data recovery folder at \(target.path, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
+            statusMessage = "Could not reveal data folder: \(error.localizedDescription)"
+            return
+        }
         NSWorkspace.shared.activateFileViewerSelecting([target])
     }
 

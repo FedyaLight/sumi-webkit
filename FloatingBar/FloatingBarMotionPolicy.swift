@@ -67,18 +67,18 @@ struct FloatingBarLocalVignetteModifier: ViewModifier {
     func body(content: Content) -> some View {
         if reduceTransparency {
             content
-                .shadow(color: Color.black.opacity(0.165), radius: 16, x: 0, y: 8)
+                .shadow(color: FloatingBarThemeTokens.Colors.reducedTransparencyShadow, radius: 16, x: 0, y: 8)
         } else {
             switch chromeScheme {
             case .light:
                 content
-                    .shadow(color: Color.black.opacity(0.16), radius: 23, x: 0, y: 10)
+                    .shadow(color: FloatingBarThemeTokens.Colors.localVignetteLightShadow, radius: 23, x: 0, y: 10)
             case .dark:
                 content
-                    .shadow(color: Color.black.opacity(0.30), radius: 22, x: 0, y: 10)
+                    .shadow(color: FloatingBarThemeTokens.Colors.localVignetteDarkShadow, radius: 22, x: 0, y: 10)
             @unknown default:
                 content
-                    .shadow(color: Color.black.opacity(0.14), radius: 22, x: 0, y: 10)
+                    .shadow(color: FloatingBarThemeTokens.Colors.localVignetteFallbackShadow, radius: 22, x: 0, y: 10)
             }
         }
     }

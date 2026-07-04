@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import OSLog
 
 enum UserScriptZipUtilError: LocalizedError {
     case dittoFailed(Int32, String)
@@ -23,12 +24,22 @@ enum UserScriptZipUtilError: LocalizedError {
 
 enum UserScriptZipUtil {
     private static let ditto = "/usr/bin/ditto"
+    private static let log = Logger.sumi(category: "SumiScripts")
 
     static func zipFolder(_ sourceFolder: URL, to zipURL: URL) throws {
         guard FileManager.default.fileExists(atPath: ditto) else {
             throw UserScriptZipUtilError.missingDitto
         }
-        try? FileManager.default.removeItem(at: zipURL)
+        if FileManager.default.fileExists(atPath: zipURL.path) {
+            do {
+                try FileManager.default.removeItem(at: zipURL)
+            } catch {
+                log.error(
+                    "Failed to remove existing userscript backup archive at \(zipURL.path, privacy: .public): \(error.localizedDescription, privacy: .public)"
+                )
+                throw error
+            }
+        }
         let p = Process()
         p.executableURL = URL(fileURLWithPath: ditto)
         p.arguments = ["-c", "-k", "--sequesterRsrc", sourceFolder.path, zipURL.path]

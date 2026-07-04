@@ -108,7 +108,10 @@ final class DownloadManager: ObservableObject {
                 )
                 return Result<URL, Error>.success(finalURL)
             } catch {
-                try? FileManager.default.removeItem(at: tempURL)
+                DownloadFileUtilities.removeItemIfPresent(
+                    at: tempURL,
+                    context: "remove failed data download temp file"
+                )
                 return Result<URL, Error>.failure(error)
             }
         }
@@ -179,7 +182,7 @@ final class DownloadManager: ObservableObject {
         Task { @MainActor [weak self] in
             let result = await moveTask.value
             if case .success(let finalURL) = result {
-                let byteCount = (try? finalURL.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init)
+                let byteCount = DownloadFileUtilities.fileSize(for: finalURL)
                 progress?.markCompleted(byteCount: byteCount)
                 if let progress {
                     self?.coordinator.didUpdateProgress(progress, for: item)

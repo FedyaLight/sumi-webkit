@@ -70,7 +70,8 @@ struct SumiApp: App {
             SumiCommands(
                 browserContext: makeCommandsBrowserContext(),
                 windowRegistry: windowRegistry,
-                shortcutManager: keyboardShortcutManager
+                shortcutManager: keyboardShortcutManager,
+                updaterService: updaterService
             )
         }
     }
@@ -125,7 +126,10 @@ struct SumiApp: App {
 
     private func makeCommandsBrowserContext() -> SumiCommandsBrowserContext {
         SumiCommandsBrowserContext(
-            runtime: .live(browserManager: browserManager)
+            runtime: .live(
+                browserManager: browserManager,
+                defaultBrowserService: defaultBrowserService
+            )
         )
     }
 

@@ -61,6 +61,7 @@ final class BrowserManagerPermissionRuntime {
     let permissionCoordinator: any SumiPermissionCoordinating
     let geolocationProvider: (any SumiGeolocationProviding)?
     let runtimePermissionController: any SumiRuntimePermissionControlling
+    let autoplayStore: SumiAutoplayPolicyStoreAdapter
     let permissionRecentActivityStore: SumiPermissionRecentActivityStore
     let permissionSiteActivityStore: SumiPermissionSiteActivityStore
     let permissionCleanupService: SumiPermissionCleanupService
@@ -149,6 +150,7 @@ final class BrowserManagerPermissionRuntime {
         self.permissionCoordinator = permissionCoordinator
         self.geolocationProvider = geolocationProvider
         self.runtimePermissionController = runtimePermissionController
+        self.autoplayStore = dependencies.browserConfiguration.resolvedAutoplayPolicyStore
         self.permissionRecentActivityStore = permissionRecentActivityStore
         self.permissionSiteActivityStore = dependencies.permissionSiteActivityStore
         self.permissionCleanupService = permissionCleanupService

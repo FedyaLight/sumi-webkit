@@ -158,23 +158,18 @@ enum SafariExtensionRuntimeDiagnosticsBuilder {
         #if DEBUG || SUMI_DIAGNOSTICS
             guard RuntimeDiagnostics.isVerboseEnabled else { return }
 
-            let encoder = JSONEncoder()
-            encoder.dateEncodingStrategy = .iso8601
-            encoder.outputFormatting = [.sortedKeys, .prettyPrinted]
-            guard let data = try? encoder.encode(report),
-                  let json = String(data: data, encoding: .utf8)
-            else {
+            do {
+                let json = try SafariExtensionDiagnosticJSON.prettyPrintedString(report)
                 RuntimeDiagnostics.debug(
-                    "SafariExtensionRuntimeDiagnosticReport encode failed",
+                    "SafariExtensionRuntimeDiagnosticReport \(json)",
                     category: "SafariExtension"
                 )
-                return
+            } catch {
+                RuntimeDiagnostics.debug(
+                    "SafariExtensionRuntimeDiagnosticReport encode failed: \(error.localizedDescription)",
+                    category: "SafariExtension"
+                )
             }
-
-            RuntimeDiagnostics.debug(
-                "SafariExtensionRuntimeDiagnosticReport \(json)",
-                category: "SafariExtension"
-            )
         #else
             _ = report
         #endif
@@ -605,8 +600,18 @@ enum SafariExtensionPasswordManagerFormFixtureProbe {
         let basicURL = repoRoot.appendingPathComponent(
             "SumiTests/Fixtures/AutofillPages/login-basic.html"
         )
-        guard let contents = try? String(contentsOf: basicURL, encoding: .utf8),
-              contents.contains("type=\"password\""),
+
+        let contents: String
+        do {
+            contents = try String(contentsOf: basicURL, encoding: .utf8)
+        } catch {
+            return Result(
+                passed: false,
+                detail: "Could not read login-basic.html: \(error.localizedDescription)"
+            )
+        }
+
+        guard contents.contains("type=\"password\""),
               contents.contains("autocomplete=\"username\"")
         else {
             return Result(
@@ -677,10 +682,6 @@ extension SumiExtensionsModule {
         let runtime = safariExtensionRuntimeDiagnosticReport()
         let nativeMessaging = safariExtensionNativeMessagingProbe()
 
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        encoder.outputFormatting = [.sortedKeys, .prettyPrinted]
-
         struct DevReport: Codable {
             let acceptanceMatrix: SafariExtensionAcceptanceMatrix
             let runtimeDiagnostics: SafariExtensionRuntimeDiagnosticReport
@@ -695,14 +696,12 @@ extension SumiExtensionsModule {
             adapterCompatibility: nativeMessaging.adapterCompatibility
         )
 
-        guard let data = try? encoder.encode(report),
-              let json = String(data: data, encoding: .utf8)
-        else {
-            print("SafariExtensionDevDiagnosticsReport: encode failed")
-            return
+        do {
+            let json = try SafariExtensionDiagnosticJSON.prettyPrintedString(report)
+            print("SafariExtensionDevDiagnosticsReport:\n\(json)")
+        } catch {
+            print("SafariExtensionDevDiagnosticsReport: encode failed: \(error.localizedDescription)")
         }
-
-        print("SafariExtensionDevDiagnosticsReport:\n\(json)")
         SafariExtensionRuntimeDiagnosticsBuilder.logIfDiagnosticsEnabled(runtime)
     }
     #endif

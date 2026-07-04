@@ -74,7 +74,7 @@ struct SumiHistoryTabRootView: View {
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 28) {
             Text("History")
-                .font(.system(size: 26, weight: .semibold))
+                .font(SumiHistoryTabTypography.sidebarTitle)
                 .foregroundStyle(tokens.primaryText)
                 .padding(.top, 4)
 
@@ -112,10 +112,10 @@ struct SumiHistoryTabRootView: View {
         } label: {
             HStack(spacing: 10) {
                 Image(systemName: iconName)
-                    .font(.system(size: 16, weight: .medium))
+                    .font(SumiHistoryTabTypography.navigationIcon)
                     .frame(width: 20, alignment: .center)
                 Text(title)
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(SumiHistoryTabTypography.navigationTitle)
                     .lineLimit(2)
                 Spacer()
             }
@@ -126,7 +126,7 @@ struct SumiHistoryTabRootView: View {
         .buttonStyle(.plain)
         .background(
             RoundedRectangle(cornerRadius: Layout.rowCornerRadius, style: .continuous)
-                .fill(isSelected ? selectionBackground : Color.clear)
+                .fill(isSelected ? selectionBackground : SumiHistoryTabColors.transparent)
         )
         .foregroundStyle(tokens.primaryText)
         .chromeCursor(.pointingHand)
@@ -264,7 +264,7 @@ struct SumiHistoryTabRootView: View {
                     }
                 } header: {
                     Text(section.title)
-                        .font(.system(size: 18, weight: .semibold))
+                        .font(SumiHistoryTabTypography.sectionTitle)
                         .foregroundStyle(tokens.primaryText)
                         .padding(.horizontal, 22)
                         .padding(.top, 20)
@@ -275,7 +275,7 @@ struct SumiHistoryTabRootView: View {
                     Divider()
                         .padding(.vertical, 20)
                 } else {
-                    Color.clear
+                    SumiHistoryTabColors.transparent
                         .frame(height: 18)
                 }
             }
@@ -298,7 +298,7 @@ struct SumiHistoryTabRootView: View {
     private var emptyState: some View {
         VStack(alignment: .center, spacing: 12) {
             Image(systemName: "clock.arrow.circlepath")
-                .font(.system(size: 42))
+                .font(SumiHistoryTabTypography.emptyStateIcon)
                 .foregroundStyle(tokens.secondaryText)
             Text("No History")
                 .font(.title3.weight(.semibold))
@@ -341,7 +341,7 @@ private struct HistoryRow: View {
                 rowMenuContent
             } label: {
                 Image(systemName: "ellipsis")
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(SumiHistoryTabTypography.rowMenuIcon)
                     .rotationEffect(.degrees(90))
                     .foregroundStyle(tokens.primaryText)
                     .frame(width: RowLayout.menuWidth, height: 28)
@@ -440,7 +440,7 @@ private struct HistoryRow: View {
 
             HStack(spacing: 8) {
                 Text(item.displayTitle)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(SumiHistoryTabTypography.rowTitle)
                     .lineLimit(1)
                     .foregroundStyle(tokens.primaryText)
                     .layoutPriority(2)
@@ -471,7 +471,7 @@ private struct HistoryRow: View {
         if viewModel.isSelected(item) {
             return themeContext.nativeSurfaceSelectionBackground
         }
-        return Color.clear
+        return SumiHistoryTabColors.transparent
     }
 }
 

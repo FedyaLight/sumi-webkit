@@ -29,7 +29,8 @@ final class BrowserAutomaticDataCleanupOwner {
         else { return nil }
         let repository = SumiPermissionSettingsRepository(
             permissionRuntime: permissionRuntime,
-            dataServices: dataServices
+            dataServices: dataServices,
+            autoplayStore: permissionRuntime.autoplayStore
         )
         return await repository.runAutomaticCleanupIfNeeded(
             profile: SumiPermissionSettingsProfileContext(profile: profile)

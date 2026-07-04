@@ -7,10 +7,13 @@
 
 import Darwin
 import Foundation
+import OSLog
 
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionControllerIdentifierOwner {
+    nonisolated private static let log = Logger.sumi(category: "Extensions")
+
     nonisolated private static let controllerIdentifierKey =
         "\(SumiAppIdentity.bundleIdentifier).WKWebExtensionController.Identifier"
     #if DEBUG
@@ -150,7 +153,19 @@ final class ExtensionControllerIdentifierOwner {
                 .appendingPathComponent(SumiAppIdentity.runtimeBundleIdentifier, isDirectory: true)
                 .appendingPathComponent("WebExtensions", isDirectory: true)
                 .appendingPathComponent(controllerIdentifier.uuidString.uppercased(), isDirectory: true)
-            try? FileManager.default.removeItem(at: storageURL)
+            do {
+                try FileManager.default.removeItem(at: storageURL)
+            } catch {
+                let nsError = error as NSError
+                guard nsError.domain != NSCocoaErrorDomain
+                    || nsError.code != NSFileNoSuchFileError
+                else {
+                    return
+                }
+                log.error(
+                    "Failed to remove test WebExtension controller storage at \(storageURL.path, privacy: .public): \(error.localizedDescription, privacy: .public)"
+                )
+            }
         }
     #endif
 }

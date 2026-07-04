@@ -155,10 +155,10 @@ struct SumiSettingsTabRootView: View {
         HStack(spacing: 7) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(.secondary)
-                .font(.system(size: 15, weight: .medium))
+                .font(SettingsTypography.searchIcon)
             TextField("Search", text: $searchText)
                 .textFieldStyle(.plain)
-                .font(.system(size: 14))
+                .font(SettingsTypography.searchField)
         }
         .padding(.vertical, 6)
         .padding(.horizontal, 10)
@@ -192,7 +192,7 @@ struct SumiSettingsTabRootView: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: 5) {
             Text(group.rawValue)
-                .font(.system(size: 11, weight: .semibold))
+                .font(SettingsTypography.sidebarSectionHeader)
                 .foregroundStyle(.secondary)
                 .textCase(.uppercase)
                 .padding(.horizontal, 10)
@@ -224,9 +224,9 @@ struct SumiSettingsTabRootView: View {
                 )
 
                 Text(descriptor.title)
-                    .font(.system(size: 14, weight: selected ? .semibold : .regular))
+                    .font(SettingsTypography.sidebarRowTitle(isSelected: selected))
                     .lineLimit(1)
-                    .foregroundStyle(selected ? Color.white : Color.primary)
+                    .foregroundStyle(selected ? SettingsSurfaceStyle.selectedNavigationForeground : Color.primary)
 
                 Spacer(minLength: 0)
             }
@@ -237,7 +237,7 @@ struct SumiSettingsTabRootView: View {
         .buttonStyle(.plain)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(selected ? Color.accentColor : Color.clear)
+                .fill(selected ? SettingsSurfaceStyle.selectedNavigationBackground : Color.clear)
         )
     }
 
@@ -285,7 +285,7 @@ struct SumiSettingsTabRootView: View {
         .buttonStyle(.plain)
         .background(
             Capsule(style: .continuous)
-                .fill(selected ? Color.accentColor.opacity(0.16) : SettingsSurfaceStyle.fieldBackground)
+                .fill(selected ? SettingsSurfaceStyle.compactSelectedNavigationBackground : SettingsSurfaceStyle.fieldBackground)
         )
         .foregroundStyle(.primary)
     }
@@ -335,7 +335,8 @@ struct SumiSettingsTabRootView: View {
             PrivacySettingsView(
                 repository: SumiPermissionSettingsRepository(
                     permissionRuntime: browserManager.permissionRuntime,
-                    dataServices: browserManager.dataServices
+                    dataServices: browserManager.dataServices,
+                    autoplayStore: browserManager.permissionRuntime.autoplayStore
                 ),
                 activeProfile: activePrivacyProfile
             )
@@ -426,11 +427,11 @@ private struct SettingsPaneIcon: View {
                 .fill(color.gradient)
 
             Image(systemName: systemImage)
-                .font(.system(size: imageSize, weight: .semibold))
-                .foregroundStyle(.white)
+                .font(SettingsTypography.paneIcon(size: imageSize))
+                .foregroundStyle(SettingsSurfaceStyle.paneIconForeground)
                 .symbolRenderingMode(.hierarchical)
         }
         .frame(width: size, height: size)
-        .shadow(color: .black.opacity(0.14), radius: 1.5, x: 0, y: 1)
+        .shadow(color: SettingsSurfaceStyle.paneIconShadow, radius: 1.5, x: 0, y: 1)
     }
 }

@@ -22,8 +22,12 @@ struct SumiPermissionRuntimeControlsView: View {
 
             if let result = model.lastResult {
                 Text(result.message)
-                    .font(.system(size: 11.5, weight: .medium))
-                    .foregroundStyle(result.isError ? Color.red.opacity(0.9) : tokens.secondaryText)
+                    .font(SumiPermissionRuntimeControlsThemeTokens.Typography.result)
+                    .foregroundStyle(
+                        result.isError
+                            ? SumiPermissionRuntimeControlsThemeTokens.DestructiveColors.result
+                            : tokens.secondaryText
+                    )
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityLabel(result.message)
             }
@@ -50,12 +54,12 @@ private struct SumiPermissionRuntimeControlRow: View {
             VStack(alignment: .leading, spacing: 6) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(control.title)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(SumiPermissionRuntimeControlsThemeTokens.Typography.rowTitle)
                         .foregroundStyle(tokens.primaryText)
                         .lineLimit(1)
 
                     Text(control.subtitle)
-                        .font(.system(size: 11.5))
+                        .font(SumiPermissionRuntimeControlsThemeTokens.Typography.rowSubtitle)
                         .foregroundStyle(tokens.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -92,7 +96,7 @@ private struct SumiPermissionRuntimeControlRow: View {
                     }
                 } else if let disabledReason = control.disabledReason {
                     Text(disabledReason)
-                        .font(.system(size: 11.5, weight: .medium))
+                        .font(SumiPermissionRuntimeControlsThemeTokens.Typography.disabledReason)
                         .foregroundStyle(tokens.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -145,7 +149,7 @@ private struct SumiPermissionRuntimeActionButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 11.5, weight: .medium))
+            .font(SumiPermissionRuntimeControlsThemeTokens.Typography.actionButton)
             .foregroundStyle(foregroundColor)
             .padding(.horizontal, 8)
             .frame(maxWidth: .infinity, minHeight: 27, alignment: .leading)
@@ -162,16 +166,16 @@ private struct SumiPermissionRuntimeActionButtonStyle: ButtonStyle {
 
     private var foregroundColor: Color {
         guard isDestructive else { return tokens.primaryText }
-        return Color.red.opacity(0.88)
+        return SumiPermissionRuntimeControlsThemeTokens.DestructiveColors.foreground
     }
 
     private func backgroundColor(isPressed: Bool) -> Color {
         if isDestructive {
             if isPressed {
-                return Color.red.opacity(0.16)
+                return SumiPermissionRuntimeControlsThemeTokens.DestructiveColors.pressedBackground
             }
             if isHovered {
-                return Color.red.opacity(0.12)
+                return SumiPermissionRuntimeControlsThemeTokens.DestructiveColors.hoveredBackground
             }
         }
         return ThemeChromeRecipeBuilder.urlBarPillFieldBackground(

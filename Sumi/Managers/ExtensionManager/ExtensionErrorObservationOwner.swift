@@ -151,20 +151,34 @@ final class ExtensionErrorObservationOwner {
                 return "{}"
             }
 
-            if JSONSerialization.isValidJSONObject(userInfo),
-               let data = try? JSONSerialization.data(withJSONObject: userInfo, options: [.sortedKeys]),
-               let string = String(data: data, encoding: .utf8) {
-                return string
+            if JSONSerialization.isValidJSONObject(userInfo) {
+                do {
+                    let data = try JSONSerialization.data(
+                        withJSONObject: userInfo,
+                        options: [.sortedKeys]
+                    )
+                    if let string = String(data: data, encoding: .utf8) {
+                        return string
+                    }
+                } catch {
+                    return "\(fallbackUserInfoDescription(userInfo)) jsonSerializationError=\(error.localizedDescription)"
+                }
             }
 
-            let parts = userInfo.keys.sorted().map { key in
-                "\(key)=\(String(describing: userInfo[key] ?? "nil"))"
-            }
-            return "{\(parts.joined(separator: ", "))}"
+            return fallbackUserInfoDescription(userInfo)
         #else
             _ = userInfo
             return "{}"
         #endif
+    }
+
+    nonisolated private static func fallbackUserInfoDescription(
+        _ userInfo: [String: Any]
+    ) -> String {
+        let parts = userInfo.keys.sorted().map { key in
+            "\(key)=\(String(describing: userInfo[key] ?? "nil"))"
+        }
+        return "{\(parts.joined(separator: ", "))}"
     }
 }
 

@@ -55,11 +55,11 @@ struct SumiScriptsPopupView: View {
     private var headerView: some View {
         HStack {
             Text("SumiScripts")
-                .font(.headline)
+                .font(SumiScriptsUITypography.popoverHeader)
             Spacer()
             Text("Enabled")
-                .font(.caption)
-                .foregroundColor(.secondary)
+                .font(SumiScriptsUITypography.popoverHeaderStatus)
+                .foregroundColor(SumiScriptsUIStyle.secondaryText)
         }
         .padding()
         .background(FloatingChromeSurfaceFill(.elevated))
@@ -68,14 +68,14 @@ struct SumiScriptsPopupView: View {
     private var disabledStateView: some View {
         VStack(spacing: 12) {
             Image(systemName: "power.circle")
-                .font(.system(size: 32))
-                .foregroundColor(.secondary)
+                .font(SumiScriptsUITypography.popoverStateIcon)
+                .foregroundColor(SumiScriptsUIStyle.secondaryText)
             Text("Manager is Disabled")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
+                .font(SumiScriptsUITypography.popoverStateTitle)
+                .foregroundColor(SumiScriptsUIStyle.secondaryText)
             Text("Enable to run userscripts on this page.")
-                .font(.caption)
-                .foregroundColor(.secondary)
+                .font(SumiScriptsUITypography.popoverStateCaption)
+                .foregroundColor(SumiScriptsUIStyle.secondaryText)
                 .multilineTextAlignment(.center)
         }
         .padding(.vertical, 40)
@@ -85,14 +85,14 @@ struct SumiScriptsPopupView: View {
     private var emptyStateView: some View {
         VStack(spacing: 12) {
             Image(systemName: "doc.text.magnifyingglass")
-                .font(.system(size: 32))
-                .foregroundColor(.secondary)
+                .font(SumiScriptsUITypography.popoverStateIcon)
+                .foregroundColor(SumiScriptsUIStyle.secondaryText)
             Text("No Scripts Found")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
+                .font(SumiScriptsUITypography.popoverStateTitle)
+                .foregroundColor(SumiScriptsUIStyle.secondaryText)
             Text(emptyStateDetailCaption)
-                .font(.caption)
-                .foregroundColor(.secondary)
+                .font(SumiScriptsUITypography.popoverStateCaption)
+                .foregroundColor(SumiScriptsUIStyle.secondaryText)
                 .multilineTextAlignment(.center)
         }
         .padding(.vertical, 40)
@@ -111,14 +111,14 @@ struct SumiScriptsPopupView: View {
     private var noHostURLStateView: some View {
         VStack(spacing: 12) {
             Image(systemName: "link.badge.plus")
-                .font(.system(size: 32))
-                .foregroundColor(.secondary)
+                .font(SumiScriptsUITypography.popoverStateIcon)
+                .foregroundColor(SumiScriptsUIStyle.secondaryText)
             Text("No Page URL")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
+                .font(SumiScriptsUITypography.popoverStateTitle)
+                .foregroundColor(SumiScriptsUIStyle.secondaryText)
             Text("Open an http(s) page to manage scripts for that site.")
-                .font(.caption)
-                .foregroundColor(.secondary)
+                .font(SumiScriptsUITypography.popoverStateCaption)
+                .foregroundColor(SumiScriptsUIStyle.secondaryText)
                 .multilineTextAlignment(.center)
         }
         .padding(.vertical, 40)
@@ -156,11 +156,11 @@ struct SumiScriptsPopupView: View {
                 NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: manager.scriptsDirectory.path)
             }) {
                 Label("Open Scripts Folder", systemImage: "folder")
-                    .font(.caption)
+                    .font(SumiScriptsUITypography.popoverStateCaption)
             }
             .buttonStyle(.plain)
             .padding(8)
-            .background(Color.primary.opacity(0.05))
+            .background(SumiScriptsUIStyle.footerButtonBackground)
             .cornerRadius(4)
 
             Spacer()
@@ -169,7 +169,7 @@ struct SumiScriptsPopupView: View {
                 manager.reloadScripts()
             }) {
                 Image(systemName: "arrow.clockwise")
-                    .font(.caption)
+                    .font(SumiScriptsUITypography.popoverStateCaption)
             }
             .buttonStyle(.plain)
             .help("Reload Scripts from Disk")
@@ -180,8 +180,8 @@ struct SumiScriptsPopupView: View {
 
     private func sectionHeader(_ title: String) -> some View {
         Text(title.uppercased())
-            .font(.system(size: 10, weight: .bold))
-            .foregroundColor(.secondary)
+            .font(SumiScriptsUITypography.popoverSectionHeader)
+            .foregroundColor(SumiScriptsUIStyle.secondaryText)
             .padding(.horizontal)
             .padding(.vertical, 6)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -263,22 +263,22 @@ struct ScriptRow: View {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(script.name)
-                        .font(.system(size: 13, weight: .medium))
+                        .font(SumiScriptsUITypography.popoverScriptTitle)
                     if let version = script.metadata.version {
                         Text("v\(version)")
-                            .font(.system(size: 10))
-                            .foregroundColor(.secondary)
+                            .font(SumiScriptsUITypography.popoverScriptVersion)
+                            .foregroundColor(SumiScriptsUIStyle.secondaryText)
                     }
                     if currentURL != nil, script.isEnabled == false {
                         switch manager.runMode {
                         case .strictOrigin:
                             Text("Off globally — enable here to allow on this site.")
-                                .font(.system(size: 9))
-                                .foregroundColor(.secondary)
+                                .font(SumiScriptsUITypography.popoverDisabledHint)
+                                .foregroundColor(SumiScriptsUIStyle.secondaryText)
                         case .alwaysMatch:
                             Text("Off globally — enable here to run on this page.")
-                                .font(.system(size: 9))
-                                .foregroundColor(.secondary)
+                                .font(SumiScriptsUITypography.popoverDisabledHint)
+                                .foregroundColor(SumiScriptsUIStyle.secondaryText)
                         }
                     }
                 }
@@ -302,11 +302,11 @@ struct ScriptRow: View {
                     }) {
                         HStack {
                             Text(caption)
-                                .font(.system(size: 12))
+                                .font(SumiScriptsUITypography.popoverCommandTitle)
                             Spacer()
                             Image(systemName: "chevron.right")
-                                .font(.system(size: 10))
-                                .foregroundColor(.secondary)
+                                .font(SumiScriptsUITypography.popoverCommandChevron)
+                                .foregroundColor(SumiScriptsUIStyle.secondaryText)
                         }
                         .padding(.horizontal, 24)
                         .padding(.vertical, 6)

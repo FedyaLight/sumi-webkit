@@ -54,7 +54,7 @@ struct SumiPermissionPromptView: View {
             .accessibilityHidden(true)
 
             Text(viewModel.title)
-                .font(.system(size: 15, weight: .semibold))
+                .font(SumiPermissionRuntimeControlsThemeTokens.Typography.promptTitle)
                 .foregroundStyle(tokens.primaryText)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
@@ -65,7 +65,7 @@ struct SumiPermissionPromptView: View {
                 viewModel.perform(.dismiss)
             } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(SumiPermissionRuntimeControlsThemeTokens.Typography.promptCloseIcon)
                     .frame(width: 24, height: 24)
             }
             .buttonStyle(.plain)
@@ -125,7 +125,11 @@ struct SumiPermissionPromptButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 13, weight: role == .primary ? .semibold : .medium))
+            .font(
+                SumiPermissionRuntimeControlsThemeTokens.Typography.promptButton(
+                    isPrimary: role == .primary
+                )
+            )
             .foregroundStyle(foregroundColor)
             .lineLimit(2)
             .multilineTextAlignment(.center)
@@ -150,7 +154,8 @@ struct SumiPermissionPromptButtonStyle: ButtonStyle {
         case .primary, .normal, .cancel:
             return tokens.primaryText
         case .destructive:
-            return Color.red.opacity(isEnabled ? 0.95 : 0.55)
+            return SumiPermissionRuntimeControlsThemeTokens.DestructiveColors
+                .promptForeground(isEnabled: isEnabled)
         }
     }
 
@@ -163,9 +168,13 @@ struct SumiPermissionPromptButtonStyle: ButtonStyle {
             return isHovering ? tokens.fieldBackgroundHover.opacity(0.94) : tokens.fieldBackgroundHover.opacity(0.82)
         case .destructive:
             if isPressed {
-                return Color.red.opacity(0.18)
+                return SumiPermissionRuntimeControlsThemeTokens.DestructiveColors
+                    .promptPressedBackground
             }
-            return isHovering ? Color.red.opacity(0.12) : tokens.fieldBackground
+            return isHovering
+                ? SumiPermissionRuntimeControlsThemeTokens.DestructiveColors
+                    .promptHoveredBackground
+                : tokens.fieldBackground
         case .normal, .cancel:
             if isPressed {
                 return tokens.fieldBackgroundHover.opacity(0.96)

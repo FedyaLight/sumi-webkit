@@ -39,7 +39,14 @@ enum SumiReaderModeService {
     }
 
     static func isReaderModeActive(on webView: WKWebView) async -> Bool {
-        (try? await readerModeSourceURL(on: webView)) != nil
+        do {
+            return try await readerModeSourceURL(on: webView) != nil
+        } catch {
+            RuntimeDiagnostics.debug(category: "ReaderMode") {
+                "Reader mode active probe failed: \(error.localizedDescription)"
+            }
+            return false
+        }
     }
 
     private static func readerModeSourceURL(on webView: WKWebView) async throws -> URL? {
@@ -93,10 +100,22 @@ enum SumiReaderModeService {
         applyReaderPresentation(tab: tab, sourceURL: sourceURL, title: title)
 
         Task { @MainActor [weak webView, weak tab] in
-            try? await Task.sleep(nanoseconds: 150_000_000)
-            guard let webView,
-                  (try? await readerModeSourceURL(on: webView)) == sourceURL
-            else {
+            do {
+                try await Task.sleep(nanoseconds: 150_000_000)
+            } catch {
+                return
+            }
+            guard let webView else {
+                return
+            }
+            do {
+                guard try await readerModeSourceURL(on: webView) == sourceURL else {
+                    return
+                }
+            } catch {
+                RuntimeDiagnostics.debug(category: "ReaderMode") {
+                    "Reader mode presentation reconciliation probe failed: \(error.localizedDescription)"
+                }
                 return
             }
             applyReaderPresentation(tab: tab, sourceURL: sourceURL, title: title)

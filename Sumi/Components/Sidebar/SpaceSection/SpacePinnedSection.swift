@@ -735,7 +735,7 @@ struct ShortcutSplitPlaceholderRow: View {
     var body: some View {
         HStack(spacing: 0) {
             Image(systemName: "rectangle.split.2x1")
-                .font(.system(size: SidebarRowLayout.faviconSize * 0.78, weight: .medium))
+                .font(SidebarThemeTokens.Typography.chromeTemplateIcon(size: SidebarRowLayout.faviconSize))
                 .symbolRenderingMode(.monochrome)
                 .foregroundStyle(tokens.primaryText)
                 .frame(width: SidebarRowLayout.faviconSize, height: SidebarRowLayout.faviconSize)
@@ -745,7 +745,7 @@ struct ShortcutSplitPlaceholderRow: View {
 
             SumiTabTitleLabel(
                 title: pin.preferredDisplayTitle,
-                font: .systemFont(ofSize: 13, weight: .medium),
+                font: SidebarThemeTokens.Typography.rowTitleNSFont,
                 textColor: tokens.primaryText,
                 trailingPadding: 0,
                 animated: false

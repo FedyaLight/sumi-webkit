@@ -30,7 +30,7 @@ extension UserScriptStore {
         let fm = FileManager.default
         let temp = fm.temporaryDirectory.appendingPathComponent("sumi-export-\(UUID().uuidString)", isDirectory: true)
         try fm.createDirectory(at: temp, withIntermediateDirectories: true)
-        defer { try? fm.removeItem(at: temp) }
+        defer { Self.removeTemporaryDirectory(temp, description: "userscript export staging") }
 
         let urls = try fm.contentsOfDirectory(at: scriptsDirectory, includingPropertiesForKeys: nil)
         for u in urls {
@@ -39,7 +39,9 @@ extension UserScriptStore {
                   name != "manifest.json"
             else { continue }
             let dest = temp.appendingPathComponent(name)
-            try? fm.removeItem(at: dest)
+            if fm.fileExists(atPath: dest.path) {
+                try fm.removeItem(at: dest)
+            }
             try fm.copyItem(at: u, to: dest)
         }
 
@@ -65,7 +67,7 @@ extension UserScriptStore {
         let fm = FileManager.default
         let temp = fm.temporaryDirectory.appendingPathComponent("sumi-import-\(UUID().uuidString)", isDirectory: true)
         try fm.createDirectory(at: temp, withIntermediateDirectories: true)
-        defer { try? fm.removeItem(at: temp) }
+        defer { Self.removeTemporaryDirectory(temp, description: "userscript import staging") }
 
         try UserScriptZipUtil.unzip(zipURL, to: temp)
 
@@ -201,5 +203,15 @@ extension UserScriptStore {
             if n == "violentmonkey" || n == "violentmonkey.json" { return u }
         }
         return nil
+    }
+
+    private static func removeTemporaryDirectory(_ url: URL, description: String) {
+        do {
+            try FileManager.default.removeItem(at: url)
+        } catch {
+            UserScriptBackupDiagnostics.log.error(
+                "Failed to remove \(description, privacy: .public) at \(url.path, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
+        }
     }
 }

@@ -119,7 +119,13 @@ enum SafariContentBlockerRuleLocator {
         let resourcesURL = appexURL
             .appendingPathComponent("Contents", isDirectory: true)
             .appendingPathComponent("Resources", isDirectory: true)
-        guard let urls = try? ruleJSONURLs(in: resourcesURL) else {
+        let urls: [URL]
+        do {
+            urls = try ruleJSONURLs(in: resourcesURL)
+        } catch {
+            RuntimeDiagnostics.debug(category: "SafariContentBlocker") {
+                "Content blocker resource fingerprint unavailable: \(error.localizedDescription)"
+            }
             return "resources-unavailable"
         }
         return resourceFingerprint(for: urls, relativeTo: resourcesURL)
@@ -148,8 +154,16 @@ enum SafariContentBlockerRuleLocator {
                 continue
             }
             guard url.pathExtension.lowercased() == "json" else { continue }
-            let values = try? url.resourceValues(forKeys: [.isRegularFileKey])
-            guard values?.isRegularFile == true else { continue }
+            let values: URLResourceValues
+            do {
+                values = try url.resourceValues(forKeys: [.isRegularFileKey])
+            } catch {
+                RuntimeDiagnostics.debug(category: "SafariContentBlocker") {
+                    "Skipping content blocker JSON candidate with unreadable resource values: path=\(displayPath(url, relativeTo: resourcesURL)) error=\(error.localizedDescription)"
+                }
+                continue
+            }
+            guard values.isRegularFile == true else { continue }
             urls.append(url)
         }
         return urls.sorted { $0.path < $1.path }
@@ -176,9 +190,16 @@ enum SafariContentBlockerRuleLocator {
     private static func resourceFingerprint(for urls: [URL], relativeTo root: URL) -> String {
         var hasher = SHA256()
         for url in urls {
-            hasher.update(data: Data(displayPath(url, relativeTo: root).utf8))
-            if let data = try? Data(contentsOf: url) {
+            let relativePath = displayPath(url, relativeTo: root)
+            hasher.update(data: Data(relativePath.utf8))
+            do {
+                let data = try Data(contentsOf: url)
                 hasher.update(data: data)
+            } catch {
+                RuntimeDiagnostics.debug(category: "SafariContentBlocker") {
+                    "Content blocker resource fingerprint marked unreadable file: path=\(relativePath) error=\(error.localizedDescription)"
+                }
+                hasher.update(data: Data("unreadable:\(relativePath)".utf8))
             }
         }
         let digest = hasher.finalize()

@@ -46,6 +46,13 @@ enum NativeMessagingStdioFraming {
         let jsonEnd = jsonStart + frameSize
         let json = buffer.subdata(in: jsonStart..<jsonEnd)
         buffer.removeSubrange(0..<jsonEnd)
-        return (try? JSONSerialization.jsonObject(with: json)) ?? NSNull()
+        do {
+            return try JSONSerialization.jsonObject(with: json)
+        } catch {
+            RuntimeDiagnostics.debug(category: "SafariNativeMessaging") {
+                "Malformed native messaging frame: bytes=\(frameSize) error=\(error.localizedDescription)"
+            }
+            return NSNull()
+        }
     }
 }

@@ -101,6 +101,21 @@ final class SumiFaviconV2DiscoveryTests: XCTestCase {
         XCTAssertEqual(candidates[1].purposes, [.maskable])
     }
 
+    func testManifestCandidatesReturnEmptyForInvalidManifestJSON() throws {
+        let manifestURL = try XCTUnwrap(URL(string: "https://example.com/app.webmanifest"))
+        let pageURL = try XCTUnwrap(URL(string: "https://example.com/"))
+        let data = Data(#"{ "icons": ["#.utf8)
+
+        let candidates = SumiWebAppManifestIconDiscovery.candidates(
+            from: data,
+            manifestURL: manifestURL,
+            pageURL: pageURL,
+            partition: .regular(nil)
+        )
+
+        XCTAssertTrue(candidates.isEmpty)
+    }
+
     func testAppleTouchAndRelativeDocumentLinksResolveAgainstBaseURL() throws {
         let pageURL = try XCTUnwrap(URL(string: "https://example.com/app/page"))
         let baseURL = try XCTUnwrap(URL(string: "https://cdn.example.com/assets/index.html"))

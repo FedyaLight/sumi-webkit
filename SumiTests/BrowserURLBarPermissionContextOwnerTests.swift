@@ -23,6 +23,7 @@ final class BrowserURLBarPermissionContextOwnerTests: XCTestCase {
         XCTAssertIdentical(loadDependencies.externalSchemeSessionStore, harness.externalSchemeStore)
         XCTAssertIdentical(loadDependencies.indicatorEventStore, harness.indicatorEventStore)
         XCTAssertIdentical(loadDependencies.siteActivityStore, harness.siteActivityStore)
+        XCTAssertIdentical(loadDependencies.autoplayStore as AnyObject, harness.autoplayStore)
         XCTAssertIdentical(
             try XCTUnwrap(loadDependencies.runtimeController) as AnyObject,
             harness.runtimeController
@@ -100,6 +101,7 @@ final class BrowserURLBarPermissionContextOwnerTests: XCTestCase {
         XCTAssertIdentical(context.hub.permissionDependencies.externalSchemeSessionStore, harness.externalSchemeStore)
         XCTAssertIdentical(context.hub.permissionDependencies.indicatorEventStore, harness.indicatorEventStore)
         XCTAssertIdentical(context.hub.permissionDependencies.siteActivityStore, harness.siteActivityStore)
+        XCTAssertIdentical(context.hub.permissionDependencies.autoplayStore as AnyObject, harness.autoplayStore)
     }
 
     private func makeHarness() throws -> Harness {
@@ -118,9 +120,12 @@ final class BrowserURLBarPermissionContextOwnerTests: XCTestCase {
         let siteActivityStore = try makeSiteActivityStore()
         let blockedPopupStore = SumiBlockedPopupStore()
         let externalSchemeStore = SumiExternalSchemeSessionStore()
+        let autoplayStore = SumiAutoplayPolicyStoreAdapter(modelContainer: container)
+        let browserConfiguration = BrowserConfiguration(autoplayPolicyStore: autoplayStore)
 
         let browserManager = BrowserManager(
             startupPersistence: BrowserManagerStartupPersistence(container: container),
+            browserConfiguration: browserConfiguration,
             systemPermissionService: systemPermissionService,
             permissionCoordinator: permissionCoordinator,
             runtimePermissionController: runtimeController,
@@ -137,7 +142,8 @@ final class BrowserURLBarPermissionContextOwnerTests: XCTestCase {
             indicatorEventStore: indicatorEventStore,
             siteActivityStore: siteActivityStore,
             blockedPopupStore: blockedPopupStore,
-            externalSchemeStore: externalSchemeStore
+            externalSchemeStore: externalSchemeStore,
+            autoplayStore: autoplayStore
         )
     }
 
@@ -230,4 +236,5 @@ private struct Harness {
     let siteActivityStore: SumiPermissionSiteActivityStore
     let blockedPopupStore: SumiBlockedPopupStore
     let externalSchemeStore: SumiExternalSchemeSessionStore
+    let autoplayStore: SumiAutoplayPolicyStoreAdapter
 }

@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import OSLog
 
 enum SumiAdblockNativeRuleBundleError: Error, LocalizedError, Equatable {
     case missingManifest(URL)
@@ -132,6 +133,8 @@ struct SumiAdblockNativeRuleBundleManifest: Codable, Equatable, Sendable {
 }
 
 struct SumiAdblockNativeRuleBundle: Sendable {
+    private static let log = Logger.sumi(category: "ContentBlocking")
+
     static let directoryName = "SumiAdblockBundle"
     static let manifestFileName = "manifest.json"
     static let requiredNativeCSSSafetyPolicyVersion = "sumi-native-css-safety/0.4"
@@ -145,6 +148,18 @@ struct SumiAdblockNativeRuleBundle: Sendable {
         fileManager: FileManager = .default
     ) -> URL? {
         guard let resourceURL = bundle.resourceURL else { return nil }
+        return bundledDirectoryURL(
+            for: profileId,
+            resourceURL: resourceURL,
+            fileManager: fileManager
+        )
+    }
+
+    static func bundledDirectoryURL(
+        for profileId: String,
+        resourceURL: URL,
+        fileManager: FileManager = .default
+    ) -> URL? {
         let candidates = [
             resourceURL
                 .appendingPathComponent("SumiAdblockBundles", isDirectory: true)
@@ -157,13 +172,25 @@ struct SumiAdblockNativeRuleBundle: Sendable {
                 .appendingPathComponent(directoryName, isDirectory: true),
         ]
 
-        return candidates.first { candidate in
+        for candidate in candidates {
             let manifestURL = candidate.appendingPathComponent(manifestFileName)
-            guard fileManager.fileExists(atPath: manifestURL.path),
-                  let bundle = try? SumiAdblockNativeRuleBundle.load(directoryURL: candidate, fileManager: fileManager)
-            else { return false }
-            return bundle.manifest.profileId == profileId
+            guard fileManager.fileExists(atPath: manifestURL.path) else { continue }
+
+            do {
+                let bundle = try SumiAdblockNativeRuleBundle.load(
+                    directoryURL: candidate,
+                    fileManager: fileManager
+                )
+                guard bundle.manifest.profileId == profileId else { continue }
+                return candidate
+            } catch {
+                log.error(
+                    "Embedded Adblock bundle candidate failed to load at \(candidate.path, privacy: .public): \(error.localizedDescription, privacy: .public)"
+                )
+            }
         }
+
+        return nil
     }
 
     static func load(
@@ -371,7 +398,7 @@ struct SumiAdblockNativeRuleBundle: Sendable {
         }
         let data = try Data(contentsOf: url)
 #if DEBUG
-        SumiProtectionStartupRestoreDiagnostics.shared.recordShardJSONRead(
+        SumiProtectionStartupRestoreDiagnosticsDefaults.recorder.recordShardJSONRead(
             identifier: shard.webKitIdentifier,
             path: url.path,
             byteCount: data.count,

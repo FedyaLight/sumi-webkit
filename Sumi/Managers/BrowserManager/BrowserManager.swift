@@ -29,6 +29,7 @@ class BrowserManager: ObservableObject {
     let moduleRegistry: SumiModuleRegistry
     let adBlockingModule: SumiAdBlockingModule
     let protectionCoordinator: SumiProtectionCoordinator
+    let adblockZapperStore: SumiAdblockZapperStore
     let extensionsModule: SumiExtensionsModule
     let userscriptsModule: SumiUserscriptsModule
     let boostsModule: SumiBoostsModule
@@ -54,6 +55,7 @@ class BrowserManager: ObservableObject {
     var splitManager: SplitViewManager
     var workspaceThemeCoordinator: WorkspaceThemeCoordinator
     var findManager: FindManager
+    let browserConfiguration: BrowserConfiguration
     let dataServices: BrowserManagerDataServices
     let browsingDataCleanupService: SumiBrowsingDataCleanupService
     let permissionRuntime: BrowserManagerPermissionRuntime
@@ -378,6 +380,7 @@ class BrowserManager: ObservableObject {
         // Explicit injection seams keep module-boundary tests focused without constructing optional runtimes at startup.
         adBlockingModule: SumiAdBlockingModule? = nil,
         protectionCoordinator: SumiProtectionCoordinator? = nil,
+        adblockZapperStore: SumiAdblockZapperStore? = nil,
         extensionsModule: SumiExtensionsModule? = nil,
         userscriptsModule: SumiUserscriptsModule? = nil,
         boostsModule: SumiBoostsModule? = nil,
@@ -418,14 +421,22 @@ class BrowserManager: ObservableObject {
         self.protectionCoordinator = protectionCoordinator
             ?? SumiProtectionCoordinator(
                 settings: SumiProtectionSettings(userDefaults: moduleRegistry.userDefaults),
-                adBlockingModule: resolvedAdBlockingModule
+                adBlockingModule: resolvedAdBlockingModule,
+                bundleUpdateStatusStore: SumiProtectionBundleUpdateStatusStore(
+                    userDefaults: moduleRegistry.userDefaults
+                )
             )
+        self.adblockZapperStore = adblockZapperStore
+            ?? SumiAdblockZapperStore(userDefaults: moduleRegistry.userDefaults)
         self.userscriptsModule = userscriptsModule
             ?? SumiUserscriptsModule(
                 moduleRegistry: moduleRegistry,
                 context: startupModelContext
             )
-        self.boostsModule = boostsModule ?? SumiBoostsModule(moduleRegistry: moduleRegistry)
+        self.boostsModule = boostsModule ?? SumiBoostsModule(
+            moduleRegistry: moduleRegistry,
+            storeFactory: { SumiBoostStore() }
+        )
         self.startupWorkspaceTheme = StartupWorkspaceThemeResolver.resolve(
             lastWindowSessionKey: Self.lastWindowSessionKey,
             modelContext: startupModelContext
@@ -443,6 +454,7 @@ class BrowserManager: ObservableObject {
             ?? SumiExtensionsModule(
                 moduleRegistry: moduleRegistry,
                 context: startupModelContext,
+                browserConfiguration: browserConfiguration,
                 initialProfileProvider: { initialProfile }
             )
 
@@ -477,6 +489,7 @@ class BrowserManager: ObservableObject {
         self.splitManager = SplitViewManager()
         self.workspaceThemeCoordinator = WorkspaceThemeCoordinator()
         self.findManager = FindManager()
+        self.browserConfiguration = browserConfiguration
         self.dataServices = resolvedDataServices
         self.browsingDataCleanupService = resolvedDataServices.browsingDataCleanupService
         self.nativeNowPlayingController = nowPlayingController

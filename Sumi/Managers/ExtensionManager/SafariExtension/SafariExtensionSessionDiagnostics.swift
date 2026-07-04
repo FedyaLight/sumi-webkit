@@ -233,12 +233,17 @@ enum SafariExtensionSessionDiagnosticsBuilder {
 
     static func logIfDiagnosticsEnabled(_ diagnostic: SafariExtensionSessionDiagnostic) {
         guard RuntimeDiagnostics.isVerboseEnabled else { return }
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys]
-        encoder.dateEncodingStrategy = .iso8601
-        guard let data = try? encoder.encode(diagnostic),
-              let json = String(data: data, encoding: .utf8)
-        else {
+        let json: String
+        do {
+            json = try SafariExtensionDiagnosticJSON.encodedString(
+                diagnostic,
+                dateEncodingStrategy: .iso8601
+            )
+        } catch {
+            RuntimeDiagnostics.debug(
+                "SafariExtensionSessionDiagnostic encode failed: \(error.localizedDescription)",
+                category: "Extensions"
+            )
             return
         }
         RuntimeDiagnostics.debug(

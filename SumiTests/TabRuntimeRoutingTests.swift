@@ -426,6 +426,7 @@ final class TabRuntimeRoutingTests: XCTestCase {
             protectionAttachmentState: { _ in protectionState },
             protectionSurfaceHost: { _ in "example.com" },
             protectionCurrentTabDiagnostics: { _ in nil },
+            autoplayPolicy: { _, _ in .default },
             evaluateAutoplayPolicyChange: { _, _ in .noOp }
         )
 

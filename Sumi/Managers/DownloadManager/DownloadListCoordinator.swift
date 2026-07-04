@@ -186,9 +186,9 @@ final class DownloadListCoordinator {
         item.fileName = finalURL.lastPathComponent
         item.completedUnitCount = max(item.completedUnitCount, item.totalUnitCount)
         if item.totalUnitCount <= 0,
-           let size = try? finalURL.resourceValues(forKeys: [.fileSizeKey]).fileSize {
-            item.totalUnitCount = Int64(size)
-            item.completedUnitCount = Int64(size)
+           let size = DownloadFileUtilities.fileSize(for: finalURL) {
+            item.totalUnitCount = size
+            item.completedUnitCount = size
         }
         item.state = .completed
         item.error = nil
@@ -273,7 +273,10 @@ final class DownloadListCoordinator {
             preference: settings?.downloadsDestinationPreference
                 ?? SumiDownloadDestinationPreference(alwaysAskWhereToSave: false, customDirectoryURL: nil)
         )
-        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        DownloadFileUtilities.ensureDirectoryExists(
+            directory,
+            context: "reserved download destination"
+        )
 
         let cleanName = DownloadFileUtilities.sanitizedFilename(filename)
         let desired = directory.appendingPathComponent(cleanName)
@@ -326,7 +329,10 @@ final class DownloadListCoordinator {
 
     private func cleanupTemporaryFile(for item: DownloadItem) {
         guard !item.isActive, item.state != .completed, let tempURL = item.tempURL else { return }
-        try? FileManager.default.removeItem(at: tempURL)
+        DownloadFileUtilities.removeItemIfPresent(
+            at: tempURL,
+            context: "remove inactive download temp file"
+        )
     }
 
     private func notify() {

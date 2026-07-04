@@ -1,8 +1,10 @@
 import Foundation
+import OSLog
 
 @MainActor
 final class SumiBackupService {
     private static let maxAutomaticPreRestoreBackups = 5
+    private static let log = Logger.sumi(category: "ImportExport")
 
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
@@ -98,7 +100,13 @@ final class SumiBackupService {
             .sorted { $0.lastPathComponent > $1.lastPathComponent }
 
         for stale in automaticBackups.dropFirst(limit) {
-            try? FileManager.default.removeItem(at: stale)
+            do {
+                try FileManager.default.removeItem(at: stale)
+            } catch {
+                Self.log.error(
+                    "Failed to prune stale pre-restore backup at \(stale.path, privacy: .public): \(error.localizedDescription, privacy: .public)"
+                )
+            }
         }
     }
 }

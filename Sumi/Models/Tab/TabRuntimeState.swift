@@ -309,11 +309,13 @@ struct TabNormalWebViewExtensionRuntime {
     var registerTabWithExtensionRuntimeIfNeeded: (Tab, String) -> Void
     var prepareWebViewForExtensionRuntime: (WKWebView, URL?, String) -> Void
     var ensureInitialExtensionContextsIfNeeded: (UUID) async -> Void
+    var pageContextMenuItems: (Tab) -> [NSMenuItem] = { _ in [] }
 
     static let inactive = Self(
         registerTabWithExtensionRuntimeIfNeeded: { _, _ in /* No-op. */ },
         prepareWebViewForExtensionRuntime: { _, _, _ in /* No-op. */ },
-        ensureInitialExtensionContextsIfNeeded: { _ in /* No-op. */ }
+        ensureInitialExtensionContextsIfNeeded: { _ in /* No-op. */ },
+        pageContextMenuItems: { _ in [] }
     )
 }
 

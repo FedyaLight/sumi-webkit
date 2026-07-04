@@ -67,11 +67,8 @@ class KeyboardShortcutManager {
     weak var windowRegistry: WindowRegistry?
 
     /// Safari dispatch order: browser shortcuts win, then extension commands,
-    /// then the page. Injectable for tests; the default routes through the
-    /// extensions module without booting its runtime.
-    var extensionCommandHandler: @MainActor (NSEvent) -> Bool = { event in
-        SumiExtensionsModule.shared.performExtensionKeyboardCommandIfLoaded(for: event)
-    }
+    /// then the page. App composition injects the browser-owned extensions module.
+    var extensionCommandHandler: @MainActor (NSEvent) -> Bool = { _ in false }
 
     init(userDefaults: UserDefaults = .standard, installEventMonitor: Bool = true) {
         self.store = KeyboardShortcutStore(userDefaults: userDefaults)
@@ -85,11 +82,13 @@ class KeyboardShortcutManager {
     func attach(
         actionRouter: any ShortcutActionRouting,
         chromeRouter: any KeyboardShortcutChromeRouting,
-        windowRegistry: WindowRegistry?
+        windowRegistry: WindowRegistry?,
+        extensionCommandHandler: @escaping @MainActor (NSEvent) -> Bool = { _ in false }
     ) {
         shortcutActionRouter = actionRouter
         self.chromeRouter = chromeRouter
         self.windowRegistry = windowRegistry
+        self.extensionCommandHandler = extensionCommandHandler
     }
 
     var shortcuts: [KeyboardShortcut] {

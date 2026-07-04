@@ -204,7 +204,13 @@ extension BrowserKeyboardShortcutCommandOwner.Dependencies {
                 browserManager?.webViewRoutingService.webView(for: tabId, in: windowId)
             },
             toggleReaderMode: { webView, tab in
-                try? await SumiReaderModeService.toggleReaderMode(on: webView, tab: tab)
+                do {
+                    try await SumiReaderModeService.toggleReaderMode(on: webView, tab: tab)
+                } catch {
+                    RuntimeDiagnostics.debug(category: "ReaderMode") {
+                        "Keyboard reader mode toggle failed: \(error.localizedDescription)"
+                    }
+                }
             }
         )
     }

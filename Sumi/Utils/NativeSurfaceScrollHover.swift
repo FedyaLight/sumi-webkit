@@ -5,12 +5,24 @@ import SwiftUI
 final class NativeSurfaceScrollHoverCoordinator: ObservableObject {
     @Published private(set) var hoverUpdatesEnabled = true
 
-    private static let hoverRestoreDelayNanoseconds: UInt64 = 250_000_000
+    private static let defaultHoverRestoreDelayNanoseconds: UInt64 = 250_000_000
 
+    private let hoverRestoreDelayNanoseconds: UInt64
+    private let sleepForNanoseconds: @Sendable (UInt64) async throws -> Void
     private var phaseScrollingRegions: Set<String> = []
     private var activityRegions: Set<String> = []
     private var activeTokensByRegion: [String: UUID] = [:]
     private var restoreTask: Task<Void, Never>?
+
+    init(
+        hoverRestoreDelayNanoseconds: UInt64 = NativeSurfaceScrollHoverCoordinator.defaultHoverRestoreDelayNanoseconds,
+        sleepForNanoseconds: @escaping @Sendable (UInt64) async throws -> Void = { nanoseconds in
+            try await Task.sleep(nanoseconds: nanoseconds)
+        }
+    ) {
+        self.hoverRestoreDelayNanoseconds = hoverRestoreDelayNanoseconds
+        self.sleepForNanoseconds = sleepForNanoseconds
+    }
 
     func registerRegion(_ region: String) -> UUID {
         let token = UUID()
@@ -60,9 +72,14 @@ final class NativeSurfaceScrollHoverCoordinator: ObservableObject {
 
     private func scheduleHoverRestoreIfIdle() {
         restoreTask?.cancel()
-        let delay = Self.hoverRestoreDelayNanoseconds
-        restoreTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: delay)
+        let delay = hoverRestoreDelayNanoseconds
+        let sleepForNanoseconds = sleepForNanoseconds
+        restoreTask = Task { @MainActor [weak self, sleepForNanoseconds] in
+            do {
+                try await sleepForNanoseconds(delay)
+            } catch {
+                return
+            }
             guard !Task.isCancelled else { return }
             self?.activityRegions.removeAll()
             self?.restoreHoverIfIdle()

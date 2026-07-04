@@ -65,6 +65,10 @@ class BrowserConfiguration {
         self.visitedLinkStoreProvider = visitedLinkStoreProvider ?? .shared
     }
 
+    var resolvedAutoplayPolicyStore: SumiAutoplayPolicyStoreAdapter {
+        autoplayPolicyStore ?? SumiAutoplayPolicyStoreAdapter.shared
+    }
+
     private func makeBaseWebViewConfiguration() -> WKWebViewConfiguration {
         let config = WKWebViewConfiguration()
         webKitProcessPoolContext.apply(to: config)
@@ -232,8 +236,7 @@ class BrowserConfiguration {
         for url: URL?,
         profile: Profile
     ) -> SumiAutoplayPolicy {
-        (autoplayPolicyStore ?? SumiAutoplayPolicyStoreAdapter.shared)
-            .effectivePolicy(for: url, profile: profile)
+        resolvedAutoplayPolicyStore.effectivePolicy(for: url, profile: profile)
     }
 }
 

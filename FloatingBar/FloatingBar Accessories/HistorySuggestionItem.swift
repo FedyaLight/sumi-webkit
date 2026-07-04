@@ -95,7 +95,7 @@ struct HistorySuggestionItem: View {
                         isDeleteConfirming = false
                     } label: {
                         Image(systemName: "xmark")
-                            .font(.system(size: 10, weight: .bold))
+                            .font(ChromeThemeTypography.floatingBarDeleteControlSmall)
                             .foregroundStyle(colors.deleteButtonColor(isHovered: false))
                             .frame(width: 24, height: 24)
                             .background(colors.deleteButtonBackground(isHovered: false))
@@ -111,8 +111,8 @@ struct HistorySuggestionItem: View {
                         isDeleteConfirming = false
                     } label: {
                         Image(systemName: "checkmark")
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundStyle(Color.white)
+                            .font(ChromeThemeTypography.floatingBarDeleteControl)
+                            .foregroundStyle(FloatingBarThemeTokens.Colors.deleteConfirmationForeground)
                             .frame(width: 24, height: 24)
                             .background(colors.confirmDeleteBackground)
                             .clipShape(FloatingBarSuggestionMetrics.controlShape)
@@ -127,7 +127,7 @@ struct HistorySuggestionItem: View {
                     isDeleteConfirming = true
                 } label: {
                     Image(systemName: "trash")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(ChromeThemeTypography.floatingBarDeleteAction)
                         .foregroundStyle(colors.deleteButtonColor(isHovered: isDeleteHovered))
                         .frame(width: 24, height: 24)
                         .background(colors.deleteButtonBackground(isHovered: isDeleteHovered))
@@ -188,7 +188,7 @@ private struct FloatingBarHistoryLineText: View {
             url: url,
             titleColor: titleColor,
             urlColor: urlColor,
-            font: .systemFont(ofSize: 13, weight: .semibold),
+            font: ChromeThemeTypography.floatingBarSuggestionRowNSFont,
             fadeWidth: 42
         )
         .frame(minWidth: 0, maxWidth: .infinity, minHeight: 17, maxHeight: 17, alignment: .leading)

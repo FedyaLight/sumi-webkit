@@ -295,7 +295,7 @@ struct SettingsGeneralTab: View {
                     .fill(SettingsSurfaceStyle.fieldBackground)
             )
             .clipShape(RoundedRectangle(cornerRadius: SettingsSurfaceStyle.compactCornerRadius, style: .continuous))
-            .shadow(color: Color.black.opacity(0.16), radius: 10, y: 4)
+            .shadow(color: SettingsSurfaceStyle.floatingRowShadow, radius: 10, y: 4)
             .offset(y: drag.floatingTopY)
             .transaction { transaction in
                 transaction.animation = nil
@@ -360,7 +360,7 @@ struct SettingsGeneralTab: View {
                         editingSearchEngine = SearchEngineEditorDraft(engine: engine)
                     } label: {
                         Image(systemName: "pencil")
-                            .font(.system(size: 13, weight: .regular))
+                            .font(SettingsTypography.searchEngineActionIcon)
                     }
                     .buttonStyle(NavButtonStyle(size: .small))
                     .help("Edit search engine")
@@ -371,7 +371,7 @@ struct SettingsGeneralTab: View {
                         }
                     } label: {
                         Image(systemName: "trash")
-                            .font(.system(size: 13, weight: .regular))
+                            .font(SettingsTypography.searchEngineActionIcon)
                     }
                     .buttonStyle(NavButtonStyle(size: .small))
                     .disabled(!canDeleteSearchEngine(engine))
@@ -381,10 +381,10 @@ struct SettingsGeneralTab: View {
             } else {
                 HStack(spacing: 12) {
                     Image(systemName: "pencil")
-                        .font(.system(size: 13, weight: .regular))
+                        .font(SettingsTypography.searchEngineActionIcon)
                         .frame(width: 28, height: 28)
                     Image(systemName: "trash")
-                        .font(.system(size: 13, weight: .regular))
+                        .font(SettingsTypography.searchEngineActionIcon)
                         .frame(width: 28, height: 28)
                 }
                 .foregroundStyle(.secondary)

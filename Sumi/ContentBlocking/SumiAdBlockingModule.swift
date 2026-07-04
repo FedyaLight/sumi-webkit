@@ -146,6 +146,9 @@ final class AdblockWebKitRuleListStore {
     private let updateCoordinator: AdblockUpdateCoordinator
     private let isAdblockEnabled: @Sendable () async -> Bool
     private let embeddedBundleURLProvider: @MainActor () -> URL?
+    #if DEBUG
+        private let startupDiagnostics: any SumiProtectionStartupRestoreDiagnosticsRecording
+    #endif
     private var startupTask: Task<Void, Never>?
     private(set) var lastUpdateDiagnostics: AdblockUpdateDiagnostics?
 
@@ -153,33 +156,74 @@ final class AdblockWebKitRuleListStore {
 
     init(
         isAdblockEnabled: @escaping @Sendable () async -> Bool = { true },
-        manifestStore: AdblockUpdateManifestStore = AdblockUpdateManifestStore(),
+        manifestStore: AdblockUpdateManifestStore? = nil,
         compiler: SumiContentRuleListCompiling = SumiWKContentRuleListCompiler(),
         compiledRuleListCatalog: SumiCompiledContentRuleListCataloging = AdblockRetainingCompiledRuleListCatalog(),
         embeddedBundleURLProvider: @escaping @MainActor () -> URL? = {
             SumiAdblockNativeRuleBundle.bundledDirectoryURL(for: SumiProtectionBundleProfile.adblock)
-        }
+        },
+        startupDiagnostics: (any SumiProtectionStartupRestoreDiagnosticsRecording)? = nil
     ) {
-        self.manifestStore = manifestStore
+        #if DEBUG
+            let startupDiagnostics = startupDiagnostics ?? SumiProtectionStartupRestoreDiagnosticsDefaults.recorder
+            self.startupDiagnostics = startupDiagnostics
+            let resolvedManifestStore = manifestStore ?? AdblockUpdateManifestStore(
+                startupDiagnostics: startupDiagnostics
+            )
+            let compiledDefinitionLoader = AdblockManifestRuleListProvider.diskBackedDefinitionLoader(
+                storageRoot: resolvedManifestStore.storageRoot,
+                startupDiagnostics: startupDiagnostics
+            )
+        #else
+            _ = startupDiagnostics
+            let resolvedManifestStore = manifestStore ?? AdblockUpdateManifestStore()
+            let compiledDefinitionLoader = AdblockManifestRuleListProvider.diskBackedDefinitionLoader(
+                storageRoot: resolvedManifestStore.storageRoot
+            )
+        #endif
+        self.manifestStore = resolvedManifestStore
         self.isAdblockEnabled = isAdblockEnabled
         self.embeddedBundleURLProvider = embeddedBundleURLProvider
         let provider = AdblockManifestRuleListProvider(
             manifest: nil,
-            compiledDefinitionLoader: AdblockManifestRuleListProvider.diskBackedDefinitionLoader(storageRoot: manifestStore.storageRoot)
+            compiledDefinitionLoader: compiledDefinitionLoader
         )
         ruleListProvider = provider
+        #if DEBUG
+            contentBlockingService = SumiContentBlockingService(
+                policy: .disabled,
+                compiler: compiler,
+                ruleListProvider: provider,
+                compiledRuleListCatalog: compiledRuleListCatalog,
+                startupDiagnostics: startupDiagnostics
+            )
+        #else
         contentBlockingService = SumiContentBlockingService(
             policy: .disabled,
             compiler: compiler,
             ruleListProvider: provider,
             compiledRuleListCatalog: compiledRuleListCatalog
         )
+        #endif
         let publisher = AdblockRuleListPublisher(ruleListProvider: provider, contentBlockingService: contentBlockingService)
+        #if DEBUG
+            let garbageCollector = AdblockGenerationGarbageCollector(
+                manifestStore: resolvedManifestStore,
+                contentRuleListStore: compiler,
+                startupDiagnostics: startupDiagnostics
+            )
+        #else
+            let garbageCollector = AdblockGenerationGarbageCollector(
+                manifestStore: resolvedManifestStore,
+                contentRuleListStore: compiler
+            )
+        #endif
         updateCoordinator = AdblockUpdateCoordinator.production(
-            manifestStore: manifestStore,
+            manifestStore: resolvedManifestStore,
             publisher: publisher,
             contentRuleListStore: compiler,
-            garbageCollector: AdblockGenerationGarbageCollector(manifestStore: manifestStore, contentRuleListStore: compiler)
+            garbageCollector: garbageCollector,
+            startupDiagnostics: startupDiagnostics
         )
         startupTask = Task { @MainActor [weak self] in
             guard let self else { return }
@@ -207,7 +251,16 @@ final class AdblockWebKitRuleListStore {
 
     func contentRuleListDefinitions(for protectionGroups: Set<SumiProtectionGroupKind>) throws -> [SumiContentRuleListDefinition] {
         guard let manifest = activeManifest else { return [] }
-        let loader = AdblockManifestRuleListProvider.diskBackedDefinitionLoader(storageRoot: manifestStore.storageRoot)
+        #if DEBUG
+            let loader = AdblockManifestRuleListProvider.diskBackedDefinitionLoader(
+                storageRoot: manifestStore.storageRoot,
+                startupDiagnostics: startupDiagnostics
+            )
+        #else
+            let loader = AdblockManifestRuleListProvider.diskBackedDefinitionLoader(
+                storageRoot: manifestStore.storageRoot
+            )
+        #endif
         return try manifest.networkShards
             .filter { shard in shard.protectionGroup.map { protectionGroups.contains($0) } ?? false }
             .sorted { lhs, rhs in
@@ -225,7 +278,7 @@ final class AdblockWebKitRuleListStore {
         do {
             let manifest = try await manifestStore.activeManifest()
 #if DEBUG
-            SumiProtectionStartupRestoreDiagnostics.shared.recordManifest(manifest)
+            startupDiagnostics.recordManifest(manifest)
 #endif
             do {
                 if try await installEmbeddedBundleIfNeeded(previousManifest: manifest) != nil { return }
@@ -268,15 +321,15 @@ final class AdblockWebKitRuleListStore {
               Self.isPreparedManifest(manifest, profileId: profileId)
         else {
 #if DEBUG
-            SumiProtectionStartupRestoreDiagnostics.shared.recordFallback(
+            startupDiagnostics.recordFallback(
                 reason: "No persisted prepared manifest matched profile \(profileId)"
             )
 #endif
             return nil
         }
 #if DEBUG
-        SumiProtectionStartupRestoreDiagnostics.shared.recordManifest(manifest)
-        SumiProtectionStartupRestoreDiagnostics.shared.recordGenerationStaleCheck(
+        startupDiagnostics.recordManifest(manifest)
+        startupDiagnostics.recordGenerationStaleCheck(
             consideredStale: false,
             reason: "Persisted prepared manifest matches requested profile \(profileId)"
         )
@@ -365,7 +418,7 @@ final class AdblockWebKitRuleListStore {
            previousManifest?.generationSource == source.generationSource,
            previousManifest?.nativeRuleBundleId == bundle.manifest.bundleId {
 #if DEBUG
-            SumiProtectionStartupRestoreDiagnostics.shared.recordGenerationStaleCheck(
+            startupDiagnostics.recordGenerationStaleCheck(
                 consideredStale: false,
                 reason: "Prepared bundle \(bundle.manifest.bundleId) is already installed for source \(source.generationSource.rawValue)"
             )
@@ -374,12 +427,12 @@ final class AdblockWebKitRuleListStore {
         }
 #if DEBUG
         let installReason = "Installing prepared bundle \(bundle.manifest.bundleId) from \(source.generationSource.rawValue)"
-        SumiProtectionStartupRestoreDiagnostics.shared.recordGenerationStaleCheck(
+        startupDiagnostics.recordGenerationStaleCheck(
             consideredStale: true,
             reason: installReason
         )
-        SumiProtectionStartupRestoreDiagnostics.shared.recordPayloadBackedRestoreUsed(reason: installReason)
-        SumiProtectionStartupRestoreDiagnostics.shared.recordRepairCompileUsed(reason: installReason)
+        startupDiagnostics.recordPayloadBackedRestoreUsed(reason: installReason)
+        startupDiagnostics.recordRepairCompileUsed(reason: installReason)
 #endif
         let manifest = bundle.compiledGenerationManifest(
             previousManifest: previousManifest,
@@ -425,14 +478,14 @@ final class AdblockWebKitRuleListStore {
                 ruleLists: providerDefinitions
             )
 #if DEBUG
-            SumiProtectionStartupRestoreDiagnostics.shared.recordMetadataOnlyRestoreUsed()
+            startupDiagnostics.recordMetadataOnlyRestoreUsed()
 #endif
         } catch {
 #if DEBUG
             let fallbackReason = "Persisted manifest lookup-only restore failed: \(error.localizedDescription)"
-            SumiProtectionStartupRestoreDiagnostics.shared.recordFallback(reason: fallbackReason)
-            SumiProtectionStartupRestoreDiagnostics.shared.recordPayloadBackedRestoreUsed(reason: fallbackReason)
-            SumiProtectionStartupRestoreDiagnostics.shared.recordRepairCompileUsed(reason: fallbackReason)
+            startupDiagnostics.recordFallback(reason: fallbackReason)
+            startupDiagnostics.recordPayloadBackedRestoreUsed(reason: fallbackReason)
+            startupDiagnostics.recordRepairCompileUsed(reason: fallbackReason)
 #endif
             let definitions = try await manifestStore.compiledShardDefinitions(for: manifest)
             providerDefinitions = definitions.map { $0.metadataOnly() }
@@ -474,7 +527,7 @@ final class AdblockWebKitRuleListStore {
     ) -> Bool {
         guard let previousManifest else {
 #if DEBUG
-            SumiProtectionStartupRestoreDiagnostics.shared.recordGenerationStaleCheck(
+            startupDiagnostics.recordGenerationStaleCheck(
                 consideredStale: true,
                 reason: "No active prepared manifest; embedded bundle \(bundle.manifest.bundleId) can seed startup"
             )
@@ -484,7 +537,7 @@ final class AdblockWebKitRuleListStore {
 
         guard previousManifest.generationSource == .embeddedBundle else {
 #if DEBUG
-            SumiProtectionStartupRestoreDiagnostics.shared.recordGenerationStaleCheck(
+            startupDiagnostics.recordGenerationStaleCheck(
                 consideredStale: false,
                 reason: "Active \(previousManifest.generationSource.rawValue) generation is preserved; embedded bundle is not a startup repair candidate"
             )
@@ -494,7 +547,7 @@ final class AdblockWebKitRuleListStore {
 
         let shouldInstall = previousManifest.nativeRuleBundleId != bundle.manifest.bundleId
 #if DEBUG
-        SumiProtectionStartupRestoreDiagnostics.shared.recordGenerationStaleCheck(
+        startupDiagnostics.recordGenerationStaleCheck(
             consideredStale: shouldInstall,
             reason: shouldInstall
                 ? "Embedded bundle changed from \(previousManifest.nativeRuleBundleId ?? "nil") to \(bundle.manifest.bundleId)"
@@ -558,7 +611,7 @@ final class AdblockRetainingCompiledRuleListCatalog: SumiCompiledContentRuleList
 
 @MainActor
 final class SumiAdBlockingModule {
-    static let shared = SumiAdBlockingModule()
+    static let shared = SumiAdBlockingModule(moduleRegistry: .shared)
 
     private let sitePolicyFactory: @MainActor () -> AdblockSitePolicyStore
     private let ruleListStoreFactory: @MainActor (@escaping @Sendable () async -> Bool) -> AdblockWebKitRuleListStore
@@ -571,7 +624,7 @@ final class SumiAdBlockingModule {
     private var preparedBundleRuntimeEnabled = false
 
     init(
-        moduleRegistry: SumiModuleRegistry = .shared,
+        moduleRegistry: SumiModuleRegistry,
         sitePolicyFactory: (@MainActor () -> AdblockSitePolicyStore)? = nil,
         preparedBundleResourceURL: URL? = Bundle.main.resourceURL,
         preparedBundleRemoteRootURL: URL? = SumiRemoteAdblockBundleCache.defaultRootDirectory(),

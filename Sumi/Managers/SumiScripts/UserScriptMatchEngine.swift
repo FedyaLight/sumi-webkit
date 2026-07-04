@@ -75,7 +75,14 @@ enum UserScriptMatchEngine {
     /// Matches a URL against a WebExtension match pattern using WebKit's SDK implementation.
     static func matchPattern(_ pattern: String, matches url: URL) -> Bool {
         let trimmed = pattern.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let matchPattern = try? WKWebExtension.MatchPattern(string: trimmed) else {
+        guard trimmed.isEmpty == false else { return false }
+        let matchPattern: WKWebExtension.MatchPattern
+        do {
+            matchPattern = try WKWebExtension.MatchPattern(string: trimmed)
+        } catch {
+            RuntimeDiagnostics.debug(category: "SumiScripts") {
+                "Invalid userscript match pattern ignored: bytes=\(trimmed.utf8.count) error=\(error.localizedDescription)"
+            }
             return false
         }
         return matchPattern.matches(url)
@@ -132,7 +139,7 @@ enum UserScriptMatchEngine {
             if flags.contains("s") { options.insert(.dotMatchesLineSeparators) }
         }
 
-        return try? NSRegularExpression(pattern: p, options: options)
+        return compileIncludeRegex(p, options: options, source: "regex")
     }
 
     private static func compileGlobInclude(_ pattern: String) -> NSRegularExpression? {
@@ -151,7 +158,22 @@ enum UserScriptMatchEngine {
             }
         }
         regex += "$"
-        return try? NSRegularExpression(pattern: regex, options: [.caseInsensitive])
+        return compileIncludeRegex(regex, options: [.caseInsensitive], source: "glob")
+    }
+
+    private static func compileIncludeRegex(
+        _ pattern: String,
+        options: NSRegularExpression.Options,
+        source: String
+    ) -> NSRegularExpression? {
+        do {
+            return try NSRegularExpression(pattern: pattern, options: options)
+        } catch {
+            RuntimeDiagnostics.debug(category: "SumiScripts") {
+                "Invalid userscript include \(source) pattern ignored: bytes=\(pattern.utf8.count) error=\(error.localizedDescription)"
+            }
+            return nil
+        }
     }
 }
 

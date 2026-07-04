@@ -125,12 +125,10 @@ final class SafariExtensionInstallCapabilityOwner {
             desiredStates[matchPattern] = (policy.defaultAccess, nil)
         }
         for rule in policy.rulesByIncreasingSpecificity {
-            guard let matchPattern = try? WKWebExtension.MatchPattern(
-                string: rule.matchPattern
-            )
-            else {
-                continue
-            }
+            guard let matchPattern = Self.matchPattern(
+                from: rule.matchPattern,
+                purpose: "configuredRule"
+            ) else { continue }
             desiredStates[matchPattern] = (rule.access, rule.expiresAt)
         }
 
@@ -453,7 +451,7 @@ final class SafariExtensionInstallCapabilityOwner {
 
         return Set(
             patternStrings.compactMap {
-                try? WKWebExtension.MatchPattern(string: $0)
+                Self.matchPattern(from: $0, purpose: "manifestSiteAccess")
             }
         )
     }
@@ -467,7 +465,7 @@ final class SafariExtensionInstallCapabilityOwner {
 
         return Set(
             patternStrings.compactMap {
-                try? WKWebExtension.MatchPattern(string: $0)
+                Self.matchPattern(from: $0, purpose: "externallyConnectable")
             }
         )
     }
@@ -527,7 +525,12 @@ final class SafariExtensionInstallCapabilityOwner {
     private static func isManifestWebExtensionPermission(
         _ value: String
     ) -> Bool {
-        (try? WKWebExtension.MatchPattern(string: value)) == nil
+        do {
+            _ = try WKWebExtension.MatchPattern(string: value)
+            return false
+        } catch {
+            return true
+        }
     }
 
     private static func isManifestHostPermissionPattern(
@@ -542,11 +545,30 @@ final class SafariExtensionInstallCapabilityOwner {
     private static func isAllHostsMatchPatternString(
         _ value: String
     ) -> Bool {
-        guard let matchPattern = try? WKWebExtension.MatchPattern(string: value) else {
-            return false
-        }
+        guard let matchPattern = Self.matchPattern(
+            from: value,
+            purpose: "allHostsRule"
+        ) else { return false }
         return matchPattern == WKWebExtension.MatchPattern.allHostsAndSchemes()
             || matchPattern == WKWebExtension.MatchPattern.allURLs()
+    }
+
+    private static func matchPattern(
+        from value: String,
+        purpose: String
+    ) -> WKWebExtension.MatchPattern? {
+        do {
+            return try WKWebExtension.MatchPattern(string: value)
+        } catch {
+            RuntimeDiagnostics.debug(
+                category: SafariExtensionPermissionLifecycleDiagnostics.category
+            ) {
+                let bucket = SafariExtensionPermissionLifecycleDiagnostics.bucket(value)
+                    ?? "empty"
+                return "Ignoring invalid extension match pattern: purpose=\(purpose) patternBucket=\(bucket) error=\(error.localizedDescription)"
+            }
+            return nil
+        }
     }
 }
 

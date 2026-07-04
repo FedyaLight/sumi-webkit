@@ -170,7 +170,7 @@ struct BrowserManagerDataServices {
     }
 
     private static var productionFaviconSystem: SumiFaviconSystem {
-        SumiFaviconSystem.shared
+        SumiFaviconProductionSystem.current
     }
 
     static var productionFaviconService: any BrowserFaviconServicing {

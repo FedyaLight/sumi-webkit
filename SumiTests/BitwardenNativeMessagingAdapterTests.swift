@@ -817,6 +817,25 @@ final class BitwardenNativeMessagingAdapterTests: XCTestCase {
         XCTAssertTrue(replyValue is NSNull)
     }
 
+    func testDownloadFileRequestDecodesTextPlainPayload() throws {
+        let payload = try downloadFilePayload(
+            fileName: "notes.txt",
+            blobData: "hello",
+            blobOptions: ["type": "text/plain"]
+        )
+
+        let request = try BitwardenSafariOneShotHandler.downloadFileRequest(payload: payload)
+
+        XCTAssertEqual(request.fileName, "notes.txt")
+        XCTAssertEqual(String(data: request.data, encoding: .utf8), "hello")
+    }
+
+    func testDownloadFileRequestThrowsForMalformedJSON() {
+        XCTAssertThrowsError(
+            try BitwardenSafariOneShotHandler.downloadFileRequest(payload: ["data": "{"])
+        )
+    }
+
     func testSleepOneShotCompletesAsynchronously() async {
         let priorDelay = BitwardenSafariOneShotHandler.sleepDelay
         defer { BitwardenSafariOneShotHandler.sleepDelay = priorDelay }
@@ -1178,5 +1197,21 @@ final class BitwardenNativeMessagingAdapterTests: XCTestCase {
             options: 0
         )
         try data.write(to: url)
+    }
+
+    private func downloadFilePayload(
+        fileName: String,
+        blobData: String,
+        blobOptions: [String: Any]? = nil
+    ) throws -> [String: Any] {
+        var object: [String: Any] = [
+            "fileName": fileName,
+            "blobData": blobData,
+        ]
+        if let blobOptions {
+            object["blobOptions"] = blobOptions
+        }
+        let data = try JSONSerialization.data(withJSONObject: object)
+        return ["data": String(decoding: data, as: UTF8.self)]
     }
 }

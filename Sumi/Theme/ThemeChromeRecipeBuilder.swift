@@ -74,8 +74,8 @@ enum ThemeContrastResolver {
             and: [0, 0, 0]
         )
         return white > black
-            ? Color.white.opacity(0.96)
-            : Color.black.opacity(0.88)
+            ? ThemeChromeRecipeColors.Foreground.preferredLight
+            : ThemeChromeRecipeColors.Foreground.preferredDark
     }
 
     static func contrastingShade(
@@ -106,33 +106,33 @@ enum ThemeContrastResolver {
     static func primaryText(for chromeScheme: ColorScheme) -> Color {
         switch chromeScheme {
         case .light:
-            return Color.black.opacity(0.84)
+            return ThemeChromeRecipeColors.Foreground.primaryLight
         case .dark:
-            return Color.white.opacity(0.92)
+            return ThemeChromeRecipeColors.Foreground.primaryDark
         @unknown default:
-            return Color.primary
+            return ThemeChromeRecipeColors.Foreground.primaryFallback
         }
     }
 
     static func secondaryText(for chromeScheme: ColorScheme) -> Color {
         switch chromeScheme {
         case .light:
-            return Color.black.opacity(0.56)
+            return ThemeChromeRecipeColors.Foreground.secondaryLight
         case .dark:
-            return Color.white.opacity(0.68)
+            return ThemeChromeRecipeColors.Foreground.secondaryDark
         @unknown default:
-            return Color.secondary
+            return ThemeChromeRecipeColors.Foreground.secondaryFallback
         }
     }
 
     static func tertiaryText(for chromeScheme: ColorScheme) -> Color {
         switch chromeScheme {
         case .light:
-            return Color.black.opacity(0.38)
+            return ThemeChromeRecipeColors.Foreground.tertiaryLight
         case .dark:
-            return Color.white.opacity(0.46)
+            return ThemeChromeRecipeColors.Foreground.tertiaryDark
         @unknown default:
-            return Color.secondary.opacity(0.6)
+            return ThemeChromeRecipeColors.Foreground.tertiaryFallback
         }
     }
 
@@ -290,42 +290,42 @@ private struct ThemeChromePalette {
         let sidebarRowActive: Color = {
             switch scheme {
             case .light:
-                return Color.white.opacity(0.85)
+                return ThemeChromeRecipeColors.Sidebar.activeLight
             case .dark:
-                return Color.white.opacity(0.18)
+                return ThemeChromeRecipeColors.Sidebar.activeDark
             @unknown default:
-                return Color.white.opacity(0.2)
+                return ThemeChromeRecipeColors.Sidebar.activeFallback
             }
         }()
         let sidebarRowHover: Color = {
             switch scheme {
             case .light:
-                return Color.black.opacity(0.08)
+                return ThemeChromeRecipeColors.Sidebar.hoverLight
             case .dark:
-                return Color.white.opacity(0.10)
+                return ThemeChromeRecipeColors.Sidebar.hoverDark
             @unknown default:
-                return Color.primary.opacity(0.1)
+                return ThemeChromeRecipeColors.Sidebar.hoverFallback
             }
         }()
         let sidebarSelectionShadow: Color = {
             switch scheme {
             case .light:
-                return Color.black.opacity(0.15)
+                return ThemeChromeRecipeColors.Sidebar.selectionShadowLight
             case .dark:
-                return Color.black.opacity(0.05)
+                return ThemeChromeRecipeColors.Sidebar.selectionShadowDark
             @unknown default:
-                return Color.black.opacity(0.08)
+                return ThemeChromeRecipeColors.Sidebar.selectionShadowFallback
             }
         }()
 
         let separator: Color = {
             switch scheme {
             case .light:
-                return Color.black.opacity(0.12)
+                return ThemeChromeRecipeColors.Sidebar.separatorLight
             case .dark:
-                return Color.white.opacity(0.26)
+                return ThemeChromeRecipeColors.Sidebar.separatorDark
             @unknown default:
-                return Color.primary.opacity(0.14)
+                return ThemeChromeRecipeColors.Sidebar.separatorFallback
             }
         }()
 
@@ -513,15 +513,15 @@ enum ThemeChromeRecipeBuilder {
     ) -> Color {
         switch scheme {
         case .light:
-            return Color.white
+            return ThemeChromeRecipeColors.Neutral.lightBackground
         case .dark:
             switch settings.darkThemeStyle {
             case .default:
-                return Color(hex: "12151A")
+                return ThemeChromeRecipeColors.Neutral.darkDefaultBackground
             case .night:
-                return Color(hex: "0C1015")
+                return ThemeChromeRecipeColors.Neutral.darkNightBackground
             case .colorful:
-                return Color(hex: "151A24")
+                return ThemeChromeRecipeColors.Neutral.darkColorfulBackground
             }
         @unknown default:
             return Color(nsColor: .windowBackgroundColor)
@@ -548,7 +548,7 @@ enum ThemeChromeRecipeBuilder {
             case .colorful:
                 lift = 0.08 + emphasis * 0.14
             }
-            return background.mixed(with: Color.white.opacity(0.28), amount: lift)
+            return background.mixed(with: ThemeChromeRecipeColors.Neutral.elevatedDarkOverlay, amount: lift)
         @unknown default:
             return background
         }
@@ -558,11 +558,11 @@ enum ThemeChromeRecipeBuilder {
     static func zenToolbarElementBackground(scheme: ColorScheme) -> Color {
         switch scheme {
         case .light:
-            return Color.black.opacity(0.08)
+            return ThemeChromeRecipeColors.Neutral.toolbarLight
         case .dark:
-            return Color.white.opacity(0.12)
+            return ThemeChromeRecipeColors.Neutral.toolbarDark
         @unknown default:
-            return Color.black.opacity(0.08)
+            return ThemeChromeRecipeColors.Neutral.toolbarFallback
         }
     }
 
@@ -574,11 +574,11 @@ enum ThemeChromeRecipeBuilder {
         let overlay: Color = {
             switch scheme {
             case .light:
-                return Color.black.opacity(0.08)
+                return ThemeChromeRecipeColors.Neutral.toolbarHoverLight
             case .dark:
-                return Color.white.opacity(0.10)
+                return ThemeChromeRecipeColors.Neutral.toolbarHoverDark
             @unknown default:
-                return Color.black.opacity(0.08)
+                return ThemeChromeRecipeColors.Neutral.toolbarHoverFallback
             }
         }()
         return elementBackground.overlaying(overlay)
@@ -587,44 +587,44 @@ enum ThemeChromeRecipeBuilder {
     static func floatingBarSolidBackground(scheme: ColorScheme) -> Color {
         switch scheme {
         case .light:
-            return Color.white
+            return ThemeChromeRecipeColors.FloatingBar.backgroundLight
         case .dark:
-            return Color(hex: "1C1C1E")
+            return ThemeChromeRecipeColors.FloatingBar.backgroundDark
         @unknown default:
-            return Color.white
+            return ThemeChromeRecipeColors.FloatingBar.backgroundFallback
         }
     }
 
     static func floatingBarChipBackground(scheme: ColorScheme) -> Color {
         switch scheme {
         case .light:
-            return Color.black.opacity(0.06)
+            return ThemeChromeRecipeColors.FloatingBar.chipLight
         case .dark:
-            return Color.white.opacity(0.10)
+            return ThemeChromeRecipeColors.FloatingBar.chipDark
         @unknown default:
-            return Color.black.opacity(0.06)
+            return ThemeChromeRecipeColors.FloatingBar.chipFallback
         }
     }
 
     static func floatingBarRowSelected(scheme: ColorScheme) -> Color {
         switch scheme {
         case .light:
-            return Color.black.opacity(0.08)
+            return ThemeChromeRecipeColors.FloatingBar.selectedRowLight
         case .dark:
-            return Color.white.opacity(0.14)
+            return ThemeChromeRecipeColors.FloatingBar.selectedRowDark
         @unknown default:
-            return Color.black.opacity(0.08)
+            return ThemeChromeRecipeColors.FloatingBar.selectedRowFallback
         }
     }
 
     static func floatingBarRowHover(scheme: ColorScheme) -> Color {
         switch scheme {
         case .light:
-            return Color.black.opacity(0.05)
+            return ThemeChromeRecipeColors.FloatingBar.hoverRowLight
         case .dark:
-            return Color.white.opacity(0.08)
+            return ThemeChromeRecipeColors.FloatingBar.hoverRowDark
         @unknown default:
-            return Color.black.opacity(0.05)
+            return ThemeChromeRecipeColors.FloatingBar.hoverRowFallback
         }
     }
 

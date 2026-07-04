@@ -14,14 +14,14 @@ struct SumiBoostFontGrid: View {
                         toggleFont(family)
                     } label: {
                         Text("Aa")
-                            .font(.custom(family, size: 14))
+                            .font(.custom(family, size: SumiBoostEditorTypography.fontGridSample))
                             .fontWeight(fontWeight(for: family))
                             .foregroundStyle(SumiBoostEditorStyle.primaryText(for: colorScheme))
                             .frame(width: 25, height: 24)
                             .background(
                                 session.boost.data.fontFamily == family
-                                    ? Color.primary.opacity(0.12)
-                                    : Color.clear
+                                    ? SumiBoostEditorStyle.fontGridSelectionBackground
+                                    : SumiBoostEditorStyle.transparent
                             )
                             .clipShape(Capsule())
                     }
@@ -59,7 +59,7 @@ struct SumiBoostFontGrid: View {
         .frame(height: 126)
         .background(SumiBoostEditorStyle.fontBackground(for: colorScheme))
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .shadow(color: .black.opacity(colorScheme == .dark ? 0.34 : 0.16), radius: 8, y: 3)
+        .shadow(color: SumiBoostEditorStyle.fontGridShadow(for: colorScheme), radius: 8, y: 3)
     }
 
     private func toggleFont(_ family: String) {

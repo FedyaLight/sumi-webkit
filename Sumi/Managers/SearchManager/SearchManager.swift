@@ -14,6 +14,12 @@ protocol SearchSuggestionDataProviding {
 
 @MainActor
 struct DuckDuckGoSearchSuggestionDataProvider: SearchSuggestionDataProviding {
+    let session: URLSession
+
+    init(session: URLSession = SumiNonPersistentURLSession.shared) {
+        self.session = session
+    }
+
     func data(for query: String) async throws -> Data {
         let encodedQuery = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
         let urlString = "https://duckduckgo.com/ac/?q=\(encodedQuery)&is_nav=1"
@@ -22,7 +28,7 @@ struct DuckDuckGoSearchSuggestionDataProvider: SearchSuggestionDataProviding {
             throw URLError(.badURL)
         }
 
-        let (data, _) = try await SumiNonPersistentURLSession.shared.data(from: url)
+        let (data, _) = try await session.data(from: url)
         return data
     }
 }

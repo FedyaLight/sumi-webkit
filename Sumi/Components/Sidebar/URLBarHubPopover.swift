@@ -323,8 +323,8 @@ struct URLBarHubPopover: View {
 
             if let bookmarkErrorMessage {
                 Text(bookmarkErrorMessage)
-                    .font(.system(size: 11.5, weight: .medium))
-                    .foregroundStyle(Color.red.opacity(0.9))
+                    .font(URLBarHubTypography.bookmarkError)
+                    .foregroundStyle(URLBarHubOverlayStyle.bookmarkErrorText)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 10)
                     .padding(.bottom, 8)
@@ -602,7 +602,7 @@ struct URLBarHubPopover: View {
         if !currentSitePermissionsModel.rows.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
                 Text(SumiCurrentSitePermissionsStrings.rowTitle)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(URLBarHubTypography.sectionHeaderTitle)
                     .foregroundStyle(URLBarHubNativeStyle.primaryText)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -837,10 +837,16 @@ struct URLBarHubPopover: View {
         }
 
         Task { @MainActor in
-            try? await SumiReaderModeService.toggleReaderMode(
-                on: webView,
-                tab: currentTab
-            )
+            do {
+                try await SumiReaderModeService.toggleReaderMode(
+                    on: webView,
+                    tab: currentTab
+                )
+            } catch {
+                RuntimeDiagnostics.debug(category: "ReaderMode") {
+                    "URL bar reader mode toggle failed: \(error.localizedDescription)"
+                }
+            }
             readerModeIsActive = await SumiReaderModeService.isReaderModeActive(on: webView)
             onClose()
         }
@@ -867,13 +873,13 @@ private struct HubSectionHeader: View {
     var body: some View {
         HStack(spacing: 8) {
             Text(title)
-                .font(.system(size: 12, weight: .semibold))
+                .font(URLBarHubTypography.sectionHeaderTitle)
                 .foregroundStyle(URLBarHubNativeStyle.primaryText)
             Spacer(minLength: 0)
             if let actionTitle, let action {
                 Button(actionTitle, action: action)
                     .buttonStyle(.plain)
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(URLBarHubTypography.sectionHeaderAction)
                     .foregroundStyle(isHovering ? URLBarHubNativeStyle.secondaryText : URLBarHubNativeStyle.tertiaryText)
                     .opacity(isSectionHovered ? 1 : 0)
                     .allowsHitTesting(isSectionHovered)

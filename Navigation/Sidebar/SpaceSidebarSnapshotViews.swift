@@ -107,7 +107,7 @@ private struct ExtensionActionSnapshotButton: View {
             .overlay(alignment: .topTrailing) {
                 if let badgeText = slot.badgeText {
                     Text(badgeText)
-                        .font(.system(size: 8, weight: .bold, design: .rounded))
+                        .font(SidebarThemeTokens.Typography.extensionActionBadge)
                         .monospacedDigit()
                         .foregroundStyle(.white)
                         .lineLimit(1)
@@ -143,7 +143,7 @@ private struct ExtensionActionSnapshotButton: View {
                     .accessibilityHidden(true)
             } else {
                 Image(systemName: "puzzlepiece.extension")
-                    .font(.system(size: 16, weight: .medium))
+                    .font(SidebarThemeTokens.Typography.extensionActionFallbackIcon)
                     .foregroundStyle(tokens.primaryText)
                     .accessibilityHidden(true)
             }
@@ -385,11 +385,11 @@ private struct SpaceSnapshotFolderView: View {
                 }
                 .frame(width: SidebarRowLayout.folderTitleLeading, alignment: .leading)
 
-                SidebarFadingRowTitleLabel(
-                    title: folder.title,
-                    font: .system(size: 14, weight: .semibold),
-                    color: tokens.primaryText
-                )
+            SidebarFadingRowTitleLabel(
+                title: folder.title,
+                font: SidebarThemeTokens.Typography.folderTitle,
+                color: tokens.primaryText
+            )
 
                 Spacer(minLength: 0)
             }
@@ -426,38 +426,10 @@ private struct SpaceSnapshotFolderView: View {
     }
 
     private var folderPalette: SumiFolderGlyphPalette {
-        let accent = themeContext.gradient.primaryColor
-
-        let backFill: Color
-        let frontFill: Color
-        let stroke: Color
-
-        switch themeContext.chromeColorScheme {
-        case .light:
-            backFill = accent.mixed(with: .gray, amount: 0.4)
-            frontFill = accent.mixed(with: .white, amount: 0.7)
-            stroke = accent.mixed(with: .black, amount: 0.5)
-        case .dark:
-            backFill = accent.mixed(with: Color(hex: "C1C1C1"), amount: 0.4)
-            frontFill = accent.mixed(with: .black, amount: 0.4)
-            stroke = Color(hex: "EBEBEB").mixed(with: tokens.primaryText, amount: 0.15)
-        @unknown default:
-            backFill = accent.mixed(with: .gray, amount: 0.4)
-            frontFill = accent.mixed(with: .white, amount: 0.7)
-            stroke = accent.mixed(with: .black, amount: 0.5)
-        }
-
-        let iconForeground = stroke.mixed(with: tokens.primaryText, amount: 0.35)
-
-        return SumiFolderGlyphPalette(
-            backFill: backFill,
-            frontFill: frontFill,
-            stroke: stroke,
-            iconForeground: iconForeground,
-            backOverlayTop: Color.white.opacity(0.1),
-            backOverlayBottom: Color.black.opacity(0.1),
-            frontOverlayTop: Color.white.opacity(0.1),
-            frontOverlayBottom: Color.black.opacity(0.1)
+        SumiFolderGlyphPalette.sidebarFolder(
+            accent: themeContext.gradient.primaryColor,
+            chromeColorScheme: themeContext.chromeColorScheme,
+            primaryText: tokens.primaryText
         )
     }
 }
@@ -487,7 +459,7 @@ private struct SpaceSnapshotShortcutRowView: View {
 
             SidebarFadingRowTitleLabel(
                 title: shortcut.title,
-                font: .system(size: 13, weight: .medium),
+                font: SidebarThemeTokens.Typography.rowTitle,
                 color: tokens.primaryText,
                 height: SidebarRowLayout.titleHeight
             )
@@ -558,7 +530,7 @@ private struct SpaceSnapshotRegularTabsSectionView: View {
             Text("New Tab")
             Spacer(minLength: 0)
         }
-        .font(.system(size: 13, weight: .regular))
+        .font(SidebarThemeTokens.Typography.newTabRow)
         .foregroundStyle(tokens.primaryText)
         .padding(.horizontal, 10)
         .frame(height: SidebarRowLayout.rowHeight)
@@ -582,7 +554,7 @@ private struct SpaceSnapshotRegularTabRowView: View {
 
             SidebarFadingRowTitleLabel(
                 title: tab.title,
-                font: .system(size: 13, weight: .medium),
+                font: SidebarThemeTokens.Typography.rowTitle,
                 color: tokens.primaryText,
                 height: SidebarRowLayout.titleHeight
             )
@@ -631,7 +603,7 @@ struct SpaceSnapshotRowAudioGlyph: View {
 
     var body: some View {
         Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-            .font(.system(size: 12, weight: .medium))
+            .font(SidebarThemeTokens.Typography.rowAccessory)
             .foregroundStyle(isMuted ? tokens.secondaryText : tokens.primaryText)
             .frame(width: 22, height: 22)
             .accessibilityHidden(true)
@@ -650,13 +622,13 @@ struct SpaceSnapshotIconView: View {
                 image
             case .system(let systemName):
                 Image(systemName: systemName)
-                    .font(.system(size: size * 0.78, weight: .medium))
+                    .font(SidebarThemeTokens.Typography.chromeTemplateIcon(size: size))
                     .symbolRenderingMode(.monochrome)
                     .foregroundStyle(foregroundColor)
                     .accessibilityHidden(true)
             case .emoji(let emoji):
                 Text(emoji)
-                    .font(.system(size: size * 0.75))
+                    .font(SidebarThemeTokens.Typography.launcherEmoji(size: size))
                     .lineLimit(1)
                     .minimumScaleFactor(0.45)
                     .multilineTextAlignment(.center)

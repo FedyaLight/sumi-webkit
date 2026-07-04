@@ -110,11 +110,15 @@ struct SafariExtensionScanner {
         var seenExtensionIDs: [String: URL] = [:]
 
         for root in roots {
-            guard let appURLs = try? fileManager.contentsOfDirectory(
-                at: root,
-                includingPropertiesForKeys: [.isDirectoryKey],
-                options: [.skipsHiddenFiles]
-            ) else {
+            let appURLs: [URL]
+            do {
+                appURLs = try fileManager.contentsOfDirectory(
+                    at: root,
+                    includingPropertiesForKeys: [.isDirectoryKey],
+                    options: [.skipsHiddenFiles]
+                )
+            } catch {
+                logDirectoryReadFailure(root, purpose: "applicationSearchRoot", error: error)
                 continue
             }
 
@@ -166,11 +170,15 @@ struct SafariExtensionScanner {
         let containingAppName = bundleDisplayName(at: appURL) ?? appURL.deletingPathExtension().lastPathComponent
         let containingAppBundleID = bundleIdentifier(at: appURL)
 
-        guard let pluginURLs = try? fileManager.contentsOfDirectory(
-            at: pluginsURL,
-            includingPropertiesForKeys: [.isDirectoryKey],
-            options: [.skipsHiddenFiles]
-        ) else {
+        let pluginURLs: [URL]
+        do {
+            pluginURLs = try fileManager.contentsOfDirectory(
+                at: pluginsURL,
+                includingPropertiesForKeys: [.isDirectoryKey],
+                options: [.skipsHiddenFiles]
+            )
+        } catch {
+            logDirectoryReadFailure(pluginsURL, purpose: "containingAppPlugins", error: error)
             issues.append(.unreadableBundle(pluginsURL))
             return []
         }
@@ -313,14 +321,26 @@ struct SafariExtensionScanner {
         let plistURL = bundleURL
             .appendingPathComponent("Contents", isDirectory: true)
             .appendingPathComponent("Info.plist")
-        guard fileManager.fileExists(atPath: plistURL.path),
-              let data = fileManager.contents(atPath: plistURL.path),
-              let plist = try? PropertyListSerialization.propertyList(
-                  from: data,
-                  options: [],
-                  format: nil
-              ) as? [String: Any]
-        else {
+        guard fileManager.fileExists(atPath: plistURL.path) else {
+            return nil
+        }
+        guard let data = fileManager.contents(atPath: plistURL.path) else {
+            logPlistReadFailure(plistURL, reason: "contentsUnavailable")
+            return nil
+        }
+        let plist: [String: Any]
+        do {
+            guard let decoded = try PropertyListSerialization.propertyList(
+                from: data,
+                options: [],
+                format: nil
+            ) as? [String: Any] else {
+                logPlistReadFailure(plistURL, reason: "topLevelNotDictionary")
+                return nil
+            }
+            plist = decoded
+        } catch {
+            logPlistReadFailure(plistURL, reason: error.localizedDescription)
             return nil
         }
 
@@ -332,6 +352,20 @@ struct SafariExtensionScanner {
             current = next
         }
         return current
+    }
+
+    private func logDirectoryReadFailure(_ url: URL, purpose: String, error: Error) {
+        RuntimeDiagnostics.debug(category: "SafariExtensionScanner") {
+            let bucket = SafariExtensionPermissionLifecycleDiagnostics.bucket(url.path) ?? "empty"
+            return "Safari extension scanner directory read failed purpose=\(purpose) pathBucket=\(bucket) error=\(error.localizedDescription)"
+        }
+    }
+
+    private func logPlistReadFailure(_ url: URL, reason: String) {
+        RuntimeDiagnostics.debug(category: "SafariExtensionScanner") {
+            let bucket = SafariExtensionPermissionLifecycleDiagnostics.bucket(url.path) ?? "empty"
+            return "Safari extension scanner Info.plist read failed pathBucket=\(bucket) reason=\(reason)"
+        }
     }
 
     private func locateManifest(in appexURL: URL) -> URL? {

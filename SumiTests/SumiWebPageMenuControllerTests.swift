@@ -190,6 +190,38 @@ final class SumiWebPageMenuControllerTests: XCTestCase {
         }, 1)
     }
 
+    func testExtensionMenuItemsUseInjectedTabRuntimeAndAppendAfterSeparator() {
+        let menu = NSMenu()
+        menu.addItem(webKitItem(title: "Reload", identifier: .reload))
+        let webView = FocusableWKWebView(frame: .zero, configuration: WKWebViewConfiguration())
+        let tab = Tab(
+            url: URL(string: "https://example.com")!,
+            loadsCachedFaviconOnInit: false
+        )
+        let extensionItem = NSMenuItem(
+            title: "Extension Item",
+            action: nil,
+            keyEquivalent: ""
+        )
+        var requestedTabIds: [UUID] = []
+        tab.normalWebViewExtensionRuntime = TabNormalWebViewExtensionRuntime(
+            registerTabWithExtensionRuntimeIfNeeded: { _, _ in /* No-op. */ },
+            prepareWebViewForExtensionRuntime: { _, _, _ in /* No-op. */ },
+            ensureInitialExtensionContextsIfNeeded: { _ in /* No-op. */ },
+            pageContextMenuItems: { requestedTab in
+                requestedTabIds.append(requestedTab.id)
+                return [extensionItem]
+            }
+        )
+        webView.owningTab = tab
+
+        SumiWebPageMenuController().prepare(menu, for: webView)
+
+        XCTAssertEqual(requestedTabIds, [tab.id])
+        XCTAssertIdentical(menu.items.last, extensionItem)
+        XCTAssertTrue(menu.items.dropLast().last?.isSeparatorItem == true)
+    }
+
     func testOwnedMenuComposerUsesStopCommandForLoadingPageSection() {
         let menu = NSMenu()
         let context = SumiWebPageMenuContext(

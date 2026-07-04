@@ -144,7 +144,13 @@ final class ExtensionBackgroundRuntimeStateOwner {
                 }
 
                 for task in tasks {
-                    _ = try? await task.value
+                    do {
+                        try await task.value
+                    } catch is CancellationError {
+                        // Expected when tests explicitly drain with cancellation.
+                    } catch {
+                        assertionFailure("Background wake test drain failed: \(error)")
+                    }
                 }
             }
         }

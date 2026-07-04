@@ -43,11 +43,11 @@ struct SumiScriptsManagerView: View {
         HStack {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Userscripts Manager")
-                    .font(.title2)
+                    .font(SumiScriptsUITypography.managerTitle)
                     .fontWeight(.bold)
                 Text("Native Greasemonkey-compatible script host.")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .font(SumiScriptsUITypography.managerSubtitle)
+                    .foregroundColor(SumiScriptsUIStyle.secondaryText)
             }
 
             Spacer()
@@ -60,7 +60,7 @@ struct SumiScriptsManagerView: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text("Runtime errors")
-                        .font(.headline)
+                        .font(SumiScriptsUITypography.sectionTitle)
                     Spacer()
                     Button("Clear log") {
                         manager.clearRuntimeErrors()
@@ -68,8 +68,8 @@ struct SumiScriptsManagerView: View {
                     .buttonStyle(.bordered)
                 }
                 Text("Errors and unhandled promise rejections from userscripts (similar to Chrome’s extension error page).")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                    .font(SumiScriptsUITypography.sectionCaption)
+                    .foregroundColor(SumiScriptsUIStyle.secondaryText)
 
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 10) {
@@ -77,38 +77,38 @@ struct SumiScriptsManagerView: View {
                             VStack(alignment: .leading, spacing: 4) {
                                 HStack {
                                     Text(entry.scriptFilename)
-                                        .font(.caption)
+                                        .font(SumiScriptsUITypography.sectionCaption)
                                         .fontWeight(.semibold)
                                     Spacer()
                                     Text(entry.kind)
-                                        .font(.caption2)
-                                        .foregroundColor(.secondary)
+                                        .font(SumiScriptsUITypography.sectionCaptionSmall)
+                                        .foregroundColor(SumiScriptsUIStyle.secondaryText)
                                     Text(entry.date.formatted(date: .abbreviated, time: .standard))
-                                        .font(.caption2)
-                                        .foregroundColor(.secondary)
+                                        .font(SumiScriptsUITypography.sectionCaptionSmall)
+                                        .foregroundColor(SumiScriptsUIStyle.secondaryText)
                                 }
                                 if !entry.message.isEmpty {
                                     Text(entry.message)
-                                        .font(.system(size: 11, design: .monospaced))
+                                        .font(SumiScriptsUITypography.runtimeMessage)
                                         .textSelection(.enabled)
                                 }
                                 if !entry.location.isEmpty {
                                     Text(entry.location)
-                                        .font(.caption2)
-                                        .foregroundColor(.secondary)
+                                        .font(SumiScriptsUITypography.sectionCaptionSmall)
+                                        .foregroundColor(SumiScriptsUIStyle.secondaryText)
                                         .textSelection(.enabled)
                                 }
                                 if !entry.stack.isEmpty {
                                     Text(entry.stack)
-                                        .font(.system(size: 10, design: .monospaced))
-                                        .foregroundColor(.secondary)
+                                        .font(SumiScriptsUITypography.runtimeStack)
+                                        .foregroundColor(SumiScriptsUIStyle.secondaryText)
                                         .textSelection(.enabled)
                                         .lineLimit(8)
                                 }
                             }
                             .padding(8)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Color(NSColor.controlBackgroundColor))
+                            .background(SumiScriptsUIStyle.panelRowBackground)
                             .cornerRadius(8)
                         }
                     }
@@ -154,8 +154,8 @@ struct SumiScriptsManagerView: View {
                 .pickerStyle(.radioGroup)
 
                 Text("Strict mode: the popover switch is the allowlist for that site only. “All sites” mode: switch off on a page disables the script there only (still runs on other sites).")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                    .font(SumiScriptsUITypography.sectionCaption)
+                    .foregroundColor(SumiScriptsUIStyle.secondaryText)
 
                 Toggle("Defer loading script bodies until first inject (saves RAM with large scripts)", isOn: Binding(
                     get: { manager.lazyScriptBodyEnabled },
@@ -229,14 +229,14 @@ struct SumiScriptsManagerView: View {
                 .resizable()
                 .scaledToFit()
                 .frame(width: 64, height: 64)
-                .foregroundColor(.secondary.opacity(0.3))
+                .foregroundColor(SumiScriptsUIStyle.emptyStateIcon)
 
             VStack(spacing: 8) {
                 Text("No Userscripts Installed")
-                    .font(.headline)
+                    .font(SumiScriptsUITypography.sectionTitle)
                 Text("Scripts dropped into the UserScripts folder will appear here automatically.")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .font(SumiScriptsUITypography.managerSubtitle)
+                    .foregroundColor(SumiScriptsUIStyle.secondaryText)
                     .multilineTextAlignment(.center)
             }
 
@@ -246,7 +246,7 @@ struct SumiScriptsManagerView: View {
             .buttonStyle(.borderedProminent)
         }
         .frame(maxWidth: .infinity, minHeight: 300)
-        .background(Color(NSColor.controlBackgroundColor))
+        .background(SumiScriptsUIStyle.panelRowBackground)
         .cornerRadius(12)
     }
 
@@ -255,12 +255,12 @@ struct SumiScriptsManagerView: View {
             HStack {
                 HStack {
                     Image(systemName: "magnifyingglass")
-                        .foregroundColor(.secondary)
+                        .foregroundColor(SumiScriptsUIStyle.secondaryText)
                     TextField("Search scripts...", text: $searchText)
                         .textFieldStyle(.plain)
                 }
                 .padding(8)
-                .background(Color(NSColor.controlBackgroundColor))
+                .background(SumiScriptsUIStyle.panelRowBackground)
                 .cornerRadius(8)
 
                 Button("Reload All") {
@@ -309,28 +309,28 @@ private struct ScriptManagerRow: View {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
                         Text(script.name)
-                            .font(.headline)
+                            .font(SumiScriptsUITypography.sectionTitle)
 
                         if let version = script.metadata.version {
                             Text("v\(version)")
-                                .font(.caption2)
+                                .font(SumiScriptsUITypography.sectionCaptionSmall)
                                 .padding(.horizontal, 4)
                                 .padding(.vertical, 2)
-                                .background(Color.accentColor.opacity(0.1))
+                                .background(SumiScriptsUIStyle.versionBadgeBackground)
                                 .cornerRadius(4)
                         }
                     }
 
                     if let desc = script.metadata.description {
                         Text(desc)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                            .font(SumiScriptsUITypography.sectionCaption)
+                            .foregroundColor(SumiScriptsUIStyle.secondaryText)
                             .lineLimit(2)
                     }
 
                     Text(script.filename)
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundColor(.secondary.opacity(0.7))
+                        .font(SumiScriptsUITypography.managerFilename)
+                        .foregroundColor(SumiScriptsUIStyle.subtleSecondaryText)
                         .padding(.top, 4)
                 }
 
@@ -370,11 +370,11 @@ private struct ScriptManagerRow: View {
                         .buttonStyle(.plain)
                         .help("Delete Script")
                     }
-                    .font(.title3)
+                    .font(SumiScriptsUITypography.managerRowActions)
                 }
             }
             .padding()
-            .background(Color(NSColor.controlBackgroundColor))
+            .background(SumiScriptsUIStyle.panelRowBackground)
             .cornerRadius(8)
 
             // Stats / Info Badge
@@ -407,7 +407,7 @@ private struct InfoBadge: View {
             Image(systemName: icon)
             Text(text)
         }
-        .font(.system(size: 9))
-        .foregroundColor(.secondary)
+        .font(SumiScriptsUITypography.infoBadge)
+        .foregroundColor(SumiScriptsUIStyle.secondaryText)
     }
 }

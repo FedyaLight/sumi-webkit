@@ -298,7 +298,10 @@ final class SumiWebKitDownloadTask: NSObject, WKDownloadDelegate {
         tempFilePresenter = nil
         guard deletePartialFile, let tempURL = item.tempURL else { return }
         Task.detached(priority: .utility) {
-            try? FileManager.default.removeItem(at: tempURL)
+            DownloadFileUtilities.removeItemIfPresent(
+                at: tempURL,
+                context: "remove cancelled WebKit download temp file"
+            )
         }
     }
 

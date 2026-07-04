@@ -100,6 +100,7 @@ extension BrowserURLBarHubContextOwner.Dependencies {
         let extensionsModule = browserManager.extensionsModule
         let extensionSurfaceStore = browserManager.extensionsModule.surfaceStore
         let protectionCoordinator = browserManager.protectionCoordinator
+        let adblockZapperStore = browserManager.adblockZapperStore
         let webViewRoutingService = browserManager.webViewRoutingService
         return Self(
             bookmarkManager: { [weak browserManager, bookmarkManager = browserManager.bookmarkManager] in
@@ -122,7 +123,7 @@ extension BrowserURLBarHubContextOwner.Dependencies {
                 protectionCoordinator
             },
             adblockZapperStore: {
-                SumiAdblockZapperStore.shared
+                adblockZapperStore
             },
             cleanupService: {
                 dataServices.websiteDataCleanupService
