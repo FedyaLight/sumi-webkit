@@ -219,7 +219,7 @@ actor TabRestoreLoader {
             regularTabsBySpace: categorizedTabs.regularTabsBySpace,
             repairReasons: &repairReasons
         )
-        let splitGroups = restoreSplitGroups(
+        let splitGroups = TabRestoreRepair.restoreSplitGroups(
             from: raw.states.first?.splitGroupsData,
             validTabIds: Set(
                 categorizedTabs.regularTabsBySpace.values.flatMap { $0.map(\.id) }
@@ -329,49 +329,12 @@ actor TabRestoreLoader {
         }
 
         for spaceId in foldersBySpace.keys {
-            foldersBySpace[spaceId] = repairedFolderHierarchy(
+            foldersBySpace[spaceId] = TabRestoreRepair.repairedFolderHierarchy(
                 foldersBySpace[spaceId] ?? [],
                 repairReasons: &repairReasons
             ).sorted(by: sortSnapshotFolders)
         }
         return foldersBySpace
-    }
-
-    private func repairedFolderHierarchy(
-        _ folders: [TabSnapshotRepository.SnapshotFolder],
-        repairReasons: inout Set<String>
-    ) -> [TabSnapshotRepository.SnapshotFolder] {
-        let foldersById = Dictionary(uniqueKeysWithValues: folders.map { ($0.id, $0) })
-
-        func hasCycle(from folder: TabSnapshotRepository.SnapshotFolder) -> Bool {
-            var seen: Set<UUID> = [folder.id]
-            var parentId = folder.parentFolderId
-            while let id = parentId {
-                guard seen.insert(id).inserted else { return true }
-                parentId = foldersById[id]?.parentFolderId
-            }
-            return false
-        }
-
-        return folders.map { folder in
-            guard let parentId = folder.parentFolderId else { return folder }
-            guard let parent = foldersById[parentId],
-                  parent.spaceId == folder.spaceId,
-                  !hasCycle(from: folder) else {
-                repairReasons.insert("moved folder out of invalid parent")
-                return TabSnapshotRepository.SnapshotFolder(
-                    id: folder.id,
-                    name: folder.name,
-                    icon: folder.icon,
-                    color: folder.color,
-                    spaceId: folder.spaceId,
-                    parentFolderId: nil,
-                    isOpen: folder.isOpen,
-                    index: folder.index
-                )
-            }
-            return folder
-        }
     }
 
     private struct CategorizedTabs {
@@ -649,67 +612,6 @@ actor TabRestoreLoader {
                 currentSpaceID: currentSpaceId
             )
         )
-    }
-
-    private func restoreSplitGroups(
-        from data: Data?,
-        validTabIds: Set<UUID>,
-        repairReasons: inout Set<String>
-    ) -> [SplitGroup] {
-        guard let data, data.isEmpty == false else { return [] }
-        do {
-            let decoded = try JSONDecoder().decode([SplitGroup].self, from: data)
-            let restored = decoded.compactMap { group -> SplitGroup? in
-                let repairedGroup = repairShortcutBackedSplitGroup(
-                    group,
-                    validTabIds: validTabIds,
-                    repairReasons: &repairReasons
-                )
-                let tabIds = repairedGroup.tabIds.filter { validTabIds.contains($0) }
-                guard tabIds.count >= SplitGroup.minimumTabs else {
-                    repairReasons.insert("removed stale split group")
-                    return nil
-                }
-                if tabIds != repairedGroup.tabIds {
-                    repairReasons.insert("repaired stale split group tabs")
-                    return SplitGroup.make(
-                        tabIds: tabIds,
-                        layoutKind: repairedGroup.layoutKind,
-                        activeTabId: repairedGroup.activeTabId.flatMap { tabIds.contains($0) ? $0 : tabIds.first },
-                        host: repairedGroup.host,
-                        members: repairedGroup.members
-                    )
-                }
-                return repairedGroup
-            }
-            let sanitized = SplitGroup.sanitized(restored)
-            if sanitized.count != restored.count {
-                repairReasons.insert("removed overlapping split groups")
-            }
-            return sanitized
-        } catch {
-            repairReasons.insert("removed unreadable split groups")
-            return []
-        }
-    }
-
-    private func repairShortcutBackedSplitGroup(
-        _ group: SplitGroup,
-        validTabIds: Set<UUID>,
-        repairReasons: inout Set<String>
-    ) -> SplitGroup {
-        var repaired = group
-        for tabId in group.tabIds where !validTabIds.contains(tabId) {
-            guard let member = repaired.member(for: tabId),
-                  let pinId = member.pinId,
-                  validTabIds.contains(pinId)
-            else {
-                continue
-            }
-            repairReasons.insert("repaired split group shortcut binding")
-            repaired = repaired.replacingMemberTab(tabId, with: pinId)
-        }
-        return repaired
     }
 
     private func makeSnapshotTab(

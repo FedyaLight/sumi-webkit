@@ -78,6 +78,9 @@ class TabManager: ObservableObject {
     lazy var shortcutPresentationOwner = TabShortcutPresentationOwner(
         dependencies: .live(tabManager: self)
     )
+    lazy var shortcutContainerRemovalOwner = ShortcutContainerRemovalOwner(
+        dependencies: .live(tabManager: self)
+    )
     lazy var shortcutLiveTabOwner = ShortcutLiveTabOwner(
         dependencies: .live(tabManager: self)
     )

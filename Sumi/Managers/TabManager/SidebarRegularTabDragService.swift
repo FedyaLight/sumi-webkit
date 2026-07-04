@@ -348,7 +348,7 @@ extension SidebarRegularTabDragService.Dependencies {
                 tabManager?.shortcutPinCommandOwner.reorderEssential(pin, to: index) ?? false
             },
             removeFromCurrentContainer: { [weak tabManager] tab in
-                tabManager?.shortcutLiveTabOwner.removeFromCurrentContainer(tab)
+                tabManager?.shortcutContainerRemovalOwner.removeFromCurrentContainer(tab)
             },
             insertRegularTab: { [weak tabManager] tab, spaceId, index in
                 tabManager?.regularTabCollectionOwner.insert(tab, in: spaceId, at: index)

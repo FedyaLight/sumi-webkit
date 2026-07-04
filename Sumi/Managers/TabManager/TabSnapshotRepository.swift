@@ -295,7 +295,7 @@ actor TabSnapshotRepository {
         let ctx = ModelContext(container)
         ctx.autosaveEnabled = false
 
-        try validateDelta(delta)
+        try TabSnapshotValidator.validateDelta(delta)
 
         let upsertSpaceIds = Set(delta.spaces.map(\.id))
         do {
@@ -385,7 +385,7 @@ actor TabSnapshotRepository {
         let ctx = ModelContext(container)
         ctx.autosaveEnabled = false
 
-        try validateInput(snapshot)
+        try TabSnapshotValidator.validateInput(snapshot)
 
         let existingTabsById: [UUID: TabEntity]
         do {
@@ -676,137 +676,6 @@ actor TabSnapshotRepository {
             try ctx.save()
         } catch {
             throw classify(error)
-        }
-    }
-
-    private func validateDelta(_ delta: StructuralDelta) throws {
-        if delta.tabs.contains(where: { $0.index < 0 })
-            || delta.folders.contains(where: { $0.index < 0 })
-            || delta.spaces.contains(where: { $0.index < 0 }) {
-            throw PersistenceError.invalidModelState
-        }
-
-        let tabIDs = Set(delta.tabs.map(\.id))
-        if tabIDs.count != delta.tabs.count {
-            throw PersistenceError.invalidModelState
-        }
-
-        let folderIDs = Set(delta.folders.map(\.id))
-        if folderIDs.count != delta.folders.count {
-            throw PersistenceError.invalidModelState
-        }
-
-        let spaceIDs = Set(delta.spaces.map(\.id))
-        if spaceIDs.count != delta.spaces.count {
-            throw PersistenceError.invalidModelState
-        }
-
-        for tab in delta.tabs {
-            if tab.isPinned && tab.isSpacePinned {
-                throw PersistenceError.invalidModelState
-            }
-            if tab.isPinned && tab.spaceId != nil {
-                throw PersistenceError.invalidModelState
-            }
-            if tab.isSpacePinned && tab.spaceId == nil {
-                throw PersistenceError.invalidModelState
-            }
-            if let spaceId = tab.spaceId, delta.deletedSpaceIds.contains(spaceId) {
-                throw PersistenceError.invalidModelState
-            }
-        }
-
-        if let splitGroups = delta.splitGroups {
-            try validateSplitGroups(splitGroups)
-        }
-
-        for folder in delta.folders where delta.deletedSpaceIds.contains(folder.spaceId) {
-            throw PersistenceError.invalidModelState
-        }
-        try validateFolderHierarchy(delta.folders, requiresCompleteParentSet: false)
-    }
-
-    private func validateInput(_ snapshot: Snapshot) throws {
-        if snapshot.tabs.contains(where: { $0.index < 0 }) {
-            throw PersistenceError.invalidModelState
-        }
-        let tabIDs = Set(snapshot.tabs.map { $0.id })
-        if tabIDs.count != snapshot.tabs.count {
-            throw PersistenceError.invalidModelState
-        }
-        let spaceIDs = Set(snapshot.spaces.map { $0.id })
-        if spaceIDs.count != snapshot.spaces.count {
-            throw PersistenceError.invalidModelState
-        }
-        let folderIDs = Set(snapshot.folders.map(\.id))
-        if folderIDs.count != snapshot.folders.count {
-            throw PersistenceError.invalidModelState
-        }
-
-        for tab in snapshot.tabs {
-            if let spaceId = tab.spaceId, !spaceIDs.contains(spaceId) {
-                throw PersistenceError.invalidModelState
-            }
-            if tab.isPinned && tab.isSpacePinned {
-                throw PersistenceError.invalidModelState
-            }
-            if tab.isPinned && tab.spaceId != nil {
-                throw PersistenceError.invalidModelState
-            }
-            if tab.isSpacePinned && tab.spaceId == nil {
-                throw PersistenceError.invalidModelState
-            }
-        }
-
-        for folder in snapshot.folders where !spaceIDs.contains(folder.spaceId) {
-            throw PersistenceError.invalidModelState
-        }
-        try validateFolderHierarchy(snapshot.folders, requiresCompleteParentSet: true)
-
-        try validateSplitGroups(snapshot.splitGroups)
-
-        for space in snapshot.spaces where space.profileId == nil {
-            Self.log.debug("[validate] Space missing profileId: \(space.id.uuidString, privacy: .public)")
-        }
-    }
-
-    private func validateSplitGroups(_ splitGroups: [SplitGroup]) throws {
-        let sanitized = SplitGroup.sanitized(splitGroups)
-        guard sanitized.count == splitGroups.count else {
-            throw PersistenceError.invalidModelState
-        }
-    }
-
-    private func validateFolderHierarchy(
-        _ folders: [SnapshotFolder],
-        requiresCompleteParentSet: Bool
-    ) throws {
-        let foldersById = Dictionary(uniqueKeysWithValues: folders.map { ($0.id, $0) })
-
-        for folder in folders {
-            guard let parentFolderId = folder.parentFolderId else { continue }
-            if parentFolderId == folder.id {
-                throw PersistenceError.invalidModelState
-            }
-            if let parent = foldersById[parentFolderId] {
-                if parent.spaceId != folder.spaceId {
-                    throw PersistenceError.invalidModelState
-                }
-            } else if requiresCompleteParentSet {
-                throw PersistenceError.invalidModelState
-            }
-        }
-
-        for folder in folders {
-            var visited: Set<UUID> = [folder.id]
-            var parentId = folder.parentFolderId
-            while let id = parentId,
-                  let parent = foldersById[id] {
-                guard visited.insert(id).inserted else {
-                    throw PersistenceError.invalidModelState
-                }
-                parentId = parent.parentFolderId
-            }
         }
     }
 

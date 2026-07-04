@@ -239,7 +239,7 @@ extension SidebarDragOperationRoutingOwner.Dependencies {
                 )
             },
             removeFromCurrentContainer: { [weak tabManager] tab in
-                tabManager?.shortcutLiveTabOwner.removeFromCurrentContainer(tab)
+                tabManager?.shortcutContainerRemovalOwner.removeFromCurrentContainer(tab)
             },
             insertRegularTab: { [weak tabManager] tab, spaceId, index in
                 tabManager?.regularTabCollectionOwner.insert(tab, in: spaceId, at: index)
