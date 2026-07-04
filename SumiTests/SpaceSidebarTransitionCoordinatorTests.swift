@@ -819,7 +819,6 @@ private final class TestSidebarBrowserContextHarness {
             isTransitioningProfile: { false },
             currentProfile: { profileManager.profiles.first },
             currentTab: { _ in tabManager.currentTab },
-            space: { spaceId in tabManager.spaces.first { $0.id == spaceId } },
             extensionToolbarSlots: { _, _ in [] },
             extensionActionBrowserContext: { _ in
                 fatalError("Unused in SpaceSidebarTransitionCoordinatorTests")

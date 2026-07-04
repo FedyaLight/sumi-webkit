@@ -62,7 +62,6 @@ struct SidebarBrowserContext {
     let isTransitioningProfile: () -> Bool
     let currentProfile: () -> Profile?
     let currentTab: (BrowserWindowState) -> Tab?
-    let space: (UUID?) -> Space?
     let extensionToolbarSlots: ([InstalledExtension], UUID?) -> [PinnedToolbarSlot]
     let extensionActionBrowserContext: (BrowserWindowState) -> ExtensionActionBrowserContext
     let savedSidebarWidth: (BrowserWindowState) -> CGFloat
@@ -139,9 +138,6 @@ struct SidebarBrowserContext {
             },
             currentTab: { [weak browserManager] windowState in
                 browserManager?.windowTabContextOwner.currentTab(for: windowState)
-            },
-            space: { [weak browserManager] spaceId in
-                browserManager?.windowSpaceStateOwner.space(for: spaceId)
             },
             extensionToolbarSlots: { [weak browserManager] enabledExtensions, profileId in
                 guard let browserManager else { return [] }
