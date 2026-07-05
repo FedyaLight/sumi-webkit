@@ -580,7 +580,7 @@ struct SpacesSideBarView: View {
 
     private var emptyStateView: some View {
         VStack(spacing: 16) {
-            Image(systemName: "square.grid.2x2")
+            Image(systemName: "plus.circle")
                 .font(.system(size: 48))
                 .foregroundColor(.secondary)
             VStack(spacing: 8) {

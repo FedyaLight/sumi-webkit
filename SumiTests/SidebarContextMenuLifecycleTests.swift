@@ -124,12 +124,10 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
 
     @MainActor
     func testChoiceFactoriesPreserveSpaceProfileAndFolderIcons() {
-        XCTAssertFalse(SumiPersistentGlyph.presentsAsEmoji("square.grid.2x2"))
-
         let personalProfile = Profile(id: Self.profileA, name: "Personal", icon: "😀")
         let workProfile = Profile(id: Self.profileB, name: "Work", icon: "💼")
         let currentSpace = Space(id: Self.spaceA, name: "Current", icon: "✨", profileId: personalProfile.id)
-        let workSpace = Space(id: Self.spaceB, name: "Work", icon: "square.grid.2x2", profileId: workProfile.id)
+        let workSpace = Space(id: Self.spaceB, name: "Work", profileId: workProfile.id)
         let folder = TabFolder(
             id: Self.folderA,
             name: "Project",
@@ -142,7 +140,8 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
             selectedSpaceId: currentSpace.id
         )
         XCTAssertEqual(spaceChoices.first?.icon, .emoji("✨"))
-        XCTAssertEqual(spaceChoices.last?.icon, .systemImage("square.grid.2x2"))
+        XCTAssertEqual(workSpace.icon, SumiPersistentGlyph.spaceDefaultIconValue)
+        XCTAssertEqual(spaceChoices.last?.icon, .defaultSpaceDot)
 
         let profileChoices = makeSidebarContextMenuProfileChoices(
             profiles: [personalProfile, workProfile],
@@ -156,6 +155,23 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
             folderChoices.first?.icon,
             .folderIcon(SumiZenFolderIconCatalog.storageValue(for: "folder"))
         )
+    }
+
+    func testSpaceIconNormalizationAndPresentation() {
+        XCTAssertEqual(
+            SumiPersistentGlyph.normalizedSpaceIconValue(""),
+            SumiPersistentGlyph.spaceDefaultIconValue
+        )
+        XCTAssertEqual(
+            SumiPersistentGlyph.normalizedSpaceIconValue("not-a-real-symbol"),
+            SumiPersistentGlyph.spaceDefaultIconValue
+        )
+        XCTAssertEqual(SumiPersistentGlyph.normalizedSpaceIconValue("✨"), "✨")
+        XCTAssertEqual(SumiPersistentGlyph.normalizedSpaceIconValue("star"), "star")
+
+        XCTAssertEqual(SumiPersistentGlyph.resolvedSpaceIconPresentation(""), .defaultDot)
+        XCTAssertEqual(SumiPersistentGlyph.resolvedSpaceIconPresentation("✨"), .emoji("✨"))
+        XCTAssertEqual(SumiPersistentGlyph.resolvedSpaceIconPresentation("star"), .systemImage("star"))
     }
 
     func testContextMenusHideOrganizationActionsWithoutUsefulTargets() {

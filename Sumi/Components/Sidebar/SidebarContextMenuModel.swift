@@ -31,6 +31,7 @@ struct SidebarContextMenuChoice: Identifiable, Equatable {
 }
 
 enum SidebarContextMenuIcon: Equatable {
+    case defaultSpaceDot
     case systemImage(String)
     case emoji(String)
     case folderIcon(String)

@@ -3,7 +3,7 @@ import Foundation
 
 @MainActor
 final class SpaceCreationSession: ObservableObject, Identifiable {
-    static let defaultIcon = "✨"
+    static let defaultIcon = SumiPersistentGlyph.spaceDefaultIconValue
     static let defaultProfileIcon = SumiProfileIcon.defaultIcon
 
     let id = UUID()

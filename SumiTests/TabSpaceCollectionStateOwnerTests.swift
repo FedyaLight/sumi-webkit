@@ -17,6 +17,8 @@ final class TabSpaceCollectionStateOwnerTests: XCTestCase {
         XCTAssertIdentical(owner.firstSpace, first)
         XCTAssertIdentical(owner.currentSpace, second)
         XCTAssertEqual(owner.currentSpaceId, second.id)
+        XCTAssertEqual(first.icon, SumiPersistentGlyph.spaceDefaultIconValue)
+        XCTAssertEqual(SumiPersistentGlyph.resolvedSpaceIconPresentation(first.icon), .defaultDot)
         XCTAssertTrue(owner.contains(spaceId: first.id))
         XCTAssertIdentical(owner.space(with: second.id), second)
         XCTAssertIdentical(owner.first(where: { $0.profileId == profileId }), first)
@@ -130,6 +132,8 @@ final class TabSpaceLifecycleOwnerTests: XCTestCase {
 
         XCTAssertEqual(resolved.name, "Personal")
         XCTAssertEqual(resolved.profileId, currentProfileId)
+        XCTAssertEqual(resolved.icon, SumiPersistentGlyph.spaceDefaultIconValue)
+        XCTAssertEqual(SumiPersistentGlyph.resolvedSpaceIconPresentation(resolved.icon), .defaultDot)
         XCTAssertIdentical(tabManager.spaceStateOwner.currentSpace, resolved)
         XCTAssertEqual(tabManager.spaceStateOwner.spaces.map(\.id), [resolved.id])
         XCTAssertEqual(

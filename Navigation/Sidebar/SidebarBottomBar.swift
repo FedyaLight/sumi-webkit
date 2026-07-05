@@ -62,7 +62,7 @@ struct SidebarBottomBar: View {
                 )
             } else {
                 Menu {
-                    Button("New Space", systemImage: "square.grid.2x2") {
+                    Button("New Space", systemImage: "plus") {
                         onNewSpaceTap()
                     }
 
@@ -100,7 +100,7 @@ struct SidebarBottomBar: View {
             .action(
                 .init(
                     title: "New Space",
-                    systemImage: "square.grid.2x2",
+                    systemImage: "plus",
                     classification: .structuralMutation,
                     onAction: onNewSpaceTap
                 )

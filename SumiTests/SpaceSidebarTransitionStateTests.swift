@@ -290,7 +290,11 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         let unrelatedId = UUID()
         let orderedSpaceIds = [sourceId, destinationId, unrelatedId]
         let snapshot = SpaceSidebarTransitionSnapshot(
-            source: makePageSnapshot(spaceId: sourceId, title: "Source", iconValue: "square.grid.2x2"),
+            source: makePageSnapshot(
+                spaceId: sourceId,
+                title: "Source",
+                iconValue: SumiPersistentGlyph.spaceDefaultIconValue
+            ),
             destination: makePageSnapshot(spaceId: destinationId, title: "Destination", iconValue: "star"),
             stationaryEssentials: nil
         )

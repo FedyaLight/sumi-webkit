@@ -231,20 +231,26 @@ private final class SpaceEditorViewController: NSViewController, NSTextFieldDele
 
     private func updateIconButton() {
         let icon = SumiPersistentGlyph.normalizedSpaceIconValue(session.icon)
-        if SumiPersistentGlyph.presentsAsEmoji(icon) {
-            iconButton.title = icon
+        switch SumiPersistentGlyph.resolvedSpaceIconPresentation(icon) {
+        case .defaultDot:
+            iconButton.title = ""
+            iconButton.image = SumiPersistentGlyph.defaultSpaceDotImage(
+                canvasSize: NSSize(width: 18, height: 18)
+            )
+            iconButton.imagePosition = .imageOnly
+        case .emoji(let glyph):
+            iconButton.title = glyph
             iconButton.image = nil
             iconButton.imagePosition = .noImage
             iconButton.font = .systemFont(ofSize: 16)
-            return
+        case .systemImage(let systemName):
+            iconButton.title = ""
+            iconButton.image = NSImage(
+                systemSymbolName: systemName,
+                accessibilityDescription: "Change Icon"
+            )
+            iconButton.imagePosition = .imageOnly
         }
-
-        iconButton.title = ""
-        iconButton.image = NSImage(
-            systemSymbolName: SumiPersistentGlyph.resolvedSpaceSystemImageName(icon),
-            accessibilityDescription: "Change Icon"
-        )
-        iconButton.imagePosition = .imageOnly
     }
 
     private func updateValidation() {

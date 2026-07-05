@@ -31,7 +31,7 @@ public class Space: NSObject, Identifiable {
     init(
         id: UUID = UUID(),
         name: String,
-        icon: String = "square.grid.2x2",
+        icon: String = SumiPersistentGlyph.spaceDefaultIconValue,
         color: NSColor = .controlAccentColor,
         workspaceTheme: WorkspaceTheme = .default,
         profileId: UUID? = nil

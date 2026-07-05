@@ -10,7 +10,7 @@ final class TabStructuralSnapshotMaterializerTests: XCTestCase {
 
         let profileId = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
         let otherProfileId = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
-        let firstSpace = Space(id: UUID(), name: "First", icon: "square.grid.2x2", profileId: profileId)
+        let firstSpace = Space(id: UUID(), name: "First", profileId: profileId)
         let secondSpace = Space(id: UUID(), name: "Second", icon: "globe", profileId: otherProfileId)
         let currentTabId = UUID()
 

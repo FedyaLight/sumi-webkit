@@ -8,7 +8,7 @@ final class SidebarEditorPresentationOwnerTests: XCTestCase {
         let owner = makeOwner(spy: spy)
         let originalProfileID = UUID()
         let updatedProfileID = UUID()
-        let space = Space(name: "Old", icon: "square.grid.2x2", profileId: originalProfileID)
+        let space = Space(name: "Old", profileId: originalProfileID)
         let session = SpaceEditorSession(space: space)
         session.name = "  New  "
         session.icon = "star"
@@ -29,7 +29,7 @@ final class SidebarEditorPresentationOwnerTests: XCTestCase {
     func testSpaceCommitSkipsUnchangedAndInvalidSessions() {
         let spy = Spy()
         let owner = makeOwner(spy: spy)
-        let space = Space(name: "Old", icon: "square.grid.2x2", profileId: UUID())
+        let space = Space(name: "Old", profileId: UUID())
         let unchangedSession = SpaceEditorSession(space: space)
         let invalidSession = SpaceEditorSession(space: space)
         invalidSession.name = " "

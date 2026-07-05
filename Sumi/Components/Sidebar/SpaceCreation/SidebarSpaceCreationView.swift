@@ -67,10 +67,15 @@ struct SidebarSpaceCreationView: View {
 
     private var titleRow: some View {
         HStack(spacing: SidebarRowLayout.iconTrailingSpacing) {
-            Image(systemName: "square.grid.2x2")
-                .font(SidebarSpaceCreationThemeTokens.Typography.titleIcon)
-                .foregroundStyle(tokens.secondaryText)
-                .frame(width: SidebarRowLayout.faviconSize, height: SidebarRowLayout.faviconSize)
+            SpaceIconGlyphView(
+                iconValue: SumiPersistentGlyph.spaceDefaultIconValue,
+                textColor: tokens.secondaryText,
+                defaultDotSize: SumiPersistentGlyph.spaceDefaultDotDiameter,
+                emojiFont: SidebarSpaceCreationThemeTokens.Typography.titleIcon,
+                systemFont: SidebarSpaceCreationThemeTokens.Typography.titleIcon,
+                hidesAccessibility: true
+            )
+            .frame(width: SidebarRowLayout.faviconSize, height: SidebarRowLayout.faviconSize)
 
             Text("New space")
                 .font(SidebarSpaceCreationThemeTokens.Typography.title)
@@ -256,15 +261,14 @@ struct SidebarSpaceCreationView: View {
 
     @ViewBuilder
     private var spaceIconView: some View {
-        let icon = session.resolvedIcon
-        if SumiPersistentGlyph.presentsAsEmoji(icon) {
-            Text(icon)
-                .font(SidebarSpaceCreationThemeTokens.Typography.spaceEmoji)
-        } else {
-            Image(systemName: SumiPersistentGlyph.resolvedSpaceSystemImageName(icon))
-                .font(SidebarSpaceCreationThemeTokens.Typography.spaceSymbol)
-                .foregroundStyle(tokens.primaryText)
-        }
+        SpaceIconGlyphView(
+            iconValue: session.resolvedIcon,
+            textColor: tokens.primaryText,
+            defaultDotSize: SumiPersistentGlyph.spaceDefaultDotDiameter,
+            emojiFont: SidebarSpaceCreationThemeTokens.Typography.spaceEmoji,
+            systemFont: SidebarSpaceCreationThemeTokens.Typography.spaceSymbol,
+            hidesAccessibility: true
+        )
     }
 
     private var currentProfileName: String {

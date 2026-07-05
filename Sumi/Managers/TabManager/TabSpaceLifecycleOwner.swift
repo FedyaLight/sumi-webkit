@@ -45,7 +45,7 @@ final class TabSpaceLifecycleOwner {
     @discardableResult
     func createSpace(
         name: String,
-        icon: String = "square.grid.2x2",
+        icon: String = SumiPersistentGlyph.spaceDefaultIconValue,
         workspaceTheme: WorkspaceTheme? = nil,
         profileId: UUID? = nil
     ) -> Space {

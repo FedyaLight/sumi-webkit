@@ -76,7 +76,7 @@ struct SettingsPaneDescriptor: Identifiable, Hashable {
                 icon: tab.icon,
                 group: .browser,
                 keywords: [
-                    "sidebar", "side", "compact spaces", "new tab",
+                    "sidebar", "side", "new tab",
                     "toggle button", "tab list", "button position",
                     "hover", "preview link", "status area",
                 ]

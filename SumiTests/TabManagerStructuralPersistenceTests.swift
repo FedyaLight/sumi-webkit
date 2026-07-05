@@ -126,7 +126,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
             SpaceEntity(
                 id: spaceId,
                 name: "Work",
-                icon: "square.grid.2x2",
+                icon: SumiPersistentGlyph.spaceDefaultIconValue,
                 index: 0,
                 profileId: profileId
             )
@@ -712,7 +712,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
             SpaceEntity(
                 id: spaceAId,
                 name: "A",
-                icon: "square.grid.2x2",
+                icon: SumiPersistentGlyph.spaceDefaultIconValue,
                 index: 1,
                 profileId: profileId
             )
@@ -855,7 +855,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
             SpaceEntity(
                 id: validSpaceId,
                 name: "Valid",
-                icon: "square.grid.2x2",
+                icon: SumiPersistentGlyph.spaceDefaultIconValue,
                 index: 0,
                 profileId: profileId
             )
@@ -955,7 +955,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
             SpaceEntity(
                 id: spaceId,
                 name: "Work",
-                icon: "square.grid.2x2",
+                icon: SumiPersistentGlyph.spaceDefaultIconValue,
                 index: 0,
                 profileId: profileId
             )
@@ -1123,7 +1123,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
             SpaceEntity(
                 id: fixture.spaceAId,
                 name: "A",
-                icon: "square.grid.2x2",
+                icon: SumiPersistentGlyph.spaceDefaultIconValue,
                 index: 0,
                 profileId: fixture.profileId
             )

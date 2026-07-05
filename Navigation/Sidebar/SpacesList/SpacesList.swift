@@ -25,10 +25,6 @@ struct SpacesList: View {
         SpaceStripMetrics.resolve(for: controlSize)
     }
 
-    private var layoutMode: SpacesListLayoutMode {
-        sumiSettings.sidebarCompactSpaces ? .compact : .normal
-    }
-
     private var stripGeometry: SpaceStripGeometry {
         SpaceStripGeometry.make(
             itemCount: displayedSpaces.count,
@@ -99,7 +95,6 @@ struct SpacesList: View {
                     space: space,
                     browserContext: browserContext,
                     isActive: visualSelectedSpaceId == space.id,
-                    compact: layoutMode == .compact,
                     isFaded: false,
                     metrics: metrics,
                     onSelect: {
@@ -211,7 +206,6 @@ struct SpacesList: View {
                 space: draggedSpace,
                 browserContext: browserContext,
                 isActive: visualSelectedSpaceId == draggedSpace.id,
-                compact: layoutMode == .compact,
                 isFaded: false,
                 metrics: metrics,
                 onSelect: { _ = () },
@@ -246,11 +240,4 @@ struct SpacesList: View {
                 .offset(y: -20)
         }
     }
-}
-
-// MARK: - Layout Mode
-
-enum SpacesListLayoutMode {
-    case normal
-    case compact
 }

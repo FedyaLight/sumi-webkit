@@ -14,7 +14,6 @@ struct SpacesListItem: View {
     let space: Space
     let browserContext: SidebarBrowserContext
     let isActive: Bool
-    let compact: Bool
     let isFaded: Bool
     let metrics: SpaceStripMetrics
     let onSelect: () -> Void
@@ -27,7 +26,6 @@ struct SpacesListItem: View {
         space: Space,
         browserContext: SidebarBrowserContext,
         isActive: Bool,
-        compact: Bool,
         isFaded: Bool,
         metrics: SpaceStripMetrics,
         onSelect: @escaping () -> Void,
@@ -36,7 +34,6 @@ struct SpacesListItem: View {
         self.space = space
         self.browserContext = browserContext
         self.isActive = isActive
-        self.compact = compact
         self.isFaded = isFaded
         self.metrics = metrics
         self.onSelect = onSelect
@@ -82,37 +79,21 @@ struct SpacesListItem: View {
 
     @ViewBuilder
     private var spaceIcon: some View {
-        if compact && !isActive {
-            // Compact mode: show dot
-            Circle()
-                .fill(iconColor)
-                .frame(width: metrics.dotSize, height: metrics.dotSize)
-        } else {
-            // Normal mode: show icon or emoji
-            if SumiPersistentGlyph.presentsAsEmoji(space.icon) {
-                Text(space.icon)
-                    .conditionally(if: !isActive, apply: { view in
-                        view.colorMultiply(.gray).blendMode(.luminosity)
-                    })
-                    .background(EmojiPickerAnchor(manager: emojiManager))
-                    .onChange(of: emojiManager.selectedEmoji) { _, newValue in
-                        guard !newValue.isEmpty else { return }
-                        space.icon = SumiPersistentGlyph.normalizedSpaceIconValue(newValue)
-                        browserContext.tabManager.structuralPersistence.markAllSpacesStructurallyDirty()
-                        browserContext.tabManager.scheduleStructuralPersistence()
-                    }
-            } else {
-                Image(systemName: SumiPersistentGlyph.resolvedSpaceSystemImageName(space.icon))
-                    .foregroundStyle(iconColor)
-                    .accessibilityHidden(true)
-                    .background(EmojiPickerAnchor(manager: emojiManager))
-                    .onChange(of: emojiManager.selectedEmoji) { _, newValue in
-                        guard !newValue.isEmpty else { return }
-                        space.icon = SumiPersistentGlyph.normalizedSpaceIconValue(newValue)
-                        browserContext.tabManager.structuralPersistence.markAllSpacesStructurallyDirty()
-                        browserContext.tabManager.scheduleStructuralPersistence()
-                    }
-            }
+        SpaceIconGlyphView(
+            iconValue: space.icon,
+            textColor: iconColor,
+            defaultDotSize: metrics.dotSize,
+            emojiFont: .body,
+            systemFont: .body,
+            desaturatesEmoji: !isActive,
+            hidesAccessibility: true
+        )
+        .background(EmojiPickerAnchor(manager: emojiManager))
+        .onChange(of: emojiManager.selectedEmoji) { _, newValue in
+            guard !newValue.isEmpty else { return }
+            space.icon = SumiPersistentGlyph.normalizedSpaceIconValue(newValue)
+            browserContext.tabManager.structuralPersistence.markAllSpacesStructurallyDirty()
+            browserContext.tabManager.scheduleStructuralPersistence()
         }
     }
 

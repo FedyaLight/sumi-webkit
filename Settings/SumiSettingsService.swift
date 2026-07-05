@@ -23,7 +23,6 @@ class SumiSettingsService {
     private let tabUnloadTimeoutKey = "settings.tabUnloadTimeout"
     private let askBeforeQuitKey = "settings.askBeforeQuit"
     private let sidebarPositionKey = "settings.sidebarPosition"
-    private let sidebarCompactSpacesKey = "settings.sidebarCompactSpaces"
     private let sidebarMiniPlayerEnabledKey = "settings.sidebarMiniPlayerEnabled"
     private let glanceEnabledKey = "settings.glanceEnabled"
     private let showSidebarToggleButtonKey = "settings.showSidebarToggleButton"
@@ -163,12 +162,6 @@ class SumiSettingsService {
     var sidebarPosition: SidebarPosition {
         didSet {
             userDefaults.set(sidebarPosition.rawValue, forKey: sidebarPositionKey)
-        }
-    }
-
-    var sidebarCompactSpaces: Bool {
-        didSet {
-            userDefaults.set(sidebarCompactSpaces, forKey: sidebarCompactSpacesKey)
         }
     }
 
@@ -423,7 +416,6 @@ class SumiSettingsService {
             tabUnloadTimeoutKey: 3600.0,
             askBeforeQuitKey: true,
             sidebarPositionKey: SidebarPosition.left.rawValue,
-            sidebarCompactSpacesKey: false,
             sidebarMiniPlayerEnabledKey: true,
             glanceEnabledKey: true,
             showSidebarToggleButtonKey: true,
@@ -467,7 +459,6 @@ class SumiSettingsService {
         self.tabUnloadTimeout = userDefaults.double(forKey: tabUnloadTimeoutKey)
         self.askBeforeQuit = userDefaults.bool(forKey: askBeforeQuitKey)
         self.sidebarPosition = SidebarPosition(rawValue: userDefaults.string(forKey: sidebarPositionKey) ?? "left") ?? SidebarPosition.left
-        self.sidebarCompactSpaces = userDefaults.bool(forKey: sidebarCompactSpacesKey)
         if userDefaults.object(forKey: sidebarMiniPlayerEnabledKey) == nil {
             self.sidebarMiniPlayerEnabled = true
         } else {

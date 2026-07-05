@@ -145,6 +145,8 @@ enum SidebarContextMenuImageStore {
 
     private static func makeImage(for icon: SidebarContextMenuIcon) -> NSImage? {
         switch icon {
+        case .defaultSpaceDot:
+            return SumiPersistentGlyph.defaultSpaceDotImage(canvasSize: imageSize)
         case .systemImage(let name):
             return sizedCopy(NSImage(systemSymbolName: name, accessibilityDescription: nil))
         case .emoji(let glyph):
@@ -210,6 +212,8 @@ enum SidebarContextMenuImageStore {
 
     private static func cacheKey(for icon: SidebarContextMenuIcon) -> String {
         switch icon {
+        case .defaultSpaceDot:
+            return "space-default-dot"
         case .systemImage(let name):
             return "system:\(name)"
         case .emoji(let glyph):

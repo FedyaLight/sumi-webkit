@@ -27,23 +27,52 @@ enum SpaceTitleRowLayout {
     }
 }
 
+struct SpaceIconGlyphView: View {
+    let iconValue: String
+    let textColor: Color
+    let defaultDotSize: CGFloat
+    let emojiFont: Font
+    let systemFont: Font
+    var desaturatesEmoji = false
+    var hidesAccessibility = false
+
+    var body: some View {
+        Group {
+            switch SumiPersistentGlyph.resolvedSpaceIconPresentation(iconValue) {
+            case .defaultDot:
+                Circle()
+                    .fill(textColor)
+                    .frame(width: defaultDotSize, height: defaultDotSize)
+            case .emoji(let glyph):
+                Text(glyph)
+                    .font(emojiFont)
+                    .conditionally(if: desaturatesEmoji) { view in
+                        view.colorMultiply(.gray).blendMode(.luminosity)
+                    }
+            case .systemImage(let systemName):
+                Image(systemName: systemName)
+                    .font(systemFont)
+                    .foregroundStyle(textColor)
+            }
+        }
+        .accessibilityHidden(hidesAccessibility)
+    }
+}
+
 struct SpaceTitleIconView: View {
     let iconValue: String
     let textColor: Color
     var hidesAccessibility = false
 
     var body: some View {
-        Group {
-            if SumiPersistentGlyph.presentsAsEmoji(iconValue) {
-                Text(iconValue)
-                    .font(.system(size: SpaceTitleRowLayout.iconFontSize))
-            } else {
-                Image(systemName: SumiPersistentGlyph.resolvedSpaceSystemImageName(iconValue))
-                    .font(.system(size: SpaceTitleRowLayout.iconFontSize, weight: .medium))
-                    .foregroundStyle(textColor)
-            }
-        }
-        .accessibilityHidden(hidesAccessibility)
+        SpaceIconGlyphView(
+            iconValue: iconValue,
+            textColor: textColor,
+            defaultDotSize: SumiPersistentGlyph.spaceDefaultDotDiameter,
+            emojiFont: .system(size: SpaceTitleRowLayout.iconFontSize),
+            systemFont: .system(size: SpaceTitleRowLayout.iconFontSize, weight: .medium),
+            hidesAccessibility: hidesAccessibility
+        )
     }
 }
 

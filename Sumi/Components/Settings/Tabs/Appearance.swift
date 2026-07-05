@@ -52,15 +52,6 @@ struct SettingsAppearanceTab: View {
                 }
 
                 SettingsRow(
-                    title: "Compact spaces",
-                    subtitle: "Use denser space presentation in the sidebar."
-                ) {
-                    Toggle("", isOn: $settings.sidebarCompactSpaces)
-                        .labelsHidden()
-                        .toggleStyle(.switch)
-                }
-
-                SettingsRow(
                     title: "Mini player",
                     subtitle: "Show media controls for background tabs at the bottom of the sidebar."
                 ) {

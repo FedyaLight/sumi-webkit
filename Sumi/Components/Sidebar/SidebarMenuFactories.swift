@@ -157,10 +157,7 @@ func makeSidebarContextMenuSpaceChoices(
         SidebarContextMenuChoice(
             id: space.id,
             title: space.name,
-            icon: sidebarContextMenuPersistentGlyphIcon(
-                space.icon,
-                fallbackSystemImage: SumiPersistentGlyph.spaceSystemImageFallback
-            ),
+            icon: sidebarContextMenuSpaceIcon(space.icon),
             isSelected: space.id == selectedSpaceId
         )
     }
@@ -183,18 +180,15 @@ func makeSidebarContextMenuProfileChoices(
     }
 }
 
-private func sidebarContextMenuPersistentGlyphIcon(
-    _ value: String,
-    fallbackSystemImage: String
-) -> SidebarContextMenuIcon {
-    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-    if SumiPersistentGlyph.isValidSystemSymbolName(trimmed) {
-        return .systemImage(trimmed)
+private func sidebarContextMenuSpaceIcon(_ value: String) -> SidebarContextMenuIcon {
+    switch SumiPersistentGlyph.resolvedSpaceIconPresentation(value) {
+    case .defaultDot:
+        return .defaultSpaceDot
+    case .emoji(let glyph):
+        return .emoji(glyph)
+    case .systemImage(let systemName):
+        return .systemImage(systemName)
     }
-    if SumiPersistentGlyph.presentsAsEmoji(trimmed) {
-        return .emoji(trimmed)
-    }
-    return .systemImage(fallbackSystemImage)
 }
 
 private func sidebarDestinationSubmenu(
