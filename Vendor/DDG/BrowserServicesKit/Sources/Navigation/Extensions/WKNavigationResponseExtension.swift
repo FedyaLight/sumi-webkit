@@ -16,15 +16,18 @@
 //  limitations under the License.
 //
 
+import Foundation
 import WebKit
 
 extension WKNavigationResponse {
 
     @nonobjc public var webKitMainFrameNavigation: WKNavigation? {
-        if #available(macOS 27.0, *) {
-            return mainFrameNavigation
-        }
-        return nil
+        guard responds(to: Selector.mainFrameNavigation) else { return nil }
+        return perform(Selector.mainFrameNavigation)?.takeUnretainedValue() as? WKNavigation
+    }
+
+    private enum Selector {
+        static let mainFrameNavigation = NSSelectorFromString("mainFrameNavigation")
     }
 
     // associated NavigationResponse wrapper for the WKNavigationResponse
