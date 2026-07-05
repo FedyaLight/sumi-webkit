@@ -137,6 +137,13 @@ final class WebViewTrackedRegistrationOwner {
             },
             selectTab: { [dependencies] tabID, windowID in
                 dependencies.requireBrowserRuntimeContext().selectTab(tabID, windowID)
+            },
+            isOwnerTabCurrent: { [dependencies] tabID, windowID in
+                let runtimeContext = dependencies.requireBrowserRuntimeContext()
+                guard let windowState = runtimeContext.window(windowID) else {
+                    return false
+                }
+                return runtimeContext.currentTab(windowState)?.id == tabID
             }
         )
 

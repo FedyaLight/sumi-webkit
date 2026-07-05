@@ -12,6 +12,7 @@ private struct HistorySwipeProtectionContext {
 private struct FullscreenProtectionContext {
     let windowID: UUID?
     let tabID: UUID?
+    var didRevealOwnerTabOnExit = false
 }
 
 @MainActor
@@ -33,12 +34,28 @@ private final class FullscreenWebViewProtection {
         activeContexts[webViewID] != nil
     }
 
+    func context(webViewID: ObjectIdentifier) -> FullscreenProtectionContext? {
+        activeContexts[webViewID]
+    }
+
     func begin(webViewID: ObjectIdentifier, windowID: UUID?, tabID: UUID?) {
         activeContexts[webViewID] = FullscreenProtectionContext(windowID: windowID, tabID: tabID)
     }
 
     func finish(webViewID: ObjectIdentifier) -> FullscreenProtectionContext? {
         activeContexts.removeValue(forKey: webViewID)
+    }
+
+    func consumeOwnerTabRevealOnExit(webViewID: ObjectIdentifier) -> FullscreenProtectionContext? {
+        guard var context = activeContexts[webViewID],
+              !context.didRevealOwnerTabOnExit
+        else {
+            return nil
+        }
+
+        context.didRevealOwnerTabOnExit = true
+        activeContexts[webViewID] = context
+        return context
     }
 
     func remove(_ webViewID: ObjectIdentifier) {
@@ -238,6 +255,30 @@ final class WebViewProtectedCommandOwner {
 
     func isFullscreenProtected(_ webViewID: ObjectIdentifier) -> Bool {
         fullscreenProtection.isProtected(webViewID)
+    }
+
+    func activeFullscreenProtection(on webView: WKWebView) -> (
+        webViewID: ObjectIdentifier,
+        windowID: UUID?,
+        tabID: UUID?
+    )? {
+        let webViewID = ObjectIdentifier(webView)
+        guard let context = fullscreenProtection.context(webViewID: webViewID) else {
+            return nil
+        }
+        return (webViewID, context.windowID, context.tabID)
+    }
+
+    func consumeFullscreenExitOwnerReveal(on webView: WKWebView) -> (
+        webViewID: ObjectIdentifier,
+        windowID: UUID?,
+        tabID: UUID?
+    )? {
+        let webViewID = ObjectIdentifier(webView)
+        guard let context = fullscreenProtection.consumeOwnerTabRevealOnExit(webViewID: webViewID) else {
+            return nil
+        }
+        return (webViewID, context.windowID, context.tabID)
     }
 
     func isProtected(_ webView: WKWebView) -> Bool {

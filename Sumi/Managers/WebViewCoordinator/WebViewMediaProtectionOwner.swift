@@ -22,6 +22,7 @@ final class WebViewMediaProtectionOwner {
     typealias DeferredCommandFlusher = (ObjectIdentifier) -> Void
     typealias WindowCompositorRefresher = (UUID) -> Void
     typealias TabSelector = (_ tabID: UUID, _ windowID: UUID) -> Void
+    typealias TabCurrentStateResolver = (_ tabID: UUID, _ windowID: UUID) -> Bool
 
     private let protectedCommandOwner = WebViewProtectedCommandOwner()
     private var nowPlayingSessionCancellablesByWebViewID: [ObjectIdentifier: AnyCancellable] = [:]
@@ -125,7 +126,8 @@ final class WebViewMediaProtectionOwner {
         fallbackWindowID: @escaping WindowIDResolver,
         flushDeferredProtectedCommands: @escaping DeferredCommandFlusher,
         refreshCompositor: @escaping WindowCompositorRefresher,
-        selectTab: @escaping TabSelector
+        selectTab: @escaping TabSelector,
+        isOwnerTabCurrent: @escaping TabCurrentStateResolver
     ) {
         protectedCommandOwner.installFullscreenStateObservationIfNeeded(
             on: webView
@@ -136,7 +138,8 @@ final class WebViewMediaProtectionOwner {
                 fallbackWindowID: fallbackWindowID,
                 flushDeferredProtectedCommands: flushDeferredProtectedCommands,
                 refreshCompositor: refreshCompositor,
-                selectTab: selectTab
+                selectTab: selectTab,
+                isOwnerTabCurrent: isOwnerTabCurrent
             )
         }
     }
@@ -243,22 +246,57 @@ final class WebViewMediaProtectionOwner {
         fallbackWindowID: WindowIDResolver,
         flushDeferredProtectedCommands: DeferredCommandFlusher,
         refreshCompositor: WindowCompositorRefresher,
-        selectTab: TabSelector
+        selectTab: TabSelector,
+        isOwnerTabCurrent: TabCurrentStateResolver
     ) {
-        if webView.sumiIsInFullscreenElementPresentation {
-            beginFullscreenProtectionIfNeeded(
-                for: webView,
-                trackedOwner: trackedOwner,
-                fallbackWindowID: fallbackWindowID
-            )
-        } else {
+        switch webView.fullscreenState {
+        case .notInFullscreen:
             finishFullscreenProtectionIfNeeded(
                 for: webView,
                 trackedOwner: trackedOwner,
                 flushDeferredProtectedCommands: flushDeferredProtectedCommands,
                 refreshCompositor: refreshCompositor,
-                selectTab: selectTab
+                selectTab: selectTab,
+                isOwnerTabCurrent: isOwnerTabCurrent
             )
+        case .exitingFullscreen:
+            if protectedCommandOwner.activeFullscreenProtection(on: webView) == nil {
+                beginFullscreenProtectionIfNeeded(
+                    for: webView,
+                    trackedOwner: trackedOwner,
+                    fallbackWindowID: fallbackWindowID
+                )
+            }
+            revealOwnerTabForFullscreenExitIfNeeded(
+                for: webView,
+                trackedOwner: trackedOwner,
+                fallbackWindowID: fallbackWindowID,
+                selectTab: selectTab,
+                isOwnerTabCurrent: isOwnerTabCurrent
+            )
+        case .enteringFullscreen, .inFullscreen:
+            beginFullscreenProtectionIfNeeded(
+                for: webView,
+                trackedOwner: trackedOwner,
+                fallbackWindowID: fallbackWindowID
+            )
+        @unknown default:
+            if webView.sumiIsInFullscreenElementPresentation {
+                beginFullscreenProtectionIfNeeded(
+                    for: webView,
+                    trackedOwner: trackedOwner,
+                    fallbackWindowID: fallbackWindowID
+                )
+            } else {
+                finishFullscreenProtectionIfNeeded(
+                    for: webView,
+                    trackedOwner: trackedOwner,
+                    flushDeferredProtectedCommands: flushDeferredProtectedCommands,
+                    refreshCompositor: refreshCompositor,
+                    selectTab: selectTab,
+                    isOwnerTabCurrent: isOwnerTabCurrent
+                )
+            }
         }
     }
 
@@ -280,12 +318,35 @@ final class WebViewMediaProtectionOwner {
         )
     }
 
+    private func revealOwnerTabForFullscreenExitIfNeeded(
+        for webView: WKWebView,
+        trackedOwner: TrackedOwnerResolver,
+        fallbackWindowID: WindowIDResolver,
+        selectTab: TabSelector,
+        isOwnerTabCurrent: TabCurrentStateResolver
+    ) {
+        let activeProtection = protectedCommandOwner.activeFullscreenProtection(on: webView)
+        let owner = trackedOwner(webView)
+        guard let tabID = activeProtection?.tabID ?? owner?.tabID,
+              let windowID = activeProtection?.windowID ?? owner?.windowID ?? fallbackWindowID(webView),
+              !isOwnerTabCurrent(tabID, windowID)
+        else {
+            return
+        }
+        guard protectedCommandOwner.consumeFullscreenExitOwnerReveal(on: webView) != nil else {
+            return
+        }
+
+        selectTab(tabID, windowID)
+    }
+
     private func finishFullscreenProtectionIfNeeded(
         for webView: WKWebView,
         trackedOwner: TrackedOwnerResolver,
         flushDeferredProtectedCommands: DeferredCommandFlusher,
         refreshCompositor: WindowCompositorRefresher,
-        selectTab: TabSelector
+        selectTab: TabSelector,
+        isOwnerTabCurrent: TabCurrentStateResolver
     ) {
         guard let result = protectedCommandOwner.finishFullscreenProtection(on: webView) else {
             return
@@ -296,15 +357,15 @@ final class WebViewMediaProtectionOwner {
             "finishFullscreenProtection webView=\(result.webViewID)"
         )
         flushDeferredProtectedCommands(result.webViewID)
-        if let windowID = result.windowID {
+
+        if let tabID = result.tabID,
+           let windowID = result.windowID,
+           !isOwnerTabCurrent(tabID, windowID) {
+            selectTab(tabID, windowID)
+        } else if let windowID = result.windowID {
             refreshCompositor(windowID)
         }
-        // Exiting element fullscreen returns the web view to its owner tab's
-        // (possibly hidden) container. Re-select that tab so the user lands back
-        // on the video instead of whatever tab is currently displayed.
-        if let tabID = result.tabID, let windowID = result.windowID {
-            selectTab(tabID, windowID)
-        }
+
         postMediaTouchBarRecoveryRequest(
             for: webView,
             owner: owner,

@@ -4,7 +4,7 @@ import WebKit
 
 @MainActor
 final class WindowMediaTouchBarRecoveryController {
-    private static let retryDelays: [TimeInterval] = [0, 0.2, 0.5]
+    private static let retryDelays: [TimeInterval] = [0.2, 0.5]
 
     private let windowID: UUID
     private let recover: (UUID?, WKWebView) -> Void

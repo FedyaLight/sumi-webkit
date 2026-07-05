@@ -385,9 +385,6 @@ final class WindowWebContentController: NSViewController {
             return
         }
 
-        host.attachDisplayedContentIfNeeded()
-        host.layoutSubtreeIfNeeded()
-
         guard host.window === window,
               webView.window === window,
               webView.superview != nil
@@ -530,6 +527,29 @@ private final class WindowWebContentHostLifecycleOwner {
 
     func attach(_ host: SumiWebViewContainerView, to paneView: PaneContainerView) {
         let isProtected = webViewCoordinator.isWebViewProtectedFromCompositorMutation(host.webView)
+        let needsInsertion = host.superview == nil
+        let needsPaneMove = host.superview != nil && host.superview !== paneView
+        let needsReveal = host.isHidden
+        let needsTransitionGate = needsInsertion || needsPaneMove || needsReveal
+        let isStableAttach = host.superview === paneView
+            && !host.isHidden
+            && host.frame == paneView.bounds
+
+        if isStableAttach {
+            performWithoutImplicitAnimations {
+                hostRegistry.removeParkedProtectedHost(for: host.webView)
+                host.autoresizingMask = [.width, .height]
+                configureViewportStyle(on: host)
+                host.attachDisplayedContentIfNeeded()
+            }
+
+            if isProtected {
+                hostRegistry.parkProtectedHost(host)
+            }
+            webViewCoordinator.completePromotedHostAttachment(for: host.tabID, in: windowID)
+            return
+        }
+
         performWithoutImplicitAnimations {
             hostRegistry.removeParkedProtectedHost(for: host.webView)
             if host.superview != nil && host.superview !== paneView {
@@ -544,7 +564,9 @@ private final class WindowWebContentHostLifecycleOwner {
             configureViewportStyle(on: host)
 
             // Temporary drawsBackground = false transition gate to guarantee zero white flashes
-            host.webView.sumiSetDrawsBackground(false)
+            if needsTransitionGate {
+                host.webView.sumiSetDrawsBackground(false)
+            }
 
             host.attachDisplayedContentIfNeeded()
             host.isHidden = false
@@ -553,8 +575,10 @@ private final class WindowWebContentHostLifecycleOwner {
         }
 
         let webView = host.webView
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak webView] in
-            webView?.sumiSetDrawsBackground(true)
+        if needsTransitionGate {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak webView] in
+                webView?.sumiSetDrawsBackground(true)
+            }
         }
 
         if isProtected {
