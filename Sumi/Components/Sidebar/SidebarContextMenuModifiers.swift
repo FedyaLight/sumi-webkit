@@ -78,6 +78,7 @@ private struct SidebarAppKitPrimaryActionModifier: ViewModifier {
     let isEnabled: Bool
     let isInteractionEnabled: Bool
     let sourceID: String?
+    let routingPriorityBoost: Int
     let onMiddleClick: (() -> Void)?
     let action: () -> Void
 
@@ -101,6 +102,7 @@ private struct SidebarAppKitPrimaryActionModifier: ViewModifier {
                         primaryAction: primaryAction,
                         onMiddleClick: middleClickAction,
                         sourceID: sourceID,
+                        routingPriorityBoost: routingPriorityBoost,
                         presentationMode: presentationContext.mode
                     )
                 )
@@ -216,6 +218,7 @@ extension View {
         isEnabled: Bool = true,
         isInteractionEnabled: Bool = true,
         sourceID: String? = nil,
+        routingPriorityBoost: Int = 0,
         onMiddleClick: (() -> Void)? = nil,
         action: @escaping () -> Void
     ) -> some View {
@@ -224,6 +227,7 @@ extension View {
                 isEnabled: isEnabled,
                 isInteractionEnabled: isInteractionEnabled,
                 sourceID: sourceID,
+                routingPriorityBoost: routingPriorityBoost,
                 onMiddleClick: onMiddleClick,
                 action: action
             )

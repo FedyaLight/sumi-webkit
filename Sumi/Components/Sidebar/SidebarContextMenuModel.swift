@@ -165,6 +165,7 @@ struct SidebarAppKitItemConfiguration {
     var primaryAction: (() -> Void)?
     var onMiddleClick: (() -> Void)?
     var sourceID: String?
+    var routingPriorityBoost: Int = 0
     var suppressesPrimaryActionAnimation: Bool = false
     var presentationMode: SidebarPresentationMode = .docked
 

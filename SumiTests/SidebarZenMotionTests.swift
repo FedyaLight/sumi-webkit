@@ -245,6 +245,101 @@ final class SidebarZenMotionTests: XCTestCase {
         ), 0)
     }
 
+    func testMiniPlayerCardSurfaceFocusesSourceAndBlocksOverlappingSidebarRowOwner() {
+        let state = SidebarInteractionState()
+        let coordinator = SidebarTransientSessionCoordinator(
+            windowID: UUID(),
+            interactionState: state
+        )
+        let controller = SidebarContextMenuController(
+            interactionState: state,
+            transientSessionCoordinator: coordinator
+        )
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 240, height: 160),
+            styleMask: .borderless,
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false
+
+        let containerView = NSView(frame: NSRect(x: 0, y: 0, width: 240, height: 160))
+        let rowHostView = NSView(frame: NSRect(x: 0, y: 0, width: 200, height: 60))
+        var focusCount = 0
+        var rowActivationCount = 0
+        var playPauseCount = 0
+        let miniPlayerCardOwner = makeInteractiveItemView(
+            sourceID: "sidebar-mini-player-card-test",
+            state: state,
+            routingPriorityBoost: 40
+        ) {
+            focusCount += 1
+        }
+        let rowOwner = makeInteractiveItemView(
+            sourceID: "space-new-tab-test",
+            state: state
+        ) {
+            rowActivationCount += 1
+        }
+        let playPauseOwner = makeInteractiveItemView(
+            sourceID: "sidebar-mini-player-play-pause-test",
+            state: state,
+            routingPriorityBoost: 50
+        ) {
+            playPauseCount += 1
+        }
+        let cardPoint = NSPoint(x: 20, y: 20)
+        let playPausePoint = NSPoint(x: 112, y: 20)
+
+        miniPlayerCardOwner.frame = NSRect(x: 0, y: 0, width: 200, height: 60)
+        rowOwner.frame = rowHostView.bounds
+        playPauseOwner.frame = NSRect(x: 100, y: 7, width: 26, height: 26)
+        window.contentView = containerView
+        containerView.addSubview(miniPlayerCardOwner)
+        containerView.addSubview(rowHostView)
+        rowHostView.addSubview(rowOwner)
+        miniPlayerCardOwner.addSubview(playPauseOwner)
+        miniPlayerCardOwner.contextMenuController = controller
+        rowOwner.contextMenuController = controller
+        playPauseOwner.contextMenuController = controller
+        defer {
+            miniPlayerCardOwner.prepareForDismantle()
+            rowOwner.prepareForDismantle()
+            playPauseOwner.prepareForDismantle()
+            window.contentView = nil
+            window.close()
+        }
+
+        let routedCardClick = SidebarColumnHitTestRouting.routedHit(
+            point: cardPoint,
+            in: containerView,
+            originalHit: rowOwner,
+            hostedSidebarView: containerView,
+            contextMenuController: controller,
+            eventType: .leftMouseDown
+        )
+        let routedPlayPauseClick = SidebarColumnHitTestRouting.routedHit(
+            point: playPausePoint,
+            in: containerView,
+            originalHit: miniPlayerCardOwner,
+            hostedSidebarView: containerView,
+            contextMenuController: controller,
+            eventType: .leftMouseDown
+        )
+
+        XCTAssertTrue(routedCardClick === miniPlayerCardOwner)
+        XCTAssertTrue(routedPlayPauseClick === playPauseOwner)
+
+        miniPlayerCardOwner.mouseDown(with: mouseEvent(.leftMouseDown, location: cardPoint))
+        miniPlayerCardOwner.mouseUp(with: mouseEvent(.leftMouseUp, location: cardPoint))
+        playPauseOwner.mouseDown(with: mouseEvent(.leftMouseDown, location: playPausePoint))
+        playPauseOwner.mouseUp(with: mouseEvent(.leftMouseUp, location: playPausePoint))
+
+        XCTAssertEqual(focusCount, 1)
+        XCTAssertEqual(rowActivationCount, 0)
+        XCTAssertEqual(playPauseCount, 1)
+    }
+
     func testSidebarColumnLeavesSideButtonsForWorkspaceCaptureSurface() {
         let containerView = NSView(frame: NSRect(x: 0, y: 0, width: 240, height: 160))
         let captureView = NSView(frame: containerView.bounds)
@@ -276,6 +371,7 @@ final class SidebarZenMotionTests: XCTestCase {
     private func makeInteractiveItemView(
         sourceID: String,
         state: SidebarInteractionState,
+        routingPriorityBoost: Int = 0,
         action: @escaping () -> Void = { /* no-op */ }
     ) -> SidebarInteractiveItemView {
         let view = SidebarInteractiveItemView(frame: NSRect(x: 0, y: 0, width: 160, height: 36))
@@ -283,16 +379,20 @@ final class SidebarZenMotionTests: XCTestCase {
             configuration: SidebarAppKitItemConfiguration(
                 interactionState: state,
                 primaryAction: action,
-                sourceID: sourceID
+                sourceID: sourceID,
+                routingPriorityBoost: routingPriorityBoost
             )
         )
         return view
     }
 
-    private func mouseEvent(_ type: NSEvent.EventType) -> NSEvent {
+    private func mouseEvent(
+        _ type: NSEvent.EventType,
+        location: NSPoint = NSPoint(x: 12, y: 12)
+    ) -> NSEvent {
         NSEvent.mouseEvent(
             with: type,
-            location: NSPoint(x: 12, y: 12),
+            location: location,
             modifierFlags: [],
             timestamp: 0,
             windowNumber: 0,

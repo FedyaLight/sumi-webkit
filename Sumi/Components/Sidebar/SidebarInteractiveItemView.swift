@@ -297,7 +297,9 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
     ) -> Int {
         guard isInteractive, bounds.contains(point) else { return 0 }
 
-        let inputBonus = itemConfiguration.isInteractionEnabled ? 100 : 0
+        let inputBonus = itemConfiguration.isInteractionEnabled
+            ? 100 + itemConfiguration.routingPriorityBoost
+            : 0
         switch eventType {
         case .leftMouseDown?:
             if shouldCaptureDrag(at: point) {
@@ -571,6 +573,7 @@ private struct SidebarAppKitItemBridgeUpdateSignature: Equatable {
     let hasPrimaryAction: Bool
     let hasMiddleClick: Bool
     let sourceID: String?
+    let routingPriorityBoost: Int
     let suppressesPrimaryActionAnimation: Bool
     let presentationMode: SidebarPresentationMode
     let supportsPrimaryMouseTracking: Bool
@@ -591,6 +594,7 @@ private extension SidebarAppKitItemConfiguration {
             hasPrimaryAction: primaryAction != nil,
             hasMiddleClick: onMiddleClick != nil,
             sourceID: sourceID,
+            routingPriorityBoost: routingPriorityBoost,
             suppressesPrimaryActionAnimation: suppressesPrimaryActionAnimation,
             presentationMode: presentationMode,
             supportsPrimaryMouseTracking: supportsPrimaryMouseTracking

@@ -75,6 +75,13 @@ private struct SumiBackgroundMediaCardView: View {
     /// When collapsed, reveal height is 0; band fills the card under vertical padding so Spacers can center the row.
     private static let controlsBandCollapsedHeight =
         collapsedCardHeight - cardVerticalPadding * 2
+    private static let cardSurfaceSourceIDPrefix = "sidebar-mini-player-card"
+    private static let focusButtonSourceIDPrefix = "sidebar-mini-player-focus"
+    private static let playPauseButtonSourceIDPrefix = "sidebar-mini-player-play-pause"
+    private static let muteButtonSourceIDPrefix = "sidebar-mini-player-mute"
+    // The expanded card can visually cover sidebar rows; route mini-player hits above row owners.
+    private static let cardSurfaceRoutingPriorityBoost = 40
+    private static let controlRoutingPriorityBoost = 50
 
     let cardState: SumiBackgroundMediaCardState
     let onFocus: () -> Void
@@ -108,6 +115,26 @@ private struct SumiBackgroundMediaCardView: View {
 
     private var cardCornerRadius: CGFloat {
         sumiSettings.resolvedCornerRadius(10)
+    }
+
+    private var cardSourceIDComponent: String {
+        cardState.tabId.uuidString
+    }
+
+    private var cardSurfaceSourceID: String {
+        "\(Self.cardSurfaceSourceIDPrefix)-\(cardSourceIDComponent)"
+    }
+
+    private var focusButtonSourceID: String {
+        "\(Self.focusButtonSourceIDPrefix)-\(cardSourceIDComponent)"
+    }
+
+    private var playPauseButtonSourceID: String {
+        "\(Self.playPauseButtonSourceIDPrefix)-\(cardSourceIDComponent)"
+    }
+
+    private var muteButtonSourceID: String {
+        "\(Self.muteButtonSourceIDPrefix)-\(cardSourceIDComponent)"
     }
 
     var body: some View {
@@ -145,6 +172,11 @@ private struct SumiBackgroundMediaCardView: View {
         }
         .shadow(color: .black.opacity(0.05), radius: 8, y: 1)
         .contentShape(Rectangle())
+        .sidebarAppKitPrimaryAction(
+            sourceID: cardSurfaceSourceID,
+            routingPriorityBoost: Self.cardSurfaceRoutingPriorityBoost,
+            action: onFocus
+        )
         .onHover { hovering in
             withAnimation(Self.hoverExpandAnimation) {
                 isHovered = hovering
@@ -156,6 +188,8 @@ private struct SumiBackgroundMediaCardView: View {
         VStack(alignment: .leading, spacing: 0) {
             infoRow
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
         .padding(.top, 5)
         .padding(.bottom, 5)
         .fixedSize(horizontal: false, vertical: true)
@@ -194,6 +228,7 @@ private struct SumiBackgroundMediaCardView: View {
                     systemName: cardState.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill",
                     help: cardState.isMuted ? "Unmute Audio" : "Mute Audio",
                     isEnabled: cardState.canMute,
+                    sourceID: muteButtonSourceID,
                     action: onToggleMute
                 )
             }
@@ -203,6 +238,7 @@ private struct SumiBackgroundMediaCardView: View {
                 help: cardState.isPlaying ? "Pause" : "Play",
                 isEnabled: cardState.canPlayPause,
                 isPrimary: true,
+                sourceID: playPauseButtonSourceID,
                 action: onPlayPause
             )
         }
@@ -224,6 +260,11 @@ private struct SumiBackgroundMediaCardView: View {
                 }
         }
         .buttonStyle(.plain)
+        .sidebarAppKitPrimaryAction(
+            sourceID: focusButtonSourceID,
+            routingPriorityBoost: Self.controlRoutingPriorityBoost,
+            action: onFocus
+        )
         .help("Focus source tab")
     }
 
@@ -232,6 +273,7 @@ private struct SumiBackgroundMediaCardView: View {
         help: String,
         isEnabled: Bool = true,
         isPrimary: Bool = false,
+        sourceID: String,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
@@ -251,6 +293,12 @@ private struct SumiBackgroundMediaCardView: View {
         .buttonStyle(.plain)
         .disabled(!isEnabled)
         .opacity(isEnabled ? 1 : 0.35)
+        .sidebarAppKitPrimaryAction(
+            isEnabled: isEnabled,
+            sourceID: sourceID,
+            routingPriorityBoost: Self.controlRoutingPriorityBoost,
+            action: action
+        )
         .help(help)
     }
 }
