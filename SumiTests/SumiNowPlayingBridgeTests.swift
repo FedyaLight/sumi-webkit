@@ -83,7 +83,7 @@ final class SumiNativeNowPlayingControllerFeatureGateTests: XCTestCase {
             tabTitle: "Title",
             playbackState: .playing,
             isMuted: false,
-            favicon: nil,
+            faviconSource: nil,
             canPlayPause: true,
             canMute: true
         )
@@ -103,6 +103,71 @@ final class SumiNativeNowPlayingControllerFeatureGateTests: XCTestCase {
                 in: windowState
             )
         )
+    }
+
+    func testCardStateCarriesProfileScopedFaviconSource() async throws {
+        let profileId = try XCTUnwrap(UUID(uuidString: "11111111-1111-1111-1111-111111111111"))
+        let profile = Profile(id: profileId, name: "Media")
+        let tab = Tab(
+            url: try XCTUnwrap(URL(string: "https://media.example/watch")),
+            loadsCachedFaviconOnInit: false
+        )
+        tab.profileId = profile.id
+        tab.profileResolutionRuntime = TabProfileResolutionRuntime(
+            ephemeralProfileForTab: { _, _ in nil },
+            profile: { id in id == profile.id ? profile : nil },
+            spaceProfile: { _ in nil },
+            currentProfile: { nil },
+            firstProfile: { nil }
+        )
+        tab.applyAudioState(.unmuted(isPlayingAudio: true))
+
+        let windowState = BrowserWindowState()
+        let controller = SumiNativeNowPlayingController(
+            candidateProvider: { context in context.candidateTabs() },
+            infoProvider: { _, _, _ in nil },
+            commandExecutor: { _, _, _, _ in false },
+            activationHandler: { _, _, _ in /* no-op */ }
+        )
+        let context = SumiNativeNowPlayingRuntimeContext(
+            candidateTabs: { [(tab, windowState)] },
+            windowState: { id in id == windowState.id ? windowState : nil },
+            resolvedTab: { tabId, _ in tabId == tab.id ? tab : nil },
+            resolvedNowPlayingWebView: { _, _ in nil },
+            selectTab: { _, _ in /* no-op */ }
+        )
+
+        controller.configure(context: context)
+        await controller.refreshImmediately()
+
+        let faviconSource = try XCTUnwrap(controller.cardState?.faviconSource)
+        XCTAssertEqual(faviconSource.documentURL, tab.url)
+        XCTAssertEqual(faviconSource.partition, .regular(profile.id))
+
+        controller.setFeatureEnabled(false)
+    }
+
+    func testMutedStatePreservesFaviconSource() throws {
+        let source = SumiBackgroundMediaFaviconSource(
+            documentURL: try XCTUnwrap(URL(string: "https://media.example/watch")),
+            partition: .regular(try XCTUnwrap(UUID(uuidString: "22222222-2222-2222-2222-222222222222")))
+        )
+        let state = SumiBackgroundMediaCardState(
+            id: "test",
+            tabId: UUID(),
+            windowId: UUID(),
+            title: "Title",
+            subtitle: "",
+            sourceHost: "media.example",
+            tabTitle: "Title",
+            playbackState: .playing,
+            isMuted: false,
+            faviconSource: source,
+            canPlayPause: true,
+            canMute: true
+        )
+
+        XCTAssertEqual(state.withMuted(true).faviconSource, source)
     }
 }
 

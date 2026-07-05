@@ -256,12 +256,19 @@ private struct SumiBackgroundMediaCardView: View {
 }
 
 private struct SumiMediaSourceIconView: View {
+    private struct LoadedFavicon {
+        let source: SumiBackgroundMediaFaviconSource
+        let image: NSImage
+    }
+
     let cardState: SumiBackgroundMediaCardState
+
+    @State private var loadedFavicon: LoadedFavicon?
+    @State private var refreshID = UUID()
 
     var body: some View {
         Group {
-            if let faviconKey = cardState.favicon,
-               let icon = TabFaviconStore.getCachedImage(for: faviconKey) {
+            if let icon = displayedFavicon {
                 Image(nsImage: icon)
                     .resizable()
                     .scaledToFit()
@@ -276,6 +283,82 @@ private struct SumiMediaSourceIconView: View {
                     .foregroundStyle(.secondary)
             }
         }
+        .task(id: faviconLoadID) {
+            await loadFavicon()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .faviconCacheUpdated)) { notification in
+            guard let source = cardState.faviconSource,
+                  SumiFaviconNotificationMatcher.update(
+                    notification,
+                    matches: source.documentURL,
+                    partition: source.partition
+                  )
+            else { return }
+
+            loadedFavicon = nil
+            refreshID = UUID()
+        }
+    }
+
+    @MainActor
+    private var displayedFavicon: NSImage? {
+        guard let source = cardState.faviconSource else { return nil }
+
+        if let image = Self.cachedFavicon(for: source) {
+            return image
+        }
+
+        guard loadedFavicon?.source == source else { return nil }
+        return loadedFavicon?.image
+    }
+
+    private var faviconLoadID: String {
+        guard let source = cardState.faviconSource else {
+            return "none|\(refreshID.uuidString)"
+        }
+
+        return [
+            source.documentURL.absoluteString,
+            source.partition.storageComponent,
+            refreshID.uuidString,
+        ].joined(separator: "|")
+    }
+
+    @MainActor
+    private func loadFavicon() async {
+        guard let source = cardState.faviconSource else {
+            loadedFavicon = nil
+            return
+        }
+
+        if let cachedImage = Self.cachedFavicon(for: source) {
+            loadedFavicon = LoadedFavicon(source: source, image: cachedImage)
+            return
+        }
+
+        let loadedImage = await TabFaviconStore.loadCachedDisplayImage(
+            forDocumentURL: source.documentURL,
+            partition: source.partition,
+            context: .tabSidebar,
+            priority: .visibleSidebarOrTabStrip
+        )
+
+        guard !Task.isCancelled else { return }
+
+        if let loadedImage {
+            loadedFavicon = LoadedFavicon(source: source, image: loadedImage)
+        } else if loadedFavicon?.source != source {
+            loadedFavicon = nil
+        }
+    }
+
+    @MainActor
+    private static func cachedFavicon(for source: SumiBackgroundMediaFaviconSource) -> NSImage? {
+        TabFaviconStore.getCachedImage(
+            forDocumentURL: source.documentURL,
+            partition: source.partition,
+            context: .tabSidebar
+        )
     }
 }
 

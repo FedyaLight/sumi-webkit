@@ -11,6 +11,11 @@ struct SumiNativeNowPlayingInfo: Equatable {
     let playbackState: SumiBackgroundMediaPlaybackState
 }
 
+struct SumiBackgroundMediaFaviconSource: Equatable {
+    let documentURL: URL
+    let partition: SumiFaviconPartition
+}
+
 struct SumiBackgroundMediaCardState: Identifiable, Equatable {
     let id: String
     let tabId: UUID
@@ -21,7 +26,7 @@ struct SumiBackgroundMediaCardState: Identifiable, Equatable {
     let tabTitle: String
     var playbackState: SumiBackgroundMediaPlaybackState
     var isMuted: Bool
-    let favicon: String?
+    let faviconSource: SumiBackgroundMediaFaviconSource?
     let canPlayPause: Bool
     let canMute: Bool
 
@@ -40,7 +45,7 @@ struct SumiBackgroundMediaCardState: Identifiable, Equatable {
             tabTitle: tabTitle,
             playbackState: playbackState,
             isMuted: muted,
-            favicon: favicon,
+            faviconSource: faviconSource,
             canPlayPause: canPlayPause,
             canMute: canMute
         )

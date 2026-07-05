@@ -342,7 +342,7 @@ final class SumiNativeNowPlayingController: ObservableObject, SumiNativeNowPlayi
         let tabTitle = normalizedTitle(tab.name) ?? "Media"
         let title = normalizedTitle(info?.title) ?? tabTitle
         let subtitle = normalizedTitle(info?.artist) ?? ""
-        let favicon = SumiFaviconResolver.cacheKey(for: tab.url)
+        let faviconSource = faviconSource(for: tab)
         let ownerContext = OwnerContext(tabId: tab.id, windowId: windowState.id)
         let playbackState: SumiBackgroundMediaPlaybackState
         if tab.audioState.isPlayingAudio {
@@ -365,9 +365,20 @@ final class SumiNativeNowPlayingController: ObservableObject, SumiNativeNowPlayi
             tabTitle: tabTitle,
             playbackState: playbackState,
             isMuted: tab.audioState.isMuted,
-            favicon: favicon,
+            faviconSource: faviconSource,
             canPlayPause: true,
             canMute: playbackState == .playing
+        )
+    }
+
+    private func faviconSource(for tab: Tab) -> SumiBackgroundMediaFaviconSource? {
+        guard TabFaviconStore.referenceKey(forDocumentURL: tab.url) != nil else {
+            return nil
+        }
+
+        return SumiBackgroundMediaFaviconSource(
+            documentURL: tab.url,
+            partition: tab.faviconService.partition(profile: tab.resolveProfile())
         )
     }
 

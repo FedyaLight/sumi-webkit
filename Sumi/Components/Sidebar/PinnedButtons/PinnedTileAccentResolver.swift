@@ -80,11 +80,7 @@ enum PinnedTileAccentResolver {
     }
 
     static func faviconUpdate(_ notification: Notification, matches launchURL: URL?) -> Bool {
-        guard let updatedDomain = notification.userInfo?[NSNotification.Name.faviconCacheUpdatedDomainKey] as? String else {
-            return true
-        }
-        guard let host = normalizedHost(for: launchURL) else { return false }
-        return host == SumiSiteNormalizer().host(fromRawHost: updatedDomain)
+        SumiFaviconNotificationMatcher.update(notification, matches: launchURL)
     }
 
     private static func normalizedHost(for launchURL: URL?) -> String? {

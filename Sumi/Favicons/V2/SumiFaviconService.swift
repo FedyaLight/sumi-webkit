@@ -643,7 +643,7 @@ extension SumiFaviconService {
                 userInfo[NSNotification.Name.faviconCacheUpdatedDomainKey] = domain
             }
             if let partition {
-                userInfo["SumiFaviconPartition"] = partition.storageComponent
+                userInfo[NSNotification.Name.faviconCacheUpdatedPartitionKey] = partition.storageComponent
             }
             if let revision {
                 userInfo["SumiFaviconRevision"] = revision
