@@ -300,7 +300,7 @@ final class WebViewMediaProtectionOwner {
     }
 
     private func requestFullscreenMediaExit(on webView: WKWebView) {
-        webView.sumiFullscreenWindowController?.window?.toggleFullScreen(webView)
+        webView.sumiFullscreenPresentation.requestExit()
     }
 
     private func postMediaTouchBarRecoveryRequest(

@@ -441,37 +441,6 @@ final class FocusableWKWebView: WKWebView {
     }
 }
 
-@MainActor
-extension WKWebView {
-    private enum SumiFullscreenSelector {
-        static let fullScreenPlaceholderView = NSSelectorFromString("_fullScreenPlaceholderView")
-    }
-
-    var sumiIsInFullscreenElementPresentation: Bool {
-        fullscreenState != .notInFullscreen
-    }
-
-    var sumiFullscreenPlaceholderView: NSView? {
-        guard responds(to: SumiFullscreenSelector.fullScreenPlaceholderView) else {
-            return nil
-        }
-        return value(forKey: NSStringFromSelector(SumiFullscreenSelector.fullScreenPlaceholderView)) as? NSView
-    }
-
-    var sumiTabContentView: NSView {
-        sumiFullscreenPlaceholderView ?? self
-    }
-
-    var sumiFullscreenWindowController: NSWindowController? {
-        guard let windowController = window?.windowController,
-              windowController.className.contains("FullScreen")
-        else {
-            return nil
-        }
-        return windowController
-    }
-}
-
 // MARK: - Find In Page
 struct _WKFindOptions: OptionSet {
     let rawValue: UInt

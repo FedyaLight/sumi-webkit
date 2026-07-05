@@ -32,7 +32,7 @@ final class SumiWebViewContainerView: NSView {
         webView.translatesAutoresizingMaskIntoConstraints = true
         webView.autoresizingMask = [.width, .height]
 
-        addDisplayedContent(webView.sumiTabContentView)
+        addDisplayedContent(webView.sumiFullscreenPresentation.tabContentView)
         updateViewportMask()
         recordInlineUIContainerClippingIfNeeded()
     }
@@ -47,7 +47,7 @@ final class SumiWebViewContainerView: NSView {
     }
 
     func attachDisplayedContentIfNeeded() {
-        let displayedView = webView.sumiTabContentView
+        let displayedView = webView.sumiFullscreenPresentation.tabContentView
         frameDisplayedContent(displayedView)
         for subview in subviews where subview !== displayedView {
             subview.removeFromSuperview()
@@ -77,7 +77,7 @@ final class SumiWebViewContainerView: NSView {
 
     override func layout() {
         super.layout()
-        webView.sumiTabContentView.frame = bounds
+        webView.sumiFullscreenPresentation.tabContentView.frame = bounds
         updateViewportMask()
     }
 
@@ -92,7 +92,7 @@ final class SumiWebViewContainerView: NSView {
         if preservesDisplayedContentOnNextRemoval {
             preservesDisplayedContentOnNextRemoval = false
         } else {
-            webView.sumiTabContentView.removeFromSuperview()
+            webView.sumiFullscreenPresentation.tabContentView.removeFromSuperview()
         }
         super.removeFromSuperview()
     }
