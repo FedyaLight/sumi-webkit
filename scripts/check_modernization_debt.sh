@@ -4,6 +4,11 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
+if ! command -v rg >/dev/null 2>&1; then
+  printf 'error: ripgrep (rg) is required for modernization debt guardrail\n' >&2
+  exit 1
+fi
+
 production_roots=(
   "App"
   "FloatingBar"

@@ -10,7 +10,7 @@ enum CollapsedSidebarShadowChrome {
         guard let layer = view.layer else { return }
 
         layer.masksToBounds = false
-        layer.shadowColor = NSColor.black.cgColor
+        layer.shadowColor = SidebarThemeTokens.Colors.collapsedSidebarShadow.cgColor
         layer.shadowRadius = SidebarHoverOverlayMetrics.shadowRadius
         layer.shadowOffset = SidebarHoverOverlayMetrics.shadowOffset
     }

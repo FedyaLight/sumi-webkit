@@ -174,10 +174,15 @@ func makeSidebarContextMenuProfileChoices(
         SidebarContextMenuChoice(
             id: profile.id,
             title: profile.name,
-            icon: .emoji(SumiProfileIcon.storedValue(profile.icon)),
+            icon: sidebarContextMenuProfileIcon(profile.icon),
             isSelected: profile.id == selectedProfileId
         )
     }
+}
+
+func sidebarContextMenuProfileIcon(_ value: String) -> SidebarContextMenuIcon {
+    let icon = SumiProfileIcon.storedValue(value)
+    return icon.isEmpty ? .defaultSpaceDot : .emoji(icon)
 }
 
 private func sidebarContextMenuSpaceIcon(_ value: String) -> SidebarContextMenuIcon {

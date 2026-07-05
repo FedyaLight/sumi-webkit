@@ -15,16 +15,16 @@ final class SumiFilePickerPanelPresenterTests: XCTestCase {
             allowedFileExtensions: ["txt"]
         )
 
-        let panel = presenter.makeOpenPanel(for: request)
+        let configuration = presenter.openPanelConfiguration(for: request)
 
-        XCTAssertTrue(panel.allowsMultipleSelection)
-        XCTAssertTrue(panel.canChooseDirectories)
-        XCTAssertTrue(panel.canChooseFiles)
-        XCTAssertTrue(panel.resolvesAliases)
-        XCTAssertEqual(panel.title, "Choose File")
-        XCTAssertEqual(panel.prompt, "Choose")
-        XCTAssertTrue(panel.allowedContentTypes.contains(.png))
-        XCTAssertTrue(panel.allowedContentTypes.contains { $0.preferredFilenameExtension == "txt" })
+        XCTAssertTrue(configuration.allowsMultipleSelection)
+        XCTAssertTrue(configuration.canChooseDirectories)
+        XCTAssertTrue(configuration.canChooseFiles)
+        XCTAssertTrue(configuration.resolvesAliases)
+        XCTAssertEqual(configuration.title, "Choose File")
+        XCTAssertEqual(configuration.prompt, "Choose")
+        XCTAssertTrue(configuration.allowedContentTypes.contains(.png))
+        XCTAssertTrue(configuration.allowedContentTypes.contains { $0.preferredFilenameExtension == "txt" })
     }
 
     func testOpenPanelConfigurationCanDisableMultipleAndDirectorySelection() {
@@ -34,11 +34,11 @@ final class SumiFilePickerPanelPresenterTests: XCTestCase {
             allowsDirectories: false
         )
 
-        let panel = presenter.makeOpenPanel(for: request)
+        let configuration = presenter.openPanelConfiguration(for: request)
 
-        XCTAssertFalse(panel.allowsMultipleSelection)
-        XCTAssertFalse(panel.canChooseDirectories)
-        XCTAssertTrue(panel.canChooseFiles)
-        XCTAssertTrue(panel.allowedContentTypes.isEmpty)
+        XCTAssertFalse(configuration.allowsMultipleSelection)
+        XCTAssertFalse(configuration.canChooseDirectories)
+        XCTAssertTrue(configuration.canChooseFiles)
+        XCTAssertTrue(configuration.allowedContentTypes.isEmpty)
     }
 }

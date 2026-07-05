@@ -11,12 +11,14 @@ final class SumiLaunchSmokeUITests: SumiLaunchSmokeUITestCase {
         XCTAssertTrue(app.windows.element(boundBy: 0).waitForExistence(timeout: 5))
     }
 
-    func testRendersSpaceSwitcherShell() {
-        let app = launchApp()
-        let predicate = NSPredicate(format: "identifier BEGINSWITH %@", "space-icon-")
-        let spaceIcons = app.descendants(matching: .any).matching(predicate)
+    func testRendersSpaceSwitcherShell() throws {
+        let fixture = try loadPersonalSidebarFixture()
+        let app = launchApp(preferencesHomeURL: try prepareSmokePreferencesHome())
+        let window = app.windows.element(boundBy: 0)
+        let spaceIcon = element(withIdentifier: "space-icon-\(fixture.personalSpaceID)", in: app)
 
-        XCTAssertTrue(spaceIcons.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(window.waitForExistence(timeout: 5))
+        XCTAssertTrue(spaceIcon.waitForExistence(timeout: 5))
     }
 
     func testNativeTrafficLightsAreHittableInNormalWindow() throws {

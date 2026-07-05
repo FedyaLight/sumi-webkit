@@ -88,7 +88,9 @@ struct SidebarColumnHostedRootView: View {
                     let currentScheme = context.nativeSurfaceColorScheme
                     let isCurrentLight = currentScheme == .light
                     let maxOpacity: Double = isCurrentLight ? 0.35 : 0.20
-                    let overlayColor = isCurrentLight ? Color.black : Color.white
+                    let overlayColor = SidebarThemeTokens.Colors.collapsedSidebarTransitionOverlay(
+                        isNativeSurfaceLight: isCurrentLight
+                    )
 
                     let factor: Double = {
                         if context.transitionProgress < 0.5 {
@@ -190,7 +192,10 @@ struct SidebarColumnRepresentable: NSViewControllerRepresentable {
     }
 
     func makeNSViewController(context: Context) -> SidebarColumnViewController {
-        SidebarColumnViewController(usesCollapsedOverlayRoot: presentationContext.isCollapsedOverlay)
+        SidebarColumnViewController(
+            usesCollapsedOverlayRoot: presentationContext.isCollapsedOverlay,
+            sidebarRecoveryCoordinator: windowState.sidebarContextMenuController.sidebarRecoveryCoordinator
+        )
     }
 
     func updateNSViewController(_ controller: SidebarColumnViewController, context: Context) {

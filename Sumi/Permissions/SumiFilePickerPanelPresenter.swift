@@ -41,6 +41,41 @@ struct SumiFilePickerPanelPresentationRequest: Equatable, Sendable {
     }
 }
 
+struct SumiFilePickerOpenPanelConfiguration: Equatable {
+    let resolvesAliases: Bool
+    let title: String
+    let prompt: String
+    let allowedContentTypes: [UTType]
+    let canChooseDirectories: Bool
+    let canChooseFiles: Bool
+    let allowsMultipleSelection: Bool
+
+    init(request: SumiFilePickerPanelPresentationRequest) {
+        self.resolvesAliases = true
+        self.title = request.title
+        self.prompt = request.prompt
+        self.allowedContentTypes = request.allowedContentTypes
+        self.canChooseDirectories = request.allowsDirectories
+        self.canChooseFiles = request.canChooseFiles
+        self.allowsMultipleSelection = request.allowsMultipleSelection
+    }
+
+    @MainActor
+    func apply(to openPanel: NSOpenPanel) {
+        openPanel.resolvesAliases = resolvesAliases
+        openPanel.title = title
+        openPanel.prompt = prompt
+
+        if !allowedContentTypes.isEmpty {
+            openPanel.allowedContentTypes = allowedContentTypes
+        }
+
+        openPanel.canChooseDirectories = canChooseDirectories
+        openPanel.canChooseFiles = canChooseFiles
+        openPanel.allowsMultipleSelection = allowsMultipleSelection
+    }
+}
+
 @MainActor
 protocol SumiFilePickerPanelPresenting: AnyObject {
     func presentFilePicker(
@@ -78,18 +113,13 @@ final class SumiFilePickerPanelPresenter: SumiFilePickerPanelPresenting {
 
     func makeOpenPanel(for request: SumiFilePickerPanelPresentationRequest) -> NSOpenPanel {
         let openPanel = NSOpenPanel()
-        openPanel.resolvesAliases = true
-        openPanel.title = request.title
-        openPanel.prompt = request.prompt
-
-        let allowedContentTypes = request.allowedContentTypes
-        if !allowedContentTypes.isEmpty {
-            openPanel.allowedContentTypes = allowedContentTypes
-        }
-
-        openPanel.canChooseDirectories = request.allowsDirectories
-        openPanel.canChooseFiles = request.canChooseFiles
-        openPanel.allowsMultipleSelection = request.allowsMultipleSelection
+        openPanelConfiguration(for: request).apply(to: openPanel)
         return openPanel
+    }
+
+    func openPanelConfiguration(
+        for request: SumiFilePickerPanelPresentationRequest
+    ) -> SumiFilePickerOpenPanelConfiguration {
+        SumiFilePickerOpenPanelConfiguration(request: request)
     }
 }

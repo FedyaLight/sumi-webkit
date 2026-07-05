@@ -311,7 +311,7 @@ final class TabSpaceLifecycleOwner {
 
         let personal = Space(
             name: "Personal",
-            icon: "🏠",
+            icon: SumiPersistentGlyph.spaceDefaultIconValue,
             workspaceTheme: .default,
             profileId: profileId
         )

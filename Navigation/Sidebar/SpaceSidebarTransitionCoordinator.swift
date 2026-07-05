@@ -378,7 +378,11 @@ final class SpaceSidebarTransitionCoordinator {
         transitionTask = Task { @MainActor [weak self, completionToken] in
             let nanoseconds = UInt64(max(duration, 0) * 1_000_000_000)
             if nanoseconds > 0 {
-                try? await Task.sleep(nanoseconds: nanoseconds)
+                do {
+                    try await Task.sleep(nanoseconds: nanoseconds)
+                } catch {
+                    return
+                }
             }
             guard !Task.isCancelled else { return }
 

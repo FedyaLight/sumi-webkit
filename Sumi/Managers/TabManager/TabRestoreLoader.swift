@@ -185,7 +185,7 @@ actor TabRestoreLoader {
             let personal = TabRestoreSpaceDTO(
                 id: UUID(),
                 name: "Personal",
-                icon: "🏠",
+                icon: SumiPersistentGlyph.spaceDefaultIconValue,
                 workspaceTheme: .default,
                 profileId: defaultProfileId
             )

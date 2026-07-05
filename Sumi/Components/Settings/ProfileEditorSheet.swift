@@ -74,7 +74,7 @@ struct ProfileEditorSheet: View {
 
                 TextField("Name", text: $profileName)
                     .textFieldStyle(.roundedBorder)
-                    .font(.system(size: 15))
+                    .font(SettingsThemeTokens.Typography.profileNameField)
             }
 
             if let validationMessage {
@@ -116,7 +116,7 @@ struct ProfileEditorSheet: View {
 
             SumiProfileIconView(
                 icon: storedIcon,
-                font: .system(size: 26, weight: .medium)
+                font: SettingsThemeTokens.Typography.profileEditorIcon
             )
             .foregroundStyle(.primary)
         }

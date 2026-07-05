@@ -134,7 +134,7 @@ final class SumiImportApplier {
             output.spaces.append(SumiPortableSpace(
                 id: UUID().uuidString,
                 name: "Personal",
-                icon: "🏠",
+                icon: SumiPersistentGlyph.spaceDefaultIconValue,
                 index: 0,
                 profileId: output.profiles.first?.id,
                 themeDataBase64: nil,

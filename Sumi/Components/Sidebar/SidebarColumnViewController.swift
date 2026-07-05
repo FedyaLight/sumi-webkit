@@ -5,15 +5,19 @@ import SwiftUI
 /// `WindowView` body recomputations (see APPLE_BRIDGING: stable owner at the framework boundary).
 @MainActor
 final class SidebarColumnViewController: NSViewController {
-    var sidebarRecoveryCoordinator: SidebarHostRecoveryHandling = SidebarHostRecoveryCoordinator.shared
+    private let sidebarRecoveryCoordinator: SidebarHostRecoveryHandling
 
     private var hostingController: NSViewController?
     private var widthConstraint: NSLayoutConstraint?
     private weak var registeredRecoveryAnchor: NSView?
     private let usesCollapsedOverlayRoot: Bool
 
-    init(usesCollapsedOverlayRoot: Bool = false) {
+    init(
+        usesCollapsedOverlayRoot: Bool = false,
+        sidebarRecoveryCoordinator: SidebarHostRecoveryHandling
+    ) {
         self.usesCollapsedOverlayRoot = usesCollapsedOverlayRoot
+        self.sidebarRecoveryCoordinator = sidebarRecoveryCoordinator
         super.init(nibName: nil, bundle: nil)
     }
 

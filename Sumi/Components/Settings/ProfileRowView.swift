@@ -22,7 +22,7 @@ struct ProfileRowView: View {
                     .fill(Color(nsColor: .controlBackgroundColor))
                 SumiProfileIconView(
                     icon: profile.icon,
-                    font: .system(size: 20, weight: .medium)
+                    font: SettingsThemeTokens.Typography.profileRowIcon
                 )
             }
             .frame(width: 36, height: 36)
@@ -44,7 +44,7 @@ struct ProfileRowView: View {
             HStack(spacing: 12) {
                 Button(action: onEdit) {
                     Image(systemName: "pencil")
-                        .font(.system(size: 14, weight: .regular))
+                        .font(SettingsThemeTokens.Typography.profileRowActionIcon)
                 }
                 .buttonStyle(NavButtonStyle(size: .small))
                 .help("Edit Profile")
@@ -52,7 +52,7 @@ struct ProfileRowView: View {
 
                 Button(role: .destructive, action: onDelete) {
                     Image(systemName: "trash")
-                        .font(.system(size: 14, weight: .regular))
+                        .font(SettingsThemeTokens.Typography.profileRowActionIcon)
                 }
                 .buttonStyle(NavButtonStyle(size: .small))
                 .disabled(!canDelete)

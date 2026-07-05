@@ -181,7 +181,14 @@ struct SidebarSpaceCreationView: View {
                     Button {
                         selectExistingProfile(profile.id)
                     } label: {
-                        Text(profileMenuItemTitle(for: profile))
+                        Label {
+                            Text(profile.name)
+                        } icon: {
+                            SumiProfileIconView(
+                                icon: profile.icon,
+                                font: SidebarSpaceCreationThemeTokens.Typography.profileMenuIcon
+                            )
+                        }
                     }
                 }
 
@@ -287,10 +294,6 @@ struct SidebarSpaceCreationView: View {
                 ?? SumiProfileIcon.defaultIcon
         }
         return profile.icon
-    }
-
-    private func profileMenuItemTitle(for profile: Profile) -> String {
-        "\(SumiProfileIcon.storedValue(profile.icon))  \(profile.name)"
     }
 
     private var currentProfile: Profile? {

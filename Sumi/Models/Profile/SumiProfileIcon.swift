@@ -10,10 +10,15 @@ import Foundation
 import SwiftUI
 
 enum SumiProfileIcon {
-    static let defaultIcon = "🏠"
+    static let defaultIcon = SumiPersistentGlyph.spaceDefaultIconValue
+    static let defaultDotDiameter = SumiPersistentGlyph.spaceDefaultDotDiameter
 
     static func storedValue(_ icon: String) -> String {
         icon.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    static func usesDefaultIcon(_ icon: String) -> Bool {
+        storedValue(icon).isEmpty
     }
 }
 
@@ -22,7 +27,16 @@ struct SumiProfileIconView: View {
     var font: Font = .body
 
     var body: some View {
-        Text(SumiProfileIcon.storedValue(icon))
-            .font(font)
+        if SumiProfileIcon.usesDefaultIcon(icon) {
+            Circle()
+                .fill(.primary)
+                .frame(
+                    width: SumiProfileIcon.defaultDotDiameter,
+                    height: SumiProfileIcon.defaultDotDiameter
+                )
+        } else {
+            Text(SumiProfileIcon.storedValue(icon))
+                .font(font)
+        }
     }
 }

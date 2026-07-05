@@ -7,6 +7,14 @@ import AppKit
 import SwiftUI
 
 enum SidebarThemeTokens {
+    enum Colors {
+        static let collapsedSidebarShadow = NSColor.black
+
+        static func collapsedSidebarTransitionOverlay(isNativeSurfaceLight: Bool) -> Color {
+            isNativeSurfaceLight ? Color.black : Color.white
+        }
+    }
+
     enum Typography {
         static let extensionActionBadge = Font.system(size: 8, weight: .bold, design: .rounded)
         static let extensionActionFallbackIcon = Font.system(size: 16, weight: .medium)

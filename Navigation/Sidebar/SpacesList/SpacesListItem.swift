@@ -57,6 +57,7 @@ struct SpacesListItem: View {
         .frame(width: metrics.slotSize, height: metrics.slotSize)
         .contentShape(RoundedRectangle(cornerRadius: metrics.cornerRadius, style: .continuous))
         .opacity(isFaded ? 0.3 : 1.0)
+        .accessibilityElement(children: .ignore)
         .accessibilityIdentifier("space-icon-\(space.id.uuidString)")
         .accessibilityLabel(space.name)
         .accessibilityAddTraits(.isButton)
