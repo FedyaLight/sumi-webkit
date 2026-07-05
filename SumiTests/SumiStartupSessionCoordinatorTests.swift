@@ -33,6 +33,8 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
         XCTAssertNil(harness.windowState.currentTabId)
         XCTAssertNil(harness.windowState.currentShortcutPinId)
         XCTAssertTrue(harness.windowState.isShowingEmptyState)
+        XCTAssertTrue(harness.windowState.isFloatingBarVisible)
+        XCTAssertEqual(harness.windowState.floatingBarPresentationReason, .emptySpace)
         XCTAssertEqual(
             harness.browserManager.tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: harness.space.id).map(\.id),
             [pin.id]
@@ -62,6 +64,8 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
         XCTAssertEqual(tabs.first?.url.absoluteString, "https://configured.example")
         XCTAssertEqual(harness.windowState.currentTabId, tabs.first?.id)
         XCTAssertFalse(harness.windowState.isShowingEmptyState)
+        XCTAssertFalse(harness.windowState.isFloatingBarVisible)
+        XCTAssertEqual(harness.windowState.floatingBarPresentationReason, .none)
         XCTAssertEqual(
             harness.browserManager.lastSessionWindowsStore.tabSnapshot?.tabs.map(\.id).contains(previousTab.id),
             true
@@ -87,6 +91,8 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
         XCTAssertNil(harness.windowState.currentSpaceId)
         XCTAssertNil(harness.windowState.currentTabId)
         XCTAssertTrue(harness.windowState.isShowingEmptyState)
+        XCTAssertTrue(harness.windowState.isFloatingBarVisible)
+        XCTAssertEqual(harness.windowState.floatingBarPresentationReason, .emptySpace)
     }
 
     func testSpecificPageStartupWithWindowProfileRepairsStaleSpace() throws {

@@ -35,7 +35,6 @@ final class BrowserTabSelectionOwner {
         let persistWindowSession: (BrowserWindowState) -> Void
         let selectionTargetForSpaceActivation: (Space, BrowserWindowState) -> Tab?
         let updateProfileRuntimeStates: (BrowserWindowState) -> Void
-        let showNewTabFloatingBar: (BrowserWindowState) -> Void
     }
 
     private let userActivationBatcher = WindowTabActivationBatcher()
@@ -236,7 +235,6 @@ final class BrowserTabSelectionOwner {
         actions.clearFindManagerCurrentTab()
         actions.refreshCompositor(windowState)
         actions.persistWindowSession(windowState)
-        actions.showNewTabFloatingBar(windowState)
     }
 
     private static func scheduleTabLoadIfNeeded(

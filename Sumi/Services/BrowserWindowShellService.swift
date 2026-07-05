@@ -3,7 +3,7 @@ import AppKit
 @MainActor
 final class BrowserWindowShellService {
     typealias ContentViewFactory = @MainActor (WindowRegistry, WebViewCoordinator, BrowserWindowState) -> NSView
-    typealias EmptyStatePresenter = @MainActor (BrowserWindowState) -> Void
+    typealias EmptyStatePresenter = @MainActor (BrowserWindowState, Bool) -> Void
 
     struct Context {
         let windowRegistry: WindowRegistry
@@ -65,7 +65,7 @@ final class BrowserWindowShellService {
 
         context.windowRegistry.register(windowState)
         context.windowRegistry.setActive(windowState)
-        context.showEmptyState(windowState)
+        context.showEmptyState(windowState, true)
 
         newWindow.makeKeyAndOrderFront(nil)
 

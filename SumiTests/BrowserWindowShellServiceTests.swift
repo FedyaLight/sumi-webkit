@@ -9,17 +9,19 @@ final class BrowserWindowShellServiceTests: XCTestCase {
     func testCreateIncognitoWindowShowsFloatingBarEmptyStateWithoutCreatingEmptyTab() throws {
         let harness = try makeHarness()
         let service = BrowserWindowShellService()
-        var emptyStateWindowIds: [UUID] = []
+        var emptyStateRequests: [(windowId: UUID, presentNewTabFloatingBar: Bool)] = []
 
-        let context = makeContext(harness: harness) { windowState in
-            emptyStateWindowIds.append(windowState.id)
+        let context = makeContext(harness: harness) { windowState, presentNewTabFloatingBar in
+            emptyStateRequests.append((windowState.id, presentNewTabFloatingBar))
             windowState.currentTabId = nil
             windowState.ephemeralTabs.removeAll()
             windowState.isShowingEmptyState = true
-            windowState.floatingBarDraftText = ""
-            windowState.floatingBarDraftNavigatesCurrentTab = false
-            windowState.floatingBarPresentationReason = .emptySpace
-            windowState.isFloatingBarVisible = true
+            if presentNewTabFloatingBar {
+                windowState.floatingBarDraftText = ""
+                windowState.floatingBarDraftNavigatesCurrentTab = false
+                windowState.floatingBarPresentationReason = .emptySpace
+                windowState.isFloatingBarVisible = true
+            }
         }
 
         service.createIncognitoWindow(using: context)
@@ -33,7 +35,9 @@ final class BrowserWindowShellServiceTests: XCTestCase {
         }
 
         XCTAssertTrue(windowState.isIncognito)
-        XCTAssertEqual(emptyStateWindowIds, [windowState.id])
+        XCTAssertEqual(emptyStateRequests.count, 1)
+        XCTAssertEqual(emptyStateRequests.first?.windowId, windowState.id)
+        XCTAssertEqual(emptyStateRequests.first?.presentNewTabFloatingBar, true)
         XCTAssertTrue(windowState.ephemeralTabs.isEmpty)
         XCTAssertNil(windowState.currentTabId)
         XCTAssertTrue(windowState.isShowingEmptyState)
@@ -69,7 +73,7 @@ final class BrowserWindowShellServiceTests: XCTestCase {
                 factoryWindowStates.append(windowState)
                 return NSView()
             },
-            showEmptyState: { _ in /* no-op */ }
+            showEmptyState: { _, _ in /* no-op */ }
         )
 
         service.createNewWindow(using: context)
@@ -90,11 +94,13 @@ final class BrowserWindowShellServiceTests: XCTestCase {
     func testEphemeralTabsUseMonotonicIndexesAndIncognitoCleanupIsIdempotent() async throws {
         let harness = try makeHarness()
         let service = BrowserWindowShellService()
-        let context = makeContext(harness: harness) { windowState in
+        let context = makeContext(harness: harness) { windowState, presentNewTabFloatingBar in
             windowState.currentTabId = nil
             windowState.isShowingEmptyState = true
-            windowState.floatingBarPresentationReason = .emptySpace
-            windowState.isFloatingBarVisible = true
+            if presentNewTabFloatingBar {
+                windowState.floatingBarPresentationReason = .emptySpace
+                windowState.isFloatingBarVisible = true
+            }
         }
 
         service.createIncognitoWindow(using: context)
@@ -135,7 +141,7 @@ final class BrowserWindowShellServiceTests: XCTestCase {
     func testCloseIncognitoWindowUsesWindowStateOwnershipAndCancelsProfilePermissions() async throws {
         let harness = try makeHarness()
         let service = BrowserWindowShellService()
-        let context = makeContext(harness: harness) { _ in /* No-op. */ }
+        let context = makeContext(harness: harness) { _, _ in /* No-op. */ }
         let windowState = BrowserWindowState()
         windowState.isIncognito = true
         windowState.tabManager = harness.tabManager
@@ -213,7 +219,7 @@ final class BrowserWindowShellServiceTests: XCTestCase {
 
     private func makeContext(
         harness: Harness,
-        showEmptyState: @escaping @MainActor (BrowserWindowState) -> Void
+        showEmptyState: @escaping @MainActor (BrowserWindowState, Bool) -> Void
     ) -> BrowserWindowShellService.Context {
         BrowserWindowShellService.Context(
             windowRegistry: harness.windowRegistry,

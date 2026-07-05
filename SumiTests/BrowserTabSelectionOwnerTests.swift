@@ -204,7 +204,7 @@ final class BrowserTabSelectionOwnerTests: XCTestCase {
         XCTAssertEqual(windowState.currentShortcutPinRole, .spacePinned)
     }
 
-    func testEmptyStateClearsSelectionAndShowsNewTabFloatingBarWhenNoFallbackExists() {
+    func testEmptyStateClearsSelectionWithoutShowingFloatingBarWhenNoFallbackExists() {
         let owner = BrowserTabSelectionOwner()
         let space = Space(id: UUID(), name: "Empty")
         let windowState = BrowserWindowState()
@@ -224,6 +224,8 @@ final class BrowserTabSelectionOwnerTests: XCTestCase {
         XCTAssertNil(windowState.currentShortcutPinId)
         XCTAssertNil(windowState.currentShortcutPinRole)
         XCTAssertTrue(windowState.isShowingEmptyState)
+        XCTAssertFalse(windowState.isFloatingBarVisible)
+        XCTAssertEqual(windowState.floatingBarPresentationReason, .none)
         XCTAssertEqual(
             probe.events,
             [
@@ -231,7 +233,6 @@ final class BrowserTabSelectionOwnerTests: XCTestCase {
                 "clearFind",
                 "refreshCompositor",
                 "persistWindowSession",
-                "showNewTabFloatingBar",
             ]
         )
     }
@@ -353,8 +354,7 @@ final class BrowserTabSelectionOwnerTests: XCTestCase {
             updateActiveTabState: { _ in probe.events.append("updateActiveTabState") },
             persistWindowSession: { _ in probe.events.append("persistWindowSession") },
             selectionTargetForSpaceActivation: { _, _ in selectionTarget },
-            updateProfileRuntimeStates: { _ in probe.events.append("updateProfileRuntimeStates") },
-            showNewTabFloatingBar: { _ in probe.events.append("showNewTabFloatingBar") }
+            updateProfileRuntimeStates: { _ in probe.events.append("updateProfileRuntimeStates") }
         )
     }
 

@@ -262,7 +262,7 @@ final class WindowSessionServiceTests: XCTestCase {
         )
     }
 
-    func testSetupWindowStateRestoresEmptyStateFloatingBarDraft() throws {
+    func testSetupWindowStateRestoresEmptyStateDraftWithoutSynthesizingFloatingBarReason() throws {
         let tabManager = try makeInMemoryTabManager(loadPersistedState: false)
         let spaceId = UUID()
         let sessionKey = try seedWindowSession(
@@ -280,9 +280,34 @@ final class WindowSessionServiceTests: XCTestCase {
         service.setupWindowState(windowState, runtime: delegate.runtime)
 
         XCTAssertTrue(windowState.isShowingEmptyState)
-        XCTAssertEqual(windowState.floatingBarPresentationReason, .emptySpace)
+        XCTAssertEqual(windowState.floatingBarPresentationReason, .none)
         XCTAssertEqual(windowState.floatingBarDraftText, "restored draft")
         XCTAssertTrue(windowState.floatingBarDraftNavigatesCurrentTab)
+    }
+
+    func testSetupWindowStatePreservesExplicitEmptyStateFloatingBarReasons() throws {
+        for reason in [FloatingBarPresentationReason.emptySpace, .keyboard] {
+            let tabManager = try makeInMemoryTabManager(loadPersistedState: false)
+            let spaceId = UUID()
+            let sessionKey = try seedWindowSession(
+                currentSpaceId: spaceId,
+                isShowingEmptyState: true,
+                floatingBarReason: reason,
+                floatingBarDraft: FloatingBarDraftState(text: "restored draft", navigateCurrentTab: true)
+            )
+            defer { UserDefaults.standard.removeObject(forKey: sessionKey) }
+
+            let service = WindowSessionService(lastWindowSessionKey: sessionKey)
+            let delegate = TestWindowSessionDelegate(tabManager: tabManager)
+            let windowState = BrowserWindowState(awaitsInitialSessionResolution: true)
+
+            service.setupWindowState(windowState, runtime: delegate.runtime)
+
+            XCTAssertTrue(windowState.isShowingEmptyState)
+            XCTAssertEqual(windowState.floatingBarPresentationReason, reason)
+            XCTAssertEqual(windowState.floatingBarDraftText, "restored draft")
+            XCTAssertTrue(windowState.floatingBarDraftNavigatesCurrentTab)
+        }
     }
 
     func testApplyWindowSessionSnapshotRestoresPersistedWindowFields() throws {

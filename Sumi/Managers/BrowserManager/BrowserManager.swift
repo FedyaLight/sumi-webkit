@@ -801,11 +801,18 @@ class BrowserManager: ObservableObject {
         )
     }
 
-    func showEmptyState(in windowState: BrowserWindowState) {
+    func showEmptyState(
+        in windowState: BrowserWindowState,
+        presentNewTabFloatingBar: Bool = false
+    ) {
         tabLifecycleService.selection.showEmptyState(
             in: windowState,
             actions: tabSelectionActions
         )
+
+        if presentNewTabFloatingBar && windowState.isShowingEmptyState {
+            floatingBarRoutingOwner.showNewTabFloatingBar(in: windowState)
+        }
     }
 
 }

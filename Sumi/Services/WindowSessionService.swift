@@ -295,7 +295,7 @@ private enum WindowSessionSnapshotApplier {
         windowState.isShowingEmptyState = snapshot.isShowingEmptyState
         windowState.floatingBarPresentationReason =
             snapshot.isShowingEmptyState
-            ? (snapshot.floatingBarReason ?? .emptySpace)
+            ? (snapshot.floatingBarReason ?? .none)
             : .none
         windowState.activeTabForSpace = Dictionary(
             uniqueKeysWithValues: snapshot.activeTabsBySpace.map { ($0.spaceId, $0.tabId) }

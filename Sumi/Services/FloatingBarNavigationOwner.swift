@@ -311,11 +311,7 @@ struct FloatingBarNavigationOwner {
     ) {
         if hasValidCurrentSelection {
             clearEmptyStatePresentationIfNeeded(in: windowState, actions: actions)
-        } else if windowState.isShowingEmptyState {
-            if windowState.floatingBarPresentationReason == .none {
-                windowState.floatingBarPresentationReason = .emptySpace
-            }
-        } else {
+        } else if !windowState.isShowingEmptyState {
             windowState.floatingBarPresentationReason = .none
         }
     }

@@ -69,8 +69,11 @@ extension BrowserWindowShellCommandOwner.Dependencies {
                     profileManager: browserManager.profileManager,
                     tabManager: browserManager.tabManager,
                     makeContentView: browserManager.shellRuntime.requireWindowShellContentViewFactory(),
-                    showEmptyState: { [weak browserManager] windowState in
-                        browserManager?.showEmptyState(in: windowState)
+                    showEmptyState: { [weak browserManager] windowState, presentNewTabFloatingBar in
+                        browserManager?.showEmptyState(
+                            in: windowState,
+                            presentNewTabFloatingBar: presentNewTabFloatingBar
+                        )
                     }
                 )
             }

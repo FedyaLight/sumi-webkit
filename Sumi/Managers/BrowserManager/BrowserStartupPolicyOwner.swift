@@ -11,7 +11,7 @@ final class BrowserStartupPolicyOwner {
         let splitManager: @MainActor () -> SplitViewManager
         let glanceManager: @MainActor () -> GlanceManager
         let selectTab: @MainActor (Tab, BrowserWindowState, TabSelectionLoadPolicy) -> Void
-        let showEmptyState: @MainActor (BrowserWindowState) -> Void
+        let showEmptyState: @MainActor (BrowserWindowState, Bool) -> Void
         let currentRegularWindowSnapshots: @MainActor (UUID?) -> [LastSessionWindowSnapshot]
         let currentTabSnapshot: @MainActor () -> TabSnapshotRepository.Snapshot
         let applyWindowSessionSnapshot: @MainActor (WindowSessionSnapshot, BrowserWindowState) -> Void
@@ -55,7 +55,7 @@ final class BrowserStartupPolicyOwner {
                 tabManager: tabManager,
                 windowState: windowState
             ) else {
-                dependencies.showEmptyState(windowState)
+                dependencies.showEmptyState(windowState, true)
                 return
             }
             let tab = tabManager.regularTabLifecycleOwner.createNewTab(
@@ -65,7 +65,7 @@ final class BrowserStartupPolicyOwner {
             )
             dependencies.selectTab(tab, windowState, .deferred)
         } else {
-            dependencies.showEmptyState(windowState)
+            dependencies.showEmptyState(windowState, true)
         }
 
         Task { [weak self] in
@@ -103,8 +103,10 @@ final class BrowserStartupPolicyOwner {
             windowState.selectionHistory.recentSelectionItemsBySpace.removeAll()
             windowState.pendingSessionSplitGroupId = nil
             windowState.isShowingEmptyState = windowState.id == selectedWindow.id
-            windowState.floatingBarPresentationReason =
-                windowState.id == selectedWindow.id ? .emptySpace : .none
+            windowState.floatingBarPresentationReason = .none
+            windowState.isFloatingBarVisible = false
+            windowState.floatingBarDraftText = ""
+            windowState.floatingBarDraftNavigatesCurrentTab = false
             windowState.currentSpaceId = fallbackSpaceId
             windowState.currentProfileId = fallbackSpaceId.flatMap { dependencies.space($0)?.profileId }
             windowState.isAwaitingInitialSessionResolution = false
@@ -216,8 +218,11 @@ extension BrowserStartupPolicyOwner.Dependencies {
             selectTab: { [weak browserManager] tab, windowState, loadPolicy in
                 browserManager?.selectTab(tab, in: windowState, loadPolicy: loadPolicy)
             },
-            showEmptyState: { [weak browserManager] windowState in
-                browserManager?.showEmptyState(in: windowState)
+            showEmptyState: { [weak browserManager] windowState, presentNewTabFloatingBar in
+                browserManager?.showEmptyState(
+                    in: windowState,
+                    presentNewTabFloatingBar: presentNewTabFloatingBar
+                )
             },
             currentRegularWindowSnapshots: { [weak browserManager] excludingWindowId in
                 browserManager?.windowHistorySessionOwner.currentRegularWindowSnapshots(excludingWindowID: excludingWindowId) ?? []
