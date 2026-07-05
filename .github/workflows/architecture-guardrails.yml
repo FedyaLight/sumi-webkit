@@ -38,7 +38,7 @@ permissions:
 
 jobs:
   architecture-guardrails:
-    name: Run boundary checks
+    name: Run portable guardrails
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -47,80 +47,10 @@ jobs:
       - name: Install ripgrep
         run: sudo apt-get update && sudo apt-get install -y ripgrep
 
+      - name: Verify vendored binary checksums
+        run: |
+          scripts/bootstrap_vendor_binaries.sh
+          scripts/verify_vendor_checksums.sh
+
       - name: Run architecture guardrails
         run: scripts/check_architecture_guardrails.sh
-
-  xcode-unit-tests:
-    name: Run full SumiTests suite
-    runs-on: macos-26
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Bootstrap URLPredictor binary
-        run: |
-          scripts/bootstrap_vendor_binaries.sh
-          scripts/verify_vendor_checksums.sh
-
-      - name: Run SumiTests
-        run: |
-          set -euo pipefail
-          xcodebuild test \
-            -project Sumi.xcodeproj \
-            -scheme Sumi \
-            -destination 'platform=macOS' \
-            -parallel-testing-enabled NO \
-            -derivedDataPath "${RUNNER_TEMP}/SumiDerivedData-unit" \
-            -resultBundlePath "${RUNNER_TEMP}/SumiTests.xcresult" \
-            CODE_SIGN_STYLE=Manual \
-            CODE_SIGN_IDENTITY=- \
-            DEVELOPMENT_TEAM=
-
-      - name: Upload SumiTests result bundle
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: SumiTests-xcresult
-          path: ${{ runner.temp }}/SumiTests.xcresult
-          if-no-files-found: ignore
-
-  xcode-smoke-tests:
-    name: Run SumiSmoke launch UI suite
-    runs-on: macos-26
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Bootstrap URLPredictor binary
-        run: |
-          scripts/bootstrap_vendor_binaries.sh
-          scripts/verify_vendor_checksums.sh
-
-      - name: Run SumiSmoke
-        env:
-          SUMI_SMOKE_SHARED_TEMP_ROOT: /tmp/sumi-smoke-${{ github.run_id }}-${{ github.run_attempt }}
-        run: |
-          set -euo pipefail
-          SUMI_SMOKE_CI_FALLBACK_TEMP_ROOT="/tmp/sumi-smoke-ci"
-          rm -rf "${SUMI_SMOKE_SHARED_TEMP_ROOT}" "${SUMI_SMOKE_CI_FALLBACK_TEMP_ROOT}"
-          mkdir -p "${SUMI_SMOKE_SHARED_TEMP_ROOT}"
-          trap 'rm -rf "${SUMI_SMOKE_SHARED_TEMP_ROOT}" "${SUMI_SMOKE_CI_FALLBACK_TEMP_ROOT}"' EXIT
-          xcodebuild test \
-            -project Sumi.xcodeproj \
-            -scheme SumiSmoke \
-            -destination 'platform=macOS' \
-            -parallel-testing-enabled NO \
-            -derivedDataPath "${RUNNER_TEMP}/SumiDerivedData-ui" \
-            -resultBundlePath "${RUNNER_TEMP}/SumiSmoke.xcresult" \
-            CODE_SIGN_STYLE=Manual \
-            CODE_SIGN_IDENTITY=- \
-            DEVELOPMENT_TEAM= \
-            CODE_SIGN_ENTITLEMENTS="${GITHUB_WORKSPACE}/SumiUITests/SumiSmokeCI.entitlements"
-
-      - name: Upload SumiSmoke result bundle
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: SumiSmoke-xcresult
-          path: ${{ runner.temp }}/SumiSmoke.xcresult
-          if-no-files-found: ignore

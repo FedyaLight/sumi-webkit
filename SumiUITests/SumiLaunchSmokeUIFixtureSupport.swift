@@ -1,7 +1,6 @@
 import AppKit
 import Darwin
 import Foundation
-import Security
 import SQLite3
 import XCTest
 
@@ -669,35 +668,7 @@ extension SumiLaunchSmokeUITestCase {
     }
 
     func smokeScratchBaseURL() throws -> URL {
-        if let sharedTempRoot = ProcessInfo.processInfo.environment[smokeSharedTempRootEnvironmentKey],
-           sharedTempRoot.isEmpty == false,
-           sharedTempRoot.hasPrefix("$(") == false,
-           sharedTempRoot != "__SUMI_SMOKE_SHARED_TEMP_ROOT__" {
-            let baseURL = URL(fileURLWithPath: sharedTempRoot, isDirectory: true)
-            try FileManager.default.createDirectory(at: baseURL, withIntermediateDirectories: true)
-            return baseURL
-        }
-
-        if hasWritableSystemTemporaryDirectoryEntitlement() {
-            let baseURL = URL(fileURLWithPath: "/tmp/sumi-smoke-ci", isDirectory: true)
-            try FileManager.default.createDirectory(at: baseURL, withIntermediateDirectories: true)
-            return baseURL
-        }
-
         return FileManager.default.temporaryDirectory
-    }
-
-    func hasWritableSystemTemporaryDirectoryEntitlement() -> Bool {
-        guard let task = SecTaskCreateFromSelf(nil),
-              let value = SecTaskCopyValueForEntitlement(
-                task,
-                "com.apple.security.temporary-exception.files.absolute-path.read-write" as CFString,
-                nil
-              ),
-              let paths = value as? [String]
-        else { return false }
-
-        return paths.contains("/tmp/") || paths.contains("/private/tmp/")
     }
 
     func openSQLiteDatabase(

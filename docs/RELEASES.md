@@ -1,6 +1,6 @@
 # Sumi Alpha Release Process
 
-Sumi Alpha releases are distributed through GitHub Releases and a static HTTPS Sparkle appcast. The current process avoids committed secrets and does not require Apple signing credentials.
+Sumi Alpha releases are built on a local release Mac with the checked-in Xcode project signing settings. GitHub-hosted runners only run portable guardrails; they do not build alpha archives because the hosted macOS image can lag the SDK required by Sumi's WebKit runtime.
 
 ## Channel
 
@@ -37,13 +37,21 @@ Build and package the app:
 scripts/release/package_alpha_release.sh
 ```
 
+The package script first runs the local release gates:
+
+```sh
+scripts/release/run_alpha_release_gates.sh
+```
+
+Those gates require Xcode 27 or newer, bootstrap and verify vendored binaries, run the architecture guardrails, and run the full `Sumi` and `SumiSmoke` Xcode test schemes with the project's normal signing configuration.
+
 The script creates:
 
 ```text
 release/artifacts/Sumi-<version>-<build>-alpha-macos.zip
 ```
 
-The current Alpha build is unsigned or ad hoc signed for local packaging. It is not Developer ID signed and not notarized.
+The archive contains the app produced by the project signing settings on the release Mac. Do not override release signing to ad hoc in the package command.
 
 ## Upload the Release Asset
 
@@ -52,8 +60,6 @@ Create or update a GitHub Release and upload the archive:
 ```sh
 gh release create v0.1.0-alpha.1 release/artifacts/Sumi-0.1.0-1-alpha-macos.zip --prerelease
 ```
-
-Alternatively, `.github/workflows/alpha-release.yml` builds and uploads the archive when a `v*` tag is pushed. The workflow uses only `GITHUB_TOKEN`; it does not need Apple credentials or Sparkle private keys.
 
 ## Generate the Alpha Appcast
 

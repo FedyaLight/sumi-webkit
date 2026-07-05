@@ -97,6 +97,11 @@ docs/*
 !docs/RELEASES.md
 !docs/appcast-alpha.xml
 !docs/appcast.xml
+!docs/permissions/
+!docs/permissions/README.md
+!docs/permissions/ARCHITECTURE.md
+!docs/permissions/TEST_PLAN.md
+!docs/permissions/LICENSE_NOTES.md
 !docs/refactor/
 docs/refactor/*
 !docs/refactor/*.md

@@ -10,16 +10,16 @@ skip_build="${SKIP_BUILD:-0}"
 
 mkdir -p "${output_dir}"
 
+"${repo_root}/scripts/release/run_alpha_release_gates.sh"
+
 if [[ -z "${app_path}" ]]; then
   if [[ "${skip_build}" != "1" ]]; then
     xcodebuild \
       -project "${repo_root}/Sumi.xcodeproj" \
       -scheme Sumi \
       -configuration "${configuration}" \
+      -destination 'platform=macOS,arch=arm64' \
       -derivedDataPath "${derived_data_path}" \
-      CODE_SIGN_STYLE=Manual \
-      CODE_SIGN_IDENTITY=- \
-      DEVELOPMENT_TEAM= \
       build
   fi
 
