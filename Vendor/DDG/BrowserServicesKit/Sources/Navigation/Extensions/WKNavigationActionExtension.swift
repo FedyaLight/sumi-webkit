@@ -130,18 +130,18 @@ extension WKNavigationAction: WebViewNavigationAction {
     }
 #endif
 
-#if _MAIN_FRAME_NAVIGATION_ENABLED
+    static var isMainFrameNavigationAvailable: Bool {
+        class_getInstanceMethod(WKNavigationAction.self, NavigationSelector.mainFrameNavigation) != nil
+    }
+
     @nonobjc public var webKitMainFrameNavigation: WKNavigation? {
-        if #available(macOS 27.0, *) {
-            return mainFrameNavigation
-        }
-        return nil
+        guard responds(to: NavigationSelector.mainFrameNavigation) else { return nil }
+        return perform(NavigationSelector.mainFrameNavigation)?.takeUnretainedValue() as? WKNavigation
     }
-#else
-    public var webKitMainFrameNavigation: WKNavigation? {
-        return nil
+
+    private enum NavigationSelector {
+        static let mainFrameNavigation = NSSelectorFromString("mainFrameNavigation")
     }
-#endif
 
 #if os(macOS)
     public var isMiddleClick: Bool {
