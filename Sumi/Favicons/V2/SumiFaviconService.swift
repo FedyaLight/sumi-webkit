@@ -18,6 +18,7 @@ final class SumiFaviconService: @unchecked Sendable {
     private let fetchScheduler: SumiFaviconFetchScheduler
     private let schedulingQueue = DispatchQueue(label: "SumiFaviconService.scheduling")
     private var scheduledColdFetchesByPageKey: [String: ScheduledColdFetch] = [:]
+    private var persistenceLifecycleObservers: [NSObjectProtocol] = []
 
     init(
         rootDirectory: URL,
@@ -31,10 +32,37 @@ final class SumiFaviconService: @unchecked Sendable {
             preparedCache: preparedCache
         )
         self.fetchScheduler = SumiFaviconFetchScheduler(fetcher: fetcher)
+        registerPersistenceLifecycleObservers()
     }
 
     deinit {
         cancelScheduledColdFetches()
+        for observer in persistenceLifecycleObservers {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        // Favicon metadata writes are coalesced in the blob store; flush any
+        // pending changes so nothing is lost when the service is torn down.
+        blobStore.flushPendingPersists()
+    }
+
+    /// Coalesced favicon metadata is only guaranteed on disk after a flush.
+    /// Terminating or backgrounding the app must not drop the pending window.
+    private func registerPersistenceLifecycleObservers() {
+        let center = NotificationCenter.default
+        let names: [Notification.Name] = [
+            NSApplication.willTerminateNotification,
+            NSApplication.willResignActiveNotification,
+        ]
+        for name in names {
+            let observer = center.addObserver(
+                forName: name,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                self?.blobStore.flushPendingPersists()
+            }
+            persistenceLifecycleObservers.append(observer)
+        }
     }
 
     func cachedPreparedImage(for request: SumiPreparedFaviconRequest) -> NSImage? {

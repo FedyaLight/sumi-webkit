@@ -138,7 +138,15 @@ public class Tab: NSObject, Identifiable, ObservableObject {
 
     @Published var canGoBack: Bool = false
     @Published var canGoForward: Bool = false
-    @Published var estimatedProgress: Double = 0.0
+
+    /// Owns page-load progress. Kept off `Tab`'s own `@Published` graph so its
+    /// high-frequency ticks don't invalidate sidebar rows that observe the whole
+    /// `Tab`; only the chrome loading bar subscribes to it. See ``TabLoadingProgress``.
+    let loadingProgress = TabLoadingProgress()
+    var estimatedProgress: Double {
+        get { loadingProgress.estimatedProgress }
+        set { loadingProgress.estimatedProgress = newValue }
+    }
 
     // Restored navigation state from undo/session restoration (applied when web view is created)
     var restoredCanGoBack: Bool? {

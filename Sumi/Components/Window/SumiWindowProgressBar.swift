@@ -131,7 +131,7 @@ private struct SumiProgressBarRepresentable: NSViewRepresentable {
                 return
             }
 
-            progressCancellable = tab.$estimatedProgress
+            progressCancellable = tab.loadingProgress.$estimatedProgress
                 .removeDuplicates { abs($0 - $1) < 0.01 }
                 .throttle(for: .milliseconds(80), scheduler: RunLoop.main, latest: true)
                 .sink { [weak view] progress in

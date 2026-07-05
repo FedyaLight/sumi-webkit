@@ -125,6 +125,9 @@ extension Tab: TabNavigationStateControllerDelegate {
         for webView: WKWebView
     ) {
         guard currentWebViewIsIdentical(to: webView) else { return }
+        // `estimatedProgress` lives on `Tab.loadingProgress`, not on `Tab`'s own
+        // observation graph, so publishing every raw tick no longer invalidates
+        // sidebar rows. The chrome loading bar throttles this stream itself.
         self.estimatedProgress = progress
     }
 }

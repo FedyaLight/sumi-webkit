@@ -118,9 +118,24 @@ final class SumiFaviconBlobStore: @unchecked Sendable {
     private var metadataByPartition: [SumiFaviconPartition: Metadata] = [:]
     private var privatePayloads: [SumiFaviconPartition: [String: Data]] = [:]
 
-    init(rootDirectory: URL, fileManager: FileManager = .default) {
+    /// Metadata writes are coalesced: each mutation re-encodes the whole
+    /// partition document, and an active session mutates it many times per
+    /// minute. Reads always hit the in-memory `metadataByPartition`, so
+    /// deferring the disk write costs nothing for correctness within a session;
+    /// durability across launches is guaranteed by `flushPendingPersists()`
+    /// (wired to app termination) and by the flush in `deinit`.
+    private let persistCoalesceInterval: TimeInterval
+    private var pendingPersistPartitions: Set<SumiFaviconPartition> = []
+    private var isPersistFlushScheduled = false
+
+    init(
+        rootDirectory: URL,
+        fileManager: FileManager = .default,
+        persistCoalesceInterval: TimeInterval = 0.75
+    ) {
         self.rootDirectory = rootDirectory
         self.fileManager = fileManager
+        self.persistCoalesceInterval = max(0, persistCoalesceInterval)
         do {
             try fileManager.createDirectory(at: rootDirectory, withIntermediateDirectories: true)
         } catch {
@@ -128,6 +143,16 @@ final class SumiFaviconBlobStore: @unchecked Sendable {
                 "Failed to create favicon blob root directory: \(String(describing: error), privacy: .public)"
             )
         }
+    }
+
+    deinit {
+        flushPendingPersists()
+    }
+
+    /// Synchronously writes any coalesced metadata changes to disk. Safe to call
+    /// from any thread; wired to app-termination lifecycle by SumiFaviconService.
+    func flushPendingPersists() {
+        queue.sync { flushPendingPersistsLocked() }
     }
 
     func cachedSelection(
@@ -611,7 +636,42 @@ final class SumiFaviconBlobStore: @unchecked Sendable {
         try data.write(to: metadataURL(for: partition), options: [.atomic])
     }
 
+    /// Marks the partition dirty and coalesces the disk write. Callers already
+    /// hold `queue` (all mutations run inside `queue.sync`) and have updated
+    /// `metadataByPartition[partition]`, so the flush re-reads the latest
+    /// in-memory metadata rather than the snapshot passed here.
     private func persistOrLog(
+        metadata: Metadata,
+        partition: SumiFaviconPartition,
+        operation: String
+    ) {
+        guard !partition.isPrivate else { return }
+
+        if persistCoalesceInterval <= 0 {
+            writeMetadataOrLog(metadata: metadata, partition: partition, operation: operation)
+            return
+        }
+
+        pendingPersistPartitions.insert(partition)
+        guard !isPersistFlushScheduled else { return }
+        isPersistFlushScheduled = true
+        queue.asyncAfter(deadline: .now() + persistCoalesceInterval) { [weak self] in
+            self?.flushPendingPersistsLocked()
+        }
+    }
+
+    /// Must run on `queue`.
+    private func flushPendingPersistsLocked() {
+        isPersistFlushScheduled = false
+        let partitions = pendingPersistPartitions
+        pendingPersistPartitions.removeAll()
+        for partition in partitions {
+            guard let metadata = metadataByPartition[partition] else { continue }
+            writeMetadataOrLog(metadata: metadata, partition: partition, operation: "coalesced flush")
+        }
+    }
+
+    private func writeMetadataOrLog(
         metadata: Metadata,
         partition: SumiFaviconPartition,
         operation: String
