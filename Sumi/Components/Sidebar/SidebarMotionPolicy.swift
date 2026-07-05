@@ -39,11 +39,21 @@ enum SidebarMotionPolicy {
     }
 
     static func overlayAnimation(for mode: Mode) -> Animation? {
+        let duration = overlayAnimationDuration(for: mode)
         switch mode {
         case .reducedMotion:
-            return .easeOut(duration: 0.08)
+            return .easeOut(duration: duration)
         case .standard:
-            return .smooth(duration: 0.22)
+            return .smooth(duration: duration)
+        }
+    }
+
+    static func overlayAnimationDuration(for mode: Mode) -> TimeInterval {
+        switch mode {
+        case .reducedMotion:
+            return 0.08
+        case .standard:
+            return 0.22
         }
     }
 

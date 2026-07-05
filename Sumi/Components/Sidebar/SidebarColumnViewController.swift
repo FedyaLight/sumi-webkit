@@ -41,7 +41,8 @@ final class SidebarColumnViewController: NSViewController {
         width: CGFloat,
         contextMenuController: SidebarContextMenuController? = nil,
         capturesOverlayBackgroundPointerEvents: Bool = false,
-        isCollapsedOverlayHitTestingEnabled: Bool = false,
+        isCollapsedOverlayVisible: Bool = false,
+        collapsedShadowAnimationDuration: TimeInterval = 0,
         onPointerDown: (() -> Void)? = nil
     ) {
         let containerView = view as? SidebarColumnBaseContainerView
@@ -49,8 +50,13 @@ final class SidebarColumnViewController: NSViewController {
         containerView?.onPointerDown = onPointerDown
         (view as? SidebarColumnContainerView)?
             .capturesOverlayBackgroundPointerEvents = capturesOverlayBackgroundPointerEvents
-        (view as? CollapsedSidebarOverlayRootView)?
-            .isOverlayHitTestingEnabled = isCollapsedOverlayHitTestingEnabled
+        if let collapsedRootView = view as? CollapsedSidebarOverlayRootView {
+            collapsedRootView.isOverlayHitTestingEnabled = isCollapsedOverlayVisible
+            collapsedRootView.setCollapsedShadowVisible(
+                isCollapsedOverlayVisible,
+                animationDuration: collapsedShadowAnimationDuration
+            )
+        }
 
         if let hostingController = hostingController as? SidebarHostingController<Content> {
             hostingController.rootView = root
@@ -92,7 +98,10 @@ final class SidebarColumnViewController: NSViewController {
         containerView?.contextMenuController = nil
         containerView?.onPointerDown = nil
         (view as? SidebarColumnContainerView)?.capturesOverlayBackgroundPointerEvents = false
-        (view as? CollapsedSidebarOverlayRootView)?.isOverlayHitTestingEnabled = false
+        if let collapsedRootView = view as? CollapsedSidebarOverlayRootView {
+            collapsedRootView.isOverlayHitTestingEnabled = false
+            collapsedRootView.setCollapsedShadowVisible(false, animationDuration: 0)
+        }
         widthConstraint?.isActive = false
         widthConstraint = nil
         removeHostingControllerIfNeeded()

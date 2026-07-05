@@ -170,6 +170,7 @@ struct SidebarColumnRepresentable: NSViewControllerRepresentable {
     var windowChromeSize: CGSize
     var sidebarDragState: SidebarDragState
     var presentationContext: SidebarPresentationContext
+    var collapsedShadowAnimationDuration: TimeInterval = 0
 
     private var environmentContext: SidebarHostEnvironmentContext {
         SidebarHostEnvironmentContext(
@@ -202,7 +203,10 @@ struct SidebarColumnRepresentable: NSViewControllerRepresentable {
             width: presentationContext.sidebarWidth,
             contextMenuController: windowState.sidebarContextMenuController,
             capturesOverlayBackgroundPointerEvents: presentationContext.capturesOverlayBackgroundPointerEvents,
-            isCollapsedOverlayHitTestingEnabled: presentationContext.mode == .collapsedVisible,
+            isCollapsedOverlayVisible: presentationContext.mode == .collapsedVisible,
+            collapsedShadowAnimationDuration: context.transaction.animation == nil
+                ? 0
+                : collapsedShadowAnimationDuration,
             onPointerDown: {
                 hostActions.dismissThemePickerCommittingIfNeeded()
             }

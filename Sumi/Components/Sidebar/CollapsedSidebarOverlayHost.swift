@@ -47,6 +47,10 @@ struct CollapsedSidebarOverlayHost: View {
             reduceMotion: reduceMotion,
             energySaverReducesMotion: sumiSettings.shouldReduceChromeMotion
         )
+        let overlayUsesTravel = SidebarMotionPolicy.overlayUsesTravel(for: mode)
+        let collapsedShadowAnimationDuration = overlayUsesTravel
+            ? SidebarMotionPolicy.overlayAnimationDuration(for: mode)
+            : 0
         if isHostRequested {
             ZStack {
                 SidebarColumnRepresentable(
@@ -62,7 +66,8 @@ struct CollapsedSidebarOverlayHost: View {
                     chromeBackgroundResolvedThemeContext: chromeBackgroundResolvedThemeContext,
                     windowChromeSize: windowChromeSize,
                     sidebarDragState: sidebarDragState,
-                    presentationContext: presentationContext
+                    presentationContext: presentationContext,
+                    collapsedShadowAnimationDuration: collapsedShadowAnimationDuration
                 )
 
                 if isRevealed {
@@ -74,12 +79,11 @@ struct CollapsedSidebarOverlayHost: View {
             .frame(maxHeight: .infinity)
             .modifier(ZenCompactSidebarOffset(
                 hiddenOffset: hiddenOffset,
-                usesTravel: SidebarMotionPolicy.overlayUsesTravel(for: mode),
+                usesTravel: overlayUsesTravel,
                 revealProgress: isRevealed ? 1 : 0
             ))
-            .opacity(isRevealed || SidebarMotionPolicy.overlayUsesTravel(for: mode) ? 1 : 0)
+            .opacity(isRevealed || overlayUsesTravel ? 1 : 0)
             .allowsHitTesting(isRevealed)
-            .clipped()
             .alwaysArrowCursor()
             .accessibilityHidden(!isRevealed)
         }

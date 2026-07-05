@@ -113,6 +113,9 @@ enum SidebarHoverOverlayStartupEmptyStatePolicy {
 
 enum SidebarHoverOverlayMetrics {
     static let cornerRadius: CGFloat = 12
+    static let shadowOpacity: Float = 0.18
+    static let shadowRadius: CGFloat = 8
+    static let shadowOffset = CGSize(width: 0, height: 0)
     static let revealAnimationDuration: TimeInterval = HoverSidebarCompactMetrics.revealAnimationDuration
 }
 

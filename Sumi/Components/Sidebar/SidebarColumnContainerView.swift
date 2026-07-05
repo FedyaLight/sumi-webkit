@@ -98,6 +98,32 @@ final class SidebarColumnContainerView: SidebarColumnBaseContainerView {
 
 final class CollapsedSidebarOverlayRootView: SidebarColumnBaseContainerView {
     var isOverlayHitTestingEnabled = false
+    private(set) var isCollapsedShadowVisible = false
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        CollapsedSidebarShadowChrome.configure(self)
+        CollapsedSidebarShadowChrome.updatePath(for: self)
+    }
+
+    override func layout() {
+        super.layout()
+        CollapsedSidebarShadowChrome.updatePath(for: self)
+    }
+
+    func setCollapsedShadowVisible(_ isVisible: Bool, animationDuration: TimeInterval) {
+        CollapsedSidebarShadowChrome.configure(self)
+        let duration = isCollapsedShadowVisible == isVisible ? 0 : animationDuration
+        isCollapsedShadowVisible = isVisible
+        if isVisible {
+            CollapsedSidebarShadowChrome.updatePath(for: self)
+        }
+        CollapsedSidebarShadowChrome.setShadowVisible(
+            isVisible,
+            for: self,
+            animationDuration: duration
+        )
+    }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         let localPoint: NSPoint
