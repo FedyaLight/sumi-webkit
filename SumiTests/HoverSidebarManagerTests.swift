@@ -24,6 +24,94 @@ final class HoverSidebarManagerTests: XCTestCase {
         XCTAssertEqual(manager.overlayHostLifecycleState, .unmounted)
     }
 
+    func testInitialEmptyStateForceMakesOverlayVisibleImmediately() async {
+        let manager = HoverSidebarManager()
+
+        manager.forceOverlayVisibleForEmptyState(animated: false, sidebarPosition: .left)
+
+        XCTAssertEqual(manager.overlayHostLifecycleState, .visible)
+
+        await drainMainQueue()
+
+        XCTAssertEqual(manager.overlayHostLifecycleState, .visible)
+    }
+
+    func testTransientDismissalKeepsOverlayVisibleDuringEmptyStateForce() async {
+        let manager = HoverSidebarManager()
+
+        manager.forceOverlayVisibleForEmptyState(animated: false, sidebarPosition: .left)
+        manager.dismissOverlayForTransientChrome(animationDuration: 0)
+
+        XCTAssertEqual(manager.overlayHostLifecycleState, .visible)
+
+        await drainMainQueue()
+
+        XCTAssertEqual(manager.overlayHostLifecycleState, .visible)
+    }
+
+    func testTransientDismissalHidesAfterEmptyStateForceReleases() async {
+        let manager = HoverSidebarManager()
+
+        manager.forceOverlayVisibleForEmptyState(animated: false, sidebarPosition: .left)
+        manager.releaseEmptyStateOverlayForce(animated: false, sidebarPosition: .left)
+        manager.requestOverlayReveal(animationDuration: 0)
+        await drainMainQueue()
+
+        XCTAssertEqual(manager.overlayHostLifecycleState, .visible)
+
+        manager.dismissOverlayForTransientChrome(animationDuration: 0)
+
+        XCTAssertEqual(manager.overlayHostLifecycleState, .retainedHidden)
+    }
+
+    func testRuntimeEmptyStateForceRevealsFromHiddenHost() async {
+        let manager = HoverSidebarManager()
+
+        manager.forceOverlayVisibleForEmptyState(animated: true, sidebarPosition: .left)
+
+        XCTAssertEqual(manager.overlayHostLifecycleState, .retainedHidden)
+
+        await drainMainQueue()
+
+        XCTAssertEqual(manager.overlayHostLifecycleState, .visible)
+    }
+
+    func testReleasingEmptyStateForceWithoutHoverCollapsesToHiddenHost() async {
+        let harness = makePointerRevealHarness(mouseLocationProvider: {
+            CGPoint(x: 650, y: 300)
+        })
+        defer {
+            harness.windowRegistry.unregister(harness.windowState.id)
+        }
+
+        harness.manager.forceOverlayVisibleForEmptyState(animated: false, sidebarPosition: .left)
+        harness.manager.releaseEmptyStateOverlayForce(animated: true, sidebarPosition: .left)
+
+        XCTAssertEqual(harness.manager.overlayHostLifecycleState, .retainedHidden)
+
+        await drainMainQueue()
+
+        XCTAssertEqual(harness.manager.overlayHostLifecycleState, .retainedHidden)
+    }
+
+    func testReleasingEmptyStateForceKeepsOverlayVisibleWhenPointerStillQualifies() async {
+        let harness = makePointerRevealHarness(mouseLocationProvider: {
+            CGPoint(x: 180, y: 300)
+        })
+        defer {
+            harness.windowRegistry.unregister(harness.windowState.id)
+        }
+
+        harness.manager.forceOverlayVisibleForEmptyState(animated: false, sidebarPosition: .left)
+        harness.manager.releaseEmptyStateOverlayForce(animated: true, sidebarPosition: .left)
+
+        XCTAssertEqual(harness.manager.overlayHostLifecycleState, .visible)
+
+        await drainMainQueue()
+
+        XCTAssertEqual(harness.manager.overlayHostLifecycleState, .visible)
+    }
+
     func testDefaultActivationZoneMatchesZenCompactSidebarEdge() {
         let manager = HoverSidebarManager()
 
@@ -183,6 +271,48 @@ final class HoverSidebarManagerTests: XCTestCase {
         await sleep(milliseconds: 60)
 
         XCTAssertFalse(manager.isOverlayHostPrewarmed)
+    }
+
+    func testStartupEmptyStateForceSurvivesInactiveReconciliationBeforeWindowActivation() async {
+        let recorder = EventMonitorRecorder()
+        let manager = HoverSidebarManager(
+            eventMonitors: recorder.client,
+            mouseLocationProvider: { .zero },
+            inactiveHostRetentionDelay: 0.03
+        )
+        let browserManager = BrowserManager()
+        let windowRegistry = WindowRegistry()
+        let hostedWindow = BrowserWindowState()
+
+        hostedWindow.tabManager = browserManager.tabManager
+        hostedWindow.isSidebarVisible = false
+
+        browserManager.windowRegistry = windowRegistry
+        manager.windowRegistry = windowRegistry
+        manager.attach(runtime: .live(browserManager: browserManager), windowState: hostedWindow)
+
+        // Mirror startup: the window is registered but the registry has not promoted
+        // any window to active yet (`activeWindowId == nil`).
+        windowRegistry.register(hostedWindow)
+        XCTAssertNil(windowRegistry.activeWindowId)
+
+        manager.start()
+        manager.forceOverlayVisibleForEmptyState(animated: false, sidebarPosition: .left)
+
+        XCTAssertEqual(manager.overlayHostLifecycleState, .visible)
+
+        // Reconciliation before the window is activated must not tear the pinned
+        // empty-state overlay down (which previously flickered it hidden→visible).
+        manager.refreshMonitoring()
+
+        XCTAssertEqual(manager.overlayHostLifecycleState, .visible)
+
+        await drainMainQueue()
+        await sleep(milliseconds: 60)
+
+        XCTAssertEqual(manager.overlayHostLifecycleState, .visible)
+
+        windowRegistry.unregister(hostedWindow.id)
     }
 
     func testReactivatingCollapsedWindowCancelsInactiveHostRelease() async {

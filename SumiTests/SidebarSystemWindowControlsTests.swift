@@ -121,6 +121,192 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
         ))
     }
 
+    func testCollapsedHostMountsFromOverlayLifecycleInputs() {
+        XCTAssertFalse(SidebarHoverOverlayHostMountPolicy.shouldMountCollapsedHost(
+            isSidebarVisible: false,
+            isOverlayVisible: false,
+            isOverlayHostPrewarmed: false,
+            transientUIPinsHoverSidebar: false,
+            sidebarDragPinsHoverSidebar: false
+        ))
+        XCTAssertTrue(SidebarHoverOverlayHostMountPolicy.shouldMountCollapsedHost(
+            isSidebarVisible: false,
+            isOverlayVisible: true,
+            isOverlayHostPrewarmed: false,
+            transientUIPinsHoverSidebar: false,
+            sidebarDragPinsHoverSidebar: false
+        ))
+        XCTAssertTrue(SidebarHoverOverlayHostMountPolicy.shouldMountCollapsedHost(
+            isSidebarVisible: false,
+            isOverlayVisible: false,
+            isOverlayHostPrewarmed: true,
+            transientUIPinsHoverSidebar: false,
+            sidebarDragPinsHoverSidebar: false
+        ))
+    }
+
+    func testStartupPendingEmptyStateBootstrapProvidesOverlayInputs() {
+        let shouldBootstrap = SidebarHoverOverlayStartupEmptyStatePolicy.shouldBootstrapVisible(
+            isStartupEmptyStateSyncPending: true,
+            isSidebarVisible: false,
+            isShowingEmptyState: true
+        )
+        let effectiveVisible = SidebarHoverOverlayStartupEmptyStatePolicy.effectiveOverlayVisible(
+            isStartupEmptyStateSyncPending: true,
+            isOverlayVisible: false,
+            startupEmptyStateBootstrapVisible: shouldBootstrap
+        )
+        let effectiveHostPrewarmed = SidebarHoverOverlayStartupEmptyStatePolicy.effectiveOverlayHostPrewarmed(
+            isStartupEmptyStateSyncPending: true,
+            isOverlayHostPrewarmed: false,
+            startupEmptyStateBootstrapVisible: shouldBootstrap
+        )
+
+        XCTAssertTrue(shouldBootstrap)
+        XCTAssertTrue(SidebarHoverOverlayRevealPolicy.isOverlayRevealed(
+            isOverlayVisible: effectiveVisible,
+            transientUIPinsHoverSidebar: false,
+            sidebarDragPinsHoverSidebar: false
+        ))
+        XCTAssertTrue(SidebarHoverOverlayHostMountPolicy.shouldMountCollapsedHost(
+            isSidebarVisible: false,
+            isOverlayVisible: effectiveVisible,
+            isOverlayHostPrewarmed: effectiveHostPrewarmed,
+            transientUIPinsHoverSidebar: false,
+            sidebarDragPinsHoverSidebar: false
+        ))
+    }
+
+    func testStartupPendingSuppressesPrewarmedHiddenHostMount() {
+        // Empty state has not resolved yet during launch, but the manager may have
+        // prewarmed the collapsed host to a hidden state. It must NOT mount while
+        // pending, otherwise it would reveal via an animated hidden→visible slide.
+        let shouldBootstrap = SidebarHoverOverlayStartupEmptyStatePolicy.shouldBootstrapVisible(
+            isStartupEmptyStateSyncPending: true,
+            isSidebarVisible: false,
+            isShowingEmptyState: false
+        )
+        let effectiveVisible = SidebarHoverOverlayStartupEmptyStatePolicy.effectiveOverlayVisible(
+            isStartupEmptyStateSyncPending: true,
+            isOverlayVisible: false,
+            startupEmptyStateBootstrapVisible: shouldBootstrap
+        )
+        let effectiveHostPrewarmed = SidebarHoverOverlayStartupEmptyStatePolicy.effectiveOverlayHostPrewarmed(
+            isStartupEmptyStateSyncPending: true,
+            isOverlayHostPrewarmed: true,
+            startupEmptyStateBootstrapVisible: shouldBootstrap
+        )
+
+        XCTAssertFalse(effectiveHostPrewarmed)
+        XCTAssertFalse(SidebarHoverOverlayHostMountPolicy.shouldMountCollapsedHost(
+            isSidebarVisible: false,
+            isOverlayVisible: effectiveVisible,
+            isOverlayHostPrewarmed: effectiveHostPrewarmed,
+            transientUIPinsHoverSidebar: false,
+            sidebarDragPinsHoverSidebar: false
+        ))
+    }
+
+    func testResolvedStartupHonorsManagerPrewarmForHoverMount() {
+        // Once startup resolves, the collapsed host should mount from the manager's
+        // real prewarm state again so hover reveals stay responsive.
+        let shouldBootstrap = SidebarHoverOverlayStartupEmptyStatePolicy.shouldBootstrapVisible(
+            isStartupEmptyStateSyncPending: false,
+            isSidebarVisible: false,
+            isShowingEmptyState: false
+        )
+        let effectiveHostPrewarmed = SidebarHoverOverlayStartupEmptyStatePolicy.effectiveOverlayHostPrewarmed(
+            isStartupEmptyStateSyncPending: false,
+            isOverlayHostPrewarmed: true,
+            startupEmptyStateBootstrapVisible: shouldBootstrap
+        )
+
+        XCTAssertTrue(effectiveHostPrewarmed)
+        XCTAssertTrue(SidebarHoverOverlayHostMountPolicy.shouldMountCollapsedHost(
+            isSidebarVisible: false,
+            isOverlayVisible: false,
+            isOverlayHostPrewarmed: effectiveHostPrewarmed,
+            transientUIPinsHoverSidebar: false,
+            sidebarDragPinsHoverSidebar: false
+        ))
+    }
+
+    func testStartupPendingEmptyStateSyncUsesNonAnimatedBranch() {
+        XCTAssertFalse(SidebarHoverOverlayStartupEmptyStatePolicy.shouldAnimateEmptyStateSync(
+            isStartupEmptyStateSyncPending: true
+        ))
+        XCTAssertTrue(SidebarHoverOverlayStartupEmptyStatePolicy.shouldAnimateEmptyStateSync(
+            isStartupEmptyStateSyncPending: false
+        ))
+    }
+
+    func testEmptyStateBootstrapStopsAfterStartupSyncCompletes() {
+        let shouldBootstrap = SidebarHoverOverlayStartupEmptyStatePolicy.shouldBootstrapVisible(
+            isStartupEmptyStateSyncPending: false,
+            isSidebarVisible: false,
+            isShowingEmptyState: true
+        )
+        let effectiveVisible = SidebarHoverOverlayStartupEmptyStatePolicy.effectiveOverlayVisible(
+            isStartupEmptyStateSyncPending: false,
+            isOverlayVisible: false,
+            startupEmptyStateBootstrapVisible: shouldBootstrap
+        )
+        let effectiveHostPrewarmed = SidebarHoverOverlayStartupEmptyStatePolicy.effectiveOverlayHostPrewarmed(
+            isStartupEmptyStateSyncPending: false,
+            isOverlayHostPrewarmed: false,
+            startupEmptyStateBootstrapVisible: shouldBootstrap
+        )
+
+        XCTAssertFalse(shouldBootstrap)
+        XCTAssertFalse(SidebarHoverOverlayRevealPolicy.isOverlayRevealed(
+            isOverlayVisible: effectiveVisible,
+            transientUIPinsHoverSidebar: false,
+            sidebarDragPinsHoverSidebar: false
+        ))
+        XCTAssertFalse(SidebarHoverOverlayHostMountPolicy.shouldMountCollapsedHost(
+            isSidebarVisible: false,
+            isOverlayVisible: effectiveVisible,
+            isOverlayHostPrewarmed: effectiveHostPrewarmed,
+            transientUIPinsHoverSidebar: false,
+            sidebarDragPinsHoverSidebar: false
+        ))
+    }
+
+    func testCollapsedNormalWebContentKeepsHoverOnlyMountBehavior() {
+        XCTAssertFalse(SidebarHoverOverlayStartupEmptyStatePolicy.shouldBootstrapVisible(
+            isStartupEmptyStateSyncPending: true,
+            isSidebarVisible: false,
+            isShowingEmptyState: false
+        ))
+        XCTAssertFalse(SidebarHoverOverlayRevealPolicy.isOverlayRevealed(
+            isOverlayVisible: false,
+            transientUIPinsHoverSidebar: false,
+            sidebarDragPinsHoverSidebar: false
+        ))
+        XCTAssertFalse(SidebarHoverOverlayHostMountPolicy.shouldMountCollapsedHost(
+            isSidebarVisible: false,
+            isOverlayVisible: false,
+            isOverlayHostPrewarmed: false,
+            transientUIPinsHoverSidebar: false,
+            sidebarDragPinsHoverSidebar: false
+        ))
+    }
+
+    func testDockedSidebarDoesNotMountCollapsedHost() {
+        XCTAssertFalse(SidebarHoverOverlayStartupEmptyStatePolicy.shouldBootstrapVisible(
+            isStartupEmptyStateSyncPending: true,
+            isSidebarVisible: true,
+            isShowingEmptyState: true
+        ))
+        XCTAssertFalse(SidebarHoverOverlayHostMountPolicy.shouldMountCollapsedHost(
+            isSidebarVisible: true,
+            isOverlayVisible: true,
+            isOverlayHostPrewarmed: true,
+            transientUIPinsHoverSidebar: false,
+            sidebarDragPinsHoverSidebar: false
+        ))
+    }
+
     func testTrafficLightIdentifiersMapToSystemButtonTypes() {
         XCTAssertEqual(
             BrowserWindowControlsAccessibilityIdentifiers.identifier(for: .closeButton),

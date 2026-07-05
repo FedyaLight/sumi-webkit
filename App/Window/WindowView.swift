@@ -171,7 +171,14 @@ struct WindowView: View {
             revealCollapsedSidebarForPinnedTransientIfNeeded()
         }
         .onChange(of: windowState.isSidebarVisible) { _, isVisible in
-            syncDockedSidebarLayout(isVisible: isVisible, animated: true)
+            // During startup the window renders the docked sidebar from its default
+            // `isSidebarVisible == true`, then session restore corrects it to the
+            // persisted collapsed state. Animating that correction slides the docked
+            // column closed for ~0.3s before the collapsed overlay can mount, which
+            // reads as a flash/blink. Snap the layout while the session is still
+            // resolving so the window settles straight into its restored state.
+            let animatesLayout = !windowState.isAwaitingInitialSessionResolution
+            syncDockedSidebarLayout(isVisible: isVisible, animated: animatesLayout)
             Task { @MainActor in
                 await Task.yield()
                 hoverSidebarManager.refreshMonitoring()
@@ -233,8 +240,7 @@ struct WindowView: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .sumiShouldHideCollapsedSidebarOverlay)) { _ in
-            hoverSidebarManager.setOverlayVisibility(
-                false,
+            hoverSidebarManager.dismissOverlayForTransientChrome(
                 animationDuration: SidebarHoverOverlayMetrics.revealAnimationDuration
             )
         }
