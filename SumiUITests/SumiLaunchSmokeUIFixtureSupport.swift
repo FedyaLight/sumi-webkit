@@ -1,6 +1,8 @@
 import AppKit
 import Darwin
 import Foundation
+import Security
+import SQLite3
 import XCTest
 
 extension SumiLaunchSmokeUITestCase {
@@ -179,9 +181,7 @@ extension SumiLaunchSmokeUITestCase {
             throw FixtureError.missingStore(sourceStoreURL.path)
         }
 
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("SumiSmoke-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let directory = try makeSmokeScratchDirectory(prefix: "SumiSmoke")
 
         let storeURL = directory.appendingPathComponent("default.store", isDirectory: false)
         try backupSQLiteStore(sourceStoreURL, to: storeURL)
@@ -310,8 +310,7 @@ extension SumiLaunchSmokeUITestCase {
     }
 
     func preparePreferencesHome(windowSessionSnapshotData: Data) throws -> URL {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("SumiSmokePrefs-\(UUID().uuidString)", isDirectory: true)
+        let directory = try makeSmokeScratchDirectory(prefix: "SumiSmokePrefs")
         let preferencesDirectory = directory
             .appendingPathComponent("Library", isDirectory: true)
             .appendingPathComponent("Preferences", isDirectory: true)
@@ -525,20 +524,17 @@ extension SumiLaunchSmokeUITestCase {
         sql: String,
         storeURL: URL
     ) throws {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/sqlite3")
-        process.arguments = [storeURL.path, sql]
+        let database = try openSQLiteDatabase(
+            at: storeURL,
+            flags: SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX
+        )
+        defer { sqlite3_close(database) }
 
-        let stderr = Pipe()
-        process.standardError = stderr
-
-        try process.run()
-        process.waitUntilExit()
-
-        guard process.terminationStatus == 0 else {
-            let stderrData = stderr.fileHandleForReading.readDataToEndOfFile()
-            let message = String(data: stderrData, encoding: .utf8)?
-                .trimmingCharacters(in: .whitespacesAndNewlines) ?? "Unknown sqlite3 error"
+        var errorMessage: UnsafeMutablePointer<CChar>?
+        guard sqlite3_exec(database, sql, nil, nil, &errorMessage) == SQLITE_OK else {
+            let message = errorMessage.map { String(cString: $0) }
+                ?? sqliteErrorMessage(database, fallback: "Unknown sqlite3 error")
+            sqlite3_free(errorMessage)
             throw FixtureError.sqliteFailure(message)
         }
     }
@@ -547,21 +543,30 @@ extension SumiLaunchSmokeUITestCase {
         _ sourceURL: URL,
         to targetURL: URL
     ) throws {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/sqlite3")
-        process.arguments = [sourceURL.path, ".backup '\(targetURL.path)'"]
+        let sourceDatabase = try openSQLiteDatabase(
+            at: sourceURL,
+            flags: SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX
+        )
+        defer { sqlite3_close(sourceDatabase) }
 
-        let stderr = Pipe()
-        process.standardError = stderr
+        let targetDatabase = try openSQLiteDatabase(
+            at: targetURL,
+            flags: SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX
+        )
+        defer { sqlite3_close(targetDatabase) }
 
-        try process.run()
-        process.waitUntilExit()
+        guard let backup = sqlite3_backup_init(targetDatabase, "main", sourceDatabase, "main") else {
+            throw FixtureError.sqliteFailure(
+                sqliteErrorMessage(targetDatabase, fallback: "Unknown sqlite3 backup error")
+            )
+        }
 
-        guard process.terminationStatus == 0 else {
-            let stderrData = stderr.fileHandleForReading.readDataToEndOfFile()
-            let message = String(data: stderrData, encoding: .utf8)?
-                .trimmingCharacters(in: .whitespacesAndNewlines) ?? "Unknown sqlite3 backup error"
-            throw FixtureError.sqliteFailure(message)
+        let stepStatus = sqlite3_backup_step(backup, -1)
+        let finishStatus = sqlite3_backup_finish(backup)
+        guard stepStatus == SQLITE_DONE, finishStatus == SQLITE_OK else {
+            throw FixtureError.sqliteFailure(
+                sqliteErrorMessage(targetDatabase, fallback: "Unknown sqlite3 backup error")
+            )
         }
     }
 
@@ -612,44 +617,116 @@ extension SumiLaunchSmokeUITestCase {
         sql: String,
         storeURL: URL
     ) throws -> [[String: String]] {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/sqlite3")
-        process.arguments = ["-json", storeURL.path, sql]
+        let database = try openSQLiteDatabase(
+            at: storeURL,
+            flags: SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX
+        )
+        defer { sqlite3_close(database) }
 
-        let stdout = Pipe()
-        let stderr = Pipe()
-        process.standardOutput = stdout
-        process.standardError = stderr
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK,
+              let statement
+        else {
+            throw FixtureError.sqliteFailure(
+                sqliteErrorMessage(database, fallback: "Unknown sqlite3 error")
+            )
+        }
+        defer { sqlite3_finalize(statement) }
 
-        try process.run()
-        process.waitUntilExit()
+        let columnCount = sqlite3_column_count(statement)
+        var rows: [[String: String]] = []
 
-        let stdoutData = stdout.fileHandleForReading.readDataToEndOfFile()
-        let stderrData = stderr.fileHandleForReading.readDataToEndOfFile()
+        while true {
+            let status = sqlite3_step(statement)
+            if status == SQLITE_DONE {
+                return rows
+            }
+            guard status == SQLITE_ROW else {
+                throw FixtureError.sqliteFailure(
+                    sqliteErrorMessage(database, fallback: "Unknown sqlite3 error")
+                )
+            }
 
-        guard process.terminationStatus == 0 else {
-            let message = String(data: stderrData, encoding: .utf8)?
-                .trimmingCharacters(in: .whitespacesAndNewlines) ?? "Unknown sqlite3 error"
+            var row: [String: String] = [:]
+            for columnIndex in 0..<columnCount {
+                guard let name = sqlite3_column_name(statement, columnIndex),
+                      let text = sqlite3_column_text(statement, columnIndex)
+                else { continue }
+                let cString = UnsafeRawPointer(text).assumingMemoryBound(to: CChar.self)
+                row[String(cString: name)] = String(cString: cString)
+            }
+            rows.append(row)
+        }
+    }
+
+    func makeSmokeScratchDirectory(prefix: String) throws -> URL {
+        let baseURL = try smokeScratchBaseURL()
+
+        let directory = baseURL
+            .appendingPathComponent("\(prefix)-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory
+    }
+
+    func smokeScratchBaseURL() throws -> URL {
+        if let sharedTempRoot = ProcessInfo.processInfo.environment[smokeSharedTempRootEnvironmentKey],
+           sharedTempRoot.isEmpty == false,
+           sharedTempRoot.hasPrefix("$(") == false,
+           sharedTempRoot != "__SUMI_SMOKE_SHARED_TEMP_ROOT__" {
+            let baseURL = URL(fileURLWithPath: sharedTempRoot, isDirectory: true)
+            try FileManager.default.createDirectory(at: baseURL, withIntermediateDirectories: true)
+            return baseURL
+        }
+
+        if hasWritableSystemTemporaryDirectoryEntitlement() {
+            let baseURL = URL(fileURLWithPath: "/tmp/sumi-smoke-ci", isDirectory: true)
+            try FileManager.default.createDirectory(at: baseURL, withIntermediateDirectories: true)
+            return baseURL
+        }
+
+        return FileManager.default.temporaryDirectory
+    }
+
+    func hasWritableSystemTemporaryDirectoryEntitlement() -> Bool {
+        guard let task = SecTaskCreateFromSelf(nil),
+              let value = SecTaskCopyValueForEntitlement(
+                task,
+                "com.apple.security.temporary-exception.files.absolute-path.read-write" as CFString,
+                nil
+              ),
+              let paths = value as? [String]
+        else { return false }
+
+        return paths.contains("/tmp/") || paths.contains("/private/tmp/")
+    }
+
+    func openSQLiteDatabase(
+        at url: URL,
+        flags: Int32
+    ) throws -> OpaquePointer {
+        var database: OpaquePointer?
+        guard sqlite3_open_v2(url.path, &database, flags, nil) == SQLITE_OK,
+              let database
+        else {
+            let message = database.map {
+                sqliteErrorMessage($0, fallback: "Unable to open database at \(url.path)")
+            } ?? "Unable to open database at \(url.path)"
+            if let database {
+                sqlite3_close(database)
+            }
             throw FixtureError.sqliteFailure(message)
         }
+        return database
+    }
 
-        guard stdoutData.isEmpty == false else { return [] }
-        guard let object = try JSONSerialization.jsonObject(with: stdoutData) as? [[String: Any]] else {
-            throw FixtureError.malformedJSON
+    func sqliteErrorMessage(
+        _ database: OpaquePointer,
+        fallback: String
+    ) -> String {
+        guard let message = sqlite3_errmsg(database) else {
+            return fallback
         }
-
-        return object.map { row in
-            row.reduce(into: [:]) { partialResult, entry in
-                switch entry.value {
-                case let string as String:
-                    partialResult[entry.key] = string
-                case let number as NSNumber:
-                    partialResult[entry.key] = number.stringValue
-                default:
-                    break
-                }
-            }
-        }
+        return String(cString: message)
     }
 
     @MainActor

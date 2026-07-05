@@ -28,6 +28,7 @@ class SumiLaunchSmokeUITestCase: XCTestCase {
     nonisolated(unsafe) var sidebarDragMarkerURL: URL?
     let smokeWindowSessionOverrideFileName = "sumi-window-session-override.json"
     let smokeWindowSessionOverrideEnvironmentKey = "SUMI_WINDOW_SESSION_OVERRIDE_PATH"
+    let smokeSharedTempRootEnvironmentKey = "SUMI_SMOKE_SHARED_TEMP_ROOT"
     let smokeShortcutDriftPinEnvironmentKey = "SUMI_SIDEBAR_DRIFT_SHORTCUT_PIN_ID"
     let smokeShortcutDriftURLEnvironmentKey = "SUMI_SIDEBAR_DRIFT_URL"
     struct PersonalSidebarFixture {

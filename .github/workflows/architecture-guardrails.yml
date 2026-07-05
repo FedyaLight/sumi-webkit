@@ -69,8 +69,12 @@ jobs:
             -project Sumi.xcodeproj \
             -scheme Sumi \
             -destination 'platform=macOS' \
+            -parallel-testing-enabled NO \
             -derivedDataPath "${RUNNER_TEMP}/SumiDerivedData-unit" \
-            -resultBundlePath "${RUNNER_TEMP}/SumiTests.xcresult"
+            -resultBundlePath "${RUNNER_TEMP}/SumiTests.xcresult" \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY=- \
+            DEVELOPMENT_TEAM=
 
       - name: Upload SumiTests result bundle
         if: failure()
@@ -93,14 +97,25 @@ jobs:
           scripts/verify_vendor_checksums.sh
 
       - name: Run SumiSmoke
+        env:
+          SUMI_SMOKE_SHARED_TEMP_ROOT: /tmp/sumi-smoke-${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           set -euo pipefail
+          SUMI_SMOKE_CI_FALLBACK_TEMP_ROOT="/tmp/sumi-smoke-ci"
+          rm -rf "${SUMI_SMOKE_SHARED_TEMP_ROOT}" "${SUMI_SMOKE_CI_FALLBACK_TEMP_ROOT}"
+          mkdir -p "${SUMI_SMOKE_SHARED_TEMP_ROOT}"
+          trap 'rm -rf "${SUMI_SMOKE_SHARED_TEMP_ROOT}" "${SUMI_SMOKE_CI_FALLBACK_TEMP_ROOT}"' EXIT
           xcodebuild test \
             -project Sumi.xcodeproj \
             -scheme SumiSmoke \
             -destination 'platform=macOS' \
+            -parallel-testing-enabled NO \
             -derivedDataPath "${RUNNER_TEMP}/SumiDerivedData-ui" \
-            -resultBundlePath "${RUNNER_TEMP}/SumiSmoke.xcresult"
+            -resultBundlePath "${RUNNER_TEMP}/SumiSmoke.xcresult" \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY=- \
+            DEVELOPMENT_TEAM= \
+            CODE_SIGN_ENTITLEMENTS="${GITHUB_WORKSPACE}/SumiUITests/SumiSmokeCI.entitlements"
 
       - name: Upload SumiSmoke result bundle
         if: failure()
