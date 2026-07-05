@@ -52,8 +52,32 @@ final class SumiWebViewContainerView: NSView {
         for subview in subviews where subview !== displayedView {
             subview.removeFromSuperview()
         }
-        guard displayedView.superview !== self else { return }
-        addDisplayedContent(displayedView)
+        if displayedView.superview !== self {
+            addDisplayedContent(displayedView)
+        }
+        recenterFullscreenPlaceholderLabelIfNeeded(displayedView)
+    }
+
+    /// WebKit centres the "exit full screen" label for the fullscreen screen's
+    /// dimensions and never re-centres it once the placeholder is hosted at the
+    /// tab's (smaller) content size, stranding the label in a corner. The label's
+    /// autoresizing mask keeps whatever margins it currently has, so a one-time
+    /// re-centre against the live bounds makes it stay centred on later resizes.
+    private func recenterFullscreenPlaceholderLabelIfNeeded(_ displayedView: NSView) {
+        guard displayedView !== webView,
+              let label = displayedView.sumiFirstDescendant(ofType: NSTextField.self),
+              let container = label.superview
+        else {
+            return
+        }
+        let centeredX = ((container.bounds.width - label.frame.width) / 2).rounded()
+        let centeredY = ((container.bounds.height - label.frame.height) / 2).rounded()
+        guard abs(label.frame.origin.x - centeredX) > 1
+            || abs(label.frame.origin.y - centeredY) > 1
+        else {
+            return
+        }
+        label.setFrameOrigin(NSPoint(x: centeredX, y: centeredY))
     }
 
     func prepareForSuperviewTransferPreservingDisplayedContent() {
@@ -77,7 +101,9 @@ final class SumiWebViewContainerView: NSView {
 
     override func layout() {
         super.layout()
-        webView.sumiFullscreenPresentation.tabContentView.frame = bounds
+        let displayedView = webView.sumiFullscreenPresentation.tabContentView
+        displayedView.frame = bounds
+        recenterFullscreenPlaceholderLabelIfNeeded(displayedView)
         updateViewportMask()
     }
 
@@ -193,5 +219,20 @@ final class SumiWebViewContainerView: NSView {
             bottomLeading: clamp(viewportCornerRadii.bottomLeading),
             bottomTrailing: clamp(viewportCornerRadii.bottomTrailing)
         )
+    }
+}
+
+private extension NSView {
+    /// Depth-first search for the first descendant of the given type.
+    func sumiFirstDescendant<T: NSView>(ofType type: T.Type) -> T? {
+        for subview in subviews {
+            if let match = subview as? T {
+                return match
+            }
+            if let match = subview.sumiFirstDescendant(ofType: type) {
+                return match
+            }
+        }
+        return nil
     }
 }
