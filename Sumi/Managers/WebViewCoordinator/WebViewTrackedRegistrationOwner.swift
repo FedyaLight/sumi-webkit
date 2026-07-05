@@ -134,6 +134,9 @@ final class WebViewTrackedRegistrationOwner {
                     return
                 }
                 runtimeContext.refreshCompositor(windowState)
+            },
+            selectTab: { [dependencies] tabID, windowID in
+                dependencies.requireBrowserRuntimeContext().selectTab(tabID, windowID)
             }
         )
 

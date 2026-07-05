@@ -11,6 +11,7 @@ private struct HistorySwipeProtectionContext {
 
 private struct FullscreenProtectionContext {
     let windowID: UUID?
+    let tabID: UUID?
 }
 
 @MainActor
@@ -32,8 +33,8 @@ private final class FullscreenWebViewProtection {
         activeContexts[webViewID] != nil
     }
 
-    func begin(webViewID: ObjectIdentifier, windowID: UUID?) {
-        activeContexts[webViewID] = FullscreenProtectionContext(windowID: windowID)
+    func begin(webViewID: ObjectIdentifier, windowID: UUID?, tabID: UUID?) {
+        activeContexts[webViewID] = FullscreenProtectionContext(windowID: windowID, tabID: tabID)
     }
 
     func finish(webViewID: ObjectIdentifier) -> FullscreenProtectionContext? {
@@ -261,22 +262,27 @@ final class WebViewProtectedCommandOwner {
         return webViewID
     }
 
-    func beginFullscreenProtection(on webView: WKWebView, windowID: UUID?) -> ObjectIdentifier {
+    func beginFullscreenProtection(
+        on webView: WKWebView,
+        windowID: UUID?,
+        tabID: UUID?
+    ) -> ObjectIdentifier {
         let webViewID = ObjectIdentifier(webView)
         note(webView)
-        fullscreenProtection.begin(webViewID: webViewID, windowID: windowID)
+        fullscreenProtection.begin(webViewID: webViewID, windowID: windowID, tabID: tabID)
         return webViewID
     }
 
     func finishFullscreenProtection(on webView: WKWebView) -> (
         webViewID: ObjectIdentifier,
-        windowID: UUID?
+        windowID: UUID?,
+        tabID: UUID?
     )? {
         let webViewID = ObjectIdentifier(webView)
         guard let context = fullscreenProtection.finish(webViewID: webViewID) else {
             return nil
         }
-        return (webViewID, context.windowID)
+        return (webViewID, context.windowID, context.tabID)
     }
 
     func removeVisualHandoffAndFullscreenProtections() {

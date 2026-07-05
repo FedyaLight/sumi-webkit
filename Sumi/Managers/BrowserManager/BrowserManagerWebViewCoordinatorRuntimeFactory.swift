@@ -34,6 +34,16 @@ enum BrowserWebViewRuntimeFactory {
             currentTab: { [weak browserManager] windowState in
                 requireBrowserManager(browserManager, operation: "resolve current tab").windowTabContextOwner.currentTab(for: windowState)
             },
+            selectTab: { [weak browserManager] tabId, windowId in
+                let manager = requireBrowserManager(
+                    browserManager,
+                    operation: "select fullscreen owner tab"
+                )
+                guard let windowState = manager.windowRegistry?.windows[windowId],
+                      let tab = manager.tabManager.tabCollectionMembershipOwner.tab(for: tabId)
+                else { return }
+                manager.selectTab(tab, in: windowState)
+            },
             handleUnprotectedWebViewDidClose: { [weak browserManager] webView in
                 requireBrowserManager(
                     browserManager,

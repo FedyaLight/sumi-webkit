@@ -21,6 +21,7 @@ final class WebViewMediaProtectionOwner {
     typealias WindowIDResolver = (WKWebView) -> UUID?
     typealias DeferredCommandFlusher = (ObjectIdentifier) -> Void
     typealias WindowCompositorRefresher = (UUID) -> Void
+    typealias TabSelector = (_ tabID: UUID, _ windowID: UUID) -> Void
 
     private let protectedCommandOwner = WebViewProtectedCommandOwner()
     private var nowPlayingSessionCancellablesByWebViewID: [ObjectIdentifier: AnyCancellable] = [:]
@@ -123,7 +124,8 @@ final class WebViewMediaProtectionOwner {
         trackedOwner: @escaping TrackedOwnerResolver,
         fallbackWindowID: @escaping WindowIDResolver,
         flushDeferredProtectedCommands: @escaping DeferredCommandFlusher,
-        refreshCompositor: @escaping WindowCompositorRefresher
+        refreshCompositor: @escaping WindowCompositorRefresher,
+        selectTab: @escaping TabSelector
     ) {
         protectedCommandOwner.installFullscreenStateObservationIfNeeded(
             on: webView
@@ -133,7 +135,8 @@ final class WebViewMediaProtectionOwner {
                 trackedOwner: trackedOwner,
                 fallbackWindowID: fallbackWindowID,
                 flushDeferredProtectedCommands: flushDeferredProtectedCommands,
-                refreshCompositor: refreshCompositor
+                refreshCompositor: refreshCompositor,
+                selectTab: selectTab
             )
         }
     }
@@ -239,7 +242,8 @@ final class WebViewMediaProtectionOwner {
         trackedOwner: TrackedOwnerResolver,
         fallbackWindowID: WindowIDResolver,
         flushDeferredProtectedCommands: DeferredCommandFlusher,
-        refreshCompositor: WindowCompositorRefresher
+        refreshCompositor: WindowCompositorRefresher,
+        selectTab: TabSelector
     ) {
         if webView.sumiIsInFullscreenElementPresentation {
             beginFullscreenProtectionIfNeeded(
@@ -252,7 +256,8 @@ final class WebViewMediaProtectionOwner {
                 for: webView,
                 trackedOwner: trackedOwner,
                 flushDeferredProtectedCommands: flushDeferredProtectedCommands,
-                refreshCompositor: refreshCompositor
+                refreshCompositor: refreshCompositor,
+                selectTab: selectTab
             )
         }
     }
@@ -267,7 +272,8 @@ final class WebViewMediaProtectionOwner {
         let owner = trackedOwner(webView)
         let webViewID = protectedCommandOwner.beginFullscreenProtection(
             on: webView,
-            windowID: owner?.windowID ?? fallbackWindowID(webView)
+            windowID: owner?.windowID ?? fallbackWindowID(webView),
+            tabID: owner?.tabID
         )
         RuntimeDiagnostics.protectedWebViewTrace(
             "beginFullscreenProtection webView=\(webViewID) tab=\(owner?.tabID.uuidString.prefix(8) ?? "nil") window=\(owner?.windowID.uuidString.prefix(8) ?? "nil")"
@@ -278,7 +284,8 @@ final class WebViewMediaProtectionOwner {
         for webView: WKWebView,
         trackedOwner: TrackedOwnerResolver,
         flushDeferredProtectedCommands: DeferredCommandFlusher,
-        refreshCompositor: WindowCompositorRefresher
+        refreshCompositor: WindowCompositorRefresher,
+        selectTab: TabSelector
     ) {
         guard let result = protectedCommandOwner.finishFullscreenProtection(on: webView) else {
             return
@@ -291,6 +298,12 @@ final class WebViewMediaProtectionOwner {
         flushDeferredProtectedCommands(result.webViewID)
         if let windowID = result.windowID {
             refreshCompositor(windowID)
+        }
+        // Exiting element fullscreen returns the web view to its owner tab's
+        // (possibly hidden) container. Re-select that tab so the user lands back
+        // on the video instead of whatever tab is currently displayed.
+        if let tabID = result.tabID, let windowID = result.windowID {
+            selectTab(tabID, windowID)
         }
         postMediaTouchBarRecoveryRequest(
             for: webView,
