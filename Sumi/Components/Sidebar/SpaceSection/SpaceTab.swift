@@ -13,6 +13,7 @@ struct SpaceTab: View {
     var isAppKitInteractionEnabled: Bool = true
     var action: () -> Void
     var onClose: () -> Void
+    var onMiddleClick: () -> Void
     var onMute: () -> Void
     var contextMenuEntries: () -> [SidebarContextMenuEntry] = { [] }
     var fetchesVisiblePresentation: Bool = true
@@ -172,6 +173,7 @@ struct SpaceTab: View {
                 }
                 action()
             },
+            onMiddleClick: onMiddleClick,
             sourceID: rowSourceID,
             entries: contextMenuEntries
         )

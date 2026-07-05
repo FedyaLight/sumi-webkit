@@ -153,6 +153,7 @@ struct SplitGroupSidebarRow: View {
     let onActivateGroup: () -> Void
     var onSegmentActionAnimationStart: (SplitGroupSidebarItem) -> Void = { _ in }
     let onSegmentAction: (SplitGroupSidebarItem) -> Void
+    let onSegmentMiddleClick: (SplitGroupSidebarItem) -> Void
 
     @EnvironmentObject private var splitManager: SplitViewManager
     @Environment(BrowserWindowState.self) private var windowState
@@ -188,7 +189,8 @@ struct SplitGroupSidebarRow: View {
                             item.tab.map(splitContextMenuEntries) ?? []
                         },
                         onActivate: { activate(item) },
-                        onSegmentAction: { performSegmentMutation(for: item, in: rowItems) }
+                        onSegmentAction: { performSegmentMutation(for: item, in: rowItems) },
+                        onMiddleClick: { onSegmentMiddleClick(item) }
                     )
                     .frame(width: isDeparting(item) ? 0 : segmentWidth)
                     .clipped()
@@ -483,6 +485,7 @@ private struct SplitGroupSegment: View {
     let contextMenuEntries: () -> [SidebarContextMenuEntry]
     let onActivate: () -> Void
     let onSegmentAction: () -> Void
+    let onMiddleClick: () -> Void
 
     @State private var isSegmentHoveredForActions = false
     @State private var isActionHovered = false
@@ -516,6 +519,7 @@ private struct SplitGroupSegment: View {
                 isInteractionEnabled: (item.tab != nil || dragSourceConfiguration != nil) && isAppKitInteractionEnabled,
                 dragSource: resolvedDragSourceConfiguration,
                 primaryAction: onActivate,
+                onMiddleClick: onMiddleClick,
                 sourceID: rowSourceID,
                 entries: contextMenuEntries
             )

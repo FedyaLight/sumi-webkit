@@ -253,6 +253,7 @@ private struct ShortcutSidebarRowChrome: View {
             isInteractionEnabled: dragIsEnabled,
             dragSource: dragSourceConfiguration,
             primaryAction: action,
+            onMiddleClick: onUnload,
             sourceID: rowSourceID,
             entries: contextMenuEntries
         )

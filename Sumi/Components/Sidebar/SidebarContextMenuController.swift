@@ -116,6 +116,7 @@ final class SidebarInteractiveOwnerRegistry {
         at windowPoint: NSPoint,
         in window: NSWindow?,
         eventType: NSEvent.EventType?,
+        eventButtonNumber: Int? = nil,
         hostedSidebarView: NSView? = nil
     ) -> SidebarInteractiveItemView? {
         pruneStaleOwners()
@@ -134,10 +135,18 @@ final class SidebarInteractiveOwnerRegistry {
 
             let localPoint = owner.convert(windowPoint, from: nil)
             guard owner.bounds.contains(localPoint),
-                  owner.shouldCaptureInteraction(at: localPoint, eventType: eventType)
+                  owner.shouldCaptureInteraction(
+                    at: localPoint,
+                    eventType: eventType,
+                    eventButtonNumber: eventButtonNumber
+                  )
             else { continue }
 
-            let priority = owner.routingPriority(at: localPoint, eventType: eventType)
+            let priority = owner.routingPriority(
+                at: localPoint,
+                eventType: eventType,
+                eventButtonNumber: eventButtonNumber
+            )
             let depth = owner.sidebarOwnerHierarchyDepth
             if let current = bestCandidate {
                 if priority > current.priority
@@ -305,12 +314,14 @@ final class SidebarContextMenuController {
         at windowPoint: NSPoint,
         in window: NSWindow?,
         eventType: NSEvent.EventType?,
+        eventButtonNumber: Int? = nil,
         hostedSidebarView: NSView? = nil
     ) -> SidebarInteractiveItemView? {
         interactiveOwnerRegistry.owner(
             at: windowPoint,
             in: window,
             eventType: eventType,
+            eventButtonNumber: eventButtonNumber,
             hostedSidebarView: hostedSidebarView
         )
     }
@@ -320,6 +331,7 @@ final class SidebarContextMenuController {
         at windowPoint: NSPoint,
         in window: NSWindow?,
         eventType: NSEvent.EventType?,
+        eventButtonNumber: Int? = nil,
         hostedSidebarView: NSView? = nil
     ) -> Bool {
         guard ownerView.window === window,
@@ -335,7 +347,11 @@ final class SidebarContextMenuController {
 
         let localPoint = ownerView.convert(windowPoint, from: nil)
         guard ownerView.bounds.contains(localPoint),
-              ownerView.shouldCaptureInteraction(at: localPoint, eventType: eventType)
+              ownerView.shouldCaptureInteraction(
+                at: localPoint,
+                eventType: eventType,
+                eventButtonNumber: eventButtonNumber
+              )
         else {
             return false
         }

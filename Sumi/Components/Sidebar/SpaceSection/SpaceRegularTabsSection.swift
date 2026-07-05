@@ -231,6 +231,9 @@ extension SpaceView {
                             },
                             onSegmentAction: { item in
                                 performSplitSegmentAction(for: item, in: group)
+                            },
+                            onSegmentMiddleClick: { item in
+                                performSplitSegmentMiddleClick(for: item, in: group)
                             }
                         )
                         .environmentObject(splitManager)
@@ -309,6 +312,25 @@ extension SpaceView {
                 performRegularSplitModelMutation {
                     browserContext.commands.restoreShortcutSplitMember(item.id, group, windowState)
                 }
+            }
+            return
+        }
+
+        guard let tab = item.tab else { return }
+        performRegularSplitModelMutation {
+            regularSplitSegmentRemovalIds.insert(tab.id)
+            onCloseTab(tab)
+        }
+    }
+
+    private func performSplitSegmentMiddleClick(
+        for item: SplitGroupSidebarItem,
+        in group: SplitGroup
+    ) {
+        if splitMember(for: item, in: group)?.isShortcutBacked == true {
+            guard let tab = item.tab else { return }
+            performRegularSplitModelMutation {
+                browserContext.commands.closeTab(tab, windowState)
             }
             return
         }
@@ -655,6 +677,7 @@ extension SpaceView {
             isAppKitInteractionEnabled: isInteractive,
             action: { handleUserTabActivation(tab) },
             onClose: { closeRegularTab(tab) },
+            onMiddleClick: { closeRegularTab(tab) },
             onMute: { onMuteTab(tab) },
             contextMenuEntries: { regularTabContextMenuEntries(tab) },
             isCurrentTab: windowState.currentTabId == tab.id

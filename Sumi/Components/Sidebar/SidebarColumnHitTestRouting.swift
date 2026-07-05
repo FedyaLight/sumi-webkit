@@ -9,6 +9,7 @@ enum SidebarColumnHitTestRouting {
         hostedSidebarView: NSView?,
         contextMenuController: SidebarContextMenuController?,
         eventType: NSEvent.EventType?,
+        eventButtonNumber: Int? = nil,
         capturesOverlayBackgroundPointerEvents: Bool = false
     ) -> NSView? {
         if eventType == .leftMouseDragged || eventType == .leftMouseUp,
@@ -20,7 +21,13 @@ enum SidebarColumnHitTestRouting {
             return originalHit
         }
 
-        guard eventType == .leftMouseDown || eventType == .rightMouseDown else {
+        let isMiddleMouseEvent = (eventType == .otherMouseDown || eventType == .otherMouseUp)
+            && eventButtonNumber == 2
+
+        guard eventType == .leftMouseDown
+            || eventType == .rightMouseDown
+            || isMiddleMouseEvent
+        else {
             return capturesOverlayBackgroundPointerEvents ? (originalHit ?? containerView) : originalHit
         }
 
@@ -33,12 +40,14 @@ enum SidebarColumnHitTestRouting {
                at: windowPoint,
                in: containerView.window,
                eventType: eventType,
+               eventButtonNumber: eventButtonNumber,
                hostedSidebarView: hostedSidebarView
            ) == true {
             let originalPoint = originalOwner.convert(windowPoint, from: nil)
             originalOwnerPriority = originalOwner.routingPriority(
                 at: originalPoint,
-                eventType: eventType
+                eventType: eventType,
+                eventButtonNumber: eventButtonNumber
             )
         }
 
@@ -46,6 +55,7 @@ enum SidebarColumnHitTestRouting {
             at: windowPoint,
             in: containerView.window,
             eventType: eventType,
+            eventButtonNumber: eventButtonNumber,
             hostedSidebarView: hostedSidebarView
         ) {
             if let originalOwner,
@@ -54,7 +64,8 @@ enum SidebarColumnHitTestRouting {
                 let ownerPoint = owner.convert(windowPoint, from: nil)
                 let ownerPriority = owner.routingPriority(
                     at: ownerPoint,
-                    eventType: eventType
+                    eventType: eventType,
+                    eventButtonNumber: eventButtonNumber
                 )
                 if originalOwnerPriority >= ownerPriority {
                     return originalOwner
@@ -77,7 +88,11 @@ enum SidebarColumnHitTestRouting {
 
         if let originalOwner {
             let ownerPoint = originalOwner.convert(windowPoint, from: nil)
-            if originalOwner.shouldCaptureInteraction(at: ownerPoint, eventType: eventType) {
+            if originalOwner.shouldCaptureInteraction(
+                at: ownerPoint,
+                eventType: eventType,
+                eventButtonNumber: eventButtonNumber
+            ) {
                 return originalOwner
             }
         }

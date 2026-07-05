@@ -44,6 +44,9 @@ struct ShortcutHostedSplitGroupRow: View {
             },
             onSegmentAction: { item in
                 performShortcutHostedSegmentAction(for: item)
+            },
+            onSegmentMiddleClick: { item in
+                performShortcutHostedSegmentMiddleClick(for: item)
             }
         )
         .environmentObject(splitManager)
@@ -60,6 +63,13 @@ struct ShortcutHostedSplitGroupRow: View {
             return
         }
 
+        guard let tab = item.tab else { return }
+        SidebarMotionTransaction.withoutAnimation {
+            onCloseTab(tab)
+        }
+    }
+
+    private func performShortcutHostedSegmentMiddleClick(for item: SplitGroupSidebarItem) {
         guard let tab = item.tab else { return }
         SidebarMotionTransaction.withoutAnimation {
             onCloseTab(tab)

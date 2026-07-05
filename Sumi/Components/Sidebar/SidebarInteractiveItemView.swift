@@ -29,6 +29,7 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
     private var mouseDownCanStartDrag = false
     private var didStartDrag = false
     private var isTrackingDragGesture = false
+    private var middleMouseDownPoint: CGPoint?
     private var trackedPressedSourceID: String?
 
     override init(frame frameRect: NSRect) {
@@ -88,8 +89,12 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard isInteractive, bounds.contains(point) else { return nil }
-        let eventType = window?.currentEvent?.type
-        let captures = shouldCaptureInteraction(at: point, eventType: eventType)
+        let event = window?.currentEvent
+        let captures = shouldCaptureInteraction(
+            at: point,
+            eventType: event?.type,
+            eventButtonNumber: event?.buttonNumber
+        )
         if captures {
             return self
         }
@@ -171,10 +176,26 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
         presentContextMenu(trigger: .rightMouseDown, event: event)
     }
 
-    override func otherMouseUp(with event: NSEvent) {
+    override func otherMouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         guard shouldHandleMiddleClick(event, at: point) else {
+            super.otherMouseDown(with: event)
+            return
+        }
+
+        window?.makeFirstResponder(self)
+        middleMouseDownPoint = point
+    }
+
+    override func otherMouseUp(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        guard middleMouseDownPoint != nil else {
             super.otherMouseUp(with: event)
+            return
+        }
+        defer { middleMouseDownPoint = nil }
+
+        guard shouldHandleMiddleClick(event, at: point) else {
             return
         }
         itemConfiguration.onMiddleClick?()
@@ -249,7 +270,8 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
 
     func shouldCaptureInteraction(
         at point: NSPoint,
-        eventType: NSEvent.EventType?
+        eventType: NSEvent.EventType?,
+        eventButtonNumber: Int? = nil
     ) -> Bool {
         guard isInteractive, bounds.contains(point) else { return false }
 
@@ -261,8 +283,8 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
             return shouldCapturePrimaryAction(at: point) || shouldCaptureDrag(at: point)
         case .rightMouseDown?:
             return shouldPresentMenu(trigger: .rightMouseDown, at: point)
-        case .otherMouseUp?:
-            return itemConfiguration.onMiddleClick != nil
+        case .otherMouseDown?, .otherMouseUp?:
+            return eventButtonNumber == 2 && itemConfiguration.onMiddleClick != nil
         default:
             return false
         }
@@ -270,7 +292,8 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
 
     func routingPriority(
         at point: NSPoint,
-        eventType: NSEvent.EventType?
+        eventType: NSEvent.EventType?,
+        eventButtonNumber: Int? = nil
     ) -> Int {
         guard isInteractive, bounds.contains(point) else { return 0 }
 
@@ -290,8 +313,8 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
             if shouldPresentMenu(trigger: .rightMouseDown, at: point) {
                 return inputBonus + 20
             }
-        case .otherMouseUp?:
-            if itemConfiguration.onMiddleClick != nil {
+        case .otherMouseDown?, .otherMouseUp?:
+            if eventButtonNumber == 2, itemConfiguration.onMiddleClick != nil {
                 return inputBonus + 10
             }
         default:
@@ -468,6 +491,7 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
         mouseDownEvent = nil
         mouseDownPoint = nil
         mouseDownCanStartDrag = false
+        middleMouseDownPoint = nil
         didStartDrag = false
         isTrackingDragGesture = false
         endPressTracking()

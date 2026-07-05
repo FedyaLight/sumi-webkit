@@ -198,6 +198,81 @@ final class SidebarZenMotionTests: XCTestCase {
         XCTAssertFalse(SidebarPrimaryActionInputRouting.usesAppKitOwner(in: context))
     }
 
+    func testPrimaryActionWithMiddleClickUsesAppKitOwnerInDockedSidebar() {
+        let context = SidebarPresentationContext.docked(sidebarWidth: 280)
+
+        XCTAssertTrue(SidebarPrimaryActionInputRouting.usesAppKitOwner(in: context, hasMiddleClick: true))
+    }
+
+    func testMiddleClickOwnerCapturesOnlyMiddleMouseButton() {
+        let point = NSPoint(x: 12, y: 12)
+        let view = SidebarInteractiveItemView(frame: NSRect(x: 0, y: 0, width: 160, height: 36))
+        view.update(
+            configuration: SidebarAppKitItemConfiguration(
+                onMiddleClick: { /* no-op */ }
+            )
+        )
+
+        XCTAssertTrue(view.shouldCaptureInteraction(
+            at: point,
+            eventType: .otherMouseDown,
+            eventButtonNumber: 2
+        ))
+        XCTAssertTrue(view.shouldCaptureInteraction(
+            at: point,
+            eventType: .otherMouseUp,
+            eventButtonNumber: 2
+        ))
+        XCTAssertFalse(view.shouldCaptureInteraction(
+            at: point,
+            eventType: .otherMouseDown,
+            eventButtonNumber: 3
+        ))
+        XCTAssertFalse(view.shouldCaptureInteraction(
+            at: point,
+            eventType: .otherMouseDown,
+            eventButtonNumber: 4
+        ))
+        XCTAssertGreaterThan(view.routingPriority(
+            at: point,
+            eventType: .otherMouseDown,
+            eventButtonNumber: 2
+        ), 0)
+        XCTAssertEqual(view.routingPriority(
+            at: point,
+            eventType: .otherMouseDown,
+            eventButtonNumber: 3
+        ), 0)
+    }
+
+    func testSidebarColumnLeavesSideButtonsForWorkspaceCaptureSurface() {
+        let containerView = NSView(frame: NSRect(x: 0, y: 0, width: 240, height: 160))
+        let captureView = NSView(frame: containerView.bounds)
+        containerView.addSubview(captureView)
+
+        let backHit = SidebarColumnHitTestRouting.routedHit(
+            point: NSPoint(x: 12, y: 12),
+            in: containerView,
+            originalHit: captureView,
+            hostedSidebarView: containerView,
+            contextMenuController: nil,
+            eventType: .otherMouseDown,
+            eventButtonNumber: 3
+        )
+        let forwardHit = SidebarColumnHitTestRouting.routedHit(
+            point: NSPoint(x: 12, y: 12),
+            in: containerView,
+            originalHit: captureView,
+            hostedSidebarView: containerView,
+            contextMenuController: nil,
+            eventType: .otherMouseDown,
+            eventButtonNumber: 4
+        )
+
+        XCTAssertTrue(backHit === captureView)
+        XCTAssertTrue(forwardHit === captureView)
+    }
+
     private func makeInteractiveItemView(
         sourceID: String,
         state: SidebarInteractionState,

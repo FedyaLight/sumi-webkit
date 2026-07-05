@@ -725,6 +725,7 @@ struct ShortcutSplitPlaceholderRow: View {
     let isSelected: Bool
     let accessibilityID: String
     let isAppKitInteractionEnabled: Bool
+    var onMiddleClick: () -> Void = {}
     let action: () -> Void
 
     @Environment(BrowserWindowState.self) private var windowState
@@ -769,6 +770,7 @@ struct ShortcutSplitPlaceholderRow: View {
         .sidebarAppKitPrimaryAction(
             isInteractionEnabled: isAppKitInteractionEnabled,
             sourceID: accessibilityID,
+            onMiddleClick: onMiddleClick,
             action: action
         )
         .accessibilityIdentifier(accessibilityID)

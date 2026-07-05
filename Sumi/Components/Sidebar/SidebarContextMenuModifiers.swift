@@ -78,15 +78,18 @@ private struct SidebarAppKitPrimaryActionModifier: ViewModifier {
     let isEnabled: Bool
     let isInteractionEnabled: Bool
     let sourceID: String?
+    let onMiddleClick: (() -> Void)?
     let action: () -> Void
 
     @ViewBuilder
     func body(content: Content) -> some View {
         if SidebarPrimaryActionInputRouting.usesAppKitOwner(
             in: presentationContext,
-            sourceID: sourceID
+            sourceID: sourceID,
+            hasMiddleClick: onMiddleClick != nil
         ) {
             let primaryAction: (() -> Void)? = isEnabled ? action : nil
+            let middleClickAction: (() -> Void)? = isEnabled ? onMiddleClick : nil
             let effectiveInteractionEnabled = isInteractionEnabled
                 && presentationContext.allowsInteractiveWork
             content.overlay {
@@ -96,6 +99,7 @@ private struct SidebarAppKitPrimaryActionModifier: ViewModifier {
                         isInteractionEnabled: effectiveInteractionEnabled,
                         interactionState: windowState.sidebarInteractionState,
                         primaryAction: primaryAction,
+                        onMiddleClick: middleClickAction,
                         sourceID: sourceID,
                         presentationMode: presentationContext.mode
                     )
@@ -150,9 +154,10 @@ private struct SumiAppKitContextMenuOverlay: View {
 enum SidebarPrimaryActionInputRouting {
     static func usesAppKitOwner(
         in presentationContext: SidebarPresentationContext,
-        sourceID: String? = nil
+        sourceID: String? = nil,
+        hasMiddleClick: Bool = false
     ) -> Bool {
-        presentationContext.inputMode == .collapsedOverlay || sourceID != nil
+        presentationContext.inputMode == .collapsedOverlay || sourceID != nil || hasMiddleClick
     }
 }
 
@@ -211,6 +216,7 @@ extension View {
         isEnabled: Bool = true,
         isInteractionEnabled: Bool = true,
         sourceID: String? = nil,
+        onMiddleClick: (() -> Void)? = nil,
         action: @escaping () -> Void
     ) -> some View {
         modifier(
@@ -218,6 +224,7 @@ extension View {
                 isEnabled: isEnabled,
                 isInteractionEnabled: isInteractionEnabled,
                 sourceID: sourceID,
+                onMiddleClick: onMiddleClick,
                 action: action
             )
         )

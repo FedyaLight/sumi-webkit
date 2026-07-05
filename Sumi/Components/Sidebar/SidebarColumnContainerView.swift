@@ -66,13 +66,15 @@ final class SidebarColumnContainerView: SidebarColumnBaseContainerView {
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         let hit = super.hitTest(point)
+        let event = window?.currentEvent
         return SidebarColumnHitTestRouting.routedHit(
             point: point,
             in: self,
             originalHit: hit,
             hostedSidebarView: hostedSidebarView,
             contextMenuController: contextMenuController,
-            eventType: window?.currentEvent?.type,
+            eventType: event?.type,
+            eventButtonNumber: event?.buttonNumber,
             capturesOverlayBackgroundPointerEvents: capturesOverlayBackgroundPointerEvents
         )
     }

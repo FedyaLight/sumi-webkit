@@ -13,6 +13,10 @@ final class BrowserMouseButtonRoutingOwner {
             eventWindow: event.window,
             mouseButtonRouter: mouseButtonRouter,
             windowRegistry: windowRegistry,
+            deferMiddleButtonToSidebar: containsSidebarMiddleMouseButtonTarget(
+                event,
+                windowRegistry: windowRegistry
+            ),
             deferSideButtonsToSidebar: SidebarMouseButtonCaptureRegistry.shared
                 .containsWorkspaceMouseButtonEvent(event)
         )
@@ -24,8 +28,13 @@ final class BrowserMouseButtonRoutingOwner {
         eventWindow: NSWindow?,
         mouseButtonRouter: any BrowserMouseButtonCommandRouting,
         windowRegistry: WindowRegistry,
+        deferMiddleButtonToSidebar: Bool = false,
         deferSideButtonsToSidebar: Bool = false
     ) -> Bool {
+        if deferMiddleButtonToSidebar, buttonNumber == 2 {
+            return false
+        }
+
         if deferSideButtonsToSidebar,
            SidebarMouseButtonWorkspaceNavigationPolicy.spaceOffset(for: buttonNumber) != nil {
             return false
@@ -68,5 +77,28 @@ final class BrowserMouseButtonRoutingOwner {
             return eventWindowState
         }
         return windowRegistry.activeWindow
+    }
+
+    private func containsSidebarMiddleMouseButtonTarget(
+        _ event: NSEvent,
+        windowRegistry: WindowRegistry
+    ) -> Bool {
+        guard event.type == .otherMouseDown,
+              event.buttonNumber == 2,
+              let windowState = targetWindow(
+                eventWindow: event.window,
+                windowRegistry: windowRegistry
+              ),
+              let eventWindow = event.window ?? windowState.window
+        else {
+            return false
+        }
+
+        return windowState.sidebarContextMenuController.interactiveOwner(
+            at: event.locationInWindow,
+            in: eventWindow,
+            eventType: .otherMouseDown,
+            eventButtonNumber: event.buttonNumber
+        ) != nil
     }
 }
