@@ -69,14 +69,30 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
         )
     }
 
-    func testSidebarResizeEdgeUsesSymmetricNativeHitTargetMetrics() {
+    func testSidebarResizeEdgeUsesCenteredBoundaryHitTargetMetrics() {
         XCTAssertEqual(SidebarResizeMetrics.hitAreaWidth, 18)
-        XCTAssertEqual(SidebarResizeMetrics.hitAreaEdgeOverlap, SidebarResizeMetrics.hitAreaWidth / 2)
-        XCTAssertEqual(SidebarResizeMetrics.indicatorEdgeOverlap, SidebarResizeMetrics.indicatorWidth / 2)
-        XCTAssertEqual(SidebarPosition.left.shellEdge.resizeHitAreaOffset, SidebarResizeMetrics.hitAreaEdgeOverlap)
-        XCTAssertEqual(SidebarPosition.right.shellEdge.resizeHitAreaOffset, -SidebarResizeMetrics.hitAreaEdgeOverlap)
-        XCTAssertEqual(SidebarPosition.left.shellEdge.resizeIndicatorOffset, SidebarResizeMetrics.indicatorEdgeOverlap)
-        XCTAssertEqual(SidebarPosition.right.shellEdge.resizeIndicatorOffset, -SidebarResizeMetrics.indicatorEdgeOverlap)
+        XCTAssertEqual(SidebarResizeMetrics.hitAreaWidth / 2, 9)
+        XCTAssertEqual(SidebarResizeMetrics.grabberWidth, 3)
+        XCTAssertEqual(SidebarResizeMetrics.grabberHeight, 56)
+    }
+
+    func testSidebarBoundaryAnchorUsesDockedSplitBoundaryForLeftAndRightEdges() {
+        let bounds = CGRect(x: 10, y: 0, width: 800, height: 600)
+
+        XCTAssertEqual(
+            SidebarPosition.left.shellEdge.sidebarBoundaryAnchorX(
+                in: bounds,
+                presentationWidth: 280
+            ),
+            290
+        )
+        XCTAssertEqual(
+            SidebarPosition.right.shellEdge.sidebarBoundaryAnchorX(
+                in: bounds,
+                presentationWidth: 280
+            ),
+            530
+        )
     }
 
     func testSidebarResizeDeltaMirrorsLeftAndRightEdges() {

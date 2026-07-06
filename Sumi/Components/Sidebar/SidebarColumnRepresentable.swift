@@ -17,25 +17,6 @@ struct SidebarColumnHostedRootView: View {
         )
             .frame(width: presentationContext.sidebarWidth, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .overlay(alignment: presentationContext.shellEdge.resizeHandleAlignment) {
-                if presentationContext.showsResizeHandle {
-                    SidebarResizeView(
-                        sidebarPosition: presentationContext.sidebarPosition,
-                        onResize: { width, windowState, persist in
-                            environmentContext.hostActions.updateSidebarWidth(
-                                width,
-                                windowState,
-                                persist
-                            )
-                        },
-                        onEndResize: { windowState in
-                            environmentContext.hostActions.persistWindowSession(windowState)
-                        }
-                    )
-                        .frame(maxHeight: .infinity)
-                        .zIndex(2000)
-                }
-            }
             .background {
                 ZStack {
                     if presentationContext.isCollapsedOverlay {

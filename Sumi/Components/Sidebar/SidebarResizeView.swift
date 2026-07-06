@@ -35,14 +35,6 @@ struct SidebarResizeView: View {
         sidebarPosition.shellEdge
     }
 
-    private var indicatorOffset: CGFloat {
-        shellEdge.resizeIndicatorOffset
-    }
-
-    private var hitAreaOffset: CGFloat {
-        shellEdge.resizeHitAreaOffset
-    }
-
     private var tokens: ChromeThemeTokens {
         themeContext.tokens(settings: sumiSettings)
     }
@@ -63,7 +55,6 @@ struct SidebarResizeView: View {
                 .fill(Color.clear)
                 .frame(width: SidebarResizeMetrics.hitAreaWidth)
                 .padding(.vertical, SidebarResizeMetrics.hitAreaVerticalInset)
-                .offset(x: hitAreaOffset)
                 .contentShape(.interaction, .rect)
                 .onHover { hovering in
                     guard windowState.isSidebarVisible else { return }
@@ -114,23 +105,14 @@ struct SidebarResizeView: View {
     @ViewBuilder
     private var indicator: some View {
         if isHovering || isResizing {
-            ZStack {
-                Capsule(style: .continuous)
-                    .fill(Color(nsColor: .separatorColor).opacity(isResizing ? 0.48 : 0.30))
-                    .frame(width: SidebarResizeMetrics.indicatorWidth)
-                    .frame(maxHeight: .infinity)
-
-                Capsule(style: .continuous)
-                    .fill(loadingIndicatorFillColor)
-                    .frame(
-                        width: SidebarResizeMetrics.grabberWidth,
-                        height: SidebarResizeMetrics.grabberHeight
-                    )
-            }
-            .offset(x: indicatorOffset)
-            .padding(.vertical, SidebarResizeMetrics.hitAreaVerticalInset)
-            .animation(.easeInOut(duration: 0.12), value: isHovering)
-            .animation(.easeInOut(duration: 0.08), value: isResizing)
+            Capsule(style: .continuous)
+                .fill(loadingIndicatorFillColor)
+                .frame(
+                    width: SidebarResizeMetrics.grabberWidth,
+                    height: SidebarResizeMetrics.grabberHeight
+                )
+                .animation(.easeInOut(duration: 0.12), value: isHovering)
+                .animation(.easeInOut(duration: 0.08), value: isResizing)
         }
     }
 }

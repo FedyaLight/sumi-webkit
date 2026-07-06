@@ -4,9 +4,6 @@ import SwiftUI
 enum SidebarResizeMetrics {
     static let hitAreaWidth: CGFloat = 18
     static let hitAreaVerticalInset: CGFloat = 18
-    static let hitAreaEdgeOverlap: CGFloat = 9
-    static let indicatorWidth: CGFloat = 9
-    static let indicatorEdgeOverlap: CGFloat = 4.5
     static let grabberWidth: CGFloat = 3
     static let grabberHeight: CGFloat = 56
 }
@@ -50,24 +47,12 @@ struct SidebarShellEdge: Equatable {
         isLeft ? .topLeading : .topTrailing
     }
 
-    var resizeHandleAlignment: Alignment {
-        isLeft ? .trailing : .leading
-    }
-
     var toggleSidebarSymbolName: String {
         isLeft ? "sidebar.left" : "sidebar.right"
     }
 
     func resizeDelta(startingMouseX: CGFloat, currentMouseX: CGFloat) -> CGFloat {
         isLeft ? (currentMouseX - startingMouseX) : (startingMouseX - currentMouseX)
-    }
-
-    var resizeIndicatorOffset: CGFloat {
-        isLeft ? SidebarResizeMetrics.indicatorEdgeOverlap : -SidebarResizeMetrics.indicatorEdgeOverlap
-    }
-
-    var resizeHitAreaOffset: CGFloat {
-        isLeft ? SidebarResizeMetrics.hitAreaEdgeOverlap : -SidebarResizeMetrics.hitAreaEdgeOverlap
     }
 
     func containsTriggerZone(
