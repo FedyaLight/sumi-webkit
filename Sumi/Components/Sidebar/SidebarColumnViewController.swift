@@ -11,6 +11,8 @@ final class SidebarColumnViewController: NSViewController {
     private var widthConstraint: NSLayoutConstraint?
     private weak var registeredRecoveryAnchor: NSView?
     private let usesCollapsedOverlayRoot: Bool
+    private let resizeGrabberView = SidebarResizeGrabberView(frame: .zero)
+    private var resizeGrabberSidebarPosition: SidebarPosition = .left
 
     init(
         usesCollapsedOverlayRoot: Bool = false,
@@ -35,6 +37,9 @@ final class SidebarColumnViewController: NSViewController {
                 self?.syncRecoveryAnchor(window: window)
             }
         }
+        containerView.onGeometryChanged = { [weak self] in
+            self?.layoutResizeGrabber()
+        }
         SidebarColumnPaintlessChrome.configure(containerView)
         view = containerView
         view.translatesAutoresizingMaskIntoConstraints = true
@@ -47,6 +52,12 @@ final class SidebarColumnViewController: NSViewController {
         capturesOverlayBackgroundPointerEvents: Bool = false,
         isCollapsedOverlayVisible: Bool = false,
         collapsedShadowAnimationDuration: TimeInterval = 0,
+        showsResizeHandle: Bool = false,
+        sidebarPosition: SidebarPosition = .left,
+        resizeGrabberColor: NSColor = .labelColor,
+        windowState: BrowserWindowState? = nil,
+        onResize: @escaping (_ width: CGFloat, _ windowState: BrowserWindowState, _ persist: Bool) -> Void = { _, _, _ in },
+        onEndResize: @escaping (_ windowState: BrowserWindowState) -> Void = { _ in },
         onPointerDown: (() -> Void)? = nil
     ) {
         let containerView = view as? SidebarColumnBaseContainerView
@@ -91,6 +102,15 @@ final class SidebarColumnViewController: NSViewController {
         }
 
         containerView?.hostedSidebarView = hostingController?.view
+        configureResizeGrabber(
+            isVisible: showsResizeHandle,
+            sidebarPosition: sidebarPosition,
+            color: resizeGrabberColor,
+            windowState: windowState,
+            onResize: onResize,
+            onEndResize: onEndResize,
+            onPointerDown: onPointerDown
+        )
 
         syncRecoveryAnchor(window: view.window)
     }
@@ -106,6 +126,8 @@ final class SidebarColumnViewController: NSViewController {
             collapsedRootView.isOverlayHitTestingEnabled = false
             collapsedRootView.setCollapsedShadowVisible(false, animationDuration: 0)
         }
+        resizeGrabberView.resetForReuse()
+        resizeGrabberView.removeFromSuperview()
         widthConstraint?.isActive = false
         widthConstraint = nil
         removeHostingControllerIfNeeded()
@@ -130,6 +152,48 @@ final class SidebarColumnViewController: NSViewController {
         guard let registeredRecoveryAnchor else { return }
         sidebarRecoveryCoordinator.unregister(anchor: registeredRecoveryAnchor)
         self.registeredRecoveryAnchor = nil
+    }
+
+    private func configureResizeGrabber(
+        isVisible: Bool,
+        sidebarPosition: SidebarPosition,
+        color: NSColor,
+        windowState: BrowserWindowState?,
+        onResize: @escaping (_ width: CGFloat, _ windowState: BrowserWindowState, _ persist: Bool) -> Void,
+        onEndResize: @escaping (_ windowState: BrowserWindowState) -> Void,
+        onPointerDown: (() -> Void)?
+    ) {
+        guard let containerView = view as? SidebarColumnBaseContainerView else { return }
+
+        if resizeGrabberView.superview !== containerView {
+            resizeGrabberView.removeFromSuperview()
+            containerView.addSubview(resizeGrabberView, positioned: .above, relativeTo: hostingController?.view)
+        }
+
+        resizeGrabberSidebarPosition = sidebarPosition
+        resizeGrabberView.configure(
+            isEnabled: isVisible && windowState?.isSidebarVisible == true,
+            sidebarPosition: sidebarPosition,
+            indicatorColor: color,
+            windowState: windowState,
+            onResize: onResize,
+            onEndResize: onEndResize,
+            onPointerDown: onPointerDown
+        )
+        layoutResizeGrabber()
+    }
+
+    private func layoutResizeGrabber() {
+        guard let containerView = view as? SidebarColumnBaseContainerView,
+              resizeGrabberView.superview === containerView else {
+            return
+        }
+
+        resizeGrabberView.frame = SidebarResizeGrabberLayout.borderStripFrame(
+            in: containerView.bounds,
+            sidebarPosition: resizeGrabberSidebarPosition
+        )
+        resizeGrabberView.needsLayout = true
     }
 
     private func removeHostingControllerIfNeeded() {

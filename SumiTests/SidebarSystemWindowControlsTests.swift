@@ -70,8 +70,6 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
     }
 
     func testSidebarResizeEdgeUsesCenteredBoundaryHitTargetMetrics() {
-        XCTAssertEqual(SidebarResizeMetrics.hitAreaWidth, 18)
-        XCTAssertEqual(SidebarResizeMetrics.hitAreaWidth / 2, 9)
         XCTAssertEqual(SidebarResizeMetrics.grabberWidth, 3)
         XCTAssertEqual(SidebarResizeMetrics.grabberHeight, 56)
     }

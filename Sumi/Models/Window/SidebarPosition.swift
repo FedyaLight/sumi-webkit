@@ -2,8 +2,6 @@ import Foundation
 import SwiftUI
 
 enum SidebarResizeMetrics {
-    static let hitAreaWidth: CGFloat = 18
-    static let hitAreaVerticalInset: CGFloat = 18
     static let grabberWidth: CGFloat = 3
     static let grabberHeight: CGFloat = 56
 }

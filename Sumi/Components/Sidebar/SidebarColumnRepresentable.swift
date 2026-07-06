@@ -172,6 +172,20 @@ struct SidebarColumnRepresentable: NSViewControllerRepresentable {
         )
     }
 
+    private var resizeGrabberColor: NSColor {
+        let tokens = resolvedThemeContext.tokens(settings: sumiSettings)
+        let accentColor = NSColor(tokens.accent).usingColorSpace(.displayP3)
+            ?? NSColor(tokens.accent).usingColorSpace(.sRGB)
+            ?? .controlAccentColor
+        return ChromePageLoadingIndicatorStyle.fillColor(
+            accentColor: accentColor,
+            isDarkTheme: ChromePageLoadingIndicatorStyle.isDarkTheme(
+                workspaceTheme: resolvedThemeContext.workspaceTheme,
+                fallbackColorScheme: resolvedThemeContext.globalColorScheme
+            )
+        )
+    }
+
     func makeNSViewController(context: Context) -> SidebarColumnViewController {
         SidebarColumnViewController(
             usesCollapsedOverlayRoot: presentationContext.isCollapsedOverlay,
@@ -193,6 +207,12 @@ struct SidebarColumnRepresentable: NSViewControllerRepresentable {
             collapsedShadowAnimationDuration: context.transaction.animation == nil
                 ? 0
                 : collapsedShadowAnimationDuration,
+            showsResizeHandle: presentationContext.showsResizeHandle,
+            sidebarPosition: presentationContext.sidebarPosition,
+            resizeGrabberColor: resizeGrabberColor,
+            windowState: windowState,
+            onResize: hostActions.updateSidebarWidth,
+            onEndResize: hostActions.persistWindowSession,
             onPointerDown: {
                 hostActions.dismissThemePickerCommittingIfNeeded()
             }

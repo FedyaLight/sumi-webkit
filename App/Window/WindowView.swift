@@ -323,47 +323,6 @@ struct WindowView: View {
         }
         .padding(.leading, horizontalInsets.leading * (1 - leftLayoutProgress))
         .padding(.trailing, horizontalInsets.trailing * (1 - rightLayoutProgress))
-        .overlay(alignment: .topLeading) {
-            dockedSidebarResizeOverlay(
-                sidebarPosition: sidebarPosition,
-                rendersDockedSidebar: rendersDockedSidebar,
-                layoutProgress: layoutProgress
-            )
-        }
-    }
-
-    @ViewBuilder
-    private func dockedSidebarResizeOverlay(
-        sidebarPosition: SidebarPosition,
-        rendersDockedSidebar: Bool,
-        layoutProgress: CGFloat
-    ) -> some View {
-        if windowState.isSidebarVisible && rendersDockedSidebar && layoutProgress > 0 {
-            GeometryReader { proxy in
-                let bounds = CGRect(origin: .zero, size: proxy.size)
-                let boundaryX = sidebarPosition.shellEdge.sidebarBoundaryAnchorX(
-                    in: bounds,
-                    presentationWidth: windowState.sidebarWidth * layoutProgress
-                )
-
-                SidebarResizeView(
-                    sidebarPosition: sidebarPosition,
-                    onResize: { width, windowState, persist in
-                        browserContext.sidebarHostActions.updateSidebarWidth(
-                            width,
-                            windowState,
-                            persist
-                        )
-                    },
-                    onEndResize: { windowState in
-                        browserContext.sidebarHostActions.persistWindowSession(windowState)
-                    }
-                )
-                .frame(height: proxy.size.height)
-                .position(x: boundaryX, y: proxy.size.height / 2)
-            }
-            .zIndex(2000)
-        }
     }
 
     @ViewBuilder

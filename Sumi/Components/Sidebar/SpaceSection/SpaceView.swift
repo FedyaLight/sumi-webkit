@@ -14,6 +14,17 @@ enum SpaceViewRenderMode {
     }
 }
 
+enum SpaceViewLayout {
+    static let horizontalPadding: CGFloat = 8
+    static let horizontalPaddingTotal: CGFloat = horizontalPadding * 2
+    static let scrollIndicatorBoundaryInset: CGFloat = 3
+    static let scrollIndicatorTrailingProjection: CGFloat = horizontalPadding - scrollIndicatorBoundaryInset
+
+    static func contentWidth(for outerWidth: CGFloat) -> CGFloat {
+        max(outerWidth - horizontalPaddingTotal, 0)
+    }
+}
+
 struct ShortcutRestoreGap: Identifiable, Hashable {
     enum Container: Hashable {
         case spacePinned(UUID)
@@ -63,7 +74,7 @@ struct SpaceView: View {
     }
 
     var innerWidth: CGFloat {
-        max(outerWidth - 16, 0)
+        SpaceViewLayout.contentWidth(for: outerWidth)
     }
 
     var spaceTitleActions: SpaceTitleActions {
@@ -129,7 +140,7 @@ struct SpaceView: View {
 
             mainContentContainer
         }
-        .padding(.horizontal, 8)
+        .padding(.horizontal, SpaceViewLayout.horizontalPadding)
         .frame(minWidth: 0, maxWidth: outerWidth, alignment: .leading)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .contentShape(Rectangle())
