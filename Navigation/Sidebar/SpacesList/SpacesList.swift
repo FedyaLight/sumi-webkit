@@ -19,17 +19,20 @@ struct SpacesList: View {
     @State private var hoveredSpaceId: UUID?
     @State private var showPreview: Bool = false
     @State private var isHoveringList: Bool = false
-    @State private var reorderState = SpaceReorderDragState()
+    @State private var reorderState = ReorderDragState<UUID>()
 
     private var metrics: SpaceStripMetrics {
         SpaceStripMetrics.resolve(for: controlSize)
     }
 
-    private var stripGeometry: SpaceStripGeometry {
-        SpaceStripGeometry.make(
-            itemCount: displayedSpaces.count,
-            availableWidth: availableWidth,
-            metrics: metrics
+    private var reorderGeometry: ReorderGeometry {
+        ReorderGeometry(
+            axis: .horizontal,
+            slotFrames: SpaceStripGeometry.make(
+                itemCount: displayedSpaces.count,
+                availableWidth: availableWidth,
+                metrics: metrics
+            ).slotFrames
         )
     }
 
@@ -41,14 +44,7 @@ struct SpacesList: View {
     }
 
     private var displayedSpaces: [Space] {
-        guard let visualOrder = reorderState.visualOrder else {
-            return visibleSpaces
-        }
-
-        let spacesById = Dictionary(uniqueKeysWithValues: visibleSpaces.map { ($0.id, $0) })
-        let orderedSpaces = visualOrder.compactMap { spacesById[$0] }
-        let orderedIds = Set(orderedSpaces.map(\.id))
-        return orderedSpaces + visibleSpaces.filter { !orderedIds.contains($0.id) }
+        reorderState.displayOrder(visibleSpaces, id: \.id)
     }
 
     var body: some View {
@@ -108,7 +104,7 @@ struct SpacesList: View {
                 )
                 .environment(windowState)
                 .gesture(spaceInteractionGesture(for: space, spaces: spaces))
-                .opacity(reorderState.hidesInlineSpace(space.id) ? 0 : 1)
+                .opacity(reorderState.hidesInlineItem(space.id) ? 0 : 1)
                 .id(space.id)
                 .transition(reorderState.isDragging ? .identity : .asymmetric(
                     insertion: .scale.combined(with: .opacity),
@@ -152,54 +148,34 @@ struct SpacesList: View {
     }
 
     private func spaceInteractionGesture(for space: Space, spaces: [Space]) -> some Gesture {
-        DragGesture(minimumDistance: 0, coordinateSpace: .named(SpaceReorderCoordinateSpace.name))
-            .onChanged { value in
-                guard canReorderSpaces else { return }
-                let result = reorderState.update(
-                    spaceId: space.id,
-                    location: value.location,
-                    orderedSpaceIds: spaces.map(\.id),
-                    geometry: stripGeometry
+        makeReorderDragGesture(
+            id: space.id,
+            coordinateSpaceName: SpaceReorderCoordinateSpace.name,
+            isEnabled: { canReorderSpaces },
+            orderedIDs: { spaces.map(\.id) },
+            geometry: { reorderGeometry },
+            state: $reorderState,
+            onBeginDrag: {
+                showPreview = false
+                hoveredSpaceId = nil
+                windowState.sidebarInteractionState.syncSidebarItemDrag(true)
+            },
+            onEndDrag: {
+                windowState.sidebarInteractionState.syncSidebarItemDrag(false)
+            },
+            onCommit: { move in
+                browserContext.tabManager.spaceLifecycleOwner.reorderSpace(
+                    spaceId: move.id,
+                    to: move.targetIndex
                 )
-
-                let didBeginDrag = result.didBeginDrag
-                if didBeginDrag {
-                    showPreview = false
-                    hoveredSpaceId = nil
-                    windowState.sidebarInteractionState.syncSidebarItemDrag(true)
-                }
-            }
-            .onEnded { value in
-                guard canReorderSpaces else {
-                    if Self.dragDistance(value) < SpaceReorderDragState.dragThreshold {
-                        onSelectSpace(space)
-                    }
-                    return
-                }
-
-                let wasDragging = reorderState.isDragging
-                let drop = reorderState.finish()
-                if wasDragging {
-                    windowState.sidebarInteractionState.syncSidebarItemDrag(false)
-                }
-                if let drop {
-                    browserContext.tabManager.spaceLifecycleOwner.reorderSpace(
-                        spaceId: drop.spaceId,
-                        to: drop.targetIndex
-                    )
-                } else if !wasDragging {
-                    onSelectSpace(space)
-                }
-            }
-    }
-
-    private static func dragDistance(_ value: DragGesture.Value) -> CGFloat {
-        hypot(value.translation.width, value.translation.height)
+            },
+            onTap: { onSelectSpace(space) }
+        )
     }
 
     @ViewBuilder
     private func draggedSpaceOverlay(spaces: [Space]) -> some View {
-        if let draggedSpaceId = reorderState.draggedSpaceId,
+        if let draggedSpaceId = reorderState.draggedID,
            let draggedSpace = spaces.first(where: { $0.id == draggedSpaceId }),
            let frame = reorderState.draggedOverlayFrame() {
             SpacesListItem(

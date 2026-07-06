@@ -73,6 +73,18 @@ final class ExtensionToolbarPinningOwner {
         }
     }
 
+    /// Move an already-pinned slot to a new index within the pinned order. The
+    /// target index is interpreted against the array with the moved slot
+    /// removed, matching `ReorderMove.targetIndex`.
+    func movePinnedToolbarSlot(id: String, to targetIndex: Int) {
+        updatePinnedToolbarExtensionIDs { ids in
+            guard let from = ids.firstIndex(of: id) else { return }
+            let slot = ids.remove(at: from)
+            let clamped = min(max(targetIndex, 0), ids.count)
+            ids.insert(slot, at: clamped)
+        }
+    }
+
     func reloadPinnedToolbarExtensionsForCurrentProfile() {
         let profileKey = Self.pinnedToolbarProfileKey(for: dependencies.currentProfileId())
         dependencies.setPublishedPinnedIDs(
@@ -245,6 +257,10 @@ extension ExtensionManager {
 
     func unpinFromToolbar(_ extensionId: String) {
         toolbarPinningOwner.unpinFromToolbar(extensionId)
+    }
+
+    func movePinnedToolbarSlot(id: String, to targetIndex: Int) {
+        toolbarPinningOwner.movePinnedToolbarSlot(id: id, to: targetIndex)
     }
 
     func reloadPinnedToolbarExtensionsForCurrentProfile() {

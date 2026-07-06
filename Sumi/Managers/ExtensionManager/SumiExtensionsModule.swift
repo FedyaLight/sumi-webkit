@@ -497,6 +497,35 @@ final class SumiExtensionsModule {
         runtime.invalidateTabStructuralRevision()
     }
 
+    func movePinnedToolbarSlot(id: String, to targetIndex: Int) {
+        managerIfEnabled()?.movePinnedToolbarSlot(id: id, to: targetIndex)
+        runtime.invalidateTabStructuralRevision()
+    }
+
+    func orderedUnpinnedExtensionIDs(
+        candidateIDs: [String],
+        profileId: UUID?
+    ) -> [String] {
+        guard let manager = managerIfLoadedAndEnabled() else { return candidateIDs }
+        return manager.orderedUnpinnedExtensionIDs(
+            candidateIDs: candidateIDs,
+            profileId: profileId
+        )
+    }
+
+    func moveUnpinnedExtension(
+        id: String,
+        to targetIndex: Int,
+        within currentOrder: [String]
+    ) {
+        managerIfEnabled()?.moveUnpinnedExtension(
+            id: id,
+            to: targetIndex,
+            within: currentOrder
+        )
+        runtime.invalidateTabStructuralRevision()
+    }
+
     func siteAccessPolicy(
         extensionId: String,
         profileId: UUID? = nil

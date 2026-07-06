@@ -12,7 +12,7 @@ struct SettingsGeneralTab: View {
     @State private var editingSearchEngine: SearchEngineEditorDraft?
     @State private var searchEnginePendingRemoval: SumiSearchEngine?
     @State private var showingRestoreDefaultsConfirmation = false
-    @State private var searchEngineDrag: SearchEngineReorderState?
+    @State private var searchEngineReorder = ReorderDragState<String>(threshold: 0)
 
     var body: some View {
         @Bindable var settings = sumiSettings
@@ -265,19 +265,20 @@ struct SettingsGeneralTab: View {
                     }
                 }
             }
-            .animation(SearchEngineReorderMetrics.reorderAnimation, value: searchEngineDrag?.projectedIndex)
+            .animation(SearchEngineReorderMetrics.reorderAnimation, value: searchEngineReorder.draggedProjectedIndex)
 
-            if let drag = searchEngineDrag,
+            if let draggedID = searchEngineReorder.draggedID,
                !isFilteringSearchEngines,
-               let engine = sumiSettings.searchEngines.first(where: { $0.id == drag.id }) {
-                searchEngineFloatingRow(engine, drag: drag)
+               let sourceIndex = searchEngineReorder.draggedSourceIndex,
+               let engine = sumiSettings.searchEngines.first(where: { $0.id == draggedID }) {
+                searchEngineFloatingRow(engine, sourceIndex: sourceIndex)
             }
         }
         .coordinateSpace(name: SearchEngineReorderMetrics.coordinateSpaceName)
     }
 
     private func searchEngineRow(_ engine: SumiSearchEngine, index: Int) -> some View {
-        let isDraggedSource = searchEngineDrag?.id == engine.id
+        let isDraggedSource = searchEngineReorder.draggedID == engine.id
 
         return searchEngineRowBody(engine, index: index, allowsDrag: true, isInteractive: true)
         .frame(height: SearchEngineReorderMetrics.rowHeight)
@@ -286,8 +287,8 @@ struct SettingsGeneralTab: View {
         .offset(y: searchEngineRowOffset(for: engine, index: index))
     }
 
-    private func searchEngineFloatingRow(_ engine: SumiSearchEngine, drag: SearchEngineReorderState) -> some View {
-        searchEngineRowBody(engine, index: drag.sourceIndex, allowsDrag: false, isInteractive: false)
+    private func searchEngineFloatingRow(_ engine: SumiSearchEngine, sourceIndex: Int) -> some View {
+        searchEngineRowBody(engine, index: sourceIndex, allowsDrag: false, isInteractive: false)
             .frame(height: SearchEngineReorderMetrics.rowHeight)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
@@ -296,7 +297,7 @@ struct SettingsGeneralTab: View {
             )
             .clipShape(RoundedRectangle(cornerRadius: SettingsSurfaceStyle.compactCornerRadius, style: .continuous))
             .shadow(color: SettingsSurfaceStyle.floatingRowShadow, radius: 10, y: 4)
-            .offset(y: drag.floatingTopY)
+            .offset(y: searchEngineReorder.draggedOverlayFrame()?.minY ?? 0)
             .transaction { transaction in
                 transaction.animation = nil
             }
@@ -403,82 +404,62 @@ struct SettingsGeneralTab: View {
         )
     }
 
+    private var searchEngineReorderGeometry: ReorderGeometry {
+        let frames = sumiSettings.searchEngines.indices.map { index in
+            CGRect(
+                x: 0,
+                y: CGFloat(index) * SearchEngineReorderMetrics.rowStep,
+                width: 1,
+                height: SearchEngineReorderMetrics.rowHeight
+            )
+        }
+        return ReorderGeometry(axis: .vertical, slotFrames: frames)
+    }
+
     private func searchEngineDragGesture(for engine: SumiSearchEngine, index: Int) -> some Gesture {
-        DragGesture(
+        makeReorderDragGesture(
+            id: engine.id,
+            coordinateSpaceName: SearchEngineReorderMetrics.coordinateSpaceName,
             minimumDistance: SearchEngineReorderMetrics.dragThreshold,
-            coordinateSpace: .named(SearchEngineReorderMetrics.coordinateSpaceName)
+            isEnabled: { !isFilteringSearchEngines },
+            orderedIDs: { sumiSettings.searchEngines.map(\.id) },
+            geometry: { searchEngineReorderGeometry },
+            state: $searchEngineReorder,
+            onCommit: { move in commitSearchEngineDrag(move) }
         )
-            .onChanged { value in
-                guard !isFilteringSearchEngines else { return }
-
-                var drag = searchEngineDrag
-                if drag?.id != engine.id {
-                    let rowTopY = SearchEngineReorderMetrics.rowTopY(for: index)
-                    drag = SearchEngineReorderState(
-                        id: engine.id,
-                        sourceIndex: index,
-                        projectedIndex: index,
-                        pointerOffsetY: min(
-                            max(value.startLocation.y - rowTopY, 0),
-                            SearchEngineReorderMetrics.rowHeight
-                        ),
-                        currentLocationY: value.location.y
-                    )
-                }
-
-                drag?.currentLocationY = value.location.y
-                if let currentLocationY = drag?.currentLocationY {
-                    drag?.projectedIndex = projectedSearchEngineIndex(locationY: currentLocationY)
-                }
-                searchEngineDrag = drag
-            }
-            .onEnded { _ in
-                guard let drag = searchEngineDrag, drag.id == engine.id else {
-                    runWithoutSearchEngineReorderAnimations {
-                        searchEngineDrag = nil
-                    }
-                    return
-                }
-
-                runWithoutSearchEngineReorderAnimations {
-                    commitSearchEngineDrag(drag)
-                    searchEngineDrag = nil
-                }
-            }
     }
 
-    private func runWithoutSearchEngineReorderAnimations(_ operation: () -> Void) {
-        var transaction = Transaction(animation: nil)
-        transaction.disablesAnimations = true
-        withTransaction(transaction, operation)
-    }
+    private func commitSearchEngineDrag(_ move: ReorderMove<String>) {
+        var engines = sumiSettings.searchEngines
+        guard let from = engines.firstIndex(where: { $0.id == move.id }) else { return }
 
-    private func projectedSearchEngineIndex(locationY: CGFloat) -> Int {
-        let count = sumiSettings.searchEngines.count
-        guard count > 0 else { return 0 }
+        let moved = engines.remove(at: from)
+        let targetIndex = min(max(move.targetIndex, 0), engines.count)
+        engines.insert(moved, at: targetIndex)
 
-        let projected = Int(floor(locationY / SearchEngineReorderMetrics.rowStep))
-        return min(max(projected, 0), count - 1)
+        guard engines.map(\.id) != sumiSettings.searchEngines.map(\.id) else { return }
+        sumiSettings.searchEngines = engines
     }
 
     private func searchEngineRowOffset(for engine: SumiSearchEngine, index: Int) -> CGFloat {
         guard !isFilteringSearchEngines,
-              let drag = searchEngineDrag
+              let sourceIndex = searchEngineReorder.draggedSourceIndex,
+              let projectedIndex = searchEngineReorder.draggedProjectedIndex
         else { return 0 }
 
-        if drag.id == engine.id {
+        if searchEngineReorder.draggedID == engine.id {
             return 0
         }
 
-        if drag.sourceIndex < drag.projectedIndex,
-           index > drag.sourceIndex,
-           index <= drag.projectedIndex {
+        if sourceIndex < projectedIndex,
+           index > sourceIndex,
+           index <= projectedIndex {
             return -SearchEngineReorderMetrics.rowStep
         }
 
-        if drag.projectedIndex < drag.sourceIndex,
-           index >= drag.projectedIndex,
-           index < drag.sourceIndex {
+        if projectedIndex < sourceIndex,
+           index >= projectedIndex,
+           index < sourceIndex {
             return SearchEngineReorderMetrics.rowStep
         }
 
@@ -497,18 +478,6 @@ struct SettingsGeneralTab: View {
                 sumiSettings.searchEngines = engines
             }
         )
-    }
-
-    private func commitSearchEngineDrag(_ drag: SearchEngineReorderState) {
-        guard drag.sourceIndex != drag.projectedIndex,
-              sumiSettings.searchEngines.indices.contains(drag.sourceIndex)
-        else { return }
-
-        var engines = sumiSettings.searchEngines
-        let movedEngine = engines.remove(at: drag.sourceIndex)
-        let targetIndex = min(max(drag.projectedIndex, 0), engines.count)
-        engines.insert(movedEngine, at: targetIndex)
-        sumiSettings.searchEngines = engines
     }
 
     private func canDeleteSearchEngine(_ engine: SumiSearchEngine) -> Bool {
@@ -554,22 +523,6 @@ private enum SearchEngineReorderMetrics {
     static let separatorHeight: CGFloat = 1
     static let rowStep = rowHeight + separatorHeight
     static let reorderAnimation: Animation = .easeInOut(duration: 0.16)
-
-    static func rowTopY(for index: Int) -> CGFloat {
-        CGFloat(index) * rowStep
-    }
-}
-
-private struct SearchEngineReorderState: Equatable {
-    let id: String
-    let sourceIndex: Int
-    var projectedIndex: Int
-    let pointerOffsetY: CGFloat
-    var currentLocationY: CGFloat
-
-    var floatingTopY: CGFloat {
-        currentLocationY - pointerOffsetY
-    }
 }
 
 private struct SearchEngineDragHandle: View {

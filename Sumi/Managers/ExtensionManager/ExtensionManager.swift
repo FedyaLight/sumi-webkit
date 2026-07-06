@@ -140,6 +140,9 @@ final class ExtensionManager: NSObject, ObservableObject {
     lazy var toolbarPinningOwner = ExtensionToolbarPinningOwner(
         dependencies: .live(manager: self)
     )
+    lazy var hubOrderingOwner = ExtensionHubOrderingOwner(
+        dependencies: .live(manager: self)
+    )
     lazy var permissionDecisionStoreOwner = ExtensionPermissionDecisionStoreOwner(
         dependencies: .live(manager: self)
     )
