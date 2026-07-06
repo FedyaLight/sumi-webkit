@@ -164,6 +164,9 @@ private struct HubExtensionTilesGrid: View {
         LazyVGrid(columns: columns, alignment: .leading, spacing: Self.spacing) {
             if browserContext.userscriptsModule.isEnabled {
                 SumiScriptsToolbarControl(layout: .hubTile, browserContext: browserContext)
+                    .sumiAppKitContextMenu(entries: {
+                        sumiScriptsToolbarMenuEntries(browserContext: browserContext)
+                    })
             }
 
             ForEach(displayed, id: \.id) { ext in
@@ -175,6 +178,7 @@ private struct HubExtensionTilesGrid: View {
                         into: $frames.live
                     )
                     .simultaneousGesture(reorderGesture(for: ext.id, baseIDs: baseIDs))
+                    .sumiAppKitContextMenu(entries: { menuEntries(for: ext) })
             }
         }
         .coordinateSpace(name: Self.coordinateSpaceName)
@@ -239,6 +243,17 @@ private struct HubExtensionTilesGrid: View {
         Date().timeIntervalSince(lastDropAt) < 0.25
     }
 
+    private func menuEntries(for ext: InstalledExtension) -> [SidebarContextMenuEntry] {
+        extensionActionMenuEntries(
+            for: ext,
+            layout: .hubTiles,
+            presentation: ExtensionActionPresentationContext(
+                browserContext: browserContext,
+                profileId: profileId
+            )
+        )
+    }
+
     private var columns: [GridItem] {
         Array(
             repeating: GridItem(.flexible(minimum: 0, maximum: .infinity), spacing: Self.spacing),
@@ -293,6 +308,19 @@ private struct SidebarExtensionActionGrid: View {
                         into: $frames.live
                     )
                     .simultaneousGesture(reorderGesture(for: slot.id, baseIDs: baseIDs))
+                    // Inside the sidebar, the background/column owns an AppKit
+                    // context menu that competes for right-clicks through the
+                    // sidebar controller's routing priority. A plain
+                    // `sumiAppKitContextMenu` overlay does not register with that
+                    // controller, so the sidebar menu wins. Route through
+                    // `sidebarAppKitContextMenu` (right-click only, no primary
+                    // action) so this slot registers as an AppKit owner and wins
+                    // the right-click while still passing the primary mouse to
+                    // the SwiftUI button and reorder drag.
+                    .sidebarAppKitContextMenu(
+                        surfaceKind: .button,
+                        entries: { menuEntries(for: slot) }
+                    )
             }
         }
         .padding(.horizontal, 2)
@@ -368,6 +396,22 @@ private struct SidebarExtensionActionGrid: View {
         Date().timeIntervalSince(lastDropAt) < 0.25
     }
 
+    private func menuEntries(for slot: PinnedToolbarSlot) -> [SidebarContextMenuEntry] {
+        switch slot {
+        case .sumiScriptsManager:
+            return sumiScriptsToolbarMenuEntries(browserContext: browserContext)
+        case .webExtension(let ext):
+            return extensionActionMenuEntries(
+                for: ext,
+                layout: .sidebarGrid,
+                presentation: ExtensionActionPresentationContext(
+                    browserContext: browserContext,
+                    profileId: profileId
+                )
+            )
+        }
+    }
+
     private func columns(slotCount: Int) -> [GridItem] {
         Array(
             repeating: GridItem(
@@ -420,6 +464,7 @@ private struct CompactExtensionActionStrip: View {
                         into: $frames.live
                     )
                     .simultaneousGesture(reorderGesture(for: slot.id, baseIDs: baseIDs))
+                    .sumiAppKitContextMenu(entries: { menuEntries(for: slot) })
             }
         }
         .coordinateSpace(name: Self.coordinateSpaceName)
@@ -490,6 +535,22 @@ private struct CompactExtensionActionStrip: View {
 
     private var shouldSuppressActivation: Bool {
         Date().timeIntervalSince(lastDropAt) < 0.25
+    }
+
+    private func menuEntries(for slot: PinnedToolbarSlot) -> [SidebarContextMenuEntry] {
+        switch slot {
+        case .sumiScriptsManager:
+            return sumiScriptsToolbarMenuEntries(browserContext: browserContext)
+        case .webExtension(let ext):
+            return extensionActionMenuEntries(
+                for: ext,
+                layout: .compactStrip,
+                presentation: ExtensionActionPresentationContext(
+                    browserContext: browserContext,
+                    profileId: nil
+                )
+            )
+        }
     }
 
     private var enabledExtensions: [InstalledExtension] {
@@ -583,7 +644,6 @@ private struct SumiScriptsToolbarControl: View {
         .popover(isPresented: $showingPopup, arrowEdge: .bottom) {
             sumiScriptsPopover
         }
-        .sumiAppKitContextMenu(entries: sumiScriptsContextMenuEntries)
         .onHover { hovering in
             isHovering = hovering
         }
@@ -623,21 +683,6 @@ private struct SumiScriptsToolbarControl: View {
         }
         return 1
     }
-
-    private func sumiScriptsContextMenuEntries() -> [SidebarContextMenuEntry] {
-        [
-            .action(
-                SidebarContextMenuAction(
-                    title: "Manage Userscripts",
-                    systemImage: "gearshape",
-                    classification: .presentationOnly,
-                    action: {
-                        browserContext.openSettingsTab(.userScripts)
-                    }
-                )
-            ),
-        ]
-    }
 }
 
 @available(macOS 15.5, *)
@@ -664,16 +709,102 @@ private struct HubTilePressGestureModifier: ViewModifier {
     }
 }
 
-@available(macOS 15.5, *)
-private struct ExtensionActionContextMenuModifier: ViewModifier {
-    let layout: ExtensionActionLayout
-    let entries: () -> [SidebarContextMenuEntry]
+// MARK: - Right-click menu entries
 
-    func body(content: Content) -> some View {
-        // All surfaces use the right-click-only AppKit menu, which passes the
-        // primary (left) mouse through to the SwiftUI Button and reorder drag.
-        content.sumiAppKitContextMenu(entries: entries)
+// The right-click-only AppKit menu is attached by the enclosing strip/grid as
+// the *outermost* layer, above the reorder drag gesture. Nesting it under the
+// container-level reorder `.simultaneousGesture` (as an inner overlay on the
+// button) lets that gesture shadow the AppKit host, so `rightMouseDown` never
+// reaches it — which is why pinned surfaces lost their context menu. Building
+// the entries here (rather than inside the button) lets each surface own the
+// overlay placement while sharing the menu contents.
+
+@available(macOS 15.5, *)
+@MainActor
+private func extensionActionMenuEntries(
+    for ext: InstalledExtension,
+    layout: ExtensionActionLayout,
+    presentation: ExtensionActionPresentationContext
+) -> [SidebarContextMenuEntry] {
+    var entries: [SidebarContextMenuEntry] = [
+        .action(
+            SidebarContextMenuAction(
+                title: "Manage Extensions",
+                systemImage: "gearshape",
+                classification: .presentationOnly,
+                action: {
+                    presentation.openExtensionsSettings()
+                }
+            )
+        ),
+    ]
+
+    switch layout {
+    case .hubTiles:
+        entries.append(
+            .action(
+                SidebarContextMenuAction(
+                    title: "Pin to Toolbar",
+                    systemImage: "pin",
+                    classification: .presentationOnly,
+                    action: {
+                        presentation.pinToToolbar(extensionId: ext.id)
+                    }
+                )
+            )
+        )
+    case .compactStrip, .sidebarGrid:
+        entries.append(
+            .action(
+                SidebarContextMenuAction(
+                    title: "Unpin from Toolbar",
+                    systemImage: "pin.slash",
+                    classification: .presentationOnly,
+                    action: {
+                        presentation.unpinFromToolbar(extensionId: ext.id)
+                    }
+                )
+            )
+        )
     }
+
+    if ext.hasOptionsPage {
+        entries.append(
+            .action(
+                SidebarContextMenuAction(
+                    title: "Options",
+                    systemImage: "slider.horizontal.3",
+                    classification: .presentationOnly,
+                    action: {
+                        Task { @MainActor in
+                            await presentation.openOptionsPage(for: ext)
+                        }
+                    }
+                )
+            )
+        )
+    }
+
+    return entries
+}
+
+@available(macOS 15.5, *)
+@MainActor
+private func sumiScriptsToolbarMenuEntries(
+    browserContext: ExtensionActionBrowserContext
+) -> [SidebarContextMenuEntry] {
+    [
+        .action(
+            SidebarContextMenuAction(
+                title: "Manage Userscripts",
+                systemImage: "gearshape",
+                classification: .presentationOnly,
+                action: {
+                    browserContext.openSettingsTab(.userScripts)
+                }
+            )
+        ),
+    ]
 }
 
 @available(macOS 15.5, *)
@@ -707,10 +838,6 @@ struct ExtensionActionButton: View {
         .help(actionTitle)
         .disabled(actionState?.isEnabled == false)
         .opacity(actionState?.isEnabled == false ? 0.55 : 1)
-        .modifier(ExtensionActionContextMenuModifier(
-            layout: layout,
-            entries: extensionContextMenuEntries
-        ))
         .onHover { state in
             isHovering = state
         }
@@ -902,69 +1029,6 @@ struct ExtensionActionButton: View {
             browserContext: browserContext,
             profileId: profileId
         )
-    }
-
-    private func extensionContextMenuEntries() -> [SidebarContextMenuEntry] {
-        var entries: [SidebarContextMenuEntry] = [
-            .action(
-                SidebarContextMenuAction(
-                    title: "Manage Extensions",
-                    systemImage: "gearshape",
-                    classification: .presentationOnly,
-                    action: {
-                        actionPresentationContext.openExtensionsSettings()
-                    }
-                )
-            ),
-        ]
-
-        switch layout {
-        case .hubTiles:
-            entries.append(
-                .action(
-                    SidebarContextMenuAction(
-                        title: "Pin to Toolbar",
-                        systemImage: "pin",
-                        classification: .presentationOnly,
-                        action: {
-                            actionPresentationContext.pinToToolbar(extensionId: ext.id)
-                        }
-                    )
-                )
-            )
-        case .compactStrip, .sidebarGrid:
-            entries.append(
-                .action(
-                    SidebarContextMenuAction(
-                        title: "Unpin from Toolbar",
-                        systemImage: "pin.slash",
-                        classification: .presentationOnly,
-                        action: {
-                            actionPresentationContext.unpinFromToolbar(extensionId: ext.id)
-                        }
-                    )
-                )
-            )
-        }
-
-        if ext.hasOptionsPage {
-            entries.append(
-                .action(
-                    SidebarContextMenuAction(
-                        title: "Options",
-                        systemImage: "slider.horizontal.3",
-                        classification: .presentationOnly,
-                        action: {
-                            Task { @MainActor in
-                                await actionPresentationContext.openOptionsPage(for: ext)
-                            }
-                        }
-                    )
-                )
-            )
-        }
-
-        return entries
     }
 }
 
