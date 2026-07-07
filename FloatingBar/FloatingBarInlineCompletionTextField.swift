@@ -143,15 +143,19 @@ struct FloatingBarInlineCompletionTextField: NSViewRepresentable {
 
 final class FloatingBarInlineCompletionTextFieldView: NSView {
     let textField = FloatingBarInlineCompletionNSTextField()
+    // Focus-maintenance hint only. Explicit focus requests (handleFocusRequest)
+    // are authoritative and must not be gated on this: the SwiftUI FocusState
+    // backing it has no .focused() anchor, so it can stay false forever.
     var wantsTextFocus = false {
         didSet {
-            if !wantsTextFocus {
-                focusGeneration &+= 1
-            }
+            guard wantsTextFocus, wantsTextFocus != oldValue else { return }
+            attemptPendingFocus()
         }
     }
     private var handledFocusRequestID = 0
     private var focusGeneration: UInt64 = 0
+    private var pendingFocusSelectAll: Bool?
+    private var isObservingWindowKey = false
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -165,7 +169,9 @@ final class FloatingBarInlineCompletionTextFieldView: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        removeWindowKeyObserver()
         focusTextFieldIfNeeded()
+        attemptPendingFocus()
     }
 
     private func setup() {
@@ -180,6 +186,7 @@ final class FloatingBarInlineCompletionTextFieldView: NSView {
         textField.lineBreakMode = .byClipping
         textField.maximumNumberOfLines = 1
         textField.usesSingleLineMode = true
+        textField.setAccessibilityIdentifier("floating-bar-input")
         textField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         textField.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
@@ -219,14 +226,63 @@ final class FloatingBarInlineCompletionTextFieldView: NSView {
     func handleFocusRequest(id: Int, selectAll: Bool) {
         guard id != handledFocusRequestID else { return }
         handledFocusRequestID = id
-        guard wantsTextFocus else { return }
+
+        // Persist the intent until focus actually lands: at launch the view may
+        // not be in a window yet, and the window may not be key yet.
+        pendingFocusSelectAll = selectAll
+        attemptPendingFocus()
+    }
+
+    private func attemptPendingFocus() {
+        guard let selectAll = pendingFocusSelectAll else { return }
+
+        guard let window else {
+            // viewDidMoveToWindow re-attempts once attached.
+            return
+        }
+
+        if isTextFieldFocused(in: window) {
+            pendingFocusSelectAll = nil
+            removeWindowKeyObserver()
+            return
+        }
 
         focusGeneration &+= 1
         focusTextField(
             selectAll: selectAll,
-            remainingRetries: 4,
+            remainingRetries: 8,
             generation: focusGeneration
         )
+    }
+
+    private func isTextFieldFocused(in window: NSWindow) -> Bool {
+        window.firstResponder === textField
+            || (textField.currentEditor() != nil && window.firstResponder === textField.currentEditor())
+    }
+
+    private func installWindowKeyObserverIfNeeded() {
+        guard !isObservingWindowKey, let window else { return }
+        isObservingWindowKey = true
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(windowDidBecomeKey(_:)),
+            name: NSWindow.didBecomeKeyNotification,
+            object: window
+        )
+    }
+
+    private func removeWindowKeyObserver() {
+        guard isObservingWindowKey else { return }
+        isObservingWindowKey = false
+        NotificationCenter.default.removeObserver(
+            self,
+            name: NSWindow.didBecomeKeyNotification,
+            object: nil
+        )
+    }
+
+    @objc private func windowDidBecomeKey(_: Notification) {
+        attemptPendingFocus()
     }
 
     private func focusTextField(
@@ -234,10 +290,16 @@ final class FloatingBarInlineCompletionTextFieldView: NSView {
         remainingRetries: Int,
         generation: UInt64
     ) {
-        guard remainingRetries >= 0 else { return }
-        guard wantsTextFocus,
-              generation == focusGeneration
+        guard generation == focusGeneration,
+              pendingFocusSelectAll != nil
         else { return }
+
+        guard remainingRetries >= 0 else {
+            // Out of immediate retries — wait for the window to become key
+            // (app launch, window restore) and try again then.
+            installWindowKeyObserverIfNeeded()
+            return
+        }
 
         guard let window else {
             DispatchQueue.main.async { [weak self] in
@@ -251,12 +313,14 @@ final class FloatingBarInlineCompletionTextFieldView: NSView {
         }
 
         window.makeFirstResponder(textField)
-        if selectAll {
-            textField.selectText(nil)
-        }
 
-        if window.firstResponder !== textField.currentEditor(),
-           window.firstResponder !== textField {
+        if isTextFieldFocused(in: window) {
+            if selectAll {
+                textField.selectText(nil)
+            }
+            pendingFocusSelectAll = nil
+            removeWindowKeyObserver()
+        } else {
             DispatchQueue.main.async { [weak self] in
                 self?.focusTextField(
                     selectAll: selectAll,
