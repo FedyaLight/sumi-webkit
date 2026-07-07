@@ -102,6 +102,3 @@ docs/*
 !docs/permissions/ARCHITECTURE.md
 !docs/permissions/TEST_PLAN.md
 !docs/permissions/LICENSE_NOTES.md
-!docs/refactor/
-docs/refactor/*
-!docs/refactor/*.md
