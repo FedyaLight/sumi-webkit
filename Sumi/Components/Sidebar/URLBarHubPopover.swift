@@ -31,6 +31,7 @@ private struct URLBarHubNativeBackground: View {
 
 struct URLBarHubPopover: View {
     @Environment(BrowserWindowState.self) private var windowState
+    @Environment(\.resolvedThemeContext) private var themeContext
 
     let browserContext: URLBarHubBrowserContext
     @ObservedObject var bookmarkManager: SumiBookmarkManager
@@ -497,7 +498,8 @@ struct URLBarHubPopover: View {
                         currentTab: currentTab,
                         windowState: windowState,
                         webViewProvider: browserContext.webView,
-                        options: screenshotOptions
+                        options: screenshotOptions,
+                        themeContext: themeContext
                     ) { options in
                         screenshotCaptureTarget = options.target.rawValue
                         screenshotDestination = options.destination.rawValue

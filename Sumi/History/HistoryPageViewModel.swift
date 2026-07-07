@@ -16,6 +16,7 @@ struct HistoryPageBrowserContext {
     let openHistoryURLsInNewTabs: ([URL], BrowserWindowState) -> Void
     let presentBrowsingDataSheet: (BrowserWindowState?) -> Void
     let scheduleRuntimeStatePersistence: (Tab) -> Void
+    let sumiSettings: () -> SumiSettingsService?
 }
 
 @MainActor
@@ -45,7 +46,7 @@ final class HistoryPageViewModel: ObservableObject {
     private let browserContext: HistoryPageBrowserContext
     private let historyManager: HistoryManager
     private let faviconService: any BrowserFaviconServicing
-    private let confirmDeletion: @MainActor (_ title: String, _ message: String) -> Bool
+    private let confirmDeletionOverride: (@MainActor (_ title: String, _ message: String) -> Bool)?
     private let calendar = Calendar.autoupdatingCurrent
     private let sectionDateFormatter: DateFormatter
     private var revisionCancellable: AnyCancellable?
@@ -61,13 +62,13 @@ final class HistoryPageViewModel: ObservableObject {
     init(
         browserContext: HistoryPageBrowserContext,
         windowState: BrowserWindowState?,
-        confirmDeletion: @escaping @MainActor (_ title: String, _ message: String) -> Bool = HistoryPageViewModel.showDeleteConfirmation
+        confirmDeletion: (@MainActor (_ title: String, _ message: String) -> Bool)? = nil
     ) {
         self.windowState = windowState
         self.browserContext = browserContext
         self.historyManager = browserContext.historyManager
         self.faviconService = browserContext.faviconService
-        self.confirmDeletion = confirmDeletion
+        self.confirmDeletionOverride = confirmDeletion
         let sectionDateFormatter = DateFormatter()
         sectionDateFormatter.locale = Locale(identifier: "en_US")
         sectionDateFormatter.calendar = calendar
@@ -389,8 +390,8 @@ final class HistoryPageViewModel: ObservableObject {
     private func deleteItem(_ item: HistoryListItem) async {
         if item.isSiteAggregate {
             guard confirmDeletion(
-                "Delete Site History",
-                "This will permanently remove all history entries for \(item.siteDomain ?? item.domain)."
+                title: "Delete Site History",
+                message: "This will permanently remove all history entries for \(item.siteDomain ?? item.domain)."
             ) else { return }
             await historyManager.delete(query: .domainFilter([item.siteDomain ?? item.domain]))
             return
@@ -419,8 +420,8 @@ final class HistoryPageViewModel: ObservableObject {
         let requiresConfirmation = selectedItems.count > 1 || !selectedDomains.isEmpty
         if requiresConfirmation,
            !confirmDeletion(
-            "Delete Selected History",
-            "This will permanently remove the selected history entries."
+            title: "Delete Selected History",
+            message: "This will permanently remove the selected history entries."
            ) {
             return
         }
@@ -450,13 +451,20 @@ final class HistoryPageViewModel: ObservableObject {
         }
     }
 
-    private static func showDeleteConfirmation(title: String, message: String) -> Bool {
+    private func confirmDeletion(title: String, message: String) -> Bool {
+        if let confirmDeletionOverride {
+            return confirmDeletionOverride(title, message)
+        }
         let alert = NSAlert()
         alert.messageText = title
         alert.informativeText = message
         alert.alertStyle = .warning
         alert.addButton(withTitle: "Delete")
         alert.addButton(withTitle: "Cancel")
+        alert.sumiApplyNativeSurfaceAppearance(
+            windowState: windowState,
+            settings: browserContext.sumiSettings()
+        )
         return alert.runModal() == .alertFirstButtonReturn
     }
 }

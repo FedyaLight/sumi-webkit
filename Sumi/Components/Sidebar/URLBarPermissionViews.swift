@@ -23,6 +23,7 @@ extension URLBarView {
             if let viewModel = permissionPromptPresenter.viewModel {
                 SumiPermissionPromptView(viewModel: viewModel)
                     .environment(windowState)
+                    .sumiNativeSurfaceColorScheme()
             } else {
                 EmptyView()
             }
@@ -39,6 +40,7 @@ extension URLBarView {
                 }
             )
             .environment(windowState)
+            .sumiNativeSurfaceColorScheme()
         }
     }
 

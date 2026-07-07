@@ -504,6 +504,7 @@ struct PinnedGrid: View {
             title: pin.preferredDisplayTitle,
             url: pin.launchURL,
             window: windowState.window,
+            themeContext: themeContext,
             onDelete: { removeFromEssentials(pin) }
         )
     }

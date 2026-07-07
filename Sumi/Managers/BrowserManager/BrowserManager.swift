@@ -144,7 +144,15 @@ class BrowserManager: ObservableObject {
     )
     lazy var bookmarkCommandOwner = BrowserBookmarkCommandOwner(
         dependencies: .live(browserManager: self),
-        presenter: BrowserBookmarkCommandAppKitPresenter()
+        presenter: BrowserBookmarkCommandAppKitPresenter(
+            nativeSurfaceAppearance: { [weak self] in
+                guard let self,
+                      let settings = self.sumiSettings,
+                      let windowState = self.windowRegistry?.activeWindow
+                else { return nil }
+                return windowState.nativeSurfaceAppearance(settings: settings)
+            }
+        )
     )
     lazy var nativeDialogPresentationOwner = BrowserNativeDialogPresentationOwner(
         dependencies: .live(browserManager: self)

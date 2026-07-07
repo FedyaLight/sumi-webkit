@@ -417,15 +417,10 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
         let windowAppearance = registration.view?.window?.effectiveAppearance
             ?? registration.windowState?.window?.effectiveAppearance
             ?? NSApplication.shared.effectiveAppearance
-        let windowScheme = ColorScheme(urlHubPopoverAppearance: windowAppearance)
-        let preferredScheme = popoverColorScheme(for: registration)
-
-        if windowScheme == preferredScheme {
-            return windowAppearance
-        }
-
-        let preferredName: NSAppearance.Name = preferredScheme == .dark ? .darkAqua : .aqua
-        return NSAppearance(named: preferredName) ?? windowAppearance
+        return NSAppearance.sumiChromeAppearance(
+            for: popoverColorScheme(for: registration),
+            fallback: windowAppearance
+        )
     }
 
     private func popoverColorScheme(for registration: AnchorRegistration) -> ColorScheme {
@@ -517,9 +512,7 @@ private struct URLBarHubPopoverRootView: View {
             .environmentObject(browserContext.extensionSurfaceStore)
             .environment(windowState)
             .environment(\.sumiSettings, settings)
-            .environment(\.resolvedThemeContext, themeContext)
-            .environment(\.colorScheme, colorScheme)
-            .preferredColorScheme(colorScheme)
+            .sumiNativeSurfaceColorScheme(colorScheme, themeContext: themeContext)
         } else {
             EmptyView()
         }
@@ -582,12 +575,5 @@ struct URLBarHubPopoverAnchorView: NSViewRepresentable {
             self.presenter = presenter
             self.windowID = windowID
         }
-    }
-}
-
-private extension ColorScheme {
-    init(urlHubPopoverAppearance appearance: NSAppearance) {
-        let bestMatch = appearance.bestMatch(from: [.darkAqua, .aqua])
-        self = bestMatch == .darkAqua ? .dark : .light
     }
 }

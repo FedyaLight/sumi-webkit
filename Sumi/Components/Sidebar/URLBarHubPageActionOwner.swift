@@ -49,6 +49,7 @@ final class URLBarHubPageActionOwner: ObservableObject {
         windowState: BrowserWindowState,
         webViewProvider: (Tab, BrowserWindowState) -> WKWebView?,
         options: URLBarHubScreenshotOptions,
+        themeContext: ResolvedThemeContext? = nil,
         persistOptions: @escaping @MainActor (URLBarHubScreenshotOptions) -> Void
     ) {
         guard let target = captureTarget(
@@ -59,7 +60,8 @@ final class URLBarHubPageActionOwner: ObservableObject {
 
         URLBarHubScreenshotSettingsPresenter.present(
             initial: options,
-            window: windowState.window
+            window: windowState.window,
+            themeContext: themeContext
         ) { selectedOptions in
             guard let selectedOptions else { return }
             persistOptions(selectedOptions)

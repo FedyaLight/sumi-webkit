@@ -643,6 +643,7 @@ private struct SumiScriptsToolbarControl: View {
         .help("SumiScripts")
         .popover(isPresented: $showingPopup, arrowEdge: .bottom) {
             sumiScriptsPopover
+                .sumiNativeSurfaceColorScheme()
         }
         .onHover { hovering in
             isHovering = hovering

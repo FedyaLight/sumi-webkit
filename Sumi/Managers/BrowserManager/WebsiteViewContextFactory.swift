@@ -105,6 +105,9 @@ enum WebsiteViewContextFactory {
             },
             scheduleRuntimeStatePersistence: { [weak browserManager] tab in
                 browserManager?.tabManager.structuralPersistence.scheduleRuntimeStatePersistence(for: tab)
+            },
+            sumiSettings: { [weak browserManager] in
+                browserManager?.sumiSettings
             }
         )
     }
@@ -146,6 +149,9 @@ enum WebsiteViewContextFactory {
             },
             scheduleRuntimeStatePersistence: { [weak browserManager] tab in
                 browserManager?.tabManager.structuralPersistence.scheduleRuntimeStatePersistence(for: tab)
+            },
+            sumiSettings: { [weak browserManager] in
+                browserManager?.sumiSettings
             }
         )
     }

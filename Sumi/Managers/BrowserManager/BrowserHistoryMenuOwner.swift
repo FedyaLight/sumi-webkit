@@ -49,13 +49,19 @@ extension BrowserHistoryMenuOwner.Dependencies {
             requestCollapsedSidebarOverlayDismissal: { [weak browserManager] in
                 browserManager?.nativeDialogPresentationOwner.requestCollapsedSidebarOverlayDismissal()
             },
-            confirmClearAllHistory: {
+            confirmClearAllHistory: { [weak browserManager] in
                 let alert = NSAlert()
                 alert.messageText = "Clear All History"
                 alert.informativeText = "This will permanently remove all browsing history for the current profile."
                 alert.alertStyle = .warning
                 alert.addButton(withTitle: "Clear History")
                 alert.addButton(withTitle: "Cancel")
+                if let keyWindow = NSApp.keyWindow {
+                    alert.sumiApplyNativeSurfaceAppearance(
+                        windowState: browserManager?.windowRegistry?.windowState(containing: keyWindow),
+                        settings: browserManager?.sumiSettings
+                    )
+                }
                 return alert.runModal() == .alertFirstButtonReturn
             },
             clearAllHistory: { [weak browserManager] in

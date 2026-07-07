@@ -59,6 +59,7 @@ struct SumiZenImportParser {
                 .first(where: { $0 != 0 }) ?? 0
             let profile = profilesByContainer[firstContainerId] ?? defaultProfile
             workspaceProfileId[workspaceId] = profile.id
+            let theme = zenTheme(from: space)
             spaces.append(
                 SumiPortableSpace(
                     id: workspaceId,
@@ -67,7 +68,9 @@ struct SumiZenImportParser {
                     index: idx,
                     profileId: profile.id,
                     themeDataBase64: nil,
-                    color: zenColor(from: space)
+                    color: theme?.colors.first,
+                    colors: theme?.colors,
+                    themeOpacity: theme?.opacity
                 )
             )
         }
@@ -334,20 +337,32 @@ struct SumiZenImportParser {
         return ids.filter { seen.insert($0).inserted }
     }
 
-    private func zenColor(from space: [String: Any]) -> SumiPortableRGBColor? {
+    private func zenTheme(from space: [String: Any]) -> (colors: [SumiPortableRGBColor], opacity: Double?)? {
         guard let theme = space["theme"] as? [String: Any],
-              let colors = theme["gradientColors"] as? [[String: Any]],
-              let first = colors.first,
-              let components = first["c"] as? [Any],
-              components.count >= 3
+              let gradientColors = theme["gradientColors"] as? [[String: Any]]
         else { return nil }
-        func component(_ idx: Int) -> Double? {
-            if let value = components[idx] as? Double { return value / 255 }
-            if let value = components[idx] as? Int { return Double(value) / 255 }
+
+        let colors = gradientColors.compactMap { zenColor(components: $0["c"] as? [Any]) }
+        guard colors.isEmpty == false else { return nil }
+
+        let opacity = (theme["opacity"] as? Double)
+            ?? (theme["opacity"] as? Int).map(Double.init)
+        return (colors, opacity)
+    }
+
+    private func zenColor(components: [Any]?) -> SumiPortableRGBColor? {
+        guard let components, components.count >= 3 else { return nil }
+        let raw: [Double] = (0..<3).compactMap { idx in
+            if let value = components[idx] as? Double { return value }
+            if let value = components[idx] as? Int { return Double(value) }
             return nil
         }
-        guard let r = component(0), let g = component(1), let b = component(2) else { return nil }
-        return SumiPortableRGBColor(r: r, g: g, b: b)
+        guard raw.count == 3 else { return nil }
+        // Zen stores gradient stops either as 0-255 components or already
+        // normalized 0-1 floats. Decide by magnitude: a genuinely 0-255 array
+        // with every component <= 1 is near-black either way.
+        let scale: Double = raw.contains(where: { $0 > 1.0 }) ? 255 : 1
+        return SumiPortableRGBColor(r: raw[0] / scale, g: raw[1] / scale, b: raw[2] / scale)
     }
 }
 

@@ -246,6 +246,66 @@ final class SumiImportExportTests: XCTestCase {
         )
     }
 
+    func testZenWorkspaceThemeColorsParseBothComponentScales() throws {
+        let profileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ZenProfile-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: profileURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: profileURL) }
+        let sessionJSON = Data(
+            """
+            {
+              "spaces": [
+                {
+                  "uuid": "workspace-int",
+                  "name": "Ints",
+                  "icon": "💼",
+                  "theme": { "gradientColors": [ { "c": [244, 239, 223] } ] }
+                },
+                {
+                  "uuid": "workspace-float",
+                  "name": "Floats",
+                  "icon": "🎨",
+                  "theme": { "gradientColors": [ { "c": [0.956, 0.937, 0.874] } ] }
+                },
+                {
+                  "uuid": "workspace-multi",
+                  "name": "Gradient",
+                  "icon": "🌈",
+                  "theme": {
+                    "opacity": 0.5,
+                    "gradientColors": [
+                      { "c": [244, 239, 223] },
+                      { "c": [221, 243, 216] },
+                      { "c": [243, 216, 225] }
+                    ]
+                  }
+                }
+              ],
+              "folders": [],
+              "tabs": []
+            }
+            """.utf8
+        )
+        try mozLZ4(sessionJSON).write(
+            to: profileURL.appendingPathComponent("zen-sessions.jsonlz4")
+        )
+
+        let result = try SumiZenImportParser().parseWithDiagnostics(profileURL: profileURL)
+
+        let intSpace = try XCTUnwrap(result.data.spaces.first(where: { $0.id == "workspace-int" }))
+        XCTAssertEqual(intSpace.color?.hex, "#F4EFDF")
+
+        // Normalized 0-1 floats must not be divided by 255 again (that used to
+        // collapse every imported Zen theme to near-black #010101).
+        let floatSpace = try XCTUnwrap(result.data.spaces.first(where: { $0.id == "workspace-float" }))
+        XCTAssertEqual(floatSpace.color?.hex, "#F4EFDF")
+
+        let multiSpace = try XCTUnwrap(result.data.spaces.first(where: { $0.id == "workspace-multi" }))
+        XCTAssertEqual(multiSpace.colors?.count, 3)
+        XCTAssertEqual(multiSpace.colors?.last?.hex, "#F3D8E1")
+        XCTAssertEqual(try XCTUnwrap(multiSpace.themeOpacity), 0.5, accuracy: 0.0001)
+    }
+
     @MainActor
     func testDetectedZenProfilesUsesInjectedRootAndSkipsNonProfiles() throws {
         let root = FileManager.default.temporaryDirectory

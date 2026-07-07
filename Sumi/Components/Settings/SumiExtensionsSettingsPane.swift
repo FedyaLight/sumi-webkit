@@ -318,6 +318,7 @@ private struct ExtensionCatalogRow: View {
                     )
                     .frame(width: 430)
                     .padding(16)
+                    .sumiNativeSurfaceColorScheme()
                 }
 
                 Button(role: .destructive) {

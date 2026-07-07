@@ -54,6 +54,7 @@ extension URLBarView {
                 cancelZoomPopoverHideTask()
                 isZoomPopoverHovering = false
             }
+            .sumiNativeSurfaceColorScheme()
         }
     }
 

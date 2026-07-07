@@ -148,6 +148,7 @@ struct SettingsGeneralTab: View {
             SearchEngineEditor(draft: draft) { result in
                 saveSearchEngine(result)
             }
+            .sumiNativeSurfaceColorScheme()
         }
         .confirmationDialog(
             "Remove Search Engine?",

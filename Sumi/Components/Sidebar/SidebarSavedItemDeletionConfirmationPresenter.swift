@@ -21,6 +21,7 @@ enum SidebarSavedItemDeletionConfirmationPresenter {
         title: String,
         url: URL,
         window: NSWindow?,
+        themeContext: ResolvedThemeContext? = nil,
         onDelete: @escaping @MainActor () -> Void
     ) {
         let alert = NSAlert()
@@ -37,6 +38,7 @@ enum SidebarSavedItemDeletionConfirmationPresenter {
         let cancelButton = alert.addButton(withTitle: "Cancel")
         cancelButton.keyEquivalent = "\u{1b}"
 
+        alert.sumiApplyNativeSurfaceAppearance(themeContext: themeContext)
         run(alert, window: window, onConfirm: onDelete)
     }
 
@@ -44,6 +46,7 @@ enum SidebarSavedItemDeletionConfirmationPresenter {
         folderName: String,
         childCount: Int,
         window: NSWindow?,
+        themeContext: ResolvedThemeContext? = nil,
         onDelete: @escaping @MainActor () -> Void
     ) {
         let alert = NSAlert()
@@ -60,6 +63,7 @@ enum SidebarSavedItemDeletionConfirmationPresenter {
         let cancelButton = alert.addButton(withTitle: "Cancel")
         cancelButton.keyEquivalent = "\u{1b}"
 
+        alert.sumiApplyNativeSurfaceAppearance(themeContext: themeContext)
         run(alert, window: window, onConfirm: onDelete)
     }
 

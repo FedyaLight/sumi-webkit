@@ -82,7 +82,10 @@ class EmojiPickerManager: NSObject, ObservableObject {
             width: SumiEmojiPickerMetrics.popoverWidth,
             height: SumiEmojiPickerMetrics.popoverHeight
         )
-        let colorScheme = popoverColorScheme(anchorView: anchorView)
+        let colorScheme = PopoverPresenterChromeSupport.nativeSurfaceColorScheme(
+            themeContext: activeThemeContext,
+            anchorView: anchorView
+        )
         popover?.appearance = NSAppearance.sumiChromeAppearance(
             for: colorScheme,
             fallback: anchorView.window?.effectiveAppearance
@@ -156,16 +159,6 @@ class EmojiPickerManager: NSObject, ObservableObject {
         )
     }
 
-    private func popoverColorScheme(anchorView: NSView) -> ColorScheme {
-        if let activeThemeContext {
-            return activeThemeContext.nativeSurfaceColorScheme
-        }
-
-        return ColorScheme(
-            sumiChromeAppearance: anchorView.window?.effectiveAppearance
-                ?? NSApplication.shared.effectiveAppearance
-        )
-    }
 }
 
 private struct EmojiPickerPanelHost: View {
@@ -178,9 +171,10 @@ private struct EmojiPickerPanelHost: View {
         if let settings, let themeContext {
             panel
                 .environment(\.sumiSettings, settings)
-                .environment(\.resolvedThemeContext, themeContext)
-                .environment(\.colorScheme, themeContext.nativeSurfaceColorScheme)
-                .preferredColorScheme(themeContext.nativeSurfaceColorScheme)
+                .sumiNativeSurfaceColorScheme(
+                    themeContext.nativeSurfaceColorScheme,
+                    themeContext: themeContext
+                )
         } else if let settings {
             panel.environment(\.sumiSettings, settings)
         } else {

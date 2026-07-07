@@ -15,6 +15,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct SumiScriptsManagerView: View {
+    @Environment(\.resolvedThemeContext) private var themeContext
     @ObservedObject var manager: SumiScriptsManager
     @State private var searchText = ""
     @State private var installURLString = ""
@@ -203,7 +204,9 @@ struct SumiScriptsManagerView: View {
         do {
             try manager.exportBackup(to: url, includeOriginRules: exportIncludeSiteRules)
         } catch {
-            NSAlert(error: error).runModal()
+            let alert = NSAlert(error: error)
+            alert.sumiApplyNativeSurfaceAppearance(themeContext: themeContext)
+            alert.runModal()
         }
     }
 
@@ -217,9 +220,12 @@ struct SumiScriptsManagerView: View {
             let alert = NSAlert()
             alert.messageText = "Import finished"
             alert.informativeText = "Imported \(n) file(s). Reload if scripts do not appear."
+            alert.sumiApplyNativeSurfaceAppearance(themeContext: themeContext)
             alert.runModal()
         } catch {
-            NSAlert(error: error).runModal()
+            let alert = NSAlert(error: error)
+            alert.sumiApplyNativeSurfaceAppearance(themeContext: themeContext)
+            alert.runModal()
         }
     }
 

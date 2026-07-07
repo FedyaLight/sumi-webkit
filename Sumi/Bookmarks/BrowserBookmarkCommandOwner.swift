@@ -442,6 +442,19 @@ extension BrowserBookmarkCommandOwner.Dependencies {
 }
 
 final class BrowserBookmarkCommandAppKitPresenter: BrowserBookmarkCommandPresenting {
+    /// Space-resolved appearance for the prompt windows; nil keeps the system
+    /// appearance.
+    private let nativeSurfaceAppearance: @MainActor () -> NSAppearance?
+
+    init(nativeSurfaceAppearance: @escaping @MainActor () -> NSAppearance? = { nil }) {
+        self.nativeSurfaceAppearance = nativeSurfaceAppearance
+    }
+
+    private func applyNativeSurfaceAppearance(to alert: NSAlert) {
+        guard let appearance = nativeSurfaceAppearance() else { return }
+        alert.window.appearance = appearance
+    }
+
     func promptBookmarkAllTabs(
         defaultTitle: String,
         folders: [SumiBookmarkFolder]
@@ -475,6 +488,7 @@ final class BrowserBookmarkCommandAppKitPresenter: BrowserBookmarkCommandPresent
         alert.accessoryView = stack
         alert.addButton(withTitle: "Add")
         alert.addButton(withTitle: "Cancel")
+        applyNativeSurfaceAppearance(to: alert)
         guard alert.runModal() == .alertFirstButtonReturn else { return nil }
 
         return BrowserBookmarkAllTabsPrompt(
@@ -504,6 +518,7 @@ final class BrowserBookmarkCommandAppKitPresenter: BrowserBookmarkCommandPresent
         alert.accessoryView = popup
         alert.addButton(withTitle: "Import")
         alert.addButton(withTitle: "Cancel")
+        applyNativeSurfaceAppearance(to: alert)
         guard alert.runModal() == .alertFirstButtonReturn else { return nil }
 
         if popup.selectedItem?.representedObject as? String == "html" {
@@ -556,6 +571,7 @@ final class BrowserBookmarkCommandAppKitPresenter: BrowserBookmarkCommandPresent
         alert.messageText = title
         alert.informativeText = message
         alert.addButton(withTitle: "OK")
+        applyNativeSurfaceAppearance(to: alert)
         alert.runModal()
     }
 }

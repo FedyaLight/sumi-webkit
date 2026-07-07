@@ -295,6 +295,7 @@ struct TabFolderContextMenuActionOwner {
             title: pin.preferredDisplayTitle,
             url: pin.launchURL,
             window: windowState.window,
+            themeContext: themeContext,
             onDelete: { removeShortcutPin(pin) }
         )
     }

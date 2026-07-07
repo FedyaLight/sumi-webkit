@@ -107,8 +107,10 @@ struct GradientEditorView: View {
         .background(tokens.floatingBarBackground)
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .accessibilityIdentifier("workspace-theme-picker-panel")
-        .environment(\.resolvedThemeContext, pickerThemeContext)
-        .preferredColorScheme(pickerThemeContext.globalColorScheme)
+        .sumiNativeSurfaceColorScheme(
+            pickerThemeContext.globalColorScheme,
+            themeContext: pickerThemeContext
+        )
         .onAppear {
             syncEditorState(with: workspaceTheme)
             editorPreview.beginInteractivePreview()

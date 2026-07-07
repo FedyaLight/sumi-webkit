@@ -16,6 +16,7 @@ struct BookmarksPageBrowserContext {
     let importBookmarksFromMenu: () -> Void
     let exportBookmarksFromMenu: () -> Void
     let scheduleRuntimeStatePersistence: (Tab) -> Void
+    let sumiSettings: () -> SumiSettingsService?
 }
 
 @MainActor
@@ -309,6 +310,10 @@ final class SumiBookmarksPageViewModel: ObservableObject {
         alert.alertStyle = .warning
         alert.addButton(withTitle: "Delete")
         alert.addButton(withTitle: "Cancel")
+        alert.sumiApplyNativeSurfaceAppearance(
+            windowState: windowState,
+            settings: browserContext.sumiSettings()
+        )
         guard alert.runModal() == .alertFirstButtonReturn else { return }
 
         do {

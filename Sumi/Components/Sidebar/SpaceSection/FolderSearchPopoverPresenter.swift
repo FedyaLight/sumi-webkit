@@ -76,7 +76,7 @@ final class FolderSearchPopoverPresenter: NSObject, NSPopoverDelegate {
 
         dismissActiveImmediately(reason: "FolderSearchPopoverPresenter.replaceActive")
 
-        let surfaceColorScheme = themeContext.chromeColorScheme
+        let surfaceColorScheme = themeContext.nativeSurfaceColorScheme
         let surfaceThemeContext = PopoverPresenterChromeSupport.themeContext(
             themeContext,
             colorScheme: surfaceColorScheme
@@ -115,9 +115,7 @@ final class FolderSearchPopoverPresenter: NSObject, NSPopoverDelegate {
             )
             .environment(windowState)
             .environment(\.sumiSettings, presentationContext.settings)
-            .environment(\.resolvedThemeContext, surfaceThemeContext)
-            .environment(\.colorScheme, surfaceColorScheme)
-            .preferredColorScheme(surfaceColorScheme)
+            .sumiNativeSurfaceColorScheme(surfaceColorScheme, themeContext: surfaceThemeContext)
         )
 
         let token = source.coordinator?.beginSession(

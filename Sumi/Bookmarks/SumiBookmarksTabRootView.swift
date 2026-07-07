@@ -75,6 +75,7 @@ struct SumiBookmarksTabRootView: View {
                     bookmarkDraft = nil
                 }
             )
+            .sumiNativeSurfaceColorScheme()
         }
         .sheet(item: $folderDraft) { draft in
             SumiFolderFormView(
@@ -94,6 +95,7 @@ struct SumiBookmarksTabRootView: View {
                     folderDraft = nil
                 }
             )
+            .sumiNativeSurfaceColorScheme()
         }
     }
 

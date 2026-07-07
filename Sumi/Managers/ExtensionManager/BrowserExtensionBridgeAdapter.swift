@@ -22,6 +22,7 @@ final class BrowserExtensionBridgeAdapter {
         let windowOwnedWebView: @MainActor (Tab, UUID) -> WKWebView?
         let createNewWindow: @MainActor () -> Void
         let urlBarHubAnchorView: @MainActor (UUID) -> NSView?
+        let sumiSettings: @MainActor () -> SumiSettingsService?
     }
 
     private let dependencies: Dependencies
@@ -379,6 +380,18 @@ extension BrowserExtensionBridgeAdapter: ExtensionBrowserBridgeContext {
     func extensionURLHubFallbackAnchorView(for windowId: UUID) -> NSView? {
         dependencies.urlBarHubAnchorView(windowId)
     }
+
+    func extensionActionPopupAppearance(
+        forAnchorWindow window: NSWindow,
+        fallback: NSAppearance?
+    ) -> NSAppearance? {
+        guard let settings = dependencies.sumiSettings(),
+              let windowState = extensionWindowState(forAppKitWindow: window)
+        else {
+            return nil
+        }
+        return windowState.nativeSurfaceAppearance(settings: settings, fallback: fallback)
+    }
 }
 
 @available(macOS 15.5, *)
@@ -430,6 +443,9 @@ extension BrowserExtensionBridgeAdapter.Dependencies {
                 browserManager?.chromePopoverRoutingOwner.urlBarHubPopoverPresenter.anchorView(
                     for: windowId
                 )
+            },
+            sumiSettings: { [weak browserManager] in
+                browserManager?.sumiSettings
             }
         )
     }

@@ -876,6 +876,7 @@ struct TabFolderView: View {
                 folderName: childFolder.name,
                 childCount: childCount,
                 window: windowState.window,
+                themeContext: themeContext,
                 onDelete: {
                     mutateFolderContent {
                         browserContext.tabManager.folderMutationOwner.deleteFolder(childFolder.id)

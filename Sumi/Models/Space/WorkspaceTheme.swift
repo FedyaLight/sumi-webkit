@@ -325,17 +325,22 @@ struct WorkspaceGradientTheme: Codable, Hashable, Sendable {
         self.texture = WorkspaceGradientTheme.quantizeTexture(texture)
     }
 
+    /// Mirrors theme-picker preset "Light Mono 1" so the default theme darkens
+    /// exactly like a picked preset (see `SumiWorkspaceThemePresets`).
     static var `default`: WorkspaceGradientTheme {
         WorkspaceGradientTheme(
             colors: [
                 WorkspaceThemeColor(
                     hex: WorkspaceResolvedGradient.defaultPrimaryHex,
                     isPrimary: true,
-                    position: .monochrome
+                    algorithm: .floating,
+                    lightness: 0.90,
+                    position: WorkspaceThemePosition(x: 240.0 / 360.0, y: 240.0 / 360.0),
+                    type: .explicitLightness
                 ),
             ],
             opacity: 0.62,
-            texture: 1.0 / 16.0
+            texture: 0.08
         )
     }
 
@@ -572,11 +577,26 @@ struct WorkspaceTheme: Codable, Hashable, Sendable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let gradientTheme = try container.decode(WorkspaceGradientTheme.self, forKey: .gradientTheme)
-        self.gradientTheme = gradientTheme
-        self.usesExplicitColorScheme = try container.decodeIfPresent(
+        let usesExplicitColorScheme = try container.decodeIfPresent(
             Bool.self,
             forKey: .usesExplicitColorScheme
         ) ?? !gradientTheme.normalizedColors.isEmpty
+
+        // Migration: the pre-preset-1 default theme was persisted with the
+        // explicit-scheme flag off, which made it collapse to the near-black
+        // fallback gradient in dark mode. Only that synthesized default could
+        // have colors while the flag is off — rebind it to the current default.
+        if !usesExplicitColorScheme,
+           gradientTheme.renderGradient.visuallyEquals(
+               WorkspaceTheme.legacyDefaultGradientTheme.renderGradient
+           ) {
+            self.gradientTheme = .default
+            self.usesExplicitColorScheme = true
+            return
+        }
+
+        self.gradientTheme = gradientTheme
+        self.usesExplicitColorScheme = usesExplicitColorScheme
     }
 
     func encode(to encoder: Encoder) throws {
@@ -585,10 +605,14 @@ struct WorkspaceTheme: Codable, Hashable, Sendable {
         try container.encode(usesExplicitColorScheme, forKey: .usesExplicitColorScheme)
     }
 
+    /// The pre-selection/fallback theme. Bound to theme-picker preset 1
+    /// ("Light Mono 1"): explicit color scheme, so it renders and darkens
+    /// exactly like the picked preset instead of collapsing to the
+    /// scheme-driven gray/near-black fallback gradient.
     static var `default`: WorkspaceTheme {
         WorkspaceTheme(
             gradientTheme: .default,
-            usesExplicitColorScheme: false
+            usesExplicitColorScheme: true
         )
     }
 
@@ -598,6 +622,20 @@ struct WorkspaceTheme: Codable, Hashable, Sendable {
             usesExplicitColorScheme: true
         )
     }
+
+    /// Shape of the default gradient as persisted before the default theme was
+    /// bound to preset 1. Used only for decode-time migration.
+    static let legacyDefaultGradientTheme = WorkspaceGradientTheme(
+        colors: [
+            WorkspaceThemeColor(
+                hex: WorkspaceResolvedGradient.defaultPrimaryHex,
+                isPrimary: true,
+                position: .monochrome
+            ),
+        ],
+        opacity: 0.62,
+        texture: 1.0 / 16.0
+    )
 
     var gradient: WorkspaceResolvedGradient { gradientTheme.renderGradient }
 

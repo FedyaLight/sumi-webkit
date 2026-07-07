@@ -66,7 +66,8 @@ final class BrowserSidebarActionOwnerTests: XCTestCase {
         let owner = BrowserSidebarActionOwner(
             dependencies: BrowserSidebarActionOwner.Dependencies(
                 tabManager: { tabManager },
-                liveFolderManager: { liveFolderManager }
+                liveFolderManager: { liveFolderManager },
+                sumiSettings: { nil }
             )
         )
 

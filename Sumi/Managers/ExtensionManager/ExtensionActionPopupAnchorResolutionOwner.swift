@@ -210,6 +210,14 @@ final class ExtensionActionPopupAnchorResolutionOwner {
             return .unresolved
         }
 
+        if let anchorWindow = resolved.anchorView.window,
+           let appearance = dependencies.browserBridgeContext()?.extensionActionPopupAppearance(
+               forAnchorWindow: anchorWindow,
+               fallback: anchorWindow.effectiveAppearance
+           ) {
+            popover.appearance = appearance
+        }
+
         ExtensionActionPopupPresentationOwner.show(
             popover,
             relativeTo: resolved.anchorView,

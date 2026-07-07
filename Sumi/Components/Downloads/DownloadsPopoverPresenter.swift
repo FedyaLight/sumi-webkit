@@ -294,9 +294,10 @@ final class DownloadsPopoverPresenter: NSObject, NSPopoverDelegate {
         return AnyView(
             DownloadsPopoverView(downloadManager: downloadManager)
                 .environment(\.sumiSettings, settings)
-                .environment(\.resolvedThemeContext, popoverThemeContext(for: registration, colorScheme: colorScheme))
-                .environment(\.colorScheme, colorScheme)
-                .preferredColorScheme(colorScheme)
+                .sumiNativeSurfaceColorScheme(
+                    colorScheme,
+                    themeContext: popoverThemeContext(for: registration, colorScheme: colorScheme)
+                )
                 .frame(width: Metrics.width, height: contentSize.height)
         )
     }

@@ -131,6 +131,11 @@ final class SumiBoostEditorSession: ObservableObject {
         let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
         textField.stringValue = boost.data.boostName
         alert.accessoryView = textField
+        // The rename button lives in the boost panel, whose appearance is
+        // pinned to the space lightness; inherit it for the prompt.
+        if let panelAppearance = NSApp.keyWindow?.appearance {
+            alert.window.appearance = panelAppearance
+        }
         let response = alert.runModal()
         guard response == .alertFirstButtonReturn else { return }
         rename(textField.stringValue)

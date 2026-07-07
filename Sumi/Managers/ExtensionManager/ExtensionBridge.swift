@@ -94,6 +94,22 @@ protocol ExtensionBrowserBridgeContext: AnyObject {
         parentWindow: NSWindow?
     ) async -> ExtensionMiniWindowAdapter?
     func extensionURLHubFallbackAnchorView(for windowId: UUID) -> NSView?
+    /// Space-resolved appearance for the extension action popup anchored in the
+    /// given AppKit window. `nil` leaves the popover on the system appearance.
+    func extensionActionPopupAppearance(
+        forAnchorWindow window: NSWindow,
+        fallback: NSAppearance?
+    ) -> NSAppearance?
+}
+
+@available(macOS 15.5, *)
+extension ExtensionBrowserBridgeContext {
+    func extensionActionPopupAppearance(
+        forAnchorWindow window: NSWindow,
+        fallback: NSAppearance?
+    ) -> NSAppearance? {
+        nil
+    }
 }
 
 @available(macOS 15.5, *)

@@ -160,6 +160,7 @@ struct WindowView: View {
         }
         .sheet(item: nativeModalPresentationBinding) { presentation in
             nativeModalContent(for: presentation)
+                .sumiNativeSurfaceColorScheme()
         }
         // Lifecycle management
         .onAppear {
@@ -490,20 +491,11 @@ struct WindowView: View {
         }
     }
 
-    private var appKitGlobalAppearance: NSAppearance {
-        windowState.window?.effectiveAppearance ?? NSApplication.shared.effectiveAppearance
-    }
-
     private var globalColorScheme: ColorScheme {
-        switch sumiSettings.windowSchemeMode {
-        case .auto:
-            let _ = effectiveAppearanceRevision
-            return ColorScheme(effectiveAppearance: appKitGlobalAppearance)
-        case .light:
-            return .light
-        case .dark:
-            return .dark
-        }
+        // Read the revision so window-scheme "auto" re-evaluates when the
+        // AppKit effective appearance changes.
+        let _ = effectiveAppearanceRevision
+        return windowState.globalColorScheme(settings: sumiSettings)
     }
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -600,13 +592,5 @@ struct WindowView: View {
     ) -> some View {
         content()
             .environment(\.resolvedThemeContext, resolvedThemeContext)
-    }
-}
-
-private extension ColorScheme {
-    /// Resolves AppKit effective appearance to SwiftUI for window-scheme **auto** (follow system).
-    init(effectiveAppearance appearance: NSAppearance) {
-        let best = appearance.bestMatch(from: [.darkAqua, .aqua])
-        self = best == .darkAqua ? .dark : .light
     }
 }

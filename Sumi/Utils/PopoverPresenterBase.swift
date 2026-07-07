@@ -17,6 +17,21 @@ enum PopoverPresenterChromeSupport {
         )
     }
 
+    /// Native-surface scheme for popovers anchored to a view: the space theme
+    /// when known, otherwise the anchor window's (or app's) appearance.
+    static func nativeSurfaceColorScheme(
+        themeContext: ResolvedThemeContext?,
+        anchorView: NSView?
+    ) -> ColorScheme {
+        if let themeContext {
+            return themeContext.nativeSurfaceColorScheme
+        }
+        return ColorScheme(
+            sumiChromeAppearance: anchorView?.window?.effectiveAppearance
+                ?? NSApplication.shared.effectiveAppearance
+        )
+    }
+
     static func themeContext(
         _ context: ResolvedThemeContext,
         colorScheme: ColorScheme

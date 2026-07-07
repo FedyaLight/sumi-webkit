@@ -142,6 +142,7 @@ struct SumiDataRecoverySettingsPane: View {
                         applyCurrentPreview()
                     }
                 )
+                .sumiNativeSurfaceColorScheme()
             }
         }
     }

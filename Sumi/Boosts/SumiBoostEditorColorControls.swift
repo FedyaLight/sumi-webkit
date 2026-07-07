@@ -196,6 +196,7 @@ struct SumiBoostAdvancedColorButton: View {
         }
         .popover(isPresented: $isPresented, arrowEdge: .bottom) {
             SumiBoostAdvancedColorPopover(session: session)
+                .sumiNativeSurfaceColorScheme()
         }
     }
 }

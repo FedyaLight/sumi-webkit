@@ -28,6 +28,9 @@ enum BrowserBoostRuntimeFactory {
             },
             sidebarPosition: { [weak browserManager] in
                 browserManager?.sumiSettings?.sidebarPosition ?? .left
+            },
+            settings: { [weak browserManager] in
+                browserManager?.sumiSettings
             }
         )
     }

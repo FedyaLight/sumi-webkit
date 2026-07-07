@@ -6,6 +6,7 @@ final class BrowserSidebarActionOwner {
     struct Dependencies {
         let tabManager: @MainActor @Sendable () -> TabManager
         let liveFolderManager: @MainActor @Sendable () -> SumiLiveFolderManager
+        let sumiSettings: @MainActor () -> SumiSettingsService?
     }
 
     private let dependencies: Dependencies
@@ -31,7 +32,7 @@ final class BrowserSidebarActionOwner {
 
     func createRSSLiveFolderInCurrentSpace(in windowState: BrowserWindowState) {
         guard let space = spaceForSidebarActions(in: windowState),
-              let feedURLString = promptForLiveFolderFeedURL()
+              let feedURLString = promptForLiveFolderFeedURL(in: windowState)
         else {
             return
         }
@@ -48,7 +49,7 @@ final class BrowserSidebarActionOwner {
         dependencies.liveFolderManager().createGitHubFolder(in: space.id, kind: .githubIssues)
     }
 
-    private func promptForLiveFolderFeedURL() -> String? {
+    private func promptForLiveFolderFeedURL(in windowState: BrowserWindowState) -> String? {
         let alert = NSAlert()
         alert.messageText = "New RSS Live Folder"
         alert.informativeText = "Enter an RSS or Atom feed URL."
@@ -59,6 +60,10 @@ final class BrowserSidebarActionOwner {
         let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 360, height: 24))
         field.placeholderString = "https://example.com/feed.xml"
         alert.accessoryView = field
+        alert.sumiApplyNativeSurfaceAppearance(
+            windowState: windowState,
+            settings: dependencies.sumiSettings()
+        )
 
         guard alert.runModal() == .alertFirstButtonReturn else {
             return nil
@@ -81,7 +86,10 @@ extension BrowserSidebarActionOwner.Dependencies {
             tabManager: { [weak browserManager, tabManager = browserManager.tabManager] in
                 browserManager?.tabManager ?? tabManager
             },
-            liveFolderManager: { liveFolderManager }
+            liveFolderManager: { liveFolderManager },
+            sumiSettings: { [weak browserManager] in
+                browserManager?.sumiSettings
+            }
         )
     }
 }

@@ -39,6 +39,7 @@ enum URLBarHubScreenshotSettingsPresenter {
     static func present(
         initial: URLBarHubScreenshotOptions,
         window: NSWindow?,
+        themeContext: ResolvedThemeContext? = nil,
         completion: @escaping @MainActor (URLBarHubScreenshotOptions?) -> Void
     ) {
         let targetItems = URLBarHubScreenshotCaptureTarget.allCases
@@ -73,6 +74,7 @@ enum URLBarHubScreenshotSettingsPresenter {
         let cancelButton = alert.addButton(withTitle: "Cancel")
         cancelButton.keyEquivalent = "\u{1b}"
 
+        alert.sumiApplyNativeSurfaceAppearance(themeContext: themeContext)
         run(alert, window: window) { response in
             guard response == .alertFirstButtonReturn else {
                 completion(nil)

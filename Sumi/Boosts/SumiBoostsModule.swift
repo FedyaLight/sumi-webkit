@@ -22,6 +22,7 @@ final class SumiBoostsModule: ObservableObject {
         let applyBoostAwareZoom: @MainActor (Tab, WKWebView) -> Void
         let openWebInspector: @MainActor (Tab, BrowserWindowState) -> Void
         let sidebarPosition: @MainActor () -> SidebarPosition
+        let settings: @MainActor () -> SumiSettingsService?
 
         static let empty = Runtime(
             windowOwnedWebView: { _, _ in nil },
@@ -29,7 +30,8 @@ final class SumiBoostsModule: ObservableObject {
             allLivePages: { [] },
             applyBoostAwareZoom: { _, _ in /* No-op. */ },
             openWebInspector: { _, _ in /* No-op. */ },
-            sidebarPosition: { .left }
+            sidebarPosition: { .left },
+            settings: { nil }
         )
     }
 
@@ -179,7 +181,8 @@ final class SumiBoostsModule: ObservableObject {
             profile: profile ?? tab.resolveProfile(),
             windowState: windowState,
             sidebarPosition: runtime.sidebarPosition(),
-            module: self
+            module: self,
+            settings: runtime.settings()
         )
     }
 

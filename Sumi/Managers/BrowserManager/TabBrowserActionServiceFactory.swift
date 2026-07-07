@@ -74,15 +74,7 @@ enum TabBrowserActionServiceFactory {
         else {
             return fallback
         }
-        let globalScheme: ColorScheme = fallback?.name == .darkAqua ? .dark : .light
-        let themeContext = windowState.resolvedThemeContext(
-            global: globalScheme,
-            settings: settings
-        )
-        return NSAppearance.sumiChromeAppearance(
-            for: themeContext.nativeSurfaceColorScheme,
-            fallback: fallback
-        )
+        return windowState.nativeSurfaceAppearance(settings: settings, fallback: fallback)
     }
 
     private static func startContextMenuDownload(

@@ -463,25 +463,43 @@ final class SumiImportApplier {
            let theme = WorkspaceTheme.decode(encoded) {
             return theme
         }
-        if let color = record.color {
-            return WorkspaceTheme(
-                gradientTheme: WorkspaceGradientTheme(
-                    colors: [
-                        WorkspaceThemeColor(
-                            hex: color.hex,
-                            isCustom: false,
-                            isPrimary: true,
-                            algorithm: .floating,
-                            position: .monochrome
-                        ),
-                    ],
-                    opacity: 0.62,
-                    texture: 1.0 / 16.0
-                ),
-                usesExplicitColorScheme: true
-            )
+
+        let stops = record.colors ?? record.color.map { [$0] } ?? []
+        guard stops.isEmpty == false else { return .default }
+
+        let limited = Array(stops.prefix(WorkspaceResolvedGradient.maxStops))
+        let positions = Self.importedGradientPositions(stopCount: limited.count)
+        let opacity = record.themeOpacity.map {
+            max($0, WorkspaceGradientTheme.customChromeThemeDisableThreshold)
+        } ?? 0.62
+
+        return WorkspaceTheme(
+            gradientTheme: WorkspaceGradientTheme(
+                colors: limited.enumerated().map { index, stop in
+                    WorkspaceThemeColor(
+                        hex: stop.hex,
+                        isCustom: false,
+                        isPrimary: index == 0,
+                        algorithm: limited.count > 1 ? .analogous : .floating,
+                        position: positions[index]
+                    )
+                },
+                opacity: opacity,
+                texture: 1.0 / 16.0
+            ),
+            usesExplicitColorScheme: true
+        )
+    }
+
+    private static func importedGradientPositions(stopCount: Int) -> [WorkspaceThemePosition] {
+        switch stopCount {
+        case ...1:
+            return [.monochrome]
+        case 2:
+            return [.topLeft, .bottom]
+        default:
+            return [.topLeft, .bottom, .monochrome]
         }
-        return .default
     }
 
     private func deduplicateRuntimeBuckets(in data: inout SumiPortableData) {

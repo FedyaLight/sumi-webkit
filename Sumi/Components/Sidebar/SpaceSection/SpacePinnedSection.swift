@@ -602,6 +602,7 @@ extension SpaceView {
             title: pin.preferredDisplayTitle,
             url: pin.launchURL,
             window: windowState.window,
+            themeContext: themeContext,
             onDelete: { removeShortcutPin(pin) }
         )
     }
@@ -611,6 +612,7 @@ extension SpaceView {
             folderName: folder.name,
             childCount: childCount,
             window: windowState.window,
+            themeContext: themeContext,
             onDelete: {
                 mutatePinnedContent {
                     browserContext.tabManager.folderMutationOwner.deleteFolder(folder.id)

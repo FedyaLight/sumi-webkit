@@ -71,20 +71,11 @@ struct ProfilesSettingsView: View {
         }
         .sheet(item: $profileEditorPresentation) { presentation in
             profileEditorSheet(for: presentation)
-                .environment(\.resolvedThemeContext, profileEditorThemeContext)
-                .environment(\.colorScheme, profileEditorColorScheme)
-                .preferredColorScheme(profileEditorColorScheme)
+                .sumiNativeSurfaceColorScheme()
         }
     }
 
     // MARK: - Helpers
-    private var profileEditorThemeContext: ResolvedThemeContext {
-        themeContext.nativeSurfaceThemeContext
-    }
-
-    private var profileEditorColorScheme: ColorScheme {
-        profileEditorThemeContext.nativeSurfaceColorScheme
-    }
 
     private var profileRows: some View {
         VStack(spacing: 0) {
@@ -201,6 +192,7 @@ struct ProfilesSettingsView: View {
         let cancelButton = alert.addButton(withTitle: "Cancel")
         cancelButton.keyEquivalent = "\u{1b}"
 
+        alert.sumiApplyNativeSurfaceAppearance(themeContext: themeContext)
         if alert.runModal() == .alertFirstButtonReturn {
             confirmDelete(profile)
         }

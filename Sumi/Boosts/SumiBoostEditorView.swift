@@ -152,6 +152,7 @@ struct SumiBoostEditorView: View {
                 .layoutPriority(1)
                 .popover(isPresented: $isBoostMenuPresented, arrowEdge: .bottom) {
                     SumiBoostHeaderMenu(session: session, isPresented: $isBoostMenuPresented)
+                        .sumiNativeSurfaceColorScheme()
                 }
 
                 Spacer(minLength: 0)

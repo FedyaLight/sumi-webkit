@@ -38,7 +38,7 @@ final class ThemeContrastResolverTests: XCTestCase {
         XCTAssertEqual(scheme, .light)
     }
 
-    func testDefaultWorkspaceFollowsExplicitDarkWindowScheme() {
+    func testDefaultWorkspaceUsesThemeContrastOverDarkWindowScheme() {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
 
@@ -52,7 +52,10 @@ final class ThemeContrastResolverTests: XCTestCase {
             settings: settings
         )
 
-        XCTAssertEqual(scheme, .dark)
+        // The default theme is bound to preset 1 (explicit color scheme), so
+        // like any picked light preset it keeps its own contrast instead of
+        // collapsing to the window scheme.
+        XCTAssertEqual(scheme, .light)
     }
 
     func testDefaultWorkspaceFollowsExplicitLightWindowScheme() {
