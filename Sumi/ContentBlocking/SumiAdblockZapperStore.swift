@@ -204,6 +204,26 @@ enum SumiAdblockZapperInjector {
     private static let log = Logger.sumi(category: "ContentBlocking")
     private static let styleElementID = "sumi-adblock-zapper-style"
 
+    // Web views whose current document may contain zapper styles/attributes.
+    // Lets the common no-rules case skip the per-navigation JavaScript
+    // round-trip entirely; an empty apply/clear only runs as cleanup after a
+    // non-empty apply.
+    private static let webViewsWithAppliedRules = NSMapTable<WKWebView, NSNumber>
+        .weakToStrongObjects()
+
+    // Test seam: replaced in unit tests to observe evaluations without a
+    // live web content process.
+    static var evaluateScript: (WKWebView, String) -> Void = { webView, script in
+        webView.evaluateJavaScript(script) { _, _ in }
+    }
+
+    static func resetForTesting() {
+        webViewsWithAppliedRules.removeAllObjects()
+        evaluateScript = { webView, script in
+            webView.evaluateJavaScript(script) { _, _ in }
+        }
+    }
+
     static func applySavedRules(
         to webView: WKWebView,
         host: String,
@@ -218,11 +238,20 @@ enum SumiAdblockZapperInjector {
             isEphemeralProfile: isEphemeralProfile
         )
         let rules = state.disabled ? [] : state.rules
-        webView.evaluateJavaScript(applyRulesScript(rules: rules)) { _, _ in }
+        if rules.isEmpty {
+            clearAppliedRules(to: webView)
+            return
+        }
+        webViewsWithAppliedRules.setObject(NSNumber(value: true), forKey: webView)
+        evaluateScript(webView, applyRulesScript(rules: rules))
     }
 
     static func clearAppliedRules(to webView: WKWebView) {
-        webView.evaluateJavaScript(applyRulesScript(rules: [])) { _, _ in }
+        guard webViewsWithAppliedRules.object(forKey: webView)?.boolValue == true else {
+            return
+        }
+        webViewsWithAppliedRules.removeObject(forKey: webView)
+        evaluateScript(webView, applyRulesScript(rules: []))
     }
 
     static func activateElementPicker(

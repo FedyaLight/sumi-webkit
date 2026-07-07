@@ -4,12 +4,18 @@ import WebKit
 @MainActor
 final class SumiBackgroundVideoOptimizationUserScript: NSObject, SumiUserScript {
     let injectionTime: WKUserScriptInjectionTime = .atDocumentStart
-    let forMainFrameOnly = false
+    // Subframes get SumiBackgroundVideoOptimizationSubframeStubUserScript
+    // instead; the full optimizer is injected into a subframe lazily on its
+    // first video "play" so frame-heavy pages don't parse this source per
+    // frame.
+    let forMainFrameOnly = true
     let messageNames: [String] = []
+
+    var source: String { Self.fullSource }
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {}
 
-    let source = """
+    static let fullSource = """
     (() => {
         const apiName = "__sumiBackgroundVideoOptimizer";
         if (window[apiName]) {
@@ -481,6 +487,27 @@ final class SumiBackgroundVideoOptimizationUserScript: NSObject, SumiUserScript 
         // on the first <video> play event (see handleVideoPlay), so video-less
         // pages never pay for an IntersectionObserver or the fullscreen/PiP
         // capture listeners.
+
+        // When this source is injected lazily into a subframe by the bootstrap
+        // stub, pick up the command the stub captured and the "play" event
+        // that fired before this script existed.
+        const stubState = window.__sumiBGVStubState;
+        if (stubState) {
+            const pendingCommand = stubState.cmd;
+            if (pendingCommand) {
+                // No re-broadcast: the stub already forwarded the command to
+                // child frames.
+                setMode(pendingCommand.mode, Number(pendingCommand.graceMs), false);
+            }
+            if (mediaElements().some(isPlaying)) {
+                installViewportOptimizer();
+                if (effectiveMode() !== "visible") {
+                    scheduleHiddenApply();
+                } else {
+                    scheduleViewportReevaluate();
+                }
+            }
+        }
     })();
     """
 }

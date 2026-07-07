@@ -1,9 +1,68 @@
+import WebKit
 import XCTest
 
 @testable import Sumi
 
 @MainActor
 final class SumiAdblockZapperStoreTests: XCTestCase {
+    override func tearDown() {
+        SumiAdblockZapperInjector.resetForTesting()
+        super.tearDown()
+    }
+
+    func testInjectorSkipsJavaScriptWhenHostHasNoRules() {
+        let store = SumiAdblockZapperStore(userDefaults: makeDefaults())
+        let webView = WKWebView()
+        var evaluatedScripts: [String] = []
+        SumiAdblockZapperInjector.evaluateScript = { _, script in
+            evaluatedScripts.append(script)
+        }
+
+        SumiAdblockZapperInjector.applySavedRules(
+            to: webView,
+            host: "example.com",
+            profilePartitionId: "profile-a",
+            isEphemeralProfile: false,
+            store: store
+        )
+        SumiAdblockZapperInjector.clearAppliedRules(to: webView)
+
+        XCTAssertTrue(evaluatedScripts.isEmpty)
+    }
+
+    func testInjectorClearsOnlyAfterRulesWereApplied() {
+        let defaults = makeDefaults()
+        let store = SumiAdblockZapperStore(userDefaults: defaults)
+        store.setRules(
+            [".ad-slot"],
+            forHost: "example.com",
+            profilePartitionId: "profile-a",
+            isEphemeralProfile: false
+        )
+        let webView = WKWebView()
+        var evaluatedScripts: [String] = []
+        SumiAdblockZapperInjector.evaluateScript = { _, script in
+            evaluatedScripts.append(script)
+        }
+
+        SumiAdblockZapperInjector.applySavedRules(
+            to: webView,
+            host: "example.com",
+            profilePartitionId: "profile-a",
+            isEphemeralProfile: false,
+            store: store
+        )
+        XCTAssertEqual(evaluatedScripts.count, 1)
+        XCTAssertTrue(evaluatedScripts[0].contains(".ad-slot"))
+
+        SumiAdblockZapperInjector.clearAppliedRules(to: webView)
+        XCTAssertEqual(evaluatedScripts.count, 2)
+
+        // The clear removed the tracking flag, so further clears are skipped.
+        SumiAdblockZapperInjector.clearAppliedRules(to: webView)
+        XCTAssertEqual(evaluatedScripts.count, 2)
+    }
+
     func testPersistentProfilesDoNotShareZapperStateForSameHost() {
         let defaults = makeDefaults()
         let store = SumiAdblockZapperStore(userDefaults: defaults)

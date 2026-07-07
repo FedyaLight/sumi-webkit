@@ -124,8 +124,11 @@ enum SafariExtensionPermissionsOriginsCompatibility {
         let baseString = extensionBaseURL.absoluteString
         let extensionDocumentPattern =
             baseString.hasSuffix("/") ? "\(baseString)*" : "\(baseString)/*"
+        // Scoped to the extension's own documents. "<all_urls>" is not a
+        // valid WebCore::UserContentURLPattern (no scheme separator), so it
+        // never matched anything here — only the extension-document pattern
+        // ever injects.
         return [
-            "<all_urls>",
             extensionDocumentPattern,
         ]
     }
