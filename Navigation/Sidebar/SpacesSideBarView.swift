@@ -137,7 +137,7 @@ struct SpacesSideBarView: View {
             SidebarHeader(browserContext: browserContext.headerContext(windowState))
                 .environment(windowState)
 
-            if let creationSession = windowState.activeSpaceCreationSession {
+            if let creationSession = windowState.spaceCreationSession.activeSession {
                 SidebarSpaceCreationView(
                     session: creationSession,
                     profileContext: SpaceCreationProfileContext(
@@ -808,8 +808,9 @@ struct SpacesSideBarView: View {
             ?? browserContext.currentProfile()?.id
             ?? browserContext.profileManager.profiles.first?.id
 
-        windowState.beginSpaceCreationSession(
+        windowState.spaceCreationSession.begin(
             source: source,
+            previousSpaceID: windowState.currentSpaceId,
             defaultProfileID: defaultProfileID
         )
     }
@@ -838,7 +839,7 @@ struct SpacesSideBarView: View {
             browserContext.spaceTransitions.setActiveSpace(resolvedSpace, windowState)
         }
 
-        windowState.finishSpaceCreationSession(
+        windowState.spaceCreationSession.finish(
             session,
             reason: "SpacesSideBarView.commitSpaceCreationSession"
         )
@@ -846,7 +847,7 @@ struct SpacesSideBarView: View {
 
     private func cancelSpaceCreationSession(_ session: SpaceCreationSession) {
         session.cancelsOnDismiss = true
-        windowState.finishSpaceCreationSession(
+        windowState.spaceCreationSession.finish(
             session,
             reason: "SpacesSideBarView.cancelSpaceCreationSession"
         )

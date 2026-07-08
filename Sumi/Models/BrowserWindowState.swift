@@ -78,8 +78,8 @@ class BrowserWindowState {
     /// Window-local sidebar projection state that must not publish through shared models.
     let sidebarFolderProjections = SidebarFolderProjectionCoalescer()
 
-    /// Window-local draft for the Zen-style in-sidebar space creation flow.
-    var activeSpaceCreationSession: SpaceCreationSession?
+    /// Window-local owner for the Zen-style in-sidebar space creation flow.
+    let spaceCreationSession = WindowSpaceCreationSessionOwner()
 
     /// Deferred split focus request used when a sidebar placeholder targets a split in another space.
     var pendingSplitGroupFocusRequest: SplitGroupFocusRequest?
@@ -206,39 +206,4 @@ class BrowserWindowState {
         )
     }
 
-    @discardableResult
-    func beginSpaceCreationSession(
-        source: SidebarTransientPresentationSource,
-        defaultProfileID: UUID?
-    ) -> SpaceCreationSession {
-        if let activeSpaceCreationSession {
-            return activeSpaceCreationSession
-        }
-
-        let token = source.coordinator?.beginSession(
-            kind: .spaceCreation,
-            source: source,
-            path: "BrowserWindowState.beginSpaceCreationSession"
-        )
-        let session = SpaceCreationSession(
-            previousSpaceID: currentSpaceId,
-            source: source,
-            transientSessionToken: token,
-            profileID: defaultProfileID
-        )
-        activeSpaceCreationSession = session
-        return session
-    }
-
-    func finishSpaceCreationSession(
-        _ session: SpaceCreationSession,
-        reason: String
-    ) {
-        guard activeSpaceCreationSession === session else { return }
-        activeSpaceCreationSession = nil
-        session.source.coordinator?.finishSession(
-            session.transientSessionToken,
-            reason: reason
-        )
-    }
 }

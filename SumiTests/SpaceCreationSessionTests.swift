@@ -9,12 +9,13 @@ final class SpaceCreationSessionTests: XCTestCase {
         let defaultProfileID = UUID()
         windowState.currentSpaceId = previousSpaceID
 
-        let session = windowState.beginSpaceCreationSession(
+        let session = windowState.spaceCreationSession.begin(
             source: windowState.resolveSidebarPresentationSource(),
+            previousSpaceID: windowState.currentSpaceId,
             defaultProfileID: defaultProfileID
         )
 
-        XCTAssertIdentical(windowState.activeSpaceCreationSession, session)
+        XCTAssertIdentical(windowState.spaceCreationSession.activeSession, session)
         XCTAssertEqual(session.previousSpaceID, previousSpaceID)
         XCTAssertEqual(session.profileID, defaultProfileID)
         XCTAssertEqual(session.resolvedIcon, SumiPersistentGlyph.spaceDefaultIconValue)
@@ -39,16 +40,17 @@ final class SpaceCreationSessionTests: XCTestCase {
 
         session.createsNewProfile = false
 
-        let duplicate = windowState.beginSpaceCreationSession(
+        let duplicate = windowState.spaceCreationSession.begin(
             source: windowState.resolveSidebarPresentationSource(),
+            previousSpaceID: windowState.currentSpaceId,
             defaultProfileID: UUID()
         )
 
         XCTAssertIdentical(duplicate, session)
 
-        windowState.finishSpaceCreationSession(session, reason: "SpaceCreationSessionTests")
+        windowState.spaceCreationSession.finish(session, reason: "SpaceCreationSessionTests")
 
-        XCTAssertNil(windowState.activeSpaceCreationSession)
+        XCTAssertNil(windowState.spaceCreationSession.activeSession)
         XCTAssertTrue(windowState.sidebarInteractionState.allowsSidebarDragSourceHitTesting)
         XCTAssertTrue(windowState.sidebarInteractionState.allowsSidebarSwipeCapture)
     }
