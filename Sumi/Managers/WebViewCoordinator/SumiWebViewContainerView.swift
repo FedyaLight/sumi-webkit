@@ -8,6 +8,7 @@ final class SumiWebViewContainerView: NSView {
 
     private var viewportCornerRadii: ChromeCornerRadii = .uniform(0)
     private var preservesDisplayedContentOnNextRemoval = false
+    private let overlayScrollChrome = WebContentOverlayScrollChrome()
 
     override var constraints: [NSLayoutConstraint] { [] }
 
@@ -33,6 +34,10 @@ final class SumiWebViewContainerView: NSView {
         webView.autoresizingMask = [.width, .height]
 
         addDisplayedContent(webView.sumiFullscreenPresentation.tabContentView)
+        overlayScrollChrome.install(in: self, webView: webView)
+        if let focusable = webView as? FocusableWKWebView {
+            focusable.overlayScrollChrome = overlayScrollChrome
+        }
         updateViewportMask()
         recordInlineUIContainerClippingIfNeeded()
     }
@@ -50,11 +55,16 @@ final class SumiWebViewContainerView: NSView {
         let displayedView = webView.sumiFullscreenPresentation.tabContentView
         frameDisplayedContent(displayedView)
         for subview in subviews where subview !== displayedView {
+            // Keep the AppKit overlay scroll indicator; only strip stray hosts.
+            if subview === overlayScrollChrome.indicatorHostingView {
+                continue
+            }
             subview.removeFromSuperview()
         }
         if displayedView.superview !== self {
             addDisplayedContent(displayedView)
         }
+        overlayScrollChrome.ensureIndicatorAboveContent()
         recenterFullscreenPlaceholderLabelIfNeeded(displayedView)
     }
 
@@ -104,7 +114,27 @@ final class SumiWebViewContainerView: NSView {
         let displayedView = webView.sumiFullscreenPresentation.tabContentView
         displayedView.frame = bounds
         recenterFullscreenPlaceholderLabelIfNeeded(displayedView)
+        overlayScrollChrome.layoutIndicator()
         updateViewportMask()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window == nil {
+            overlayScrollChrome.hideImmediately()
+        } else {
+            overlayScrollChrome.refreshGeometry(revealIfChanged: false)
+        }
+    }
+
+    deinit {
+        MainActor.assumeIsolated {
+            if let focusable = webView as? FocusableWKWebView,
+               focusable.overlayScrollChrome === overlayScrollChrome {
+                focusable.overlayScrollChrome = nil
+            }
+            overlayScrollChrome.uninstall()
+        }
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {

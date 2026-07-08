@@ -32,6 +32,8 @@ final class FocusableWKWebView: WKWebView {
     private var glanceCursorStabilizationOwner: WebKitGlanceCursorStabilizationOwner?
 
     weak var owningTab: Tab?
+    /// AppKit overlay scroll chrome owned by `SumiWebViewContainerView`.
+    weak var overlayScrollChrome: WebContentOverlayScrollChrome?
     let interactionEventsPublisher = PassthroughSubject<SumiWebViewInteractionEvent, Never>()
     private var findInPageCompletionHandler: ((FindResult) -> Void)?
     private var shouldSwallowNextMouseUpAfterDynamicGlance = false
@@ -334,11 +336,24 @@ final class FocusableWKWebView: WKWebView {
         owningTab?.recordPopupUserActivation(event, kind: "keyDown")
         super.keyDown(with: event)
         interactionEventsPublisher.send(.keyDown(event))
+        if Self.isPageScrollKey(event) {
+            overlayScrollChrome?.handleScrollWheel()
+        }
     }
 
     override func scrollWheel(with event: NSEvent) {
         super.scrollWheel(with: event)
         interactionEventsPublisher.send(.scrollWheel(event))
+        overlayScrollChrome?.handleScrollWheel()
+    }
+
+    private static func isPageScrollKey(_ event: NSEvent) -> Bool {
+        switch event.keyCode {
+        case 125, 126, 115, 119, 116, 121, 49: // down/up/home/end/pageUp/pageDown/space
+            return true
+        default:
+            return false
+        }
     }
 
     override func rightMouseDown(with event: NSEvent) {

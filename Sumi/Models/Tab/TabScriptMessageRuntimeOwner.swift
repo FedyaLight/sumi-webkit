@@ -21,6 +21,7 @@ final class TabScriptMessageRuntimeOwner {
             SumiWebPageContextMenuUserScript(tab: tab),
             SumiTabSuspensionUserScript(tabID: tab.id, dispatcher: self),
             SumiWebNotificationUserScript(tab: tab),
+            SumiNativeScrollbarHideUserScript(),
         ]
         if tab.sumiSettings?.isGPCEnabled ?? true {
             scripts.append(SumiGPCUserScript())

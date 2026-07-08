@@ -53,6 +53,10 @@ private struct SpaceScrollView<Content: View>: View {
         themeContext.tokens(settings: sumiSettings)
     }
 
+    private var scrollIndicatorColor: NSColor {
+        OverlayScrollIndicatorStyle.thumbColor
+    }
+
     var body: some View {
         let contentWidth = SpaceViewLayout.contentWidth(for: outerWidth)
         let scrollIndicatorTrailingProjection = SpaceViewLayout.scrollIndicatorTrailingProjection
@@ -105,17 +109,6 @@ private struct SpaceScrollView<Content: View>: View {
                 .animation(.easeInOut(duration: 0.15), value: hasContentBelow)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-    }
-
-    private var scrollIndicatorColor: NSColor {
-        switch themeContext.nativeSurfaceColorScheme {
-        case .light:
-            return NSColor.black
-        case .dark:
-            return NSColor.white
-        @unknown default:
-            return NSColor.labelColor
-        }
     }
 }
 
