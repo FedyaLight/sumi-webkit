@@ -1,4 +1,3 @@
-import Bookmarks
 import CoreData
 import Foundation
 import OSLog
@@ -23,7 +22,7 @@ final class SumiBookmarkDatabase {
             return
         }
 
-        let database = SumiDDGCoreDataDatabase(
+        let database = SumiPersistentContainerDatabase(
             name: "SumiBookmarks",
             containerLocation: directory,
             model: model
@@ -115,15 +114,14 @@ final class SumiBookmarkDatabase {
     }
 
     private static func loadBookmarksModel() -> NSManagedObjectModel? {
-        let candidateBundles = [
-            Bookmarks.bundle,
+        let candidateBundles: [Bundle] = [
             Bundle(for: BookmarkEntity.self),
             .main,
-        ] + Bundle.allBundles + Bundle.allFrameworks
+        ]
 
         var seen = Set<String>()
         for bundle in candidateBundles where seen.insert(bundle.bundleURL.path).inserted {
-            if let model = SumiDDGCoreDataDatabase.loadModel(from: bundle, named: "BookmarksModel") {
+            if let model = SumiPersistentContainerDatabase.loadModel(from: bundle, named: "BookmarksModel") {
                 return model
             }
         }

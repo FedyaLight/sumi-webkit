@@ -49,8 +49,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         setupURLEventHandling()
         setupMouseButtonHandling()
         scheduleCloseMenuConfiguration()
+        warmUpPublicSuffixList()
         if NSApplication.shared.windows.isEmpty == false {
             NSApp.activate(ignoringOtherApps: true)
+        }
+    }
+
+    /// Parsing the bundled Public Suffix List is a one-time cost; do it off
+    /// the main thread at launch so the first omnibar input or permission
+    /// lookup does not pay for it.
+    private func warmUpPublicSuffixList() {
+        Task.detached(priority: .utility) {
+            _ = SumiPublicSuffixList.bundled
         }
     }
 

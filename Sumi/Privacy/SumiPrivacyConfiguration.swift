@@ -1,5 +1,4 @@
 import Foundation
-import PrivacyConfig
 
 enum SumiPrivacyFeature: String {
     case contentBlocking
@@ -15,7 +14,7 @@ extension SumiPrivacyConfiguration {
     }
 }
 
-final class SumiContentBlockingPrivacyConfigurationManager: PrivacyConfigurationManaging {
+final class SumiContentBlockingPrivacyConfigurationManager {
     private let lock = NSLock()
     private var configuration: SumiContentBlockingPrivacyConfiguration
 
@@ -26,13 +25,6 @@ final class SumiContentBlockingPrivacyConfigurationManager: PrivacyConfiguration
     }
 
     var sumiPrivacyConfig: any SumiPrivacyConfiguration {
-        lock.lock()
-        let configuration = configuration
-        lock.unlock()
-        return configuration
-    }
-
-    var privacyConfig: any PrivacyConfiguration {
         lock.lock()
         let configuration = configuration
         lock.unlock()
@@ -51,15 +43,10 @@ final class SumiContentBlockingPrivacyConfigurationManager: PrivacyConfiguration
     }
 }
 
-struct SumiContentBlockingPrivacyConfiguration: SumiPrivacyConfiguration, PrivacyConfiguration {
+struct SumiContentBlockingPrivacyConfiguration: SumiPrivacyConfiguration {
     let isContentBlockingEnabled: Bool
 
     func isEnabled(featureKey: SumiPrivacyFeature, defaultValue: Bool) -> Bool {
-        _ = defaultValue
-        return featureKey == .contentBlocking ? isContentBlockingEnabled : false
-    }
-
-    func isEnabled(featureKey: PrivacyFeature, defaultValue: Bool) -> Bool {
         _ = defaultValue
         return featureKey == .contentBlocking ? isContentBlockingEnabled : false
     }

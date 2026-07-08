@@ -1,70 +1,70 @@
-import Bookmarks
+
 import Foundation
 
 extension SumiBookmarkImportSource {
     func readBookmarks() throws -> [SumiBookmarkImportNode] {
-        try ddgSource.readBookmarks().map(SumiBookmarkImportNode.init(ddgBookmarkOrFolder:))
+        try storeSource.readBookmarks().map(SumiBookmarkImportNode.init(storeBookmarkOrFolder:))
     }
 
     static func detectedBrowserSources(
         homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
     ) -> [SumiBookmarkImportSource] {
         BookmarkImportSource.detectedBrowserSources(homeDirectory: homeDirectory)
-            .map(SumiBookmarkImportSource.init(ddgImportSource:))
+            .map(SumiBookmarkImportSource.init(storeImportSource:))
     }
 
-    init(ddgImportSource: BookmarkImportSource) {
+    init(storeImportSource: BookmarkImportSource) {
         self.init(
-            id: ddgImportSource.id,
-            title: ddgImportSource.title,
-            fileURL: ddgImportSource.fileURL,
-            kind: SumiBookmarkImportReaderKind(ddgReaderKind: ddgImportSource.kind)
+            id: storeImportSource.id,
+            title: storeImportSource.title,
+            fileURL: storeImportSource.fileURL,
+            kind: SumiBookmarkImportReaderKind(storeReaderKind: storeImportSource.kind)
         )
     }
 
-    var ddgSource: BookmarkImportSource {
+    var storeSource: BookmarkImportSource {
         BookmarkImportSource(
             id: id,
             title: title,
             fileURL: fileURL,
-            kind: kind.ddgReaderKind
+            kind: kind.storeReaderKind
         )
     }
 }
 
 extension SumiBookmarkImportNode {
-    init(ddgBookmarkOrFolder: BookmarkOrFolder) {
+    init(storeBookmarkOrFolder: BookmarkOrFolder) {
         self.init(
-            name: ddgBookmarkOrFolder.name,
-            type: SumiBookmarkImportNode.NodeType(ddgBookmarkType: ddgBookmarkOrFolder.type),
-            urlString: ddgBookmarkOrFolder.urlString,
-            children: ddgBookmarkOrFolder.children?.map(SumiBookmarkImportNode.init(ddgBookmarkOrFolder:))
+            name: storeBookmarkOrFolder.name,
+            type: SumiBookmarkImportNode.NodeType(storeBookmarkType: storeBookmarkOrFolder.type),
+            urlString: storeBookmarkOrFolder.urlString,
+            children: storeBookmarkOrFolder.children?.map(SumiBookmarkImportNode.init(storeBookmarkOrFolder:))
         )
     }
 
-    var ddgBookmarkOrFolder: BookmarkOrFolder {
+    var storeBookmarkOrFolder: BookmarkOrFolder {
         BookmarkOrFolder(
             name: name,
-            type: type.ddgBookmarkType,
+            type: type.storeBookmarkType,
             urlString: urlString,
-            children: children?.map(\.ddgBookmarkOrFolder)
+            children: children?.map(\.storeBookmarkOrFolder)
         )
     }
 }
 
 extension SumiBookmarksImportSummary {
-    init(ddgImportSummary: BookmarksImportSummary) {
+    init(storeImportSummary: BookmarksImportSummary) {
         self.init(
-            successful: ddgImportSummary.successful,
-            duplicates: ddgImportSummary.duplicates,
-            failed: ddgImportSummary.failed
+            successful: storeImportSummary.successful,
+            duplicates: storeImportSummary.duplicates,
+            failed: storeImportSummary.failed
         )
     }
 }
 
 private extension SumiBookmarkImportReaderKind {
-    init(ddgReaderKind: BookmarkImportReaderKind) {
-        switch ddgReaderKind {
+    init(storeReaderKind: BookmarkImportReaderKind) {
+        switch storeReaderKind {
         case .html:
             self = .html
         case .safariPlist:
@@ -76,7 +76,7 @@ private extension SumiBookmarkImportReaderKind {
         }
     }
 
-    var ddgReaderKind: BookmarkImportReaderKind {
+    var storeReaderKind: BookmarkImportReaderKind {
         switch self {
         case .html:
             return .html
@@ -91,8 +91,8 @@ private extension SumiBookmarkImportReaderKind {
 }
 
 private extension SumiBookmarkImportNode.NodeType {
-    init(ddgBookmarkType: BookmarkOrFolder.BookmarkType) {
-        switch ddgBookmarkType {
+    init(storeBookmarkType: BookmarkOrFolder.BookmarkType) {
+        switch storeBookmarkType {
         case .bookmark:
             self = .bookmark
         case .favorite:
@@ -102,7 +102,7 @@ private extension SumiBookmarkImportNode.NodeType {
         }
     }
 
-    var ddgBookmarkType: BookmarkOrFolder.BookmarkType {
+    var storeBookmarkType: BookmarkOrFolder.BookmarkType {
         switch self {
         case .bookmark:
             return .bookmark

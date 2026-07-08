@@ -14,8 +14,6 @@ if [[ -z "${xcode_version}" || -z "${xcode_major}" || "${xcode_major}" -lt 27 ]]
 fi
 
 "${repo_root}/scripts/check_architecture_guardrails.sh"
-"${repo_root}/scripts/bootstrap_vendor_binaries.sh"
-"${repo_root}/scripts/verify_vendor_checksums.sh"
 
 rm -rf "${derived_data_root}"
 mkdir -p "${derived_data_root}"

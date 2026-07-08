@@ -43,7 +43,7 @@ The package script first runs the local release gates:
 scripts/release/run_alpha_release_gates.sh
 ```
 
-Those gates require Xcode 27 or newer, bootstrap and verify vendored binaries, run the architecture guardrails, and run the full `Sumi` and `SumiSmoke` Xcode test schemes with the project's normal signing configuration.
+Those gates require Xcode 27 or newer, run the architecture guardrails, and run the full `Sumi` and `SumiSmoke` Xcode test schemes with the project's normal signing configuration.
 
 The script creates:
 

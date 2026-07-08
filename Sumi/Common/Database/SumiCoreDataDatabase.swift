@@ -2,7 +2,9 @@ import CoreData
 import Foundation
 
 protocol SumiCoreDataDatabase: AnyObject {
-    func loadStore(completion: @escaping (NSManagedObjectContext?, Error?) -> Void)
+    /// The completion may run on the persistent container's loading queue,
+    /// so it must be Sendable.
+    func loadStore(completion: @escaping @Sendable (NSManagedObjectContext?, Error?) -> Void)
     func makeContext(
         concurrencyType: NSManagedObjectContextConcurrencyType,
         name: String?

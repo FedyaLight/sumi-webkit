@@ -19,8 +19,6 @@ if [[ -e "${mounted_volume}" ]]; then
 fi
 
 "${repo_root}/scripts/check_architecture_guardrails.sh"
-"${repo_root}/scripts/bootstrap_vendor_binaries.sh"
-"${repo_root}/scripts/verify_vendor_checksums.sh"
 
 rm -rf "${derived_data_path}"
 mkdir -p "${derived_data_path}"

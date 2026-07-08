@@ -1,3 +1,0 @@
-[submodule "Tests/BrowserServicesKitTests/Resources/privacy-reference-tests"]
-	path = Tests/BrowserServicesKitTests/Resources/privacy-reference-tests
-	url = https://github.com/duckduckgo/privacy-reference-tests

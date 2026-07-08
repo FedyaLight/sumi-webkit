@@ -47,10 +47,5 @@ jobs:
       - name: Install ripgrep
         run: sudo apt-get update && sudo apt-get install -y ripgrep
 
-      - name: Verify vendored binary checksums
-        run: |
-          scripts/bootstrap_vendor_binaries.sh
-          scripts/verify_vendor_checksums.sh
-
       - name: Run architecture guardrails
         run: scripts/check_architecture_guardrails.sh

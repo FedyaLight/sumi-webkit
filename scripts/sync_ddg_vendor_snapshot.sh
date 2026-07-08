@@ -24,9 +24,10 @@ Options:
   -h, --help      Show this help.
 
 The script does not checkout or pull upstream for you, and it does not replace
-Sumi's pruned Package.swift manifests. Update the source checkout explicitly,
-then run this script from a clean Sumi worktree so the resulting diff is a
-reviewable vendor snapshot.
+Sumi's pruned Package.swift manifest. It synchronizes only the Common and
+Navigation targets (upstream tests are not vendored). Update the source
+checkout explicitly, then run this script from a clean Sumi worktree so the
+resulting diff is a reviewable vendor snapshot.
 EOF
 }
 
@@ -84,11 +85,9 @@ if [[ ! -d "$SOURCE/.git" ]]; then
 fi
 
 BROWSER_SERVICES_SOURCE="$SOURCE/SharedPackages/BrowserServicesKit"
-URL_PREDICTOR_SOURCE="$SOURCE/SharedPackages/URLPredictor"
 BROWSER_SERVICES_DEST="$ROOT/Vendor/DDG/BrowserServicesKit"
-URL_PREDICTOR_DEST="$ROOT/Vendor/DDG/URLPredictor"
 
-for path in "$BROWSER_SERVICES_SOURCE" "$URL_PREDICTOR_SOURCE"; do
+for path in "$BROWSER_SERVICES_SOURCE"; do
   if [[ ! -f "$path/Package.swift" ]]; then
     echo "error: missing Package.swift under expected upstream package path: $path" >&2
     exit 1
@@ -143,66 +142,27 @@ sync_directory() {
   rsync "${RSYNC_ARGS[@]}" "$source_dir/" "$dest_dir/"
 }
 
-for target in Bookmarks Common Navigation Persistence PrivacyConfig; do
+for target in Common Navigation; do
   sync_directory \
     "$BROWSER_SERVICES_SOURCE/Sources/$target" \
     "$BROWSER_SERVICES_DEST/Sources/$target"
 done
-sync_directory "$BROWSER_SERVICES_SOURCE/Tests" "$BROWSER_SERVICES_DEST/Tests"
 
-sync_directory "$URL_PREDICTOR_SOURCE/Sources/URLPredictor" "$URL_PREDICTOR_DEST/Sources/URLPredictor"
-sync_directory "$URL_PREDICTOR_SOURCE/Sources/URLPredictorTests" "$URL_PREDICTOR_DEST/Sources/URLPredictorTests"
+# Sumi prunes Common further than upstream: the TLD component (and its
+# URLPredictor dependency) is not vendored.
+if [[ "$DRY_RUN" -eq 0 ]]; then
+  rm -rf "$BROWSER_SERVICES_DEST/Sources/Common/TLD"
+fi
 
 if [[ "$DRY_RUN" -eq 1 ]]; then
   echo "Dry run complete. No files changed."
   exit 0
 fi
 
-cat > "$BROWSER_SERVICES_DEST/Tests/README.md" <<'EOF'
-BrowserServicesKit upstream tests
-=================================
-
-This directory is upstream reference material from DuckDuckGo's
-BrowserServicesKit package. It is quarantined in place and is not part of
-Sumi's active test coverage.
-
-Sumi's active gates are documented in `Vendor/DDG/UPSTREAM_TESTS.md` and
-checked by:
-
-    bash scripts/check_ddg_vendor_test_boundary.sh
-EOF
-
-mkdir -p "$URL_PREDICTOR_DEST/Sources/URLPredictorTests"
-cat > "$URL_PREDICTOR_DEST/Sources/URLPredictorTests/README.md" <<'EOF'
-URLPredictor upstream tests
-===========================
-
-This directory is upstream reference material from DuckDuckGo's URLPredictor
-package. It is quarantined in place and is not part of Sumi's active test
-coverage.
-
-Sumi's active gates are documented in `Vendor/DDG/UPSTREAM_TESTS.md` and
-checked by:
-
-    bash scripts/check_ddg_vendor_test_boundary.sh
-EOF
-
 perl -0pi -e \
   "s/Source revision \\(Swift snapshot\\): [0-9a-f]+/Source revision (Swift snapshot): $SOURCE_HEAD/" \
   "$ROOT/Vendor/DDG/README.md"
 
-BINARY_DIR="$URL_PREDICTOR_DEST/Binary"
-if [[ -d "$BINARY_DIR/URLPredictorRust.xcframework" ]]; then
-  (
-    cd "$BINARY_DIR"
-    find URLPredictorRust.xcframework -type f -print0 \
-      | sort -z \
-      | xargs -0 shasum -a 256 \
-      > CHECKSUMS.sha256
-  )
-fi
-
-bash "$ROOT/scripts/verify_vendor_checksums.sh"
 bash "$ROOT/scripts/check_ddg_vendor_test_boundary.sh"
 
 echo "DDG vendor snapshot synchronized from $SOURCE_HEAD."

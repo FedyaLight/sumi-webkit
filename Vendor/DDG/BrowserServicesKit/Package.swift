@@ -9,34 +9,12 @@ let package = Package(
         .macOS("11.4")
     ],
     products: [
-        .library(name: "Bookmarks", targets: ["Bookmarks"]),
         .library(name: "Common", targets: ["Common"]),
         .library(name: "Navigation", targets: ["Navigation"]),
-        .library(name: "Persistence", targets: ["Persistence"]),
-        .library(name: "PrivacyConfig", targets: ["PrivacyConfig"]),
-    ],
-    dependencies: [
-        .package(path: "../URLPredictor"),
     ],
     targets: [
         .target(
-            name: "Bookmarks",
-            dependencies: [
-                "Common",
-                "Persistence",
-            ],
-            resources: [
-                .process("BookmarksModel.xcdatamodeld")
-            ],
-            swiftSettings: [
-                .define("DEBUG", .when(configuration: .debug))
-            ]
-        ),
-        .target(
             name: "Common",
-            dependencies: [
-                .product(name: "URLPredictor", package: "URLPredictor"),
-            ],
             swiftSettings: [
                 .define("DEBUG", .when(configuration: .debug))
             ]
@@ -58,25 +36,6 @@ let package = Package(
                 .define("TERMINATE_WITH_REASON_ENABLED", .when(platforms: [.macOS])),
                 .define("_SESSION_STATE_WITH_FILTER_ENABLED", .when(platforms: [.macOS])),
                 .define("_WEBPAGE_PREFS_AUTOPLAY_POLICY_ENABLED", .when(platforms: [.macOS])),
-            ]
-        ),
-        .target(
-            name: "Persistence",
-            dependencies: [
-                "Common",
-            ],
-            swiftSettings: [
-                .define("DEBUG", .when(configuration: .debug))
-            ]
-        ),
-        .target(
-            name: "PrivacyConfig",
-            dependencies: [
-                "Common",
-                "Persistence",
-            ],
-            swiftSettings: [
-                .define("DEBUG", .when(configuration: .debug))
             ]
         ),
     ],

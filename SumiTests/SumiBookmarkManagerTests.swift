@@ -2,7 +2,7 @@ import CoreData
 import Synchronization
 import XCTest
 
-import Bookmarks
+
 @testable import Sumi
 
 @MainActor

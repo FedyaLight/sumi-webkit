@@ -6,9 +6,11 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$script_dir/.." && pwd)"
 cd "$repo_root"
 
-upstream_test_roots=(
+# Upstream DDG test trees must NOT be vendored: Sumi's only test gates are the
+# shared schemes running SumiTests/SumiUITests, and dead upstream test code is
+# not allowed back into the snapshot.
+forbidden_test_roots=(
   "Vendor/DDG/BrowserServicesKit/Tests"
-  "Vendor/DDG/URLPredictor/Sources/URLPredictorTests"
 )
 
 active_sumi_testables=(
@@ -17,11 +19,7 @@ active_sumi_testables=(
 )
 
 ddg_library_products=(
-  "Bookmarks"
   "Navigation"
-  "Persistence"
-  "PrivacyConfig"
-  "URLPredictor"
 )
 
 fail() {
@@ -42,36 +40,15 @@ contains_active_testable() {
   return 1
 }
 
-require_file_mentions_path() {
-  local file="$1"
-  local path="$2"
-
-  [[ -f "$file" ]] || fail "missing quarantine documentation: $file"
-  grep -Fq "$path" "$file" || fail "$file does not mention $path"
-}
-
-doc_path="Vendor/DDG/UPSTREAM_TESTS.md"
 project_file="Sumi.xcodeproj/project.pbxproj"
 scheme_dir="Sumi.xcodeproj/xcshareddata/xcschemes"
 
 [[ -f "$project_file" ]] || fail "missing Sumi project file: $project_file"
 [[ -d "$scheme_dir" ]] || fail "missing Sumi shared schemes directory: $scheme_dir"
 
-swift_test_file_count=0
-
-for root in "${upstream_test_roots[@]}"; do
-  [[ -d "$root" ]] || fail "missing upstream DDG test root: $root"
-  [[ -f "$root/README.md" ]] || fail "missing quarantine marker: $root/README.md"
-  require_file_mentions_path "$doc_path" "$root"
-
-  while IFS= read -r _; do
-    swift_test_file_count=$((swift_test_file_count + 1))
-  done < <(find "$root" -type f -name "*.swift")
+for root in "${forbidden_test_roots[@]}"; do
+  [[ ! -e "$root" ]] || fail "upstream DDG test root must not be vendored: $root"
 done
-
-if [[ "$swift_test_file_count" -eq 0 ]]; then
-  fail "DDG upstream test roots contain no Swift test files; update quarantine docs if the snapshot changed"
-fi
 
 expected_ddg_products="$(printf "%s\n" "${ddg_library_products[@]}" | sort)"
 actual_ddg_products="$(
@@ -140,6 +117,6 @@ if [[ "$tested_scheme_count" -eq 0 ]]; then
   fail "no shared Xcode schemes declare testables"
 fi
 
-echo "OK: DDG upstream tests are quarantined reference material."
+echo "OK: no upstream DDG test trees are vendored."
 echo "OK: Sumi DDG package products are limited to ${ddg_library_products[*]}."
 echo "OK: Sumi shared scheme testables are limited to ${active_sumi_testables[*]}."

@@ -70,3 +70,24 @@ No private WebKit permission selectors are used from SwiftUI settings, URL hub v
 No new fonts, icon packs, images, media files, CDNs, or license-incompatible assets were added for the permission project. Permission UI uses existing Sumi assets and SF Symbol fallbacks.
 
 Manual pages use generated DOM/media primitives only and do not embed third-party source snippets. Automated permission tests under `SumiTests/` and `SumiUITests/` are Sumi-owned.
+
+## Vendored DDG Code Ported Into Sumi Source (2026-07)
+
+When the vendored `Vendor/DDG` snapshot was reduced to the `Navigation` and
+`Common` targets, the bookmark storage code Sumi depends on was ported from
+BrowserServicesKit into the app target. These files are copied or closely
+adapted Apache 2.0 DDG source and carry the required notice in their headers:
+
+| Source (duckduckgo/apple-browsers, BrowserServicesKit) | Destination |
+| --- | --- |
+| `Sources/Bookmarks/BookmarkEntity.swift` | `Sumi/Bookmarks/Store/BookmarkEntity.swift` |
+| `Sources/Bookmarks/BookmarkUtils.swift` | `Sumi/Bookmarks/Store/BookmarkUtils.swift` |
+| `Sources/Bookmarks/BookmarksModel.xcdatamodeld` | `Sumi/Bookmarks/Store/BookmarksModel.xcdatamodeld` |
+| `Sources/Bookmarks/ImportExport/*` (importer, HTML exporter, import sources, node/summary/error types) | `Sumi/Bookmarks/Store/*` |
+| `Sources/Persistence/CoreDataDatabase.swift` | `Sumi/Common/Database/SumiPersistentContainerDatabase.swift` (adapted) |
+
+The URLPredictor Rust binary and its Swift wrapper were removed entirely; the
+replacement classifier (`SumiAddressBarClassifier`), Punycode encoder, and
+Public Suffix List matcher are Sumi-owned implementations. The bundled
+`Sumi/Resources/public_suffix_list.dat` comes from https://publicsuffix.org
+(Mozilla Public License 2.0; comments and blank lines are stripped for bundle size, rules unmodified, MPL notice retained in the file header).

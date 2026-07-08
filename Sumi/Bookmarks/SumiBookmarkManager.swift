@@ -45,7 +45,7 @@ final class SumiBookmarkManager: ObservableObject {
         if let unavailableReason = database.unavailableReason {
             self.repository = SumiUnavailableBookmarkRepository(reason: unavailableReason.description)
         } else {
-            self.repository = SumiDDGBookmarkRepository(database: database)
+            self.repository = SumiCoreDataBookmarkRepository(database: database)
         }
         self.syncFavicons = syncFavicons
         self.faviconService = faviconService

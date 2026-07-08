@@ -1,7 +1,9 @@
 import Foundation
 import WebKit
 
+/// Isolated to the main actor because `WKWebExtension.MatchPattern` is.
 @available(macOS 15.5, *)
+@MainActor
 enum SafariExtensionMatchPatternDiagnostics {
     static func make(_ value: String, purpose: String) -> WKWebExtension.MatchPattern? {
         do {
