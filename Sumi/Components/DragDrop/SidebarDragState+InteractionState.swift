@@ -1,39 +1,65 @@
 import Foundation
 
+// Every setter below drops writes that don't change the value. The AppKit drag
+// pipeline re-resolves state on each pointer sample (and on periodic dragging
+// updates while the pointer is idle); without this guard each sample publishes
+// `objectWillChange` to every observing sidebar view even when nothing moved.
 extension SidebarDragState {
     var isDragging: Bool {
         get { interactionStateOwner.isDragging }
-        set { interactionStateOwner.isDragging = newValue }
+        set {
+            guard interactionStateOwner.isDragging != newValue else { return }
+            interactionStateOwner.isDragging = newValue
+            activityState.isDragging = newValue
+        }
     }
 
     var hoveredSlot: DropZoneSlot {
         get { interactionStateOwner.hoveredSlot }
-        set { interactionStateOwner.hoveredSlot = newValue }
+        set {
+            guard interactionStateOwner.hoveredSlot != newValue else { return }
+            interactionStateOwner.hoveredSlot = newValue
+        }
     }
 
     var folderDropIntent: FolderDropIntent {
         get { interactionStateOwner.folderDropIntent }
-        set { interactionStateOwner.folderDropIntent = newValue }
+        set {
+            guard interactionStateOwner.folderDropIntent != newValue else { return }
+            interactionStateOwner.folderDropIntent = newValue
+        }
     }
 
     var activeHoveredFolderId: UUID? {
         get { interactionStateOwner.activeHoveredFolderId }
-        set { interactionStateOwner.activeHoveredFolderId = newValue }
+        set {
+            guard interactionStateOwner.activeHoveredFolderId != newValue else { return }
+            interactionStateOwner.activeHoveredFolderId = newValue
+        }
     }
 
     var activeSplitTarget: SplitDropSide? {
         get { interactionStateOwner.activeSplitTarget }
-        set { interactionStateOwner.activeSplitTarget = newValue }
+        set {
+            guard interactionStateOwner.activeSplitTarget != newValue else { return }
+            interactionStateOwner.activeSplitTarget = newValue
+        }
     }
 
     var activeDragItemId: UUID? {
         get { interactionStateOwner.activeDragItemId }
-        set { interactionStateOwner.activeDragItemId = newValue }
+        set {
+            guard interactionStateOwner.activeDragItemId != newValue else { return }
+            interactionStateOwner.activeDragItemId = newValue
+        }
     }
 
     var previewKind: SidebarDragPreviewKind? {
         get { interactionStateOwner.previewKind }
-        set { interactionStateOwner.previewKind = newValue }
+        set {
+            guard interactionStateOwner.previewKind != newValue else { return }
+            interactionStateOwner.previewKind = newValue
+        }
     }
 
     var previewAssets: [SidebarDragPreviewKind: SidebarDragPreviewAsset] {
@@ -48,11 +74,25 @@ extension SidebarDragState {
 
     var isInternalDragSession: Bool {
         get { interactionStateOwner.isInternalDragSession }
-        set { interactionStateOwner.isInternalDragSession = newValue }
+        set {
+            guard interactionStateOwner.isInternalDragSession != newValue else { return }
+            interactionStateOwner.isInternalDragSession = newValue
+        }
     }
 
     var activeDragScope: SidebarDragScope? {
         get { interactionStateOwner.activeDragScope }
-        set { interactionStateOwner.activeDragScope = newValue }
+        set {
+            guard interactionStateOwner.activeDragScope != newValue else { return }
+            interactionStateOwner.activeDragScope = newValue
+        }
+    }
+
+    var regularExternalDropGap: SidebarRegularExternalDropGap? {
+        get { interactionStateOwner.regularExternalDropGap }
+        set {
+            guard interactionStateOwner.regularExternalDropGap != newValue else { return }
+            interactionStateOwner.regularExternalDropGap = newValue
+        }
     }
 }

@@ -333,12 +333,15 @@ private struct SidebarDDGHoverModifier: ViewModifier {
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sidebarPresentationContext) private var presentationContext
     @Environment(\.nativeSurfaceHoverUpdatesEnabled) private var nativeSurfaceHoverUpdatesEnabled
-    @EnvironmentObject private var dragState: SidebarDragState
+    // Narrow subscription: this modifier is instantiated per row, so observing
+    // the full SidebarDragState would re-render every row on each hover-slot
+    // change during a drag. The activity flag publishes only on begin/end.
+    @EnvironmentObject private var dragActivity: SidebarDragActivityState
 
     private var effectiveIsEnabled: Bool {
         isEnabled
             && presentationContext.allowsInteractiveWork
-            && !dragState.isDragging
+            && !dragActivity.isDragging
             && !windowState.sidebarInteractionState.freezesSidebarHoverState
             && nativeSurfaceHoverUpdatesEnabled
     }

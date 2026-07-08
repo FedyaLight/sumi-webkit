@@ -42,6 +42,19 @@ struct SidebarDropResolution: Equatable {
     let activeHoveredFolderId: UUID?
 }
 
+/// Published while a drag hovers above/below a space's regular tab list so the
+/// list can open an edge gap. Computed here (not in the view) so row views
+/// don't have to observe the raw pointer location.
+struct SidebarRegularExternalDropGap: Equatable {
+    enum Edge: Equatable {
+        case top
+        case bottom
+    }
+
+    let spaceId: UUID
+    let edge: Edge
+}
+
 @MainActor
 enum SidebarDropResolver {
     private static let rowStride: CGFloat = SidebarRowLayout.rowHeight
@@ -139,11 +152,38 @@ enum SidebarDropResolver {
         state.hoveredSlot = resolution.slot
         state.folderDropIntent = resolution.folderIntent
         state.activeHoveredFolderId = resolution.activeHoveredFolderId
+        state.regularExternalDropGap = regularExternalDropGap(
+            location: location,
+            state: state,
+            slot: resolution.slot
+        )
         state.updateEssentialsPreviewState(
             at: location,
             resolution: resolution.slot
         )
         return resolution
+    }
+
+    private static func regularExternalDropGap(
+        location: CGPoint,
+        state: SidebarDragState,
+        slot: DropZoneSlot
+    ) -> SidebarRegularExternalDropGap? {
+        guard state.isDragging,
+              case .spaceRegular(let spaceId, let slotIndex) = slot,
+              let listMetrics = state.regularListHitTargets[spaceId] else {
+            return nil
+        }
+
+        if slotIndex == 0, location.y < listMetrics.frame.minY {
+            return SidebarRegularExternalDropGap(spaceId: spaceId, edge: .top)
+        }
+
+        if location.y > listMetrics.frame.maxY {
+            return SidebarRegularExternalDropGap(spaceId: spaceId, edge: .bottom)
+        }
+
+        return nil
     }
 
     private static func resolveSpacePinnedTarget(

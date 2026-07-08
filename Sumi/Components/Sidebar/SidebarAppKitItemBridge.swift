@@ -6,10 +6,24 @@
 import AppKit
 import SwiftUI
 
+/// Non-observing handle to the sidebar drag state for AppKit bridges that only
+/// need the object reference. Unlike `@EnvironmentObject`, reading this does
+/// not subscribe the (per-row) view to drag-state publishes.
+private struct SidebarDragStateHandleKey: EnvironmentKey {
+    static let defaultValue: SidebarDragState? = nil
+}
+
+extension EnvironmentValues {
+    var sidebarDragStateHandle: SidebarDragState? {
+        get { self[SidebarDragStateHandleKey.self] }
+        set { self[SidebarDragStateHandleKey.self] = newValue }
+    }
+}
+
 struct SidebarAppKitItemBridge: NSViewRepresentable {
     let controller: SidebarContextMenuController
     let configuration: SidebarAppKitItemConfiguration
-    @EnvironmentObject private var dragState: SidebarDragState
+    @Environment(\.sidebarDragStateHandle) private var dragState: SidebarDragState?
 
     func makeNSView(context: Context) -> SidebarInteractiveItemView {
         let view = SidebarInteractiveItemView(frame: .zero)

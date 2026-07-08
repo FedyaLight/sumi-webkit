@@ -14,4 +14,5 @@ final class SidebarDragInteractionStateOwner: ObservableObject {
     @Published var previewModel: SidebarDragPreviewModel?
     @Published var isInternalDragSession: Bool = false
     @Published var activeDragScope: SidebarDragScope?
+    @Published var regularExternalDropGap: SidebarRegularExternalDropGap?
 }

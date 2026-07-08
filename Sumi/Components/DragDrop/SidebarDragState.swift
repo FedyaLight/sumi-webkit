@@ -9,14 +9,24 @@ final class SidebarDragState: ObservableObject {
     let interactionStateOwner = SidebarDragInteractionStateOwner()
     private var interactionStateCancellables: Set<AnyCancellable> = []
     let locationTracker = SidebarDragLocationTracker()
+    /// Narrow observable for per-row chrome (hover sensors etc.) that only
+    /// cares whether a drag session is active — subscribing rows to the full
+    /// drag state would re-render all of them on every hover-slot change.
+    let activityState = SidebarDragActivityState()
 
     var dragLocation: CGPoint? {
         get { locationTracker.location }
-        set { locationTracker.location = newValue }
+        set {
+            guard locationTracker.location != newValue else { return }
+            locationTracker.location = newValue
+        }
     }
     var previewDragLocation: CGPoint? {
         get { locationTracker.previewLocation }
-        set { locationTracker.previewLocation = newValue }
+        set {
+            guard locationTracker.previewLocation != newValue else { return }
+            locationTracker.previewLocation = newValue
+        }
     }
     @Published private var dropCommitProjection = SidebarDropCommitProjectionState()
     private var dropCommitProjectionGeneration = 0
@@ -109,9 +119,15 @@ final class SidebarDragState: ObservableObject {
     }
 
     private func setGeometryGenerationState(_ generationState: SidebarDragGeometryRepository.GenerationState) {
-        sidebarGeometryGeneration = generationState.sidebarGeometryGeneration
-        activeGeometryGeneration = generationState.activeGeometryGeneration
-        pendingGeometryGeneration = generationState.pendingGeometryGeneration
+        if sidebarGeometryGeneration != generationState.sidebarGeometryGeneration {
+            sidebarGeometryGeneration = generationState.sidebarGeometryGeneration
+        }
+        if activeGeometryGeneration != generationState.activeGeometryGeneration {
+            activeGeometryGeneration = generationState.activeGeometryGeneration
+        }
+        if pendingGeometryGeneration != generationState.pendingGeometryGeneration {
+            pendingGeometryGeneration = generationState.pendingGeometryGeneration
+        }
     }
 
     func flushDeferredGeometryForDragStart() {
@@ -191,6 +207,7 @@ final class SidebarDragState: ObservableObject {
     }
 
     private func clearEssentialsPreviewState() {
+        guard !essentialsPreviewStateBySpace.isEmpty else { return }
         essentialsPreviewStateBySpace = [:]
     }
 
@@ -371,6 +388,7 @@ final class SidebarDragState: ObservableObject {
         folderDropIntent = .none
         activeHoveredFolderId = nil
         activeSplitTarget = nil
+        regularExternalDropGap = nil
         clearEssentialsPreviewState()
     }
 
@@ -400,12 +418,14 @@ final class SidebarDragState: ObservableObject {
             return
         }
 
-        essentialsPreviewStateBySpace = [
+        let nextPreviewState = [
             hoveredPage.spaceId: SidebarEssentialsPreviewState(
                 expandedDropRowCount: metrics.maxDropRowCount,
                 gapSlot: slot
             ),
         ]
+        guard essentialsPreviewStateBySpace != nextPreviewState else { return }
+        essentialsPreviewStateBySpace = nextPreviewState
     }
 
     func essentialsPreviewState(for spaceId: UUID) -> SidebarEssentialsPreviewState? {
@@ -493,4 +513,11 @@ final class SidebarDragState: ObservableObject {
 final class SidebarDragLocationTracker: ObservableObject {
     @Published var location: CGPoint? = nil
     @Published var previewLocation: CGPoint? = nil
+}
+
+/// Minimal drag-session flag for chrome that must disable itself while any
+/// drag is in flight. Publishes exactly twice per drag (begin/end).
+@MainActor
+final class SidebarDragActivityState: ObservableObject {
+    @Published var isDragging: Bool = false
 }

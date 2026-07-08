@@ -72,14 +72,20 @@ enum SidebarMotionPolicy {
         return .interactiveSpring(response: 0.22, dampingFraction: 0.86)
     }
 
+    /// Shared duration for list/folder content reflow. Also gates when model
+    /// mutations commit after a gap-collapse (see `SidebarDropMotion`).
+    static let contentLayoutDuration: TimeInterval = 0.16
+
     static func contentLayoutAnimation(for mode: Mode) -> Animation? {
         guard mode != .reducedMotion else { return nil }
-        return .smooth(duration: 0.18)
+        return .smooth(duration: contentLayoutDuration)
     }
 
     static func folderLayoutAnimation(for mode: Mode) -> Animation? {
         guard mode != .reducedMotion else { return nil }
-        return .easeInOut(duration: 0.18)
+        // `.smooth` fronts the motion instead of easing in, so toggles read as
+        // immediate at the same cost.
+        return .smooth(duration: contentLayoutDuration)
     }
 
     static func spaceSwitchAnimation(for mode: Mode) -> Animation? {

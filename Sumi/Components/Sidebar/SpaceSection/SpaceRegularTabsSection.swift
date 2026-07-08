@@ -628,24 +628,17 @@ extension SpaceView {
     }
 
     private var regularExternalDropGapPlacement: RegularExternalDropGapPlacement? {
-        guard dragState.isDragging,
-              case .spaceRegular(let hoveredSpaceId, let slot) = dragState.hoveredSlot,
-              hoveredSpaceId == space.id,
-              let location = locationTracker.location,
-              let listMetrics = dragState.regularListHitTargets[space.id] else {
+        guard let gap = dragState.regularExternalDropGap,
+              gap.spaceId == space.id else {
             return nil
         }
 
-        if slot == 0, location.y < listMetrics.frame.minY {
+        switch gap.edge {
+        case .top:
             return .top
+        case .bottom:
+            return showsBottomNewTabButton ? .bottom : nil
         }
-
-        if showsBottomNewTabButton,
-           location.y > listMetrics.frame.maxY {
-            return .bottom
-        }
-
-        return nil
     }
 
     private var regularDropGap: some View {

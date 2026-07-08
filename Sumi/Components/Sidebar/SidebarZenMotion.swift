@@ -72,7 +72,7 @@ private struct SidebarRowStagedInsertionModifier: ViewModifier {
 }
 
 enum SidebarDropMotion {
-    static let contentLayoutDuration: Double = 0.18
+    static let contentLayoutDuration: Double = SidebarMotionPolicy.contentLayoutDuration
     static let shortcutRestoreRevealStartDelay: Double = 0.016
     static let shortcutRestoreActionDelay: Double = contentLayoutDuration + shortcutRestoreRevealStartDelay + 0.01
     static let gap = SidebarMotionPolicy.dragGapAnimation(for: .standard)

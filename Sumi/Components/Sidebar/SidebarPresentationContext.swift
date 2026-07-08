@@ -132,7 +132,8 @@ extension View {
             .environment(context.windowState)
             .environment(context.windowRegistry)
             .environmentObject(context.sidebarDragState)
-            .environmentObject(context.sidebarDragState.locationTracker)
+            .environmentObject(context.sidebarDragState.activityState)
+            .environment(\.sidebarDragStateHandle, context.sidebarDragState)
             .environment(\.sumiSettings, context.sumiSettings)
             .environment(\.resolvedThemeContext, context.resolvedThemeContext)
     }
