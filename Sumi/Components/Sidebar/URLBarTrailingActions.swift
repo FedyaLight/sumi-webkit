@@ -20,6 +20,15 @@ extension URLBarView {
             let permissionIndicatorState = permissionIndicatorDisplayState(for: currentTab)
             HStack(spacing: 6) {
                 urlBarExtensionActions
+                if showsZoomIndicator {
+                    zoomIndicator(for: currentTab)
+                        .transition(
+                            .asymmetric(
+                                insertion: .scale(scale: 0.82).combined(with: .opacity),
+                                removal: .scale(scale: 0.92).combined(with: .opacity)
+                            )
+                        )
+                }
                 copyLinkButton(for: currentTab)
                 hubButton
                 if permissionIndicatorState.isVisible {
@@ -31,16 +40,8 @@ extension URLBarView {
                             )
                         )
                 }
-                if showsZoomIndicator {
-                    zoomIndicator(for: currentTab)
-                        .transition(
-                            .asymmetric(
-                                insertion: .scale(scale: 0.82).combined(with: .opacity),
-                                removal: .scale(scale: 0.92).combined(with: .opacity)
-                            )
-                        )
-                }
             }
+            .fixedSize(horizontal: true, vertical: false)
             .task(id: permissionIndicatorTaskKey(for: currentTab)) {
                 refreshPermissionIndicator(for: currentTab)
                 refreshPermissionPrompt(for: currentTab)

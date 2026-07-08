@@ -79,6 +79,7 @@ struct URLBarView: View {
 
                 if let currentTab = currentTab {
                     trailingActions(for: currentTab)
+                        .layoutPriority(1)
                 }
             }
             .padding(.leading, 12)

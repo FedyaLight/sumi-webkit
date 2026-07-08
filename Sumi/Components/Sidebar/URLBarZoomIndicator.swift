@@ -30,11 +30,12 @@ extension URLBarView {
             Text(percentage)
                 .font(.system(size: 11, weight: .medium, design: .monospaced))
                 .lineLimit(1)
-                .minimumScaleFactor(0.85)
+                .fixedSize(horizontal: true, vertical: false)
         }
         .buttonStyle(URLBarZoomIndicatorStyle())
         .help("Reset zoom to 100%")
         .accessibilityLabel("Zoom \(percentage). Reset zoom to 100%.")
+        .fixedSize(horizontal: true, vertical: false)
         .sidebarAppKitPrimaryAction(action: action)
     }
 
@@ -71,7 +72,8 @@ struct URLBarZoomIndicatorStyle: ButtonStyle {
         configuration.label
             .foregroundStyle(tokens.primaryText)
             .padding(.horizontal, 8)
-            .frame(minWidth: 36, minHeight: 28, maxHeight: 28)
+            .frame(minWidth: 44, minHeight: 28, maxHeight: 28)
+            .fixedSize(horizontal: true, vertical: false)
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(backgroundColor(isPressed: configuration.isPressed))
