@@ -20,7 +20,7 @@ final class TabSuspensionStateOwnerTests: XCTestCase {
         XCTAssertEqual(tab.suspensionStateOwner.lastSelectedAt, selectedAt)
         XCTAssertEqual(tab.loadingState, .idle)
         XCTAssertFalse(tab.audioState.isPlayingAudio)
-        XCTAssertEqual(tab.lastMediaActivityAt, .distantPast)
+        XCTAssertEqual(tab.mediaRuntime.lastMediaActivityAt, .distantPast)
         XCTAssertEqual(recorder.count, 1)
         XCTAssertIdentical(recorder.firstObject, tab)
         XCTAssertFalse(recorder.firstNotificationHasUserInfo)

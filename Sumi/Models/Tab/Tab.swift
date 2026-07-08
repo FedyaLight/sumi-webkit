@@ -47,7 +47,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         set { webViewInteractionStateOwner.clickModifierFlags = newValue }
     }
     let stateChangeEmitter = TabStateChangeEmitter()
-    private let navigationRuntime = TabNavigationRuntime()
+    let navigationRuntime = TabNavigationRuntime()
     let mediaRuntime = TabMediaRuntime()
     let popupUserActivationTracker = SumiPopupUserActivationTracker()
     let faviconRuntime = TabFaviconRuntime()
@@ -176,118 +176,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         webViewRuntime.findInPage
     }
 
-    var navigationTransactionOwner: TabNavigationTransactionOwner {
-        navigationRuntime.navigationTransactionOwner
-    }
-    var pendingMainFrameNavigationKind: TabMainFrameNavigationKind? {
-        get { navigationTransactionOwner.pendingMainFrameNavigationKind }
-        set { navigationTransactionOwner.pendingMainFrameNavigationKind = newValue }
-    }
-    var historyRecorder: HistoryTabRecorder {
-        navigationRuntime.historyRecorder
-    }
-    var titleUpdateOwner: TabTitleUpdateOwner {
-        navigationRuntime.titleUpdateOwner
-    }
-    var navigationDelegateBundles: NSMapTable<WKWebView, SumiTabNavigationDelegateAdapter> {
-        navigationRuntime.navigationDelegateBundles
-    }
-    var webViewRoutingRuntime: TabWebViewRoutingRuntime {
-        get { navigationRuntime.webViewRouting }
-        set { navigationRuntime.webViewRouting = newValue }
-    }
-    var persistenceRuntimeCallbacks: TabRuntimePersistenceCallbacks {
-        get { navigationRuntime.persistenceCallbacks }
-        set { navigationRuntime.persistenceCallbacks = newValue }
-    }
-    var historySwipeRuntime: TabHistorySwipeRuntime {
-        get { navigationRuntime.historySwipeRuntime }
-        set { navigationRuntime.historySwipeRuntime = newValue }
-    }
-    var historyRecordingRuntime: TabHistoryRecordingRuntime {
-        get { navigationRuntime.historyRecordingRuntime }
-        set { navigationRuntime.historyRecordingRuntime = newValue }
-    }
-    var findInPageRuntime: TabFindInPageRuntime {
-        get { navigationRuntime.findInPageRuntime }
-        set { navigationRuntime.findInPageRuntime = newValue }
-    }
-    var extensionPropertiesRuntime: TabExtensionPropertiesRuntime {
-        get { navigationRuntime.extensionPropertiesRuntime }
-        set { navigationRuntime.extensionPropertiesRuntime = newValue }
-    }
-    var closeLifecycleRuntime: TabCloseLifecycleRuntime {
-        get { navigationRuntime.closeLifecycleRuntime }
-        set { navigationRuntime.closeLifecycleRuntime = newValue }
-    }
-    var lifecycleNavigationRuntime: TabLifecycleNavigationRuntime {
-        get { navigationRuntime.lifecycleNavigationRuntime }
-        set { navigationRuntime.lifecycleNavigationRuntime = newValue }
-    }
-    var permissionRuntime: TabPermissionRuntime {
-        get { navigationRuntime.permissionRuntime }
-        set { navigationRuntime.permissionRuntime = newValue }
-    }
-    var webViewCleanupRuntime: TabWebViewCleanupRuntime {
-        get { navigationRuntime.webViewCleanupRuntime }
-        set { navigationRuntime.webViewCleanupRuntime = newValue }
-    }
-    var normalWebViewExtensionRuntime: TabNormalWebViewExtensionRuntime {
-        get { navigationRuntime.normalWebViewExtensionRuntime }
-        set { navigationRuntime.normalWebViewExtensionRuntime = newValue }
-    }
-    var scriptMessageRuntime: TabScriptMessageRuntime {
-        get { navigationRuntime.scriptMessageRuntime }
-        set { navigationRuntime.scriptMessageRuntime = newValue }
-    }
-    var navigationDelegateRuntime: TabNavigationDelegateRuntime {
-        get { navigationRuntime.navigationDelegateRuntime }
-        set { navigationRuntime.navigationDelegateRuntime = newValue }
-    }
-    var faviconExtensionRuntime: TabFaviconExtensionRuntime {
-        get { navigationRuntime.faviconExtensionRuntime }
-        set { navigationRuntime.faviconExtensionRuntime = newValue }
-    }
-    var popupHandlingRuntime: TabPopupHandlingRuntime {
-        get { navigationRuntime.popupHandlingRuntime }
-        set { navigationRuntime.popupHandlingRuntime = newValue }
-    }
-    var webKitUIRuntime: TabWebKitUIRuntime {
-        get { navigationRuntime.webKitUIRuntime }
-        set { navigationRuntime.webKitUIRuntime = newValue }
-    }
-    var installNavigationRuntime: TabInstallNavigationRuntime {
-        get { navigationRuntime.installNavigationRuntime }
-        set { navigationRuntime.installNavigationRuntime = newValue }
-    }
-    var webViewReplacementRuntime: TabWebViewReplacementRuntime {
-        get { navigationRuntime.webViewReplacementRuntime }
-        set { navigationRuntime.webViewReplacementRuntime = newValue }
-    }
-    var navigationCommandRuntime: TabNavigationCommandRuntime {
-        get { navigationRuntime.navigationCommandRuntime }
-        set { navigationRuntime.navigationCommandRuntime = newValue }
-    }
-    var profileResolutionRuntime: TabProfileResolutionRuntime {
-        get { navigationRuntime.profileResolutionRuntime }
-        set { navigationRuntime.profileResolutionRuntime = newValue }
-    }
-    var reloadPolicyRuntime: TabReloadPolicyRuntime {
-        get { navigationRuntime.reloadPolicyRuntime }
-        set { navigationRuntime.reloadPolicyRuntime = newValue }
-    }
-    var isFreezingNavDuringBackForwardGesture: Bool {
-        get { navigationTransactionOwner.isFreezingNavDuringBackForwardGesture }
-        set { navigationTransactionOwner.isFreezingNavDuringBackForwardGesture = newValue }
-    }
-    var lastMediaActivityAt: Date {
-        get { mediaRuntime.lastMediaActivityAt }
-        set { mediaRuntime.lastMediaActivityAt = newValue }
-    }
-    var mediaRuntimeCallbacks: TabMediaRuntimeCallbacks {
-        get { mediaRuntime.callbacks }
-        set { mediaRuntime.callbacks = newValue }
-    }
     // MARK: - Tab State
     var isUnloaded: Bool {
         webViewOwnershipOwner.isUnloaded
@@ -346,28 +234,28 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     func attachBrowserRuntime(_ runtime: TabBrowserRuntime) {
         browserRuntime = runtime
         browserActionService = runtime.browserActionService
-        webViewRoutingRuntime = runtime.webViewRoutingRuntime
-        persistenceRuntimeCallbacks = runtime.persistenceRuntimeCallbacks
-        mediaRuntimeCallbacks = runtime.mediaRuntimeCallbacks
-        navigationCommandRuntime = runtime.navigationCommandRuntime
-        profileResolutionRuntime = runtime.profileResolutionRuntime
-        reloadPolicyRuntime = runtime.reloadPolicyRuntime
-        historySwipeRuntime = runtime.historySwipeRuntime
-        historyRecordingRuntime = runtime.historyRecordingRuntime
-        findInPageRuntime = runtime.findInPageRuntime
-        extensionPropertiesRuntime = runtime.extensionPropertiesRuntime
-        closeLifecycleRuntime = runtime.closeLifecycleRuntime
-        lifecycleNavigationRuntime = runtime.lifecycleNavigationRuntime
-        permissionRuntime = runtime.permissionRuntime
-        webViewCleanupRuntime = runtime.webViewCleanupRuntime
-        normalWebViewExtensionRuntime = runtime.normalWebViewExtensionRuntime
-        scriptMessageRuntime = runtime.scriptMessageRuntime
-        navigationDelegateRuntime = runtime.navigationDelegateRuntime
-        faviconExtensionRuntime = runtime.faviconExtensionRuntime
-        popupHandlingRuntime = runtime.popupHandlingRuntime
-        installNavigationRuntime = runtime.installNavigationRuntime
-        webKitUIRuntime = runtime.webKitUIRuntime
-        webViewReplacementRuntime =
+        navigationRuntime.webViewRouting = runtime.webViewRoutingRuntime
+        navigationRuntime.persistenceCallbacks = runtime.persistenceRuntimeCallbacks
+        mediaRuntime.callbacks = runtime.mediaRuntimeCallbacks
+        navigationRuntime.navigationCommandRuntime = runtime.navigationCommandRuntime
+        navigationRuntime.profileResolutionRuntime = runtime.profileResolutionRuntime
+        navigationRuntime.reloadPolicyRuntime = runtime.reloadPolicyRuntime
+        navigationRuntime.historySwipeRuntime = runtime.historySwipeRuntime
+        navigationRuntime.historyRecordingRuntime = runtime.historyRecordingRuntime
+        navigationRuntime.findInPageRuntime = runtime.findInPageRuntime
+        navigationRuntime.extensionPropertiesRuntime = runtime.extensionPropertiesRuntime
+        navigationRuntime.closeLifecycleRuntime = runtime.closeLifecycleRuntime
+        navigationRuntime.lifecycleNavigationRuntime = runtime.lifecycleNavigationRuntime
+        navigationRuntime.permissionRuntime = runtime.permissionRuntime
+        navigationRuntime.webViewCleanupRuntime = runtime.webViewCleanupRuntime
+        navigationRuntime.normalWebViewExtensionRuntime = runtime.normalWebViewExtensionRuntime
+        navigationRuntime.scriptMessageRuntime = runtime.scriptMessageRuntime
+        navigationRuntime.navigationDelegateRuntime = runtime.navigationDelegateRuntime
+        navigationRuntime.faviconExtensionRuntime = runtime.faviconExtensionRuntime
+        navigationRuntime.popupHandlingRuntime = runtime.popupHandlingRuntime
+        navigationRuntime.installNavigationRuntime = runtime.installNavigationRuntime
+        navigationRuntime.webKitUIRuntime = runtime.webKitUIRuntime
+        navigationRuntime.webViewReplacementRuntime =
             runtime.webViewReplacementRuntime
         dependencyStateOwner.attachDataServicesProvider { [weak self] in
             self?.browserRuntime.dataServices()

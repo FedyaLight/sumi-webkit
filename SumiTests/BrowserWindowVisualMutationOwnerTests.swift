@@ -7,7 +7,7 @@ final class BrowserWindowVisualMutationOwnerTests: XCTestCase {
     func testRefreshCompositorDefersDuringTabBackForwardNavigationUntilFlush() async {
         let windowState = BrowserWindowState()
         let tab = Tab()
-        tab.pendingMainFrameNavigationKind = .backForward
+        tab.navigationRuntime.navigationTransactionOwner.pendingMainFrameNavigationKind = .backForward
         let owner = makeOwner(currentTab: { tab })
 
         owner.refreshCompositor(for: windowState)
@@ -24,7 +24,7 @@ final class BrowserWindowVisualMutationOwnerTests: XCTestCase {
     func testRefreshCompositorDefersDuringFrozenBackForwardNavigationUntilFlush() async {
         let windowState = BrowserWindowState()
         let tab = Tab()
-        tab.isFreezingNavDuringBackForwardGesture = true
+        tab.navigationRuntime.navigationTransactionOwner.isFreezingNavDuringBackForwardGesture = true
         let owner = makeOwner(currentTab: { tab })
 
         owner.refreshCompositor(for: windowState)

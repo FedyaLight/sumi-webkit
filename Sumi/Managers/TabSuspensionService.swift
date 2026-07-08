@@ -966,8 +966,8 @@ final class TabSuspensionService {
     }
 
     private func isRecentlyAudible(_ tab: Tab) -> Bool {
-        guard tab.lastMediaActivityAt != .distantPast else { return false }
-        return dateProvider().timeIntervalSince(tab.lastMediaActivityAt)
+        guard tab.mediaRuntime.lastMediaActivityAt != .distantPast else { return false }
+        return dateProvider().timeIntervalSince(tab.mediaRuntime.lastMediaActivityAt)
             < TabSuspensionPolicy.recentlyAudibleProtectionInterval
     }
 

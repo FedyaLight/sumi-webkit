@@ -143,7 +143,7 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
         tab._existingWebView = nil
 
         var warmedProfileIds: [UUID] = []
-        tab.normalWebViewExtensionRuntime = TabNormalWebViewExtensionRuntime(
+        tab.navigationRuntime.normalWebViewExtensionRuntime = TabNormalWebViewExtensionRuntime(
             registerTabWithExtensionRuntimeIfNeeded: { _, _ in /* No-op. */ },
             prepareWebViewForExtensionRuntime: { _, _, _ in /* No-op. */ },
             ensureInitialExtensionContextsIfNeeded: { warmedProfileId in

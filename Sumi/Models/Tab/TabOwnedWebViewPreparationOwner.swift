@@ -125,7 +125,7 @@ extension TabOwnedWebViewPreparationOwner.Dependencies {
             uiDelegate: { [weak tab] in tab?.webKitUIDelegateOwner },
             visitedLinkStore: { [weak tab] in tab?.visitedLinkStore },
             prepareWebViewForExtensionRuntime: { [weak tab] webView, currentURL, reason in
-                tab?.normalWebViewExtensionRuntime.prepareWebViewForExtensionRuntime(
+                tab?.navigationRuntime.normalWebViewExtensionRuntime.prepareWebViewForExtensionRuntime(
                     webView,
                     currentURL,
                     reason

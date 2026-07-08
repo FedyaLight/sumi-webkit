@@ -267,7 +267,7 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
         let profile = Profile(name: "Popup Runtime")
         let tab = Tab(url: URL(string: "https://source.example/page")!, loadsCachedFaviconOnInit: false)
         tab.profileId = profile.id
-        tab.profileResolutionRuntime = TabProfileResolutionRuntime(
+        tab.navigationRuntime.profileResolutionRuntime = TabProfileResolutionRuntime(
             ephemeralProfileForTab: { _, _ in nil },
             profile: { profileId in
                 profileId == profile.id ? profile : nil
@@ -278,7 +278,7 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
         )
         var evaluatedRequests: [SumiPopupPermissionRequest] = []
         var evaluatedContexts: [SumiPopupPermissionTabContext] = []
-        tab.popupHandlingRuntime = TabPopupHandlingRuntime(
+        tab.navigationRuntime.popupHandlingRuntime = TabPopupHandlingRuntime(
             hasBrowserRuntime: { true },
             consumeRecentlyOpenedExtensionTabRequest: { _ in false },
             evaluatePopupPermission: { request, context in

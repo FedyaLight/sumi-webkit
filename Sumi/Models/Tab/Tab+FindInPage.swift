@@ -5,7 +5,7 @@ extension Tab {
     func targetFindWebView(in windowId: UUID?) -> FocusableWKWebView? {
         let targetWebView: WKWebView?
         if let windowId {
-            targetWebView = findInPageRuntime.webView(id, windowId)
+            targetWebView = navigationRuntime.findInPageRuntime.webView(id, windowId)
         } else {
             targetWebView = existingWebView
         }

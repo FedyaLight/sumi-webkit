@@ -39,16 +39,16 @@ final class SumiTabLifecycleNavigationResponder:
             tab.markRegularMainFrameNavigation(on: webView)
         }
         tab.suspensionStateOwner.resetRuntimeState()
-        tab.lifecycleNavigationRuntime.resetRevisitProtection(tab)
+        tab.navigationRuntime.lifecycleNavigationRuntime.resetRevisitProtection(tab)
 
         if let url = context.url {
-            tab.lifecycleNavigationRuntime.prepareExtensionWebView(
+            tab.navigationRuntime.lifecycleNavigationRuntime.prepareExtensionWebView(
                 webView,
                 url,
                 "SumiTabLifecycleNavigationResponder.willStart"
             )
             if context.action?.navigationType.isBackForward != true {
-                tab.lifecycleNavigationRuntime.prepareExtensionRuntimeBeforeCommit(
+                tab.navigationRuntime.lifecycleNavigationRuntime.prepareExtensionRuntimeBeforeCommit(
                     tab,
                     url,
                     "SumiTabLifecycleNavigationResponder.willStart"
@@ -73,7 +73,7 @@ final class SumiTabLifecycleNavigationResponder:
         }
 
         tab.beginLoadingPresentationIfNeeded()
-        tab.extensionPropertiesRuntime.notifyTabPropertiesChanged(tab, [.loading])
+        tab.navigationRuntime.extensionPropertiesRuntime.notifyTabPropertiesChanged(tab, [.loading])
 
         if let newURL = webView.url {
             if newURL.absoluteString != tab.url.absoluteString {
@@ -115,30 +115,30 @@ final class SumiTabLifecycleNavigationResponder:
         StartupPerformanceTrace.firstNavigationCommitted()
 
         tab.loadingState = .didCommit
-        tab.extensionPropertiesRuntime.notifyTabPropertiesChanged(tab, [.loading])
+        tab.navigationRuntime.extensionPropertiesRuntime.notifyTabPropertiesChanged(tab, [.loading])
 
         if let newURL = webView.url {
             tab.url = newURL
-            if tab.pendingMainFrameNavigationKind == .backForward {
+            if tab.navigationRuntime.navigationTransactionOwner.pendingMainFrameNavigationKind == .backForward {
                 tab.handleNormalTabPermissionNavigation(to: newURL)
             }
             tab.extensionPageRuntimeOwner.noteCommittedMainDocumentNavigation(to: newURL)
             tab.clearSafariContentBlockerReloadRequirementIfResolved(for: newURL)
             tab.clearProtectionReloadRequirementIfResolved(for: newURL)
             tab.clearAutoplayReloadRequirementIfResolved(for: newURL)
-            tab.historyRecorder.didCommitMainFrameNavigation(
+            tab.navigationRuntime.historyRecorder.didCommitMainFrameNavigation(
                 to: newURL,
-                kind: tab.pendingMainFrameNavigationKind == .backForward ? .backForward : .regular,
+                kind: tab.navigationRuntime.navigationTransactionOwner.pendingMainFrameNavigationKind == .backForward ? .backForward : .regular,
                 tab: tab
             )
-            tab.lifecycleNavigationRuntime.markExtensionEligibleAfterCommit(
+            tab.navigationRuntime.lifecycleNavigationRuntime.markExtensionEligibleAfterCommit(
                 tab,
                 "SumiTabLifecycleNavigationResponder.didCommit"
             )
-            if tab.pendingMainFrameNavigationKind != .backForward {
-                tab.webViewRoutingRuntime.syncTabAcrossWindows(tab.id, webView)
+            if tab.navigationRuntime.navigationTransactionOwner.pendingMainFrameNavigationKind != .backForward {
+                tab.navigationRuntime.webViewRouting.syncTabAcrossWindows(tab.id, webView)
             }
-            tab.extensionPropertiesRuntime.notifyTabPropertiesChanged(tab, [.URL, .loading])
+            tab.navigationRuntime.extensionPropertiesRuntime.notifyTabPropertiesChanged(tab, [.URL, .loading])
         }
 
         tab.stateChangeEmitter.postNavigationStateDidChange(for: tab)
@@ -163,39 +163,39 @@ final class SumiTabLifecycleNavigationResponder:
         StartupPerformanceTrace.firstNavigationFinished()
 
         tab.loadingState = .didFinish
-        tab.extensionPropertiesRuntime.notifyTabPropertiesChanged(tab, [.loading])
+        tab.navigationRuntime.extensionPropertiesRuntime.notifyTabPropertiesChanged(tab, [.loading])
 
         if let newURL = webView.url {
             tab.url = newURL
-            tab.lifecycleNavigationRuntime.loadZoomForTab(tab.id)
+            tab.navigationRuntime.lifecycleNavigationRuntime.loadZoomForTab(tab.id)
             tab.refreshFaviconExtensionCache()
-            tab.lifecycleNavigationRuntime.applyAdblockZapperRulesAfterNavigation(webView, newURL, tab)
+            tab.navigationRuntime.lifecycleNavigationRuntime.applyAdblockZapperRulesAfterNavigation(webView, newURL, tab)
         }
 
         tab.updateNavigationState()
         let resolvedTitle = webView.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
 
         if webView.url != nil {
-            tab.historyRecorder.updateTitle(resolvedTitle, tab: tab)
+            tab.navigationRuntime.historyRecorder.updateTitle(resolvedTitle, tab: tab)
         }
-        tab.persistenceRuntimeCallbacks.scheduleRuntimeStatePersistence(tab)
-        if tab.pendingMainFrameNavigationKind == .backForward {
+        tab.navigationRuntime.persistenceCallbacks.scheduleRuntimeStatePersistence(tab)
+        if tab.navigationRuntime.navigationTransactionOwner.pendingMainFrameNavigationKind == .backForward {
             tab.finishBackForwardNavigationTracking(using: webView)
-            tab.webViewRoutingRuntime.syncTabAcrossWindows(tab.id, webView)
+            tab.navigationRuntime.webViewRouting.syncTabAcrossWindows(tab.id, webView)
         } else {
-            tab.pendingMainFrameNavigationKind = nil
+            tab.navigationRuntime.navigationTransactionOwner.pendingMainFrameNavigationKind = nil
         }
 
         if tab.audioState.isMuted {
             tab.setMuted(true)
         }
 
-        tab.extensionPropertiesRuntime.notifyTabPropertiesChanged(
+        tab.navigationRuntime.extensionPropertiesRuntime.notifyTabPropertiesChanged(
             tab,
             [.URL, .title, .loading]
         )
-        tab.mediaRuntimeCallbacks.scheduleBackgroundMediaReconcile("navigation-did-finish")
-        tab.lifecycleNavigationRuntime.enforceSiteDataPolicyAfterNavigation(tab)
+        tab.mediaRuntime.callbacks.scheduleBackgroundMediaReconcile("navigation-did-finish")
+        tab.navigationRuntime.lifecycleNavigationRuntime.enforceSiteDataPolicyAfterNavigation(tab)
         SafariExtensionAutofillFillDiagnostics.endInlineUISession(extensionId: nil)
     }
 
@@ -210,20 +210,20 @@ final class SumiTabLifecycleNavigationResponder:
         else { return }
 
         tab.handleSameDocumentNavigation(to: newURL)
-        tab.historyRecorder.didSameDocumentNavigation(
+        tab.navigationRuntime.historyRecorder.didSameDocumentNavigation(
             to: newURL,
             type: navigationType,
             tab: tab
         )
-        if tab.pendingMainFrameNavigationKind == .backForward {
+        if tab.navigationRuntime.navigationTransactionOwner.pendingMainFrameNavigationKind == .backForward {
             tab.scheduleBackForwardSameDocumentSettle(using: webView)
         } else {
-            tab.persistenceRuntimeCallbacks.scheduleRuntimeStatePersistence(tab)
-            tab.webViewRoutingRuntime.syncTabAcrossWindows(tab.id, webView)
-            tab.pendingMainFrameNavigationKind = nil
+            tab.navigationRuntime.persistenceCallbacks.scheduleRuntimeStatePersistence(tab)
+            tab.navigationRuntime.webViewRouting.syncTabAcrossWindows(tab.id, webView)
+            tab.navigationRuntime.navigationTransactionOwner.pendingMainFrameNavigationKind = nil
         }
 
-        tab.extensionPropertiesRuntime.notifyTabPropertiesChanged(tab, [.URL])
+        tab.navigationRuntime.extensionPropertiesRuntime.notifyTabPropertiesChanged(tab, [.URL])
     }
 
     func navigationDidFail(_ error: WKError, context: SumiNavigationContext?) {
@@ -252,7 +252,7 @@ final class SumiTabLifecycleNavigationResponder:
                 tab.loadingState = .idle
             }
             tab.updateNavigationState()
-            tab.extensionPropertiesRuntime.notifyTabPropertiesChanged(tab, [.loading])
+            tab.navigationRuntime.extensionPropertiesRuntime.notifyTabPropertiesChanged(tab, [.loading])
             return
         }
 
@@ -263,7 +263,7 @@ final class SumiTabLifecycleNavigationResponder:
             tab.finishBackForwardNavigationTracking(using: webView)
         }
         tab.updateNavigationState()
-        tab.extensionPropertiesRuntime.notifyTabPropertiesChanged(tab, [.loading])
+        tab.navigationRuntime.extensionPropertiesRuntime.notifyTabPropertiesChanged(tab, [.loading])
     }
 
     func didReceive(
@@ -281,7 +281,7 @@ final class SumiTabLifecycleNavigationResponder:
         for authenticationChallenge: URLAuthenticationChallenge
     ) async -> SumiAuthChallengeDisposition? {
         guard let tab else { return .next }
-        return await tab.lifecycleNavigationRuntime.resolveAuthenticationChallenge(
+        return await tab.navigationRuntime.lifecycleNavigationRuntime.resolveAuthenticationChallenge(
             authenticationChallenge,
             tab
         )
@@ -293,7 +293,7 @@ final class SumiTabLifecycleNavigationResponder:
         requestURL: URL?,
         allowCurrentWebViewURLFallback: Bool
     ) -> Bool {
-        guard tab?.lifecycleNavigationRuntime
+        guard tab?.navigationRuntime.lifecycleNavigationRuntime
             .isPreparingForDataCleanupNavigation(webView) == true
         else {
             return false
@@ -313,7 +313,7 @@ final class SumiTabLifecycleNavigationResponder:
     }
 
     private func finishDestructiveDataCleanupSuppression(on webView: WKWebView) {
-        tab?.lifecycleNavigationRuntime.finishDestructiveDataCleanupNavigation(webView)
+        tab?.navigationRuntime.lifecycleNavigationRuntime.finishDestructiveDataCleanupNavigation(webView)
     }
 }
 

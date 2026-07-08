@@ -3,7 +3,7 @@ import WebKit
 
 extension Tab {
     func updateTitle(from webView: WKWebView) {
-        titleUpdateOwner.updateTitle(
+        navigationRuntime.titleUpdateOwner.updateTitle(
             from: webView,
             context: titleUpdateContext()
         )
@@ -11,7 +11,7 @@ extension Tab {
 
     @discardableResult
     func acceptResolvedDisplayTitle(_ title: String, url candidateURL: URL? = nil) -> Bool {
-        titleUpdateOwner.acceptResolvedDisplayTitle(
+        navigationRuntime.titleUpdateOwner.acceptResolvedDisplayTitle(
             title,
             url: candidateURL,
             context: titleUpdateContext()
@@ -19,7 +19,7 @@ extension Tab {
     }
 
     func resolvedHistoryTitle(for candidateURL: URL) -> String {
-        titleUpdateOwner.resolvedHistoryTitle(
+        navigationRuntime.titleUpdateOwner.resolvedHistoryTitle(
             for: candidateURL,
             context: titleUpdateContext()
         )
@@ -37,19 +37,19 @@ extension Tab {
                 self.representsSumiEmptySurface
             },
             pendingMainFrameNavigationKind: {
-                self.pendingMainFrameNavigationKind
+                self.navigationRuntime.navigationTransactionOwner.pendingMainFrameNavigationKind
             },
             scheduleRuntimeStatePersistence: {
-                self.persistenceRuntimeCallbacks.scheduleRuntimeStatePersistence(self)
+                self.navigationRuntime.persistenceCallbacks.scheduleRuntimeStatePersistence(self)
             },
             notifyTitleChangedToExtensions: {
-                self.extensionPropertiesRuntime.notifyTabPropertiesChanged(
+                self.navigationRuntime.extensionPropertiesRuntime.notifyTabPropertiesChanged(
                     self,
                     [.title]
                 )
             },
             recordHistoryTitle: { title in
-                self.historyRecorder.updateTitle(title, tab: self)
+                self.navigationRuntime.historyRecorder.updateTitle(title, tab: self)
             }
         )
     }

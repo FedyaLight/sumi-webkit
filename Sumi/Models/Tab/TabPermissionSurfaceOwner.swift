@@ -302,10 +302,10 @@ extension TabPermissionSurfaceOwner.Context {
                 tab?.extensionPageRuntimeOwner.invalidatePageForWebViewReplacement()
             },
             handlePermissionLifecycleEvent: { [weak tab] event in
-                tab?.permissionRuntime.handlePermissionLifecycleEvent(event)
+                tab?.navigationRuntime.permissionRuntime.handlePermissionLifecycleEvent(event)
             },
             isActiveGlancePreviewSurface: { [weak tab] webView in
-                tab?.permissionRuntime.isActiveGlancePreviewSurface(tabId, webView) ?? false
+                tab?.navigationRuntime.permissionRuntime.isActiveGlancePreviewSurface(tabId, webView) ?? false
             }
         )
     }

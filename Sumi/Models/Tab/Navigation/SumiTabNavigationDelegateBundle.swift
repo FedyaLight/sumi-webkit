@@ -44,12 +44,12 @@ final class SumiTabNavigationDelegateAdapter {
         self.popupHandlingAdapter = SumiNavigationResponderAdapter(target: popupHandling)
         self.externalScheme = SumiExternalSchemeNavigationResponder(
             tab: tab,
-            permissionBridge: tab.navigationDelegateRuntime.externalSchemePermissionBridge()
+            permissionBridge: tab.navigationRuntime.navigationDelegateRuntime.externalSchemePermissionBridge()
         )
         self.externalSchemeAdapter = SumiNavigationResponderAdapter(target: externalScheme)
         self.downloads = SumiDownloadsNavigationResponder(
             tab: tab,
-            downloadManager: tab.navigationDelegateRuntime.downloadManager()
+            downloadManager: tab.navigationRuntime.navigationDelegateRuntime.downloadManager()
         )
         self.downloadsAdapter = SumiNavigationResponderAdapter(target: downloads)
         self.scriptAttachment = SumiTabScriptAttachmentNavigationResponder(tab: tab)
@@ -154,18 +154,18 @@ extension Tab {
         }
 
         let bundle = SumiTabNavigationDelegateAdapter(tab: self)
-        navigationDelegateBundles.setObject(bundle, forKey: webView)
+        navigationRuntime.navigationDelegateBundles.setObject(bundle, forKey: webView)
         bundle.install(on: webView)
         bindWebViewInteractionEvents(on: webView)
         return bundle
     }
 
     func navigationDelegateBundle(for webView: WKWebView) -> SumiTabNavigationDelegateAdapter? {
-        navigationDelegateBundles.object(forKey: webView)
+        navigationRuntime.navigationDelegateBundles.object(forKey: webView)
     }
 
     func removeNavigationDelegateBundle(for webView: WKWebView) {
-        navigationDelegateBundles.removeObject(forKey: webView)
+        navigationRuntime.navigationDelegateBundles.removeObject(forKey: webView)
         webViewInteractionCancellables.removeValue(forKey: ObjectIdentifier(webView))
     }
 

@@ -139,7 +139,7 @@ final class TabFaviconRuntime {
         tab: Tab
     ) async -> NSImage? {
         guard ExtensionUtils.isExtensionOwnedURL(url) else { return nil }
-        let installedExtensions = tab.faviconExtensionRuntime.installedExtensions()
+        let installedExtensions = tab.navigationRuntime.faviconExtensionRuntime.installedExtensions()
         guard let iconPath = ExtensionUtils.iconPath(
             forExtensionOwnedURL: url,
             installedExtensions: installedExtensions

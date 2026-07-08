@@ -116,7 +116,7 @@ enum NormalTabInitialDocumentRuntimeHandoff {
         profileId: UUID?
     ) async {
         if let profileId, let tab {
-            await tab.normalWebViewExtensionRuntime
+            await tab.navigationRuntime.normalWebViewExtensionRuntime
                 .ensureInitialExtensionContextsIfNeeded(profileId)
         }
     }

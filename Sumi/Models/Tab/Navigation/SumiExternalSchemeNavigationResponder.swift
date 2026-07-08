@@ -61,7 +61,7 @@ final class SumiExternalSchemeNavigationResponder: SumiNavigationActionWebViewRe
         }
 
         guard let tab,
-              let bridge = permissionBridge ?? tab.navigationDelegateRuntime.externalSchemePermissionBridge(),
+              let bridge = permissionBridge ?? tab.navigationRuntime.navigationDelegateRuntime.externalSchemePermissionBridge(),
               let webView,
               let tabContext = tabContextProvider?(webView) ?? tab.externalSchemePermissionTabContext(for: webView)
         else {

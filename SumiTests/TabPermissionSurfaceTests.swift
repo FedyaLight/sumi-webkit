@@ -36,7 +36,7 @@ final class TabPermissionSurfaceTests: XCTestCase {
         var lifecycleEvents: [SumiPermissionLifecycleEvent] = []
         var glanceLookupTabIds: [UUID] = []
         var glanceLookupWebViewIds: [ObjectIdentifier] = []
-        tab.permissionRuntime = TabPermissionRuntime(
+        tab.navigationRuntime.permissionRuntime = TabPermissionRuntime(
             permissionBridges: { nil },
             handlePermissionLifecycleEvent: { event in
                 lifecycleEvents.append(event)

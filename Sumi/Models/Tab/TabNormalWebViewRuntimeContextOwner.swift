@@ -142,7 +142,7 @@ final class TabNormalWebViewRuntimeContextOwner {
             },
             registerTabWithExtensionRuntimeIfNeeded: { [weak tab] reason in
                 guard let tab else { return }
-                tab.normalWebViewExtensionRuntime.registerTabWithExtensionRuntimeIfNeeded(
+                tab.navigationRuntime.normalWebViewExtensionRuntime.registerTabWithExtensionRuntimeIfNeeded(
                     tab,
                     reason
                 )

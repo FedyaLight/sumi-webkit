@@ -89,7 +89,7 @@ final class TabNavigationCommandOwner {
         else {
             return false
         }
-        return tab.navigationCommandRuntime.prepareExtensionPageNavigation(
+        return tab.navigationRuntime.navigationCommandRuntime.prepareExtensionPageNavigation(
             tab,
             newURL,
             reason
@@ -106,7 +106,7 @@ final class TabNavigationCommandOwner {
 
     func navigateToURL(_ input: String, for tab: Tab) {
         let template = tab.sumiSettings?.resolvedSearchEngineTemplate
-            ?? tab.navigationCommandRuntime.resolvedSearchEngineTemplate()
+            ?? tab.navigationRuntime.navigationCommandRuntime.resolvedSearchEngineTemplate()
             ?? SearchProvider.google.queryTemplate
         let normalizedUrl = normalizeURL(input, queryTemplate: template)
 
@@ -162,7 +162,7 @@ final class TabNavigationCommandOwner {
         }
 
         if !rebuiltForConfigurationPolicy {
-            tab.webViewRoutingRuntime.reloadTabAcrossWindows(tab.id)
+            tab.navigationRuntime.webViewRouting.reloadTabAcrossWindows(tab.id)
         }
     }
 
@@ -182,7 +182,7 @@ final class TabNavigationCommandOwner {
             return
         }
 
-        tab.navigationTransactionOwner.performAfterPreparation(
+        tab.navigationRuntime.navigationTransactionOwner.performAfterPreparation(
             on: webView,
             prepare: {
                 await controller.waitForContentBlockingAssetsInstalled()

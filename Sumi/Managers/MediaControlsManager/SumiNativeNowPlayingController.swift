@@ -301,8 +301,8 @@ final class SumiNativeNowPlayingController: ObservableObject, SumiNativeNowPlayi
                     return lhsIsOwner
                 }
 
-                if lhs.tab.lastMediaActivityAt != rhs.tab.lastMediaActivityAt {
-                    return lhs.tab.lastMediaActivityAt > rhs.tab.lastMediaActivityAt
+                if lhs.tab.mediaRuntime.lastMediaActivityAt != rhs.tab.mediaRuntime.lastMediaActivityAt {
+                    return lhs.tab.mediaRuntime.lastMediaActivityAt > rhs.tab.mediaRuntime.lastMediaActivityAt
                 }
 
                 return lhs.tab.id.uuidString < rhs.tab.id.uuidString

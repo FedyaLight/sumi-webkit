@@ -46,7 +46,7 @@ final class TabWebViewReplacementContextOwnerTests: XCTestCase {
         var removeTrackedTabIds: [UUID] = []
         var refreshedWindowIds: [UUID] = []
 
-        tab.webViewReplacementRuntime = TabWebViewReplacementRuntime(
+        tab.navigationRuntime.webViewReplacementRuntime = TabWebViewReplacementRuntime(
             trackedWindowIdContainingWebView: { candidate in
                 XCTAssertIdentical(candidate, webView)
                 return windowId

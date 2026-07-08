@@ -17,7 +17,7 @@ final class TabWebKitPermissionUIDelegateOwner {
         // swiftlint:disable:next discouraged_optional_collection
         completionHandler: @escaping @MainActor @Sendable ([URL]?) -> Void
     ) {
-        guard let permissionBridges = tab.permissionRuntime.permissionBridges(),
+        guard let permissionBridges = tab.navigationRuntime.permissionRuntime.permissionBridges(),
               let tabContext = filePickerPermissionTabContext(for: webView)
         else {
             RuntimeDiagnostics.emit("📁 [Tab] Denying file picker because browser/profile context is unavailable.")
@@ -52,7 +52,7 @@ final class TabWebKitPermissionUIDelegateOwner {
         RuntimeDiagnostics.emit(
             "🔐 [Tab] Media capture authorization requested for type: \(type.rawValue) from origin: \(origin)"
         )
-        guard let permissionBridges = tab.permissionRuntime.permissionBridges(),
+        guard let permissionBridges = tab.navigationRuntime.permissionRuntime.permissionBridges(),
               let tabContext = mediaCaptureTabContext(for: webView)
         else {
             RuntimeDiagnostics.emit(
@@ -85,7 +85,7 @@ final class TabWebKitPermissionUIDelegateOwner {
         RuntimeDiagnostics.emit(
             "🔐 [Tab] Display capture authorization requested from origin: \(origin)"
         )
-        guard let permissionBridges = tab.permissionRuntime.permissionBridges(),
+        guard let permissionBridges = tab.navigationRuntime.permissionRuntime.permissionBridges(),
               let tabContext = mediaCaptureTabContext(for: webView)
         else {
             RuntimeDiagnostics.emit(
@@ -120,7 +120,7 @@ final class TabWebKitPermissionUIDelegateOwner {
             forLegacyCaptureDevices: devices
         )
         guard !permissionTypes.isEmpty,
-              let permissionBridges = tab.permissionRuntime.permissionBridges(),
+              let permissionBridges = tab.navigationRuntime.permissionRuntime.permissionBridges(),
               let tabContext = mediaCaptureTabContext(for: webView, fallbackMainFrameURL: mainFrameURL)
         else {
             RuntimeDiagnostics.emit(
@@ -167,7 +167,7 @@ final class TabWebKitPermissionUIDelegateOwner {
         currentDomain: String,
         completionHandler: @escaping (Bool) -> Void
     ) {
-        guard let permissionBridges = tab.permissionRuntime.permissionBridges(),
+        guard let permissionBridges = tab.navigationRuntime.permissionRuntime.permissionBridges(),
               let tabContext = storageAccessTabContext(for: webView)
         else {
             RuntimeDiagnostics.emit("🍪 [Tab] Denying storage access because browser/profile context is unavailable.")
@@ -193,7 +193,7 @@ final class TabWebKitPermissionUIDelegateOwner {
         quirkDomains: [String: [String]],
         completionHandler: @escaping (Bool) -> Void
     ) {
-        guard let permissionBridges = tab.permissionRuntime.permissionBridges(),
+        guard let permissionBridges = tab.navigationRuntime.permissionRuntime.permissionBridges(),
               let tabContext = storageAccessTabContext(for: webView)
         else {
             RuntimeDiagnostics.emit("🍪 [Tab] Denying quirk-domain storage access because browser/profile context is unavailable.")
@@ -221,7 +221,7 @@ final class TabWebKitPermissionUIDelegateOwner {
         RuntimeDiagnostics.emit(
             "🔐 [Tab] Legacy geolocation authorization requested from frame: \(String(describing: frame.sumiWebKitRequestURL))"
         )
-        guard let permissionBridges = tab.permissionRuntime.permissionBridges(),
+        guard let permissionBridges = tab.navigationRuntime.permissionRuntime.permissionBridges(),
               let tabContext = geolocationTabContext(for: webView)
         else {
             RuntimeDiagnostics.emit(
@@ -249,7 +249,7 @@ final class TabWebKitPermissionUIDelegateOwner {
         RuntimeDiagnostics.emit(
             "🔐 [Tab] Geolocation authorization requested from origin: \(origin)"
         )
-        guard let permissionBridges = tab.permissionRuntime.permissionBridges(),
+        guard let permissionBridges = tab.navigationRuntime.permissionRuntime.permissionBridges(),
               let tabContext = geolocationTabContext(for: webView)
         else {
             RuntimeDiagnostics.emit(

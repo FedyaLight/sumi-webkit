@@ -14,7 +14,7 @@ final class TabProfileResolutionOwnerTests: XCTestCase {
         tab.profileId = explicitProfile.id
         tab.spaceId = spaceId
 
-        tab.profileResolutionRuntime = TabProfileResolutionRuntime(
+        tab.navigationRuntime.profileResolutionRuntime = TabProfileResolutionRuntime(
             ephemeralProfileForTab: { _, _ in nil },
             profile: { profileId in
                 profileId == explicitProfile.id ? explicitProfile : nil

@@ -41,7 +41,7 @@ final class TabScriptMessageRuntimeOwner {
     }
 
     func openURLInGlance(_ url: URL, originRectInWindow: CGRect? = nil) {
-        tab.scriptMessageRuntime.presentExternalURLInGlance(
+        tab.navigationRuntime.scriptMessageRuntime.presentExternalURLInGlance(
             url,
             tab,
             originRectInWindow

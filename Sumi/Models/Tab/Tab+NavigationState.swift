@@ -30,7 +30,7 @@ extension Tab {
     }
 
     func updateNavigationState() {
-        guard !isFreezingNavDuringBackForwardGesture else { return }
+        guard !navigationRuntime.navigationTransactionOwner.isFreezingNavDuringBackForwardGesture else { return }
         guard let webView = currentWebView else { return }
 
         let newCanGoBack = webView.canGoBack
@@ -40,7 +40,7 @@ extension Tab {
             canGoBack = newCanGoBack
             canGoForward = newCanGoForward
             stateChangeEmitter.postNavigationStateDidChange(for: self)
-            persistenceRuntimeCallbacks.updateNavigationState(self)
+            navigationRuntime.persistenceCallbacks.updateNavigationState(self)
         }
     }
 
@@ -86,28 +86,28 @@ extension Tab {
     }
 
     func markRegularMainFrameNavigation(on webView: WKWebView? = nil) {
-        navigationTransactionOwner.markRegularMainFrameNavigation(
+        navigationRuntime.navigationTransactionOwner.markRegularMainFrameNavigation(
             on: webView,
             environment: navigationTransactionEnvironment()
         )
     }
 
     func beginBackForwardNavigationTracking(on webView: WKWebView) {
-        navigationTransactionOwner.beginBackForwardNavigationTracking(
+        navigationRuntime.navigationTransactionOwner.beginBackForwardNavigationTracking(
             on: webView,
             environment: navigationTransactionEnvironment()
         )
     }
 
     func finishBackForwardNavigationTracking(using webView: WKWebView?) {
-        navigationTransactionOwner.finishBackForwardNavigationTracking(
+        navigationRuntime.navigationTransactionOwner.finishBackForwardNavigationTracking(
             using: webView,
             environment: navigationTransactionEnvironment()
         )
     }
 
     func scheduleBackForwardSameDocumentSettle(using webView: WKWebView) {
-        navigationTransactionOwner.scheduleBackForwardSameDocumentSettle(
+        navigationRuntime.navigationTransactionOwner.scheduleBackForwardSameDocumentSettle(
             using: webView,
             environment: navigationTransactionEnvironment()
         )
@@ -123,10 +123,10 @@ extension Tab {
                 self?.url
             },
             windowIDContaining: { [weak self] webView in
-                self?.historySwipeRuntime.windowIDContaining(webView)
+                self?.navigationRuntime.historySwipeRuntime.windowIDContaining(webView)
             },
             beginHistorySwipeProtection: { [weak self] tabId, webView, originURL, originHistoryItem in
-                self?.historySwipeRuntime.beginHistorySwipeProtection(
+                self?.navigationRuntime.historySwipeRuntime.beginHistorySwipeProtection(
                     tabId,
                     webView,
                     originURL,
@@ -134,7 +134,7 @@ extension Tab {
                 )
             },
             finishHistorySwipeProtection: { [weak self] tabId, webView, currentURL, currentHistoryItem in
-                self?.historySwipeRuntime.finishHistorySwipeProtection(
+                self?.navigationRuntime.historySwipeRuntime.finishHistorySwipeProtection(
                     tabId,
                     webView,
                     currentURL,
@@ -142,10 +142,10 @@ extension Tab {
                 ) ?? false
             },
             cancelWindowMutationsAfterHistorySwipe: { [weak self] windowId in
-                self?.historySwipeRuntime.cancelWindowMutationsAfterHistorySwipe(windowId)
+                self?.navigationRuntime.historySwipeRuntime.cancelWindowMutationsAfterHistorySwipe(windowId)
             },
             flushWindowMutationsAfterHistorySwipe: { [weak self] windowId in
-                self?.historySwipeRuntime.flushWindowMutationsAfterHistorySwipe(windowId)
+                self?.navigationRuntime.historySwipeRuntime.flushWindowMutationsAfterHistorySwipe(windowId)
             },
             updateNavStateIfCurrentWebViewExists: { [weak self] in
                 guard let self, self.hasCurrentWebView else { return }
@@ -153,11 +153,11 @@ extension Tab {
             },
             scheduleRuntimeStatePersistence: { [weak self] in
                 guard let self else { return }
-                self.persistenceRuntimeCallbacks.scheduleRuntimeStatePersistence(self)
+                self.navigationRuntime.persistenceCallbacks.scheduleRuntimeStatePersistence(self)
             },
             syncAcrossWindows: { [weak self] webView in
                 guard let self else { return }
-                self.webViewRoutingRuntime.syncTabAcrossWindows(
+                self.navigationRuntime.webViewRouting.syncTabAcrossWindows(
                     self.id,
                     webView
                 )

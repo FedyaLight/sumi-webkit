@@ -9,7 +9,7 @@ final class TabRuntimeRoutingTests: XCTestCase {
     func testSetMutedUsesInjectedRoutingWithoutBrowserManager() {
         let tab = Tab(loadsCachedFaviconOnInit: false)
         let routing = RecordingTabWebViewRouting()
-        tab.webViewRoutingRuntime = routing.runtime
+        tab.navigationRuntime.webViewRouting = routing.runtime
 
         tab.setMuted(true)
 
@@ -23,7 +23,7 @@ final class TabRuntimeRoutingTests: XCTestCase {
             loadsCachedFaviconOnInit: false
         )
         let routing = RecordingTabWebViewRouting()
-        tab.webViewRoutingRuntime = routing.runtime
+        tab.navigationRuntime.webViewRouting = routing.runtime
 
         tab.navigationCommandOwner.refresh(tab)
 
@@ -33,7 +33,7 @@ final class TabRuntimeRoutingTests: XCTestCase {
     func testAudioStateUsesInjectedMediaCallbacksWithoutBrowserManager() {
         let tab = Tab(loadsCachedFaviconOnInit: false)
         let callbacks = RecordingTabMediaCallbacks()
-        tab.mediaRuntimeCallbacks = callbacks.runtime
+        tab.mediaRuntime.callbacks = callbacks.runtime
 
         tab.applyAudioState(.unmuted(isPlayingAudio: true))
 
@@ -44,7 +44,7 @@ final class TabRuntimeRoutingTests: XCTestCase {
     func testUnloadWebViewUsesInjectedMediaCallbacksWithoutBrowserManager() {
         let tab = Tab(loadsCachedFaviconOnInit: false)
         let callbacks = RecordingTabMediaCallbacks()
-        tab.mediaRuntimeCallbacks = callbacks.runtime
+        tab.mediaRuntime.callbacks = callbacks.runtime
 
         tab.unloadWebView()
 
@@ -60,14 +60,14 @@ final class TabRuntimeRoutingTests: XCTestCase {
         var cleanedUserScriptWebViewIds: [UUID] = []
         var removedWebViewFromContainers = false
         var removeAllWebViewsCallCount = 0
-        tab.permissionRuntime = TabPermissionRuntime(
+        tab.navigationRuntime.permissionRuntime = TabPermissionRuntime(
             permissionBridges: { nil },
             handlePermissionLifecycleEvent: { _ in
                 permissionLifecycleEventCount += 1
             },
             isActiveGlancePreviewSurface: { _, _ in false }
         )
-        tab.webViewCleanupRuntime = TabWebViewCleanupRuntime(
+        tab.navigationRuntime.webViewCleanupRuntime = TabWebViewCleanupRuntime(
             deferProtectedWebViewCleanup: { candidateWebView, tabId, reason in
                 XCTAssertIdentical(candidateWebView, webView)
                 deferredTabIds.append(tabId)
@@ -101,7 +101,7 @@ final class TabRuntimeRoutingTests: XCTestCase {
         let tab = Tab(loadsCachedFaviconOnInit: false)
         var registeredTabIds: [UUID] = []
         var registrationReasons: [String] = []
-        tab.normalWebViewExtensionRuntime = TabNormalWebViewExtensionRuntime(
+        tab.navigationRuntime.normalWebViewExtensionRuntime = TabNormalWebViewExtensionRuntime(
             registerTabWithExtensionRuntimeIfNeeded: { registeredTab, reason in
                 registeredTabIds.append(registeredTab.id)
                 registrationReasons.append(reason)
@@ -125,7 +125,7 @@ final class TabRuntimeRoutingTests: XCTestCase {
         var preparedWebViews: [WKWebView] = []
         var preparedURLs: [URL?] = []
         var preparedReasons: [String] = []
-        tab.normalWebViewExtensionRuntime = TabNormalWebViewExtensionRuntime(
+        tab.navigationRuntime.normalWebViewExtensionRuntime = TabNormalWebViewExtensionRuntime(
             registerTabWithExtensionRuntimeIfNeeded: { _, _ in /* No-op. */ },
             prepareWebViewForExtensionRuntime: { webView, currentURL, reason in
                 preparedWebViews.append(webView)
@@ -156,7 +156,7 @@ final class TabRuntimeRoutingTests: XCTestCase {
         var capturedURL: URL?
         var capturedTab: Tab?
         var capturedOriginRect: CGRect?
-        tab.scriptMessageRuntime = TabScriptMessageRuntime(
+        tab.navigationRuntime.scriptMessageRuntime = TabScriptMessageRuntime(
             presentExternalURLInGlance: { url, sourceTab, originRectInWindow in
                 capturedURL = url
                 capturedTab = sourceTab
@@ -279,7 +279,7 @@ final class TabRuntimeRoutingTests: XCTestCase {
             loadsCachedFaviconOnInit: false
         )
         var installedExtensionsLookupCount = 0
-        tab.faviconExtensionRuntime = TabFaviconExtensionRuntime(
+        tab.navigationRuntime.faviconExtensionRuntime = TabFaviconExtensionRuntime(
             installedExtensions: {
                 installedExtensionsLookupCount += 1
                 return []
@@ -295,7 +295,7 @@ final class TabRuntimeRoutingTests: XCTestCase {
     func testCloseTabUsesInjectedLifecycleRuntimeWithoutBrowserManager() {
         let tab = Tab(loadsCachedFaviconOnInit: false)
         let lifecycle = RecordingTabCloseLifecycleRuntime()
-        tab.closeLifecycleRuntime = lifecycle.runtime
+        tab.navigationRuntime.closeLifecycleRuntime = lifecycle.runtime
 
         tab.closeTab()
 
@@ -313,8 +313,8 @@ final class TabRuntimeRoutingTests: XCTestCase {
         )
         let persistence = RecordingTabPersistenceCallbacks()
         let extensionProperties = RecordingTabExtensionPropertiesRuntime()
-        tab.persistenceRuntimeCallbacks = persistence.runtime
-        tab.extensionPropertiesRuntime = extensionProperties.runtime
+        tab.navigationRuntime.persistenceCallbacks = persistence.runtime
+        tab.navigationRuntime.extensionPropertiesRuntime = extensionProperties.runtime
 
         XCTAssertTrue(tab.acceptResolvedDisplayTitle("Updated"))
 
@@ -332,20 +332,20 @@ final class TabRuntimeRoutingTests: XCTestCase {
             loadsCachedFaviconOnInit: false
         )
         let history = RecordingTabHistoryRecordingRuntime(currentProfileId: profileId)
-        tab.historyRecordingRuntime = history.runtime
+        tab.navigationRuntime.historyRecordingRuntime = history.runtime
 
-        tab.historyRecorder.didCommitMainFrameNavigation(
+        tab.navigationRuntime.historyRecorder.didCommitMainFrameNavigation(
             to: pageURL,
             kind: .regular,
             tab: tab
         )
-        tab.historyRecorder.updateTitle("Resolved Title", tab: tab)
+        tab.navigationRuntime.historyRecorder.updateTitle("Resolved Title", tab: tab)
 
         XCTAssertFalse(tab.hasBrowserRuntime)
         XCTAssertEqual(history.visitURLs, [pageURL])
         XCTAssertEqual(history.visitTabIds, [tab.id])
         XCTAssertEqual(history.visitProfileIds, [profileId])
-        XCTAssertEqual(tab.historyRecorder.localVisitIDs, [history.visitId])
+        XCTAssertEqual(tab.navigationRuntime.historyRecorder.localVisitIDs, [history.visitId])
         XCTAssertEqual(history.titleUpdateTitles, ["Resolved Title"])
         XCTAssertEqual(history.titleUpdateURLs, [pageURL])
         XCTAssertEqual(history.titleUpdateProfileIds, [profileId])
@@ -357,7 +357,7 @@ final class TabRuntimeRoutingTests: XCTestCase {
         let windowId = UUID()
         let tab = Tab(existingWebView: existingWebView, loadsCachedFaviconOnInit: false)
         var lookup: (tabId: UUID, windowId: UUID)?
-        tab.findInPageRuntime = TabFindInPageRuntime(
+        tab.navigationRuntime.findInPageRuntime = TabFindInPageRuntime(
             webView: { tabId, resolvedWindowId in
                 lookup = (tabId, resolvedWindowId)
                 return windowScopedWebView
@@ -374,7 +374,7 @@ final class TabRuntimeRoutingTests: XCTestCase {
         let tab = Tab(loadsCachedFaviconOnInit: false)
         let webView = WKWebView()
         let historySwipe = RecordingTabHistorySwipeRuntime()
-        tab.historySwipeRuntime = historySwipe.runtime
+        tab.navigationRuntime.historySwipeRuntime = historySwipe.runtime
 
         tab.beginBackForwardNavigationTracking(on: webView)
         tab.finishBackForwardNavigationTracking(using: webView)
@@ -423,7 +423,7 @@ final class TabRuntimeRoutingTests: XCTestCase {
             attachedRuleListIdentifiers: ["tracking-rule"],
             activeGenerationId: "generation-1"
         )
-        tab.reloadPolicyRuntime = TabReloadPolicyRuntime(
+        tab.navigationRuntime.reloadPolicyRuntime = TabReloadPolicyRuntime(
             safariContentBlockerAttachmentState: { _ in safariState },
             protectionAttachmentState: { _ in protectionState },
             protectionSurfaceHost: { _ in "example.com" },
@@ -446,7 +446,7 @@ final class TabRuntimeRoutingTests: XCTestCase {
     func testNavigateToURLUsesInjectedSearchTemplateWithoutBrowserManager() {
         let webView = WKWebView()
         let tab = Tab(existingWebView: webView, loadsCachedFaviconOnInit: false)
-        tab.navigationCommandRuntime = TabNavigationCommandRuntime(
+        tab.navigationRuntime.navigationCommandRuntime = TabNavigationCommandRuntime(
             resolvedSearchEngineTemplate: {
                 "https://search.example/?q=%@"
             }

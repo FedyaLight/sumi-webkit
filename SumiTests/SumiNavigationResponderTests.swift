@@ -117,7 +117,7 @@ final class SumiNavigationResponderTests: SumiNavigationResponderTestCase {
             appResolver: resolver,
             now: { Date(timeIntervalSince1970: 1_800_000_000) }
         )
-        tab.navigationDelegateRuntime = TabNavigationDelegateRuntime(
+        tab.navigationRuntime.navigationDelegateRuntime = TabNavigationDelegateRuntime(
             externalSchemePermissionBridge: { bridge },
             downloadManager: { nil }
         )
@@ -831,7 +831,7 @@ final class SumiNavigationResponderTests: SumiNavigationResponderTestCase {
         let installURL = URL(string: "https://userscripts.example/install.user.js")!
         let tab = Tab(loadsCachedFaviconOnInit: false)
         var interceptedURLs: [URL] = []
-        tab.installNavigationRuntime = TabInstallNavigationRuntime(
+        tab.navigationRuntime.installNavigationRuntime = TabInstallNavigationRuntime(
             interceptInstallNavigation: { url in
                 interceptedURLs.append(url)
                 return url == installURL
@@ -929,7 +929,7 @@ final class SumiNavigationResponderTests: SumiNavigationResponderTestCase {
         let destinationURL = URL(string: "https://example.com/page")!
         let tab = Tab(loadsCachedFaviconOnInit: false)
         let lifecycle = RecordingTabLifecycleNavigationRuntime()
-        tab.lifecycleNavigationRuntime = lifecycle.runtime
+        tab.navigationRuntime.lifecycleNavigationRuntime = lifecycle.runtime
         let responder = SumiTabLifecycleNavigationResponder(tab: tab)
         let webView = SumiNavigationURLReportingWebView(frame: .zero)
 
@@ -957,8 +957,8 @@ final class SumiNavigationResponderTests: SumiNavigationResponderTestCase {
         let tab = Tab(url: URL(string: "https://example.com/start")!, loadsCachedFaviconOnInit: false)
         let lifecycle = RecordingTabLifecycleNavigationRuntime()
         let extensionProperties = NavigationRecordingTabExtensionPropertiesRuntime()
-        tab.lifecycleNavigationRuntime = lifecycle.runtime
-        tab.extensionPropertiesRuntime = extensionProperties.runtime
+        tab.navigationRuntime.lifecycleNavigationRuntime = lifecycle.runtime
+        tab.navigationRuntime.extensionPropertiesRuntime = extensionProperties.runtime
         let responder = SumiTabLifecycleNavigationResponder(tab: tab)
         let webView = SumiNavigationURLReportingWebView(frame: .zero)
         webView.reportedURL = finalURL
@@ -992,7 +992,7 @@ final class SumiNavigationResponderTests: SumiNavigationResponderTestCase {
         let tab = Tab(loadsCachedFaviconOnInit: false)
         let lifecycle = RecordingTabLifecycleNavigationRuntime()
         lifecycle.authDisposition = .credential(credential)
-        tab.lifecycleNavigationRuntime = lifecycle.runtime
+        tab.navigationRuntime.lifecycleNavigationRuntime = lifecycle.runtime
         let responder = SumiTabLifecycleNavigationResponder(tab: tab)
         let challenge = makeAuthenticationChallenge()
 
@@ -1014,8 +1014,8 @@ final class SumiNavigationResponderTests: SumiNavigationResponderTestCase {
         let lifecycle = RecordingTabLifecycleNavigationRuntime()
         let extensionProperties = NavigationRecordingTabExtensionPropertiesRuntime()
         lifecycle.isPreparingForDestructiveCleanup = true
-        tab.lifecycleNavigationRuntime = lifecycle.runtime
-        tab.extensionPropertiesRuntime = extensionProperties.runtime
+        tab.navigationRuntime.lifecycleNavigationRuntime = lifecycle.runtime
+        tab.navigationRuntime.extensionPropertiesRuntime = extensionProperties.runtime
         let responder = SumiTabLifecycleNavigationResponder(tab: tab)
         let webView = SumiNavigationURLReportingWebView(frame: .zero)
 

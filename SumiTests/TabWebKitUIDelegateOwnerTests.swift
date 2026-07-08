@@ -103,7 +103,7 @@ final class TabWebKitUIDelegateOwnerTests: XCTestCase {
         let tab = Tab(loadsCachedFaviconOnInit: false)
         let webView = WKWebView(frame: .zero)
         var closedWebViewIds: [ObjectIdentifier] = []
-        tab.webKitUIRuntime = TabWebKitUIRuntime(
+        tab.navigationRuntime.webKitUIRuntime = TabWebKitUIRuntime(
             handleWebViewDidClose: { webView in
                 closedWebViewIds.append(ObjectIdentifier(webView))
                 return true
@@ -124,7 +124,7 @@ final class TabWebKitUIDelegateOwnerTests: XCTestCase {
         let data = Data("payload".utf8)
         let originatingURL = URL(string: "https://example.com/file.txt")!
         var saved: [SavedDataRequest] = []
-        tab.webKitUIRuntime = TabWebKitUIRuntime(
+        tab.navigationRuntime.webKitUIRuntime = TabWebKitUIRuntime(
             handleWebViewDidClose: { _ in false },
             saveDownloadedData: { data, suggestedFilename, mimeType, originatingURL in
                 saved.append(SavedDataRequest(

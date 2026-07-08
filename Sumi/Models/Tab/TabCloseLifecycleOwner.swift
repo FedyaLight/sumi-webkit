@@ -67,10 +67,10 @@ extension TabCloseLifecycleOwner.Context {
                 tab.loadingState = .idle
             },
             cleanupZoomForTab: { tabId in
-                tab.closeLifecycleRuntime.cleanupZoomForTab(tabId)
+                tab.navigationRuntime.closeLifecycleRuntime.cleanupZoomForTab(tabId)
             },
             updateTabVisibility: {
-                tab.closeLifecycleRuntime.updateTabVisibility()
+                tab.navigationRuntime.closeLifecycleRuntime.updateTabVisibility()
             },
             currentWebView: {
                 tab.currentWebView
@@ -79,7 +79,7 @@ extension TabCloseLifecycleOwner.Context {
                 tab.removeNavigationStateObservers(from: webView)
             },
             removeTab: { tabId in
-                tab.closeLifecycleRuntime.removeTab(tabId)
+                tab.navigationRuntime.closeLifecycleRuntime.removeTab(tabId)
             },
             cancelProfileAwait: {
                 tab.profileAwaitCancellable?.cancel()

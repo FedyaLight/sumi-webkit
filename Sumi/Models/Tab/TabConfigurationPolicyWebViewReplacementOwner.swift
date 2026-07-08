@@ -29,14 +29,14 @@ final class TabWebViewReplacementContextOwner {
             },
             primaryWindowId: tab.primaryWindowId,
             trackedWindowIdContainingWebView: { webView in
-                tab.webViewReplacementRuntime
+                tab.navigationRuntime.webViewReplacementRuntime
                     .trackedWindowIdContainingWebView(webView)
             },
             hasTrackedWebViews: { tabId in
-                tab.webViewReplacementRuntime.hasTrackedWebViews(tabId)
+                tab.navigationRuntime.webViewReplacementRuntime.hasTrackedWebViews(tabId)
             },
             setTrackedWebView: { webView, tabId, windowId in
-                tab.webViewReplacementRuntime.setTrackedWebView(
+                tab.navigationRuntime.webViewReplacementRuntime.setTrackedWebView(
                     webView,
                     tabId,
                     windowId
@@ -49,7 +49,7 @@ final class TabWebViewReplacementContextOwner {
                 tab.invalidatePermissionPageForReplacement(reason: reason)
             },
             removeTrackedWebViews: {
-                tab.webViewReplacementRuntime.removeTrackedWebViews(tab)
+                tab.navigationRuntime.webViewReplacementRuntime.removeTrackedWebViews(tab)
             },
             cleanupCloneWebView: { webView in
                 tab.cleanupCloneWebView(webView)
@@ -64,7 +64,7 @@ final class TabWebViewReplacementContextOwner {
                 tab.assignWebViewToWindow(webView, windowId: windowId)
             },
             refreshWindowAfterWebViewReplacement: { windowId in
-                tab.webViewReplacementRuntime
+                tab.navigationRuntime.webViewReplacementRuntime
                     .refreshWindowAfterWebViewReplacement(windowId)
             }
         )

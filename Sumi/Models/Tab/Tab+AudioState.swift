@@ -32,14 +32,14 @@ extension Tab {
         audioState = newState
 
         if newState.isPlayingAudio {
-            lastMediaActivityAt = Date()
+            mediaRuntime.lastMediaActivityAt = Date()
         }
 
         guard oldState != newState else { return }
 
         if oldState.isPlayingAudio != newState.isPlayingAudio {
-            mediaRuntimeCallbacks.scheduleNowPlayingRefresh(0)
-            mediaRuntimeCallbacks.scheduleBackgroundMediaReconcile("tab-audio-state-changed")
+            mediaRuntime.callbacks.scheduleNowPlayingRefresh(0)
+            mediaRuntime.callbacks.scheduleBackgroundMediaReconcile("tab-audio-state-changed")
         }
     }
 
@@ -54,13 +54,13 @@ extension Tab {
             RuntimeDiagnostics.emit("🔇 [Tab] Mute state queued at \(muted); base webView not loaded yet")
         }
 
-        webViewRoutingRuntime.setMuteState(muted, id)
+        navigationRuntime.webViewRouting.setMuteState(muted, id)
 
         applyAudioState(audioState.withMuted(muted))
     }
 
     func resetPlaybackActivity() {
         applyAudioState(audioState.withPlayingAudio(false))
-        lastMediaActivityAt = .distantPast
+        mediaRuntime.lastMediaActivityAt = .distantPast
     }
 }

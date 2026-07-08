@@ -10,14 +10,14 @@ final class HistoryTabRecorderTests: XCTestCase {
         let firstURL = URL(string: "https://example.com/first")!
         let secondURL = URL(string: "https://example.com/second")!
 
-        harness.tab.historyRecorder.didCommitMainFrameNavigation(
+        harness.tab.navigationRuntime.historyRecorder.didCommitMainFrameNavigation(
             to: firstURL,
             kind: .regular,
             tab: harness.tab
         )
         try await waitForVisitCount(1, harness: harness)
 
-        harness.tab.historyRecorder.didCommitMainFrameNavigation(
+        harness.tab.navigationRuntime.historyRecorder.didCommitMainFrameNavigation(
             to: secondURL,
             kind: .backForward,
             tab: harness.tab
@@ -37,33 +37,33 @@ final class HistoryTabRecorderTests: XCTestCase {
         let replaceURL = URL(string: "https://example.com/page?replace=1")!
         let popURL = URL(string: "https://example.com/page")!
 
-        harness.tab.historyRecorder.didCommitMainFrameNavigation(
+        harness.tab.navigationRuntime.historyRecorder.didCommitMainFrameNavigation(
             to: baseURL,
             kind: .regular,
             tab: harness.tab
         )
         try await waitForVisitCount(1, harness: harness)
 
-        harness.tab.historyRecorder.didSameDocumentNavigation(
+        harness.tab.navigationRuntime.historyRecorder.didSameDocumentNavigation(
             to: anchorURL,
             type: .anchorNavigation,
             tab: harness.tab
         )
         try await waitForVisitCount(2, harness: harness)
 
-        harness.tab.historyRecorder.didSameDocumentNavigation(
+        harness.tab.navigationRuntime.historyRecorder.didSameDocumentNavigation(
             to: pushURL,
             type: .sessionStatePush,
             tab: harness.tab
         )
         try await waitForVisitCount(3, harness: harness)
 
-        harness.tab.historyRecorder.didSameDocumentNavigation(
+        harness.tab.navigationRuntime.historyRecorder.didSameDocumentNavigation(
             to: replaceURL,
             type: .sessionStateReplace,
             tab: harness.tab
         )
-        harness.tab.historyRecorder.didSameDocumentNavigation(
+        harness.tab.navigationRuntime.historyRecorder.didSameDocumentNavigation(
             to: popURL,
             type: .sessionStatePop,
             tab: harness.tab
@@ -79,14 +79,14 @@ final class HistoryTabRecorderTests: XCTestCase {
         let baseURL = URL(string: "https://example.com/page")!
         let unknownSameDocumentURL = URL(string: "https://example.com/page#unknown")!
 
-        harness.tab.historyRecorder.didCommitMainFrameNavigation(
+        harness.tab.navigationRuntime.historyRecorder.didCommitMainFrameNavigation(
             to: baseURL,
             kind: .regular,
             tab: harness.tab
         )
         try await waitForVisitCount(1, harness: harness)
 
-        harness.tab.historyRecorder.didSameDocumentNavigation(
+        harness.tab.navigationRuntime.historyRecorder.didSameDocumentNavigation(
             to: unknownSameDocumentURL,
             type: nil,
             tab: harness.tab
@@ -95,21 +95,21 @@ final class HistoryTabRecorderTests: XCTestCase {
 
         let visits = try await visits(in: harness.store, profileId: harness.profile.id)
         XCTAssertEqual(visits.map(\.url), [baseURL])
-        XCTAssertEqual(harness.tab.historyRecorder.localVisitIDs.count, 1)
+        XCTAssertEqual(harness.tab.navigationRuntime.historyRecorder.localVisitIDs.count, 1)
     }
 
     func testTitleUpdateMutatesExistingEntry() async throws {
         let harness = try makeHarness()
         let url = URL(string: "https://example.com/title")!
 
-        harness.tab.historyRecorder.didCommitMainFrameNavigation(
+        harness.tab.navigationRuntime.historyRecorder.didCommitMainFrameNavigation(
             to: url,
             kind: .regular,
             tab: harness.tab
         )
         try await waitForVisitCount(1, harness: harness)
 
-        harness.tab.historyRecorder.updateTitle("Resolved Title", tab: harness.tab)
+        harness.tab.navigationRuntime.historyRecorder.updateTitle("Resolved Title", tab: harness.tab)
         try await waitForTitle("Resolved Title", harness: harness)
 
         let visits = try await visits(in: harness.store, profileId: harness.profile.id)
@@ -124,7 +124,7 @@ final class HistoryTabRecorderTests: XCTestCase {
         let baselineRevision = harness.browserManager.historyManager.revision
 
         for index in 0..<3 {
-            harness.tab.historyRecorder.didCommitMainFrameNavigation(
+            harness.tab.navigationRuntime.historyRecorder.didCommitMainFrameNavigation(
                 to: URL(string: "https://example.com/burst-\(index)")!,
                 kind: .regular,
                 tab: harness.tab
@@ -149,12 +149,12 @@ final class HistoryTabRecorderTests: XCTestCase {
         ephemeralTab.profileId = ephemeralProfile.id
         harness.browserManager.profileManager.profiles.append(ephemeralProfile)
 
-        ephemeralTab.historyRecorder.didCommitMainFrameNavigation(
+        ephemeralTab.navigationRuntime.historyRecorder.didCommitMainFrameNavigation(
             to: URL(string: "https://private.example.com")!,
             kind: .regular,
             tab: ephemeralTab
         )
-        harness.tab.historyRecorder.didCommitMainFrameNavigation(
+        harness.tab.navigationRuntime.historyRecorder.didCommitMainFrameNavigation(
             to: URL(string: "sumi://history?range=all")!,
             kind: .regular,
             tab: harness.tab

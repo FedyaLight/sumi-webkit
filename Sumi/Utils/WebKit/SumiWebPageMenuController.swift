@@ -207,7 +207,7 @@ final class SumiWebPageMenuController: NSObject, NSMenuItemValidation {
         for webView: FocusableWKWebView
     ) {
         guard let tab = webView.owningTab else { return }
-        let extensionItems = tab.normalWebViewExtensionRuntime
+        let extensionItems = tab.navigationRuntime.normalWebViewExtensionRuntime
             .pageContextMenuItems(tab)
         guard extensionItems.isEmpty == false else { return }
 

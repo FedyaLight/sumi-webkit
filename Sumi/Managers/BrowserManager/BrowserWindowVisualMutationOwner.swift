@@ -78,7 +78,7 @@ final class BrowserWindowVisualMutationOwner {
             return true
         }
         guard let currentTab = dependencies.currentTab(windowState) else { return false }
-        return currentTab.pendingMainFrameNavigationKind == .backForward
-            || currentTab.isFreezingNavDuringBackForwardGesture
+        return currentTab.navigationRuntime.navigationTransactionOwner.pendingMainFrameNavigationKind == .backForward
+            || currentTab.navigationRuntime.navigationTransactionOwner.isFreezingNavDuringBackForwardGesture
     }
 }

@@ -124,7 +124,7 @@ final class FindManagerTests: XCTestCase {
         let webView = FocusableWKWebView()
         let windowId = UUID()
         var lookup: (tabId: UUID, windowId: UUID)?
-        tab.findInPageRuntime = TabFindInPageRuntime { tabId, resolvedWindowId in
+        tab.navigationRuntime.findInPageRuntime = TabFindInPageRuntime { tabId, resolvedWindowId in
             lookup = (tabId, resolvedWindowId)
             return webView
         }

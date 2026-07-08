@@ -113,7 +113,7 @@ final class SumiNativeNowPlayingControllerFeatureGateTests: XCTestCase {
             loadsCachedFaviconOnInit: false
         )
         tab.profileId = profile.id
-        tab.profileResolutionRuntime = TabProfileResolutionRuntime(
+        tab.navigationRuntime.profileResolutionRuntime = TabProfileResolutionRuntime(
             ephemeralProfileForTab: { _, _ in nil },
             profile: { id in id == profile.id ? profile : nil },
             spaceProfile: { _ in nil },

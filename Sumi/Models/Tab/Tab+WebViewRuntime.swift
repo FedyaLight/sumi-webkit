@@ -177,7 +177,7 @@ extension Tab {
     }
 
     func cancelPendingMainFrameNavigation() {
-        navigationTransactionOwner.cancelPendingMainFrameNavigation()
+        navigationRuntime.navigationTransactionOwner.cancelPendingMainFrameNavigation()
     }
 
     @available(macOS 15.5, *)
@@ -195,7 +195,7 @@ extension Tab {
         on webView: WKWebView,
         performLoad: @escaping @MainActor (WKWebView) -> Void
     ) {
-        navigationTransactionOwner.perform(
+        navigationRuntime.navigationTransactionOwner.perform(
             on: webView,
             performLoad: performLoad
         )

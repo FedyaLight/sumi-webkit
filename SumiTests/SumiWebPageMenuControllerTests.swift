@@ -204,7 +204,7 @@ final class SumiWebPageMenuControllerTests: XCTestCase {
             keyEquivalent: ""
         )
         var requestedTabIds: [UUID] = []
-        tab.normalWebViewExtensionRuntime = TabNormalWebViewExtensionRuntime(
+        tab.navigationRuntime.normalWebViewExtensionRuntime = TabNormalWebViewExtensionRuntime(
             registerTabWithExtensionRuntimeIfNeeded: { _, _ in /* No-op. */ },
             prepareWebViewForExtensionRuntime: { _, _, _ in /* No-op. */ },
             ensureInitialExtensionContextsIfNeeded: { _ in /* No-op. */ },
