@@ -16,12 +16,16 @@ final class TabScriptMessageRuntimeOwner {
     }
 
     func normalTabCoreUserScripts() -> [SumiUserScript] {
-        [
+        var scripts: [SumiUserScript] = [
             SumiLinkInteractionUserScript(tabID: tab.id, dispatcher: self),
             SumiWebPageContextMenuUserScript(tab: tab),
             SumiTabSuspensionUserScript(tabID: tab.id, dispatcher: self),
             SumiWebNotificationUserScript(tab: tab),
         ]
+        if tab.sumiSettings?.isGPCEnabled ?? true {
+            scripts.append(SumiGPCUserScript())
+        }
+        return scripts
     }
 
     func setClickModifierFlags(_ flags: NSEvent.ModifierFlags) {

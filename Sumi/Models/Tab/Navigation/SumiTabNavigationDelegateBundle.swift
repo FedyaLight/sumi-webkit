@@ -22,6 +22,8 @@ final class SumiTabNavigationDelegateAdapter {
     private let downloadsAdapter: SumiNavigationResponderAdapter
     private let scriptAttachment: SumiTabScriptAttachmentNavigationResponder
     private let scriptAttachmentAdapter: SumiNavigationResponderAdapter
+    private let gpc: SumiGPCNavigationResponder
+    private let gpcAdapter: SumiNavigationResponderAdapter
     private let autoplayPolicy: SumiAutoplayPolicyNavigationResponder
     private let autoplayPolicyAdapter: SumiNavigationResponderAdapter
     private let lifecycle: SumiTabLifecycleNavigationResponder
@@ -52,6 +54,8 @@ final class SumiTabNavigationDelegateAdapter {
         self.downloadsAdapter = SumiNavigationResponderAdapter(target: downloads)
         self.scriptAttachment = SumiTabScriptAttachmentNavigationResponder(tab: tab)
         self.scriptAttachmentAdapter = SumiNavigationResponderAdapter(target: scriptAttachment)
+        self.gpc = SumiGPCNavigationResponder(tab: tab)
+        self.gpcAdapter = SumiNavigationResponderAdapter(target: gpc)
         self.autoplayPolicy = SumiAutoplayPolicyNavigationResponder(tab: tab)
         self.autoplayPolicyAdapter = SumiNavigationResponderAdapter(target: autoplayPolicy)
         self.lifecycle = SumiTabLifecycleNavigationResponder(tab: tab)
@@ -70,6 +74,7 @@ final class SumiTabNavigationDelegateAdapter {
             .strong(externalSchemeAdapter),
             .strong(downloadsAdapter),
             .strong(scriptAttachmentAdapter),
+            .strong(gpcAdapter),
             .strong(autoplayPolicyAdapter),
             .strong(lifecycleAdapter),
             .strong(inlineUIExtensionResourcesAdapter),

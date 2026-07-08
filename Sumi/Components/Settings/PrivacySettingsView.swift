@@ -13,6 +13,8 @@ struct PrivacySettingsView: View {
     let activeProfile: Profile?
 
     var body: some View {
+        @Bindable var settings = sumiSettings
+
         Group {
             if sumiSettings.privacySettingsRoute.isSiteSettings {
                 SumiSiteSettingsView(
@@ -41,8 +43,30 @@ struct PrivacySettingsView: View {
                         coordinator: protectionCoordinator
                     )
 
+                    GlobalPrivacyControlSettingsView(isGPCEnabled: $settings.isGPCEnabled)
+
                     Spacer()
                 }
+            }
+        }
+    }
+}
+
+private struct GlobalPrivacyControlSettingsView: View {
+    @Binding var isGPCEnabled: Bool
+
+    var body: some View {
+        SettingsSection(
+            title: "Global Privacy Control",
+            subtitle: "Tell every site you visit that you don't want your data sold or shared."
+        ) {
+            SettingsRow(
+                title: "Send Global Privacy Control signal",
+                subtitle: "Sends the GPC opt-out signal to websites via the page and request headers."
+            ) {
+                Toggle("", isOn: $isGPCEnabled)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
             }
         }
     }

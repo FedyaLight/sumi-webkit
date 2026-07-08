@@ -46,6 +46,7 @@ class SumiSettingsService {
     private let browsingDataRetentionDaysKey = "settings.browsingData.retentionDays"
     private let downloadsAlwaysAskWhereToSaveKey = "settings.downloads.alwaysAskWhereToSave"
     private let downloadsFallbackActionKey = "settings.downloads.fallbackAction"
+    private let gpcEnabledKey = "settings.privacy.gpcEnabled"
     private let energySaverSystemMonitor: any SumiEnergySaverSystemMonitoring
     private let nowPlayingController: any SumiNativeNowPlayingFeatureControlling
     @ObservationIgnored
@@ -362,6 +363,16 @@ class SumiSettingsService {
         }
     }
 
+    /// Global Privacy Control: broadcasts the user's opt-out of sale/sharing of
+    /// personal data to every site, via both a DOM signal and a `Sec-GPC` request
+    /// header. On by default, matching Firefox/Brave/DDG's stance that GPC is a
+    /// baseline privacy signal rather than an opt-in feature.
+    var isGPCEnabled: Bool {
+        didSet {
+            userDefaults.set(isGPCEnabled, forKey: gpcEnabledKey)
+        }
+    }
+
     var downloadsDestinationPreference: SumiDownloadDestinationPreference {
         SumiDownloadDestinationPreference(
             alwaysAskWhereToSave: DownloadsDirectoryResolver.usesIsolatedDirectory
@@ -438,6 +449,7 @@ class SumiSettingsService {
             browsingDataRetentionDaysKey: SumiBrowsingDataRetentionPeriod.defaultPeriod.rawValue,
             downloadsAlwaysAskWhereToSaveKey: false,
             downloadsFallbackActionKey: SumiDownloadFallbackAction.saveFile.rawValue,
+            gpcEnabledKey: true,
         ])
 
         // Initialize properties from UserDefaults
@@ -552,6 +564,11 @@ class SumiSettingsService {
             rawValue: userDefaults.string(forKey: downloadsFallbackActionKey)
                 ?? SumiDownloadFallbackAction.saveFile.rawValue
         ) ?? .saveFile
+        if userDefaults.object(forKey: gpcEnabledKey) == nil {
+            self.isGPCEnabled = true
+        } else {
+            self.isGPCEnabled = userDefaults.bool(forKey: gpcEnabledKey)
+        }
 
         let loadedSearchEngines: [SumiSearchEngine]
         if let data = userDefaults.data(forKey: searchEnginesKey) {
