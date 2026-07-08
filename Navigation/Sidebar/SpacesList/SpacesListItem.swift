@@ -15,6 +15,10 @@ struct SpacesListItem: View {
     let browserContext: SidebarBrowserContext
     let isActive: Bool
     let isFaded: Bool
+    /// When true the item collapses its icon to a small dot (the strip's
+    /// compact overflow treatment); hover and activity restore the icon.
+    let showsCompactDot: Bool
+    let slotWidth: CGFloat
     let metrics: SpaceStripMetrics
     let onSelect: () -> Void
     let onHoverChange: ((Bool) -> Void)?
@@ -27,6 +31,8 @@ struct SpacesListItem: View {
         browserContext: SidebarBrowserContext,
         isActive: Bool,
         isFaded: Bool,
+        showsCompactDot: Bool,
+        slotWidth: CGFloat,
         metrics: SpaceStripMetrics,
         onSelect: @escaping () -> Void,
         onHoverChange: ((Bool) -> Void)? = nil
@@ -35,6 +41,8 @@ struct SpacesListItem: View {
         self.browserContext = browserContext
         self.isActive = isActive
         self.isFaded = isFaded
+        self.showsCompactDot = showsCompactDot
+        self.slotWidth = slotWidth
         self.metrics = metrics
         self.onSelect = onSelect
         self.onHoverChange = onHoverChange
@@ -51,10 +59,17 @@ struct SpacesListItem: View {
                 )
 
             spaceIcon
-                .opacity(isActive ? 1.0 : 0.7)
+                .opacity(showsCompactDot ? 0 : (isActive ? 1.0 : 0.7))
+                .scaleEffect(showsCompactDot ? 0.1 : 1)
                 .frame(maxWidth: .infinity)
+
+            Circle()
+                .fill(iconColor.opacity(0.45))
+                .frame(width: metrics.compactDotSize, height: metrics.compactDotSize)
+                .opacity(showsCompactDot ? 1 : 0)
         }
-        .frame(width: metrics.slotSize, height: metrics.slotSize)
+        .animation(.easeInOut(duration: 0.15), value: showsCompactDot)
+        .frame(width: slotWidth, height: metrics.slotSize)
         .contentShape(RoundedRectangle(cornerRadius: metrics.cornerRadius, style: .continuous))
         .opacity(isFaded ? 0.3 : 1.0)
         .accessibilityElement(children: .ignore)

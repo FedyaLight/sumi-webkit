@@ -2,6 +2,10 @@
 //  SpacesList.swift
 //  Sumi
 //
+//  Horizontal strip of space icons in the sidebar bottom bar. Mirrors Zen's
+//  workspace-icons strip: slots shrink as spaces are added, collapse to dots
+//  past the minimum width, and the strip scrolls just enough to keep the
+//  active (or hovered) space in view with a neighbour peeking in.
 //
 
 import SwiftUI
@@ -20,20 +24,23 @@ struct SpacesList: View {
     @State private var showPreview: Bool = false
     @State private var isHoveringList: Bool = false
     @State private var reorderState = ReorderDragState<UUID>()
+    @State private var stripScrollPosition = ScrollPosition(edge: .leading)
+    @State private var stripScrollOffset: CGFloat = 0
 
     private var metrics: SpaceStripMetrics {
         SpaceStripMetrics.resolve(for: controlSize)
     }
 
-    private var reorderGeometry: ReorderGeometry {
-        ReorderGeometry(
-            axis: .horizontal,
-            slotFrames: SpaceStripGeometry.make(
-                itemCount: displayedSpaces.count,
-                availableWidth: availableWidth,
-                metrics: metrics
-            ).slotFrames
+    private var stripGeometry: SpaceStripGeometry {
+        SpaceStripGeometry.make(
+            itemCount: displayedSpaces.count,
+            availableWidth: availableWidth,
+            metrics: metrics
         )
+    }
+
+    private var reorderGeometry: ReorderGeometry {
+        ReorderGeometry(axis: .horizontal, slotFrames: stripGeometry.slotFrames)
     }
 
     private var visibleSpaces: [Space] {
@@ -48,32 +55,47 @@ struct SpacesList: View {
     }
 
     var body: some View {
-        Color.clear
-            .onGeometryChange(for: CGFloat.self) { proxy in
-                proxy.size.width
-            } action: { newWidth in
-                deferredAvailableWidthMutation.schedule(newWidth) { resolvedWidth in
-                    guard abs(availableWidth - resolvedWidth) > 0.5 else { return }
-                    availableWidth = resolvedWidth
-                }
+        ScrollView(.horizontal) {
+            spacesContent(spaces: displayedSpaces)
+        }
+        .scrollIndicators(.hidden)
+        .scrollDisabled(!stripGeometry.isScrollable || reorderState.isDragging)
+        .scrollPosition($stripScrollPosition)
+        .onScrollGeometryChange(for: CGFloat.self) { geometry in
+            geometry.contentOffset.x
+        } action: { _, newOffset in
+            stripScrollOffset = newOffset
+        }
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.size.width
+        } action: { newWidth in
+            deferredAvailableWidthMutation.schedule(newWidth) { resolvedWidth in
+                guard abs(availableWidth - resolvedWidth) > 0.5 else { return }
+                availableWidth = resolvedWidth
+                revealActiveSpace(animated: false)
             }
-            .overlay {
-                spacesContent(spaces: displayedSpaces)
+        }
+        .overlay(alignment: .top) {
+            spacePreviewOverlay(spaces: displayedSpaces)
+        }
+        .onChange(of: visualSelectedSpaceId) { _, _ in
+            revealActiveSpace(animated: true)
+        }
+        .onChange(of: visibleSpaces.map(\.id)) { _, _ in
+            if reorderState.isDragging {
+                windowState.sidebarInteractionState.syncSidebarItemDrag(false)
             }
-            .onChange(of: visibleSpaces.map(\.id)) { _, _ in
-                if reorderState.isDragging {
-                    windowState.sidebarInteractionState.syncSidebarItemDrag(false)
-                }
-                reorderState.reset()
+            reorderState.reset()
+            revealActiveSpace(animated: true)
+        }
+        .onDisappear {
+            if reorderState.isDragging {
+                windowState.sidebarInteractionState.syncSidebarItemDrag(false)
             }
-            .onDisappear {
-                if reorderState.isDragging {
-                    windowState.sidebarInteractionState.syncSidebarItemDrag(false)
-                }
-                reorderState.reset()
-            }
-            .animation(.easeInOut(duration: 0.3), value: visibleSpaces.count)
-            .animation(.interactiveSpring(duration: 0.22, extraBounce: 0.05), value: displayedSpaces.map(\.id))
+            reorderState.reset()
+        }
+        .animation(.easeInOut(duration: 0.3), value: visibleSpaces.count)
+        .animation(.interactiveSpring(duration: 0.22, extraBounce: 0.05), value: displayedSpaces.map(\.id))
     }
 
     private var previewTextColor: Color {
@@ -85,13 +107,15 @@ struct SpacesList: View {
     }
 
     private func spacesContent(spaces: [Space]) -> some View {
-        SpaceStripLayout(metrics: metrics) {
+        SpaceStripLayout(geometry: stripGeometry, metrics: metrics) {
             ForEach(spaces, id: \.id) { space in
                 SpacesListItem(
                     space: space,
                     browserContext: browserContext,
                     isActive: visualSelectedSpaceId == space.id,
                     isFaded: false,
+                    showsCompactDot: showsCompactDot(for: space),
+                    slotWidth: stripGeometry.slotWidth,
                     metrics: metrics,
                     onSelect: {
                         guard !reorderState.isDragging else { return }
@@ -120,19 +144,59 @@ struct SpacesList: View {
                 hoveredSpaceId = nil
             }
         }
-        .overlay(alignment: .top) {
-            spacePreviewOverlay(spaces: spaces)
-        }
         .overlay(alignment: .topLeading) {
             draggedSpaceOverlay(spaces: spaces)
         }
     }
+
+    /// Zen's `icons-overflow` presentation: in compact mode every space shows
+    /// a dot except the hovered one; the active space keeps its icon unless
+    /// another space is being hovered.
+    private func showsCompactDot(for space: Space) -> Bool {
+        guard stripGeometry.displayMode == .compactDots else { return false }
+        if hoveredSpaceId == space.id { return false }
+        if visualSelectedSpaceId == space.id { return hoveredSpaceId != nil }
+        return true
+    }
+
+    // MARK: - Scrolling
+
+    private func revealActiveSpace(animated: Bool) {
+        guard let visualSelectedSpaceId else { return }
+        revealSpace(visualSelectedSpaceId, animated: animated)
+    }
+
+    /// Scroll the strip the minimal amount that brings the space into view
+    /// (Zen scrolls on both activation and hover of edge-peeking icons).
+    private func revealSpace(_ spaceId: UUID, animated: Bool) {
+        guard !reorderState.isDragging,
+              let index = displayedSpaces.firstIndex(where: { $0.id == spaceId }),
+              let targetOffset = SpaceStripScrollPolicy.targetOffset(
+                  toReveal: index,
+                  geometry: stripGeometry,
+                  currentOffset: stripScrollOffset,
+                  viewportWidth: availableWidth,
+                  margin: metrics.scrollMargin
+              )
+        else { return }
+
+        if animated {
+            withAnimation(.smooth(duration: 0.25)) {
+                stripScrollPosition.scrollTo(x: targetOffset)
+            }
+        } else {
+            stripScrollPosition.scrollTo(x: targetOffset)
+        }
+    }
+
+    // MARK: - Hover
 
     private func handleHoverChange(_ isHovering: Bool, for space: Space) {
         guard !reorderState.isDragging else { return }
 
         if isHovering {
             hoveredSpaceId = space.id
+            revealSpace(space.id, animated: true)
             if !showPreview {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
                     if hoveredSpaceId == space.id && isHoveringList && !reorderState.isDragging {
@@ -183,6 +247,8 @@ struct SpacesList: View {
                 browserContext: browserContext,
                 isActive: visualSelectedSpaceId == draggedSpace.id,
                 isFaded: false,
+                showsCompactDot: false,
+                slotWidth: frame.width,
                 metrics: metrics,
                 onSelect: { _ = () },
                 onHoverChange: nil
