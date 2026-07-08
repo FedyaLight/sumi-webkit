@@ -32,7 +32,10 @@ final class TabProfileAssignmentOwner {
         let requestStructuralPublish: () -> Void
         let updateShortcutPinExecutionProfile: (ShortcutPin, UUID) -> ShortcutPin?
         let windowIDsTrackingWebViews: (UUID) -> [UUID]
+        let primaryTrackedWindowId: (UUID) -> UUID?
         let rebuildLiveWebViews: (Tab, UUID?, URL) -> Void
+        let liveDocumentURL: (Tab) -> URL?
+        let hasUntrackedOwnedWebView: (Tab) -> Bool
     }
 
     private let dependencies: Dependencies
@@ -241,15 +244,16 @@ final class TabProfileAssignmentOwner {
     func assignProfile(_ profileId: UUID?, to tab: Tab) {
         guard tab.profileId != profileId else { return }
 
-        let targetURL = tab.existingWebView?.url ?? tab.url
+        let targetURL = dependencies.liveDocumentURL(tab) ?? tab.url
         let trackedWindowIds = dependencies.windowIDsTrackingWebViews(tab.id)
-        let hasTrackedWebViews = trackedWindowIds.isEmpty == false || tab.primaryWindowId != nil
-        let hasUntrackedWebView = tab.existingWebView != nil && !hasTrackedWebViews
+        let preferredPrimaryWindowId = dependencies.primaryTrackedWindowId(tab.id)
+        let hasTrackedWebViews = trackedWindowIds.isEmpty == false || preferredPrimaryWindowId != nil
+        let hasUntrackedWebView = dependencies.hasUntrackedOwnedWebView(tab) && !hasTrackedWebViews
 
         if hasTrackedWebViews,
            #available(macOS 15.5, *) {
             tab.profileId = profileId
-            dependencies.rebuildLiveWebViews(tab, tab.primaryWindowId, targetURL)
+            dependencies.rebuildLiveWebViews(tab, preferredPrimaryWindowId, targetURL)
         } else if hasTrackedWebViews || hasUntrackedWebView {
             tab.unloadWebView()
             tab.profileId = profileId
@@ -343,12 +347,21 @@ extension TabProfileAssignmentOwner.Dependencies {
             windowIDsTrackingWebViews: { [weak tabManager] tabId in
                 tabManager?.runtimeContext?.webViewLifecycle.windowIDsTrackingWebViews(for: tabId) ?? []
             },
+            primaryTrackedWindowId: { [weak tabManager] tabId in
+                tabManager?.runtimeContext?.webViewLifecycle.primaryTrackedWindowId(for: tabId)
+            },
             rebuildLiveWebViews: { [weak tabManager] tab, windowId, url in
                 tabManager?.runtimeContext?.webViewLifecycle.rebuildLiveWebViews(
                     for: tab,
                     preferredPrimaryWindowId: windowId,
                     load: url
                 )
+            },
+            liveDocumentURL: { [weak tabManager] tab in
+                tabManager?.runtimeContext?.webViewLifecycle.anyLiveWebView(for: tab)?.url
+            },
+            hasUntrackedOwnedWebView: { [weak tabManager] tab in
+                tabManager?.runtimeContext?.webViewLifecycle.hasUntrackedOwnedWebView(for: tab) ?? false
             }
         )
     }

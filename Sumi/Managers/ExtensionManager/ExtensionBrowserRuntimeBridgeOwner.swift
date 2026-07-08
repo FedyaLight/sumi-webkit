@@ -290,7 +290,7 @@ final class ExtensionBrowserRuntimeBridgeOwner {
 
         var webViews: [WKWebView] = []
 
-        if let primaryWindowId = tab.primaryWindowId,
+        if let primaryWindowId = runtime.primaryTrackedWindowId(tab.id),
            let webView = runtime.windowOwnedWebView(tab, primaryWindowId) {
             webViews.append(webView)
         }

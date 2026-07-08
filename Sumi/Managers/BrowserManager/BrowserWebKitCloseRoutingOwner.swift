@@ -18,6 +18,7 @@ struct BrowserWebKitCloseRoutingOwner {
         let allWindows: () -> [BrowserWindowState]
         let window: (UUID) -> BrowserWindowState?
         let windowContaining: (Tab) -> BrowserWindowState?
+        let ownsLiveWebView: (WKWebView, Tab) -> Bool
         let closeTab: (Tab, BrowserWindowState) -> Void
         let removeTab: (UUID) -> Void
     }
@@ -86,7 +87,7 @@ struct BrowserWebKitCloseRoutingOwner {
         runtime: Runtime
     ) -> (tab: Tab, windowState: BrowserWindowState?)? {
         func matches(_ tab: Tab) -> Bool {
-            tab.existingWebView === webView || tab.assignedWebView === webView
+            runtime.ownsLiveWebView(webView, tab)
         }
 
         for windowState in runtime.allWindows() {

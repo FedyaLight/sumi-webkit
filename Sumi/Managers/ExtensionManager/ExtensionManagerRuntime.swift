@@ -13,6 +13,8 @@ struct ExtensionManagerRuntime {
     typealias AllWindowStatesProvider = @MainActor () -> [BrowserWindowState]
     typealias WindowStateContainingTabProvider = @MainActor (_ tab: Tab) -> BrowserWindowState?
     typealias WindowOwnedWebViewProvider = @MainActor (_ tab: Tab, _ windowId: UUID) -> WKWebView?
+    typealias PrimaryTrackedWindowIdProvider = @MainActor (_ tabId: UUID) -> UUID?
+    typealias UntrackedOwnedWebViewProvider = @MainActor (_ tab: Tab) -> WKWebView?
     typealias TrackedWebViewsProvider = @MainActor (_ tabId: UUID) -> [WKWebView]
     typealias RebuildLiveWebViews = @MainActor (_ tab: Tab) -> Void
     typealias BrowserRuntimeAvailabilityProvider = @MainActor () -> Bool
@@ -32,6 +34,8 @@ struct ExtensionManagerRuntime {
     let allWindowStates: AllWindowStatesProvider
     let windowStateContainingTab: WindowStateContainingTabProvider
     let windowOwnedWebView: WindowOwnedWebViewProvider
+    let primaryTrackedWindowId: PrimaryTrackedWindowIdProvider
+    let untrackedOwnedWebView: UntrackedOwnedWebViewProvider
     let trackedWebViews: TrackedWebViewsProvider
     let rebuildLiveWebViews: RebuildLiveWebViews
     let browserRuntimeAvailable: BrowserRuntimeAvailabilityProvider
@@ -47,6 +51,8 @@ struct ExtensionManagerRuntime {
         allWindowStates: { [] },
         windowStateContainingTab: { _ in nil },
         windowOwnedWebView: { _, _ in nil },
+        primaryTrackedWindowId: { _ in nil },
+        untrackedOwnedWebView: { _ in nil },
         trackedWebViews: { _ in [] },
         rebuildLiveWebViews: { _ in /* No-op. */ },
         browserRuntimeAvailable: { false },

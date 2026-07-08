@@ -49,7 +49,7 @@ final class FaviconsTabExtension {
 
     func loadCachedFavicon(previousURL: URL?, error: Error?) {
         guard let tab, error == nil else { return }
-        let currentURL = tab.existingWebView?.url ?? tab.url
+        let currentURL = tab.url
 
         let partition = faviconService.partition(profile: tab.resolveProfile())
         if let cachedFavicon = TabFaviconStore.getCachedImage(
@@ -75,7 +75,7 @@ final class FaviconsTabExtension {
                 faviconImageService: faviconImageService
             ) else { return }
             guard let tab = self.tab,
-                  currentURL == (tab.existingWebView?.url ?? tab.url) else { return }
+                  currentURL == tab.url else { return }
 
             if cachedFavicon != self.favicon {
                 self.favicon = cachedFavicon
@@ -102,7 +102,7 @@ extension FaviconsTabExtension: SumiFaviconUserScriptDelegate {
         in webView: WKWebView?
     ) {
         guard let tab else { return }
-        let currentURL = tab.existingWebView?.url ?? tab.url
+        let currentURL = tab.url
         guard Self.documentURL(documentUrl, matches: currentURL) else { return }
 
         faviconHandlingTask = Task { @MainActor [weak self] in
@@ -119,7 +119,7 @@ extension FaviconsTabExtension: SumiFaviconUserScriptDelegate {
             if let image,
                !Task.isCancelled,
                let tab = self.tab,
-               Self.documentURL(documentUrl, matches: tab.existingWebView?.url ?? tab.url) {
+               Self.documentURL(documentUrl, matches: tab.url) {
                 self.favicon = image
             }
         }

@@ -1044,7 +1044,7 @@ struct ExtensionActionButton: View {
             currentTab: { nil },
             currentProfileID: { nil },
             hasLoadedInitialData: { true },
-            webView: { $0.existingWebView },
+            webView: { _ in nil },
             openSettingsTab: { _ in /* No-op. */ },
             showExtensionUnavailableAlert: { _, _ in /* No-op. */ }
         )

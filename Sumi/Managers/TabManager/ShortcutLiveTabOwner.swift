@@ -59,7 +59,10 @@ final class ShortcutLiveTabOwner {
         self.windowQuery = ShortcutLiveTabWindowQueryOwner(
             dependencies: ShortcutLiveTabWindowQueryOwner.Dependencies(
                 runtimeContext: dependencies.runtimeContext,
-                tab: dependencies.tab
+                tab: dependencies.tab,
+                primaryTrackedWindowId: { [dependencies] tabId in
+                    dependencies.runtimeContext()?.webViewLifecycle.primaryTrackedWindowId(for: tabId)
+                }
             )
         )
     }

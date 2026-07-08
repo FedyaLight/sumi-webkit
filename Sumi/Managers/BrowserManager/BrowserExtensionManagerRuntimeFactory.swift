@@ -34,6 +34,12 @@ enum BrowserExtensionManagerRuntimeFactory {
             windowOwnedWebView: { [weak browserManager] tab, windowId in
                 browserManager?.webViewRoutingService.windowOwnedWebView(for: tab, in: windowId)
             },
+            primaryTrackedWindowId: { [weak browserManager] tabId in
+                browserManager?.webViewRoutingService.primaryTrackedWindowId(for: tabId)
+            },
+            untrackedOwnedWebView: { [weak browserManager] tab in
+                browserManager?.webViewCoordinator?.untrackedOwnedWebView(for: tab)
+            },
             trackedWebViews: { [weak browserManager] tabId in
                 browserManager?.webViewCoordinator?.getAllWebViews(for: tabId) ?? []
             },

@@ -36,10 +36,6 @@ class GlanceSession: ObservableObject, Identifiable {
         self.originRectInWindow = originRectInWindow
         self.currentURL = targetURL
         self.title = targetURL.absoluteString
-
-        if let webView = previewTab.existingWebView {
-            observe(webView)
-        }
     }
 
     deinit {

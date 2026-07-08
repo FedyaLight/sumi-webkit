@@ -22,6 +22,9 @@ enum TabBrowserExtensionRuntimeFactory {
             },
             currentTab: { [weak browserManager] windowState in
                 browserManager?.windowTabContextOwner.currentTab(for: windowState)
+            },
+            primaryTrackedWindowId: { [weak browserManager] tabId in
+                browserManager?.webViewRoutingService.primaryTrackedWindowId(for: tabId)
             }
         )
     }
@@ -45,7 +48,8 @@ extension TabNormalWebViewExtensionRuntime {
     static func live(
         extensionsModule: @escaping () -> SumiExtensionsModule?,
         windowState: @escaping (UUID) -> BrowserWindowState?,
-        currentTab: @escaping (BrowserWindowState) -> Tab?
+        currentTab: @escaping (BrowserWindowState) -> Tab?,
+        primaryTrackedWindowId: @escaping (UUID) -> UUID?
     ) -> Self {
         Self(
             registerTabWithExtensionRuntimeIfNeeded: { tab, reason in
@@ -56,7 +60,7 @@ extension TabNormalWebViewExtensionRuntime {
                     reason: reason
                 )
 
-                guard let windowId = tab.primaryWindowId,
+                guard let windowId = primaryTrackedWindowId(tab.id),
                       let windowState = windowState(windowId),
                       currentTab(windowState)?.id == tab.id
                 else {

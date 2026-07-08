@@ -162,7 +162,7 @@ final class ExtensionProfileRuntimeOwner {
         if let profile = tab.resolveProfile() {
             return profile.id
         }
-        if let windowId = tab.primaryWindowId,
+        if let windowId = runtime.primaryTrackedWindowId(tab.id),
            let windowState = runtime.windowState(windowId) {
             return resolvedProfileId(
                 for: windowState,

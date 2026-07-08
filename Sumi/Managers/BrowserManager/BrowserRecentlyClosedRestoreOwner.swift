@@ -157,7 +157,7 @@ final class BrowserRecentlyClosedRestoreOwner {
         tab.applyRestoredNavigationPresentation()
         _ = tab.applyCachedFaviconOrPlaceholder(for: shortcutState.url)
 
-        if tab.existingWebView != nil {
+        if tab.hasCurrentWebView {
             tab.loadURL(shortcutState.url)
         }
     }

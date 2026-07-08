@@ -3,10 +3,18 @@ import WebKit
 
 @MainActor
 final class TabNormalWebViewSetupOwner {
-    func setupWebView(
+    /// Single create-policy path for pre-window / untracked normal-tab WebViews.
+    /// Order: profile defer → parked reuse → aux override → factory+replace → registration/handoff.
+    @discardableResult
+    func ensureUntrackedNormalWebView(
         context: TabNormalWebViewRuntimeContext,
-        provisioningOwner: TabWebViewProvisioningOwner
-    ) {
+        provisioningOwner: TabWebViewProvisioningOwner,
+        reason: String
+    ) -> WKWebView? {
+        if context.hasCurrentWebView {
+            return context.currentWebView()
+        }
+
         context.beginSuspendedRestoreIfNeeded()
         let reusableExistingWebView = context.parkedWebView()
         var didReuseExistingWebView = false
@@ -14,7 +22,7 @@ final class TabNormalWebViewSetupOwner {
 
         guard let profile = context.resolveProfile() else {
             context.deferWebViewUntilProfileAvailable()
-            return
+            return nil
         }
 
         let configurationContext = context.configurationContext()
@@ -47,18 +55,19 @@ final class TabNormalWebViewSetupOwner {
                 configurationContext.prepareWebViewConfigForExtensionRuntime(
                     auxiliaryOverrideConfiguration,
                     profile.id,
-                    "Tab.setupWebView.configuration"
+                    "\(reason).configuration"
                 )
-                provisioningOwner.createAuxiliaryOverrideWebView(
+                let overrideWebView = provisioningOwner.createAuxiliaryOverrideWebView(
                     auxiliaryOverrideConfiguration,
                     context: context,
                     currentURL: context.currentURL(),
-                    reason: "Tab.setupWebView"
+                    reason: reason
                 )
+                context.replaceUntrackedWebView(overrideWebView)
                 didCreateAuxiliaryOverrideWebView = true
             } else if let normalWebView = provisioningOwner.makeNormalTabWebView(
                 context: context,
-                reason: "Tab.setupWebView"
+                reason: reason
             ) {
                 context.replaceUntrackedWebView(normalWebView)
             }
@@ -85,7 +94,7 @@ final class TabNormalWebViewSetupOwner {
         if shouldDelayInitialTabRuntimeRegistration == false {
             provisioningOwner.registerTabWithExtensionRuntimeIfNeeded(
                 context: context,
-                reason: "Tab.setupWebView"
+                reason: reason
             )
         }
 
@@ -94,7 +103,7 @@ final class TabNormalWebViewSetupOwner {
            let webView = context.currentWebView() {
             loadExtensionOwnedInitialURL(context.currentURL(), on: webView, context: context)
             context.finishSuspendedRestoreIfNeeded()
-            return
+            return webView
         }
 
         if shouldDelayInitialTabRuntimeRegistration {
@@ -106,7 +115,7 @@ final class TabNormalWebViewSetupOwner {
                 initialWebView,
                 context.currentURL(),
                 profile.id,
-                "Tab.setupWebView.beforeInitialLoad",
+                "\(reason).beforeInitialLoad",
                 hasInitialUserContentController
                     ? .currentWebViewIdentity
                     : .noExistingWebView
@@ -114,6 +123,7 @@ final class TabNormalWebViewSetupOwner {
         }
 
         context.finishSuspendedRestoreIfNeeded()
+        return context.currentWebView()
     }
 
     func shouldDelayInitialTabRuntimeRegistration(

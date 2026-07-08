@@ -353,7 +353,9 @@ final class ExtensionActionClickFlowOwner {
         }
         if dependencies.actionPopupAnchorStore.latestSessionToken(for: extensionId) == nil {
             let windowId =
-                currentTab?.primaryWindowId
+                currentTab.flatMap { tab in
+                    dependencies.runtime().primaryTrackedWindowId(tab.id)
+                }
                 ?? dependencies.activeExtensionWindowId()
             if let windowId {
                 captureActionPopupAnchor(

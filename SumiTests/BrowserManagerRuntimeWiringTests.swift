@@ -759,6 +759,65 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         )
     }
 
+    func testSettingsPageBrowserContextProjectsBrowserSubsystemsWithoutSettingsUICoupling() throws {
+        UserDefaults.standard.removeObject(forKey: BrowserManager.lastWindowSessionKey)
+        defer {
+            UserDefaults.standard.removeObject(forKey: BrowserManager.lastWindowSessionKey)
+        }
+
+        let browserManager = BrowserManager(
+            startupPersistence: BrowserManagerStartupPersistence(
+                container: try makeInMemoryStartupContainer()
+            ),
+            permissionSiteActivityStore: try makeSiteActivityStore()
+        )
+        browserManager.webViewCoordinator = WebViewCoordinator()
+
+        let profile = Profile(name: "Settings Context")
+        let space = Space(name: "Settings Context", profileId: profile.id)
+        let windowRegistry = WindowRegistry()
+        let windowState = BrowserWindowState()
+
+        browserManager.profileManager.profiles = [profile]
+        browserManager.currentProfile = profile
+        browserManager.windowRegistry = windowRegistry
+        browserManager.tabManager.spaceStateOwner.replaceSpaces([space])
+        browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(space)
+
+        windowState.tabManager = browserManager.tabManager
+        windowState.currentSpaceId = space.id
+        windowState.currentProfileId = profile.id
+        windowRegistry.register(windowState)
+        windowRegistry.setActive(windowState)
+
+        let settingsTab = browserManager.tabLifecycleService.opening.openNewTab(
+            url: "sumi://settings/general",
+            context: .foreground(windowState: windowState)
+        )
+        let browserContext = WebsiteViewContextFactory.settingsPageBrowserContext(
+            for: browserManager
+        )
+
+        XCTAssertTrue(browserContext.profileManager === browserManager.profileManager)
+        XCTAssertTrue(browserContext.tabManager === browserManager.tabManager)
+        XCTAssertTrue(browserContext.extensionsModule === browserManager.extensionsModule)
+        XCTAssertTrue(browserContext.userscriptsModule === browserManager.userscriptsModule)
+        XCTAssertTrue(
+            browserContext.extensionSurfaceStore === browserManager.extensionsModule.surfaceStore
+        )
+        XCTAssertEqual(browserContext.currentProfile()?.id, profile.id)
+        XCTAssertEqual(browserContext.currentTab(windowState)?.id, settingsTab.id)
+        XCTAssertTrue(settingsTab.representsSumiSettingsSurface)
+
+        let repository = browserContext.makePermissionRepository()
+        XCTAssertNotNil(repository)
+
+        let previousURL = settingsTab.url
+        settingsTab.url = URL(string: "sumi://settings/privacy")!
+        browserContext.scheduleRuntimeStatePersistence(settingsTab)
+        XCTAssertNotEqual(settingsTab.url, previousURL)
+    }
+
     func testRuntimeNotificationsPreserveLazyExtensionRuntime() throws {
         let browserManager = BrowserManager(
             startupPersistence: BrowserManagerStartupPersistence(

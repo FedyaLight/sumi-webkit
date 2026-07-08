@@ -115,11 +115,14 @@ enum SumiImportExportError: LocalizedError {
     case unsupportedFile(String)
     case importFailed(String)
     case exportFailed(String)
+    case browserUnavailable
 
     var errorDescription: String? {
         switch self {
         case .unsupportedFile(let message), .importFailed(let message), .exportFailed(let message):
             return message
+        case .browserUnavailable:
+            return "The browser is no longer available for import or export."
         }
     }
 }

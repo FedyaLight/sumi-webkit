@@ -73,7 +73,7 @@ final class TabWebViewProvisioningOwnerTests: XCTestCase {
         XCTAssertEqual(preparedProfileId, fallbackProfileId)
     }
 
-    func testCreatePopupWebViewUsesAuxiliaryPreparationRuntime() {
+    func testCreatePopupWebViewUsesAuxiliaryPreparationRuntimeWithoutInstallingOwnership() {
         let owner = TabWebViewProvisioningOwner()
         var capturedOptions: CreatedWebViewPreparationOptions?
         var capturedReason: String?
@@ -96,7 +96,10 @@ final class TabWebViewProvisioningOwnerTests: XCTestCase {
             reason: "test.popup"
         )
 
-        XCTAssertTrue(didReplaceWebView)
+        XCTAssertFalse(
+            didReplaceWebView,
+            "Phase 6: popup construction must not silently install Tab ownership"
+        )
         XCTAssertEqual(capturedReason, "test.popup")
         XCTAssertEqual(capturedOptions?.installFaviconRuntime, false)
         XCTAssertEqual(capturedOptions?.prepareExtensionRuntime, true)

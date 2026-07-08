@@ -257,6 +257,7 @@ final class ExtensionRequestedTabLifecycleOwner {
                 in: targetWindow
             )
         }
+        // Safety net for pre-window / coordinator-unavailable paths only.
         if tab.isUnloaded {
             tab.loadWebViewIfNeeded()
         }
@@ -471,7 +472,9 @@ final class ExtensionRequestedTabLifecycleOwner {
         }
 
         let replacementReason = "ExtensionManager.extensionRequestedNormalTab.replacement"
-        guard let replacementWebView = tab.makeNormalTabWebView(
+        _ = manager.browserBridgeContext?.replaceExtensionLiveWebView(
+            for: tab,
+            in: targetWindow,
             reason: replacementReason,
             prepareConfiguration: { [weak manager, weak tab] configuration in
                 guard let manager,
@@ -485,34 +488,20 @@ final class ExtensionRequestedTabLifecycleOwner {
                     profileId: profileId,
                     reason: "\(replacementReason).configuration"
                 )
+            },
+            prepareReplacement: { [weak manager, weak tab] webView in
+                guard let manager, let tab else { return }
+                manager.prepareWebViewForExtensionRuntime(
+                    webView,
+                    currentURL: tab.url,
+                    reason: replacementReason
+                )
+            },
+            validate: { [weak self, weak manager, weak tab] webView in
+                guard let self, let manager, let tab else { return false }
+                return self.normalTabWebViewIsUsable(webView, for: tab, manager: manager)
             }
-        ) else {
-            return
-        }
-        manager.prepareWebViewForExtensionRuntime(
-            replacementWebView,
-            currentURL: tab.url,
-            reason: replacementReason
         )
-        guard normalTabWebViewIsUsable(replacementWebView, for: tab, manager: manager) else {
-            tab.cleanupCloneWebView(replacementWebView)
-            return
-        }
-
-        let previousWebView = tab.existingWebView
-        if let targetWindow {
-            tab.assignWebViewToWindow(replacementWebView, windowId: targetWindow.id)
-            manager.browserBridgeContext?.assignExtensionWebView(
-                replacementWebView,
-                to: tab,
-                in: targetWindow
-            )
-        } else {
-            tab.replaceUntrackedWebView(replacementWebView)
-        }
-        if let previousWebView, previousWebView !== replacementWebView {
-            tab.cleanupCloneWebView(previousWebView)
-        }
     }
 
     private func normalTabWebViewIsUsable(

@@ -45,7 +45,7 @@ final class TabNormalWebViewRuntimeContextOwner {
                 tab?.finishSuspendedRestoreIfNeeded()
             },
             setupWebView: { [weak tab] in
-                tab?.setupWebView()
+                _ = tab?.ensureUntrackedNormalWebView(reason: "TabNormalWebViewRuntimeContext.setupWebView")
             },
             adoptParkedWebViewAsCurrent: { [weak tab] webView in
                 tab?.adoptParkedWebViewAsCurrent(webView)

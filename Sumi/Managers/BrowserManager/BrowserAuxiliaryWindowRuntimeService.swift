@@ -42,6 +42,12 @@ enum BrowserAuxiliaryWindowRuntimeService {
                     reason: reason
                 )
             },
+            installUntrackedOwnedWebView: { [weak browserManager] webView, tab in
+                browserManager?.webViewRoutingService.installUntrackedOwnedWebView(
+                    webView,
+                    for: tab
+                )
+            },
             popupPermissionBridge: { [weak browserManager] in
                 browserManager?.permissionRuntime.popupPermissionBridge
             },

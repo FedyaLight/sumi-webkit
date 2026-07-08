@@ -112,6 +112,9 @@ extension BrowserWebViewCloseRouter.Dependencies {
                     windowContaining: { [weak browserManager] tab in
                         browserManager?.windowTabContextOwner.windowState(containing: tab)
                     },
+                    ownsLiveWebView: { [weak browserManager] webView, tab in
+                        browserManager?.webViewRoutingService.ownsLiveWebView(webView, for: tab) ?? false
+                    },
                     closeTab: { [weak browserManager] tab, windowState in
                         browserManager?.tabLifecycleService.closeOrchestration.closeTab(tab, in: windowState)
                     },

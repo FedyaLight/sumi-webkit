@@ -507,7 +507,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     func loadWebViewIfNeeded() {
         if !hasCurrentWebView {
             suspensionStateOwner.beginRestoreIfNeeded()
-            setupWebView()
+            _ = ensureUntrackedNormalWebView(reason: "Tab.loadWebViewIfNeeded")
             finishSuspendedRestoreIfNeeded()
         }
     }

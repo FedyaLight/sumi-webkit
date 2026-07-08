@@ -40,7 +40,7 @@ final class GlancePromotionHandoffOwner {
         manager: GlanceManager?,
         attachmentCompletion: @escaping @MainActor () -> Void
     ) -> Bool {
-        guard canRegisterPreviewHost(previewHostView, for: session),
+        guard canRegisterPreviewHost(previewHostView, for: session, manager: manager),
               let previewHostView,
               manager?.registerPromotedHost(
                   previewHostView,
@@ -55,10 +55,11 @@ final class GlancePromotionHandoffOwner {
 
     private func canRegisterPreviewHost(
         _ previewHostView: SumiWebViewContainerView?,
-        for session: GlanceSession
+        for session: GlanceSession,
+        manager: GlanceManager?
     ) -> Bool {
         guard let previewHostView,
-              let webView = session.previewTab.existingWebView,
+              let webView = manager?.runtime?.previewWebView(session.previewTab),
               previewHostView.webView === webView
         else { return false }
 

@@ -20,10 +20,8 @@ final class GlancePreviewHostAttachmentOwner {
         self.webContentShieldAnchorView = webContentShieldAnchorView
     }
 
-    func attachIfAvailable(for session: GlanceSession?) {
-        guard let session,
-              let webView = session.previewTab.existingWebView
-        else { return }
+    func attachIfAvailable(for session: GlanceSession?, webView: WKWebView?) {
+        guard let session, let webView else { return }
 
         markPreviewWebView(webView)
         let hostView: SumiWebViewContainerView

@@ -1,5 +1,6 @@
 import AppKit
 import QuartzCore
+import WebKit
 
 @MainActor
 final class GlanceOverlayController: NSObject {
@@ -104,7 +105,10 @@ final class GlanceOverlayController: NSObject {
                 presentWhenReady(session: session, configuration: configuration)
             } else {
                 installViewsIfNeeded()
-                previewHostAttachment.attachIfAvailable(for: session)
+                previewHostAttachment.attachIfAvailable(
+                    for: session,
+                    webView: previewWebView(for: session)
+                )
                 setPresentationVisible(false)
             }
             return
@@ -130,7 +134,10 @@ final class GlanceOverlayController: NSObject {
             presentationState.queuePendingPresentation(session: session, configuration: configuration)
             _ = presentPendingIfPossible()
         } else if phase == .opening {
-            previewHostAttachment.attachIfAvailable(for: session)
+            previewHostAttachment.attachIfAvailable(
+                for: session,
+                webView: previewWebView(for: session)
+            )
         } else {
             layoutForCurrentBounds(animated: phase == .open && !configuration.reduceMotion)
         }
@@ -153,8 +160,11 @@ final class GlanceOverlayController: NSObject {
         if presentPendingIfPossible() {
             return
         }
-        if manager?.phase == .opening {
-            previewHostAttachment.attachIfAvailable(for: session)
+        if manager?.phase == .opening, let session {
+            previewHostAttachment.attachIfAvailable(
+                for: session,
+                webView: previewWebView(for: session)
+            )
             return
         }
         layoutForCurrentBounds(animated: false)
@@ -211,7 +221,10 @@ final class GlanceOverlayController: NSObject {
         webContentShieldAnchorView.isHidden = false
         keyCommands.installIfNeeded()
         resetCloseConfirmation()
-        previewHostAttachment.attachIfAvailable(for: session)
+        previewHostAttachment.attachIfAvailable(
+            for: session,
+            webView: previewWebView(for: session)
+        )
 
         let targetFrame = overlayLayout.targetContentFrame(in: rootView.bounds, configuration: configuration)
         let startFrame = overlayLayout.startContentFrame(
@@ -479,7 +492,12 @@ final class GlanceOverlayController: NSObject {
 
         let targetFrame = overlayLayout.targetContentFrame(in: rootView.bounds, configuration: configuration)
         let updates = {
-            self.previewHostAttachment.attachIfAvailable(for: self.session)
+            if let session = self.session {
+                self.previewHostAttachment.attachIfAvailable(
+                    for: session,
+                    webView: self.previewWebView(for: session)
+                )
+            }
             self.contentShadowView.frame = targetFrame
             self.webClipView.frame = self.contentShadowView.bounds
             self.publishContentFrame(targetFrame, in: rootView)
@@ -605,7 +623,10 @@ final class GlanceOverlayController: NSObject {
         rootView.acceptsBackgroundMouseEvents = false
         actionChrome.setButtonsEnabled(false)
 
-        previewHostAttachment.attachIfAvailable(for: session)
+        previewHostAttachment.attachIfAvailable(
+            for: session,
+            webView: previewWebView(for: session)
+        )
 
         let targetFrame = overlayLayout.promotionContentFrame(in: rootView.bounds, configuration: configuration)
         publishContentFrame(targetFrame, in: rootView)
@@ -718,7 +739,8 @@ final class GlanceOverlayController: NSObject {
     }
 
     private func webContentIsFocused() -> Bool {
-        guard let webView = session?.previewTab.existingWebView,
+        guard let session,
+              let webView = previewWebView(for: session),
               let firstResponder = webView.window?.firstResponder
         else { return false }
 
@@ -727,6 +749,10 @@ final class GlanceOverlayController: NSObject {
             return view.isDescendant(of: webView)
         }
         return false
+    }
+
+    private func previewWebView(for session: GlanceSession) -> WKWebView? {
+        manager?.runtime?.previewWebView(session.previewTab)
     }
 
     private func scheduleCloseConfirmationReset() {

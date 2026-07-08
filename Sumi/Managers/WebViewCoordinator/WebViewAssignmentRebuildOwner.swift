@@ -168,7 +168,9 @@ final class WebViewAssignmentRebuildOwner {
         tab.clearAllWebViewOwnership()
         tab.url = targetURL
 
-        guard let recreatedPrimary = tab.ensureWebView() else {
+        guard let recreatedPrimary = tab.makeNormalTabWebView(
+            reason: "WebViewCoordinator.rebuildLiveWebViews"
+        ) else {
             assertionFailure("Unable to rebuild normal tab WebView without a resolved profile")
             return false
         }
@@ -193,6 +195,13 @@ final class WebViewAssignmentRebuildOwner {
             for webView in recreatedWebViews {
                 loadRecreatedWebView(webView, for: tab, targetURL: url)
             }
+        } else {
+            // Factory create no longer runs Tab ensure handoff; restore initial load.
+            schedulePrimaryInitialLoadIfNeeded(
+                for: recreatedPrimary,
+                tab: tab,
+                reason: "WebViewCoordinator.rebuildLiveWebViews"
+            )
         }
 
         tab.updateSafariContentBlockerReloadRequirementForCurrentSite()
@@ -233,12 +242,21 @@ final class WebViewAssignmentRebuildOwner {
         in windowId: UUID,
         runtime: Runtime
     ) -> WKWebView? {
-        guard let webView = tab.ensureWebView() else {
+        guard let webView = tab.makeNormalTabWebView(
+            reason: "WebViewCoordinator.createPrimaryWebView"
+        ) else {
             assertionFailure("Unable to create normal tab WebView without a resolved profile")
             return nil
         }
         tab.assignWebViewToWindow(webView, windowId: windowId)
         runtime.registerTrackedWebView(webView, tab.id, windowId)
+        // Previously `ensureWebView` → setup handoff loaded http(s). Factory-only
+        // create must schedule that load explicitly or pages stay blank.
+        schedulePrimaryInitialLoadIfNeeded(
+            for: webView,
+            tab: tab,
+            reason: "WebViewCoordinator.createPrimaryWebView"
+        )
         return webView
     }
 
@@ -273,6 +291,54 @@ final class WebViewAssignmentRebuildOwner {
             profileId: tab.resolveProfile()?.id ?? tab.profileId,
             registrationReason: "WebViewCoordinator.loadInitialURLIfNeeded"
         )
+    }
+
+    /// Restores the initial http(s) load that `Tab.ensureUntrackedNormalWebView` used to
+    /// schedule. Validity ignores parked staging so leftover `_existingWebView` cannot
+    /// cancel a windowed primary load after factory create.
+    private func schedulePrimaryInitialLoadIfNeeded(
+        for webView: WKWebView,
+        tab: Tab,
+        reason: String
+    ) {
+        let targetURL = tab.url
+        guard TabNormalWebViewSetupOwner.isInitialDocumentExtensionWarmupURL(targetURL) else {
+            tab.registerTabWithExtensionRuntimeIfNeeded(reason: reason)
+            return
+        }
+
+        let controller = webView.configuration.userContentController
+            .sumiNormalTabUserContentController
+        let profileId = tab.resolveProfile()?.id ?? tab.profileId
+
+        Task { @MainActor [weak tab, weak webView] in
+            await NormalTabInitialDocumentRuntimeHandoff.perform {
+                if let controller,
+                   controller.hasInstalledInitialUserContent == false {
+                    await controller.waitForInitialUserContentInstallation()
+                }
+            } warmInitialDocumentContexts: {
+                if let profileId, let tab {
+                    await tab.navigationRuntime.normalWebViewExtensionRuntime
+                        .ensureInitialExtensionContextsIfNeeded(profileId)
+                }
+            } isStillValid: {
+                guard let tab, let webView else { return false }
+                return tab.currentWebViewIsIdentical(to: webView)
+            } register: {
+                tab?.registerTabWithExtensionRuntimeIfNeeded(
+                    reason: "\(reason).beforeInitialLoad"
+                )
+            } load: {
+                guard let tab else { return }
+                tab.navigationCommandOwner.loadURL(
+                    targetURL,
+                    for: tab,
+                    resolvedWebView: { [weak webView] in webView },
+                    reason: "\(reason).initialLoad"
+                )
+            }
+        }
     }
 
     private func adoptExistingPrimaryWebView(

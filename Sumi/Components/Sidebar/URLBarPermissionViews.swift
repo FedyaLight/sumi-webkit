@@ -139,7 +139,7 @@ extension URLBarView {
             pageId: context.pageId,
             navigationOrPageGeneration: context.navigationOrPageGeneration,
             displayDomain: context.displayDomain,
-            currentWebView: { [weak tab] in
+            resolveWebView: { [weak tab] in
                 guard let tab else { return nil }
                 return browserContext.webView(tab, windowState)
             },

@@ -45,11 +45,15 @@ struct ExtensionActionBrowserContext {
                 browserManager?.tabManager.hasLoadedInitialData ?? true
             },
             webView: { [weak browserManager, weak windowState] tab in
-                guard let browserManager, let windowState else {
-                    return tab.existingWebView
+                guard let browserManager else { return nil }
+                if let windowState,
+                   let windowOwned = browserManager.webViewRoutingService.webView(
+                    for: tab.id,
+                    in: windowState.id
+                   ) {
+                    return windowOwned
                 }
-                return browserManager.webViewRoutingService.webView(for: tab.id, in: windowState.id)
-                    ?? tab.existingWebView
+                return browserManager.webViewRoutingService.anyLiveWebView(for: tab)
             },
             openSettingsTab: { [weak browserManager, weak windowState] tab in
                 guard let browserManager, let windowState else { return }

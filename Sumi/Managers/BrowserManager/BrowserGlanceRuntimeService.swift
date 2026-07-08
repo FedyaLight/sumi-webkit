@@ -120,6 +120,18 @@ enum BrowserGlanceRuntimeService {
                     attachmentCompletion: attachmentCompletion
                 )
                 return true
+            },
+            previewWebView: { [weak browserManager] tab in
+                browserManager?.webViewRoutingService.anyLiveWebView(for: tab)
+            },
+            ensurePreviewWebView: { [weak browserManager] tab, _ in
+                browserManager?.webViewRoutingService.ensureUntrackedOwnedWebView(for: tab)
+            },
+            ownsPreviewWebView: { [weak browserManager] tab, webView in
+                browserManager?.webViewRoutingService.ownsLiveWebView(webView, for: tab) ?? false
+            },
+            releasePreviewWebView: { [weak browserManager] tab in
+                browserManager?.webViewRoutingService.releaseUntrackedOwnedWebView(for: tab)
             }
         )
     }

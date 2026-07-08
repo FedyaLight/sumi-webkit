@@ -361,6 +361,7 @@ struct TabPopupHandlingRuntime {
     ) -> WKWebView?
     var applyVisitedLinksToPopupConfiguration: (_ openerTab: Tab, _ configuration: WKWebViewConfiguration) -> Void
     var createPopupTab: (_ openerTab: Tab, _ activate: Bool) -> Tab?
+    var installUntrackedOwnedWebView: (_ webView: WKWebView, _ tab: Tab) -> Void
     var windowStateContainingTab: (Tab) -> BrowserWindowState?
     var selectTab: (_ tab: Tab, _ windowState: BrowserWindowState) -> Void
     var notifications: () -> (any BrowserNotificationPresenting)?
@@ -374,6 +375,7 @@ struct TabPopupHandlingRuntime {
         presentWebPopup: { _, _, _, _, _ in nil },
         applyVisitedLinksToPopupConfiguration: { _, _ in /* No-op. */ },
         createPopupTab: { _, _ in nil },
+        installUntrackedOwnedWebView: { _, _ in /* No-op. */ },
         windowStateContainingTab: { _ in nil },
         selectTab: { _, _ in /* No-op. */ },
         notifications: { nil }

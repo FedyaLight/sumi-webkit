@@ -455,7 +455,9 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             manager.testHooks.didOpenTab = nil
         }
 
-        let webView = try XCTUnwrap(tab.ensureWebView())
+        let webView = try XCTUnwrap(
+            tab.ensureUntrackedNormalWebView(reason: "SafariExtensionWebViewControllerWiringTests")
+        )
         XCTAssertIdentical(
             webView.configuration.webExtensionController,
             manager.ensureExtensionController(for: profile.id)
@@ -463,7 +465,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         XCTAssertEqual(
             didOpenCount,
             0,
-            "Tab.setupWebView must not notify extensions before initial-document context warmup"
+            "ensureUntrackedNormalWebView must not notify extensions before initial-document context warmup"
         )
 
         await fulfillment(of: [didOpenExpectation], timeout: 3.0)
@@ -1097,7 +1099,11 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             controller: controller,
             reason: "SafariExtensionWebViewControllerWiringTests"
         )
-        let webView = try XCTUnwrap(tab.ensureWebView())
+        let webView = try XCTUnwrap(
+            tab.ensureUntrackedNormalWebView(
+                reason: "SafariExtensionWebViewControllerWiringTests.extensionRender"
+            )
+        )
 
         let metrics = try await pollExtensionRenderMetrics(in: webView)
         XCTAssertTrue(metrics.loadedFromExtensionScheme, metrics.debugSummary)

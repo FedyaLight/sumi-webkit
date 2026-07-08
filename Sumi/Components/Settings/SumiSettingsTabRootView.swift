@@ -6,30 +6,33 @@
 //
 
 import AppKit
+import Combine
 import SwiftUI
 
 struct SumiSettingsTabRootView: View {
     @Environment(\.sumiSettings) private var sumiSettingsModel
     @Environment(\.resolvedThemeContext) private var themeContext
     @Environment(KeyboardShortcutManager.self) private var keyboardShortcutManager
-    @ObservedObject var browserManager: BrowserManager
+    let browserContext: SettingsBrowserContext
     let updaterService: SumiUpdaterService
     let defaultBrowserService: SumiDefaultBrowserService
     /// When `nil` (e.g. standalone preview), sidebar still works; tab URL sync is skipped.
     var windowState: BrowserWindowState?
 
     @State private var searchText = ""
+    @State private var currentProfileID: UUID?
 
     init(
-        browserManager: BrowserManager,
+        browserContext: SettingsBrowserContext,
         updaterService: SumiUpdaterService,
         defaultBrowserService: SumiDefaultBrowserService,
         windowState: BrowserWindowState? = nil
     ) {
-        self._browserManager = ObservedObject(wrappedValue: browserManager)
+        self.browserContext = browserContext
         self.updaterService = updaterService
         self.defaultBrowserService = defaultBrowserService
         self.windowState = windowState
+        _currentProfileID = State(initialValue: browserContext.currentProfile()?.id)
     }
 
     private enum Layout {
@@ -69,6 +72,9 @@ struct SumiSettingsTabRootView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .environment(\.resolvedThemeContext, surfaceThemeContext)
         .environment(\.colorScheme, surfaceThemeContext.chromeColorScheme)
+        .onReceive(browserContext.currentProfileUpdates) { profile in
+            currentProfileID = profile?.id
+        }
         .onChange(of: sumiSettings.currentSettingsTab) { _, _ in
             syncSettingsURLToActiveTab(sumiSettings: sumiSettings)
         }
@@ -83,6 +89,7 @@ struct SumiSettingsTabRootView: View {
             }
         }
         .onAppear {
+            currentProfileID = browserContext.currentProfile()?.id
             syncSettingsURLToActiveTab(sumiSettings: sumiSettings)
         }
     }
@@ -333,52 +340,25 @@ struct SumiSettingsTabRootView: View {
             SettingsPerformanceTab()
         case .privacy:
             PrivacySettingsView(
-                repository: SumiPermissionSettingsRepository(
-                    permissionRuntime: browserManager.permissionRuntime,
-                    dataServices: browserManager.dataServices,
-                    autoplayStore: browserManager.permissionRuntime.autoplayStore
-                ),
+                repository: browserContext.makePermissionRepository(),
                 activeProfile: activePrivacyProfile
             )
         case .profiles:
             SumiProfilesSettingsPane(
-                profileManager: browserManager.profileManager,
-                tabManager: browserManager.tabManager,
-                deleteProfile: { profile in
-                    browserManager.profileMaintenanceOwner.deleteProfile(profile)
-                }
+                profileManager: browserContext.profileManager,
+                tabManager: browserContext.tabManager,
+                deleteProfile: browserContext.deleteProfile
             )
         case .shortcuts:
             ShortcutsSettingsView(shortcutManager: keyboardShortcutManager)
         case .extensions, .userScripts:
             SumiExtensionsSettingsPane(
-                extensionsModule: browserManager.extensionsModule,
-                userscriptsModule: browserManager.userscriptsModule,
-                currentProfileID: browserManager.currentProfile?.id
+                extensionsModule: browserContext.extensionsModule,
+                userscriptsModule: browserContext.userscriptsModule,
+                currentProfileID: currentProfileID
             )
         case .advanced:
-            SumiDataRecoverySettingsPane(
-                actions: SumiDataRecoveryActions(
-                    importBookmarksFromMenu: {
-                        browserManager.bookmarkCommandOwner.importBookmarksFromMenu()
-                    },
-                    exportBrowser2ZenDocument: {
-                        try SumiTransferExportService()
-                            .exportBrowser2ZenDocument(from: browserManager)
-                    },
-                    writeBackup: { url in
-                        try SumiBackupService().writeBackup(from: browserManager, to: url)
-                    },
-                    applyImport: { data, categories, mode in
-                        try await SumiImportApplier().apply(
-                            data,
-                            to: browserManager,
-                            categories: categories,
-                            mode: mode
-                        )
-                    }
-                )
-            )
+            SumiDataRecoverySettingsPane(actions: browserContext.dataRecoveryActions)
         case .about:
             SettingsAboutTab(updaterService: updaterService)
         }
@@ -386,13 +366,13 @@ struct SumiSettingsTabRootView: View {
 
     private func syncSettingsURLToActiveTab(sumiSettings: SumiSettingsService) {
         guard let windowState,
-              let tab = browserManager.windowTabContextOwner.currentTab(for: windowState),
+              let tab = browserContext.currentTab(windowState),
               tab.representsSumiSettingsSurface
         else { return }
         let newURL = sumiSettings.settingsSurfaceURLForCurrentNavigation()
         guard tab.url != newURL else { return }
         tab.url = newURL
-        browserManager.tabManager.structuralPersistence.scheduleRuntimeStatePersistence(for: tab)
+        browserContext.scheduleRuntimeStatePersistence(tab)
     }
 
     private var activePrivacyProfile: Profile? {
@@ -401,16 +381,16 @@ struct SumiSettingsTabRootView: View {
                 return windowState.ephemeralProfile
             }
             if let currentProfileId = windowState.currentProfileId,
-               let profile = browserManager.profileManager.profiles.first(where: { $0.id == currentProfileId }) {
+               let profile = browserContext.profileManager.profiles.first(where: { $0.id == currentProfileId }) {
                 return profile
             }
-            if let currentTab = browserManager.windowTabContextOwner.currentTab(for: windowState),
+            if let currentTab = browserContext.currentTab(windowState),
                let profileId = currentTab.profileId,
-               let profile = browserManager.profileManager.profiles.first(where: { $0.id == profileId }) {
+               let profile = browserContext.profileManager.profiles.first(where: { $0.id == profileId }) {
                 return profile
             }
         }
-        return browserManager.currentProfile
+        return browserContext.currentProfile()
     }
 }
 

@@ -51,16 +51,81 @@ enum WebsiteViewContextFactory {
             },
             settings: { [weak browserManager] windowState in
                 guard let browserManager else { return AnyView(EmptyView()) }
+                let browserContext = settingsPageBrowserContext(for: browserManager)
                 return AnyView(
                     SumiSettingsTabRootView(
-                        browserManager: browserManager,
+                        browserContext: browserContext,
                         updaterService: updaterService,
                         defaultBrowserService: defaultBrowserService,
                         windowState: windowState
                     )
-                    .environmentObject(browserManager.extensionsModule.surfaceStore)
+                    .environmentObject(browserContext.extensionSurfaceStore)
                 )
             }
+        )
+    }
+
+    static func settingsPageBrowserContext(
+        for browserManager: BrowserManager
+    ) -> SettingsBrowserContext {
+        SettingsBrowserContext(
+            profileManager: browserManager.profileManager,
+            tabManager: browserManager.tabManager,
+            extensionsModule: browserManager.extensionsModule,
+            userscriptsModule: browserManager.userscriptsModule,
+            extensionSurfaceStore: browserManager.extensionsModule.surfaceStore,
+            currentProfile: { [weak browserManager] in
+                browserManager?.currentProfile
+            },
+            currentProfileUpdates: browserManager.$currentProfile.eraseToAnyPublisher(),
+            currentTab: { [weak browserManager] windowState in
+                browserManager?.windowTabContextOwner.currentTab(for: windowState)
+            },
+            deleteProfile: { [weak browserManager] profile in
+                browserManager?.profileMaintenanceOwner.deleteProfile(profile)
+            },
+            scheduleRuntimeStatePersistence: { [weak browserManager] tab in
+                browserManager?.tabManager.structuralPersistence.scheduleRuntimeStatePersistence(for: tab)
+            },
+            makePermissionRepository: { [weak browserManager] in
+                guard let browserManager else {
+                    preconditionFailure("SettingsBrowserContext used after BrowserManager deallocation")
+                }
+                return SumiPermissionSettingsRepository(
+                    permissionRuntime: browserManager.permissionRuntime,
+                    dataServices: browserManager.dataServices,
+                    autoplayStore: browserManager.permissionRuntime.autoplayStore
+                )
+            },
+            dataRecoveryActions: SumiDataRecoveryActions(
+                importBookmarksFromMenu: { [weak browserManager] in
+                    browserManager?.bookmarkCommandOwner.importBookmarksFromMenu()
+                },
+                exportBrowser2ZenDocument: { [weak browserManager] in
+                    guard let browserManager else {
+                        throw SumiImportExportError.browserUnavailable
+                    }
+                    return try SumiTransferExportService()
+                        .exportBrowser2ZenDocument(from: browserManager)
+                },
+                writeBackup: { [weak browserManager] url in
+                    guard let browserManager else {
+                        throw SumiImportExportError.browserUnavailable
+                    }
+                    try SumiBackupService().writeBackup(from: browserManager, to: url)
+                },
+                applyImport: { [weak browserManager] data, categories, mode in
+                    guard let browserManager else {
+                        throw SumiImportExportError.browserUnavailable
+                    }
+                    return try await SumiImportApplier().apply(
+                        data,
+                        to: browserManager,
+                        categories: categories,
+                        mode: mode
+                    )
+                }
+            )
         )
     }
 

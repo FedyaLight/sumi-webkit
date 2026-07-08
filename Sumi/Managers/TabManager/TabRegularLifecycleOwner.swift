@@ -24,6 +24,7 @@ final class TabRegularLifecycleOwner {
         let faviconService: @MainActor () -> any BrowserFaviconServicing
         let faviconImageService: @MainActor () -> any BrowserFaviconImageServicing
         let visitedLinkStore: @MainActor () -> any BrowserVisitedLinkStoreManaging
+        let liveDocumentURL: @MainActor (Tab) -> URL?
     }
 
     private let dependencies: Dependencies
@@ -85,7 +86,7 @@ final class TabRegularLifecycleOwner {
                 return nil
             }()
 
-            if let currentURL = tab.existingWebView?.url {
+            if let currentURL = dependencies.liveDocumentURL(tab) {
                 tab.url = currentURL
             }
             insertRegularTab(tab, in: targetSpace.id, at: insertionIndex)
@@ -370,6 +371,9 @@ extension TabRegularLifecycleOwner.Dependencies {
             visitedLinkStore: { [weak tabManager] in
                 guard let tabManager else { preconditionFailure("TabManager dependency used after deallocation") }
                 return tabManager.visitedLinkStore
+            },
+            liveDocumentURL: { [weak tabManager] tab in
+                tabManager?.runtimeContext?.webViewLifecycle.anyLiveWebView(for: tab)?.url
             }
         )
     }

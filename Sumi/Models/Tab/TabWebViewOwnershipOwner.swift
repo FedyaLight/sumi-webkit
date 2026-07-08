@@ -2,6 +2,16 @@ import Combine
 import Foundation
 import WebKit
 
+/// Tab-local WebView ownership cache / staging.
+///
+/// - Windowed `webView` + `primaryWindowId`: coordinator-synced cache. Live SoT is
+///   `WindowWebViewRegistry` via `WebViewCoordinator` / `BrowserWebViewRoutingService`.
+/// - Untracked `webView` (`primaryWindowId == nil`): Tab slot write-gated by coordinator
+///   install/release (and Tab ensure path which installs through the same mutators).
+/// - Parked `existingWebView`: Tab-local staging for untracked ensure reuse; not registry material.
+///
+/// External production code must not mutate these fields; CI enforces Tab + WebViewCoordinator
+/// as the sole writers.
 @MainActor
 final class TabWebViewOwnershipOwner {
     private(set) var webView: WKWebView?

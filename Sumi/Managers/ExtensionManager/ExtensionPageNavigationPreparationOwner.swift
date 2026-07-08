@@ -23,7 +23,8 @@ final class ExtensionPageNavigationPreparationOwner {
         }
         return clearExtensionPageOverrideIfNeeded(
             tab,
-            reason: reason
+            reason: reason,
+            manager: manager
         )
     }
 
@@ -45,7 +46,8 @@ final class ExtensionPageNavigationPreparationOwner {
         guard let configuration = extensionContext.webViewConfiguration,
               needsExtensionPageWebViewReplacement(
                   tab,
-                  configuration: configuration
+                  configuration: configuration,
+                  manager: manager
               )
         else {
             return false
@@ -65,14 +67,15 @@ final class ExtensionPageNavigationPreparationOwner {
 
     private func clearExtensionPageOverrideIfNeeded(
         _ tab: Tab,
-        reason: String
+        reason: String,
+        manager: ExtensionManager
     ) -> Bool {
         guard tab.webExtensionContextOverride != nil else {
             return false
         }
         tab.webExtensionContextOverride = nil
 
-        guard let currentWebView = tab.currentWebView,
+        guard let currentWebView = manager.resolvedLiveWebView(for: tab),
               currentWebView.configuration.sumiIsNormalTabWebViewConfiguration == false
         else {
             return false
@@ -104,9 +107,10 @@ final class ExtensionPageNavigationPreparationOwner {
 
     private func needsExtensionPageWebViewReplacement(
         _ tab: Tab,
-        configuration: WKWebViewConfiguration
+        configuration: WKWebViewConfiguration,
+        manager: ExtensionManager
     ) -> Bool {
-        guard let currentWebView = tab.currentWebView else {
+        guard let currentWebView = manager.resolvedLiveWebView(for: tab) else {
             return false
         }
         return currentWebView.configuration !== configuration

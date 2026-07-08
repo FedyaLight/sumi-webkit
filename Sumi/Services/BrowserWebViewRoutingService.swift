@@ -24,8 +24,80 @@ final class BrowserWebViewRoutingService {
         webView(for: tab.id, in: windowId)
     }
 
+    @discardableResult
+    func getOrCreateWebView(for tab: Tab, in windowId: UUID) -> WKWebView? {
+        coordinatorProvider().getOrCreateWebView(for: tab, in: windowId)
+    }
+
+    /// Live WebViews known to the coordinator registry for this tab.
+    func trackedWebViews(for tabId: UUID) -> [WKWebView] {
+        coordinatorProvider().getAllWebViews(for: tabId)
+    }
+
+    /// Prefer a window-tracked WebView; fall back to an untracked tab-owned instance
+    /// (popup / pre-window / Glance materialization) via the coordinator.
+    func anyLiveWebView(for tab: Tab) -> WKWebView? {
+        coordinatorProvider().anyLiveWebView(for: tab)
+    }
+
+    func ownsLiveWebView(_ webView: WKWebView, for tab: Tab) -> Bool {
+        coordinatorProvider().ownsLiveWebView(webView, for: tab)
+    }
+
+    func hasLiveWebView(for tab: Tab) -> Bool {
+        coordinatorProvider().hasLiveWebView(for: tab)
+    }
+
+    func hasUntrackedOwnedWebView(for tab: Tab) -> Bool {
+        coordinatorProvider().untrackedOwnedWebView(for: tab) != nil
+    }
+
+    func assignWebView(_ webView: WKWebView, to tab: Tab, in windowId: UUID) {
+        coordinatorProvider().assignWebView(webView, to: tab, in: windowId)
+    }
+
+    func installUntrackedOwnedWebView(_ webView: WKWebView, for tab: Tab) {
+        coordinatorProvider().installUntrackedOwnedWebView(webView, for: tab)
+    }
+
+    @discardableResult
+    func ensureUntrackedOwnedWebView(for tab: Tab) -> WKWebView? {
+        coordinatorProvider().ensureUntrackedOwnedWebView(for: tab)
+    }
+
+    func releaseUntrackedOwnedWebView(for tab: Tab) {
+        coordinatorProvider().releaseUntrackedOwnedWebView(for: tab)
+    }
+
+    @discardableResult
+    func replaceLiveWebView(
+        for tab: Tab,
+        in windowId: UUID?,
+        reason: String,
+        prepareConfiguration: ((WKWebViewConfiguration) -> Void)? = nil,
+        prepareReplacement: ((WKWebView) -> Void)? = nil,
+        validate: ((WKWebView) -> Bool)? = nil
+    ) -> WKWebView? {
+        coordinatorProvider().replaceLiveWebView(
+            for: tab,
+            in: windowId,
+            reason: reason,
+            prepareConfiguration: prepareConfiguration,
+            prepareReplacement: prepareReplacement,
+            validate: validate
+        )
+    }
+
     func trackedOwner(containing webView: WKWebView) -> TrackedWebViewOwner? {
         coordinatorProvider().trackedOwner(containing: webView)
+    }
+
+    func primaryTrackedWindowId(for tabId: UUID) -> UUID? {
+        coordinatorProvider().primaryTrackedWindowId(for: tabId)
+    }
+
+    func windowIDs(for tabId: UUID) -> [UUID] {
+        coordinatorProvider().windowIDs(for: tabId)
     }
 
     func syncTabAcrossWindows(_ tabId: UUID, originatingWebView: WKWebView? = nil) {

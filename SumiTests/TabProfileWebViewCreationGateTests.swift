@@ -97,7 +97,7 @@ private final class TabProfileWebViewCreationGateHarness {
                 hasCurrentWebView: { [weak self] in
                     self?.hasCurrentWebView == true
                 },
-                setupWebView: { [weak self] in
+                ensureUntrackedNormalWebView: { [weak self] in
                     self?.setupWebViewCallCount += 1
                 }
             )

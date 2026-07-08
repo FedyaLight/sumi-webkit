@@ -68,7 +68,10 @@ extension GlanceManager {
     }
 
     private func materializePreviewWebViewIfNeeded(for session: GlanceSession) {
-        guard let webView = session.previewTab.ensureWebView() else { return }
+        guard let webView = runtime?.ensurePreviewWebView(
+            session.previewTab,
+            session.windowId
+        ) else { return }
         webView.allowsMagnification = false
         session.observe(webView)
     }

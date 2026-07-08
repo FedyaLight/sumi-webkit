@@ -64,6 +64,18 @@ protocol ExtensionBrowserBridgeContext: AnyObject {
         to tab: Tab,
         in windowState: BrowserWindowState
     )
+    func replaceUntrackedExtensionWebView(
+        _ webView: WKWebView,
+        for tab: Tab
+    )
+    func replaceExtensionLiveWebView(
+        for tab: Tab,
+        in windowState: BrowserWindowState?,
+        reason: String,
+        prepareConfiguration: ((WKWebViewConfiguration) -> Void)?,
+        prepareReplacement: ((WKWebView) -> Void)?,
+        validate: ((WKWebView) -> Bool)?
+    ) -> WKWebView?
     func auxiliaryWindowSession(for tab: Tab) -> AuxiliaryWindowSession?
     func auxiliaryWindowSession(for sessionId: UUID) -> AuxiliaryWindowSession?
     func auxiliaryWindowSession(for window: NSWindow) -> AuxiliaryWindowSession?

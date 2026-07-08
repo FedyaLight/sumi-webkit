@@ -71,7 +71,8 @@ final class ExtensionControllerAttachmentOwner {
 
     func resolvedLiveWebView(for tab: Tab) -> WKWebView? {
         let runtime = dependencies.runtime()
-        let windowId = runtime.windowStateContainingTab(tab)?.id ?? tab.primaryWindowId
+        let windowId = runtime.windowStateContainingTab(tab)?.id
+            ?? runtime.primaryTrackedWindowId(tab.id)
         if let windowId,
            let webView = runtime.windowOwnedWebView(tab, windowId) {
             return webView
@@ -81,10 +82,7 @@ final class ExtensionControllerAttachmentOwner {
     }
 
     func ownedUntrackedCurrentWebView(for tab: Tab) -> WKWebView? {
-        guard tab.primaryWindowId == nil else { return nil }
-        guard let webView = tab.currentWebView else { return nil }
-        guard (webView as? FocusableWKWebView)?.owningTab === tab else { return nil }
-        return webView
+        dependencies.runtime().untrackedOwnedWebView(tab)
     }
 
     @discardableResult

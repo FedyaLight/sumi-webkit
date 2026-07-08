@@ -175,6 +175,17 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         webViewRegistry.windowIDs(for: tabId)
     }
 
+    /// Registry-backed primary window for a tab (preferred tracked candidate).
+    /// Does not require a wired visible-runtime context — safe for bare coordinators/tests.
+    func primaryTrackedWindowId(for tabId: UUID) -> UUID? {
+        visibleWebViewRuntimeOwner.preferredPrimaryWebViewCandidate(
+            for: tabId,
+            runtime: nil,
+            webViewRegistry: webViewRegistry
+        )?.owner.windowID
+            ?? windowIDs(for: tabId).sorted { $0.uuidString < $1.uuidString }.first
+    }
+
     func setWebView(_ webView: WKWebView, for tabId: UUID, in windowId: UUID) {
         registerTrackedWebView(webView, for: tabId, in: windowId)
     }
@@ -577,6 +588,109 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
 
     func trackedOwner(containing webView: WKWebView) -> TrackedWebViewOwner? {
         webViewRegistry.trackedOwner(containing: webView)
+    }
+
+    /// Window-tracked WebViews first; then an untracked tab-owned instance if present.
+    func anyLiveWebView(for tab: Tab) -> WKWebView? {
+        if let primaryWindowId = primaryTrackedWindowId(for: tab.id),
+           let tracked = getWebView(for: tab.id, in: primaryWindowId) {
+            return tracked
+        }
+        if let firstTracked = getAllWebViews(for: tab.id).first {
+            return firstTracked
+        }
+        return untrackedOwnedWebView(for: tab)
+    }
+
+    func untrackedOwnedWebView(for tab: Tab) -> WKWebView? {
+        guard windowIDs(for: tab.id).isEmpty else { return nil }
+        guard let webView = tab.currentWebView else { return nil }
+        guard (webView as? FocusableWKWebView)?.owningTab === tab else { return nil }
+        return webView
+    }
+
+    func hasLiveWebView(for tab: Tab) -> Bool {
+        anyLiveWebView(for: tab) != nil
+    }
+
+    func ownsLiveWebView(_ webView: WKWebView, for tab: Tab) -> Bool {
+        if trackedOwner(containing: webView)?.tabID == tab.id {
+            return true
+        }
+        return tab.existingWebView === webView || tab.assignedWebView === webView
+    }
+
+    func assignWebView(_ webView: WKWebView, to tab: Tab, in windowId: UUID) {
+        tab.assignWebViewToWindow(webView, windowId: windowId)
+        setWebView(webView, for: tab.id, in: windowId)
+    }
+
+    func installUntrackedOwnedWebView(_ webView: WKWebView, for tab: Tab) {
+        tab.replaceUntrackedWebView(webView)
+    }
+
+    /// Materializes a tab-owned WebView without assigning a window slot.
+    /// Used by Glance previews and other pre-window surfaces.
+    @discardableResult
+    func ensureUntrackedOwnedWebView(for tab: Tab) -> WKWebView? {
+        if let existing = anyLiveWebView(for: tab) {
+            return existing
+        }
+        return tab.ensureUntrackedNormalWebView(
+            reason: "WebViewCoordinator.ensureUntrackedOwnedWebView"
+        )
+    }
+
+    /// Releases an untracked tab-owned WebView (Glance dismiss, pre-window teardown).
+    func releaseUntrackedOwnedWebView(for tab: Tab) {
+        if let webView = anyLiveWebView(for: tab) {
+            tab.cleanupCloneWebView(webView)
+        }
+        tab.clearCurrentWebViewOwnership()
+        _ = removeAllWebViews(for: tab)
+    }
+
+    /// Atomically replaces the live WebView for a tab (windowed or untracked).
+    /// Creates via Tab factory, optionally validates before install, then cleans up the previous instance.
+    @discardableResult
+    func replaceLiveWebView(
+        for tab: Tab,
+        in windowId: UUID?,
+        reason: String,
+        prepareConfiguration: ((WKWebViewConfiguration) -> Void)? = nil,
+        prepareReplacement: ((WKWebView) -> Void)? = nil,
+        validate: ((WKWebView) -> Bool)? = nil
+    ) -> WKWebView? {
+        let previousWebView = {
+            if let windowId {
+                return getWebView(for: tab.id, in: windowId) ?? anyLiveWebView(for: tab)
+            }
+            return anyLiveWebView(for: tab)
+        }()
+
+        guard let replacementWebView = tab.makeNormalTabWebView(
+            reason: reason,
+            prepareConfiguration: prepareConfiguration
+        ) else {
+            return nil
+        }
+        prepareReplacement?(replacementWebView)
+        if let validate, validate(replacementWebView) == false {
+            tab.cleanupCloneWebView(replacementWebView)
+            return nil
+        }
+
+        if let windowId {
+            assignWebView(replacementWebView, to: tab, in: windowId)
+        } else {
+            installUntrackedOwnedWebView(replacementWebView, for: tab)
+        }
+
+        if let previousWebView, previousWebView !== replacementWebView {
+            tab.cleanupCloneWebView(previousWebView)
+        }
+
+        return replacementWebView
     }
 
     private func uniqueWebViews(_ webViews: [WKWebView]) -> [WKWebView] {

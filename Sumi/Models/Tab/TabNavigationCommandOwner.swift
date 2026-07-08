@@ -14,7 +14,7 @@ final class TabNavigationCommandOwner {
                 for: tab,
                 reason: "Tab.loadURL.initial"
             )
-            tab.setupWebView()
+            _ = tab.ensureUntrackedNormalWebView(reason: "Tab.loadURL.initial")
             return
         }
 

@@ -165,7 +165,11 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
         )
         let session = try XCTUnwrap(harness.browserManager.glanceManager.currentSession)
         let previewTab = session.previewTab
-        XCTAssertNotNil(previewTab.ensureWebView())
+        XCTAssertNotNil(
+            previewTab.ensureUntrackedNormalWebView(
+                reason: "SumiStartupSessionCoordinatorTests.glancePreview"
+            )
+        )
 
         harness.browserManager.startupPolicyOwner.applyStartupPolicy(.nothing)
 

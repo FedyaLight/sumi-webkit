@@ -536,6 +536,10 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
             isExtensionOriginated: isExtensionOriginated,
             reason: "SumiPopupHandlingNavigationResponder.createChildWebView"
         )
+        tab.navigationRuntime.popupHandlingRuntime.installUntrackedOwnedWebView(
+            childWebView,
+            childTab
+        )
         if policy.shouldActivateTab,
            let windowState = tab.navigationRuntime.popupHandlingRuntime.windowStateContainingTab(tab) {
             tab.navigationRuntime.popupHandlingRuntime.selectTab(childTab, windowState)

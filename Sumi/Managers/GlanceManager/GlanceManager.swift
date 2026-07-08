@@ -215,8 +215,8 @@ final class GlanceManager: ObservableObject {
 
     @discardableResult
     func handleWebViewDidClose(_ webView: WKWebView) -> Bool {
-        guard currentSession?.previewTab.existingWebView === webView
-            || currentSession?.previewTab.assignedWebView === webView
+        guard let session = currentSession,
+              runtime?.ownsPreviewWebView(session.previewTab, webView) == true
         else {
             return false
         }
@@ -251,7 +251,8 @@ final class GlanceManager: ObservableObject {
     }
 
     func activePreviewWebView(for windowState: BrowserWindowState) -> WKWebView? {
-        activeSession(for: windowState)?.previewTab.existingWebView
+        guard let session = activeSession(for: windowState) else { return nil }
+        return runtime?.previewWebView(session.previewTab)
     }
 
     func activeSession(for windowState: BrowserWindowState) -> GlanceSession? {
@@ -305,10 +306,8 @@ final class GlanceManager: ObservableObject {
             return
         }
 
-        if !preservesPreviewWebView,
-           let webView = session.previewTab.existingWebView {
-            session.previewTab.cleanupCloneWebView(webView)
-            session.previewTab.clearCurrentWebViewOwnership()
+        if !preservesPreviewWebView {
+            runtime?.releasePreviewWebView(session.previewTab)
         }
 
         let shouldResetFindManager = runtime?.findCurrentTabId() == session.previewTab.id
@@ -362,7 +361,7 @@ final class GlanceManager: ObservableObject {
             guard let self,
                   let session,
                   self.currentSession?.id == session.id,
-                  let webView = previewTab.ensureWebView()
+                  let webView = self.runtime?.ensurePreviewWebView(previewTab, windowId)
             else { return }
 
             webView.allowsMagnification = false

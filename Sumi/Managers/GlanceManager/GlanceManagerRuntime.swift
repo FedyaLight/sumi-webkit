@@ -1,4 +1,5 @@
 import Foundation
+import WebKit
 
 @MainActor
 extension GlanceManager {
@@ -29,5 +30,9 @@ extension GlanceManager {
             UUID,
             @escaping @MainActor () -> Void
         ) -> Bool
+        let previewWebView: @MainActor (Tab) -> WKWebView?
+        let ensurePreviewWebView: @MainActor (Tab, UUID) -> WKWebView?
+        let ownsPreviewWebView: @MainActor (Tab, WKWebView) -> Bool
+        let releasePreviewWebView: @MainActor (Tab) -> Void
     }
 }

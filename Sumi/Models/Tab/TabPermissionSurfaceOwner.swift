@@ -281,7 +281,8 @@ extension TabPermissionSurfaceOwner.Context {
                 tab?.isCurrentTab ?? false
             },
             isVisibleTab: { [weak tab] in
-                tab?.primaryWindowId != nil
+                // Visible when assigned to a window slot (coordinator-synced cache).
+                tab?.assignedWebView != nil
             },
             pageIdentity: { [weak tab] in
                 tab?.extensionPageRuntimeOwner.pageIdentity(tabId: tabId)

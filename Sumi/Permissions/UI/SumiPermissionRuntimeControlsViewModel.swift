@@ -9,7 +9,7 @@ final class SumiPermissionRuntimeControlsViewModel: ObservableObject {
         let pageId: String?
         let navigationOrPageGeneration: String?
         let displayDomain: String
-        let currentWebView: @MainActor () -> WKWebView?
+        let resolveWebView: @MainActor () -> WKWebView?
         let isCurrentPage: @MainActor (_ tabId: String?, _ pageId: String?, _ navigationOrPageGeneration: String?) -> Bool
         let reloadPage: @MainActor () -> Bool
         let isGeolocationStillAllowed: @MainActor () async -> Bool
@@ -50,7 +50,7 @@ final class SumiPermissionRuntimeControlsViewModel: ObservableObject {
                 pageContext.pageId,
                 pageContext.navigationOrPageGeneration
               ),
-              let webView = pageContext.currentWebView()
+              let webView = pageContext.resolveWebView()
         else {
             runtimeState = nil
             controls = []
@@ -117,7 +117,7 @@ final class SumiPermissionRuntimeControlsViewModel: ObservableObject {
             rebuildControls()
             return result
         }
-        guard let webView = pageContext.currentWebView() else {
+        guard let webView = pageContext.resolveWebView() else {
             let result = SumiPermissionRuntimeControlResult.missingWebView()
             lastResult = result
             rebuildControls()

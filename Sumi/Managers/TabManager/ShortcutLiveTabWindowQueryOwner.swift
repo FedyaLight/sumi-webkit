@@ -11,6 +11,7 @@ final class ShortcutLiveTabWindowQueryOwner {
     struct Dependencies {
         let runtimeContext: @MainActor () -> TabManagerRuntimeContext?
         let tab: @MainActor (UUID) -> Tab?
+        let primaryTrackedWindowId: @MainActor (UUID) -> UUID?
     }
 
     private let dependencies: Dependencies
@@ -32,7 +33,7 @@ final class ShortcutLiveTabWindowQueryOwner {
 
         var orderedWindowIds: [UUID] = []
 
-        if let primaryWindowId = dependencies.tab(tabId)?.primaryWindowId,
+        if let primaryWindowId = dependencies.primaryTrackedWindowId(tabId),
            let primaryWindow = runtimeContext.windowState(for: primaryWindowId),
            windowSelectsTab(primaryWindow) {
             orderedWindowIds.append(primaryWindowId)
@@ -77,7 +78,7 @@ final class ShortcutLiveTabWindowQueryOwner {
             orderedWindowIds.append(preferredWindowId)
         }
 
-        if let primaryWindowId = dependencies.tab(tabId)?.primaryWindowId,
+        if let primaryWindowId = dependencies.primaryTrackedWindowId(tabId),
            let primaryWindow = runtimeContext.windowState(for: primaryWindowId),
            windowDisplaysTab(primaryWindowId, primaryWindow),
            !orderedWindowIds.contains(primaryWindowId) {

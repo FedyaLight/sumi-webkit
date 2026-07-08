@@ -379,7 +379,10 @@ final class GlanceManagerTests: XCTestCase {
         browserManager.glanceManager.presentExternalURL(url, from: sourceTab)
         let session = try XCTUnwrap(browserManager.glanceManager.currentSession)
         let previewTab = session.previewTab
-        let webView = try await waitForPreviewWebView(in: session)
+        let webView = try await waitForPreviewWebView(
+            in: session,
+            manager: browserManager.glanceManager
+        )
 
         XCTAssertFalse(previewTab.isCurrentTab)
         XCTAssertNil(previewTab.primaryWindowId)
@@ -579,16 +582,23 @@ final class GlanceManagerTests: XCTestCase {
 
     private func waitForPreviewWebView(
         in session: GlanceSession,
+        manager: GlanceManager? = nil,
         file: StaticString = #filePath,
         line: UInt = #line
     ) async throws -> WKWebView {
         for _ in 0..<20 {
-            if let webView = session.previewTab.existingWebView {
+            if let webView = manager?.runtime?.previewWebView(session.previewTab)
+                ?? session.previewTab.existingWebView {
                 return webView
             }
             await Task.yield()
         }
-        return try XCTUnwrap(session.previewTab.existingWebView, file: file, line: line)
+        return try XCTUnwrap(
+            manager?.runtime?.previewWebView(session.previewTab)
+                ?? session.previewTab.existingWebView,
+            file: file,
+            line: line
+        )
     }
 
     private func makeRuntime(
@@ -623,7 +633,23 @@ final class GlanceManagerTests: XCTestCase {
             selectPromotedTab: { _, _ in /* No-op. */ },
             selectPromotedTabInActiveWindow: { _ in /* No-op. */ },
             createSplitPlaceholder: { _ in /* No-op. */ },
-            registerPromotedHost: { _, _, _, _ in false }
+            registerPromotedHost: { _, _, _, _ in false },
+            previewWebView: { tab in tab.existingWebView },
+            ensurePreviewWebView: { tab, _ in
+                tab.ensureUntrackedNormalWebView(
+                    reason: "GlanceManagerTests.ensurePreviewWebView"
+                )
+            },
+            ownsPreviewWebView: { tab, webView in
+                tab.existingWebView === webView || tab.assignedWebView === webView
+            },
+            releasePreviewWebView: { tab in
+                if let webView = tab.existingWebView {
+                    tab.cleanupCloneWebView(webView)
+                }
+                // Mirror coordinator.releaseUntrackedOwnedWebView for injected runtime tests.
+                tab.clearCurrentWebViewOwnership()
+            }
         )
     }
 }

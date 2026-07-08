@@ -9,6 +9,7 @@ final class WebViewNavigationBroadcastOwner {
         let crossWindowSyncOwner: WebViewCrossWindowSyncOwner
         let webViewRegistry: WindowWebViewRegistry
         let isWebViewProtectedFromCompositorMutation: @MainActor (WKWebView) -> Bool
+        let primaryTrackedWindowId: @MainActor (UUID) -> UUID?
         let rebuildLiveWebViews: @MainActor (Tab, UUID?, URL?) -> Bool
     }
 
@@ -44,7 +45,7 @@ final class WebViewNavigationBroadcastOwner {
         if tab.configurationPolicyRequiresNormalWebViewRebuild(for: reloadTargetURL) {
             if dependencies.rebuildLiveWebViews(
                 tab,
-                tab.primaryWindowId,
+                dependencies.primaryTrackedWindowId(tab.id),
                 reloadTargetURL
             ), protectionReloadWasRequired {
                 tab.noteProtectionManualReloadResult(
@@ -107,6 +108,9 @@ extension WebViewNavigationBroadcastOwner.Dependencies {
             webViewRegistry: coordinator.webViewRegistry,
             isWebViewProtectedFromCompositorMutation: { [weak coordinator] webView in
                 coordinator?.isWebViewProtectedFromCompositorMutation(webView) ?? false
+            },
+            primaryTrackedWindowId: { [weak coordinator] tabId in
+                coordinator?.primaryTrackedWindowId(for: tabId)
             },
             rebuildLiveWebViews: { [weak coordinator] tab, preferredPrimaryWindowId, url in
                 coordinator?.rebuildLiveWebViews(

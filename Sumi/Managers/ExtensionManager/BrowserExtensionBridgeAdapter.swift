@@ -20,6 +20,16 @@ final class BrowserExtensionBridgeAdapter {
         let selectTab: @MainActor (Tab, BrowserWindowState) -> Void
         let materializeVisibleTabWebViewIfNeeded: @MainActor (Tab, BrowserWindowState) -> Void
         let windowOwnedWebView: @MainActor (Tab, UUID) -> WKWebView?
+        let assignWebView: @MainActor (WKWebView, Tab, UUID) -> Void
+        let installUntrackedOwnedWebView: @MainActor (WKWebView, Tab) -> Void
+        let replaceLiveWebView: @MainActor (
+            Tab,
+            UUID?,
+            String,
+            ((WKWebViewConfiguration) -> Void)?,
+            ((WKWebView) -> Void)?,
+            ((WKWebView) -> Bool)?
+        ) -> WKWebView?
         let createNewWindow: @MainActor () -> Void
         let urlBarHubAnchorView: @MainActor (UUID) -> NSView?
         let sumiSettings: @MainActor () -> SumiSettingsService?
@@ -138,7 +148,7 @@ extension BrowserExtensionBridgeAdapter: ExtensionBrowserBridgeContext {
     }
 
     func preferredExtensionWindowState(containing tab: Tab) -> BrowserWindowState? {
-        if let primaryWindowId = tab.primaryWindowId,
+        if let primaryWindowId = dependencies.webViewCoordinator()?.primaryTrackedWindowId(for: tab.id),
            let primaryWindow = windowRegistry?.windows[primaryWindowId] {
             return primaryWindow
         }
@@ -291,7 +301,32 @@ extension BrowserExtensionBridgeAdapter: ExtensionBrowserBridgeContext {
         to tab: Tab,
         in windowState: BrowserWindowState
     ) {
-        dependencies.webViewCoordinator()?.setWebView(webView, for: tab.id, in: windowState.id)
+        dependencies.assignWebView(webView, tab, windowState.id)
+    }
+
+    func replaceUntrackedExtensionWebView(
+        _ webView: WKWebView,
+        for tab: Tab
+    ) {
+        dependencies.installUntrackedOwnedWebView(webView, tab)
+    }
+
+    func replaceExtensionLiveWebView(
+        for tab: Tab,
+        in windowState: BrowserWindowState?,
+        reason: String,
+        prepareConfiguration: ((WKWebViewConfiguration) -> Void)?,
+        prepareReplacement: ((WKWebView) -> Void)?,
+        validate: ((WKWebView) -> Bool)?
+    ) -> WKWebView? {
+        dependencies.replaceLiveWebView(
+            tab,
+            windowState?.id,
+            reason,
+            prepareConfiguration,
+            prepareReplacement,
+            validate
+        )
     }
 
     func auxiliaryWindowSession(for tab: Tab) -> AuxiliaryWindowSession? {
@@ -435,6 +470,22 @@ extension BrowserExtensionBridgeAdapter.Dependencies {
             },
             windowOwnedWebView: { [weak browserManager] tab, windowId in
                 browserManager?.webViewRoutingService.windowOwnedWebView(for: tab, in: windowId)
+            },
+            assignWebView: { [weak browserManager] webView, tab, windowId in
+                browserManager?.webViewRoutingService.assignWebView(webView, to: tab, in: windowId)
+            },
+            installUntrackedOwnedWebView: { [weak browserManager] webView, tab in
+                browserManager?.webViewRoutingService.installUntrackedOwnedWebView(webView, for: tab)
+            },
+            replaceLiveWebView: { [weak browserManager] tab, windowId, reason, prepareConfiguration, prepareReplacement, validate in
+                browserManager?.webViewRoutingService.replaceLiveWebView(
+                    for: tab,
+                    in: windowId,
+                    reason: reason,
+                    prepareConfiguration: prepareConfiguration,
+                    prepareReplacement: prepareReplacement,
+                    validate: validate
+                )
             },
             createNewWindow: { [weak browserManager] in
                 browserManager?.windowShellCommandOwner.createNewWindow()

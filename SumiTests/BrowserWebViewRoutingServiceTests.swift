@@ -118,6 +118,45 @@ final class BrowserWebViewRoutingServiceTests: XCTestCase {
 
         XCTAssertNil(service.windowOwnedWebView(for: tab, in: UUID()))
     }
+
+    func testAnyLiveWebViewFallsBackToUntrackedOwnedWebViewViaCoordinator() throws {
+        let tab = Tab(
+            url: try XCTUnwrap(URL(string: "https://example.com/page")),
+            loadsCachedFaviconOnInit: false
+        )
+        let untracked = FocusableWKWebView(frame: .zero, configuration: WKWebViewConfiguration())
+        untracked.owningTab = tab
+        tab.replaceUntrackedWebView(untracked)
+        let coordinator = RecordingWebViewCoordinator()
+        let service = BrowserWebViewRoutingService(
+            tabLookup: { tabId in tabId == tab.id ? tab : nil },
+            coordinatorProvider: { coordinator }
+        )
+
+        XCTAssertIdentical(service.anyLiveWebView(for: tab), untracked)
+        XCTAssertTrue(service.hasLiveWebView(for: tab))
+        XCTAssertTrue(service.ownsLiveWebView(untracked, for: tab))
+    }
+
+    func testGetOrCreateWebViewDelegatesToCoordinator() throws {
+        let tab = Tab(
+            url: try XCTUnwrap(URL(string: "https://example.com/page")),
+            loadsCachedFaviconOnInit: false
+        )
+        let created = WKWebView()
+        let coordinator = RecordingWebViewCoordinator()
+        coordinator.getOrCreateWebViewToReturn = created
+        let windowId = UUID()
+        let service = BrowserWebViewRoutingService(
+            tabLookup: { tabId in tabId == tab.id ? tab : nil },
+            coordinatorProvider: { coordinator }
+        )
+
+        XCTAssertIdentical(service.getOrCreateWebView(for: tab, in: windowId), created)
+        XCTAssertEqual(coordinator.getOrCreateRequests.count, 1)
+        XCTAssertEqual(coordinator.getOrCreateRequests.first?.windowId, windowId)
+        XCTAssertIdentical(coordinator.getOrCreateRequests.first?.tab, tab)
+    }
 }
 
 private final class RecordingWebViewCoordinator: WebViewCoordinator {
@@ -143,7 +182,9 @@ private final class RecordingWebViewCoordinator: WebViewCoordinator {
     }
 
     var webViewToReturn: WKWebView?
+    var getOrCreateWebViewToReturn: WKWebView?
     private(set) var webViewRequests: [WebViewRequest] = []
+    private(set) var getOrCreateRequests: [(tab: Tab, windowId: UUID)] = []
     private(set) var syncCalls: [SyncCall] = []
     private(set) var reloadCalls: [Tab] = []
     private(set) var windowReloadCalls: [WindowReloadCall] = []
@@ -152,6 +193,15 @@ private final class RecordingWebViewCoordinator: WebViewCoordinator {
     override func getWebView(for tabId: UUID, in windowId: UUID) -> WKWebView? {
         webViewRequests.append(WebViewRequest(tabId: tabId, windowId: windowId))
         return webViewToReturn
+    }
+
+    override func getOrCreateWebView(for tab: Tab, in windowId: UUID) -> WKWebView? {
+        getOrCreateRequests.append((tab, windowId))
+        return getOrCreateWebViewToReturn
+    }
+
+    override func getAllWebViews(for tabId: UUID) -> [WKWebView] {
+        []
     }
 
     override func syncTab(_ tab: Tab, to url: URL, originatingWebView: WKWebView?) {

@@ -58,6 +58,12 @@ enum TabPopupRuntimeFactory {
                         activate: activate
                     )
                 },
+                installUntrackedOwnedWebView: { [weak browserManager] webView, tab in
+                    browserManager?.webViewRoutingService.installUntrackedOwnedWebView(
+                        webView,
+                        for: tab
+                    )
+                },
                 windowStateContainingTab: { [weak browserManager] tab in
                     browserManager?.windowTabContextOwner.windowState(containing: tab)
                 },
@@ -90,6 +96,7 @@ extension TabPopupHandlingRuntime {
         ) -> WKWebView?
         let openerProfile: (Tab) -> Profile?
         let createPopupTab: (_ openerTab: Tab, _ activate: Bool) -> Tab?
+        let installUntrackedOwnedWebView: (WKWebView, Tab) -> Void
         let windowStateContainingTab: (Tab) -> BrowserWindowState?
         let selectTab: (Tab, BrowserWindowState) -> Void
         let notifications: () -> (any BrowserNotificationPresenting)?
@@ -128,6 +135,7 @@ extension TabPopupHandlingRuntime {
                     dependencies.materializeVisibleTabWebViewIfNeeded(childTab, windowState)
                     dependencies.selectTab(childTab, windowState)
                 }
+                // Prefer windowed materialize above; untracked ensure only if still unloaded.
                 if childTab.isUnloaded {
                     childTab.loadWebViewIfNeeded()
                 }
@@ -156,6 +164,7 @@ extension TabPopupHandlingRuntime {
                 )
             },
             createPopupTab: dependencies.createPopupTab,
+            installUntrackedOwnedWebView: dependencies.installUntrackedOwnedWebView,
             windowStateContainingTab: dependencies.windowStateContainingTab,
             selectTab: dependencies.selectTab,
             notifications: dependencies.notifications

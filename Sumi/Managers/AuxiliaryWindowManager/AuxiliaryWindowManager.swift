@@ -100,6 +100,7 @@ struct AuxiliaryWindowRuntime {
     ) -> Tab?
     typealias TabHandler = @MainActor (_ tab: Tab) -> Void
     typealias ExtensionCreatedTabRegistrar = @MainActor (_ tab: Tab, _ reason: String) -> Void
+    typealias UntrackedWebViewInstaller = @MainActor (_ webView: WKWebView, _ tab: Tab) -> Void
     typealias PopupPermissionBridgeProvider = @MainActor () -> SumiPopupPermissionBridge?
     typealias FilePickerPermissionBridgeProvider = @MainActor () -> SumiFilePickerPermissionBridge?
 
@@ -113,6 +114,7 @@ struct AuxiliaryWindowRuntime {
     let removeMiniWindowTab: TabHandler
     let notifyTabClosedIfLoaded: TabHandler
     let registerExtensionCreatedTabIfLoaded: ExtensionCreatedTabRegistrar
+    let installUntrackedOwnedWebView: UntrackedWebViewInstaller
     let popupPermissionBridge: PopupPermissionBridgeProvider
     let filePickerPermissionBridge: FilePickerPermissionBridgeProvider
 
@@ -127,6 +129,7 @@ struct AuxiliaryWindowRuntime {
         removeMiniWindowTab: @escaping TabHandler,
         notifyTabClosedIfLoaded: @escaping TabHandler,
         registerExtensionCreatedTabIfLoaded: @escaping ExtensionCreatedTabRegistrar,
+        installUntrackedOwnedWebView: @escaping UntrackedWebViewInstaller,
         popupPermissionBridge: @escaping PopupPermissionBridgeProvider,
         filePickerPermissionBridge: @escaping FilePickerPermissionBridgeProvider
     ) {
@@ -140,6 +143,7 @@ struct AuxiliaryWindowRuntime {
         self.removeMiniWindowTab = removeMiniWindowTab
         self.notifyTabClosedIfLoaded = notifyTabClosedIfLoaded
         self.registerExtensionCreatedTabIfLoaded = registerExtensionCreatedTabIfLoaded
+        self.installUntrackedOwnedWebView = installUntrackedOwnedWebView
         self.popupPermissionBridge = popupPermissionBridge
         self.filePickerPermissionBridge = filePickerPermissionBridge
     }
@@ -155,6 +159,7 @@ struct AuxiliaryWindowRuntime {
         removeMiniWindowTab: { _ in /* No-op. */ },
         notifyTabClosedIfLoaded: { _ in /* No-op. */ },
         registerExtensionCreatedTabIfLoaded: { _, _ in /* No-op. */ },
+        installUntrackedOwnedWebView: { _, _ in /* No-op. */ },
         popupPermissionBridge: { nil },
         filePickerPermissionBridge: { nil }
     )
@@ -276,6 +281,7 @@ final class AuxiliaryWindowManager {
             isExtensionOriginated: false,
             reason: "AuxiliaryWindowManager.presentWebPopup"
         )
+        runtime.installUntrackedOwnedWebView(webView, miniTab)
 
         guard finalizePresentation(
             tab: miniTab,
@@ -342,6 +348,7 @@ final class AuxiliaryWindowManager {
             isExtensionOriginated: true,
             reason: "AuxiliaryWindowManager.presentExtensionExternalWebPopup"
         )
+        runtime.installUntrackedOwnedWebView(webView, miniTab)
 
         guard finalizePresentation(
             tab: miniTab,
@@ -447,6 +454,7 @@ final class AuxiliaryWindowManager {
             isExtensionOriginated: true,
             reason: "AuxiliaryWindowManager.presentExtensionPopupWindow"
         )
+        runtime.installUntrackedOwnedWebView(webView, miniTab)
 
         let shouldActivateApp = configuration.shouldBeFocused
         let ownerExtensionID = resolveOwnerExtensionID(

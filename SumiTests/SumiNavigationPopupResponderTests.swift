@@ -291,6 +291,7 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
             presentWebPopup: { _, _, _, _, _ in nil },
             applyVisitedLinksToPopupConfiguration: { _, _ in /* No-op. */ },
             createPopupTab: { _, _ in nil },
+            installUntrackedOwnedWebView: { _, _ in /* No-op. */ },
             windowStateContainingTab: { _ in nil },
             selectTab: { _, _ in /* No-op. */ },
             notifications: { nil }

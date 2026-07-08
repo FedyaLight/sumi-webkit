@@ -9,13 +9,6 @@ extension Tab {
         primaryWindowId != nil ? _webView : nil
     }
 
-    /// Ensures a WebView exists, triggering lazy initialization if needed.
-    /// Prefer `existingWebView` for read-only checks that should not create a WebView.
-    @discardableResult
-    func ensureWebView() -> WKWebView? {
-        webViewProvisioningOwner.ensureWebView(context: normalWebViewRuntimeContext())
-    }
-
     /// Returns the current WebView without triggering lazy initialization.
     var existingWebView: WKWebView? {
         currentWebView
@@ -85,7 +78,7 @@ extension Tab {
     }
 
     /// Installs the Tab-owned runtime observers on WebViews created outside
-    /// `Tab.setupWebView()`, for example by `WebViewCoordinator`.
+    /// the untracked ensure path, for example by `WebViewCoordinator`.
     func installRuntimeObservers(on webView: WKWebView) {
         ownedWebViewPreparationOwner.installRuntimeObservers(on: webView)
     }
@@ -201,11 +194,21 @@ extension Tab {
         )
     }
 
-    func setupWebView() {
-        normalWebViewSetupOwner.setupWebView(
+    /// Single create-policy path for pre-window / untracked normal-tab WebViews.
+    @discardableResult
+    func ensureUntrackedNormalWebView(
+        reason: String = "Tab.ensureUntrackedNormalWebView"
+    ) -> WKWebView? {
+        normalWebViewSetupOwner.ensureUntrackedNormalWebView(
             context: normalWebViewRuntimeContext(),
-            provisioningOwner: webViewProvisioningOwner
+            provisioningOwner: webViewProvisioningOwner,
+            reason: reason
         )
+    }
+
+    /// Thin wrapper retained for call sites that historically named this `setupWebView`.
+    func setupWebView() {
+        _ = ensureUntrackedNormalWebView(reason: "Tab.setupWebView")
     }
 
     func resolveProfile() -> Profile? {

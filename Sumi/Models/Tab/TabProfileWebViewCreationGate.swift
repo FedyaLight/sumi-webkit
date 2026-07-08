@@ -7,7 +7,7 @@ final class TabProfileWebViewCreationGate {
         let currentProfileAwaitCancellable: @MainActor () -> AnyCancellable?
         let setCurrentProfileAwaitCancellable: @MainActor (AnyCancellable?) -> Void
         let hasCurrentWebView: @MainActor () -> Bool
-        let setupWebView: @MainActor () -> Void
+        let ensureUntrackedNormalWebView: @MainActor () -> Void
     }
 
     private let dependencies: Dependencies
@@ -45,7 +45,7 @@ final class TabProfileWebViewCreationGate {
 
         dependencies.currentProfileAwaitCancellable()?.cancel()
         dependencies.setCurrentProfileAwaitCancellable(nil)
-        dependencies.setupWebView()
+        dependencies.ensureUntrackedNormalWebView()
     }
 }
 
@@ -66,8 +66,10 @@ extension TabProfileWebViewCreationGate.Dependencies {
             hasCurrentWebView: { [weak tab] in
                 tab?.hasCurrentWebView ?? false
             },
-            setupWebView: { [weak tab] in
-                tab?.setupWebView()
+            ensureUntrackedNormalWebView: { [weak tab] in
+                _ = tab?.ensureUntrackedNormalWebView(
+                    reason: "TabProfileWebViewCreationGate"
+                )
             }
         )
     }

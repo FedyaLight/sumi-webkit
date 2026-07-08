@@ -60,7 +60,10 @@ enum TabBrowserHostServicesRuntimeFactory {
                 guard let browserManager,
                       let session = browserManager.glanceManager.currentSession,
                       session.previewTab.id == tabId,
-                      session.previewTab.existingWebView === webView,
+                      browserManager.webViewRoutingService.ownsLiveWebView(
+                        webView,
+                        for: session.previewTab
+                      ),
                       let windowState = browserManager.windowRegistry?.windows[session.windowId],
                       browserManager.glanceManager.activeSession(for: windowState)?.id == session.id
                 else {

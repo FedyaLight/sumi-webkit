@@ -3,14 +3,8 @@ import WebKit
 
 @MainActor
 final class TabWebViewProvisioningOwner {
-    @discardableResult
-    func ensureWebView(context: TabNormalWebViewRuntimeContext) -> WKWebView? {
-        if !context.hasCurrentWebView {
-            context.setupWebView()
-        }
-        return context.currentWebView()
-    }
-
+    /// Constructs an auxiliary mini-window WebView. Does not install ownership —
+    /// callers must install via WebViewCoordinator / routing.
     @discardableResult
     func createAuxiliaryMiniWindowWebViewFromWebKitConfiguration(
         _ configuration: WKWebViewConfiguration,
@@ -20,18 +14,17 @@ final class TabWebViewProvisioningOwner {
         reason: String
     ) -> WKWebView {
         let webView = AuxiliaryWebViewFactory.makeWebViewPreservingWebKitConfiguration(configuration)
-        context.replaceUntrackedWebView(webView)
-
         context.preparationRuntime.prepareCreatedFocusableWebView(
             webView,
             currentURL,
             reason,
             .auxiliary(prepareExtensionRuntime: isExtensionOriginated)
         )
-
         return webView
     }
 
+    /// Constructs a popup WebView. Does not install ownership —
+    /// callers must install via WebViewCoordinator / routing.
     @discardableResult
     func createPopupWebViewFromWebKitConfiguration(
         _ configuration: WKWebViewConfiguration,
@@ -41,18 +34,17 @@ final class TabWebViewProvisioningOwner {
         reason: String
     ) -> WKWebView {
         let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
-        context.replaceUntrackedWebView(webView)
-
         context.preparationRuntime.prepareCreatedFocusableWebView(
             webView,
             currentURL,
             reason,
             .auxiliary(prepareExtensionRuntime: isExtensionOriginated)
         )
-
         return webView
     }
 
+    /// Constructs an auxiliary-override WebView. Does not install ownership —
+    /// the untracked ensure path installs after construction.
     @discardableResult
     func createAuxiliaryOverrideWebView(
         _ configuration: WKWebViewConfiguration,
@@ -61,15 +53,12 @@ final class TabWebViewProvisioningOwner {
         reason: String
     ) -> WKWebView {
         let webView = AuxiliaryWebViewFactory.makeWebViewPreservingWebKitConfiguration(configuration)
-        context.replaceUntrackedWebView(webView)
-
         context.preparationRuntime.prepareCreatedFocusableWebView(
             webView,
             currentURL,
             reason,
             .auxiliaryOverride
         )
-
         return webView
     }
 
