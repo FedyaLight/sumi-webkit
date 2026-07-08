@@ -479,24 +479,7 @@ struct FloatingBarView: View {
 
     private func handleReturn() {
         if let site = searchSession.activeSiteSearch {
-            let query: String
-            if searchSession.selectedSuggestionIndex >= 0
-                && searchSession.selectedSuggestionIndex < visibleSuggestions.count {
-                query = visibleSuggestions[searchSession.selectedSuggestionIndex].text
-            } else {
-                query = searchSession.text
-            }
-            guard !query.isEmpty else { return }
-            let navigateURL = resolvedSiteSearchURL(site: site, query: query).absoluteString
-            guard interactionCommitOwner.requestCommit(in: windowState, perform: {
-                browserContext.commitFloatingBarNavigation(
-                    to: navigateURL,
-                    in: windowState
-                )
-            }) else { return }
-            searchSession.text = ""
-            searchSession.activeSiteSearch = nil
-            searchSession.selectedSuggestionIndex = -1
+            commitActiveSiteSearch(site, query: activeSiteSearchReturnQuery())
             return
         }
 
@@ -517,12 +500,41 @@ struct FloatingBarView: View {
     }
 
     private func selectSuggestion(_ suggestion: SearchManager.SearchSuggestion) {
+        if let site = searchSession.activeSiteSearch {
+            commitActiveSiteSearch(site, query: suggestion.text)
+            return
+        }
+
         guard interactionCommitOwner.requestCommit(in: windowState, perform: {
             browserContext.commitFloatingBarSuggestion(
                 suggestion,
                 in: windowState
             )
         }) else { return }
+        resetCommittedSearchSession()
+    }
+
+    private func activeSiteSearchReturnQuery() -> String {
+        if searchSession.selectedSuggestionIndex >= 0
+            && searchSession.selectedSuggestionIndex < visibleSuggestions.count {
+            return visibleSuggestions[searchSession.selectedSuggestionIndex].text
+        }
+        return searchSession.text
+    }
+
+    private func commitActiveSiteSearch(_ site: SumiSearchEngine, query: String) {
+        guard !query.isEmpty else { return }
+        let navigateURL = resolvedSiteSearchURL(site: site, query: query).absoluteString
+        guard interactionCommitOwner.requestCommit(in: windowState, perform: {
+            browserContext.commitFloatingBarNavigation(
+                to: navigateURL,
+                in: windowState
+            )
+        }) else { return }
+        resetCommittedSearchSession()
+    }
+
+    private func resetCommittedSearchSession() {
         searchSession.text = ""
         searchSession.activeSiteSearch = nil
         searchSession.selectedSuggestionIndex = -1
