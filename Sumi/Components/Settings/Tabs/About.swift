@@ -30,13 +30,12 @@ struct SettingsAboutTab: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            SumiAboutVersionPanel(
-                metadata: metadata,
-                channelName: updateViewModel.channelDisplayName,
+            SumiAboutStatusPanel(
+                viewModel: updateViewModel,
                 appIconImage: appIconImage
             )
 
-            SumiAboutUpdatePanel(
+            SumiAboutVersionUpdatePanel(
                 viewModel: updateViewModel,
                 onRetry: { updaterService.checkForUpdatesFromAboutView() }
             )
@@ -53,213 +52,277 @@ struct SettingsAboutTab: View {
     }
 }
 
-private struct SumiAboutVersionPanel: View {
-    let metadata: SumiAppVersionMetadata
-    let channelName: String
+private enum SumiAboutLayout {
+    static let cardHorizontalPadding: CGFloat = 18
+    static let cardVerticalPadding: CGFloat = 18
+    static let appIconSize: CGFloat = 76
+    static let appIconVisibleLeadingCorrection: CGFloat = -10
+}
+
+private struct SumiAboutCard<Content: View>: View {
+    let content: Content
+
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    var body: some View {
+        content
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, SumiAboutLayout.cardVerticalPadding)
+            .padding(.horizontal, SumiAboutLayout.cardHorizontalPadding)
+            .background(
+                RoundedRectangle(cornerRadius: SettingsSurfaceStyle.groupedCornerRadius, style: .continuous)
+                    .fill(SettingsSurfaceStyle.groupedBackground)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: SettingsSurfaceStyle.groupedCornerRadius, style: .continuous)
+                    .strokeBorder(SettingsSurfaceStyle.stroke, lineWidth: 1)
+            )
+            .accessibilityElement(children: .contain)
+    }
+}
+
+private struct SumiAboutStatusPanel: View {
+    let viewModel: SumiAboutUpdateViewModel
     let appIconImage: Image
 
     var body: some View {
-        SettingsSection(
-            title: metadata.displayName,
-            subtitle: "Current version"
-        ) {
-            HStack(alignment: .center, spacing: 16) {
+        SumiAboutCard {
+            HStack(alignment: .center, spacing: 18) {
                 appIconImage
                     .resizable()
                     .scaledToFit()
-                    .frame(width: 72, height: 72)
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .frame(width: SumiAboutLayout.appIconSize, height: SumiAboutLayout.appIconSize)
+                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    .offset(x: SumiAboutLayout.appIconVisibleLeadingCorrection)
 
-                VStack(alignment: .leading, spacing: 7) {
-                    HStack(spacing: 8) {
-                        Text(metadata.versionLine)
-                            .font(.title3.weight(.semibold))
-                            .foregroundStyle(.primary)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(statusTitle)
+                        .font(.title2.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
 
-                        Text(channelName.uppercased())
-                            .font(.caption2.weight(.bold))
+                    if let statusDetail {
+                        Text(statusDetail)
+                            .font(.callout)
                             .foregroundStyle(.secondary)
-                            .padding(.horizontal, 7)
-                            .padding(.vertical, 3)
-                            .background(
-                                Capsule(style: .continuous)
-                                    .fill(SettingsSurfaceStyle.fieldBackground)
-                            )
+                            .fixedSize(horizontal: false, vertical: true)
                     }
-
-                    Text(metadata.buildLine)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
                 }
 
                 Spacer(minLength: 0)
             }
         }
     }
+
+    private var statusTitle: String {
+        switch viewModel.panelState {
+        case .ready, .checking:
+            return "Checking for updates..."
+        case .upToDate:
+            return "Sumi is up to date"
+        case .updateAvailable(let update):
+            return "\(update.versionLine) is available"
+        case .checkFailed:
+            return "Couldn't check for updates"
+        case .unavailable:
+            return "Updates unavailable"
+        }
+    }
+
+    private var statusDetail: String? {
+        switch viewModel.panelState {
+        case .ready, .checking:
+            return "Sumi is looking for the latest \(viewModel.channelDisplayName) build."
+        case .upToDate:
+            return nil
+        case .updateAvailable:
+            return "Download and install the update with Sparkle."
+        case .checkFailed(let message), .unavailable(let message):
+            return message
+        }
+    }
 }
 
-private struct SumiAboutUpdatePanel: View {
+private struct SumiAboutVersionUpdatePanel: View {
     let viewModel: SumiAboutUpdateViewModel
     let onRetry: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            panelContent
+        SumiAboutCard {
+            HStack(alignment: .center, spacing: 10) {
+                SumiAboutStatusBadge(kind: statusBadgeKind)
+
+                Text(viewModel.metadata.versionLine)
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+
+                SumiAboutChannelBadge(title: viewModel.channelDisplayName.uppercased())
+
+                Spacer(minLength: 16)
+
+                actionButton
+            }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 16)
-        .padding(.horizontal, 18)
-        .background(
-            RoundedRectangle(cornerRadius: SettingsSurfaceStyle.groupedCornerRadius, style: .continuous)
-                .fill(SettingsSurfaceStyle.groupedBackground)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: SettingsSurfaceStyle.groupedCornerRadius, style: .continuous)
-                .strokeBorder(SettingsSurfaceStyle.stroke, lineWidth: 1)
-        )
-        .accessibilityElement(children: .contain)
+    }
+
+    private var statusBadgeKind: SumiAboutStatusBadge.Kind {
+        switch viewModel.panelState {
+        case .ready, .checking:
+            return .progress
+        case .upToDate:
+            return .checkmark
+        case .updateAvailable:
+            return .download
+        case .checkFailed:
+            return .warning
+        case .unavailable:
+            return .info
+        }
     }
 
     @ViewBuilder
-    private var panelContent: some View {
+    private var actionButton: some View {
         switch viewModel.panelState {
         case .ready, .checking:
-            SumiAboutUpdateStatusRow(
-                systemImage: nil,
-                title: "Checking for updates...",
-                subtitle: "Sumi is looking for the latest Alpha build.",
-                progress: true
-            )
-
+            Button("Check for Updates", action: onRetry)
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
+                .fixedSize()
+                .disabled(true)
         case .upToDate:
-            HStack(alignment: .center, spacing: 14) {
-                SumiAboutUpdateStatusRow(
-                    systemImage: nil,
-                    title: "Sumi is up to date",
-                    subtitle: "Sumi \(viewModel.metadata.shortVersion)",
-                    symbolStyle: .green,
-                    customIcon: AnyView(MacOSSoftwareUpdateCheckmarkIcon())
-                )
-
-                Spacer(minLength: 16)
-
-                Button("Check for Updates", action: onRetry)
-                    .buttonStyle(.bordered)
-                    .controlSize(.regular)
-                    .disabled(!viewModel.checkButtonIsEnabled)
-            }
-
+            Button("Check for Updates", action: onRetry)
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
+                .fixedSize()
+                .disabled(!viewModel.checkButtonIsEnabled)
         case .updateAvailable(let update):
-            HStack(alignment: .center, spacing: 14) {
-                SumiAboutUpdateStatusRow(
-                    systemImage: "arrow.down.circle.fill",
-                    title: "\(update.versionLine) is available",
-                    subtitle: "Download and install the update with Sparkle.",
-                    symbolStyle: .accentColor
-                )
-
-                Spacer(minLength: 16)
-
-                Button("Update", action: viewModel.checkForUpdates)
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.regular)
-                    .disabled(!viewModel.checkButtonIsEnabled)
-            }
-
+            Button("Update", action: viewModel.checkForUpdates)
+                .buttonStyle(.borderedProminent)
+                .controlSize(.regular)
+                .fixedSize()
+                .disabled(!viewModel.checkButtonIsEnabled)
+                .accessibilityLabel("Update to \(update.versionLine)")
         case .checkFailed(let message):
-            HStack(alignment: .center, spacing: 14) {
-                SumiAboutUpdateStatusRow(
-                    systemImage: "exclamationmark.triangle.fill",
-                    title: "Couldn't check for updates",
-                    subtitle: message,
-                    symbolStyle: .yellow
-                )
-
-                Spacer(minLength: 16)
-
-                Button("Try Again", action: onRetry)
-                    .buttonStyle(.bordered)
-                    .controlSize(.regular)
-                    .disabled(!viewModel.checkButtonIsEnabled)
-            }
-
-        case .unavailable(let message):
-            SumiAboutUpdateStatusRow(
-                systemImage: "info.circle.fill",
-                title: "Updates unavailable",
-                subtitle: message,
-                symbolStyle: .secondary
-            )
+            Button("Try Again", action: onRetry)
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
+                .fixedSize()
+                .disabled(!viewModel.checkButtonIsEnabled)
+                .accessibilityHint(message)
+        case .unavailable:
+            Button("Check for Updates", action: onRetry)
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
+                .fixedSize()
+                .disabled(true)
         }
     }
 }
 
-private struct MacOSSoftwareUpdateCheckmarkIcon: View {
+private struct SumiAboutStatusBadge: View {
+    enum Kind: Equatable {
+        case progress
+        case checkmark
+        case download
+        case warning
+        case info
+    }
+
+    let kind: Kind
+
     var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color(nsColor: NSColor(red: 52 / 255, green: 199 / 255, blue: 89 / 255, alpha: 1)),
-                            Color(nsColor: NSColor(red: 46 / 255, green: 180 / 255, blue: 80 / 255, alpha: 1)),
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
-                .shadow(color: Color.black.opacity(0.12), radius: 1, x: 0, y: 1)
-                .overlay(
+        Group {
+            if kind == .progress {
+                ProgressView()
+                    .controlSize(.small)
+            } else {
+                ZStack {
                     RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .stroke(Color.white.opacity(0.15), lineWidth: 0.5)
-                )
+                        .fill(
+                            LinearGradient(
+                                colors: backgroundColors,
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                        .shadow(color: Color.black.opacity(0.12), radius: 1, x: 0, y: 1)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                .stroke(Color.white.opacity(0.15), lineWidth: 0.5)
+                        )
 
-            Image(systemName: "checkmark")
-                .font(.system(size: 13, weight: .bold))
-                .foregroundColor(.white)
-        }
-        .frame(width: 28, height: 28)
-    }
-}
-
-private struct SumiAboutUpdateStatusRow: View {
-    let systemImage: String?
-    let title: String
-    let subtitle: String
-    var progress = false
-    var symbolStyle: Color = .secondary
-    var customIcon: AnyView?
-
-    var body: some View {
-        HStack(alignment: .center, spacing: 12) {
-            Group {
-                if progress {
-                    ProgressView()
-                        .controlSize(.small)
-                } else if let customIcon {
-                    customIcon
-                } else if let systemImage {
-                    Image(systemName: systemImage)
-                        .font(.system(size: 22, weight: .semibold))
-                        .symbolRenderingMode(.hierarchical)
-                        .foregroundStyle(symbolStyle)
+                    Image(systemName: systemImageName)
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundColor(.white)
                 }
             }
-            .frame(width: 28, height: 28)
-            .accessibilityHidden(true)
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .font(.headline.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                Text(subtitle)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .frame(width: 28, height: 28)
+        .accessibilityHidden(true)
+    }
+
+    private var systemImageName: String {
+        switch kind {
+        case .progress:
+            return "clock"
+        case .checkmark:
+            return "checkmark"
+        case .download:
+            return "arrow.down"
+        case .warning:
+            return "exclamationmark"
+        case .info:
+            return "info"
+        }
+    }
+
+    private var backgroundColors: [Color] {
+        switch kind {
+        case .progress:
+            return [
+                Color(nsColor: .systemGray),
+                Color(nsColor: .systemGray)
+            ]
+        case .checkmark:
+            return [
+                Color(nsColor: NSColor(red: 52 / 255, green: 199 / 255, blue: 89 / 255, alpha: 1)),
+                Color(nsColor: NSColor(red: 46 / 255, green: 180 / 255, blue: 80 / 255, alpha: 1))
+            ]
+        case .download:
+            return [
+                Color(nsColor: .systemBlue),
+                Color(nsColor: .controlAccentColor)
+            ]
+        case .warning:
+            return [
+                Color(nsColor: .systemOrange),
+                Color(nsColor: NSColor(red: 210 / 255, green: 120 / 255, blue: 24 / 255, alpha: 1))
+            ]
+        case .info:
+            return [
+                Color(nsColor: .systemGray),
+                Color(nsColor: .secondaryLabelColor)
+            ]
+        }
+    }
+}
+
+private struct SumiAboutChannelBadge: View {
+    let title: String
+
+    var body: some View {
+        Text(title)
+            .font(.caption2.weight(.bold))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(SettingsSurfaceStyle.fieldBackground)
+            )
     }
 }
