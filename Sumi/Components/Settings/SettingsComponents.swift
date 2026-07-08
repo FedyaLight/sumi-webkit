@@ -77,6 +77,7 @@ typealias SettingsTypography = SettingsThemeTokens.Typography
 struct SettingsSection<Content: View>: View {
     let title: String
     var subtitle: String?
+    var headerAccessory: AnyView?
     @ViewBuilder var content: Content
 
     init(
@@ -86,21 +87,41 @@ struct SettingsSection<Content: View>: View {
     ) {
         self.title = title
         self.subtitle = subtitle
+        self.headerAccessory = nil
+        self.content = content()
+    }
+
+    init<HeaderAccessory: View>(
+        title: String,
+        subtitle: String? = nil,
+        @ViewBuilder headerAccessory: () -> HeaderAccessory,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.title = title
+        self.subtitle = subtitle
+        self.headerAccessory = AnyView(headerAccessory())
         self.content = content()
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .font(.headline.weight(.semibold))
-                    .foregroundStyle(.primary)
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title)
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(.primary)
 
-                if let subtitle {
-                    Text(subtitle)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    if let subtitle {
+                        Text(subtitle)
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                if let headerAccessory {
+                    headerAccessory
                 }
             }
 

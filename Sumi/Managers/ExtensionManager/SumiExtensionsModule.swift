@@ -23,6 +23,12 @@ struct SumiExtensionsModuleRuntime {
     )
 }
 
+struct SafariWebExtensionSyncResult {
+    let addedExtensions: [InstalledExtension]
+    let failedMessages: [String]
+    let skippedUnreadableCount: Int
+}
+
 @MainActor
 final class SumiExtensionsModule {
     static let shared = SumiExtensionsModule()
@@ -345,6 +351,77 @@ final class SumiExtensionsModule {
     func enableSafariAppExtension(
         from candidate: DiscoveredSafariExtensionCandidate
     ) async throws -> InstalledExtension {
+        try await installSafariAppExtension(from: candidate, enableOnInstall: true)
+    }
+
+    func syncDiscoveredSafariWebExtensions(
+        _ candidates: [DiscoveredSafariExtensionCandidate]
+    ) async -> SafariWebExtensionSyncResult {
+        refreshDiscoveredSafariWebExtensionCandidates(candidates)
+
+        guard let manager = managerIfEnabled() else {
+            return SafariWebExtensionSyncResult(
+                addedExtensions: [],
+                failedMessages: [ExtensionError.unsupportedOS.localizedDescription],
+                skippedUnreadableCount: 0
+            )
+        }
+
+        var installedSourcePaths = Set(
+            manager.installedExtensions.map {
+                Self.standardizedFilePath($0.sourceBundlePath)
+            }
+        )
+        let installedExtensionIDs = Set(manager.installedExtensions.map(\.id))
+        let installedImportedBundleIDs = Set(
+            safariExtensionImportStore.importedRecords()
+                .filter { installedExtensionIDs.contains($0.installedExtensionId) }
+                .map(\.extensionBundleIdentifier)
+        )
+        var knownSafariBundleIDs = installedExtensionIDs.union(installedImportedBundleIDs)
+
+        var addedExtensions: [InstalledExtension] = []
+        var failedMessages: [String] = []
+        var skippedUnreadableCount = 0
+
+        for candidate in candidates where candidate.bundleKind == .webExtension {
+            guard candidate.isReadable else {
+                skippedUnreadableCount += 1
+                continue
+            }
+
+            let sourcePath = Self.standardizedFilePath(candidate.appexURL.path)
+            guard installedSourcePaths.contains(sourcePath) == false,
+                  knownSafariBundleIDs.contains(candidate.extensionBundleIdentifier) == false
+            else {
+                continue
+            }
+
+            do {
+                let installed = try await installSafariAppExtension(
+                    from: candidate,
+                    enableOnInstall: false
+                )
+                addedExtensions.append(installed)
+                installedSourcePaths.insert(Self.standardizedFilePath(installed.sourceBundlePath))
+                knownSafariBundleIDs.insert(installed.id)
+                knownSafariBundleIDs.insert(candidate.extensionBundleIdentifier)
+            } catch {
+                failedMessages.append("\(candidate.displayName): \(error.localizedDescription)")
+            }
+        }
+
+        return SafariWebExtensionSyncResult(
+            addedExtensions: addedExtensions,
+            failedMessages: failedMessages,
+            skippedUnreadableCount: skippedUnreadableCount
+        )
+    }
+
+    private func installSafariAppExtension(
+        from candidate: DiscoveredSafariExtensionCandidate,
+        enableOnInstall: Bool
+    ) async throws -> InstalledExtension {
         guard candidate.bundleKind == .webExtension else {
             throw ExtensionError.installationFailed(
                 "Only Safari Web Extensions can be enabled in the WebExtension runtime."
@@ -356,13 +433,19 @@ final class SumiExtensionsModule {
 
         let installed = try await manager.performInstallation(
             from: candidate.appexURL,
-            enableOnInstall: true
+            enableOnInstall: enableOnInstall
         )
         safariExtensionImportStore.markImported(
             candidate: candidate,
             installedExtensionId: installed.id
         )
         return installed
+    }
+
+    private static func standardizedFilePath(_ path: String) -> String {
+        URL(fileURLWithPath: path, isDirectory: true)
+            .standardizedFileURL
+            .path
     }
 
     func refreshDiscoveredSafariWebExtensionCandidates(

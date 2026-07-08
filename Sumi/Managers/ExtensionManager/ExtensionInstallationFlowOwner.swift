@@ -73,6 +73,22 @@ final class ExtensionInstallationFlowOwner {
 
     private let dependencies: Dependencies
 
+    private enum EnabledExtensionRuntimeActivation {
+        case standard(backgroundWakeReason: ExtensionManager.ExtensionBackgroundWakeReason?)
+        case safariAppExtensionEnable
+
+        func loadOperation(
+            expectedGeneration: UInt64
+        ) -> ExtensionRuntimeContextLoadOwner.Operation {
+            switch self {
+            case .standard:
+                return .loadEnabled(expectedGeneration: expectedGeneration)
+            case .safariAppExtensionEnable:
+                return .safariEnable
+            }
+        }
+    }
+
     init(dependencies: Dependencies) {
         self.dependencies = dependencies
     }
@@ -159,9 +175,15 @@ final class ExtensionInstallationFlowOwner {
             throw ExtensionError.installationFailed("Extension was not found in persistence")
         }
 
-        try dependencies.installationMetadataStore.setEnabled(true, for: entity)
+        let wasEnabledBeforeToggle = entity.isEnabled
         let sourceKind =
             WebExtensionSourceKind(rawValue: entity.sourceKindRawValue) ?? .directory
+        let runtimeActivation = enableRuntimeActivation(
+            sourceKind: sourceKind,
+            wasEnabledBeforeToggle: wasEnabledBeforeToggle
+        )
+
+        try dependencies.installationMetadataStore.setEnabled(true, for: entity)
         let extensionRoot = try dependencies.extensionResourcesRoot(
             sourceKind,
             entity.packagePath,
@@ -189,14 +211,14 @@ final class ExtensionInstallationFlowOwner {
             return try await loadEnabledExtension(
                 from: entity,
                 profileId: enableProfileId,
-                postLoadBackgroundWakeReason: .enable
+                postLoadActivation: runtimeActivation
             )
         }
 
-        await dependencies.finalizeEnabledExtensionRuntime(
+        await finalizeAlreadyLoadedEnabledExtensionRuntime(
             extensionId,
             enableProfileId,
-            .enable
+            activation: runtimeActivation
         )
         return refreshed
     }
@@ -307,6 +329,20 @@ final class ExtensionInstallationFlowOwner {
         expectedLoadGeneration: UInt64? = nil,
         postLoadBackgroundWakeReason: ExtensionManager.ExtensionBackgroundWakeReason? = nil
     ) async throws -> InstalledExtension {
+        try await loadEnabledExtension(
+            from: entity,
+            profileId: profileId,
+            expectedLoadGeneration: expectedLoadGeneration,
+            postLoadActivation: .standard(backgroundWakeReason: postLoadBackgroundWakeReason)
+        )
+    }
+
+    private func loadEnabledExtension(
+        from entity: ExtensionEntity,
+        profileId: UUID? = nil,
+        expectedLoadGeneration: UInt64? = nil,
+        postLoadActivation: EnabledExtensionRuntimeActivation
+    ) async throws -> InstalledExtension {
         let loadGeneration = expectedLoadGeneration ?? dependencies.extensionLoadGeneration()
         let signpostState = PerformanceTrace.beginInterval("ExtensionManager.loadEnabledExtension")
         defer {
@@ -339,7 +375,7 @@ final class ExtensionInstallationFlowOwner {
             dependencies.recordRuntimeMetric(entity.id) {
                 $0.manifestValidationDuration = CFAbsoluteTimeGetCurrent() - validationStart
             }
-            _ = try await dependencies.loadRuntimeContext(
+            let extensionContext = try await dependencies.loadRuntimeContext(
                 ExtensionRuntimeContextLoadOwner.Request(
                     extensionId: entity.id,
                     profileId: resolvedProfileId,
@@ -347,7 +383,9 @@ final class ExtensionInstallationFlowOwner {
                     sourceBundlePath: entity.sourceBundlePath,
                     packageRoot: extensionRoot,
                     manifest: manifest,
-                    operation: .loadEnabled(expectedGeneration: loadGeneration)
+                    operation: postLoadActivation.loadOperation(
+                        expectedGeneration: loadGeneration
+                    )
                 )
             )
 
@@ -355,12 +393,12 @@ final class ExtensionInstallationFlowOwner {
             dependencies.touchLiveExtensionContext(entity.id, resolvedProfileId)
             dependencies.enforceBoundedLiveExtensionContexts(resolvedProfileId, entity.id)
 
-            await dependencies.finalizeEnabledExtensionRuntime(
+            await finalizeLoadedEnabledExtensionRuntime(
                 entity.id,
                 resolvedProfileId,
-                postLoadBackgroundWakeReason
+                extensionContext: extensionContext,
+                activation: postLoadActivation
             )
-            dependencies.markExtensionRuntimeReadyIfProfileContextsLoaded(resolvedProfileId)
 
             let refreshed = try dependencies.refreshedRecord(entity, manifest)
             await applyInstalledExtensionsMutationOnNextRunLoop { [dependencies] in
@@ -376,6 +414,64 @@ final class ExtensionInstallationFlowOwner {
             }
             dependencies.tearDownExtensionRuntimeState(entity.id, false)
             throw error
+        }
+    }
+
+    private func enableRuntimeActivation(
+        sourceKind: WebExtensionSourceKind,
+        wasEnabledBeforeToggle: Bool
+    ) -> EnabledExtensionRuntimeActivation {
+        if sourceKind == .safariAppExtension,
+           wasEnabledBeforeToggle == false {
+            return .safariAppExtensionEnable
+        }
+
+        return .standard(backgroundWakeReason: .enable)
+    }
+
+    private func finalizeAlreadyLoadedEnabledExtensionRuntime(
+        _ extensionId: String,
+        _ profileId: UUID,
+        activation: EnabledExtensionRuntimeActivation
+    ) async {
+        guard let extensionContext = dependencies.getExtensionContext(
+            extensionId,
+            profileId
+        ) else {
+            return
+        }
+
+        await finalizeLoadedEnabledExtensionRuntime(
+            extensionId,
+            profileId,
+            extensionContext: extensionContext,
+            activation: activation
+        )
+    }
+
+    private func finalizeLoadedEnabledExtensionRuntime(
+        _ extensionId: String,
+        _ profileId: UUID,
+        extensionContext: WKWebExtensionContext,
+        activation: EnabledExtensionRuntimeActivation
+    ) async {
+        switch activation {
+        case .standard(let backgroundWakeReason):
+            await dependencies.finalizeEnabledExtensionRuntime(
+                extensionId,
+                profileId,
+                backgroundWakeReason
+            )
+            dependencies.markExtensionRuntimeReadyIfProfileContextsLoaded(profileId)
+        case .safariAppExtensionEnable:
+            await dependencies.activateInstallRuntime(
+                ExtensionInstallRuntimeActivationOwner.Request(
+                    profileId: profileId,
+                    extensionContext: extensionContext,
+                    installedExtensionId: extensionId,
+                    operation: .safariEnable
+                )
+            )
         }
     }
 
