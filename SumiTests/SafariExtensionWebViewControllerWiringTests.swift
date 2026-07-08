@@ -372,7 +372,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             scratchDirectory: scratchDirectory,
             name: "WebViewWiringExtension"
         )
-        _ = try await manager.enableExtension(installed.id)
+        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
         manager.extensionsLoaded = true
 
         let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
@@ -425,7 +425,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             manager: manager,
             scratchDirectory: scratchDirectory
         )
-        _ = try await manager.enableExtension(installed.id)
+        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
         manager.unloadExtensionContextIfLoaded(
             extensionId: installed.id,
             profileId: profile.id
@@ -520,7 +520,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             manager: manager,
             scratchDirectory: scratchDirectory
         )
-        _ = try await manager.enableExtension(installed.id)
+        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
         manager.unloadExtensionContextIfLoaded(
             extensionId: installed.id,
             profileId: profile.id
@@ -629,7 +629,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             scratchDirectory: scratchDirectory,
             name: "ExtensionRequestedPage"
         )
-        _ = try await manager.enableExtension(installed.id)
+        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
 
         let loadedContext = try await manager.ensureExtensionLoaded(
             extensionId: installed.id,
@@ -709,7 +709,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             scratchDirectory: scratchDirectory,
             name: "ExtensionRequestedBackgroundPage"
         )
-        _ = try await manager.enableExtension(installed.id)
+        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
 
         let loadedContext = try await manager.ensureExtensionLoaded(
             extensionId: installed.id,
@@ -891,7 +891,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             scratchDirectory: scratchDirectory,
             name: "ExtensionRequestedPublicURLPage"
         )
-        _ = try await manager.enableExtension(installed.id)
+        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
 
         let loadedContext = try await manager.ensureExtensionLoaded(
             extensionId: installed.id,
@@ -972,7 +972,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             scratchDirectory: scratchDirectory,
             name: "ExtensionRequestedWindowPage"
         )
-        _ = try await manager.enableExtension(installed.id)
+        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
 
         let loadedContext = try await manager.ensureExtensionLoaded(
             extensionId: installed.id,
@@ -1076,7 +1076,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             scratchDirectory: scratchDirectory,
             name: "ExtensionRequestedRenderedPage"
         )
-        _ = try await manager.enableExtension(installed.id)
+        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
 
         let loadedContext = try await manager.ensureExtensionLoaded(
             extensionId: installed.id,
@@ -1148,7 +1148,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             name: "ExtensionOptionsRenderedPage",
             optionsPage: "options.html"
         )
-        _ = try await manager.enableExtension(installed.id)
+        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
 
         let loadedContext = try await manager.ensureExtensionLoaded(
             extensionId: installed.id,
@@ -1230,7 +1230,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             scratchDirectory: scratchDirectory,
             name: "ExtensionRequestedPage"
         )
-        _ = try await manager.enableExtension(installed.id)
+        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
 
         let loadedContext = try await manager.ensureExtensionLoaded(
             extensionId: installed.id,

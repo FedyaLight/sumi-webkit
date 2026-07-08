@@ -131,6 +131,7 @@ final class ExtensionManager: NSObject, ObservableObject {
         /// weak reference to the message handler.
         let accountForkDiagnosticsUserScript = SafariExtensionAccountForkDiagnosticsUserScript()
     #endif
+    lazy var installedRecordsOwner = ExtensionInstalledRecordsOwner(manager: self)
     lazy var installationFlowOwner = ExtensionInstallationFlowOwner(
         dependencies: .live(manager: self)
     )
@@ -350,7 +351,7 @@ final class ExtensionManager: NSObject, ObservableObject {
             return
         }
 
-        loadInstalledExtensionMetadata()
+        installationFlowOwner.loadInstalledExtensionMetadata()
         PerformanceTrace.emitEvent("ExtensionManager.lazyRuntimeDeferred")
     }
 

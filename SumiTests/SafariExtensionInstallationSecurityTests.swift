@@ -90,7 +90,7 @@ final class SafariExtensionInstallationSecurityTests: XCTestCase {
         }
 
         do {
-            _ = try await manager.performInstallation(
+            _ = try await manager.installationFlowOwner.performInstallation(
                 from: source,
                 enableOnInstall: false
             )
@@ -124,7 +124,7 @@ final class SafariExtensionInstallationSecurityTests: XCTestCase {
             geckoId: extensionId
         )
 
-        let installed = try await manager.performInstallation(
+        let installed = try await manager.installationFlowOwner.performInstallation(
             from: source,
             enableOnInstall: false
         )
@@ -171,7 +171,7 @@ final class SafariExtensionInstallationSecurityTests: XCTestCase {
             )
         )
 
-        let installed = try await manager.performInstallation(
+        let installed = try await manager.installationFlowOwner.performInstallation(
             from: appexURL,
             enableOnInstall: false
         )
@@ -187,7 +187,7 @@ final class SafariExtensionInstallationSecurityTests: XCTestCase {
             context: container.mainContext,
             initialProfile: profile
         )
-        let installed = try await manager.performInstallation(
+        let installed = try await manager.installationFlowOwner.performInstallation(
             from: try makeUnpackedExtension(
                 name: "OptionalNativeMessaging",
                 geckoId: "optional-native-\(UUID().uuidString)@example.com",
@@ -220,7 +220,7 @@ final class SafariExtensionInstallationSecurityTests: XCTestCase {
             context: container.mainContext,
             initialProfile: profile
         )
-        let installed = try await manager.performInstallation(
+        let installed = try await manager.installationFlowOwner.performInstallation(
             from: try makeUnpackedExtension(
                 name: "OptionalTabs",
                 geckoId: "optional-tabs-\(UUID().uuidString)@example.com",
@@ -255,7 +255,7 @@ final class SafariExtensionInstallationSecurityTests: XCTestCase {
             context: container.mainContext,
             initialProfile: profile
         )
-        let installed = try await manager.performInstallation(
+        let installed = try await manager.installationFlowOwner.performInstallation(
             from: try makeUnpackedExtension(
                 name: "RequiredNativeMessaging",
                 geckoId: "required-native-\(UUID().uuidString)@example.com",

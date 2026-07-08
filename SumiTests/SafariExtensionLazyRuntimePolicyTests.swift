@@ -135,7 +135,7 @@ final class SafariExtensionLazyRuntimePolicyTests: XCTestCase {
             scratchDirectory: scratchDirectory,
             name: "LazyPolicyExtension"
         )
-        _ = try await manager.enableExtension(installed.id)
+        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
 
         XCTAssertEqual(
             manager.countLoadedExtensionContexts(),
@@ -188,7 +188,7 @@ final class SafariExtensionLazyRuntimePolicyTests: XCTestCase {
             scratchDirectory: scratchDirectory,
             name: "CacheReuseExtension"
         )
-        _ = try await manager.enableExtension(installed.id)
+        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
 
         let contextA = try XCTUnwrap(
             manager.getExtensionContext(for: installed.id, profileId: profileA.id)
@@ -226,14 +226,14 @@ final class SafariExtensionLazyRuntimePolicyTests: XCTestCase {
             scratchDirectory: scratchDirectory,
             name: "DisableUnloadExtension"
         )
-        _ = try await manager.enableExtension(installed.id)
+        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
         _ = try await manager.ensureExtensionLoaded(
             extensionId: installed.id,
             profileId: profileB.id
         )
         XCTAssertEqual(manager.countLoadedExtensionContexts(), 2)
 
-        try await manager.disableExtension(installed.id)
+        try await manager.installationFlowOwner.disableExtension(installed.id)
 
         XCTAssertEqual(manager.countLoadedExtensionContexts(), 0)
         XCTAssertNil(manager.cachedWebExtensionsByID[installed.id])
@@ -282,7 +282,7 @@ final class SafariExtensionLazyRuntimePolicyTests: XCTestCase {
             name: name,
             manifestVersion: manifestVersion
         )
-        return try await manager.performInstallation(
+        return try await manager.installationFlowOwner.performInstallation(
             from: directoryURL,
             enableOnInstall: false
         )

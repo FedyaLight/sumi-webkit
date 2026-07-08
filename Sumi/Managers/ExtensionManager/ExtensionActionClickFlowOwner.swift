@@ -14,47 +14,37 @@ import WebKit
 final class ExtensionActionClickFlowOwner {
     struct Dependencies {
         let actionPopupAnchorStore: ExtensionActionPopupAnchorStore
-        let installedExtensions: @MainActor () -> [InstalledExtension]
-        let runtimeState: @MainActor () -> ExtensionManager.ExtensionRuntimeState
-        let currentProfileId: @MainActor () -> UUID?
-        let fallbackProfileId: @MainActor () -> UUID?
+        let installedRecordsOwner: ExtensionInstalledRecordsOwner
+        let runtimeSessionOwner: ExtensionRuntimeSessionOwner
+        let profileRuntimeOwner: ExtensionProfileRuntimeOwner
+        /// Manager's mutable current-window/tab bridge; not owner-backed.
+        let runtime: @MainActor () -> ExtensionManagerRuntime
+        let actionPopupAnchorResolutionOwner: ExtensionActionPopupAnchorResolutionOwner
+        let runtimeLifecycleOwner: ExtensionRuntimeLifecycleOwner
+        let controllerProvisioningOwner: ExtensionControllerProvisioningOwner
+        let contextResidencyOwner: ExtensionContextResidencyOwner
+        let actionPopupFailureDiagnosticsOwner: ExtensionActionPopupFailureDiagnosticsOwner
+        let installCapabilityOwner: SafariExtensionInstallCapabilityOwner
+        let siteAccessPolicyCoordinator: ExtensionSiteAccessPolicyCoordinator
+        let permissionDecisionStoreOwner: ExtensionPermissionDecisionStoreOwner
+        let actionSurfacePublicationOwner: ExtensionActionSurfacePublicationOwner
+        let runtimeDiagnosticsOwner: ExtensionRuntimeDiagnosticsOwner
+        // Browser/Tab domain seam: these four cross into BrowserManager/TabManager
+        // territory (window/tab resolution, runtime tab registration, WebKit tab
+        // adapter identity). Routing them through a stored ExtensionManager owner
+        // would still need the same browser-side lookups, so they stay closures
+        // rather than inverting the extension → browser layering.
         let resolvedProfileIdForTab: @MainActor (Tab) -> UUID?
-        let getExtensionContext: @MainActor (String, UUID?) -> WKWebExtensionContext?
-        let loadedContextCount: @MainActor (UUID) -> Int
         let activeExtensionWindowId: @MainActor () -> UUID?
-        let captureActionPopupAnchor: @MainActor (String, UUID, UUID?) -> Void
-        let switchProfile: @MainActor (UUID) -> Void
-        let ensureExtensionController: @MainActor (UUID) -> Void
-        let ensureExtensionLoaded: @MainActor (String, UUID) async throws -> WKWebExtensionContext?
-        let classifyFailure: @MainActor (String, UUID, InstalledExtension?) -> ExtensionActionPopupRuntimeFailureBucket
-        let diagnosticLines:
-            @MainActor (String, UUID, InstalledExtension, ExtensionActionPopupRuntimeFailureBucket, Error?) -> [String]
-        let lastExtensionLoadError: @MainActor (String, UUID) -> Error?
         let registerTabWithExtensionRuntime: @MainActor (Tab, String) -> Void
         let stableAdapter: @MainActor (Tab) -> ExtensionTabAdapter?
-        let grantRequestedPermissions: @MainActor (WKWebExtensionContext, WKWebExtension, [String: Any]) -> Void
+        // Real manager-level orchestration (context/profile resolution from a
+        // WKWebExtensionContext, DEBUG test-hook interception, dedupe-key
+        // defaulting) that no single sibling owner can absorb without manager
+        // access itself.
         let grantRequestedMatchPatterns: @MainActor (WKWebExtensionContext, WKWebExtension) -> Void
-        let grantActiveTabURLAccess: @MainActor (WKWebExtensionContext, Tab, [String: Any]) -> Void
-        let effectivePermissionStatus:
-            @MainActor (URL, WKWebExtensionContext, ExtensionTabAdapter?) -> WKWebExtensionContext.PermissionStatus
-        let isGrantedPermissionStatus: @MainActor (WKWebExtensionContext.PermissionStatus) -> Bool
-        let explicitlyGrantURLIfCoveredByGrantedMatchPattern:
-            @MainActor (URL, WKWebExtensionContext, ExtensionTabAdapter?) -> Bool
-        let extensionIDForContext: @MainActor (WKWebExtensionContext) -> String?
-        let configuredSiteAccessLevel:
-            @MainActor (URL, String, UUID) -> SafariExtensionSiteAccessLevel
-        let grantSiteAccess: @MainActor (URL, WKWebExtensionContext, String, UUID?, Date?, Bool) -> Void
-        let denySiteAccess: @MainActor (URL, WKWebExtensionContext, String, UUID?, Bool) -> Void
         let promptForExtensionPermissionDecision:
             @MainActor (WKWebExtensionContext, [String], String, String) async -> ExtensionManager.ExtensionPermissionPromptDecision
-        let permissionPromptDedupeKey: @MainActor (WKWebExtensionContext, [String]) -> String
-        let persistExtensionPermissionDecision:
-            @MainActor (String, UUID, ExtensionManager.ExtensionPermissionTargetKind, String, ExtensionManager.ExtensionStoredPermissionState, Date?) -> Void
-        let hostMatchPatternString: @MainActor (URL) -> String?
-        let updateActionSurfaceState: @MainActor (WKWebExtension.Action, WKWebExtensionContext) -> Void
-        let recordRuntimeMetric:
-            @MainActor (String, (inout ExtensionManager.ExtensionRuntimeMetrics) -> Void) -> Void
-        let trace: @MainActor (() -> String) -> Void
     }
 
     private let dependencies: Dependencies
@@ -63,11 +53,255 @@ final class ExtensionActionClickFlowOwner {
         self.dependencies = dependencies
     }
 
+    // MARK: - Sibling-owner call shims
+    //
+    // Translate the pre-refactor closure call shape onto the owner
+    // references now held in `Dependencies`.
+
+    private func installedExtensions() -> [InstalledExtension] {
+        dependencies.installedRecordsOwner.records
+    }
+
+    private func runtimeState() -> ExtensionManager.ExtensionRuntimeState {
+        dependencies.runtimeSessionOwner.runtimeState
+    }
+
+    private func currentProfileId() -> UUID? {
+        dependencies.profileRuntimeOwner.currentProfileId
+    }
+
+    private func fallbackProfileId() -> UUID? {
+        dependencies.profileRuntimeOwner.resolvedProfileId(
+            explicitProfileId: nil,
+            runtime: dependencies.runtime()
+        )
+    }
+
+    private func getExtensionContext(_ extensionId: String, _ profileId: UUID?) -> WKWebExtensionContext? {
+        guard let resolvedProfileId = dependencies.profileRuntimeOwner.resolvedProfileId(
+            explicitProfileId: profileId,
+            runtime: dependencies.runtime()
+        ) else { return nil }
+        return dependencies.profileRuntimeOwner.contexts(for: resolvedProfileId)[extensionId]
+    }
+
+    private func loadedContextCount(_ profileId: UUID) -> Int {
+        dependencies.profileRuntimeOwner.contexts(for: profileId).count
+    }
+
+    private func captureActionPopupAnchor(_ extensionId: String, _ windowId: UUID, _ profileId: UUID?) {
+        _ = dependencies.actionPopupAnchorResolutionOwner.captureActionPopupAnchor(
+            extensionId: extensionId,
+            windowId: windowId,
+            profileId: profileId
+        )
+    }
+
+    private func switchProfile(_ profileId: UUID) {
+        dependencies.runtimeLifecycleOwner.switchProfile(profileId: profileId)
+    }
+
+    private func ensureExtensionController(_ profileId: UUID) {
+        _ = dependencies.controllerProvisioningOwner.ensureExtensionController(for: profileId)
+    }
+
+    private func ensureExtensionLoaded(
+        _ extensionId: String,
+        _ profileId: UUID
+    ) async throws -> WKWebExtensionContext? {
+        try await dependencies.contextResidencyOwner.ensureExtensionLoaded(
+            extensionId: extensionId,
+            profileId: profileId
+        )
+    }
+
+    private func classifyFailure(
+        _ extensionId: String,
+        _ profileId: UUID,
+        _ installedExtension: InstalledExtension?
+    ) -> ExtensionActionPopupRuntimeFailureBucket {
+        dependencies.actionPopupFailureDiagnosticsOwner.classifyActionPopupRuntimeFailure(
+            extensionId: extensionId,
+            profileId: profileId,
+            installedExtension: installedExtension
+        )
+    }
+
+    private func diagnosticLines(
+        _ extensionId: String,
+        _ profileId: UUID,
+        _ installedExtension: InstalledExtension,
+        _ failureBucket: ExtensionActionPopupRuntimeFailureBucket,
+        _ lastLoadError: Error?
+    ) -> [String] {
+        dependencies.actionPopupFailureDiagnosticsOwner.actionPopupRuntimeDiagnosticLines(
+            extensionId: extensionId,
+            profileId: profileId,
+            installedExtension: installedExtension,
+            failureBucket: failureBucket,
+            lastLoadError: lastLoadError
+        )
+    }
+
+    private func lastExtensionLoadError(_ extensionId: String, _ profileId: UUID) -> Error? {
+        dependencies.runtimeSessionOwner.lastExtensionLoadErrors[
+            ExtensionRuntimeResidencyState.scopedKey(extensionId: extensionId, profileId: profileId)
+        ]
+    }
+
+    private func grantRequestedPermissions(
+        _ context: WKWebExtensionContext,
+        _ webExtension: WKWebExtension,
+        _ manifest: [String: Any]
+    ) {
+        dependencies.installCapabilityOwner.grantRequestedPermissions(
+            to: context,
+            webExtension: webExtension,
+            manifest: manifest
+        )
+    }
+
+    private func grantActiveTabURLAccess(
+        _ context: WKWebExtensionContext,
+        _ tab: Tab,
+        _ manifest: [String: Any]
+    ) {
+        dependencies.installCapabilityOwner.grantActiveTabURLAccess(
+            for: context,
+            tab: tab,
+            manifest: manifest,
+            extensionId: nil,
+            profileId: nil
+        )
+    }
+
+    private func effectivePermissionStatus(
+        _ url: URL,
+        _ context: WKWebExtensionContext,
+        _ adapter: ExtensionTabAdapter?
+    ) -> WKWebExtensionContext.PermissionStatus {
+        dependencies.installCapabilityOwner.effectivePermissionStatus(for: url, in: context, tab: adapter)
+    }
+
+    private func isGrantedPermissionStatus(_ status: WKWebExtensionContext.PermissionStatus) -> Bool {
+        dependencies.installCapabilityOwner.isGrantedPermissionStatus(status)
+    }
+
+    private func explicitlyGrantURLIfCoveredByGrantedMatchPattern(
+        _ url: URL,
+        _ context: WKWebExtensionContext,
+        _ adapter: ExtensionTabAdapter?
+    ) -> Bool {
+        dependencies.installCapabilityOwner.explicitlyGrantURLIfCoveredByGrantedMatchPattern(
+            url,
+            in: context,
+            tab: adapter
+        )
+    }
+
+    private func extensionIDForContext(_ context: WKWebExtensionContext) -> String? {
+        dependencies.profileRuntimeOwner.extensionId(for: context)
+    }
+
+    private func configuredSiteAccessLevel(
+        _ url: URL,
+        _ extensionId: String,
+        _ profileId: UUID
+    ) -> SafariExtensionSiteAccessLevel {
+        dependencies.siteAccessPolicyCoordinator.configuredSiteAccessLevel(
+            for: url,
+            extensionId: extensionId,
+            profileId: profileId
+        )
+    }
+
+    private func grantSiteAccess(
+        _ url: URL,
+        _ context: WKWebExtensionContext,
+        _ extensionId: String,
+        _ profileId: UUID?,
+        _ expirationDate: Date?,
+        _ persistPolicy: Bool
+    ) {
+        dependencies.siteAccessPolicyCoordinator.grantSiteAccess(
+            to: url,
+            in: context,
+            extensionId: extensionId,
+            profileId: profileId,
+            expirationDate: expirationDate,
+            persistPolicy: persistPolicy
+        )
+    }
+
+    private func denySiteAccess(
+        _ url: URL,
+        _ context: WKWebExtensionContext,
+        _ extensionId: String,
+        _ profileId: UUID?,
+        _ persistPolicy: Bool
+    ) {
+        dependencies.siteAccessPolicyCoordinator.denySiteAccess(
+            to: url,
+            in: context,
+            extensionId: extensionId,
+            profileId: profileId,
+            persistPolicy: persistPolicy
+        )
+    }
+
+    private func permissionPromptDedupeKey(_ context: WKWebExtensionContext, _ targets: [String]) -> String {
+        dependencies.permissionDecisionStoreOwner.permissionPromptDedupeKey(
+            extensionContext: context,
+            targets: targets
+        )
+    }
+
+    private func persistExtensionPermissionDecision(
+        _ extensionId: String,
+        _ profileId: UUID,
+        _ targetKind: ExtensionManager.ExtensionPermissionTargetKind,
+        _ target: String,
+        _ state: ExtensionManager.ExtensionStoredPermissionState,
+        _ expiresAt: Date?
+    ) {
+        dependencies.permissionDecisionStoreOwner.persistExtensionPermissionDecision(
+            extensionId: extensionId,
+            profileId: profileId,
+            targetKind: targetKind,
+            target: target,
+            state: state,
+            expiresAt: expiresAt
+        )
+    }
+
+    private func hostMatchPatternString(_ url: URL) -> String? {
+        dependencies.siteAccessPolicyCoordinator.hostMatchPatternString(for: url)
+    }
+
+    private func updateActionSurfaceState(_ action: WKWebExtension.Action, _ context: WKWebExtensionContext) {
+        dependencies.actionSurfacePublicationOwner.updateActionSurfaceState(
+            for: action,
+            extensionContext: context
+        )
+    }
+
+    private func recordRuntimeMetric(
+        _ extensionId: String,
+        _ update: (inout ExtensionManager.ExtensionRuntimeMetrics) -> Void
+    ) {
+        dependencies.runtimeSessionOwner.recordRuntimeMetric(for: extensionId, update: update)
+    }
+
+    private func trace(_ message: () -> String) {
+        guard ExtensionManager.isWebKitRuntimeTraceEnabled else { return }
+        dependencies.runtimeDiagnosticsOwner.trace(message())
+    }
+
     func openActionPopupFromURLHub(
         extensionId: String,
         currentTab: Tab?
     ) async -> BrowserExtensionActionPopupRequestResult {
-        guard let installedExtension = dependencies.installedExtensions().first(where: {
+        guard let installedExtension = installedExtensions().first(where: {
             $0.id == extensionId
         }) else {
             return .blocked(
@@ -75,8 +309,8 @@ final class ExtensionActionClickFlowOwner {
                 message: "The extension is not installed in Sumi's local extension store."
             )
         }
-        dependencies.trace {
-            "urlHubAction click extensionId=\(extensionId) manifestHash=\(installedExtension.manifestRootFingerprint) resourcesPath=\(installedExtension.packagePath) sourceBundlePath=\(installedExtension.sourceBundlePath) extensionEnabled=\(installedExtension.isEnabled) runtimeState=\(self.dependencies.runtimeState().rawValue) contextLoaded=\(self.dependencies.getExtensionContext(extensionId, nil) != nil) currentProfile=\(self.dependencies.currentProfileId()?.uuidString ?? "nil") tabProfile=\(currentTab?.profileId?.uuidString ?? "nil") tabOffRecord=\(currentTab?.isEphemeral ?? false) currentURLShape=\(Self.sanitizedURLHubTraceURL(currentTab?.url))"
+        trace {
+            "urlHubAction click extensionId=\(extensionId) manifestHash=\(installedExtension.manifestRootFingerprint) resourcesPath=\(installedExtension.packagePath) sourceBundlePath=\(installedExtension.sourceBundlePath) extensionEnabled=\(installedExtension.isEnabled) runtimeState=\(self.runtimeState().rawValue) contextLoaded=\(self.getExtensionContext(extensionId, nil) != nil) currentProfile=\(self.currentProfileId()?.uuidString ?? "nil") tabProfile=\(currentTab?.profileId?.uuidString ?? "nil") tabOffRecord=\(currentTab?.isEphemeral ?? false) currentURLShape=\(Self.sanitizedURLHubTraceURL(currentTab?.url))"
         }
         guard installedExtension.isEnabled else {
             return .blocked(
@@ -104,13 +338,13 @@ final class ExtensionActionClickFlowOwner {
                 message: "\(installedExtension.name) declares a module service worker, which remains unsupported in this popup path."
             )
         }
-        dependencies.trace {
+        trace {
             "urlHubAction preflight passed extensionId=\(extensionId) localExperimentalRecordEnabled=true currentTabEligible=\(currentTab != nil) currentPagePermission=true moduleWorkerUnsupported=false"
         }
 
         guard let actionProfileId =
                 currentTab.flatMap({ dependencies.resolvedProfileIdForTab($0) })
-                ?? dependencies.fallbackProfileId()
+                ?? fallbackProfileId()
         else {
             return .blocked(
                 .noEligibleTab,
@@ -122,36 +356,36 @@ final class ExtensionActionClickFlowOwner {
                 currentTab?.primaryWindowId
                 ?? dependencies.activeExtensionWindowId()
             if let windowId {
-                dependencies.captureActionPopupAnchor(
+                captureActionPopupAnchor(
                     extensionId,
                     windowId,
                     actionProfileId
                 )
             }
         }
-        dependencies.switchProfile(actionProfileId)
-        dependencies.ensureExtensionController(actionProfileId)
+        switchProfile(actionProfileId)
+        ensureExtensionController(actionProfileId)
 
         let extensionContext: WKWebExtensionContext
         do {
-            dependencies.trace {
-                "urlHubAction loading selected context extensionId=\(installedExtension.id) profileId=\(actionProfileId.uuidString) runtimeState=\(self.dependencies.runtimeState().rawValue) packagePath=\(installedExtension.packagePath)"
+            trace {
+                "urlHubAction loading selected context extensionId=\(installedExtension.id) profileId=\(actionProfileId.uuidString) runtimeState=\(self.runtimeState().rawValue) packagePath=\(installedExtension.packagePath)"
             }
-            guard let loadedContext = try await dependencies.ensureExtensionLoaded(
+            guard let loadedContext = try await ensureExtensionLoaded(
                 installedExtension.id,
                 actionProfileId
             ) else {
-                let failureBucket = dependencies.classifyFailure(
+                let failureBucket = classifyFailure(
                     extensionId,
                     actionProfileId,
                     installedExtension
                 )
-                let diagnostics = dependencies.diagnosticLines(
+                let diagnostics = diagnosticLines(
                     extensionId,
                     actionProfileId,
                     installedExtension,
                     failureBucket,
-                    dependencies.lastExtensionLoadError(extensionId, actionProfileId)
+                    lastExtensionLoadError(extensionId, actionProfileId)
                 )
                 return .blocked(
                     .contextUnavailable,
@@ -161,19 +395,19 @@ final class ExtensionActionClickFlowOwner {
             }
             extensionContext = loadedContext
         } catch {
-            let failureBucket = dependencies.classifyFailure(
+            let failureBucket = classifyFailure(
                 extensionId,
                 actionProfileId,
                 installedExtension
             )
-            let diagnostics = dependencies.diagnosticLines(
+            let diagnostics = diagnosticLines(
                 extensionId,
                 actionProfileId,
                 installedExtension,
                 failureBucket,
                 error
             )
-            dependencies.trace {
+            trace {
                 "urlHubAction selected context load failed extensionId=\(extensionId) bucket=\(failureBucket.rawValue) error=\(error.localizedDescription) \(diagnostics.joined(separator: " "))"
             }
             return .blocked(
@@ -184,19 +418,19 @@ final class ExtensionActionClickFlowOwner {
         }
 
         guard extensionContext.isLoaded else {
-            let failureBucket = dependencies.classifyFailure(
+            let failureBucket = classifyFailure(
                 extensionId,
                 actionProfileId,
                 installedExtension
             )
-            let diagnostics = dependencies.diagnosticLines(
+            let diagnostics = diagnosticLines(
                 extensionId,
                 actionProfileId,
                 installedExtension,
                 failureBucket,
-                dependencies.lastExtensionLoadError(extensionId, actionProfileId)
+                lastExtensionLoadError(extensionId, actionProfileId)
             )
-            dependencies.trace {
+            trace {
                 "urlHubAction runtime gate failed extensionId=\(extensionId) profileId=\(actionProfileId.uuidString) bucket=\(failureBucket.rawValue) \(diagnostics.joined(separator: " "))"
             }
             let blocker: BrowserExtensionActionPopupBlocker =
@@ -211,8 +445,8 @@ final class ExtensionActionClickFlowOwner {
                 diagnostics: diagnostics
             )
         }
-        dependencies.trace {
-            "urlHubAction runtime ready extensionId=\(extensionId) profileId=\(actionProfileId.uuidString) loadedContexts=\(self.dependencies.loadedContextCount(actionProfileId)) selectedContextLoaded=true currentTabEligible=\(currentTab != nil)"
+        trace {
+            "urlHubAction runtime ready extensionId=\(extensionId) profileId=\(actionProfileId.uuidString) loadedContexts=\(self.loadedContextCount(actionProfileId)) selectedContextLoaded=true currentTabEligible=\(currentTab != nil)"
         }
 
         let adapter: ExtensionTabAdapter?
@@ -225,7 +459,7 @@ final class ExtensionActionClickFlowOwner {
         } else {
             adapter = nil
         }
-        dependencies.grantRequestedPermissions(
+        grantRequestedPermissions(
             extensionContext,
             extensionContext.webExtension,
             installedExtension.manifest
@@ -255,7 +489,7 @@ final class ExtensionActionClickFlowOwner {
             )
         }
 
-        dependencies.updateActionSurfaceState(action, extensionContext)
+        updateActionSurfaceState(action, extensionContext)
 
         guard action.isEnabled else {
             return .blocked(
@@ -264,11 +498,11 @@ final class ExtensionActionClickFlowOwner {
             )
         }
 
-        dependencies.trace {
+        trace {
             "urlHubAction performAction extensionId=\(extensionId) actionLabel=\(action.label) actionEnabled=\(action.isEnabled) presentsPopup=\(action.presentsPopup)"
         }
         extensionContext.performAction(for: adapter)
-        dependencies.recordRuntimeMetric(extensionId) { metrics in
+        recordRuntimeMetric(extensionId) { metrics in
             metrics.lastBackgroundWakeReason = .actionPopup
             metrics.backgroundWakeCount += 1
         }
@@ -290,7 +524,7 @@ final class ExtensionActionClickFlowOwner {
         let permissions = Self.stringArray(from: manifest["permissions"])
         let optionalPermissions = Self.stringArray(from: manifest["optional_permissions"])
         if (permissions + optionalPermissions).contains("activeTab") {
-            dependencies.grantActiveTabURLAccess(
+            grantActiveTabURLAccess(
                 extensionContext,
                 tab,
                 manifest
@@ -298,18 +532,18 @@ final class ExtensionActionClickFlowOwner {
             return true
         }
 
-        let status = dependencies.effectivePermissionStatus(
+        let status = effectivePermissionStatus(
             currentURL,
             extensionContext,
             adapter
         )
-        if dependencies.isGrantedPermissionStatus(status) {
+        if isGrantedPermissionStatus(status) {
             return true
         }
         if status == .deniedExplicitly {
             return false
         }
-        if dependencies.explicitlyGrantURLIfCoveredByGrantedMatchPattern(
+        if explicitlyGrantURLIfCoveredByGrantedMatchPattern(
             currentURL,
             extensionContext,
             adapter
@@ -319,16 +553,16 @@ final class ExtensionActionClickFlowOwner {
 
         let decisionProfileId = tab.profileId
             ?? dependencies.resolvedProfileIdForTab(tab)
-            ?? dependencies.currentProfileId()
-        if let extensionId = dependencies.extensionIDForContext(extensionContext),
+            ?? currentProfileId()
+        if let extensionId = extensionIDForContext(extensionContext),
            let decisionProfileId {
-            switch dependencies.configuredSiteAccessLevel(
+            switch configuredSiteAccessLevel(
                 currentURL,
                 extensionId,
                 decisionProfileId
             ) {
             case .allow:
-                dependencies.grantSiteAccess(
+                grantSiteAccess(
                     currentURL,
                     extensionContext,
                     extensionId,
@@ -338,7 +572,7 @@ final class ExtensionActionClickFlowOwner {
                 )
                 return true
             case .deny:
-                dependencies.denySiteAccess(
+                denySiteAccess(
                     currentURL,
                     extensionContext,
                     extensionId,
@@ -364,12 +598,12 @@ final class ExtensionActionClickFlowOwner {
         }
 
         let host = currentURL.host ?? currentURL.scheme ?? "this site"
-        let patternString = dependencies.hostMatchPatternString(currentURL)
+        let patternString = hostMatchPatternString(currentURL)
         let decision = await dependencies.promptForExtensionPermissionDecision(
             extensionContext,
             [host],
             "actionClickCurrentPageAccess",
-            dependencies.permissionPromptDedupeKey(
+            permissionPromptDedupeKey(
                 extensionContext,
                 patternString.map { [$0] } ?? [host]
             )
@@ -377,7 +611,7 @@ final class ExtensionActionClickFlowOwner {
 
         switch decision {
         case .allow(let expirationDate):
-            dependencies.grantSiteAccess(
+            grantSiteAccess(
                 currentURL,
                 extensionContext,
                 installedExtension.id,
@@ -386,7 +620,7 @@ final class ExtensionActionClickFlowOwner {
                 true
             )
             if let patternString, let decisionProfileId {
-                dependencies.persistExtensionPermissionDecision(
+                persistExtensionPermissionDecision(
                     installedExtension.id,
                     decisionProfileId,
                     .matchPattern,
@@ -402,7 +636,7 @@ final class ExtensionActionClickFlowOwner {
             )
             return true
         case .deny:
-            dependencies.denySiteAccess(
+            denySiteAccess(
                 currentURL,
                 extensionContext,
                 installedExtension.id,
@@ -410,7 +644,7 @@ final class ExtensionActionClickFlowOwner {
                 true
             )
             if let patternString, let decisionProfileId {
-                dependencies.persistExtensionPermissionDecision(
+                persistExtensionPermissionDecision(
                     installedExtension.id,
                     decisionProfileId,
                     .matchPattern,
@@ -499,70 +733,25 @@ extension ExtensionActionClickFlowOwner.Dependencies {
     static func live(manager: ExtensionManager) -> Self {
         Self(
             actionPopupAnchorStore: manager.actionPopupAnchorStore,
-            installedExtensions: { [weak manager] in
-                manager?.installedExtensions ?? []
-            },
-            runtimeState: { [weak manager] in
-                manager?.runtimeState ?? .unavailable
-            },
-            currentProfileId: { [weak manager] in
-                manager?.currentProfileId
-            },
-            fallbackProfileId: { [weak manager] in
-                manager?.fallbackProfileId
-            },
+            installedRecordsOwner: manager.installedRecordsOwner,
+            runtimeSessionOwner: manager.runtimeSessionOwner,
+            profileRuntimeOwner: manager.profileRuntimeOwner,
+            runtime: { [weak manager] in manager?.runtime ?? .inactive },
+            actionPopupAnchorResolutionOwner: manager.actionPopupAnchorResolutionOwner,
+            runtimeLifecycleOwner: manager.runtimeLifecycleOwner,
+            controllerProvisioningOwner: manager.controllerProvisioningOwner,
+            contextResidencyOwner: manager.contextResidencyOwner,
+            actionPopupFailureDiagnosticsOwner: manager.actionPopupFailureDiagnosticsOwner,
+            installCapabilityOwner: manager.installCapabilityOwner,
+            siteAccessPolicyCoordinator: manager.siteAccessPolicyCoordinator,
+            permissionDecisionStoreOwner: manager.permissionDecisionStoreOwner,
+            actionSurfacePublicationOwner: manager.actionSurfacePublicationOwner,
+            runtimeDiagnosticsOwner: manager.runtimeDiagnosticsOwner,
             resolvedProfileIdForTab: { [weak manager] tab in
                 manager?.resolvedProfileId(for: tab)
             },
-            getExtensionContext: { [weak manager] extensionId, profileId in
-                manager?.getExtensionContext(for: extensionId, profileId: profileId)
-            },
-            loadedContextCount: { [weak manager] profileId in
-                manager?.extensionContexts(for: profileId).count ?? 0
-            },
             activeExtensionWindowId: { [weak manager] in
                 manager?.browserBridgeContext?.activeExtensionWindowState?.id
-            },
-            captureActionPopupAnchor: { [weak manager] extensionId, windowId, profileId in
-                _ = manager?.actionPopupAnchorResolutionOwner.captureActionPopupAnchor(
-                    extensionId: extensionId,
-                    windowId: windowId,
-                    profileId: profileId
-                )
-            },
-            switchProfile: { [weak manager] profileId in
-                manager?.switchProfile(profileId: profileId)
-            },
-            ensureExtensionController: { [weak manager] profileId in
-                _ = manager?.ensureExtensionController(for: profileId)
-            },
-            ensureExtensionLoaded: { [weak manager] extensionId, profileId in
-                try await manager?.ensureExtensionLoaded(
-                    extensionId: extensionId,
-                    profileId: profileId
-                )
-            },
-            classifyFailure: { [weak manager] extensionId, profileId, installedExtension in
-                manager?.classifyActionPopupRuntimeFailure(
-                    extensionId: extensionId,
-                    profileId: profileId,
-                    installedExtension: installedExtension
-                ) ?? .profileRuntimeNotFound
-            },
-            diagnosticLines: { [weak manager] extensionId, profileId, installedExtension, bucket, error in
-                manager?.actionPopupRuntimeDiagnosticLines(
-                    extensionId: extensionId,
-                    profileId: profileId,
-                    installedExtension: installedExtension,
-                    failureBucket: bucket,
-                    lastLoadError: error
-                ) ?? []
-            },
-            lastExtensionLoadError: { [weak manager] extensionId, profileId in
-                manager?.lastExtensionLoadError(
-                    extensionId: extensionId,
-                    profileId: profileId
-                )
             },
             registerTabWithExtensionRuntime: { [weak manager] tab, reason in
                 manager?.registerTabWithExtensionRuntime(tab, reason: reason)
@@ -570,89 +759,11 @@ extension ExtensionActionClickFlowOwner.Dependencies {
             stableAdapter: { [weak manager] tab in
                 manager?.adapterResolutionOwner.stableAdapter(for: tab)
             },
-            grantRequestedPermissions: { [weak manager] context, webExtension, manifest in
-                manager?.grantRequestedPermissions(
-                    to: context,
-                    webExtension: webExtension,
-                    manifest: manifest
-                )
-            },
             grantRequestedMatchPatterns: { [weak manager] context, webExtension in
                 manager?.grantRequestedMatchPatterns(
                     to: context,
                     webExtension: webExtension
                 )
-            },
-            grantActiveTabURLAccess: { [weak manager] context, tab, manifest in
-                manager?.grantActiveTabURLAccess(
-                    for: context,
-                    tab: tab,
-                    manifest: manifest
-                )
-            },
-            effectivePermissionStatus: { [weak manager] url, context, adapter in
-                manager?.effectivePermissionStatus(
-                    for: url,
-                    in: context,
-                    tab: adapter
-                ) ?? .unknown
-            },
-            isGrantedPermissionStatus: { [weak manager] status in
-                manager?.isGrantedPermissionStatus(status) ?? false
-            },
-            explicitlyGrantURLIfCoveredByGrantedMatchPattern: { [weak manager] url, context, adapter in
-                manager?.explicitlyGrantURLIfCoveredByGrantedMatchPattern(
-                    url,
-                    in: context,
-                    tab: adapter
-                ) ?? false
-            },
-            extensionIDForContext: { [weak manager] context in
-                manager?.extensionID(for: context)
-            },
-            configuredSiteAccessLevel: { [weak manager] url, extensionId, profileId in
-                manager?.configuredSiteAccessLevel(
-                    for: url,
-                    extensionId: extensionId,
-                    profileId: profileId
-                ) ?? .ask
-            },
-            grantSiteAccess: { [weak manager] url, context, extensionId, profileId, expirationDate, persistPolicy in
-                if persistPolicy {
-                    manager?.grantSiteAccess(
-                        to: url,
-                        in: context,
-                        extensionId: extensionId,
-                        profileId: profileId,
-                        expirationDate: expirationDate
-                    )
-                } else {
-                    manager?.grantSiteAccess(
-                        to: url,
-                        in: context,
-                        extensionId: extensionId,
-                        profileId: profileId,
-                        persistPolicy: false
-                    )
-                }
-            },
-            denySiteAccess: { [weak manager] url, context, extensionId, profileId, persistPolicy in
-                if persistPolicy {
-                    manager?.denySiteAccess(
-                        to: url,
-                        in: context,
-                        extensionId: extensionId,
-                        profileId: profileId
-                    )
-                } else {
-                    manager?.denySiteAccess(
-                        to: url,
-                        in: context,
-                        extensionId: extensionId,
-                        profileId: profileId,
-                        persistPolicy: false
-                    )
-                }
             },
             promptForExtensionPermissionDecision: { [weak manager] context, targets, reason, dedupeKey in
                 await manager?.promptForExtensionPermissionDecision(
@@ -661,37 +772,6 @@ extension ExtensionActionClickFlowOwner.Dependencies {
                     reason: reason,
                     dedupeKey: dedupeKey
                 ) ?? .deny
-            },
-            permissionPromptDedupeKey: { [weak manager] context, targets in
-                manager?.permissionPromptDedupeKey(
-                    extensionContext: context,
-                    targets: targets
-                ) ?? targets.joined(separator: "|")
-            },
-            persistExtensionPermissionDecision: { [weak manager] extensionId, profileId, targetKind, target, state, expiresAt in
-                manager?.persistExtensionPermissionDecision(
-                    extensionId: extensionId,
-                    profileId: profileId,
-                    targetKind: targetKind,
-                    target: target,
-                    state: state,
-                    expiresAt: expiresAt
-                )
-            },
-            hostMatchPatternString: { [weak manager] url in
-                manager?.hostMatchPatternString(for: url)
-            },
-            updateActionSurfaceState: { [weak manager] action, context in
-                manager?.updateActionSurfaceState(
-                    for: action,
-                    extensionContext: context
-                )
-            },
-            recordRuntimeMetric: { [weak manager] extensionId, update in
-                manager?.runtimeSessionOwner.recordRuntimeMetric(for: extensionId, update: update)
-            },
-            trace: { [weak manager] message in
-                manager?.extensionRuntimeTrace(message())
             }
         )
     }

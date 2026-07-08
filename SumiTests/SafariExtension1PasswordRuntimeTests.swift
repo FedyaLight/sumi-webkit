@@ -42,7 +42,7 @@ final class SafariExtension1PasswordRuntimeTests: XCTestCase {
 
         // Real import path for a Safari app extension: validates the signed
         // bundle, copies resources for persistence, loads the runtime.
-        let installed = try await manager.performInstallation(
+        let installed = try await manager.installationFlowOwner.performInstallation(
             from: appexURL,
             enableOnInstall: true
         )

@@ -343,7 +343,7 @@ final class WebExtensionManifestValidationTests: XCTestCase {
             browserConfiguration: BrowserConfiguration()
         )
 
-        _ = manager.loadInstalledExtensionMetadata()
+        _ = manager.installationFlowOwner.loadInstalledExtensionMetadata()
 
         let refreshed = try XCTUnwrap(
             manager.installedExtensions.first { $0.id == staleRecord.id }
@@ -428,7 +428,7 @@ final class WebExtensionManifestValidationTests: XCTestCase {
         let profileKey = ExtensionManager.pinnedToolbarProfileKey(for: profile.id)
         manager.pinnedToolbarExtensionIDsByProfile[profileKey] = ["missing-extension"]
 
-        _ = manager.applyInstalledExtensionMetadataLoadResult(
+        _ = manager.installationFlowOwner.applyInstalledExtensionMetadataLoadResult(
             .init(
                 didFetchPersistedMetadata: false,
                 records: [],

@@ -11,62 +11,37 @@ final class ExtensionInstallationFlowOwner {
     struct Dependencies {
         let modelContext: ModelContext
         let installationMetadataStore: ExtensionInstallationMetadataStore
-        let isExtensionSupportAvailable: @MainActor () -> Bool
-        let extensionEntity: @MainActor (String) throws -> ExtensionEntity?
-        let extensionResourcesRoot: @MainActor (WebExtensionSourceKind, String, String) throws -> URL
-        let refreshedRecord: @MainActor (ExtensionEntity, [String: Any]) throws -> InstalledExtension
-        let upsertInstalledExtension: @MainActor (InstalledExtension) -> Void
-        let installedExtensions: @MainActor () -> [InstalledExtension]
-        let replaceInstalledExtension: @MainActor (Int, InstalledExtension) -> Void
-        let removeInstalledExtension: @MainActor (String) -> Void
-        let setInstalledExtensions: @MainActor ([InstalledExtension]) -> Void
-        let sortInstalledExtensions: @MainActor () -> Void
-        let reconcilePinnedToolbarExtensions: @MainActor () -> Void
-        let setExtensionsLoaded: @MainActor (Bool) -> Void
-        let fallbackProfileId: @MainActor () -> UUID?
-        let resolvedProfileId: @MainActor (UUID?) -> UUID?
-        let ensureExtensionController: @MainActor (UUID) -> Void
-        let getExtensionContext: @MainActor (String, UUID) -> WKWebExtensionContext?
-        let finalizeEnabledExtensionRuntime: @MainActor (
-            String, UUID, ExtensionManager.ExtensionBackgroundWakeReason?
-        ) async -> Void
-        let tearDownExtensionRuntimeState: @MainActor (String, Bool) -> Void
+        /// Records seam: CRUD over `ExtensionManager.installedExtensions`.
+        let installedRecordsOwner: ExtensionInstalledRecordsOwner
+        let toolbarPinningOwner: ExtensionToolbarPinningOwner
+        let profileRuntimeOwner: ExtensionProfileRuntimeOwner
+        let runtimeLifecycleOwner: ExtensionRuntimeLifecycleOwner
+        let runtimeStateResetOwner: ExtensionRuntimeStateResetOwner
+        /// Full-runtime teardown needs the concrete manager instance
+        /// (ExtensionRuntimeTeardownOwner.tearDownRuntime(manager:...)); no
+        /// stored owner can absorb this without holding a strong `manager`.
         let tearDownExtensionRuntime: @MainActor (String, Bool, Bool) -> Void
-        let hasEnabledInstalledExtensions: @MainActor () -> Bool
-        let removeStoredWebExtensionData: @MainActor (
-            String, ExtensionManager.WebExtensionStorageCleanupMode
-        ) async -> Void
-        let hasStoredWebExtensionDataCandidate: @MainActor (String) -> Bool
-        let traceWebExtensionStoreLifecycle: @MainActor (String, String, [String: Any]?) -> Void
-        let ensureWebExtensionStorageDirectoryExists: @MainActor (String) -> Void
-        let requestExtensionRuntimeAndWait: @MainActor (
-            ExtensionManager.ExtensionRuntimeRequestReason, Bool
-        ) async -> Void
-        let resolveInstallSource: @MainActor (URL) throws -> ExtensionInstallSourceResolver.ResolvedInstallSource
-        let validateMV3Requirements: @MainActor ([String: Any], URL) throws -> Void
-        let makeInstalledRecord: @MainActor (
-            String, [String: Any], URL, Bool, WebExtensionSourceKind, String, URL, ExtensionEntity?
-        ) throws -> InstalledExtension
-        let persistRecord: @MainActor (InstalledExtension) throws -> Void
-        let updateEntity: @MainActor (ExtensionEntity, InstalledExtension) -> Void
-        let extensionLoadGeneration: @MainActor () -> UInt64
+        let controllerProvisioningOwner: ExtensionControllerProvisioningOwner
+        let actionSurfacePublicationOwner: ExtensionActionSurfacePublicationOwner
+        let contextResidencyOwner: ExtensionContextResidencyOwner
+        let runtimeSessionOwner: ExtensionRuntimeSessionOwner
+        let runtimeDiagnosticsOwner: ExtensionRuntimeDiagnosticsOwner
+        /// Manager's mutable current-window/tab bridge; not owner-backed.
+        let runtime: @MainActor () -> ExtensionManagerRuntime
+        let isExtensionSupportAvailable: @MainActor () -> Bool
+        let setExtensionsLoaded: @MainActor (Bool) -> Void
         let loadRuntimeContext: @MainActor (
             ExtensionRuntimeContextLoadOwner.Request
         ) async throws -> WKWebExtensionContext
         let activateInstallRuntime: @MainActor (
             ExtensionInstallRuntimeActivationOwner.Request
         ) async -> Void
-        let recordRuntimeMetric: @MainActor (
-            String, (inout ExtensionManager.ExtensionRuntimeMetrics) -> Void
-        ) -> Void
-        let clearExtensionLoadError: @MainActor (String, UUID) -> Void
-        let recordExtensionLoadError: @MainActor (Error, String, UUID) -> Void
-        let touchLiveExtensionContext: @MainActor (String, UUID) -> Void
-        let enforceBoundedLiveExtensionContexts: @MainActor (UUID, String) -> Void
-        let markExtensionRuntimeReadyIfProfileContextsLoaded: @MainActor (UUID) -> Void
-        let logExtensionLoadFailure: @MainActor (Error, String, UUID, String) -> Void
-        let liveExtensionContextsCount: @MainActor () -> Int
-        let trace: @MainActor (String) -> Void
+        let removeStoredWebExtensionData: @MainActor (
+            String, ExtensionManager.WebExtensionStorageCleanupMode
+        ) async -> Void
+        let hasStoredWebExtensionDataCandidate: @MainActor (String) -> Bool
+        let traceWebExtensionStoreLifecycle: @MainActor (String, String, [String: Any]?) -> Void
+        let ensureWebExtensionStorageDirectoryExists: @MainActor (String) -> Void
         /// Debug-only persistence hook; returns nil in release builds.
         let debugBeforePersistInstalledRecord: @MainActor () -> ((InstalledExtension) throws -> Void)?
     }
@@ -91,6 +66,210 @@ final class ExtensionInstallationFlowOwner {
 
     init(dependencies: Dependencies) {
         self.dependencies = dependencies
+    }
+
+    // MARK: - Sibling-owner call shims
+    //
+    // These translate the pre-refactor closure call shape onto the owner
+    // references now held in `Dependencies`, so the flow methods below read
+    // the same as before while the seam narrows to real collaborators.
+
+    private func extensionEntity(_ extensionId: String) throws -> ExtensionEntity? {
+        try dependencies.installationMetadataStore.extensionEntity(for: extensionId)
+    }
+
+    private func extensionResourcesRoot(
+        _ sourceKind: WebExtensionSourceKind,
+        _ packagePath: String,
+        _ sourceBundlePath: String
+    ) throws -> URL {
+        try dependencies.installationMetadataStore.extensionResourcesRoot(
+            sourceKind: sourceKind,
+            packagePath: packagePath,
+            sourceBundlePath: sourceBundlePath
+        )
+    }
+
+    private func refreshedRecord(
+        _ entity: ExtensionEntity,
+        _ manifest: [String: Any]
+    ) throws -> InstalledExtension {
+        try dependencies.installationMetadataStore.refreshedRecord(for: entity, manifest: manifest)
+    }
+
+    private func makeInstalledRecord(
+        _ extensionId: String,
+        _ manifest: [String: Any],
+        _ extensionRoot: URL,
+        _ isEnabled: Bool,
+        _ sourceKind: WebExtensionSourceKind,
+        _ sourceBundlePath: String,
+        _ sourceFingerprintURL: URL,
+        _ existingEntity: ExtensionEntity?
+    ) throws -> InstalledExtension {
+        try dependencies.installationMetadataStore.makeInstalledRecord(
+            extensionId: extensionId,
+            manifest: manifest,
+            extensionRoot: extensionRoot,
+            isEnabled: isEnabled,
+            sourceKind: sourceKind,
+            sourceBundlePath: sourceBundlePath,
+            sourceFingerprintURL: sourceFingerprintURL,
+            existingEntity: existingEntity
+        )
+    }
+
+    private func persistRecord(_ record: InstalledExtension) throws {
+        try dependencies.installationMetadataStore.persist(record: record)
+    }
+
+    private func updateEntity(_ entity: ExtensionEntity, _ record: InstalledExtension) {
+        dependencies.installationMetadataStore.update(entity, from: record)
+    }
+
+    private func setInstalledExtensions(_ records: [InstalledExtension]) {
+        dependencies.installedRecordsOwner.setAll(records)
+    }
+
+    private func hasEnabledInstalledExtensions() -> Bool {
+        dependencies.installedRecordsOwner.records.contains { $0.isEnabled }
+    }
+
+    private func reconcilePinnedToolbarExtensions() {
+        dependencies.toolbarPinningOwner.reconcilePinnedToolbarExtensions()
+    }
+
+    private func fallbackProfileId() -> UUID? {
+        dependencies.profileRuntimeOwner.resolvedProfileId(
+            explicitProfileId: nil,
+            runtime: dependencies.runtime()
+        )
+    }
+
+    private func resolvedProfileId(_ explicitProfileId: UUID?) -> UUID? {
+        dependencies.profileRuntimeOwner.resolvedProfileId(
+            explicitProfileId: explicitProfileId,
+            runtime: dependencies.runtime()
+        )
+    }
+
+    private func ensureExtensionController(_ profileId: UUID) {
+        _ = dependencies.controllerProvisioningOwner.ensureExtensionController(for: profileId)
+    }
+
+    private func getExtensionContext(
+        _ extensionId: String,
+        _ profileId: UUID
+    ) -> WKWebExtensionContext? {
+        dependencies.profileRuntimeOwner.contexts(for: profileId)[extensionId]
+    }
+
+    private func liveExtensionContextsCount() -> Int {
+        dependencies.profileRuntimeOwner.contextsForCurrentProfile().count
+    }
+
+    private func finalizeEnabledExtensionRuntime(
+        _ extensionId: String,
+        _ profileId: UUID,
+        _ backgroundWakeReason: ExtensionManager.ExtensionBackgroundWakeReason?
+    ) async {
+        await dependencies.actionSurfacePublicationOwner.finalizeEnabledExtensionRuntime(
+            for: extensionId,
+            profileId: profileId,
+            backgroundWakeReason: backgroundWakeReason
+        )
+    }
+
+    private func tearDownExtensionRuntimeState(_ extensionId: String, _ removeUIState: Bool) {
+        dependencies.runtimeStateResetOwner.tearDownExtensionRuntimeState(
+            for: extensionId,
+            removeUIState: removeUIState
+        )
+    }
+
+    private func requestExtensionRuntimeAndWait(
+        _ reason: ExtensionManager.ExtensionRuntimeRequestReason,
+        _ allowWithoutEnabledExtensions: Bool
+    ) async {
+        _ = await dependencies.runtimeLifecycleOwner.requestExtensionRuntimeAndWait(
+            reason: reason,
+            allowWithoutEnabledExtensions: allowWithoutEnabledExtensions
+        )
+    }
+
+    private func extensionLoadGeneration() -> UInt64 {
+        dependencies.runtimeSessionOwner.extensionLoadGeneration
+    }
+
+    private func recordRuntimeMetric(
+        _ extensionId: String,
+        _ update: (inout ExtensionManager.ExtensionRuntimeMetrics) -> Void
+    ) {
+        dependencies.runtimeSessionOwner.recordRuntimeMetric(for: extensionId, update: update)
+    }
+
+    private func clearExtensionLoadError(_ extensionId: String, _ profileId: UUID) {
+        dependencies.runtimeSessionOwner.lastExtensionLoadErrors.removeValue(
+            forKey: ExtensionRuntimeResidencyState.scopedKey(
+                extensionId: extensionId,
+                profileId: profileId
+            )
+        )
+    }
+
+    private func recordExtensionLoadError(_ error: Error, _ extensionId: String, _ profileId: UUID) {
+        dependencies.runtimeSessionOwner.lastExtensionLoadErrors[
+            ExtensionRuntimeResidencyState.scopedKey(extensionId: extensionId, profileId: profileId)
+        ] = error
+    }
+
+    private func touchLiveExtensionContext(_ extensionId: String, _ profileId: UUID) {
+        dependencies.contextResidencyOwner.touchLiveExtensionContext(
+            extensionId: extensionId,
+            profileId: profileId
+        )
+    }
+
+    private func enforceBoundedLiveExtensionContexts(_ profileId: UUID, _ extensionId: String) {
+        dependencies.contextResidencyOwner.enforceBoundedLiveExtensionContexts(
+            keepingProfileId: profileId,
+            keepingExtensionId: extensionId
+        )
+    }
+
+    private func markExtensionRuntimeReadyIfProfileContextsLoaded(_ profileId: UUID) {
+        dependencies.contextResidencyOwner.markExtensionRuntimeReadyIfProfileContextsLoaded(
+            for: profileId
+        )
+    }
+
+    private func logExtensionLoadFailure(
+        _ error: Error,
+        _ extensionId: String,
+        _ profileId: UUID,
+        _ operation: String
+    ) {
+        ExtensionManager.logger.error(
+            "Failed to \(operation, privacy: .public) for extension \(extensionId, privacy: .public) profile \(profileId.uuidString, privacy: .public): \(error.localizedDescription, privacy: .public)"
+        )
+    }
+
+    private func trace(_ message: @autoclosure () -> String) {
+        guard ExtensionManager.isWebKitRuntimeTraceEnabled else { return }
+        dependencies.runtimeDiagnosticsOwner.trace(message())
+    }
+
+    private func resolveInstallSource(
+        _ sourceURL: URL
+    ) throws -> ExtensionInstallSourceResolver.ResolvedInstallSource {
+        try ExtensionInstallSourceResolver.resolve(at: sourceURL)
+    }
+
+    private func validateMV3Requirements(_ manifest: [String: Any], _ baseURL: URL) throws {
+        try ExtensionInstallSourceResolver.validateMV3Requirements(
+            manifest: manifest,
+            baseURL: baseURL
+        )
     }
 
     /// Delivers install results on the next main runloop turn so SwiftUI does not emit
@@ -171,7 +350,7 @@ final class ExtensionInstallationFlowOwner {
     }
 
     func enableExtension(_ extensionId: String) async throws -> InstalledExtension {
-        guard let entity = try dependencies.extensionEntity(extensionId) else {
+        guard let entity = try extensionEntity(extensionId) else {
             throw ExtensionError.installationFailed("Extension was not found in persistence")
         }
 
@@ -184,7 +363,7 @@ final class ExtensionInstallationFlowOwner {
         )
 
         try dependencies.installationMetadataStore.setEnabled(true, for: entity)
-        let extensionRoot = try dependencies.extensionResourcesRoot(
+        let extensionRoot = try extensionResourcesRoot(
             sourceKind,
             entity.packagePath,
             entity.sourceBundlePath
@@ -193,21 +372,21 @@ final class ExtensionInstallationFlowOwner {
             at: extensionRoot.appendingPathComponent("manifest.json"),
             policy: WebExtensionManifestValidationPolicy.forSourceKind(sourceKind)
         )
-        let refreshed = try dependencies.refreshedRecord(entity, manifest)
-        await applyInstalledExtensionsMutationOnNextRunLoop { [dependencies] in
-            dependencies.upsertInstalledExtension(refreshed)
+        let refreshed = try refreshedRecord(entity, manifest)
+        await applyInstalledExtensionsMutationOnNextRunLoop { [recordsOwner = dependencies.installedRecordsOwner] in
+            recordsOwner.upsert(refreshed)
         }
         loadInstalledExtensionMetadata()
 
-        let enableProfileId = dependencies.fallbackProfileId()
+        let enableProfileId = fallbackProfileId()
         guard let enableProfileId else {
             throw ExtensionError.installationFailed(
                 "Extension runtime profile is unavailable"
             )
         }
 
-        dependencies.ensureExtensionController(enableProfileId)
-        if dependencies.getExtensionContext(extensionId, enableProfileId) == nil {
+        ensureExtensionController(enableProfileId)
+        if getExtensionContext(extensionId, enableProfileId) == nil {
             return try await loadEnabledExtension(
                 from: entity,
                 profileId: enableProfileId,
@@ -227,29 +406,32 @@ final class ExtensionInstallationFlowOwner {
         _ extensionId: String,
         releaseRuntimeIfIdle: Bool = true
     ) async throws {
-        dependencies.tearDownExtensionRuntimeState(extensionId, true)
+        tearDownExtensionRuntimeState(extensionId, true)
 
-        if let entity = try dependencies.extensionEntity(extensionId) {
+        if let entity = try extensionEntity(extensionId) {
             try dependencies.installationMetadataStore.setEnabled(false, for: entity)
         }
 
-        await applyInstalledExtensionsMutationOnNextRunLoop { [dependencies] in
-            guard let index = dependencies.installedExtensions()
+        await applyInstalledExtensionsMutationOnNextRunLoop { [
+            recordsOwner = dependencies.installedRecordsOwner,
+            metadataStore = dependencies.installationMetadataStore
+        ] in
+            guard let index = recordsOwner.records
                 .firstIndex(where: { $0.id == extensionId })
             else {
                 return
             }
 
-            let current = dependencies.installedExtensions()[index]
-            let updated = dependencies.installationMetadataStore.record(
+            let current = recordsOwner.records[index]
+            let updated = metadataStore.record(
                 current,
                 withEnabledState: false
             )
-            dependencies.replaceInstalledExtension(index, updated)
-            dependencies.sortInstalledExtensions()
+            recordsOwner.replace(at: index, with: updated)
+            recordsOwner.sort()
         }
 
-        if releaseRuntimeIfIdle && dependencies.hasEnabledInstalledExtensions() == false {
+        if releaseRuntimeIfIdle && hasEnabledInstalledExtensions() == false {
             dependencies.tearDownExtensionRuntime(
                 "disableExtension.noEnabledExtensions",
                 true,
@@ -262,7 +444,7 @@ final class ExtensionInstallationFlowOwner {
         try await disableExtension(extensionId, releaseRuntimeIfIdle: false)
         await dependencies.removeStoredWebExtensionData(extensionId, .pruneDirectoryIfPossible)
 
-        if let entity = try dependencies.extensionEntity(extensionId) {
+        if let entity = try extensionEntity(extensionId) {
             let sourceKind = WebExtensionSourceKind(rawValue: entity.sourceKindRawValue) ?? .directory
             let packageURL = URL(fileURLWithPath: entity.packagePath, isDirectory: true)
             if sourceKind == .directory,
@@ -273,11 +455,11 @@ final class ExtensionInstallationFlowOwner {
             try dependencies.modelContext.save()
         }
 
-        await applyInstalledExtensionsMutationOnNextRunLoop { [dependencies] in
-            dependencies.removeInstalledExtension(extensionId)
+        await applyInstalledExtensionsMutationOnNextRunLoop { [recordsOwner = dependencies.installedRecordsOwner] in
+            recordsOwner.remove(id: extensionId)
         }
 
-        if dependencies.hasEnabledInstalledExtensions() == false {
+        if hasEnabledInstalledExtensions() == false {
             dependencies.tearDownExtensionRuntime(
                 "uninstallExtension.noEnabledExtensions",
                 true,
@@ -298,12 +480,12 @@ final class ExtensionInstallationFlowOwner {
             )
         }
 
-        dependencies.trace(
-            "loadInstalledExtensionMetadata start installedContexts=\(dependencies.liveExtensionContextsCount())"
+        trace(
+            "loadInstalledExtensionMetadata start installedContexts=\(liveExtensionContextsCount())"
         )
 
         let result = dependencies.installationMetadataStore.loadInstalledExtensionMetadata {
-            dependencies.trace($0)
+            trace($0)
         }
         return applyInstalledExtensionMetadataLoadResult(result)
     }
@@ -312,12 +494,12 @@ final class ExtensionInstallationFlowOwner {
     func applyInstalledExtensionMetadataLoadResult(
         _ result: ExtensionInstallationMetadataStore.MetadataLoadResult
     ) -> [ExtensionEntity] {
-        dependencies.setInstalledExtensions(result.records)
+        setInstalledExtensions(result.records)
         if result.didFetchPersistedMetadata {
-            dependencies.reconcilePinnedToolbarExtensions()
+            reconcilePinnedToolbarExtensions()
         }
         dependencies.setExtensionsLoaded(true)
-        dependencies.trace(
+        trace(
             "loadInstalledExtensionMetadata complete records=\(result.records.count) enabled=\(result.enabledEntities.count)"
         )
         return result.enabledEntities
@@ -343,14 +525,14 @@ final class ExtensionInstallationFlowOwner {
         expectedLoadGeneration: UInt64? = nil,
         postLoadActivation: EnabledExtensionRuntimeActivation
     ) async throws -> InstalledExtension {
-        let loadGeneration = expectedLoadGeneration ?? dependencies.extensionLoadGeneration()
+        let loadGeneration = expectedLoadGeneration ?? extensionLoadGeneration()
         let signpostState = PerformanceTrace.beginInterval("ExtensionManager.loadEnabledExtension")
         defer {
             PerformanceTrace.endInterval("ExtensionManager.loadEnabledExtension", signpostState)
         }
 
         do {
-            let resolvedProfileId = dependencies.resolvedProfileId(profileId)
+            let resolvedProfileId = resolvedProfileId(profileId)
             guard let resolvedProfileId else {
                 throw ExtensionError.installationFailed(
                     "Extension runtime profile is unavailable"
@@ -358,21 +540,21 @@ final class ExtensionInstallationFlowOwner {
             }
             let sourceKind =
                 WebExtensionSourceKind(rawValue: entity.sourceKindRawValue) ?? .directory
-            let extensionRoot = try dependencies.extensionResourcesRoot(
+            let extensionRoot = try extensionResourcesRoot(
                 sourceKind,
                 entity.packagePath,
                 entity.sourceBundlePath
             )
             let manifestURL = extensionRoot.appendingPathComponent("manifest.json")
-            dependencies.trace(
-                "loadEnabledExtension start extensionId=\(entity.id) profileId=\(resolvedProfileId.uuidString) expectedGeneration=\(loadGeneration) currentGeneration=\(dependencies.extensionLoadGeneration()) packagePath=\(extensionRoot.path)"
+            trace(
+                "loadEnabledExtension start extensionId=\(entity.id) profileId=\(resolvedProfileId.uuidString) expectedGeneration=\(loadGeneration) currentGeneration=\(extensionLoadGeneration()) packagePath=\(extensionRoot.path)"
             )
             let validationStart = CFAbsoluteTimeGetCurrent()
             let manifest = try ExtensionUtils.validateManifest(
                 at: manifestURL,
                 policy: WebExtensionManifestValidationPolicy.forSourceKind(sourceKind)
             )
-            dependencies.recordRuntimeMetric(entity.id) {
+            recordRuntimeMetric(entity.id) {
                 $0.manifestValidationDuration = CFAbsoluteTimeGetCurrent() - validationStart
             }
             let extensionContext = try await dependencies.loadRuntimeContext(
@@ -389,9 +571,9 @@ final class ExtensionInstallationFlowOwner {
                 )
             )
 
-            dependencies.clearExtensionLoadError(entity.id, resolvedProfileId)
-            dependencies.touchLiveExtensionContext(entity.id, resolvedProfileId)
-            dependencies.enforceBoundedLiveExtensionContexts(resolvedProfileId, entity.id)
+            clearExtensionLoadError(entity.id, resolvedProfileId)
+            touchLiveExtensionContext(entity.id, resolvedProfileId)
+            enforceBoundedLiveExtensionContexts(resolvedProfileId, entity.id)
 
             await finalizeLoadedEnabledExtensionRuntime(
                 entity.id,
@@ -400,19 +582,19 @@ final class ExtensionInstallationFlowOwner {
                 activation: postLoadActivation
             )
 
-            let refreshed = try dependencies.refreshedRecord(entity, manifest)
-            await applyInstalledExtensionsMutationOnNextRunLoop { [dependencies] in
-                dependencies.upsertInstalledExtension(refreshed)
+            let refreshed = try refreshedRecord(entity, manifest)
+            await applyInstalledExtensionsMutationOnNextRunLoop { [recordsOwner = dependencies.installedRecordsOwner] in
+                recordsOwner.upsert(refreshed)
             }
-            dependencies.updateEntity(entity, refreshed)
+            updateEntity(entity, refreshed)
             try dependencies.modelContext.save()
             return refreshed
         } catch {
-            let errorProfileId = dependencies.resolvedProfileId(profileId)
+            let errorProfileId = resolvedProfileId(profileId)
             if let errorProfileId {
-                dependencies.recordExtensionLoadError(error, entity.id, errorProfileId)
+                recordExtensionLoadError(error, entity.id, errorProfileId)
             }
-            dependencies.tearDownExtensionRuntimeState(entity.id, false)
+            tearDownExtensionRuntimeState(entity.id, false)
             throw error
         }
     }
@@ -434,7 +616,7 @@ final class ExtensionInstallationFlowOwner {
         _ profileId: UUID,
         activation: EnabledExtensionRuntimeActivation
     ) async {
-        guard let extensionContext = dependencies.getExtensionContext(
+        guard let extensionContext = getExtensionContext(
             extensionId,
             profileId
         ) else {
@@ -457,12 +639,12 @@ final class ExtensionInstallationFlowOwner {
     ) async {
         switch activation {
         case .standard(let backgroundWakeReason):
-            await dependencies.finalizeEnabledExtensionRuntime(
+            await finalizeEnabledExtensionRuntime(
                 extensionId,
                 profileId,
                 backgroundWakeReason
             )
-            dependencies.markExtensionRuntimeReadyIfProfileContextsLoaded(profileId)
+            markExtensionRuntimeReadyIfProfileContextsLoaded(profileId)
         case .safariAppExtensionEnable:
             await dependencies.activateInstallRuntime(
                 ExtensionInstallRuntimeActivationOwner.Request(
@@ -480,10 +662,10 @@ final class ExtensionInstallationFlowOwner {
         enableOnInstall: Bool = true
     ) async throws -> InstalledExtension {
         if enableOnInstall {
-            await dependencies.requestExtensionRuntimeAndWait(.install, true)
+            await requestExtensionRuntimeAndWait(.install, true)
         }
 
-        let resolvedSource = try dependencies.resolveInstallSource(sourceURL)
+        let resolvedSource = try resolveInstallSource(sourceURL)
         if resolvedSource.sourceKind == .safariAppExtension {
             return try await enableDiscoveredSafariAppExtension(
                 resolvedSource,
@@ -521,7 +703,7 @@ final class ExtensionInstallationFlowOwner {
                 at: manifestURL,
                 policy: manifestPolicy
             )
-            try dependencies.validateMV3Requirements(manifest, temporaryDirectory)
+            try validateMV3Requirements(manifest, temporaryDirectory)
 
             let allEntities = try dependencies.modelContext.fetch(FetchDescriptor<ExtensionEntity>())
             let existingEntityBySource = allEntities.first {
@@ -539,7 +721,7 @@ final class ExtensionInstallationFlowOwner {
                 under: extensionsDirectory
             )
             finalDirectory = destinationDirectory
-            existingEntitySnapshot = try dependencies.extensionEntity(extensionId)
+            existingEntitySnapshot = try extensionEntity(extensionId)
             shouldRestoreExistingRuntime = existingEntitySnapshot?.isEnabled == true
 
             if FileManager.default.fileExists(atPath: destinationDirectory.path) {
@@ -552,13 +734,13 @@ final class ExtensionInstallationFlowOwner {
             }
 
             if let existingEntitySnapshot {
-                dependencies.tearDownExtensionRuntimeState(existingEntitySnapshot.id, false)
+                tearDownExtensionRuntimeState(existingEntitySnapshot.id, false)
             } else if resolvedSource.sourceKind == .safariAppExtension {
                 // Safari parity: reinstalling a Safari app extension keeps its
                 // WebKit data — Safari preserves extension state across
                 // reinstall and containing-app updates.
                 if RuntimeDiagnostics.isVerboseEnabled {
-                    dependencies.trace(
+                    trace(
                         "Preserved WebExtension data for \(extensionId): Safari app extension reinstall keeps state"
                     )
                 }
@@ -579,7 +761,7 @@ final class ExtensionInstallationFlowOwner {
                 )
             } else {
                 if RuntimeDiagnostics.isVerboseEnabled {
-                    dependencies.trace(
+                    trace(
                         "Skipped WebExtension data cleanup for \(extensionId): no stored data candidate (fresh install path)"
                     )
                 }
@@ -593,7 +775,7 @@ final class ExtensionInstallationFlowOwner {
                 policy: manifestPolicy
             )
 
-            let record = try dependencies.makeInstalledRecord(
+            let record = try makeInstalledRecord(
                 extensionId,
                 finalManifest,
                 destinationDirectory,
@@ -605,7 +787,7 @@ final class ExtensionInstallationFlowOwner {
             )
 
             if enableOnInstall {
-                let installProfileId = dependencies.fallbackProfileId()
+                let installProfileId = fallbackProfileId()
                 guard let installProfileId else {
                     throw ExtensionError.installationFailed(
                         "Extension runtime profile is unavailable"
@@ -638,9 +820,9 @@ final class ExtensionInstallationFlowOwner {
             if let beforePersist = dependencies.debugBeforePersistInstalledRecord() {
                 try beforePersist(record)
             }
-            try dependencies.persistRecord(record)
-            await applyInstalledExtensionsMutationOnNextRunLoop { [dependencies] in
-                dependencies.upsertInstalledExtension(record)
+            try persistRecord(record)
+            await applyInstalledExtensionsMutationOnNextRunLoop { [recordsOwner = dependencies.installedRecordsOwner] in
+                recordsOwner.upsert(record)
             }
 
             if let backupDirectory {
@@ -653,7 +835,7 @@ final class ExtensionInstallationFlowOwner {
             return record
         } catch {
             if let installedExtensionID {
-                dependencies.tearDownExtensionRuntimeState(installedExtensionID, false)
+                tearDownExtensionRuntimeState(installedExtensionID, false)
             }
 
             if let finalDirectory {
@@ -679,8 +861,8 @@ final class ExtensionInstallationFlowOwner {
                 do {
                     _ = try await loadEnabledExtension(from: existingEntitySnapshot)
                 } catch let restoreError {
-                    if let restoreProfileId = dependencies.fallbackProfileId() {
-                        dependencies.logExtensionLoadFailure(
+                    if let restoreProfileId = fallbackProfileId() {
+                        logExtensionLoadFailure(
                             restoreError,
                             existingEntitySnapshot.id,
                             restoreProfileId,
@@ -745,7 +927,7 @@ final class ExtensionInstallationFlowOwner {
             at: manifestURL,
             policy: manifestPolicy
         )
-        try dependencies.validateMV3Requirements(manifest, extensionRoot)
+        try validateMV3Requirements(manifest, extensionRoot)
 
         let allEntities = try dependencies.modelContext.fetch(FetchDescriptor<ExtensionEntity>())
         let existingEntityBySource = allEntities.first {
@@ -762,19 +944,19 @@ final class ExtensionInstallationFlowOwner {
         if let existingEntityBySource {
             existingEntitySnapshot = existingEntityBySource
         } else {
-            existingEntitySnapshot = try dependencies.extensionEntity(extensionId)
+            existingEntitySnapshot = try extensionEntity(extensionId)
         }
         let shouldRestoreExistingRuntime = existingEntitySnapshot?.isEnabled == true
 
         do {
             if let existingEntitySnapshot {
-                dependencies.tearDownExtensionRuntimeState(existingEntitySnapshot.id, false)
+                tearDownExtensionRuntimeState(existingEntitySnapshot.id, false)
             }
             // Safari parity: reinstalling or updating a Safari app extension
             // keeps its WebKit data (sessions survive extension updates in
             // Safari). Stale-data cleanup applies only to directory sources.
 
-            let record = try dependencies.makeInstalledRecord(
+            let record = try makeInstalledRecord(
                 extensionId,
                 manifest,
                 extensionRoot,
@@ -786,7 +968,7 @@ final class ExtensionInstallationFlowOwner {
             )
 
             if enableOnInstall {
-                let installProfileId = dependencies.fallbackProfileId()
+                let installProfileId = fallbackProfileId()
                 guard let installProfileId else {
                     throw ExtensionError.installationFailed(
                         "Extension runtime profile is unavailable"
@@ -819,14 +1001,14 @@ final class ExtensionInstallationFlowOwner {
             if let beforePersist = dependencies.debugBeforePersistInstalledRecord() {
                 try beforePersist(record)
             }
-            try dependencies.persistRecord(record)
-            await applyInstalledExtensionsMutationOnNextRunLoop { [dependencies] in
-                dependencies.upsertInstalledExtension(record)
+            try persistRecord(record)
+            await applyInstalledExtensionsMutationOnNextRunLoop { [recordsOwner = dependencies.installedRecordsOwner] in
+                recordsOwner.upsert(record)
             }
 
             return record
         } catch {
-            dependencies.tearDownExtensionRuntimeState(
+            tearDownExtensionRuntimeState(
                 existingEntitySnapshot?.id ?? extensionId,
                 false
             )
@@ -834,8 +1016,8 @@ final class ExtensionInstallationFlowOwner {
                 do {
                     _ = try await loadEnabledExtension(from: existingEntitySnapshot)
                 } catch let restoreError {
-                    if let restoreProfileId = dependencies.fallbackProfileId() {
-                        dependencies.logExtensionLoadFailure(
+                    if let restoreProfileId = fallbackProfileId() {
+                        logExtensionLoadFailure(
                             restoreError,
                             existingEntitySnapshot.id,
                             restoreProfileId,
@@ -860,72 +1042,11 @@ extension ExtensionInstallationFlowOwner.Dependencies {
         Self(
             modelContext: manager.context,
             installationMetadataStore: manager.installationMetadataStore,
-            isExtensionSupportAvailable: { [weak manager] in
-                manager?.isExtensionSupportAvailable ?? false
-            },
-            extensionEntity: { [weak manager] extensionId in
-                try manager?.extensionEntity(for: extensionId)
-            },
-            extensionResourcesRoot: { [weak manager] sourceKind, packagePath, sourceBundlePath in
-                guard let manager else {
-                    throw ExtensionError.installationFailed("Extension manager is unavailable")
-                }
-                return try manager.extensionResourcesRoot(
-                    sourceKind: sourceKind,
-                    packagePath: packagePath,
-                    sourceBundlePath: sourceBundlePath
-                )
-            },
-            refreshedRecord: { [weak manager] entity, manifest in
-                guard let manager else {
-                    throw ExtensionError.installationFailed("Extension manager is unavailable")
-                }
-                return try manager.refreshedRecord(for: entity, manifest: manifest)
-            },
-            upsertInstalledExtension: { [weak manager] record in
-                manager?.upsertInstalledExtension(record)
-            },
-            installedExtensions: { [weak manager] in manager?.installedExtensions ?? [] },
-            replaceInstalledExtension: { [weak manager] index, record in
-                guard let manager, manager.installedExtensions.indices.contains(index) else { return }
-                manager.installedExtensions[index] = record
-            },
-            removeInstalledExtension: { [weak manager] extensionId in
-                manager?.installedExtensions.removeAll { $0.id == extensionId }
-            },
-            setInstalledExtensions: { [weak manager] records in
-                manager?.installedExtensions = records
-            },
-            sortInstalledExtensions: { [weak manager] in manager?.sortInstalledExtensions() },
-            reconcilePinnedToolbarExtensions: { [weak manager] in
-                manager?.reconcilePinnedToolbarExtensions()
-            },
-            setExtensionsLoaded: { [weak manager] loaded in
-                manager?.extensionsLoaded = loaded
-            },
-            fallbackProfileId: { [weak manager] in manager?.fallbackProfileId },
-            resolvedProfileId: { [weak manager] explicitProfileId in
-                manager?.resolvedProfileId(explicitProfileId: explicitProfileId)
-            },
-            ensureExtensionController: { [weak manager] profileId in
-                _ = manager?.ensureExtensionController(for: profileId)
-            },
-            getExtensionContext: { [weak manager] extensionId, profileId in
-                manager?.getExtensionContext(for: extensionId, profileId: profileId)
-            },
-            finalizeEnabledExtensionRuntime: { [weak manager] extensionId, profileId, reason in
-                await manager?.finalizeEnabledExtensionRuntime(
-                    for: extensionId,
-                    profileId: profileId,
-                    backgroundWakeReason: reason
-                )
-            },
-            tearDownExtensionRuntimeState: { [weak manager] extensionId, removeUIState in
-                manager?.tearDownExtensionRuntimeState(
-                    for: extensionId,
-                    removeUIState: removeUIState
-                )
-            },
+            installedRecordsOwner: manager.installedRecordsOwner,
+            toolbarPinningOwner: manager.toolbarPinningOwner,
+            profileRuntimeOwner: manager.profileRuntimeOwner,
+            runtimeLifecycleOwner: manager.runtimeLifecycleOwner,
+            runtimeStateResetOwner: manager.runtimeStateResetOwner,
             tearDownExtensionRuntime: { [weak manager] reason, removeUIState, releaseController in
                 manager?.tearDownExtensionRuntime(
                     reason: reason,
@@ -933,8 +1054,27 @@ extension ExtensionInstallationFlowOwner.Dependencies {
                     releaseController: releaseController
                 )
             },
-            hasEnabledInstalledExtensions: { [weak manager] in
-                manager?.hasEnabledInstalledExtensions ?? false
+            controllerProvisioningOwner: manager.controllerProvisioningOwner,
+            actionSurfacePublicationOwner: manager.actionSurfacePublicationOwner,
+            contextResidencyOwner: manager.contextResidencyOwner,
+            runtimeSessionOwner: manager.runtimeSessionOwner,
+            runtimeDiagnosticsOwner: manager.runtimeDiagnosticsOwner,
+            runtime: { [weak manager] in manager?.runtime ?? .inactive },
+            isExtensionSupportAvailable: { [weak manager] in
+                manager?.isExtensionSupportAvailable ?? false
+            },
+            setExtensionsLoaded: { [weak manager] loaded in
+                manager?.extensionsLoaded = loaded
+            },
+            loadRuntimeContext: { [weak manager] request in
+                guard let manager else {
+                    throw ExtensionError.installationFailed("Extension manager is unavailable")
+                }
+                return try await ExtensionRuntimeContextLoadOwner(manager: manager).load(request)
+            },
+            activateInstallRuntime: { [weak manager] request in
+                guard let manager else { return }
+                await ExtensionInstallRuntimeActivationOwner(manager: manager).activate(request)
             },
             removeStoredWebExtensionData: { [weak manager] extensionId, mode in
                 await manager?.removeStoredWebExtensionData(for: extensionId, mode: mode)
@@ -952,95 +1092,6 @@ extension ExtensionInstallationFlowOwner.Dependencies {
             ensureWebExtensionStorageDirectoryExists: { [weak manager] extensionId in
                 _ = manager?.ensureWebExtensionStorageDirectoryExists(for: extensionId)
             },
-            requestExtensionRuntimeAndWait: { [weak manager] reason, allowWithoutEnabledExtensions in
-                _ = await manager?.requestExtensionRuntimeAndWait(
-                    reason: reason,
-                    allowWithoutEnabledExtensions: allowWithoutEnabledExtensions
-                )
-            },
-            resolveInstallSource: { sourceURL in
-                try ExtensionInstallSourceResolver.resolve(at: sourceURL)
-            },
-            validateMV3Requirements: { manifest, baseURL in
-                try ExtensionInstallSourceResolver.validateMV3Requirements(
-                    manifest: manifest,
-                    baseURL: baseURL
-                )
-            },
-            // swiftlint:disable:next line_length
-            makeInstalledRecord: { [weak manager] extensionId, manifest, extensionRoot, isEnabled, sourceKind, sourceBundlePath, sourceFingerprintURL, existingEntity in
-                guard let manager else {
-                    throw ExtensionError.installationFailed("Extension manager is unavailable")
-                }
-                return try manager.makeInstalledRecord(
-                    extensionId: extensionId,
-                    manifest: manifest,
-                    extensionRoot: extensionRoot,
-                    isEnabled: isEnabled,
-                    sourceKind: sourceKind,
-                    sourceBundlePath: sourceBundlePath,
-                    sourceFingerprintURL: sourceFingerprintURL,
-                    existingEntity: existingEntity
-                )
-            },
-            persistRecord: { [weak manager] record in
-                try manager?.persist(record: record)
-            },
-            updateEntity: { [weak manager] entity, record in
-                manager?.update(entity, from: record)
-            },
-            extensionLoadGeneration: { [weak manager] in
-                manager?.extensionLoadGeneration ?? 0
-            },
-            loadRuntimeContext: { [weak manager] request in
-                guard let manager else {
-                    throw ExtensionError.installationFailed("Extension manager is unavailable")
-                }
-                return try await ExtensionRuntimeContextLoadOwner(manager: manager).load(request)
-            },
-            activateInstallRuntime: { [weak manager] request in
-                guard let manager else { return }
-                await ExtensionInstallRuntimeActivationOwner(manager: manager).activate(request)
-            },
-            recordRuntimeMetric: { [weak manager] extensionId, update in
-                manager?.runtimeSessionOwner.recordRuntimeMetric(for: extensionId, update: update)
-            },
-            clearExtensionLoadError: { [weak manager] extensionId, profileId in
-                manager?.clearExtensionLoadError(extensionId: extensionId, profileId: profileId)
-            },
-            recordExtensionLoadError: { [weak manager] error, extensionId, profileId in
-                manager?.recordExtensionLoadError(
-                    error,
-                    extensionId: extensionId,
-                    profileId: profileId
-                )
-            },
-            touchLiveExtensionContext: { [weak manager] extensionId, profileId in
-                manager?.touchLiveExtensionContext(extensionId: extensionId, profileId: profileId)
-            },
-            enforceBoundedLiveExtensionContexts: { [weak manager] profileId, extensionId in
-                manager?.enforceBoundedLiveExtensionContexts(
-                    keepingProfileId: profileId,
-                    keepingExtensionId: extensionId
-                )
-            },
-            markExtensionRuntimeReadyIfProfileContextsLoaded: { [weak manager] profileId in
-                manager?.markExtensionRuntimeReadyIfProfileContextsLoaded(for: profileId)
-            },
-            logExtensionLoadFailure: { [weak manager] error, extensionId, profileId, operation in
-                manager?.logExtensionLoadFailure(
-                    error,
-                    extensionId: extensionId,
-                    profileId: profileId,
-                    operation: operation
-                )
-            },
-            liveExtensionContextsCount: { [weak manager] in
-                manager?.extensionContexts.count ?? 0
-            },
-            trace: { [weak manager] message in
-                manager?.extensionRuntimeTrace(message)
-            },
             debugBeforePersistInstalledRecord: { [weak manager] in
                 #if DEBUG
                     manager?.testHooks.beforePersistInstalledRecord
@@ -1048,76 +1099,6 @@ extension ExtensionInstallationFlowOwner.Dependencies {
                     nil
                 #endif
             }
-        )
-    }
-}
-
-// MARK: - ExtensionManager facade
-
-@available(macOS 15.5, *)
-@MainActor
-extension ExtensionManager {
-    func installExtension(
-        from sourceURL: URL,
-        completionHandler: @escaping (Result<InstalledExtension, ExtensionError>) -> Void
-    ) {
-        installationFlowOwner.installExtension(
-            from: sourceURL,
-            completionHandler: completionHandler
-        )
-    }
-
-    func enableExtension(_ extensionId: String) async throws -> InstalledExtension {
-        try await installationFlowOwner.enableExtension(extensionId)
-    }
-
-    func disableExtension(
-        _ extensionId: String,
-        releaseRuntimeIfIdle: Bool = true
-    ) async throws {
-        try await installationFlowOwner.disableExtension(
-            extensionId,
-            releaseRuntimeIfIdle: releaseRuntimeIfIdle
-        )
-    }
-
-    func uninstallExtension(_ extensionId: String) async throws {
-        try await installationFlowOwner.uninstallExtension(extensionId)
-    }
-
-    @discardableResult
-    func loadInstalledExtensionMetadata() -> [ExtensionEntity] {
-        installationFlowOwner.loadInstalledExtensionMetadata()
-    }
-
-    @discardableResult
-    func applyInstalledExtensionMetadataLoadResult(
-        _ result: ExtensionInstallationMetadataStore.MetadataLoadResult
-    ) -> [ExtensionEntity] {
-        installationFlowOwner.applyInstalledExtensionMetadataLoadResult(result)
-    }
-
-    func loadEnabledExtension(
-        from entity: ExtensionEntity,
-        profileId: UUID? = nil,
-        expectedLoadGeneration: UInt64? = nil,
-        postLoadBackgroundWakeReason: ExtensionBackgroundWakeReason? = nil
-    ) async throws -> InstalledExtension {
-        try await installationFlowOwner.loadEnabledExtension(
-            from: entity,
-            profileId: profileId,
-            expectedLoadGeneration: expectedLoadGeneration,
-            postLoadBackgroundWakeReason: postLoadBackgroundWakeReason
-        )
-    }
-
-    func performInstallation(
-        from sourceURL: URL,
-        enableOnInstall: Bool = true
-    ) async throws -> InstalledExtension {
-        try await installationFlowOwner.performInstallation(
-            from: sourceURL,
-            enableOnInstall: enableOnInstall
         )
     }
 }

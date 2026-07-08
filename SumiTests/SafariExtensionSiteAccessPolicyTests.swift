@@ -39,7 +39,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
             manager: manager,
             name: "OptionalHostAccess"
         )
-        _ = try await manager.enableExtension(installed.id)
+        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
 
         let context = try XCTUnwrap(
             manager.getExtensionContext(for: installed.id, profileId: profile.id)
@@ -70,7 +70,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
             manager: manager,
             name: "ExplicitAllowHostAccess"
         )
-        _ = try await manager.enableExtension(installed.id)
+        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
         manager.setDefaultSiteAccess(
             .allow,
             extensionId: installed.id,
@@ -100,7 +100,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
             manager: manager,
             name: "DefaultDenyHostAccess"
         )
-        _ = try await manager.enableExtension(installed.id)
+        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
         manager.setDefaultSiteAccess(
             .deny,
             extensionId: installed.id,
@@ -130,7 +130,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
             manager: firstManager,
             name: "PersistentOptionalHostAccess"
         )
-        _ = try await firstManager.enableExtension(installed.id)
+        _ = try await firstManager.installationFlowOwner.enableExtension(installed.id)
         firstManager.setDefaultSiteAccess(
             .ask,
             extensionId: installed.id,
@@ -357,7 +357,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
             manager: manager,
             name: "ProfileScopedSiteAccess"
         )
-        _ = try await manager.enableExtension(installed.id)
+        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
         manager.setDefaultSiteAccess(
             .ask,
             extensionId: installed.id,
@@ -402,7 +402,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
             name: "NativeMessagingPermission",
             permissions: ["nativeMessaging"]
         )
-        _ = try await manager.enableExtension(installed.id)
+        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
         _ = try await manager.ensureExtensionLoaded(
             extensionId: installed.id,
             profileId: profileB.id
@@ -442,7 +442,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
             manager: manager,
             name: "ConfiguredAsk"
         )
-        _ = try await manager.enableExtension(installed.id)
+        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
         manager.setDefaultSiteAccess(
             .allow,
             extensionId: installed.id,
@@ -491,7 +491,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
             manager: manager,
             name: "DefaultCurrentSiteAccess"
         )
-        _ = try await manager.enableExtension(installed.id)
+        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
         let context = try XCTUnwrap(
             manager.getExtensionContext(for: installed.id, profileId: profile.id)
         )
@@ -532,7 +532,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
                 "https://accounts.example.com/*",
             ]
         )
-        _ = try await manager.enableExtension(installed.id)
+        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
         let context = try XCTUnwrap(
             manager.getExtensionContext(for: installed.id, profileId: profile.id)
         )
@@ -601,7 +601,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
             name: "PrivateCapable",
             incognitoMode: "split"
         )
-        _ = try await manager.enableExtension(installed.id)
+        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
         let context = try XCTUnwrap(
             manager.getExtensionContext(for: installed.id, profileId: profile.id)
         )
@@ -620,7 +620,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
             name: "PrivateBlocked",
             incognitoMode: "not_allowed"
         )
-        _ = try await manager.enableExtension(blocked.id)
+        _ = try await manager.installationFlowOwner.enableExtension(blocked.id)
         manager.setPrivateBrowsingAccess(
             true,
             extensionId: blocked.id,
@@ -645,7 +645,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
             manager: manager,
             name: "LegacyPromptOverride"
         )
-        _ = try await manager.enableExtension(installed.id)
+        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
 
         let context = try XCTUnwrap(
             manager.getExtensionContext(for: installed.id, profileId: profile.id)
@@ -705,7 +705,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
             manager: manager,
             name: "BroadHostProbe"
         )
-        _ = try await manager.enableExtension(installed.id)
+        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
         let context = try XCTUnwrap(
             manager.getExtensionContext(for: installed.id, profileId: profile.id)
         )
@@ -732,7 +732,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
             manager: manager,
             name: "ConfiguredBroadHostProbe"
         )
-        _ = try await manager.enableExtension(installed.id)
+        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
         manager.setDefaultSiteAccess(
             .ask,
             extensionId: installed.id,
@@ -775,7 +775,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
             manager: manager,
             name: "IdempotentPolicyProbe"
         )
-        _ = try await manager.enableExtension(installed.id)
+        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
         manager.setDefaultSiteAccess(
             .allow,
             extensionId: installed.id,
@@ -871,7 +871,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
             manager: manager,
             name: "BroadHostRequestProbe"
         )
-        _ = try await manager.enableExtension(installed.id)
+        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
         let context = try XCTUnwrap(
             manager.getExtensionContext(for: installed.id, profileId: profile.id)
         )
@@ -927,7 +927,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
             manager: manager,
             name: "BroadHostRequestDenyProbe"
         )
-        _ = try await manager.enableExtension(installed.id)
+        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
         let context = try XCTUnwrap(
             manager.getExtensionContext(for: installed.id, profileId: profile.id)
         )
@@ -998,7 +998,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
                 "https://pass.example.test/*",
             ]
         )
-        _ = try await manager.enableExtension(installed.id)
+        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
 
         let context = try XCTUnwrap(
             manager.getExtensionContext(for: installed.id, profileId: profile.id)
@@ -1183,7 +1183,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
                 options: [.atomic]
             )
 
-        return try await manager.performInstallation(
+        return try await manager.installationFlowOwner.performInstallation(
             from: directory,
             enableOnInstall: false
         )
@@ -1255,7 +1255,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
                 options: [.atomic]
             )
 
-        return try await manager.performInstallation(
+        return try await manager.installationFlowOwner.performInstallation(
             from: directory,
             enableOnInstall: false
         )

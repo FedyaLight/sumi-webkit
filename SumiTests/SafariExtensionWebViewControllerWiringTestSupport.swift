@@ -70,7 +70,7 @@ class SafariExtensionWebViewControllerWiringTestCase: XCTestCase {
             scratchDirectory: scratchDirectory,
             name: "ContextProbeExtension"
         )
-        _ = try await manager.enableExtension(installed.id)
+        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
         let context = try await manager.ensureExtensionLoaded(
             extensionId: installed.id,
             profileId: profile.id
@@ -173,7 +173,7 @@ class SafariExtensionWebViewControllerWiringTestCase: XCTestCase {
         try Data("<!doctype html><title>overlay</title>".utf8)
             .write(to: directoryURL.appendingPathComponent("overlay.html"), options: [.atomic])
 
-        return try await manager.performInstallation(
+        return try await manager.installationFlowOwner.performInstallation(
             from: directoryURL,
             enableOnInstall: false
         )
@@ -213,7 +213,7 @@ class SafariExtensionWebViewControllerWiringTestCase: XCTestCase {
         try Data("globalThis.__sumiBackgroundProbe = true;".utf8)
             .write(to: directoryURL.appendingPathComponent("background.js"), options: [.atomic])
 
-        return try await manager.performInstallation(
+        return try await manager.installationFlowOwner.performInstallation(
             from: directoryURL,
             enableOnInstall: false
         )
@@ -254,7 +254,7 @@ class SafariExtensionWebViewControllerWiringTestCase: XCTestCase {
         try Data("globalThis.__sumiNativeMessagingBackgroundProbe = true;".utf8)
             .write(to: directoryURL.appendingPathComponent("background.js"), options: [.atomic])
 
-        return try await manager.performInstallation(
+        return try await manager.installationFlowOwner.performInstallation(
             from: directoryURL,
             enableOnInstall: false
         )
@@ -314,7 +314,7 @@ class SafariExtensionWebViewControllerWiringTestCase: XCTestCase {
         )
             .write(to: directoryURL.appendingPathComponent("popup.js"), options: [.atomic])
 
-        return try await manager.performInstallation(
+        return try await manager.installationFlowOwner.performInstallation(
             from: directoryURL,
             enableOnInstall: false
         )

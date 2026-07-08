@@ -382,7 +382,7 @@ final class SafariExtensionAccountForkPipelineTests: XCTestCase {
             manager: manager,
             scratchDirectory: makeScratchDirectory()
         )
-        _ = try await manager.enableExtension(installed.id)
+        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
         manager.setDefaultSiteAccess(
             .allow,
             extensionId: installed.id,
@@ -1185,7 +1185,7 @@ final class SafariExtensionAccountForkPipelineTests: XCTestCase {
             existingEntity: nil
         )
         try manager.persist(record: record)
-        _ = manager.loadInstalledExtensionMetadata()
+        _ = manager.installationFlowOwner.loadInstalledExtensionMetadata()
         return record
     }
 

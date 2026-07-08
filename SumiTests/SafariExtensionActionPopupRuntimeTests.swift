@@ -49,7 +49,7 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
             scratchDirectory: scratchDirectory,
             name: "ProfileIsolationExtension"
         )
-        _ = try await manager.enableExtension(installed.id)
+        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
 
         XCTAssertTrue(
             manager.isProfileExtensionRuntimeReady(for: profileA.id),
@@ -95,7 +95,7 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
             name: "Raindrop",
             manifestVersion: 3
         )
-        _ = try await manager.enableExtension(installed.id)
+        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
 
         let tab = Tab(url: URL(string: "https://example.com/")!)
         tab.profileId = profile.id
@@ -131,7 +131,7 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
             name: "Raindrop Iframe",
             packageStyle: .raindropIframePopup
         )
-        _ = try await manager.enableExtension(installed.id)
+        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
 
         XCTAssertEqual(installed.defaultPopupPath, "assets/action_in_iframe.html")
         XCTAssertTrue(installed.hasAction)
@@ -168,7 +168,7 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
             name: "ActiveTab Popup",
             packageStyle: .raindropIframePopup
         )
-        _ = try await manager.enableExtension(installed.id)
+        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
 
         let clickedTab = Tab(url: URL(string: "https://clicked.example/path")!)
         clickedTab.profileId = profile.id
@@ -213,7 +213,7 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
             name: "Raindrop Iframe Resource",
             packageStyle: .raindropIframePopup
         )
-        _ = try await manager.enableExtension(installed.id)
+        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
 
         guard let extensionContext = try await manager.ensureExtensionLoaded(
             extensionId: installed.id,
@@ -288,8 +288,8 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
             scratchDirectory: scratchDirectory,
             name: "Reimport Extension"
         )
-        _ = try await manager.enableExtension(installed.id)
-        try await manager.uninstallExtension(installed.id)
+        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
+        try await manager.installationFlowOwner.uninstallExtension(installed.id)
 
         let reinstalled = try await installSafariStyleCopiedPackage(
             manager: manager,
@@ -297,7 +297,7 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
             name: "Reimport Extension",
             extensionId: installed.id
         )
-        _ = try await manager.enableExtension(reinstalled.id)
+        _ = try await manager.installationFlowOwner.enableExtension(reinstalled.id)
 
         _ = try await manager.ensureExtensionLoaded(
             extensionId: reinstalled.id,
@@ -323,7 +323,7 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
             name: "Bitwarden",
             manifestVersion: 2
         )
-        _ = try await manager.enableExtension(installed.id)
+        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
 
         _ = try await manager.ensureExtensionLoaded(
             extensionId: installed.id,
@@ -379,7 +379,7 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
             manifestVersion: manifestVersion,
             packageStyle: packageStyle
         )
-        return try await manager.performInstallation(
+        return try await manager.installationFlowOwner.performInstallation(
             from: directoryURL,
             enableOnInstall: false
         )
@@ -431,7 +431,7 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
             existingEntity: nil
         )
         try manager.persist(record: record)
-        _ = manager.loadInstalledExtensionMetadata()
+        _ = manager.installationFlowOwner.loadInstalledExtensionMetadata()
         return record
     }
 

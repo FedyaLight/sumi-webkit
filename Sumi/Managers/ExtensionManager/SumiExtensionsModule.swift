@@ -330,14 +330,14 @@ final class SumiExtensionsModule {
         guard let manager = managerIfEnabled() else {
             throw ExtensionError.unsupportedOS
         }
-        let enabled = try await manager.enableExtension(extensionId)
+        let enabled = try await manager.installationFlowOwner.enableExtension(extensionId)
         _ = safariExtensionCompatibilityReport()
         return enabled
     }
 
     func disableExtension(_ extensionId: String) async throws {
         guard let manager = managerIfEnabled() else { return }
-        try await manager.disableExtension(extensionId)
+        try await manager.installationFlowOwner.disableExtension(extensionId)
     }
 
     func uninstallExtension(_ extensionId: String) async throws {
@@ -345,7 +345,7 @@ final class SumiExtensionsModule {
         safariExtensionImportStore.removeImportedRecord(
             forInstalledExtensionId: extensionId
         )
-        try await manager.uninstallExtension(extensionId)
+        try await manager.installationFlowOwner.uninstallExtension(extensionId)
     }
 
     func enableSafariAppExtension(
@@ -431,7 +431,7 @@ final class SumiExtensionsModule {
             throw ExtensionError.unsupportedOS
         }
 
-        let installed = try await manager.performInstallation(
+        let installed = try await manager.installationFlowOwner.performInstallation(
             from: candidate.appexURL,
             enableOnInstall: enableOnInstall
         )

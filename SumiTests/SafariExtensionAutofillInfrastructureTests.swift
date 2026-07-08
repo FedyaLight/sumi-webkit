@@ -30,7 +30,7 @@ final class SafariExtensionAutofillInfrastructureTests: XCTestCase {
             initialProfile: profile
         )
         let installed = try await installProbeExtension(manager: manager)
-        _ = try await manager.enableExtension(installed.id)
+        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
         manager.setDefaultSiteAccess(
             .allow,
             extensionId: installed.id,
@@ -58,7 +58,7 @@ final class SafariExtensionAutofillInfrastructureTests: XCTestCase {
             initialProfile: profile
         )
         let installed = try await installProbeExtension(manager: manager)
-        _ = try await manager.enableExtension(installed.id)
+        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
         manager.setDefaultSiteAccess(
             .allow,
             extensionId: installed.id,
@@ -132,7 +132,7 @@ final class SafariExtensionAutofillInfrastructureTests: XCTestCase {
         manager.extensionsLoaded = true
 
         let installed = try await installProbeExtension(manager: manager)
-        _ = try await manager.enableExtension(installed.id)
+        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
         manager.setDefaultSiteAccess(
             .allow,
             extensionId: installed.id,
@@ -192,7 +192,7 @@ final class SafariExtensionAutofillInfrastructureTests: XCTestCase {
         manager.extensionsLoaded = true
 
         let installed = try await installProbeExtension(manager: manager)
-        _ = try await manager.enableExtension(installed.id)
+        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
         manager.setDefaultSiteAccess(
             .allow,
             extensionId: installed.id,
@@ -282,7 +282,7 @@ final class SafariExtensionAutofillInfrastructureTests: XCTestCase {
         try Data("true;".utf8)
             .write(to: directoryURL.appendingPathComponent("content.js"), options: [.atomic])
 
-        return try await manager.performInstallation(
+        return try await manager.installationFlowOwner.performInstallation(
             from: directoryURL,
             enableOnInstall: false
         )

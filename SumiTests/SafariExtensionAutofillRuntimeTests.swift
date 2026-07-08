@@ -20,7 +20,7 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
             manager: seedManager,
             scratchDirectory: scratchDirectory
         )
-        _ = try await seedManager.enableExtension(installed.id)
+        _ = try await seedManager.installationFlowOwner.enableExtension(installed.id)
 
         let registry = SumiModuleRegistry(
             settingsStore: SumiModuleSettingsStore(
@@ -141,7 +141,7 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
             manager: manager,
             scratchDirectory: scratchDirectory
         )
-        _ = try await manager.enableExtension(installed.id)
+        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
         await manager.ensureContentScriptContextsLoaded(for: profile.id)
         manager.extensionsLoaded = true
 
@@ -288,7 +288,7 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
             manager: manager,
             scratchDirectory: scratchDirectory
         )
-        _ = try await manager.enableExtension(installed.id)
+        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
         let context = try await manager.ensureExtensionLoaded(
             extensionId: installed.id,
             profileId: profile.id
@@ -328,7 +328,7 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
         try Data("<!doctype html><title>popup</title>".utf8)
             .write(to: directoryURL.appendingPathComponent("popup.html"), options: [.atomic])
 
-        return try await manager.performInstallation(
+        return try await manager.installationFlowOwner.performInstallation(
             from: directoryURL,
             enableOnInstall: false
         )

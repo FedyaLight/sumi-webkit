@@ -233,7 +233,7 @@ extension ExtensionContextResidencyOwner.Dependencies {
                 manager?.enabledPersistedExtensionEntities() ?? []
             },
             loadEnabledExtension: { [weak manager] entity, profileId, generation in
-                _ = try await manager?.loadEnabledExtension(
+                _ = try await manager?.installationFlowOwner.loadEnabledExtension(
                     from: entity,
                     profileId: profileId,
                     expectedLoadGeneration: generation

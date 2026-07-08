@@ -47,7 +47,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             manager: manager,
             scratchDirectory: scratchDirectory
         )
-        _ = try await manager.enableExtension(installed.id)
+        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
         manager.unloadExtensionContextIfLoaded(
             extensionId: installed.id,
             profileId: profile.id
@@ -101,7 +101,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         let entity = try XCTUnwrap(try manager.extensionEntity(for: installed.id))
         entity.isEnabled = true
         try container.mainContext.save()
-        _ = manager.loadInstalledExtensionMetadata()
+        _ = manager.installationFlowOwner.loadInstalledExtensionMetadata()
 
         await manager.ensureContentScriptContextsLoaded(for: profile.id)
 
@@ -184,7 +184,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             manager: manager,
             scratchDirectory: scratchDirectory
         )
-        _ = try await manager.enableExtension(installed.id)
+        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
         await manager.ensureContentScriptContextsLoaded(for: profile.id)
 
         let tab = makeTab(
@@ -248,7 +248,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             manager: manager,
             scratchDirectory: scratchDirectory
         )
-        _ = try await manager.enableExtension(installed.id)
+        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
         await manager.ensureContentScriptContextsLoaded(for: profile.id)
 
         let pageURL = URL(string: "https://example.com/login")!
@@ -317,7 +317,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             manager: manager,
             scratchDirectory: scratchDirectory
         )
-        _ = try await manager.enableExtension(installed.id)
+        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
         manager.unloadExtensionContextIfLoaded(
             extensionId: installed.id,
             profileId: profile.id
@@ -411,7 +411,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         let entity = try XCTUnwrap(try manager.extensionEntity(for: installed.id))
         entity.isEnabled = true
         try container.mainContext.save()
-        _ = manager.loadInstalledExtensionMetadata()
+        _ = manager.installationFlowOwner.loadInstalledExtensionMetadata()
 
         var backgroundWakeCount = 0
         manager.testHooks.backgroundContentWake = { _, _ in
@@ -505,7 +505,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             manager: manager,
             scratchDirectory: scratchDirectory
         )
-        _ = try await manager.enableExtension(installed.id)
+        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
         manager.unloadExtensionContextIfLoaded(
             extensionId: installed.id,
             profileId: profile.id
@@ -586,7 +586,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         let entity = try XCTUnwrap(try manager.extensionEntity(for: installed.id))
         entity.isEnabled = true
         try container.mainContext.save()
-        _ = manager.loadInstalledExtensionMetadata()
+        _ = manager.installationFlowOwner.loadInstalledExtensionMetadata()
 
         var backgroundWakeCount = 0
         manager.testHooks.backgroundContentWake = { _, _ in
@@ -641,7 +641,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         let entity = try XCTUnwrap(try manager.extensionEntity(for: installed.id))
         entity.isEnabled = true
         try container.mainContext.save()
-        _ = manager.loadInstalledExtensionMetadata()
+        _ = manager.installationFlowOwner.loadInstalledExtensionMetadata()
 
         var backgroundWakeCount = 0
         let backgroundWakeExpectation = expectation(description: "nativeMessaging background wake")
@@ -705,7 +705,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         let entity = try XCTUnwrap(try manager.extensionEntity(for: installed.id))
         entity.isEnabled = true
         try container.mainContext.save()
-        _ = manager.loadInstalledExtensionMetadata()
+        _ = manager.installationFlowOwner.loadInstalledExtensionMetadata()
 
         var backgroundWakeCount = 0
         manager.testHooks.backgroundContentWake = { _, _ in
@@ -739,7 +739,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         let entity = try XCTUnwrap(try manager.extensionEntity(for: installed.id))
         entity.isEnabled = true
         try container.mainContext.save()
-        _ = manager.loadInstalledExtensionMetadata()
+        _ = manager.installationFlowOwner.loadInstalledExtensionMetadata()
 
         var backgroundWakeCount = 0
         manager.testHooks.backgroundContentWake = { _, _ in
@@ -802,7 +802,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         }
 
         do {
-            _ = try await manager.loadEnabledExtension(from: entity)
+            _ = try await manager.installationFlowOwner.loadEnabledExtension(from: entity)
             XCTFail("A load invalidated by runtime teardown must not reach WebKit")
         } catch {
             XCTAssertTrue(error is CancellationError, String(describing: error))
@@ -867,7 +867,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             manager: manager,
             scratchDirectory: scratchDirectory
         )
-        _ = try await manager.enableExtension(installed.id)
+        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
         _ = try await manager.ensureExtensionLoaded(
             extensionId: installed.id,
             profileId: profile.id

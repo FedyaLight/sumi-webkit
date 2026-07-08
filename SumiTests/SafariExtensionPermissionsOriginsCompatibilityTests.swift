@@ -143,7 +143,7 @@ final class SafariExtensionPermissionsOriginsCompatibilityTests: XCTestCase {
             manager: manager,
             scratchDirectory: scratchDirectory
         )
-        _ = try await manager.enableExtension(installed.id)
+        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
         manager.setDefaultSiteAccess(
             .allow,
             extensionId: installed.id,
@@ -380,7 +380,7 @@ final class SafariExtensionPermissionsOriginsCompatibilityTests: XCTestCase {
         try Data(probeScript.utf8)
             .write(to: directoryURL.appendingPathComponent("probe.js"), options: [.atomic])
 
-        return try await manager.performInstallation(
+        return try await manager.installationFlowOwner.performInstallation(
             from: directoryURL,
             enableOnInstall: false
         )
