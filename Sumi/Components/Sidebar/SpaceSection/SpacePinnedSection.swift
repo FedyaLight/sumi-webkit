@@ -5,20 +5,6 @@
 
 import SwiftUI
 
-private typealias SpacePinnedListItem = TabSplitGroupStructureOwner.SpacePinnedVisualItem
-
-private enum SpacePinnedRenderedItem: Hashable {
-    case item(SpacePinnedListItem)
-    case dragPlaceholder
-    case restoreGap(UUID)
-}
-
-private struct SpacePinnedDisplayEntry: Identifiable {
-    let item: SpacePinnedRenderedItem
-    let dropIndex: Int
-    let id: String
-}
-
 extension SpaceView {
     private var launcherProjection: SpaceLauncherProjectionSnapshot? {
         guard windowState.isIncognito == false else { return nil }
@@ -64,115 +50,57 @@ extension SpaceView {
         return browserContext.tabManager.splitGroupStructureOwner.topLevelSpacePinnedVisualItems(for: space.id)
     }
 
-    private var projectedSpacePinnedItems: [ProjectedItem<SpacePinnedListItem>] {
-        SidebarDropProjection.projectedItems(
-            itemIDs: spacePinnedItems,
-            removesSourceID: spacePinnedProjectedSourceItem,
-            insertsPlaceholderAt: spacePinnedProjectedInsertionIndex
+    private var spacePinnedDisplayModel: SpacePinnedDisplayModel {
+        let hoveredSpaceId: UUID?
+        let hoveredSlot: Int?
+        if case .spacePinned(let slotSpaceId, let slot) = dragState.projectionHoveredSlot {
+            hoveredSpaceId = slotSpaceId
+            hoveredSlot = slot
+        } else {
+            hoveredSpaceId = nil
+            hoveredSlot = nil
+        }
+
+        return SpacePinnedDisplayModel(
+            spaceId: space.id,
+            items: spacePinnedItems,
+            restoreGaps: shortcutRestoreGaps,
+            dragProjection: .init(
+                isDropProjectionActive: dragState.isDropProjectionActive,
+                sourceContainer: dragState.projectionDragScope?.sourceContainer,
+                dragItemId: dragState.projectionDragItemId,
+                hoveredSpaceId: hoveredSpaceId,
+                hoveredSlot: hoveredSlot,
+                folderDropIntent: dragState.projectionFolderDropIntent,
+                shouldHideCommittedCrossContainerPlaceholder: { targetAlreadyContainsDraggedItem in
+                    dragState.shouldHideCommittedCrossContainerPlaceholder(
+                        into: .spacePinned(space.id),
+                        targetAlreadyContainsDraggedItem: targetAlreadyContainsDraggedItem
+                    )
+                }
+            )
         )
     }
 
+    private var projectedSpacePinnedItems: [ProjectedItem<SpacePinnedListItem>] {
+        spacePinnedDisplayModel.projectedItems
+    }
+
     private var projectedSpacePinnedDisplayEntries: [SpacePinnedDisplayEntry] {
-        var itemCount = 0
-        return renderedSpacePinnedItems.map { item in
-            let entry = SpacePinnedDisplayEntry(
-                item: item,
-                dropIndex: itemCount,
-                id: projectedSpacePinnedDisplayID(for: item, placeholderIndex: itemCount)
-            )
-            switch item {
-            case .item:
-                itemCount += 1
-            case .dragPlaceholder, .restoreGap:
-                break
-            }
-            return entry
-        }
+        spacePinnedDisplayModel.displayEntries
     }
 
     private var renderedSpacePinnedItems: [SpacePinnedRenderedItem] {
-        var rendered = projectedSpacePinnedItems.map { item -> SpacePinnedRenderedItem in
-            switch item {
-            case .item(let listItem):
-                return .item(listItem)
-            case .placeholder:
-                return .dragPlaceholder
-            }
-        }
-
-        let gaps = shortcutRestoreGaps.filter { gap in
-            gap.container == .spacePinned(space.id)
-        }
-        for gap in gaps.sorted(by: { $0.index < $1.index }) {
-            rendered.removeAll { item in
-                if case .item(.shortcut(let pinId)) = item {
-                    return pinId == gap.pinId
-                }
-                return false
-            }
-            rendered.insert(.restoreGap(gap.id), at: max(0, min(gap.index, rendered.count)))
-        }
-
-        return rendered
+        spacePinnedDisplayModel.renderedItems
     }
 
-    private func projectedSpacePinnedDisplayID(
-        for item: SpacePinnedRenderedItem,
-        placeholderIndex: Int
-    ) -> String {
-        switch item {
-        case .item(let listItem):
-            return "item-\(listItem.id.uuidString)"
-        case .dragPlaceholder:
-            if let projectionDragItemId = dragState.projectionDragItemId {
-                return "item-\(projectionDragItemId.uuidString)"
-            }
-            return "placeholder-\(placeholderIndex)"
-        case .restoreGap(let gapId):
-            if let gap = shortcutRestoreGaps.first(where: { $0.id == gapId }) {
-                return "item-\(gap.pinId.uuidString)"
-            }
-            return "restore-gap-\(gapId.uuidString)"
-        }
-    }
-
-    private var spacePinnedProjectedSourceItem: SpacePinnedListItem? {
-        guard dragState.isDropProjectionActive,
-              dragState.projectionDragScope?.sourceContainer == .spacePinned(space.id),
-              let projectionDragItemId = dragState.projectionDragItemId else {
-            return nil
-        }
-        return spacePinnedItems.first { $0.id == projectionDragItemId }
-    }
-
-    private var spacePinnedProjectedInsertionIndex: Int? {
-        guard dragState.isDropProjectionActive,
-              case .spacePinned(let hoveredSpaceId, let slot) = dragState.projectionHoveredSlot,
-              hoveredSpaceId == space.id else {
-            return nil
-        }
-        guard dragState.projectionFolderDropIntent == .none else {
-            return nil
-        }
-        if let projectionDragItemId = dragState.projectionDragItemId,
-           dragState.shouldHideCommittedCrossContainerPlaceholder(
-                into: .spacePinned(space.id),
-                targetAlreadyContainsDraggedItem: spacePinnedItems.contains { $0.id == projectionDragItemId }
-           ) {
-            return nil
-        }
-        return slot
-    }
-
-    private func presentShortcutLinkEditor(
-        for pin: ShortcutPin,
-        source: SidebarTransientPresentationSource? = nil
-    ) {
-        browserContext.presentationActions.showShortcutEditor(
-            pin,
-            windowState,
-            themeContext,
-            source ?? windowState.resolveSidebarPresentationSource()
+    private var spacePinnedActionOwner: SpacePinnedActionOwner {
+        SpacePinnedActionOwner(
+            space: space,
+            browserContext: browserContext,
+            windowState: windowState,
+            themeContext: themeContext,
+            contentMutationAnimation: sidebarContentMutationAnimation
         )
     }
 
@@ -402,8 +330,8 @@ extension SpaceView {
             parentFolderId: nil,
             containerIndex: topLevelPinnedIndex,
             nestingDepth: 0,
-            onUngroup: { ungroupFolder(folder) },
-            onDelete: { deleteFolder(folder) },
+            onUngroup: { spacePinnedActionOwner.ungroupFolder(folder) },
+            onDelete: { spacePinnedActionOwner.deleteFolder(folder) },
             onPrepareShortcutRestoreGap: { item, group in
                 prepareShortcutRestoreGap(for: item, in: group)
             },
@@ -462,15 +390,15 @@ extension SpaceView {
                 ),
                 accessibilityID: "space-pinned-shortcut-\(pin.id.uuidString)",
                 contextMenuEntries: {
-                    pinnedShortcutContextMenuEntries(pin)
+                    spacePinnedActionOwner.pinnedShortcutContextMenuEntries(pin)
                 },
                 action: { activateShortcutPin(pin) },
                 dragSourceZone: .spacePinned(space.id),
                 dragHasTrailingActionExclusion: true,
                 dragIsEnabled: isInteractive,
-                onResetToLaunchURL: { resetShortcutPin(pin) },
-                onUnload: { unloadShortcutPin(pin) },
-                onRemove: { removeShortcutPin(pin) }
+                onResetToLaunchURL: { spacePinnedActionOwner.resetShortcutPin(pin) },
+                onUnload: { spacePinnedActionOwner.unloadShortcutPin(pin) },
+                onRemove: { spacePinnedActionOwner.removeShortcutPin(pin) }
             )
             .opacity(
                 dragState.isDragging && dragState.activeDragItemId == pin.id
@@ -486,153 +414,6 @@ extension SpaceView {
             )
             .sidebarRowListItemTransition(isEnabled: isInteractive)
         }
-    }
-
-    private func pinnedShortcutContextMenuEntries(_ pin: ShortcutPin) -> [SidebarContextMenuEntry] {
-        let presentationState = shortcutPresentationState(for: pin)
-        let profiles = browserContext.profileManager.profiles
-        let folderChoices = makeSidebarContextMenuFolderChoices(
-            folders: browserContext.tabManager.folderCollectionStateOwner.folders(for: space.id)
-                .filter { !browserContext.liveFolderManager.isLiveFolder($0.id) },
-            selectedFolderId: pin.folderId
-        )
-        let spaceChoices = makeSidebarContextMenuSpaceChoices(
-            spaces: browserContext.tabManager.spaceStateOwner.spaces,
-            selectedSpaceId: pin.spaceId
-        )
-        let profileChoices = makeSidebarContextMenuProfileChoices(
-            profiles: profiles,
-            selectedProfileId: browserContext.tabManager.shortcutPinRuntimeResolutionOwner.resolvedExecutionProfileId(
-                for: pin,
-                currentSpaceId: space.id
-            )
-        )
-        let addToEssentialsAction: (() -> Void)? = browserContext.tabManager.essentialsShortcutPlacementOwner.canAddURL(
-            pin.launchURL,
-            using: .init(windowState: windowState, spaceId: space.id)
-        )
-            ? { pinShortcutGlobally(pin) }
-            : nil
-        let savedURLDriftActions: SidebarSavedURLDriftActions? =
-            browserContext.tabManager.shortcutPresentationOwner.shortcutHasDrifted(pin, in: windowState)
-                ? .init(
-                    onBackToSavedURL: { resetShortcutPin(pin) },
-                    onUseCurrentPageAsSavedURL: { _ = browserContext.tabManager.shortcutPinCommandOwner.replaceShortcutPinURLWithCurrent(pin, in: windowState) }
-                )
-                : nil
-        let unloadAction: (() -> Void)? = presentationState.isOpenLive
-            ? { unloadShortcutPin(pin) }
-            : nil
-        let moveToSpaceAction: (UUID) -> Void = { targetSpaceId in
-            moveShortcutPin(pin, toSpace: targetSpaceId)
-        }
-
-        return makeSidebarTabContextMenuEntries(
-            role: .pinnedTab,
-            actions: .init(
-                duplicate: { duplicateShortcutPin(pin) },
-                copyLink: { SidebarLinkActions.copyLink(pin.launchURL) },
-                share: {
-                    SidebarLinkActions.presentSharePicker(
-                        for: pin.launchURL,
-                        source: windowState.resolveSidebarPresentationSource(),
-                        presentationActions: browserContext.presentationActions
-                    )
-                },
-                edit: {
-                    presentShortcutLinkEditor(
-                        for: pin,
-                        source: windowState.resolveSidebarPresentationSource()
-                    )
-                },
-                folderTarget: .init(
-                    choices: folderChoices,
-                    onSelect: { folderId in moveShortcutPin(pin, toFolder: folderId) }
-                ),
-                moveToSpace: .init(
-                    choices: spaceChoices,
-                    onSelect: moveToSpaceAction
-                ),
-                profileTarget: .init(
-                    choices: profileChoices,
-                    onSelect: { profileId in
-                        browserContext.tabManager.profileAssignmentOwner.assign(
-                            shortcutPin: pin,
-                            toExecutionProfile: profileId
-                        )
-                    }
-                ),
-                addToEssentials: addToEssentialsAction,
-                savedURLDrift: savedURLDriftActions,
-                unload: unloadAction,
-                deleteSavedTab: { confirmDeleteShortcutPin(pin) }
-            )
-        )
-    }
-
-    // MARK: - Folder Management
-
-    private func ungroupFolder(_ folder: TabFolder) {
-        mutatePinnedContent {
-            browserContext.tabManager.folderMutationOwner.ungroupFolder(folder.id)
-        }
-    }
-
-    private func deleteFolder(_ folder: TabFolder) {
-        let childCount = browserContext.tabManager.spacePinnedStructureOwner.folderRecursiveChildCount(for: folder.id, in: space.id)
-        guard childCount == 0 else {
-            confirmDeleteFolder(folder, childCount: childCount)
-            return
-        }
-
-        mutatePinnedContent {
-            browserContext.tabManager.folderMutationOwner.deleteFolder(folder.id)
-        }
-    }
-
-    private func removeShortcutPin(_ pin: ShortcutPin) {
-        mutatePinnedContent {
-            browserContext.tabManager.shortcutPinCommandOwner.removeShortcutPin(pin)
-        }
-    }
-
-    private func confirmDeleteShortcutPin(_ pin: ShortcutPin) {
-        SidebarSavedItemDeletionConfirmationPresenter.confirmDeleteSavedTab(
-            kind: .pinnedTab,
-            title: pin.preferredDisplayTitle,
-            url: pin.launchURL,
-            window: windowState.window,
-            themeContext: themeContext,
-            onDelete: { removeShortcutPin(pin) }
-        )
-    }
-
-    private func confirmDeleteFolder(_ folder: TabFolder, childCount: Int) {
-        SidebarSavedItemDeletionConfirmationPresenter.confirmDeleteFolder(
-            folderName: folder.name,
-            childCount: childCount,
-            window: windowState.window,
-            themeContext: themeContext,
-            onDelete: {
-                mutatePinnedContent {
-                    browserContext.tabManager.folderMutationOwner.deleteFolder(folder.id)
-                }
-            }
-        )
-    }
-
-    private func mutatePinnedContent(_ update: () -> Void) {
-        if let animation = sidebarContentMutationAnimation {
-            withAnimation(animation) {
-                update()
-            }
-        } else {
-            update()
-        }
-    }
-
-    private func shortcutPresentationState(for pin: ShortcutPin) -> ShortcutPresentationState {
-        browserContext.tabManager.shortcutPresentationOwner.shortcutPresentationState(for: pin, in: windowState)
     }
 
     private func activeShortcutTab(for pin: ShortcutPin) -> Tab? {
@@ -662,145 +443,4 @@ extension SpaceView {
         )
     }
 
-    private func unloadShortcutPin(_ pin: ShortcutPin) {
-        if let current = browserContext.tabManager.shortcutPresentationOwner.selectedShortcutLiveTab(for: pin.id, in: windowState) {
-            browserContext.commands.closeTab(current, windowState)
-            return
-        }
-
-        browserContext.tabManager.shortcutLiveTabOwner.deactivateShortcutLiveTab(pinId: pin.id, in: windowState.id)
-    }
-
-    private func duplicateShortcutPin(_ pin: ShortcutPin) {
-        _ = browserContext.commands.openForegroundTab(pin.launchURL.absoluteString, windowState, space.id)
-    }
-
-    private func moveShortcutPin(_ pin: ShortcutPin, toFolder folderId: UUID) {
-        guard let targetFolder = browserContext.tabManager.folderCollectionStateOwner.folder(by: folderId) else { return }
-        let targetIndex = browserContext.tabManager.shortcutPinCollectionStateOwner.folderPinnedPins(
-            for: folderId,
-            in: targetFolder.spaceId
-        ).count
-
-        mutatePinnedContent {
-            _ = browserContext.tabManager.shortcutPinCommandOwner.moveShortcutPin(
-                pin,
-                to: .spacePinned,
-                profileId: nil,
-                spaceId: targetFolder.spaceId,
-                folderId: folderId,
-                index: targetIndex
-            )
-        }
-    }
-
-    private func moveShortcutPin(_ pin: ShortcutPin, toSpace targetSpaceId: UUID) {
-        let targetIndex = browserContext.tabManager.spacePinnedStructureOwner.topLevelSpacePinnedItems(for: targetSpaceId).count
-
-        mutatePinnedContent {
-            _ = browserContext.tabManager.shortcutPinCommandOwner.moveShortcutPin(
-                pin,
-                to: .spacePinned,
-                profileId: nil,
-                spaceId: targetSpaceId,
-                folderId: nil,
-                index: targetIndex
-            )
-        }
-    }
-
-    private func resetShortcutPin(_ pin: ShortcutPin) {
-        SidebarShortcutPinActions.resetToLaunchURL(
-            pin,
-            in: windowState,
-            tabManager: browserContext.tabManager
-        )
-    }
-
-    private func pinShortcutGlobally(_ pin: ShortcutPin) {
-        browserContext.commands.pinShortcutGlobally(pin, windowState, space.id, activeShortcutTab(for: pin))
-    }
-}
-
-struct ShortcutSplitPlaceholderRow: View {
-    @ObservedObject var pin: ShortcutPin
-    let isSelected: Bool
-    let accessibilityID: String
-    let isAppKitInteractionEnabled: Bool
-    var onMiddleClick: () -> Void = {}
-    let action: () -> Void
-
-    @Environment(BrowserWindowState.self) private var windowState
-    @Environment(\.sumiSettings) private var sumiSettings
-    @Environment(\.resolvedThemeContext) private var themeContext
-    @State private var isRowHovered = false
-
-    var body: some View {
-        HStack(spacing: 0) {
-            Image(systemName: "rectangle.split.2x1")
-                .font(SidebarThemeTokens.Typography.chromeTemplateIcon(size: SidebarRowLayout.faviconSize))
-                .symbolRenderingMode(.monochrome)
-                .foregroundStyle(tokens.primaryText)
-                .frame(width: SidebarRowLayout.faviconSize, height: SidebarRowLayout.faviconSize)
-                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                .padding(.leading, SidebarRowLayout.leadingInset)
-                .padding(.trailing, SidebarRowLayout.iconTrailingSpacing)
-
-            SumiTabTitleLabel(
-                title: pin.preferredDisplayTitle,
-                font: SidebarThemeTokens.Typography.rowTitleNSFont,
-                textColor: tokens.primaryText,
-                trailingPadding: 0,
-                animated: false
-            )
-            .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
-        }
-        .padding(.trailing, SidebarRowLayout.trailingInset)
-        .frame(height: SidebarRowLayout.rowHeight)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .sidebarRowSurface(
-            background: backgroundColor,
-            cornerRadius: sumiSettings.resolvedCornerRadius(12),
-            tokens: tokens,
-            isVisible: drawsRowSurface,
-            drawsSelectionShadow: isSelected
-        )
-        .contentShape(Rectangle())
-        .onTapGesture(perform: action)
-        .sidebarDDGHover($isRowHovered, isEnabled: isAppKitInteractionEnabled)
-        .sidebarZenPressEffect(sourceID: accessibilityID, isEnabled: isAppKitInteractionEnabled)
-        .sidebarAppKitPrimaryAction(
-            isInteractionEnabled: isAppKitInteractionEnabled,
-            sourceID: accessibilityID,
-            onMiddleClick: onMiddleClick,
-            action: action
-        )
-        .accessibilityIdentifier(accessibilityID)
-        .accessibilityValue(isSelected ? "selected" : "split placeholder")
-    }
-
-    private var backgroundColor: Color {
-        if isSelected {
-            return tokens.sidebarRowActive
-        }
-        if displayIsHovering {
-            return tokens.sidebarRowHover
-        }
-        return .clear
-    }
-
-    private var drawsRowSurface: Bool {
-        isSelected || displayIsHovering
-    }
-
-    private var displayIsHovering: Bool {
-        SidebarHoverChrome.displayHover(
-            isRowHovered,
-            freezesHoverState: windowState.sidebarInteractionState.freezesSidebarHoverState
-        )
-    }
-
-    private var tokens: ChromeThemeTokens {
-        themeContext.tokens(settings: sumiSettings)
-    }
 }

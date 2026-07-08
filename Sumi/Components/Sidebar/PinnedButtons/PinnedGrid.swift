@@ -71,79 +71,32 @@ struct PinnedGrid: View {
         let items: [ShortcutPin] = effectiveProfileId != nil
             ? browserContext.tabManager.shortcutPinCollectionStateOwner.essentialPins(for: effectiveProfileId)
             : []
-        let gridProjection = SidebarEssentialsGridProjection(width: width)
-        let projectedLayout = SidebarEssentialsProjectionPolicy.make(
-            items: items,
+        let layout = PinnedGridLayoutModel(
             width: width,
-            dragState: dragState
+            items: items,
+            dragState: dragState,
+            geometrySpaceId: geometrySpaceId,
+            effectiveProfileId: effectiveProfileId,
+            animateLayout: animateLayout,
+            reportsGeometry: reportsGeometry,
+            isActiveWindow: windowRegistry.activeWindow?.id == windowState.id,
+            isTransitioningProfile: browserContext.isTransitioningProfile(),
+            shouldReduceMotion: shouldReduceMotion
         )
-        let rawPreviewState = dragState.essentialsPreviewState(for: geometrySpaceId)
-        let reportsDetailedGeometry = reportsGeometry
-            && dragState.shouldCollectDetailedGeometry(
-                spaceId: geometrySpaceId,
-                profileId: effectiveProfileId
-            )
-        let shouldAnimateDropLayout = animateLayout
-            && (windowRegistry.activeWindow?.id == windowState.id)
-            && !browserContext.isTransitioningProfile()
-            && !shouldReduceMotion
-            && dragState.shouldAnimateDropLayout
-        let shouldAnimateContentLayout = animateLayout
-            && (windowRegistry.activeWindow?.id == windowState.id)
-            && !browserContext.isTransitioningProfile()
-            && !shouldReduceMotion
-
-        let isHoveringThisEssentials: Bool = {
-            guard dragState.isDropProjectionActive,
-                  case .essentials = dragState.projectionHoveredSlot else {
-                return false
-            }
-            return true
-        }()
-        let showsRevealGap = items.isEmpty
-            && isHoveringThisEssentials
-            && projectedLayout.canAcceptDrop
-        let revealTileSize = projectedLayout.rows.first?.tileSize ?? projectedLayout.tileSize
-        let revealHeight = showsRevealGap
-            ? revealTileSize.height
-            : Self.collapsedRevealHeight
-        let visibleRowCount = max(projectedLayout.visibleRowCount, items.isEmpty ? 0 : 1)
-        let maxDropRowCount = items.isEmpty
-            ? 1
-            : SidebarEssentialsProjectionPolicy.neededRowCountAfterDrop(
-                itemIDs: items.map(\.id),
-                visibleItemCount: projectedLayout.visibleItemCount,
-                layoutItemCount: projectedLayout.projectedItemCount,
-                columnCount: projectedLayout.columnCount,
-                canAcceptDrop: projectedLayout.canAcceptDrop,
-                dragState: dragState
-            )
-        let dropFrame = items.isEmpty
-            ? CGRect(x: 0, y: 0, width: width, height: revealHeight)
-            : gridProjection.resolvedDropFrame(
-                visibleRowCount: visibleRowCount,
-                maxDropRowCount: maxDropRowCount,
-                tileSize: projectedLayout.tileSize,
-                visibleHeight: gridProjection.projectedContentHeight(for: projectedLayout)
-            )
-        let previewState = rawPreviewState.flatMap {
-            gridProjection.resolvedPreviewState(
-                $0,
-                visibleRowCount: visibleRowCount,
-                maxDropRowCount: maxDropRowCount
-            )
-        }
-        let displayRows = gridProjection.resolvedDisplayRows(
-            for: projectedLayout,
-            previewState: previewState,
-            maxDropRowCount: maxDropRowCount
-        )
-        let displayLayoutSignature = displayRows.flatMap { $0.layoutSignature }
-        let dropSlotFrames = gridProjection.resolvedDropSlotFrames(
-            for: projectedLayout,
-            revealTileSize: revealTileSize,
-            maxDropRowCount: maxDropRowCount
-        )
+        let projectedLayout = layout.projectedLayout
+        let reportsDetailedGeometry = layout.reportsDetailedGeometry
+        let shouldAnimateDropLayout = layout.shouldAnimateDropLayout
+        let shouldAnimateContentLayout = layout.shouldAnimateContentLayout
+        let showsRevealGap = layout.showsRevealGap
+        let revealTileSize = layout.revealTileSize
+        let revealHeight = layout.revealHeight
+        let visibleRowCount = layout.visibleRowCount
+        let maxDropRowCount = layout.maxDropRowCount
+        let dropFrame = layout.dropFrame
+        let previewState = layout.previewState
+        let displayRows = layout.displayRows
+        let displayLayoutSignature = layout.displayLayoutSignature
+        let dropSlotFrames = layout.dropSlotFrames
 
         ZStack(alignment: .topLeading) {
             if items.isEmpty {
@@ -263,7 +216,7 @@ struct PinnedGrid: View {
                 for: pin.id,
                 in: windowState.id
             )
-            let contextMenuActions = essentialContextMenuActions(for: pin)
+            let contextMenuActions = essentialTileActionOwner.contextMenuActions(for: pin)
 
             PinnedTile(
                 pin: pin,
@@ -276,7 +229,7 @@ struct PinnedGrid: View {
                 essentialRuntimeState: essentialRuntimeState(pin),
                 accessibilityID: "essential-shortcut-\(pin.id.uuidString)",
                 onActivate: { activate(pin) },
-                onUnload: { unload(pin) },
+                onUnload: { essentialTileActionOwner.unload(pin) },
                 contextMenuActions: contextMenuActions,
                 dragIsEnabled: !browserContext.isTransitioningProfile() && isAppKitInteractionEnabled,
                 isAppKitInteractionEnabled: isAppKitInteractionEnabled
@@ -346,179 +299,20 @@ struct PinnedGrid: View {
         )
     }
 
-    private func unload(_ pin: ShortcutPin) {
-        if let current = browserContext.tabManager.shortcutPresentationOwner.selectedShortcutLiveTab(for: pin.id, in: windowState) {
-            browserContext.commands.closeTab(current, windowState)
-            return
-        }
-
-        browserContext.tabManager.shortcutLiveTabOwner.deactivateShortcutLiveTab(pinId: pin.id, in: windowState.id)
-    }
-
-    private func duplicateAsRegularTab(_ pin: ShortcutPin) {
-        _ = browserContext.commands.openForegroundTab(
-            pin.launchURL.absoluteString,
-            windowState,
-            windowState.currentSpaceId
-        )
-    }
-
-    private func essentialContextMenuActions(for pin: ShortcutPin) -> EssentialTileContextMenuActions {
-        EssentialTileContextMenuActions(makeEntries: {
-            let savedURLDriftActions: SidebarSavedURLDriftActions? =
-                browserContext.tabManager.shortcutPresentationOwner.shortcutHasDrifted(pin, in: windowState)
-                    ? .init(
-                        onBackToSavedURL: { resetShortcutPin(pin) },
-                        onUseCurrentPageAsSavedURL: { _ = browserContext.tabManager.shortcutPinCommandOwner.replaceShortcutPinURLWithCurrent(pin, in: windowState) }
-                    )
-                    : nil
-            let unloadAction: (() -> Void)? = pinPresentationState(pin).isOpenLive
-                ? { unload(pin) }
-                : nil
-            let moveToSpaceAction: (UUID) -> Void = { targetSpaceId in
-                moveEssential(pin, toSpace: targetSpaceId)
-            }
-            let spaceChoices = essentialSpaceChoices
-
-            return makeSidebarTabContextMenuEntries(
-                role: .essential,
-                actions: .init(
-                    duplicate: { duplicateAsRegularTab(pin) },
-                    copyLink: { SidebarLinkActions.copyLink(pin.launchURL) },
-                    share: {
-                        SidebarLinkActions.presentSharePicker(
-                            for: pin.launchURL,
-                            source: windowState.resolveSidebarPresentationSource(),
-                            presentationActions: browserContext.presentationActions
-                        )
-                    },
-                    edit: { presentShortcutLinkEditor(for: pin) },
-                    folderTarget: .init(
-                        choices: essentialFolderChoices,
-                        onSelect: { folderId in moveEssential(pin, toFolder: folderId) }
-                    ),
-                    moveToSpace: .init(
-                        choices: spaceChoices,
-                        onSelect: moveToSpaceAction
-                    ),
-                    profileTarget: .init(
-                        choices: profileChoices(for: pin),
-                        onSelect: { profileId in
-                            browserContext.tabManager.profileAssignmentOwner.assign(
-                                shortcutPin: pin,
-                                toExecutionProfile: profileId
-                            )
-                        }
-                    ),
-                    savedURLDrift: savedURLDriftActions,
-                    unload: unloadAction,
-                    deleteSavedTab: { confirmDeleteEssential(pin) }
-                )
-            )
-        })
-    }
-
-    private var contextMenuSpace: Space? {
-        let targetSpaceId = PinnedGridContextResolver.contextMenuSpaceId(
-            explicitSpaceId: spaceId,
-            windowSpaceId: windowState.currentSpaceId
-        )
-        guard let targetSpaceId else { return nil }
-        return browserContext.tabManager.spaceStateOwner.spaces.first { $0.id == targetSpaceId }
-    }
-
-    private var essentialFolderChoices: [SidebarContextMenuChoice] {
-        guard let contextMenuSpace else { return [] }
-        return makeSidebarContextMenuFolderChoices(
-            folders: browserContext.tabManager.folderCollectionStateOwner.folders(for: contextMenuSpace.id)
-        )
-    }
-
-    private var essentialSpaceChoices: [SidebarContextMenuChoice] {
-        makeSidebarContextMenuSpaceChoices(
-            spaces: browserContext.tabManager.spaceStateOwner.spaces
-        )
-    }
-
-    private func profileChoices(for pin: ShortcutPin) -> [SidebarContextMenuChoice] {
-        makeSidebarContextMenuProfileChoices(
-            profiles: browserContext.profileManager.profiles,
-            selectedProfileId: browserContext.tabManager.shortcutPinRuntimeResolutionOwner.resolvedExecutionProfileId(
-                for: pin,
-                currentSpaceId: contextMenuSpace?.id
-            )
-        )
-    }
-
-    private func moveEssential(_ pin: ShortcutPin, toFolder folderId: UUID) {
-        guard let targetFolder = browserContext.tabManager.folderCollectionStateOwner.folder(by: folderId) else { return }
-        let targetIndex = browserContext.tabManager.shortcutPinCollectionStateOwner.folderPinnedPins(
-            for: folderId,
-            in: targetFolder.spaceId
-        ).count
-
-        mutateContentLayout {
-            _ = browserContext.tabManager.shortcutPinCommandOwner.moveShortcutPin(
-                pin,
-                to: .spacePinned,
-                profileId: nil,
-                spaceId: targetFolder.spaceId,
-                folderId: folderId,
-                index: targetIndex
-            )
-        }
-    }
-
-    private func moveEssential(_ pin: ShortcutPin, toSpace targetSpaceId: UUID) {
-        let targetIndex = browserContext.tabManager.spacePinnedStructureOwner.topLevelSpacePinnedItems(for: targetSpaceId).count
-
-        mutateContentLayout {
-            _ = browserContext.tabManager.shortcutPinCommandOwner.moveShortcutPin(
-                pin,
-                to: .spacePinned,
-                profileId: nil,
-                spaceId: targetSpaceId,
-                folderId: nil,
-                index: targetIndex
-            )
-        }
-    }
-
-    private func resetShortcutPin(_ pin: ShortcutPin) {
-        SidebarShortcutPinActions.resetToLaunchURL(
-            pin,
-            in: windowState,
-            tabManager: browserContext.tabManager
-        )
-    }
-
-    private func removeFromEssentials(_ pin: ShortcutPin) {
-        mutateContentLayout {
-            browserContext.tabManager.shortcutPinCommandOwner.removeShortcutPin(pin)
-        }
-    }
-
-    private func confirmDeleteEssential(_ pin: ShortcutPin) {
-        SidebarSavedItemDeletionConfirmationPresenter.confirmDeleteSavedTab(
-            kind: .essential,
-            title: pin.preferredDisplayTitle,
-            url: pin.launchURL,
-            window: windowState.window,
+    private var essentialTileActionOwner: EssentialTileActionOwner {
+        EssentialTileActionOwner(
+            browserContext: browserContext,
+            windowState: windowState,
             themeContext: themeContext,
-            onDelete: { removeFromEssentials(pin) }
+            contextMenuSpaceId: PinnedGridContextResolver.contextMenuSpaceId(
+                explicitSpaceId: spaceId,
+                windowSpaceId: windowState.currentSpaceId
+            ),
+            mutateContentLayout: mutateContentLayout
         )
     }
 
-    private func presentShortcutLinkEditor(for pin: ShortcutPin) {
-        browserContext.presentationActions.showShortcutEditor(
-            pin,
-            windowState,
-            themeContext,
-            windowState.resolveSidebarPresentationSource()
-        )
-    }
-
-    private func mutateContentLayout(_ update: () -> Void) {
+    private func mutateContentLayout(_ update: @escaping () -> Void) {
         guard animateLayout,
               windowRegistry.activeWindow?.id == windowState.id,
               !browserContext.isTransitioningProfile(),
@@ -538,379 +332,3 @@ struct PinnedGrid: View {
         )
     }
 }
-
-private struct PinnedSplitPlaceholderTile: View {
-    @ObservedObject var pin: ShortcutPin
-    let faviconPartition: SumiFaviconPartition
-    let isSelected: Bool
-    let accessibilityID: String
-    let isAppKitInteractionEnabled: Bool
-    let onActivate: () -> Void
-
-    @Environment(BrowserWindowState.self) private var windowState
-    @Environment(\.sumiSettings) private var sumiSettings
-    @Environment(\.resolvedThemeContext) private var themeContext
-    @State private var isTileHovered = false
-    @StateObject private var storedFaviconLoader = SidebarStoredFaviconLoader()
-
-    var body: some View {
-        let resolvedFavicon = currentLoadedStoredFavicon ?? pin.storedFaviconImage(partition: faviconPartition)
-        let resolvedChromeTemplateSystemImageName = currentLoadedStoredFavicon == nil
-            ? pin.storedChromeTemplateSystemImageName(for: faviconPartition)
-            : nil
-
-        PinnedTileVisual(
-            tabIcon: resolvedFavicon,
-            chromeTemplateSystemImageName: resolvedChromeTemplateSystemImageName,
-            presentationState: isSelected ? .visuallySelected : .liveBackgrounded,
-            isHovered: displayIsHovered,
-            showsSplitGroupOutline: true,
-            faviconOpacity: 1,
-            accentSourceURL: pin.launchURL,
-            accentSourcePartition: faviconPartition
-        )
-        .frame(maxWidth: .infinity)
-        .frame(height: PinnedTileMetrics.height)
-        .frame(minWidth: PinnedTileMetrics.minWidth)
-        .contentShape(
-            RoundedRectangle(
-                cornerRadius: sumiSettings.resolvedCornerRadius(PinnedTileMetrics.cornerRadius),
-                style: .continuous
-            )
-        )
-        .onTapGesture(perform: onActivate)
-        .accessibilityIdentifier(accessibilityID)
-        .accessibilityValue(isSelected ? "selected" : "split placeholder")
-        .sidebarDDGHover($isTileHovered, isEnabled: isAppKitInteractionEnabled)
-        .sidebarZenPressEffect(sourceID: accessibilityID, isEnabled: isAppKitInteractionEnabled)
-        .sidebarAppKitPrimaryAction(
-            isInteractionEnabled: isAppKitInteractionEnabled,
-            sourceID: accessibilityID,
-            action: onActivate
-        )
-        .shadow(
-            color: isSelected ? tokens.sidebarSelectionShadow : .clear,
-            radius: isSelected ? 2 : 0,
-            y: isSelected ? 1 : 0
-        )
-        .task(id: storedFaviconLoadKey) {
-            await loadStoredFavicon()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .faviconCacheUpdated)) { notification in
-            storedFaviconLoader.invalidateIfNeeded(for: notification, launchURL: pin.launchURL)
-        }
-    }
-
-    private var displayIsHovered: Bool {
-        SidebarHoverChrome.displayHover(
-            isTileHovered,
-            freezesHoverState: windowState.sidebarInteractionState.freezesSidebarHoverState
-        )
-    }
-
-    private var currentLoadedStoredFavicon: Image? {
-        storedFaviconLoader.image(for: pin.launchURL)
-    }
-
-    private var storedFaviconLoadKey: String {
-        storedFaviconLoader.loadKey(
-            launchURL: pin.launchURL,
-            partition: faviconPartition
-        )
-    }
-
-    private var tokens: ChromeThemeTokens {
-        themeContext.tokens(settings: sumiSettings)
-    }
-
-    @MainActor
-    private func loadStoredFavicon() async {
-        await storedFaviconLoader.load(
-            launchURL: pin.launchURL,
-            partition: faviconPartition,
-            isCurrentLaunchURL: { pin.launchURL == $0 }
-        )
-    }
-}
-
-private struct EssentialTileContextMenuActions {
-    let makeEntries: () -> [SidebarContextMenuEntry]
-
-    func entries() -> [SidebarContextMenuEntry] {
-        makeEntries()
-    }
-}
-
-private struct PinnedTile: View {
-    @ObservedObject var pin: ShortcutPin
-    let faviconPartition: SumiFaviconPartition
-    let presentationState: ShortcutPresentationState
-    let liveTab: Tab?
-    let essentialRuntimeState: SumiEssentialRuntimeState?
-    let accessibilityID: String
-    let onActivate: () -> Void
-    let onUnload: () -> Void
-    let contextMenuActions: EssentialTileContextMenuActions
-    let dragIsEnabled: Bool
-    let isAppKitInteractionEnabled: Bool
-
-    var body: some View {
-        Group {
-            if let liveTab {
-                LivePinnedTileContent(
-                    pin: pin,
-                    faviconPartition: faviconPartition,
-                    liveTab: liveTab,
-                    presentationState: presentationState,
-                    essentialRuntimeState: essentialRuntimeState,
-                    accessibilityID: accessibilityID,
-                    onActivate: onActivate,
-                    onUnload: onUnload,
-                    contextMenuActions: contextMenuActions,
-                    dragIsEnabled: dragIsEnabled,
-                    isAppKitInteractionEnabled: isAppKitInteractionEnabled
-                )
-            } else {
-                StoredPinnedTileContent(
-                    pin: pin,
-                    faviconPartition: faviconPartition,
-                    presentationState: presentationState,
-                    essentialRuntimeState: essentialRuntimeState,
-                    accessibilityID: accessibilityID,
-                    onActivate: onActivate,
-                    onUnload: onUnload,
-                    contextMenuActions: contextMenuActions,
-                    dragIsEnabled: dragIsEnabled,
-                    isAppKitInteractionEnabled: isAppKitInteractionEnabled
-                )
-            }
-        }
-        .frame(maxWidth: .infinity)
-    }
-}
-
-private struct LivePinnedTileContent: View {
-    @ObservedObject var pin: ShortcutPin
-    let faviconPartition: SumiFaviconPartition
-    @ObservedObject var liveTab: Tab
-    let presentationState: ShortcutPresentationState
-    let essentialRuntimeState: SumiEssentialRuntimeState?
-    let accessibilityID: String
-    let onActivate: () -> Void
-    let onUnload: () -> Void
-    let contextMenuActions: EssentialTileContextMenuActions
-    let dragIsEnabled: Bool
-    let isAppKitInteractionEnabled: Bool
-    @StateObject private var storedFaviconLoader = SidebarStoredFaviconLoader()
-
-    var body: some View {
-        let resolvedTitle = pin.resolvedDisplayTitle(liveTab: liveTab)
-        let glyphText = pin.glyphText
-        let launcherFavicon = currentCachedStoredFavicon
-        let resolvedFavicon = launcherFavicon ?? liveTab.favicon
-        let chromeTemplateSystemImageName = pin.chromeTemplateSystemImageName
-            ?? Self.chromeTemplateSystemImageName(
-                for: liveTab,
-                hasLauncherFavicon: launcherFavicon != nil
-            )
-        PinnedTabView(
-            tabIcon: resolvedFavicon,
-            glyphText: glyphText,
-            chromeTemplateSystemImageName: chromeTemplateSystemImageName,
-            presentationState: presentationState,
-            liveTab: liveTab,
-            dragSourceConfiguration: makePinnedTileDragSourceConfiguration(
-                pin: pin,
-                resolvedTitle: resolvedTitle,
-                previewIcon: resolvedFavicon,
-                chromeTemplateSystemImageName: chromeTemplateSystemImageName,
-                previewPresentationState: presentationState,
-                exclusionZones: dragExclusionZones,
-                onActivate: onActivate,
-                isEnabled: dragIsEnabled
-            ),
-            accessibilityID: accessibilityID,
-            isAppKitInteractionEnabled: isAppKitInteractionEnabled,
-            showsUnloadIndicator: false,
-            showsSplitGroupOutline: essentialRuntimeState?.showsSplitProxyOutline == true,
-            supportsMiddleClickUnload: true,
-            contextMenuEntries: { contextMenuActions.entries() },
-            action: onActivate,
-            onUnload: onUnload,
-            accentSourceURL: pin.launchURL,
-            accentSourcePartition: faviconPartition
-        )
-        .task(id: storedFaviconLoadKey) {
-            await loadStoredFavicon()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .faviconCacheUpdated)) { notification in
-            storedFaviconLoader.invalidateIfNeeded(for: notification, launchURL: pin.launchURL)
-        }
-    }
-
-    private static func chromeTemplateSystemImageName(
-        for liveTab: Tab,
-        hasLauncherFavicon: Bool
-    ) -> String? {
-        if SumiSurface.isSettingsSurfaceURL(liveTab.url) {
-            return SumiSurface.settingsTabFaviconSystemImageName
-        }
-        if hasLauncherFavicon {
-            return nil
-        }
-        if liveTab.faviconIsTemplateGlobePlaceholder {
-            return SumiPersistentGlyph.launcherSystemImageFallback
-        }
-        return nil
-    }
-
-    private var dragExclusionZones: [SidebarDragSourceExclusionZone] {
-        var zones: [SidebarDragSourceExclusionZone] = []
-
-        if liveTab.audioState.showsTabAudioButton {
-            zones.append(.topLeadingSquare(size: 22, inset: 6))
-        }
-
-        return zones
-    }
-
-    private var currentLoadedStoredFavicon: Image? {
-        storedFaviconLoader.image(for: pin.launchURL)
-    }
-
-    private var currentCachedStoredFavicon: Image? {
-        currentLoadedStoredFavicon ?? ShortcutPin.cachedLaunchFavicon(
-            for: pin.launchURL,
-            partition: faviconPartition
-        )
-    }
-
-    private var storedFaviconLoadKey: String {
-        storedFaviconLoader.loadKey(
-            launchURL: pin.launchURL,
-            partition: faviconPartition,
-            isEnabled: pin.iconAsset == nil,
-            disabledID: pin.id.uuidString
-        )
-    }
-
-    @MainActor
-    private func loadStoredFavicon() async {
-        guard pin.iconAsset == nil else { return }
-
-        await storedFaviconLoader.load(
-            launchURL: pin.launchURL,
-            partition: faviconPartition,
-            isCurrentLaunchURL: { pin.launchURL == $0 }
-        )
-    }
-}
-
-private struct StoredPinnedTileContent: View {
-    @ObservedObject var pin: ShortcutPin
-    let faviconPartition: SumiFaviconPartition
-    let presentationState: ShortcutPresentationState
-    let essentialRuntimeState: SumiEssentialRuntimeState?
-    let accessibilityID: String
-    let onActivate: () -> Void
-    let onUnload: () -> Void
-    let contextMenuActions: EssentialTileContextMenuActions
-    let dragIsEnabled: Bool
-    let isAppKitInteractionEnabled: Bool
-    @StateObject private var storedFaviconLoader = SidebarStoredFaviconLoader()
-
-    var body: some View {
-        let resolvedTitle = pin.preferredDisplayTitle
-        let resolvedFavicon = currentLoadedStoredFavicon ?? pin.storedFaviconImage(partition: faviconPartition)
-        let glyphText = pin.glyphText
-        let resolvedChromeTemplateSystemImageName = currentLoadedStoredFavicon == nil
-            ? (pin.chromeTemplateSystemImageName ?? pin.storedChromeTemplateSystemImageName(for: faviconPartition))
-            : nil
-        PinnedTabView(
-            tabIcon: resolvedFavicon,
-            glyphText: glyphText,
-            chromeTemplateSystemImageName: resolvedChromeTemplateSystemImageName,
-            presentationState: presentationState,
-            liveTab: nil,
-            dragSourceConfiguration: makePinnedTileDragSourceConfiguration(
-                pin: pin,
-                resolvedTitle: resolvedTitle,
-                previewIcon: resolvedFavicon,
-                chromeTemplateSystemImageName: resolvedChromeTemplateSystemImageName,
-                previewPresentationState: presentationState,
-                exclusionZones: dragExclusionZones,
-                onActivate: onActivate,
-                isEnabled: dragIsEnabled
-            ),
-            accessibilityID: accessibilityID,
-            isAppKitInteractionEnabled: isAppKitInteractionEnabled,
-            showsUnloadIndicator: false,
-            showsSplitGroupOutline: essentialRuntimeState?.showsSplitProxyOutline == true,
-            supportsMiddleClickUnload: true,
-            contextMenuEntries: { contextMenuActions.entries() },
-            action: onActivate,
-            onUnload: onUnload,
-            accentSourceURL: pin.launchURL,
-            accentSourcePartition: faviconPartition
-        )
-        .task(id: storedFaviconLoadKey) {
-            await loadStoredFavicon()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .faviconCacheUpdated)) { notification in
-            storedFaviconLoader.invalidateIfNeeded(for: notification, launchURL: pin.launchURL)
-        }
-    }
-
-    private var dragExclusionZones: [SidebarDragSourceExclusionZone] { [] }
-
-    private var currentLoadedStoredFavicon: Image? {
-        storedFaviconLoader.image(for: pin.launchURL)
-    }
-
-    private var storedFaviconLoadKey: String {
-        storedFaviconLoader.loadKey(
-            launchURL: pin.launchURL,
-            partition: faviconPartition
-        )
-    }
-
-    @MainActor
-    private func loadStoredFavicon() async {
-        await storedFaviconLoader.load(
-            launchURL: pin.launchURL,
-            partition: faviconPartition,
-            isCurrentLaunchURL: { pin.launchURL == $0 }
-        )
-    }
-}
-
-@MainActor
-func makePinnedTileDragSourceConfiguration(
-    pin: ShortcutPin,
-    resolvedTitle: String,
-    previewIcon: Image?,
-    chromeTemplateSystemImageName: String? = nil,
-    previewPresentationState: ShortcutPresentationState? = nil,
-    exclusionZones: [SidebarDragSourceExclusionZone],
-    onActivate: (() -> Void)? = nil,
-    isEnabled: Bool = true
-) -> SidebarDragSourceConfiguration {
-    SidebarDragSourceConfiguration(
-        item: SumiDragItem(
-            tabId: pin.id,
-            title: resolvedTitle,
-            urlString: pin.launchURL.absoluteString
-        ),
-        sourceZone: .essentials,
-        previewKind: .essentialsTile,
-        previewIcon: previewIcon,
-        chromeTemplateSystemImageName: chromeTemplateSystemImageName,
-        previewPresentationState: previewPresentationState,
-        exclusionZones: exclusionZones,
-        onActivate: onActivate,
-        isEnabled: isEnabled
-    )
-}
-
-// MARK: - Preference Keys
-// no-op

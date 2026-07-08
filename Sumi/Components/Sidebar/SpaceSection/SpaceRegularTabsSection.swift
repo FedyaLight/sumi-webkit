@@ -257,50 +257,35 @@ extension SpaceView {
         .animation(sidebarContentMutationAnimation, value: regularTabsListAnimation.appearingTabIds)
     }
 
+    private var regularSplitSegmentResolver: RegularSplitSegmentResolver {
+        RegularSplitSegmentResolver(space: space, isInteractive: isInteractive)
+    }
+
     private func visibleSplitGroups(currentTabs: [Tab]) -> [SplitGroup] {
-        guard !dragState.isDragging else { return [] }
-        let currentTabIds = Set(currentTabs.map(\.id))
-        var seenGroupIds = Set<UUID>()
-        return currentTabs.compactMap { tab in
-            guard let group = browserContext.regularTabs.splitGroup(containing: tab.id),
-                  !group.isShortcutHosted,
-                  seenGroupIds.insert(group.id).inserted,
-                  group.tabIds.count >= SplitGroup.minimumTabs,
-                  group.tabIds.contains(where: { currentTabIds.contains($0) })
-            else {
-                return nil
-            }
-            return group
-        }
+        regularSplitSegmentResolver.visibleSplitGroups(
+            currentTabs: currentTabs,
+            isDragging: dragState.isDragging,
+            splitGroup: { browserContext.regularTabs.splitGroup(containing: $0) }
+        )
     }
 
     private func splitGroupItems(
         for group: SplitGroup,
         tabById: [UUID: Tab]
     ) -> [SplitGroupSidebarItem] {
-        group.tabIds.compactMap { id in
-            if let tab = tabById[id] ?? browserContext.regularTabs.tab(for: id) {
-                return .tab(tab)
-            }
-            if let pinId = group.member(for: id)?.pinId,
-               let pin = browserContext.regularTabs.shortcutPin(by: pinId) {
-                return .pin(pin)
-            }
-            if let pin = browserContext.regularTabs.shortcutPin(by: id) {
-                return .pin(pin)
-            }
-            return nil
-        }
+        regularSplitSegmentResolver.splitGroupItems(
+            for: group,
+            tabById: tabById,
+            liveTab: { browserContext.regularTabs.tab(for: $0) },
+            shortcutPin: { browserContext.regularTabs.shortcutPin(by: $0) }
+        )
     }
 
     private func splitSegmentAction(
         for item: SplitGroupSidebarItem,
         in group: SplitGroup
     ) -> SplitGroupSidebarSegmentAction? {
-        if splitMember(for: item, in: group)?.isShortcutBacked == true {
-            return .restore
-        }
-        return item.tab == nil ? nil : .close
+        regularSplitSegmentResolver.action(for: item, in: group)
     }
 
     private func performSplitSegmentAction(
@@ -350,85 +335,20 @@ extension SpaceView {
         for item: SplitGroupSidebarItem,
         in group: SplitGroup
     ) -> SplitGroupMember? {
-        if let pin = item.pin {
-            return group.member(forPinId: pin.id) ?? group.member(for: pin.id)
-        }
-        if let tab = item.tab {
-            if let pinId = tab.shortcutPinId {
-                return group.member(forPinId: pinId) ?? group.member(for: tab.id)
-            }
-            return group.member(for: tab.id)
-        }
-        return nil
+        regularSplitSegmentResolver.member(for: item, in: group)
     }
 
     private func splitSegmentDragSource(
         for item: SplitGroupSidebarItem,
         in group: SplitGroup
     ) -> SidebarDragSourceConfiguration? {
-        let member = splitMember(for: item, in: group)
-        if let pin = splitSegmentShortcutPin(for: item, member: member) {
-            let dragItemId = item.tab?.id ?? pin.id
-            return SidebarDragSourceConfiguration(
-                item: SumiDragItem(
-                    tabId: dragItemId,
-                    title: item.title,
-                    urlString: item.tab?.url.absoluteString ?? pin.launchURL.absoluteString
-                ),
-                sourceZone: splitSegmentSourceZone(for: pin),
-                previewKind: .row,
-                previewIcon: item.tab?.favicon ?? pin.storedFavicon,
-                exclusionZones: [.trailingStrip(32)],
-                onActivate: {
-                    if let tab = item.tab {
-                        onActivateTab(tab)
-                    } else {
-                        browserContext.commands.focusSplitGroup(group, windowState)
-                    }
-                },
-                isEnabled: isInteractive
-            )
-        }
-
-        guard let tab = item.tab else { return nil }
-        return SidebarDragSourceConfiguration(
-            item: SumiDragItem(
-                tabId: tab.id,
-                title: tab.name,
-                urlString: tab.url.absoluteString
-            ),
-            sourceZone: .spaceRegular(space.id),
-            previewKind: .row,
-            previewIcon: tab.favicon,
-            exclusionZones: [.trailingStrip(32)],
-            onActivate: { onActivateTab(tab) },
-            isEnabled: isInteractive
+        regularSplitSegmentResolver.dragSource(
+            for: item,
+            in: group,
+            shortcutPin: { browserContext.regularTabs.shortcutPin(by: $0) },
+            onActivateTab: { onActivateTab($0) },
+            onActivateGroup: { browserContext.commands.focusSplitGroup(group, windowState) }
         )
-    }
-
-    private func splitSegmentShortcutPin(
-        for item: SplitGroupSidebarItem,
-        member: SplitGroupMember?
-    ) -> ShortcutPin? {
-        if let pin = item.pin {
-            return pin
-        }
-        if let pinId = item.tab?.shortcutPinId ?? member?.pinId {
-            return browserContext.regularTabs.shortcutPin(by: pinId)
-        }
-        return nil
-    }
-
-    private func splitSegmentSourceZone(for pin: ShortcutPin) -> DropZoneID {
-        switch pin.role {
-        case .essential:
-            return .essentials
-        case .spacePinned:
-            if let folderId = pin.folderId {
-                return .folder(folderId)
-            }
-            return .spacePinned(pin.spaceId ?? space.id)
-        }
     }
 
     private func regularDisplayItems(currentTabs: [Tab]) -> [RegularTabRenderedItem] {
@@ -613,18 +533,11 @@ extension SpaceView {
     }
 
     private var shouldSuppressRegularCommitGapForExternalShortcutSource: Bool {
-        guard dragState.isCompletingDrop,
-              let sourceContainer = dragState.projectionDragScope?.sourceContainer,
-              sourceContainer != .spaceRegular(space.id) else {
-            return false
-        }
-
-        switch sourceContainer {
-        case .essentials, .spacePinned, .folder:
-            return true
-        case .spaceRegular, .none:
-            return false
-        }
+        SidebarDragPlaceholderPolicy.shouldSuppressCommitGapForExternalSource(
+            isCompletingDrop: dragState.isCompletingDrop,
+            sourceContainer: dragState.projectionDragScope?.sourceContainer,
+            targetContainer: .spaceRegular(space.id)
+        )
     }
 
     private var regularExternalDropGapPlacement: RegularExternalDropGapPlacement? {
