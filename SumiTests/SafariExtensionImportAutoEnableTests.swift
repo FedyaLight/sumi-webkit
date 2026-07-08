@@ -17,8 +17,8 @@ final class SafariExtensionImportAutoEnableTests: XCTestCase {
     }
 
     override func tearDownWithError() throws {
-        if let scratchDirectory {
-            try? FileManager.default.removeItem(at: scratchDirectory)
+        if let scratchDirectory, FileManager.default.fileExists(atPath: scratchDirectory.path) {
+            try FileManager.default.removeItem(at: scratchDirectory)
         }
         scratchDirectory = nil
     }
