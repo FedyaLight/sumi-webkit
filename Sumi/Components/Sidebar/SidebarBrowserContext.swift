@@ -45,6 +45,8 @@ struct SidebarBrowserCommandActions {
     let createRSSLiveFolderInCurrentSpace: (BrowserWindowState) -> Void
     let createGitHubPRFolderInCurrentSpace: (BrowserWindowState) -> Void
     let createGitHubIssuesFolderInCurrentSpace: (BrowserWindowState) -> Void
+    let unloadShortcutPin: (ShortcutPin, BrowserWindowState) -> Void
+    let unloadShortcutPins: ([ShortcutPin], BrowserWindowState) -> Void
 }
 
 @MainActor

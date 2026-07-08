@@ -224,6 +224,19 @@ final class BrowserActivePageRoutingOwnerTests: XCTestCase {
         XCTAssertFalse(opened)
     }
 
+    func testCopyCurrentURLDelegatesToCopyDependency() throws {
+        let windowState = BrowserWindowState()
+        let url = try XCTUnwrap(URL(string: "https://copy.example/page"))
+        let harness = BrowserActivePageRoutingOwnerHarness(activeWindow: windowState)
+        harness.sessionURLsByWindowId[windowState.id] = url
+        let owner = harness.makeOwner()
+
+        owner.copyCurrentURL()
+
+        XCTAssertEqual(harness.copiedURLs, ["https://copy.example/page"])
+        XCTAssertEqual(harness.copyToastWindowIds, [windowState.id])
+    }
+
     private func assertForeground(
         _ context: BrowserTabOpenContext,
         windowState: BrowserWindowState,
@@ -289,7 +302,7 @@ private final class BrowserActivePageRoutingOwnerHarness {
     var convertedPins: [ConvertedPin] = []
     var refreshedPages: [RefreshedPage] = []
     var copyToastWindowIds: [UUID] = []
-    var pasteboardWrites: [String] = []
+    var copiedURLs: [String] = []
 
     init(activeWindow: BrowserWindowState? = nil) {
         self.activeWindow = activeWindow
@@ -365,11 +378,12 @@ private final class BrowserActivePageRoutingOwnerHarness {
                         title: tab.name
                     )
                 },
-                presentCopyToast: { [weak self] windowState in
-                    self?.copyToastWindowIds.append(windowState.id)
-                },
-                writeURLToPasteboard: { [weak self] url in
-                    self?.pasteboardWrites.append(url)
+                copyURLToPasteboard: { [weak self] url, windowState in
+                    guard let self else { return false }
+                    self.copiedURLs.append(url)
+                    if let windowState {
+                        self.copyToastWindowIds.append(windowState.id)
+                    }
                     return true
                 }
             )

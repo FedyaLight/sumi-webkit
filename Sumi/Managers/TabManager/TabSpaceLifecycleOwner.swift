@@ -34,6 +34,7 @@ final class TabSpaceLifecycleOwner {
         let activeEssentialTabs: (UUID?) -> [Tab]
         let currentProfileId: () -> UUID?
         let persistSelection: () -> Void
+        let notifications: @MainActor () -> (any BrowserNotificationPresenting)?
     }
 
     private let dependencies: Dependencies
@@ -259,14 +260,16 @@ final class TabSpaceLifecycleOwner {
 
     func renameSpace(spaceId: UUID, newName: String) throws {
         try dependencies.withStructuralUpdateTransactionThrowingVoid {
-            guard dependencies.spaceStateOwner.space(with: spaceId) != nil else {
+            guard let space = dependencies.spaceStateOwner.space(with: spaceId) else {
                 throw TabManager.TabManagerError.spaceNotFound(spaceId)
             }
+            guard space.name != newName else { return }
 
             dependencies.sendObjectWillChange()
             dependencies.spaceStateOwner.renameSpace(spaceId: spaceId, to: newName)
             dependencies.markAllSpacesStructurallyDirty()
             dependencies.scheduleStructuralPersistence()
+            dependencies.notifications()?.presentSpaceRenamedNotification(name: newName)
         }
     }
 
@@ -426,6 +429,9 @@ extension TabSpaceLifecycleOwner.Dependencies {
             },
             persistSelection: { [weak tabManager] in
                 tabManager?.structuralPersistence.persistSelection()
+            },
+            notifications: { [weak tabManager] in
+                tabManager?.runtimeContext?.notifications()
             }
         )
     }

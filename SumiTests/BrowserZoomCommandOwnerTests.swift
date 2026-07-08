@@ -5,14 +5,14 @@ import XCTest
 
 @MainActor
 final class BrowserZoomCommandOwnerTests: XCTestCase {
-    func testZoomInActiveTabSavesProfileScopedBaseZoomAppliesBoostAndRequestsMenuPopover() {
+    func testZoomInActiveTabSavesProfileScopedBaseZoomAppliesBoostAndPresentsNotification() {
         let zoomManager = makeZoomManager()
         let profileId = UUID()
         let tab = makeTab(url: "https://example.com/page", profileId: profileId)
         let webView = WKWebView()
         let windowState = BrowserWindowState()
         var revision = 0
-        var popoverRequest: ZoomPopoverRequest?
+        let spy = NotificationPresentingSpy()
         var boostRequest: (url: URL, profileId: UUID?)?
 
         let owner = makeOwner(
@@ -27,9 +27,7 @@ final class BrowserZoomCommandOwnerTests: XCTestCase {
             incrementZoomStateRevision: {
                 revision += 1
             },
-            setZoomPopoverRequest: { request in
-                popoverRequest = request
-            }
+            notifications: { spy }
         )
 
         owner.zoomInCurrentTab()
@@ -38,14 +36,16 @@ final class BrowserZoomCommandOwnerTests: XCTestCase {
         XCTAssertEqual(webView.pageZoom, 2.3, accuracy: 0.001)
         XCTAssertEqual(zoomManager.getZoomLevel(for: tab.id), 2.3, accuracy: 0.001)
         XCTAssertEqual(revision, 1)
-        XCTAssertEqual(popoverRequest?.windowId, windowState.id)
-        XCTAssertEqual(popoverRequest?.tabId, tab.id)
-        XCTAssertEqual(popoverRequest?.source, .menu)
+        XCTAssertEqual(spy.presentNotificationCalls.count, 1)
+        XCTAssertEqual(spy.presentNotificationCalls.first?.0.messageKey, "zoom")
+        XCTAssertEqual(spy.presentNotificationCalls.first?.0.title, "Zoom")
+        XCTAssertEqual(spy.presentNotificationCalls.first?.0.controls?.count, 3)
+        XCTAssertEqual(spy.presentNotificationCalls.first?.1?.id, windowState.id)
         XCTAssertEqual(boostRequest?.url, tab.url)
         XCTAssertEqual(boostRequest?.profileId, profileId)
     }
 
-    func testLoadZoomForTabUsesContainingWindowBeforeActiveWindowAndDoesNotRequestPopover() {
+    func testLoadZoomForTabUsesContainingWindowBeforeActiveWindowAndDoesNotPresentNotification() {
         let zoomManager = makeZoomManager()
         let profileId = UUID()
         let tab = makeTab(url: "https://example.com/page", profileId: profileId)
@@ -54,7 +54,7 @@ final class BrowserZoomCommandOwnerTests: XCTestCase {
         let containingWindow = BrowserWindowState()
         var requestedWebViewWindowId: UUID?
         var revision = 0
-        var popoverRequest: ZoomPopoverRequest?
+        let spy = NotificationPresentingSpy()
 
         zoomManager.saveZoomLevel(1.5, for: "example.com", profileId: profileId)
 
@@ -72,9 +72,7 @@ final class BrowserZoomCommandOwnerTests: XCTestCase {
             incrementZoomStateRevision: {
                 revision += 1
             },
-            setZoomPopoverRequest: { request in
-                popoverRequest = request
-            }
+            notifications: { spy }
         )
 
         owner.loadZoomForTab(tab.id)
@@ -83,7 +81,7 @@ final class BrowserZoomCommandOwnerTests: XCTestCase {
         XCTAssertEqual(webView.pageZoom, 1.5, accuracy: 0.001)
         XCTAssertEqual(zoomManager.getZoomLevel(for: tab.id), 1.5, accuracy: 0.001)
         XCTAssertEqual(revision, 1)
-        XCTAssertNil(popoverRequest)
+        XCTAssertTrue(spy.presentNotificationCalls.isEmpty)
     }
 
     func testCleanupRemovesTabZoomAndBumpsRevision() {
@@ -127,7 +125,7 @@ final class BrowserZoomCommandOwnerTests: XCTestCase {
         webView: @escaping @MainActor (UUID, UUID) -> WKWebView? = { _, _ in nil },
         sizeOverride: @escaping @MainActor (URL, UUID?) -> Double = { _, _ in 1.0 },
         incrementZoomStateRevision: @escaping @MainActor () -> Void = { /* No-op. */ },
-        setZoomPopoverRequest: @escaping @MainActor (ZoomPopoverRequest) -> Void = { _ in /* No-op. */ }
+        notifications: @escaping @MainActor () -> (any BrowserNotificationPresenting)? = { nil }
     ) -> BrowserZoomCommandOwner {
         BrowserZoomCommandOwner(
             dependencies: BrowserZoomCommandOwner.Dependencies(
@@ -140,7 +138,7 @@ final class BrowserZoomCommandOwnerTests: XCTestCase {
                 zoomManager: { zoomManager },
                 sizeOverride: sizeOverride,
                 incrementZoomStateRevision: incrementZoomStateRevision,
-                setZoomPopoverRequest: setZoomPopoverRequest
+                notifications: notifications
             )
         )
     }

@@ -63,8 +63,8 @@ enum BrowserTabManagerRuntimeContextFactory {
             captureDeletedShortcutLauncher: { [weak browserManager] pin in
                 browserManager?.recentlyClosedManager.captureDeletedShortcutLauncher(pin)
             },
-            presentTabClosureToast: { [weak browserManager] tabCount in
-                browserManager?.toastPresenter.presentTabClosureToast(tabCount: tabCount)
+            notifications: { [weak browserManager] in
+                browserManager?.notificationPresenter
             },
             validateWindowStates: { [weak browserManager] in
                 browserManager?.windowSpaceStateOwner.validateWindowStates()

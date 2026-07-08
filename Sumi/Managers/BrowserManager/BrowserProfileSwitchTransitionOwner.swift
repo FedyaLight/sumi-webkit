@@ -17,7 +17,7 @@ final class BrowserProfileSwitchTransitionOwner {
         let faviconService: any BrowserFaviconServicing
         let historyManager: HistoryManager
         let tabManager: TabManager
-        let showProfileSwitchToast: @MainActor (Profile, BrowserWindowState?) -> Void
+        let notifications: @MainActor () -> (any BrowserNotificationPresenting)?
         let runAutomaticPermissionCleanupIfNeeded: @MainActor (Profile?) async -> Void
         let scheduleAutomaticBrowsingDataCleanup: @MainActor (String) -> Void
     }
@@ -77,9 +77,9 @@ final class BrowserProfileSwitchTransitionOwner {
             }
 
             if context.shouldProvideFeedback {
-                dependencies.showProfileSwitchToast(
-                    profile,
-                    targetWindowState
+                dependencies.notifications()?.presentProfileSwitchNotification(
+                    to: profile,
+                    in: targetWindowState
                 )
                 NSHapticFeedbackManager.defaultPerformer.perform(
                     .generic,
@@ -156,11 +156,8 @@ extension BrowserProfileSwitchTransitionOwner.Dependencies {
             faviconService: browserManager.dataServices.faviconService,
             historyManager: browserManager.historyManager,
             tabManager: browserManager.tabManager,
-            showProfileSwitchToast: { [weak browserManager] profile, windowState in
-                browserManager?.toastPresenter.showProfileSwitchToast(
-                    to: profile,
-                    in: windowState
-                )
+            notifications: { [weak browserManager] in
+                browserManager?.notificationPresenter
             },
             runAutomaticPermissionCleanupIfNeeded: { [weak browserManager] profile in
                 _ = await browserManager?.automaticDataCleanupOwner

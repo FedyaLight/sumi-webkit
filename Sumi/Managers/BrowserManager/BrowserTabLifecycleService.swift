@@ -48,6 +48,9 @@ final class BrowserTabLifecycleService {
                         group,
                         in: windowState
                     )
+                },
+                notifications: { [weak browserManager] in
+                    browserManager?.notificationPresenter
                 }
             )
         )

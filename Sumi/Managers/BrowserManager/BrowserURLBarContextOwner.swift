@@ -22,7 +22,7 @@ final class BrowserURLBarContextOwner {
         let presentURLBarHubPopover: @MainActor (BrowserWindowState, URLBarHubBrowserContext) -> Void
         let toggleURLBarHubPopover: @MainActor (BrowserWindowState, URLBarHubBrowserContext) -> Void
         let isURLBarHubPopoverPresented: @MainActor (BrowserWindowState) -> Bool
-        let presentToast: @MainActor (BrowserToast, BrowserWindowState) -> Void
+        let copyURLToClipboard: @MainActor (String, BrowserWindowState) -> Void
         let toggleSidebar: @MainActor (BrowserWindowState) -> Void
         let navigationToolbarContext: @MainActor (BrowserWindowState) -> NavigationToolbarBrowserContext
         let navigationHistoryContext: @MainActor (BrowserWindowState) -> SumiNavigationHistoryContext
@@ -70,7 +70,7 @@ final class BrowserURLBarContextOwner {
                 self.dependencies.toggleURLBarHubPopover(windowState, self.urlBarHubContext)
             },
             isURLBarHubPopoverPresented: dependencies.isURLBarHubPopoverPresented,
-            presentToast: dependencies.presentToast,
+            copyURLToClipboard: dependencies.copyURLToClipboard,
             extensionActions: dependencies.extensionActionContext()
         )
     }
@@ -246,8 +246,8 @@ extension BrowserURLBarContextOwner.Dependencies {
             isURLBarHubPopoverPresented: { [weak browserManager] windowState in
                 browserManager?.chromePopoverRoutingOwner.urlBarHubPopoverPresenter.isPresented(in: windowState) ?? false
             },
-            presentToast: { [weak browserManager] toast, windowState in
-                browserManager?.toastPresenter.presentToast(toast, in: windowState)
+            copyURLToClipboard: { [weak browserManager] urlString, windowState in
+                _ = browserManager?.urlCopyOwner.copyURLToPasteboard(urlString, in: windowState)
             },
             toggleSidebar: { [weak browserManager] windowState in
                 browserManager?.sidebarPresentationOwner.toggleSidebar(for: windowState)
@@ -321,7 +321,6 @@ private extension BrowserURLBarContextOwner {
         URLBarZoomContext(
             manager: zoomManager,
             stateRevision: browserManager?.zoomStateRevision ?? 0,
-            popoverRequest: browserManager?.zoomPopoverRequest,
             resetCurrentTab: { [weak browserManager] windowState in
                 browserManager?.zoomCommandOwner.resetZoomCurrentTab(in: windowState)
             },
@@ -330,9 +329,6 @@ private extension BrowserURLBarContextOwner {
             },
             zoomInCurrentTab: { [weak browserManager] windowState in
                 browserManager?.zoomCommandOwner.zoomInCurrentTab(in: windowState)
-            },
-            requestPopover: { [weak browserManager] tab, windowState, source in
-                browserManager?.zoomCommandOwner.requestZoomPopover(for: tab, in: windowState, source: source)
             }
         )
     }

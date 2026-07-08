@@ -63,6 +63,9 @@ enum TabPopupRuntimeFactory {
                 },
                 selectTab: { [weak browserManager] tab, windowState in
                     browserManager?.selectTab(tab, in: windowState)
+                },
+                notifications: { [weak browserManager] in
+                    browserManager?.notificationPresenter
                 }
             )
         )
@@ -89,6 +92,7 @@ extension TabPopupHandlingRuntime {
         let createPopupTab: (_ openerTab: Tab, _ activate: Bool) -> Tab?
         let windowStateContainingTab: (Tab) -> BrowserWindowState?
         let selectTab: (Tab, BrowserWindowState) -> Void
+        let notifications: () -> (any BrowserNotificationPresenting)?
     }
 
     static func live(dependencies: LiveDependencies) -> Self {
@@ -153,7 +157,8 @@ extension TabPopupHandlingRuntime {
             },
             createPopupTab: dependencies.createPopupTab,
             windowStateContainingTab: dependencies.windowStateContainingTab,
-            selectTab: dependencies.selectTab
+            selectTab: dependencies.selectTab,
+            notifications: dependencies.notifications
         )
     }
 

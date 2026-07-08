@@ -14,7 +14,6 @@ import WebKit
 class BrowserManager: ObservableObject {
     static let lastWindowSessionKey = "sumi.windowSession.last.v3"
     @Published var zoomStateRevision: Int = 0
-    @Published var zoomPopoverRequest: ZoomPopoverRequest?
     @Published var bookmarkEditorPresentationRequest: SumiBookmarkEditorPresentationRequest?
     @Published var currentProfile: Profile?
     // Indicates an in-progress animated profile transition for coordinating UI
@@ -214,7 +213,10 @@ class BrowserManager: ObservableObject {
     lazy var workspaceThemeEditorOwner = BrowserWorkspaceThemeEditorOwner(
         dependencies: .live(browserManager: self)
     )
-    lazy var toastPresenter = BrowserToastPresenter(
+    lazy var notificationPresenter = BrowserNotificationPresenter(
+        dependencies: .live(browserManager: self)
+    )
+    lazy var urlCopyOwner = BrowserURLCopyOwner(
         dependencies: .live(browserManager: self)
     )
     lazy var appCommandRouter = BrowserAppCommandRouter(

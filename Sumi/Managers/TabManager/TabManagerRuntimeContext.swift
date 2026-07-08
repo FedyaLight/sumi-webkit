@@ -21,7 +21,7 @@ struct TabManagerRuntimeContext {
     private let notifyTabActivatedIfLoadedHandler: (Tab, Tab?) -> Void
     private let captureClosedTabHandler: (Tab, UUID?) -> Void
     private let captureDeletedShortcutLauncherHandler: (ShortcutPin) -> Void
-    private let presentTabClosureToastHandler: (Int) -> Void
+    private let notificationsProvider: @MainActor () -> (any BrowserNotificationPresenting)?
     private let validateWindowStatesHandler: () -> Void
     private let persistWindowSessionHandler: (BrowserWindowState) -> Void
     private let syncWorkspaceThemeAcrossWindowsHandler: (Space, Bool) -> Void
@@ -49,7 +49,7 @@ struct TabManagerRuntimeContext {
         notifyTabActivatedIfLoaded: @escaping (Tab, Tab?) -> Void = { _, _ in /* No-op. */ },
         captureClosedTab: @escaping (Tab, UUID?) -> Void = { _, _ in /* No-op. */ },
         captureDeletedShortcutLauncher: @escaping (ShortcutPin) -> Void = { _ in /* No-op. */ },
-        presentTabClosureToast: @escaping (Int) -> Void = { _ in /* No-op. */ },
+        notifications: @escaping @MainActor () -> (any BrowserNotificationPresenting)? = { nil },
         validateWindowStates: @escaping () -> Void = { /* No-op. */ },
         persistWindowSession: @escaping (BrowserWindowState) -> Void = { _ in /* No-op. */ },
         syncWorkspaceThemeAcrossWindows: @escaping (Space, Bool) -> Void = { _, _ in /* No-op. */ },
@@ -76,7 +76,7 @@ struct TabManagerRuntimeContext {
         self.notifyTabActivatedIfLoadedHandler = notifyTabActivatedIfLoaded
         self.captureClosedTabHandler = captureClosedTab
         self.captureDeletedShortcutLauncherHandler = captureDeletedShortcutLauncher
-        self.presentTabClosureToastHandler = presentTabClosureToast
+        self.notificationsProvider = notifications
         self.validateWindowStatesHandler = validateWindowStates
         self.persistWindowSessionHandler = persistWindowSession
         self.syncWorkspaceThemeAcrossWindowsHandler = syncWorkspaceThemeAcrossWindows
@@ -153,8 +153,8 @@ struct TabManagerRuntimeContext {
         captureDeletedShortcutLauncherHandler(pin)
     }
 
-    func presentTabClosureToast(tabCount: Int) {
-        presentTabClosureToastHandler(tabCount)
+    func notifications() -> (any BrowserNotificationPresenting)? {
+        notificationsProvider()
     }
 
     func validateWindowStates() {

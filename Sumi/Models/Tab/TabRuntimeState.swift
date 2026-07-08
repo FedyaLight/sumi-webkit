@@ -363,6 +363,7 @@ struct TabPopupHandlingRuntime {
     var createPopupTab: (_ openerTab: Tab, _ activate: Bool) -> Tab?
     var windowStateContainingTab: (Tab) -> BrowserWindowState?
     var selectTab: (_ tab: Tab, _ windowState: BrowserWindowState) -> Void
+    var notifications: () -> (any BrowserNotificationPresenting)?
 
     static let inactive = Self(
         hasBrowserRuntime: { false },
@@ -374,7 +375,8 @@ struct TabPopupHandlingRuntime {
         applyVisitedLinksToPopupConfiguration: { _, _ in /* No-op. */ },
         createPopupTab: { _, _ in nil },
         windowStateContainingTab: { _ in nil },
-        selectTab: { _, _ in /* No-op. */ }
+        selectTab: { _, _ in /* No-op. */ },
+        notifications: { nil }
     )
 }
 

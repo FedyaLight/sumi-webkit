@@ -9,6 +9,7 @@ final class BrowserSidebarCommandService {
     let tabCommand: BrowserSidebarTabCommandOwner
     let splitShortcutRouting: BrowserSidebarSplitShortcutRoutingOwner
     let spaceTransitionRouting: BrowserSpaceTransitionRoutingOwner
+    let shortcutPinUnload: BrowserShortcutPinUnloadOwner
     let commandRouting: BrowserSidebarCommandRoutingOwner
 
     init(browserManager: BrowserManager) {
@@ -31,6 +32,9 @@ final class BrowserSidebarCommandService {
             dependencies: .live(browserManager: browserManager)
         )
         spaceTransitionRouting = BrowserSpaceTransitionRoutingOwner(
+            dependencies: .live(browserManager: browserManager)
+        )
+        shortcutPinUnload = BrowserShortcutPinUnloadOwner(
             dependencies: .live(browserManager: browserManager)
         )
         commandRouting = BrowserSidebarCommandRoutingOwner(

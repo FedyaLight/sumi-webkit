@@ -158,12 +158,7 @@ struct SpacePinnedActionOwner {
     }
 
     func unloadShortcutPin(_ pin: ShortcutPin) {
-        if let current = browserContext.tabManager.shortcutPresentationOwner.selectedShortcutLiveTab(for: pin.id, in: windowState) {
-            browserContext.commands.closeTab(current, windowState)
-            return
-        }
-
-        browserContext.tabManager.shortcutLiveTabOwner.deactivateShortcutLiveTab(pinId: pin.id, in: windowState.id)
+        browserContext.commands.unloadShortcutPin(pin, windowState)
     }
 
     func duplicateShortcutPin(_ pin: ShortcutPin) {

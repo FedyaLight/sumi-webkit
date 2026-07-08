@@ -141,4 +141,22 @@ final class TabSpaceLifecycleOwnerTests: XCTestCase {
             []
         )
     }
+
+    func testRenameSpacePresentsNotificationOnlyWhenNameChanges() throws {
+        let tabManager = try makeInMemoryTabManager()
+        let space = tabManager.spaceLifecycleOwner.createSpace(name: "Work")
+        let spy = NotificationPresentingSpy()
+        tabManager.runtimeContextAttachmentOwner.attach(
+            TabManagerRuntimeContext(
+                notifications: { spy }
+            )
+        )
+
+        try tabManager.spaceLifecycleOwner.renameSpace(spaceId: space.id, newName: "Work")
+        XCTAssertTrue(spy.presentSpaceRenamedNotificationCalls.isEmpty)
+
+        try tabManager.spaceLifecycleOwner.renameSpace(spaceId: space.id, newName: "Focus")
+        XCTAssertEqual(spy.presentSpaceRenamedNotificationCalls.map(\.name), ["Focus"])
+        XCTAssertEqual(space.name, "Focus")
+    }
 }

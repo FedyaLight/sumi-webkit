@@ -27,6 +27,9 @@ enum BrowserSplitViewRuntimeFactory {
                     navigateCurrentTab: true,
                     presentationReason: reason
                 )
+            },
+            notifications: { [weak browserManager] in
+                browserManager?.notificationPresenter
             }
         )
     }

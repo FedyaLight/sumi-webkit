@@ -73,7 +73,6 @@ extension URLBarView {
     }
 
     func handlePermissionIndicatorClick() {
-        closeZoomPopover()
         if permissionPromptPresenter.presentFromIndicatorClick() {
             browserContext.closeURLBarHubPopover(windowState)
             closePermissionIndicatorPopover()

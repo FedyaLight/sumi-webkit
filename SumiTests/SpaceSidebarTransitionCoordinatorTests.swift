@@ -899,7 +899,9 @@ private final class TestSidebarBrowserContextHarness {
                 createFolderInCurrentSpace: { _ in /* No-op. */ },
                 createRSSLiveFolderInCurrentSpace: { _ in /* No-op. */ },
                 createGitHubPRFolderInCurrentSpace: { _ in /* No-op. */ },
-                createGitHubIssuesFolderInCurrentSpace: { _ in /* No-op. */ }
+                createGitHubIssuesFolderInCurrentSpace: { _ in /* No-op. */ },
+                unloadShortcutPin: { _, _ in /* No-op. */ },
+                unloadShortcutPins: { _, _ in /* No-op. */ }
             )
         )
     }

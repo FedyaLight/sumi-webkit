@@ -23,7 +23,7 @@ final class TabRemovalOwner {
         let liveSpacePinnedTabs: (UUID) -> [Tab]
         let regularTabs: (UUID) -> [Tab]
         let captureClosedTab: (Tab, UUID?) -> Void
-        let presentTabClosureToast: (Int) -> Void
+        let notifications: @MainActor () -> (any BrowserNotificationPresenting)?
         let tabsBelow: (Tab) -> [Tab]?
         let setActiveTab: (Tab) -> Void
     }
@@ -166,7 +166,7 @@ final class TabRemovalOwner {
 
     func captureRecentlyClosedTab(_ tab: Tab, spaceId: UUID?) {
         dependencies.captureClosedTab(tab, spaceId)
-        dependencies.presentTabClosureToast(1)
+        dependencies.notifications()?.presentTabClosureNotification(tabCount: 1)
     }
 
     private func captureRecentlyClosedTabs(_ tabs: [(tab: Tab, spaceId: UUID?)], count: Int) {
@@ -174,7 +174,7 @@ final class TabRemovalOwner {
             dependencies.captureClosedTab(tab, spaceId)
         }
 
-        dependencies.presentTabClosureToast(count)
+        dependencies.notifications()?.presentTabClosureNotification(tabCount: count)
     }
 
     // MARK: - Bulk Removal
@@ -345,8 +345,8 @@ extension TabRemovalOwner.Dependencies {
             captureClosedTab: { [weak tabManager] tab, spaceId in
                 tabManager?.runtimeContext?.captureClosedTab(tab, sourceSpaceId: spaceId)
             },
-            presentTabClosureToast: { [weak tabManager] count in
-                tabManager?.runtimeContext?.presentTabClosureToast(tabCount: count)
+            notifications: { [weak tabManager] in
+                tabManager?.runtimeContext?.notifications()
             },
             tabsBelow: { [weak tabManager] tab in
                 tabManager?.regularTabCollectionOwner.tabsBelow(tab)

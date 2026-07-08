@@ -16,7 +16,7 @@ extension URLBarView {
         if currentTab.representsSumiNativeSurface {
             EmptyView()
         } else {
-            let showsZoomButton = shouldShowZoomButton(for: currentTab)
+            let showsZoomIndicator = shouldShowZoomIndicator(for: currentTab)
             let permissionIndicatorState = permissionIndicatorDisplayState(for: currentTab)
             HStack(spacing: 6) {
                 urlBarExtensionActions
@@ -31,8 +31,8 @@ extension URLBarView {
                             )
                         )
                 }
-                if showsZoomButton {
-                    zoomButton(for: currentTab)
+                if showsZoomIndicator {
+                    zoomIndicator(for: currentTab)
                         .transition(
                             .asymmetric(
                                 insertion: .scale(scale: 0.82).combined(with: .opacity),
@@ -52,7 +52,7 @@ extension URLBarView {
                 refreshPermissionIndicator(for: tab)
                 refreshPermissionPrompt(for: tab)
             }
-            .animation(.smooth(duration: 0.18), value: showsZoomButton)
+            .animation(.smooth(duration: 0.18), value: showsZoomIndicator)
             .animation(.smooth(duration: 0.18), value: permissionIndicatorState.isVisible)
         }
     }
@@ -94,7 +94,6 @@ extension URLBarView {
 
     var hubButton: some View {
         let action = {
-            closeZoomPopover()
             browserContext.toggleURLBarHubPopover(windowState)
         }
 
@@ -132,14 +131,11 @@ extension URLBarView {
     }
 
     func copyURLToClipboard(_ urlString: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(urlString, forType: .string)
+        _ = browserContext.copyURLToClipboard(urlString, windowState)
 
         withAnimation(.easeInOut(duration: 0.2)) {
             showCheckmark = true
         }
-
-        browserContext.presentToast(.init(kind: .copyURL), windowState)
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
             withAnimation(.easeInOut(duration: 0.2)) {

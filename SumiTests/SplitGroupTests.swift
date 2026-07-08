@@ -1110,7 +1110,8 @@ final class SplitGroupTests: SplitGroupTestCase {
                 },
                 refreshCompositor: { _ in refreshCount += 1 },
                 schedulePersistWindowSession: { _ in persistCount += 1 },
-                focusFloatingBar: { _, reason in focusedReasons.append(reason) }
+                focusFloatingBar: { _, reason in focusedReasons.append(reason) },
+                notifications: { nil }
             )
         )
         splitManager.windowRegistry = windowRegistry

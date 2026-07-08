@@ -156,7 +156,7 @@ struct WindowView: View {
         }
         // System feedback toast - top trailing corner
         .overlay(alignment: .topTrailing) {
-            toastOverlay
+            notificationOverlay
         }
         .sheet(item: nativeModalPresentationBinding) { presentation in
             nativeModalContent(for: presentation)
@@ -222,9 +222,9 @@ struct WindowView: View {
                 effectiveAppearanceRevision &+= 1
             }
         }
-        .onChange(of: sumiSettings.showBrowserToasts) { _, isEnabled in
+        .onChange(of: sumiSettings.showInAppNotifications) { _, isEnabled in
             if !isEnabled {
-                windowState.toastPresentation.dismiss()
+                windowState.inAppNotifications.dismissAll()
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .sumiApplicationDidChangeEffectiveAppearance)) { _ in
@@ -501,24 +501,25 @@ struct WindowView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @ViewBuilder
-    private var toastOverlay: some View {
+    private var notificationOverlay: some View {
+        // No `isEmpty` gate here: inserting/removing the whole stack would bypass
+        // the per-item transitions, making the first/last notification pop in
+        // without animation. An empty stack renders nothing and costs nothing.
         ZStack(alignment: .topTrailing) {
-            if sumiSettings.showBrowserToasts, let toast = windowState.toastPresentation.toast {
+            if sumiSettings.showInAppNotifications {
                 chromeThemeScope {
-                    BrowserToastView(toast: toast)
-                        .onTapGesture {
-                            windowState.toastPresentation.dismiss(id: toast.id)
-                        }
-                        .accessibilityAddTraits(.isButton)
+                    BrowserNotificationStackView(
+                        center: windowState.inAppNotifications,
+                        animation: notificationAnimation,
+                        reduceMotion: effectiveReduceMotion
+                    )
                 }
-                .transition(effectiveReduceMotion ? .opacity : .toast)
             }
         }
         .padding(10)
-        .animation(toastAnimation, value: windowState.toastPresentation.toast?.id)
     }
 
-    private var toastAnimation: Animation {
+    private var notificationAnimation: Animation {
         effectiveReduceMotion ? .easeOut(duration: 0.08) : .smooth(duration: 0.18)
     }
 

@@ -85,6 +85,8 @@ final class BrowserSidebarCommandRoutingOwnerTests: XCTestCase {
         actions.createRSSLiveFolderInCurrentSpace(windowState)
         actions.createGitHubPRFolderInCurrentSpace(windowState)
         actions.createGitHubIssuesFolderInCurrentSpace(windowState)
+        actions.unloadShortcutPin(pin, windowState)
+        actions.unloadShortcutPins([pin], windowState)
 
         XCTAssertEqual(
             spy.events,
@@ -94,6 +96,8 @@ final class BrowserSidebarCommandRoutingOwnerTests: XCTestCase {
                 .createRSSLiveFolder(windowState.id),
                 .createGitHubPullRequestsLiveFolder(windowState.id),
                 .createGitHubIssuesLiveFolder(windowState.id),
+                .unloadShortcutPin(pin.id, windowState.id),
+                .unloadShortcutPins([pin.id], windowState.id),
             ]
         )
     }
@@ -162,6 +166,12 @@ final class BrowserSidebarCommandRoutingOwnerTests: XCTestCase {
                 },
                 createGitHubIssuesFolderInCurrentSpace: { windowState in
                     spy.events.append(.createGitHubIssuesLiveFolder(windowState.id))
+                },
+                unloadShortcutPin: { pin, windowState in
+                    spy.events.append(.unloadShortcutPin(pin.id, windowState.id))
+                },
+                unloadShortcutPins: { pins, windowState in
+                    spy.events.append(.unloadShortcutPins(pins.map(\.id), windowState.id))
                 }
             )
         )
@@ -203,5 +213,7 @@ extension BrowserSidebarCommandRoutingOwnerTests {
         case createRSSLiveFolder(UUID)
         case createGitHubPullRequestsLiveFolder(UUID)
         case createGitHubIssuesLiveFolder(UUID)
+        case unloadShortcutPin(UUID, UUID)
+        case unloadShortcutPins([UUID], UUID)
     }
 }

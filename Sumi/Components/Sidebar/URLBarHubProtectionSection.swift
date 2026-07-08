@@ -82,7 +82,7 @@ struct URLBarHubProtectionSection: View {
             HStack {
                 Spacer(minLength: 0)
                 Button("Done", action: onClose)
-                    .buttonStyle(URLBarZoomPopoverButtonStyle(minWidth: 76))
+                    .buttonStyle(URLBarCompactButtonStyle(minWidth: 76))
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
@@ -171,7 +171,7 @@ struct URLBarHubProtectionSection: View {
                     }
                     .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(URLBarZoomPopoverButtonStyle(minWidth: 150))
+                .buttonStyle(URLBarCompactButtonStyle(minWidth: 150))
                 .disabled(
                     !isSiteEnabled
                         || !areSavedRulesEnabled

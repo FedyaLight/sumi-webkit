@@ -12,6 +12,7 @@ final class BrowserShortcutLiveTabCloseOwner {
         let showEmptyState: (BrowserWindowState) -> Void
         let restoreShortcutSplitMember: (UUID, SplitGroup, BrowserWindowState, Bool) -> Void
         let unloadShortcutHostedSplitGroup: (SplitGroup, BrowserWindowState) -> Void
+        let notifications: @MainActor () -> (any BrowserNotificationPresenting)?
     }
 
     private let dependencies: Dependencies
@@ -29,6 +30,7 @@ final class BrowserShortcutLiveTabCloseOwner {
             if group.isShortcutHosted {
                 captureClosedShortcutLiveInstance(tab, in: windowState)
                 dependencies.unloadShortcutHostedSplitGroup(group, windowState)
+                dependencies.notifications()?.presentTabUnloadedNotification(count: 1, in: windowState)
                 return
             }
             if group.member(for: tab.id)?.isShortcutBacked == true
@@ -40,6 +42,7 @@ final class BrowserShortcutLiveTabCloseOwner {
                     windowState,
                     false
                 )
+                dependencies.notifications()?.presentTabUnloadedNotification(count: 1, in: windowState)
                 return
             }
         }
@@ -62,10 +65,18 @@ final class BrowserShortcutLiveTabCloseOwner {
             dependencies.performImmediateVisualHandoffIfPossible(windowState)
         }
 
+        let didDeactivate: Bool
         if let pinId = tab.shortcutPinId {
-            tabManager.shortcutLiveTabOwner.deactivateShortcutLiveTab(pinId: pinId, in: windowState.id)
+            didDeactivate = tabManager.shortcutLiveTabOwner.deactivateShortcutLiveTab(
+                pinId: pinId,
+                in: windowState.id
+            )
         } else {
-            tabManager.shortcutLiveTabOwner.deactivateShortcutLiveTab(in: windowState.id)
+            didDeactivate = tabManager.shortcutLiveTabOwner.deactivateShortcutLiveTab(in: windowState.id)
+        }
+
+        if didDeactivate {
+            dependencies.notifications()?.presentTabUnloadedNotification(count: 1, in: windowState)
         }
 
         guard wasCurrent else {
@@ -96,45 +107,6 @@ final class BrowserShortcutLiveTabCloseOwner {
             tab: tab,
             pin: pin,
             sourceWindowId: windowState.id
-        )
-    }
-}
-
-extension BrowserShortcutLiveTabCloseOwner.Dependencies {
-    @MainActor
-    static func live(browserManager: BrowserManager) -> Self {
-        let tabLifecycleService = browserManager.tabLifecycleService
-        return Self(
-            tabManager: { [weak browserManager, tabManager = browserManager.tabManager] in
-                browserManager?.tabManager ?? tabManager
-            },
-            recentlyClosedManager: { [weak browserManager, recentlyClosedManager = browserManager.recentlyClosedManager] in
-                browserManager?.recentlyClosedManager ?? recentlyClosedManager
-            },
-            fallbackPlanner: { tabLifecycleService.closeFallbackPlanner },
-            selectTab: { [weak browserManager] tab, windowState in
-                browserManager?.selectTab(tab, in: windowState)
-            },
-            performImmediateVisualHandoffIfPossible: { [weak browserManager] windowState in
-                _ = browserManager?.windowVisualMutationOwner.performImmediateVisualHandoffIfPossible(in: windowState)
-            },
-            persistWindowSession: { [weak browserManager] windowState in
-                browserManager?.windowSessionActivationOwner.persistWindowSession(for: windowState)
-            },
-            showEmptyState: { [weak browserManager] windowState in
-                browserManager?.showEmptyState(in: windowState)
-            },
-            restoreShortcutSplitMember: { [weak browserManager] itemId, group, windowState, preserveLiveInstance in
-                browserManager?.sidebarCommandService.splitShortcutRouting.restoreShortcutSplitMember(
-                    itemId,
-                    from: group,
-                    in: windowState,
-                    preserveLiveInstance: preserveLiveInstance
-                )
-            },
-            unloadShortcutHostedSplitGroup: { [weak browserManager] group, windowState in
-                browserManager?.sidebarCommandService.splitShortcutRouting.unloadShortcutHostedSplitGroup(group, in: windowState)
-            }
         )
     }
 }

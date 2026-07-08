@@ -539,6 +539,14 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
         if policy.shouldActivateTab,
            let windowState = tab.navigationRuntime.popupHandlingRuntime.windowStateContainingTab(tab) {
             tab.navigationRuntime.popupHandlingRuntime.selectTab(childTab, windowState)
+        } else if !policy.shouldActivateTab,
+                  !policy.isPopup,
+                  !isExtensionOriginated,
+                  let windowState = tab.navigationRuntime.popupHandlingRuntime.windowStateContainingTab(tab) {
+            tab.navigationRuntime.popupHandlingRuntime.notifications()?.presentBackgroundTabOpenedNotification(
+                tabId: childTab.id,
+                in: windowState
+            )
         }
         resetLinkGestureModifierState(for: tab)
         return childWebView

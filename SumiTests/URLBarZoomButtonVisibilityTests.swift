@@ -7,7 +7,6 @@ final class URLBarZoomButtonVisibilityTests: XCTestCase {
             URLBarZoomButtonVisibility.shouldShow(
                 hasURL: true,
                 isEditing: false,
-                isPopoverPresented: false,
                 isDefaultZoom: true
             )
         )
@@ -18,19 +17,7 @@ final class URLBarZoomButtonVisibilityTests: XCTestCase {
             URLBarZoomButtonVisibility.shouldShow(
                 hasURL: true,
                 isEditing: false,
-                isPopoverPresented: false,
                 isDefaultZoom: false
-            )
-        )
-    }
-
-    func testVisibleWhilePopoverIsOpenAtDefaultZoom() {
-        XCTAssertTrue(
-            URLBarZoomButtonVisibility.shouldShow(
-                hasURL: true,
-                isEditing: false,
-                isPopoverPresented: true,
-                isDefaultZoom: true
             )
         )
     }
@@ -40,7 +27,6 @@ final class URLBarZoomButtonVisibilityTests: XCTestCase {
             URLBarZoomButtonVisibility.shouldShow(
                 hasURL: false,
                 isEditing: false,
-                isPopoverPresented: true,
                 isDefaultZoom: false
             )
         )
@@ -48,7 +34,6 @@ final class URLBarZoomButtonVisibilityTests: XCTestCase {
             URLBarZoomButtonVisibility.shouldShow(
                 hasURL: true,
                 isEditing: true,
-                isPopoverPresented: true,
                 isDefaultZoom: false
             )
         )

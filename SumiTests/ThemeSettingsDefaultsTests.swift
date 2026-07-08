@@ -54,12 +54,12 @@ final class ThemeSettingsDefaultsTests: XCTestCase {
 
         let settings = SumiSettingsService(userDefaults: harness.defaults)
 
-        XCTAssertTrue(settings.showBrowserToasts)
+        XCTAssertTrue(settings.showInAppNotifications)
 
-        settings.showBrowserToasts = false
+        settings.showInAppNotifications = false
         let recreatedSettings = SumiSettingsService(userDefaults: harness.defaults)
 
-        XCTAssertFalse(recreatedSettings.showBrowserToasts)
+        XCTAssertFalse(recreatedSettings.showInAppNotifications)
         XCTAssertFalse(harness.defaults.bool(forKey: "settings.showBrowserToasts"))
     }
 

@@ -46,7 +46,7 @@ final class KeyboardShortcutStoreTests: XCTestCase {
         XCTAssertEqual(validation, .valid)
         XCTAssertEqual(shortcutManager.shortcutDisplayString(for: .undoCloseTab), "⌥⌘Z")
 
-        let toast = BrowserToast(kind: .tabClosure(count: 1))
-        XCTAssertEqual(toast.subtitle(shortcutManager: shortcutManager), "Press ⌥⌘Z to reopen")
+        let notification = BrowserNotification.tabClosure(count: 1, undoShortcut: "⌥⌘Z", action: nil)
+        XCTAssertEqual(notification.subtitle, "Press ⌥⌘Z to reopen")
     }
 }

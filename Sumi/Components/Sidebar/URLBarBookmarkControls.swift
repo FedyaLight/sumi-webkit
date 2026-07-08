@@ -17,7 +17,6 @@ extension URLBarView {
               request.tabID == currentTab?.id
         else { return }
 
-        closeZoomPopover()
         browserContext.presentURLBarHubPopover(windowState)
     }
 }

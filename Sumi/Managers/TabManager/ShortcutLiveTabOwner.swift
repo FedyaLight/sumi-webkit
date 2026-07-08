@@ -45,6 +45,7 @@ final class ShortcutLiveTabOwner {
         let cancelRuntimeStatePersistence: @MainActor (UUID) -> Void
         let removeFromCurrentContainer: @MainActor (Tab) -> Void
         let insertRegularTab: @MainActor (Tab, UUID, Int?) -> Void
+        let notifications: @MainActor () -> (any BrowserNotificationPresenting)?
         let faviconService: @MainActor () -> any BrowserFaviconServicing
         let faviconImageService: @MainActor () -> any BrowserFaviconImageServicing
         let visitedLinkStore: @MainActor () -> any BrowserVisitedLinkStoreManaging
@@ -257,6 +258,21 @@ final class ShortcutLiveTabOwner {
         dependencies.withStructuralUpdateTransaction {
             deactivateShortcutLiveTabWithoutStartingTransaction(pinId: pinId, in: windowId)
         }
+    }
+
+    /// Unloads a shortcut live tab in response to an explicit user gesture and
+    /// optionally presents the tab-unloaded in-app notification.
+    @discardableResult
+    func userInitiatedUnload(
+        pinId: UUID,
+        in windowState: BrowserWindowState,
+        presentNotification: Bool = true
+    ) -> Bool {
+        guard deactivateShortcutLiveTab(pinId: pinId, in: windowState.id) else { return false }
+        if presentNotification {
+            dependencies.notifications()?.presentTabUnloadedNotification(count: 1, in: windowState)
+        }
+        return true
     }
 
     @discardableResult
@@ -522,6 +538,9 @@ extension ShortcutLiveTabOwner.Dependencies {
             },
             insertRegularTab: { [weak tabManager] tab, spaceId, insertionIndex in
                 tabManager?.regularTabCollectionOwner.insert(tab, in: spaceId, at: insertionIndex)
+            },
+            notifications: { [weak tabManager] in
+                tabManager?.runtimeContext?.notifications()
             },
             faviconService: { [weak tabManager] in
                 guard let tabManager else { preconditionFailure("TabManager dependency used after deallocation") }

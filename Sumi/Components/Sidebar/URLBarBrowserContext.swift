@@ -17,11 +17,9 @@ struct URLBarExtensionActionContext {
 struct URLBarZoomContext {
     let manager: ZoomManager
     let stateRevision: Int
-    let popoverRequest: ZoomPopoverRequest?
     let resetCurrentTab: (BrowserWindowState) -> Void
     let zoomOutCurrentTab: (BrowserWindowState) -> Void
     let zoomInCurrentTab: (BrowserWindowState) -> Void
-    let requestPopover: (Tab, BrowserWindowState, ZoomPopoverSource) -> Void
 }
 
 @MainActor
@@ -95,6 +93,6 @@ struct URLBarBrowserContext {
     let presentURLBarHubPopover: (BrowserWindowState) -> Void
     let toggleURLBarHubPopover: (BrowserWindowState) -> Void
     let isURLBarHubPopoverPresented: (BrowserWindowState) -> Bool
-    let presentToast: (BrowserToast, BrowserWindowState) -> Void
+    let copyURLToClipboard: (String, BrowserWindowState) -> Void
     let extensionActions: URLBarExtensionActionContext
 }

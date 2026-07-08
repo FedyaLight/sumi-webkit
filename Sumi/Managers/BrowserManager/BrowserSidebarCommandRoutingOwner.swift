@@ -23,6 +23,8 @@ final class BrowserSidebarCommandRoutingOwner {
         let createRSSLiveFolderInCurrentSpace: @MainActor (BrowserWindowState) -> Void
         let createGitHubPRFolderInCurrentSpace: @MainActor (BrowserWindowState) -> Void
         let createGitHubIssuesFolderInCurrentSpace: @MainActor (BrowserWindowState) -> Void
+        let unloadShortcutPin: @MainActor (ShortcutPin, BrowserWindowState) -> Void
+        let unloadShortcutPins: @MainActor ([ShortcutPin], BrowserWindowState) -> Void
     }
 
     private let dependencies: Dependencies
@@ -92,6 +94,12 @@ final class BrowserSidebarCommandRoutingOwner {
             },
             createGitHubIssuesFolderInCurrentSpace: { [weak self] windowState in
                 self?.dependencies.createGitHubIssuesFolderInCurrentSpace(windowState)
+            },
+            unloadShortcutPin: { [weak self] pin, windowState in
+                self?.dependencies.unloadShortcutPin(pin, windowState)
+            },
+            unloadShortcutPins: { [weak self] pins, windowState in
+                self?.dependencies.unloadShortcutPins(pins, windowState)
             }
         )
     }
@@ -176,6 +184,12 @@ extension BrowserSidebarCommandRoutingOwner.Dependencies {
                 browserManager?.sidebarCommandService.folderCommand.createGitHubIssuesFolderInCurrentSpace(
                     in: windowState
                 )
+            },
+            unloadShortcutPin: { [weak browserManager] pin, windowState in
+                browserManager?.sidebarCommandService.shortcutPinUnload.unloadShortcutPin(pin, in: windowState)
+            },
+            unloadShortcutPins: { [weak browserManager] pins, windowState in
+                browserManager?.sidebarCommandService.shortcutPinUnload.unloadShortcutPins(pins, in: windowState)
             }
         )
     }

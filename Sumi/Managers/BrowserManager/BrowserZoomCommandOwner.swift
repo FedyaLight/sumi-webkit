@@ -13,7 +13,7 @@ final class BrowserZoomCommandOwner {
         let zoomManager: @MainActor () -> ZoomManager
         let sizeOverride: @MainActor (URL, UUID?) -> Double
         let incrementZoomStateRevision: @MainActor () -> Void
-        let setZoomPopoverRequest: @MainActor (ZoomPopoverRequest) -> Void
+        let notifications: @MainActor () -> (any BrowserNotificationPresenting)?
     }
 
     private let dependencies: Dependencies
@@ -24,28 +24,28 @@ final class BrowserZoomCommandOwner {
 
     func zoomInCurrentTab() {
         guard let windowState = dependencies.activeWindow() else { return }
-        zoomInCurrentTab(in: windowState, source: .menu)
+        zoomInCurrentTab(in: windowState)
     }
 
-    func zoomInCurrentTab(in windowState: BrowserWindowState, source: ZoomPopoverSource? = nil) {
-        applyUserZoomStep(.up, in: windowState, source: source)
+    func zoomInCurrentTab(in windowState: BrowserWindowState) {
+        applyUserZoomStep(.up, in: windowState)
     }
 
     func zoomOutCurrentTab() {
         guard let windowState = dependencies.activeWindow() else { return }
-        zoomOutCurrentTab(in: windowState, source: .menu)
+        zoomOutCurrentTab(in: windowState)
     }
 
-    func zoomOutCurrentTab(in windowState: BrowserWindowState, source: ZoomPopoverSource? = nil) {
-        applyUserZoomStep(.down, in: windowState, source: source)
+    func zoomOutCurrentTab(in windowState: BrowserWindowState) {
+        applyUserZoomStep(.down, in: windowState)
     }
 
     func resetZoomCurrentTab() {
         guard let windowState = dependencies.activeWindow() else { return }
-        resetZoomCurrentTab(in: windowState, source: .menu)
+        resetZoomCurrentTab(in: windowState)
     }
 
-    func resetZoomCurrentTab(in windowState: BrowserWindowState, source: ZoomPopoverSource? = nil) {
+    func resetZoomCurrentTab(in windowState: BrowserWindowState) {
         guard let context = activeZoomContext(in: windowState) else { return }
 
         dependencies.zoomManager().saveZoomLevel(
@@ -54,7 +54,7 @@ final class BrowserZoomCommandOwner {
             profileId: context.profileId
         )
         applyBoostAwareZoom(for: context.tab, webView: context.webView)
-        didUpdateZoom(for: context.tab, in: windowState, source: source)
+        didUpdateZoom(for: context.tab, in: windowState, showNotification: true)
     }
 
     func loadZoomForTab(_ tabId: UUID) {
@@ -66,22 +66,12 @@ final class BrowserZoomCommandOwner {
         else { return }
 
         applyBoostAwareZoom(for: tab, webView: webView)
-        didUpdateZoom(for: tab, in: windowState, source: nil)
+        didUpdateZoom(for: tab, in: windowState, showNotification: false)
     }
 
     func cleanupZoomForTab(_ tabId: UUID) {
         dependencies.zoomManager().removeTabZoomLevel(for: tabId)
         dependencies.incrementZoomStateRevision()
-    }
-
-    func requestZoomPopover(for tab: Tab, in windowState: BrowserWindowState, source: ZoomPopoverSource) {
-        dependencies.setZoomPopoverRequest(
-            ZoomPopoverRequest(
-                windowId: windowState.id,
-                tabId: tab.id,
-                source: source
-            )
-        )
     }
 
     func applyBoostAwareZoom(for tab: Tab, webView: WKWebView) {
@@ -105,8 +95,7 @@ final class BrowserZoomCommandOwner {
 
     private func applyUserZoomStep(
         _ direction: ZoomStepDirection,
-        in windowState: BrowserWindowState,
-        source: ZoomPopoverSource?
+        in windowState: BrowserWindowState
     ) {
         guard let context = activeZoomContext(in: windowState) else { return }
 
@@ -124,7 +113,7 @@ final class BrowserZoomCommandOwner {
             profileId: context.profileId
         )
         applyBoostAwareZoom(for: context.tab, webView: context.webView)
-        didUpdateZoom(for: context.tab, in: windowState, source: source)
+        didUpdateZoom(for: context.tab, in: windowState, showNotification: true)
     }
 
     private func activeZoomContext(in windowState: BrowserWindowState) -> ActiveZoomContext? {
@@ -141,11 +130,33 @@ final class BrowserZoomCommandOwner {
         )
     }
 
-    private func didUpdateZoom(for tab: Tab, in windowState: BrowserWindowState, source: ZoomPopoverSource?) {
+    private func didUpdateZoom(
+        for tab: Tab,
+        in windowState: BrowserWindowState,
+        showNotification: Bool
+    ) {
         dependencies.incrementZoomStateRevision()
-        if let source {
-            requestZoomPopover(for: tab, in: windowState, source: source)
-        }
+        guard showNotification else { return }
+
+        let zoomManager = dependencies.zoomManager()
+        let tabId = tab.id
+        dependencies.notifications()?.presentNotification(
+            .zoom(
+                percentage: zoomManager.getZoomPercentageDisplay(for: tabId),
+                isAtMinimum: zoomManager.isAtMinimumZoom(for: tabId),
+                isAtMaximum: zoomManager.isAtMaximumZoom(for: tabId),
+                zoomOut: { [weak self] in
+                    self?.zoomOutCurrentTab(in: windowState)
+                },
+                resetZoom: { [weak self] in
+                    self?.resetZoomCurrentTab(in: windowState)
+                },
+                zoomIn: { [weak self] in
+                    self?.zoomInCurrentTab(in: windowState)
+                }
+            ),
+            in: windowState
+        )
     }
 
     private func zoomContext(for tab: Tab) -> ZoomContext {
@@ -201,30 +212,9 @@ extension BrowserZoomCommandOwner.Dependencies {
                 guard let browserManager else { return }
                 browserManager.zoomStateRevision += 1
             },
-            setZoomPopoverRequest: { [weak browserManager] request in
-                browserManager?.zoomPopoverRequest = request
+            notifications: { [weak browserManager] in
+                browserManager?.notificationPresenter
             }
         )
     }
-}
-
-enum ZoomPopoverSource {
-    case toolbar
-    case menu
-
-    var autoCloseInterval: TimeInterval? {
-        switch self {
-        case .toolbar:
-            return nil
-        case .menu:
-            return 2
-        }
-    }
-}
-
-struct ZoomPopoverRequest: Equatable, Identifiable {
-    let id = UUID()
-    let windowId: UUID
-    let tabId: UUID
-    let source: ZoomPopoverSource
 }

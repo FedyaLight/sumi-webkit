@@ -132,8 +132,8 @@ class BrowserWindowState {
     /// Frame of the URL bar within this window
     var urlBarFrame: CGRect = .zero
 
-    /// Window-scoped owner for the single chrome toast and its dismiss timer.
-    let toastPresentation = WindowToastPresentationOwner()
+    /// Window-scoped owner for stacked in-app notifications and their dismiss timers.
+    let inAppNotifications = BrowserNotificationCenter()
 
     /// Window-scoped owner for compositor/native-surface invalidation counters.
     let compositorInvalidation = WindowCompositorInvalidationOwner()

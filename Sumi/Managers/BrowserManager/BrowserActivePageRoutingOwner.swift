@@ -20,8 +20,7 @@ final class BrowserActivePageRoutingOwner {
             @MainActor (BrowserWindowState, Int) -> EssentialsShortcutPlacementOwner.InsertionPlan?
         let convertTabToShortcutPin:
             @MainActor (Tab, ShortcutPinRole, UUID?, UUID?, UUID?, Int, Bool) -> ShortcutPin?
-        let presentCopyToast: @MainActor (BrowserWindowState) -> Void
-        let writeURLToPasteboard: @MainActor (String) -> Bool
+        let copyURLToPasteboard: @MainActor (String, BrowserWindowState?) -> Bool
     }
 
     private let dependencies: Dependencies
@@ -95,16 +94,12 @@ final class BrowserActivePageRoutingOwner {
         if let url = activePageURLForActiveWindow()?.absoluteString {
             RuntimeDiagnostics.emit("Attempting to copy URL: \(url)")
 
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                let success = self.dependencies.writeURLToPasteboard(url)
+            let windowState = dependencies.activeWindow()
+            let success = dependencies.copyURLToPasteboard(url, windowState)
+            if success {
                 NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .drawCompleted)
-                RuntimeDiagnostics.emit("Clipboard operation success: \(success)")
             }
-
-            if let windowState = dependencies.activeWindow() {
-                dependencies.presentCopyToast(windowState)
-            }
+            RuntimeDiagnostics.emit("Clipboard operation success: \(success)")
         } else {
             RuntimeDiagnostics.emit("No URL found to copy")
         }
@@ -311,12 +306,8 @@ extension BrowserActivePageRoutingOwner.Dependencies {
                     openTargetFolder: openTargetFolder
                 )
             },
-            presentCopyToast: { [weak browserManager] windowState in
-                browserManager?.toastPresenter.presentToast(.init(kind: .copyURL), in: windowState)
-            },
-            writeURLToPasteboard: { urlString in
-                NSPasteboard.general.clearContents()
-                return NSPasteboard.general.setString(urlString, forType: .string)
+            copyURLToPasteboard: { [weak browserManager] url, windowState in
+                browserManager?.urlCopyOwner.copyURLToPasteboard(url, in: windowState) ?? false
             }
         )
     }

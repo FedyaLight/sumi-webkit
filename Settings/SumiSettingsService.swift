@@ -203,9 +203,9 @@ class SumiSettingsService {
         }
     }
 
-    var showBrowserToasts: Bool {
+    var showInAppNotifications: Bool {
         didSet {
-            userDefaults.set(showBrowserToasts, forKey: showBrowserToastsKey)
+            userDefaults.set(showInAppNotifications, forKey: showBrowserToastsKey)
         }
     }
 
@@ -495,7 +495,7 @@ class SumiSettingsService {
             rawValue: userDefaults.string(forKey: tabListNewTabButtonPositionKey) ?? TabListNewTabButtonPosition.bottom.rawValue
         ) ?? .bottom
         self.showLinkStatusBar = userDefaults.bool(forKey: showLinkStatusBarKey)
-        self.showBrowserToasts = userDefaults.bool(forKey: showBrowserToastsKey)
+        self.showInAppNotifications = userDefaults.bool(forKey: showBrowserToastsKey)
         self.framelessChrome = userDefaults.bool(forKey: framelessChromeKey)
         self.didFinishOnboarding = userDefaults.bool(forKey: didFinishOnboardingKey)
         let storedMemoryMode = userDefaults.string(forKey: memoryModeKey)

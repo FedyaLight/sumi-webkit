@@ -292,7 +292,8 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
             applyVisitedLinksToPopupConfiguration: { _, _ in /* No-op. */ },
             createPopupTab: { _, _ in nil },
             windowStateContainingTab: { _ in nil },
-            selectTab: { _, _ in /* No-op. */ }
+            selectTab: { _, _ in /* No-op. */ },
+            notifications: { nil }
         )
         let responder = SumiPopupHandlingNavigationResponder(tab: tab)
         let adapter = SumiNavigationResponderAdapter(target: responder)

@@ -48,12 +48,6 @@ struct URLBarView: View {
 
     @State var isHovering = false
     @State var showCheckmark = false
-    @State var isZoomPopoverPresented = false
-    @State var zoomPopoverSource: ZoomPopoverSource = .toolbar
-    @State var zoomPopoverSize = CGSize(width: 252, height: 48)
-    @State var isZoomButtonHovering = false
-    @State var isZoomPopoverHovering = false
-    @State var zoomPopoverHideTask: Task<Void, Never>?
     @State var isPermissionIndicatorPopoverPresented = false
     @StateObject var permissionIndicatorViewModel = SumiPermissionIndicatorViewModel()
     @StateObject var permissionPromptPresenter = SumiPermissionPromptPresenter()
@@ -116,15 +110,11 @@ struct URLBarView: View {
                 }
             }
         }
-        .onChange(of: browserContext.zoom.popoverRequest) { _, request in
-            handleZoomPopoverRequest(request)
-        }
         .onChange(of: browserContext.bookmarkEditorPresentationRequest) { _, request in
             handleBookmarkEditorPresentationRequest(request)
         }
         .onChange(of: currentTab?.id) { _, _ in
             DispatchQueue.main.async {
-                closeZoomPopover()
                 closePermissionIndicatorPopover()
                 browserContext.closeURLBarHubPopover(windowState)
                 permissionPromptPresenter.closeForCurrentTabChange()
@@ -133,7 +123,6 @@ struct URLBarView: View {
         .onChange(of: currentTab?.url) { _, url in
             if let url, SumiSurface.isSettingsSurfaceURL(url) || SumiSurface.isHistorySurfaceURL(url) || SumiSurface.isBookmarksSurfaceURL(url) {
                 DispatchQueue.main.async {
-                    closeZoomPopover()
                     closePermissionIndicatorPopover()
                     browserContext.closeURLBarHubPopover(windowState)
                 }
@@ -146,7 +135,6 @@ struct URLBarView: View {
             }
         }
         .onDisappear {
-            cancelZoomPopoverHideTask()
             closePermissionIndicatorPopover()
             browserContext.closeURLBarHubPopover(windowState)
             permissionPromptPresenter.clear()

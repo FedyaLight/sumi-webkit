@@ -10,6 +10,7 @@ struct SplitViewRuntime {
     let refreshCompositor: @MainActor (BrowserWindowState) -> Void
     let schedulePersistWindowSession: @MainActor (BrowserWindowState) -> Void
     let focusFloatingBar: @MainActor (BrowserWindowState, FloatingBarPresentationReason) -> Void
+    let notifications: @MainActor () -> (any BrowserNotificationPresenting)?
 }
 
 @MainActor
@@ -336,6 +337,13 @@ final class SplitViewManager: ObservableObject {
                     side: side
                 )?.upsertingMember(resolvedIncoming.member)
             }
+            if group == nil {
+                notifySplitViewLimitIfNeeded(
+                    targetGroup: targetGroup,
+                    incomingTabId: resolvedIncoming.tab.id,
+                    in: windowState
+                )
+            }
             guard let group else { return false }
             removeFromSourceSplitIfNeeded(
                 sourceGroup,
@@ -390,6 +398,17 @@ final class SplitViewManager: ObservableObject {
         runtime?.refreshCompositor(windowState)
         notifyChanged(for: windowState.id)
         return true
+    }
+
+    private func notifySplitViewLimitIfNeeded(
+        targetGroup: SplitGroup,
+        incomingTabId: UUID,
+        in windowState: BrowserWindowState
+    ) {
+        guard targetGroup.tabIds.count >= SplitGroup.maximumTabs,
+              !targetGroup.contains(incomingTabId)
+        else { return }
+        runtime?.notifications()?.presentSplitViewLimitNotification(in: windowState)
     }
 
     private func removeFromSourceSplitIfNeeded(
