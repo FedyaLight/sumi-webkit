@@ -111,6 +111,56 @@ enum SumiBoostCSSBuilder {
         return css
     }
 
+    // MARK: - Threat model: user CSS/JS string embedding into the page content world
+    //
+    // `installJavaScript` returns a JavaScript source string that is injected with
+    // `requiresRunInPageContentWorld = true` (see `SumiBoostUserScript`), i.e. it runs
+    // in the *page's own* JS realm, sharing `window`/`document` with the page's scripts
+    // and any extensions the page trusts. Unlike an isolated content world, code that
+    // escapes its intended data context here executes with the page's own privileges.
+    // We deliberately accept that trade-off because a Boost's CSS must land in the
+    // page's own CSSOM/document (author style tags, `!important` cascades against the
+    // page's own rules, live `document.documentElement` attributes for `:not()` zap
+    // selectors) rather than in a sandboxed shadow world the page cannot see or that
+    // an isolated-world CSSStyleSheet API cannot reach on all WebKit versions.
+    //
+    // Attacker model: `boost.data` (customCSS, zapSelectors, fontFamily, boostId) is
+    // user-authored and may also arrive via `SumiBoostExportPackage` import from an
+    // untrusted file, i.e. we must treat every string field as attacker-controlled.
+    // The attack we defend against is a *JS string breakout*: a crafted CSS payload
+    // containing sequences like `"; maliciousCode(); "`, backslashes, quotes,
+    // backtick/`${}` template syntax, or U+2028/U+2029 line separators, designed to
+    // terminate the JS string literal that carries it and get arbitrary statements
+    // executed in the page content world instead of merely being treated as inert
+    // style text.
+    //
+    // Containment mechanism: `contentCSS`/`filterCSS`/`boostId` are never
+    // string-interpolated directly into the generated JS. They are placed into a
+    // Swift `[String: String]` and serialized once via `JSONEncoder` into `payload`,
+    // which is embedded as a single JSON object literal (`const payload = <json>;`).
+    // JSON string encoding is a strict subset of valid JS string literal syntax (every
+    // control character, backslash, and double quote is escaped; JSON.parse-shaped
+    // output is always balanced), so no payload value can close the enclosing string
+    // or object literal early. The generated script then only ever *reads*
+    // `payload.contentCSS` / `payload.filterCSS` as opaque string values (assigned to
+    // `textContent`, never `eval`'d, never used to build a `<script>` tag or passed to
+    // `innerHTML`), so even a value that looks like `</script><script>...` stays inert
+    // text content instead of being reparsed as markup or code.
+    //
+    // Invariants this relies on (see `SumiBoostCSSBuilderTests` for coverage):
+    //   1. `encodedPayloadLiteral` is the only place that turns Boost strings into JS
+    //      source; every field of the payload dictionary must go through it.
+    //   2. The decoded JSON payload must round-trip byte-for-byte back to the original
+    //      `contentCSS`/`filterCSS`/`boostId` inputs (proves JSON escaping did not
+    //      truncate or corrupt the payload while still being safe JS source).
+    //   3. Evaluating the generated script must never execute attacker-supplied code
+    //      or throw a syntax error, for a battery of classic JSON-into-JS breakout
+    //      payloads (quotes, backslashes, U+2028/U+2029, template literals, `</script>`).
+    //   4. Separately, `cssString(_:)` performs *CSS* single-quoted string escaping
+    //      (backslash/quote/newline) for values embedded directly into generated CSS
+    //      text (e.g. `font-family`); this is a distinct containment boundary from the
+    //      JSON/JS one above and only needs to prevent breaking out of a CSS string,
+    //      since CSS text itself is not executable.
     static func installJavaScript(for boost: SumiBoost) -> String {
         installJavaScript(
             boostId: boost.id.uuidString,
@@ -155,6 +205,10 @@ enum SumiBoostCSSBuilder {
         """
     }
 
+    /// The sole JS-string-breakout containment boundary for Boost payloads — see the
+    /// threat-model comment on `installJavaScript` above. Every attacker-controlled
+    /// string that ends up embedded into the generated page-content-world script must
+    /// flow through this function's `JSONEncoder`, never through raw interpolation.
     private static func encodedPayloadLiteral(_ payload: [String: String]) -> String {
         do {
             let data = try JSONEncoder().encode(payload)
@@ -181,6 +235,10 @@ enum SumiBoostCSSBuilder {
         """
     }
 
+    /// CSS single-quoted string escaping boundary (distinct from the JS/JSON boundary
+    /// in `encodedPayloadLiteral`): prevents attacker-controlled values such as
+    /// `fontFamily` from closing the `'...'` CSS string they are embedded into. CSS
+    /// text is not executable, so this only needs to preserve CSS syntax, not JS safety.
     private static func cssString(_ value: String) -> String {
         value
             .replacingOccurrences(of: "\\", with: "\\\\")

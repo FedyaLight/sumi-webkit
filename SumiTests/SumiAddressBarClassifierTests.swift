@@ -176,4 +176,85 @@ final class SumiPublicSuffixListTests: XCTestCase {
         XCTAssertTrue(list.isPublicSuffix("co.uk"))
         XCTAssertFalse(list.isPublicSuffix("example.com"))
     }
+
+    // MARK: - Direct coverage against the real bundled `public_suffix_list.dat`.
+    //
+    // `SumiPublicSuffixList` is a low-level, case-sensitive matcher that expects
+    // an already-normalized host (lowercased, no leading/trailing dots): that
+    // normalization is `SumiSiteNormalizer`'s job (see `host(fromRawHost:)`),
+    // not this class's. The tests below both exercise the intended multi-level
+    // suffix / wildcard / exception behavior *and* pin down that contract so a
+    // future caller does not assume this class silently normalizes for them.
+
+    func testBundledListResolvesMultiLevelSuffix() {
+        let list = SumiPublicSuffixList.bundled
+        XCTAssertEqual(list.registrableDomain(forHost: "example.co.uk"), "example.co.uk")
+        XCTAssertEqual(list.registrableDomain(forHost: "www.example.co.uk"), "example.co.uk")
+        XCTAssertEqual(list.registrableDomain(forHost: "deeply.nested.example.co.uk"), "example.co.uk")
+    }
+
+    func testBareTLDHasNoRegistrableDomainButIsItselfAPublicSuffix() {
+        let list = SumiPublicSuffixList.bundled
+        XCTAssertNil(list.registrableDomain(forHost: "com"))
+        XCTAssertNil(list.registrableDomain(forHost: "co.uk"))
+        XCTAssertTrue(list.isPublicSuffix("com"))
+        XCTAssertTrue(list.isPublicSuffix("co.uk"))
+    }
+
+    func testIPAddressLikeHostHasNoRegistrableDomain() {
+        // The PSL has no notion of IP literals; a dotted-quad simply fails to
+        // match any real suffix rule (its labels are not real TLD names), so
+        // no digit sequence should ever be misidentified as a registrable
+        // domain or public suffix.
+        let list = SumiPublicSuffixList.bundled
+        XCTAssertNil(list.registrableDomain(forHost: "192.168.1.1"))
+        XCTAssertNil(list.registrableDomain(forHost: "127.0.0.1"))
+        XCTAssertFalse(list.isPublicSuffix("1"))
+    }
+
+    func testTrailingDotIsNotStrippedByThisLayer() {
+        // A trailing dot produces an empty final label, which fails the
+        // "all labels non-empty" guard in both APIs. Callers (SumiSiteNormalizer)
+        // are responsible for trimming dots before calling in; this class does
+        // not do it implicitly.
+        let list = SumiPublicSuffixList.bundled
+        XCTAssertNil(list.registrableDomain(forHost: "example.com."))
+        XCTAssertEqual(list.registrableDomain(forHost: "example.com"), "example.com")
+        XCTAssertFalse(list.isPublicSuffix("com."))
+        XCTAssertTrue(list.isPublicSuffix("com"))
+    }
+
+    func testMatchingIsCaseSensitiveAndExpectsLowercasedInput() {
+        // Rules are indexed as spelled in the bundled list (lowercase). This
+        // class does not lowercase the host itself -- SumiSiteNormalizer does
+        // that upstream. Only the *suffix* labels participate in rule matching,
+        // so an uppercase suffix fails to resolve, while uppercase labels left
+        // of a lowercase suffix still resolve (and are returned case-preserved).
+        // Documented contract, not a bug in this layer.
+        let list = SumiPublicSuffixList.bundled
+        XCTAssertEqual(list.registrableDomain(forHost: "www.example.com"), "example.com")
+        XCTAssertNil(list.registrableDomain(forHost: "WWW.EXAMPLE.COM"))
+        XCTAssertEqual(list.registrableDomain(forHost: "www.EXAMPLE.com"), "EXAMPLE.com")
+    }
+
+    func testCustomListWildcardBaseIsNotItselfARegistrableDomainWithoutTheChildLabel() {
+        let list = SumiPublicSuffixList(listText: """
+        *.ck
+        !www.ck
+        """)
+
+        // "ck" alone has no rule of its own (only "*.ck"), and a wildcard base
+        // needs at least one label beneath it to become a public suffix.
+        XCTAssertNil(list.registrableDomain(forHost: "ck"))
+        XCTAssertFalse(list.isPublicSuffix("ck"))
+        XCTAssertTrue(list.isPublicSuffix("bar.ck"))
+    }
+
+    func testEmptyAndSingleLabelHostsHaveNoRegistrableDomain() {
+        let list = SumiPublicSuffixList.bundled
+        XCTAssertNil(list.registrableDomain(forHost: nil))
+        XCTAssertNil(list.registrableDomain(forHost: ""))
+        XCTAssertNil(list.registrableDomain(forHost: "localhost"))
+        XCTAssertFalse(list.isPublicSuffix(""))
+    }
 }
