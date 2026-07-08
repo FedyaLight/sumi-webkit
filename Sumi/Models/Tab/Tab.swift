@@ -7,7 +7,6 @@
 import AppKit
 import Combine
 import Foundation
-import SwiftUI
 import WebKit
 
 @MainActor
@@ -15,7 +14,9 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     public let id: UUID
     var url: URL
     @Published var name: String
-    @Published var favicon: SwiftUI.Image
+    /// Model-neutral favicon representation; the UI layer maps this to `SwiftUI.Image`
+    /// (see `Sumi/Components/TabFaviconPresentation+Image.swift`).
+    @Published var faviconPresentation: TabFaviconPresentation
     /// True while the tab shows the SF Symbol ``globe`` fallback (no bitmap favicon yet / resolver miss).
     @Published var faviconIsTemplateGlobePlaceholder: Bool = false
     private let placementStateOwner = TabPlacementStateOwner()
@@ -80,7 +81,10 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     lazy var webKitPermissionUIDelegateOwner = TabWebKitPermissionUIDelegateOwner(tab: self)
     lazy var scriptMessageRuntimeOwner = TabScriptMessageRuntimeOwner(tab: self)
     private var browserRuntime = TabBrowserRuntime.inactive
-    private var browserActionService = TabBrowserActionService.inactive
+    /// Web-page context-menu / bookmark / download UI actions, delegated to whatever owns
+    /// the active browser runtime. Callers invoke this directly instead of routing through
+    /// per-action forwarders on `Tab` (see `SumiWebPageMenuController`, `SumiWebNotificationUserScript`).
+    private(set) var browserActionService = TabBrowserActionService.inactive
     private let dependencyStateOwner: TabDependencyStateOwner
 
     // MARK: - Pin State
@@ -335,42 +339,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         browserActionService.hasBrowserRuntime()
     }
 
-    func webPageMenuAppearance(fallback: NSAppearance?) -> NSAppearance? {
-        browserActionService.webPageMenuAppearance(self, fallback)
-    }
-
-    func canBookmarkFromWebPageMenu() -> Bool {
-        browserActionService.canBookmark(self)
-    }
-
-    func requestBookmarkEditorFromWebPageMenu() {
-        browserActionService.requestBookmarkEditorFromMenu()
-    }
-
-    func canStartContextMenuDownload() -> Bool {
-        browserActionService.canStartContextMenuDownload()
-    }
-
-    func startContextMenuDownload(using request: URLRequest, in webView: WKWebView) {
-        browserActionService.startContextMenuDownload(webView, request)
-    }
-
-    func openContextMenuURLInForegroundTab(_ url: URL) {
-        browserActionService.openURLInForegroundTab(url, self)
-    }
-
-    func openContextMenuURLsInNewWindow(_ urls: [URL]) {
-        browserActionService.openURLsInNewWindow(urls)
-    }
-
-    func notificationPermissionBridgeForRuntime() -> SumiNotificationPermissionBridge? {
-        browserActionService.notificationPermissionBridge()
-    }
-
-    func shortcutLaunchURL(for shortcutPinId: UUID) -> URL? {
-        browserActionService.shortcutLaunchURL(shortcutPinId)
-    }
-
     func makeWebViewConfigurationContext() -> TabWebViewConfigurationContext {
         browserRuntime.webViewConfigurationContext()
     }
@@ -558,7 +526,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         self.id = id
         self.url = url
         self.name = name
-        self.favicon = Image(systemName: favicon)
+        self.faviconPresentation = .systemSymbol(favicon)
         self.faviconIsTemplateGlobePlaceholder = (favicon == "globe")
         self.dependencyStateOwner = TabDependencyStateOwner(
             faviconService: faviconService,

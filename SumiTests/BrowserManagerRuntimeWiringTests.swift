@@ -207,7 +207,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         detachedTab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
 
         let targetURL = URL(string: "https://detached-target.example")!
-        detachedTab.openContextMenuURLInForegroundTab(targetURL)
+        detachedTab.browserActionService.openURLInForegroundTab(targetURL, detachedTab)
 
         XCTAssertFalse(
             browserManager.tabManager.tabCollectionMembershipOwner.allTabs().contains { $0.url == targetURL },

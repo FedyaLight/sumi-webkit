@@ -1,7 +1,6 @@
 import AppKit
 import Combine
 import Foundation
-import SwiftUI
 
 @MainActor
 final class TabFaviconRuntime {
@@ -15,26 +14,25 @@ final class TabFaviconRuntime {
         tab: Tab,
         allowCacheLookup: Bool = true
     ) -> Bool {
-        let defaultFavicon = SwiftUI.Image(systemName: "globe")
         let referenceKey = TabFaviconStore.referenceKey(forDocumentURL: url)
         let partition = tab.faviconService.partition(profile: tab.resolveProfile())
 
         if SumiSurface.isSettingsSurfaceURL(url) {
-            tab.favicon = SwiftUI.Image(systemName: SumiSurface.settingsTabFaviconSystemImageName)
+            tab.faviconPresentation = .systemSymbol(SumiSurface.settingsTabFaviconSystemImageName)
             tab.faviconIsTemplateGlobePlaceholder = false
             resolvedCacheKey = nil
             return true
         }
 
         if SumiSurface.isHistorySurfaceURL(url) {
-            tab.favicon = SwiftUI.Image(systemName: SumiSurface.historyTabFaviconSystemImageName)
+            tab.faviconPresentation = .systemSymbol(SumiSurface.historyTabFaviconSystemImageName)
             tab.faviconIsTemplateGlobePlaceholder = false
             resolvedCacheKey = nil
             return true
         }
 
         if SumiSurface.isBookmarksSurfaceURL(url) {
-            tab.favicon = SwiftUI.Image(systemName: SumiSurface.bookmarksTabFaviconSystemImageName)
+            tab.faviconPresentation = .systemSymbol(SumiSurface.bookmarksTabFaviconSystemImageName)
             tab.faviconIsTemplateGlobePlaceholder = false
             resolvedCacheKey = nil
             return true
@@ -53,12 +51,12 @@ final class TabFaviconRuntime {
                !tab.faviconIsTemplateGlobePlaceholder {
                 return false
             }
-            tab.favicon = defaultFavicon
+            tab.faviconPresentation = .systemSymbol("globe")
             tab.faviconIsTemplateGlobePlaceholder = true
             return false
         }
 
-        tab.favicon = SwiftUI.Image(nsImage: image)
+        tab.faviconPresentation = .bitmap(image)
         tab.faviconIsTemplateGlobePlaceholder = false
         resolvedCacheKey = referenceKey
         return true
@@ -80,7 +78,7 @@ final class TabFaviconRuntime {
         ),
            !Task.isCancelled,
            tab.url == requestedURL {
-            tab.favicon = SwiftUI.Image(nsImage: image)
+            tab.faviconPresentation = .bitmap(image)
             tab.faviconIsTemplateGlobePlaceholder = false
             resolvedCacheKey = TabFaviconStore.referenceKey(forDocumentURL: requestedURL)
             return
@@ -95,7 +93,7 @@ final class TabFaviconRuntime {
         ),
            !Task.isCancelled,
            tab.url == requestedURL {
-            tab.favicon = SwiftUI.Image(nsImage: image)
+            tab.faviconPresentation = .bitmap(image)
             tab.faviconIsTemplateGlobePlaceholder = false
             resolvedCacheKey = TabFaviconStore.referenceKey(forDocumentURL: requestedURL)
             return
@@ -123,7 +121,7 @@ final class TabFaviconRuntime {
                 guard let self, let tab, let image else { return }
                 let currentURL = tab.existingWebView?.url ?? tab.url
                 guard let referenceKey = TabFaviconStore.referenceKey(forDocumentURL: currentURL) else { return }
-                tab.favicon = SwiftUI.Image(nsImage: image)
+                tab.faviconPresentation = .bitmap(image)
                 tab.faviconIsTemplateGlobePlaceholder = false
                 self.resolvedCacheKey = referenceKey
             }

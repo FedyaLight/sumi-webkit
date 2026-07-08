@@ -1,5 +1,4 @@
 import AppKit
-import SwiftUI
 import WebKit
 
 @MainActor
@@ -208,7 +207,7 @@ final class BrowserHistoryNavigationOwner {
         in windowState: BrowserWindowState
     ) {
         tab.name = displayName(for: url)
-        tab.favicon = Image(systemName: "globe")
+        tab.faviconPresentation = .systemSymbol("globe")
         tab.faviconIsTemplateGlobePlaceholder = true
         dependencies.loadCurrentPageURL(tab, windowState, url)
         windowState.compositorInvalidation.invalidateNativeSurfaceRouting()

@@ -4,7 +4,6 @@
 //
 
 import Foundation
-import SwiftUI
 
 extension Tab {
     @discardableResult
@@ -32,16 +31,5 @@ extension Tab {
     @MainActor
     func refreshFaviconExtensionCache() {
         faviconRuntime.loadCachedFaviconFromExtension()
-    }
-
-    static func getCachedFavicon(forReferenceKey referenceKey: String) -> SwiftUI.Image? {
-        guard let image = TabFaviconStore.getCachedImage(forReferenceKey: referenceKey) else {
-            return nil
-        }
-        return SwiftUI.Image(nsImage: image)
-    }
-
-    static func getCachedFavicon(for key: String) -> SwiftUI.Image? {
-        getCachedFavicon(forReferenceKey: key)
     }
 }

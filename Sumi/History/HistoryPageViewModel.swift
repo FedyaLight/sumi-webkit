@@ -1,7 +1,6 @@
 import AppKit
 import Combine
 import Foundation
-import SwiftUI
 
 @MainActor
 struct HistoryPageBrowserContext {
@@ -372,7 +371,7 @@ final class HistoryPageViewModel: ObservableObject {
         guard tab.url != newURL else { return }
         tab.url = newURL
         tab.name = "History"
-        tab.favicon = .init(systemName: SumiSurface.historyTabFaviconSystemImageName)
+        tab.faviconPresentation = .systemSymbol(SumiSurface.historyTabFaviconSystemImageName)
         tab.faviconIsTemplateGlobePlaceholder = false
         browserContext.scheduleRuntimeStatePersistence(tab)
     }

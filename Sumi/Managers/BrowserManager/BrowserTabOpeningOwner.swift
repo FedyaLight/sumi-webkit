@@ -229,7 +229,7 @@ final class BrowserTabOpeningOwner {
             spaceId: targetSpace?.id,
             index: 0
         )
-        newTab.favicon = tab.favicon
+        newTab.faviconPresentation = tab.faviconPresentation
         newTab.faviconIsTemplateGlobePlaceholder = tab.faviconIsTemplateGlobePlaceholder
         newTab.profileId = tab.profileId
 

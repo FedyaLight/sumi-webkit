@@ -28,7 +28,10 @@ final class SumiWebPageMenuController: NSObject, NSMenuItemValidation {
         updateOwnedItemState(in: menu)
 
         if let tab = webView.owningTab,
-           let appearance = tab.webPageMenuAppearance(fallback: webView.window?.effectiveAppearance) {
+           let appearance = tab.browserActionService.webPageMenuAppearance(
+               tab,
+               webView.window?.effectiveAppearance
+           ) {
             menu.sumiApplyAppearance(appearance)
         }
     }
@@ -48,7 +51,7 @@ final class SumiWebPageMenuController: NSObject, NSMenuItemValidation {
         case .stop:
             return webView.isLoading
         case .bookmarkPage:
-            return webView.owningTab?.canBookmarkFromWebPageMenu() ?? false
+            return webView.owningTab.map { $0.browserActionService.canBookmark($0) } ?? false
         case .copyPageAddress:
             return pageURL != nil
         case .copySelection:
@@ -103,7 +106,7 @@ final class SumiWebPageMenuController: NSObject, NSMenuItemValidation {
 
     @objc func bookmarkPage(_: Any?) {
         webView?.owningTab?.activate()
-        webView?.owningTab?.requestBookmarkEditorFromWebPageMenu()
+        webView?.owningTab?.browserActionService.requestBookmarkEditorFromMenu()
     }
 
     @objc func copyPageAddress(_: Any?) {
@@ -257,7 +260,7 @@ final class SumiWebPageMenuController: NSObject, NSMenuItemValidation {
     }
 
     private var canStartSumiDownload: Bool {
-        webView?.owningTab?.canStartContextMenuDownload() ?? false
+        webView?.owningTab?.browserActionService.canStartContextMenuDownload() ?? false
     }
 
     private func consumeNativeContextReference(
@@ -298,11 +301,13 @@ final class SumiWebPageMenuController: NSObject, NSMenuItemValidation {
     }
 
     private func openInNewTab(_ url: URL) {
-        webView?.owningTab?.openContextMenuURLInForegroundTab(url)
+        if let tab = webView?.owningTab {
+            tab.browserActionService.openURLInForegroundTab(url, tab)
+        }
     }
 
     private func openInNewWindow(_ url: URL) {
-        webView?.owningTab?.openContextMenuURLsInNewWindow([url])
+        webView?.owningTab?.browserActionService.openURLsInNewWindow([url])
     }
 
     private func nonZeroPrintSize(for webView: WKWebView) -> CGSize {
@@ -320,7 +325,7 @@ final class SumiWebPageMenuController: NSObject, NSMenuItemValidation {
               let tab = webView.owningTab
         else { return }
 
-        tab.startContextMenuDownload(using: request, in: webView)
+        tab.browserActionService.startContextMenuDownload(webView, request)
     }
 }
 

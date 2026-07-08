@@ -1,7 +1,6 @@
 import AppKit
 import Combine
 import Foundation
-import SwiftUI
 
 @MainActor
 struct BookmarksPageBrowserContext {
@@ -346,7 +345,7 @@ final class SumiBookmarksPageViewModel: ObservableObject {
         else { return }
         tab.url = SumiSurface.bookmarksSurfaceURL(selecting: selectedFolderID)
         tab.name = "Bookmarks"
-        tab.favicon = Image(systemName: SumiSurface.bookmarksTabFaviconSystemImageName)
+        tab.faviconPresentation = .systemSymbol(SumiSurface.bookmarksTabFaviconSystemImageName)
         tab.faviconIsTemplateGlobePlaceholder = false
         browserContext.scheduleRuntimeStatePersistence(tab)
     }

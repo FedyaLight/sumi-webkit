@@ -321,7 +321,7 @@ final class ShortcutPinCommandOwner {
                     faviconImageService: dependencies.faviconImageService,
                     visitedLinkStore: dependencies.visitedLinkStore
                 )
-                duplicateTab.favicon = liveTab.favicon
+                duplicateTab.faviconPresentation = liveTab.faviconPresentation
                 duplicateTab.faviconIsTemplateGlobePlaceholder = liveTab.faviconIsTemplateGlobePlaceholder
                 duplicateTab.profileId = liveTab.profileId
                 dependencies.tabCollectionMembershipOwner.attach(duplicateTab)

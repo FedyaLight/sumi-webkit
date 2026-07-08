@@ -1,5 +1,4 @@
 import Foundation
-import SwiftUI
 
 @MainActor
 enum SumiNativeBrowserSurfaceKind {
@@ -23,13 +22,13 @@ enum SumiNativeBrowserSurfaceKind {
         switch self {
         case .settings:
             tab.name = "Settings"
-            tab.favicon = Image(systemName: SumiSurface.settingsTabFaviconSystemImageName)
+            tab.faviconPresentation = .systemSymbol(SumiSurface.settingsTabFaviconSystemImageName)
         case .history:
             tab.name = "History"
-            tab.favicon = Image(systemName: SumiSurface.historyTabFaviconSystemImageName)
+            tab.faviconPresentation = .systemSymbol(SumiSurface.historyTabFaviconSystemImageName)
         case .bookmarks:
             tab.name = "Bookmarks"
-            tab.favicon = Image(systemName: SumiSurface.bookmarksTabFaviconSystemImageName)
+            tab.faviconPresentation = .systemSymbol(SumiSurface.bookmarksTabFaviconSystemImageName)
         }
         tab.faviconIsTemplateGlobePlaceholder = false
     }
