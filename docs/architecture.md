@@ -4,7 +4,7 @@ Sumi Browser is a native macOS app built around system WebKit, SwiftUI, and
 AppKit where platform integration requires it. The repository name emphasizes
 the WebKit direction, but the public product name is Sumi Browser.
 
-The current target is macOS 15.7+.
+The current target is macOS 15.5+.
 
 ## Browser Shell
 

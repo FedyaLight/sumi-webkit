@@ -672,9 +672,10 @@ Sumi targets native Safari Web Extension support through public WebKit APIs
 `WKWebExtensionControllerDelegate`). Chrome MV3 shims, CRX install paths, and
 controlled Chrome compatibility popups are out of scope and must not return.
 
-Deployment target remains **macOS 15.7** until a specific API is confirmed to
-require macOS 27. Local SDK (Xcode macOS SDK) exposes `WKWebExtension` from
-**macOS 15.4+** including `extensionWithAppExtensionBundle:completionHandler:`.
+Deployment target is **macOS 15.5**. Local SDK (Xcode macOS SDK) exposes
+`WKWebExtension` from **macOS 15.4+** including
+`extensionWithAppExtensionBundle:completionHandler:`, while Sumi's current
+extension runtime ownership is compiled and tested against macOS 15.5+.
 
 ## Modernization Audit Guardrails (2026-06-30)
 
@@ -1310,7 +1311,7 @@ Probe machine: **macOS 27.0** (`MacOSX27.0.sdk` at
 | Chrome-style host manifest APIs | **Absent** (expected) |
 | `SafariExtensionHostRelayAPIProbe.wkWebExtensionAppMessagingAvailable` | `true` |
 
-Sumi deployment target remains **macOS 15.7**.
+Sumi deployment target is **macOS 15.5**.
 
 ## Profile isolation (Cycle 10)
 

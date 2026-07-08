@@ -131,8 +131,8 @@ body:
     attributes:
       label: macOS version
       options:
-        - macOS 15.7+
-        - macOS 15.x older than 15.7
+        - macOS 15.5+
+        - macOS 15.x older than 15.5
         - macOS 14 or older
         - Not sure
   - type: dropdown

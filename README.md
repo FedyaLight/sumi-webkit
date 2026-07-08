@@ -10,7 +10,7 @@
 </div>
 
 <p align="center">
-  <a href="https://www.apple.com/macos/"><img src="https://img.shields.io/badge/macOS-15.7+-blue" alt="macOS 15.7+"></a>
+  <a href="https://www.apple.com/macos/"><img src="https://img.shields.io/badge/macOS-15.5+-blue" alt="macOS 15.5+"></a>
   <a href="https://swift.org/"><img src="https://img.shields.io/badge/Swift-6.3.1-orange" alt="Swift 6.3.1"></a>
   <a href="https://www.gnu.org/licenses/gpl-3.0.html"><img src="https://img.shields.io/badge/License-GPL--3.0-green" alt="GPL-3.0"></a>
   <img src="https://img.shields.io/badge/Status-ALPHA-orange" alt="ALPHA">
@@ -91,7 +91,7 @@ See [docs/SumiSafariExtensionCompatibility.md](docs/SumiSafariExtensionCompatibi
 
 ## Architecture Principles
 
-Sumi WebKit is a native macOS application. The current target is macOS 15.7+.
+Sumi WebKit is a native macOS application. The current target is macOS 15.5+.
 
 The project prefers:
 

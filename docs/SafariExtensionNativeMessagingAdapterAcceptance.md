@@ -16,7 +16,7 @@ and DuckDuckGo [`apple-browsers`](https://github.com/duckduckgo/apple-browsers).
 
 ## Preconditions
 
-- macOS 15.7+ with target containing apps installed under `/Applications` when testing PMs.
+- macOS 15.5+ with target containing apps installed under `/Applications` when testing PMs.
 - No compat JS shims or manifest patching (verified by clean-import audits).
 - No `SafariExtensionRuntimeConnectCompatibility` wrapper or externally-connectable page bridge.
   `runtime.connect` / `runtime.onConnect` must be native WebKit behavior, verified by
