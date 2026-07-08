@@ -59,6 +59,19 @@ extension Tab {
         restoredCanGoForward = nil
     }
 
+    /// Reflects restored back/forward availability in presentation state
+    /// immediately, without consuming the restored values. Needed because web
+    /// view materialization can be deferred (e.g. startup protection), and the
+    /// UI should not show a restored tab as having no history until then.
+    func applyRestoredNavigationPresentation() {
+        if let back = restoredCanGoBack, back != canGoBack {
+            canGoBack = back
+        }
+        if let forward = restoredCanGoForward, forward != canGoForward {
+            canGoForward = forward
+        }
+    }
+
     func handleSameDocumentNavigation(to newURL: URL) {
         let urlChanged = self.url.absoluteString != newURL.absoluteString
         if !urlChanged { return }

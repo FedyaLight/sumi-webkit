@@ -105,6 +105,7 @@ final class BrowserRecentlyClosedRestoreOwner {
         restoredTab.name = tabState.title
         restoredTab.restoredCanGoBack = tabState.canGoBack
         restoredTab.restoredCanGoForward = tabState.canGoForward
+        restoredTab.applyRestoredNavigationPresentation()
 
         if let targetWindow {
             dependencies.selectTab(restoredTab, targetWindow)
@@ -153,6 +154,7 @@ final class BrowserRecentlyClosedRestoreOwner {
         tab.url = shortcutState.url
         tab.restoredCanGoBack = shortcutState.canGoBack
         tab.restoredCanGoForward = shortcutState.canGoForward
+        tab.applyRestoredNavigationPresentation()
         _ = tab.applyCachedFaviconOrPlaceholder(for: shortcutState.url)
 
         if tab.existingWebView != nil {
