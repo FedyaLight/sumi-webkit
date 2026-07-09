@@ -48,11 +48,29 @@
 #   `SumiUserAgent`, `WebContentProcessDisplayNameProvider`).
 # - AppKit/WebKit allowed; SwiftUI forbidden. App-target `RuntimeDiagnostics` /
 #   `PerformanceTrace` edges replaced with package-local OSLog helpers.
-# - Dropped from v1 (cannot close cleanly): `WebViewRuntimeContextStore` (needs
-#   Visible/Browser contexts that edge `Tab`/`BrowserWindowState`),
-#   `WebViewCompositorHandoffState` (edges `SumiWebViewContainerView`),
-#   `SumiElementZapperSession` (SwiftUI overlay + page-script companions).
+# - Dropped from v1 (cannot close cleanly): `WebViewCompositorHandoffState`
+#   (edges `SumiWebViewContainerView`), `SumiElementZapperSession` (SwiftUI
+#   overlay + page-script companions).
 # - `@_exported import SumiWebRuntime` compatibility shim in the app target.
+#
+# Progress (W4 — WebViewRuntimeContextStore into SumiWebRuntime):
+# - Moved `WebViewRuntimeContextStore` plus closed Visible/Browser runtime
+#   context types into `Packages/SumiWebRuntime/Sources/.../Context/`.
+# - Contexts expose only `WebRuntimeTabHandle` / `WebRuntimeWindowHandle`
+#   surfaces (no concrete `Tab` / `BrowserWindowState` / `TabManager` in the
+#   package). Cleanup APIs no longer thread `TabManager` through the store.
+# - Still outside the package at W4: `WebViewCompositorHandoffState`,
+#   `SumiElementZapperSession`, and Tab-parameterized coordinator owners.
+#
+# Progress (X2 — WebViewCompositorHandoffState into SumiWebRuntime):
+# - Moved `WebViewCompositorHandoffState` to
+#   `Packages/SumiWebRuntime/Sources/SumiWebRuntime/Handoff/`.
+# - Promoted-host maps/APIs retyped to `any WebRuntimePromotedHost` (X1
+#   protocol); app-target `SumiWebViewContainerView` stays put and conforms.
+# - `VisibleWebViewRuntimeOwner` / `WebViewCoordinator` handoff APIs follow
+#   the protocol surface; compositor casts back to the concrete host on take.
+# - Still outside the package: `SumiElementZapperSession`,
+#   `SumiWebViewContainerView`, and Tab-parameterized coordinator owners.
 #
 # Still blocked for Domain peel:
 # - BrowserWindowState (SwiftUI environment / chrome state)
@@ -60,9 +78,10 @@
 # - Tab itself (still a runtime-heavy class; accessors removal is separate)
 # - SumiPermissionFailClosedMapper (pulls CoordinatorDecision)
 # - Remaining DOMAIN_FILES allowlist entries (KeyboardShortcut model,
-#   HistoryTypes, navigation responders, other Tab/Window owners)
+#   FailClosedMapper, TabDependencyStateOwner; HistoryTypes / navigation
+#   responders stay excluded)
 #
 # Still blocked for WebRuntime peel:
 # - WebViewCoordinator.swift and Tab-parameterized owners
-# - Visible/Browser runtime contexts (Tab / BrowserWindowState closures)
 # - SumiWebViewContainerView / FocusableWKWebView / BrowserWebViewRoutingService
+# - SumiElementZapperSession
