@@ -8,10 +8,19 @@ cd "$repo_root"
 # Live lookup/assignment goes through WebViewCoordinator / BrowserWebViewRoutingService.
 # Untracked create goes through ensureUntrackedNormalWebView / coordinator ensureUntrackedOwnedWebView.
 #
-# Phase 9 sole-writer model:
-# - Windowed webView + primaryWindowId = coordinator-synced cache (registry is SoT)
-# - Untracked webView = Tab slot write-gated by coordinator install/release (+ Tab ensure)
-# - Parked existingWebView = Tab-local staging for ensure reuse
+# Phase 6B progress (session-first writers):
+# - TabWebViewSessionStore is authoritative for parked / untracked / primary-assignment notes
+#   when a browser runtime is attached (Tab mutators call note* FIRST, then mirror Tab fields).
+# - Teardown, rebuild, ownsLive, creation adopt, cleanup validation, and reload URL prefer session.
+# - Tab.assignedWebView / existingWebView / parkedWebView remain a dual-write compatibility mirror
+#   for Tab-internal readers and pre-runtime tabs; do not remove fields until those readers migrate.
+# - Goal: forbid Tab WebView accessors outside Tab + WebViewCoordinator (this script),
+#   then remove Tab fields once session is sole SoT for parked/untracked.
+#
+# Phase 9 sole-writer model (evolving under 6B):
+# - Windowed webView + primaryWindowId = dual-write cache (registry is SoT; session notes primary)
+# - Untracked webView = session note first, Tab mirror second
+# - Parked existingWebView = session note first, Tab mirror second
 scan_roots=(App Sumi Navigation FloatingBar Settings UI)
 allow_prefixes=(
   "Sumi/Models/Tab/"

@@ -79,7 +79,7 @@ private final class SumiCommandsBrowserManagerAdapter:
     }
 
     func openSettingsTab(selecting pane: SettingsTabs, in windowState: BrowserWindowState?) {
-        browserManager?.settingsSurfaceRoutingOwner.openSettingsTab(selecting: pane, in: windowState)
+        browserManager?.urlBarCommands.openSettingsTab(selecting: pane, in: windowState)
     }
 
     func setAsDefaultBrowser() {
@@ -90,7 +90,7 @@ private final class SumiCommandsBrowserManagerAdapter:
     }
 
     func clearCurrentPageCookies() {
-        browserManager?.pagePrivacyCommandOwner.clearCurrentPageCookies()
+        browserManager?.chromeCommands.clearCurrentPageCookies()
     }
 
     func showGradientEditor() {
@@ -110,11 +110,11 @@ private final class SumiCommandsBrowserManagerAdapter:
     }
 
     func closeActiveWindow() {
-        browserManager?.windowShellCommandOwner.closeActiveWindow()
+        browserManager?.windowSessionCommands.closeActiveWindow()
     }
 
     func closeWindow(_ windowState: BrowserWindowState) {
-        browserManager?.windowShellCommandOwner.closeWindow(windowState)
+        browserManager?.windowSessionCommands.closeWindow(windowState)
     }
 
     func undoCloseTab() {
@@ -126,11 +126,11 @@ private final class SumiCommandsBrowserManagerAdapter:
     }
 
     func createNewWindow() {
-        browserManager?.windowShellCommandOwner.createNewWindow()
+        browserManager?.windowSessionCommands.createNewWindow()
     }
 
     func createIncognitoWindow() {
-        browserManager?.windowShellCommandOwner.createIncognitoWindow()
+        browserManager?.windowSessionCommands.createIncognitoWindow()
     }
 
     func focusFloatingBarForActiveWindow(
@@ -154,7 +154,7 @@ private final class SumiCommandsBrowserManagerAdapter:
     }
 
     func showFindBar() {
-        browserManager?.findBarRoutingOwner.showFindBar()
+        browserManager?.showFindBar()
     }
 
     func refreshCurrentTabInActiveWindow() {
@@ -174,7 +174,7 @@ private final class SumiCommandsBrowserManagerAdapter:
     }
 
     func hardReloadCurrentPage() {
-        browserManager?.pagePrivacyCommandOwner.hardReloadCurrentPage()
+        browserManager?.chromeCommands.hardReloadCurrentPage()
     }
 
     func openWebInspector() {

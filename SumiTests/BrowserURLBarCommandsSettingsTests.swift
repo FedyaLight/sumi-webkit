@@ -3,13 +3,13 @@ import Foundation
 import XCTest
 
 @MainActor
-final class BrowserSettingsSurfaceRoutingOwnerTests: XCTestCase {
+final class BrowserURLBarCommandsSettingsTests: XCTestCase {
     func testOpenSettingsTabUsesExplicitWindowAndPaneURL() {
         let windowState = BrowserWindowState()
         let harness = Harness(activeWindow: BrowserWindowState())
-        let owner = harness.makeOwner()
+        let commands = harness.makeCommands()
 
-        owner.openSettingsTab(selecting: .about, in: windowState)
+        commands.openSettingsTab(selecting: .about, in: windowState)
 
         XCTAssertEqual(harness.openRequests.map(\.kind), [.settings])
         XCTAssertEqual(harness.openRequests.map(\.url), [Harness.aboutURL])
@@ -19,9 +19,9 @@ final class BrowserSettingsSurfaceRoutingOwnerTests: XCTestCase {
     func testOpenSettingsTabFallsBackToActiveWindow() {
         let activeWindow = BrowserWindowState()
         let harness = Harness(activeWindow: activeWindow)
-        let owner = harness.makeOwner()
+        let commands = harness.makeCommands()
 
-        owner.openSettingsTab(selecting: .privacy)
+        commands.openSettingsTab(selecting: .privacy)
 
         XCTAssertEqual(harness.openRequests.map(\.kind), [.settings])
         XCTAssertEqual(harness.openRequests.map(\.url), [Harness.privacyURL])
@@ -30,9 +30,9 @@ final class BrowserSettingsSurfaceRoutingOwnerTests: XCTestCase {
 
     func testOpenSettingsTabDoesNothingWithoutWindow() {
         let harness = Harness(activeWindow: nil)
-        let owner = harness.makeOwner()
+        let commands = harness.makeCommands()
 
-        owner.openSettingsTab(selecting: .about)
+        commands.openSettingsTab(selecting: .about)
 
         XCTAssertTrue(harness.openRequests.isEmpty)
     }
@@ -42,9 +42,9 @@ final class BrowserSettingsSurfaceRoutingOwnerTests: XCTestCase {
         let currentTab = Self.makeTab(url: "https://current.example")
         let focusedTab = Self.makeTab(url: "https://focused.example")
         let harness = Harness(activeWindow: windowState, currentTab: currentTab)
-        let owner = harness.makeOwner()
+        let commands = harness.makeCommands()
 
-        owner.openSiteSettingsTab(focusing: focusedTab, in: windowState)
+        commands.openSiteSettingsTab(focusing: focusedTab, in: windowState)
 
         XCTAssertEqual(harness.privacyURLTabIds, [focusedTab.id])
         XCTAssertEqual(harness.openRequests.map(\.url), [Harness.siteSettingsURL])
@@ -55,9 +55,9 @@ final class BrowserSettingsSurfaceRoutingOwnerTests: XCTestCase {
         let activeWindow = BrowserWindowState()
         let currentTab = Self.makeTab(url: "https://current.example")
         let harness = Harness(activeWindow: activeWindow, currentTab: currentTab)
-        let owner = harness.makeOwner()
+        let commands = harness.makeCommands()
 
-        owner.openSiteSettingsTab()
+        commands.openSiteSettingsTab()
 
         XCTAssertEqual(harness.privacyURLTabIds, [currentTab.id])
         XCTAssertEqual(harness.openRequests.map(\.url), [Harness.siteSettingsURL])
@@ -88,9 +88,10 @@ final class BrowserSettingsSurfaceRoutingOwnerTests: XCTestCase {
             self.currentTab = currentTab
         }
 
-        func makeOwner() -> BrowserSettingsSurfaceRoutingOwner {
-            BrowserSettingsSurfaceRoutingOwner(
-                dependencies: BrowserSettingsSurfaceRoutingOwner.Dependencies(
+        func makeCommands() -> BrowserURLBarCommands {
+            BrowserURLBarCommands(
+                notifications: { nil },
+                settingsSurface: BrowserURLBarCommands.SettingsSurfaceHooks(
                     activeWindow: { self.activeWindow },
                     currentTab: { _ in self.currentTab },
                     settingsSurfaceURL: { pane in

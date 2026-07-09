@@ -189,11 +189,20 @@ public class Tab: NSObject, Identifiable, ObservableObject {
 
     var _webView: WKWebView? {
         get { webViewOwnershipOwner.webView }
-        set { webViewOwnershipOwner.setCurrentWebView(newValue) }
+        set {
+            // Keep session aligned when tests/compat paths mutate the Tab mirror directly.
+            if primaryWindowId == nil {
+                navigationRuntime.webViewRouting.noteUntrackedWebView(newValue, id)
+            }
+            webViewOwnershipOwner.setCurrentWebView(newValue)
+        }
     }
     var _existingWebView: WKWebView? {
         get { webViewOwnershipOwner.existingWebView }
-        set { webViewOwnershipOwner.setExistingWebView(newValue) }
+        set {
+            navigationRuntime.webViewRouting.noteParkedWebView(newValue, id)
+            webViewOwnershipOwner.setExistingWebView(newValue)
+        }
     }
     var webViewConfigurationOverride: WKWebViewConfiguration? {
         get { webViewConfigurationOwner.webViewConfigurationOverride }
@@ -407,9 +416,9 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         index: Int = 0,
         existingWebView: WKWebView? = nil,
         loadsCachedFaviconOnInit: Bool = true,
-        faviconService: any BrowserFaviconServicing = BrowserManagerDataServices.productionFaviconService,
-        faviconImageService: any BrowserFaviconImageServicing = BrowserManagerDataServices.productionFaviconImageService,
-        visitedLinkStore: any BrowserVisitedLinkStoreManaging = BrowserManagerDataServices.productionVisitedLinkStore
+        faviconService: any BrowserFaviconServicing = TabDependencyIsolationDefaults.faviconService,
+        faviconImageService: any BrowserFaviconImageServicing = TabDependencyIsolationDefaults.faviconImageService,
+        visitedLinkStore: any BrowserVisitedLinkStoreManaging = TabDependencyIsolationDefaults.visitedLinkStore
     ) {
         self.id = id
         self.url = url
@@ -434,36 +443,50 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     }
 
     func parkExistingWebView(_ webView: WKWebView?) {
+        // Session first (authoritative when runtime is attached), then Tab mirror.
+        navigationRuntime.webViewRouting.noteParkedWebView(webView, id)
         webViewOwnershipOwner.parkExistingWebView(webView)
     }
 
     func clearParkedExistingWebView() {
+        navigationRuntime.webViewRouting.noteParkedWebView(nil, id)
         webViewOwnershipOwner.clearParkedExistingWebView()
     }
 
     func adoptParkedWebViewAsCurrent(_ webView: WKWebView) {
+        navigationRuntime.webViewRouting.noteUntrackedWebView(webView, id)
         webViewOwnershipOwner.adoptParkedWebViewAsCurrent(webView)
     }
 
     func replaceUntrackedWebView(_ webView: WKWebView) {
+        navigationRuntime.webViewRouting.noteUntrackedWebView(webView, id)
         webViewOwnershipOwner.replaceUntrackedWebView(webView)
     }
 
     func assignPrimaryWebView(_ webView: WKWebView, windowId: UUID) {
+        navigationRuntime.webViewRouting.notePrimaryAssignment(windowId, id)
         webViewOwnershipOwner.assignPrimaryWebView(webView, windowId: windowId)
     }
 
     func clearCurrentWebViewOwnership() {
+        navigationRuntime.webViewRouting.clearPrimaryAssignment(id)
+        navigationRuntime.webViewRouting.noteUntrackedWebView(nil, id)
         webViewOwnershipOwner.clearCurrentWebViewOwnership()
     }
 
     func clearAllWebViewOwnership() {
+        navigationRuntime.webViewRouting.clearWebViewSession(id)
         webViewOwnershipOwner.clearAllWebViewOwnership()
     }
 
     @discardableResult
     func clearCurrentWebViewOwnershipIfIdentical(to webView: WKWebView) -> Bool {
-        webViewOwnershipOwner.clearCurrentWebViewOwnershipIfIdentical(to: webView)
+        guard webViewOwnershipOwner.clearCurrentWebViewOwnershipIfIdentical(to: webView) else {
+            return false
+        }
+        navigationRuntime.webViewRouting.clearPrimaryAssignment(id)
+        navigationRuntime.webViewRouting.noteUntrackedWebView(nil, id)
+        return true
     }
 
     func bindToShortcutPin(_ pin: ShortcutPin) {

@@ -8,6 +8,7 @@ import WebKit
 final class WebViewTabTeardownOwner {
     struct Dependencies {
         let webViewRegistry: WindowWebViewRegistry
+        let tabWebViewSessionStore: TabWebViewSessionStore
         let mediaProtectionOwner: WebViewMediaProtectionOwner
         let isWebViewProtectedFromCompositorMutation: @MainActor (WKWebView) -> Bool
         let enqueueDeferredProtectedCommand:
@@ -27,28 +28,8 @@ final class WebViewTabTeardownOwner {
     }
 
     func allKnownWebViews(for tab: Tab) -> [WKWebView] {
-        var seen = Set<ObjectIdentifier>()
-        var result: [WKWebView] = []
-        func appendUnique(_ webView: WKWebView?) {
-            guard let webView else { return }
-            let id = ObjectIdentifier(webView)
-            if seen.insert(id).inserted {
-                result.append(webView)
-            }
-        }
-        let windowWebViews = dependencies.webViewRegistry.windowWebViews(for: tab.id)
-        if windowWebViews.isEmpty == false {
-            result.reserveCapacity(windowWebViews.count + 2)
-            for webView in windowWebViews.values {
-                appendUnique(webView)
-            }
-        } else {
-            result.reserveCapacity(2)
-        }
-        appendUnique(tab.assignedWebView)
-        appendUnique(tab.existingWebView)
-        appendUnique(tab.parkedWebView)
-        return result
+        // Phase 6B: session/registry only (imports Tab mirror once if session is empty).
+        dependencies.tabWebViewSessionStore.allKnownWebViews(for: tab)
     }
 
     @discardableResult
@@ -58,8 +39,7 @@ final class WebViewTabTeardownOwner {
     ) -> Bool {
         let currentEntries = dependencies.webViewRegistry.windowWebViews(for: tab.id)
         let protectedCandidateWebViews = uniqueWebViews(
-            Array(currentEntries.values)
-                + [tab.assignedWebView, tab.existingWebView].compactMap { $0 }
+            dependencies.tabWebViewSessionStore.protectedCandidateWebViews(for: tab)
         )
         if protectedCandidateWebViews
             .contains(where: dependencies.isWebViewProtectedFromCompositorMutation) {
@@ -152,6 +132,7 @@ final class WebViewTabTeardownOwner {
 
         tab.cancelPendingMainFrameNavigation()
         tab.clearAllWebViewOwnership()
+        dependencies.tabWebViewSessionStore.clearAll(for: tab.id)
 
         RuntimeDiagnostics.debug(category: "WebViewCoordinator") {
             "Suspension released \(cleanedIdentifiers.count) WebView(s) for tab=\(tab.id.uuidString.prefix(8)) reason=\(reason)."
@@ -178,6 +159,7 @@ extension WebViewTabTeardownOwner.Dependencies {
     static func live(coordinator: WebViewCoordinator) -> Self {
         Self(
             webViewRegistry: coordinator.webViewRegistry,
+            tabWebViewSessionStore: coordinator.tabWebViewSessionStore,
             mediaProtectionOwner: coordinator.mediaProtectionOwner,
             isWebViewProtectedFromCompositorMutation: { [weak coordinator] webView in
                 coordinator?.isWebViewProtectedFromCompositorMutation(webView) ?? false

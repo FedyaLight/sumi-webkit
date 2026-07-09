@@ -101,7 +101,7 @@ struct SidebarWindowControlsView: View {
     @ViewBuilder
     private var trafficLightCluster: some View {
         BrowserWindowTrafficLights(
-            actionProvider: .browserWindow(windowState.window),
+            actionProvider: .browserWindow(windowState.shellWindow(in: nil)),
             isVisible: shouldRenderTrafficLightsInSidebarHeader
         )
     }
@@ -122,12 +122,12 @@ struct SidebarWindowControlsView: View {
     }
 
     private var browserWindowIdentity: ObjectIdentifier? {
-        windowState.window.map { ObjectIdentifier($0) }
+        windowState.shellWindow(in: nil).map { ObjectIdentifier($0) }
     }
 
     private func handleFullScreenNotification(_ notification: Notification) {
         guard let notificationWindow = notification.object as? NSWindow,
-              notificationWindow === windowState.window
+              notificationWindow === windowState.shellWindow(in: nil)
         else { return }
 
         switch notification.name {
@@ -146,11 +146,13 @@ struct SidebarWindowControlsView: View {
     }
 
     private func syncFullScreenWindowControls() {
-        isBrowserWindowFullScreen = windowState.window?.styleMask.contains(.fullScreen) == true
+        isBrowserWindowFullScreen =
+            windowState.shellWindow(in: nil)?.styleMask.contains(.fullScreen) == true
         syncNativeWindowButtonsForCurrentFullScreenState()
     }
 
     private func syncNativeWindowButtonsForCurrentFullScreenState() {
-        windowState.window?.setNativeStandardWindowButtonsForBrowserFullScreenChromeVisible(isBrowserWindowFullScreen)
+        windowState.shellWindow(in: nil)?
+            .setNativeStandardWindowButtonsForBrowserFullScreenChromeVisible(isBrowserWindowFullScreen)
     }
 }

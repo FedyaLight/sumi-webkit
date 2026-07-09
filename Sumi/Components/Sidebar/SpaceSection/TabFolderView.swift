@@ -819,7 +819,7 @@ struct TabFolderView: View {
         else { return }
 
         let source = windowState.sidebarTransientSessionCoordinator.preparedPresentationSource(
-            window: anchorView.window ?? windowState.window,
+            window: anchorView.window ?? windowState.shellWindow(in: nil),
             ownerView: anchorView
         )
         browserContext.presentationActions.showFolderSearchPopover(
@@ -875,7 +875,7 @@ struct TabFolderView: View {
             SidebarSavedItemDeletionConfirmationPresenter.confirmDeleteFolder(
                 folderName: childFolder.name,
                 childCount: childCount,
-                window: windowState.window,
+                window: windowState.shellWindow(in: nil),
                 themeContext: themeContext,
                 onDelete: {
                     mutateFolderContent {

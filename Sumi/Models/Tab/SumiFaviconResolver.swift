@@ -13,7 +13,7 @@ enum SumiFaviconResolver {
     static func menuImage(
         for url: URL?,
         partition: SumiFaviconPartition = .regular(nil),
-        faviconImageService: any BrowserFaviconImageServicing = BrowserManagerDataServices.productionFaviconImageService
+        faviconImageService: any BrowserFaviconImageServicing = TabDependencyIsolationDefaults.faviconImageService
     ) -> NSImage {
         guard let url else {
             return menuSystemImage("globe")
@@ -52,7 +52,7 @@ enum SumiFaviconResolver {
         for url: URL,
         partition: SumiFaviconPartition = .regular(nil),
         webView: WKWebView? = nil,
-        faviconImageService: any BrowserFaviconImageServicing = BrowserManagerDataServices.productionFaviconImageService
+        faviconImageService: any BrowserFaviconImageServicing = TabDependencyIsolationDefaults.faviconImageService
     ) async -> NSImage? {
         if let image = await TabFaviconStore.loadCachedDisplayImage(
             forDocumentURL: url,

@@ -1,19 +1,30 @@
 import Foundation
 import SwiftData
 
+/// Sync-readable autoplay policy façade over the canonical `SumiPermissionStore`.
+///
+/// Persistent reads use an in-memory cache seeded at composition / after writes.
+/// The adapter never opens its own `ModelContext` — that would bypass the store actor
+/// and duplicate the SwiftData predicate.
 @MainActor
 final class SumiAutoplayPolicyStoreAdapter {
-    private let modelContainer: ModelContainer
     private let persistentStore: any SumiPermissionStore
-    private var ephemeralPoliciesByIdentity: [String: SumiAutoplayPolicy] = [:]
+    /// Persistent + ephemeral policies keyed by `SumiPermissionKey.persistentIdentity`.
+    private var policiesByIdentity: [String: SumiAutoplayPolicy] = [:]
 
-    init(
-        modelContainer: ModelContainer,
-        persistentStore: (any SumiPermissionStore)? = nil
-    ) {
-        self.modelContainer = modelContainer
+    /// Canonical store shared with `SumiPermissionCoordinator` (same instance).
+    var permissionStore: any SumiPermissionStore { persistentStore }
+
+    init(persistentStore: any SumiPermissionStore) {
         self.persistentStore = persistentStore
-            ?? SwiftDataPermissionStore(container: modelContainer)
+    }
+
+    /// Seeds the sync cache from canonical store records (composition-root / test harness).
+    func seedCache(with records: [SumiPermissionStoreRecord]) {
+        for record in records where record.key.permissionType == .autoplay {
+            policiesByIdentity[record.key.persistentIdentity] =
+                SumiAutoplayDecisionMapper.policy(from: record.decision)
+        }
     }
 
     func effectivePolicy(for url: URL?, profile: Profile?) -> SumiAutoplayPolicy {
@@ -27,11 +38,7 @@ final class SumiAutoplayPolicyStoreAdapter {
 
     func explicitPolicy(for key: SumiPermissionKey) -> SumiAutoplayPolicy? {
         guard key.permissionType == .autoplay else { return nil }
-        if key.isEphemeralProfile {
-            return ephemeralPoliciesByIdentity[key.persistentIdentity]
-        }
-        guard let record = persistentRecord(for: key) else { return nil }
-        return SumiAutoplayDecisionMapper.policy(from: record.decision)
+        return policiesByIdentity[key.persistentIdentity]
     }
 
     func setPolicy(
@@ -61,7 +68,7 @@ final class SumiAutoplayPolicyStoreAdapter {
         }
 
         if key.isEphemeralProfile {
-            ephemeralPoliciesByIdentity[key.persistentIdentity] = policy
+            policiesByIdentity[key.persistentIdentity] = policy
             return
         }
 
@@ -72,6 +79,7 @@ final class SumiAutoplayPolicyStoreAdapter {
         ) else { return }
 
         try await persistentStore.setDecision(for: key, decision: decision)
+        policiesByIdentity[key.persistentIdentity] = policy
     }
 
     func resetPolicy(for url: URL?, profile: Profile?) async throws {
@@ -83,8 +91,8 @@ final class SumiAutoplayPolicyStoreAdapter {
         guard key.permissionType == .autoplay else {
             throw SumiPermissionSiteDecisionError.unsupportedPermission(key.permissionType.identity)
         }
+        policiesByIdentity.removeValue(forKey: key.persistentIdentity)
         if key.isEphemeralProfile {
-            ephemeralPoliciesByIdentity.removeValue(forKey: key.persistentIdentity)
             return
         }
 
@@ -97,7 +105,7 @@ final class SumiAutoplayPolicyStoreAdapter {
     ) async throws -> [SumiPermissionStoreRecord] {
         let normalizedProfileId = SumiPermissionKey.normalizedProfilePartitionId(profilePartitionId)
         if isEphemeralProfile {
-            return ephemeralPoliciesByIdentity.compactMap { identity, policy in
+            return policiesByIdentity.compactMap { identity, policy in
                 guard identity.hasPrefix("\(normalizedProfileId)|"),
                       let record = ephemeralRecord(identity: identity, policy: policy)
                 else { return nil }
@@ -124,26 +132,6 @@ final class SumiAutoplayPolicyStoreAdapter {
         )
     }
 
-    private func persistentRecord(for key: SumiPermissionKey) -> SumiPermissionStoreRecord? {
-        let context = ModelContext(modelContainer)
-        context.autosaveEnabled = false
-
-        let identity = key.persistentIdentity
-        let predicate = #Predicate<PermissionDecisionEntity> { entity in
-            entity.persistentIdentity == identity
-        }
-        var descriptor = FetchDescriptor<PermissionDecisionEntity>(predicate: predicate)
-        descriptor.fetchLimit = 1
-        do {
-            return try context.fetch(descriptor).first?.record()
-        } catch {
-            RuntimeDiagnostics.emit(
-                "[Permissions] Failed to fetch autoplay policy for \(key.displayDomain): \(error.localizedDescription)"
-            )
-            return nil
-        }
-    }
-
     private func ephemeralRecord(
         identity: String,
         policy: SumiAutoplayPolicy
@@ -165,5 +153,34 @@ final class SumiAutoplayPolicyStoreAdapter {
             isEphemeralProfile: true
         )
         return SumiPermissionStoreRecord(key: key, decision: decision)
+    }
+}
+
+/// Composition-root helper: one-shot ModelContext read to seed the autoplay sync cache.
+/// Lives outside the adapter so the adapter never opens SwiftData directly.
+@MainActor
+enum SumiAutoplayPolicyCacheBootstrap {
+    static func loadAutoplayRecords(from container: ModelContainer) -> [SumiPermissionStoreRecord] {
+        let context = ModelContext(container)
+        context.autosaveEnabled = false
+        let autoplayIdentity = SumiPermissionType.autoplay.identity
+        let predicate = #Predicate<PermissionDecisionEntity> { entity in
+            entity.permissionTypeIdentity == autoplayIdentity
+        }
+        let descriptor = FetchDescriptor<PermissionDecisionEntity>(predicate: predicate)
+        do {
+            return try context.fetch(descriptor).compactMap { entity in
+                do {
+                    return try entity.record()
+                } catch {
+                    return nil
+                }
+            }
+        } catch {
+            RuntimeDiagnostics.emit(
+                "[Permissions] Failed to bootstrap autoplay cache: \(error.localizedDescription)"
+            )
+            return []
+        }
     }
 }

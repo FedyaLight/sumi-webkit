@@ -556,7 +556,12 @@ private final class RecordingTabWebViewRouting {
             },
             setMuteState: { [weak self] muted, tabId in
                 self?.muteCalls.append(.init(muted: muted, tabId: tabId))
-            }
+            },
+            noteParkedWebView: { _, _ in /* No-op. */ },
+            noteUntrackedWebView: { _, _ in /* No-op. */ },
+            notePrimaryAssignment: { _, _ in /* No-op. */ },
+            clearPrimaryAssignment: { _ in /* No-op. */ },
+            clearWebViewSession: { _ in /* No-op. */ }
         )
     }
 }

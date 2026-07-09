@@ -105,6 +105,13 @@ final class BrowserActivePageRoutingOwner {
         }
     }
 
+    func activeFindSession() -> (tab: Tab?, windowId: UUID?) {
+        guard let windowState = dependencies.activeWindow() else {
+            return (nil, nil)
+        }
+        return (activePageTab(for: windowState), windowState.id)
+    }
+
     func openWebInspector() {
         guard RuntimeDiagnostics.isDeveloperInspectionEnabled else {
             RuntimeDiagnostics.emit("Developer inspection is disabled for this runtime.")
@@ -307,7 +314,7 @@ extension BrowserActivePageRoutingOwner.Dependencies {
                 )
             },
             copyURLToPasteboard: { [weak browserManager] url, windowState in
-                browserManager?.urlCopyOwner.copyURLToPasteboard(url, in: windowState) ?? false
+                browserManager?.urlBarCommands.copyURLToPasteboard(url, in: windowState) ?? false
             }
         )
     }

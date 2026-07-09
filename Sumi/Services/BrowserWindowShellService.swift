@@ -27,8 +27,7 @@ final class BrowserWindowShellService {
                 windowState
             )
         )
-        windowState.window = newWindow
-
+        context.windowRegistry.bindAppKitWindow(newWindow, to: windowState)
         context.windowRegistry.register(windowState)
         context.windowRegistry.setActive(windowState)
         newWindow.makeKeyAndOrderFront(nil)
@@ -61,8 +60,7 @@ final class BrowserWindowShellService {
                 windowState
             )
         )
-        windowState.window = newWindow
-
+        context.windowRegistry.bindAppKitWindow(newWindow, to: windowState)
         context.windowRegistry.register(windowState)
         context.windowRegistry.setActive(windowState)
         context.showEmptyState(windowState, true)
@@ -131,15 +129,18 @@ final class BrowserWindowShellService {
 
     func closeActiveWindow(in windowRegistry: WindowRegistry) {
         guard let activeWindow = windowRegistry.activeWindow else { return }
-        closeWindow(activeWindow)
+        closeWindow(activeWindow, in: windowRegistry)
     }
 
-    func closeWindow(_ windowState: BrowserWindowState) {
-        windowState.window?.performCloseFromBrowserChrome(nil)
+    func closeWindow(_ windowState: BrowserWindowState, in windowRegistry: WindowRegistry? = nil) {
+        let appKitWindow = windowRegistry?.appKitWindow(for: windowState)
+            ?? windowState.window
+        appKitWindow?.performCloseFromBrowserChrome(nil)
     }
 
     func toggleFullScreenForActiveWindow(in windowRegistry: WindowRegistry) {
-        windowRegistry.activeWindow?.window?.toggleFullScreen(nil)
+        guard let activeWindow = windowRegistry.activeWindow else { return }
+        windowRegistry.appKitWindow(for: activeWindow)?.toggleFullScreen(nil)
     }
 
     private func makeWindow(title: String, contentView: NSView) -> NSWindow {

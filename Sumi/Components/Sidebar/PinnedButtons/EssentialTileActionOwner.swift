@@ -112,7 +112,7 @@ struct EssentialTileActionOwner {
             kind: .essential,
             title: pin.preferredDisplayTitle,
             url: pin.launchURL,
-            window: windowState.window,
+            window: windowState.shellWindow(in: nil),
             themeContext: themeContext,
             onDelete: { removeFromEssentials(pin) }
         )

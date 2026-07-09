@@ -142,10 +142,7 @@ final class SumiAutoplayBrowserConfigTests: XCTestCase {
             configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
         )
         let store = SwiftDataPermissionStore(container: container)
-        let adapter = SumiAutoplayPolicyStoreAdapter(
-            modelContainer: container,
-            persistentStore: store
-        )
+        let adapter = SumiAutoplayPolicyStoreAdapter(persistentStore: store)
         return (container, adapter, BrowserConfiguration(autoplayPolicyStore: adapter))
     }
 

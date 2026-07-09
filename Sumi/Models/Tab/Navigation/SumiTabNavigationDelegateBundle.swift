@@ -56,7 +56,10 @@ final class SumiTabNavigationDelegateAdapter {
         self.scriptAttachmentAdapter = SumiNavigationResponderAdapter(target: scriptAttachment)
         self.gpc = SumiGPCNavigationResponder(tab: tab)
         self.gpcAdapter = SumiNavigationResponderAdapter(target: gpc)
-        self.autoplayPolicy = SumiAutoplayPolicyNavigationResponder(tab: tab)
+        self.autoplayPolicy = SumiAutoplayPolicyNavigationResponder(
+            tab: tab,
+            autoplayPolicyStore: SumiStartupPersistenceComposition.autoplayPolicyStore
+        )
         self.autoplayPolicyAdapter = SumiNavigationResponderAdapter(target: autoplayPolicy)
         self.lifecycle = SumiTabLifecycleNavigationResponder(tab: tab)
         self.lifecycleAdapter = SumiNavigationResponderAdapter(target: lifecycle)

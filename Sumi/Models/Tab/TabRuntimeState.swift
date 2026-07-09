@@ -103,11 +103,22 @@ struct TabWebViewRoutingRuntime {
     var syncTabAcrossWindows: (UUID, WKWebView?) -> Void
     var reloadTabAcrossWindows: (UUID) -> Void
     var setMuteState: (Bool, UUID) -> Void
+    /// Phase 6B: session-first ownership notes (no-op until browser runtime attaches).
+    var noteParkedWebView: (WKWebView?, UUID) -> Void
+    var noteUntrackedWebView: (WKWebView?, UUID) -> Void
+    var notePrimaryAssignment: (UUID, UUID) -> Void
+    var clearPrimaryAssignment: (UUID) -> Void
+    var clearWebViewSession: (UUID) -> Void
 
     static let inactive = Self(
         syncTabAcrossWindows: { _, _ in /* No-op. */ },
         reloadTabAcrossWindows: { _ in /* No-op. */ },
-        setMuteState: { _, _ in /* No-op. */ }
+        setMuteState: { _, _ in /* No-op. */ },
+        noteParkedWebView: { _, _ in /* No-op. */ },
+        noteUntrackedWebView: { _, _ in /* No-op. */ },
+        notePrimaryAssignment: { _, _ in /* No-op. */ },
+        clearPrimaryAssignment: { _ in /* No-op. */ },
+        clearWebViewSession: { _ in /* No-op. */ }
     )
 }
 

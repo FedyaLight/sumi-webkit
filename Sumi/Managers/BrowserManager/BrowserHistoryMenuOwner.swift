@@ -71,7 +71,7 @@ extension BrowserHistoryMenuOwner.Dependencies {
                 browserManager?.windowRegistry.map { Set($0.windows.keys) } ?? []
             },
             createNewWindow: { [weak browserManager] in
-                browserManager?.windowShellCommandOwner.createNewWindow()
+                browserManager?.windowSessionCommands.createNewWindow()
             },
             awaitNextRegisteredWindow: { [weak browserManager] existingWindowIds in
                 await browserManager?.windowRegistry?.awaitNextRegisteredWindow(
@@ -86,8 +86,9 @@ extension BrowserHistoryMenuOwner.Dependencies {
                     runtime: WindowSessionRuntimeFactory.make(for: browserManager)
                 )
             },
-            bringWindowToFront: { windowState in
-                windowState.window?.makeKeyAndOrderFront(nil as Any?)
+            bringWindowToFront: { [weak browserManager] windowState in
+                windowState.shellWindow(in: browserManager?.windowRegistry)?
+                    .makeKeyAndOrderFront(nil as Any?)
             },
             activateApplication: {
                 NSApp.activate(ignoringOtherApps: true)

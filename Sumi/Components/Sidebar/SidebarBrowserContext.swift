@@ -81,7 +81,7 @@ struct SidebarBrowserContext {
             liveFolderManager: browserManager.liveFolderManager,
             splitManager: browserManager.splitManager,
             downloadManager: browserManager.downloadManager,
-            downloadsPopoverPresenter: browserManager.chromePopoverRoutingOwner.downloadsPopoverPresenter,
+            downloadsPopoverPresenter: browserManager.chromeCommands.downloadsPopoverPresenter,
             glanceManager: browserManager.glanceManager,
             extensionSurfaceStore: browserManager.extensionsModule.surfaceStore,
             regularTabs: SidebarRegularTabsController.live(
@@ -136,7 +136,7 @@ struct SidebarBrowserContext {
                     SpaceDeletionConfirmationPresenter.confirmDelete(
                         space: space,
                         browserManager: browserManager,
-                        window: windowState.window
+                        window: windowState.shellWindow(in: nil)
                     )
                 },
                 presentSharingServicePicker: { [weak browserManager] items, source in

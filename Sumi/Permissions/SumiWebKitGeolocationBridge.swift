@@ -31,16 +31,10 @@ enum SumiWebKitGeolocationDecisionMapper {
         for context: SumiPermissionSecurityContext,
         reason: String
     ) -> SumiPermissionCoordinatorDecision {
-        SumiPermissionCoordinatorDecision(
-            outcome: .promptRequired,
-            state: .ask,
-            persistence: nil,
-            source: .runtime,
+        SumiPermissionFailClosedMapper.temporaryPendingDecision(
+            for: context,
             reason: reason,
-            permissionTypes: [.geolocation],
-            keys: [context.request.key(for: .geolocation)],
-            shouldOfferSystemSettings: false,
-            disablesPersistentAllow: context.isEphemeralProfile
+            permissionTypes: [.geolocation]
         )
     }
 
@@ -48,16 +42,10 @@ enum SumiWebKitGeolocationDecisionMapper {
         for context: SumiPermissionSecurityContext?,
         reason: String
     ) -> SumiPermissionCoordinatorDecision {
-        SumiPermissionCoordinatorDecision(
-            outcome: .cancelled,
-            state: nil,
-            persistence: nil,
-            source: .runtime,
+        SumiPermissionFailClosedMapper.failClosedDecision(
+            for: context,
             reason: reason,
-            permissionTypes: [.geolocation],
-            keys: context.map { [$0.request.key(for: .geolocation)] } ?? [],
-            shouldOfferSystemSettings: false,
-            disablesPersistentAllow: context?.isEphemeralProfile ?? false
+            permissionTypes: [.geolocation]
         )
     }
 }
@@ -172,41 +160,25 @@ final class SumiWebKitGeolocationBridge {
         for request: SumiWebKitGeolocationRequest,
         tabContext: SumiWebKitGeolocationTabContext
     ) -> SumiPermissionSecurityContext {
-        let topOrigin = SumiPermissionOrigin(
-            url: tabContext.committedURL ?? tabContext.mainFrameURL ?? tabContext.visibleURL
-        )
-        let permissionRequest = SumiPermissionRequest(
-            id: request.id,
+        SumiPermissionSecurityContextBuilder.make(
+            requestId: request.id,
             tabId: tabContext.tabId,
             pageId: tabContext.pageId,
-            frameId: nil,
             requestingOrigin: request.requestingOrigin,
-            topOrigin: topOrigin,
             displayDomain: request.requestingOrigin.displayDomain,
             permissionTypes: [.geolocation],
-            hasUserGesture: false,
-            requestedAt: now(),
-            isEphemeralProfile: tabContext.isEphemeralProfile,
-            profilePartitionId: tabContext.profilePartitionId
-        )
-
-        return SumiPermissionSecurityContext(
-            request: permissionRequest,
-            requestingOrigin: request.requestingOrigin,
-            topOrigin: topOrigin,
+            hasUserGesture: nil,
+            isMainFrame: request.isMainFrame,
             committedURL: tabContext.committedURL,
             visibleURL: tabContext.visibleURL,
             mainFrameURL: tabContext.mainFrameURL,
-            isMainFrame: request.isMainFrame,
             isActiveTab: tabContext.isActiveTab,
             isVisibleTab: tabContext.isVisibleTab,
-            hasUserGesture: nil,
             isEphemeralProfile: tabContext.isEphemeralProfile,
             profilePartitionId: tabContext.profilePartitionId,
-            transientPageId: tabContext.pageId,
             surface: tabContext.surface,
             navigationOrPageGeneration: tabContext.navigationOrPageGeneration,
-            now: permissionRequest.requestedAt
+            now: now()
         )
     }
 

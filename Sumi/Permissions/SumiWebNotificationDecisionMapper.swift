@@ -69,16 +69,10 @@ enum SumiWebNotificationDecisionMapper {
         for context: SumiPermissionSecurityContext,
         reason: String
     ) -> SumiPermissionCoordinatorDecision {
-        SumiPermissionCoordinatorDecision(
-            outcome: .promptRequired,
-            state: .ask,
-            persistence: nil,
-            source: .runtime,
+        SumiPermissionFailClosedMapper.temporaryPendingDecision(
+            for: context,
             reason: reason,
-            permissionTypes: [.notifications],
-            keys: [context.request.key(for: .notifications)],
-            shouldOfferSystemSettings: false,
-            disablesPersistentAllow: context.isEphemeralProfile
+            permissionTypes: [.notifications]
         )
     }
 
@@ -86,16 +80,10 @@ enum SumiWebNotificationDecisionMapper {
         for context: SumiPermissionSecurityContext?,
         reason: String
     ) -> SumiPermissionCoordinatorDecision {
-        SumiPermissionCoordinatorDecision(
-            outcome: .cancelled,
-            state: nil,
-            persistence: nil,
-            source: .runtime,
+        SumiPermissionFailClosedMapper.failClosedDecision(
+            for: context,
             reason: reason,
-            permissionTypes: [.notifications],
-            keys: context.map { [$0.request.key(for: .notifications)] } ?? [],
-            shouldOfferSystemSettings: false,
-            disablesPersistentAllow: context?.isEphemeralProfile ?? false
+            permissionTypes: [.notifications]
         )
     }
 

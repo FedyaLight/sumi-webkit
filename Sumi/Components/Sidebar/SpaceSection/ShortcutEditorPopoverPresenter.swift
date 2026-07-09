@@ -98,7 +98,7 @@ final class ShortcutEditorPopoverPresenter: NSObject, NSPopoverDelegate {
         popover.contentSize = Self.Metrics.contentSize
         popover.appearance = PopoverPresenterChromeSupport.appearance(
             for: surfaceColorScheme,
-            fallback: anchor.view.window?.effectiveAppearance ?? windowState.window?.effectiveAppearance
+            fallback: anchor.view.window?.effectiveAppearance ?? windowState.shellWindow(in: nil)?.effectiveAppearance
         )
 
         let token = source.coordinator?.beginSession(
@@ -116,7 +116,7 @@ final class ShortcutEditorPopoverPresenter: NSObject, NSPopoverDelegate {
             transientSessionToken: token
         )
 
-        windowState.window?.makeKeyAndOrderFront(nil)
+        windowState.shellWindow(in: nil)?.makeKeyAndOrderFront(nil)
         popover.show(
             relativeTo: anchor.rect,
             of: anchor.view,
@@ -211,7 +211,7 @@ final class ShortcutEditorPopoverPresenter: NSObject, NSPopoverDelegate {
             return (ownerView, ownerView.bounds, preferredEdge)
         }
 
-        guard let contentView = windowState.window?.contentView ?? source.window?.contentView else {
+        guard let contentView = windowState.shellWindow(in: nil)?.contentView ?? source.window?.contentView else {
             return nil
         }
 

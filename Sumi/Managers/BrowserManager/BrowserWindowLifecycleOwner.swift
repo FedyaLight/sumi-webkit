@@ -131,7 +131,7 @@ extension BrowserWindowLifecycleOwner.Dependencies {
                 browserManager?.windowRegistry?.windows[windowId]
             },
             closeIncognitoWindow: { [weak browserManager] windowState in
-                await browserManager?.windowShellCommandOwner.closeIncognitoWindow(windowState)
+                await browserManager?.windowSessionCommands.closeIncognitoWindow(windowState)
             },
             setActiveWindowState: { [weak browserManager] windowState in
                 browserManager?.windowSessionActivationOwner.setActiveWindowState(windowState)

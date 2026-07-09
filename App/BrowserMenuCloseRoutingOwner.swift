@@ -57,6 +57,6 @@ struct BrowserMenuCloseRoutingOwner {
         matching keyWindow: NSWindow,
         in windowRegistry: WindowRegistry?
     ) -> BrowserWindowState? {
-        windowRegistry?.windows.values.first { $0.window === keyWindow }
+        windowRegistry?.windowState(containing: keyWindow)
     }
 }

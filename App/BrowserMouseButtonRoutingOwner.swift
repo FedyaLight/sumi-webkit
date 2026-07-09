@@ -89,7 +89,7 @@ final class BrowserMouseButtonRoutingOwner {
                 eventWindow: event.window,
                 windowRegistry: windowRegistry
               ),
-              let eventWindow = event.window ?? windowState.window
+              let eventWindow = event.window ?? windowRegistry.appKitWindow(for: windowState)
         else {
             return false
         }

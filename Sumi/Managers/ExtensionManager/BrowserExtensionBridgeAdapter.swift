@@ -98,7 +98,11 @@ extension BrowserExtensionBridgeAdapter: ExtensionBrowserBridgeContext {
     }
 
     func extensionWindowState(forAppKitWindow window: NSWindow) -> BrowserWindowState? {
-        windowRegistry?.windows.values.first { $0.window === window }
+        windowRegistry?.windowState(containing: window)
+    }
+
+    func appKitWindow(for windowState: BrowserWindowState) -> NSWindow? {
+        windowRegistry?.appKitWindow(for: windowState) ?? windowState.window
     }
 
     func currentExtensionTab(in windowState: BrowserWindowState) -> Tab? {
@@ -488,10 +492,10 @@ extension BrowserExtensionBridgeAdapter.Dependencies {
                 )
             },
             createNewWindow: { [weak browserManager] in
-                browserManager?.windowShellCommandOwner.createNewWindow()
+                browserManager?.windowSessionCommands.createNewWindow()
             },
             urlBarHubAnchorView: { [weak browserManager] windowId in
-                browserManager?.chromePopoverRoutingOwner.urlBarHubPopoverPresenter.anchorView(
+                browserManager?.chromeCommands.urlBarHubPopoverPresenter.anchorView(
                     for: windowId
                 )
             },

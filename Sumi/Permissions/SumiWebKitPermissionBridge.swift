@@ -213,41 +213,25 @@ final class SumiWebKitPermissionBridge {
         isMainFrame: Bool,
         tabContext: SumiWebKitMediaCaptureTabContext
     ) -> SumiPermissionSecurityContext {
-        let topOrigin = SumiPermissionOrigin(
-            url: tabContext.committedURL ?? tabContext.mainFrameURL ?? tabContext.visibleURL
-        )
-        let permissionRequest = SumiPermissionRequest(
-            id: requestId,
+        SumiPermissionSecurityContextBuilder.make(
+            requestId: requestId,
             tabId: tabContext.tabId,
             pageId: tabContext.pageId,
-            frameId: nil,
             requestingOrigin: requestingOrigin,
-            topOrigin: topOrigin,
             displayDomain: requestingOrigin.displayDomain,
             permissionTypes: permissionTypes,
-            hasUserGesture: false,
-            requestedAt: now(),
-            isEphemeralProfile: tabContext.isEphemeralProfile,
-            profilePartitionId: tabContext.profilePartitionId
-        )
-
-        return SumiPermissionSecurityContext(
-            request: permissionRequest,
-            requestingOrigin: requestingOrigin,
-            topOrigin: topOrigin,
+            hasUserGesture: nil,
+            isMainFrame: isMainFrame,
             committedURL: tabContext.committedURL,
             visibleURL: tabContext.visibleURL,
             mainFrameURL: tabContext.mainFrameURL,
-            isMainFrame: isMainFrame,
             isActiveTab: tabContext.isActiveTab,
             isVisibleTab: tabContext.isVisibleTab,
-            hasUserGesture: nil,
             isEphemeralProfile: tabContext.isEphemeralProfile,
             profilePartitionId: tabContext.profilePartitionId,
-            transientPageId: tabContext.pageId,
             surface: tabContext.surface,
             navigationOrPageGeneration: tabContext.navigationOrPageGeneration,
-            now: permissionRequest.requestedAt
+            now: now()
         )
     }
 

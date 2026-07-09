@@ -8,6 +8,7 @@ final class WebViewNavigationBroadcastOwner {
     struct Dependencies {
         let crossWindowSyncOwner: WebViewCrossWindowSyncOwner
         let webViewRegistry: WindowWebViewRegistry
+        let tabWebViewSessionStore: TabWebViewSessionStore
         let isWebViewProtectedFromCompositorMutation: @MainActor (WKWebView) -> Bool
         let primaryTrackedWindowId: @MainActor (UUID) -> UUID?
         let rebuildLiveWebViews: @MainActor (Tab, UUID?, URL?) -> Bool
@@ -40,7 +41,7 @@ final class WebViewNavigationBroadcastOwner {
     }
 
     func reloadTab(_ tab: Tab) {
-        let reloadTargetURL = tab.existingWebView?.url ?? tab.url
+        let reloadTargetURL = reloadTargetURL(for: tab)
         let protectionReloadWasRequired = tab.reloadPolicyStateOwner.isProtectionReloadRequired
         if tab.configurationPolicyRequiresNormalWebViewRebuild(for: reloadTargetURL) {
             if dependencies.rebuildLiveWebViews(
@@ -98,6 +99,16 @@ final class WebViewNavigationBroadcastOwner {
             windowWebViews: dependencies.webViewRegistry.windowWebViews(for: tabId)
         )
     }
+
+    private func reloadTargetURL(for tab: Tab) -> URL {
+        let store = dependencies.tabWebViewSessionStore
+        store.syncFromTabIfNeeded(tab)
+        if let sessionURL = store.untrackedWebView(for: tab.id)?.url
+            ?? store.parkedWebView(for: tab.id)?.url {
+            return sessionURL
+        }
+        return tab.url
+    }
 }
 
 extension WebViewNavigationBroadcastOwner.Dependencies {
@@ -106,6 +117,7 @@ extension WebViewNavigationBroadcastOwner.Dependencies {
         Self(
             crossWindowSyncOwner: coordinator.crossWindowSyncOwner,
             webViewRegistry: coordinator.webViewRegistry,
+            tabWebViewSessionStore: coordinator.tabWebViewSessionStore,
             isWebViewProtectedFromCompositorMutation: { [weak coordinator] webView in
                 coordinator?.isWebViewProtectedFromCompositorMutation(webView) ?? false
             },

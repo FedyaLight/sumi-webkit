@@ -64,7 +64,7 @@ extension BrowserTabSelectionOwner {
                 browserManager?.floatingBarRoutingOwner.dismissFloatingBarAfterSelection(in: windowState)
             },
             updateFindManagerCurrentTab: { [weak browserManager] in
-                browserManager?.findBarRoutingOwner.updateCurrentTab()
+                browserManager?.updateFindManagerCurrentTab()
             },
             clearFindManagerCurrentTab: { [weak browserManager] in
                 browserManager?.findManager.updateCurrentTab(nil, in: nil)

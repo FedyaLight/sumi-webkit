@@ -12,9 +12,22 @@ enum SumiStartupPersistenceComposition {
         BrowserManagerStartupPersistence(container: startupContainer)
     }
 
-    static let autoplayPolicyStore = SumiAutoplayPolicyStoreAdapter(
-        modelContainer: startupPersistence.container
+    /// Single SwiftData permission store shared by coordinator and autoplay adapter.
+    static let persistentPermissionStore = SwiftDataPermissionStore(
+        container: SumiStartupPersistence.shared.container
     )
+
+    static let autoplayPolicyStore: SumiAutoplayPolicyStoreAdapter = {
+        let adapter = SumiAutoplayPolicyStoreAdapter(
+            persistentStore: persistentPermissionStore
+        )
+        adapter.seedCache(
+            with: SumiAutoplayPolicyCacheBootstrap.loadAutoplayRecords(
+                from: SumiStartupPersistence.shared.container
+            )
+        )
+        return adapter
+    }()
 
     static func saveMainContext() throws {
         try startupContainer.mainContext.save()
@@ -25,12 +38,5 @@ enum SumiStartupPersistenceComposition {
 extension BrowserManagerStartupPersistence {
     static var production: BrowserManagerStartupPersistence {
         SumiStartupPersistenceComposition.browserManagerStartupPersistence
-    }
-}
-
-@MainActor
-extension SumiAutoplayPolicyStoreAdapter {
-    static var shared: SumiAutoplayPolicyStoreAdapter {
-        SumiStartupPersistenceComposition.autoplayPolicyStore
     }
 }

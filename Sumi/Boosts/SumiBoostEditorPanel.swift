@@ -73,15 +73,16 @@ final class SumiBoostEditorPanelController: NSObject, NSWindowDelegate {
                 rootView: SumiBoostEditorView(session: session)
             )
         }
-        if parentWindow !== windowState.window {
+        let appKitWindow = windowState.shellWindow(in: nil)
+        if parentWindow !== appKitWindow {
             parentWindow?.removeChildWindow(panel)
-            parentWindow = windowState.window
-            windowState.window?.addChildWindow(panel, ordered: .above)
+            parentWindow = appKitWindow
+            appKitWindow?.addChildWindow(panel, ordered: .above)
         }
         self.panel = panel
         panel.delegate = self
         resizePanel(forCodeMode: false, animated: false)
-        placePanel(alongside: windowState.window)
+        placePanel(alongside: appKitWindow)
         panel.makeKeyAndOrderFront(nil)
     }
 

@@ -14,20 +14,16 @@ final class ExtensionInstallationFlowOwner {
         /// Records seam: CRUD over `ExtensionManager.installedExtensions`.
         let installedRecordsOwner: ExtensionInstalledRecordsOwner
         let toolbarPinningOwner: ExtensionToolbarPinningOwner
-        let profileRuntimeOwner: ExtensionProfileRuntimeOwner
+        let runtimeAccess: ExtensionFlowOwnerRuntimeAccess
         let runtimeLifecycleOwner: ExtensionRuntimeLifecycleOwner
         let runtimeStateResetOwner: ExtensionRuntimeStateResetOwner
         /// Full-runtime teardown needs the concrete manager instance
         /// (ExtensionRuntimeTeardownOwner.tearDownRuntime(manager:...)); no
         /// stored owner can absorb this without holding a strong `manager`.
         let tearDownExtensionRuntime: @MainActor (String, Bool, Bool) -> Void
-        let controllerProvisioningOwner: ExtensionControllerProvisioningOwner
         let actionSurfacePublicationOwner: ExtensionActionSurfacePublicationOwner
         let contextResidencyOwner: ExtensionContextResidencyOwner
-        let runtimeSessionOwner: ExtensionRuntimeSessionOwner
         let runtimeDiagnosticsOwner: ExtensionRuntimeDiagnosticsOwner
-        /// Manager's mutable current-window/tab bridge; not owner-backed.
-        let runtime: @MainActor () -> ExtensionManagerRuntime
         let isExtensionSupportAvailable: @MainActor () -> Bool
         let setExtensionsLoaded: @MainActor (Bool) -> Void
         let loadRuntimeContext: @MainActor (
@@ -140,32 +136,26 @@ final class ExtensionInstallationFlowOwner {
     }
 
     private func fallbackProfileId() -> UUID? {
-        dependencies.profileRuntimeOwner.resolvedProfileId(
-            explicitProfileId: nil,
-            runtime: dependencies.runtime()
-        )
+        dependencies.runtimeAccess.fallbackProfileId()
     }
 
     private func resolvedProfileId(_ explicitProfileId: UUID?) -> UUID? {
-        dependencies.profileRuntimeOwner.resolvedProfileId(
-            explicitProfileId: explicitProfileId,
-            runtime: dependencies.runtime()
-        )
+        dependencies.runtimeAccess.resolvedProfileId(explicitProfileId)
     }
 
     private func ensureExtensionController(_ profileId: UUID) {
-        _ = dependencies.controllerProvisioningOwner.ensureExtensionController(for: profileId)
+        dependencies.runtimeAccess.ensureExtensionController(profileId)
     }
 
     private func getExtensionContext(
         _ extensionId: String,
         _ profileId: UUID
     ) -> WKWebExtensionContext? {
-        dependencies.profileRuntimeOwner.contexts(for: profileId)[extensionId]
+        dependencies.runtimeAccess.getExtensionContext(extensionId, profileId)
     }
 
     private func liveExtensionContextsCount() -> Int {
-        dependencies.profileRuntimeOwner.contextsForCurrentProfile().count
+        dependencies.runtimeAccess.profileRuntimeOwner.contextsForCurrentProfile().count
     }
 
     private func finalizeEnabledExtensionRuntime(
@@ -198,29 +188,25 @@ final class ExtensionInstallationFlowOwner {
     }
 
     private func extensionLoadGeneration() -> UInt64 {
-        dependencies.runtimeSessionOwner.extensionLoadGeneration
+        dependencies.runtimeAccess.runtimeSessionOwner.extensionLoadGeneration
     }
 
     private func recordRuntimeMetric(
         _ extensionId: String,
         _ update: (inout ExtensionManager.ExtensionRuntimeMetrics) -> Void
     ) {
-        dependencies.runtimeSessionOwner.recordRuntimeMetric(for: extensionId, update: update)
-    }
-
-    private func clearExtensionLoadError(_ extensionId: String, _ profileId: UUID) {
-        dependencies.runtimeSessionOwner.lastExtensionLoadErrors.removeValue(
-            forKey: ExtensionRuntimeResidencyState.scopedKey(
-                extensionId: extensionId,
-                profileId: profileId
-            )
+        dependencies.runtimeAccess.runtimeSessionOwner.recordRuntimeMetric(
+            for: extensionId,
+            update: update
         )
     }
 
+    private func clearExtensionLoadError(_ extensionId: String, _ profileId: UUID) {
+        dependencies.runtimeAccess.clearExtensionLoadError(extensionId, profileId)
+    }
+
     private func recordExtensionLoadError(_ error: Error, _ extensionId: String, _ profileId: UUID) {
-        dependencies.runtimeSessionOwner.lastExtensionLoadErrors[
-            ExtensionRuntimeResidencyState.scopedKey(extensionId: extensionId, profileId: profileId)
-        ] = error
+        dependencies.runtimeAccess.recordExtensionLoadError(error, extensionId, profileId)
     }
 
     private func touchLiveExtensionContext(_ extensionId: String, _ profileId: UUID) {
@@ -1044,7 +1030,12 @@ extension ExtensionInstallationFlowOwner.Dependencies {
             installationMetadataStore: manager.installationMetadataStore,
             installedRecordsOwner: manager.installedRecordsOwner,
             toolbarPinningOwner: manager.toolbarPinningOwner,
-            profileRuntimeOwner: manager.profileRuntimeOwner,
+            runtimeAccess: ExtensionFlowOwnerRuntimeAccess(
+                profileRuntimeOwner: manager.profileRuntimeOwner,
+                controllerProvisioningOwner: manager.controllerProvisioningOwner,
+                runtimeSessionOwner: manager.runtimeSessionOwner,
+                runtime: { [weak manager] in manager?.runtime ?? .inactive }
+            ),
             runtimeLifecycleOwner: manager.runtimeLifecycleOwner,
             runtimeStateResetOwner: manager.runtimeStateResetOwner,
             tearDownExtensionRuntime: { [weak manager] reason, removeUIState, releaseController in
@@ -1054,12 +1045,9 @@ extension ExtensionInstallationFlowOwner.Dependencies {
                     releaseController: releaseController
                 )
             },
-            controllerProvisioningOwner: manager.controllerProvisioningOwner,
             actionSurfacePublicationOwner: manager.actionSurfacePublicationOwner,
             contextResidencyOwner: manager.contextResidencyOwner,
-            runtimeSessionOwner: manager.runtimeSessionOwner,
             runtimeDiagnosticsOwner: manager.runtimeDiagnosticsOwner,
-            runtime: { [weak manager] in manager?.runtime ?? .inactive },
             isExtensionSupportAvailable: { [weak manager] in
                 manager?.isExtensionSupportAvailable ?? false
             },

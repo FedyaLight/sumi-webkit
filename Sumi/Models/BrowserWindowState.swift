@@ -138,8 +138,15 @@ class BrowserWindowState {
     /// Window-scoped owner for compositor/native-surface invalidation counters.
     let compositorInvalidation = WindowCompositorInvalidationOwner()
 
-    /// Reference to the actual NSWindow for this window state
+    /// Dual-write mirror of `WindowRegistry` shell (Phase 6A).
+    /// Prefer `WindowRegistry.appKitWindow(for:)` / `shellWindow(in:)` when a registry is available.
+    /// TODO(Phase 6A): remove after remaining readers migrate off this property.
     var window: NSWindow?
+
+    /// Resolves the AppKit window from the shell map when possible.
+    func shellWindow(in registry: WindowRegistry?) -> NSWindow? {
+        registry?.appKitWindow(for: self) ?? window
+    }
 
     /// Physical AppKit visibility used by background media optimization.
     var windowVisibilityState: SumiWindowVisibilityState = .unknown
@@ -201,7 +208,7 @@ class BrowserWindowState {
 
     func resolveSidebarPresentationSource(ownerView: NSView? = nil) -> SidebarTransientPresentationSource {
         sidebarTransientSessionCoordinator.consumePresentationSource(
-            window: window,
+            window: shellWindow(in: nil),
             ownerView: ownerView
         )
     }

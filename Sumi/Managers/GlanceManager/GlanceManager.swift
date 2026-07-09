@@ -120,7 +120,9 @@ final class GlanceManager: ObservableObject {
             windowState: windowState,
             fallbackWindowId: windowState.id,
             originRectInWindow: snapshot.originRectInWindow?.cgRect
-                ?? GlanceManager.fallbackOriginRect(in: windowState.window),
+                ?? GlanceManager.fallbackOriginRect(
+                    in: windowState.shellWindow(in: windowRegistry)
+                ),
             initialTitle: snapshot.title,
             persistsWindowSession: false
         )

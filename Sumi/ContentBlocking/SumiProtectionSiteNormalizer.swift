@@ -1,23 +1,25 @@
 import Foundation
 
+/// Thin protection-facing façade over `SumiSiteNormalizer` so content-blocking
+/// and favicon/cookie site keys share one host pipeline.
 struct SumiProtectionSiteNormalizer {
-    private let registrableDomainResolver: any SumiRegistrableDomainResolving
+    private let siteNormalizer: SumiSiteNormalizer
 
     init(registrableDomainResolver: any SumiRegistrableDomainResolving = SumiRegistrableDomainResolver()) {
-        self.registrableDomainResolver = registrableDomainResolver
+        self.siteNormalizer = SumiSiteNormalizer(
+            registrableDomainResolver: registrableDomainResolver
+        )
+    }
+
+    init(siteNormalizer: SumiSiteNormalizer) {
+        self.siteNormalizer = siteNormalizer
     }
 
     func normalizedHost(for url: URL?) -> String? {
-        guard let rawHost = url?.host else { return nil }
-        return normalizedHost(fromRawHost: rawHost)
+        siteNormalizer.normalizedHost(for: url)
     }
 
     func normalizedHost(fromRawHost rawHost: String) -> String? {
-        let host = rawHost
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .trimmingCharacters(in: CharacterSet(charactersIn: "."))
-            .lowercased()
-        guard !host.isEmpty else { return nil }
-        return registrableDomainResolver.registrableDomain(forHost: host) ?? host
+        siteNormalizer.siteDomain(fromRawDomain: rawHost)
     }
 }

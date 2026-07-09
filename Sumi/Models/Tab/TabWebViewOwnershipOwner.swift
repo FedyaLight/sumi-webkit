@@ -2,13 +2,17 @@ import Combine
 import Foundation
 import WebKit
 
-/// Tab-local WebView ownership cache / staging.
+/// Tab-local WebView ownership cache / staging (compatibility mirror).
 ///
-/// - Windowed `webView` + `primaryWindowId`: coordinator-synced cache. Live SoT is
+/// Phase 6B: `TabWebViewSessionStore` is the authoritative writer for parked /
+/// untracked / primary-assignment notes when a browser runtime is attached.
+/// Tab mutators call session `note*` first, then update these fields for readers
+/// that still go through Tab accessors.
+///
+/// - Windowed `webView` + `primaryWindowId`: dual-write cache; live SoT is
 ///   `WindowWebViewRegistry` via `WebViewCoordinator` / `BrowserWebViewRoutingService`.
-/// - Untracked `webView` (`primaryWindowId == nil`): Tab slot write-gated by coordinator
-///   install/release (and Tab ensure path which installs through the same mutators).
-/// - Parked `existingWebView`: Tab-local staging for untracked ensure reuse; not registry material.
+/// - Untracked `webView` (`primaryWindowId == nil`): mirrored from session notes.
+/// - Parked `existingWebView`: mirrored staging for untracked ensure reuse.
 ///
 /// External production code must not mutate these fields; CI enforces Tab + WebViewCoordinator
 /// as the sole writers.

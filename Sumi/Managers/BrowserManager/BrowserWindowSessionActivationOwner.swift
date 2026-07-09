@@ -175,7 +175,7 @@ extension BrowserWindowSessionActivationOwner.Dependencies {
                 browserManager?.splitManager.refreshPublishedState(for: windowId)
             },
             updateFindManagerCurrentTab: { [weak browserManager] in
-                browserManager?.findBarRoutingOwner.updateCurrentTab()
+                browserManager?.updateFindManagerCurrentTab()
             },
             notifyExtensionWindowOpened: { [weak browserManager] windowState in
                 browserManager?.extensionsModule.notifyWindowOpenedIfLoaded(windowState)

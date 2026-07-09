@@ -216,40 +216,27 @@ final class SumiPopupPermissionBridge {
         tabContext: SumiPopupPermissionTabContext,
         bypassActivationGateForStoreLookup: Bool = false
     ) -> SumiPermissionSecurityContext {
-        let topOrigin = topOrigin(for: tabContext)
         let hasUserGesture = bypassActivationGateForStoreLookup ? true : request.isUserActivated
-        let permissionRequest = SumiPermissionRequest(
-            id: request.id,
+        return SumiPermissionSecurityContextBuilder.make(
+            requestId: request.id,
             tabId: tabContext.tabId,
             pageId: tabContext.pageId,
-            frameId: nil,
             requestingOrigin: request.requestingOrigin,
-            topOrigin: topOrigin,
+            topOrigin: topOrigin(for: tabContext),
             displayDomain: tabContext.displayDomain ?? request.requestingOrigin.displayDomain,
             permissionTypes: [.popups],
             hasUserGesture: hasUserGesture,
-            requestedAt: now(),
-            isEphemeralProfile: tabContext.isEphemeralProfile,
-            profilePartitionId: tabContext.profilePartitionId
-        )
-
-        return SumiPermissionSecurityContext(
-            request: permissionRequest,
-            requestingOrigin: request.requestingOrigin,
-            topOrigin: topOrigin,
+            isMainFrame: request.isMainFrame,
             committedURL: tabContext.committedURL,
             visibleURL: tabContext.visibleURL,
             mainFrameURL: tabContext.mainFrameURL,
-            isMainFrame: request.isMainFrame,
             isActiveTab: tabContext.isActiveTab,
             isVisibleTab: tabContext.isVisibleTab,
-            hasUserGesture: hasUserGesture,
             isEphemeralProfile: tabContext.isEphemeralProfile,
             profilePartitionId: tabContext.profilePartitionId,
-            transientPageId: tabContext.pageId,
             surface: tabContext.surface,
             navigationOrPageGeneration: tabContext.navigationOrPageGeneration,
-            now: permissionRequest.requestedAt
+            now: now()
         )
     }
 

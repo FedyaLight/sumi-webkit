@@ -370,14 +370,15 @@ struct FloatingBarView: View {
     }
 
     private func availableWindowWidth(from layoutWidth: CGFloat) -> CGFloat {
-        if let contentWidth = windowState.window?.contentView?.bounds.width,
+        let appKitWindow = windowState.shellWindow(in: nil)
+        if let contentWidth = appKitWindow?.contentView?.bounds.width,
            contentWidth > 0 {
             return contentWidth
         }
         if layoutWidth > 0 {
             return layoutWidth
         }
-        return windowState.window?.frame.width ?? 0
+        return appKitWindow?.frame.width ?? 0
     }
 
     private var tokens: ChromeThemeTokens {
@@ -564,7 +565,7 @@ struct FloatingBarView: View {
             ) {
                 // Defer the state mutation and return the original event so sidebar/browser chrome handles this click.
                 interactionCommitOwner.requestDismiss(in: windowState) {
-                    windowState.window?.makeFirstResponder(nil)
+                    windowState.shellWindow(in: nil)?.makeFirstResponder(nil)
                     isSearchFocused = false
                     browserContext.dismissFloatingBar(in: windowState, preserveDraft: true)
                 }

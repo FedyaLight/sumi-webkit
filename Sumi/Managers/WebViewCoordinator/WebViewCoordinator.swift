@@ -28,6 +28,12 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     @ObservationIgnored
     let webViewRegistry = WindowWebViewRegistry()
 
+    /// Phase 6B: parked + untracked session material outside Tab fields (Tab remains a mirror).
+    @ObservationIgnored
+    private(set) lazy var tabWebViewSessionStore = TabWebViewSessionStore(
+        webViewRegistry: webViewRegistry
+    )
+
     @ObservationIgnored
     let visibleWebViewRuntimeOwner = VisibleWebViewRuntimeOwner()
 
@@ -88,11 +94,6 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
 
     @ObservationIgnored
     private lazy var runtimeAssembler = WebViewRuntimeAssembler(
-        dependencies: .live(coordinator: self)
-    )
-
-    @ObservationIgnored
-    private lazy var containerDetachmentOwner = WebViewContainerDetachmentOwner(
         dependencies: .live(coordinator: self)
     )
 
@@ -424,7 +425,31 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     }
 
     func removeWebViewFromContainers(_ webView: WKWebView) {
-        containerDetachmentOwner.removeWebViewFromContainers(webView)
+        if enqueueDeferredProtectedCommand(
+            .removeWebViewFromContainers(webViewID: ObjectIdentifier(webView)),
+            for: webView,
+            reason: "removeWebViewFromContainers"
+        ) {
+            return
+        }
+
+        for (_, container) in compositorContainers() {
+            removeMatchingWebView(webView, from: container)
+        }
+    }
+
+    /// `WKWebView` instances live under pane views, not only as direct children of the compositor container.
+    private func removeMatchingWebView(_ webView: WKWebView, from root: NSView) {
+        for subview in Array(root.subviews) {
+            if let host = subview as? SumiWebViewContainerView,
+               host.webView === webView {
+                host.removeFromSuperview()
+            } else if subview === webView {
+                subview.removeFromSuperview()
+            } else {
+                removeMatchingWebView(webView, from: subview)
+            }
+        }
     }
 
     private func windowId(containing webView: WKWebView) -> UUID? {
@@ -604,7 +629,10 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
 
     func untrackedOwnedWebView(for tab: Tab) -> WKWebView? {
         guard windowIDs(for: tab.id).isEmpty else { return nil }
-        guard let webView = tab.currentWebView else { return nil }
+        tabWebViewSessionStore.syncFromTabIfNeeded(tab)
+        let sessionWebView = tabWebViewSessionStore.untrackedWebView(for: tab.id)
+            ?? tab.currentWebView
+        guard let webView = sessionWebView else { return nil }
         guard (webView as? FocusableWKWebView)?.owningTab === tab else { return nil }
         return webView
     }
@@ -617,15 +645,25 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         if trackedOwner(containing: webView)?.tabID == tab.id {
             return true
         }
+        tabWebViewSessionStore.syncFromTabIfNeeded(tab)
+        let session = tabWebViewSessionStore.session(for: tab.id)
+        if session.untrackedWebView === webView || session.parkedWebView === webView {
+            return true
+        }
+        // Compat mirror until Tab assigned/current fields are removed (Phase 6B).
         return tab.existingWebView === webView || tab.assignedWebView === webView
     }
 
     func assignWebView(_ webView: WKWebView, to tab: Tab, in windowId: UUID) {
+        // Session note happens inside Tab.assignPrimaryWebView when runtime is attached;
+        // note again here so coordinator-only paths stay authoritative even before attach.
+        tabWebViewSessionStore.notePrimaryAssignment(windowId: windowId, for: tab.id)
         tab.assignWebViewToWindow(webView, windowId: windowId)
         setWebView(webView, for: tab.id, in: windowId)
     }
 
     func installUntrackedOwnedWebView(_ webView: WKWebView, for tab: Tab) {
+        tabWebViewSessionStore.noteUntrackedWebView(webView, for: tab.id)
         tab.replaceUntrackedWebView(webView)
     }
 
@@ -636,9 +674,17 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         if let existing = anyLiveWebView(for: tab) {
             return existing
         }
-        return tab.ensureUntrackedNormalWebView(
+        let webView = tab.ensureUntrackedNormalWebView(
             reason: "WebViewCoordinator.ensureUntrackedOwnedWebView"
         )
+        // Ensure path writes Tab first when runtime is inactive; import into session.
+        if let webView {
+            tabWebViewSessionStore.noteUntrackedWebView(webView, for: tab.id)
+            if let parked = tab.parkedWebView {
+                tabWebViewSessionStore.noteParkedWebView(parked, for: tab.id)
+            }
+        }
+        return webView
     }
 
     /// Releases an untracked tab-owned WebView (Glance dismiss, pre-window teardown).
@@ -647,6 +693,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
             tab.cleanupCloneWebView(webView)
         }
         tab.clearCurrentWebViewOwnership()
+        tabWebViewSessionStore.clearAll(for: tab.id)
         _ = removeAllWebViews(for: tab)
     }
 

@@ -150,9 +150,9 @@ class TabManager: ObservableObject {
         runtimeContext: TabManagerRuntimeContext? = nil,
         context: ModelContext,
         loadPersistedState: Bool = true,
-        faviconService: any BrowserFaviconServicing = BrowserManagerDataServices.productionFaviconService,
-        faviconImageService: any BrowserFaviconImageServicing = BrowserManagerDataServices.productionFaviconImageService,
-        visitedLinkStore: any BrowserVisitedLinkStoreManaging = BrowserManagerDataServices.productionVisitedLinkStore
+        faviconService: any BrowserFaviconServicing = TabDependencyIsolationDefaults.faviconService,
+        faviconImageService: any BrowserFaviconImageServicing = TabDependencyIsolationDefaults.faviconImageService,
+        visitedLinkStore: any BrowserVisitedLinkStoreManaging = TabDependencyIsolationDefaults.visitedLinkStore
     ) {
         self.runtimeContext = runtimeContext
         self.context = context

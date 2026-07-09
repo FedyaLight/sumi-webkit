@@ -10,7 +10,7 @@ final class BrowserAppCommandRouter {
     struct Dependencies {
         let floatingBarRouting: @MainActor () -> BrowserFloatingBarRoutingOwner?
         let historyNavigation: @MainActor () -> BrowserHistoryNavigationOwner?
-        let windowShellCommands: @MainActor () -> BrowserWindowShellCommandOwner?
+        let windowShellCommands: @MainActor () -> BrowserWindowSessionCommands?
         let activePageRouting: @MainActor () -> BrowserActivePageRoutingOwner?
         let themeEditor: @MainActor () -> BrowserWorkspaceThemeEditorOwner?
         let requireTabManager: @MainActor () -> TabManager
@@ -138,7 +138,7 @@ extension BrowserAppCommandRouter.Dependencies {
                 browserManager?.historyNavigationOwner
             },
             windowShellCommands: { [weak browserManager] in
-                browserManager?.windowShellCommandOwner
+                browserManager?.windowSessionCommands
             },
             activePageRouting: { [weak browserManager] in
                 browserManager?.activePageRoutingOwner

@@ -18,6 +18,9 @@ enum BrowserNativeNowPlayingRuntimeFactory {
             windowState: { [weak browserManager] windowId in
                 browserManager?.windowRegistry?.windows[windowId]
             },
+            windowRegistry: { [weak browserManager] in
+                browserManager?.windowRegistry
+            },
             currentTab: { [weak browserManager] windowState in
                 browserManager?.windowTabContextOwner.currentTab(for: windowState)
             },

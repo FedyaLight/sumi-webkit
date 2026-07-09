@@ -132,6 +132,7 @@ final class SumiNativeNowPlayingControllerFeatureGateTests: XCTestCase {
         let context = SumiNativeNowPlayingRuntimeContext(
             candidateTabs: { [(tab, windowState)] },
             windowState: { id in id == windowState.id ? windowState : nil },
+            windowRegistry: { nil },
             resolvedTab: { tabId, _ in tabId == tab.id ? tab : nil },
             resolvedNowPlayingWebView: { _, _ in nil },
             selectTab: { _, _ in /* no-op */ }
@@ -190,6 +191,7 @@ final class SumiNativeNowPlayingRuntimeContextTests: XCTestCase {
             runtime: SumiNativeNowPlayingBrowserRuntime(
                 windowStates: { [regularWindow, fallbackWindow, incognitoWindow] },
                 windowState: { _ in nil },
+                windowRegistry: { nil },
                 currentTab: { windowState in
                     windowState === fallbackWindow ? fallbackCurrentTab : pausedCandidate
                 },
@@ -225,6 +227,7 @@ final class SumiNativeNowPlayingRuntimeContextTests: XCTestCase {
             runtime: SumiNativeNowPlayingBrowserRuntime(
                 windowStates: { [firstWindow, secondWindow] },
                 windowState: { _ in nil },
+                windowRegistry: { nil },
                 currentTab: { _ in sharedPlayingTab },
                 mediaCandidateTabs: { _ in [sharedPlayingTab] },
                 tab: { _ in nil },
@@ -256,6 +259,7 @@ final class SumiNativeNowPlayingRuntimeContextTests: XCTestCase {
                     if windowId == incognitoWindow.id { return incognitoWindow }
                     return nil
                 },
+                windowRegistry: { nil },
                 currentTab: { _ in nil },
                 mediaCandidateTabs: { windowState in
                     windowState === regularWindow ? [visibleCandidate] : []

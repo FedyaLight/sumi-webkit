@@ -303,10 +303,7 @@ struct SiteSettingsRepositoryHarness {
         self.modelContainer = container
         let store = SwiftDataPermissionStore(container: container)
         self.permissionStore = store
-        self.autoplayStore = SumiAutoplayPolicyStoreAdapter(
-            modelContainer: container,
-            persistentStore: store
-        )
+        self.autoplayStore = SumiAutoplayPolicyStoreAdapter(persistentStore: store)
         let cleanupService = SumiPermissionCleanupService(
             store: store,
             recentActivityStore: recentStore,

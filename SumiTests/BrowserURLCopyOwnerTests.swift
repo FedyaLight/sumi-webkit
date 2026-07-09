@@ -9,15 +9,11 @@ final class BrowserURLCopyOwnerTests: XCTestCase {
         let windowState = BrowserWindowState()
         let url = "https://copy.example/page"
         let spy = NotificationPresentingSpy()
-        let owner = BrowserURLCopyOwner(
-            dependencies: BrowserURLCopyOwner.Dependencies(
-                notifications: { spy }
-            )
-        )
+        let commands = BrowserURLBarCommands(browserManager: nil, notifications: { spy })
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString("previous clipboard", forType: .string)
 
-        let success = owner.copyURLToPasteboard(url, in: windowState)
+        let success = commands.copyURLToPasteboard(url, in: windowState)
 
         XCTAssertTrue(success)
         XCTAssertEqual(NSPasteboard.general.string(forType: .string), url)
@@ -36,14 +32,10 @@ final class BrowserURLCopyOwnerTests: XCTestCase {
         let windowState = BrowserWindowState()
         let url = "https://copy.example/empty"
         let spy = NotificationPresentingSpy()
-        let owner = BrowserURLCopyOwner(
-            dependencies: BrowserURLCopyOwner.Dependencies(
-                notifications: { spy }
-            )
-        )
+        let commands = BrowserURLBarCommands(browserManager: nil, notifications: { spy })
         NSPasteboard.general.clearContents()
 
-        _ = owner.copyURLToPasteboard(url, in: windowState)
+        _ = commands.copyURLToPasteboard(url, in: windowState)
 
         let notification = try XCTUnwrap(spy.presentNotificationCalls.first?.0)
         notification.action?.handler()

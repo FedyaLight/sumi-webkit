@@ -59,7 +59,7 @@ final class SumiPermissionSidebarPinningController {
         reason: String
     ) {
         let source = windowState.sidebarTransientSessionCoordinator.preparedPresentationSource(
-            window: windowState.window
+            window: windowState.shellWindow(in: nil)
         )
         let token = windowState.sidebarTransientSessionCoordinator.beginSession(
             kind: .permissionPrompt,

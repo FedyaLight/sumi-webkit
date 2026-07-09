@@ -291,7 +291,7 @@ final class SettingsNavigationTests: XCTestCase {
     func testOpenSettingsTabSelectsAboutSurface() {
         let (browserManager, _, settings, windowState, space) = makeHarness()
 
-        browserManager.settingsSurfaceRoutingOwner.openSettingsTab(selecting: .about, in: windowState)
+        browserManager.urlBarCommands.openSettingsTab(selecting: .about, in: windowState)
 
         let settingsTabs = browserManager.tabManager.regularTabCollectionOwner.tabs(in: space).filter(\.representsSumiSettingsSurface)
         XCTAssertEqual(settingsTabs.count, 1)
@@ -308,7 +308,7 @@ final class SettingsNavigationTests: XCTestCase {
             activate: false
         )
 
-        browserManager.settingsSurfaceRoutingOwner.openSettingsTab(selecting: .about, in: windowState)
+        browserManager.urlBarCommands.openSettingsTab(selecting: .about, in: windowState)
 
         let settingsTabs = browserManager.tabManager.regularTabCollectionOwner.tabs(in: space).filter(\.representsSumiSettingsSurface)
         XCTAssertEqual(settingsTabs.count, 1)
@@ -325,7 +325,7 @@ final class SettingsNavigationTests: XCTestCase {
         windowState.ephemeralProfile = ephemeralProfile
         windowState.currentProfileId = ephemeralProfile.id
 
-        browserManager.settingsSurfaceRoutingOwner.openSettingsTab(selecting: .privacy, in: windowState)
+        browserManager.urlBarCommands.openSettingsTab(selecting: .privacy, in: windowState)
 
         let firstSettingsTab = try XCTUnwrap(
             windowState.ephemeralTabs.first(where: \.representsSumiSettingsSurface)
@@ -337,7 +337,7 @@ final class SettingsNavigationTests: XCTestCase {
         XCTAssertEqual(settings.currentSettingsTab, .privacy)
         XCTAssertFalse(browserManager.tabManager.regularTabCollectionOwner.tabs(in: space).contains(where: \.representsSumiSettingsSurface))
 
-        browserManager.settingsSurfaceRoutingOwner.openSettingsTab(selecting: .about, in: windowState)
+        browserManager.urlBarCommands.openSettingsTab(selecting: .about, in: windowState)
 
         let settingsTabs = windowState.ephemeralTabs.filter(\.representsSumiSettingsSurface)
         XCTAssertEqual(settingsTabs.count, 1)

@@ -109,35 +109,23 @@ class BrowserManager: ObservableObject {
     lazy var nativeSurfaceRoutingOwner = BrowserNativeSurfaceRoutingOwner(
         dependencies: .live(browserManager: self)
     )
-    lazy var settingsSurfaceRoutingOwner = BrowserSettingsSurfaceRoutingOwner(
-        dependencies: .live(browserManager: self)
+    // Phase 5A capability bags — BM holds bags; bags hold owners.
+    // TODO(5A): remaining peer Owners → BrowserChromeCommands bag (zoom/sidebar chrome)
+    // once chromeCommands façade absorbs more than popover+privacy.
+    lazy var privacyBundle = BrowserPrivacyBundle(browserManager: self)
+    lazy var urlBarBundle = BrowserURLBarBundle(browserManager: self)
+    lazy var windowSessionBundle = BrowserWindowSessionBundle(
+        browserManager: self,
+        startupSessionRestoreOwner: startupSessionRestoreOwner
     )
-    private lazy var permissionSidebarPinningOwner = BrowserPermissionSidebarPinningOwner(
-        dependencies: BrowserPermissionSidebarPinningOwner.Dependencies(
-            permissionStateSnapshot: { [weak self] in
-                guard let self else {
-                    return SumiPermissionCoordinatorState(
-                        activeQueriesByPageId: [:],
-                        queueCountByPageId: [:],
-                        latestEvent: nil,
-                        latestSystemBlockedEvent: nil
-                    )
-                }
-                return await self.permissionRuntime.permissionCoordinator.stateSnapshot()
-            },
-            windowForPermissionPageId: { [weak self] pageId in
-                guard let self else { return nil }
-                return self.permissionSiteSettingsRoutingOwner.windowState(
-                    displayingPermissionPageId: pageId,
-                    in: self.windowRegistry,
-                    tabsForDisplay: { windowState in
-                        self.windowTabContextOwner.tabsForDisplay(in: windowState)
-                    }
-                )
-            }
-        ),
-        pinningController: SumiPermissionSidebarPinningController()
-    )
+    lazy var profileLifecycleBundle = BrowserProfileLifecycleBundle(browserManager: self)
+    lazy var extensionBridgeBundle = BrowserExtensionBridgeBundle(browserManager: self)
+
+    /// Compatibility forwards — prefer `*Bundle` for new call sites.
+    var urlBarCommands: BrowserURLBarCommands { urlBarBundle.commands }
+    private var permissionSidebarPinningOwner: BrowserPermissionSidebarPinningOwner {
+        privacyBundle.permissionSidebarPinningOwner
+    }
     lazy var historyNavigationOwner = BrowserHistoryNavigationOwner(
         dependencies: .live(browserManager: self)
     )
@@ -165,45 +153,30 @@ class BrowserManager: ObservableObject {
     lazy var keyboardShortcutCommandOwner = BrowserKeyboardShortcutCommandOwner(
         dependencies: .live(browserManager: self)
     )
-    lazy var floatingBarRoutingOwner = BrowserFloatingBarRoutingOwner(
-        dependencies: .live(browserManager: self)
-    )
-    lazy var floatingBarBrowserContextOwner = BrowserFloatingBarBrowserContextOwner(
-        dependencies: .live(browserManager: self)
-    )
-    lazy var urlBarContextOwner = BrowserURLBarContextOwner(
-        dependencies: .live(browserManager: self)
-    )
-    lazy var activePageRoutingOwner = BrowserActivePageRoutingOwner(
-        dependencies: .live(browserManager: self)
-    )
-    lazy var findBarRoutingOwner = BrowserFindBarRoutingOwner(
-        dependencies: .live(browserManager: self)
-    )
+    var floatingBarRoutingOwner: BrowserFloatingBarRoutingOwner {
+        urlBarBundle.floatingBarRoutingOwner
+    }
+    var floatingBarBrowserContextOwner: BrowserFloatingBarBrowserContextOwner {
+        urlBarBundle.floatingBarBrowserContextOwner
+    }
+    var urlBarContextOwner: BrowserURLBarContextOwner { urlBarBundle.contextOwner }
+    var activePageRoutingOwner: BrowserActivePageRoutingOwner {
+        urlBarBundle.activePageRoutingOwner
+    }
     private(set) lazy var zoomCommandOwner = BrowserZoomCommandOwner(
         dependencies: .live(browserManager: self)
     )
     lazy var sidebarActionOwner = BrowserSidebarActionOwner(
         dependencies: .live(browserManager: self)
     )
-    lazy var windowShellCommandOwner = BrowserWindowShellCommandOwner(
-        dependencies: .live(browserManager: self)
-    )
-    lazy var pagePrivacyCommandOwner = BrowserPagePrivacyCommandOwner(
-        dependencies: .live(browserManager: self)
-    )
+    var windowSessionCommands: BrowserWindowSessionCommands { windowSessionBundle.commands }
+    lazy var chromeCommands = BrowserChromeCommands(browserManager: self)
     lazy var webViewCloseRouter = BrowserWebViewCloseRouter(
         dependencies: .live(browserManager: self)
     )
-    lazy var chromePopoverRoutingOwner = BrowserChromePopoverRoutingOwner(
-        dependencies: .live(browserManager: self)
-    )
-    lazy var profileMaintenanceOwner = BrowserProfileMaintenanceOwner(
-        dependencies: .live(browserManager: self)
-    )
-    lazy var automaticDataCleanupOwner = BrowserAutomaticDataCleanupOwner(
-        dependencies: .live(browserManager: self)
-    )
+    var automaticDataCleanupOwner: BrowserAutomaticDataCleanupOwner {
+        privacyBundle.automaticDataCleanupOwner
+    }
     lazy var windowScopedNavigationOwner = BrowserWindowScopedNavigationOwner(
         dependencies: .live(browserManager: self)
     )
@@ -216,42 +189,33 @@ class BrowserManager: ObservableObject {
     lazy var notificationPresenter = BrowserNotificationPresenter(
         dependencies: .live(browserManager: self)
     )
-    lazy var urlCopyOwner = BrowserURLCopyOwner(
-        dependencies: .live(browserManager: self)
-    )
     lazy var appCommandRouter = BrowserAppCommandRouter(
         dependencies: .live(browserManager: self)
     )
     lazy var shortcutActionRouter = BrowserShortcutActionRouter(
         dependencies: .live(browserManager: self)
     )
-    lazy var extensionBridgeAdapter = BrowserExtensionBridgeAdapter(
-        dependencies: .live(browserManager: self)
-    )
+    var extensionBridgeAdapter: BrowserExtensionBridgeAdapter {
+        extensionBridgeBundle.adapter
+    }
     let shellRuntime = BrowserShellRuntime()
     lazy var webViewRoutingService = BrowserWebViewRoutingService(
         tabLookup: { [weak self] tabId in
             self?.tabManager.tabCollectionMembershipOwner.tab(for: tabId)
         },
         coordinatorProvider: { [weak self] in
-            guard let self else {
-                preconditionFailure(
-                    "BrowserManager was released before WebView routing resolved its coordinator."
-                )
-            }
-            return self.shellRuntime.requireWebViewCoordinator()
+            self?.shellRuntime.webViewCoordinator
         }
     )
-    lazy var windowSessionService = WindowSessionService(
-        lastWindowSessionKey: Self.lastWindowSessionKey
+    var windowSessionService = WindowSessionService(
+        lastWindowSessionKey: BrowserManager.lastWindowSessionKey
     )
     let startupSessionRestoreOwner: BrowserStartupSessionRestoreOwner
 
     var auxiliaryWindowManager = AuxiliaryWindowManager()
-    private lazy var profileSwitchTransitionOwner = BrowserProfileSwitchTransitionOwner(
-        host: self,
-        dependencies: .live(browserManager: self)
-    )
+    private var profileSwitchTransitionOwner: BrowserProfileSwitchTransitionOwner {
+        profileLifecycleBundle.profileSwitchTransitionOwner
+    }
     let glanceManager = GlanceManager()
 
     /// Shared with app shell / `ContentView` via `.environment`; retained strongly so routing never sees a dangling coordinator.
@@ -329,49 +293,18 @@ class BrowserManager: ObservableObject {
             }
         )
     )
-    lazy var windowHistorySessionOwner = BrowserWindowHistorySessionOwner(
-        dependencies: BrowserWindowHistorySessionOwner.Dependencies(
-            windowState: { [weak self] windowId in
-                self?.windowRegistry?.windows[windowId]
-            },
-            allWindows: { [weak self] in
-                self?.windowRegistry?.allWindows ?? []
-            },
-            makeWindowSessionSnapshot: { [weak self] windowState in
-                guard let self else { return nil }
-                return self.windowSessionService.makeWindowSessionSnapshot(
-                    for: windowState,
-                    runtime: WindowSessionRuntimeFactory.make(for: self)
-                )
-            },
-            windowDisplayTitle: { [weak self] windowState in
-                guard let self else { return "" }
-                if let currentTab = self.windowTabContextOwner.currentTab(for: windowState) {
-                    return currentTab.name
-                }
-                if let currentSpace = self.windowSpaceStateOwner.space(for: windowState.currentSpaceId) {
-                    return currentSpace.name
-                }
-                return "Window"
-            },
-            recentlyClosedManager: { [weak self, recentlyClosedManager = self.recentlyClosedManager] in
-                self?.recentlyClosedManager ?? recentlyClosedManager
-            },
-            lastSessionWindowsStore: { [weak self, lastSessionWindowsStore = self.lastSessionWindowsStore] in
-                self?.lastSessionWindowsStore ?? lastSessionWindowsStore
-            },
-            startupRestore: startupSessionRestoreOwner
-        )
-    )
-    lazy var recentlyClosedRestoreOwner = BrowserRecentlyClosedRestoreOwner(
-        dependencies: .live(browserManager: self)
-    )
-    lazy var windowSessionActivationOwner = BrowserWindowSessionActivationOwner(
-        dependencies: .live(browserManager: self)
-    )
-    lazy var startupPolicyOwner = BrowserStartupPolicyOwner(
-        dependencies: .live(browserManager: self)
-    )
+    var windowHistorySessionOwner: BrowserWindowHistorySessionOwner {
+        windowSessionBundle.historySessionOwner
+    }
+    var recentlyClosedRestoreOwner: BrowserRecentlyClosedRestoreOwner {
+        windowSessionBundle.recentlyClosedRestoreOwner
+    }
+    var windowSessionActivationOwner: BrowserWindowSessionActivationOwner {
+        windowSessionBundle.activationOwner
+    }
+    var startupPolicyOwner: BrowserStartupPolicyOwner {
+        profileLifecycleBundle.startupPolicyOwner
+    }
 
     func adoptProfileIfNeeded(
         for windowState: BrowserWindowState, context: ProfileSwitchContext
@@ -823,6 +756,18 @@ class BrowserManager: ObservableObject {
         if presentNewTabFloatingBar && windowState.isShowingEmptyState {
             floatingBarRoutingOwner.showNewTabFloatingBar(in: windowState)
         }
+    }
+
+    // MARK: - Find Bar Routing
+
+    func showFindBar() {
+        let session = activePageRoutingOwner.activeFindSession()
+        findManager.showFindBar(for: session.tab, in: session.windowId)
+    }
+
+    func updateFindManagerCurrentTab() {
+        let session = activePageRoutingOwner.activeFindSession()
+        findManager.updateCurrentTab(session.tab, in: session.windowId)
     }
 
 }

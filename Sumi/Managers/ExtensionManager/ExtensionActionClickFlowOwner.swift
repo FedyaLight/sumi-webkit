@@ -15,13 +15,9 @@ final class ExtensionActionClickFlowOwner {
     struct Dependencies {
         let actionPopupAnchorStore: ExtensionActionPopupAnchorStore
         let installedRecordsOwner: ExtensionInstalledRecordsOwner
-        let runtimeSessionOwner: ExtensionRuntimeSessionOwner
-        let profileRuntimeOwner: ExtensionProfileRuntimeOwner
-        /// Manager's mutable current-window/tab bridge; not owner-backed.
-        let runtime: @MainActor () -> ExtensionManagerRuntime
+        let runtimeAccess: ExtensionFlowOwnerRuntimeAccess
         let actionPopupAnchorResolutionOwner: ExtensionActionPopupAnchorResolutionOwner
         let runtimeLifecycleOwner: ExtensionRuntimeLifecycleOwner
-        let controllerProvisioningOwner: ExtensionControllerProvisioningOwner
         let contextResidencyOwner: ExtensionContextResidencyOwner
         let actionPopupFailureDiagnosticsOwner: ExtensionActionPopupFailureDiagnosticsOwner
         let installCapabilityOwner: SafariExtensionInstallCapabilityOwner
@@ -63,30 +59,23 @@ final class ExtensionActionClickFlowOwner {
     }
 
     private func runtimeState() -> ExtensionManager.ExtensionRuntimeState {
-        dependencies.runtimeSessionOwner.runtimeState
+        dependencies.runtimeAccess.runtimeSessionOwner.runtimeState
     }
 
     private func currentProfileId() -> UUID? {
-        dependencies.profileRuntimeOwner.currentProfileId
+        dependencies.runtimeAccess.profileRuntimeOwner.currentProfileId
     }
 
     private func fallbackProfileId() -> UUID? {
-        dependencies.profileRuntimeOwner.resolvedProfileId(
-            explicitProfileId: nil,
-            runtime: dependencies.runtime()
-        )
+        dependencies.runtimeAccess.fallbackProfileId()
     }
 
     private func getExtensionContext(_ extensionId: String, _ profileId: UUID?) -> WKWebExtensionContext? {
-        guard let resolvedProfileId = dependencies.profileRuntimeOwner.resolvedProfileId(
-            explicitProfileId: profileId,
-            runtime: dependencies.runtime()
-        ) else { return nil }
-        return dependencies.profileRuntimeOwner.contexts(for: resolvedProfileId)[extensionId]
+        dependencies.runtimeAccess.getExtensionContext(extensionId, profileId)
     }
 
     private func loadedContextCount(_ profileId: UUID) -> Int {
-        dependencies.profileRuntimeOwner.contexts(for: profileId).count
+        dependencies.runtimeAccess.profileRuntimeOwner.contexts(for: profileId).count
     }
 
     private func captureActionPopupAnchor(_ extensionId: String, _ windowId: UUID, _ profileId: UUID?) {
@@ -102,7 +91,7 @@ final class ExtensionActionClickFlowOwner {
     }
 
     private func ensureExtensionController(_ profileId: UUID) {
-        _ = dependencies.controllerProvisioningOwner.ensureExtensionController(for: profileId)
+        dependencies.runtimeAccess.ensureExtensionController(profileId)
     }
 
     private func ensureExtensionLoaded(
@@ -144,9 +133,7 @@ final class ExtensionActionClickFlowOwner {
     }
 
     private func lastExtensionLoadError(_ extensionId: String, _ profileId: UUID) -> Error? {
-        dependencies.runtimeSessionOwner.lastExtensionLoadErrors[
-            ExtensionRuntimeResidencyState.scopedKey(extensionId: extensionId, profileId: profileId)
-        ]
+        dependencies.runtimeAccess.lastExtensionLoadError(extensionId, profileId)
     }
 
     private func grantRequestedPermissions(
@@ -200,7 +187,7 @@ final class ExtensionActionClickFlowOwner {
     }
 
     private func extensionIDForContext(_ context: WKWebExtensionContext) -> String? {
-        dependencies.profileRuntimeOwner.extensionId(for: context)
+        dependencies.runtimeAccess.profileRuntimeOwner.extensionId(for: context)
     }
 
     private func configuredSiteAccessLevel(
@@ -289,7 +276,10 @@ final class ExtensionActionClickFlowOwner {
         _ extensionId: String,
         _ update: (inout ExtensionManager.ExtensionRuntimeMetrics) -> Void
     ) {
-        dependencies.runtimeSessionOwner.recordRuntimeMetric(for: extensionId, update: update)
+        dependencies.runtimeAccess.runtimeSessionOwner.recordRuntimeMetric(
+            for: extensionId,
+            update: update
+        )
     }
 
     private func trace(_ message: () -> String) {
@@ -354,7 +344,7 @@ final class ExtensionActionClickFlowOwner {
         if dependencies.actionPopupAnchorStore.latestSessionToken(for: extensionId) == nil {
             let windowId =
                 currentTab.flatMap { tab in
-                    dependencies.runtime().primaryTrackedWindowId(tab.id)
+                    dependencies.runtimeAccess.runtime().primaryTrackedWindowId(tab.id)
                 }
                 ?? dependencies.activeExtensionWindowId()
             if let windowId {
@@ -736,12 +726,14 @@ extension ExtensionActionClickFlowOwner.Dependencies {
         Self(
             actionPopupAnchorStore: manager.actionPopupAnchorStore,
             installedRecordsOwner: manager.installedRecordsOwner,
-            runtimeSessionOwner: manager.runtimeSessionOwner,
-            profileRuntimeOwner: manager.profileRuntimeOwner,
-            runtime: { [weak manager] in manager?.runtime ?? .inactive },
+            runtimeAccess: ExtensionFlowOwnerRuntimeAccess(
+                profileRuntimeOwner: manager.profileRuntimeOwner,
+                controllerProvisioningOwner: manager.controllerProvisioningOwner,
+                runtimeSessionOwner: manager.runtimeSessionOwner,
+                runtime: { [weak manager] in manager?.runtime ?? .inactive }
+            ),
             actionPopupAnchorResolutionOwner: manager.actionPopupAnchorResolutionOwner,
             runtimeLifecycleOwner: manager.runtimeLifecycleOwner,
-            controllerProvisioningOwner: manager.controllerProvisioningOwner,
             contextResidencyOwner: manager.contextResidencyOwner,
             actionPopupFailureDiagnosticsOwner: manager.actionPopupFailureDiagnosticsOwner,
             installCapabilityOwner: manager.installCapabilityOwner,

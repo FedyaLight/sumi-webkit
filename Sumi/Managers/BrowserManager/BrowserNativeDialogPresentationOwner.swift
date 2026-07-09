@@ -142,7 +142,7 @@ final class BrowserNativeDialogPresentationOwner {
         if let presentedWindow = presentation.window {
             return presentedWindow === window
         }
-        return dependencies.windowRegistry()?.windows[presentation.windowID]?.window === window
+        return dependencies.windowRegistry()?.appKitWindow(for: presentation.windowID) === window
     }
 
     func presentSharingServicePicker(

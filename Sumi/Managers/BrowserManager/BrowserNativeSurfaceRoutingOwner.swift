@@ -133,8 +133,9 @@ extension BrowserNativeSurfaceRoutingOwner.Dependencies {
             selectTab: { [weak browserManager] tab, windowState in
                 browserManager?.selectTab(tab, in: windowState)
             },
-            focusWindow: { windowState in
-                windowState.window?.makeKeyAndOrderFront(nil)
+            focusWindow: { [weak browserManager] windowState in
+                windowState.shellWindow(in: browserManager?.windowRegistry)?
+                    .makeKeyAndOrderFront(nil)
                 NSApp.activate(ignoringOtherApps: true)
             }
         )

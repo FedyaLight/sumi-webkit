@@ -117,7 +117,8 @@ final class WorkspaceThemePickerPopoverPresenter: NSObject, NSPopoverDelegate {
         popover.contentSize = Self.Metrics.contentSize
         popover.appearance = PopoverPresenterChromeSupport.appearance(
             for: windowState.nativeSurfaceThemeContext(settings: settings).chromeColorScheme,
-            fallback: resolvedAnchor.view.window?.effectiveAppearance ?? windowState.window?.effectiveAppearance
+            fallback: resolvedAnchor.view.window?.effectiveAppearance
+                ?? windowState.shellWindow(in: nil)?.effectiveAppearance
         )
 
         activeSession = ActiveSession(
@@ -130,7 +131,7 @@ final class WorkspaceThemePickerPopoverPresenter: NSObject, NSPopoverDelegate {
         )
         startObservingDismissNotifications()
 
-        windowState.window?.makeKeyAndOrderFront(nil)
+        windowState.shellWindow(in: nil)?.makeKeyAndOrderFront(nil)
         popover.show(
             relativeTo: resolvedAnchor.rect,
             of: resolvedAnchor.view,
@@ -277,7 +278,7 @@ final class WorkspaceThemePickerPopoverPresenter: NSObject, NSPopoverDelegate {
             return (ownerView, ownerView.bounds, preferredEdge)
         }
 
-        guard let contentView = windowState.window?.contentView
+        guard let contentView = windowState.shellWindow(in: nil)?.contentView
             ?? session.presentationSource?.window?.contentView
         else { return nil }
 
@@ -454,7 +455,7 @@ final class WorkspaceThemePickerPopoverPresenter: NSObject, NSPopoverDelegate {
         guard let activeSession,
               !activeSession.isClosing,
               let windowState = activeSession.windowState,
-              let window = windowState.window,
+              let window = windowState.shellWindow(in: nil),
               let contentView = window.contentView,
               event.window === window
         else { return }

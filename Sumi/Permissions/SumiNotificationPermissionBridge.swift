@@ -278,41 +278,25 @@ final class SumiNotificationPermissionBridge {
         for request: SumiWebNotificationRequest,
         tabContext: SumiWebNotificationTabContext
     ) -> SumiPermissionSecurityContext {
-        let topOrigin = SumiPermissionOrigin(
-            url: tabContext.committedURL ?? tabContext.mainFrameURL ?? tabContext.visibleURL
-        )
-        let permissionRequest = SumiPermissionRequest(
-            id: request.id,
+        SumiPermissionSecurityContextBuilder.make(
+            requestId: request.id,
             tabId: tabContext.tabId,
             pageId: tabContext.pageId,
-            frameId: nil,
             requestingOrigin: request.requestingOrigin,
-            topOrigin: topOrigin,
             displayDomain: tabContext.displayDomain ?? request.requestingOrigin.displayDomain,
             permissionTypes: [.notifications],
-            hasUserGesture: false,
-            requestedAt: now(),
-            isEphemeralProfile: tabContext.isEphemeralProfile,
-            profilePartitionId: tabContext.profilePartitionId
-        )
-
-        return SumiPermissionSecurityContext(
-            request: permissionRequest,
-            requestingOrigin: request.requestingOrigin,
-            topOrigin: topOrigin,
+            hasUserGesture: nil,
+            isMainFrame: request.isMainFrame,
             committedURL: tabContext.committedURL,
             visibleURL: tabContext.visibleURL,
             mainFrameURL: tabContext.mainFrameURL,
-            isMainFrame: request.isMainFrame,
             isActiveTab: tabContext.isActiveTab,
             isVisibleTab: tabContext.isVisibleTab,
-            hasUserGesture: nil,
             isEphemeralProfile: tabContext.isEphemeralProfile,
             profilePartitionId: tabContext.profilePartitionId,
-            transientPageId: tabContext.pageId,
             surface: tabContext.surface,
             navigationOrPageGeneration: tabContext.navigationOrPageGeneration,
-            now: permissionRequest.requestedAt
+            now: now()
         )
     }
 

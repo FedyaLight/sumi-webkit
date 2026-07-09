@@ -28,11 +28,41 @@ final class SidebarDragGeometryRepository {
     private var pendingGeometrySnapshotPublishRequested = false
     private var isDrainingMainRunLoopGeometry = false
     private let geometryMutationBuffer = SidebarDragGeometryMutationBuffer()
-    private let mainRunLoopOwner = SidebarDragGeometryMainRunLoopOwner()
+    private let mainRunLoopOwner = MainRunLoopOwner()
 
     private let publishSnapshot: @MainActor (SidebarGeometrySnapshot) -> Void
     private let publishRevision: @MainActor (Int) -> Void
     private let publishGenerations: @MainActor (GenerationState) -> Void
+
+    @MainActor
+    private final class MainRunLoopOwner {
+        private var scheduledDrainToken = 0
+        private var isDrainScheduled = false
+
+        func scheduleDrain(_ drain: @escaping @MainActor () -> Void) {
+            guard !isDrainScheduled else { return }
+            isDrainScheduled = true
+            let token = scheduledDrainToken
+
+            DispatchQueue.main.async { [weak self] in
+                guard let self,
+                      isDrainScheduled,
+                      scheduledDrainToken == token else {
+                    return
+                }
+                isDrainScheduled = false
+                drain()
+            }
+        }
+
+        func drainSynchronously(_ drain: @MainActor () -> Void) {
+            if isDrainScheduled {
+                scheduledDrainToken &+= 1
+                isDrainScheduled = false
+            }
+            drain()
+        }
+    }
 
     init(
         geometrySnapshot: SidebarGeometrySnapshot = .empty,

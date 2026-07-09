@@ -8,11 +8,11 @@ final class SumiAutoplayPolicyNavigationResponder: SumiNavigationActionRespondin
 
     init(
         tab: Tab,
-        autoplayPolicyStore: SumiAutoplayPolicyStoreAdapter? = nil,
+        autoplayPolicyStore: SumiAutoplayPolicyStoreAdapter,
         profileProvider: (@MainActor (Tab) -> Profile?)? = nil
     ) {
         self.tab = tab
-        self.autoplayPolicyStore = autoplayPolicyStore ?? .shared
+        self.autoplayPolicyStore = autoplayPolicyStore
         self.profileProvider = profileProvider ?? { $0.resolveProfile() }
     }
 

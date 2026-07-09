@@ -237,6 +237,44 @@ final class BrowserActivePageRoutingOwnerTests: XCTestCase {
         XCTAssertEqual(harness.copyToastWindowIds, [windowState.id])
     }
 
+    func testActiveFindSessionFallsBackToNilWhenThereIsNoActiveWindow() {
+        let harness = BrowserActivePageRoutingOwnerHarness(activeWindow: nil)
+        let owner = harness.makeOwner()
+
+        let session = owner.activeFindSession()
+
+        XCTAssertNil(session.tab)
+        XCTAssertNil(session.windowId)
+    }
+
+    func testActiveFindSessionRoutesActivePageTabInActiveWindow() {
+        let windowState = BrowserWindowState()
+        let tab = makeTab("https://example.com")
+        let harness = BrowserActivePageRoutingOwnerHarness(activeWindow: windowState)
+        harness.currentTabsByWindowId[windowState.id] = tab
+        let owner = harness.makeOwner()
+
+        let session = owner.activeFindSession()
+
+        XCTAssertEqual(session.tab?.id, tab.id)
+        XCTAssertEqual(session.windowId, windowState.id)
+    }
+
+    func testActiveFindSessionPrefersGlancePreviewTab() {
+        let windowState = BrowserWindowState()
+        let currentTab = makeTab("https://current.example")
+        let previewTab = makeTab("https://preview.example")
+        let harness = BrowserActivePageRoutingOwnerHarness(activeWindow: windowState)
+        harness.currentTabsByWindowId[windowState.id] = currentTab
+        harness.previewTabsByWindowId[windowState.id] = previewTab
+        let owner = harness.makeOwner()
+
+        let session = owner.activeFindSession()
+
+        XCTAssertEqual(session.tab?.id, previewTab.id)
+        XCTAssertEqual(session.windowId, windowState.id)
+    }
+
     private func assertForeground(
         _ context: BrowserTabOpenContext,
         windowState: BrowserWindowState,

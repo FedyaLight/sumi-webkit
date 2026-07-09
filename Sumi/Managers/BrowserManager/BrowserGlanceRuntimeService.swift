@@ -63,7 +63,7 @@ enum BrowserGlanceRuntimeService {
                 browserManager?.findManager.hideFindBar()
             },
             updateFindManagerCurrentTab: { [weak browserManager] in
-                browserManager?.findBarRoutingOwner.updateCurrentTab()
+                browserManager?.updateFindManagerCurrentTab()
             },
             persistWindowSession: { [weak browserManager] windowState in
                 browserManager?.windowSessionActivationOwner.persistWindowSession(for: windowState)

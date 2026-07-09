@@ -237,7 +237,7 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
         )
         activeSessions[windowState.id] = session
 
-        windowState.window?.makeKeyAndOrderFront(nil)
+        windowState.shellWindow(in: nil)?.makeKeyAndOrderFront(nil)
         popover.show(relativeTo: anchorView.bounds, of: anchorView, preferredEdge: .maxY)
 
         if let pendingSize = pendingContentSizes.removeValue(forKey: windowState.id) {
@@ -441,7 +441,7 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
         else { return }
 
         let source = windowState.sidebarTransientSessionCoordinator.preparedPresentationSource(
-            window: windowState.window
+            window: windowState.shellWindow(in: nil)
         )
         let token = windowState.sidebarTransientSessionCoordinator.beginSession(
             kind: .urlHubPopover,
@@ -461,14 +461,14 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
         let windowID = windowState.id
         if let pendingSession = pendingTransientSessions.removeValue(forKey: windowID) {
             pendingSession.source.refresh(
-                window: anchorView.window ?? windowState.window,
+                window: anchorView.window ?? windowState.shellWindow(in: nil),
                 originOwnerView: anchorView
             )
             return pendingSession.token
         }
 
         let source = windowState.sidebarTransientSessionCoordinator.preparedPresentationSource(
-            window: anchorView.window ?? windowState.window,
+            window: anchorView.window ?? windowState.shellWindow(in: nil),
             ownerView: anchorView
         )
         return windowState.sidebarTransientSessionCoordinator.beginSession(

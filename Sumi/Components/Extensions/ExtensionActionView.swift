@@ -148,99 +148,63 @@ private struct HubExtensionTilesGrid: View {
     let profileId: UUID?
     let browserContext: ExtensionActionBrowserContext
 
-    @State private var reorder = ReorderDragState<String>()
-    @State private var frames = ReorderFrameStore()
-    @State private var lastDropAt = Date.distantPast
-
-    private static let axis: ReorderAxis = .grid
     private static let spacing: CGFloat = 8
     private static let coordinateSpaceName = "hub-extension-reorder"
 
     var body: some View {
         let base = hubExtensions
-        let baseIDs = base.map(\.id)
-        let displayed = reorder.displayOrder(base, id: \.id)
+        ExtensionActionReorderSurface(
+            base: base,
+            id: \.id,
+            axis: .grid,
+            coordinateSpaceName: Self.coordinateSpaceName,
+            onCommit: { move in
+                browserContext.extensionsModule.moveUnpinnedExtension(
+                    id: move.id,
+                    to: move.targetIndex,
+                    within: base.map(\.id)
+                )
+            },
+            content: { surface in
+                LazyVGrid(columns: columns, alignment: .leading, spacing: Self.spacing) {
+                    if browserContext.userscriptsModule.isEnabled {
+                        SumiScriptsToolbarControl(
+                            layout: .hubTile,
+                            browserContext: browserContext
+                        )
+                        .sumiAppKitContextMenu(entries: {
+                            sumiScriptsToolbarMenuEntries(browserContext: browserContext)
+                        })
+                    }
 
-        LazyVGrid(columns: columns, alignment: .leading, spacing: Self.spacing) {
-            if browserContext.userscriptsModule.isEnabled {
-                SumiScriptsToolbarControl(layout: .hubTile, browserContext: browserContext)
-                    .sumiAppKitContextMenu(entries: {
-                        sumiScriptsToolbarMenuEntries(browserContext: browserContext)
-                    })
+                    ForEach(surface.displayed, id: \.id) { ext in
+                        surface.slot(ext) {
+                            tileView(
+                                ext,
+                                suppressActivation: surface.shouldSuppressActivation
+                            )
+                        }
+                        .sumiAppKitContextMenu(entries: { menuEntries(for: ext) })
+                    }
+                }
+            },
+            overlayContent: { ext in
+                tileView(ext, suppressActivation: nil)
             }
-
-            ForEach(displayed, id: \.id) { ext in
-                tileView(ext)
-                    .opacity(reorder.hidesInlineItem(ext.id) ? 0 : 1)
-                    .reorderSlotFrame(
-                        id: ext.id,
-                        coordinateSpace: Self.coordinateSpaceName,
-                        into: $frames.live
-                    )
-                    .simultaneousGesture(reorderGesture(for: ext.id, baseIDs: baseIDs))
-                    .sumiAppKitContextMenu(entries: { menuEntries(for: ext) })
-            }
-        }
-        .coordinateSpace(name: Self.coordinateSpaceName)
-        .overlay(alignment: .topLeading) { draggedOverlay(displayed) }
-        .animation(
-            .interactiveSpring(duration: 0.22, extraBounce: 0.05),
-            value: displayed.map(\.id)
         )
     }
 
-    private func tileView(_ ext: InstalledExtension, isOverlay: Bool = false) -> some View {
+    private func tileView(
+        _ ext: InstalledExtension,
+        suppressActivation: (() -> Bool)?
+    ) -> some View {
         ExtensionActionButton(
             ext: ext,
             layout: .hubTiles,
             profileId: profileId,
             browserContext: browserContext,
-            suppressActivation: isOverlay ? nil : { shouldSuppressActivation }
+            suppressActivation: suppressActivation
         )
-    }
-
-    @ViewBuilder
-    private func draggedOverlay(_ tiles: [InstalledExtension]) -> some View {
-        if let id = reorder.draggedID,
-           let ext = tiles.first(where: { $0.id == id }),
-           let frame = reorder.draggedOverlayFrame() {
-            tileView(ext, isOverlay: true)
-                .frame(width: frame.width, height: frame.height)
-                .offset(x: frame.minX, y: frame.minY)
-                .allowsHitTesting(false)
-                .animation(nil, value: reorder.currentLocation)
-                .zIndex(2)
-        }
-    }
-
-    private func reorderGesture(for id: String, baseIDs: [String]) -> some Gesture {
-        makeReorderDragGesture(
-            id: id,
-            coordinateSpaceName: Self.coordinateSpaceName,
-            isEnabled: { baseIDs.count > 1 },
-            orderedIDs: { baseIDs },
-            geometry: {
-                frames.geometry(
-                    axis: Self.axis,
-                    isDragging: reorder.isDragging,
-                    baseOrder: baseIDs
-                )
-            },
-            state: $reorder,
-            onBeginDrag: { frames.freeze(order: baseIDs) },
-            onEndDrag: { lastDropAt = Date() },
-            onCommit: { move in
-                browserContext.extensionsModule.moveUnpinnedExtension(
-                    id: move.id,
-                    to: move.targetIndex,
-                    within: baseIDs
-                )
-            }
-        )
-    }
-
-    private var shouldSuppressActivation: Bool {
-        Date().timeIntervalSince(lastDropAt) < 0.25
     }
 
     private func menuEntries(for ext: InstalledExtension) -> [SidebarContextMenuEntry] {
@@ -286,61 +250,68 @@ private struct SidebarExtensionActionGrid: View {
     let profileId: UUID?
     let browserContext: ExtensionActionBrowserContext
     private static let gridSpacing: CGFloat = 8
-    private static let axis: ReorderAxis = .horizontal
     private static let coordinateSpaceName = "sidebar-extension-reorder"
 
-    @State private var reorder = ReorderDragState<String>()
-    @State private var frames = ReorderFrameStore()
-    @State private var lastDropAt = Date.distantPast
-
     var body: some View {
-        let base = pinnedSlots
-        let baseIDs = base.map(\.id)
-        let displayed = reorder.displayOrder(base, id: \.id)
-
-        LazyVGrid(columns: columns(slotCount: displayed.count), alignment: .leading, spacing: Self.gridSpacing) {
-            ForEach(displayed) { slot in
-                slotView(slot)
-                    .opacity(reorder.hidesInlineItem(slot.id) ? 0 : 1)
-                    .reorderSlotFrame(
-                        id: slot.id,
-                        coordinateSpace: Self.coordinateSpaceName,
-                        into: $frames.live
-                    )
-                    .simultaneousGesture(reorderGesture(for: slot.id, baseIDs: baseIDs))
-                    // Inside the sidebar, the background/column owns an AppKit
-                    // context menu that competes for right-clicks through the
-                    // sidebar controller's routing priority. A plain
-                    // `sumiAppKitContextMenu` overlay does not register with that
-                    // controller, so the sidebar menu wins. Route through
-                    // `sidebarAppKitContextMenu` (right-click only, no primary
-                    // action) so this slot registers as an AppKit owner and wins
-                    // the right-click while still passing the primary mouse to
-                    // the SwiftUI button and reorder drag.
-                    .sidebarAppKitContextMenu(
-                        surfaceKind: .button,
-                        entries: { menuEntries(for: slot) }
-                    )
+        ExtensionActionReorderSurface(
+            base: pinnedSlots,
+            id: \.id,
+            axis: .horizontal,
+            coordinateSpaceName: Self.coordinateSpaceName,
+            onCommit: { move in
+                browserContext.extensionsModule.movePinnedToolbarSlot(
+                    id: move.id,
+                    to: move.targetIndex
+                )
+            },
+            content: { surface in
+                LazyVGrid(
+                    columns: columns(slotCount: surface.displayed.count),
+                    alignment: .leading,
+                    spacing: Self.gridSpacing
+                ) {
+                    ForEach(surface.displayed) { slot in
+                        surface.slot(slot) {
+                            slotView(
+                                slot,
+                                suppressActivation: surface.shouldSuppressActivation
+                            )
+                        }
+                        // Inside the sidebar, the background/column owns an AppKit
+                        // context menu that competes for right-clicks through the
+                        // sidebar controller's routing priority. A plain
+                        // `sumiAppKitContextMenu` overlay does not register with that
+                        // controller, so the sidebar menu wins. Route through
+                        // `sidebarAppKitContextMenu` (right-click only, no primary
+                        // action) so this slot registers as an AppKit owner and wins
+                        // the right-click while still passing the primary mouse to
+                        // the SwiftUI button and reorder drag.
+                        .sidebarAppKitContextMenu(
+                            surfaceKind: .button,
+                            entries: { menuEntries(for: slot) }
+                        )
+                    }
+                }
+                .padding(.horizontal, 2)
+                .accessibilityIdentifier("sidebar-extension-action-grid")
+            },
+            overlayContent: { slot in
+                slotView(slot, suppressActivation: nil)
             }
-        }
-        .padding(.horizontal, 2)
-        .coordinateSpace(name: Self.coordinateSpaceName)
-        .overlay(alignment: .topLeading) { draggedOverlay(displayed) }
-        .animation(
-            .interactiveSpring(duration: 0.22, extraBounce: 0.05),
-            value: displayed.map(\.id)
         )
-        .accessibilityIdentifier("sidebar-extension-action-grid")
     }
 
     @ViewBuilder
-    private func slotView(_ slot: PinnedToolbarSlot, isOverlay: Bool = false) -> some View {
+    private func slotView(
+        _ slot: PinnedToolbarSlot,
+        suppressActivation: (() -> Bool)?
+    ) -> some View {
         switch slot {
         case .sumiScriptsManager:
             SumiScriptsToolbarControl(
                 layout: .sidebarGrid,
                 browserContext: browserContext,
-                suppressActivation: isOverlay ? nil : { shouldSuppressActivation }
+                suppressActivation: suppressActivation
             )
         case .webExtension(let ext):
             ExtensionActionButton(
@@ -348,52 +319,9 @@ private struct SidebarExtensionActionGrid: View {
                 layout: .sidebarGrid,
                 profileId: profileId,
                 browserContext: browserContext,
-                suppressActivation: isOverlay ? nil : { shouldSuppressActivation }
+                suppressActivation: suppressActivation
             )
         }
-    }
-
-    @ViewBuilder
-    private func draggedOverlay(_ slots: [PinnedToolbarSlot]) -> some View {
-        if let id = reorder.draggedID,
-           let slot = slots.first(where: { $0.id == id }),
-           let frame = reorder.draggedOverlayFrame() {
-            slotView(slot, isOverlay: true)
-                .frame(width: frame.width, height: frame.height)
-                .offset(x: frame.minX, y: frame.minY)
-                .allowsHitTesting(false)
-                .animation(nil, value: reorder.currentLocation)
-                .zIndex(2)
-        }
-    }
-
-    private func reorderGesture(for id: String, baseIDs: [String]) -> some Gesture {
-        makeReorderDragGesture(
-            id: id,
-            coordinateSpaceName: Self.coordinateSpaceName,
-            isEnabled: { baseIDs.count > 1 },
-            orderedIDs: { baseIDs },
-            geometry: {
-                frames.geometry(
-                    axis: Self.axis,
-                    isDragging: reorder.isDragging,
-                    baseOrder: baseIDs
-                )
-            },
-            state: $reorder,
-            onBeginDrag: { frames.freeze(order: baseIDs) },
-            onEndDrag: { lastDropAt = Date() },
-            onCommit: { move in
-                browserContext.extensionsModule.movePinnedToolbarSlot(
-                    id: move.id,
-                    to: move.targetIndex
-                )
-            }
-        )
-    }
-
-    private var shouldSuppressActivation: Bool {
-        Date().timeIntervalSince(lastDropAt) < 0.25
     }
 
     private func menuEntries(for slot: PinnedToolbarSlot) -> [SidebarContextMenuEntry] {
@@ -442,99 +370,59 @@ private struct CompactExtensionActionStrip: View {
     let visibleActionLimit: Int?
     let browserContext: ExtensionActionBrowserContext
 
-    @State private var reorder = ReorderDragState<String>()
-    @State private var frames = ReorderFrameStore()
-    @State private var lastDropAt = Date.distantPast
-
-    private static let axis: ReorderAxis = .horizontal
     private static let coordinateSpaceName = "compact-extension-reorder"
 
     var body: some View {
-        let base = visiblePinnedSlots
-        let baseIDs = base.map(\.id)
-        let displayed = reorder.displayOrder(base, id: \.id)
-
-        HStack(spacing: 4) {
-            ForEach(displayed) { slot in
-                slotView(slot)
-                    .opacity(reorder.hidesInlineItem(slot.id) ? 0 : 1)
-                    .reorderSlotFrame(
-                        id: slot.id,
-                        coordinateSpace: Self.coordinateSpaceName,
-                        into: $frames.live
-                    )
-                    .simultaneousGesture(reorderGesture(for: slot.id, baseIDs: baseIDs))
-                    .sumiAppKitContextMenu(entries: { menuEntries(for: slot) })
+        ExtensionActionReorderSurface(
+            base: visiblePinnedSlots,
+            id: \.id,
+            axis: .horizontal,
+            coordinateSpaceName: Self.coordinateSpaceName,
+            onCommit: { move in
+                browserContext.extensionsModule.movePinnedToolbarSlot(
+                    id: move.id,
+                    to: move.targetIndex
+                )
+            },
+            content: { surface in
+                HStack(spacing: 4) {
+                    ForEach(surface.displayed) { slot in
+                        surface.slot(slot) {
+                            slotView(
+                                slot,
+                                suppressActivation: surface.shouldSuppressActivation
+                            )
+                        }
+                        .sumiAppKitContextMenu(entries: { menuEntries(for: slot) })
+                    }
+                }
+            },
+            overlayContent: { slot in
+                slotView(slot, suppressActivation: nil)
             }
-        }
-        .coordinateSpace(name: Self.coordinateSpaceName)
-        .overlay(alignment: .topLeading) { draggedOverlay(displayed) }
-        .animation(
-            .interactiveSpring(duration: 0.22, extraBounce: 0.05),
-            value: displayed.map(\.id)
         )
     }
 
     @ViewBuilder
-    private func slotView(_ slot: PinnedToolbarSlot, isOverlay: Bool = false) -> some View {
+    private func slotView(
+        _ slot: PinnedToolbarSlot,
+        suppressActivation: (() -> Bool)?
+    ) -> some View {
         switch slot {
         case .sumiScriptsManager:
             SumiScriptsToolbarControl(
                 layout: .compactStrip,
                 browserContext: browserContext,
-                suppressActivation: isOverlay ? nil : { shouldSuppressActivation }
+                suppressActivation: suppressActivation
             )
         case .webExtension(let ext):
             ExtensionActionButton(
                 ext: ext,
                 layout: .compactStrip,
                 browserContext: browserContext,
-                suppressActivation: isOverlay ? nil : { shouldSuppressActivation }
+                suppressActivation: suppressActivation
             )
         }
-    }
-
-    @ViewBuilder
-    private func draggedOverlay(_ slots: [PinnedToolbarSlot]) -> some View {
-        if let id = reorder.draggedID,
-           let slot = slots.first(where: { $0.id == id }),
-           let frame = reorder.draggedOverlayFrame() {
-            slotView(slot, isOverlay: true)
-                .frame(width: frame.width, height: frame.height)
-                .offset(x: frame.minX, y: frame.minY)
-                .allowsHitTesting(false)
-                .animation(nil, value: reorder.currentLocation)
-                .zIndex(2)
-        }
-    }
-
-    private func reorderGesture(for id: String, baseIDs: [String]) -> some Gesture {
-        makeReorderDragGesture(
-            id: id,
-            coordinateSpaceName: Self.coordinateSpaceName,
-            isEnabled: { baseIDs.count > 1 },
-            orderedIDs: { baseIDs },
-            geometry: {
-                frames.geometry(
-                    axis: Self.axis,
-                    isDragging: reorder.isDragging,
-                    baseOrder: baseIDs
-                )
-            },
-            state: $reorder,
-            onBeginDrag: { frames.freeze(order: baseIDs) },
-            onEndDrag: { lastDropAt = Date() },
-            onCommit: { move in
-                browserContext.extensionsModule.movePinnedToolbarSlot(
-                    id: move.id,
-                    to: move.targetIndex
-                )
-            }
-        )
-    }
-
-    private var shouldSuppressActivation: Bool {
-        Date().timeIntervalSince(lastDropAt) < 0.25
     }
 
     private func menuEntries(for slot: PinnedToolbarSlot) -> [SidebarContextMenuEntry] {

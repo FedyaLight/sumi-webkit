@@ -44,19 +44,42 @@ final class GlanceOverlayController: NSObject {
             }
         )
     )
-
-    private enum Motion {
-        static let glanceDuration: TimeInterval = 0.35
-        static let reducedMotionDuration: TimeInterval = 0.08
-        static let layoutDuration: TimeInterval = 0.16
-        static let buttonDuration: TimeInterval = 0.2
-        static let buttonOffset: CGFloat = 20
-    }
-
-    private enum AnimationDirection {
-        case opening
-        case closing
-    }
+    private lazy var motion = GlanceOverlayMotionController(
+        contentShadowView: contentShadowView,
+        webClipView: webClipView
+    )
+    private lazy var viewHierarchy = GlanceOverlayViewHierarchyOwner(
+        rootView: rootView,
+        webContentShieldAnchorView: webContentShieldAnchorView,
+        contentShadowView: contentShadowView,
+        webClipView: webClipView,
+        actionChrome: actionChrome,
+        keyCommands: keyCommands,
+        presentationState: presentationState,
+        previewHostAttachment: previewHostAttachment,
+        overlayLayout: overlayLayout,
+        resetCloseConfirmation: { [weak self] in self?.resetCloseConfirmation() },
+        configurationProvider: { [weak self] in self?.configuration },
+        managerProvider: { [weak self] in self?.manager },
+        sessionProvider: { [weak self] in self?.session }
+    )
+    private lazy var promotionAnimator = GlanceOverlayPromotionAnimator(
+        contentShadowView: contentShadowView,
+        webClipView: webClipView,
+        actionChrome: actionChrome,
+        contentVisualStyleOwner: contentVisualStyleOwner,
+        motion: motion,
+        viewHierarchy: viewHierarchy,
+        promotionHandoff: promotionHandoff,
+        previewHostAttachment: previewHostAttachment,
+        overlayLayout: overlayLayout,
+        resetCloseConfirmation: { [weak self] in self?.resetCloseConfirmation() },
+        rootViewProvider: { [weak self] in self?.rootView },
+        configurationProvider: { [weak self] in self?.configuration },
+        sessionProvider: { [weak self] in self?.session },
+        managerProvider: { [weak self] in self?.manager },
+        previewWebView: { [weak self] session in self?.previewWebView(for: session) }
+    )
 
     init(rootView: GlanceOverlayRootView) {
         self.rootView = rootView
@@ -90,7 +113,7 @@ final class GlanceOverlayController: NSObject {
         guard let session else {
             presentationState.resetForMissingSession()
             keyCommands.uninstall()
-            tearDownPresentedViews(
+            viewHierarchy.tearDownPresentedViews(
                 preservingPromotionHandoff: promotionHandoff.preservesPresentedHostDuringTeardown
             )
             promotionHandoff.reset()
@@ -104,12 +127,12 @@ final class GlanceOverlayController: NSObject {
             if configuration.isVisible {
                 presentWhenReady(session: session, configuration: configuration)
             } else {
-                installViewsIfNeeded()
+                viewHierarchy.installViewsIfNeeded()
                 previewHostAttachment.attachIfAvailable(
                     for: session,
                     webView: previewWebView(for: session)
                 )
-                setPresentationVisible(false)
+                viewHierarchy.setPresentationVisible(false)
             }
             return
         }
@@ -117,12 +140,12 @@ final class GlanceOverlayController: NSObject {
         self.session = session
         if !configuration.isVisible {
             presentationState.clearPendingPresentation()
-            setPresentationVisible(false)
+            viewHierarchy.setPresentationVisible(false)
             return
         }
 
         if !presentationState.isPresentationVisible {
-            setPresentationVisible(true)
+            viewHierarchy.setPresentationVisible(true)
             layoutForCurrentBounds(animated: false)
             return
         }
@@ -147,7 +170,7 @@ final class GlanceOverlayController: NSObject {
         presentationState.prepareForTearDown()
         promotionHandoff.reset()
         keyCommands.uninstall()
-        tearDownPresentedViews()
+        viewHierarchy.tearDownPresentedViews()
         rootView?.onLayout = nil
         rootView?.onBackgroundMouseDown = nil
         rootView?.onActionChromeMouseDown = nil
@@ -197,6 +220,8 @@ final class GlanceOverlayController: NSObject {
     private func configureViews() {
         contentVisualStyleOwner.configureViews()
         _ = actionChrome
+        _ = viewHierarchy
+        _ = promotionAnimator
     }
 
     private func apply(configuration: GlanceOverlayConfiguration) {
@@ -214,12 +239,8 @@ final class GlanceOverlayController: NSObject {
         guard let rootView else { return }
 
         presentationState.beginOpening()
-        installViewsIfNeeded()
-        rootView.acceptsBackgroundMouseEvents = true
-        contentShadowView.isHidden = false
-        actionChrome.isHidden = false
-        webContentShieldAnchorView.isHidden = false
-        keyCommands.installIfNeeded()
+        viewHierarchy.installViewsIfNeeded()
+        viewHierarchy.preparePresentSurface()
         resetCloseConfirmation()
         previewHostAttachment.attachIfAvailable(
             for: session,
@@ -232,26 +253,18 @@ final class GlanceOverlayController: NSObject {
             rootBounds: rootView.bounds,
             targetFrame: targetFrame
         )
-        publishContentFrame(targetFrame, in: rootView)
+        viewHierarchy.publishContentFrame(targetFrame, in: rootView)
 
         contentShadowView.frame = configuration.reduceMotion ? targetFrame : startFrame
         webClipView.frame = contentShadowView.bounds
         contentShadowView.alphaValue = configuration.reduceMotion ? 0 : 1
         actionChrome.alphaValue = 0
-        layoutActionChrome(for: targetFrame, configuration: configuration)
-        layoutInteractionShield(in: rootView.bounds, contentFrame: targetFrame)
+        viewHierarchy.layoutActionChrome(for: targetFrame, configuration: configuration)
+        viewHierarchy.layoutInteractionShield(in: rootView.bounds, contentFrame: targetFrame)
 
-        let duration = configuration.reduceMotion ? Motion.reducedMotionDuration : Motion.glanceDuration
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = duration
-            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            if configuration.reduceMotion {
-                contentShadowView.animator().frame = targetFrame
-                contentShadowView.animator().alphaValue = 1
-            }
-        }
-
-        guard !configuration.reduceMotion else {
+        let duration = motion.duration(reduceMotion: configuration.reduceMotion, kind: .glance)
+        if configuration.reduceMotion {
+            motion.runReducedMotionOpen(targetFrame: targetFrame, duration: duration)
             scheduleOpeningCompletion(
                 sessionID: session.id,
                 targetFrame: targetFrame,
@@ -261,7 +274,13 @@ final class GlanceOverlayController: NSObject {
             return
         }
 
-        animateContentFrame(
+        // Match prior non-reduced open: run an empty easeInEaseOut group for duration parity.
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = duration
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        }
+
+        motion.animateContentFrame(
             from: startFrame,
             to: targetFrame,
             direction: .opening,
@@ -284,30 +303,12 @@ final class GlanceOverlayController: NSObject {
         guard presentationState.isPresentationVisible,
               self.configuration?.isVisible == true
         else {
-            publishContentFrame(nil, in: rootView)
+            viewHierarchy.publishContentFrame(nil, in: rootView)
             return
         }
 
-        publishContentFrame(targetFrame, in: rootView)
-        animateButtonsIn(configuration: configuration)
-    }
-
-    private func animateButtonsIn(configuration: GlanceOverlayConfiguration) {
-        let duration = configuration.reduceMotion ? Motion.reducedMotionDuration : Motion.buttonDuration
-        let finalFrame = actionChrome.frame
-        if !configuration.reduceMotion {
-            let xOffset = configuration.sidebarPosition == .right
-                ? Motion.buttonOffset
-                : -Motion.buttonOffset
-            actionChrome.frame = finalFrame.offsetBy(dx: xOffset, dy: 0)
-        }
-
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = duration
-            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            actionChrome.setAnimatedFrame(finalFrame)
-            actionChrome.setAnimatedAlphaValue(1)
-        }
+        viewHierarchy.publishContentFrame(targetFrame, in: rootView)
+        motion.animateButtonsIn(actionChrome: actionChrome, configuration: configuration)
     }
 
     private func animateClose(
@@ -327,23 +328,20 @@ final class GlanceOverlayController: NSObject {
             rootBounds: rootView.bounds,
             targetFrame: targetFrame
         )
-        let duration = configuration.reduceMotion ? Motion.reducedMotionDuration : Motion.glanceDuration
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = duration
-            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            actionChrome.setAnimatedAlphaValue(0)
-            if configuration.reduceMotion {
-                contentShadowView.animator().alphaValue = 0
-                contentShadowView.animator().frame = targetFrame
-            }
-        }
+        let duration = motion.duration(reduceMotion: configuration.reduceMotion, kind: .glance)
 
-        guard !configuration.reduceMotion else {
+        if configuration.reduceMotion {
+            motion.runReducedMotionClose(
+                actionChrome: actionChrome,
+                targetFrame: targetFrame,
+                duration: duration
+            )
             scheduleClosingCompletion(sessionID: session.id, after: duration)
             return
         }
 
-        animateContentFrame(
+        motion.fadeOutActionChrome(actionChrome: actionChrome, duration: duration)
+        motion.animateContentFrame(
             from: targetFrame,
             to: endFrame,
             direction: .closing,
@@ -356,7 +354,7 @@ final class GlanceOverlayController: NSObject {
     private func finishClosing(sessionID: UUID) {
         guard session?.id == sessionID else { return }
         presentationState.finishClosing()
-        tearDownPresentedViews()
+        viewHierarchy.tearDownPresentedViews()
         manager?.finishAnimatedDismissal(sessionID: sessionID)
     }
 
@@ -387,100 +385,6 @@ final class GlanceOverlayController: NSObject {
         }
     }
 
-    private func animateContentFrame(
-        from startFrame: CGRect,
-        to endFrame: CGRect,
-        direction: AnimationDirection,
-        duration: TimeInterval,
-        completion: @escaping @MainActor @Sendable () -> Void
-    ) {
-        guard startFrame != endFrame, duration > 0 else {
-            contentShadowView.frame = endFrame
-            webClipView.frame = contentShadowView.bounds
-            completion()
-            return
-        }
-
-        contentShadowView.frame = startFrame
-        webClipView.frame = contentShadowView.bounds
-
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = duration
-            context.timingFunction = timingFunction(for: direction)
-            contentShadowView.animator().frame = endFrame
-            webClipView.animator().frame = CGRect(origin: .zero, size: endFrame.size)
-        } completionHandler: { [weak self] in
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                self.contentShadowView.frame = endFrame
-                self.webClipView.frame = self.contentShadowView.bounds
-                completion()
-            }
-        }
-    }
-
-    private func timingFunction(for direction: AnimationDirection) -> CAMediaTimingFunction {
-        switch direction {
-        case .opening:
-            return CAMediaTimingFunction(controlPoints: 0.16, 1, 0.3, 1)
-        case .closing:
-            return CAMediaTimingFunction(controlPoints: 0.33, 1, 0.68, 1)
-        }
-    }
-
-    private func installViewsIfNeeded() {
-        guard let rootView else { return }
-        rootView.wantsLayer = true
-
-        if webContentShieldAnchorView.superview == nil {
-            rootView.addSubview(webContentShieldAnchorView)
-        }
-        if contentShadowView.superview == nil {
-            rootView.addSubview(contentShadowView)
-        }
-        if webClipView.superview == nil {
-            contentShadowView.addSubview(webClipView)
-        }
-        actionChrome.install(in: rootView)
-    }
-
-    private func tearDownPresentedViews(preservingPromotionHandoff: Bool = false) {
-        resetCloseConfirmation()
-        presentationState.setPresentationVisible(false)
-        publishContentFrame(nil, in: rootView)
-        WebContentMouseTrackingShield.unregister(webContentShieldAnchorView)
-        rootView?.acceptsBackgroundMouseEvents = false
-        rootView?.sidebarPassthroughRect = nil
-        rootView?.webContentCursorExclusionRect = nil
-        rootView?.chromeCursorExclusionRect = nil
-        previewHostAttachment.clear(preservingDisplayedContent: preservingPromotionHandoff)
-        webContentShieldAnchorView.removeFromSuperview()
-        actionChrome.removeFromSuperview()
-        contentShadowView.removeFromSuperview()
-    }
-
-    private func setPresentationVisible(_ isVisible: Bool) {
-        presentationState.setPresentationVisible(isVisible)
-        rootView?.acceptsBackgroundMouseEvents = isVisible
-        contentShadowView.isHidden = !isVisible
-        actionChrome.isHidden = !isVisible
-        webContentShieldAnchorView.isHidden = !isVisible
-
-        if isVisible {
-            keyCommands.installIfNeeded()
-            contentShadowView.alphaValue = 1
-            actionChrome.alphaValue = 1
-        } else {
-            keyCommands.uninstall()
-            publishContentFrame(nil, in: rootView)
-            WebContentMouseTrackingShield.unregister(webContentShieldAnchorView)
-            rootView?.sidebarPassthroughRect = nil
-            rootView?.webContentCursorExclusionRect = nil
-            rootView?.chromeCursorExclusionRect = nil
-            resetCloseConfirmation()
-        }
-    }
-
     private func layoutForCurrentBounds(animated: Bool) {
         guard let rootView,
               let configuration,
@@ -500,68 +404,12 @@ final class GlanceOverlayController: NSObject {
             }
             self.contentShadowView.frame = targetFrame
             self.webClipView.frame = self.contentShadowView.bounds
-            self.publishContentFrame(targetFrame, in: rootView)
-            self.layoutActionChrome(for: targetFrame, configuration: configuration)
-            self.layoutInteractionShield(in: rootView.bounds, contentFrame: targetFrame)
+            self.viewHierarchy.publishContentFrame(targetFrame, in: rootView)
+            self.viewHierarchy.layoutActionChrome(for: targetFrame, configuration: configuration)
+            self.viewHierarchy.layoutInteractionShield(in: rootView.bounds, contentFrame: targetFrame)
         }
 
-        if animated {
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = Motion.layoutDuration
-                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                updates()
-            }
-        } else {
-            updates()
-        }
-    }
-
-    private func layoutActionChrome(
-        for contentFrame: CGRect,
-        configuration: GlanceOverlayConfiguration
-    ) {
-        let exclusionRect = actionChrome.layout(
-            for: contentFrame,
-            in: rootView?.bounds ?? contentFrame,
-            sidebarPosition: configuration.sidebarPosition,
-            using: overlayLayout
-        )
-        rootView?.chromeCursorExclusionRect = exclusionRect
-    }
-
-    private func layoutInteractionShield(
-        in bounds: CGRect,
-        contentFrame: CGRect
-    ) {
-        webContentShieldAnchorView.frame = bounds
-        rootView?.sidebarPassthroughRect = configuration.flatMap {
-            overlayLayout.sidebarPassthroughRect(in: bounds, configuration: $0)
-        }
-        rootView?.webContentCursorExclusionRect = contentFrame
-        WebContentMouseTrackingShield.setActive(
-            bounds.width > 0 && bounds.height > 0,
-            for: webContentShieldAnchorView,
-            excludingWebContentIn: webClipView,
-            coversAllWebContent: true
-        )
-    }
-
-    private func publishContentFrame(_ frame: CGRect?, in rootView: NSView?) {
-        guard let manager,
-              let session
-        else { return }
-
-        guard let rootView,
-              let swiftUIFrame = overlayLayout.swiftUIContentFrame(
-                  frame,
-                  rootBoundsHeight: rootView.bounds.height,
-                  isRootViewFlipped: rootView.isFlipped
-              )
-        else {
-            manager.updateContentFrameInWindowSpace(nil, sessionID: session.id)
-            return
-        }
-        manager.updateContentFrameInWindowSpace(swiftUIFrame, sessionID: session.id)
+        motion.runLayoutUpdates(animated: animated, updates: updates)
     }
 
     private func closeFromBackdrop() {
@@ -602,140 +450,13 @@ final class GlanceOverlayController: NSObject {
     }
 
     private func openButtonPressed() {
-        animatePromotionToRegularTab()
+        promotionAnimator.animatePromotionToRegularTab()
     }
 
     private func splitButtonPressed() {
         guard !promotionHandoff.isAnimating else { return }
         guard actionChrome.isSplitEnabled else { return }
         manager?.moveToSplitView()
-    }
-
-    private func animatePromotionToRegularTab() {
-        guard let manager,
-              let session,
-              let configuration,
-              let rootView
-        else { return }
-        guard promotionHandoff.beginAnimation() else { return }
-
-        resetCloseConfirmation()
-        rootView.acceptsBackgroundMouseEvents = false
-        actionChrome.setButtonsEnabled(false)
-
-        previewHostAttachment.attachIfAvailable(
-            for: session,
-            webView: previewWebView(for: session)
-        )
-
-        let targetFrame = overlayLayout.promotionContentFrame(in: rootView.bounds, configuration: configuration)
-        publishContentFrame(targetFrame, in: rootView)
-        layoutInteractionShield(in: rootView.bounds, contentFrame: targetFrame)
-
-        let duration = min(
-            configuration.reduceMotion ? Motion.reducedMotionDuration : Motion.glanceDuration,
-            0.28
-        )
-        let promotionTimingFunction = CAMediaTimingFunction(controlPoints: 0.16, 1, 0.3, 1)
-        contentVisualStyleOwner.animateToBrowserViewportStyle(
-            for: configuration,
-            duration: duration,
-            timingFunction: promotionTimingFunction
-        )
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = duration
-            context.timingFunction = promotionTimingFunction
-            actionChrome.setAnimatedAlphaValue(0)
-        }
-
-        animateContentFrame(
-            from: contentShadowView.frame,
-            to: targetFrame,
-            direction: .opening,
-            duration: duration
-        ) { [weak self, weak manager, sessionID = session.id] in
-            guard let self else { return }
-            guard self.session?.id == sessionID else {
-                self.promotionHandoff.cancelAnimation()
-                self.contentVisualStyleOwner.removeAnimations()
-                return
-            }
-            self.contentShadowView.frame = targetFrame
-            self.webClipView.frame = self.contentShadowView.bounds
-            self.contentVisualStyleOwner.applyBrowserViewportStyle(for: configuration)
-            self.contentVisualStyleOwner.removeAnimations()
-            self.completePromotionHandoff(
-                sessionID: sessionID,
-                manager: manager
-            )
-        }
-    }
-
-    private func completePromotionHandoff(
-        sessionID: UUID,
-        manager: GlanceManager?
-    ) {
-        guard session?.id == sessionID else {
-            promotionHandoff.cancelAnimation()
-            return
-        }
-
-        finishPromotionHandoff(sessionID: sessionID, manager: manager)
-    }
-
-    private func finishPromotionHandoff(
-        sessionID: UUID,
-        manager: GlanceManager?
-    ) {
-        guard let session,
-              session.id == sessionID
-        else {
-            promotionHandoff.cancelAnimation()
-            return
-        }
-
-        guard promotionHandoff.registerPreviewHost(
-            previewHostAttachment.promotedHostCandidate,
-            for: session,
-            manager: self.manager,
-            attachmentCompletion: { [weak self, weak manager, sessionID = session.id] in
-                guard let self,
-                      self.session?.id == sessionID
-                else {
-                    manager?.finishPromotedSession(sessionID: sessionID)
-                    return
-                }
-                self.completePromotionAfterCompositorAttachment(sessionID: sessionID, manager: manager)
-            }
-        ) else {
-            promotionHandoff.cancelAnimation()
-            actionChrome.setButtonsEnabled(true)
-            actionChrome.setAnimatedAlphaValue(1)
-            if let configuration {
-                contentVisualStyleOwner.removeAnimations()
-                contentVisualStyleOwner.applyGlanceStyle(for: configuration)
-            }
-            return
-        }
-
-        promotionHandoff.beginCompositorHandoff()
-        manager?.moveToNewTab(finishesAfterDisplayUpdate: true)
-    }
-
-    private func completePromotionAfterCompositorAttachment(
-        sessionID: UUID,
-        manager: GlanceManager?
-    ) {
-        guard session?.id == sessionID else {
-            manager?.finishPromotedSession(sessionID: sessionID)
-            return
-        }
-
-        rootView?.acceptsBackgroundMouseEvents = false
-        contentShadowView.isHidden = true
-        actionChrome.isHidden = true
-        webContentShieldAnchorView.isHidden = true
-        manager?.finishPromotedSession(sessionID: sessionID)
     }
 
     private func webContentIsFocused() -> Bool {

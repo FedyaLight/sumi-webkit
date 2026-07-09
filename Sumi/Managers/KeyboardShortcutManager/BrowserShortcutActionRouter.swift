@@ -10,9 +10,9 @@ final class BrowserShortcutActionRouter {
         let historyNavigation: @MainActor () -> BrowserHistoryNavigationOwner?
         let activePageRouting: @MainActor () -> BrowserActivePageRoutingOwner?
         let zoomCommands: @MainActor () -> BrowserZoomCommandOwner?
-        let windowShellCommands: @MainActor () -> BrowserWindowShellCommandOwner?
-        let pagePrivacyCommands: @MainActor () -> BrowserPagePrivacyCommandOwner?
-        let chromePopovers: @MainActor () -> BrowserChromePopoverRoutingOwner?
+        let windowShellCommands: @MainActor () -> BrowserWindowSessionCommands?
+        let pagePrivacyCommands: @MainActor () -> BrowserChromeCommands?
+        let chromePopovers: @MainActor () -> BrowserChromeCommands?
         let dialogs: @MainActor () -> BrowserNativeDialogPresentationOwner?
         let recentlyClosedRestore: @MainActor () -> BrowserRecentlyClosedRestoreOwner?
         let themeEditor: @MainActor () -> BrowserWorkspaceThemeEditorOwner?
@@ -224,13 +224,13 @@ extension BrowserShortcutActionRouter.Dependencies {
                 browserManager?.zoomCommandOwner
             },
             windowShellCommands: { [weak browserManager] in
-                browserManager?.windowShellCommandOwner
+                browserManager?.windowSessionCommands
             },
             pagePrivacyCommands: { [weak browserManager] in
-                browserManager?.pagePrivacyCommandOwner
+                browserManager?.chromeCommands
             },
             chromePopovers: { [weak browserManager] in
-                browserManager?.chromePopoverRoutingOwner
+                browserManager?.chromeCommands
             },
             dialogs: { [weak browserManager] in
                 browserManager?.nativeDialogPresentationOwner
@@ -248,7 +248,7 @@ extension BrowserShortcutActionRouter.Dependencies {
                 browserManager?.findManager
             },
             showFindBar: { [weak browserManager] in
-                browserManager?.findBarRoutingOwner.showFindBar()
+                browserManager?.showFindBar()
             },
             closeCurrentTab: { [weak browserManager] in
                 browserManager?.tabLifecycleService.closeOrchestration.closeCurrentTab()

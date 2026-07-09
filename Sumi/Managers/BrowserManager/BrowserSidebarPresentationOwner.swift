@@ -120,13 +120,7 @@ extension BrowserSidebarPresentationOwner.Dependencies {
                       let keyWindow = NSApp.keyWindow
                 else { return nil }
 
-                return browserManager.windowRegistry?.allWindows.first { windowState in
-                    guard let browserWindow = windowState.window else { return false }
-                    if browserWindow === keyWindow {
-                        return true
-                    }
-                    return browserWindow.childWindows?.contains(where: { $0 === keyWindow }) == true
-                }
+                return browserManager.windowRegistry?.windowState(containing: keyWindow)
             },
             schedulePersistWindowSession: { [weak browserManager] windowState, delayNanoseconds in
                 browserManager?.windowSessionActivationOwner.schedulePersistWindowSession(

@@ -127,10 +127,7 @@ class SumiNavigationResponderTestCase: XCTestCase {
         let store = SwiftDataPermissionStore(container: container)
         return (
             container,
-            SumiAutoplayPolicyStoreAdapter(
-                modelContainer: container,
-                persistentStore: store
-            )
+            SumiAutoplayPolicyStoreAdapter(persistentStore: store)
         )
     }
 

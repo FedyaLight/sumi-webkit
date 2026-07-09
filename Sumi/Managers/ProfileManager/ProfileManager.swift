@@ -22,8 +22,8 @@ final class ProfileManager: ObservableObject {
 
     init(
         context: ModelContext,
-        faviconService: any BrowserFaviconServicing = BrowserManagerDataServices.productionFaviconService,
-        visitedLinkStore: any BrowserVisitedLinkStoreManaging = BrowserManagerDataServices.productionVisitedLinkStore
+        faviconService: any BrowserFaviconServicing = TabDependencyIsolationDefaults.faviconService,
+        visitedLinkStore: any BrowserVisitedLinkStoreManaging = TabDependencyIsolationDefaults.visitedLinkStore
     ) {
         self.context = context
         self.faviconService = faviconService

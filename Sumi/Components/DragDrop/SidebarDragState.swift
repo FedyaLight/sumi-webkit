@@ -6,13 +6,109 @@ import SwiftUI
 final class SidebarDragState: ObservableObject {
     static let shared = SidebarDragState()
 
-    let interactionStateOwner = SidebarDragInteractionStateOwner()
-    private var interactionStateCancellables: Set<AnyCancellable> = []
     let locationTracker = SidebarDragLocationTracker()
     /// Narrow observable for per-row chrome (hover sensors etc.) that only
     /// cares whether a drag session is active — subscribing rows to the full
     /// drag state would re-render all of them on every hover-slot change.
     let activityState = SidebarDragActivityState()
+
+    // Every setter below drops writes that don't change the value. The AppKit drag
+    // pipeline re-resolves state on each pointer sample (and on periodic dragging
+    // updates while the pointer is idle); without this guard each sample publishes
+    // `objectWillChange` to every observing sidebar view even when nothing moved.
+    @Published private var storedIsDragging = false
+    @Published private var storedHoveredSlot: DropZoneSlot = .empty
+    @Published private var storedFolderDropIntent: FolderDropIntent = .none
+    @Published private var storedActiveHoveredFolderId: UUID?
+    @Published private var storedActiveSplitTarget: SplitDropSide?
+    @Published private var storedActiveDragItemId: UUID?
+    @Published private var storedPreviewKind: SidebarDragPreviewKind?
+    @Published var previewAssets: [SidebarDragPreviewKind: SidebarDragPreviewAsset] = [:]
+    @Published var previewModel: SidebarDragPreviewModel?
+    @Published private var storedIsInternalDragSession = false
+    @Published private var storedActiveDragScope: SidebarDragScope?
+    @Published private var storedRegularExternalDropGap: SidebarRegularExternalDropGap?
+
+    var isDragging: Bool {
+        get { storedIsDragging }
+        set {
+            guard storedIsDragging != newValue else { return }
+            storedIsDragging = newValue
+            activityState.isDragging = newValue
+        }
+    }
+
+    var hoveredSlot: DropZoneSlot {
+        get { storedHoveredSlot }
+        set {
+            guard storedHoveredSlot != newValue else { return }
+            storedHoveredSlot = newValue
+        }
+    }
+
+    var folderDropIntent: FolderDropIntent {
+        get { storedFolderDropIntent }
+        set {
+            guard storedFolderDropIntent != newValue else { return }
+            storedFolderDropIntent = newValue
+        }
+    }
+
+    var activeHoveredFolderId: UUID? {
+        get { storedActiveHoveredFolderId }
+        set {
+            guard storedActiveHoveredFolderId != newValue else { return }
+            storedActiveHoveredFolderId = newValue
+        }
+    }
+
+    var activeSplitTarget: SplitDropSide? {
+        get { storedActiveSplitTarget }
+        set {
+            guard storedActiveSplitTarget != newValue else { return }
+            storedActiveSplitTarget = newValue
+        }
+    }
+
+    var activeDragItemId: UUID? {
+        get { storedActiveDragItemId }
+        set {
+            guard storedActiveDragItemId != newValue else { return }
+            storedActiveDragItemId = newValue
+        }
+    }
+
+    var previewKind: SidebarDragPreviewKind? {
+        get { storedPreviewKind }
+        set {
+            guard storedPreviewKind != newValue else { return }
+            storedPreviewKind = newValue
+        }
+    }
+
+    var isInternalDragSession: Bool {
+        get { storedIsInternalDragSession }
+        set {
+            guard storedIsInternalDragSession != newValue else { return }
+            storedIsInternalDragSession = newValue
+        }
+    }
+
+    var activeDragScope: SidebarDragScope? {
+        get { storedActiveDragScope }
+        set {
+            guard storedActiveDragScope != newValue else { return }
+            storedActiveDragScope = newValue
+        }
+    }
+
+    var regularExternalDropGap: SidebarRegularExternalDropGap? {
+        get { storedRegularExternalDropGap }
+        set {
+            guard storedRegularExternalDropGap != newValue else { return }
+            storedRegularExternalDropGap = newValue
+        }
+    }
 
     var dragLocation: CGPoint? {
         get { locationTracker.location }
@@ -63,14 +159,6 @@ final class SidebarDragState: ObservableObject {
             self?.setGeometryGenerationState(generationState)
         }
     )
-
-    init() {
-        interactionStateOwner.objectWillChange
-            .sink { [weak self] _ in
-                self?.objectWillChange.send()
-            }
-            .store(in: &interactionStateCancellables)
-    }
 
     var shouldAnimateDropLayout: Bool {
         isDragging && !isCompletingDrop

@@ -181,10 +181,32 @@ final class WindowRegistryTests: XCTestCase {
             defer: false
         )
         let windowState = BrowserWindowState()
-        windowState.window = parentWindow
+        registry.bindAppKitWindow(parentWindow, to: windowState)
         parentWindow.addChildWindow(childWindow, ordered: .above)
         registry.register(windowState)
 
+        XCTAssertIdentical(registry.appKitWindow(for: windowState), parentWindow)
         XCTAssertIdentical(registry.windowState(containing: childWindow), windowState)
+        XCTAssertIdentical(windowState.shellWindow(in: registry), parentWindow)
+    }
+
+    func testBindAppKitWindowDualWritesShellAndStateMirror() {
+        let registry = WindowRegistry()
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 200, height: 120),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        let windowState = BrowserWindowState()
+        registry.register(windowState)
+        registry.bindAppKitWindow(window, to: windowState)
+
+        XCTAssertIdentical(windowState.window, window)
+        XCTAssertIdentical(registry.appKitWindow(for: windowState.id), window)
+
+        registry.unregister(windowState.id)
+        XCTAssertNil(windowState.window)
+        XCTAssertNil(registry.appKitWindow(for: windowState.id))
     }
 }

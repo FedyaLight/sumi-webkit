@@ -13,6 +13,7 @@ final class WebViewProtectedCommandDispatchOwner {
         let executionOwner: WebViewDeferredProtectedCommandExecutionOwner
         let tabScopedCleanupValidationOwner: WebViewTabScopedCleanupValidationOwner
         let webViewRegistry: WindowWebViewRegistry
+        let tabWebViewSessionStore: TabWebViewSessionStore
         let requireBrowserRuntimeContext: @MainActor () -> WebViewCoordinatorBrowserRuntimeContext
         let resolveWebView: @MainActor (ObjectIdentifier) -> WKWebView?
         let resolvedTab: @MainActor (UUID, WebViewCoordinatorBrowserRuntimeContext) -> Tab?
@@ -214,7 +215,8 @@ final class WebViewProtectedCommandDispatchOwner {
                 runtimeContext.regularTabs()
                     + runtimeContext.pinnedTabs()
                     + runtimeContext.allWindows().flatMap(\.ephemeralTabs)
-            }
+            },
+            sessionStore: dependencies.tabWebViewSessionStore
         )
     }
 }
@@ -227,6 +229,7 @@ extension WebViewProtectedCommandDispatchOwner.Dependencies {
             executionOwner: coordinator.deferredProtectedCommandExecutionOwner,
             tabScopedCleanupValidationOwner: coordinator.tabScopedCleanupValidationOwner,
             webViewRegistry: coordinator.webViewRegistry,
+            tabWebViewSessionStore: coordinator.tabWebViewSessionStore,
             requireBrowserRuntimeContext: { [weak coordinator] in
                 guard let coordinator else {
                     preconditionFailure("WebViewCoordinator dependency used after deallocation")

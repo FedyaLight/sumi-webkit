@@ -349,7 +349,7 @@ final class DownloadsPopoverPresenter: NSObject, NSPopoverDelegate {
         else { return }
 
         let source = windowState.sidebarTransientSessionCoordinator.preparedPresentationSource(
-            window: windowState.window
+            window: windowState.shellWindow(in: nil)
         )
         let token = windowState.sidebarTransientSessionCoordinator.beginSession(
             kind: .downloadsPopover,
@@ -369,14 +369,14 @@ final class DownloadsPopoverPresenter: NSObject, NSPopoverDelegate {
         let windowID = windowState.id
         if let pendingSession = pendingTransientSessions.removeValue(forKey: windowID) {
             pendingSession.source.refresh(
-                window: anchorView.window ?? windowState.window,
+                window: anchorView.window ?? windowState.shellWindow(in: nil),
                 originOwnerView: anchorView
             )
             return pendingSession.token
         }
 
         let source = windowState.sidebarTransientSessionCoordinator.preparedPresentationSource(
-            window: anchorView.window ?? windowState.window,
+            window: anchorView.window ?? windowState.shellWindow(in: nil),
             ownerView: anchorView
         )
         return windowState.sidebarTransientSessionCoordinator.beginSession(

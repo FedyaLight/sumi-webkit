@@ -99,7 +99,7 @@ extension BrowserURLBarContextOwner.Dependencies {
         let extensionsModule = browserManager.extensionsModule
         let userscriptsModule = browserManager.userscriptsModule
         let protectionCoordinator = browserManager.protectionCoordinator
-        let urlBarHubPopoverPresenter = browserManager.chromePopoverRoutingOwner.urlBarHubPopoverPresenter
+        let urlBarHubPopoverPresenter = browserManager.chromeCommands.urlBarHubPopoverPresenter
         let webViewRoutingService = browserManager.webViewRoutingService
         let zoomManager = browserManager.zoomManager
         let permissionContextOwner = BrowserURLBarPermissionContextOwner(
@@ -229,25 +229,25 @@ extension BrowserURLBarContextOwner.Dependencies {
                 )
             },
             closeURLBarHubPopover: { [weak browserManager] windowState in
-                browserManager?.chromePopoverRoutingOwner.urlBarHubPopoverPresenter.close(in: windowState)
+                browserManager?.chromeCommands.urlBarHubPopoverPresenter.close(in: windowState)
             },
             presentURLBarHubPopover: { [weak browserManager] windowState, context in
-                browserManager?.chromePopoverRoutingOwner.urlBarHubPopoverPresenter.present(
+                browserManager?.chromeCommands.urlBarHubPopoverPresenter.present(
                     in: windowState,
                     browserContext: context
                 )
             },
             toggleURLBarHubPopover: { [weak browserManager] windowState, context in
-                browserManager?.chromePopoverRoutingOwner.urlBarHubPopoverPresenter.toggle(
+                browserManager?.chromeCommands.urlBarHubPopoverPresenter.toggle(
                     in: windowState,
                     browserContext: context
                 )
             },
             isURLBarHubPopoverPresented: { [weak browserManager] windowState in
-                browserManager?.chromePopoverRoutingOwner.urlBarHubPopoverPresenter.isPresented(in: windowState) ?? false
+                browserManager?.chromeCommands.urlBarHubPopoverPresenter.isPresented(in: windowState) ?? false
             },
             copyURLToClipboard: { [weak browserManager] urlString, windowState in
-                _ = browserManager?.urlCopyOwner.copyURLToPasteboard(urlString, in: windowState)
+                _ = browserManager?.urlBarCommands.copyURLToPasteboard(urlString, in: windowState)
             },
             toggleSidebar: { [weak browserManager] windowState in
                 browserManager?.sidebarPresentationOwner.toggleSidebar(for: windowState)

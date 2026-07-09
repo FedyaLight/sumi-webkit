@@ -83,7 +83,7 @@ final class SumiAutoplayPermissionStoreTests: XCTestCase {
         XCTAssertEqual(harness.adapter.effectivePolicy(for: url, profile: profileB), .default)
     }
 
-    func testInjectedContainerIsUsedForPersistentAutoplayFetches() async throws {
+    func testInjectedStoreIsUsedForPersistentAutoplayFetches() async throws {
         let firstHarness = try makeHarness()
         let secondHarness = try makeHarness()
         let profile = makeProfile("99999999-9999-9999-9999-999999999999")
@@ -93,6 +93,21 @@ final class SumiAutoplayPermissionStoreTests: XCTestCase {
 
         XCTAssertEqual(firstHarness.adapter.effectivePolicy(for: url, profile: profile), .blockAll)
         XCTAssertEqual(secondHarness.adapter.effectivePolicy(for: url, profile: profile), .default)
+    }
+
+    func testAdapterDoesNotOpenModelContextForSyncReads() async throws {
+        let harness = try makeHarness()
+        let profile = makeProfile("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+        let url = URL(string: "https://example.com/video")!
+
+        try await harness.adapter.setPolicy(.blockAudible, for: url, profile: profile)
+
+        // Sync path must hit the in-memory cache seeded by setPolicy, not a ModelContext fetch.
+        XCTAssertEqual(harness.adapter.effectivePolicy(for: url, profile: profile), .blockAudible)
+        XCTAssertTrue(
+            String(describing: type(of: harness.adapter.permissionStore))
+                .contains("SwiftDataPermissionStore")
+        )
     }
 
     func testPersistentIdentityIncludesTopOrigin() {
@@ -159,10 +174,7 @@ final class SumiAutoplayPermissionStoreTests: XCTestCase {
             configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
         )
         let store = SwiftDataPermissionStore(container: container)
-        let adapter = SumiAutoplayPolicyStoreAdapter(
-            modelContainer: container,
-            persistentStore: store
-        )
+        let adapter = SumiAutoplayPolicyStoreAdapter(persistentStore: store)
         return (container, store, adapter)
     }
 

@@ -15,6 +15,7 @@ struct WebViewTabScopedCleanupValidationOwner {
         let resolveWebView: (ObjectIdentifier) -> WKWebView?
         let resolveTab: (UUID) -> Tab?
         let allTabs: () -> [Tab]
+        let sessionStore: TabWebViewSessionStore?
     }
 
     func canCleanUpTabScopedWebView(
@@ -31,12 +32,12 @@ struct WebViewTabScopedCleanupValidationOwner {
         }
 
         if let tab = context.resolveTab(tabID),
-           tabOwnsUntrackedWebView(tab, webView) {
+           tabOwnsUntrackedWebView(tab, webView, sessionStore: context.sessionStore) {
             return true
         }
 
         guard let owningTab = context.allTabs().first(where: { tab in
-            tabOwnsUntrackedWebView(tab, webView)
+            tabOwnsUntrackedWebView(tab, webView, sessionStore: context.sessionStore)
         }) else {
             return true
         }
@@ -44,8 +45,19 @@ struct WebViewTabScopedCleanupValidationOwner {
         return owningTab.id == tabID
     }
 
-    private func tabOwnsUntrackedWebView(_ tab: Tab, _ webView: WKWebView) -> Bool {
-        tab.currentWebView === webView
-            || tab.parkedWebView === webView
+    private func tabOwnsUntrackedWebView(
+        _ tab: Tab,
+        _ webView: WKWebView,
+        sessionStore: TabWebViewSessionStore?
+    ) -> Bool {
+        if let sessionStore {
+            sessionStore.syncFromTabIfNeeded(tab)
+            let session = sessionStore.session(for: tab.id)
+            if session.untrackedWebView === webView || session.parkedWebView === webView {
+                return true
+            }
+        }
+        // Compat mirror until Tab fields are removed.
+        return tab.currentWebView === webView || tab.parkedWebView === webView
     }
 }

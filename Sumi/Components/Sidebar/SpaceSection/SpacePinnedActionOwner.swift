@@ -129,7 +129,7 @@ struct SpacePinnedActionOwner {
             kind: .pinnedTab,
             title: pin.preferredDisplayTitle,
             url: pin.launchURL,
-            window: windowState.window,
+            window: windowState.shellWindow(in: nil),
             themeContext: themeContext,
             onDelete: { removeShortcutPin(pin) }
         )
@@ -139,7 +139,7 @@ struct SpacePinnedActionOwner {
         SidebarSavedItemDeletionConfirmationPresenter.confirmDeleteFolder(
             folderName: folder.name,
             childCount: childCount,
-            window: windowState.window,
+            window: windowState.shellWindow(in: nil),
             themeContext: themeContext,
             onDelete: {
                 mutatePinnedContent {

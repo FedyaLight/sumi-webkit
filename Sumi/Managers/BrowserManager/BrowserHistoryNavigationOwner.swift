@@ -271,7 +271,7 @@ extension BrowserHistoryNavigationOwner.Dependencies {
                 browserManager?.windowRegistry.map { Array($0.windows.keys) } ?? []
             },
             createNewWindow: { [weak browserManager] in
-                browserManager?.windowShellCommandOwner.createNewWindow()
+                browserManager?.windowSessionCommands.createNewWindow()
             },
             awaitNextRegisteredWindow: { [weak browserManager] existingWindowIDs in
                 await browserManager?.windowRegistry?.awaitNextRegisteredWindow(

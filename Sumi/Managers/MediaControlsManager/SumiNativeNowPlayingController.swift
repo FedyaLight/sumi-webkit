@@ -494,7 +494,7 @@ extension SumiNativeNowPlayingController {
         windowState: BrowserWindowState
     ) {
         NSApp.activate(ignoringOtherApps: true)
-        windowState.window?.makeKeyAndOrderFront(nil)
+        windowState.shellWindow(in: context.windowRegistry())?.makeKeyAndOrderFront(nil)
         context.selectTab(tab, windowState)
     }
 }

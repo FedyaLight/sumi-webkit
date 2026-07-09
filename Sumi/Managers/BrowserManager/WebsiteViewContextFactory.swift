@@ -82,7 +82,7 @@ enum WebsiteViewContextFactory {
                 browserManager?.windowTabContextOwner.currentTab(for: windowState)
             },
             deleteProfile: { [weak browserManager] profile in
-                browserManager?.profileMaintenanceOwner.deleteProfile(profile)
+                browserManager?.windowSessionCommands.deleteProfile(profile)
             },
             scheduleRuntimeStatePersistence: { [weak browserManager] tab in
                 browserManager?.tabManager.structuralPersistence.scheduleRuntimeStatePersistence(for: tab)

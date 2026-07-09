@@ -99,7 +99,8 @@ final class WebViewScopedCleanupValidationTests: XCTestCase {
             resolveTab: { candidateTabID in
                 resolvedTab?.id == candidateTabID ? resolvedTab : nil
             },
-            allTabs: { allTabs }
+            allTabs: { allTabs },
+            sessionStore: nil
         )
     }
 

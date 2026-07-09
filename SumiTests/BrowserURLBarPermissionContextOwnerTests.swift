@@ -120,7 +120,8 @@ final class BrowserURLBarPermissionContextOwnerTests: XCTestCase {
         let siteActivityStore = try makeSiteActivityStore()
         let blockedPopupStore = SumiBlockedPopupStore()
         let externalSchemeStore = SumiExternalSchemeSessionStore()
-        let autoplayStore = SumiAutoplayPolicyStoreAdapter(modelContainer: container)
+        let store = SwiftDataPermissionStore(container: container)
+        let autoplayStore = SumiAutoplayPolicyStoreAdapter(persistentStore: store)
         let browserConfiguration = BrowserConfiguration(autoplayPolicyStore: autoplayStore)
 
         let browserManager = BrowserManager(

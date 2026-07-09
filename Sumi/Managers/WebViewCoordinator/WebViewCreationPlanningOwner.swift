@@ -82,7 +82,8 @@ final class WebViewCreationPlanningOwner {
         in windowId: UUID,
         initialDocumentWarmupRuntime: InitialDocumentWarmupRuntime?,
         existingWebView: WKWebView?,
-        windowWebViews: [UUID: WKWebView]
+        windowWebViews: [UUID: WKWebView],
+        sessionStore: TabWebViewSessionStore? = nil
     ) -> NormalTabWebViewCreationPlan {
         if let existingWebView {
             return .useExisting(existingWebView)
@@ -90,7 +91,7 @@ final class WebViewCreationPlanningOwner {
 
         if let adoptableWebView = adoptableExistingPrimaryWebView(
             for: tab,
-            in: windowId,
+            sessionStore: sessionStore,
             hasTrackedWebViews: windowWebViews.isEmpty == false
         ) {
             return .adoptExistingPrimary(adoptableWebView)
@@ -145,11 +146,16 @@ final class WebViewCreationPlanningOwner {
 
     private func adoptableExistingPrimaryWebView(
         for tab: Tab,
-        in _: UUID,
+        sessionStore: TabWebViewSessionStore?,
         hasTrackedWebViews: Bool
     ) -> WKWebView? {
-        guard let existingWebView = tab.existingWebView else { return nil }
         guard hasTrackedWebViews == false else { return nil }
-        return existingWebView
+        // Historical adopt source was Tab.existingWebView (== currentWebView).
+        if let current = tab.currentWebView {
+            return current
+        }
+        guard let sessionStore else { return nil }
+        sessionStore.syncFromTabIfNeeded(tab)
+        return sessionStore.untrackedWebView(for: tab.id)
     }
 }

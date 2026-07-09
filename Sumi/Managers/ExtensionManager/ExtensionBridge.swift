@@ -18,6 +18,8 @@ protocol ExtensionBrowserBridgeContext: AnyObject {
     func extensionTab(for tabId: UUID) -> Tab?
     func extensionWindowState(containing tab: Tab) -> BrowserWindowState?
     func extensionWindowState(forAppKitWindow window: NSWindow) -> BrowserWindowState?
+    /// Phase 6A: resolve AppKit window via shell map (falls back to dual-write mirror).
+    func appKitWindow(for windowState: BrowserWindowState) -> NSWindow?
     func currentExtensionTab(in windowState: BrowserWindowState) -> Tab?
     func currentExtensionTabForActiveWindow() -> Tab?
     func currentExtensionTabForPopup() -> Tab?
@@ -242,11 +244,11 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
     }
 
     func frame(for extensionContext: WKWebExtensionContext) -> CGRect {
-        profileMatchedWindowState(for: extensionContext)?.window?.frame ?? .zero
+        appKitWindow(for: extensionContext)?.frame ?? .zero
     }
 
     func screenFrame(for extensionContext: WKWebExtensionContext) -> CGRect {
-        profileMatchedWindowState(for: extensionContext)?.window?.screen?.frame ?? NSScreen.main?.frame ?? .zero
+        appKitWindow(for: extensionContext)?.screen?.frame ?? NSScreen.main?.frame ?? .zero
     }
 
     func focus(
@@ -264,7 +266,7 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
             return
         }
 
-        windowState.window?.makeKeyAndOrderFront(nil)
+        appKitWindow(for: windowState)?.makeKeyAndOrderFront(nil)
         browserContext?.setActiveExtensionWindow(windowState)
         NSApp.activate(ignoringOtherApps: true)
         ExtensionBridgeCallbackSupport.complete(completionHandler, api: .windowAdapterCompletion, error: nil)
@@ -279,7 +281,7 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
     }
 
     func windowState(for extensionContext: WKWebExtensionContext) -> WKWebExtension.WindowState {
-        guard let window = profileMatchedWindowState(for: extensionContext)?.window else { return .normal }
+        guard let window = appKitWindow(for: extensionContext) else { return .normal }
         if window.isMiniaturized { return .minimized }
         if window.styleMask.contains(.fullScreen) { return .fullscreen }
         return .normal
@@ -290,7 +292,7 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
         for extensionContext: WKWebExtensionContext,
         completionHandler: @escaping (Error?) -> Void
     ) {
-        guard let window = profileMatchedWindowState(for: extensionContext)?.window else {
+        guard let window = appKitWindow(for: extensionContext) else {
             ExtensionBridgeCallbackSupport.complete(
                 completionHandler,
                 api: .windowAdapterCompletion,
@@ -331,7 +333,7 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
         for extensionContext: WKWebExtensionContext,
         completionHandler: @escaping (Error?) -> Void
     ) {
-        guard let window = profileMatchedWindowState(for: extensionContext)?.window else {
+        guard let window = appKitWindow(for: extensionContext) else {
             ExtensionBridgeCallbackSupport.complete(
                 completionHandler,
                 api: .windowAdapterCompletion,
@@ -350,7 +352,7 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
         for extensionContext: WKWebExtensionContext,
         completionHandler: @escaping (Error?) -> Void
     ) {
-        guard let window = profileMatchedWindowState(for: extensionContext)?.window else {
+        guard let window = appKitWindow(for: extensionContext) else {
             ExtensionBridgeCallbackSupport.complete(
                 completionHandler,
                 api: .windowAdapterCompletion,
@@ -363,6 +365,15 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
 
         window.performClose(nil)
         ExtensionBridgeCallbackSupport.complete(completionHandler, api: .windowAdapterCompletion, error: nil)
+    }
+
+    private func appKitWindow(for extensionContext: WKWebExtensionContext) -> NSWindow? {
+        guard let windowState = profileMatchedWindowState(for: extensionContext) else { return nil }
+        return appKitWindow(for: windowState)
+    }
+
+    private func appKitWindow(for windowState: BrowserWindowState) -> NSWindow? {
+        browserContext?.appKitWindow(for: windowState) ?? windowState.window
     }
 }
 

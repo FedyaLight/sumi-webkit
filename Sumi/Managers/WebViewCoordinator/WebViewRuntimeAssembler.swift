@@ -15,6 +15,7 @@ final class WebViewRuntimeAssembler {
     struct Dependencies {
         let runtimeContextStore: WebViewRuntimeContextStore
         let webViewRegistry: WindowWebViewRegistry
+        let tabWebViewSessionStore: TabWebViewSessionStore
         let visibleWebViewRuntimeOwner: VisibleWebViewRuntimeOwner
         let hiddenCloneEvictionOwner: WebViewHiddenCloneEvictionOwner
         let registerTrackedWebView: @MainActor (WKWebView, UUID, UUID) -> Void
@@ -130,6 +131,7 @@ final class WebViewRuntimeAssembler {
         let runtimeContext = dependencies.runtimeContextStore.requireBrowser()
         return WebViewAssignmentRebuildOwner.Runtime(
             webViewRegistry: dependencies.webViewRegistry,
+            tabWebViewSessionStore: dependencies.tabWebViewSessionStore,
             initialDocumentWarmupRuntime: initialDocumentWarmupRuntime(),
             registerTrackedWebView: { [dependencies] webView, tabId, windowId in
                 dependencies.registerTrackedWebView(webView, tabId, windowId)
@@ -212,6 +214,7 @@ extension WebViewRuntimeAssembler.Dependencies {
         Self(
             runtimeContextStore: coordinator.runtimeContextStore,
             webViewRegistry: coordinator.webViewRegistry,
+            tabWebViewSessionStore: coordinator.tabWebViewSessionStore,
             visibleWebViewRuntimeOwner: coordinator.visibleWebViewRuntimeOwner,
             hiddenCloneEvictionOwner: coordinator.hiddenCloneEvictionOwner,
             registerTrackedWebView: { [weak coordinator] webView, tabId, windowId in

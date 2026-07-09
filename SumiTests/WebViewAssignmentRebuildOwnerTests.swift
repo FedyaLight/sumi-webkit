@@ -258,6 +258,7 @@ final class WebViewAssignmentRebuildOwnerTests: XCTestCase {
     ) -> WebViewAssignmentRebuildOwner.Runtime {
         WebViewAssignmentRebuildOwner.Runtime(
             webViewRegistry: webViewRegistry,
+            tabWebViewSessionStore: TabWebViewSessionStore(webViewRegistry: webViewRegistry),
             initialDocumentWarmupRuntime: nil,
             registerTrackedWebView: registerTrackedWebView,
             unregisterTrackedWebViewSlot: unregisterTrackedWebViewSlot,

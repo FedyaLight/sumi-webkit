@@ -39,10 +39,12 @@ enum BrowserConfigurationAuxiliarySurface: String, CaseIterable {
 
 @MainActor
 class BrowserConfiguration {
-    static let shared = BrowserConfiguration()
+    static let shared = BrowserConfiguration(
+        autoplayPolicyStore: SumiStartupPersistenceComposition.autoplayPolicyStore
+    )
 
     let webKitProcessPoolContext = SumiWebKitProcessPoolContext()
-    private let autoplayPolicyStore: SumiAutoplayPolicyStoreAdapter?
+    let autoplayPolicyStore: SumiAutoplayPolicyStoreAdapter
     private let visitedLinkStoreProvider: SharedVisitedLinkStoreProvider
     private static let auxiliaryFilteredUserScriptMarkers = [
         "__sumiFaviconTransportInstalled",
@@ -58,7 +60,7 @@ class BrowserConfiguration {
     ]
 
     init(
-        autoplayPolicyStore: SumiAutoplayPolicyStoreAdapter? = nil,
+        autoplayPolicyStore: SumiAutoplayPolicyStoreAdapter = SumiStartupPersistenceComposition.autoplayPolicyStore,
         visitedLinkStoreProvider: SharedVisitedLinkStoreProvider? = nil
     ) {
         self.autoplayPolicyStore = autoplayPolicyStore
@@ -66,7 +68,7 @@ class BrowserConfiguration {
     }
 
     var resolvedAutoplayPolicyStore: SumiAutoplayPolicyStoreAdapter {
-        autoplayPolicyStore ?? SumiAutoplayPolicyStoreAdapter.shared
+        autoplayPolicyStore
     }
 
     private func makeBaseWebViewConfiguration() -> WKWebViewConfiguration {

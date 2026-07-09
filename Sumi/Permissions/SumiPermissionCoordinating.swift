@@ -17,7 +17,10 @@ enum SumiPermissionSiteDecisionError: Error, Equatable, LocalizedError {
     }
 }
 
-protocol SumiPermissionCoordinating: Sendable {
+// MARK: - Role protocols (ISP)
+
+/// Request / query permission decisions for a security context.
+protocol SumiPermissionRequesting: Sendable {
     func requestPermission(
         _ context: SumiPermissionSecurityContext
     ) async -> SumiPermissionCoordinatorDecision
@@ -25,48 +28,11 @@ protocol SumiPermissionCoordinating: Sendable {
     func queryPermissionState(
         _ context: SumiPermissionSecurityContext
     ) async -> SumiPermissionCoordinatorDecision
+}
 
-    func siteDecisionRecords(
-        profilePartitionId: String,
-        isEphemeralProfile: Bool
-    ) async throws -> [SumiPermissionStoreRecord]
-
-    func transientDecisionRecords(
-        profilePartitionId: String,
-        pageId: String
-    ) async throws -> [SumiPermissionStoreRecord]
-
-    func setSiteDecision(
-        for key: SumiPermissionKey,
-        state: SumiPermissionState,
-        source: SumiPermissionDecisionSource,
-        reason: String?
-    ) async throws
-
-    func resetSiteDecision(
-        for key: SumiPermissionKey
-    ) async throws
-
-    func resetSiteDecisions(
-        for keys: [SumiPermissionKey]
-    ) async throws
-
-    @discardableResult
-    func resetTransientDecisions(
-        profilePartitionId: String,
-        pageId: String?,
-        requestingOrigin: SumiPermissionOrigin,
-        topOrigin: SumiPermissionOrigin,
-        reason: String
-    ) async -> Int
-
-    func activeQuery(forPageId pageId: String) async -> SumiPermissionAuthorizationQuery?
-
+/// Settle an active authorization prompt (approve / deny / dismiss / system-block).
+protocol SumiPermissionSettling: Sendable {
     func recordPromptShown(queryId: String) async
-
-    func stateSnapshot() async -> SumiPermissionCoordinatorState
-
-    func events() async -> AsyncStream<SumiPermissionCoordinatorEvent>
 
     @discardableResult
     func approveCurrentAttempt(_ queryId: String) async -> SumiPermissionCoordinatorDecision
@@ -95,7 +61,10 @@ protocol SumiPermissionCoordinating: Sendable {
         snapshots: [SumiSystemPermissionSnapshot],
         reason: String
     ) async -> SumiPermissionCoordinatorDecision
+}
 
+/// Cancel in-flight permission work by query, request, page, tab, profile, or session.
+protocol SumiPermissionCancelling: Sendable {
     @discardableResult
     func cancel(
         queryId: String,
@@ -139,9 +108,65 @@ protocol SumiPermissionCoordinating: Sendable {
     ) async -> SumiPermissionCoordinatorDecision
 }
 
+/// Read and mutate persisted / transient site permission decisions.
+protocol SumiPermissionSiteDecisionEditing: Sendable {
+    func siteDecisionRecords(
+        profilePartitionId: String,
+        isEphemeralProfile: Bool
+    ) async throws -> [SumiPermissionStoreRecord]
+
+    func transientDecisionRecords(
+        profilePartitionId: String,
+        pageId: String
+    ) async throws -> [SumiPermissionStoreRecord]
+
+    func setSiteDecision(
+        for key: SumiPermissionKey,
+        state: SumiPermissionState,
+        source: SumiPermissionDecisionSource,
+        reason: String?
+    ) async throws
+
+    func resetSiteDecision(
+        for key: SumiPermissionKey
+    ) async throws
+
+    func resetSiteDecisions(
+        for keys: [SumiPermissionKey]
+    ) async throws
+
+    @discardableResult
+    func resetTransientDecisions(
+        profilePartitionId: String,
+        pageId: String?,
+        requestingOrigin: SumiPermissionOrigin,
+        topOrigin: SumiPermissionOrigin,
+        reason: String
+    ) async -> Int
+}
+
+/// Observe active queries, coordinator state, and the event stream.
+protocol SumiPermissionObserving: Sendable {
+    func activeQuery(forPageId pageId: String) async -> SumiPermissionAuthorizationQuery?
+
+    func stateSnapshot() async -> SumiPermissionCoordinatorState
+
+    func events() async -> AsyncStream<SumiPermissionCoordinatorEvent>
+}
+
+/// Full coordinator surface used by bridges and UI that need every role.
+typealias SumiPermissionCoordinating =
+    SumiPermissionRequesting
+    & SumiPermissionSettling
+    & SumiPermissionCancelling
+    & SumiPermissionSiteDecisionEditing
+    & SumiPermissionObserving
+
 extension SumiPermissionCoordinator: SumiPermissionCoordinating {}
 
-extension SumiPermissionCoordinating {
+// MARK: - Default no-ops (on role protocols)
+
+extension SumiPermissionSiteDecisionEditing {
     func siteDecisionRecords(
         profilePartitionId: String,
         isEphemeralProfile: Bool
@@ -203,44 +228,67 @@ extension SumiPermissionCoordinating {
         _ = reason
         return 0
     }
+}
 
+extension SumiPermissionSettling {
     func recordPromptShown(queryId: String) async {
         _ = queryId
     }
 
     @discardableResult
     func approveCurrentAttempt(_ queryId: String) async -> SumiPermissionCoordinatorDecision {
-        ignoredSettlementDecision(reason: "approve-current-attempt-unavailable")
+        _ = queryId
+        return SumiPermissionCoordinatorIgnoredSettlement.decision(
+            reason: "approve-current-attempt-unavailable"
+        )
     }
 
     @discardableResult
     func approveOnce(_ queryId: String) async -> SumiPermissionCoordinatorDecision {
-        ignoredSettlementDecision(reason: "approve-once-unavailable")
+        _ = queryId
+        return SumiPermissionCoordinatorIgnoredSettlement.decision(
+            reason: "approve-once-unavailable"
+        )
     }
 
     @discardableResult
     func approveForSession(_ queryId: String) async -> SumiPermissionCoordinatorDecision {
-        ignoredSettlementDecision(reason: "approve-for-session-unavailable")
+        _ = queryId
+        return SumiPermissionCoordinatorIgnoredSettlement.decision(
+            reason: "approve-for-session-unavailable"
+        )
     }
 
     @discardableResult
     func approvePersistently(_ queryId: String) async -> SumiPermissionCoordinatorDecision {
-        ignoredSettlementDecision(reason: "approve-persistently-unavailable")
+        _ = queryId
+        return SumiPermissionCoordinatorIgnoredSettlement.decision(
+            reason: "approve-persistently-unavailable"
+        )
     }
 
     @discardableResult
     func denyForSession(_ queryId: String) async -> SumiPermissionCoordinatorDecision {
-        ignoredSettlementDecision(reason: "deny-for-session-unavailable")
+        _ = queryId
+        return SumiPermissionCoordinatorIgnoredSettlement.decision(
+            reason: "deny-for-session-unavailable"
+        )
     }
 
     @discardableResult
     func dismiss(_ queryId: String) async -> SumiPermissionCoordinatorDecision {
-        ignoredSettlementDecision(reason: "dismiss-unavailable")
+        _ = queryId
+        return SumiPermissionCoordinatorIgnoredSettlement.decision(
+            reason: "dismiss-unavailable"
+        )
     }
 
     @discardableResult
     func denyPersistently(_ queryId: String) async -> SumiPermissionCoordinatorDecision {
-        ignoredSettlementDecision(reason: "deny-persistently-unavailable")
+        _ = queryId
+        return SumiPermissionCoordinatorIgnoredSettlement.decision(
+            reason: "deny-persistently-unavailable"
+        )
     }
 
     @discardableResult
@@ -251,15 +299,18 @@ extension SumiPermissionCoordinating {
     ) async -> SumiPermissionCoordinatorDecision {
         _ = queryId
         _ = snapshots
-        return ignoredSettlementDecision(reason: reason)
+        return SumiPermissionCoordinatorIgnoredSettlement.decision(reason: reason)
     }
+}
 
+extension SumiPermissionCancelling {
     @discardableResult
     func cancel(
         queryId: String,
         reason: String
     ) async -> SumiPermissionCoordinatorDecision {
-        ignoredSettlementDecision(reason: reason)
+        _ = queryId
+        return SumiPermissionCoordinatorIgnoredSettlement.decision(reason: reason)
     }
 
     @discardableResult
@@ -267,7 +318,8 @@ extension SumiPermissionCoordinating {
         requestId: String,
         reason: String
     ) async -> SumiPermissionCoordinatorDecision {
-        ignoredSettlementDecision(reason: reason)
+        _ = requestId
+        return SumiPermissionCoordinatorIgnoredSettlement.decision(reason: reason)
     }
 
     @discardableResult
@@ -275,7 +327,8 @@ extension SumiPermissionCoordinating {
         pageId: String,
         reason: String
     ) async -> SumiPermissionCoordinatorDecision {
-        ignoredSettlementDecision(reason: reason)
+        _ = pageId
+        return SumiPermissionCoordinatorIgnoredSettlement.decision(reason: reason)
     }
 
     @discardableResult
@@ -283,7 +336,8 @@ extension SumiPermissionCoordinating {
         pageId: String,
         reason: String
     ) async -> SumiPermissionCoordinatorDecision {
-        ignoredSettlementDecision(reason: reason)
+        _ = pageId
+        return SumiPermissionCoordinatorIgnoredSettlement.decision(reason: reason)
     }
 
     @discardableResult
@@ -291,7 +345,8 @@ extension SumiPermissionCoordinating {
         tabId: String,
         reason: String
     ) async -> SumiPermissionCoordinatorDecision {
-        ignoredSettlementDecision(reason: reason)
+        _ = tabId
+        return SumiPermissionCoordinatorIgnoredSettlement.decision(reason: reason)
     }
 
     @discardableResult
@@ -299,7 +354,8 @@ extension SumiPermissionCoordinating {
         profilePartitionId: String,
         reason: String
     ) async -> SumiPermissionCoordinatorDecision {
-        ignoredSettlementDecision(reason: reason)
+        _ = profilePartitionId
+        return SumiPermissionCoordinatorIgnoredSettlement.decision(reason: reason)
     }
 
     @discardableResult
@@ -307,10 +363,13 @@ extension SumiPermissionCoordinating {
         ownerId: String,
         reason: String
     ) async -> SumiPermissionCoordinatorDecision {
-        ignoredSettlementDecision(reason: reason)
+        _ = ownerId
+        return SumiPermissionCoordinatorIgnoredSettlement.decision(reason: reason)
     }
+}
 
-    private func ignoredSettlementDecision(reason: String) -> SumiPermissionCoordinatorDecision {
+private enum SumiPermissionCoordinatorIgnoredSettlement {
+    static func decision(reason: String) -> SumiPermissionCoordinatorDecision {
         SumiPermissionCoordinatorDecision(
             outcome: .ignored,
             state: nil,

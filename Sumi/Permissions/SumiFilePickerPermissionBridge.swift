@@ -90,41 +90,25 @@ final class SumiFilePickerPermissionBridge {
         for request: SumiFilePickerPermissionRequest,
         tabContext: SumiFilePickerPermissionTabContext
     ) -> SumiPermissionSecurityContext {
-        let topOrigin = SumiPermissionOrigin(
-            url: tabContext.committedURL ?? tabContext.mainFrameURL ?? tabContext.visibleURL
-        )
-        let permissionRequest = SumiPermissionRequest(
-            id: request.id,
+        SumiPermissionSecurityContextBuilder.make(
+            requestId: request.id,
             tabId: tabContext.tabId,
             pageId: tabContext.pageId,
-            frameId: nil,
             requestingOrigin: request.requestingOrigin,
-            topOrigin: topOrigin,
             displayDomain: request.requestingOrigin.displayDomain,
             permissionTypes: [.filePicker],
             hasUserGesture: request.isUserActivated,
-            requestedAt: now(),
-            isEphemeralProfile: tabContext.isEphemeralProfile,
-            profilePartitionId: tabContext.profilePartitionId
-        )
-
-        return SumiPermissionSecurityContext(
-            request: permissionRequest,
-            requestingOrigin: request.requestingOrigin,
-            topOrigin: topOrigin,
+            isMainFrame: request.isMainFrame,
             committedURL: tabContext.committedURL,
             visibleURL: tabContext.visibleURL,
             mainFrameURL: tabContext.mainFrameURL,
-            isMainFrame: request.isMainFrame,
             isActiveTab: tabContext.isActiveTab,
             isVisibleTab: tabContext.isVisibleTab,
-            hasUserGesture: request.isUserActivated,
             isEphemeralProfile: tabContext.isEphemeralProfile,
             profilePartitionId: tabContext.profilePartitionId,
-            transientPageId: tabContext.pageId,
             surface: tabContext.surface,
             navigationOrPageGeneration: tabContext.navigationOrPageGeneration,
-            now: permissionRequest.requestedAt
+            now: now()
         )
     }
 

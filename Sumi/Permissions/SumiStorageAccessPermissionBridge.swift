@@ -79,41 +79,25 @@ final class SumiStorageAccessPermissionBridge {
         for request: SumiStorageAccessRequest,
         tabContext: SumiStorageAccessTabContext
     ) -> SumiPermissionSecurityContext {
-        let topOrigin = SumiPermissionOrigin(
-            url: tabContext.committedURL ?? tabContext.mainFrameURL ?? tabContext.visibleURL
-        )
-        let permissionRequest = SumiPermissionRequest(
-            id: request.id,
+        SumiPermissionSecurityContextBuilder.make(
+            requestId: request.id,
             tabId: tabContext.tabId,
             pageId: tabContext.pageId,
-            frameId: nil,
             requestingOrigin: request.requestingOrigin,
-            topOrigin: topOrigin,
             displayDomain: request.requestingOrigin.displayDomain,
             permissionTypes: [.storageAccess],
-            hasUserGesture: false,
-            requestedAt: now(),
-            isEphemeralProfile: tabContext.isEphemeralProfile,
-            profilePartitionId: tabContext.profilePartitionId
-        )
-
-        return SumiPermissionSecurityContext(
-            request: permissionRequest,
-            requestingOrigin: request.requestingOrigin,
-            topOrigin: topOrigin,
+            hasUserGesture: nil,
+            isMainFrame: false,
             committedURL: tabContext.committedURL,
             visibleURL: tabContext.visibleURL,
             mainFrameURL: tabContext.mainFrameURL,
-            isMainFrame: false,
             isActiveTab: tabContext.isActiveTab,
             isVisibleTab: tabContext.isVisibleTab,
-            hasUserGesture: nil,
             isEphemeralProfile: tabContext.isEphemeralProfile,
             profilePartitionId: tabContext.profilePartitionId,
-            transientPageId: tabContext.pageId,
             surface: tabContext.surface,
             navigationOrPageGeneration: tabContext.navigationOrPageGeneration,
-            now: permissionRequest.requestedAt
+            now: now()
         )
     }
 

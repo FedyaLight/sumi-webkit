@@ -47,13 +47,13 @@ extension BrowserSidebarChromeCommandOwner.Dependencies {
                 browserManager?.sidebarPresentationOwner.toggleSidebar(for: windowState)
             },
             openAppearanceSettings: { [weak browserManager] windowState in
-                browserManager?.settingsSurfaceRoutingOwner.openSettingsTab(selecting: .appearance, in: windowState)
+                browserManager?.urlBarCommands.openSettingsTab(selecting: .appearance, in: windowState)
             },
             closeDownloadsPopover: { [weak browserManager] windowState in
-                browserManager?.chromePopoverRoutingOwner.closeDownloadsPopover(in: windowState)
+                browserManager?.chromeCommands.closeDownloadsPopover(in: windowState)
             },
             toggleDownloadsPopover: { [weak browserManager] windowState in
-                browserManager?.chromePopoverRoutingOwner.toggleDownloadsPopover(in: windowState)
+                browserManager?.chromeCommands.toggleDownloadsPopover(in: windowState)
             }
         )
     }

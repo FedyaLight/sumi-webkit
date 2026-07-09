@@ -234,7 +234,7 @@ struct WindowView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .sumiWindowDidChangeEffectiveAppearance)) { notification in
             guard let window = notification.object as? NSWindow,
-                  window === windowState.window
+                  window === windowState.shellWindow(in: windowRegistry)
             else { return }
             Task { @MainActor in
                 effectiveAppearanceRevision &+= 1

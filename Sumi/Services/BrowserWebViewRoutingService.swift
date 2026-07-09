@@ -3,7 +3,8 @@ import WebKit
 @MainActor
 final class BrowserWebViewRoutingService {
     typealias TabLookup = @MainActor (UUID) -> Tab?
-    typealias WebViewCoordinatorProvider = @MainActor () -> WebViewCoordinator
+    /// May return nil before the shell binds a coordinator (startup / early Tab mutators).
+    typealias WebViewCoordinatorProvider = @MainActor () -> WebViewCoordinator?
 
     private let tabLookup: TabLookup
     private let coordinatorProvider: WebViewCoordinatorProvider
@@ -16,8 +17,19 @@ final class BrowserWebViewRoutingService {
         self.coordinatorProvider = coordinatorProvider
     }
 
+    private func requireCoordinator(
+        operation: String = #function
+    ) -> WebViewCoordinator {
+        guard let coordinator = coordinatorProvider() else {
+            preconditionFailure(
+                "WebViewCoordinator is nil during \(operation). Bind it before WebView routing."
+            )
+        }
+        return coordinator
+    }
+
     func webView(for tabId: UUID, in windowId: UUID) -> WKWebView? {
-        coordinatorProvider().getWebView(for: tabId, in: windowId)
+        requireCoordinator().getWebView(for: tabId, in: windowId)
     }
 
     func windowOwnedWebView(for tab: Tab, in windowId: UUID) -> WKWebView? {
@@ -26,47 +38,47 @@ final class BrowserWebViewRoutingService {
 
     @discardableResult
     func getOrCreateWebView(for tab: Tab, in windowId: UUID) -> WKWebView? {
-        coordinatorProvider().getOrCreateWebView(for: tab, in: windowId)
+        requireCoordinator().getOrCreateWebView(for: tab, in: windowId)
     }
 
     /// Live WebViews known to the coordinator registry for this tab.
     func trackedWebViews(for tabId: UUID) -> [WKWebView] {
-        coordinatorProvider().getAllWebViews(for: tabId)
+        requireCoordinator().getAllWebViews(for: tabId)
     }
 
     /// Prefer a window-tracked WebView; fall back to an untracked tab-owned instance
     /// (popup / pre-window / Glance materialization) via the coordinator.
     func anyLiveWebView(for tab: Tab) -> WKWebView? {
-        coordinatorProvider().anyLiveWebView(for: tab)
+        requireCoordinator().anyLiveWebView(for: tab)
     }
 
     func ownsLiveWebView(_ webView: WKWebView, for tab: Tab) -> Bool {
-        coordinatorProvider().ownsLiveWebView(webView, for: tab)
+        requireCoordinator().ownsLiveWebView(webView, for: tab)
     }
 
     func hasLiveWebView(for tab: Tab) -> Bool {
-        coordinatorProvider().hasLiveWebView(for: tab)
+        requireCoordinator().hasLiveWebView(for: tab)
     }
 
     func hasUntrackedOwnedWebView(for tab: Tab) -> Bool {
-        coordinatorProvider().untrackedOwnedWebView(for: tab) != nil
+        requireCoordinator().untrackedOwnedWebView(for: tab) != nil
     }
 
     func assignWebView(_ webView: WKWebView, to tab: Tab, in windowId: UUID) {
-        coordinatorProvider().assignWebView(webView, to: tab, in: windowId)
+        requireCoordinator().assignWebView(webView, to: tab, in: windowId)
     }
 
     func installUntrackedOwnedWebView(_ webView: WKWebView, for tab: Tab) {
-        coordinatorProvider().installUntrackedOwnedWebView(webView, for: tab)
+        requireCoordinator().installUntrackedOwnedWebView(webView, for: tab)
     }
 
     @discardableResult
     func ensureUntrackedOwnedWebView(for tab: Tab) -> WKWebView? {
-        coordinatorProvider().ensureUntrackedOwnedWebView(for: tab)
+        requireCoordinator().ensureUntrackedOwnedWebView(for: tab)
     }
 
     func releaseUntrackedOwnedWebView(for tab: Tab) {
-        coordinatorProvider().releaseUntrackedOwnedWebView(for: tab)
+        requireCoordinator().releaseUntrackedOwnedWebView(for: tab)
     }
 
     @discardableResult
@@ -78,7 +90,7 @@ final class BrowserWebViewRoutingService {
         prepareReplacement: ((WKWebView) -> Void)? = nil,
         validate: ((WKWebView) -> Bool)? = nil
     ) -> WKWebView? {
-        coordinatorProvider().replaceLiveWebView(
+        requireCoordinator().replaceLiveWebView(
             for: tab,
             in: windowId,
             reason: reason,
@@ -89,21 +101,21 @@ final class BrowserWebViewRoutingService {
     }
 
     func trackedOwner(containing webView: WKWebView) -> TrackedWebViewOwner? {
-        coordinatorProvider().trackedOwner(containing: webView)
+        requireCoordinator().trackedOwner(containing: webView)
     }
 
     func primaryTrackedWindowId(for tabId: UUID) -> UUID? {
-        coordinatorProvider().primaryTrackedWindowId(for: tabId)
+        requireCoordinator().primaryTrackedWindowId(for: tabId)
     }
 
     func windowIDs(for tabId: UUID) -> [UUID] {
-        coordinatorProvider().windowIDs(for: tabId)
+        requireCoordinator().windowIDs(for: tabId)
     }
 
     func syncTabAcrossWindows(_ tabId: UUID, originatingWebView: WKWebView? = nil) {
         guard let tab = tabLookup(tabId) else { return }
         guard ExtensionUtils.isExtensionOwnedURL(tab.url) == false else { return }
-        let coordinator = coordinatorProvider()
+        let coordinator = requireCoordinator()
         coordinator.syncTab(
             tab,
             to: tab.url,
@@ -113,17 +125,41 @@ final class BrowserWebViewRoutingService {
 
     func reloadTabAcrossWindows(_ tabId: UUID) {
         guard let tab = tabLookup(tabId) else { return }
-        let coordinator = coordinatorProvider()
-        coordinator.reloadTab(tab)
+        requireCoordinator().reloadTab(tab)
     }
 
     func reloadTab(_ tabId: UUID, in windowId: UUID) {
         guard let tab = tabLookup(tabId) else { return }
-        let coordinator = coordinatorProvider()
-        coordinator.reloadTab(tab, in: windowId)
+        requireCoordinator().reloadTab(tab, in: windowId)
     }
 
     func setMuteState(_ muted: Bool, for tabId: UUID) {
-        coordinatorProvider().setMuteState(muted, for: tabId)
+        requireCoordinator().setMuteState(muted, for: tabId)
+    }
+
+    // MARK: - Phase 6B session notes
+
+    /// Best-effort: no-ops when the coordinator is not bound yet (Tab mirror still written).
+    func noteParkedWebView(_ webView: WKWebView?, for tabId: UUID) {
+        coordinatorProvider()?.tabWebViewSessionStore.noteParkedWebView(webView, for: tabId)
+    }
+
+    func noteUntrackedWebView(_ webView: WKWebView?, for tabId: UUID) {
+        coordinatorProvider()?.tabWebViewSessionStore.noteUntrackedWebView(webView, for: tabId)
+    }
+
+    func notePrimaryAssignment(windowId: UUID, for tabId: UUID) {
+        coordinatorProvider()?.tabWebViewSessionStore.notePrimaryAssignment(
+            windowId: windowId,
+            for: tabId
+        )
+    }
+
+    func clearPrimaryAssignment(for tabId: UUID) {
+        coordinatorProvider()?.tabWebViewSessionStore.clearPrimaryAssignment(for: tabId)
+    }
+
+    func clearWebViewSession(for tabId: UUID) {
+        coordinatorProvider()?.tabWebViewSessionStore.clearAll(for: tabId)
     }
 }

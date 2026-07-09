@@ -25,6 +25,10 @@ class WindowRegistry {
     @ObservationIgnored
     private var windowAwaiters: [UUID: WindowAwaiter] = [:]
 
+    /// Phase 6A: AppKit NSWindow handles keyed by window id (weak). SoT for shell lookup.
+    @ObservationIgnored
+    private var shells: [UUID: BrowserWindowShell] = [:]
+
     var windows: [UUID: BrowserWindowState] {
         get { _windows }
         set { _windows = newValue }
@@ -95,7 +99,7 @@ class WindowRegistry {
 
     /// Unregister a window when it closes
     func unregister(_ id: UUID) {
-        guard windows[id] != nil else {
+        guard let windowState = windows[id] else {
             RuntimeDiagnostics.emit {
                 "🪟 [WindowRegistry] Ignored duplicate unregister for window: \(id)"
             }
@@ -106,6 +110,8 @@ class WindowRegistry {
         onWindowClose?(id)
 
         windows.removeValue(forKey: id)
+        unbindAppKitWindow(for: id)
+        windowState.window = nil
 
         if windows.isEmpty {
             onAllWindowsClosed?()
@@ -170,9 +176,43 @@ class WindowRegistry {
         Array(windows.values)
     }
 
+    /// Binds the AppKit window into the shell map and dual-writes `BrowserWindowState.window`.
+    func bindAppKitWindow(_ window: NSWindow?, to windowState: BrowserWindowState) {
+        windowState.window = window
+        bindAppKitWindow(window, for: windowState.id)
+    }
+
+    func bindAppKitWindow(_ window: NSWindow?, for windowId: UUID) {
+        if let shell = shells[windowId] {
+            shell.window = window
+            if window == nil {
+                shells.removeValue(forKey: windowId)
+            }
+            return
+        }
+        guard let window else { return }
+        shells[windowId] = BrowserWindowShell(windowId: windowId, window: window)
+    }
+
+    func unbindAppKitWindow(for windowId: UUID) {
+        shells.removeValue(forKey: windowId)
+    }
+
+    /// Preferred AppKit window lookup (shell map). Falls back to the dual-write mirror.
+    func appKitWindow(for windowId: UUID) -> NSWindow? {
+        if let shellWindow = shells[windowId]?.window {
+            return shellWindow
+        }
+        return windows[windowId]?.window
+    }
+
+    func appKitWindow(for windowState: BrowserWindowState) -> NSWindow? {
+        appKitWindow(for: windowState.id)
+    }
+
     func windowState(containing appKitWindow: NSWindow) -> BrowserWindowState? {
         windows.values.first { state in
-            guard let browserWindow = state.window else { return false }
+            guard let browserWindow = self.appKitWindow(for: state) else { return false }
             if browserWindow === appKitWindow {
                 return true
             }

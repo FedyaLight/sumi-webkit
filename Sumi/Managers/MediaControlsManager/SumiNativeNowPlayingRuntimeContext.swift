@@ -4,6 +4,7 @@ import Foundation
 struct SumiNativeNowPlayingBrowserRuntime {
     let windowStates: @MainActor () -> [BrowserWindowState]
     let windowState: @MainActor (UUID) -> BrowserWindowState?
+    let windowRegistry: @MainActor () -> WindowRegistry?
     let currentTab: @MainActor (BrowserWindowState) -> Tab?
     let mediaCandidateTabs: @MainActor (BrowserWindowState) -> [Tab]
     let tab: @MainActor (UUID) -> Tab?
@@ -17,6 +18,7 @@ struct SumiNativeNowPlayingRuntimeContext {
 
     let candidateTabs: @MainActor () -> [Candidate]
     let windowState: @MainActor (UUID) -> BrowserWindowState?
+    let windowRegistry: @MainActor () -> WindowRegistry?
     let resolvedTab: @MainActor (UUID, BrowserWindowState) -> Tab?
     let resolvedNowPlayingWebView: @MainActor (Tab, BrowserWindowState) -> SumiNowPlayingWebViewAdapter?
     let selectTab: @MainActor (Tab, BrowserWindowState) -> Void
@@ -48,6 +50,9 @@ extension SumiNativeNowPlayingRuntimeContext {
             },
             windowState: { windowId in
                 runtime.windowState(windowId)
+            },
+            windowRegistry: {
+                runtime.windowRegistry()
             },
             resolvedTab: { tabId, windowState in
                 if windowState.isIncognito {

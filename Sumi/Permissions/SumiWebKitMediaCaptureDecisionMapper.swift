@@ -69,16 +69,9 @@ enum SumiWebKitMediaCaptureDecisionMapper {
         for context: SumiPermissionSecurityContext,
         reason: String
     ) -> SumiPermissionCoordinatorDecision {
-        SumiPermissionCoordinatorDecision(
-            outcome: .promptRequired,
-            state: .ask,
-            persistence: nil,
-            source: .runtime,
-            reason: reason,
-            permissionTypes: context.request.permissionTypes,
-            keys: context.request.permissionTypes.map { context.request.key(for: $0) },
-            shouldOfferSystemSettings: false,
-            disablesPersistentAllow: context.isEphemeralProfile
+        SumiPermissionFailClosedMapper.temporaryPendingDecision(
+            for: context,
+            reason: reason
         )
     }
 
@@ -86,16 +79,10 @@ enum SumiWebKitMediaCaptureDecisionMapper {
         for context: SumiPermissionSecurityContext?,
         reason: String
     ) -> SumiPermissionCoordinatorDecision {
-        SumiPermissionCoordinatorDecision(
-            outcome: .cancelled,
-            state: nil,
-            persistence: nil,
-            source: .runtime,
+        SumiPermissionFailClosedMapper.failClosedDecision(
+            for: context,
             reason: reason,
-            permissionTypes: context?.request.permissionTypes ?? [],
-            keys: context?.request.permissionTypes.map { context?.request.key(for: $0) }.compactMap { $0 } ?? [],
-            shouldOfferSystemSettings: false,
-            disablesPersistentAllow: context?.isEphemeralProfile ?? false
+            fallbackPermissionTypes: []
         )
     }
 }

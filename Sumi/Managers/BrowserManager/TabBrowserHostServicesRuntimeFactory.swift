@@ -100,6 +100,21 @@ extension TabWebViewRoutingRuntime {
             },
             setMuteState: { [weak webViewRoutingService] muted, tabId in
                 webViewRoutingService?.setMuteState(muted, for: tabId)
+            },
+            noteParkedWebView: { [weak webViewRoutingService] webView, tabId in
+                webViewRoutingService?.noteParkedWebView(webView, for: tabId)
+            },
+            noteUntrackedWebView: { [weak webViewRoutingService] webView, tabId in
+                webViewRoutingService?.noteUntrackedWebView(webView, for: tabId)
+            },
+            notePrimaryAssignment: { [weak webViewRoutingService] windowId, tabId in
+                webViewRoutingService?.notePrimaryAssignment(windowId: windowId, for: tabId)
+            },
+            clearPrimaryAssignment: { [weak webViewRoutingService] tabId in
+                webViewRoutingService?.clearPrimaryAssignment(for: tabId)
+            },
+            clearWebViewSession: { [weak webViewRoutingService] tabId in
+                webViewRoutingService?.clearWebViewSession(for: tabId)
             }
         )
     }

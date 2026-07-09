@@ -289,7 +289,7 @@ struct TabFolderContextMenuActionOwner {
             kind: .pinnedTab,
             title: pin.preferredDisplayTitle,
             url: pin.launchURL,
-            window: windowState.window,
+            window: windowState.shellWindow(in: nil),
             themeContext: themeContext,
             onDelete: { removeShortcutPin(pin) }
         )

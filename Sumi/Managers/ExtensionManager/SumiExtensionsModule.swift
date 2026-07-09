@@ -49,8 +49,35 @@ final class SumiExtensionsModule {
 
     private var cachedManager: ExtensionManager?
     private var pendingActionAnchors: [String: [WeakAnchor]] = [:]
-    private let safariContentBlockerRuntimeOwner: SafariContentBlockerRuntimeOwner
     private var runtime = SumiExtensionsModuleRuntime.inactive
+
+    // Phase 5B collaborators — module remains the public façade.
+    private lazy var contentBlockerAPI: SumiSafariContentBlockerAPIOwner = {
+        SumiSafariContentBlockerAPIOwner(
+            context: context,
+            defaults: moduleRegistry.userDefaults,
+            isModuleEnabled: { [weak self] in self?.isEnabled ?? false },
+            liveTabs: { [weak self] in self?.runtime.liveTabs() ?? [] }
+        )
+    }()
+
+    private lazy var safariWebExtensionImport: SumiSafariWebExtensionImportOwner = {
+        SumiSafariWebExtensionImportOwner(
+            importStore: safariExtensionImportStore,
+            managerIfEnabled: { [weak self] in self?.managerIfEnabled() }
+        )
+    }()
+
+    private lazy var toolbarSiteAccess: SumiExtensionToolbarSiteAccessOwner = {
+        SumiExtensionToolbarSiteAccessOwner(
+            managerIfLoadedAndEnabled: { [weak self] in self?.managerIfLoadedAndEnabled() },
+            managerIfEnabled: { [weak self] in self?.managerIfEnabled() },
+            fallbackProfileId: { [weak self] in self?.runtime.currentProfile()?.id },
+            invalidateTabStructuralRevision: { [weak self] in
+                self?.runtime.invalidateTabStructuralRevision()
+            }
+        )
+    }()
 
     init(
         moduleRegistry: SumiModuleRegistry = .shared,
@@ -82,13 +109,6 @@ final class SumiExtensionsModule {
         self.surfaceStore = surfaceStore ?? BrowserExtensionSurfaceStore(
             extensionManager: nil
         )
-        self.safariContentBlockerRuntimeOwner = SafariContentBlockerRuntimeOwner(
-            context: context,
-            defaults: moduleRegistry.userDefaults,
-            isModuleEnabled: {
-                moduleRegistry.isEnabled(.extensions)
-            }
-        )
     }
 
     var isEnabled: Bool {
@@ -112,11 +132,11 @@ final class SumiExtensionsModule {
         moduleRegistry.setEnabled(isEnabled, for: .extensions)
         if isEnabled == false {
             tearDownLoadedRuntime(reason: "SumiExtensionsModule.setEnabled(false)")
-            safariContentBlockerRuntimeOwner.clearRuntime()
+            contentBlockerAPI.clearRuntime()
             pendingActionAnchors.removeAll()
         }
         if wasEnabled != isEnabled {
-            markSafariContentBlockerReloadRequiredForLiveTabs()
+            contentBlockerAPI.markReloadRequiredForLiveTabs()
         }
     }
 
@@ -342,7 +362,7 @@ final class SumiExtensionsModule {
 
     func uninstallExtension(_ extensionId: String) async throws {
         guard let manager = managerIfEnabled() else { return }
-        safariExtensionImportStore.removeImportedRecord(
+        safariWebExtensionImport.removeImportedRecord(
             forInstalledExtensionId: extensionId
         )
         try await manager.installationFlowOwner.uninstallExtension(extensionId)
@@ -351,123 +371,33 @@ final class SumiExtensionsModule {
     func enableSafariAppExtension(
         from candidate: DiscoveredSafariExtensionCandidate
     ) async throws -> InstalledExtension {
-        try await installSafariAppExtension(from: candidate, enableOnInstall: true)
+        try await safariWebExtensionImport.enableAppExtension(from: candidate)
     }
 
     func syncDiscoveredSafariWebExtensions(
         _ candidates: [DiscoveredSafariExtensionCandidate]
     ) async -> SafariWebExtensionSyncResult {
-        refreshDiscoveredSafariWebExtensionCandidates(candidates)
-
-        guard let manager = managerIfEnabled() else {
-            return SafariWebExtensionSyncResult(
-                addedExtensions: [],
-                failedMessages: [ExtensionError.unsupportedOS.localizedDescription],
-                skippedUnreadableCount: 0
-            )
-        }
-
-        var installedSourcePaths = Set(
-            manager.installedExtensions.map {
-                Self.standardizedFilePath($0.sourceBundlePath)
-            }
-        )
-        let installedExtensionIDs = Set(manager.installedExtensions.map(\.id))
-        let installedImportedBundleIDs = Set(
-            safariExtensionImportStore.importedRecords()
-                .filter { installedExtensionIDs.contains($0.installedExtensionId) }
-                .map(\.extensionBundleIdentifier)
-        )
-        var knownSafariBundleIDs = installedExtensionIDs.union(installedImportedBundleIDs)
-
-        var addedExtensions: [InstalledExtension] = []
-        var failedMessages: [String] = []
-        var skippedUnreadableCount = 0
-
-        for candidate in candidates where candidate.bundleKind == .webExtension {
-            guard candidate.isReadable else {
-                skippedUnreadableCount += 1
-                continue
-            }
-
-            let sourcePath = Self.standardizedFilePath(candidate.appexURL.path)
-            guard installedSourcePaths.contains(sourcePath) == false,
-                  knownSafariBundleIDs.contains(candidate.extensionBundleIdentifier) == false
-            else {
-                continue
-            }
-
-            do {
-                let installed = try await installSafariAppExtension(
-                    from: candidate,
-                    enableOnInstall: false
-                )
-                addedExtensions.append(installed)
-                installedSourcePaths.insert(Self.standardizedFilePath(installed.sourceBundlePath))
-                knownSafariBundleIDs.insert(installed.id)
-                knownSafariBundleIDs.insert(candidate.extensionBundleIdentifier)
-            } catch {
-                failedMessages.append("\(candidate.displayName): \(error.localizedDescription)")
-            }
-        }
-
-        return SafariWebExtensionSyncResult(
-            addedExtensions: addedExtensions,
-            failedMessages: failedMessages,
-            skippedUnreadableCount: skippedUnreadableCount
-        )
-    }
-
-    private func installSafariAppExtension(
-        from candidate: DiscoveredSafariExtensionCandidate,
-        enableOnInstall: Bool
-    ) async throws -> InstalledExtension {
-        guard candidate.bundleKind == .webExtension else {
-            throw ExtensionError.installationFailed(
-                "Only Safari Web Extensions can be enabled in the WebExtension runtime."
-            )
-        }
-        guard let manager = managerIfEnabled() else {
-            throw ExtensionError.unsupportedOS
-        }
-
-        let installed = try await manager.installationFlowOwner.performInstallation(
-            from: candidate.appexURL,
-            enableOnInstall: enableOnInstall
-        )
-        safariExtensionImportStore.markImported(
-            candidate: candidate,
-            installedExtensionId: installed.id
-        )
-        return installed
-    }
-
-    private static func standardizedFilePath(_ path: String) -> String {
-        URL(fileURLWithPath: path, isDirectory: true)
-            .standardizedFileURL
-            .path
+        await safariWebExtensionImport.syncDiscoveredWebExtensions(candidates)
     }
 
     func refreshDiscoveredSafariWebExtensionCandidates(
         _ candidates: [DiscoveredSafariExtensionCandidate]
     ) {
-        safariExtensionImportStore.refreshDiscoveredCandidates(
-            candidates.filter { $0.bundleKind == .webExtension }
-        )
+        safariWebExtensionImport.refreshDiscoveredCandidates(candidates)
     }
 
     func safariExtensionImportRecordsForDiagnostics() -> any SafariExtensionImportRecordProviding {
-        safariExtensionImportStore
+        safariWebExtensionImport.recordsForDiagnostics()
     }
 
     func installedSafariContentBlockers() -> [InstalledSafariContentBlockerRecord] {
-        safariContentBlockerRuntimeOwner.installedContentBlockers()
+        contentBlockerAPI.installedContentBlockers()
     }
 
     func safariContentBlockerRecord(
         forBundleIdentifier bundleIdentifier: String
     ) -> InstalledSafariContentBlockerRecord? {
-        safariContentBlockerRuntimeOwner.contentBlockerRecord(
+        contentBlockerAPI.contentBlockerRecord(
             forBundleIdentifier: bundleIdentifier
         )
     }
@@ -475,28 +405,24 @@ final class SumiExtensionsModule {
     func enableSafariContentBlocker(
         from candidate: DiscoveredSafariExtensionCandidate
     ) async throws -> InstalledSafariContentBlockerRecord {
-        let record = try await safariContentBlockerRuntimeOwner.enableContentBlocker(from: candidate)
-        markSafariContentBlockerReloadRequiredForLiveTabs()
-        return record
+        try await contentBlockerAPI.enableContentBlocker(from: candidate)
     }
 
     func setSafariContentBlockerEnabled(
         _ enabled: Bool,
         bundleIdentifier: String
     ) async throws -> InstalledSafariContentBlockerRecord? {
-        let record = try await safariContentBlockerRuntimeOwner.setContentBlockerEnabled(
+        try await contentBlockerAPI.setContentBlockerEnabled(
             enabled,
             bundleIdentifier: bundleIdentifier
         )
-        markSafariContentBlockerReloadRequiredForLiveTabs()
-        return record
     }
 
     func enabledSafariContentBlockingServices(
         for url: URL?,
         profileId: UUID?
     ) -> [SumiContentBlockingService] {
-        safariContentBlockerRuntimeOwner.enabledContentBlockingServices(
+        contentBlockerAPI.enabledContentBlockingServices(
             for: url,
             profileId: profileId
         )
@@ -505,41 +431,24 @@ final class SumiExtensionsModule {
     func safariContentBlockerAttachmentState(
         for url: URL?
     ) -> SumiSafariContentBlockerAttachmentState {
-        safariContentBlockerRuntimeOwner.attachmentState(for: url)
+        contentBlockerAPI.attachmentState(for: url)
     }
 
     func safariContentBlockerSiteState(
         for url: URL?
     ) -> SumiSafariContentBlockerSiteState {
-        safariContentBlockerRuntimeOwner.siteState(for: url)
+        contentBlockerAPI.siteState(for: url)
     }
 
     func safariContentBlockerAttachedRuleListIdentifiers() -> [String] {
-        safariContentBlockerRuntimeOwner.attachedRuleListIdentifiers()
-    }
-
-    private func markSafariContentBlockerReloadRequiredForLiveTabs() {
-        runtime.liveTabs().forEach {
-            $0.updateSafariContentBlockerReloadRequirementForCurrentSite()
-        }
-    }
-
-    private func markSafariContentBlockerReloadRequiredForLiveTabs(
-        afterChangingPolicyFor url: URL?
-    ) {
-        runtime.liveTabs().forEach {
-            $0.markSafariContentBlockerReloadRequiredIfNeeded(
-                afterChangingPolicyFor: url
-            )
-        }
+        contentBlockerAPI.attachedRuleListIdentifiers()
     }
 
     func setSafariContentBlockerSiteOverride(
         _ override: SumiSafariContentBlockerSiteOverride,
         for url: URL?
     ) {
-        safariContentBlockerRuntimeOwner.setSiteOverride(override, for: url)
-        markSafariContentBlockerReloadRequiredForLiveTabs(afterChangingPolicyFor: url)
+        contentBlockerAPI.setSiteOverride(override, for: url)
     }
 
     func orderedPinnedToolbarSlots(
@@ -558,39 +467,34 @@ final class SumiExtensionsModule {
         sumiScriptsManagerEnabled: Bool,
         profileId: UUID?
     ) -> [PinnedToolbarSlot] {
-        guard let manager = managerIfLoadedAndEnabled() else { return [] }
-        return manager.orderedPinnedToolbarSlots(
+        toolbarSiteAccess.orderedPinnedToolbarSlots(
             enabledExtensions: enabledExtensions,
             sumiScriptsManagerEnabled: sumiScriptsManagerEnabled,
-            profileId: profileId ?? manager.currentProfileId
+            profileId: profileId
         )
     }
 
     func isPinnedToToolbar(_ extensionId: String) -> Bool {
-        managerIfLoadedAndEnabled()?.isPinnedToToolbar(extensionId) ?? false
+        toolbarSiteAccess.isPinnedToToolbar(extensionId)
     }
 
     func pinToToolbar(_ extensionId: String) {
-        managerIfEnabled()?.pinToToolbar(extensionId)
-        runtime.invalidateTabStructuralRevision()
+        toolbarSiteAccess.pinToToolbar(extensionId)
     }
 
     func unpinFromToolbar(_ extensionId: String) {
-        managerIfEnabled()?.unpinFromToolbar(extensionId)
-        runtime.invalidateTabStructuralRevision()
+        toolbarSiteAccess.unpinFromToolbar(extensionId)
     }
 
     func movePinnedToolbarSlot(id: String, to targetIndex: Int) {
-        managerIfEnabled()?.movePinnedToolbarSlot(id: id, to: targetIndex)
-        runtime.invalidateTabStructuralRevision()
+        toolbarSiteAccess.movePinnedToolbarSlot(id: id, to: targetIndex)
     }
 
     func orderedUnpinnedExtensionIDs(
         candidateIDs: [String],
         profileId: UUID?
     ) -> [String] {
-        guard let manager = managerIfLoadedAndEnabled() else { return candidateIDs }
-        return manager.orderedUnpinnedExtensionIDs(
+        toolbarSiteAccess.orderedUnpinnedExtensionIDs(
             candidateIDs: candidateIDs,
             profileId: profileId
         )
@@ -601,27 +505,20 @@ final class SumiExtensionsModule {
         to targetIndex: Int,
         within currentOrder: [String]
     ) {
-        managerIfEnabled()?.moveUnpinnedExtension(
+        toolbarSiteAccess.moveUnpinnedExtension(
             id: id,
             to: targetIndex,
             within: currentOrder
         )
-        runtime.invalidateTabStructuralRevision()
     }
 
     func siteAccessPolicy(
         extensionId: String,
         profileId: UUID? = nil
     ) -> SafariExtensionSiteAccessPolicy? {
-        guard let manager = managerIfEnabled() else { return nil }
-        let resolvedProfileId =
-            profileId
-            ?? manager.currentProfileId
-            ?? runtime.currentProfile()?.id
-        guard let resolvedProfileId else { return nil }
-        return manager.siteAccessPolicy(
+        toolbarSiteAccess.siteAccessPolicy(
             extensionId: extensionId,
-            profileId: resolvedProfileId
+            profileId: profileId
         )
     }
 
@@ -630,16 +527,10 @@ final class SumiExtensionsModule {
         extensionId: String,
         profileId: UUID? = nil
     ) {
-        guard let manager = managerIfEnabled() else { return }
-        let resolvedProfileId =
-            profileId
-            ?? manager.currentProfileId
-            ?? runtime.currentProfile()?.id
-        guard let resolvedProfileId else { return }
-        manager.setDefaultSiteAccess(
+        toolbarSiteAccess.setDefaultSiteAccess(
             access,
             extensionId: extensionId,
-            profileId: resolvedProfileId
+            profileId: profileId
         )
     }
 
@@ -648,16 +539,10 @@ final class SumiExtensionsModule {
         extensionId: String,
         profileId: UUID? = nil
     ) {
-        guard let manager = managerIfEnabled() else { return }
-        let resolvedProfileId =
-            profileId
-            ?? manager.currentProfileId
-            ?? runtime.currentProfile()?.id
-        guard let resolvedProfileId else { return }
-        manager.setPrivateBrowsingAccess(
+        toolbarSiteAccess.setPrivateBrowsingAccess(
             isAllowed,
             extensionId: extensionId,
-            profileId: resolvedProfileId
+            profileId: profileId
         )
     }
 
@@ -667,16 +552,10 @@ final class SumiExtensionsModule {
         profileId: UUID? = nil,
         matchPatternString: String
     ) {
-        guard let manager = managerIfEnabled() else { return }
-        let resolvedProfileId =
-            profileId
-            ?? manager.currentProfileId
-            ?? runtime.currentProfile()?.id
-        guard let resolvedProfileId else { return }
-        manager.setConfiguredSiteAccess(
+        toolbarSiteAccess.setConfiguredSiteAccess(
             access,
             extensionId: extensionId,
-            profileId: resolvedProfileId,
+            profileId: profileId,
             matchPatternString: matchPatternString
         )
     }
@@ -839,7 +718,7 @@ final class SumiExtensionsModule {
 
     #if DEBUG
         func drainSafariContentBlockerRuntimeForTests(cancel: Bool = false) async {
-            await safariContentBlockerRuntimeOwner.drainRuntimeForTests(cancel: cancel)
+            await contentBlockerAPI.drainRuntimeForTests(cancel: cancel)
         }
     #endif
 

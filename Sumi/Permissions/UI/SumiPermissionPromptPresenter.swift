@@ -113,7 +113,7 @@ final class SumiPermissionPromptPresenter: ObservableObject {
             tabId: tab.id.uuidString,
             pageId: tab.currentPermissionPageId(),
             displayDomain: Self.displayDomain(for: tab.url),
-            windowIsActive: windowState.window?.isKeyWindow ?? true
+            windowIsActive: windowState.shellWindow(in: nil)?.isKeyWindow ?? true
         )
         currentWindowState = windowState
         Task { @MainActor [weak self] in
@@ -311,7 +311,7 @@ final class SumiPermissionPromptPresenter: ObservableObject {
 
         finishSidebarPin(reason: "sync")
         let source = windowState.sidebarTransientSessionCoordinator.preparedPresentationSource(
-            window: windowState.window
+            window: windowState.shellWindow(in: nil)
         )
         let token = windowState.sidebarTransientSessionCoordinator.beginSession(
             kind: .permissionPrompt,

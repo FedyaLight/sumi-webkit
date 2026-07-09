@@ -7,7 +7,6 @@
 //
 
 import Foundation
-import SwiftUI
 
 enum SumiProfileIcon {
     static let defaultIcon = SumiPersistentGlyph.spaceDefaultIconValue
@@ -19,24 +18,5 @@ enum SumiProfileIcon {
 
     static func usesDefaultIcon(_ icon: String) -> Bool {
         storedValue(icon).isEmpty
-    }
-}
-
-struct SumiProfileIconView: View {
-    let icon: String
-    var font: Font = .body
-
-    var body: some View {
-        if SumiProfileIcon.usesDefaultIcon(icon) {
-            Circle()
-                .fill(.primary)
-                .frame(
-                    width: SumiProfileIcon.defaultDotDiameter,
-                    height: SumiProfileIcon.defaultDotDiameter
-                )
-        } else {
-            Text(SumiProfileIcon.storedValue(icon))
-                .font(font)
-        }
     }
 }

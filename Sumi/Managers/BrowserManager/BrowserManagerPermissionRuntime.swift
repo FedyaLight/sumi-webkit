@@ -108,9 +108,9 @@ final class BrowserManagerPermissionRuntime {
     private var didPauseGeolocationForApplicationBackground = false
 
     init(dependencies: Dependencies) {
-        let persistentPermissionStore = SwiftDataPermissionStore(
-            container: dependencies.startupPersistence.container
-        )
+        // One store instance for coordinator + autoplay adapter (no dual SwiftData path).
+        let autoplayStore = dependencies.browserConfiguration.autoplayPolicyStore
+        let persistentPermissionStore = autoplayStore.permissionStore
         let antiAbuseStore = SumiPermissionAntiAbuseStore()
         let systemPermissionService = dependencies.systemPermissionService
             ?? MacSumiSystemPermissionService()
@@ -150,7 +150,7 @@ final class BrowserManagerPermissionRuntime {
         self.permissionCoordinator = permissionCoordinator
         self.geolocationProvider = geolocationProvider
         self.runtimePermissionController = runtimePermissionController
-        self.autoplayStore = dependencies.browserConfiguration.resolvedAutoplayPolicyStore
+        self.autoplayStore = autoplayStore
         self.permissionRecentActivityStore = permissionRecentActivityStore
         self.permissionSiteActivityStore = dependencies.permissionSiteActivityStore
         self.permissionCleanupService = permissionCleanupService

@@ -27,6 +27,7 @@ final class WebViewAssignmentRebuildOwner {
 
     struct Runtime {
         let webViewRegistry: WindowWebViewRegistry
+        let tabWebViewSessionStore: TabWebViewSessionStore?
         let initialDocumentWarmupRuntime: InitialDocumentWarmupRuntime?
         let registerTrackedWebView: RegisterTrackedWebView
         let unregisterTrackedWebViewSlot: UnregisterTrackedWebViewSlot
@@ -51,7 +52,8 @@ final class WebViewAssignmentRebuildOwner {
             in: windowId,
             initialDocumentWarmupRuntime: runtime.initialDocumentWarmupRuntime,
             existingWebView: runtime.webViewRegistry.webView(for: tab.id, in: windowId),
-            windowWebViews: runtime.webViewRegistry.windowWebViews(for: tab.id)
+            windowWebViews: runtime.webViewRegistry.windowWebViews(for: tab.id),
+            sessionStore: runtime.tabWebViewSessionStore
         ) {
         case .useExisting(let existing):
             return existing
@@ -82,12 +84,17 @@ final class WebViewAssignmentRebuildOwner {
     ) {
         guard let replacement = runtime.primaryCandidate(tab.id) else {
             tab.clearCurrentWebViewOwnership()
+            runtime.tabWebViewSessionStore?.clearPrimaryAssignment(for: tab.id)
             return
         }
 
         if !tab.currentWebViewIsIdentical(to: replacement.webView)
             || tab.primaryWindowId != replacement.owner.windowID {
             tab.assignWebViewToWindow(replacement.webView, windowId: replacement.owner.windowID)
+            runtime.tabWebViewSessionStore?.notePrimaryAssignment(
+                windowId: replacement.owner.windowID,
+                for: tab.id
+            )
         }
     }
 
@@ -108,7 +115,11 @@ final class WebViewAssignmentRebuildOwner {
 
         guard targetWindowIds.isEmpty == false else { return false }
 
-        let targetURL = url ?? tab.existingWebView?.url ?? tab.url
+        let sessionStore = runtime.tabWebViewSessionStore
+        sessionStore?.syncFromTabIfNeeded(tab)
+        let sessionUntrackedURL = sessionStore?.untrackedWebView(for: tab.id)?.url
+        let sessionParkedURL = sessionStore?.parkedWebView(for: tab.id)?.url
+        let targetURL = url ?? sessionUntrackedURL ?? sessionParkedURL ?? tab.url
         let preferredPrimaryWindowIdCandidate: UUID?
         if let preferredPrimaryWindowId,
            targetWindowIds.contains(preferredPrimaryWindowId) {
@@ -129,8 +140,8 @@ final class WebViewAssignmentRebuildOwner {
 
         guard let primaryWindowId else { return false }
 
-        let protectedCandidateWebViews = Array(runtime.webViewRegistry.windowWebViews(for: tab.id).values)
-            + [tab.assignedWebView, tab.existingWebView].compactMap { $0 }
+        let protectedCandidateWebViews = sessionStore?.protectedCandidateWebViews(for: tab)
+            ?? Array(runtime.webViewRegistry.windowWebViews(for: tab.id).values)
         if protectedCandidateWebViews.contains(where: runtime.isWebViewProtectedFromCompositorMutation) {
             let deferredWebViews = protectedCandidateWebViews.filter(runtime.isWebViewProtectedFromCompositorMutation)
             for protectedWebView in deferredWebViews {
@@ -144,6 +155,7 @@ final class WebViewAssignmentRebuildOwner {
         }
 
         let oldEntries = runtime.webViewRegistry.windowWebViews(for: tab.id)
+        let sessionKnownWebViews = sessionStore?.allKnownWebViews(for: tab) ?? []
         var cleanedIdentifiers: Set<ObjectIdentifier> = []
 
         func cleanup(_ webView: WKWebView?) {
@@ -161,11 +173,13 @@ final class WebViewAssignmentRebuildOwner {
             )
             cleanup(webView)
         }
-        cleanup(tab.assignedWebView)
-        cleanup(tab.existingWebView)
+        for webView in sessionKnownWebViews {
+            cleanup(webView)
+        }
 
         tab.cancelPendingMainFrameNavigation()
         tab.clearAllWebViewOwnership()
+        sessionStore?.clearAll(for: tab.id)
         tab.url = targetURL
 
         guard let recreatedPrimary = tab.makeNormalTabWebView(
@@ -175,6 +189,7 @@ final class WebViewAssignmentRebuildOwner {
             return false
         }
         tab.assignWebViewToWindow(recreatedPrimary, windowId: primaryWindowId)
+        sessionStore?.notePrimaryAssignment(windowId: primaryWindowId, for: tab.id)
         runtime.registerTrackedWebView(recreatedPrimary, tab.id, primaryWindowId)
         var recreatedWebViews = [recreatedPrimary]
 
@@ -249,6 +264,7 @@ final class WebViewAssignmentRebuildOwner {
             return nil
         }
         tab.assignWebViewToWindow(webView, windowId: windowId)
+        runtime.tabWebViewSessionStore?.notePrimaryAssignment(windowId: windowId, for: tab.id)
         runtime.registerTrackedWebView(webView, tab.id, windowId)
         // Previously `ensureWebView` → setup handoff loaded http(s). Factory-only
         // create must schedule that load explicitly or pages stay blank.
@@ -349,5 +365,6 @@ final class WebViewAssignmentRebuildOwner {
     ) {
         runtime.registerTrackedWebView(webView, tab.id, windowId)
         tab.assignWebViewToWindow(webView, windowId: windowId)
+        runtime.tabWebViewSessionStore?.notePrimaryAssignment(windowId: windowId, for: tab.id)
     }
 }
