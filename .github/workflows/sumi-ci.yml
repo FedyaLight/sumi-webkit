@@ -1,0 +1,69 @@
+name: Sumi CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sumi-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+  XCODE_PROJECT: Sumi.xcodeproj
+  XCODE_SCHEME: Sumi
+  XCODE_CONFIGURATION: Debug
+  DERIVED_DATA_PATH: ${{ github.workspace }}/build/DerivedData
+  RESULT_BUNDLE_PATH: ${{ github.workspace }}/build/BuildResults/Sumi.xcresult
+
+jobs:
+  build-and-test:
+    name: Build and package tests
+    runs-on: macos-15
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+          xcodebuild -showsdks | sed -n '/macOS SDKs:/,/iOS SDKs:/p'
+
+      - name: Test SumiDomain package
+        run: swift test --package-path Packages/SumiDomain
+
+      - name: Build Sumi app
+        run: |
+          set -euo pipefail
+          rm -rf "$RESULT_BUNDLE_PATH"
+          mkdir -p "$(dirname "$RESULT_BUNDLE_PATH")"
+
+          xcodebuild \
+            -quiet \
+            -project "$XCODE_PROJECT" \
+            -scheme "$XCODE_SCHEME" \
+            -configuration "$XCODE_CONFIGURATION" \
+            -destination 'platform=macOS' \
+            -derivedDataPath "$DERIVED_DATA_PATH" \
+            -resultBundlePath "$RESULT_BUNDLE_PATH" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            build
+
+      - name: Upload Sumi build result
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Sumi-build.xcresult
+          path: build/BuildResults/Sumi.xcresult
+          if-no-files-found: ignore
+          retention-days: 7

@@ -76,6 +76,7 @@ telemetry-id
 .github/workflows/*
 !.github/workflows/alpha-release.yml
 !.github/workflows/publish-appcast-pages.yml
+!.github/workflows/sumi-ci.yml
 .vscode/
 
 # Local dev artifacts (not part of the Xcode app)
