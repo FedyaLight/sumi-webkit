@@ -11,22 +11,26 @@ import WebKit
 /// this placeholder (via ``tabContentView``) during space/tab switches so the
 /// live web view is never reparented out from under the fullscreen presentation.
 @MainActor
-struct WKWebViewFullscreenPresentation {
-    let webView: WKWebView
+public struct WKWebViewFullscreenPresentation {
+    public let webView: WKWebView
+
+    public init(webView: WKWebView) {
+        self.webView = webView
+    }
 
     private enum Selector {
         static let placeholderView = NSSelectorFromString("_fullScreenPlaceholderView")
     }
 
     /// Whether WebKit is currently presenting an element in fullscreen.
-    var isPresentingElement: Bool {
+    public var isPresentingElement: Bool {
         webView.fullscreenState != .notInFullscreen
     }
 
     /// WebKit's native fullscreen placeholder snapshot, present only while an
     /// element is fullscreen. Returns `nil` when the private accessor is
     /// unavailable, degrading to the web view itself via ``tabContentView``.
-    var placeholderView: NSView? {
+    public var placeholderView: NSView? {
         guard webView.responds(to: Selector.placeholderView) else {
             return nil
         }
@@ -38,7 +42,7 @@ struct WKWebViewFullscreenPresentation {
     /// The view that represents this tab's content in the compositor: the native
     /// fullscreen placeholder while an element is presented, otherwise the web
     /// view itself.
-    var tabContentView: NSView {
+    public var tabContentView: NSView {
         placeholderView ?? webView
     }
 
@@ -47,7 +51,7 @@ struct WKWebViewFullscreenPresentation {
     /// presentations (`<video>` fullscreen and Picture in Picture). Fire-and-
     /// forget: teardown of the underlying web view is gated on the
     /// `fullscreenState` observer, not on this call returning.
-    func requestExit() {
+    public func requestExit() {
         let webView = webView
         Task { @MainActor in
             await webView.closeAllMediaPresentations()
@@ -56,7 +60,7 @@ struct WKWebViewFullscreenPresentation {
 }
 
 @MainActor
-extension WKWebView {
+public extension WKWebView {
     var sumiFullscreenPresentation: WKWebViewFullscreenPresentation {
         WKWebViewFullscreenPresentation(webView: self)
     }
