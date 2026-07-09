@@ -88,7 +88,7 @@ final class SafariExtensionLazyRuntimePolicyTests: XCTestCase {
             }
         )
 
-        module.attach(runtime: .live(browserManager: browserManager))
+        module.attach(runtime: BrowserExtensionsModuleRuntimeFactory.runtime(for: browserManager))
         _ = try XCTUnwrap(module.managerIfEnabled())
 
         XCTAssertIdentical(initialProfileUsedByFactory, runtimeProfile)

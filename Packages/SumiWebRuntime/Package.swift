@@ -11,7 +11,10 @@ let package = Package(
         .macOS("15.5")
     ],
     products: [
-        .library(name: "SumiWebRuntime", targets: ["SumiWebRuntime"]),
+        // Dynamic so host-based SumiTests do not statically embed a second
+        // copy of the module (duplicate class metadata breaks TabWebViewSession
+        // field access across the app/test boundary).
+        .library(name: "SumiWebRuntime", type: .dynamic, targets: ["SumiWebRuntime"]),
     ],
     dependencies: [
         .package(path: "../SumiDomain"),

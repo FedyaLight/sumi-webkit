@@ -1,17 +1,6 @@
 import AppKit
 import Foundation
-
-enum SidebarInputRecoveryReason: String, CaseIterable, CustomStringConvertible {
-    case menuEnded = "menu-ended"
-    case popoverDismissed = "popover-dismissed"
-    case structuralMenuAction = "structural-menu-action"
-    case ownerUnresolvedAfterSoftRecovery = "owner-unresolved-after-soft-recovery"
-    case dragSessionRecovery = "drag-session-recovery"
-    case explicitFallback = "explicit-fallback"
-    case unknownFallback = "unknown-fallback"
-
-    var description: String { rawValue }
-}
+import SumiDomain
 
 enum SidebarRecoveryTier: Int, Comparable, CustomStringConvertible {
     case soft = 0

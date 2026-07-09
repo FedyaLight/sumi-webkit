@@ -1,23 +1,32 @@
 //
 //  WebViewCreationPlanningOwner.swift
-//  Sumi
+//  SumiWebRuntime
 //
 //  Owns normal-tab WebView materialization planning and initial-document warmup gating.
 //
 
 import Foundation
 import WebKit
-import SumiWebRuntime
 
-enum InitialDocumentWarmupDeferral {
+public enum InitialDocumentWarmupDeferral {
     case waitForInFlight
     case start(profileId: UUID, windowId: UUID)
 }
 
-struct InitialDocumentWarmupRuntime {
-    let needsInitialDocumentExtensionContextLoad: @MainActor (UUID) -> Bool
-    let ensureInitialExtensionContextsLoaded: @MainActor (UUID) async -> Void
-    let refreshCompositorForWindow: @MainActor (UUID) -> Void
+public struct InitialDocumentWarmupRuntime {
+    public let needsInitialDocumentExtensionContextLoad: @MainActor (UUID) -> Bool
+    public let ensureInitialExtensionContextsLoaded: @MainActor (UUID) async -> Void
+    public let refreshCompositorForWindow: @MainActor (UUID) -> Void
+
+    public init(
+        needsInitialDocumentExtensionContextLoad: @escaping @MainActor (UUID) -> Bool,
+        ensureInitialExtensionContextsLoaded: @escaping @MainActor (UUID) async -> Void,
+        refreshCompositorForWindow: @escaping @MainActor (UUID) -> Void
+    ) {
+        self.needsInitialDocumentExtensionContextLoad = needsInitialDocumentExtensionContextLoad
+        self.ensureInitialExtensionContextsLoaded = ensureInitialExtensionContextsLoaded
+        self.refreshCompositorForWindow = refreshCompositorForWindow
+    }
 }
 
 @MainActor
@@ -26,13 +35,13 @@ private struct InitialDocumentWarmupGate {
     private var attemptedProfileIds: Set<UUID> = []
 
     mutating func deferralIfNeeded(
-        for tab: Tab,
+        for tab: any WebRuntimeTabHandle,
         in windowId: UUID,
         runtime: InitialDocumentWarmupRuntime?
     ) -> InitialDocumentWarmupDeferral? {
         guard tab.isEphemeral == false,
               Self.isWarmupURL(tab.url),
-              let profileId = tab.resolveProfile()?.id ?? tab.profileId,
+              let profileId = tab.resolvedProfileId,
               let runtime
         else {
             return nil
@@ -66,7 +75,7 @@ private struct InitialDocumentWarmupGate {
     }
 }
 
-enum NormalTabWebViewCreationPlan {
+public enum NormalTabWebViewCreationPlan {
     case useExisting(WKWebView)
     case adoptExistingPrimary(WKWebView)
     case deferForInitialDocumentWarmup(InitialDocumentWarmupDeferral)
@@ -75,11 +84,13 @@ enum NormalTabWebViewCreationPlan {
 }
 
 @MainActor
-final class WebViewCreationPlanningOwner {
+public final class WebViewCreationPlanningOwner {
     private var initialDocumentWarmupGate = InitialDocumentWarmupGate()
 
-    func creationPlan(
-        for tab: Tab,
+    public init() {}
+
+    public func creationPlan(
+        for tab: any WebRuntimeTabHandle,
         in windowId: UUID,
         initialDocumentWarmupRuntime: InitialDocumentWarmupRuntime?,
         existingWebView: WKWebView?,
@@ -118,7 +129,7 @@ final class WebViewCreationPlanningOwner {
         return .createClone(primaryWindowId: primaryWindowId)
     }
 
-    func startInitialDocumentWarmupIfNeeded(
+    public func startInitialDocumentWarmupIfNeeded(
         _ deferral: InitialDocumentWarmupDeferral,
         runtime: InitialDocumentWarmupRuntime?
     ) {
@@ -138,7 +149,7 @@ final class WebViewCreationPlanningOwner {
         }
     }
 
-    static func primaryWindowIdForClone<S: Sequence>(
+    public static func primaryWindowIdForClone<S: Sequence>(
         otherWindowIds: S
     ) -> UUID? where S.Element == UUID {
         let candidates = Array(otherWindowIds)
@@ -146,17 +157,22 @@ final class WebViewCreationPlanningOwner {
     }
 
     private func adoptableExistingPrimaryWebView(
-        for tab: Tab,
+        for tab: any WebRuntimeTabHandle,
         sessionStore: TabWebViewSessionStore?,
         hasTrackedWebViews: Bool
     ) -> WKWebView? {
         guard hasTrackedWebViews == false else { return nil }
-        guard let sessionStore else { return nil }
-        sessionStore.promoteLocalSessionIfNeeded(
-            tabId: tab.id,
-            localSession: tab.webViewOwnershipOwner.localSession
-        )
-        let session = sessionStore.session(for: tab.id)
+        let session: TabWebViewSession
+        if let sessionStore {
+            sessionStore.promoteLocalSessionIfNeeded(
+                tabId: tab.id,
+                localSession: tab.localSession
+            )
+            session = sessionStore.session(for: tab.id)
+        } else {
+            // Pre-runtime / tests without a store: Tab-local session notes.
+            session = tab.localSession
+        }
         // Adopt windowed primary hint or untracked — never parked staging.
         if session.primaryWindowId != nil, let primary = session.primaryWebView {
             return primary

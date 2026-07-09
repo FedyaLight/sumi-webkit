@@ -101,9 +101,3 @@ enum BrowserTabManagerRuntimeContextFactory {
         )
     }
 }
-
-extension TabManagerRuntimeContext {
-    static func live(browserManager: BrowserManager) -> TabManagerRuntimeContext {
-        BrowserTabManagerRuntimeContextFactory.runtime(for: browserManager)
-    }
-}

@@ -1,6 +1,6 @@
 //
 //  VisibleWebViewRuntimeOwner.swift
-//  Sumi
+//  SumiWebRuntime
 //
 //  Owns visible WebView preparation and compositor container bookkeeping.
 //
@@ -8,20 +8,21 @@
 import AppKit
 import Foundation
 import WebKit
-import SumiWebRuntime
 
 @MainActor
-final class VisibleWebViewRuntimeOwner {
+public final class VisibleWebViewRuntimeOwner: WebRuntimeVisiblePreparationControlling {
     private let compositorHandoffState = WebViewCompositorHandoffState()
     private var scheduledPrepareWindowIds: Set<UUID> = []
 
+    public init() {}
+
     // MARK: - Compositor Containers
 
-    func setCompositorContainerView(_ view: NSView?, for windowId: UUID) {
+    public func setCompositorContainerView(_ view: NSView?, for windowId: UUID) {
         compositorHandoffState.setContainerView(view, for: windowId)
     }
 
-    func setImmediateVisualHandoffHandler(
+    public func setImmediateVisualHandoffHandler(
         _ handler: (@MainActor () -> Bool)?,
         for windowId: UUID
     ) {
@@ -29,15 +30,15 @@ final class VisibleWebViewRuntimeOwner {
     }
 
     @discardableResult
-    func performImmediateVisualHandoffIfPossible(in windowId: UUID) -> Bool {
+    public func performImmediateVisualHandoffIfPossible(in windowId: UUID) -> Bool {
         compositorHandoffState.performImmediateVisualHandoffIfPossible(in: windowId)
     }
 
-    func compositorContainerView(for windowId: UUID) -> NSView? {
+    public func compositorContainerView(for windowId: UUID) -> NSView? {
         compositorHandoffState.containerView(for: windowId)
     }
 
-    func removeCompositorContainerView(
+    public func removeCompositorContainerView(
         for windowId: UUID,
         webViewRegistry: WindowWebViewRegistry,
         pruneInvalidDeferredCommands: (String) -> Void
@@ -48,23 +49,23 @@ final class VisibleWebViewRuntimeOwner {
         pruneInvalidDeferredCommands("removeCompositorContainerView")
     }
 
-    func compositorContainers() -> [(UUID, NSView)] {
+    public func compositorContainers() -> [(UUID, NSView)] {
         compositorHandoffState.containerViewsByWindow()
     }
 
-    func resetWindowRegistrations() {
+    public func resetWindowRegistrations() {
         compositorHandoffState.removeAllWindowRegistrations()
         scheduledPrepareWindowIds.removeAll()
     }
 
-    func cancelScheduledPreparation(for windowId: UUID) {
+    public func cancelScheduledPreparation(for windowId: UUID) {
         scheduledPrepareWindowIds.remove(windowId)
     }
 
     // MARK: - Promoted Host Handoff
 
-    func registerPromotedHost(
-        _ host: SumiWebViewContainerView,
+    public func registerPromotedHost(
+        _ host: any WebRuntimePromotedHost,
         for tabId: UUID,
         in windowId: UUID,
         attachmentCompletion: (@MainActor () -> Void)? = nil
@@ -77,11 +78,11 @@ final class VisibleWebViewRuntimeOwner {
         )
     }
 
-    func takePromotedHost(
+    public func takePromotedHost(
         for tabId: UUID,
         in windowId: UUID,
         expectedWebView: WKWebView
-    ) -> SumiWebViewContainerView? {
+    ) -> (any WebRuntimePromotedHost)? {
         compositorHandoffState.takePromotedHost(
             for: tabId,
             in: windowId,
@@ -89,37 +90,39 @@ final class VisibleWebViewRuntimeOwner {
         )
     }
 
-    func completePromotedHostAttachment(for tabId: UUID, in windowId: UUID) {
+    public func completePromotedHostAttachment(for tabId: UUID, in windowId: UUID) {
         compositorHandoffState.completePromotedHostAttachment(for: tabId, in: windowId)
     }
 
     // MARK: - Visible WebView Preparation
 
     @discardableResult
-    func prepareVisibleWebViews(
-        for windowState: BrowserWindowState,
+    public func prepareVisibleWebViews(
+        for windowHandle: any WebRuntimeWindowHandle,
         runtime: VisibleWebViewPreparationRuntime,
         webViewRegistry: WindowWebViewRegistry,
         existingWebView: (UUID, UUID) -> WKWebView?,
-        createWebView: (Tab, UUID) -> WKWebView?
+        createWebView: (any WebRuntimeTabHandle, UUID) -> WKWebView?
     ) -> Bool {
-        let signpostState = PerformanceTrace.beginInterval("WebViewCoordinator.prepareVisibleWebViews")
+        let signpostState = SumiWebRuntimeDiagnostics.beginInterval(
+            "WebViewCoordinator.prepareVisibleWebViews"
+        )
         defer {
-            PerformanceTrace.endInterval(
+            SumiWebRuntimeDiagnostics.endInterval(
                 "WebViewCoordinator.prepareVisibleWebViews",
                 signpostState
             )
         }
 
         let visibleTabIDs = visibleTabIDs(
-            for: windowState,
+            for: windowHandle,
             runtime: runtime
         )
-        webViewRegistry.noteVisibleTabs(visibleTabIDs, in: windowState.id)
+        webViewRegistry.noteVisibleTabs(visibleTabIDs, in: windowHandle.id)
 
         var didCreateWebView = false
         for tabId in visibleTabIDs {
-            guard let tab = runtime.resolveTab(tabId, windowState) else {
+            guard let tab = runtime.resolveTab(tabId, windowHandle) else {
                 continue
             }
             guard runtime.canMaterializeWebViewDuringStartup(tab) else {
@@ -127,14 +130,14 @@ final class VisibleWebViewRuntimeOwner {
             }
 
             runtime.markTabAccessed(tab.id)
-            if existingWebView(tab.id, windowState.id) == nil,
-               createWebView(tab, windowState.id) != nil {
+            if existingWebView(tab.id, windowHandle.id) == nil,
+               createWebView(tab, windowHandle.id) != nil {
                 didCreateWebView = true
             }
         }
 
         runtime.evictHiddenWebViews(
-            windowState.id,
+            windowHandle.id,
             Set(visibleTabIDs)
         )
         runtime.scheduleTabSuspensionReconcile("visible-webviews-prepared")
@@ -143,59 +146,59 @@ final class VisibleWebViewRuntimeOwner {
         return didCreateWebView
     }
 
-    func schedulePrepareVisibleWebViews(
-        for windowState: BrowserWindowState,
+    public func schedulePrepareVisibleWebViews(
+        for windowHandle: any WebRuntimeWindowHandle,
         runtime: VisibleWebViewPreparationRuntime,
-        prepareVisibleWebViews: @escaping @MainActor (BrowserWindowState) -> Bool
+        prepareVisibleWebViews: @escaping @MainActor (any WebRuntimeWindowHandle) -> Bool
     ) {
-        let windowId = windowState.id
+        let windowId = windowHandle.id
         guard scheduledPrepareWindowIds.insert(windowId).inserted else { return }
 
-        DispatchQueue.main.async { [weak self, weak windowState] in
+        DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.scheduledPrepareWindowIds.remove(windowId)
 
-            guard let windowState else { return }
-            let didCreateWebView = prepareVisibleWebViews(windowState)
+            guard let windowHandle = runtime.windowState(windowId) else { return }
+            let didCreateWebView = prepareVisibleWebViews(windowHandle)
             if didCreateWebView {
-                runtime.refreshCompositor(windowState)
+                runtime.refreshCompositor(windowId)
             }
         }
     }
 
-    func visibleTabIDs(
-        for windowState: BrowserWindowState,
+    public func visibleTabIDs(
+        for windowHandle: any WebRuntimeWindowHandle,
         runtime: VisibleWebViewPreparationRuntime
     ) -> [UUID] {
         VisibleTabPreparationPlan.visibleTabIDs(
-            currentTabId: runtime.currentTabId(windowState),
-            splitTabIds: runtime.splitVisibleTabIds(windowState.id)
+            currentTabId: runtime.currentTabId(windowHandle),
+            splitTabIds: runtime.splitVisibleTabIds(windowHandle.id)
         ).filter { tabId in
-            guard let tab = runtime.resolveTab(tabId, windowState) else {
+            guard let tab = runtime.resolveTab(tabId, windowHandle) else {
                 return false
             }
             return tab.requiresPrimaryWebView
         }
     }
 
-    func visibleTabIDSet(
+    public func visibleTabIDSet(
         in windowId: UUID,
         runtime: VisibleWebViewPreparationRuntime?
     ) -> Set<UUID> {
         guard let runtime,
-              let windowState = runtime.windowState(windowId)
+              let windowHandle = runtime.windowState(windowId)
         else {
             return []
         }
         return Set(
             visibleTabIDs(
-                for: windowState,
+                for: windowHandle,
                 runtime: runtime
             )
         )
     }
 
-    func preferredPrimaryWebViewCandidate(
+    public func preferredPrimaryWebViewCandidate(
         for tabId: UUID,
         runtime: VisibleWebViewPreparationRuntime?,
         webViewRegistry: WindowWebViewRegistry
@@ -224,9 +227,9 @@ final class VisibleWebViewRuntimeOwner {
     ) -> (Int, Int, String) {
         let visibleRank: Int
         if let runtime,
-           let windowState = runtime.windowState(owner.windowID),
+           let windowHandle = runtime.windowState(owner.windowID),
            visibleTabIDs(
-               for: windowState,
+               for: windowHandle,
                runtime: runtime
            ).contains(owner.tabID) {
             visibleRank = 0

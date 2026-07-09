@@ -13,9 +13,3 @@ enum BrowserHoverSidebarRuntimeFactory {
         )
     }
 }
-
-extension HoverSidebarRuntime {
-    static func live(browserManager: BrowserManager) -> Self {
-        BrowserHoverSidebarRuntimeFactory.runtime(for: browserManager)
-    }
-}

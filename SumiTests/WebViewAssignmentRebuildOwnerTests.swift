@@ -16,6 +16,7 @@ final class WebViewAssignmentRebuildOwnerTests: XCTestCase {
         owner.refreshPrimaryTrackedWebView(
             for: tab,
             runtime: makeRuntime(
+                tab: tab,
                 primaryCandidate: { tabId in
                     requestedTabIds.append(tabId)
                     return (
@@ -39,7 +40,7 @@ final class WebViewAssignmentRebuildOwnerTests: XCTestCase {
 
         owner.refreshPrimaryTrackedWebView(
             for: tab,
-            runtime: makeRuntime(primaryCandidate: { _ in nil })
+            runtime: makeRuntime(tab: tab, primaryCandidate: { _ in nil })
         )
 
         XCTAssertNil(tab.resolvedAssignedWebView())
@@ -54,11 +55,38 @@ final class WebViewAssignmentRebuildOwnerTests: XCTestCase {
 
         let rebuilt = owner.rebuildLiveWebViews(
             for: tab,
-            runtime: makeRuntime()
+            runtime: makeRuntime(tab: tab)
         )
 
         XCTAssertFalse(rebuilt)
         XCTAssertEqual(tab.resolvedPrimaryWindowId(), staleWindowId)
+    }
+
+    func testRefreshPrimaryUsesRuntimeOwnershipWitnessNotOnlyConcreteFallback() {
+        let owner = WebViewAssignmentRebuildOwner()
+        let tab = makeTab()
+        let windowId = UUID()
+        let webView = WKWebView(frame: .zero)
+        let ownershipProbe = OwnershipWitnessProbe(backing: tab)
+
+        owner.refreshPrimaryTrackedWebView(
+            for: tab,
+            runtime: makeRuntime(
+                tab: tab,
+                primaryCandidate: { _ in
+                    (
+                        TrackedWebViewOwner(tabID: tab.id, windowID: windowId),
+                        webView
+                    )
+                },
+                tabOwnership: ownershipProbe
+            )
+        )
+
+        XCTAssertEqual(ownershipProbe.assignCallCount, 1)
+        XCTAssertEqual(ownershipProbe.lastAssignedWindowId, windowId)
+        XCTAssertIdentical(ownershipProbe.lastAssignedWebView, webView)
+        XCTAssertIdentical(tab.resolvedAssignedWebView(), webView)
     }
 
     func testCreatePrimaryUsesFactoryInsteadOfParkedEnsureWebViewReuse() async throws {
@@ -87,6 +115,7 @@ final class WebViewAssignmentRebuildOwnerTests: XCTestCase {
                 for: tab,
                 in: windowId,
                 runtime: makeRuntime(
+                    tab: tab,
                     webViewRegistry: registry,
                     registerTrackedWebView: { webView, tabId, registeredWindowId in
                         registered.append((tabId, registeredWindowId, webView))
@@ -144,6 +173,7 @@ final class WebViewAssignmentRebuildOwnerTests: XCTestCase {
                 for: tab,
                 in: windowId,
                 runtime: makeRuntime(
+                    tab: tab,
                     webViewRegistry: registry,
                     registerTrackedWebView: { webView, tabId, registeredWindowId in
                         registry.setWebView(
@@ -198,6 +228,7 @@ final class WebViewAssignmentRebuildOwnerTests: XCTestCase {
             for: tab,
             preferredPrimaryWindowId: windowId,
             runtime: makeRuntime(
+                tab: tab,
                 webViewRegistry: registry,
                 registerTrackedWebView: { webView, tabId, registeredWindowId in
                     registered.append((tabId, registeredWindowId, webView))
@@ -251,12 +282,65 @@ final class WebViewAssignmentRebuildOwnerTests: XCTestCase {
     }
 
     private func makeRuntime(
+        tab: Tab? = nil,
         webViewRegistry: WindowWebViewRegistry = WindowWebViewRegistry(),
         registerTrackedWebView: @escaping WebViewAssignmentRebuildOwner.RegisterTrackedWebView = { _, _, _ in },
         unregisterTrackedWebViewSlot: @escaping WebViewAssignmentRebuildOwner.UnregisterTrackedWebViewSlot = { _, _ in nil },
-        primaryCandidate: @escaping WebViewAssignmentRebuildOwner.PrimaryCandidateResolver = { _ in nil }
+        primaryCandidate: @escaping WebViewAssignmentRebuildOwner.PrimaryCandidateResolver = { _ in nil },
+        tabMaterializing: (any WebRuntimeTabMaterializing)? = nil,
+        tabOwnership: (any WebRuntimeTabOwnershipMutating)? = nil,
+        tabTeardown: (any WebRuntimeTabTeardownLifecycle)? = nil,
+        tabSiteReloadPolicy: (any WebRuntimeTabSiteReloadPolicyNotifying)? = nil,
+        tabMainFrameLoading: (any WebRuntimeTabMainFrameLoading)? = nil,
+        tabAudioMute: (any WebRuntimeTabAudioMuteSnapshotting)? = nil,
+        schedulePrimaryInitialDocumentLoad: WebViewAssignmentRebuildOwner.SchedulePrimaryInitialDocumentLoad? = nil,
+        scheduleCloneInitialDocumentLoad: WebViewAssignmentRebuildOwner.ScheduleCloneInitialDocumentLoad? = nil
     ) -> WebViewAssignmentRebuildOwner.Runtime {
-        WebViewAssignmentRebuildOwner.Runtime(
+        // Mirror live assembler wiring: pass Tab as protocol witnesses when available.
+        let materializing = tabMaterializing ?? tab
+        let ownership = tabOwnership ?? tab
+        let teardown = tabTeardown ?? tab
+        let siteReload = tabSiteReloadPolicy ?? tab
+        let mainFrame = tabMainFrameLoading ?? tab
+        let audioMute = tabAudioMute ?? tab
+        let primaryLoad = schedulePrimaryInitialDocumentLoad ?? { webView, handle, ownership, mainFrameLoading, reason in
+            // Test-local handoff mirroring assembler primary scheduling.
+            let targetURL = handle.url
+            guard TabNormalWebViewSetupOwner.isInitialDocumentExtensionWarmupURL(targetURL) else {
+                mainFrameLoading.registerTabWithExtensionRuntimeIfNeeded(reason: reason)
+                return
+            }
+            Task { @MainActor in
+                await NormalTabInitialDocumentRuntimeHandoff.perform {
+                    /* No-op wait. */
+                } warmInitialDocumentContexts: {
+                    /* No-op warm. */
+                } isStillValid: {
+                    ownership.currentWebViewIsIdentical(to: webView)
+                } register: {
+                    mainFrameLoading.registerTabWithExtensionRuntimeIfNeeded(
+                        reason: "\(reason).beforeInitialLoad"
+                    )
+                } load: {
+                    mainFrameLoading.loadURL(
+                        targetURL,
+                        resolvedWebView: { webView },
+                        reason: "\(reason).initialLoad"
+                    )
+                }
+            }
+        }
+        let cloneLoad = scheduleCloneInitialDocumentLoad ?? { webView, handle, _, targetURL in
+            guard let concrete = handle.concreteTab else { return }
+            NormalTabInitialDocumentRuntimeHandoff.scheduleCloneInitialLoad(
+                tab: concrete,
+                webView: webView,
+                targetURL: targetURL,
+                profileId: handle.resolvedProfileId,
+                registrationReason: "WebViewCoordinator.loadInitialURLIfNeeded"
+            )
+        }
+        return WebViewAssignmentRebuildOwner.Runtime(
             webViewRegistry: webViewRegistry,
             tabWebViewSessionStore: TabWebViewSessionStore(webViewRegistry: webViewRegistry),
             initialDocumentWarmupRuntime: nil,
@@ -268,7 +352,47 @@ final class WebViewAssignmentRebuildOwnerTests: XCTestCase {
             primaryCandidate: primaryCandidate,
             liveWindowSelection: { .allTrackedWindows },
             refreshCompositor: { _ in /* No-op. */ },
-            notifyTabActivatedIfCurrent: { _, _ in /* No-op. */ }
+            notifyTabActivatedIfCurrent: { _, _ in /* No-op. */ },
+            tabMaterializing: materializing,
+            tabOwnership: ownership,
+            tabTeardown: teardown,
+            tabSiteReloadPolicy: siteReload,
+            tabMainFrameLoading: mainFrame,
+            tabAudioMute: audioMute,
+            schedulePrimaryInitialDocumentLoad: primaryLoad,
+            scheduleCloneInitialDocumentLoad: cloneLoad
         )
+    }
+}
+
+/// Forwards ownership mutations to a backing Tab while recording protocol-surface calls.
+@MainActor
+private final class OwnershipWitnessProbe: WebRuntimeTabOwnershipMutating {
+    private let backing: Tab
+    private(set) var assignCallCount = 0
+    private(set) var lastAssignedWebView: WKWebView?
+    private(set) var lastAssignedWindowId: UUID?
+
+    init(backing: Tab) {
+        self.backing = backing
+    }
+
+    func assignWebViewToWindow(_ webView: WKWebView, windowId: UUID) {
+        assignCallCount += 1
+        lastAssignedWebView = webView
+        lastAssignedWindowId = windowId
+        backing.assignWebViewToWindow(webView, windowId: windowId)
+    }
+
+    func clearCurrentWebViewOwnership() {
+        backing.clearCurrentWebViewOwnership()
+    }
+
+    func clearAllWebViewOwnership() {
+        backing.clearAllWebViewOwnership()
+    }
+
+    func currentWebViewIsIdentical(to webView: WKWebView) -> Bool {
+        backing.currentWebViewIsIdentical(to: webView)
     }
 }

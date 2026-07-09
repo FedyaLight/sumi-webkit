@@ -61,7 +61,7 @@ extension Tab {
         resolvedParkedWebView() != nil
     }
 
-    func currentWebViewIsIdentical(to webView: WKWebView) -> Bool {
+    public func currentWebViewIsIdentical(to webView: WKWebView) -> Bool {
         resolvedCurrentWebView() === webView
     }
 
@@ -98,7 +98,7 @@ extension Tab {
     }
 
     /// Assigns the primary WebView to a specific window to avoid orphan runtime instances.
-    func assignWebViewToWindow(_ webView: WKWebView, windowId: UUID) {
+    public func assignWebViewToWindow(_ webView: WKWebView, windowId: UUID) {
         webViewProvisioningOwner.assignWebViewToWindow(
             webView,
             context: normalWebViewRuntimeContext(),
@@ -114,7 +114,7 @@ extension Tab {
 
     /// Creates a fully configured normal-tab WebView. This is the single
     /// construction path for primary and clone normal-tab runtimes.
-    func makeNormalTabWebView(
+    public func makeNormalTabWebView(
         reason: String,
         prepareConfiguration: ((WKWebViewConfiguration) -> Void)? = nil
     ) -> WKWebView? {
@@ -145,7 +145,7 @@ extension Tab {
         return webView
     }
 
-    func registerTabWithExtensionRuntimeIfNeeded(reason: String) {
+    public func registerTabWithExtensionRuntimeIfNeeded(reason: String) {
         webViewProvisioningOwner.registerTabWithExtensionRuntimeIfNeeded(
             context: normalWebViewRuntimeContext(),
             reason: reason
@@ -198,7 +198,7 @@ extension Tab {
         await controller.replaceNormalTabUserScripts(with: provider)
     }
 
-    func cancelPendingMainFrameNavigation() {
+    public func cancelPendingMainFrameNavigation() {
         navigationRuntime.navigationTransactionOwner.cancelPendingMainFrameNavigation()
     }
 

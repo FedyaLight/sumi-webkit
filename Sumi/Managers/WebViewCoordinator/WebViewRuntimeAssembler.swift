@@ -128,7 +128,9 @@ final class WebViewRuntimeAssembler {
 
     // MARK: - Assignment/Rebuild Runtime
 
-    func assignmentRebuildRuntime() -> WebViewAssignmentRebuildOwner.Runtime {
+    /// Builds assignment/rebuild Runtime with live `Tab` protocol witnesses
+    /// and app-owned initial-document handoff closures (Y3/Y4).
+    func assignmentRebuildRuntime(for tab: Tab) -> WebViewAssignmentRebuildOwner.Runtime {
         let runtimeContext = dependencies.runtimeContextStore.requireBrowser()
         return WebViewAssignmentRebuildOwner.Runtime(
             webViewRegistry: dependencies.webViewRegistry,
@@ -163,20 +165,96 @@ final class WebViewRuntimeAssembler {
                 .liveWindows(Set(runtimeContext.allWindows().map(\.id)))
             },
             refreshCompositor: { windowId in
-                guard let windowState = runtimeContext.window(windowId) else {
+                guard runtimeContext.window(windowId) != nil else {
                     return
                 }
-                runtimeContext.refreshCompositor(windowState)
+                runtimeContext.refreshCompositor(windowId)
             },
-            notifyTabActivatedIfCurrent: { tab, windowId in
-                guard let windowState = runtimeContext.window(windowId),
-                      runtimeContext.currentTab(windowState)?.id == tab.id
+            notifyTabActivatedIfCurrent: { handle, windowId in
+                guard let windowHandle = runtimeContext.window(windowId),
+                      runtimeContext.currentTab(windowHandle)?.id == handle.id
                 else {
                     return
                 }
-                runtimeContext.notifyTabActivatedIfLoaded(tab)
+                runtimeContext.notifyTabActivatedIfLoaded(handle)
+            },
+            // Y3/Y4: live-wire Tab as protocol witnesses (not nil → concrete fallback only).
+            tabMaterializing: tab,
+            tabOwnership: tab,
+            tabTeardown: tab,
+            tabSiteReloadPolicy: tab,
+            tabMainFrameLoading: tab,
+            tabAudioMute: tab,
+            schedulePrimaryInitialDocumentLoad: { [weak tab] webView, handle, ownership, mainFrameLoading, reason in
+                Self.schedulePrimaryInitialDocumentLoad(
+                    webView: webView,
+                    tab: tab,
+                    handle: handle,
+                    ownership: ownership,
+                    mainFrameLoading: mainFrameLoading,
+                    reason: reason
+                )
+            },
+            scheduleCloneInitialDocumentLoad: { [weak tab] webView, handle, _, targetURL in
+                guard let tab, tab.id == handle.id else { return }
+                NormalTabInitialDocumentRuntimeHandoff.scheduleCloneInitialLoad(
+                    tab: tab,
+                    webView: webView,
+                    targetURL: targetURL,
+                    profileId: handle.resolvedProfileId,
+                    registrationReason: "WebViewCoordinator.loadInitialURLIfNeeded"
+                )
             }
         )
+    }
+
+    /// Restores the initial http(s) load that `Tab.ensureUntrackedNormalWebView` used to
+    /// schedule. Validity ignores parked staging so leftover parked session staging cannot
+    /// cancel a windowed primary load after factory create.
+    private static func schedulePrimaryInitialDocumentLoad(
+        webView: WKWebView,
+        tab: Tab?,
+        handle: any WebRuntimeTabHandle,
+        ownership: any WebRuntimeTabOwnershipMutating,
+        mainFrameLoading: any WebRuntimeTabMainFrameLoading,
+        reason: String
+    ) {
+        let targetURL = handle.url
+        guard TabNormalWebViewSetupOwner.isInitialDocumentExtensionWarmupURL(targetURL) else {
+            mainFrameLoading.registerTabWithExtensionRuntimeIfNeeded(reason: reason)
+            return
+        }
+
+        let controller = webView.configuration.userContentController
+            .sumiNormalTabUserContentController
+        let profileId = handle.resolvedProfileId
+
+        Task { @MainActor [weak tab, weak webView] in
+            await NormalTabInitialDocumentRuntimeHandoff.perform {
+                if let controller,
+                   controller.hasInstalledInitialUserContent == false {
+                    await controller.waitForInitialUserContentInstallation()
+                }
+            } warmInitialDocumentContexts: {
+                if let profileId, let tab {
+                    await tab.navigationRuntime.normalWebViewExtensionRuntime
+                        .ensureInitialExtensionContextsIfNeeded(profileId)
+                }
+            } isStillValid: {
+                guard let webView else { return false }
+                return ownership.currentWebViewIsIdentical(to: webView)
+            } register: {
+                mainFrameLoading.registerTabWithExtensionRuntimeIfNeeded(
+                    reason: "\(reason).beforeInitialLoad"
+                )
+            } load: {
+                mainFrameLoading.loadURL(
+                    targetURL,
+                    resolvedWebView: { [weak webView] in webView },
+                    reason: "\(reason).initialLoad"
+                )
+            }
+        }
     }
 
     private func initialDocumentWarmupRuntime() -> InitialDocumentWarmupRuntime {

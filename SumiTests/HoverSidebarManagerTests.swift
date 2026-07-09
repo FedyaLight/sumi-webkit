@@ -251,7 +251,7 @@ final class HoverSidebarManagerTests: XCTestCase {
 
         browserManager.windowRegistry = windowRegistry
         manager.windowRegistry = windowRegistry
-        manager.attach(runtime: .live(browserManager: browserManager), windowState: hostedWindow)
+        manager.attach(runtime: BrowserHoverSidebarRuntimeFactory.runtime(for: browserManager), windowState: hostedWindow)
 
         windowRegistry.register(hostedWindow)
         windowRegistry.register(otherWindow)
@@ -289,7 +289,7 @@ final class HoverSidebarManagerTests: XCTestCase {
 
         browserManager.windowRegistry = windowRegistry
         manager.windowRegistry = windowRegistry
-        manager.attach(runtime: .live(browserManager: browserManager), windowState: hostedWindow)
+        manager.attach(runtime: BrowserHoverSidebarRuntimeFactory.runtime(for: browserManager), windowState: hostedWindow)
 
         // Mirror startup: the window is registered but the registry has not promoted
         // any window to active yet (`activeWindowId == nil`).
@@ -334,7 +334,7 @@ final class HoverSidebarManagerTests: XCTestCase {
 
         browserManager.windowRegistry = windowRegistry
         manager.windowRegistry = windowRegistry
-        manager.attach(runtime: .live(browserManager: browserManager), windowState: hostedWindow)
+        manager.attach(runtime: BrowserHoverSidebarRuntimeFactory.runtime(for: browserManager), windowState: hostedWindow)
 
         windowRegistry.register(hostedWindow)
         windowRegistry.register(otherWindow)
@@ -475,7 +475,7 @@ final class HoverSidebarManagerTests: XCTestCase {
 
         browserManager.windowRegistry = windowRegistry
         manager.windowRegistry = windowRegistry
-        manager.attach(runtime: .live(browserManager: browserManager), windowState: windowState)
+        manager.attach(runtime: BrowserHoverSidebarRuntimeFactory.runtime(for: browserManager), windowState: windowState)
 
         windowRegistry.register(windowState)
         windowRegistry.setActive(windowState)
@@ -514,7 +514,7 @@ final class HoverSidebarManagerTests: XCTestCase {
 
         browserManager.windowRegistry = windowRegistry
         manager.windowRegistry = windowRegistry
-        manager.attach(runtime: .live(browserManager: browserManager), windowState: hostedWindow)
+        manager.attach(runtime: BrowserHoverSidebarRuntimeFactory.runtime(for: browserManager), windowState: hostedWindow)
 
         windowRegistry.register(hostedWindow)
         windowRegistry.register(otherWindow)
@@ -584,7 +584,7 @@ private func makePointerRevealHarness(
 
     browserManager.windowRegistry = windowRegistry
     manager.windowRegistry = windowRegistry
-    manager.attach(runtime: .live(browserManager: browserManager), windowState: windowState)
+    manager.attach(runtime: BrowserHoverSidebarRuntimeFactory.runtime(for: browserManager), windowState: windowState)
 
     windowRegistry.register(windowState)
     windowRegistry.setActive(windowState)

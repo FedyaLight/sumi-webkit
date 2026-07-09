@@ -2,14 +2,10 @@ import Foundation
 
 @MainActor
 final class BrowserShellRuntime {
-    struct Dependencies {
-        let releaseWebViewCoordinator: @MainActor (WebViewCoordinator?) -> Void
-        let adoptWebViewCoordinator: @MainActor (WebViewCoordinator?) -> Void
-        let setDestructiveCleanupPreparer: @MainActor (WebViewCoordinator?) -> Void
-        let windowRegistryChanged: @MainActor (WindowRegistry?) -> Void
-    }
-
-    private var dependencies: Dependencies?
+    private var releaseWebViewCoordinator: (@MainActor (WebViewCoordinator?) -> Void)?
+    private var adoptWebViewCoordinator: (@MainActor (WebViewCoordinator?) -> Void)?
+    private var setDestructiveCleanupPreparer: (@MainActor (WebViewCoordinator?) -> Void)?
+    private var windowRegistryChanged: (@MainActor (WindowRegistry?) -> Void)?
     private var retainedWebViewCoordinator: WebViewCoordinator?
     private weak var retainedWindowRegistry: WindowRegistry?
     var windowShellContentViewFactory: BrowserWindowShellService.ContentViewFactory?
@@ -49,10 +45,18 @@ final class BrowserShellRuntime {
         return windowShellContentViewFactory
     }
 
-    func attach(dependencies: Dependencies) {
-        self.dependencies = dependencies
+    func attach(
+        releaseWebViewCoordinator: @escaping @MainActor (WebViewCoordinator?) -> Void,
+        adoptWebViewCoordinator: @escaping @MainActor (WebViewCoordinator?) -> Void,
+        setDestructiveCleanupPreparer: @escaping @MainActor (WebViewCoordinator?) -> Void,
+        windowRegistryChanged: @escaping @MainActor (WindowRegistry?) -> Void
+    ) {
+        self.releaseWebViewCoordinator = releaseWebViewCoordinator
+        self.adoptWebViewCoordinator = adoptWebViewCoordinator
+        self.setDestructiveCleanupPreparer = setDestructiveCleanupPreparer
+        self.windowRegistryChanged = windowRegistryChanged
         applyWebViewCoordinatorBinding(oldValue: nil, newValue: retainedWebViewCoordinator)
-        dependencies.windowRegistryChanged(retainedWindowRegistry)
+        windowRegistryChanged(retainedWindowRegistry)
     }
 
     func bindWebViewCoordinator(_ coordinator: WebViewCoordinator?) {
@@ -63,16 +67,19 @@ final class BrowserShellRuntime {
 
     func bindWindowRegistry(_ registry: WindowRegistry?) {
         retainedWindowRegistry = registry
-        dependencies?.windowRegistryChanged(registry)
+        windowRegistryChanged?(registry)
     }
 
     private func applyWebViewCoordinatorBinding(
         oldValue: WebViewCoordinator?,
         newValue: WebViewCoordinator?
     ) {
-        guard let dependencies else { return }
-        dependencies.releaseWebViewCoordinator(oldValue)
-        dependencies.adoptWebViewCoordinator(newValue)
-        dependencies.setDestructiveCleanupPreparer(newValue)
+        guard let releaseWebViewCoordinator,
+              let adoptWebViewCoordinator,
+              let setDestructiveCleanupPreparer
+        else { return }
+        releaseWebViewCoordinator(oldValue)
+        adoptWebViewCoordinator(newValue)
+        setDestructiveCleanupPreparer(newValue)
     }
 }

@@ -97,12 +97,8 @@ final class BrowserAppOrchestrationOwner {
             notifyWindowClosedIfLoaded: { [weak browserManager] windowId in
                 browserManager?.extensionsModule.notifyWindowClosedIfLoaded(windowId)
             },
-            cleanupWebViews: { [weak browserManager] windowId in
-                guard let browserManager else { return }
-                webViewCoordinator.cleanupWindow(
-                    windowId,
-                    tabManager: browserManager.tabManager
-                )
+            cleanupWebViews: { windowId in
+                webViewCoordinator.cleanupWindow(windowId)
             },
             cleanupSplitWindow: { [weak browserManager] windowId in
                 browserManager?.splitManager.cleanupWindow(windowId)

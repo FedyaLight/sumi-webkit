@@ -1,5 +1,6 @@
 import AppKit
 @testable import Sumi
+import SumiWebRuntime
 import WebKit
 import XCTest
 
@@ -146,7 +147,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         let tab = Tab(url: try XCTUnwrap(URL(string: "https://example.com")))
         let windowID = UUID()
         let webView = WKWebView()
-        let host = SumiWebViewContainerView(tab: tab, webView: webView)
+        let host = SumiWebViewContainerView(tabID: tab.id, webView: webView)
         var completionCount = 0
 
         handoffState.registerPromotedHost(

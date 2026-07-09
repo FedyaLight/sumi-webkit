@@ -20,9 +20,3 @@ enum BrowserExtensionsModuleRuntimeFactory {
         )
     }
 }
-
-extension SumiExtensionsModuleRuntime {
-    static func live(browserManager: BrowserManager) -> Self {
-        BrowserExtensionsModuleRuntimeFactory.runtime(for: browserManager)
-    }
-}

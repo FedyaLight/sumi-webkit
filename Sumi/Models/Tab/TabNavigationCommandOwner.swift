@@ -3,7 +3,7 @@ import WebKit
 
 @MainActor
 final class TabNavigationCommandOwner {
-    typealias WebViewResolver = @MainActor () -> WKWebView?
+    typealias WebViewResolver = @MainActor @Sendable () -> WKWebView?
 
     func loadURL(_ newURL: URL, for tab: Tab) {
         guard tab.hasCurrentWebView else {
@@ -171,7 +171,7 @@ final class TabNavigationCommandOwner {
         on webView: WKWebView,
         tab: Tab,
         waitForContentBlockingAssets: Bool,
-        performLoad: @escaping @MainActor (WKWebView) -> Void
+        performLoad: @escaping @MainActor @Sendable (WKWebView) -> Void
     ) {
         guard waitForContentBlockingAssets,
               let controller = webView.configuration.userContentController.sumiNormalTabUserContentController

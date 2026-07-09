@@ -1,3 +1,4 @@
+import SumiWebRuntime
 import WebKit
 import XCTest
 

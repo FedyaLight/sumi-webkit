@@ -3,7 +3,7 @@ import WebKit
 import SumiWebRuntime
 
 @MainActor
-final class SumiWebViewContainerView: NSView {
+final class SumiWebViewContainerView: NSView, WebRuntimePromotedHost {
     let tabID: UUID
     let webView: WKWebView
 
@@ -13,8 +13,8 @@ final class SumiWebViewContainerView: NSView {
 
     override var constraints: [NSLayoutConstraint] { [] }
 
-    init(tab: Tab, webView: WKWebView) {
-        self.tabID = tab.id
+    init(tabID: UUID, webView: WKWebView) {
+        self.tabID = tabID
         self.webView = webView
         super.init(frame: .zero)
 

@@ -80,13 +80,11 @@ final class WebKitTransientChromeInteractionShieldOwnerTests: XCTestCase {
         clearHoveredLink: @escaping @MainActor () -> Void = {}
     ) -> WebKitTransientChromeInteractionShieldOwner {
         WebKitTransientChromeInteractionShieldOwner(
-            dependencies: WebKitTransientChromeInteractionShieldOwner.Dependencies(
-                isSuppressionExempt: isSuppressionExempt,
-                currentClientPoint: currentClientPoint,
-                evaluateJavaScript: evaluateJavaScript,
-                refreshMouseTracking: refreshMouseTracking,
-                clearHoveredLink: clearHoveredLink
-            )
+            isSuppressionExempt: isSuppressionExempt,
+            currentClientPoint: currentClientPoint,
+            evaluateJavaScript: evaluateJavaScript,
+            refreshMouseTracking: refreshMouseTracking,
+            clearHoveredLink: clearHoveredLink
         )
     }
 }

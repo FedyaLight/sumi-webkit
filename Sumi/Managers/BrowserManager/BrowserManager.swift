@@ -223,29 +223,27 @@ class BrowserManager: ObservableObject {
     }
 
     private lazy var initializationWiringOwner = BrowserManagerInitializationWiringOwner(
-        dependencies: BrowserManagerInitializationWiringOwner.Dependencies(
-            attachShellRuntime: { [weak self] in
-                guard let self else { return }
-                self.shellRuntime.attach(dependencies: self.shellRuntimeDependencies())
-            },
-            attachRuntimeWiring: { [weak self] in
-                guard let self else { return AnyCancellable {} }
-                return BrowserManagerRuntimeWiring.attach(to: self)
-            },
-            handleTabManagerDataLoaded: { [weak self] in
-                self?.handleTabManagerDataLoaded()
-            },
-            scheduleBrowsingDataRetentionCleanup: { [weak self] in
-                self?.automaticDataCleanupOwner.scheduleAutomaticBrowsingDataCleanup(
-                    reason: "retention-setting-changed",
-                    force: true,
-                    delayNanoseconds: 0
-                )
-            },
-            beginProtectionRestoreForStartupIfNeeded: { [weak self] in
-                self?.beginProtectionRestoreForStartupIfNeeded()
-            }
-        )
+        attachShellRuntime: { [weak self] in
+            guard let self else { return }
+            self.attachShellRuntime()
+        },
+        attachRuntimeWiring: { [weak self] in
+            guard let self else { return AnyCancellable {} }
+            return BrowserManagerRuntimeWiring.attach(to: self)
+        },
+        handleTabManagerDataLoaded: { [weak self] in
+            self?.handleTabManagerDataLoaded()
+        },
+        scheduleBrowsingDataRetentionCleanup: { [weak self] in
+            self?.automaticDataCleanupOwner.scheduleAutomaticBrowsingDataCleanup(
+                reason: "retention-setting-changed",
+                force: true,
+                delayNanoseconds: 0
+            )
+        },
+        beginProtectionRestoreForStartupIfNeeded: { [weak self] in
+            self?.beginProtectionRestoreForStartupIfNeeded()
+        }
     )
     private(set) var startupProtectionRuntime: BrowserStartupProtectionRuntime!
     var windowHistorySessionOwner: BrowserWindowHistorySessionOwner {
@@ -487,8 +485,8 @@ class BrowserManager: ObservableObject {
         }
     }
 
-    private func shellRuntimeDependencies() -> BrowserShellRuntime.Dependencies {
-        BrowserShellRuntime.Dependencies(
+    private func attachShellRuntime() {
+        shellRuntime.attach(
             releaseWebViewCoordinator: { [weak self] coordinator in
                 guard self != nil else { return }
                 coordinator?.detachVisiblePreparationRuntimeContext()

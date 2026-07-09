@@ -56,7 +56,7 @@ final class TabNavigationTransactionOwner {
     func performAfterPreparation(
         on webView: WKWebView,
         prepare: @escaping @MainActor () async -> Void,
-        performLoad: @escaping @MainActor (WKWebView) -> Void
+        performLoad: @escaping @MainActor @Sendable (WKWebView) -> Void
     ) {
         cancelPendingMainFrameNavigation()
 

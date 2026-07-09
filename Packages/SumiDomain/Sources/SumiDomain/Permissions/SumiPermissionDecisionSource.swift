@@ -1,6 +1,6 @@
 import Foundation
 
-enum SumiPermissionDecisionSource: String, Codable, CaseIterable, Hashable, Sendable {
+public enum SumiPermissionDecisionSource: String, Codable, CaseIterable, Hashable, Sendable {
     case user
     case policy
     case system

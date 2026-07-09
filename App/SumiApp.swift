@@ -181,7 +181,7 @@ struct SumiApp: App {
     ) -> some View {
         ContentView(
             windowLifecycleHandler: dependencies.browserManager.appCommandRouter,
-            browserContext: .live(
+            browserContext: .make(
                 browserManager: dependencies.browserManager,
                 updaterService: dependencies.updaterService,
                 defaultBrowserService: dependencies.defaultBrowserService

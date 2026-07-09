@@ -69,14 +69,12 @@ final class GlanceOverlayKeyCommandOwnerTests: XCTestCase {
         closeOverlay: @escaping () -> Void = {}
     ) -> GlanceOverlayKeyCommandOwner {
         GlanceOverlayKeyCommandOwner(
-            dependencies: GlanceOverlayKeyCommandOwner.Dependencies(
-                rootWindow: { nil },
-                activeWindowID: { activeWindowID },
-                dismissFloatingBarIfVisible: dismissFloatingBarIfVisible,
-                isFindBarVisible: isFindBarVisible,
-                hideFindBar: hideFindBar,
-                closeOverlay: closeOverlay
-            )
+            rootWindow: { nil },
+            activeWindowID: { activeWindowID },
+            dismissFloatingBarIfVisible: dismissFloatingBarIfVisible,
+            isFindBarVisible: isFindBarVisible,
+            hideFindBar: hideFindBar,
+            closeOverlay: closeOverlay
         )
     }
 }

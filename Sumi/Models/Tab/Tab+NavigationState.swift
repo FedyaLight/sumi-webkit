@@ -85,10 +85,10 @@ extension Tab {
         }
     }
 
-    func performMainFrameNavigationAfterContentBlockingAssetsIfNeeded(
+    public func performMainFrameNavigationAfterContentBlockingAssetsIfNeeded(
         on webView: WKWebView,
         waitForContentBlockingAssets: Bool,
-        performLoad: @escaping @MainActor (WKWebView) -> Void
+        performLoad: @escaping @MainActor @Sendable (WKWebView) -> Void
     ) {
         navigationCommandOwner.performMainFrameNavigationAfterContentBlockingAssetsIfNeeded(
             on: webView,

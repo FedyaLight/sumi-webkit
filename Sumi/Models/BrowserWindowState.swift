@@ -14,11 +14,6 @@ struct SplitGroupFocusRequest: Equatable {
     let targetSpaceId: UUID
 }
 
-enum BrowserWindowSelectionHistoryItem: Equatable {
-    case regularTab(UUID)
-    case shortcutPin(UUID)
-}
-
 /// Represents the state of a single browser window, allowing multiple windows
 /// to have independent tab selections and UI states while sharing the same tab data.
 @MainActor

@@ -1,16 +1,28 @@
+//
+//  WebViewCompositorHandoffState.swift
+//  SumiWebRuntime
+//
+//  Owns compositor container registration and Glance promoted-host handoff.
+//  Hosts are typed as WebRuntimePromotedHost so the package never edges the
+//  app-target SumiWebViewContainerView.
+//
+
 import AppKit
+import Foundation
 import WebKit
 
 @MainActor
-final class WebViewCompositorHandoffState {
+public final class WebViewCompositorHandoffState {
     private struct WeakNSView { weak var view: NSView? }
 
     private var containerViews: [UUID: WeakNSView] = [:]
     private var immediateVisualHandoffHandlersByWindow: [UUID: @MainActor () -> Bool] = [:]
-    private var promotedHostsByTabAndWindow: [UUID: [UUID: SumiWebViewContainerView]] = [:]
+    private var promotedHostsByTabAndWindow: [UUID: [UUID: any WebRuntimePromotedHost]] = [:]
     private var promotedHostAttachmentCompletionsByTabAndWindow: [UUID: [UUID: @MainActor () -> Void]] = [:]
 
-    func setContainerView(_ view: NSView?, for windowID: UUID) {
+    public init() {}
+
+    public func setContainerView(_ view: NSView?, for windowID: UUID) {
         if let view {
             containerViews[windowID] = WeakNSView(view: view)
         } else {
@@ -18,7 +30,7 @@ final class WebViewCompositorHandoffState {
         }
     }
 
-    func setImmediateVisualHandoffHandler(
+    public func setImmediateVisualHandoffHandler(
         _ handler: (@MainActor () -> Bool)?,
         for windowID: UUID
     ) {
@@ -26,11 +38,11 @@ final class WebViewCompositorHandoffState {
     }
 
     @discardableResult
-    func performImmediateVisualHandoffIfPossible(in windowID: UUID) -> Bool {
+    public func performImmediateVisualHandoffIfPossible(in windowID: UUID) -> Bool {
         immediateVisualHandoffHandlersByWindow[windowID]?() ?? false
     }
 
-    func containerView(for windowID: UUID) -> NSView? {
+    public func containerView(for windowID: UUID) -> NSView? {
         if let view = containerViews[windowID]?.view {
             return view
         }
@@ -39,12 +51,12 @@ final class WebViewCompositorHandoffState {
         return nil
     }
 
-    func removeContainerView(for windowID: UUID) {
+    public func removeContainerView(for windowID: UUID) {
         containerViews.removeValue(forKey: windowID)
         immediateVisualHandoffHandlersByWindow.removeValue(forKey: windowID)
     }
 
-    func containerViewsByWindow() -> [(UUID, NSView)] {
+    public func containerViewsByWindow() -> [(UUID, NSView)] {
         var result: [(UUID, NSView)] = []
         var staleWindowIDs: [UUID] = []
         for (windowID, entry) in containerViews {
@@ -61,13 +73,13 @@ final class WebViewCompositorHandoffState {
         return result
     }
 
-    func removeAllWindowRegistrations() {
+    public func removeAllWindowRegistrations() {
         containerViews.removeAll()
         immediateVisualHandoffHandlersByWindow.removeAll()
     }
 
-    func registerPromotedHost(
-        _ host: SumiWebViewContainerView,
+    public func registerPromotedHost(
+        _ host: any WebRuntimePromotedHost,
         for tabID: UUID,
         in windowID: UUID,
         attachmentCompletion: (@MainActor () -> Void)? = nil
@@ -83,11 +95,11 @@ final class WebViewCompositorHandoffState {
         }
     }
 
-    func takePromotedHost(
+    public func takePromotedHost(
         for tabID: UUID,
         in windowID: UUID,
         expectedWebView: WKWebView
-    ) -> SumiWebViewContainerView? {
+    ) -> (any WebRuntimePromotedHost)? {
         guard let host = promotedHostsByTabAndWindow[tabID]?[windowID] else { return nil }
         guard host.webView === expectedWebView else { return nil }
 
@@ -100,7 +112,7 @@ final class WebViewCompositorHandoffState {
         return host
     }
 
-    func completePromotedHostAttachment(for tabID: UUID, in windowID: UUID) {
+    public func completePromotedHostAttachment(for tabID: UUID, in windowID: UUID) {
         guard let completion = promotedHostAttachmentCompletionsByTabAndWindow[tabID]?[windowID] else {
             return
         }

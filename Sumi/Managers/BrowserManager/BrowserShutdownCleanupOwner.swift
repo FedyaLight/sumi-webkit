@@ -69,10 +69,7 @@ final class BrowserShutdownCleanupOwner {
                 tab.performComprehensiveWebViewCleanup()
             },
             cleanupAllWebViews: { [weak browserManager] in
-                guard let browserManager else { return }
-                browserManager.webViewCoordinator?.cleanupAllWebViews(
-                    tabManager: browserManager.tabManager
-                )
+                browserManager?.webViewCoordinator?.cleanupAllWebViews()
             }
         )
     }

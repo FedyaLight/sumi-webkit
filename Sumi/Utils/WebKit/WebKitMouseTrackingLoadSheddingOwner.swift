@@ -4,26 +4,33 @@ import WebKit
 
 @MainActor
 final class WebKitMouseTrackingLoadSheddingOwner {
-    struct Dependencies {
-        let addTrackingArea: (NSTrackingArea) -> Void
-        let removeTrackingArea: (NSTrackingArea) -> Void
-        let containsTrackingArea: (NSTrackingArea) -> Bool
-        let keepsMouseTrackingDuringLoad: () -> Bool
-        let isTransientChromeMouseTrackingSuppressed: () -> Bool
-    }
-
     private static let isEnabled = true
     private static let webKitMouseTrackingObserverClassName = "WKMouseTrackingObserver"
 
     private weak var webView: WKWebView?
-    private let dependencies: Dependencies
+    private let addTrackingArea: (NSTrackingArea) -> Void
+    private let removeTrackingArea: (NSTrackingArea) -> Void
+    private let containsTrackingArea: (NSTrackingArea) -> Bool
+    private let keepsMouseTrackingDuringLoad: () -> Bool
+    private let isTransientChromeMouseTrackingSuppressed: () -> Bool
     private var observer: NSKeyValueObservation?
     private var trackingArea: NSTrackingArea?
     private var isLoading = false
 
-    init(webView: WKWebView, dependencies: Dependencies) {
+    init(
+        webView: WKWebView,
+        addTrackingArea: @escaping (NSTrackingArea) -> Void,
+        removeTrackingArea: @escaping (NSTrackingArea) -> Void,
+        containsTrackingArea: @escaping (NSTrackingArea) -> Bool,
+        keepsMouseTrackingDuringLoad: @escaping () -> Bool,
+        isTransientChromeMouseTrackingSuppressed: @escaping () -> Bool
+    ) {
         self.webView = webView
-        self.dependencies = dependencies
+        self.addTrackingArea = addTrackingArea
+        self.removeTrackingArea = removeTrackingArea
+        self.containsTrackingArea = containsTrackingArea
+        self.keepsMouseTrackingDuringLoad = keepsMouseTrackingDuringLoad
+        self.isTransientChromeMouseTrackingSuppressed = isTransientChromeMouseTrackingSuppressed
     }
 
     deinit {
@@ -90,16 +97,16 @@ final class WebKitMouseTrackingLoadSheddingOwner {
 
     private func updateTrackingArea(_ trackingArea: NSTrackingArea) {
         if shouldSuspendTracking {
-            guard dependencies.containsTrackingArea(trackingArea) else { return }
-            dependencies.removeTrackingArea(trackingArea)
+            guard containsTrackingArea(trackingArea) else { return }
+            removeTrackingArea(trackingArea)
         } else {
-            guard !dependencies.containsTrackingArea(trackingArea) else { return }
-            dependencies.addTrackingArea(trackingArea)
+            guard !containsTrackingArea(trackingArea) else { return }
+            addTrackingArea(trackingArea)
         }
     }
 
     private var shouldSuspendTracking: Bool {
-        (isLoading && !dependencies.keepsMouseTrackingDuringLoad())
-            || dependencies.isTransientChromeMouseTrackingSuppressed()
+        (isLoading && !keepsMouseTrackingDuringLoad())
+            || isTransientChromeMouseTrackingSuppressed()
     }
 }

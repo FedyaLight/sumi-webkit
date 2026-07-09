@@ -51,18 +51,16 @@ final class TabProfileWebViewCreationGateTests: XCTestCase {
         XCTAssertNotNil(harness.cancellable)
     }
 
-    func testLiveDependenciesUseInjectedCurrentProfileUpdatesWithoutBrowserManager() {
+    func testUsesInjectedCurrentProfileUpdatesWithoutBrowserManager() {
         let tab = Tab(loadsCachedFaviconOnInit: false)
         let subject = PassthroughSubject<Profile?, Never>()
         var currentProfileUpdatesCallCount = 0
         let owner = TabProfileWebViewCreationGate(
-            dependencies: .live(
-                tab: tab,
-                currentProfileUpdates: {
-                    currentProfileUpdatesCallCount += 1
-                    return subject.eraseToAnyPublisher()
-                }
-            )
+            tab: tab,
+            currentProfileUpdates: {
+                currentProfileUpdatesCallCount += 1
+                return subject.eraseToAnyPublisher()
+            }
         )
 
         owner.deferCreationUntilProfileAvailable()
@@ -83,24 +81,22 @@ private final class TabProfileWebViewCreationGateHarness {
 
     func makeOwner() -> TabProfileWebViewCreationGate {
         TabProfileWebViewCreationGate(
-            dependencies: TabProfileWebViewCreationGate.Dependencies(
-                currentProfileUpdates: { [weak self] in
-                    self?.currentProfileUpdatesCallCount += 1
-                    return self?.subject.eraseToAnyPublisher()
-                },
-                currentProfileAwaitCancellable: { [weak self] in
-                    self?.cancellable
-                },
-                setCurrentProfileAwaitCancellable: { [weak self] cancellable in
-                    self?.cancellable = cancellable
-                },
-                hasCurrentWebView: { [weak self] in
-                    self?.hasCurrentWebView == true
-                },
-                ensureUntrackedNormalWebView: { [weak self] in
-                    self?.setupWebViewCallCount += 1
-                }
-            )
+            currentProfileUpdates: { [weak self] in
+                self?.currentProfileUpdatesCallCount += 1
+                return self?.subject.eraseToAnyPublisher()
+            },
+            currentProfileAwaitCancellable: { [weak self] in
+                self?.cancellable
+            },
+            setCurrentProfileAwaitCancellable: { [weak self] cancellable in
+                self?.cancellable = cancellable
+            },
+            hasCurrentWebView: { [weak self] in
+                self?.hasCurrentWebView == true
+            },
+            ensureUntrackedNormalWebView: { [weak self] in
+                self?.setupWebViewCallCount += 1
+            }
         )
     }
 }

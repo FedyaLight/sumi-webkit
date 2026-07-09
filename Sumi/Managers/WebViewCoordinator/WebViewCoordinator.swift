@@ -100,14 +100,15 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
                 reason: reason
             ) ?? false
         },
-        cleanupUnprotectedTrackedWebView: { [weak self] webView, owner, tab in
+        cleanupUnprotectedTrackedWebView: { [weak self] webView, owner, tabHandle in
             self?.cleanupUnprotectedTrackedWebView(
                 webView,
                 owner: owner,
-                tab: tab
+                tab: tabHandle.flatMap { $0.concreteTab }
             )
         },
-        refreshPrimaryTrackedWebView: { [weak self] tab in
+        refreshPrimaryTrackedWebView: { [weak self] tabHandle in
+            guard let tab = tabHandle.concreteTab else { return }
             self?.refreshPrimaryTrackedWebView(for: tab)
         },
         removeWebViewFromContainers: { [weak self] webView in
@@ -140,14 +141,15 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
                 reason: reason
             ) ?? false
         },
-        cleanupUnprotectedTrackedWebView: { [weak self] webView, owner, tab in
+        cleanupUnprotectedTrackedWebView: { [weak self] webView, owner, tabHandle in
             self?.cleanupUnprotectedTrackedWebView(
                 webView,
                 owner: owner,
-                tab: tab
+                tab: tabHandle.flatMap { $0.concreteTab }
             )
         },
-        refreshPrimaryTrackedWebView: { [weak self] tab in
+        refreshPrimaryTrackedWebView: { [weak self] tabHandle in
+            guard let tab = tabHandle.concreteTab else { return }
             self?.refreshPrimaryTrackedWebView(for: tab)
         },
         removeCompositorContainerView: { [weak self] windowId in
@@ -314,7 +316,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     }
 
     func registerPromotedHost(
-        _ host: SumiWebViewContainerView,
+        _ host: any WebRuntimePromotedHost,
         for tabId: UUID,
         in windowId: UUID,
         attachmentCompletion: (@MainActor () -> Void)? = nil
@@ -327,7 +329,11 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         )
     }
 
-    func takePromotedHost(for tabId: UUID, in windowId: UUID, expectedWebView: WKWebView) -> SumiWebViewContainerView? {
+    func takePromotedHost(
+        for tabId: UUID,
+        in windowId: UUID,
+        expectedWebView: WKWebView
+    ) -> (any WebRuntimePromotedHost)? {
         visibleWebViewRuntimeOwner.takePromotedHost(
             for: tabId,
             in: windowId,
@@ -362,8 +368,9 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
             existingWebView: { [self] tabId, windowId in
                 getWebView(for: tabId, in: windowId)
             },
-            createWebView: { [self] tab, windowId in
-                getOrCreateWebView(for: tab, in: windowId)
+            createWebView: { [self] tabHandle, windowId in
+                guard let tab = tabHandle.concreteTab else { return nil }
+                return getOrCreateWebView(for: tab, in: windowId)
             }
         )
     }
@@ -375,8 +382,10 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         visibleWebViewRuntimeOwner.schedulePrepareVisibleWebViews(
             for: windowState,
             runtime: runtime,
-            prepareVisibleWebViews: { [weak self] windowState in
-                guard let self else { return false }
+            prepareVisibleWebViews: { [weak self] windowHandle in
+                guard let self,
+                      let windowState = windowHandle.concreteWindowState
+                else { return false }
                 return self.prepareVisibleWebViews(
                     for: windowState,
                     runtime: runtime
@@ -421,12 +430,12 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
 
     // MARK: - Window Cleanup
 
-    func cleanupWindow(_ windowId: UUID, tabManager: TabManager) {
-        windowCleanupOwner.cleanupWindow(windowId, tabManager: tabManager)
+    func cleanupWindow(_ windowId: UUID) {
+        windowCleanupOwner.cleanupWindow(windowId)
     }
 
-    func cleanupAllWebViews(tabManager: TabManager) {
-        windowCleanupOwner.cleanupAllWebViews(tabManager: tabManager)
+    func cleanupAllWebViews() {
+        windowCleanupOwner.cleanupAllWebViews()
     }
 
     // MARK: - History Swipe Protection
@@ -542,7 +551,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         webViewAssignmentRebuildOwner.getOrCreateWebView(
             for: tab,
             in: windowId,
-            runtime: runtimeAssembler.assignmentRebuildRuntime()
+            runtime: runtimeAssembler.assignmentRebuildRuntime(for: tab)
         )
     }
 
@@ -608,7 +617,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
             for: tab,
             preferredPrimaryWindowId: preferredPrimaryWindowId,
             load: url,
-            runtime: runtimeAssembler.assignmentRebuildRuntime()
+            runtime: runtimeAssembler.assignmentRebuildRuntime(for: tab)
         )
     }
 
@@ -658,15 +667,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         with tabID: UUID,
         runtimeContext: WebViewCoordinatorBrowserRuntimeContext
     ) -> Tab? {
-        if let tab = runtimeContext.tab(tabID) {
-            return tab
-        }
-        for windowState in runtimeContext.allWindows() {
-            if let tab = windowState.ephemeralTabs.first(where: { $0.id == tabID }) {
-                return tab
-            }
-        }
-        return nil
+        runtimeContext.resolveWebRuntimeTab(tabID)?.concreteTab
     }
 
     func pruneInvalidDeferredProtectedCommands(reason: String) {
@@ -883,7 +884,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     func refreshPrimaryTrackedWebView(for tab: Tab) {
         webViewAssignmentRebuildOwner.refreshPrimaryTrackedWebView(
             for: tab,
-            runtime: runtimeAssembler.assignmentRebuildRuntime()
+            runtime: runtimeAssembler.assignmentRebuildRuntime(for: tab)
         )
     }
 

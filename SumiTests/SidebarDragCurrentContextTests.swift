@@ -1570,7 +1570,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         let browserManager = BrowserManager()
         browserManager.webViewCoordinator = WebViewCoordinator()
         let tabManager = TabManager(
-            runtimeContext: .live(browserManager: browserManager),
+            runtimeContext: BrowserTabManagerRuntimeContextFactory.runtime(for: browserManager),
             context: container.mainContext,
             loadPersistedState: false
         )

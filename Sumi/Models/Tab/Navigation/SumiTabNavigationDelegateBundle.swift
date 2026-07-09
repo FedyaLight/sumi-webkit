@@ -38,7 +38,7 @@ final class SumiTabNavigationDelegateAdapter {
         self.glanceNavigationAdapter = SumiNavigationResponderAdapter(target: glanceNavigation)
         self.installNavigation = SumiInstallNavigationResponder(tab: tab)
         self.installNavigationAdapter = SumiNavigationResponderAdapter(target: installNavigation)
-        self.internalSurfaceNavigation = SumiInternalSurfaceNavigationResponder(tab: tab)
+        self.internalSurfaceNavigation = SumiInternalSurfaceNavigationResponder()
         self.internalSurfaceNavigationAdapter = SumiNavigationResponderAdapter(target: internalSurfaceNavigation)
         self.popupHandling = SumiPopupHandlingNavigationResponder(tab: tab)
         self.popupHandlingAdapter = SumiNavigationResponderAdapter(target: popupHandling)

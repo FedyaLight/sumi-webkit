@@ -2,7 +2,7 @@ import Foundation
 
 @MainActor
 extension TabCompositorRuntime {
-    static func live(browserManager: BrowserManager) -> Self {
+    static func make(browserManager: BrowserManager) -> Self {
         Self(
             markTabAccessed: { [weak browserManager] tabId in
                 if let tab = browserManager?.tabManager.tabCollectionMembershipOwner.tab(for: tabId) {

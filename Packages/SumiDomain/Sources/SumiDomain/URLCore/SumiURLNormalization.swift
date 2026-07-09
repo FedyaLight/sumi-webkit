@@ -1,7 +1,6 @@
 import Foundation
-import SumiDomain
 
-enum SumiURLNormalizationContext: Equatable {
+public enum SumiURLNormalizationContext: Equatable, Sendable {
     case searchBar(queryTemplate: String)
     case startupPage
     case newTabPage
@@ -9,8 +8,8 @@ enum SumiURLNormalizationContext: Equatable {
     case searchEngineTemplate
 }
 
-enum SumiURLNormalization {
-    static func normalize(_ input: String, context: SumiURLNormalizationContext) -> String {
+public enum SumiURLNormalization {
+    public static func normalize(_ input: String, context: SumiURLNormalizationContext) -> String {
         switch context {
         case .searchBar(let queryTemplate):
             return normalizeSearchBarInput(input, queryTemplate: queryTemplate)
@@ -25,20 +24,20 @@ enum SumiURLNormalization {
         }
     }
 
-    static func normalizedStartupURLString(from input: String) -> String? {
+    public static func normalizedStartupURLString(from input: String) -> String? {
         SumiStartupPageURL.normalizedURLString(from: input)
     }
 
-    static func normalizedNewTabURLString(from input: String) -> String? {
+    public static func normalizedNewTabURLString(from input: String) -> String? {
         SumiNewTabPageURL.normalizedURLString(from: input)
     }
 
-    static func normalizedShortcutURL(from input: String) -> URL? {
+    public static func normalizedShortcutURL(from input: String) -> URL? {
         guard let normalized = normalizedShortcutURLString(from: input) else { return nil }
         return URL(string: normalized)
     }
 
-    static func normalizedShortcutURLString(from input: String) -> String? {
+    public static func normalizedShortcutURLString(from input: String) -> String? {
         let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         if let direct = URL(string: trimmed), direct.scheme != nil {
@@ -48,7 +47,7 @@ enum SumiURLNormalization {
         return URL(string: prefixed) != nil ? prefixed : nil
     }
 
-    static func normalizedSearchEngineTemplate(_ template: String) -> String {
+    public static func normalizedSearchEngineTemplate(_ template: String) -> String {
         if template.hasPrefix("http://") || template.hasPrefix("https://") {
             return template
         }
@@ -86,6 +85,6 @@ enum SumiURLNormalization {
     }
 }
 
-func normalizeURL(_ input: String, queryTemplate: String) -> String {
+public func normalizeURL(_ input: String, queryTemplate: String) -> String {
     SumiURLNormalization.normalize(input, context: .searchBar(queryTemplate: queryTemplate))
 }

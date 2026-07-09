@@ -3,7 +3,7 @@ import Foundation
 
 @MainActor
 extension WindowViewBrowserContext {
-    static func live(
+    static func make(
         browserManager: BrowserManager,
         updaterService: SumiUpdaterService,
         defaultBrowserService: SumiDefaultBrowserService

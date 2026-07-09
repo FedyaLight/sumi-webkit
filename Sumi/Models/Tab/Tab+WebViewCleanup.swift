@@ -7,7 +7,7 @@ extension Tab {
     }
 
     /// MEMORY LEAK FIX: Comprehensive WebView cleanup to prevent memory leaks
-    func cleanupCloneWebView(_ webView: WKWebView) {
+    public func cleanupCloneWebView(_ webView: WKWebView) {
         TabWebViewCleanupOwner.cleanupWebView(webView, context: webViewCleanupContext())
     }
 

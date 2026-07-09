@@ -28,7 +28,7 @@ final class WebViewTrackedCleanupExecutionOwner {
     func cleanupUnprotectedTrackedWebView(
         _ webView: WKWebView,
         owner: TrackedWebViewOwner,
-        tab: Tab?,
+        tab: (any WebRuntimeTabTeardownLifecycle)?,
         webViewRegistry: WindowWebViewRegistry,
         trackingLifecycleOwner: WebViewTrackingLifecycleOwner,
         runtime: Runtime

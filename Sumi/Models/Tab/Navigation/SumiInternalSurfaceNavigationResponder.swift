@@ -3,7 +3,7 @@ import SumiDomain
 
 @MainActor
 final class SumiInternalSurfaceNavigationResponder: SumiNavigationActionResponding {
-    init(tab _: Tab) {}
+    init() {}
 
     func decidePolicy(
         for navigationAction: SumiNavigationAction,

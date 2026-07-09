@@ -62,15 +62,40 @@
 # - Still outside the package at W4: `WebViewCompositorHandoffState`,
 #   `SumiElementZapperSession`, and Tab-parameterized coordinator owners.
 #
-# Progress (X2 — WebViewCompositorHandoffState into SumiWebRuntime):
-# - Moved `WebViewCompositorHandoffState` to
-#   `Packages/SumiWebRuntime/Sources/SumiWebRuntime/Handoff/`.
-# - Promoted-host maps/APIs retyped to `any WebRuntimePromotedHost` (X1
-#   protocol); app-target `SumiWebViewContainerView` stays put and conforms.
-# - `VisibleWebViewRuntimeOwner` / `WebViewCoordinator` handoff APIs follow
-#   the protocol surface; compositor casts back to the concrete host on take.
-# - Still outside the package: `SumiElementZapperSession`,
-#   `SumiWebViewContainerView`, and Tab-parameterized coordinator owners.
+# Progress (X — seventh pass, WebRuntime growth on protocol seam):
+# - X1 protocols: `WebRuntimePromotedHost`, `WebRuntimeTabTeardownLifecycle`,
+#   `WebRuntimeTabMaterializing`, `WebRuntimeTabOwnershipMutating` (plus earlier
+#   TabHandle / WindowHandle / TabResolving).
+# - X2: moved `WebViewCompositorHandoffState` into
+#   `Packages/SumiWebRuntime/.../Handoff/`; promoted-host maps use
+#   `any WebRuntimePromotedHost`; app `SumiWebViewContainerView` conforms and
+#   stays in-app (`init(tabID:)`).
+# - Moved into Owners/: `WebViewCreationPlanningOwner`,
+#   `WebViewTabScopedCleanupValidationOwner`, `WebViewTabTeardownOwner`.
+# - AssignmentRebuild stayed in-app; Runtime could inject materializing/
+#   ownership but assembler still passed `nil` until pass 8 / Y3.
+# - WindowCleanup stayed in-app (Visible edge) until pass 8 / Y0–Y2.
+# - `SumiWebRuntime` product set to `type: .dynamic` to fix host-based test
+#   dual-link / `TabWebViewSession` metadata issues.
+# - `TabPlacementStateOwner` → SumiDomain (Domain allowlist still 4).
+#
+# Progress (Y — eighth pass, Visible + WindowCleanup + rebuild seams):
+# - Y0: `WebRuntimeVisiblePreparationControlling`; WindowCleanup depends on
+#   protocol, not concrete Visible owner.
+# - Y1: moved `VisibleWebViewPreparationRuntime` + `VisibleWebViewRuntimeOwner`
+#   into Owners/; `PerformanceTrace` → `SumiWebRuntimeDiagnostics`.
+# - Y2: moved `WebViewCleanupScopeOwner` + `WebViewWindowCleanupOwner` into
+#   Owners/; stretch — `WebViewTrackedCleanupExecutionOwner` takes
+#   `WebRuntimeTabTeardownLifecycle` (owner remains app-target).
+# - Y3: assembler live-wires `tabMaterializing` / `tabOwnership` (no nils);
+#   rebuild file stays in-app.
+# - Y4: narrow sibling protocols/closures for remaining rebuild Tab seams
+#   (url on handle, teardown lifecycle, site-reload policy, main-frame
+#   loading, mute snapshot, handle-typed activation notify, initial-doc
+#   handoff closures). Public rebuild entry still takes `Tab`; file move
+#   deferred to a later pass once handle-only API is green.
+# - Package sources ≈ 29 (Owners cluster includes Visible + WindowCleanup +
+#   CreationPlanning / CleanupValidation / Teardown).
 #
 # Still blocked for Domain peel:
 # - BrowserWindowState (SwiftUI environment / chrome state)
@@ -82,6 +107,8 @@
 #   responders stay excluded)
 #
 # Still blocked for WebRuntime peel:
-# - WebViewCoordinator.swift and Tab-parameterized owners
+# - WebViewAssignmentRebuildOwner (in-app; Y4 seams ready, file move later)
+# - WebViewNavigationBroadcast / DestructiveCleanup / ProtectedCommandDispatch
+# - WebViewCoordinator.swift and remaining Tab-parameterized owners
 # - SumiWebViewContainerView / FocusableWKWebView / BrowserWebViewRoutingService
 # - SumiElementZapperSession

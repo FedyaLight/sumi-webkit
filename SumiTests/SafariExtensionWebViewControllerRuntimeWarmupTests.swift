@@ -228,7 +228,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         browserManager.windowRegistry = windowRegistry
         browserManager.webViewCoordinator = WebViewCoordinator()
         browserManager.tabManager = TabManager(
-            runtimeContext: .live(browserManager: browserManager),
+            runtimeContext: BrowserTabManagerRuntimeContextFactory.runtime(for: browserManager),
             context: container.mainContext,
             loadPersistedState: false
         )
@@ -297,7 +297,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         browserManager.windowRegistry = windowRegistry
         browserManager.webViewCoordinator = WebViewCoordinator()
         browserManager.tabManager = TabManager(
-            runtimeContext: .live(browserManager: browserManager),
+            runtimeContext: BrowserTabManagerRuntimeContextFactory.runtime(for: browserManager),
             context: container.mainContext,
             loadPersistedState: false
         )
@@ -388,7 +388,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         browserManager.windowRegistry = windowRegistry
         browserManager.webViewCoordinator = WebViewCoordinator()
         browserManager.tabManager = TabManager(
-            runtimeContext: .live(browserManager: browserManager),
+            runtimeContext: BrowserTabManagerRuntimeContextFactory.runtime(for: browserManager),
             context: container.mainContext,
             loadPersistedState: false
         )
@@ -490,7 +490,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         browserManager.windowRegistry = windowRegistry
         browserManager.webViewCoordinator = WebViewCoordinator()
         browserManager.tabManager = TabManager(
-            runtimeContext: .live(browserManager: browserManager),
+            runtimeContext: BrowserTabManagerRuntimeContextFactory.runtime(for: browserManager),
             context: container.mainContext,
             loadPersistedState: false
         )
@@ -854,7 +854,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         let browserManager = makeBrowserManager(profile: profile)
         manager.attach(browserManager: browserManager)
         browserManager.tabManager = TabManager(
-            runtimeContext: .live(browserManager: browserManager),
+            runtimeContext: BrowserTabManagerRuntimeContextFactory.runtime(for: browserManager),
             context: container.mainContext,
             loadPersistedState: false
         )

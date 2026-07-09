@@ -150,21 +150,20 @@ final class WebViewTrackedRegistrationOwner {
             },
             refreshCompositor: { [requireBrowserRuntimeContext] windowID in
                 let runtimeContext = requireBrowserRuntimeContext()
-                guard let windowState = runtimeContext.window(windowID)
-                else {
+                guard runtimeContext.window(windowID) != nil else {
                     return
                 }
-                runtimeContext.refreshCompositor(windowState)
+                runtimeContext.refreshCompositor(windowID)
             },
             selectTab: { [requireBrowserRuntimeContext] tabID, windowID in
                 requireBrowserRuntimeContext().selectTab(tabID, windowID)
             },
             isOwnerTabCurrent: { [requireBrowserRuntimeContext] tabID, windowID in
                 let runtimeContext = requireBrowserRuntimeContext()
-                guard let windowState = runtimeContext.window(windowID) else {
+                guard let windowHandle = runtimeContext.window(windowID) else {
                     return false
                 }
-                return runtimeContext.currentTab(windowState)?.id == tabID
+                return runtimeContext.currentTab(windowHandle)?.id == tabID
             }
         )
 

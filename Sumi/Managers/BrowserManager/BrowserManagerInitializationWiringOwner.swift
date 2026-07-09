@@ -3,17 +3,13 @@ import Foundation
 
 @MainActor
 final class BrowserManagerInitializationWiringOwner {
-    struct Dependencies {
-        let attachShellRuntime: @MainActor () -> Void
-        let attachRuntimeWiring: @MainActor () -> AnyCancellable
-        let handleTabManagerDataLoaded: @MainActor () -> Void
-        let scheduleBrowsingDataRetentionCleanup: @MainActor () -> Void
-        let beginProtectionRestoreForStartupIfNeeded: @MainActor () -> Void
-    }
-
     private let notificationCenter: NotificationCenter
     private let notificationQueue: OperationQueue?
-    private let dependencies: Dependencies
+    private let attachShellRuntime: @MainActor () -> Void
+    private let attachRuntimeWiring: @MainActor () -> AnyCancellable
+    private let handleTabManagerDataLoaded: @MainActor () -> Void
+    private let scheduleBrowsingDataRetentionCleanup: @MainActor () -> Void
+    private let beginProtectionRestoreForStartupIfNeeded: @MainActor () -> Void
     private var structuralChangeCancellable: AnyCancellable?
     private var tabManagerLoadObserverToken: NSObjectProtocol?
     private var browsingDataRetentionObserverToken: NSObjectProtocol?
@@ -21,11 +17,19 @@ final class BrowserManagerInitializationWiringOwner {
     init(
         notificationCenter: NotificationCenter = .default,
         notificationQueue: OperationQueue? = .main,
-        dependencies: Dependencies
+        attachShellRuntime: @escaping @MainActor () -> Void,
+        attachRuntimeWiring: @escaping @MainActor () -> AnyCancellable,
+        handleTabManagerDataLoaded: @escaping @MainActor () -> Void,
+        scheduleBrowsingDataRetentionCleanup: @escaping @MainActor () -> Void,
+        beginProtectionRestoreForStartupIfNeeded: @escaping @MainActor () -> Void
     ) {
         self.notificationCenter = notificationCenter
         self.notificationQueue = notificationQueue
-        self.dependencies = dependencies
+        self.attachShellRuntime = attachShellRuntime
+        self.attachRuntimeWiring = attachRuntimeWiring
+        self.handleTabManagerDataLoaded = handleTabManagerDataLoaded
+        self.scheduleBrowsingDataRetentionCleanup = scheduleBrowsingDataRetentionCleanup
+        self.beginProtectionRestoreForStartupIfNeeded = beginProtectionRestoreForStartupIfNeeded
     }
 
     deinit {
@@ -35,8 +39,8 @@ final class BrowserManagerInitializationWiringOwner {
     }
 
     func finishInitializationWiring() {
-        dependencies.attachShellRuntime()
-        structuralChangeCancellable = dependencies.attachRuntimeWiring()
+        attachShellRuntime()
+        structuralChangeCancellable = attachRuntimeWiring()
 
         tabManagerLoadObserverToken = notificationCenter.addObserver(
             forName: .tabManagerDidLoadInitialData,
@@ -44,7 +48,7 @@ final class BrowserManagerInitializationWiringOwner {
             queue: notificationQueue
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
-                self?.dependencies.handleTabManagerDataLoaded()
+                self?.handleTabManagerDataLoaded()
             }
         }
 
@@ -54,11 +58,11 @@ final class BrowserManagerInitializationWiringOwner {
             queue: notificationQueue
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
-                self?.dependencies.scheduleBrowsingDataRetentionCleanup()
+                self?.scheduleBrowsingDataRetentionCleanup()
             }
         }
 
-        dependencies.beginProtectionRestoreForStartupIfNeeded()
+        beginProtectionRestoreForStartupIfNeeded()
     }
 
     func cancel() {

@@ -2,60 +2,31 @@ import Combine
 import Foundation
 
 final class TabProfileWebViewCreationGate {
-    struct Dependencies {
-        let currentProfileUpdates: @MainActor () -> AnyPublisher<Profile?, Never>?
-        let currentProfileAwaitCancellable: @MainActor () -> AnyCancellable?
-        let setCurrentProfileAwaitCancellable: @MainActor (AnyCancellable?) -> Void
-        let hasCurrentWebView: @MainActor () -> Bool
-        let ensureUntrackedNormalWebView: @MainActor () -> Void
+    private let currentProfileUpdates: @MainActor () -> AnyPublisher<Profile?, Never>?
+    private let currentProfileAwaitCancellable: @MainActor () -> AnyCancellable?
+    private let setCurrentProfileAwaitCancellable: @MainActor (AnyCancellable?) -> Void
+    private let hasCurrentWebView: @MainActor () -> Bool
+    private let ensureUntrackedNormalWebView: @MainActor () -> Void
+
+    init(
+        currentProfileUpdates: @escaping @MainActor () -> AnyPublisher<Profile?, Never>?,
+        currentProfileAwaitCancellable: @escaping @MainActor () -> AnyCancellable?,
+        setCurrentProfileAwaitCancellable: @escaping @MainActor (AnyCancellable?) -> Void,
+        hasCurrentWebView: @escaping @MainActor () -> Bool,
+        ensureUntrackedNormalWebView: @escaping @MainActor () -> Void
+    ) {
+        self.currentProfileUpdates = currentProfileUpdates
+        self.currentProfileAwaitCancellable = currentProfileAwaitCancellable
+        self.setCurrentProfileAwaitCancellable = setCurrentProfileAwaitCancellable
+        self.hasCurrentWebView = hasCurrentWebView
+        self.ensureUntrackedNormalWebView = ensureUntrackedNormalWebView
     }
 
-    private let dependencies: Dependencies
-
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
-    }
-
-    @MainActor
-    func deferCreationUntilProfileAvailable() {
-        guard dependencies.currentProfileAwaitCancellable() == nil else { return }
-
-        RuntimeDiagnostics.emit(
-            "[Tab] No profile resolved yet; deferring WebView creation and observing currentProfile..."
-        )
-
-        guard let currentProfileUpdates = dependencies.currentProfileUpdates() else { return }
-        let cancellable = currentProfileUpdates
-            .receive(on: RunLoop.main)
-            .sink { [weak self] profile in
-                Task { @MainActor [weak self] in
-                    self?.handleCurrentProfileUpdate(profile)
-                }
-            }
-        dependencies.setCurrentProfileAwaitCancellable(cancellable)
-    }
-
-    @MainActor
-    private func handleCurrentProfileUpdate(_ profile: Profile?) {
-        guard profile != nil,
-              dependencies.hasCurrentWebView() == false
-        else {
-            return
-        }
-
-        dependencies.currentProfileAwaitCancellable()?.cancel()
-        dependencies.setCurrentProfileAwaitCancellable(nil)
-        dependencies.ensureUntrackedNormalWebView()
-    }
-}
-
-extension TabProfileWebViewCreationGate.Dependencies {
-    @MainActor
-    static func live(
+    convenience init(
         tab: Tab,
-        currentProfileUpdates: @MainActor @escaping () -> AnyPublisher<Profile?, Never>?
-    ) -> Self {
-        Self(
+        currentProfileUpdates: @escaping @MainActor () -> AnyPublisher<Profile?, Never>?
+    ) {
+        self.init(
             currentProfileUpdates: currentProfileUpdates,
             currentProfileAwaitCancellable: { [weak tab] in
                 tab?.profileAwaitCancellable
@@ -72,5 +43,37 @@ extension TabProfileWebViewCreationGate.Dependencies {
                 )
             }
         )
+    }
+
+    @MainActor
+    func deferCreationUntilProfileAvailable() {
+        guard currentProfileAwaitCancellable() == nil else { return }
+
+        RuntimeDiagnostics.emit(
+            "[Tab] No profile resolved yet; deferring WebView creation and observing currentProfile..."
+        )
+
+        guard let currentProfileUpdates = currentProfileUpdates() else { return }
+        let cancellable = currentProfileUpdates
+            .receive(on: RunLoop.main)
+            .sink { [weak self] profile in
+                Task { @MainActor [weak self] in
+                    self?.handleCurrentProfileUpdate(profile)
+                }
+            }
+        setCurrentProfileAwaitCancellable(cancellable)
+    }
+
+    @MainActor
+    private func handleCurrentProfileUpdate(_ profile: Profile?) {
+        guard profile != nil,
+              hasCurrentWebView() == false
+        else {
+            return
+        }
+
+        currentProfileAwaitCancellable()?.cancel()
+        setCurrentProfileAwaitCancellable(nil)
+        ensureUntrackedNormalWebView()
     }
 }

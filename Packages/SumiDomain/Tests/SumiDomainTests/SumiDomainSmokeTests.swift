@@ -22,4 +22,30 @@ final class SumiDomainSmokeTests: XCTestCase {
         XCTAssertEqual(combo.key, "t")
         XCTAssertEqual(combo.lookupKey, "cmd+t")
     }
+
+    func testProfileIconAndURLNormalization() {
+        XCTAssertTrue(SumiProfileIcon.usesDefaultIcon(""))
+        XCTAssertEqual(
+            SumiURLNormalization.normalizedStartupURLString(from: "example.com"),
+            "https://example.com"
+        )
+        XCTAssertEqual(
+            SumiPermissionCoordinatorOutcome.granted.rawValue,
+            "granted"
+        )
+    }
+
+    @MainActor
+    func testTabPlacementStateOwnerShortcutBinding() {
+        let owner = TabPlacementStateOwner()
+        let pinId = UUID()
+        owner.bindToShortcutPin(id: pinId, role: .essential)
+        XCTAssertEqual(owner.shortcutPinId, pinId)
+        XCTAssertEqual(owner.shortcutPinRole, .essential)
+        XCTAssertTrue(owner.isShortcutLiveInstance)
+        owner.clearShortcutBinding()
+        XCTAssertNil(owner.shortcutPinId)
+        XCTAssertNil(owner.shortcutPinRole)
+        XCTAssertFalse(owner.isShortcutLiveInstance)
+    }
 }

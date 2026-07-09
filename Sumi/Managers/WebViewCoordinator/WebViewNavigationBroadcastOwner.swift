@@ -29,8 +29,9 @@ final class WebViewNavigationBroadcastOwner {
         self.rebuildLiveWebViews = rebuildLiveWebViews
     }
 
-    func syncTab(_ tab: Tab, to url: URL, originatingWebView: WKWebView?) {
+    func syncTab(_ tab: any WebRuntimeTabHandle, to url: URL, originatingWebView: WKWebView?) {
         let tabId = tab.id
+        guard let concreteTab = tab.concreteTab else { return }
         crossWindowSyncOwner.syncTab(
             tabId,
             to: url,
@@ -40,7 +41,7 @@ final class WebViewNavigationBroadcastOwner {
                 isWebViewProtectedFromCompositorMutation(webView)
             },
             load: { webView in
-                tab.performMainFrameNavigationAfterHydrationIfNeeded(
+                concreteTab.performMainFrameNavigationAfterHydrationIfNeeded(
                     on: webView
                 ) { resolvedWebView in
                     resolvedWebView.load(URLRequest(url: url))
@@ -49,16 +50,17 @@ final class WebViewNavigationBroadcastOwner {
         )
     }
 
-    func reloadTab(_ tab: Tab) {
+    func reloadTab(_ tab: any WebRuntimeTabHandle) {
+        guard let concreteTab = tab.concreteTab else { return }
         let reloadTargetURL = reloadTargetURL(for: tab)
-        let protectionReloadWasRequired = tab.reloadPolicyStateOwner.isProtectionReloadRequired
-        if tab.configurationPolicyRequiresNormalWebViewRebuild(for: reloadTargetURL) {
+        let protectionReloadWasRequired = concreteTab.reloadPolicyStateOwner.isProtectionReloadRequired
+        if concreteTab.configurationPolicyRequiresNormalWebViewRebuild(for: reloadTargetURL) {
             if rebuildLiveWebViews(
-                tab,
+                concreteTab,
                 primaryTrackedWindowId(tab.id),
                 reloadTargetURL
             ), protectionReloadWasRequired {
-                tab.noteProtectionManualReloadResult(
+                concreteTab.noteProtectionManualReloadResult(
                     rebuiltForConfigurationPolicy: true,
                     targetURL: reloadTargetURL
                 )
@@ -73,7 +75,7 @@ final class WebViewNavigationBroadcastOwner {
                 isWebViewProtectedFromCompositorMutation(webView)
             },
             reload: { webView in
-                tab.performMainFrameNavigationAfterHydrationIfNeeded(
+                concreteTab.performMainFrameNavigationAfterHydrationIfNeeded(
                     on: webView
                 ) { resolvedWebView in
                     resolvedWebView.reload()
@@ -83,7 +85,8 @@ final class WebViewNavigationBroadcastOwner {
     }
 
     @discardableResult
-    func reloadTab(_ tab: Tab, in windowId: UUID) -> Bool {
+    func reloadTab(_ tab: any WebRuntimeTabHandle, in windowId: UUID) -> Bool {
+        guard let concreteTab = tab.concreteTab else { return false }
         guard let webView = webViewRegistry.webView(for: tab.id, in: windowId) else {
             return false
         }
@@ -93,7 +96,7 @@ final class WebViewNavigationBroadcastOwner {
             )
             return false
         }
-        tab.performMainFrameNavigationAfterHydrationIfNeeded(
+        concreteTab.performMainFrameNavigationAfterHydrationIfNeeded(
             on: webView
         ) { resolvedWebView in
             resolvedWebView.reload()
@@ -109,11 +112,11 @@ final class WebViewNavigationBroadcastOwner {
         )
     }
 
-    private func reloadTargetURL(for tab: Tab) -> URL {
+    private func reloadTargetURL(for tab: any WebRuntimeTabHandle) -> URL {
         let store = tabWebViewSessionStore
         store.promoteLocalSessionIfNeeded(
             tabId: tab.id,
-            localSession: tab.webViewOwnershipOwner.localSession
+            localSession: tab.localSession
         )
         if let sessionURL = store.session(for: tab.id).currentWebView?.url
             ?? store.untrackedWebView(for: tab.id)?.url

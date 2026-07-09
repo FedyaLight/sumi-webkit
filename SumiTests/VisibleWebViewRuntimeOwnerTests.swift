@@ -29,7 +29,7 @@ final class VisibleWebViewRuntimeOwnerTests: XCTestCase {
             for: windowState,
             runtime: makeRuntime(
                 windowStatesById: [windowState.id: windowState],
-                currentTabId: { $0.currentTabId },
+                currentTabId: { $0.concreteWindowState?.currentTabId },
                 splitVisibleTabIds: { _ in [currentTab.id, splitTab.id] },
                 resolveTab: { tabId, _ in tabsById[tabId] },
                 markTabAccessed: { markedTabIds.append($0) },
@@ -70,7 +70,7 @@ final class VisibleWebViewRuntimeOwnerTests: XCTestCase {
 
         let runtime = makeRuntime(
             windowStatesById: [windowState.id: windowState],
-            refreshCompositor: { refreshedWindowIds.append($0.id) }
+            refreshCompositor: { refreshedWindowIds.append($0) }
         )
 
         owner.schedulePrepareVisibleWebViews(
@@ -118,7 +118,7 @@ final class VisibleWebViewRuntimeOwnerTests: XCTestCase {
                     visibleWindow.id: visibleWindow,
                     hiddenWindow.id: hiddenWindow,
                 ],
-                currentTabId: { $0.currentTabId },
+                currentTabId: { $0.concreteWindowState?.currentTabId },
                 resolveTab: { tabId, _ in tabId == tab.id ? tab : nil }
             ),
             webViewRegistry: webViewRegistry
@@ -130,17 +130,17 @@ final class VisibleWebViewRuntimeOwnerTests: XCTestCase {
 
     private func makeRuntime(
         windowStatesById: [UUID: BrowserWindowState] = [:],
-        currentTabId: @escaping @MainActor (BrowserWindowState) -> UUID? = { _ in nil },
+        currentTabId: @escaping @MainActor (any WebRuntimeWindowHandle) -> UUID? = { _ in nil },
         splitVisibleTabIds: @escaping @MainActor (UUID) -> [UUID] = { _ in [] },
-        resolveTab: @escaping @MainActor (UUID, BrowserWindowState) -> Tab? = { _, _ in nil },
+        resolveTab: @escaping @MainActor (UUID, any WebRuntimeWindowHandle) -> (any WebRuntimeTabHandle)? = { _, _ in nil },
         canMaterializeWebViewDuringStartup: @escaping @MainActor (
-            Tab
+            any WebRuntimeTabHandle
         ) -> Bool = { _ in true },
         markTabAccessed: @escaping @MainActor (UUID) -> Void = { _ in /* No-op. */ },
         evictHiddenWebViews: @escaping @MainActor (UUID, Set<UUID>) -> Void = { _, _ in /* No-op. */ },
         scheduleTabSuspensionReconcile: @escaping @MainActor (String) -> Void = { _ in /* No-op. */ },
         scheduleBackgroundMediaReconcile: @escaping @MainActor (String) -> Void = { _ in /* No-op. */ },
-        refreshCompositor: @escaping @MainActor (BrowserWindowState) -> Void = { _ in /* No-op. */ }
+        refreshCompositor: @escaping @MainActor (UUID) -> Void = { _ in /* No-op. */ }
     ) -> VisibleWebViewPreparationRuntime {
         VisibleWebViewPreparationRuntime(
             windowState: { windowStatesById[$0] },

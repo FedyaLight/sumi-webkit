@@ -436,7 +436,7 @@ final class WindowWebContentController: NSViewController {
             for: tab.id,
             in: windowState.id,
             expectedWebView: webView
-        ) {
+        ) as? SumiWebViewContainerView {
             hostLifecycleOwner.replaceHost(promotedHost, in: slot)
             return promotedHost
         }
@@ -453,7 +453,7 @@ final class WindowWebContentController: NSViewController {
             return existingHost
         }
 
-        let host = SumiWebViewContainerView(tab: tab, webView: webView)
+        let host = SumiWebViewContainerView(tabID: tab.id, webView: webView)
         hostLifecycleOwner.replaceHost(host, in: slot)
         return host
     }

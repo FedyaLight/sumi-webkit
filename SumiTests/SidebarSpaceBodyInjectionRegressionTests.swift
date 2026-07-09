@@ -8,7 +8,7 @@ import XCTest
 final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
     func testSidebarStructuralInvalidationTracksProfileRuntimeState() {
         let browserManager = BrowserManager()
-        let context = WindowViewBrowserContext.live(
+        let context = WindowViewBrowserContext.make(
             browserManager: browserManager,
             updaterService: SumiUpdaterService(backendFactory: { _ in nil }),
             defaultBrowserService: SumiDefaultBrowserService()

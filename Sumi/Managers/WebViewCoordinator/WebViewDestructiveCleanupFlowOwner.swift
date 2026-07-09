@@ -53,8 +53,8 @@ final class WebViewDestructiveCleanupFlowOwner {
         let runtimeContext = browserRuntimeContext()
 
         let preparationResult = prepareLiveWebViews(
-            pinnedTabs: runtimeContext.pinnedTabs(),
-            tabs: runtimeContext.regularTabs(),
+            pinnedTabs: runtimeContext.pinnedTabs().compactMap(\.concreteTab),
+            tabs: runtimeContext.regularTabs().compactMap(\.concreteTab),
             profileIDs: profileIDs
         )
 

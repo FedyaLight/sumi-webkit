@@ -122,7 +122,7 @@ final class SafariExtensionInstalledInternalPageRenderTests: XCTestCase {
         browserManager.currentProfile = profile
         browserManager.webViewCoordinator = WebViewCoordinator()
         browserManager.tabManager = TabManager(
-            runtimeContext: .live(browserManager: browserManager),
+            runtimeContext: BrowserTabManagerRuntimeContextFactory.runtime(for: browserManager),
             context: container.mainContext,
             loadPersistedState: false
         )

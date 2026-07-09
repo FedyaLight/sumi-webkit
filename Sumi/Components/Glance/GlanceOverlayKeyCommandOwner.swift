@@ -2,24 +2,32 @@ import AppKit
 
 @MainActor
 final class GlanceOverlayKeyCommandOwner {
-    struct Dependencies {
-        let rootWindow: () -> NSWindow?
-        let activeWindowID: () -> UUID?
-        let dismissFloatingBarIfVisible: (UUID) -> Bool
-        let isFindBarVisible: () -> Bool
-        let hideFindBar: () -> Void
-        let closeOverlay: () -> Void
-    }
-
     private enum KeyCode {
         static let escape: UInt16 = 53
     }
 
-    private let dependencies: Dependencies
+    private let rootWindow: () -> NSWindow?
+    private let activeWindowID: () -> UUID?
+    private let dismissFloatingBarIfVisible: (UUID) -> Bool
+    private let isFindBarVisible: () -> Bool
+    private let hideFindBar: () -> Void
+    private let closeOverlay: () -> Void
     private var keyMonitor: Any?
 
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
+    init(
+        rootWindow: @escaping () -> NSWindow?,
+        activeWindowID: @escaping () -> UUID?,
+        dismissFloatingBarIfVisible: @escaping (UUID) -> Bool,
+        isFindBarVisible: @escaping () -> Bool,
+        hideFindBar: @escaping () -> Void,
+        closeOverlay: @escaping () -> Void
+    ) {
+        self.rootWindow = rootWindow
+        self.activeWindowID = activeWindowID
+        self.dismissFloatingBarIfVisible = dismissFloatingBarIfVisible
+        self.isFindBarVisible = isFindBarVisible
+        self.hideFindBar = hideFindBar
+        self.closeOverlay = closeOverlay
     }
 
     func installIfNeeded() {
@@ -38,7 +46,7 @@ final class GlanceOverlayKeyCommandOwner {
 
     func handleKeyDown(_ event: NSEvent) -> NSEvent? {
         guard event.keyCode == KeyCode.escape,
-              let rootWindow = dependencies.rootWindow(),
+              let rootWindow = rootWindow(),
               event.window === rootWindow
         else { return event }
 
@@ -47,18 +55,18 @@ final class GlanceOverlayKeyCommandOwner {
 
     @discardableResult
     func handleEscapeKeyForActiveOverlay() -> Bool {
-        guard let windowID = dependencies.activeWindowID() else { return false }
+        guard let windowID = activeWindowID() else { return false }
 
-        if dependencies.dismissFloatingBarIfVisible(windowID) {
+        if dismissFloatingBarIfVisible(windowID) {
             return true
         }
 
-        if dependencies.isFindBarVisible() {
-            dependencies.hideFindBar()
+        if isFindBarVisible() {
+            hideFindBar()
             return true
         }
 
-        dependencies.closeOverlay()
+        closeOverlay()
         return true
     }
 }

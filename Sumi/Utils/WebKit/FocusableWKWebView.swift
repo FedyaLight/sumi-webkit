@@ -95,23 +95,21 @@ final class FocusableWKWebView: WKWebView {
         }
         let owner = WebKitMouseTrackingLoadSheddingOwner(
             webView: self,
-            dependencies: WebKitMouseTrackingLoadSheddingOwner.Dependencies(
-                addTrackingArea: { [weak self] trackingArea in
-                    self?.superAddTrackingArea(trackingArea)
-                },
-                removeTrackingArea: { [weak self] trackingArea in
-                    self?.removeTrackingArea(trackingArea)
-                },
-                containsTrackingArea: { [weak self] trackingArea in
-                    self?.trackingAreas.contains(trackingArea) == true
-                },
-                keepsMouseTrackingDuringLoad: { [weak self] in
-                    self?.keepsWebKitMouseTrackingDuringLoad == true
-                },
-                isTransientChromeMouseTrackingSuppressed: { [weak self] in
-                    self?.isTransientChromeMouseTrackingSuppressed == true
-                }
-            )
+            addTrackingArea: { [weak self] trackingArea in
+                self?.superAddTrackingArea(trackingArea)
+            },
+            removeTrackingArea: { [weak self] trackingArea in
+                self?.removeTrackingArea(trackingArea)
+            },
+            containsTrackingArea: { [weak self] trackingArea in
+                self?.trackingAreas.contains(trackingArea) == true
+            },
+            keepsMouseTrackingDuringLoad: { [weak self] in
+                self?.keepsWebKitMouseTrackingDuringLoad == true
+            },
+            isTransientChromeMouseTrackingSuppressed: { [weak self] in
+                self?.isTransientChromeMouseTrackingSuppressed == true
+            }
         )
         webKitMouseTrackingLoadSheddingOwner = owner
         return owner
@@ -127,23 +125,21 @@ final class FocusableWKWebView: WKWebView {
         }
 
         let owner = WebKitTransientChromeInteractionShieldOwner(
-            dependencies: WebKitTransientChromeInteractionShieldOwner.Dependencies(
-                isSuppressionExempt: { [weak self] in
-                    self?.isTransientChromeMouseTrackingSuppressionExempt == true
-                },
-                currentClientPoint: { [weak self] in
-                    self?.currentClientPointForPageInteractionShield()
-                },
-                evaluateJavaScript: { [weak self] script in
-                    self?.evaluateJavaScript(script, completionHandler: nil)
-                },
-                refreshMouseTracking: { [weak self] in
-                    self?.webKitMouseTrackingLoadSheddingOwner?.refresh()
-                },
-                clearHoveredLink: { [weak self] in
-                    self?.owningTab?.updateHoveredLink(nil)
-                }
-            )
+            isSuppressionExempt: { [weak self] in
+                self?.isTransientChromeMouseTrackingSuppressionExempt == true
+            },
+            currentClientPoint: { [weak self] in
+                self?.currentClientPointForPageInteractionShield()
+            },
+            evaluateJavaScript: { [weak self] script in
+                self?.evaluateJavaScript(script, completionHandler: nil)
+            },
+            refreshMouseTracking: { [weak self] in
+                self?.webKitMouseTrackingLoadSheddingOwner?.refresh()
+            },
+            clearHoveredLink: { [weak self] in
+                self?.owningTab?.updateHoveredLink(nil)
+            }
         )
         transientChromeInteractionShieldOwner = owner
         return owner

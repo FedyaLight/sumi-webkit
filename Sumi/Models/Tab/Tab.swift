@@ -15,7 +15,7 @@ import SumiWebRuntime
 public class Tab: NSObject, Identifiable, ObservableObject {
     public typealias LoadingState = TabLoadingState
     public let id: UUID
-    var url: URL
+    public var url: URL
     @Published var name: String
     /// Model-neutral favicon representation; the UI layer maps this to `SwiftUI.Image`
     /// (see `Sumi/Components/TabFaviconPresentation+Image.swift`).
@@ -67,12 +67,10 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         TabWebViewReplacementContextOwner()
     let navigationCommandOwner = TabNavigationCommandOwner()
     lazy var profileWebViewCreationGate = TabProfileWebViewCreationGate(
-        dependencies: .live(
-            tab: self,
-            currentProfileUpdates: { [weak self] in
-                self?.browserRuntime.currentProfileUpdates()
-            }
-        )
+        tab: self,
+        currentProfileUpdates: { [weak self] in
+            self?.browserRuntime.currentProfileUpdates()
+        }
     )
     lazy var ownedWebViewPreparationOwner = TabOwnedWebViewPreparationOwner(
         dependencies: .live(tab: self)
@@ -118,7 +116,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
 
     // MARK: - Ephemeral State
     /// Whether this tab belongs to an ephemeral/incognito session
-    var isEphemeral: Bool {
+    public var isEphemeral: Bool {
         resolveProfile()?.isEphemeral ?? false
     }
 
@@ -382,7 +380,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         surfaceStateOwner.representsSumiInternalSurface(for: url)
     }
 
-    var requiresPrimaryWebView: Bool {
+    public var requiresPrimaryWebView: Bool {
         surfaceStateOwner.requiresPrimaryWebView(for: url)
     }
 
@@ -458,13 +456,13 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         webViewOwnershipOwner.assignPrimaryWebView(webView, windowId: windowId)
     }
 
-    func clearCurrentWebViewOwnership() {
+    public func clearCurrentWebViewOwnership() {
         navigationRuntime.webViewRouting.clearPrimaryAssignment(id)
         navigationRuntime.webViewRouting.noteUntrackedWebView(nil, id)
         webViewOwnershipOwner.clearCurrentWebViewOwnership()
     }
 
-    func clearAllWebViewOwnership() {
+    public func clearAllWebViewOwnership() {
         navigationRuntime.webViewRouting.clearWebViewSession(id)
         webViewOwnershipOwner.clearAllWebViewOwnership()
     }
@@ -477,7 +475,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     }
 
     func bindToShortcutPin(_ pin: ShortcutPin) {
-        placementStateOwner.bindToShortcutPin(pin)
+        placementStateOwner.bindToShortcutPin(id: pin.id, role: pin.role)
     }
 
     func clearShortcutBinding() {

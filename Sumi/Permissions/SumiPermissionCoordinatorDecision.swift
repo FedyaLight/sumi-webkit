@@ -1,20 +1,9 @@
 import Foundation
 import SumiDomain
 
-enum SumiPermissionCoordinatorOutcome: String, Codable, CaseIterable, Hashable, Sendable {
-    case granted
-    case denied
-    case promptRequired
-    case systemBlocked
-    case unsupported
-    case requiresUserActivation
-    case cancelled
-    case dismissed
-    case suppressed
-    case ignored
-    case expired
-}
-
+/// Coordinator decision stays in the app target: it edges into
+/// `SumiSystemPermissionSnapshot` and `SumiPermissionPromptSuppression`
+/// (anti-abuse), which must not enter SumiDomain.
 struct SumiPermissionCoordinatorDecision: Equatable, Sendable {
     let outcome: SumiPermissionCoordinatorOutcome
     let state: SumiPermissionState?

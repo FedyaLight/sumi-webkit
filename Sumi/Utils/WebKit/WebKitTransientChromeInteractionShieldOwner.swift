@@ -2,29 +2,35 @@ import AppKit
 
 @MainActor
 final class WebKitTransientChromeInteractionShieldOwner {
-    struct Dependencies {
-        let isSuppressionExempt: @MainActor () -> Bool
-        let currentClientPoint: @MainActor () -> CGPoint?
-        let evaluateJavaScript: @MainActor (String) -> Void
-        let refreshMouseTracking: @MainActor () -> Void
-        let clearHoveredLink: @MainActor () -> Void
-    }
-
-    private let dependencies: Dependencies
+    private let isSuppressionExempt: @MainActor () -> Bool
+    private let currentClientPoint: @MainActor () -> CGPoint?
+    private let evaluateJavaScript: @MainActor (String) -> Void
+    private let refreshMouseTracking: @MainActor () -> Void
+    private let clearHoveredLink: @MainActor () -> Void
     private var isInteractionShieldApplied = false
     private var interactionShieldRects: [SumiTransientChromeInteractionShieldRect] = []
 
     private(set) var isMouseTrackingSuppressed = false
 
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
+    init(
+        isSuppressionExempt: @escaping @MainActor () -> Bool,
+        currentClientPoint: @escaping @MainActor () -> CGPoint?,
+        evaluateJavaScript: @escaping @MainActor (String) -> Void,
+        refreshMouseTracking: @escaping @MainActor () -> Void,
+        clearHoveredLink: @escaping @MainActor () -> Void
+    ) {
+        self.isSuppressionExempt = isSuppressionExempt
+        self.currentClientPoint = currentClientPoint
+        self.evaluateJavaScript = evaluateJavaScript
+        self.refreshMouseTracking = refreshMouseTracking
+        self.clearHoveredLink = clearHoveredLink
     }
 
     func setMouseTrackingSuppressed(
         _ isSuppressed: Bool,
         shieldRects: [SumiTransientChromeInteractionShieldRect] = []
     ) {
-        let shouldSuppress = isSuppressed && !dependencies.isSuppressionExempt()
+        let shouldSuppress = isSuppressed && !isSuppressionExempt()
         setInteractionShieldApplied(
             shouldSuppress,
             shieldRects: shouldSuppress ? shieldRects : []
@@ -33,10 +39,10 @@ final class WebKitTransientChromeInteractionShieldOwner {
         guard isMouseTrackingSuppressed != shouldSuppress else { return }
 
         isMouseTrackingSuppressed = shouldSuppress
-        dependencies.refreshMouseTracking()
+        refreshMouseTracking()
 
         if shouldSuppress {
-            dependencies.clearHoveredLink()
+            clearHoveredLink()
         }
     }
 
@@ -53,9 +59,9 @@ final class WebKitTransientChromeInteractionShieldOwner {
         interactionShieldRects = activeShieldRects
         let script = SumiTransientChromeInteractionShieldUserScript.makeSetActiveSource(
             isApplied,
-            clientPoint: dependencies.currentClientPoint(),
+            clientPoint: currentClientPoint(),
             rects: activeShieldRects
         )
-        dependencies.evaluateJavaScript(script)
+        evaluateJavaScript(script)
     }
 }

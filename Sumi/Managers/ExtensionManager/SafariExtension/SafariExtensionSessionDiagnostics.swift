@@ -83,7 +83,7 @@ struct SafariExtensionSessionDiagnosticsRuntime {
         activeTabStore: { _ in nil }
     )
 
-    static func live(extensionManager: ExtensionManager) -> Self {
+    static func make(extensionManager: ExtensionManager) -> Self {
         Self(
             currentTab: { [weak extensionManager] in
                 extensionManager?.browserBridgeContext?
@@ -120,7 +120,7 @@ enum SafariExtensionSessionDiagnosticsBuilder {
         popupWebView: WKWebView? = nil,
         runtime: SafariExtensionSessionDiagnosticsRuntime? = nil
     ) async -> SafariExtensionSessionDiagnostic {
-        let runtime = runtime ?? .live(extensionManager: extensionManager)
+        let runtime = runtime ?? .make(extensionManager: extensionManager)
         let installed = extensionManager.installedExtensions.first { $0.id == extensionId }
         let activeTab = runtime.currentTab()
         let activeProfileId =

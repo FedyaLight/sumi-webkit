@@ -61,28 +61,26 @@ final class BrowserManagerInitializationWiringOwnerTests: XCTestCase {
             BrowserManagerInitializationWiringOwner(
                 notificationCenter: notificationCenter,
                 notificationQueue: nil,
-                dependencies: BrowserManagerInitializationWiringOwner.Dependencies(
-                    attachShellRuntime: {
-                        self.attachShellRuntimeCount += 1
-                    },
-                    attachRuntimeWiring: {
-                        self.attachRuntimeWiringCount += 1
-                        return AnyCancellable {
-                            MainActor.assumeIsolated {
-                                self.runtimeWiringCancelCount += 1
-                            }
+                attachShellRuntime: {
+                    self.attachShellRuntimeCount += 1
+                },
+                attachRuntimeWiring: {
+                    self.attachRuntimeWiringCount += 1
+                    return AnyCancellable {
+                        MainActor.assumeIsolated {
+                            self.runtimeWiringCancelCount += 1
                         }
-                    },
-                    handleTabManagerDataLoaded: {
-                        self.tabManagerDataLoadedCount += 1
-                    },
-                    scheduleBrowsingDataRetentionCleanup: {
-                        self.browsingDataRetentionCleanupCount += 1
-                    },
-                    beginProtectionRestoreForStartupIfNeeded: {
-                        self.beginProtectionRestoreCount += 1
                     }
-                )
+                },
+                handleTabManagerDataLoaded: {
+                    self.tabManagerDataLoadedCount += 1
+                },
+                scheduleBrowsingDataRetentionCleanup: {
+                    self.browsingDataRetentionCleanupCount += 1
+                },
+                beginProtectionRestoreForStartupIfNeeded: {
+                    self.beginProtectionRestoreCount += 1
+                }
             )
         }
     }

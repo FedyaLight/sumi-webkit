@@ -12,6 +12,20 @@ extension Tab {
         navigationCommandOwner.loadURL(urlString, for: self)
     }
 
+    public func loadURL(
+        _ url: URL,
+        resolvedWebView: @escaping @MainActor @Sendable () -> WKWebView?,
+        reason: String
+    ) {
+        navigationCommandOwner.loadURL(
+            url,
+            for: self,
+            resolvedWebView: resolvedWebView,
+            reason: reason
+        )
+    }
+
+
     /// Navigate to a new URL with proper search engine normalization
     func navigateToURL(_ input: String) {
         navigationCommandOwner.navigateToURL(input, for: self)

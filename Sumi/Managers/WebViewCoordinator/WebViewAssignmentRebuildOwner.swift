@@ -19,7 +19,22 @@ final class WebViewAssignmentRebuildOwner {
     typealias PrimaryCandidateResolver = (UUID) -> (owner: TrackedWebViewOwner, webView: WKWebView)?
     typealias LiveWindowSelectionProvider = () -> LiveWindowSelection
     typealias CompositorRefresh = (UUID) -> Void
-    typealias TabActivationNotifier = (Tab, UUID) -> Void
+    typealias TabActivationNotifier = (any WebRuntimeTabHandle, UUID) -> Void
+    /// App-owned initial-document handoff for factory primary create / rebuild.
+    typealias SchedulePrimaryInitialDocumentLoad = (
+        _ webView: WKWebView,
+        _ tab: any WebRuntimeTabHandle,
+        _ ownership: any WebRuntimeTabOwnershipMutating,
+        _ mainFrameLoading: any WebRuntimeTabMainFrameLoading,
+        _ reason: String
+    ) -> Void
+    /// App-owned clone initial-document handoff (`NormalTabInitialDocumentRuntimeHandoff`).
+    typealias ScheduleCloneInitialDocumentLoad = (
+        _ webView: WKWebView,
+        _ tab: any WebRuntimeTabHandle,
+        _ mainFrameLoading: any WebRuntimeTabMainFrameLoading,
+        _ targetURL: URL
+    ) -> Void
 
     enum LiveWindowSelection {
         case allTrackedWindows
@@ -39,21 +54,123 @@ final class WebViewAssignmentRebuildOwner {
         let liveWindowSelection: LiveWindowSelectionProvider
         let refreshCompositor: CompositorRefresh
         let notifyTabActivatedIfCurrent: TabActivationNotifier
+        /// Y3/Y4: live protocol witnesses. Assembler passes the operation `Tab`
+        /// (conforms). Tests may inject alternate witnesses; when nil, falls
+        /// back to casting the concrete `Tab` entry argument.
+        let tabMaterializing: (any WebRuntimeTabMaterializing)?
+        let tabOwnership: (any WebRuntimeTabOwnershipMutating)?
+        let tabTeardown: (any WebRuntimeTabTeardownLifecycle)?
+        let tabSiteReloadPolicy: (any WebRuntimeTabSiteReloadPolicyNotifying)?
+        let tabMainFrameLoading: (any WebRuntimeTabMainFrameLoading)?
+        let tabAudioMute: (any WebRuntimeTabAudioMuteSnapshotting)?
+        let schedulePrimaryInitialDocumentLoad: SchedulePrimaryInitialDocumentLoad
+        let scheduleCloneInitialDocumentLoad: ScheduleCloneInitialDocumentLoad
+
+        init(
+            webViewRegistry: WindowWebViewRegistry,
+            tabWebViewSessionStore: TabWebViewSessionStore?,
+            initialDocumentWarmupRuntime: InitialDocumentWarmupRuntime?,
+            registerTrackedWebView: @escaping RegisterTrackedWebView,
+            unregisterTrackedWebViewSlot: @escaping UnregisterTrackedWebViewSlot,
+            removeFromContainers: @escaping ContainerRemoval,
+            isWebViewProtectedFromCompositorMutation: @escaping ProtectedWebViewCheck,
+            deferProtectedRebuild: @escaping ProtectedRebuildDeferral,
+            primaryCandidate: @escaping PrimaryCandidateResolver,
+            liveWindowSelection: @escaping LiveWindowSelectionProvider,
+            refreshCompositor: @escaping CompositorRefresh,
+            notifyTabActivatedIfCurrent: @escaping TabActivationNotifier,
+            tabMaterializing: (any WebRuntimeTabMaterializing)? = nil,
+            tabOwnership: (any WebRuntimeTabOwnershipMutating)? = nil,
+            tabTeardown: (any WebRuntimeTabTeardownLifecycle)? = nil,
+            tabSiteReloadPolicy: (any WebRuntimeTabSiteReloadPolicyNotifying)? = nil,
+            tabMainFrameLoading: (any WebRuntimeTabMainFrameLoading)? = nil,
+            tabAudioMute: (any WebRuntimeTabAudioMuteSnapshotting)? = nil,
+            schedulePrimaryInitialDocumentLoad: @escaping SchedulePrimaryInitialDocumentLoad = { _, _, _, _, _ in },
+            scheduleCloneInitialDocumentLoad: @escaping ScheduleCloneInitialDocumentLoad = { _, _, _, _ in }
+        ) {
+            self.webViewRegistry = webViewRegistry
+            self.tabWebViewSessionStore = tabWebViewSessionStore
+            self.initialDocumentWarmupRuntime = initialDocumentWarmupRuntime
+            self.registerTrackedWebView = registerTrackedWebView
+            self.unregisterTrackedWebViewSlot = unregisterTrackedWebViewSlot
+            self.removeFromContainers = removeFromContainers
+            self.isWebViewProtectedFromCompositorMutation = isWebViewProtectedFromCompositorMutation
+            self.deferProtectedRebuild = deferProtectedRebuild
+            self.primaryCandidate = primaryCandidate
+            self.liveWindowSelection = liveWindowSelection
+            self.refreshCompositor = refreshCompositor
+            self.notifyTabActivatedIfCurrent = notifyTabActivatedIfCurrent
+            self.tabMaterializing = tabMaterializing
+            self.tabOwnership = tabOwnership
+            self.tabTeardown = tabTeardown
+            self.tabSiteReloadPolicy = tabSiteReloadPolicy
+            self.tabMainFrameLoading = tabMainFrameLoading
+            self.tabAudioMute = tabAudioMute
+            self.schedulePrimaryInitialDocumentLoad = schedulePrimaryInitialDocumentLoad
+            self.scheduleCloneInitialDocumentLoad = scheduleCloneInitialDocumentLoad
+        }
     }
 
     private let creationPlanningOwner = WebViewCreationPlanningOwner()
+
+    private func resolvedMaterializing(
+        for tab: Tab,
+        runtime: Runtime
+    ) -> any WebRuntimeTabMaterializing {
+        runtime.tabMaterializing ?? tab
+    }
+
+    private func resolvedOwnership(
+        for tab: Tab,
+        runtime: Runtime
+    ) -> any WebRuntimeTabOwnershipMutating {
+        runtime.tabOwnership ?? tab
+    }
+
+    private func resolvedTeardown(
+        for tab: Tab,
+        runtime: Runtime
+    ) -> any WebRuntimeTabTeardownLifecycle {
+        runtime.tabTeardown ?? tab
+    }
+
+    private func resolvedSiteReloadPolicy(
+        for tab: Tab,
+        runtime: Runtime
+    ) -> any WebRuntimeTabSiteReloadPolicyNotifying {
+        runtime.tabSiteReloadPolicy ?? tab
+    }
+
+    private func resolvedMainFrameLoading(
+        for tab: Tab,
+        runtime: Runtime
+    ) -> any WebRuntimeTabMainFrameLoading {
+        runtime.tabMainFrameLoading ?? tab
+    }
+
+    private func resolvedAudioMute(
+        for tab: Tab,
+        runtime: Runtime
+    ) -> any WebRuntimeTabAudioMuteSnapshotting {
+        runtime.tabAudioMute ?? tab
+    }
+
+    private func resolvedHandle(for tab: Tab) -> any WebRuntimeTabHandle {
+        tab
+    }
 
     func getOrCreateWebView(
         for tab: Tab,
         in windowId: UUID,
         runtime: Runtime
     ) -> WKWebView? {
+        let handle = resolvedHandle(for: tab)
         switch creationPlanningOwner.creationPlan(
-            for: tab,
+            for: handle,
             in: windowId,
             initialDocumentWarmupRuntime: runtime.initialDocumentWarmupRuntime,
-            existingWebView: runtime.webViewRegistry.webView(for: tab.id, in: windowId),
-            windowWebViews: runtime.webViewRegistry.windowWebViews(for: tab.id),
+            existingWebView: runtime.webViewRegistry.webView(for: handle.id, in: windowId),
+            windowWebViews: runtime.webViewRegistry.windowWebViews(for: handle.id),
             sessionStore: runtime.tabWebViewSessionStore
         ) {
         case .useExisting(let existing):
@@ -83,20 +200,22 @@ final class WebViewAssignmentRebuildOwner {
         for tab: Tab,
         runtime: Runtime
     ) {
-        guard let replacement = runtime.primaryCandidate(tab.id) else {
-            tab.clearCurrentWebViewOwnership()
-            runtime.tabWebViewSessionStore?.clearPrimaryAssignment(for: tab.id)
+        let handle = resolvedHandle(for: tab)
+        let ownership = resolvedOwnership(for: tab, runtime: runtime)
+        guard let replacement = runtime.primaryCandidate(handle.id) else {
+            ownership.clearCurrentWebViewOwnership()
+            runtime.tabWebViewSessionStore?.clearPrimaryAssignment(for: handle.id)
             return
         }
 
-        let sessionPrimaryWindowId = runtime.tabWebViewSessionStore?.primaryWindowId(for: tab.id)
-            ?? tab.resolvedPrimaryWindowId()
-        if !tab.currentWebViewIsIdentical(to: replacement.webView)
+        let sessionPrimaryWindowId = runtime.tabWebViewSessionStore?.primaryWindowId(for: handle.id)
+            ?? handle.localSession.primaryWindowId
+        if !ownership.currentWebViewIsIdentical(to: replacement.webView)
             || sessionPrimaryWindowId != replacement.owner.windowID {
-            tab.assignWebViewToWindow(replacement.webView, windowId: replacement.owner.windowID)
+            ownership.assignWebViewToWindow(replacement.webView, windowId: replacement.owner.windowID)
             runtime.tabWebViewSessionStore?.notePrimaryAssignment(
                 windowId: replacement.owner.windowID,
-                for: tab.id,
+                for: handle.id,
                 webView: replacement.webView
             )
         }
@@ -110,7 +229,8 @@ final class WebViewAssignmentRebuildOwner {
         load url: URL? = nil,
         runtime: Runtime
     ) -> Bool {
-        let trackedWindowIds = Set(runtime.webViewRegistry.windowIDs(for: tab.id))
+        let handle = resolvedHandle(for: tab)
+        let trackedWindowIds = Set(runtime.webViewRegistry.windowIDs(for: handle.id))
         var targetWindowIds = trackedWindowIds
 
         if case .liveWindows(let liveWindowIds) = runtime.liveWindowSelection() {
@@ -120,16 +240,16 @@ final class WebViewAssignmentRebuildOwner {
         guard targetWindowIds.isEmpty == false else { return false }
 
         let sessionStore = runtime.tabWebViewSessionStore
-        let localSession = tab.webViewOwnershipOwner.localSession
-        sessionStore?.promoteLocalSessionIfNeeded(tabId: tab.id, localSession: localSession)
-        let sessionUntrackedURL = sessionStore?.untrackedWebView(for: tab.id)?.url
-        let sessionParkedURL = sessionStore?.parkedWebView(for: tab.id)?.url
-        let sessionPrimaryURL = sessionStore?.session(for: tab.id).primaryWebView?.url
+        let localSession = handle.localSession
+        sessionStore?.promoteLocalSessionIfNeeded(tabId: handle.id, localSession: localSession)
+        let sessionUntrackedURL = sessionStore?.untrackedWebView(for: handle.id)?.url
+        let sessionParkedURL = sessionStore?.parkedWebView(for: handle.id)?.url
+        let sessionPrimaryURL = sessionStore?.session(for: handle.id).primaryWebView?.url
         let targetURL = url
             ?? sessionPrimaryURL
             ?? sessionUntrackedURL
             ?? sessionParkedURL
-            ?? tab.url
+            ?? handle.url
         let preferredPrimaryWindowIdCandidate: UUID?
         if let preferredPrimaryWindowId,
            targetWindowIds.contains(preferredPrimaryWindowId) {
@@ -138,7 +258,7 @@ final class WebViewAssignmentRebuildOwner {
             preferredPrimaryWindowIdCandidate = nil
         }
         let registryPrimaryWindowIdCandidate: UUID?
-        if let registryPrimaryWindowId = runtime.primaryCandidate(tab.id)?.owner.windowID,
+        if let registryPrimaryWindowId = runtime.primaryCandidate(handle.id)?.owner.windowID,
            targetWindowIds.contains(registryPrimaryWindowId) {
             registryPrimaryWindowIdCandidate = registryPrimaryWindowId
         } else {
@@ -151,39 +271,40 @@ final class WebViewAssignmentRebuildOwner {
         guard let primaryWindowId else { return false }
 
         let protectedCandidateWebViews = sessionStore?.protectedCandidateWebViews(
-            for: tab.id,
+            for: handle.id,
             localSession: localSession
-        ) ?? Array(runtime.webViewRegistry.windowWebViews(for: tab.id).values)
+        ) ?? Array(runtime.webViewRegistry.windowWebViews(for: handle.id).values)
         if protectedCandidateWebViews.contains(where: runtime.isWebViewProtectedFromCompositorMutation) {
             let deferredWebViews = protectedCandidateWebViews.filter(runtime.isWebViewProtectedFromCompositorMutation)
             for protectedWebView in deferredWebViews {
                 runtime.deferProtectedRebuild(
                     protectedWebView,
-                    tab.id,
+                    handle.id,
                     preferredPrimaryWindowId
                 )
             }
             return false
         }
 
-        let oldEntries = runtime.webViewRegistry.windowWebViews(for: tab.id)
+        let oldEntries = runtime.webViewRegistry.windowWebViews(for: handle.id)
         let sessionKnownWebViews = sessionStore?.allKnownWebViews(
-            for: tab.id,
+            for: handle.id,
             localSession: localSession
         ) ?? []
         var cleanedIdentifiers: Set<ObjectIdentifier> = []
+        let teardown = resolvedTeardown(for: tab, runtime: runtime)
 
         func cleanup(_ webView: WKWebView?) {
             guard let webView else { return }
             let identifier = ObjectIdentifier(webView)
             guard cleanedIdentifiers.insert(identifier).inserted else { return }
-            tab.cleanupCloneWebView(webView)
+            teardown.cleanupCloneWebView(webView)
         }
 
         for (windowId, webView) in oldEntries {
             runtime.removeFromContainers(webView)
             _ = runtime.unregisterTrackedWebViewSlot(
-                TrackedWebViewOwner(tabID: tab.id, windowID: windowId),
+                TrackedWebViewOwner(tabID: handle.id, windowID: windowId),
                 webView
             )
             cleanup(webView)
@@ -192,24 +313,27 @@ final class WebViewAssignmentRebuildOwner {
             cleanup(webView)
         }
 
-        tab.cancelPendingMainFrameNavigation()
-        tab.clearAllWebViewOwnership()
-        sessionStore?.clearAll(for: tab.id)
-        tab.url = targetURL
+        teardown.cancelPendingMainFrameNavigation()
+        resolvedOwnership(for: tab, runtime: runtime).clearAllWebViewOwnership()
+        sessionStore?.clearAll(for: handle.id)
+        handle.url = targetURL
 
-        guard let recreatedPrimary = tab.makeNormalTabWebView(
+        guard let recreatedPrimary = resolvedMaterializing(for: tab, runtime: runtime).makeNormalTabWebView(
             reason: "WebViewCoordinator.rebuildLiveWebViews"
         ) else {
             assertionFailure("Unable to rebuild normal tab WebView without a resolved profile")
             return false
         }
-        tab.assignWebViewToWindow(recreatedPrimary, windowId: primaryWindowId)
+        resolvedOwnership(for: tab, runtime: runtime).assignWebViewToWindow(
+            recreatedPrimary,
+            windowId: primaryWindowId
+        )
         sessionStore?.notePrimaryAssignment(
             windowId: primaryWindowId,
-            for: tab.id,
+            for: handle.id,
             webView: recreatedPrimary
         )
-        runtime.registerTrackedWebView(recreatedPrimary, tab.id, primaryWindowId)
+        runtime.registerTrackedWebView(recreatedPrimary, handle.id, primaryWindowId)
         var recreatedWebViews = [recreatedPrimary]
 
         for windowId in targetWindowIds
@@ -225,22 +349,30 @@ final class WebViewAssignmentRebuildOwner {
             }
         }
 
+        let mainFrameLoading = resolvedMainFrameLoading(for: tab, runtime: runtime)
         if let url {
             for webView in recreatedWebViews {
-                loadRecreatedWebView(webView, for: tab, targetURL: url)
+                loadRecreatedWebView(
+                    webView,
+                    mainFrameLoading: mainFrameLoading,
+                    targetURL: url
+                )
             }
         } else {
             // Factory create no longer runs Tab ensure handoff; restore initial load.
-            schedulePrimaryInitialLoadIfNeeded(
-                for: recreatedPrimary,
-                tab: tab,
-                reason: "WebViewCoordinator.rebuildLiveWebViews"
+            runtime.schedulePrimaryInitialDocumentLoad(
+                recreatedPrimary,
+                handle,
+                resolvedOwnership(for: tab, runtime: runtime),
+                mainFrameLoading,
+                "WebViewCoordinator.rebuildLiveWebViews"
             )
         }
 
-        tab.updateSafariContentBlockerReloadRequirementForCurrentSite()
-        tab.updateProtectionReloadRequirementForCurrentSite()
-        tab.updateAutoplayReloadRequirementForCurrentSite()
+        let siteReloadPolicy = resolvedSiteReloadPolicy(for: tab, runtime: runtime)
+        siteReloadPolicy.updateSafariContentBlockerReloadRequirementForCurrentSite()
+        siteReloadPolicy.updateProtectionReloadRequirementForCurrentSite()
+        siteReloadPolicy.updateAutoplayReloadRequirementForCurrentSite()
 
         for windowId in targetWindowIds {
             runtime.refreshCompositor(windowId)
@@ -250,12 +382,11 @@ final class WebViewAssignmentRebuildOwner {
 
     private func loadRecreatedWebView(
         _ webView: WKWebView,
-        for tab: Tab,
+        mainFrameLoading: any WebRuntimeTabMainFrameLoading,
         targetURL: URL
     ) {
-        tab.navigationCommandOwner.performMainFrameNavigationAfterContentBlockingAssetsIfNeeded(
+        mainFrameLoading.performMainFrameNavigationAfterContentBlockingAssetsIfNeeded(
             on: webView,
-            tab: tab,
             waitForContentBlockingAssets: true
         ) { resolvedWebView in
             if targetURL.isFileURL {
@@ -276,25 +407,28 @@ final class WebViewAssignmentRebuildOwner {
         in windowId: UUID,
         runtime: Runtime
     ) -> WKWebView? {
-        guard let webView = tab.makeNormalTabWebView(
+        let handle = resolvedHandle(for: tab)
+        guard let webView = resolvedMaterializing(for: tab, runtime: runtime).makeNormalTabWebView(
             reason: "WebViewCoordinator.createPrimaryWebView"
         ) else {
             assertionFailure("Unable to create normal tab WebView without a resolved profile")
             return nil
         }
-        tab.assignWebViewToWindow(webView, windowId: windowId)
+        resolvedOwnership(for: tab, runtime: runtime).assignWebViewToWindow(webView, windowId: windowId)
         runtime.tabWebViewSessionStore?.notePrimaryAssignment(
             windowId: windowId,
-            for: tab.id,
+            for: handle.id,
             webView: webView
         )
-        runtime.registerTrackedWebView(webView, tab.id, windowId)
+        runtime.registerTrackedWebView(webView, handle.id, windowId)
         // Previously `ensureWebView` → setup handoff loaded http(s). Factory-only
         // create must schedule that load explicitly or pages stay blank.
-        schedulePrimaryInitialLoadIfNeeded(
-            for: webView,
-            tab: tab,
-            reason: "WebViewCoordinator.createPrimaryWebView"
+        runtime.schedulePrimaryInitialDocumentLoad(
+            webView,
+            handle,
+            resolvedOwnership(for: tab, runtime: runtime),
+            resolvedMainFrameLoading(for: tab, runtime: runtime),
+            "WebViewCoordinator.createPrimaryWebView"
         )
         return webView
     }
@@ -305,79 +439,30 @@ final class WebViewAssignmentRebuildOwner {
         primaryWindowId: UUID,
         runtime: Runtime
     ) -> WKWebView? {
-        guard runtime.webViewRegistry.webView(for: tab.id, in: primaryWindowId) != nil else {
+        let handle = resolvedHandle(for: tab)
+        guard runtime.webViewRegistry.webView(for: handle.id, in: primaryWindowId) != nil else {
             assertionFailure("Cannot create a clone WebView before the primary WebView is tracked")
             return nil
         }
-        guard let newWebView = tab.makeNormalTabWebView(reason: "WebViewCoordinator.createCloneWebView") else {
+        guard let newWebView = resolvedMaterializing(for: tab, runtime: runtime).makeNormalTabWebView(
+            reason: "WebViewCoordinator.createCloneWebView"
+        ) else {
             assertionFailure("Unable to create normal tab clone WebView without a resolved profile")
             return nil
         }
 
-        runtime.registerTrackedWebView(newWebView, tab.id, windowId)
-        loadInitialURLIfNeeded(for: newWebView, tab: tab)
-        newWebView.sumiSetAudioMuted(tab.audioState.isMuted)
-        runtime.notifyTabActivatedIfCurrent(tab, windowId)
+        runtime.registerTrackedWebView(newWebView, handle.id, windowId)
+        if let url = URL(string: handle.url.absoluteString) {
+            runtime.scheduleCloneInitialDocumentLoad(
+                newWebView,
+                handle,
+                resolvedMainFrameLoading(for: tab, runtime: runtime),
+                url
+            )
+        }
+        newWebView.sumiSetAudioMuted(resolvedAudioMute(for: tab, runtime: runtime).isAudioMuted)
+        runtime.notifyTabActivatedIfCurrent(handle, windowId)
         return newWebView
-    }
-
-    private func loadInitialURLIfNeeded(for webView: WKWebView, tab: Tab) {
-        guard let url = URL(string: tab.url.absoluteString) else { return }
-        NormalTabInitialDocumentRuntimeHandoff.scheduleCloneInitialLoad(
-            tab: tab,
-            webView: webView,
-            targetURL: url,
-            profileId: tab.resolveProfile()?.id ?? tab.profileId,
-            registrationReason: "WebViewCoordinator.loadInitialURLIfNeeded"
-        )
-    }
-
-    /// Restores the initial http(s) load that `Tab.ensureUntrackedNormalWebView` used to
-    /// schedule. Validity ignores parked staging so leftover parked session staging cannot
-    /// cancel a windowed primary load after factory create.
-    private func schedulePrimaryInitialLoadIfNeeded(
-        for webView: WKWebView,
-        tab: Tab,
-        reason: String
-    ) {
-        let targetURL = tab.url
-        guard TabNormalWebViewSetupOwner.isInitialDocumentExtensionWarmupURL(targetURL) else {
-            tab.registerTabWithExtensionRuntimeIfNeeded(reason: reason)
-            return
-        }
-
-        let controller = webView.configuration.userContentController
-            .sumiNormalTabUserContentController
-        let profileId = tab.resolveProfile()?.id ?? tab.profileId
-
-        Task { @MainActor [weak tab, weak webView] in
-            await NormalTabInitialDocumentRuntimeHandoff.perform {
-                if let controller,
-                   controller.hasInstalledInitialUserContent == false {
-                    await controller.waitForInitialUserContentInstallation()
-                }
-            } warmInitialDocumentContexts: {
-                if let profileId, let tab {
-                    await tab.navigationRuntime.normalWebViewExtensionRuntime
-                        .ensureInitialExtensionContextsIfNeeded(profileId)
-                }
-            } isStillValid: {
-                guard let tab, let webView else { return false }
-                return tab.currentWebViewIsIdentical(to: webView)
-            } register: {
-                tab?.registerTabWithExtensionRuntimeIfNeeded(
-                    reason: "\(reason).beforeInitialLoad"
-                )
-            } load: {
-                guard let tab else { return }
-                tab.navigationCommandOwner.loadURL(
-                    targetURL,
-                    for: tab,
-                    resolvedWebView: { [weak webView] in webView },
-                    reason: "\(reason).initialLoad"
-                )
-            }
-        }
     }
 
     private func adoptExistingPrimaryWebView(
@@ -386,11 +471,12 @@ final class WebViewAssignmentRebuildOwner {
         in windowId: UUID,
         runtime: Runtime
     ) {
-        runtime.registerTrackedWebView(webView, tab.id, windowId)
-        tab.assignWebViewToWindow(webView, windowId: windowId)
+        let handle = resolvedHandle(for: tab)
+        runtime.registerTrackedWebView(webView, handle.id, windowId)
+        resolvedOwnership(for: tab, runtime: runtime).assignWebViewToWindow(webView, windowId: windowId)
         runtime.tabWebViewSessionStore?.notePrimaryAssignment(
             windowId: windowId,
-            for: tab.id,
+            for: handle.id,
             webView: webView
         )
     }

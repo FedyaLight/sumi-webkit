@@ -15,26 +15,26 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
 DOMAIN_FILES=(
-  "Sumi/Models/Profile/SumiProfileIcon.swift"
-  "Sumi/Utils/SumiURLNormalization.swift"
+  # W5/X5 peeled into Packages/SumiDomain:
+  #   SumiProfileIcon, SidebarInputRecoveryOwner (+ reason), SumiURLNormalization
+  #   (+ SumiStartupPageURL / SumiNewTabPageURL), BrowserWindowSelectionHistoryItem,
+  #   WindowSelectionHistoryOwner, SumiPermissionState / Persistence / DecisionSource,
+  #   SumiPermissionCoordinatorOutcome, TabPlacementStateOwner
+  # SumiPermissionCoordinatorDecision stays app-target (system snapshot /
+  # prompt-suppression edges); FailClosedMapper stays with it (Foundation-only).
   "Sumi/Permissions/SumiPermissionFailClosedMapper.swift"
-  # V6 peeled into Packages/SumiDomain:
-  #   KeyCombination / Modifiers, SumiNavigationResponse (+ redirect/main-frame)
-  #   SumiExtensionOwnedURL, SumiPopupNavigationOrigin, ShortcutPinRole
   # KeyboardShortcut stays app-target (name collides with SwiftUI.KeyboardShortcut when
   # re-exported from SumiDomain); Foundation-only after KeyCombination peel.
   "Sumi/Models/KeyboardShortcut/KeyboardShortcut.swift"
   "Sumi/Models/KeyboardShortcut/DefaultKeyboardShortcuts.swift"
   # excluded: references ShortcutPin — Sumi/Models/History/HistoryTypes.swift
   "Sumi/Models/Tab/TabDependencyStateOwner.swift"
-  # excluded: references ShortcutPin — Sumi/Models/Tab/TabPlacementStateOwner.swift
   # excluded: references Tab/Profile — Sumi/Models/Tab/TabProfileResolutionOwner.swift
   # excluded: references Tab — Sumi/Models/Tab/Tab+Favicon.swift
-  "Sumi/Models/Window/SidebarInputRecoveryOwner.swift"
-  "Sumi/Models/Window/WindowSelectionHistoryOwner.swift"
   # excluded: references Tab/Profile — Sumi/Models/Tab/Navigation/SumiAutoplayPolicyNavigationResponder.swift
   # excluded: references Tab — Sumi/Models/Tab/Navigation/SumiInstallNavigationResponder.swift
   # excluded: references Tab — Sumi/Models/Tab/Navigation/SumiInternalSurfaceNavigationResponder.swift
+  #   (unused Tab init arg dropped; still app-target navigation responder)
   # AppKit bridge retained in app (NSEvent init): Sumi/Models/KeyboardShortcut/KeyCombination+NSEvent.swift
 )
 

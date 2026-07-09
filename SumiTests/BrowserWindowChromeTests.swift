@@ -367,7 +367,7 @@ final class BrowserWindowChromeTests: XCTestCase {
 
         let contentView = ContentView(
             windowLifecycleHandler: lifecycleHandler,
-            browserContext: .live(
+            browserContext: .make(
                 browserManager: browserManager,
                 updaterService: updaterService,
                 defaultBrowserService: SumiDefaultBrowserService()

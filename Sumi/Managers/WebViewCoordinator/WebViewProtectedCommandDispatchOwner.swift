@@ -22,8 +22,8 @@ final class WebViewProtectedCommandDispatchOwner {
         let removeWebViewFromContainers: @MainActor (WKWebView) -> Void
         let removeAllWebViews: @MainActor (Tab) -> Void
         let cleanupTrackedWebView: @MainActor (WKWebView, TrackedWebViewOwner) -> Void
-        let cleanupWindow: @MainActor (UUID, TabManager) -> Void
-        let cleanupAllWebViews: @MainActor (TabManager) -> Void
+        let cleanupWindow: @MainActor (UUID) -> Void
+        let cleanupAllWebViews: @MainActor () -> Void
         let rebuildLiveWebViews: @MainActor (Tab, UUID?) -> Void
         let evictHiddenWebViews: @MainActor (UUID, Set<UUID>) -> Void
         let visibleTabIDSet: @MainActor (UUID) -> Set<UUID>
@@ -153,14 +153,9 @@ final class WebViewProtectedCommandDispatchOwner {
                 return false
             }
         case .cleanupWindow(let windowID):
-            dependencies.cleanupWindow(
-                windowID,
-                dependencies.requireBrowserRuntimeContext().tabManager()
-            )
+            dependencies.cleanupWindow(windowID)
         case .cleanupAllWebViews:
-            dependencies.cleanupAllWebViews(
-                dependencies.requireBrowserRuntimeContext().tabManager()
-            )
+            dependencies.cleanupAllWebViews()
         case .rebuildLiveWebViews(let tabID, let preferredPrimaryWindowID):
             guard let tab = resolvedTab(with: tabID) else {
                 return false
@@ -213,9 +208,10 @@ final class WebViewProtectedCommandDispatchOwner {
                 dependencies.resolvedTab(tabID, runtimeContext)
             },
             allTabs: {
-                runtimeContext.regularTabs()
-                    + runtimeContext.pinnedTabs()
-                    + runtimeContext.allWindows().flatMap(\.ephemeralTabs)
+                let regular = runtimeContext.regularTabs()
+                let pinned = runtimeContext.pinnedTabs()
+                let ephemeral = runtimeContext.allWindows().flatMap(\.ephemeralTabHandles)
+                return regular + pinned + ephemeral
             },
             sessionStore: dependencies.tabWebViewSessionStore
         )
@@ -255,11 +251,11 @@ extension WebViewProtectedCommandDispatchOwner.Dependencies {
             cleanupTrackedWebView: { [weak coordinator] webView, owner in
                 coordinator?.cleanupTrackedWebView(webView, owner: owner)
             },
-            cleanupWindow: { [weak coordinator] windowID, tabManager in
-                coordinator?.cleanupWindow(windowID, tabManager: tabManager)
+            cleanupWindow: { [weak coordinator] windowID in
+                coordinator?.cleanupWindow(windowID)
             },
-            cleanupAllWebViews: { [weak coordinator] tabManager in
-                coordinator?.cleanupAllWebViews(tabManager: tabManager)
+            cleanupAllWebViews: { [weak coordinator] in
+                coordinator?.cleanupAllWebViews()
             },
             rebuildLiveWebViews: { [weak coordinator] tab, preferredPrimaryWindowId in
                 _ = coordinator?.rebuildLiveWebViews(

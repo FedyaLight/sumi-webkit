@@ -57,7 +57,7 @@ extension Tab {
         )
     }
 
-    func updateSafariContentBlockerReloadRequirementForCurrentSite() {
+    public func updateSafariContentBlockerReloadRequirementForCurrentSite() {
         publishNavigationStateChangeIfNeeded(
             reloadPolicyStateOwner.updateSafariContentBlockerReloadRequirementForCurrentSite(
                 currentURL: url,
@@ -76,7 +76,7 @@ extension Tab {
         )
     }
 
-    func updateProtectionReloadRequirementForCurrentSite() {
+    public func updateProtectionReloadRequirementForCurrentSite() {
         publishNavigationStateChangeIfNeeded(
             reloadPolicyStateOwner.updateProtectionReloadRequirementForCurrentSite(
                 currentURL: url,
@@ -126,7 +126,7 @@ extension Tab {
         )
     }
 
-    func updateAutoplayReloadRequirementForCurrentSite() {
+    public func updateAutoplayReloadRequirementForCurrentSite() {
         publishNavigationStateChangeIfNeeded(
             reloadPolicyStateOwner.updateAutoplayReloadRequirementForCurrentSite(
                 currentURL: url,

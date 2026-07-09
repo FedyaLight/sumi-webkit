@@ -50,7 +50,7 @@ enum BrowserTabManagerWebViewLifecycleFactory {
 }
 
 extension TabManagerWebViewLifecycleService {
-    static func live(browserManager: BrowserManager) -> TabManagerWebViewLifecycleService {
+    static func make(browserManager: BrowserManager) -> TabManagerWebViewLifecycleService {
         BrowserTabManagerWebViewLifecycleFactory.service(for: browserManager)
     }
 }

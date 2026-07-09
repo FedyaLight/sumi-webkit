@@ -28,7 +28,7 @@ class TabManager: ObservableObject {
     let faviconImageService: any BrowserFaviconImageServicing
     let visitedLinkStore: any BrowserVisitedLinkStoreManaging
 
-    lazy var runtimeStore = DefaultTabRuntimeStore(dependencies: .live(tabManager: self))
+    lazy var runtimeStore = DefaultTabRuntimeStore(tabManager: self)
     lazy var folderMutationOwner = TabFolderMutationOwner(dependencies: .live(tabManager: self))
     private let spaceCollectionStateOwner = TabSpaceCollectionStateOwner()
     var spaceStateOwner: TabSpaceCollectionStateOwner { spaceCollectionStateOwner }
@@ -87,15 +87,9 @@ class TabManager: ObservableObject {
             return self.faviconService
         }
     )
-    lazy var shortcutPinConversionOwner = ShortcutPinConversionOwner(
-        dependencies: .live(tabManager: self)
-    )
-    lazy var shortcutDragOperationOwner = ShortcutDragOperationOwner(
-        dependencies: .live(tabManager: self)
-    )
-    lazy var shortcutPresentationOwner = TabShortcutPresentationOwner(
-        dependencies: .live(tabManager: self)
-    )
+    lazy var shortcutPinConversionOwner = ShortcutPinConversionOwner(tabManager: self)
+    lazy var shortcutDragOperationOwner = ShortcutDragOperationOwner(tabManager: self)
+    lazy var shortcutPresentationOwner = TabShortcutPresentationOwner(tabManager: self)
     lazy var shortcutContainerRemovalOwner = ShortcutContainerRemovalOwner(
         pinnedByProfile: { [weak self] in
             self?.shortcutPinCollectionStateOwner.pinnedByProfileSnapshot() ?? [:]
@@ -150,9 +144,9 @@ class TabManager: ObservableObject {
         dependencies: .live(tabManager: self)
     )
     lazy var tabCollectionMembershipOwner = TabCollectionMembershipOwner(
+        tabManager: self,
         structuralLookupOwner: structuralLookupCoordinator.lookupOwner,
-        transientTabRegistryOwner: transientTabRegistryOwner,
-        dependencies: .live(tabManager: self)
+        transientTabRegistryOwner: transientTabRegistryOwner
     )
     lazy var transientWebKitTabLifecycleOwner = TabTransientWebKitTabLifecycleOwner(
         dependencies: .live(tabManager: self)

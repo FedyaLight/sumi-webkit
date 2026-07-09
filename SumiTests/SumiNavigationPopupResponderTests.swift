@@ -644,7 +644,7 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
     }
 
     func testInternalSurfaceResponderCancelsRemoteWebNavigationToSumiSurface() async {
-        let responder = SumiInternalSurfaceNavigationResponder(tab: Tab(url: URL(string: "https://evil.example")!))
+        let responder = SumiInternalSurfaceNavigationResponder()
         var preferences = sumiNavigationPreferences()
         let action = SumiNavigationAction(navigationAction(
             url: URL(string: "sumi://settings?pane=userScripts")!,
@@ -661,7 +661,7 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
     }
 
     func testInternalSurfaceResponderAllowsUserEnteredSumiSurface() async {
-        let responder = SumiInternalSurfaceNavigationResponder(tab: Tab(url: URL(string: "about:blank")!))
+        let responder = SumiInternalSurfaceNavigationResponder()
         var preferences = sumiNavigationPreferences()
         let action = SumiNavigationAction(navigationAction(
             url: URL(string: "sumi://settings?pane=privacy")!,

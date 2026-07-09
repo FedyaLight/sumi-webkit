@@ -27,22 +27,20 @@ final class GlanceOverlayController: NSObject {
         self?.handleActionChromeAction(action)
     }
     private lazy var keyCommands = GlanceOverlayKeyCommandOwner(
-        dependencies: GlanceOverlayKeyCommandOwner.Dependencies(
-            rootWindow: { [weak self] in self?.rootView?.window },
-            activeWindowID: { [weak self] in self?.session?.windowId },
-            dismissFloatingBarIfVisible: { [weak self] windowID in
-                self?.manager?.dismissFloatingBarIfVisible(in: windowID) == true
-            },
-            isFindBarVisible: { [weak self] in
-                self?.manager?.isFindBarVisible == true
-            },
-            hideFindBar: { [weak self] in
-                _ = self?.manager?.hideFindBar()
-            },
-            closeOverlay: { [weak self] in
-                _ = self?.closeFromBackdrop()
-            }
-        )
+        rootWindow: { [weak self] in self?.rootView?.window },
+        activeWindowID: { [weak self] in self?.session?.windowId },
+        dismissFloatingBarIfVisible: { [weak self] windowID in
+            self?.manager?.dismissFloatingBarIfVisible(in: windowID) == true
+        },
+        isFindBarVisible: { [weak self] in
+            self?.manager?.isFindBarVisible == true
+        },
+        hideFindBar: { [weak self] in
+            _ = self?.manager?.hideFindBar()
+        },
+        closeOverlay: { [weak self] in
+            _ = self?.closeFromBackdrop()
+        }
     )
     private lazy var motion = GlanceOverlayMotionController(
         contentShadowView: contentShadowView,

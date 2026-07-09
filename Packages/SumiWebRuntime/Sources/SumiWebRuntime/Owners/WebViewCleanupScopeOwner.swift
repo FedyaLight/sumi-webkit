@@ -1,36 +1,52 @@
 //
 //  WebViewCleanupScopeOwner.swift
-//  Sumi
+//  SumiWebRuntime
 //
 //  Owns cleanup orchestration for window/all tracked WebView scopes.
 //
 
 import Foundation
 import WebKit
-import SumiWebRuntime
 
 @MainActor
-final class WebViewCleanupScopeOwner {
-    typealias TabResolver = (UUID) -> Tab?
-    typealias WebViewProtectionCheck = (WKWebView) -> Bool
-    typealias ProtectedCommandEnqueuer = (DeferredWebViewCommand, WKWebView, String) -> Bool
-    typealias UnprotectedTrackedCleanup = (WKWebView, TrackedWebViewOwner, Tab?) -> Void
-    typealias PrimaryTrackedWebViewRefresh = (Tab) -> Void
+public final class WebViewCleanupScopeOwner {
+    public typealias TabResolver = (UUID) -> (any WebRuntimeTabHandle)?
+    public typealias WebViewProtectionCheck = (WKWebView) -> Bool
+    public typealias ProtectedCommandEnqueuer = (DeferredWebViewCommand, WKWebView, String) -> Bool
+    public typealias UnprotectedTrackedCleanup =
+        (WKWebView, TrackedWebViewOwner, (any WebRuntimeTabHandle)?) -> Void
+    public typealias PrimaryTrackedWebViewRefresh = (any WebRuntimeTabHandle) -> Void
 
-    struct Runtime {
-        let tabForID: TabResolver
-        let isWebViewProtectedFromCompositorMutation: WebViewProtectionCheck
-        let enqueueDeferredProtectedCommand: ProtectedCommandEnqueuer
-        let cleanupUnprotectedTrackedWebView: UnprotectedTrackedCleanup
-        let refreshPrimaryTrackedWebView: PrimaryTrackedWebViewRefresh
+    public struct Runtime {
+        public let tabForID: TabResolver
+        public let isWebViewProtectedFromCompositorMutation: WebViewProtectionCheck
+        public let enqueueDeferredProtectedCommand: ProtectedCommandEnqueuer
+        public let cleanupUnprotectedTrackedWebView: UnprotectedTrackedCleanup
+        public let refreshPrimaryTrackedWebView: PrimaryTrackedWebViewRefresh
+
+        public init(
+            tabForID: @escaping TabResolver,
+            isWebViewProtectedFromCompositorMutation: @escaping WebViewProtectionCheck,
+            enqueueDeferredProtectedCommand: @escaping ProtectedCommandEnqueuer,
+            cleanupUnprotectedTrackedWebView: @escaping UnprotectedTrackedCleanup,
+            refreshPrimaryTrackedWebView: @escaping PrimaryTrackedWebViewRefresh
+        ) {
+            self.tabForID = tabForID
+            self.isWebViewProtectedFromCompositorMutation = isWebViewProtectedFromCompositorMutation
+            self.enqueueDeferredProtectedCommand = enqueueDeferredProtectedCommand
+            self.cleanupUnprotectedTrackedWebView = cleanupUnprotectedTrackedWebView
+            self.refreshPrimaryTrackedWebView = refreshPrimaryTrackedWebView
+        }
     }
 
-    func cleanupWindow(
+    public init() {}
+
+    public func cleanupWindow(
         _ windowId: UUID,
         entries: [(TrackedWebViewOwner, WKWebView)],
         runtime: Runtime
     ) {
-        RuntimeDiagnostics.debug(category: "WebViewCoordinator") {
+        SumiWebRuntimeDiagnostics.debug(category: "WebViewCoordinator") {
             "Cleaning up \(entries.count) WebViews for window \(windowId.uuidString)."
         }
 
@@ -44,12 +60,12 @@ final class WebViewCleanupScopeOwner {
         }
     }
 
-    func cleanupAllWebViews(
+    public func cleanupAllWebViews(
         entries: [(TrackedWebViewOwner, WKWebView)],
         totalWebViewCount: Int,
         runtime: Runtime
     ) {
-        RuntimeDiagnostics.debug(category: "WebViewCoordinator") {
+        SumiWebRuntimeDiagnostics.debug(category: "WebViewCoordinator") {
             "Starting full WebView cleanup for \(totalWebViewCount) tracked views."
         }
 
@@ -90,7 +106,7 @@ final class WebViewCleanupScopeOwner {
                 runtime.refreshPrimaryTrackedWebView(tab)
             }
 
-            RuntimeDiagnostics.debug(category: "WebViewCoordinator") {
+            SumiWebRuntimeDiagnostics.debug(category: "WebViewCoordinator") {
                 cleanedMessage(owner)
             }
         }

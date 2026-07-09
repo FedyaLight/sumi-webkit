@@ -4,7 +4,7 @@ import WebKit
 @MainActor
 enum TabPopupRuntimeFactory {
     static func make(for browserManager: BrowserManager) -> TabPopupHandlingRuntime {
-        .live(
+        .make(
             dependencies: TabPopupHandlingRuntime.LiveDependencies(
                 isAvailable: { [weak browserManager] in
                     browserManager != nil
@@ -102,7 +102,7 @@ extension TabPopupHandlingRuntime {
         let notifications: () -> (any BrowserNotificationPresenting)?
     }
 
-    static func live(dependencies: LiveDependencies) -> Self {
+    static func make(dependencies: LiveDependencies) -> Self {
         Self(
             hasBrowserRuntime: dependencies.isAvailable,
             consumeRecentlyOpenedExtensionTabRequest: { requestURL in

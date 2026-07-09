@@ -31,7 +31,7 @@ final class GlancePreviewHostAttachmentOwner {
             hostView = existingHost
         } else {
             webClipView.subviews.forEach { $0.removeFromSuperview() }
-            hostView = SumiWebViewContainerView(tab: session.previewTab, webView: webView)
+            hostView = SumiWebViewContainerView(tabID: session.previewTab.id, webView: webView)
             previewHostView = hostView
         }
 

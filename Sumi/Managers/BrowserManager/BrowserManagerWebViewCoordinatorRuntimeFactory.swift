@@ -7,9 +7,6 @@ enum BrowserWebViewRuntimeFactory {
         for browserManager: BrowserManager
     ) -> WebViewCoordinatorBrowserRuntimeContext {
         WebViewCoordinatorBrowserRuntimeContext(
-            tabManager: { [weak browserManager] in
-                requireBrowserManager(browserManager, operation: "resolve TabManager").tabManager
-            },
             tab: { [weak browserManager] tabId in
                 requireBrowserManager(browserManager, operation: "resolve tab").tabManager.tabCollectionMembershipOwner.tab(for: tabId)
             },
@@ -28,11 +25,15 @@ enum BrowserWebViewRuntimeFactory {
             window: { [weak browserManager] windowId in
                 requireWindowRegistry(browserManager, operation: "resolve window").windows[windowId]
             },
-            windowContaining: { [weak browserManager] tab in
-                requireBrowserManager(browserManager, operation: "resolve tab window").windowTabContextOwner.windowState(containing: tab)
+            windowContaining: { [weak browserManager] tabHandle in
+                guard let tab = tabHandle.concreteTab else { return nil }
+                return requireBrowserManager(browserManager, operation: "resolve tab window")
+                    .windowTabContextOwner.windowState(containing: tab)
             },
-            currentTab: { [weak browserManager] windowState in
-                requireBrowserManager(browserManager, operation: "resolve current tab").windowTabContextOwner.currentTab(for: windowState)
+            currentTab: { [weak browserManager] windowHandle in
+                guard let windowState = windowHandle.concreteWindowState else { return nil }
+                return requireBrowserManager(browserManager, operation: "resolve current tab")
+                    .windowTabContextOwner.currentTab(for: windowState)
             },
             selectTab: { [weak browserManager] tabId, windowId in
                 let manager = requireBrowserManager(
@@ -50,13 +51,18 @@ enum BrowserWebViewRuntimeFactory {
                     operation: "handle unprotected WebKit close"
                 ).webViewCloseRouter.handleNormalWebViewDidClose(webView)
             },
-            refreshCompositor: { [weak browserManager] windowState in
-                requireBrowserManager(
+            refreshCompositor: { [weak browserManager] windowId in
+                let manager = requireBrowserManager(
                     browserManager,
                     operation: "refresh compositor"
-                ).windowVisualMutationOwner.refreshCompositor(for: windowState)
+                )
+                guard let windowState = manager.windowRegistry?.windows[windowId] else {
+                    return
+                }
+                manager.windowVisualMutationOwner.refreshCompositor(for: windowState)
             },
-            notifyTabActivatedIfLoaded: { [weak browserManager] tab in
+            notifyTabActivatedIfLoaded: { [weak browserManager] tabHandle in
+                guard let tab = tabHandle.concreteTab else { return }
                 requireBrowserManager(
                     browserManager,
                     operation: "notify extension tab activation"
@@ -120,15 +126,17 @@ enum BrowserWebViewRuntimeFactory {
             windowState: { [weak browserManager] windowId in
                 requireWindowRegistry(browserManager, operation: "resolve visible window").windows[windowId]
             },
-            currentTabId: { [weak browserManager] windowState in
-                requireBrowserManager(browserManager, operation: "resolve visible current tab")
+            currentTabId: { [weak browserManager] windowHandle in
+                guard let windowState = windowHandle.concreteWindowState else { return nil }
+                return requireBrowserManager(browserManager, operation: "resolve visible current tab")
                     .windowTabContextOwner.currentTab(for: windowState)?.id
             },
             splitVisibleTabIds: { [weak browserManager] windowId in
                 requireBrowserManager(browserManager, operation: "resolve split visible tabs")
                     .splitManager.visibleTabIds(for: windowId)
             },
-            resolveTab: { [weak browserManager] tabId, windowState in
+            resolveTab: { [weak browserManager] tabId, windowHandle in
+                guard let windowState = windowHandle.concreteWindowState else { return nil }
                 if windowState.isIncognito,
                    let ephemeralTab = windowState.ephemeralTabs.first(where: { $0.id == tabId }) {
                     return ephemeralTab
@@ -136,8 +144,9 @@ enum BrowserWebViewRuntimeFactory {
                 return requireBrowserManager(browserManager, operation: "resolve visible tab")
                     .tabManager.tabCollectionMembershipOwner.tab(for: tabId)
             },
-            canMaterializeWebViewDuringStartup: { [weak browserManager] tab in
-                requireBrowserManager(
+            canMaterializeWebViewDuringStartup: { [weak browserManager] tabHandle in
+                guard let tab = tabHandle.concreteTab else { return false }
+                return requireBrowserManager(
                     browserManager,
                     operation: "check visible WebView startup materialization"
                 ).startupProtectionRuntime.canMaterializeWebViewDuringStartup(tab)
@@ -160,9 +169,12 @@ enum BrowserWebViewRuntimeFactory {
                 requireBrowserManager(browserManager, operation: "schedule background media reconcile")
                     .backgroundMediaOptimizationService.scheduleReconcile(reason: reason)
             },
-            refreshCompositor: { [weak browserManager] windowState in
-                requireBrowserManager(browserManager, operation: "refresh visible compositor")
-                    .windowVisualMutationOwner.refreshCompositor(for: windowState)
+            refreshCompositor: { [weak browserManager] windowId in
+                let manager = requireBrowserManager(browserManager, operation: "refresh visible compositor")
+                guard let windowState = manager.windowRegistry?.windows[windowId] else {
+                    return
+                }
+                manager.windowVisualMutationOwner.refreshCompositor(for: windowState)
             }
         )
     }

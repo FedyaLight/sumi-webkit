@@ -89,7 +89,7 @@ struct SafariCompatibilityReportRuntime {
         stableAdapter: { _ in nil }
     )
 
-    static func live(extensionManager: ExtensionManager?) -> Self {
+    static func make(extensionManager: ExtensionManager?) -> Self {
         guard let extensionManager else { return .inactive }
         return Self(
             currentTab: { [weak extensionManager] in
@@ -177,7 +177,7 @@ enum SafariExtensionCompatibilityReportBuilder {
         extensionsModuleEnabled: Bool = true,
         runtime: SafariCompatibilityReportRuntime? = nil
     ) -> SafariExtensionCompatibilityReport {
-        let runtime = runtime ?? .live(extensionManager: extensionManager)
+        let runtime = runtime ?? .make(extensionManager: extensionManager)
         let discoveredByAppexID = Dictionary(
             uniqueKeysWithValues: discovered.map { ($0.extensionBundleIdentifier, $0) }
         )
@@ -425,7 +425,7 @@ extension SumiExtensionsModule {
             installedExtensions: installed,
             extensionManager: manager,
             extensionsModuleEnabled: isEnabled,
-            runtime: .live(extensionManager: manager)
+            runtime: .make(extensionManager: manager)
         )
         SafariExtensionCompatibilityReportBuilder.logIfDiagnosticsEnabled(report)
         return report
