@@ -5,10 +5,11 @@
 //
 
 import CoreGraphics
+import SumiChromeTokens
 
 enum FloatingBarLayoutPolicy {
     static let idealWidth: CGFloat = 765
-    static let horizontalPadding: CGFloat = 10
+    static let horizontalPadding: CGFloat = ChromeLayoutTokens.floatingBarHorizontalPadding
     static let minimumWidth: CGFloat = 200
     static let horizontalVignetteOutset: CGFloat = 56
     static let verticalVignetteOutset: CGFloat = 72

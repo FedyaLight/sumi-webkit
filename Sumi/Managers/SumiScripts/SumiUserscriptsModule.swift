@@ -10,6 +10,8 @@ final class SumiUserscriptsModule {
 
     private var cachedManager: SumiScriptsManager?
     private var managerRuntime = SumiScriptsManagerRuntime.inactive
+    private var runtimeProvider: (@MainActor () -> SumiScriptsManagerRuntime)?
+    private(set) var hasAttachedRuntime = false
 
     init(
         moduleRegistry: SumiModuleRegistry = .shared,
@@ -32,16 +34,37 @@ final class SumiUserscriptsModule {
         cachedManager != nil
     }
 
+    /// Stores a factory used when the module is enabled after BrowserManager wiring.
+    func bindRuntimeProvider(_ provider: @escaping @MainActor () -> SumiScriptsManagerRuntime) {
+        runtimeProvider = provider
+    }
+
     func attach(runtime: SumiScriptsManagerRuntime) {
         managerRuntime = runtime
+        hasAttachedRuntime = true
         cachedManager?.attach(runtime: managerRuntime)
     }
 
     func setEnabled(_ isEnabled: Bool) {
+        let wasEnabled = self.isEnabled
         moduleRegistry.setEnabled(isEnabled, for: .userScripts)
         if isEnabled == false {
             cachedManager?.deactivateFromUserscriptsModule()
+            cachedManager = nil
+            clearAttachedRuntime()
+        } else if wasEnabled == false {
+            attachRuntimeFromProviderIfNeeded()
         }
+    }
+
+    private func attachRuntimeFromProviderIfNeeded() {
+        guard hasAttachedRuntime == false, let runtimeProvider else { return }
+        attach(runtime: runtimeProvider())
+    }
+
+    private func clearAttachedRuntime() {
+        managerRuntime = .inactive
+        hasAttachedRuntime = false
     }
 
     func managerIfEnabled() -> SumiScriptsManager? {

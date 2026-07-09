@@ -50,16 +50,16 @@ final class EssentialsShortcutPlacementOwner {
     }
 
     private let spaces: @MainActor () -> [Space]
-    private let runtimeContext: @MainActor () -> TabManagerRuntimeContext?
+    private let runtimePorts: @MainActor () -> RuntimePortRegistry?
     private let essentialPins: @MainActor (UUID?) -> [ShortcutPin]
 
     init(
         spaces: @escaping @MainActor () -> [Space],
-        runtimeContext: @escaping @MainActor () -> TabManagerRuntimeContext?,
+        runtimePorts: @escaping @MainActor () -> RuntimePortRegistry?,
         essentialPins: @escaping @MainActor (UUID?) -> [ShortcutPin]
     ) {
         self.spaces = spaces
-        self.runtimeContext = runtimeContext
+        self.runtimePorts = runtimePorts
         self.essentialPins = essentialPins
     }
 
@@ -78,7 +78,7 @@ final class EssentialsShortcutPlacementOwner {
             return TargetResolution(profileId: profileId, source: .explicitProfile)
         }
 
-        if let profileId = runtimeContext()?.currentProfileId {
+        if let profileId = runtimePorts()?.currentProfileId {
             return TargetResolution(profileId: profileId, source: .globalFallback)
         }
 

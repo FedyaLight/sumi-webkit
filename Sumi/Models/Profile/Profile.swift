@@ -10,6 +10,7 @@
 import Foundation
 import Observation
 import WebKit
+import SumiDomain
 
 @MainActor
 @Observable

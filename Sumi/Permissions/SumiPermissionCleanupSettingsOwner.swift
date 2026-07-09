@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 /// Owns the automatic permission cleanup preference and the scheduling of
 /// cleanup runs through `SumiPermissionCleanupService`.

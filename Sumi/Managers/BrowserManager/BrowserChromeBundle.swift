@@ -62,13 +62,13 @@ final class BrowserChromeBundle {
                 browserManager?.sidebarHostRecoveryCoordinator ?? SidebarHostRecoveryCoordinator()
             },
             commitWorkspaceTheme: { [weak browserManager] theme, windowState in
-                browserManager?.workspaceThemeTransitionOwner.commitWorkspaceTheme(
+                browserManager?.chromeBundle.workspaceThemeTransitionOwner.commitWorkspaceTheme(
                     theme,
                     for: windowState
                 )
             },
             syncWorkspaceThemeAcrossWindows: { [weak browserManager] space, animate in
-                browserManager?.workspaceThemeTransitionOwner.syncWorkspaceThemeAcrossWindows(
+                browserManager?.chromeBundle.workspaceThemeTransitionOwner.syncWorkspaceThemeAcrossWindows(
                     for: space,
                     animate: animate
                 )
@@ -78,7 +78,7 @@ final class BrowserChromeBundle {
                 browserManager?.tabManager.scheduleStructuralPersistence()
             },
             presentNotice: { [weak browserManager] notice, source in
-                browserManager?.nativeDialogPresentationOwner.presentNoticeSheet(notice, source: source)
+                browserManager?.chromeBundle.nativeDialogPresentationOwner.presentNoticeSheet(notice, source: source)
             },
             settings: { [weak browserManager] in
                 browserManager?.sumiSettings
@@ -93,16 +93,16 @@ final class BrowserChromeBundle {
                 browserManager?.windowRegistry?.activeWindow
             },
             activePageTab: { [weak browserManager] windowState in
-                browserManager?.activePageRoutingOwner.activePageTab(for: windowState)
+                browserManager?.urlBarBundle.activePageRoutingOwner.activePageTab(for: windowState)
             },
             activePageWebView: { [weak browserManager] windowState in
-                browserManager?.activePageRoutingOwner.activePageWebView(for: windowState)
+                browserManager?.urlBarBundle.activePageRoutingOwner.activePageWebView(for: windowState)
             },
             tab: { [weak browserManager] tabId in
                 browserManager?.tabManager.tabCollectionMembershipOwner.tab(for: tabId)
             },
             windowStateContainingTab: { [weak browserManager] tab in
-                browserManager?.windowTabContextOwner.windowState(containing: tab)
+                browserManager?.windowSessionBundle.tabContextOwner.windowState(containing: tab)
             },
             webView: { [weak browserManager] tabId, windowId in
                 browserManager?.webViewRoutingService.webView(for: tabId, in: windowId)
@@ -138,15 +138,15 @@ final class BrowserChromeBundle {
                 )
             },
             dismissFloatingBarForActiveWindow: { [weak browserManager] preserveDraft in
-                browserManager?.floatingBarRoutingOwner.dismissFloatingBarForActiveWindow(
+                browserManager?.urlBarBundle.floatingBarRoutingOwner.dismissFloatingBarForActiveWindow(
                     preserveDraft: preserveDraft
                 )
             },
             dismissThemePickerDiscardingIfNeeded: { [weak browserManager] in
-                browserManager?.workspaceThemeEditorOwner.dismissThemePickerDiscardingIfNeeded()
+                browserManager?.chromeBundle.workspaceThemeEditorOwner.dismissThemePickerDiscardingIfNeeded()
             },
             dismissThemePickerCommittingIfNeeded: { [weak browserManager] in
-                browserManager?.workspaceThemeEditorOwner.dismissThemePickerCommittingIfNeeded()
+                browserManager?.chromeBundle.workspaceThemeEditorOwner.dismissThemePickerCommittingIfNeeded()
             },
             terminateApplication: {
                 NSApplication.shared.terminate(nil)
@@ -161,7 +161,7 @@ final class BrowserChromeBundle {
                 browserManager?.sidebarHostRecoveryCoordinator.recover(in: window)
             },
             presentSharingServicePicker: { [weak browserManager] items, source in
-                browserManager?.sharingPickerPresentationOwner.presentSharingServicePicker(
+                browserManager?.chromeBundle.sharingPickerPresentationOwner.presentSharingServicePicker(
                     items,
                     source: source
                 )

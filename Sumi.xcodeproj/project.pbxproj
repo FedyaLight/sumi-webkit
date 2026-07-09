@@ -13,6 +13,16 @@
 		B11DD021B11D000100000005 /* SumiDomain in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD020B11D000100000012 /* SumiDomain */; };
 		B11DD030B11D000100000005 /* SumiWebRuntime in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD030B11D000100000011 /* SumiWebRuntime */; };
 		B11DD031B11D000100000005 /* SumiWebRuntime in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD030B11D000100000012 /* SumiWebRuntime */; };
+		B11DD040B11D000100000005 /* SumiChromeTokens in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD040B11D000100000011 /* SumiChromeTokens */; };
+		B11DD041B11D000100000005 /* SumiChromeTokens in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD040B11D000100000012 /* SumiChromeTokens */; };
+		B11DD050B11D000100000005 /* SumiChromeContracts in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD050B11D000100000011 /* SumiChromeContracts */; };
+		B11DD051B11D000100000005 /* SumiChromeContracts in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD050B11D000100000012 /* SumiChromeContracts */; };
+		B11DD060B11D000100000005 /* SumiSidebarChrome in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD060B11D000100000011 /* SumiSidebarChrome */; };
+		B11DD061B11D000100000005 /* SumiSidebarChrome in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD060B11D000100000012 /* SumiSidebarChrome */; };
+		B11DD070B11D000100000005 /* SumiFloatingBarChrome in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD070B11D000100000011 /* SumiFloatingBarChrome */; };
+		B11DD071B11D000100000005 /* SumiFloatingBarChrome in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD070B11D000100000012 /* SumiFloatingBarChrome */; };
+		B11DD080B11D000100000005 /* SumiBrowserCore in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD080B11D000100000011 /* SumiBrowserCore */; };
+		B11DD081B11D000100000005 /* SumiBrowserCore in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD080B11D000100000012 /* SumiBrowserCore */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -67,17 +77,21 @@
 			);
 			target = 7F8340FB2E37F39400674A5D /* Sumi */;
 		};
-		2D0834D12EC8E0AD00C302AC /* Exceptions for "Navigation" folder in "Sumi" target */ = {
+		2D0834D12EC8E0AD00C302AC /* Exceptions for "SidebarChrome" folder in "Sumi" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Sidebar/SidebarBottomBar.swift,
 				Sidebar/SidebarHeader.swift,
 				Sidebar/SidebarMouseButtonCaptureSurface.swift,
 				Sidebar/SidebarSwipeCaptureSurface.swift,
+				Sidebar/SpaceSidebarChromeBindings.swift,
+				Sidebar/SpaceSidebarPageChrome.swift,
 				Sidebar/SpaceSidebarRenderPolicy.swift,
+				Sidebar/SpaceSidebarShellActions.swift,
 				Sidebar/SpaceSidebarSnapshots.swift,
 				Sidebar/SpaceSidebarSnapshotViews.swift,
 				Sidebar/SpaceSidebarTransitionCoordinator.swift,
+				Sidebar/SpaceSidebarTransitionLayers.swift,
 				Sidebar/SpaceSidebarTransitionState.swift,
 				Sidebar/SpacesList/SpaceStripLayout.swift,
 				Sidebar/SpacesList/SpacesList.swift,
@@ -127,12 +141,12 @@
 			path = Settings;
 			sourceTree = "<group>";
 		};
-		2D0834CF2EC8E0AD00C302AC /* Navigation */ = {
+		2D0834CF2EC8E0AD00C302AC /* SidebarChrome */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				2D0834D12EC8E0AD00C302AC /* Exceptions for "Navigation" folder in "Sumi" target */,
+				2D0834D12EC8E0AD00C302AC /* Exceptions for "SidebarChrome" folder in "Sumi" target */,
 			);
-			path = Navigation;
+			path = SidebarChrome;
 			sourceTree = "<group>";
 		};
 		564997D02E9B125200D89F78 /* UI */ = {
@@ -149,6 +163,11 @@
 			files = (
 				B11DD021B11D000100000005 /* SumiDomain in Frameworks */,
 				B11DD031B11D000100000005 /* SumiWebRuntime in Frameworks */,
+				B11DD041B11D000100000005 /* SumiChromeTokens in Frameworks */,
+				B11DD051B11D000100000005 /* SumiChromeContracts in Frameworks */,
+				B11DD061B11D000100000005 /* SumiSidebarChrome in Frameworks */,
+				B11DD071B11D000100000005 /* SumiFloatingBarChrome in Frameworks */,
+				B11DD081B11D000100000005 /* SumiBrowserCore in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -166,6 +185,11 @@
 				A11DD020B11D000100000005 /* Navigation in Frameworks */,
 				B11DD020B11D000100000005 /* SumiDomain in Frameworks */,
 				B11DD030B11D000100000005 /* SumiWebRuntime in Frameworks */,
+				B11DD040B11D000100000005 /* SumiChromeTokens in Frameworks */,
+				B11DD050B11D000100000005 /* SumiChromeContracts in Frameworks */,
+				B11DD060B11D000100000005 /* SumiSidebarChrome in Frameworks */,
+				B11DD070B11D000100000005 /* SumiFloatingBarChrome in Frameworks */,
+				B11DD080B11D000100000005 /* SumiBrowserCore in Frameworks */,
 				3ABB06E087FC4AB7B21B2B6B /* Sparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -179,7 +203,7 @@
 				2C8925322E88DFF9002236DC /* SumiTests */,
 				2C8925332E88DFF9002236DC /* SumiUITests */,
 				2D0834C72EC8D90400C302AC /* Settings */,
-				2D0834CF2EC8E0AD00C302AC /* Navigation */,
+				2D0834CF2EC8E0AD00C302AC /* SidebarChrome */,
 				2D0834BE2EC8CE0C00C302AC /* FloatingBar */,
 				7F8340FD2E37F39400674A5D /* Products */,
 				564997D02E9B125200D89F78 /* UI */,
@@ -242,6 +266,11 @@
 			packageProductDependencies = (
 				A11DD020B11D000100000012 /* SumiDomain */,
 				A11DD030B11D000100000012 /* SumiWebRuntime */,
+				A11DD040B11D000100000012 /* SumiChromeTokens */,
+				A11DD050B11D000100000012 /* SumiChromeContracts */,
+				A11DD060B11D000100000012 /* SumiSidebarChrome */,
+				A11DD070B11D000100000012 /* SumiFloatingBarChrome */,
+				A11DD080B11D000100000012 /* SumiBrowserCore */,
 			);
 			productName = SumiTests;
 			productReference = 2C89252E2E88DFF9002236DC /* SumiTests.xctest */;
@@ -270,6 +299,11 @@
 				A11DD010B11D000100000005 /* Navigation */,
 				A11DD020B11D000100000011 /* SumiDomain */,
 				A11DD030B11D000100000011 /* SumiWebRuntime */,
+				A11DD040B11D000100000011 /* SumiChromeTokens */,
+				A11DD050B11D000100000011 /* SumiChromeContracts */,
+				A11DD060B11D000100000011 /* SumiSidebarChrome */,
+				A11DD070B11D000100000011 /* SumiFloatingBarChrome */,
+				A11DD080B11D000100000011 /* SumiBrowserCore */,
 				3E692AE1701C49119B0EB052 /* Sparkle */,
 			);
 			productName = Sumi;
@@ -312,6 +346,11 @@
 				A11DD000B11D000100000001 /* XCLocalSwiftPackageReference "Vendor/DDG/BrowserServicesKit" */,
 				A11DD020B11D000100000010 /* XCLocalSwiftPackageReference "Packages/SumiDomain" */,
 				A11DD030B11D000100000010 /* XCLocalSwiftPackageReference "Packages/SumiWebRuntime" */,
+				A11DD040B11D000100000010 /* XCLocalSwiftPackageReference "Packages/SumiChromeTokens" */,
+				A11DD050B11D000100000010 /* XCLocalSwiftPackageReference "Packages/SumiChromeContracts" */,
+				A11DD060B11D000100000010 /* XCLocalSwiftPackageReference "Packages/SumiSidebarChrome" */,
+				A11DD070B11D000100000010 /* XCLocalSwiftPackageReference "Packages/SumiFloatingBarChrome" */,
+				A11DD080B11D000100000010 /* XCLocalSwiftPackageReference "Packages/SumiBrowserCore" */,
 				9AD90DB4528040A5950C146D /* XCRemoteSwiftPackageReference "Sparkle" */,
 			);
 			preferredProjectObjectVersion = 77;
@@ -762,6 +801,26 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Packages/SumiWebRuntime;
 		};
+		A11DD040B11D000100000010 /* XCLocalSwiftPackageReference "Packages/SumiChromeTokens" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/SumiChromeTokens;
+		};
+		A11DD050B11D000100000010 /* XCLocalSwiftPackageReference "Packages/SumiChromeContracts" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/SumiChromeContracts;
+		};
+		A11DD060B11D000100000010 /* XCLocalSwiftPackageReference "Packages/SumiSidebarChrome" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/SumiSidebarChrome;
+		};
+		A11DD070B11D000100000010 /* XCLocalSwiftPackageReference "Packages/SumiFloatingBarChrome" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/SumiFloatingBarChrome;
+		};
+		A11DD080B11D000100000010 /* XCLocalSwiftPackageReference "Packages/SumiBrowserCore" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/SumiBrowserCore;
+		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
@@ -805,6 +864,56 @@
 			isa = XCSwiftPackageProductDependency;
 			package = A11DD030B11D000100000010 /* XCLocalSwiftPackageReference "Packages/SumiWebRuntime" */;
 			productName = SumiWebRuntime;
+		};
+		A11DD040B11D000100000011 /* SumiChromeTokens */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A11DD040B11D000100000010 /* XCLocalSwiftPackageReference "Packages/SumiChromeTokens" */;
+			productName = SumiChromeTokens;
+		};
+		A11DD040B11D000100000012 /* SumiChromeTokens */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A11DD040B11D000100000010 /* XCLocalSwiftPackageReference "Packages/SumiChromeTokens" */;
+			productName = SumiChromeTokens;
+		};
+		A11DD050B11D000100000011 /* SumiChromeContracts */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A11DD050B11D000100000010 /* XCLocalSwiftPackageReference "Packages/SumiChromeContracts" */;
+			productName = SumiChromeContracts;
+		};
+		A11DD050B11D000100000012 /* SumiChromeContracts */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A11DD050B11D000100000010 /* XCLocalSwiftPackageReference "Packages/SumiChromeContracts" */;
+			productName = SumiChromeContracts;
+		};
+		A11DD060B11D000100000011 /* SumiSidebarChrome */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A11DD060B11D000100000010 /* XCLocalSwiftPackageReference "Packages/SumiSidebarChrome" */;
+			productName = SumiSidebarChrome;
+		};
+		A11DD060B11D000100000012 /* SumiSidebarChrome */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A11DD060B11D000100000010 /* XCLocalSwiftPackageReference "Packages/SumiSidebarChrome" */;
+			productName = SumiSidebarChrome;
+		};
+		A11DD070B11D000100000011 /* SumiFloatingBarChrome */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A11DD070B11D000100000010 /* XCLocalSwiftPackageReference "Packages/SumiFloatingBarChrome" */;
+			productName = SumiFloatingBarChrome;
+		};
+		A11DD070B11D000100000012 /* SumiFloatingBarChrome */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A11DD070B11D000100000010 /* XCLocalSwiftPackageReference "Packages/SumiFloatingBarChrome" */;
+			productName = SumiFloatingBarChrome;
+		};
+		A11DD080B11D000100000011 /* SumiBrowserCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A11DD080B11D000100000010 /* XCLocalSwiftPackageReference "Packages/SumiBrowserCore" */;
+			productName = SumiBrowserCore;
+		};
+		A11DD080B11D000100000012 /* SumiBrowserCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A11DD080B11D000100000010 /* XCLocalSwiftPackageReference "Packages/SumiBrowserCore" */;
+			productName = SumiBrowserCore;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

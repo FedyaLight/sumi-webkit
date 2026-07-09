@@ -4,6 +4,7 @@
 //
 //
 
+import SumiChromeTokens
 import SwiftUI
 
 enum FloatingBarMotionPolicy {
@@ -53,7 +54,7 @@ struct FloatingBarSearchModeConfirmationView: View {
 
     var body: some View {
         let remainingOpacity = max(0, min(1, Double(1 - progress)))
-        RoundedRectangle(cornerRadius: 26, style: .continuous)
+        RoundedRectangle(cornerRadius: ChromeLayoutTokens.floatingBarCornerRadius, style: .continuous)
             .strokeBorder(confirmation.color.opacity(0.42 * remainingOpacity), lineWidth: 1.2)
             .padding(0.5)
             .id(confirmation.id)

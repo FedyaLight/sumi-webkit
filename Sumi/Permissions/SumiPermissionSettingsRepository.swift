@@ -1,5 +1,6 @@
 import Foundation
 import WebKit
+import SumiDomain
 
 /// Facade for the site settings surface. Composes the cleanup settings
 /// owner, permission record aggregator, presentation builder, and decision

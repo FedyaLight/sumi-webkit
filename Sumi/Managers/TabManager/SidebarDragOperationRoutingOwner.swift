@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 /// Owns sidebar drag operation routing: validates an incoming drag against
 /// its declared scope, plans it, and dispatches execution to the folder,

@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 @MainActor
 final class TabShortcutPresentationOwner {
@@ -37,7 +38,7 @@ final class TabShortcutPresentationOwner {
                 tabManager?.transientTabRegistryOwner.transientShortcutTabsByWindow ?? [:]
             },
             windowState: { [weak tabManager] windowId in
-                tabManager?.runtimeContext?.windowState(for: windowId)
+                tabManager?.runtimePorts?.windowState(for: windowId)
             },
             shortcutPin: { [weak tabManager] pinId in
                 tabManager?.shortcutPinCollectionStateOwner.shortcutPin(by: pinId)

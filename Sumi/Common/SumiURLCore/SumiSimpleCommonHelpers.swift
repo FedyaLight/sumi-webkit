@@ -1,5 +1,6 @@
 import Foundation
 import os.log
+import SumiDomain
 
 struct SumiNavigationalScheme: RawRepresentable, Hashable, Sendable {
     let rawValue: String

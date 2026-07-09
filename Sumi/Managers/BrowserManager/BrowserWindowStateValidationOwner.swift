@@ -47,7 +47,7 @@ final class BrowserWindowStateValidationOwner {
                 browserManager?.syncShortcutSelectionState(for: windowState)
             },
             commitWorkspaceTheme: { [weak browserManager] theme, windowState in
-                browserManager?.workspaceThemeTransitionOwner.commitWorkspaceTheme(theme, for: windowState)
+                browserManager?.chromeBundle.workspaceThemeTransitionOwner.commitWorkspaceTheme(theme, for: windowState)
             },
             applyTabSelection: { [weak browserManager] tab, windowState, updateSpaceFromTab, updateTheme, rememberSelection, persistSelection in
                 browserManager?.applyTabSelection(
@@ -63,10 +63,10 @@ final class BrowserWindowStateValidationOwner {
                 browserManager?.showEmptyState(in: windowState)
             },
             persistWindowSession: { [weak browserManager] windowState in
-                browserManager?.windowSessionActivationOwner.persistWindowSession(for: windowState)
+                browserManager?.windowSessionBundle.activationOwner.persistWindowSession(for: windowState)
             },
             refreshCompositor: { [weak browserManager] windowState in
-                browserManager?.windowVisualMutationOwner.refreshCompositor(for: windowState)
+                browserManager?.windowSessionBundle.visualMutationOwner.refreshCompositor(for: windowState)
             }
         )
     }

@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 enum SumiAutoplayDecisionMapper {
     static let metadataKey = "autoplayPolicy"

@@ -1,4 +1,5 @@
 import SwiftUI
+import SumiDomain
 
 enum SumiPermissionRuntimeControlsThemeTokens {
     enum Typography {

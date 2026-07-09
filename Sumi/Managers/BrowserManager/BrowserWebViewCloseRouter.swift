@@ -82,7 +82,7 @@ final class BrowserWebViewCloseRouter {
                         browserManager?.windowRegistry?.windows[windowID]
                     },
                     windowContaining: { [weak browserManager] tab in
-                        browserManager?.windowTabContextOwner.windowState(containing: tab)
+                        browserManager?.windowSessionBundle.tabContextOwner.windowState(containing: tab)
                     },
                     ownsLiveWebView: { [weak browserManager] webView, tab in
                         browserManager?.webViewRoutingService.ownsLiveWebView(webView, for: tab) ?? false

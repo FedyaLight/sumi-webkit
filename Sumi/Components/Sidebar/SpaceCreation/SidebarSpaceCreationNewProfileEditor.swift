@@ -1,4 +1,5 @@
 import SwiftUI
+import SumiDomain
 
 struct SidebarSpaceCreationNewProfileEditor: View {
     @ObservedObject var session: SpaceCreationSession

@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import SumiBrowserCore
 
 @MainActor
 final class BrowserManagerInitializationWiringOwner {
@@ -10,13 +11,16 @@ final class BrowserManagerInitializationWiringOwner {
     private let handleTabManagerDataLoaded: @MainActor () -> Void
     private let scheduleBrowsingDataRetentionCleanup: @MainActor () -> Void
     private let beginProtectionRestoreForStartupIfNeeded: @MainActor () -> Void
+    private let tabStructureEventBus: TabStructureEventBus?
     private var structuralChangeCancellable: AnyCancellable?
+    private var initialDataLoadedCancellable: AnyCancellable?
     private var tabManagerLoadObserverToken: NSObjectProtocol?
     private var browsingDataRetentionObserverToken: NSObjectProtocol?
 
     init(
         notificationCenter: NotificationCenter = .default,
         notificationQueue: OperationQueue? = .main,
+        tabStructureEventBus: TabStructureEventBus? = nil,
         attachShellRuntime: @escaping @MainActor () -> Void,
         attachRuntimeWiring: @escaping @MainActor () -> AnyCancellable,
         handleTabManagerDataLoaded: @escaping @MainActor () -> Void,
@@ -25,6 +29,7 @@ final class BrowserManagerInitializationWiringOwner {
     ) {
         self.notificationCenter = notificationCenter
         self.notificationQueue = notificationQueue
+        self.tabStructureEventBus = tabStructureEventBus
         self.attachShellRuntime = attachShellRuntime
         self.attachRuntimeWiring = attachRuntimeWiring
         self.handleTabManagerDataLoaded = handleTabManagerDataLoaded
@@ -42,13 +47,21 @@ final class BrowserManagerInitializationWiringOwner {
         attachShellRuntime()
         structuralChangeCancellable = attachRuntimeWiring()
 
-        tabManagerLoadObserverToken = notificationCenter.addObserver(
-            forName: .tabManagerDidLoadInitialData,
-            object: nil,
-            queue: notificationQueue
-        ) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.handleTabManagerDataLoaded()
+        if let tabStructureEventBus {
+            initialDataLoadedCancellable = tabStructureEventBus.initialDataLoadedPublisher
+                .receive(on: RunLoop.main)
+                .sink { [weak self] in
+                    self?.handleTabManagerDataLoaded()
+                }
+        } else {
+            tabManagerLoadObserverToken = notificationCenter.addObserver(
+                forName: .tabManagerDidLoadInitialData,
+                object: nil,
+                queue: notificationQueue
+            ) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.handleTabManagerDataLoaded()
+                }
             }
         }
 
@@ -68,6 +81,8 @@ final class BrowserManagerInitializationWiringOwner {
     func cancel() {
         structuralChangeCancellable?.cancel()
         structuralChangeCancellable = nil
+        initialDataLoadedCancellable?.cancel()
+        initialDataLoadedCancellable = nil
 
         if let token = tabManagerLoadObserverToken {
             notificationCenter.removeObserver(token)

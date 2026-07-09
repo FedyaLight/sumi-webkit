@@ -5,6 +5,7 @@
 //
 
 import SwiftUI
+import SumiDomain
 
 struct PrivacySettingsView: View {
     @Environment(\.sumiSettings) private var sumiSettings

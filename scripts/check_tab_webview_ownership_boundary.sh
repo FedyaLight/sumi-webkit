@@ -16,7 +16,7 @@ cd "$repo_root"
 # - Coordinator must not fall back to Tab accessors; promoteLocalSessionIfNeeded bridges pre-attach.
 #
 # Allowlist: Tab internals + WebViewCoordinator (+ BrowserWebViewRoutingService for façade).
-scan_roots=(App Sumi Navigation FloatingBar Settings UI)
+scan_roots=(App Sumi SidebarChrome FloatingBar Settings UI)
 allow_prefixes=(
   "Sumi/Models/Tab/"
   "Sumi/Managers/WebViewCoordinator/"

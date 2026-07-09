@@ -1,16 +1,22 @@
 import Combine
 import Foundation
 import OSLog
+import SumiBrowserCore
 
 @MainActor
 final class TabStructuralPublishOwner {
     private let structuralChanges: PassthroughSubject<Void, Never>
+    private weak var eventBus: TabStructureEventBus?
     private var structuralUpdateDepth = 0
     private var pendingStructuralPublish = false
     private var structuralTransactionSignpostState: OSSignpostIntervalState?
 
-    init(structuralChanges: PassthroughSubject<Void, Never>) {
+    init(
+        structuralChanges: PassthroughSubject<Void, Never>,
+        eventBus: TabStructureEventBus? = nil
+    ) {
         self.structuralChanges = structuralChanges
+        self.eventBus = eventBus
     }
 
     var isBatching: Bool {
@@ -36,7 +42,12 @@ final class TabStructuralPublishOwner {
         }
 
         PerformanceTrace.emitEvent("TabManager.structuralPublish.immediate")
+        emitStructureChanged()
+    }
+
+    private func emitStructureChanged() {
         structuralChanges.send()
+        eventBus?.publishStructureChanged()
     }
 
     private func begin() {
@@ -60,7 +71,7 @@ final class TabStructuralPublishOwner {
         }
         if shouldPublish {
             PerformanceTrace.emitEvent("TabManager.structuralPublish.coalesced")
-            structuralChanges.send()
+            emitStructureChanged()
         }
     }
 }

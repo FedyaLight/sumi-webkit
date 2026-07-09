@@ -1,5 +1,6 @@
 import Foundation
 import WebKit
+import SumiDomain
 
 private enum WindowScopedConfigPreparation {
     case ready

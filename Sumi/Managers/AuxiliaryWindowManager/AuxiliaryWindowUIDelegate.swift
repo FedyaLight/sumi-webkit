@@ -5,6 +5,7 @@
 
 import AppKit
 import WebKit
+import SumiDomain
 
 @MainActor
 final class AuxiliaryWindowUIDelegate: NSObject, WKUIDelegate {

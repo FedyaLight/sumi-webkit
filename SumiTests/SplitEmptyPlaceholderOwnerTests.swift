@@ -18,7 +18,7 @@ final class SplitEmptyPlaceholderOwnerTests: XCTestCase {
     private func makeHarness() throws -> Harness {
         let container = try makeInMemoryStartupModelContainer()
         let tabManager = TabManager(context: container.mainContext, loadPersistedState: false)
-        tabManager.runtimeContextAttachmentOwner.attach(TabManagerRuntimeContext())
+        tabManager.runtimePortsAttachmentOwner.attach(TestRuntimePorts.inactive)
         let windowState = BrowserWindowState()
         windowState.tabManager = tabManager
 

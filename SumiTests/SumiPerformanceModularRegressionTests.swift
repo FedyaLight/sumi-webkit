@@ -100,6 +100,58 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         XCTAssertFalse(userscriptsModule.hasLoadedRuntime)
         XCTAssertFalse(extensionsModule.hasLoadedRuntime)
         XCTAssertFalse(browserManager.boostsModule.hasLoadedRuntime)
+        // W4/R9: disabled modules must not receive attach(runtime:) at wiring time.
+        XCTAssertFalse(extensionsModule.hasAttachedRuntime)
+        XCTAssertFalse(userscriptsModule.hasAttachedRuntime)
+        XCTAssertFalse(browserManager.boostsModule.hasAttachedRuntime)
+        XCTAssertFalse(browserManager.liveFoldersModule.hasAttachedRuntime)
+        XCTAssertFalse(browserManager.liveFolderManager.hasAttachedRuntime)
+    }
+
+    func testEnablingOptionalModuleAfterStartupAttachesRuntime() throws {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        let userscriptsModule = makeUserscriptsModule(
+            registry: registry,
+            probe: UserscriptsRuntimeProbe()
+        )
+        let extensionsModule = try makeExtensionsModule(
+            registry: registry,
+            probe: ExtensionsRuntimeProbe()
+        )
+        let browserManager = BrowserManager(
+            moduleRegistry: registry,
+            extensionsModule: extensionsModule,
+            userscriptsModule: userscriptsModule
+        )
+
+        XCTAssertFalse(browserManager.boostsModule.hasAttachedRuntime)
+        XCTAssertFalse(userscriptsModule.hasAttachedRuntime)
+        XCTAssertFalse(extensionsModule.hasAttachedRuntime)
+
+        browserManager.boostsModule.setEnabled(true)
+        XCTAssertTrue(browserManager.boostsModule.hasAttachedRuntime)
+
+        userscriptsModule.setEnabled(true)
+        XCTAssertTrue(userscriptsModule.hasAttachedRuntime)
+
+        extensionsModule.setEnabled(true)
+        XCTAssertTrue(extensionsModule.hasAttachedRuntime)
+        XCTAssertFalse(extensionsModule.hasLoadedRuntime)
+
+        browserManager.boostsModule.setEnabled(false)
+        XCTAssertFalse(browserManager.boostsModule.hasAttachedRuntime)
+
+        userscriptsModule.setEnabled(false)
+        XCTAssertFalse(userscriptsModule.hasAttachedRuntime)
+        XCTAssertFalse(userscriptsModule.hasLoadedRuntime)
+
+        extensionsModule.setEnabled(false)
+        XCTAssertFalse(extensionsModule.hasAttachedRuntime)
+        XCTAssertFalse(extensionsModule.hasLoadedRuntime)
     }
 
     func testYouTubeFaviconSelectionPrefersSharpDocumentCandidateOverTinyShortcutIcon() throws {

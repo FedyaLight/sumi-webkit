@@ -1,4 +1,5 @@
 import SwiftUI
+import SumiDomain
 
 struct SumiSiteSettingsNavigationRow: View {
     let title: String

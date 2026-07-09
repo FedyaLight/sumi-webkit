@@ -1,5 +1,6 @@
 import SwiftUI
 import WebKit
+import SumiDomain
 
 @MainActor
 final class BrowserURLBarContextOwner {
@@ -59,7 +60,7 @@ final class BrowserURLBarContextOwner {
         let extensionsModule = browserManager.extensionsModule
         let userscriptsModule = browserManager.userscriptsModule
         let protectionCoordinator = browserManager.protectionCoordinator
-        let urlBarHubPopoverPresenter = browserManager.chromeCommands.urlBarHubPopoverPresenter
+        let urlBarHubPopoverPresenter = browserManager.chromeBundle.commands.urlBarHubPopoverPresenter
         let webViewRoutingService = browserManager.webViewRoutingService
         let zoomManager = browserManager.zoomManager
         let permissionContextOwner = BrowserURLBarPermissionContextOwner(
@@ -67,7 +68,7 @@ final class BrowserURLBarContextOwner {
         )
         let navigationToolbarContextOwner = BrowserNavigationToolbarContextOwner(
             currentTab: { [weak browserManager] windowState in
-                browserManager?.windowTabContextOwner.currentTab(for: windowState)
+                browserManager?.windowSessionBundle.tabContextOwner.currentTab(for: windowState)
             },
             webView: { tab, windowState in
                 webViewRoutingService.windowOwnedWebView(for: tab, in: windowState.id)
@@ -79,7 +80,7 @@ final class BrowserURLBarContextOwner {
                 dataServices.faviconImageService
             },
             openURLInCurrentTab: { [weak browserManager] url, windowState in
-                browserManager?.historyNavigationOwner.openHistoryURL(
+                browserManager?.historyBundle.historyNavigationOwner.openHistoryURL(
                     url,
                     in: windowState,
                     preferredOpenMode: .currentTab
@@ -89,16 +90,16 @@ final class BrowserURLBarContextOwner {
                 browserManager?.tabLifecycleService.opening.openNewTab(url: urlString, context: context)
             },
             openHistoryURLsInNewWindow: { [weak browserManager] urls in
-                browserManager?.historyNavigationOwner.openHistoryURLsInNewWindow(urls)
+                browserManager?.historyBundle.historyNavigationOwner.openHistoryURLsInNewWindow(urls)
             },
             goBack: { [weak browserManager] windowState in
-                browserManager?.historyNavigationOwner.goBack(in: windowState)
+                browserManager?.historyBundle.historyNavigationOwner.goBack(in: windowState)
             },
             goForward: { [weak browserManager] windowState in
-                browserManager?.historyNavigationOwner.goForward(in: windowState)
+                browserManager?.historyBundle.historyNavigationOwner.goForward(in: windowState)
             },
             reload: { [weak browserManager] tab, windowState in
-                browserManager?.windowScopedNavigationOwner.refreshWindowScopedPage(
+                browserManager?.windowSessionBundle.scopedNavigationOwner.refreshWindowScopedPage(
                     tab: tab,
                     in: windowState,
                     reason: "NavigationToolbar.reload"
@@ -143,27 +144,27 @@ final class BrowserURLBarContextOwner {
             hubPresentation: HubPresentationCapabilities(
                 hubPopoverPresenter: urlBarHubPopoverPresenter,
                 closeURLBarHubPopover: { [weak browserManager] windowState in
-                    browserManager?.chromeCommands.urlBarHubPopoverPresenter.close(in: windowState)
+                    browserManager?.chromeBundle.commands.urlBarHubPopoverPresenter.close(in: windowState)
                 },
                 presentURLBarHubPopover: { [weak browserManager] windowState, context in
-                    browserManager?.chromeCommands.urlBarHubPopoverPresenter.present(
+                    browserManager?.chromeBundle.commands.urlBarHubPopoverPresenter.present(
                         in: windowState,
                         browserContext: context
                     )
                 },
                 toggleURLBarHubPopover: { [weak browserManager] windowState, context in
-                    browserManager?.chromeCommands.urlBarHubPopoverPresenter.toggle(
+                    browserManager?.chromeBundle.commands.urlBarHubPopoverPresenter.toggle(
                         in: windowState,
                         browserContext: context
                     )
                 },
                 isURLBarHubPopoverPresented: { [weak browserManager] windowState in
-                    browserManager?.chromeCommands.urlBarHubPopoverPresenter.isPresented(in: windowState) ?? false
+                    browserManager?.chromeBundle.commands.urlBarHubPopoverPresenter.isPresented(in: windowState) ?? false
                 }
             ),
             pageChrome: PageChromeCapabilities(
                 currentTab: { [weak browserManager] windowState in
-                    browserManager?.windowTabContextOwner.currentTab(for: windowState)
+                    browserManager?.windowSessionBundle.tabContextOwner.currentTab(for: windowState)
                 },
                 tabForID: { [weak browserManager] tabId in
                     browserManager?.tabManager.tabCollectionMembershipOwner.tab(for: tabId)
@@ -179,7 +180,7 @@ final class BrowserURLBarContextOwner {
                 },
                 siteControlsSnapshot: siteControlsSnapshot,
                 focusFloatingBar: { [weak browserManager] windowState, prefill, navigateCurrentTab in
-                    browserManager?.floatingBarRoutingOwner.focusFloatingBar(
+                    browserManager?.urlBarBundle.floatingBarRoutingOwner.focusFloatingBar(
                         in: windowState,
                         prefill: prefill,
                         navigateCurrentTab: navigateCurrentTab,
@@ -187,17 +188,17 @@ final class BrowserURLBarContextOwner {
                     )
                 },
                 reloadPage: { [weak browserManager] tab, windowState, reason in
-                    browserManager?.windowScopedNavigationOwner.refreshWindowScopedPage(
+                    browserManager?.windowSessionBundle.scopedNavigationOwner.refreshWindowScopedPage(
                         tab: tab,
                         in: windowState,
                         reason: reason
                     )
                 },
                 copyURLToClipboard: { [weak browserManager] urlString, windowState in
-                    _ = browserManager?.urlBarCommands.copyURLToPasteboard(urlString, in: windowState)
+                    _ = browserManager?.urlBarBundle.commands.copyURLToPasteboard(urlString, in: windowState)
                 },
                 toggleSidebar: { [weak browserManager] windowState in
-                    browserManager?.sidebarPresentationOwner.toggleSidebar(for: windowState)
+                    browserManager?.chromeBundle.sidebarPresentationOwner.toggleSidebar(for: windowState)
                 },
                 bookmarkEditorPresentationRequest: { [weak browserManager] in
                     browserManager?.bookmarkEditorPresentationRequest
@@ -268,13 +269,13 @@ final class BrowserURLBarContextOwner {
             manager: zoomManager,
             stateRevision: browserManager?.zoomStateRevision ?? 0,
             resetCurrentTab: { [weak browserManager] windowState in
-                browserManager?.zoomCommandOwner.resetZoomCurrentTab(in: windowState)
+                browserManager?.chromeBundle.zoomCommandOwner.resetZoomCurrentTab(in: windowState)
             },
             zoomOutCurrentTab: { [weak browserManager] windowState in
-                browserManager?.zoomCommandOwner.zoomOutCurrentTab(in: windowState)
+                browserManager?.chromeBundle.zoomCommandOwner.zoomOutCurrentTab(in: windowState)
             },
             zoomInCurrentTab: { [weak browserManager] windowState in
-                browserManager?.zoomCommandOwner.zoomInCurrentTab(in: windowState)
+                browserManager?.chromeBundle.zoomCommandOwner.zoomInCurrentTab(in: windowState)
             }
         )
     }

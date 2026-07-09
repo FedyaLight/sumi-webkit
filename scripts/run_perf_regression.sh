@@ -23,6 +23,7 @@ OPTIMIZED_STACK_TESTS=(
   "-only-testing:SumiTests/SumiNormalTabUserContentControllerParityTests/testCleanupIsIdempotentAndPreventsLaterScriptReplacement"
   "-only-testing:SumiTests/SumiPerformanceModularRegressionTests/testPrompt22MemorySaverRegressionGates"
   "-only-testing:SumiTests/SumiPerformanceModularRegressionTests/testBrowserManagerStartupAndSettingsSurfacesDoNotConstructDisabledRuntimes"
+  "-only-testing:SumiTests/SumiPerformanceModularRegressionTests/testEnablingOptionalModuleAfterStartupAttachesRuntime"
   "-only-testing:SumiTests/SumiPerformanceModularRegressionTests/testDefaultNormalTabAttachesOnlyCoreRuntimeAndNoOptionalModuleAssets"
 )
 

@@ -48,6 +48,8 @@ final class SumiExtensionsModule {
     private var cachedManager: ExtensionManager?
     private var pendingActionAnchors: [String: [WeakAnchor]] = [:]
     private var runtime = SumiExtensionsModuleRuntime.inactive
+    private var runtimeProvider: (@MainActor () -> SumiExtensionsModuleRuntime)?
+    private(set) var hasAttachedRuntime = false
 
     // Phase 5B collaborators — module remains the public façade.
     private lazy var contentBlockerAPI: SumiSafariContentBlockerAPIOwner = {
@@ -117,8 +119,14 @@ final class SumiExtensionsModule {
         cachedManager != nil
     }
 
+    /// Stores a factory used when the module is enabled after BrowserManager wiring.
+    func bindRuntimeProvider(_ provider: @escaping @MainActor () -> SumiExtensionsModuleRuntime) {
+        runtimeProvider = provider
+    }
+
     func attach(runtime: SumiExtensionsModuleRuntime) {
         self.runtime = runtime
+        hasAttachedRuntime = true
         if let cachedManager {
             runtime.attachManager(cachedManager)
         }
@@ -132,10 +140,26 @@ final class SumiExtensionsModule {
             tearDownLoadedRuntime(reason: "SumiExtensionsModule.setEnabled(false)")
             contentBlockerAPI.clearRuntime()
             pendingActionAnchors.removeAll()
+            clearAttachedRuntime()
+        } else if wasEnabled == false {
+            // Bind runtime only; do not eagerly load ExtensionManager / action
+            // metadata — that stays on first real use (managerIfEnabled paths).
+            attachRuntimeFromProviderIfNeeded()
         }
         if wasEnabled != isEnabled {
             contentBlockerAPI.markReloadRequiredForLiveTabs()
         }
+    }
+
+    private func attachRuntimeFromProviderIfNeeded() {
+        guard hasAttachedRuntime == false, let runtimeProvider else { return }
+        runtime = runtimeProvider()
+        hasAttachedRuntime = true
+    }
+
+    private func clearAttachedRuntime() {
+        runtime = .inactive
+        hasAttachedRuntime = false
     }
 
     func managerIfLoadedAndEnabled() -> ExtensionManager? {

@@ -99,7 +99,7 @@ enum SidebarDropCoordinator {
             return false
         }
 
-        return browserManager.activePageRoutingOwner.openDroppedURL(
+        return browserManager.urlBarBundle.activePageRoutingOwner.openDroppedURL(
             droppedURL,
             in: windowState,
             at: resolution.slot

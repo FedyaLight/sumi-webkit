@@ -1,5 +1,6 @@
 @testable import Sumi
 import XCTest
+import SumiDomain
 
 final class SearchManagerURLNormalizationTests: XCTestCase {
     private let template = SearchProvider.google.queryTemplate

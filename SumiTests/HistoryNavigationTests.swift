@@ -9,7 +9,7 @@ final class HistoryNavigationTests: XCTestCase {
     func testOpenHistoryTabCreatesSelectedHistorySurface() {
         let (browserManager, _, windowState, space) = makeHarness()
 
-        browserManager.historyNavigationOwner.openHistoryTab(in: windowState)
+        browserManager.historyBundle.historyNavigationOwner.openHistoryTab(in: windowState)
 
         let historyTabs = browserManager.tabManager.regularTabCollectionOwner.tabs(in: space).filter(\.representsSumiHistorySurface)
         XCTAssertEqual(historyTabs.count, 1)
@@ -38,12 +38,12 @@ final class HistoryNavigationTests: XCTestCase {
     func testOpenHistoryTabReusesExistingHistorySurface() throws {
         let (browserManager, _, windowState, space) = makeHarness()
 
-        browserManager.historyNavigationOwner.openHistoryTab(in: windowState)
+        browserManager.historyBundle.historyNavigationOwner.openHistoryTab(in: windowState)
         let firstHistoryTab = try XCTUnwrap(
             browserManager.tabManager.regularTabCollectionOwner.tabs(in: space).first(where: \.representsSumiHistorySurface)
         )
 
-        browserManager.historyNavigationOwner.openHistoryTab(selecting: .older, in: windowState)
+        browserManager.historyBundle.historyNavigationOwner.openHistoryTab(selecting: .older, in: windowState)
 
         let historyTabs = browserManager.tabManager.regularTabCollectionOwner.tabs(in: space).filter(\.representsSumiHistorySurface)
         XCTAssertEqual(historyTabs.count, 1)

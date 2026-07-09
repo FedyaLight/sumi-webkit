@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 enum SumiPermissionIndicatorPriority: Int, Codable, CaseIterable, Comparable, Sendable {
     case activeScreenCapture = 10

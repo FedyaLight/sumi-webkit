@@ -5,6 +5,7 @@
 //
 
 import Foundation
+import SumiDomain
 
 struct WindowTabSelectionTargetState: Equatable {
     enum ShortcutMemoryUpdate: Equatable {

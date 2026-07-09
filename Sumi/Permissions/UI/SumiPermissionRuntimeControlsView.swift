@@ -1,4 +1,5 @@
 import SwiftUI
+import SumiDomain
 
 struct SumiPermissionRuntimeControlsView: View {
     @ObservedObject var model: SumiPermissionRuntimeControlsViewModel

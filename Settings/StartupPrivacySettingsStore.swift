@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import SumiDomain
 
 @MainActor
 @Observable

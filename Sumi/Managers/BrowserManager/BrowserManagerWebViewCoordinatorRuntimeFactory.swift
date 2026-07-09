@@ -1,5 +1,6 @@
 import Foundation
 import WebKit
+import SumiWebRuntime
 
 @MainActor
 enum BrowserWebViewRuntimeFactory {
@@ -28,12 +29,12 @@ enum BrowserWebViewRuntimeFactory {
             windowContaining: { [weak browserManager] tabHandle in
                 guard let tab = tabHandle.concreteTab else { return nil }
                 return requireBrowserManager(browserManager, operation: "resolve tab window")
-                    .windowTabContextOwner.windowState(containing: tab)
+                    .windowSessionBundle.tabContextOwner.windowState(containing: tab)
             },
             currentTab: { [weak browserManager] windowHandle in
                 guard let windowState = windowHandle.concreteWindowState else { return nil }
                 return requireBrowserManager(browserManager, operation: "resolve current tab")
-                    .windowTabContextOwner.currentTab(for: windowState)
+                    .windowSessionBundle.tabContextOwner.currentTab(for: windowState)
             },
             selectTab: { [weak browserManager] tabId, windowId in
                 let manager = requireBrowserManager(
@@ -59,7 +60,7 @@ enum BrowserWebViewRuntimeFactory {
                 guard let windowState = manager.windowRegistry?.windows[windowId] else {
                     return
                 }
-                manager.windowVisualMutationOwner.refreshCompositor(for: windowState)
+                manager.windowSessionBundle.visualMutationOwner.refreshCompositor(for: windowState)
             },
             notifyTabActivatedIfLoaded: { [weak browserManager] tabHandle in
                 guard let tab = tabHandle.concreteTab else { return }
@@ -98,7 +99,7 @@ enum BrowserWebViewRuntimeFactory {
                 guard let browserManager = browserManager,
                       let windowState = browserManager.windowRegistry?.windows[windowId]
                 else { return }
-                browserManager.windowVisualMutationOwner.refreshCompositor(for: windowState)
+                browserManager.windowSessionBundle.visualMutationOwner.refreshCompositor(for: windowState)
             }
         )
     }
@@ -129,7 +130,7 @@ enum BrowserWebViewRuntimeFactory {
             currentTabId: { [weak browserManager] windowHandle in
                 guard let windowState = windowHandle.concreteWindowState else { return nil }
                 return requireBrowserManager(browserManager, operation: "resolve visible current tab")
-                    .windowTabContextOwner.currentTab(for: windowState)?.id
+                    .windowSessionBundle.tabContextOwner.currentTab(for: windowState)?.id
             },
             splitVisibleTabIds: { [weak browserManager] windowId in
                 requireBrowserManager(browserManager, operation: "resolve split visible tabs")
@@ -174,7 +175,7 @@ enum BrowserWebViewRuntimeFactory {
                 guard let windowState = manager.windowRegistry?.windows[windowId] else {
                     return
                 }
-                manager.windowVisualMutationOwner.refreshCompositor(for: windowState)
+                manager.windowSessionBundle.visualMutationOwner.refreshCompositor(for: windowState)
             }
         )
     }

@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 enum SumiPermissionRuntimeControlResult: Equatable, Sendable {
     case applied(message: String)

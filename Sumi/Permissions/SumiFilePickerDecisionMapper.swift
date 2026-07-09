@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 enum SumiFilePickerPermissionAction: Equatable, Sendable {
     case presentPanel

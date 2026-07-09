@@ -1,4 +1,5 @@
 import SwiftData
+import SumiDomain
 
 @MainActor
 final class BrowserManagerPermissionRuntime {

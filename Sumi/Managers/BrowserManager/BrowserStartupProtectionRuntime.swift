@@ -60,10 +60,10 @@ final class BrowserStartupProtectionRuntime {
                 browserManager?.tabLifecycleService.opening.prepareBackgroundTabIfNeeded(tab, in: nil)
             },
             schedulePrepareVisibleWebViews: { [weak browserManager] windowState in
-                browserManager?.windowVisualMutationOwner.schedulePrepareVisibleWebViews(for: windowState)
+                browserManager?.windowSessionBundle.visualMutationOwner.schedulePrepareVisibleWebViews(for: windowState)
             },
             refreshCompositor: { [weak browserManager] windowState in
-                browserManager?.windowVisualMutationOwner.refreshCompositor(for: windowState)
+                browserManager?.windowSessionBundle.visualMutationOwner.refreshCompositor(for: windowState)
             }
         )
     }

@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 struct SumiArcImportResult {
     var data: SumiPortableData

@@ -6,6 +6,7 @@
 
 import AppKit
 import SwiftUI
+import SumiDomain
 
 struct ShortcutRecorderView: View {
     let keyCombination: KeyCombination?

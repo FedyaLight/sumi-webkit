@@ -137,7 +137,7 @@ enum WindowSessionRuntimeFactory {
             glanceManager: browserManager.glanceManager,
             shellSelectionService: browserManager.shellSelectionService,
             hasValidCurrentSelection: { [weak browserManager] windowState in
-                browserManager?.windowSpaceStateOwner.hasValidCurrentSelection(in: windowState) ?? false
+                browserManager?.windowSessionBundle.spaceStateOwner.hasValidCurrentSelection(in: windowState) ?? false
             },
             applyTabSelection: { [weak browserManager] tab, windowState, updateSpaceFromTab, updateTheme, rememberSelection, persistSelection in
                 browserManager?.applyTabSelection(
@@ -153,22 +153,22 @@ enum WindowSessionRuntimeFactory {
                 browserManager?.showEmptyState(in: windowState)
             },
             sanitizeFloatingBarState: { [weak browserManager] windowState in
-                browserManager?.floatingBarRoutingOwner.sanitizeFloatingBarState(in: windowState)
+                browserManager?.urlBarBundle.floatingBarRoutingOwner.sanitizeFloatingBarState(in: windowState)
             },
             syncShortcutSelectionState: { [weak browserManager] windowState in
                 browserManager?.syncShortcutSelectionState(for: windowState)
             },
             commitWorkspaceTheme: { [weak browserManager] theme, windowState in
-                browserManager?.workspaceThemeTransitionOwner.commitWorkspaceTheme(
+                browserManager?.chromeBundle.workspaceThemeTransitionOwner.commitWorkspaceTheme(
                     theme,
                     for: windowState
                 )
             },
             space: { [weak browserManager] spaceId in
-                browserManager?.windowSpaceStateOwner.space(for: spaceId)
+                browserManager?.windowSessionBundle.spaceStateOwner.space(for: spaceId)
             },
             syncSidebarPresentationState: { [weak browserManager] windowState in
-                browserManager?.sidebarPresentationOwner.syncFromWindow( windowState)
+                browserManager?.chromeBundle.sidebarPresentationOwner.syncFromWindow( windowState)
             },
             focusSplitGroup: { [weak browserManager] group, windowState in
                 browserManager?.sidebarCommandService.splitShortcutRouting.focusSplitGroup(

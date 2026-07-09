@@ -38,7 +38,7 @@ final class BrowserHistoryMenuOwner {
     convenience init(browserManager: BrowserManager) {
         self.init(
             requestCollapsedSidebarOverlayDismissal: { [weak browserManager] in
-                browserManager?.nativeDialogPresentationOwner.requestCollapsedSidebarOverlayDismissal()
+                browserManager?.chromeBundle.nativeDialogPresentationOwner.requestCollapsedSidebarOverlayDismissal()
             },
             confirmClearAllHistory: { [weak browserManager] in
                 let alert = NSAlert()
@@ -62,7 +62,7 @@ final class BrowserHistoryMenuOwner {
                 browserManager?.windowRegistry.map { Set($0.windows.keys) } ?? []
             },
             createNewWindow: { [weak browserManager] in
-                browserManager?.windowSessionCommands.createNewWindow()
+                browserManager?.windowSessionBundle.commands.createNewWindow()
             },
             awaitNextRegisteredWindow: { [weak browserManager] existingWindowIds in
                 await browserManager?.windowRegistry?.awaitNextRegisteredWindow(

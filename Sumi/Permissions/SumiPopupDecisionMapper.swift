@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 enum SumiPopupPermissionAction: Equatable, Sendable {
     case allow

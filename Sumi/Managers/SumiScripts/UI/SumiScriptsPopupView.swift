@@ -14,6 +14,7 @@
 import AppKit
 import SwiftUI
 import WebKit
+import SumiDomain
 
 @MainActor
 struct SumiScriptsPopupView: View {

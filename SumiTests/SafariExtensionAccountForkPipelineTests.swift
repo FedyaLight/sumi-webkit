@@ -534,7 +534,7 @@ final class SafariExtensionAccountForkPipelineTests: XCTestCase {
         for _ in 0..<100 {
             let allTabs = harness.browserManager.tabManager.tabCollectionMembershipOwner.allTabs()
                 + harness.browserManager.tabManager.shortcutPresentationOwner.activeEssentialTabs(
-                    for: harness.browserManager.tabManager.runtimeContext?.currentProfileId
+                    for: harness.browserManager.tabManager.runtimePorts?.currentProfileId
                 )
             if let match = allTabs.first(where: {
                 $0.url.absoluteString == accountURL.absoluteString

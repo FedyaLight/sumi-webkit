@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import SumiDomain
 
 struct TabRestoreSpaceDTO: Sendable {
     let id: UUID

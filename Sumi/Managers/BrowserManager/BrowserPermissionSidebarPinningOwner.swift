@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 final class BrowserPermissionSidebarPinningOwner {
     private let permissionStateSnapshot: @MainActor () async -> SumiPermissionCoordinatorState

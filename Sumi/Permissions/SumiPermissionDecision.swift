@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 struct SumiPermissionDecision: Codable, Equatable, Hashable, Sendable {
     var state: SumiPermissionState

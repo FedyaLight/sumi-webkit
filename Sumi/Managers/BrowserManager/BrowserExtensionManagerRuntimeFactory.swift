@@ -29,7 +29,7 @@ enum BrowserExtensionManagerRuntimeFactory {
                 browserManager?.windowRegistry?.allWindows ?? []
             },
             windowStateContainingTab: { [weak browserManager] tab in
-                browserManager?.windowTabContextOwner.windowState(containing: tab)
+                browserManager?.windowSessionBundle.tabContextOwner.windowState(containing: tab)
             },
             windowOwnedWebView: { [weak browserManager] tab, windowId in
                 browserManager?.webViewRoutingService.windowOwnedWebView(for: tab, in: windowId)

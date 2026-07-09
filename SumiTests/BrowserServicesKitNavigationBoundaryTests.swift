@@ -1,4 +1,5 @@
 import XCTest
+import SumiDomain
 
 final class ServicesKitNavigationBoundaryTests: XCTestCase {
     func testNavigationImportsStayInBrowserServicesKitAdapters() throws {

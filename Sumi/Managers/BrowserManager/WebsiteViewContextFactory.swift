@@ -1,5 +1,6 @@
 import Combine
 import SwiftUI
+import SumiDomain
 
 /// Builds the browser contexts consumed by website/native-surface root views
 /// (web content, history page, bookmarks page) from browser subsystems.
@@ -11,10 +12,10 @@ enum WebsiteViewContextFactory {
     ) -> WebsiteViewBrowserContext {
         WebsiteViewBrowserContext(
             currentTab: { [weak browserManager] windowState in
-                browserManager?.windowTabContextOwner.currentTab(for: windowState)
+                browserManager?.windowSessionBundle.tabContextOwner.currentTab(for: windowState)
             },
             workspaceTheme: { [weak browserManager] spaceId in
-                browserManager?.windowSpaceStateOwner.space(for: spaceId)?.workspaceTheme
+                browserManager?.windowSessionBundle.spaceStateOwner.space(for: spaceId)?.workspaceTheme
             },
             makeWebContentContext: {
                 BrowserManagerWindowWebContentContext(
@@ -79,10 +80,10 @@ enum WebsiteViewContextFactory {
             },
             currentProfileUpdates: browserManager.$currentProfile.eraseToAnyPublisher(),
             currentTab: { [weak browserManager] windowState in
-                browserManager?.windowTabContextOwner.currentTab(for: windowState)
+                browserManager?.windowSessionBundle.tabContextOwner.currentTab(for: windowState)
             },
             deleteProfile: { [weak browserManager] profile in
-                browserManager?.windowSessionCommands.deleteProfile(profile)
+                browserManager?.windowSessionBundle.commands.deleteProfile(profile)
             },
             scheduleRuntimeStatePersistence: { [weak browserManager] tab in
                 browserManager?.tabManager.structuralPersistence.scheduleRuntimeStatePersistence(for: tab)
@@ -99,7 +100,7 @@ enum WebsiteViewContextFactory {
             },
             dataRecoveryActions: SumiDataRecoveryActions(
                 importBookmarksFromMenu: { [weak browserManager] in
-                    browserManager?.bookmarkCommandOwner.importBookmarksFromMenu()
+                    browserManager?.bookmarkBundle.bookmarkCommandOwner.importBookmarksFromMenu()
                 },
                 exportBrowser2ZenDocument: { [weak browserManager] in
                     guard let browserManager else {
@@ -144,27 +145,27 @@ enum WebsiteViewContextFactory {
                 .eraseToAnyPublisher(),
             isNativeModalPresented: { [weak browserManager] windowId in
                 guard let windowId else { return false }
-                return browserManager?.nativeDialogPresentationOwner
+                return browserManager?.chromeBundle.nativeDialogPresentationOwner
                     .isNativeModalPresented(in: windowId) ?? false
             },
             currentTab: { [weak browserManager] windowState in
-                browserManager?.windowTabContextOwner.currentTab(for: windowState)
+                browserManager?.windowSessionBundle.tabContextOwner.currentTab(for: windowState)
             },
             openHistoryURL: { [weak browserManager] url, windowState, preferredOpenMode in
-                browserManager?.historyNavigationOwner.openHistoryURL(
+                browserManager?.historyBundle.historyNavigationOwner.openHistoryURL(
                     url,
                     in: windowState,
                     preferredOpenMode: preferredOpenMode
                 )
             },
             openHistoryURLsInNewTabs: { [weak browserManager] urls, windowState in
-                browserManager?.historyNavigationOwner.openHistoryURLsInNewTabs(
+                browserManager?.historyBundle.historyNavigationOwner.openHistoryURLsInNewTabs(
                     urls,
                     in: windowState
                 )
             },
             presentBrowsingDataSheet: { [weak browserManager] windowState in
-                browserManager?.nativeDialogPresentationOwner.presentBrowsingDataSheet(
+                browserManager?.chromeBundle.nativeDialogPresentationOwner.presentBrowsingDataSheet(
                     windowState: windowState
                 )
             },
@@ -188,29 +189,29 @@ enum WebsiteViewContextFactory {
             },
             currentProfileUpdates: browserManager.$currentProfile.eraseToAnyPublisher(),
             currentTab: { [weak browserManager] windowState in
-                browserManager?.windowTabContextOwner.currentTab(for: windowState)
+                browserManager?.windowSessionBundle.tabContextOwner.currentTab(for: windowState)
             },
             openHistoryURLsInNewTabs: { [weak browserManager] urls, windowState in
-                browserManager?.historyNavigationOwner.openHistoryURLsInNewTabs(
+                browserManager?.historyBundle.historyNavigationOwner.openHistoryURLsInNewTabs(
                     urls,
                     in: windowState
                 )
             },
             openHistoryURLsInNewWindow: { [weak browserManager] urls in
-                browserManager?.historyNavigationOwner.openHistoryURLsInNewWindow(urls)
+                browserManager?.historyBundle.historyNavigationOwner.openHistoryURLsInNewWindow(urls)
             },
             openBookmarkURL: { [weak browserManager] url, windowState, preferredOpenMode in
-                browserManager?.bookmarkCommandOwner.openBookmarkURL(
+                browserManager?.bookmarkBundle.bookmarkCommandOwner.openBookmarkURL(
                     url,
                     in: windowState,
                     preferredOpenMode: preferredOpenMode
                 )
             },
             importBookmarksFromMenu: { [weak browserManager] in
-                browserManager?.bookmarkCommandOwner.importBookmarksFromMenu()
+                browserManager?.bookmarkBundle.bookmarkCommandOwner.importBookmarksFromMenu()
             },
             exportBookmarksFromMenu: { [weak browserManager] in
-                browserManager?.bookmarkCommandOwner.exportBookmarksFromMenu()
+                browserManager?.bookmarkBundle.bookmarkCommandOwner.exportBookmarksFromMenu()
             },
             scheduleRuntimeStatePersistence: { [weak browserManager] tab in
                 browserManager?.tabManager.structuralPersistence.scheduleRuntimeStatePersistence(for: tab)

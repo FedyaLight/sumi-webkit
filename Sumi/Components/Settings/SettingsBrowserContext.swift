@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import SumiDomain
 
 /// Browser projection consumed by the in-tab Settings surface.
 /// Built by `WebsiteViewContextFactory`; Settings UI must not reach into the browser composition root.

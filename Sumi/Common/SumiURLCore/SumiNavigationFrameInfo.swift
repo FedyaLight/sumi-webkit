@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 struct SumiFrameHandle: Hashable, Sendable {
     let frameID: UInt64

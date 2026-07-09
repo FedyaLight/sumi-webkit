@@ -21,7 +21,7 @@ enum TabBrowserExtensionRuntimeFactory {
                 browserManager?.windowRegistry?.windows[windowId]
             },
             currentTab: { [weak browserManager] windowState in
-                browserManager?.windowTabContextOwner.currentTab(for: windowState)
+                browserManager?.windowSessionBundle.tabContextOwner.currentTab(for: windowState)
             },
             primaryTrackedWindowId: { [weak browserManager] tabId in
                 browserManager?.webViewRoutingService.primaryTrackedWindowId(for: tabId)

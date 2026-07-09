@@ -10,6 +10,7 @@
 import Foundation
 import SumiDomain
 import WebKit
+import SumiWebRuntime
 
 @MainActor
 final class WebViewDestructiveCleanupFlowOwner {

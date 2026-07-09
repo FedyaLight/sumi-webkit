@@ -16,6 +16,7 @@ final class SumiProfileMaintenanceService {
         var websiteDataCleanupService: any SumiWebsiteDataCleanupServicing
         var faviconService: any BrowserFaviconServicing
         var visitedLinkStore: any BrowserVisitedLinkStoreManaging
+        var permissionCleanupService: SumiPermissionCleanupService?
         var showNotice: @MainActor (Notice) -> Void
         var switchToProfile: @MainActor (Profile) async -> Void
     }
@@ -45,11 +46,20 @@ final class SumiProfileMaintenanceService {
                 profile.id,
                 fallbackProfileId: replacement.id
             )
-            await profile.clearAllData(
-                browsingDataCleanupService: context.browsingDataCleanupService,
-                websiteDataCleanupService: context.websiteDataCleanupService
-            )
-            context.faviconService.clearFaviconPartition(for: profile)
+
+            do {
+                try await makeDeletionCleanupOrchestrator(for: profile, using: context)
+                    .cleanup(profileId: profile.id)
+            } catch {
+                context.showNotice(
+                    Notice(
+                        title: "Couldn't Delete Profile",
+                        subtitle: profile.name,
+                        message: "Cleanup failed before deletion. Please try again."
+                    )
+                )
+                return
+            }
 
             let deleted = context.profileManager.deleteProfile(profile)
             if deleted == false {
@@ -67,5 +77,39 @@ final class SumiProfileMaintenanceService {
                 context.visitedLinkStore.discardStore(for: profile.id)
             }
         }
+    }
+
+    /// Ordered cleanup participants for profile deletion (browsing data → favicons → permissions).
+    private func makeDeletionCleanupOrchestrator(
+        for profile: Profile,
+        using context: Context
+    ) -> ProfileDeletionCleanupOrchestrator {
+        var participants: [any ProfileCleanupParticipant] = [
+            BrowsingDataProfileCleanupParticipant { profileId in
+                guard profile.id == profileId else { return }
+                await profile.clearAllData(
+                    browsingDataCleanupService: context.browsingDataCleanupService,
+                    websiteDataCleanupService: context.websiteDataCleanupService
+                )
+            },
+            FaviconProfileCleanupParticipant { profileId in
+                guard profile.id == profileId else { return }
+                context.faviconService.clearFaviconPartition(for: profile)
+            },
+        ]
+
+        if let permissionCleanupService = context.permissionCleanupService {
+            participants.append(
+                PermissionProfileCleanupParticipant { profileId in
+                    try await permissionCleanupService.deleteAllDecisions(
+                        profilePartitionId: profileId.uuidString
+                    )
+                }
+            )
+        } else {
+            participants.append(StubProfileCleanupParticipant(name: "permissions"))
+        }
+
+        return ProfileDeletionCleanupOrchestrator(participants: participants)
     }
 }

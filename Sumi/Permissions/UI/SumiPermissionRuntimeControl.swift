@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 struct SumiPermissionRuntimeControl: Equatable, Identifiable, Sendable {
     struct Action: Equatable, Identifiable, Sendable {

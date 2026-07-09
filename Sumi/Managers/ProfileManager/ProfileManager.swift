@@ -8,6 +8,7 @@
 import Foundation
 import SwiftData
 import SwiftUI
+import SumiDomain
 
 @MainActor
 final class ProfileManager: ObservableObject {
@@ -64,6 +65,9 @@ final class ProfileManager: ObservableObject {
         return profile
     }
 
+    /// Persists profile-entity removal only.
+    /// Full deletion cleanup (browsing data, favicons, permissions) runs through
+    /// `ProfileDeletionCleanupOrchestrator` in `SumiProfileMaintenanceService.deleteProfile`.
     func deleteProfile(_ profile: Profile) -> Bool {
         guard profiles.count > 1 else { return false } // prevent deleting last profile
         // Remove from SwiftData first; if persistence fails, do not mutate runtime state

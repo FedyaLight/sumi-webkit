@@ -531,10 +531,3 @@ private struct PinnedTileAudioButton: View {
         )
     }
 }
-
-private extension String {
-    func replacingPrefix(_ prefix: String, with replacement: String) -> String? {
-        guard hasPrefix(prefix) else { return nil }
-        return replacement + String(dropFirst(prefix.count))
-    }
-}

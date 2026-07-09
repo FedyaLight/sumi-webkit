@@ -42,30 +42,38 @@ final class SumiLiveFolderManager: ObservableObject {
     private var wakeObserverToken: NSObjectProtocol?
     private var appActiveObserverToken: NSObjectProtocol?
     private var hasLoadedState = false
+    private let workspace: NSWorkspace
 
     init(
         store: SumiLiveFolderStore = SumiLiveFolderStore(),
-        networkClient: SumiLiveFolderNetworkClient = SumiLiveFolderNetworkClient()
+        networkClient: SumiLiveFolderNetworkClient = SumiLiveFolderNetworkClient(),
+        workspace: NSWorkspace = NSWorkspace()
     ) {
         self.store = store
         self.networkClient = networkClient
+        self.workspace = workspace
     }
 
     isolated deinit {
         scheduler?.invalidate()
         if let wakeObserverToken {
-            NSWorkspace.shared.notificationCenter.removeObserver(wakeObserverToken)
+            workspace.notificationCenter.removeObserver(wakeObserverToken)
         }
         if let appActiveObserverToken {
             NotificationCenter.default.removeObserver(appActiveObserverToken)
         }
     }
 
+    private(set) var hasAttachedRuntime = false
+
     func attach(runtime: SumiLiveFolderRuntime) {
         self.runtime = runtime
+        hasAttachedRuntime = true
     }
 
-    func startAfterTabRestore() {
+    /// Starts Live Folders after tab restore. No-op when the Live Folders module is disabled.
+    func startAfterTabRestore(isEnabled: Bool = true) {
+        guard isEnabled else { return }
         guard !hasLoadedState else { return }
         hasLoadedState = true
 
@@ -79,7 +87,7 @@ final class SumiLiveFolderManager: ObservableObject {
             }
         }
 
-        wakeObserverToken = NSWorkspace.shared.notificationCenter.addObserver(
+        wakeObserverToken = workspace.notificationCenter.addObserver(
             forName: NSWorkspace.didWakeNotification,
             object: nil,
             queue: .main
@@ -98,6 +106,30 @@ final class SumiLiveFolderManager: ObservableObject {
                 self?.refreshDueSources(reason: "active")
             }
         }
+    }
+
+    /// Stops background work and clears the attached runtime (W4/R9 disable path).
+    func stopAndClearRuntime() {
+        for task in refreshTasksBySourceId.values {
+            task.cancel()
+        }
+        refreshTasksBySourceId.removeAll()
+        scheduler?.invalidate()
+        scheduler = nil
+        if let wakeObserverToken {
+            workspace.notificationCenter.removeObserver(wakeObserverToken)
+            self.wakeObserverToken = nil
+        }
+        if let appActiveObserverToken {
+            NotificationCenter.default.removeObserver(appActiveObserverToken)
+            self.appActiveObserverToken = nil
+        }
+        sourcesByFolderId = [:]
+        itemsBySourceId = [:]
+        dismissedItemIdsBySourceId = [:]
+        hasLoadedState = false
+        runtime = .inactive
+        hasAttachedRuntime = false
     }
 
     func isLiveFolder(_ folderId: UUID) -> Bool {

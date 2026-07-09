@@ -6,7 +6,7 @@ enum BrowserGlanceRuntimeService {
     static func runtime(for browserManager: BrowserManager) -> GlanceManager.Runtime {
         GlanceManager.Runtime(
             windowStateContainingTab: { [weak browserManager] tab in
-                browserManager?.windowTabContextOwner.windowState(containing: tab)
+                browserManager?.windowSessionBundle.tabContextOwner.windowState(containing: tab)
             },
             hasLoadedInitialTabData: { [weak browserManager] in
                 browserManager?.tabManager.hasLoadedInitialData ?? false
@@ -31,7 +31,7 @@ enum BrowserGlanceRuntimeService {
                 )
             },
             currentTab: { [weak browserManager] windowState in
-                browserManager?.windowTabContextOwner.currentTab(for: windowState)
+                browserManager?.windowSessionBundle.tabContextOwner.currentTab(for: windowState)
             },
             restoreSourceSelection: { [weak browserManager] tab, windowState in
                 browserManager?.applyTabSelection(
@@ -48,7 +48,7 @@ enum BrowserGlanceRuntimeService {
                 browserManager?.splitManager.visibleTabIds(for: windowId).count ?? 0
             },
             dismissFloatingBarIfVisible: { [weak browserManager] windowId in
-                browserManager?.floatingBarRoutingOwner.dismissFloatingBarIfVisible(
+                browserManager?.urlBarBundle.floatingBarRoutingOwner.dismissFloatingBarIfVisible(
                     in: windowId,
                     preserveDraft: true
                 ) ?? false
@@ -66,7 +66,7 @@ enum BrowserGlanceRuntimeService {
                 browserManager?.updateFindManagerCurrentTab()
             },
             persistWindowSession: { [weak browserManager] windowState in
-                browserManager?.windowSessionActivationOwner.persistWindowSession(for: windowState)
+                browserManager?.windowSessionBundle.activationOwner.persistWindowSession(for: windowState)
             },
             makePreviewTab: { [weak browserManager] url, sourceTab, windowState in
                 guard let browserManager else {

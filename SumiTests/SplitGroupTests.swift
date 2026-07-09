@@ -1066,7 +1066,7 @@ final class SplitGroupTests: SplitGroupTestCase {
         let group = try XCTUnwrap(harness.tabManager.splitGroupStructureOwner.splitGroup(containing: current.id))
         let placeholderId = try XCTUnwrap(group.tabIds.first { $0 != current.id })
 
-        harness.browserManager.floatingBarRoutingOwner.dismissFloatingBar(
+        harness.browserManager.urlBarBundle.floatingBarRoutingOwner.dismissFloatingBar(
             in: harness.windowState,
             preserveDraft: true,
             cancelEmptySplitPlaceholder: true
@@ -1141,7 +1141,7 @@ final class SplitGroupTests: SplitGroupTestCase {
         let placeholderGroup = try XCTUnwrap(harness.tabManager.splitGroupStructureOwner.splitGroup(containing: current.id))
         let placeholderId = try XCTUnwrap(placeholderGroup.tabIds.first { $0 != current.id })
 
-        harness.browserManager.floatingBarRoutingOwner.openFloatingBarSuggestion(
+        harness.browserManager.urlBarBundle.floatingBarRoutingOwner.openFloatingBarSuggestion(
             SearchManager.SearchSuggestion(text: existing.name, type: .tab(existing)),
             in: harness.windowState
         )

@@ -64,6 +64,15 @@ final class SumiPermissionCleanupService {
         return await run(profile: profile, settings: settings, force: true)
     }
 
+    /// Removes every stored decision for a deleted profile partition.
+    func deleteAllDecisions(profilePartitionId: String) async throws {
+        let profileId = SumiPermissionKey.normalizedProfilePartitionId(profilePartitionId)
+        let records = try await store.listDecisions(profilePartitionId: profileId)
+        for record in records {
+            try await store.resetDecision(for: record.key)
+        }
+    }
+
     @discardableResult
     func run(
         profile: SumiPermissionSettingsProfileContext,

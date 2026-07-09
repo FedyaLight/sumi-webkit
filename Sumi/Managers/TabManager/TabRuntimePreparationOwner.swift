@@ -2,23 +2,23 @@ import Foundation
 
 @MainActor
 final class TabRuntimePreparationOwner {
-    private let runtimeContext: @MainActor () -> TabManagerRuntimeContext?
+    private let runtimePorts: @MainActor () -> RuntimePortRegistry?
     private let settings: @MainActor () -> SumiSettingsService?
 
     init(
-        runtimeContext: @escaping @MainActor () -> TabManagerRuntimeContext?,
+        runtimePorts: @escaping @MainActor () -> RuntimePortRegistry?,
         settings: @escaping @MainActor () -> SumiSettingsService?
     ) {
-        self.runtimeContext = runtimeContext
+        self.runtimePorts = runtimePorts
         self.settings = settings
     }
 
     func prepare(_ tab: Tab) {
-        let runtimeContext = runtimeContext()
-        runtimeContext?.webViewLifecycle.prepareTab(tab)
+        let ports = runtimePorts()
+        ports?.webViewLifecycle.prepareTab(tab)
 
         if tab.sumiSettings == nil {
-            tab.sumiSettings = settings() ?? runtimeContext?.settings
+            tab.sumiSettings = settings() ?? ports?.settings
         }
     }
 }

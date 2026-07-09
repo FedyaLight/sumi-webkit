@@ -4,6 +4,7 @@ public struct SumiPermissionSecurityContext: Equatable, Sendable {
     public enum Surface: String, Codable, CaseIterable, Hashable, Sendable {
         case normalTab
         case glance
+        case miniWindow
         case extensionPage
         case internalPage
         case unknown
@@ -26,6 +27,9 @@ public struct SumiPermissionSecurityContext: Equatable, Sendable {
     public let navigationOrPageGeneration: String?
     public let now: Date
 
+    /// Prompt UI is fail-closed for non-normal surfaces.
+    /// Glance, MiniWindow (and extension/internal/unknown) must never present permission
+    /// prompts — even when the surface reports active/visible state.
     public var canPresentPromptUI: Bool {
         surface == .normalTab && isActiveTab && isVisibleTab
     }

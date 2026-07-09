@@ -22,10 +22,10 @@ enum BrowserNativeNowPlayingRuntimeFactory {
                 browserManager?.windowRegistry
             },
             currentTab: { [weak browserManager] windowState in
-                browserManager?.windowTabContextOwner.currentTab(for: windowState)
+                browserManager?.windowSessionBundle.tabContextOwner.currentTab(for: windowState)
             },
             mediaCandidateTabs: { [weak browserManager] windowState in
-                browserManager?.windowTabContextOwner.windowScopedMediaCandidateTabs(in: windowState) ?? []
+                browserManager?.windowSessionBundle.tabContextOwner.windowScopedMediaCandidateTabs(in: windowState) ?? []
             },
             tab: { [weak browserManager] tabId in
                 browserManager?.tabManager.tabCollectionMembershipOwner.tab(for: tabId)

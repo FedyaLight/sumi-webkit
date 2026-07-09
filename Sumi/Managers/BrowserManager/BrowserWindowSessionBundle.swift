@@ -39,20 +39,20 @@ final class BrowserWindowSessionBundle {
             windowRegistry: { [weak browserManager] in browserManager?.windowRegistry },
             selectionService: selectionService,
             sanitizeFloatingBarState: { [weak browserManager] windowState in
-                browserManager?.floatingBarRoutingOwner.sanitizeFloatingBarState(in: windowState)
+                browserManager?.urlBarBundle.floatingBarRoutingOwner.sanitizeFloatingBarState(in: windowState)
             },
             syncShortcutSelectionState: { [weak browserManager] windowState in
                 browserManager?.syncShortcutSelectionState(for: windowState)
             },
             updateWorkspaceTheme: { [weak browserManager] windowState, theme, animate in
-                browserManager?.workspaceThemeTransitionOwner.updateWorkspaceTheme(
+                browserManager?.chromeBundle.workspaceThemeTransitionOwner.updateWorkspaceTheme(
                     for: windowState,
                     to: theme,
                     animate: animate
                 )
             },
             finishInteractiveSpaceTransition: { [weak browserManager] space, windowState, identity in
-                browserManager?.workspaceThemeTransitionOwner.finishInteractiveSpaceTransition(
+                browserManager?.chromeBundle.workspaceThemeTransitionOwner.finishInteractiveSpaceTransition(
                     to: space,
                     in: windowState,
                     identity: identity
@@ -69,7 +69,7 @@ final class BrowserWindowSessionBundle {
                 )
             },
             performImmediateVisualHandoffIfPossible: { [weak browserManager] windowState in
-                _ = browserManager?.windowVisualMutationOwner.performImmediateVisualHandoffIfPossible(
+                _ = browserManager?.windowSessionBundle.visualMutationOwner.performImmediateVisualHandoffIfPossible(
                     in: windowState
                 )
             },
@@ -80,7 +80,7 @@ final class BrowserWindowSessionBundle {
                 browserManager?.adoptProfileIfNeeded(for: windowState, context: .spaceChange)
             },
             persistWindowSession: { [weak browserManager] windowState in
-                browserManager?.windowSessionActivationOwner.persistWindowSession(for: windowState)
+                browserManager?.windowSessionBundle.activationOwner.persistWindowSession(for: windowState)
             },
             completePendingSplitGroupFocusIfReady: { [weak browserManager] windowState, spaceId in
                 browserManager?.sidebarCommandService.splitShortcutRouting.completePendingSplitGroupFocusIfReady(
@@ -89,12 +89,12 @@ final class BrowserWindowSessionBundle {
                 )
             },
             updateProfileRuntimeStates: { [weak browserManager] windowState in
-                browserManager?.windowStateValidationOwner.updateProfileRuntimeStates(
+                browserManager?.windowSessionBundle.windowStateValidationOwner.updateProfileRuntimeStates(
                     activeWindowState: windowState
                 )
             },
             validateWindowStates: { [weak browserManager] in
-                browserManager?.windowStateValidationOwner.validateWindowStates()
+                browserManager?.windowSessionBundle.windowStateValidationOwner.validateWindowStates()
             }
         )
         self.tabContextOwner = BrowserWindowTabContextOwner(
@@ -124,7 +124,7 @@ final class BrowserWindowSessionBundle {
                 browserManager?.webViewCoordinator?.hasActiveHistorySwipe(in: windowId) == true
             },
             currentTab: { [weak browserManager] windowState in
-                browserManager?.windowTabContextOwner.currentTab(for: windowState)
+                browserManager?.windowSessionBundle.tabContextOwner.currentTab(for: windowState)
             },
             performImmediateVisualHandoffIfPossible: { [weak browserManager] windowId in
                 browserManager?.webViewCoordinator?.performImmediateVisualHandoffIfPossible(
@@ -167,13 +167,13 @@ final class BrowserWindowSessionBundle {
                 browserManager?.lastSessionWindowsStore ?? lastSessionWindowsStore
             },
             currentRegularWindowSnapshots: { [weak browserManager] excludedWindowId in
-                browserManager?.windowHistorySessionOwner.currentRegularWindowSnapshots(excludingWindowID: excludedWindowId) ?? []
+                browserManager?.windowSessionBundle.historySessionOwner.currentRegularWindowSnapshots(excludingWindowID: excludedWindowId) ?? []
             },
             refreshLastSessionWindowsStore: { [weak browserManager] excludedWindowId in
-                browserManager?.windowHistorySessionOwner.refreshLastSessionWindowsStore(excludingWindowID: excludedWindowId)
+                browserManager?.windowSessionBundle.historySessionOwner.refreshLastSessionWindowsStore(excludingWindowID: excludedWindowId)
             },
             reopenWindow: { [weak browserManager] snapshot in
-                await browserManager?.historyMenuOwner.reopenWindow(from: snapshot)
+                await browserManager?.historyBundle.historyMenuOwner.reopenWindow(from: snapshot)
             },
             mergeSnapshotForLastSessionRestore: { [weak browserManager] snapshot in
                 browserManager?.tabManager.lastSessionRestoreOwner.mergeSnapshotForLastSessionRestore(snapshot)
@@ -191,7 +191,7 @@ final class BrowserWindowSessionBundle {
                 browserManager?.profileManager ?? profileManager
             },
             space: { [weak browserManager] spaceId in
-                browserManager?.windowSpaceStateOwner.space(for: spaceId)
+                browserManager?.windowSessionBundle.spaceStateOwner.space(for: spaceId)
             },
             selectTab: { [weak browserManager] tab, windowState in
                 browserManager?.selectTab(tab, in: windowState)
@@ -213,10 +213,10 @@ final class BrowserWindowSessionBundle {
             },
             windowDisplayTitle: { [weak browserManager] windowState in
                 guard let browserManager else { return "" }
-                if let currentTab = browserManager.windowTabContextOwner.currentTab(for: windowState) {
+                if let currentTab = browserManager.windowSessionBundle.tabContextOwner.currentTab(for: windowState) {
                     return currentTab.name
                 }
-                if let currentSpace = browserManager.windowSpaceStateOwner.space(
+                if let currentSpace = browserManager.windowSessionBundle.spaceStateOwner.space(
                     for: windowState.currentSpaceId
                 ) {
                     return currentSpace.name
@@ -273,7 +273,7 @@ final class BrowserWindowSessionBundle {
                 permissionRuntime.resumeGeolocationOnAppForegroundIfNeeded()
             },
             refreshLastSessionWindowsStore: { [weak browserManager] in
-                browserManager?.windowHistorySessionOwner.refreshLastSessionWindowsStore(excludingWindowID: nil)
+                browserManager?.windowSessionBundle.historySessionOwner.refreshLastSessionWindowsStore(excludingWindowID: nil)
             }
         )
     }

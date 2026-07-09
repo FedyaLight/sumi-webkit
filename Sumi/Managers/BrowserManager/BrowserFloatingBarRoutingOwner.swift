@@ -221,14 +221,14 @@ final class BrowserFloatingBarRoutingOwner {
             normalizeURL: { text in
                 let template = self.settings()?.resolvedSearchEngineTemplate
                     ?? SearchProvider.google.queryTemplate
-                return Sumi.normalizeURL(text, queryTemplate: template)
+                return normalizeURL(text, queryTemplate: template)
             },
             loadCurrentPageURL: loadCurrentPageURL,
             navigateCurrentPage: navigateCurrentPage,
             applySettingsSurfaceNavigation: { text in
                 let template = self.settings()?.resolvedSearchEngineTemplate
                     ?? SearchProvider.google.queryTemplate
-                let normalized = Sumi.normalizeURL(text, queryTemplate: template)
+                let normalized = normalizeURL(text, queryTemplate: template)
                 guard let url = URL(string: normalized),
                       SumiSurface.isSettingsSurfaceURL(url)
                 else { return }

@@ -92,8 +92,8 @@ final class TabSpaceLifecycleOwnerTests: XCTestCase {
             profileId: currentProfileId
         )
         tabManager.spaceStateOwner.replaceCurrentSpace(defaultProfileSpace)
-        tabManager.runtimeContextAttachmentOwner.attach(
-            TabManagerRuntimeContext(
+        tabManager.runtimePortsAttachmentOwner.attach(
+            TestRuntimePorts.make(
                 currentProfileId: { currentProfileId },
                 defaultProfileId: { defaultProfileId }
             )
@@ -109,8 +109,8 @@ final class TabSpaceLifecycleOwnerTests: XCTestCase {
         let currentProfileId = UUID()
         let unassigned = Space(name: "Unassigned")
         tabManager.spaceStateOwner.replaceSpaces([unassigned])
-        tabManager.runtimeContextAttachmentOwner.attach(
-            TabManagerRuntimeContext(currentProfileId: { currentProfileId })
+        tabManager.runtimePortsAttachmentOwner.attach(
+            TestRuntimePorts.make(currentProfileId: { currentProfileId })
         )
 
         let resolved = tabManager.spaceLifecycleOwner.resolvedTargetSpace(preferred: nil)
@@ -124,8 +124,8 @@ final class TabSpaceLifecycleOwnerTests: XCTestCase {
         let tabManager = try makeInMemoryTabManager()
         let currentProfileId = UUID()
         tabManager.spaceStateOwner.removeAll()
-        tabManager.runtimeContextAttachmentOwner.attach(
-            TabManagerRuntimeContext(currentProfileId: { currentProfileId })
+        tabManager.runtimePortsAttachmentOwner.attach(
+            TestRuntimePorts.make(currentProfileId: { currentProfileId })
         )
 
         let resolved = tabManager.spaceLifecycleOwner.resolvedTargetSpace(preferred: nil)
@@ -146,8 +146,8 @@ final class TabSpaceLifecycleOwnerTests: XCTestCase {
         let tabManager = try makeInMemoryTabManager()
         let space = tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let spy = NotificationPresentingSpy()
-        tabManager.runtimeContextAttachmentOwner.attach(
-            TabManagerRuntimeContext(
+        tabManager.runtimePortsAttachmentOwner.attach(
+            TestRuntimePorts.make(
                 notifications: { spy }
             )
         )

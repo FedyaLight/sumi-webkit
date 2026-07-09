@@ -44,17 +44,17 @@ final class BrowserSpaceTransitionRoutingOwner {
                 )
             },
             setActiveSpace: { [weak browserManager] space, windowState in
-                browserManager?.windowSpaceStateOwner.setActiveSpace(space, in: windowState)
+                browserManager?.windowSessionBundle.spaceStateOwner.setActiveSpace(space, in: windowState)
             },
             setActiveSpaceFromTransition: { [weak browserManager] space, windowState, identity in
-                browserManager?.windowSpaceStateOwner.setActiveSpace(
+                browserManager?.windowSessionBundle.spaceStateOwner.setActiveSpace(
                     space,
                     in: windowState,
                     completingTransition: identity
                 )
             },
             beginInteractiveSpaceTransition: { [weak browserManager] source, destination, identity, windowState in
-                browserManager?.workspaceThemeTransitionOwner.beginInteractiveSpaceTransition(
+                browserManager?.chromeBundle.workspaceThemeTransitionOwner.beginInteractiveSpaceTransition(
                     from: source,
                     to: destination,
                     identity: identity,
@@ -62,14 +62,14 @@ final class BrowserSpaceTransitionRoutingOwner {
                 )
             },
             updateInteractiveSpaceTransition: { [weak browserManager] progress, identity, windowState in
-                browserManager?.workspaceThemeTransitionOwner.updateInteractiveSpaceTransition(
+                browserManager?.chromeBundle.workspaceThemeTransitionOwner.updateInteractiveSpaceTransition(
                     progress: progress,
                     identity: identity,
                     in: windowState
                 )
             },
             cancelInteractiveSpaceTransition: { [weak browserManager] identity, windowState in
-                browserManager?.workspaceThemeTransitionOwner.cancelInteractiveSpaceTransition(identity: identity, in: windowState)
+                browserManager?.chromeBundle.workspaceThemeTransitionOwner.cancelInteractiveSpaceTransition(identity: identity, in: windowState)
             }
         )
     }

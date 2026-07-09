@@ -1247,7 +1247,7 @@ Run with Extensions module enabled. Use DEBUG → Extensions → **Run Safari Ex
 5. **PM native unlock** — host app may wake via `NSWorkspace`; JSON relay returns `companionAppProtocolUnknown` until companion IPC is known.
 6. **Raindrop save** — on article `https://` page, action popup shows title/URL; save completes without host relay.
 
-Skipped UI tests documenting these steps: `SumiUITests/SafariExtensionManualE2ETests.swift` (not in default test plan; run individually in Xcode).
+Manual checklist: [`docs/SafariExtensionManualE2E.md`](SafariExtensionManualE2E.md) (documentation-only; not XCTest).
 
 ## Native messaging readiness audit (Cycle 8)
 
@@ -1453,7 +1453,7 @@ cookie domain counts only, popup lifecycle phase).
 - **Popup fixes:** minimum `NSPopover.contentSize`, non-zero anchor rect fallback, `ActionAnchorView` autoresizing mask.
 - **Raindrop activeTab:** `grantActiveTabURLAccess` on URL-hub `performAction` and `presentActionPopup`.
 - **DEBUG menu:** Extensions → Run Safari Extension Acceptance Check → stdout JSON when module enabled.
-- **Manual E2E scaffold:** `SafariExtensionManualE2ETests` (4 `XCTSkip` tests; not in default scheme test plan).
+- **Manual E2E checklist:** `docs/SafariExtensionManualE2E.md` (documentation-only; not XCTest).
 - **Tests:** 39 Safari-extension unit tests pass across 6 `SumiTests` suites.
 - **macOS 27.0 SDK re-probe (parallel):** `MacOSX27.0.sdk`; no new public host-relay APIs; blocker unchanged.
 - **Blocker for Cycle 8:** manual import → enable → popup on all four targets; companion app IPC protocol.

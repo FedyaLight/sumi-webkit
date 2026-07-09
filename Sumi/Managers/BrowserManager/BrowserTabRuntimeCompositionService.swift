@@ -151,7 +151,7 @@ extension BrowserTabRuntimeCompositionService.Dependencies {
             attachBackgroundMediaOptimizationRuntime: { [weak browserManager] runtime in
                 browserManager?.backgroundMediaOptimizationService.attach(runtime: runtime)
             },
-            tabStructuralChanges: browserManager.tabManager.structuralChanges.eraseToAnyPublisher(),
+            tabStructuralChanges: browserManager.tabStructureEventBus.structureChangedPublisher,
             incrementTabStructuralRevision: { [weak browserManager] in
                 browserManager?.tabStructuralRevision &+= 1
             },
@@ -219,7 +219,7 @@ extension BrowserTabRuntimeCompositionService.Dependencies {
         var visibleTabIDsByWindow: [UUID: Set<UUID>] = [:]
         for windowState in windowRegistry.windows.values where windowState.windowVisibilityState.isEffectivelyVisible {
             let tabIDs = VisibleTabPreparationPlan.visibleTabIDs(
-                currentTabId: browserManager.windowTabContextOwner.currentTab(for: windowState)?.id,
+                currentTabId: browserManager.windowSessionBundle.tabContextOwner.currentTab(for: windowState)?.id,
                 splitTabIds: browserManager.splitManager.visibleTabIds(for: windowState.id)
             )
             visibleTabIDsByWindow[windowState.id] = Set(tabIDs)
@@ -232,7 +232,7 @@ extension BrowserTabRuntimeCompositionService.Dependencies {
     ) -> Set<UUID> {
         var selectedIDs = Set<UUID>()
         for windowState in browserManager.windowRegistry.map({ Array($0.windows.values) }) ?? [] {
-            if let current = browserManager.windowTabContextOwner.currentTab(for: windowState) {
+            if let current = browserManager.windowSessionBundle.tabContextOwner.currentTab(for: windowState) {
                 selectedIDs.insert(current.id)
             }
         }
@@ -245,7 +245,7 @@ extension BrowserTabRuntimeCompositionService.Dependencies {
         var visible: [UUID: Set<UUID>] = [:]
         for windowState in browserManager.windowRegistry.map({ Array($0.windows.values) }) ?? [] {
             let tabIDs = VisibleTabPreparationPlan.visibleTabIDs(
-                currentTabId: browserManager.windowTabContextOwner.currentTab(for: windowState)?.id,
+                currentTabId: browserManager.windowSessionBundle.tabContextOwner.currentTab(for: windowState)?.id,
                 splitTabIds: browserManager.splitManager.visibleTabIds(for: windowState.id)
             )
             visible[windowState.id] = Set(tabIDs)
@@ -270,7 +270,7 @@ extension BrowserTabRuntimeCompositionService.Dependencies {
                 return lhs.id.uuidString < rhs.id.uuidString
             }
             .compactMap { windowState in
-                let currentTab = browserManager.windowTabContextOwner.currentTab(for: windowState)
+                let currentTab = browserManager.windowSessionBundle.tabContextOwner.currentTab(for: windowState)
                 return browserManager.tabManager.lazyRestoreCoordinator.opportunisticRestoreAnchor(
                     in: windowState,
                     currentTab: currentTab

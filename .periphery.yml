@@ -15,7 +15,7 @@ disable_update_check: true
 report_include:
   - "App/**/*.swift"
   - "CommandPalette/**/*.swift"
-  - "Navigation/**/*.swift"
+  - "SidebarChrome/**/*.swift"
   - "Settings/**/*.swift"
   - "Sumi/**/*.swift"
   - "UI/**/*.swift"

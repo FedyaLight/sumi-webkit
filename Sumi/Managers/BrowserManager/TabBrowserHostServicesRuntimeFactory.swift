@@ -1,5 +1,6 @@
 import Foundation
 import WebKit
+import SumiDomain
 
 @MainActor
 enum TabBrowserHostServicesRuntimeFactory {
@@ -35,7 +36,7 @@ enum TabBrowserHostServicesRuntimeFactory {
     ) -> TabCloseLifecycleRuntime {
         .make(
             cleanupZoomForTab: { [weak browserManager] tabId in
-                browserManager?.zoomCommandOwner.cleanupZoomForTab(tabId)
+                browserManager?.chromeBundle.zoomCommandOwner.cleanupZoomForTab(tabId)
             },
             updateTabVisibility: { [weak browserManager] in
                 browserManager?.compositorManager.updateTabVisibility()

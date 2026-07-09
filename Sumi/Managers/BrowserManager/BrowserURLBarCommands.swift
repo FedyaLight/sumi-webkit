@@ -105,7 +105,7 @@ final class BrowserURLBarCommands {
                 browserManager?.windowRegistry?.activeWindow
             },
             currentTab: { [weak browserManager] windowState in
-                browserManager?.windowTabContextOwner.currentTab(for: windowState)
+                browserManager?.windowSessionBundle.tabContextOwner.currentTab(for: windowState)
             },
             settingsSurfaceURL: { [weak browserManager] pane in
                 browserManager?.permissionSiteSettingsRoutingOwner.settingsSurfaceURL(for: pane)
@@ -116,7 +116,7 @@ final class BrowserURLBarCommands {
                     ?? SettingsTabs.privacy.settingsSurfaceURL
             },
             openNativeBrowserSurface: { [weak browserManager] kind, url, windowState in
-                browserManager?.nativeSurfaceRoutingOwner.openNativeBrowserSurface(
+                browserManager?.chromeBundle.nativeSurfaceRoutingOwner.openNativeBrowserSurface(
                     kind,
                     url: url,
                     in: windowState

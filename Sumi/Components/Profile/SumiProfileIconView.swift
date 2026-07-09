@@ -1,4 +1,5 @@
 import SwiftUI
+import SumiDomain
 
 /// UI rendering for profile emoji / default-dot icons.
 /// Lives in Components so Models stay Foundation-only.

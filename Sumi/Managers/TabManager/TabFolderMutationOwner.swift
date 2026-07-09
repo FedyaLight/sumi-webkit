@@ -18,7 +18,7 @@ final class TabFolderMutationOwner {
         let shortcutLiveTabOwner: ShortcutLiveTabOwner
         let tabRemovalOwner: TabRemovalOwner
         let shortcutPinCommandOwner: ShortcutPinCommandOwner
-        let runtimeContext: @MainActor () -> TabManagerRuntimeContext?
+        let runtimePorts: @MainActor () -> RuntimePortRegistry?
         let markFoldersStructurallyDirty: @MainActor (UUID) -> Void
         let markRegularTabsStructurallyDirty: @MainActor (UUID) -> Void
         let requestStructuralPublish: @MainActor () -> Void
@@ -168,12 +168,12 @@ final class TabFolderMutationOwner {
 
             var cleanupResult = ShortcutPinSelectionCleanupResult()
             for pin in deletedPins {
-                dependencies.runtimeContext()?.captureDeletedShortcutLauncher(pin)
+                dependencies.runtimePorts()?.captureDeletedShortcutLauncher(pin)
                 let liveWindowIds = dependencies.transientTabRegistryOwner.transientShortcutTabsByWindow.compactMap { windowId, tabsByPin in
                     tabsByPin[pin.id] == nil ? nil : windowId
                 }
                 for windowId in liveWindowIds {
-                    let windowState = dependencies.runtimeContext()?.windowState(for: windowId)
+                    let windowState = dependencies.runtimePorts()?.windowState(for: windowId)
                     if dependencies.shortcutLiveTabOwner.deactivateShortcutLiveTab(pinId: pin.id, in: windowId),
                        let windowState {
                         cleanupResult.recordCurrentSelectionCleared(in: windowState)
@@ -187,10 +187,10 @@ final class TabFolderMutationOwner {
             }
 
             if cleanupResult.didClearCurrentSelection {
-                dependencies.runtimeContext()?.validateWindowStates()
+                dependencies.runtimePorts()?.validateWindowStates()
             }
             dependencies.shortcutLiveTabOwner.persistWindowSessionsForShortcutSelectionCleanup(cleanupResult)
-            dependencies.runtimeContext()?.deleteLiveFolderState(forFolderIds: deletedFolderIds)
+            dependencies.runtimePorts()?.deleteLiveFolderState(forFolderIds: deletedFolderIds)
             dependencies.scheduleStructuralPersistence()
         }
     }
@@ -228,7 +228,7 @@ final class TabFolderMutationOwner {
                 dependencies.markRegularTabsStructurallyDirty(spaceId)
             }
 
-            dependencies.runtimeContext()?.deleteLiveFolderState(forFolderIds: [folderId])
+            dependencies.runtimePorts()?.deleteLiveFolderState(forFolderIds: [folderId])
             dependencies.scheduleStructuralPersistence()
         }
     }
@@ -259,7 +259,7 @@ final class TabFolderMutationOwner {
     func moveTabToFolder(tab: Tab, folderId: UUID) {
         dependencies.withStructuralUpdateTransactionVoid {
             guard let targetFolder = dependencies.folderCollectionStateOwner.folder(by: folderId) else { return }
-            guard dependencies.runtimeContext()?.isLiveFolder(folderId) != true else { return }
+            guard dependencies.runtimePorts()?.isLiveFolder(folderId) != true else { return }
 
             targetFolder.isOpen = true
             dependencies.markFoldersStructurallyDirty(targetFolder.spaceId)
@@ -295,7 +295,7 @@ final class TabFolderMutationOwner {
         case (.spacePinned(let fromSpaceId), .spacePinned(let toSpaceId)) where fromSpaceId == toSpaceId:
             return dependencies.spacePinnedStructureOwner.reorderFolderInTopLevelPinned(folder, in: toSpaceId, to: operation.toIndex)
         case (.spacePinned(let fromSpaceId), .folder(let targetFolderId)) where fromSpaceId == folder.spaceId:
-            guard dependencies.runtimeContext()?.isLiveFolder(targetFolderId) != true else {
+            guard dependencies.runtimePorts()?.isLiveFolder(targetFolderId) != true else {
                 return false
             }
             guard let targetSpaceId = dependencies.folderCollectionStateOwner.spaceId(for: targetFolderId),
@@ -308,7 +308,7 @@ final class TabFolderMutationOwner {
             return moveFolder(folder, toParentFolderId: nil, in: toSpaceId, to: operation.toIndex)
         case (.folder(let sourceParentId), .folder(let targetFolderId)):
             guard folder.parentFolderId == sourceParentId,
-                  dependencies.runtimeContext()?.isLiveFolder(targetFolderId) != true,
+                  dependencies.runtimePorts()?.isLiveFolder(targetFolderId) != true,
                   let targetSpaceId = dependencies.folderCollectionStateOwner.spaceId(for: targetFolderId),
                   targetSpaceId == folder.spaceId else {
                 return false
@@ -524,8 +524,8 @@ extension TabFolderMutationOwner.Dependencies {
             shortcutLiveTabOwner: tabManager.shortcutLiveTabOwner,
             tabRemovalOwner: tabManager.tabRemovalOwner,
             shortcutPinCommandOwner: tabManager.shortcutPinCommandOwner,
-            runtimeContext: { [weak tabManager] in
-                tabManager?.runtimeContext
+            runtimePorts: { [weak tabManager] in
+                tabManager?.runtimePorts
             },
             markFoldersStructurallyDirty: { [weak tabManager] spaceId in
                 tabManager?.structuralPersistence.markFoldersStructurallyDirty(for: spaceId)

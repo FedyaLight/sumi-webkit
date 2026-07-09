@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import WebKit
+import SumiDomain
 
 struct SumiNavigationToolbarControlState: Equatable {
     var canGoBack: Bool

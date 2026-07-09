@@ -5,6 +5,7 @@
 //
 
 import Foundation
+import SumiDomain
 
 /// Ranks and filters a window's open tabs into "active tab" suggestions:
 /// candidates come from the current profile's regular tabs plus any live

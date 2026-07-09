@@ -8,7 +8,7 @@ final class TabRegularLifecycleOwner {
         let withStructuralUpdateTransaction: @MainActor (@MainActor () -> Tab?) -> Tab?
         let withStructuralUpdateTransactionVoid: @MainActor (@MainActor () -> Void) -> Void
         let settings: @MainActor () -> SumiSettingsService?
-        let runtimeContext: @MainActor () -> TabManagerRuntimeContext?
+        let runtimePorts: @MainActor () -> RuntimePortRegistry?
         let contains: @MainActor (Tab) -> Bool
         let attach: @MainActor (Tab) -> Void
         let insertRegularTab: @MainActor (Tab, UUID, Int?) -> Void
@@ -48,9 +48,9 @@ final class TabRegularLifecycleOwner {
             // Load the tab in compositor if it's the current tab.
             if tab.id == dependencies.currentTab()?.id {
                 if let windowState = dependencies.windowStateDisplaying(tab.id) {
-                    dependencies.runtimeContext()?.webViewLifecycle.materializeVisibleTabWebViewIfNeeded(tab, in: windowState)
+                    dependencies.runtimePorts()?.webViewLifecycle.materializeVisibleTabWebViewIfNeeded(tab, in: windowState)
                 } else {
-                    dependencies.runtimeContext()?.webViewLifecycle.loadTab(tab)
+                    dependencies.runtimePorts()?.webViewLifecycle.loadTab(tab)
                 }
             }
 
@@ -72,7 +72,7 @@ final class TabRegularLifecycleOwner {
             let targetSpace = dependencies.resolvedTargetSpace(space, sourceTab?.spaceId)
             _ = dependencies.backfillTargetSpaceProfileIfNeeded(
                 targetSpace,
-                tab.profileId ?? dependencies.runtimeContext()?.currentProfileId
+                tab.profileId ?? dependencies.runtimePorts()?.currentProfileId
             )
 
             let insertionIndex: Int? = {
@@ -106,7 +106,7 @@ final class TabRegularLifecycleOwner {
         regularInsertionIndex: Int? = nil
     ) -> Tab {
         dependencies.withStructuralUpdateTransaction {
-            let settings = dependencies.settings() ?? dependencies.runtimeContext()?.settings
+            let settings = dependencies.settings() ?? dependencies.runtimePorts()?.settings
             let template = settings?.resolvedSearchEngineTemplate ?? SearchProvider.google.queryTemplate
             let normalizedUrl = normalizeURL(url, queryTemplate: template)
             guard let validURL = URL(string: normalizedUrl)
@@ -161,7 +161,7 @@ final class TabRegularLifecycleOwner {
         existingWebView: WKWebView? = nil
     ) -> Tab {
         dependencies.withStructuralUpdateTransaction {
-            let settings = dependencies.settings() ?? dependencies.runtimeContext()?.settings
+            let settings = dependencies.settings() ?? dependencies.runtimePorts()?.settings
             let template = settings?.resolvedSearchEngineTemplate ?? SearchProvider.google.queryTemplate
             let normalizedUrl = normalizeURL(url, queryTemplate: template)
             guard let validURL = URL(string: normalizedUrl)
@@ -310,8 +310,8 @@ extension TabRegularLifecycleOwner.Dependencies {
             settings: { [weak tabManager] in
                 tabManager?.sumiSettings
             },
-            runtimeContext: { [weak tabManager] in
-                tabManager?.runtimeContext
+            runtimePorts: { [weak tabManager] in
+                tabManager?.runtimePorts
             },
             contains: { [weak tabManager] tab in
                 tabManager?.tabCollectionMembershipOwner.contains(tab) ?? false
@@ -374,7 +374,7 @@ extension TabRegularLifecycleOwner.Dependencies {
                 return tabManager.visitedLinkStore
             },
             liveDocumentURL: { [weak tabManager] tab in
-                tabManager?.runtimeContext?.webViewLifecycle.anyLiveWebView(for: tab)?.url
+                tabManager?.runtimePorts?.webViewLifecycle.anyLiveWebView(for: tab)?.url
             }
         )
     }

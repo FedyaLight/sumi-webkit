@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 struct SumiPermissionPromptCooldown: Equatable, Sendable {
     static let firstDismissCooldown: TimeInterval = 10 * 60

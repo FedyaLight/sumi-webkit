@@ -4,6 +4,7 @@
 //
 
 import SwiftUI
+import SumiDomain
 
 struct SettingsGeneralTab: View {
     @Environment(\.sumiSettings) var sumiSettings

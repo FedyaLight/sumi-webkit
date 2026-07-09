@@ -6,7 +6,7 @@ import WebKit
 final class TabTransientWebKitTabLifecycleOwner {
     struct Dependencies {
         let settings: () -> SumiSettingsService?
-        let runtimeContext: () -> TabManagerRuntimeContext?
+        let runtimePorts: () -> RuntimePortRegistry?
         let membershipOwner: () -> TabCollectionMembershipOwner
         let regularTabCollectionOwner: () -> RegularTabCollectionOwner
         let attach: (Tab) -> Void
@@ -78,7 +78,7 @@ final class TabTransientWebKitTabLifecycleOwner {
         let resolvedProfileId = profileId
             ?? openerTab?.profileId
             ?? openerTab?.resolveProfile()?.id
-            ?? dependencies.runtimeContext()?.currentProfileId
+            ?? dependencies.runtimePorts()?.currentProfileId
 
         let tab = Tab(
             url: resolvedURL,
@@ -141,7 +141,7 @@ final class TabTransientWebKitTabLifecycleOwner {
         guard let auxiliaryTab = dependencies.membershipOwner().auxiliaryMiniWindowTab(for: id) else {
             return false
         }
-        dependencies.runtimeContext()?.closeAuxiliaryMiniWindow(
+        dependencies.runtimePorts()?.closeAuxiliaryMiniWindow(
             for: dependencies.tabForID(id) ?? auxiliaryTab,
             reason: .extensionRequestedClose
         )
@@ -153,17 +153,17 @@ final class TabTransientWebKitTabLifecycleOwner {
     }
 
     private func unloadAndDetach(_ tab: Tab, notifyExtensionClose: Bool) {
-        guard let runtimeContext = dependencies.runtimeContext() else {
+        guard let runtimePorts = dependencies.runtimePorts() else {
             preconditionFailure(
-                "TabManager.runtimeContext is nil. Transient WebKit tab cleanup requires "
+                "TabManager.runtimePorts is nil. Transient WebKit tab cleanup requires "
                     + "BrowserManagerRuntimeWiring.attach(to:) before destructive tab operations."
             )
         }
         if notifyExtensionClose {
-            runtimeContext.notifyTabClosedIfLoaded(tab)
+            runtimePorts.notifyTabClosedIfLoaded(tab)
         }
-        runtimeContext.webViewLifecycle.unloadTab(tab)
-        runtimeContext.webViewLifecycle.requireRemoveAllWebViews(
+        runtimePorts.webViewLifecycle.unloadTab(tab)
+        runtimePorts.webViewLifecycle.requireRemoveAllWebViews(
             for: tab,
             closeActiveFullscreenMedia: true
         )
@@ -179,8 +179,8 @@ extension TabTransientWebKitTabLifecycleOwner.Dependencies {
     @MainActor
     static func live(tabManager: TabManager) -> Self {
         Self(
-            settings: { [weak tabManager] in tabManager?.sumiSettings ?? tabManager?.runtimeContext?.settings },
-            runtimeContext: { [weak tabManager] in tabManager?.runtimeContext },
+            settings: { [weak tabManager] in tabManager?.sumiSettings ?? tabManager?.runtimePorts?.settings },
+            runtimePorts: { [weak tabManager] in tabManager?.runtimePorts },
             membershipOwner: { [weak tabManager] in
                 guard let tabManager else { preconditionFailure("TabManager dependency used after deallocation") }
                 return tabManager.tabCollectionMembershipOwner

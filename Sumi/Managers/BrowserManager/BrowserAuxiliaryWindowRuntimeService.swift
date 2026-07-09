@@ -11,7 +11,7 @@ enum BrowserAuxiliaryWindowRuntimeService {
                 browserManager?.windowRegistry?.activeWindow
             },
             currentTab: { [weak browserManager] windowState in
-                browserManager?.windowTabContextOwner.currentTab(for: windowState)
+                browserManager?.windowSessionBundle.tabContextOwner.currentTab(for: windowState)
             },
             currentProfileID: { [weak browserManager] in
                 browserManager?.currentProfile?.id
@@ -20,7 +20,7 @@ enum BrowserAuxiliaryWindowRuntimeService {
                 browserManager?.tabManager.spaceStateOwner.currentSpace
             },
             windowContainingTab: { [weak browserManager] tab in
-                browserManager?.windowTabContextOwner.windowState(containing: tab)
+                browserManager?.windowSessionBundle.tabContextOwner.windowState(containing: tab)
             },
             appKitWindow: { [weak browserManager] windowState in
                 browserManager?.windowRegistry?.appKitWindow(for: windowState)

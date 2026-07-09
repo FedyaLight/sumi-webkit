@@ -35,6 +35,25 @@ final class SumiDomainSmokeTests: XCTestCase {
         )
     }
 
+    func testProfilePartitionAndTabIdentityAreHashable() {
+        let partition = ProfilePartition(name: "Work", icon: "💼", isEphemeral: false)
+        XCTAssertEqual(partition.icon, "💼")
+        XCTAssertFalse(partition.isEphemeral)
+
+        let tab = TabIdentity(
+            url: "https://example.com",
+            title: "Example",
+            spaceId: UUID(),
+            profilePartitionId: partition.id,
+            isPinned: true,
+            folderId: nil
+        )
+        XCTAssertEqual(tab.profilePartitionId, partition.id)
+        XCTAssertTrue(tab.isPinned)
+        XCTAssertEqual(Set([partition, partition]).count, 1)
+        XCTAssertEqual(Set([tab, tab]).count, 1)
+    }
+
     @MainActor
     func testTabPlacementStateOwnerShortcutBinding() {
         let owner = TabPlacementStateOwner()

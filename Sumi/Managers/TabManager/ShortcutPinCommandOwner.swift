@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 /// Owns user-level launcher pin commands: pinning tabs to essentials or a
 /// space, copying, removing, updating, resetting, and reordering shortcut
@@ -25,7 +26,7 @@ final class ShortcutPinCommandOwner {
         let faviconService: any BrowserFaviconServicing
         let faviconImageService: any BrowserFaviconImageServicing
         let visitedLinkStore: any BrowserVisitedLinkStoreManaging
-        let runtimeContext: @MainActor () -> TabManagerRuntimeContext?
+        let runtimePorts: @MainActor () -> RuntimePortRegistry?
         let scheduleStructuralPersistence: @MainActor () -> Void
     }
 
@@ -194,14 +195,14 @@ final class ShortcutPinCommandOwner {
     func removeShortcutPin(_ pin: ShortcutPin) {
         dependencies.withStructuralUpdateTransactionVoid {
             if dependencies.shortcutPinCollectionStateOwner.shortcutPin(by: pin.id) != nil {
-                dependencies.runtimeContext()?.captureDeletedShortcutLauncher(pin)
+                dependencies.runtimePorts()?.captureDeletedShortcutLauncher(pin)
             }
 
             dependencies.shortcutPinStoreOwner.removeFromContainers(pin)
 
             let cleanupResult = dependencies.shortcutLiveTabOwner.removeLiveShortcutTabs(forDeletedPinId: pin.id)
             if cleanupResult.didClearCurrentSelection {
-                dependencies.runtimeContext()?.validateWindowStates()
+                dependencies.runtimePorts()?.validateWindowStates()
             }
             dependencies.shortcutLiveTabOwner.persistWindowSessionsForShortcutSelectionCleanup(cleanupResult)
             dependencies.scheduleStructuralPersistence()
@@ -472,8 +473,8 @@ extension ShortcutPinCommandOwner.Dependencies {
             faviconService: tabManager.faviconService,
             faviconImageService: tabManager.faviconImageService,
             visitedLinkStore: tabManager.visitedLinkStore,
-            runtimeContext: { [weak tabManager] in
-                tabManager?.runtimeContext
+            runtimePorts: { [weak tabManager] in
+                tabManager?.runtimePorts
             },
             scheduleStructuralPersistence: { [weak tabManager] in
                 tabManager?.scheduleStructuralPersistence()

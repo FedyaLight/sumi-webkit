@@ -1,4 +1,5 @@
 import SwiftUI
+import SumiDomain
 
 struct SumiPermissionPromptDeviceListView: View {
     let text: String

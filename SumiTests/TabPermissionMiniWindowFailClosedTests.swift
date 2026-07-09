@@ -1,0 +1,132 @@
+import WebKit
+import XCTest
+
+@testable import Sumi
+import SumiDomain
+
+/// Regression: MiniWindow must never present permission prompt UI (fail-closed).
+/// Bridges that default surface to `.normalTab` must not weaken this for mini windows.
+@MainActor
+final class TabPermissionMiniWindowFailClosedTests: XCTestCase {
+    func testMiniWindowSurfaceCannotPresentPromptUIEvenWhenActiveAndVisible() {
+        let miniWindowContext = makeSecurityContext(surface: .miniWindow)
+
+        XCTAssertEqual(miniWindowContext.surface, .miniWindow)
+        XCTAssertFalse(
+            miniWindowContext.canPresentPromptUI,
+            "MiniWindow must fail closed: canPresentPromptUI must be false"
+        )
+    }
+
+    func testNormalTabCanPresentPromptUIWhenActiveAndVisible() {
+        let normalContext = makeSecurityContext(surface: .normalTab)
+        XCTAssertTrue(normalContext.canPresentPromptUI)
+    }
+
+    private func makeSecurityContext(
+        surface: SumiPermissionSecurityContext.Surface
+    ) -> SumiPermissionSecurityContext {
+        let origin = SumiPermissionOrigin(url: URL(string: "https://example.com/")!)
+        let request = SumiPermissionRequest(
+            requestingOrigin: origin,
+            topOrigin: origin,
+            displayDomain: "example.com",
+            permissionTypes: [.geolocation],
+            hasUserGesture: true,
+            requestedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            isEphemeralProfile: false,
+            profilePartitionId: "profile-a"
+        )
+        return SumiPermissionSecurityContext(
+            request: request,
+            requestingOrigin: request.requestingOrigin,
+            topOrigin: request.topOrigin,
+            committedURL: URL(string: "https://example.com/"),
+            visibleURL: URL(string: "https://example.com/"),
+            mainFrameURL: URL(string: "https://example.com/"),
+            isMainFrame: true,
+            isActiveTab: true,
+            isVisibleTab: true,
+            hasUserGesture: true,
+            isEphemeralProfile: false,
+            profilePartitionId: "profile-a",
+            transientPageId: "page-a",
+            surface: surface,
+            navigationOrPageGeneration: "0",
+            now: Date(timeIntervalSince1970: 1_700_000_001)
+        )
+    }
+
+    func testPermissionSurfaceOwnerReportsMiniWindowForAuxiliaryTab() {
+        let tabId = UUID()
+        let profile = Profile(
+            id: UUID(uuidString: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")!,
+            name: "MiniWindow Fail Closed",
+            icon: "person"
+        )
+        let owner = TabPermissionSurfaceOwner(
+            context: TabPermissionSurfaceOwner.Context(
+                tabId: tabId,
+                currentURL: { URL(string: "https://example.com/")! },
+                resolveProfile: { profile },
+                isActiveTab: { true },
+                isVisibleTab: { true },
+                pageIdentity: {
+                    let tabIdString = tabId.uuidString.lowercased()
+                    return TabExtensionPageIdentity(
+                        tabId: tabIdString,
+                        pageGeneration: "0",
+                        pageId: "\(tabIdString):0"
+                    )
+                },
+                committedMainDocumentURL: { URL(string: "https://example.com/") },
+                isCurrentPage: { _, _ in true },
+                invalidatePageForWebViewReplacement: {},
+                handlePermissionLifecycleEvent: { _ in },
+                isActiveGlancePreviewSurface: { _ in false },
+                isAuxiliaryMiniWindow: { true }
+            )
+        )
+        let webView = WKWebView()
+
+        XCTAssertEqual(owner.permissionSurface(for: webView), .miniWindow)
+
+        let geolocation = owner.geolocationContext(for: webView)
+        XCTAssertEqual(geolocation?.surface, .miniWindow)
+    }
+
+    func testPermissionSurfaceOwnerPrefersGlanceOverMiniWindow() {
+        let tabId = UUID()
+        let profile = Profile(
+            id: UUID(uuidString: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")!,
+            name: "MiniWindow Fail Closed",
+            icon: "person"
+        )
+        let owner = TabPermissionSurfaceOwner(
+            context: TabPermissionSurfaceOwner.Context(
+                tabId: tabId,
+                currentURL: { URL(string: "https://example.com/")! },
+                resolveProfile: { profile },
+                isActiveTab: { true },
+                isVisibleTab: { true },
+                pageIdentity: {
+                    let tabIdString = tabId.uuidString.lowercased()
+                    return TabExtensionPageIdentity(
+                        tabId: tabIdString,
+                        pageGeneration: "0",
+                        pageId: "\(tabIdString):0"
+                    )
+                },
+                committedMainDocumentURL: { URL(string: "https://example.com/") },
+                isCurrentPage: { _, _ in true },
+                invalidatePageForWebViewReplacement: {},
+                handlePermissionLifecycleEvent: { _ in },
+                isActiveGlancePreviewSurface: { _ in true },
+                isAuxiliaryMiniWindow: { true }
+            )
+        )
+        let webView = WKWebView()
+
+        XCTAssertEqual(owner.permissionSurface(for: webView), .glance)
+    }
+}

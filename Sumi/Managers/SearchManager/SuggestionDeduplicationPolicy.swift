@@ -5,6 +5,7 @@
 //
 
 import Foundation
+import SumiDomain
 
 /// Pure dedup/identity policy for search suggestions: how a suggestion's
 /// canonical URL is derived, whether two suggestions are "the same" result,

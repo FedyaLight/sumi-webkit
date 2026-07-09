@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import SumiDomain
 
 enum KeyboardShortcutPresentation {
     static func displayString(for keyCombination: KeyCombination) -> String {

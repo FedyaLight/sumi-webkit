@@ -5,6 +5,7 @@
 //
 
 import SwiftUI
+import SumiDomain
 
 @MainActor
 @Observable

@@ -2,6 +2,7 @@ import WebKit
 import XCTest
 
 @testable import Sumi
+import SumiDomain
 
 final class SumiAutoplayPolicyTests: XCTestCase {
     func testWebKitMappingIsDeterministic() {

@@ -30,7 +30,7 @@ Manual validation for real device, TCC, WebKit, app-handler, and app-level popov
 
 ## Deferred Work
 
-- MiniWindow/Glance permission integration.
+- Full MiniWindow/Glance permission integration beyond fail-closed gating.
 - Extension permission bridging/UI.
 - Deterministic permission XCUITest injection harness.
 - Optional future content settings for JavaScript, images, automatic downloads, ads, background sync, and sound.

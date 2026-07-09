@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 enum SumiExternalSchemePermissionAction: Equatable, Sendable {
     case opened(SumiExternalSchemeAttemptRecord)

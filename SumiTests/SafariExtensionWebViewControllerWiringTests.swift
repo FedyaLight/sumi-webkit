@@ -55,7 +55,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         browserManager.windowRegistry = windowRegistry
         browserManager.webViewCoordinator = coordinator
         browserManager.tabManager = TabManager(
-            runtimeContext: BrowserTabManagerRuntimeContextFactory.runtime(for: browserManager),
+            runtimePorts: BrowserTabManagerRuntimePortsFactory.registry(for: browserManager),
             context: container.mainContext,
             loadPersistedState: false
         )
@@ -410,7 +410,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         )
         extensionsModule.attach(runtime: BrowserExtensionsModuleRuntimeFactory.runtime(for: browserManager))
         browserManager.tabManager = TabManager(
-            runtimeContext: BrowserTabManagerRuntimeContextFactory.runtime(for: browserManager),
+            runtimePorts: BrowserTabManagerRuntimePortsFactory.registry(for: browserManager),
             context: container.mainContext,
             loadPersistedState: false
         )
@@ -502,7 +502,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         browserManager.windowRegistry = windowRegistry
         browserManager.webViewCoordinator = WebViewCoordinator()
         browserManager.tabManager = TabManager(
-            runtimeContext: BrowserTabManagerRuntimeContextFactory.runtime(for: browserManager),
+            runtimePorts: BrowserTabManagerRuntimePortsFactory.registry(for: browserManager),
             context: container.mainContext,
             loadPersistedState: false
         )
@@ -614,7 +614,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             profile: profile
         )
         browserManager.tabManager = TabManager(
-            runtimeContext: BrowserTabManagerRuntimeContextFactory.runtime(for: browserManager),
+            runtimePorts: BrowserTabManagerRuntimePortsFactory.registry(for: browserManager),
             context: container.mainContext,
             loadPersistedState: false
         )
@@ -695,7 +695,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             profile: profile
         )
         browserManager.tabManager = TabManager(
-            runtimeContext: BrowserTabManagerRuntimeContextFactory.runtime(for: browserManager),
+            runtimePorts: BrowserTabManagerRuntimePortsFactory.registry(for: browserManager),
             context: container.mainContext,
             loadPersistedState: false
         )
@@ -791,7 +791,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         let browserManager = makeBrowserManager(profile: profile)
         browserManager.webViewCoordinator = WebViewCoordinator()
         browserManager.tabManager = TabManager(
-            runtimeContext: BrowserTabManagerRuntimeContextFactory.runtime(for: browserManager),
+            runtimePorts: BrowserTabManagerRuntimePortsFactory.registry(for: browserManager),
             context: container.mainContext,
             loadPersistedState: false
         )
@@ -876,7 +876,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             profile: profile
         )
         browserManager.tabManager = TabManager(
-            runtimeContext: BrowserTabManagerRuntimeContextFactory.runtime(for: browserManager),
+            runtimePorts: BrowserTabManagerRuntimePortsFactory.registry(for: browserManager),
             context: container.mainContext,
             loadPersistedState: false
         )
@@ -957,7 +957,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         browserManager.windowRegistry = windowRegistry
         browserManager.webViewCoordinator = WebViewCoordinator()
         browserManager.tabManager = TabManager(
-            runtimeContext: BrowserTabManagerRuntimeContextFactory.runtime(for: browserManager),
+            runtimePorts: BrowserTabManagerRuntimePortsFactory.registry(for: browserManager),
             context: container.mainContext,
             loadPersistedState: false
         )
@@ -1062,7 +1062,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             profile: profile
         )
         browserManager.tabManager = TabManager(
-            runtimeContext: BrowserTabManagerRuntimeContextFactory.runtime(for: browserManager),
+            runtimePorts: BrowserTabManagerRuntimePortsFactory.registry(for: browserManager),
             context: container.mainContext,
             loadPersistedState: false
         )
@@ -1219,7 +1219,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             profile: profile
         )
         browserManager.tabManager = TabManager(
-            runtimeContext: BrowserTabManagerRuntimeContextFactory.runtime(for: browserManager),
+            runtimePorts: BrowserTabManagerRuntimePortsFactory.registry(for: browserManager),
             context: container.mainContext,
             loadPersistedState: false
         )

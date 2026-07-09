@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 final class SumiPermissionCoordinatorEventStream: @unchecked Sendable {
     private let lock = NSLock()

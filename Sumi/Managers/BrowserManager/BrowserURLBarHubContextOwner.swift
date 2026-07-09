@@ -81,19 +81,19 @@ final class BrowserURLBarHubContextOwner {
                     browserManager?.bookmarkEditorPresentationRequest
                 },
                 openExtensionSettings: { [weak browserManager] windowState in
-                    browserManager?.urlBarCommands.openSettingsTab(selecting: .extensions, in: windowState)
+                    browserManager?.urlBarBundle.commands.openSettingsTab(selecting: .extensions, in: windowState)
                 },
                 openSiteSettings: { [weak browserManager] tab, windowState in
-                    browserManager?.urlBarCommands.openSiteSettingsTab(focusing: tab, in: windowState)
+                    browserManager?.urlBarBundle.commands.openSiteSettingsTab(focusing: tab, in: windowState)
                 },
                 presentSharingServicePicker: { [weak browserManager] items, source in
-                    browserManager?.nativeDialogPresentationOwner.presentSharingServicePicker(
+                    browserManager?.chromeBundle.nativeDialogPresentationOwner.presentSharingServicePicker(
                         items,
                         source: source
                     )
                 },
                 clearBookmarkEditorPresentationRequest: { [weak browserManager] request in
-                    browserManager?.bookmarkCommandOwner.clearBookmarkEditorPresentationRequest(request)
+                    browserManager?.bookmarkBundle.bookmarkCommandOwner.clearBookmarkEditorPresentationRequest(request)
                 }
             )
         )

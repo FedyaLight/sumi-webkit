@@ -1,18 +1,19 @@
 import Foundation
+import SumiDomain
 
 @MainActor
 final class ShortcutPinRuntimeResolutionOwner {
     private let spaces: @MainActor () -> [Space]
-    private let runtimeContext: @MainActor () -> TabManagerRuntimeContext?
+    private let runtimePorts: @MainActor () -> RuntimePortRegistry?
     private let faviconService: @MainActor () -> any BrowserFaviconServicing
 
     init(
         spaces: @escaping @MainActor () -> [Space],
-        runtimeContext: @escaping @MainActor () -> TabManagerRuntimeContext?,
+        runtimePorts: @escaping @MainActor () -> RuntimePortRegistry?,
         faviconService: @escaping @MainActor () -> any BrowserFaviconServicing
     ) {
         self.spaces = spaces
-        self.runtimeContext = runtimeContext
+        self.runtimePorts = runtimePorts
         self.faviconService = faviconService
     }
 
@@ -69,7 +70,7 @@ final class ShortcutPinRuntimeResolutionOwner {
     func resolvedFaviconPartition(for pin: ShortcutPin, currentSpaceId: UUID? = nil) -> SumiFaviconPartition {
         let profileId = resolvedExecutionProfileId(for: pin, currentSpaceId: currentSpaceId)
         guard let profileId,
-              let profile = runtimeContext()?.profile(with: profileId)
+              let profile = runtimePorts()?.profile(with: profileId)
         else {
             return .regular(profileId)
         }

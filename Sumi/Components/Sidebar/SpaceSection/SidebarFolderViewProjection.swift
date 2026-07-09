@@ -464,6 +464,49 @@ struct SidebarFolderViewProjectionReader<Content: View>: View {
 
     @Environment(BrowserWindowState.self) private var windowState
 
+    init(
+        folder: TabFolder,
+        space: Space,
+        shortcutPins: [ShortcutPin],
+        childFolders: [TabFolder],
+        shortcutRestoreGaps: [ShortcutRestoreGap],
+        browserContext: SidebarBrowserContext,
+        currentTab: Tab?,
+        @ViewBuilder content: @escaping (SidebarFolderViewProjection) -> Content
+    ) {
+        self.folder = folder
+        self.space = space
+        self.shortcutPins = shortcutPins
+        self.childFolders = childFolders
+        self.shortcutRestoreGaps = shortcutRestoreGaps
+        self.tabManager = browserContext.tabManager
+        self.liveFolderManager = browserContext.liveFolderManager
+        self.currentTab = currentTab
+        self.content = content
+    }
+
+    init(
+        folder: TabFolder,
+        space: Space,
+        shortcutPins: [ShortcutPin],
+        childFolders: [TabFolder],
+        shortcutRestoreGaps: [ShortcutRestoreGap],
+        tabManager: TabManager,
+        liveFolderManager: SumiLiveFolderManager,
+        currentTab: Tab?,
+        @ViewBuilder content: @escaping (SidebarFolderViewProjection) -> Content
+    ) {
+        self.folder = folder
+        self.space = space
+        self.shortcutPins = shortcutPins
+        self.childFolders = childFolders
+        self.shortcutRestoreGaps = shortcutRestoreGaps
+        self.tabManager = tabManager
+        self.liveFolderManager = liveFolderManager
+        self.currentTab = currentTab
+        self.content = content
+    }
+
     var body: some View {
         content(
             SidebarFolderViewProjection(

@@ -2,6 +2,7 @@ import SwiftData
 import XCTest
 
 @testable import Sumi
+import SumiDomain
 
 @MainActor
 final class WindowSessionServiceTests: XCTestCase {
@@ -21,14 +22,14 @@ final class WindowSessionServiceTests: XCTestCase {
         windowState.savedSidebarWidth = 312
         windowState.sidebarContentWidth = BrowserWindowState.sidebarContentWidth(for: 312)
 
-        browserManager.windowSessionActivationOwner.schedulePersistWindowSession(
+        browserManager.windowSessionBundle.activationOwner.schedulePersistWindowSession(
             for: windowState,
             delayNanoseconds: 60_000_000_000
         )
 
         XCTAssertNil(UserDefaults.standard.data(forKey: sessionKey))
 
-        browserManager.windowSessionActivationOwner.flushPendingWindowSessionPersistence()
+        browserManager.windowSessionBundle.activationOwner.flushPendingWindowSessionPersistence()
 
         let data = try XCTUnwrap(UserDefaults.standard.data(forKey: sessionKey))
         let snapshot = try JSONDecoder().decode(WindowSessionSnapshot.self, from: data)
@@ -247,11 +248,11 @@ final class WindowSessionServiceTests: XCTestCase {
         let windowState = BrowserWindowState(awaitsInitialSessionResolution: true)
         windowState.currentSpaceId = space.id
 
-        XCTAssertNil(browserManager.windowTabContextOwner.currentTab(for: windowState))
+        XCTAssertNil(browserManager.windowSessionBundle.tabContextOwner.currentTab(for: windowState))
 
         windowState.isAwaitingInitialSessionResolution = false
 
-        XCTAssertNil(browserManager.windowTabContextOwner.currentTab(for: windowState))
+        XCTAssertNil(browserManager.windowSessionBundle.tabContextOwner.currentTab(for: windowState))
         XCTAssertEqual(
             browserManager.shellSelectionService.preferredTabForSpace(
                 space,
@@ -603,7 +604,7 @@ final class WindowSessionServiceTests: XCTestCase {
         browserManager.windowRegistry = windowRegistry
         windowRegistry.register(windowState)
 
-        browserManager.windowSpaceStateOwner.validateWindowStates()
+        browserManager.windowSessionBundle.spaceStateOwner.validateWindowStates()
 
         XCTAssertEqual(windowState.currentSpaceId, windowSpace.id)
         XCTAssertEqual(windowState.currentProfileId, windowProfile.id)
@@ -635,7 +636,7 @@ final class WindowSessionServiceTests: XCTestCase {
         browserManager.windowRegistry = windowRegistry
         windowRegistry.register(windowState)
 
-        browserManager.windowSpaceStateOwner.validateWindowStates()
+        browserManager.windowSessionBundle.spaceStateOwner.validateWindowStates()
 
         XCTAssertEqual(windowState.currentSpaceId, windowSpace.id)
         XCTAssertEqual(windowState.currentProfileId, windowProfile.id)
@@ -663,7 +664,7 @@ final class WindowSessionServiceTests: XCTestCase {
         browserManager.windowRegistry = windowRegistry
         windowRegistry.register(windowState)
 
-        browserManager.windowSpaceStateOwner.validateWindowStates()
+        browserManager.windowSessionBundle.spaceStateOwner.validateWindowStates()
 
         XCTAssertNil(windowState.currentSpaceId)
         XCTAssertNil(windowState.currentProfileId)
@@ -680,7 +681,7 @@ final class WindowSessionServiceTests: XCTestCase {
         browserManager.currentProfile = processProfile
         browserManager.tabManager.spaceStateOwner.replaceSpaces([])
 
-        browserManager.windowSpaceStateOwner.syncWindowSpaceContext(in: windowState, animateTheme: false)
+        browserManager.windowSessionBundle.spaceStateOwner.syncWindowSpaceContext(in: windowState, animateTheme: false)
 
         XCTAssertNil(windowState.currentProfileId)
     }
@@ -694,7 +695,7 @@ final class WindowSessionServiceTests: XCTestCase {
         let windowState = BrowserWindowState()
         browserManager.currentProfile = processProfile
 
-        browserManager.windowSessionActivationOwner.setActiveWindowState(windowState)
+        browserManager.windowSessionBundle.activationOwner.setActiveWindowState(windowState)
 
         XCTAssertNil(windowState.currentProfileId)
     }

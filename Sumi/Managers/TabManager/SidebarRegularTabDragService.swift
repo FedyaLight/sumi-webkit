@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 @MainActor
 final class SidebarRegularTabDragService {
@@ -24,7 +25,7 @@ final class SidebarRegularTabDragService {
         let reorderEssential: (ShortcutPin, Int) -> Bool
         let removeFromCurrentContainer: (Tab) -> Void
         let insertRegularTab: (Tab, UUID, Int) -> Void
-        let runtimeContext: () -> TabManagerRuntimeContext?
+        let runtimePorts: () -> RuntimePortRegistry?
 
         init(
             convertTabToShortcutPin: @escaping (
@@ -47,7 +48,7 @@ final class SidebarRegularTabDragService {
             reorderEssential: @escaping (ShortcutPin, Int) -> Bool,
             removeFromCurrentContainer: @escaping (Tab) -> Void,
             insertRegularTab: @escaping (Tab, UUID, Int) -> Void,
-            runtimeContext: @escaping () -> TabManagerRuntimeContext?
+            runtimePorts: @escaping () -> RuntimePortRegistry?
         ) {
             self.convertTabToShortcutPinBody = convertTabToShortcutPin
             self.resolvedEssentialsProfileId = resolvedEssentialsProfileId
@@ -60,7 +61,7 @@ final class SidebarRegularTabDragService {
             self.reorderEssential = reorderEssential
             self.removeFromCurrentContainer = removeFromCurrentContainer
             self.insertRegularTab = insertRegularTab
-            self.runtimeContext = runtimeContext
+            self.runtimePorts = runtimePorts
         }
 
         func convertTabToShortcutPin(
@@ -296,11 +297,11 @@ final class SidebarRegularTabDragService {
 
     private func dissolveActiveSplitIfNeeded(for tab: Tab) {
         guard !tab.isShortcutLiveInstance else { return }
-        guard let runtimeContext = dependencies.runtimeContext() else { return }
+        guard let runtimePorts = dependencies.runtimePorts() else { return }
 
-        runtimeContext.forEachWindow { windowId, _ in
-            if runtimeContext.visibleSplitTabIds(for: windowId).contains(tab.id) {
-                runtimeContext.handleTabClosure(tab.id)
+        runtimePorts.forEachWindow { windowId, _ in
+            if runtimePorts.visibleSplitTabIds(for: windowId).contains(tab.id) {
+                runtimePorts.handleTabClosure(tab.id)
             }
         }
     }
@@ -353,8 +354,8 @@ extension SidebarRegularTabDragService.Dependencies {
             insertRegularTab: { [weak tabManager] tab, spaceId, index in
                 tabManager?.regularTabCollectionOwner.insert(tab, in: spaceId, at: index)
             },
-            runtimeContext: { [weak tabManager] in
-                tabManager?.runtimeContext
+            runtimePorts: { [weak tabManager] in
+                tabManager?.runtimePorts
             }
         )
     }

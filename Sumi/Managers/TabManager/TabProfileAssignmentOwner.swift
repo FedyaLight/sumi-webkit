@@ -324,16 +324,16 @@ extension TabProfileAssignmentOwner.Dependencies {
                 tabManager?.selectionStateOwner.replaceCurrentTab(tab)
             },
             updateTabVisibility: { [weak tabManager] in
-                tabManager?.runtimeContext?.updateTabVisibility()
+                tabManager?.runtimePorts?.updateTabVisibility()
             },
             persistSelection: { [weak tabManager] in
                 tabManager?.structuralPersistence.persistSelection()
             },
             defaultProfileId: { [weak tabManager] in
-                tabManager?.runtimeContext?.defaultProfileId
+                tabManager?.runtimePorts?.defaultProfileId
             },
             profileExists: { [weak tabManager] profileId in
-                tabManager?.runtimeContext?.profileExists(profileId) ?? true
+                tabManager?.runtimePorts?.profileExists(profileId) ?? true
             },
             requestStructuralPublish: { [weak tabManager] in
                 tabManager?.requestStructuralPublish()
@@ -345,23 +345,23 @@ extension TabProfileAssignmentOwner.Dependencies {
                 )
             },
             windowIDsTrackingWebViews: { [weak tabManager] tabId in
-                tabManager?.runtimeContext?.webViewLifecycle.windowIDsTrackingWebViews(for: tabId) ?? []
+                tabManager?.runtimePorts?.webViewLifecycle.windowIDsTrackingWebViews(for: tabId) ?? []
             },
             primaryTrackedWindowId: { [weak tabManager] tabId in
-                tabManager?.runtimeContext?.webViewLifecycle.primaryTrackedWindowId(for: tabId)
+                tabManager?.runtimePorts?.webViewLifecycle.primaryTrackedWindowId(for: tabId)
             },
             rebuildLiveWebViews: { [weak tabManager] tab, windowId, url in
-                tabManager?.runtimeContext?.webViewLifecycle.rebuildLiveWebViews(
+                tabManager?.runtimePorts?.webViewLifecycle.rebuildLiveWebViews(
                     for: tab,
                     preferredPrimaryWindowId: windowId,
                     load: url
                 )
             },
             liveDocumentURL: { [weak tabManager] tab in
-                tabManager?.runtimeContext?.webViewLifecycle.anyLiveWebView(for: tab)?.url
+                tabManager?.runtimePorts?.webViewLifecycle.anyLiveWebView(for: tab)?.url
             },
             hasUntrackedOwnedWebView: { [weak tabManager] tab in
-                tabManager?.runtimeContext?.webViewLifecycle.hasUntrackedOwnedWebView(for: tab) ?? false
+                tabManager?.runtimePorts?.webViewLifecycle.hasUntrackedOwnedWebView(for: tab) ?? false
             }
         )
     }

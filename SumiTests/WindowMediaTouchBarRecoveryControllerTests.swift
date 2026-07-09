@@ -2,6 +2,7 @@ import WebKit
 import XCTest
 
 @testable import Sumi
+import SumiWebRuntime
 
 @MainActor
 final class WindowMediaTouchBarRecoveryControllerTests: XCTestCase {

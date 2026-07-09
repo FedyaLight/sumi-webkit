@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 /// Schedules automatic permission cleanup and browsing-data retention cleanup
 /// from settings, profile switches, and retention-change notifications.

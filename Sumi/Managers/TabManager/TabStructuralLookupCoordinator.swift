@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import SumiBrowserCore
 
 /// Coordinates the structural-lookup index and structural-publish batching that used to
 /// live directly on `TabManager`. It owns the `TabStructuralLookupOwner` (the id→tab index)
@@ -22,13 +23,17 @@ final class TabStructuralLookupCoordinator {
 
     init(
         structuralChanges: PassthroughSubject<Void, Never>,
+        eventBus: TabStructureEventBus? = nil,
         tabsBySpace: @escaping @MainActor () -> [UUID: [Tab]],
         transientShortcutTabsByWindow: @escaping @MainActor () -> [UUID: [UUID: Tab]],
         transientExtensionTabsByID: @escaping @MainActor () -> [UUID: Tab],
         auxiliaryMiniWindowTabsByID: @escaping @MainActor () -> [UUID: Tab]
     ) {
         self.lookupOwner = TabStructuralLookupOwner()
-        self.publishOwner = TabStructuralPublishOwner(structuralChanges: structuralChanges)
+        self.publishOwner = TabStructuralPublishOwner(
+            structuralChanges: structuralChanges,
+            eventBus: eventBus
+        )
         self.tabsBySpace = tabsBySpace
         self.transientShortcutTabsByWindow = transientShortcutTabsByWindow
         self.transientExtensionTabsByID = transientExtensionTabsByID

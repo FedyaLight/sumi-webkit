@@ -89,10 +89,10 @@ final class BrowserAppOrchestrationOwner {
                 browserManager != nil
             },
             setupWindowState: { [weak browserManager] windowState in
-                browserManager?.windowSessionActivationOwner.setupWindowState(windowState)
+                browserManager?.windowSessionBundle.activationOwner.setupWindowState(windowState)
             },
             handleWindowWillClose: { [weak browserManager] windowId in
-                browserManager?.windowHistorySessionOwner.handleWindowWillClose(windowId)
+                browserManager?.windowSessionBundle.historySessionOwner.handleWindowWillClose(windowId)
             },
             notifyWindowClosedIfLoaded: { [weak browserManager] windowId in
                 browserManager?.extensionsModule.notifyWindowClosedIfLoaded(windowId)
@@ -112,13 +112,13 @@ final class BrowserAppOrchestrationOwner {
                 browserManager?.windowRegistry?.windows[windowId]
             },
             closeIncognitoWindow: { [weak browserManager] windowState in
-                await browserManager?.windowSessionCommands.closeIncognitoWindow(windowState)
+                await browserManager?.windowSessionBundle.commands.closeIncognitoWindow(windowState)
             },
             setActiveWindowState: { [weak browserManager] windowState in
-                browserManager?.windowSessionActivationOwner.setActiveWindowState(windowState)
+                browserManager?.windowSessionBundle.activationOwner.setActiveWindowState(windowState)
             },
             handleWindowVisibilityChanged: { [weak browserManager] windowState in
-                browserManager?.windowSessionActivationOwner.handleWindowVisibilityChanged(windowState)
+                browserManager?.windowSessionBundle.activationOwner.handleWindowVisibilityChanged(windowState)
             },
             prepareForAllWindowsClosed: { [weak browserManager] in
                 browserManager?.windowSessionService.prepareForAllWindowsClosed()
@@ -139,7 +139,7 @@ final class BrowserAppOrchestrationOwner {
         )
 
         Task { @MainActor [browserManager] in
-            await browserManager.automaticDataCleanupOwner.runAutomaticPermissionCleanupIfNeeded(
+            await browserManager.privacyBundle.automaticDataCleanupOwner.runAutomaticPermissionCleanupIfNeeded(
                 for: browserManager.currentProfile
             )
         }

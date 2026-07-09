@@ -22,7 +22,7 @@ enum TabBrowserActionServiceFactory {
                 browserManager?.bookmarkManager.canBookmark(tab) ?? false
             },
             requestBookmarkEditorFromMenu: { [weak browserManager] in
-                browserManager?.bookmarkCommandOwner.requestBookmarkEditorForActiveWindowFromMenu()
+                browserManager?.bookmarkBundle.bookmarkCommandOwner.requestBookmarkEditorForActiveWindowFromMenu()
             },
             canStartContextMenuDownload: { [weak browserManager] in
                 browserManager != nil
@@ -40,7 +40,7 @@ enum TabBrowserActionServiceFactory {
                 openURLInForegroundTab(url, from: tab, browserManager: browserManager)
             },
             openURLsInNewWindow: { [weak browserManager] urls in
-                browserManager?.historyNavigationOwner.openURLsInNewWindow(urls)
+                browserManager?.historyBundle.historyNavigationOwner.openURLsInNewWindow(urls)
             },
             notificationPermissionBridge: { [weak browserManager] in
                 browserManager?.permissionRuntime.notificationPermissionBridge
@@ -69,7 +69,7 @@ enum TabBrowserActionServiceFactory {
         fallback: NSAppearance?,
         browserManager: BrowserManager
     ) -> NSAppearance? {
-        guard let windowState = browserManager.windowTabContextOwner.windowState(containing: tab),
+        guard let windowState = browserManager.windowSessionBundle.tabContextOwner.windowState(containing: tab),
               let settings = browserManager.sumiSettings
         else {
             return fallback
@@ -107,7 +107,7 @@ enum TabBrowserActionServiceFactory {
         from tab: Tab,
         browserManager: BrowserManager
     ) {
-        guard let windowState = browserManager.windowTabContextOwner.windowState(containing: tab) else { return }
+        guard let windowState = browserManager.windowSessionBundle.tabContextOwner.windowState(containing: tab) else { return }
 
         _ = browserManager.tabLifecycleService.opening.openNewTab(
             url: url.absoluteString,
@@ -119,7 +119,7 @@ enum TabBrowserActionServiceFactory {
     }
 
     private static func isCurrentTab(_ tab: Tab, browserManager: BrowserManager) -> Bool {
-        guard let windowState = browserManager.windowTabContextOwner.windowState(containing: tab) else { return false }
-        return browserManager.windowTabContextOwner.currentTab(for: windowState)?.id == tab.id
+        guard let windowState = browserManager.windowSessionBundle.tabContextOwner.windowState(containing: tab) else { return false }
+        return browserManager.windowSessionBundle.tabContextOwner.currentTab(for: windowState)?.id == tab.id
     }
 }

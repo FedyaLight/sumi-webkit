@@ -3,6 +3,7 @@ import Combine
 import Foundation
 import Navigation
 import WebKit
+import SumiDomain
 
 @MainActor
 final class SumiTabNavigationDelegateAdapter {

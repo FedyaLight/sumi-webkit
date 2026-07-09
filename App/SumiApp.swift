@@ -9,6 +9,7 @@ import Carbon
 import OSLog
 import SwiftUI
 import WebKit
+import SumiDomain
 
 private struct SumiAppRootDependencies {
     let browserManager: BrowserManager

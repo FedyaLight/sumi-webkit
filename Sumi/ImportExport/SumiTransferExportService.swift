@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 // Compatibility model for browser2zen's MIT-licensed legacy JSON shape.
 // This is a Sumi-owned Swift implementation; browser2zen is not vendored.

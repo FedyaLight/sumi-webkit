@@ -1,5 +1,6 @@
 import Navigation
 import WebKit
+import SumiDomain
 
 extension SumiFrameHandle {
     init(_ handle: FrameHandle) {

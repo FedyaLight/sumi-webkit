@@ -7,7 +7,7 @@ import Foundation
 @MainActor
 final class TabLastSessionRestoreOwner {
     struct Dependencies {
-        let requireRuntimeContext: @MainActor () -> TabManagerRuntimeContext
+        let requireRuntimePorts: @MainActor () -> RuntimePortRegistry
         let withStructuralUpdateTransactionVoid: @MainActor (@MainActor () -> Void) -> Void
         let lazyRestoreCoordinator: TabLazyRestoreCoordinator
         let transientTabRegistryOwner: TabTransientTabRegistryOwner
@@ -39,7 +39,7 @@ final class TabLastSessionRestoreOwner {
     }
 
     func resetRegularTabsAndShortcutLiveInstancesForStartup() {
-        let runtimeContext = dependencies.requireRuntimeContext()
+        let runtimePorts = dependencies.requireRuntimePorts()
         dependencies.withStructuralUpdateTransactionVoid {
             dependencies.lazyRestoreCoordinator.clear()
             let liveShortcutTabs = dependencies.transientTabRegistryOwner.transientShortcutTabs
@@ -47,8 +47,8 @@ final class TabLastSessionRestoreOwner {
                 for tab in liveShortcutTabs {
                     dependencies.cancelRuntimeStatePersistence(tab.id)
                     tab.performComprehensiveWebViewCleanup()
-                    runtimeContext.webViewLifecycle.unloadTab(tab)
-                    runtimeContext.webViewLifecycle.requireRemoveAllWebViews(
+                    runtimePorts.webViewLifecycle.unloadTab(tab)
+                    runtimePorts.webViewLifecycle.requireRemoveAllWebViews(
                         for: tab,
                         closeActiveFullscreenMedia: true
                     )
@@ -62,8 +62,8 @@ final class TabLastSessionRestoreOwner {
                 let regularTabs = dependencies.regularTabCollectionOwner.tabs(in: space)
                 for tab in regularTabs {
                     dependencies.cancelRuntimeStatePersistence(tab.id)
-                    runtimeContext.webViewLifecycle.unloadTab(tab)
-                    runtimeContext.webViewLifecycle.requireRemoveAllWebViews(
+                    runtimePorts.webViewLifecycle.unloadTab(tab)
+                    runtimePorts.webViewLifecycle.requireRemoveAllWebViews(
                         for: tab,
                         closeActiveFullscreenMedia: true
                     )
@@ -349,11 +349,11 @@ extension TabLastSessionRestoreOwner.Dependencies {
     @MainActor
     static func live(tabManager: TabManager) -> Self {
         Self(
-            requireRuntimeContext: { [weak tabManager] in
+            requireRuntimePorts: { [weak tabManager] in
                 guard let tabManager else {
                     preconditionFailure("TabManager dependency used after deallocation")
                 }
-                return tabManager.requireRuntimeContext()
+                return tabManager.requireRuntimePorts()
             },
             withStructuralUpdateTransactionVoid: { [weak tabManager] operation in
                 guard let tabManager else {

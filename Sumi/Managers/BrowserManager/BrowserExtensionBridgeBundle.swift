@@ -35,13 +35,13 @@ final class BrowserExtensionBridgeBundle {
                 )
             },
             currentTab: { [weak browserManager] windowState in
-                browserManager?.windowTabContextOwner.currentTab(for: windowState)
+                browserManager?.windowSessionBundle.tabContextOwner.currentTab(for: windowState)
             },
             currentTabForActiveWindow: { [weak browserManager] in
-                browserManager?.activePageRoutingOwner.currentTabForActiveWindow()
+                browserManager?.urlBarBundle.activePageRoutingOwner.currentTabForActiveWindow()
             },
             windowStateContainingTab: { [weak browserManager] tab in
-                browserManager?.windowTabContextOwner.windowState(containing: tab)
+                browserManager?.windowSessionBundle.tabContextOwner.windowState(containing: tab)
             },
             selectTab: { [weak browserManager] tab, windowState in
                 browserManager?.selectTab(tab, in: windowState)
@@ -69,10 +69,10 @@ final class BrowserExtensionBridgeBundle {
                 )
             },
             createNewWindow: { [weak browserManager] in
-                browserManager?.windowSessionCommands.createNewWindow()
+                browserManager?.windowSessionBundle.commands.createNewWindow()
             },
             urlBarHubAnchorView: { [weak browserManager] windowId in
-                browserManager?.chromeCommands.urlBarHubPopoverPresenter.anchorView(
+                browserManager?.chromeBundle.commands.urlBarHubPopoverPresenter.anchorView(
                     for: windowId
                 )
             },

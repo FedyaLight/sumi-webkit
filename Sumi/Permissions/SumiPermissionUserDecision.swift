@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 enum SumiPermissionUserDecision: Equatable, Sendable {
     case approveCurrentAttempt

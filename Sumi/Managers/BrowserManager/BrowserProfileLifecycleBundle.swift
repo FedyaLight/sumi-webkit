@@ -26,11 +26,11 @@ final class BrowserProfileLifecycleBundle {
                 browserManager?.notificationPresenter
             },
             runAutomaticPermissionCleanupIfNeeded: { [weak browserManager] profile in
-                _ = await browserManager?.automaticDataCleanupOwner
+                _ = await browserManager?.privacyBundle.automaticDataCleanupOwner
                     .runAutomaticPermissionCleanupIfNeeded(for: profile)
             },
             scheduleAutomaticBrowsingDataCleanup: { [weak browserManager] reason in
-                browserManager?.automaticDataCleanupOwner.scheduleAutomaticBrowsingDataCleanup(
+                browserManager?.privacyBundle.automaticDataCleanupOwner.scheduleAutomaticBrowsingDataCleanup(
                     reason: reason
                 )
             }
@@ -56,7 +56,7 @@ final class BrowserProfileLifecycleBundle {
                 browserManager?.sumiSettings?.resolvedStartupPageURL
             },
             space: { [weak browserManager] spaceId in
-                browserManager?.windowSpaceStateOwner.space(for: spaceId)
+                browserManager?.windowSessionBundle.spaceStateOwner.space(for: spaceId)
             },
             splitManager: { [weak browserManager] in
                 guard let browserManager else {
@@ -80,7 +80,7 @@ final class BrowserProfileLifecycleBundle {
                 )
             },
             currentRegularWindowSnapshots: { [weak browserManager] excludingWindowId in
-                browserManager?.windowHistorySessionOwner.currentRegularWindowSnapshots(excludingWindowID: excludingWindowId) ?? []
+                browserManager?.windowSessionBundle.historySessionOwner.currentRegularWindowSnapshots(excludingWindowID: excludingWindowId) ?? []
             },
             currentTabSnapshot: { [weak browserManager] in
                 guard let browserManager else {
@@ -97,10 +97,10 @@ final class BrowserProfileLifecycleBundle {
                 )
             },
             reopenWindow: { [weak browserManager] snapshot in
-                await browserManager?.historyMenuOwner.reopenWindow(from: snapshot)
+                await browserManager?.historyBundle.historyMenuOwner.reopenWindow(from: snapshot)
             },
             refreshLastSessionWindowsStore: { [weak browserManager] excludingWindowId in
-                browserManager?.windowHistorySessionOwner.refreshLastSessionWindowsStore(excludingWindowID: excludingWindowId)
+                browserManager?.windowSessionBundle.historySessionOwner.refreshLastSessionWindowsStore(excludingWindowID: excludingWindowId)
             }
         )
     }

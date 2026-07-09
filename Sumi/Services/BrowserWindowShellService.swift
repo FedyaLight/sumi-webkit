@@ -1,4 +1,5 @@
 import AppKit
+import SumiDomain
 
 @MainActor
 final class BrowserWindowShellService {

@@ -1,4 +1,5 @@
 import SwiftUI
+import SumiDomain
 
 struct SumiSiteSettingsView: View {
     enum Route: Equatable {

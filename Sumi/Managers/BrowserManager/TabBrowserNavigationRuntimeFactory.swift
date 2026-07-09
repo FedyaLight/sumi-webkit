@@ -75,10 +75,10 @@ enum TabBrowserNavigationRuntimeFactory {
                 browserManager?.webViewCoordinator
             },
             cancelWindowMutationsAfterHistorySwipe: { [weak browserManager] windowId in
-                browserManager?.windowVisualMutationOwner.cancelWindowMutationsAfterHistorySwipe(in: windowId)
+                browserManager?.windowSessionBundle.visualMutationOwner.cancelWindowMutationsAfterHistorySwipe(in: windowId)
             },
             flushWindowMutationsAfterHistorySwipe: { [weak browserManager] windowId in
-                browserManager?.windowVisualMutationOwner.flushWindowMutationsAfterHistorySwipe(in: windowId)
+                browserManager?.windowSessionBundle.visualMutationOwner.flushWindowMutationsAfterHistorySwipe(in: windowId)
             }
         )
     }
@@ -118,7 +118,7 @@ enum TabBrowserNavigationRuntimeFactory {
                     browserManager?.extensionsModule
                 },
                 loadZoomForTab: { [weak browserManager] tabId in
-                    browserManager?.zoomCommandOwner.loadZoomForTab(tabId)
+                    browserManager?.chromeBundle.zoomCommandOwner.loadZoomForTab(tabId)
                 },
                 adBlockingModule: { [weak browserManager] in
                     browserManager?.adBlockingModule

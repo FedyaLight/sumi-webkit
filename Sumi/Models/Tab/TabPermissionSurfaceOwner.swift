@@ -16,6 +16,7 @@ final class TabPermissionSurfaceOwner {
         let invalidatePageForWebViewReplacement: @MainActor () -> Void
         let handlePermissionLifecycleEvent: @MainActor (SumiPermissionLifecycleEvent) -> Void
         let isActiveGlancePreviewSurface: @MainActor (WKWebView) -> Bool
+        let isAuxiliaryMiniWindow: @MainActor () -> Bool
     }
 
     private let context: Context
@@ -37,12 +38,16 @@ final class TabPermissionSurfaceOwner {
     }
 
     func permissionSurface(for webView: WKWebView?) -> SumiPermissionSecurityContext.Surface {
-        guard let webView,
-              isActiveGlancePreviewSurface(for: webView)
-        else {
-            return .normalTab
+        if let webView,
+           isActiveGlancePreviewSurface(for: webView) {
+            // Glance is fail-closed for permission prompt UI (`canPresentPromptUI` is false).
+            return .glance
         }
-        return .glance
+        if context.isAuxiliaryMiniWindow() {
+            // MiniWindow is fail-closed for permission prompt UI (`canPresentPromptUI` is false).
+            return .miniWindow
+        }
+        return .normalTab
     }
 
     func isActiveSurface(for webView: WKWebView?) -> Bool {
@@ -308,6 +313,9 @@ extension TabPermissionSurfaceOwner.Context {
             },
             isActiveGlancePreviewSurface: { [weak tab] webView in
                 tab?.navigationRuntime.permissionRuntime.isActiveGlancePreviewSurface(tabId, webView) ?? false
+            },
+            isAuxiliaryMiniWindow: { [weak tab] in
+                tab?.isAuxiliaryMiniWindow ?? false
             }
         )
     }

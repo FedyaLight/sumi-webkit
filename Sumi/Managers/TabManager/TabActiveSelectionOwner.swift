@@ -6,7 +6,7 @@ final class TabActiveSelectionOwner {
         let contains: @MainActor (Tab) -> Bool
         let currentTab: @MainActor () -> Tab?
         let replaceCurrentTab: @MainActor (Tab?) -> Void
-        let runtimeContext: @MainActor () -> TabManagerRuntimeContext?
+        let runtimePorts: @MainActor () -> RuntimePortRegistry?
         let spaces: @MainActor () -> [Space]
         let currentSpace: @MainActor () -> Space?
         let replaceCurrentSpace: @MainActor (Space?) -> Void
@@ -40,7 +40,7 @@ final class TabActiveSelectionOwner {
         updateActiveTabSpaceSelectionState(for: tab, refreshCurrentSpaceReference: false)
 
         if previous?.id != tab.id {
-            dependencies.runtimeContext()?.notifyTabActivatedIfLoaded(
+            dependencies.runtimePorts()?.notifyTabActivatedIfLoaded(
                 newTab: tab,
                 previous: previous
             )
@@ -81,10 +81,10 @@ final class TabActiveSelectionOwner {
     }
 
     private func updateActiveSplitSelection(for tab: Tab) {
-        guard let runtimeContext = dependencies.runtimeContext() else { return }
-        runtimeContext.forEachWindow { windowId, windowState in
-            if runtimeContext.visibleSplitTabIds(for: windowId).contains(tab.id) {
-                runtimeContext.updateActiveSplitSide(for: tab.id, in: windowId)
+        guard let runtimePorts = dependencies.runtimePorts() else { return }
+        runtimePorts.forEachWindow { windowId, windowState in
+            if runtimePorts.visibleSplitTabIds(for: windowId).contains(tab.id) {
+                runtimePorts.updateActiveSplitSide(for: tab.id, in: windowId)
                 if windowState.currentTabId != tab.id {
                     windowState.currentTabId = tab.id
                 }
@@ -131,8 +131,8 @@ extension TabActiveSelectionOwner.Dependencies {
             replaceCurrentTab: { [weak tabManager] tab in
                 tabManager?.selectionStateOwner.replaceCurrentTab(tab)
             },
-            runtimeContext: { [weak tabManager] in
-                tabManager?.runtimeContext
+            runtimePorts: { [weak tabManager] in
+                tabManager?.runtimePorts
             },
             spaces: { [weak tabManager] in
                 tabManager?.spaceStateOwner.spaces ?? []
@@ -150,7 +150,7 @@ extension TabActiveSelectionOwner.Dependencies {
                 tabManager?.structuralPersistence.persistSelection()
             },
             windowState: { [weak tabManager] windowId in
-                tabManager?.runtimeContext?.windowState(for: windowId)
+                tabManager?.runtimePorts?.windowState(for: windowId)
             },
             currentSpaceId: { [weak tabManager] in
                 tabManager?.spaceStateOwner.currentSpaceId
@@ -159,7 +159,7 @@ extension TabActiveSelectionOwner.Dependencies {
                 tabManager?.spaceStateOwner.profileId(for: spaceId)
             },
             currentProfileId: { [weak tabManager] in
-                tabManager?.runtimeContext?.currentProfileId
+                tabManager?.runtimePorts?.currentProfileId
             },
             regularTabs: { [weak tabManager] spaceId in
                 tabManager?.regularTabCollectionOwner.tabs(in: spaceId) ?? []

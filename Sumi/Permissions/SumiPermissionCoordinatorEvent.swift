@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 enum SumiPermissionCoordinatorEvent: Equatable, Sendable {
     case queryActivated(SumiPermissionAuthorizationQuery)

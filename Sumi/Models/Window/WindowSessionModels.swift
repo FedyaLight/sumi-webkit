@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import SumiDomain
 
 enum LegacySplitOrientation: String, Codable, Hashable {
     case horizontal

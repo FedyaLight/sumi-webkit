@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 enum SumiPermissionRuntimeControlsStrings {
     static let defaultDisplayDomain = "This site"

@@ -49,7 +49,7 @@ final class BrowserChromeCommands {
 
     func toggleURLBarHubPopover(in windowState: BrowserWindowState) {
         syncPopoverRegistries()
-        guard let browserContext = browserManager?.urlBarContextOwner.urlBarHubContext else { return }
+        guard let browserContext = browserManager?.urlBarBundle.contextOwner.urlBarHubContext else { return }
         urlBarHubPopoverPresenter.toggle(
             in: windowState,
             browserContext: browserContext
@@ -58,7 +58,7 @@ final class BrowserChromeCommands {
 
     func presentURLBarHubPopover(in windowState: BrowserWindowState) {
         syncPopoverRegistries()
-        guard let browserContext = browserManager?.urlBarContextOwner.urlBarHubContext else { return }
+        guard let browserContext = browserManager?.urlBarBundle.contextOwner.urlBarHubContext else { return }
         urlBarHubPopoverPresenter.present(
             in: windowState,
             browserContext: browserContext
@@ -73,7 +73,7 @@ final class BrowserChromeCommands {
 
     func clearCurrentPageCookies() {
         guard let browserManager,
-              let tab = browserManager.activePageRoutingOwner.activePageTabForActiveWindow(),
+              let tab = browserManager.urlBarBundle.activePageRoutingOwner.activePageTabForActiveWindow(),
               !tab.representsSumiNativeSurface,
               let context = makePrivacyContext()
         else { return }
@@ -82,7 +82,7 @@ final class BrowserChromeCommands {
 
     func hardReloadCurrentPage() {
         guard let browserManager,
-              let tab = browserManager.activePageRoutingOwner.activePageTabForActiveWindow(),
+              let tab = browserManager.urlBarBundle.activePageRoutingOwner.activePageTabForActiveWindow(),
               !tab.representsSumiNativeSurface,
               let context = makePrivacyContext()
         else { return }
@@ -93,12 +93,12 @@ final class BrowserChromeCommands {
         guard browserManager != nil else { return nil }
         return BrowserPrivacyService.Context(
             currentDataStore: { [weak browserManager] in
-                browserManager?.activePageRoutingOwner.activePageTabForActiveWindow()?.resolveProfile()?.dataStore
+                browserManager?.urlBarBundle.activePageRoutingOwner.activePageTabForActiveWindow()?.resolveProfile()?.dataStore
                     ?? browserManager?.currentProfile?.dataStore
                     ?? WKWebsiteDataStore.default()
             },
             currentTab: { [weak browserManager] in
-                browserManager?.activePageRoutingOwner.activePageTabForActiveWindow()
+                browserManager?.urlBarBundle.activePageRoutingOwner.activePageTabForActiveWindow()
             },
             activeWindowId: { [weak browserManager] in
                 browserManager?.windowRegistry?.activeWindow?.id
@@ -110,7 +110,7 @@ final class BrowserChromeCommands {
                 guard let browserManager,
                       let windowState = browserManager.windowRegistry?.windows[windowId]
                 else { return }
-                browserManager.windowScopedNavigationOwner.refreshWindowScopedPage(
+                browserManager.windowSessionBundle.scopedNavigationOwner.refreshWindowScopedPage(
                     tab: tab,
                     in: windowState,
                     reason: reason

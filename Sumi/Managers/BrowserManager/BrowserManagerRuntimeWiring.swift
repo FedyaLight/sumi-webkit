@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import SumiSidebarChrome
 
 @MainActor
 enum BrowserManagerRuntimeWiring {
@@ -11,22 +12,15 @@ enum BrowserManagerRuntimeWiring {
         browserManager.splitManager.attach(
             runtime: BrowserSplitViewRuntimeFactory.runtime(for: browserManager)
         )
-        browserManager.tabManager.runtimeContextAttachmentOwner.attach(
-            BrowserTabManagerRuntimeContextFactory.runtime(for: browserManager)
-        )
-        browserManager.liveFolderManager.attach(
-            runtime: BrowserLiveFolderRuntimeService.runtime(for: browserManager)
-        )
+        let runtimePortRegistry = BrowserTabManagerRuntimePortsFactory.registry(for: browserManager)
+        browserManager.attachRuntimePortRegistry(runtimePortRegistry)
+        browserManager.tabManager.runtimePortsAttachmentOwner.attach(runtimePortRegistry)
+        // W8/R12: bind chrome commanding so SumiSidebarChrome peels stay hub-free.
+        SidebarChromeModule.bind(browserManager.sidebarChromeCommanding)
+        // Live Folders runtime attaches only when the module is enabled (W4/R9),
+        // via OptionalModuleHost.attachEnabled.
         browserManager.downloadManager.retryRuntime = BrowserDownloadRetryRuntimeFactory.runtime(for: browserManager)
-        browserManager.extensionsModule.attach(
-            runtime: BrowserExtensionsModuleRuntimeFactory.runtime(for: browserManager)
-        )
-        browserManager.userscriptsModule.attach(
-            runtime: BrowserUserscriptRuntimeFactory.runtime(for: browserManager)
-        )
-        browserManager.boostsModule.attach(
-            runtime: BrowserBoostRuntimeFactory.runtime(for: browserManager)
-        )
+        browserManager.optionalModuleHost.attachEnabled(into: browserManager)
         browserManager.auxiliaryWindowManager.attach(
             runtime: BrowserAuxiliaryWindowRuntimeService.runtime(for: browserManager)
         )

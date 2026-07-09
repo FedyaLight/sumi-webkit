@@ -326,7 +326,7 @@ extension TabStoreRestoreOwner.Dependencies {
             faviconImageService: tabManager.faviconImageService,
             visitedLinkStore: tabManager.visitedLinkStore,
             defaultProfileId: { [weak tabManager] in
-                tabManager?.runtimeContext?.defaultProfileId
+                tabManager?.runtimePorts?.defaultProfileId
             },
             markInitialDataLoadStarted: { [weak tabManager] in
                 tabManager?.markInitialDataLoadStarted()
@@ -357,7 +357,7 @@ extension TabStoreRestoreOwner.Dependencies {
                 tabManager?.structuralPersistence.prepareForRestoredState()
             },
             syncWorkspaceTheme: { [weak tabManager] space in
-                tabManager?.runtimeContext?.syncWorkspaceThemeAcrossWindows(for: space, animate: false)
+                tabManager?.runtimePorts?.syncWorkspaceThemeAcrossWindows(for: space, animate: false)
             },
             buildSnapshot: { [weak tabManager] in
                 tabManager?.structuralPersistence.buildSnapshot()

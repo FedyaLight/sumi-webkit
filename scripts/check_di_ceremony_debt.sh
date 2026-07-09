@@ -18,7 +18,7 @@ fi
 production_roots=(
   "App"
   "FloatingBar"
-  "Navigation"
+  "SidebarChrome"
   "Settings"
   "Sumi"
   "UI"

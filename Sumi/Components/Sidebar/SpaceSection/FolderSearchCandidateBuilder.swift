@@ -43,6 +43,25 @@ struct FolderSearchCandidateBuilder {
     let liveFolderProvider: FolderSearchLiveFolderProviding
     let actions: FolderSearchActivationActions
 
+    init(
+        tabManager: TabManager,
+        liveFolderProvider: FolderSearchLiveFolderProviding,
+        actions: FolderSearchActivationActions
+    ) {
+        self.tabManager = tabManager
+        self.liveFolderProvider = liveFolderProvider
+        self.actions = actions
+    }
+
+    init(
+        browserContext: SidebarBrowserContext,
+        actions: FolderSearchActivationActions
+    ) {
+        self.tabManager = browserContext.tabManager
+        self.liveFolderProvider = browserContext.liveFolderManager
+        self.actions = actions
+    }
+
     func candidates(
         for folder: TabFolder,
         in space: Space,

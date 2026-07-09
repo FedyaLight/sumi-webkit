@@ -2,6 +2,7 @@ import AppKit
 import Combine
 import SwiftUI
 import WebKit
+import SumiDomain
 
 @MainActor
 struct URLBarExtensionActionContext {

@@ -4,7 +4,7 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
-runtime_paths=(App Sumi Settings Navigation FloatingBar UI)
+runtime_paths=(App Sumi Settings SidebarChrome FloatingBar UI)
 allowed_files=(
   "Sumi/Managers/BrowserManager/BrowserManager.swift"
   "Sumi/Managers/WebViewCoordinator/WebViewCoordinator.swift"

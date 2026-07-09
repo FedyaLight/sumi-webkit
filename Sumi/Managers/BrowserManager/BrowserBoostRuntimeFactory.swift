@@ -21,10 +21,10 @@ enum BrowserBoostRuntimeFactory {
                 return allLivePages(browserManager: browserManager)
             },
             applyBoostAwareZoom: { [weak browserManager] tab, webView in
-                browserManager?.zoomCommandOwner.applyBoostAwareZoom(for: tab, webView: webView)
+                browserManager?.chromeBundle.zoomCommandOwner.applyBoostAwareZoom(for: tab, webView: webView)
             },
             openWebInspector: { [weak browserManager] tab, windowState in
-                browserManager?.activePageRoutingOwner.openWebInspector(for: tab, in: windowState)
+                browserManager?.urlBarBundle.activePageRoutingOwner.openWebInspector(for: tab, in: windowState)
             },
             sidebarPosition: { [weak browserManager] in
                 browserManager?.sumiSettings?.sidebarPosition ?? .left
@@ -69,7 +69,7 @@ enum BrowserBoostRuntimeFactory {
         }
 
         for windowState in browserManager.windowRegistry?.allWindows ?? [] {
-            for tab in browserManager.windowTabContextOwner.tabsForDisplay(in: windowState) where tabMatches(tab) {
+            for tab in browserManager.windowSessionBundle.tabContextOwner.tabsForDisplay(in: windowState) where tabMatches(tab) {
                 if let webView = browserManager.webViewRoutingService.windowOwnedWebView(for: tab, in: windowState.id) {
                     visit(tab, webView)
                 }

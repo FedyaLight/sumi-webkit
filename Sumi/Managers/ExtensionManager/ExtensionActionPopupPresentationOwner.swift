@@ -1,5 +1,6 @@
 import AppKit
 import WebKit
+import SumiDomain
 
 @available(macOS 15.5, *)
 @MainActor

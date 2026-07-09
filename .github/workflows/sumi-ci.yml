@@ -21,12 +21,13 @@ env:
   XCODE_CONFIGURATION: Debug
   DERIVED_DATA_PATH: ${{ github.workspace }}/build/DerivedData
   RESULT_BUNDLE_PATH: ${{ github.workspace }}/build/BuildResults/Sumi.xcresult
+  TEST_RESULT_BUNDLE_PATH: ${{ github.workspace }}/build/BuildResults/SumiPRSmoke.xcresult
 
 jobs:
   build-and-test:
-    name: Build and package tests
+    name: Build and PR smoke tests
     runs-on: macos-15
-    timeout-minutes: 45
+    timeout-minutes: 60
 
     steps:
       - name: Check out repository
@@ -59,11 +60,55 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             build
 
+      - name: PR smoke unit tests
+        env:
+          SUMI_CI_DERIVED_DATA: ${{ env.DERIVED_DATA_PATH }}
+          SUMI_CI_RESULT_BUNDLE: ${{ env.TEST_RESULT_BUNDLE_PATH }}
+        run: |
+          set -euo pipefail
+          # Domain already tested above; run xcode smoke only
+          mkdir -p "$(dirname "$SUMI_CI_RESULT_BUNDLE")"
+          rm -rf "$SUMI_CI_RESULT_BUNDLE"
+          xcodebuild \
+            -project "$XCODE_PROJECT" \
+            -scheme "$XCODE_SCHEME" \
+            -configuration "$XCODE_CONFIGURATION" \
+            -destination 'platform=macOS' \
+            -derivedDataPath "$SUMI_CI_DERIVED_DATA" \
+            -resultBundlePath "$SUMI_CI_RESULT_BUNDLE" \
+            -parallel-testing-enabled NO \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            -only-testing:SumiTests/TabManagerStructuralPersistenceTests \
+            -only-testing:SumiTests/TabManagerStructuralBatchingTests \
+            -only-testing:SumiTests/RuntimeStateCoalescerTests \
+            -only-testing:SumiTests/BrowserManagerRuntimeWiringTests \
+            -only-testing:SumiTests/BrowserManagerInitializationWiringOwnerTests \
+            -only-testing:SumiTests/SumiPerformanceModularRegressionTests/testBrowserManagerStartupAndSettingsSurfacesDoNotConstructDisabledRuntimes \
+            -only-testing:SumiTests/SumiPerformanceModularRegressionTests/testEnablingOptionalModuleAfterStartupAttachesRuntime \
+            -only-testing:SumiTests/SumiPerformanceModularRegressionTests/testDefaultNormalTabAttachesOnlyCoreRuntimeAndNoOptionalModuleAssets \
+            -only-testing:SumiTests/BrowserSidebarCommandRoutingOwnerTests \
+            -only-testing:SumiTests/BrowserSidebarActionOwnerTests \
+            -only-testing:SumiTests/SidebarRegularTabsControllerTests \
+            -only-testing:SumiTests/SidebarSpaceBodyInjectionRegressionTests \
+            -only-testing:SumiTests/TabWebViewOwnershipOwnerTests \
+            -only-testing:SumiTests/BrowserShortcutPinUnloadOwnerTests \
+            test
+
       - name: Upload Sumi build result
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: Sumi-build.xcresult
           path: build/BuildResults/Sumi.xcresult
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Upload PR smoke test result
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Sumi-pr-smoke.xcresult
+          path: build/BuildResults/SumiPRSmoke.xcresult
           if-no-files-found: ignore
           retention-days: 7

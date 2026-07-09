@@ -1,4 +1,5 @@
 import SwiftUI
+import SumiDomain
 
 struct SumiSiteSettingsCategoryView: View {
     @StateObject private var viewModel: SumiSiteSettingsCategoryViewModel

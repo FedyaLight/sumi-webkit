@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 enum SumiPermissionPromptAction: String, Equatable, Hashable, Sendable {
     case allowWhileVisiting

@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 /// Owns cross-store permission record aggregation: merging coordinator and
 /// autoplay site decisions, and folding recent activity, blocked popups,

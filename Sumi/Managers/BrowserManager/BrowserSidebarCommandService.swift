@@ -55,19 +55,19 @@ final class BrowserSidebarCommandService {
         )
         chromeCommand = BrowserSidebarChromeCommandOwner(
             showGradientEditor: { [weak browserManager] source in
-                browserManager?.workspaceThemeEditorOwner.showGradientEditor(source: source)
+                browserManager?.chromeBundle.workspaceThemeEditorOwner.showGradientEditor(source: source)
             },
             toggleSidebar: { [weak browserManager] windowState in
-                browserManager?.sidebarPresentationOwner.toggleSidebar(for: windowState)
+                browserManager?.chromeBundle.sidebarPresentationOwner.toggleSidebar(for: windowState)
             },
             openAppearanceSettings: { [weak browserManager] windowState in
-                browserManager?.urlBarCommands.openSettingsTab(selecting: .appearance, in: windowState)
+                browserManager?.urlBarBundle.commands.openSettingsTab(selecting: .appearance, in: windowState)
             },
             closeDownloadsPopover: { [weak browserManager] windowState in
-                browserManager?.chromeCommands.closeDownloadsPopover(in: windowState)
+                browserManager?.chromeBundle.commands.closeDownloadsPopover(in: windowState)
             },
             toggleDownloadsPopover: { [weak browserManager] windowState in
-                browserManager?.chromeCommands.toggleDownloadsPopover(in: windowState)
+                browserManager?.chromeBundle.commands.toggleDownloadsPopover(in: windowState)
             }
         )
         shortcutPromotion = BrowserSidebarShortcutPromotionOwner(
@@ -81,19 +81,19 @@ final class BrowserSidebarCommandService {
         )
         folderCommand = BrowserSidebarFolderCommandOwner(
             spaceForSidebarActions: { [weak browserManager] windowState in
-                browserManager?.sidebarActionOwner.spaceForSidebarActions(in: windowState)
+                browserManager?.chromeBundle.sidebarActionOwner.spaceForSidebarActions(in: windowState)
             },
             createFolderInCurrentSpace: { [weak browserManager] windowState in
-                browserManager?.sidebarActionOwner.createFolderInCurrentSpace(in: windowState)
+                browserManager?.chromeBundle.sidebarActionOwner.createFolderInCurrentSpace(in: windowState)
             },
             createRSSLiveFolderInCurrentSpace: { [weak browserManager] windowState in
-                browserManager?.sidebarActionOwner.createRSSLiveFolderInCurrentSpace(in: windowState)
+                browserManager?.chromeBundle.sidebarActionOwner.createRSSLiveFolderInCurrentSpace(in: windowState)
             },
             createGitHubPRFolderInCurrentSpace: { [weak browserManager] windowState in
-                browserManager?.sidebarActionOwner.createGitHubPRFolderInCurrentSpace(in: windowState)
+                browserManager?.chromeBundle.sidebarActionOwner.createGitHubPRFolderInCurrentSpace(in: windowState)
             },
             createGitHubIssuesFolderInCurrentSpace: { [weak browserManager] windowState in
-                browserManager?.sidebarActionOwner.createGitHubIssuesFolderInCurrentSpace(in: windowState)
+                browserManager?.chromeBundle.sidebarActionOwner.createGitHubIssuesFolderInCurrentSpace(in: windowState)
             }
         )
         tabCommand = BrowserSidebarTabCommandOwner(browserManager: browserManager)
@@ -107,24 +107,24 @@ final class BrowserSidebarCommandService {
                 browserManager?.splitManager ?? splitManager
             },
             space: { [weak browserManager] spaceId in
-                browserManager?.windowSpaceStateOwner.space(for: spaceId)
+                browserManager?.windowSessionBundle.spaceStateOwner.space(for: spaceId)
             },
             setActiveSpace: { [weak browserManager] space, windowState in
-                browserManager?.windowSpaceStateOwner.setActiveSpace(space, in: windowState)
+                browserManager?.windowSessionBundle.spaceStateOwner.setActiveSpace(space, in: windowState)
             },
             selectTab: { [weak browserManager] tab, windowState in
                 browserManager?.selectTab(tab, in: windowState)
             },
             refreshCompositor: { [weak browserManager] windowState in
-                browserManager?.windowVisualMutationOwner.refreshCompositor(for: windowState)
+                browserManager?.windowSessionBundle.visualMutationOwner.refreshCompositor(for: windowState)
             },
             performImmediateVisualHandoffIfPossible: { [weak browserManager] windowState in
-                _ = browserManager?.windowVisualMutationOwner.performImmediateVisualHandoffIfPossible(
+                _ = browserManager?.windowSessionBundle.visualMutationOwner.performImmediateVisualHandoffIfPossible(
                     in: windowState
                 )
             },
             persistWindowSession: { [weak browserManager] windowState in
-                browserManager?.windowSessionActivationOwner.persistWindowSession(for: windowState)
+                browserManager?.windowSessionBundle.activationOwner.persistWindowSession(for: windowState)
             },
             showEmptyState: { [weak browserManager] windowState in
                 browserManager?.showEmptyState(in: windowState)

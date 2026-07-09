@@ -1,4 +1,5 @@
 import SwiftUI
+import SumiDomain
 
 enum SidebarSpaceCreationFocusedField: Hashable {
     case name

@@ -1,4 +1,5 @@
 import AppKit
+import SumiChromeTokens
 import SwiftUI
 
 struct ThemeContrastDecision: Equatable {
@@ -275,8 +276,10 @@ private struct ThemeChromePalette {
         let tertiaryText = ThemeContrastResolver.tertiaryText(for: scheme)
         let chromeControlHoverBackground = primaryText.opacity(scheme == .dark ? 0.20 : 0.10)
         let chromeControlPressedBackground = primaryText.opacity(scheme == .dark ? 0.24 : 0.16)
-        let chromeNavigationControlDisabledAlpha: CGFloat = 0.34
-        let popoverActionDisabledAlpha: CGFloat = 0.45
+        let chromeNavigationControlDisabledAlpha: CGFloat =
+            ChromeLayoutTokens.chromeNavigationControlDisabledAlpha
+        let popoverActionDisabledAlpha: CGFloat =
+            ChromeLayoutTokens.popoverActionDisabledAlpha
         let buttonPrimaryText = ThemeContrastResolver.preferredForeground(on: accent)
         let fieldBackground = ThemeChromeRecipeBuilder.zenToolbarElementBackground(scheme: scheme)
         let fieldBackgroundHover = ThemeChromeRecipeBuilder.zenToolbarElementHoverBackground(

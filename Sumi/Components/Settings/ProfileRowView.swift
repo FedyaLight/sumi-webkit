@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import SumiDomain
 
 struct ProfileRowView: View {
     let profile: Profile

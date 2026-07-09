@@ -4,6 +4,7 @@
 //
 
 import AppKit
+import SumiDomain
 
 struct SidebarFolderHeaderMenuActions {
     let edit: () -> Void

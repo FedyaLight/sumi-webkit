@@ -1,0 +1,90 @@
+//
+//  TabStructureOwnerBag.swift
+//  Sumi
+//
+//  Capability bag: structural mutation, membership, split, and drag owners.
+//
+
+import Foundation
+
+/// Groups structure-adjacent TabManager owners so they are not peer `lazy var`
+/// Owners on the TabManager façade.
+@MainActor
+final class TabStructureOwnerBag {
+    private weak var tabManager: TabManager?
+
+    /// Called from `TabManager.init` after all stored properties are assigned.
+    func bind(_ tabManager: TabManager) {
+        self.tabManager = tabManager
+    }
+
+    private var tm: TabManager {
+        guard let tabManager else {
+            preconditionFailure("TabStructureOwnerBag used before bind(tabManager:)")
+        }
+        return tabManager
+    }
+
+    lazy var folderMutationOwner = TabFolderMutationOwner(dependencies: .live(tabManager: tm))
+    lazy var regularTabCollectionOwner = RegularTabCollectionOwner(
+        tabManager: tm,
+        stateOwner: tm.regularTabCollectionStateOwner
+    )
+    lazy var regularTabDragService = SidebarRegularTabDragService(dependencies: .live(tabManager: tm))
+    lazy var lazyRestoreCoordinator = TabLazyRestoreCoordinator(
+        spaces: { [weak self] in self?.tm.spaceStateOwner.spaces ?? [] },
+        tabsBySpaceSnapshot: { [weak self] in
+            self?.tm.regularTabCollectionStateOwner.tabsBySpaceSnapshot() ?? [:]
+        },
+        resolveTab: { [weak self] id in
+            self?.tm.tabCollectionMembershipOwner.tab(for: id)
+        }
+    )
+    lazy var spacePinnedStructureOwner = SpacePinnedStructureOwner(dependencies: .live(tabManager: tm))
+    lazy var sidebarDragRoutingOwner = SidebarDragOperationRoutingOwner(dependencies: .live(tabManager: tm))
+    lazy var spaceLauncherProjectionOwner = SpaceLauncherProjectionOwner(tabManager: tm)
+    lazy var splitGroupRepairOwner = TabManagerSplitGroupRepairOwner(
+        shortcutPin: { [weak self] id in
+            self?.tm.shortcutPinCollectionStateOwner.shortcutPin(by: id)
+        },
+        tab: { [weak self] id in
+            self?.tm.tabCollectionMembershipOwner.tab(for: id)
+        },
+        folderSpaceId: { [weak self] folderId in
+            self?.tm.folderCollectionStateOwner.spaceId(for: folderId)
+        },
+        spaceExists: { [weak self] spaceId in
+            self?.tm.spaceStateOwner.contains(spaceId: spaceId) ?? false
+        }
+    )
+    lazy var splitGroupStructureOwner = TabSplitGroupStructureOwner(
+        dependencies: .live(tabManager: tm)
+    )
+    lazy var structuralCollectionMutationOwner = TabStructuralCollectionMutationOwner(
+        dependencies: .live(tabManager: tm)
+    )
+    lazy var structuralInstallOwner = TabStructuralInstallOwner(
+        dependencies: .live(tabManager: tm)
+    )
+    lazy var structuralLookupCoordinator = TabStructuralLookupCoordinator(
+        structuralChanges: tm.structuralChanges,
+        eventBus: tm.tabStructureEventBus,
+        tabsBySpace: { [weak self] in
+            self?.tm.regularTabCollectionStateOwner.tabsBySpaceSnapshot() ?? [:]
+        },
+        transientShortcutTabsByWindow: { [weak self] in
+            self?.tm.transientTabRegistryOwner.transientShortcutTabsByWindow ?? [:]
+        },
+        transientExtensionTabsByID: { [weak self] in
+            self?.tm.transientTabRegistryOwner.transientExtensionTabsByID ?? [:]
+        },
+        auxiliaryMiniWindowTabsByID: { [weak self] in
+            self?.tm.transientTabRegistryOwner.auxiliaryMiniWindowTabsByID ?? [:]
+        }
+    )
+    lazy var tabCollectionMembershipOwner = TabCollectionMembershipOwner(
+        tabManager: tm,
+        structuralLookupOwner: structuralLookupCoordinator.lookupOwner,
+        transientTabRegistryOwner: tm.transientTabRegistryOwner
+    )
+}

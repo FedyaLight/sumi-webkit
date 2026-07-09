@@ -7,6 +7,7 @@ import AppKit
 import Combine
 import SwiftUI
 import WebKit
+import SumiDomain
 
 // Narrow wrapper that only publishes navigation state (canGoBack/canGoForward),
 // avoiding full Tab.objectWillChange fan-out for unrelated changes like favicon/audio/title.

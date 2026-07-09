@@ -55,13 +55,13 @@ final class BrowserKeyboardShortcutCommandOwner {
                     browserManager?.tabLifecycleService.opening.createNewTab()
                 },
                 openNewTabOrFloatingBar: { [weak browserManager] windowState in
-                    browserManager?.floatingBarRoutingOwner.openNewTabOrFloatingBar(in: windowState)
+                    browserManager?.urlBarBundle.floatingBarRoutingOwner.openNewTabOrFloatingBar(in: windowState)
                 },
                 tabsForDisplay: { [weak browserManager] windowState in
-                    browserManager?.windowTabContextOwner.tabsForDisplay(in: windowState) ?? []
+                    browserManager?.windowSessionBundle.tabContextOwner.tabsForDisplay(in: windowState) ?? []
                 },
                 currentTab: { [weak browserManager] windowState in
-                    browserManager?.windowTabContextOwner.currentTab(for: windowState)
+                    browserManager?.windowSessionBundle.tabContextOwner.currentTab(for: windowState)
                 },
                 selectTab: { [weak browserManager] tab, windowState in
                     browserManager?.selectTab(tab, in: windowState)
@@ -87,21 +87,21 @@ final class BrowserKeyboardShortcutCommandOwner {
                     browserManager?.tabManager.spaceStateOwner.spaces ?? []
                 },
                 setActiveSpace: { [weak browserManager] space, windowState in
-                    browserManager?.windowSpaceStateOwner.setActiveSpace(space, in: windowState)
+                    browserManager?.windowSessionBundle.spaceStateOwner.setActiveSpace(space, in: windowState)
                 },
                 setAllFoldersOpen: { [weak browserManager] isOpen, spaceId in
                     browserManager?.tabManager.folderMutationOwner.setAllFolders(open: isOpen, in: spaceId)
                 },
                 persistWindowSession: { [weak browserManager] windowState in
-                    browserManager?.windowSessionActivationOwner.persistWindowSession(for: windowState)
+                    browserManager?.windowSessionBundle.activationOwner.persistWindowSession(for: windowState)
                 }
             ),
             reader: ReaderCapabilities(
                 activePageTab: { [weak browserManager] in
-                    browserManager?.activePageRoutingOwner.activePageTabForActiveWindow()
+                    browserManager?.urlBarBundle.activePageRoutingOwner.activePageTabForActiveWindow()
                 },
                 activePageWebView: { [weak browserManager] in
-                    browserManager?.activePageRoutingOwner.activePageWebViewForActiveWindow()
+                    browserManager?.urlBarBundle.activePageRoutingOwner.activePageWebViewForActiveWindow()
                 },
                 webView: { [weak browserManager] tabId, windowId in
                     browserManager?.webViewRoutingService.webView(for: tabId, in: windowId)

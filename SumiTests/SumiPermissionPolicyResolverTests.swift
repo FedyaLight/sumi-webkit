@@ -206,6 +206,11 @@ final class SumiPermissionPolicyResolverTests: XCTestCase {
         XCTAssertEqual(glance.source, .defaultSetting)
         XCTAssertEqual(glance.reason, SumiPermissionPolicyReason.glanceSensitiveDenied)
 
+        let miniWindow = await evaluate(.camera, surface: .miniWindow)
+        XCTAssertFalse(miniWindow.isAllowedToProceed)
+        XCTAssertEqual(miniWindow.source, .defaultSetting)
+        XCTAssertEqual(miniWindow.reason, SumiPermissionPolicyReason.miniWindowSensitiveDenied)
+
         let unknown = await evaluate(.camera, surface: .unknown)
         XCTAssertFalse(unknown.isAllowedToProceed)
         XCTAssertEqual(unknown.source, .defaultSetting)
@@ -235,6 +240,7 @@ final class SumiPermissionPolicyResolverTests: XCTestCase {
 
         for surface in [
             SumiPermissionSecurityContext.Surface.glance,
+            .miniWindow,
             .extensionPage,
             .internalPage,
             .unknown,

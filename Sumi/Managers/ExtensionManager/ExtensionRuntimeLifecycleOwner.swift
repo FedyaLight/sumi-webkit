@@ -377,7 +377,7 @@ extension ExtensionRuntimeLifecycleOwner.Dependencies {
 @MainActor
 extension ExtensionManager {
     func attach(browserManager: BrowserManager) {
-        browserBridgeContext = browserManager.extensionBridgeAdapter
+        browserBridgeContext = browserManager.extensionBridgeBundle.adapter
         runtime = BrowserExtensionManagerRuntimeFactory.runtime(for: browserManager)
 
         if runtime.activeWindowState() == nil,

@@ -1,5 +1,6 @@
 import Foundation
 import OSLog
+import SumiDomain
 
 struct SumiPermissionJSONPersistenceDiagnostics: Equatable, Sendable {
     enum LoadOutcome: Equatable, Sendable {

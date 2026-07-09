@@ -9,6 +9,7 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 import WebKit
+import SumiDomain
 
 extension URLBarView {
     func permissionIndicatorButton(

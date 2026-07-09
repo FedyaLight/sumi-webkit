@@ -4,6 +4,7 @@
 //
 
 import SwiftUI
+import SumiDomain
 
 private enum ShortcutLinkEditorFocusedField: Hashable {
     case title

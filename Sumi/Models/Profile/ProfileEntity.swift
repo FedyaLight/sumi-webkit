@@ -7,6 +7,7 @@
 
 import Foundation
 import SwiftData
+import SumiDomain
 
 @Model
 final class ProfileEntity {

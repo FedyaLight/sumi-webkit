@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 enum SumiPermissionPolicyResult: Equatable, Sendable {
     case proceed(

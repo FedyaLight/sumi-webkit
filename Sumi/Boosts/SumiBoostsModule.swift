@@ -45,6 +45,8 @@ final class SumiBoostsModule: ObservableObject {
     private let moduleRegistry: SumiModuleRegistry
     private let storeFactory: @MainActor () -> SumiBoostStore
     private var runtime: Runtime = .empty
+    private var runtimeProvider: (@MainActor () -> Runtime)?
+    private(set) var hasAttachedRuntime = false
 
     private var loadedStore: SumiBoostStore?
     private var storeChangesCancellable: AnyCancellable?
@@ -73,8 +75,14 @@ final class SumiBoostsModule: ObservableObject {
         changesSubject.eraseToAnyPublisher()
     }
 
+    /// Stores a factory used when the module is enabled after BrowserManager wiring.
+    func bindRuntimeProvider(_ provider: @escaping @MainActor () -> Runtime) {
+        runtimeProvider = provider
+    }
+
     func attach(runtime: Runtime) {
         self.runtime = runtime
+        hasAttachedRuntime = true
     }
 
     func setEnabled(_ isEnabled: Bool) {
@@ -90,9 +98,22 @@ final class SumiBoostsModule: ObservableObject {
         if isEnabled == false {
             removeBoostsFromLivePages()
             releaseLoadedRuntime()
+            clearAttachedRuntime()
+        } else {
+            attachRuntimeFromProviderIfNeeded()
         }
 
         changesSubject.send(())
+    }
+
+    private func attachRuntimeFromProviderIfNeeded() {
+        guard hasAttachedRuntime == false, let runtimeProvider else { return }
+        attach(runtime: runtimeProvider())
+    }
+
+    private func clearAttachedRuntime() {
+        runtime = .empty
+        hasAttachedRuntime = false
     }
 
     func canBoost(url: URL?) -> Bool {

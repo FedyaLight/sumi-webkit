@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import SumiDomain
 
 /// Groups privacy-adjacent BrowserManager owners so new privacy features attach
 /// here instead of as another peer `lazy var` on BrowserManager.
@@ -36,7 +37,7 @@ final class BrowserPrivacyBundle {
                     displayingPermissionPageId: pageId,
                     in: browserManager.windowRegistry,
                     tabsForDisplay: { windowState in
-                        browserManager.windowTabContextOwner.tabsForDisplay(in: windowState)
+                        browserManager.windowSessionBundle.tabContextOwner.tabsForDisplay(in: windowState)
                     }
                 )
             },

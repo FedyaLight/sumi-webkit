@@ -27,7 +27,7 @@ The implemented normal-tab scope covers:
 - filePicker;
 - storageAccess.
 
-MiniWindow/Glance permission integration, extension permission bridging/UI, optional extra content settings, deterministic permission XCUITest injection, and ServiceWorker notification support remain deferred.
+Glance and MiniWindow surfaces are fail-closed for permission prompt UI (`canPresentPromptUI` is false; sensitive permissions are denied by policy). Full MiniWindow/Glance permission integration (beyond fail-closed gating), extension permission bridging/UI, optional extra content settings, deterministic permission XCUITest injection, and ServiceWorker notification support remain deferred.
 
 ## Permission Model And Storage
 
@@ -154,7 +154,7 @@ Known limitations:
 
 The following areas are intentionally outside the implemented normal-tab permission scope:
 
-- MiniWindow/Glance permission integration. Their direct OAuth media/file picker behavior remains separate auxiliary-surface behavior and should not be treated as normal-tab architecture.
+- Full MiniWindow/Glance permission integration beyond fail-closed gating. Their direct OAuth media/file picker behavior remains separate auxiliary-surface behavior and should not be treated as normal-tab architecture.
 - Extension permission bridging/UI. `WKWebExtensionControllerDelegate` permission behavior remains separate from website permissions.
 - Deterministic permission XCUITest injection harness for fake active queries, repositories, and runtime state.
 - Optional future content settings for JavaScript, images, automatic downloads, ads, background sync, and sound.

@@ -82,7 +82,7 @@ final class BrowserTabOpeningOwner {
             settings: { [weak browserManager] in browserManager?.sumiSettings },
             activeWindow: { [weak browserManager] in browserManager?.windowRegistry?.activeWindow },
             windowStateContainingTab: { [weak browserManager] tab in
-                browserManager?.windowTabContextOwner.windowState(containing: tab)
+                browserManager?.windowSessionBundle.tabContextOwner.windowState(containing: tab)
             },
             canMaterializeBackgroundTab: { [weak browserManager] tab in
                 browserManager?.startupProtectionRuntime.canMaterializeWebViewDuringStartup(tab) ?? true

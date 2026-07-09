@@ -164,7 +164,7 @@ class SearchManager {
                 tabManager?.shortcutPresentationOwner.shortcutLiveTab(for: pinId, in: windowId)
             },
             visibleSplitTabIds: { [weak tabManager] windowId in
-                Set(tabManager?.runtimeContext?.visibleSplitTabIds(for: windowId) ?? [])
+                Set(tabManager?.runtimePorts?.visibleSplitTabIds(for: windowId) ?? [])
             }
         )
         let activeTabs = owner.suggestions(for: windowState)
@@ -176,7 +176,7 @@ class SearchManager {
     }
 
     @MainActor func updateProfileContext() {
-        let pid = tabManager?.runtimeContext?.currentProfileId
+        let pid = tabManager?.runtimePorts?.currentProfileId
         currentProfileId = pid
         #if DEBUG
         if let pid { RuntimeDiagnostics.emit("🔎 [SearchManager] Profile context updated: \(pid.uuidString)") }

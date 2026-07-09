@@ -28,10 +28,10 @@ final class BrowserURLBarBundle {
             windowRegistry: { [weak browserManager] in browserManager?.windowRegistry },
             settings: { [weak browserManager] in browserManager?.sumiSettings },
             activePageTab: { [weak browserManager] windowState in
-                browserManager?.activePageRoutingOwner.activePageTab(for: windowState)
+                browserManager?.urlBarBundle.activePageRoutingOwner.activePageTab(for: windowState)
             },
             hasValidCurrentSelection: { [weak browserManager] windowState in
-                browserManager?.windowSpaceStateOwner.hasValidCurrentSelection(in: windowState) ?? false
+                browserManager?.windowSessionBundle.spaceStateOwner.hasValidCurrentSelection(in: windowState) ?? false
             },
             cancelEmptySplitPlaceholder: { [weak browserManager] windowState in
                 browserManager?.splitManager.cancelEmptySplitPlaceholder(in: windowState)
@@ -46,27 +46,27 @@ final class BrowserURLBarBundle {
                 browserManager?.selectTab(tab, in: windowState)
             },
             loadCurrentPageURL: { [weak browserManager] tab, windowState, urlString in
-                browserManager?.windowScopedNavigationOwner.loadFloatingBarCurrentPage(
+                browserManager?.windowSessionBundle.scopedNavigationOwner.loadFloatingBarCurrentPage(
                     urlString,
                     tab: tab,
                     in: windowState
                 )
             },
             navigateCurrentPage: { [weak browserManager] tab, windowState, input in
-                browserManager?.windowScopedNavigationOwner.navigateFloatingBarCurrentPage(
+                browserManager?.windowSessionBundle.scopedNavigationOwner.navigateFloatingBarCurrentPage(
                     input,
                     tab: tab,
                     in: windowState
                 )
             },
             dismissThemePickerDiscardingIfNeeded: { [weak browserManager] in
-                browserManager?.workspaceThemeEditorOwner.dismissThemePickerDiscardingIfNeeded()
+                browserManager?.chromeBundle.workspaceThemeEditorOwner.dismissThemePickerDiscardingIfNeeded()
             },
             persistWindowSession: { [weak browserManager] windowState in
-                browserManager?.windowSessionActivationOwner.persistWindowSession(for: windowState)
+                browserManager?.windowSessionBundle.activationOwner.persistWindowSession(for: windowState)
             },
             schedulePersistWindowSession: { [weak browserManager] windowState, delayNanoseconds in
-                browserManager?.windowSessionActivationOwner.schedulePersistWindowSession(
+                browserManager?.windowSessionBundle.activationOwner.schedulePersistWindowSession(
                     for: windowState,
                     delayNanoseconds: delayNanoseconds
                 )
@@ -80,7 +80,7 @@ final class BrowserURLBarBundle {
                 browserManager?.windowRegistry?.activeWindow
             },
             currentTab: { [weak browserManager] windowState in
-                browserManager?.windowTabContextOwner.currentTab(for: windowState)
+                browserManager?.windowSessionBundle.tabContextOwner.currentTab(for: windowState)
             },
             activePreviewTab: { [weak browserManager] windowState in
                 browserManager?.glanceManager.activePreviewTab(for: windowState)
@@ -95,7 +95,7 @@ final class BrowserURLBarBundle {
                 browserManager?.webViewRoutingService.windowOwnedWebView(for: tab, in: windowId)
             },
             refreshActivePage: { [weak browserManager] tab, windowState in
-                browserManager?.windowScopedNavigationOwner.refreshWindowScopedPage(
+                browserManager?.windowSessionBundle.scopedNavigationOwner.refreshWindowScopedPage(
                     tab: tab,
                     in: windowState,
                     reason: "BrowserActivePage.refresh"
@@ -133,7 +133,7 @@ final class BrowserURLBarBundle {
                 )
             },
             copyURLToPasteboard: { [weak browserManager] url, windowState in
-                browserManager?.urlBarCommands.copyURLToPasteboard(url, in: windowState) ?? false
+                browserManager?.urlBarBundle.commands.copyURLToPasteboard(url, in: windowState) ?? false
             }
         )
     }

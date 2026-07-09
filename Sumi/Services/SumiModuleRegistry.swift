@@ -4,6 +4,7 @@ enum SumiModuleID: String, CaseIterable, Codable, Hashable, Identifiable, Sendab
     case extensions
     case userScripts
     case boosts
+    case liveFolders
 
     var id: String {
         rawValue

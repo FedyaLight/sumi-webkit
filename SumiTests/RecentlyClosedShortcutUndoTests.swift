@@ -15,7 +15,7 @@ final class RecentlyClosedShortcutUndoTests: XCTestCase {
         harness.browserManager.tabLifecycleService.closeOrchestration.closeTab(tab, in: harness.windowState)
         XCTAssertTrue(harness.browserManager.tabManager.regularTabCollectionOwner.tabs(in: harness.space).isEmpty)
 
-        harness.browserManager.recentlyClosedRestoreOwner.reopenMostRecentClosedItem()
+        harness.browserManager.windowSessionBundle.recentlyClosedRestoreOwner.reopenMostRecentClosedItem()
 
         let restored = harness.browserManager.tabManager.regularTabCollectionOwner.tabs(in: harness.space).first
         XCTAssertEqual(restored?.url, URL(string: "https://regular.example")!)
@@ -42,7 +42,7 @@ final class RecentlyClosedShortcutUndoTests: XCTestCase {
         harness.browserManager.tabLifecycleService.closeOrchestration.closeTab(liveTab, in: harness.windowState)
         XCTAssertNil(harness.browserManager.tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pin.id, in: harness.windowState.id))
 
-        harness.browserManager.recentlyClosedRestoreOwner.reopenMostRecentClosedItem()
+        harness.browserManager.windowSessionBundle.recentlyClosedRestoreOwner.reopenMostRecentClosedItem()
 
         let restored = try XCTUnwrap(
             harness.browserManager.tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pin.id, in: harness.windowState.id)
@@ -71,7 +71,7 @@ final class RecentlyClosedShortcutUndoTests: XCTestCase {
         harness.browserManager.tabManager.shortcutPinCommandOwner.removeShortcutPin(pin)
         XCTAssertNil(harness.browserManager.tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: pin.id))
 
-        harness.browserManager.recentlyClosedRestoreOwner.reopenMostRecentClosedItem()
+        harness.browserManager.windowSessionBundle.recentlyClosedRestoreOwner.reopenMostRecentClosedItem()
 
         let restoredPin = try XCTUnwrap(harness.browserManager.tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: pin.id))
         XCTAssertEqual(restoredPin.role, .spacePinned)
@@ -95,7 +95,7 @@ final class RecentlyClosedShortcutUndoTests: XCTestCase {
         harness.browserManager.tabManager.shortcutPinCommandOwner.removeShortcutPin(inserted)
         XCTAssertTrue(harness.browserManager.tabManager.shortcutPinCollectionStateOwner.essentialPins(for: harness.profile.id).isEmpty)
 
-        harness.browserManager.recentlyClosedRestoreOwner.reopenMostRecentClosedItem()
+        harness.browserManager.windowSessionBundle.recentlyClosedRestoreOwner.reopenMostRecentClosedItem()
 
         let restoredPin = try XCTUnwrap(harness.browserManager.tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: inserted.id))
         XCTAssertEqual(restoredPin.role, .essential)

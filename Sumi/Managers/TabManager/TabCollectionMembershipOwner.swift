@@ -61,7 +61,7 @@ final class TabCollectionMembershipOwner {
                 tabManager?.spaceStateOwner.spaces ?? []
             },
             currentProfileId: { [weak tabManager] in
-                tabManager?.runtimeContext?.currentProfileId
+                tabManager?.runtimePorts?.currentProfileId
             },
             activeShortcutTabs: { [weak tabManager] in
                 tabManager?.shortcutPresentationOwner.activeShortcutTabs() ?? []

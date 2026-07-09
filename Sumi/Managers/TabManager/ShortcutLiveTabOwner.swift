@@ -30,7 +30,7 @@ final class ShortcutLiveTabOwner {
     struct Dependencies {
         let withStructuralUpdateTransaction: @MainActor (@MainActor () -> Bool) -> Bool
         let withStructuralUpdateTransactionReturningTab: @MainActor (@MainActor () -> Tab) -> Tab
-        let runtimeContext: @MainActor () -> TabManagerRuntimeContext?
+        let runtimePorts: @MainActor () -> RuntimePortRegistry?
         let transientShortcutTabsByWindow: @MainActor () -> [UUID: [UUID: Tab]]
         let updateTransientShortcutTabsByWindow: @MainActor ((inout [UUID: [UUID: Tab]]) -> Void) -> Void
         let firstRegularTabId: @MainActor (UUID) -> UUID?
@@ -57,10 +57,10 @@ final class ShortcutLiveTabOwner {
     init(dependencies: Dependencies) {
         self.dependencies = dependencies
         self.windowQuery = ShortcutLiveTabWindowQueryOwner(
-            runtimeContext: dependencies.runtimeContext,
+            runtimePorts: dependencies.runtimePorts,
             tab: dependencies.tab,
             primaryTrackedWindowId: { [dependencies] tabId in
-                dependencies.runtimeContext()?.webViewLifecycle.primaryTrackedWindowId(for: tabId)
+                dependencies.runtimePorts()?.webViewLifecycle.primaryTrackedWindowId(for: tabId)
             }
         )
     }
@@ -75,7 +75,7 @@ final class ShortcutLiveTabOwner {
         tab.isPinned = false
         tab.isSpacePinned = false
         tab.bindToShortcutPin(pin)
-        let currentSpaceId = dependencies.runtimeContext()?.windowState(for: windowId)?.currentSpaceId
+        let currentSpaceId = dependencies.runtimePorts()?.windowState(for: windowId)?.currentSpaceId
         tab.spaceId = dependencies.resolvedLiveSpaceId(pin, currentSpaceId)
         tab.folderId = pin.folderId
         dependencies.updateTransientShortcutTabsByWindow { liveTabsByWindow in
@@ -85,7 +85,7 @@ final class ShortcutLiveTabOwner {
         }
         dependencies.notifyTransientShortcutStateChanged()
 
-        if let windowState = dependencies.runtimeContext()?.windowState(for: windowId) {
+        if let windowState = dependencies.runtimePorts()?.windowState(for: windowId) {
             if updateSelection || windowState.currentTabId == tab.id {
                 windowState.currentShortcutPinId = pin.id
                 windowState.currentShortcutPinRole = pin.role
@@ -132,7 +132,7 @@ final class ShortcutLiveTabOwner {
         for windowId in displayingWindowIds where windowId != firstWindowId {
             let isSelectedWindow = selectedWindowIds.contains(windowId)
             if !isSelectedWindow,
-               dependencies.runtimeContext()?.isTabVisibleInSplit(tab.id, in: windowId) == true {
+               dependencies.runtimePorts()?.isTabVisibleInSplit(tab.id, in: windowId) == true {
                 continue
             }
             replaceDisplayedTabWithShortcutLiveInstance(
@@ -162,7 +162,7 @@ final class ShortcutLiveTabOwner {
         dependencies.notifyTransientShortcutStateChanged()
 
         tab.bindToShortcutPin(insertedPin)
-        let currentSpaceId = dependencies.runtimeContext()?.windowState(for: windowId)?.currentSpaceId
+        let currentSpaceId = dependencies.runtimePorts()?.windowState(for: windowId)?.currentSpaceId
         tab.spaceId = dependencies.resolvedLiveSpaceId(insertedPin, currentSpaceId)
         tab.folderId = nil
         dependencies.assignProfile(
@@ -170,7 +170,7 @@ final class ShortcutLiveTabOwner {
             tab
         )
 
-        if let windowState = dependencies.runtimeContext()?.windowState(for: windowId),
+        if let windowState = dependencies.runtimePorts()?.windowState(for: windowId),
            windowState.currentShortcutPinId == sourcePin.id {
             windowState.currentShortcutPinId = insertedPin.id
             windowState.currentShortcutPinRole = insertedPin.role
@@ -182,14 +182,14 @@ final class ShortcutLiveTabOwner {
         for (windowId, tabsByPin) in dependencies.transientShortcutTabsByWindow() {
             if let tab = tabsByPin[pin.id] {
                 tab.bindToShortcutPin(pin)
-                let windowCurrentSpaceId = dependencies.runtimeContext()?.windowState(for: windowId)?.currentSpaceId
+                let windowCurrentSpaceId = dependencies.runtimePorts()?.windowState(for: windowId)?.currentSpaceId
                 tab.spaceId = dependencies.resolvedLiveSpaceId(pin, windowCurrentSpaceId)
                 tab.folderId = pin.folderId
                 dependencies.assignProfile(
                     dependencies.resolvedExecutionProfileId(pin, windowCurrentSpaceId),
                     tab
                 )
-                if let windowState = dependencies.runtimeContext()?.windowState(for: windowId) {
+                if let windowState = dependencies.runtimePorts()?.windowState(for: windowId) {
                     if windowState.currentShortcutPinId == pin.id {
                         windowState.currentShortcutPinRole = pin.role
                     }
@@ -284,8 +284,8 @@ final class ShortcutLiveTabOwner {
         }
         guard let tab = removedTab else { return false }
 
-        let runtimeContext = dependencies.runtimeContext()
-        let windowState = runtimeContext?.windowState(for: windowId)
+        let runtimePorts = dependencies.runtimePorts()
+        let windowState = runtimePorts?.windowState(for: windowId)
         let cleanupResult = windowState.map {
             clearShortcutSelectionReferences(
                 to: pinId,
@@ -302,7 +302,7 @@ final class ShortcutLiveTabOwner {
         }
         dependencies.notifyTransientShortcutStateChanged()
         tab.performComprehensiveWebViewCleanup()
-        runtimeContext?.webViewLifecycle.unloadTab(tab)
+        runtimePorts?.webViewLifecycle.unloadTab(tab)
         dependencies.detach(tab)
         NotificationCenter.default.post(
             name: .sumiTabLifecycleDidChange,
@@ -318,7 +318,7 @@ final class ShortcutLiveTabOwner {
         }
         var cleanupResult = ShortcutPinSelectionCleanupResult()
         for windowId in liveWindowIds {
-            let windowState = dependencies.runtimeContext()?.windowState(for: windowId)
+            let windowState = dependencies.runtimePorts()?.windowState(for: windowId)
             if deactivateShortcutLiveTab(pinId: pinId, in: windowId),
                let windowState {
                 cleanupResult.recordCurrentSelectionCleared(in: windowState)
@@ -360,7 +360,7 @@ final class ShortcutLiveTabOwner {
             existingLiveTab.isSpacePinned = false
             dependencies.attach(existingLiveTab)
             dependencies.insertRegularTab(existingLiveTab, targetSpaceId, targetIndex)
-            if let windowState = dependencies.runtimeContext()?.windowState(for: existingWindowId) {
+            if let windowState = dependencies.runtimePorts()?.windowState(for: existingWindowId) {
                 windowState.currentShortcutPinId = nil
                 windowState.currentShortcutPinRole = nil
                 windowState.currentSpaceId = targetSpaceId
@@ -389,7 +389,7 @@ final class ShortcutLiveTabOwner {
     @discardableResult
     func clearDeletedShortcutPinSelectionReferences(_ pinId: UUID) -> ShortcutPinSelectionCleanupResult {
         var cleanupResult = ShortcutPinSelectionCleanupResult()
-        dependencies.runtimeContext()?.forEachWindowState { windowState in
+        dependencies.runtimePorts()?.forEachWindowState { windowState in
             cleanupResult.merge(clearShortcutSelectionReferences(
                 to: pinId,
                 removedLiveTabId: nil,
@@ -401,9 +401,9 @@ final class ShortcutLiveTabOwner {
     }
 
     func persistWindowSessionsForShortcutSelectionCleanup(_ cleanupResult: ShortcutPinSelectionCleanupResult) {
-        guard let runtimeContext = dependencies.runtimeContext() else { return }
+        guard let runtimePorts = dependencies.runtimePorts() else { return }
         for windowState in cleanupResult.windowStatesNeedingPersistence {
-            runtimeContext.persistWindowSession(for: windowState)
+            runtimePorts.persistWindowSession(for: windowState)
         }
     }
 
@@ -419,7 +419,7 @@ final class ShortcutLiveTabOwner {
         in windowId: UUID,
         updateSelection: Bool = true
     ) {
-        guard let windowState = dependencies.runtimeContext()?.windowState(for: windowId) else { return }
+        guard let windowState = dependencies.runtimePorts()?.windowState(for: windowId) else { return }
         let liveTab = activateShortcutPin(
             pin,
             in: windowId,
@@ -443,7 +443,7 @@ final class ShortcutLiveTabOwner {
             }
         }
         windowState.selectionHistory.removeFromRegularTabHistory(originalTab.id)
-        dependencies.runtimeContext()?.webViewLifecycle.materializeVisibleTabWebViewIfNeeded(liveTab, in: windowState)
+        dependencies.runtimePorts()?.webViewLifecycle.materializeVisibleTabWebViewIfNeeded(liveTab, in: windowState)
     }
 
     @discardableResult
@@ -495,8 +495,8 @@ extension ShortcutLiveTabOwner.Dependencies {
                 guard let tabManager else { return operation() }
                 return tabManager.withStructuralUpdateTransaction(operation)
             },
-            runtimeContext: { [weak tabManager] in
-                tabManager?.runtimeContext
+            runtimePorts: { [weak tabManager] in
+                tabManager?.runtimePorts
             },
             transientShortcutTabsByWindow: { [weak tabManager] in
                 tabManager?.transientTabRegistryOwner.transientShortcutTabsByWindow ?? [:]
@@ -541,7 +541,7 @@ extension ShortcutLiveTabOwner.Dependencies {
                 tabManager?.regularTabCollectionOwner.insert(tab, in: spaceId, at: insertionIndex)
             },
             notifications: { [weak tabManager] in
-                tabManager?.runtimeContext?.notifications()
+                tabManager?.runtimePorts?.notifications()
             },
             faviconService: { [weak tabManager] in
                 guard let tabManager else { preconditionFailure("TabManager dependency used after deallocation") }

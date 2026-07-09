@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 struct SumiPermissionPromptOption: Identifiable, Equatable, Sendable {
     enum Role: String, Equatable, Sendable {

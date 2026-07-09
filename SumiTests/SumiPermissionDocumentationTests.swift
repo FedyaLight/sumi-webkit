@@ -1,4 +1,5 @@
 import XCTest
+import SumiDomain
 
 final class SumiPermissionDocumentationTests: XCTestCase {
     func testStablePermissionDocsExistAndTemporaryImplementationFileIsAbsent() {
@@ -77,7 +78,7 @@ final class SumiPermissionDocumentationTests: XCTestCase {
         XCTAssertTrue(architecture.contains("camera"))
         XCTAssertTrue(architecture.contains("microphone"))
         XCTAssertTrue(architecture.contains("storageAccess"))
-        XCTAssertTrue(architecture.contains("MiniWindow/Glance permission integration"))
+        XCTAssertTrue(architecture.contains("MiniWindow/Glance permission integration beyond fail-closed gating"))
         XCTAssertTrue(architecture.contains("Extension permission bridging/UI"))
     }
 

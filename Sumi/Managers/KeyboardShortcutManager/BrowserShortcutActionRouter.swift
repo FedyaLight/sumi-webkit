@@ -1,4 +1,5 @@
 import AppKit
+import SumiDomain
 
 /// Adapts keyboard-shortcut actions to the browser owners that execute them.
 /// Replaces the former god-object conformance of `BrowserManager` to
@@ -215,34 +216,34 @@ extension BrowserShortcutActionRouter.Dependencies {
                 browserManager?.keyboardShortcutCommandOwner
             },
             historyNavigation: { [weak browserManager] in
-                browserManager?.historyNavigationOwner
+                browserManager?.historyBundle.historyNavigationOwner
             },
             activePageRouting: { [weak browserManager] in
-                browserManager?.activePageRoutingOwner
+                browserManager?.urlBarBundle.activePageRoutingOwner
             },
             zoomCommands: { [weak browserManager] in
-                browserManager?.zoomCommandOwner
+                browserManager?.chromeBundle.zoomCommandOwner
             },
             windowShellCommands: { [weak browserManager] in
-                browserManager?.windowSessionCommands
+                browserManager?.windowSessionBundle.commands
             },
             pagePrivacyCommands: { [weak browserManager] in
-                browserManager?.chromeCommands
+                browserManager?.chromeBundle.commands
             },
             chromePopovers: { [weak browserManager] in
-                browserManager?.chromeCommands
+                browserManager?.chromeBundle.commands
             },
             dialogs: { [weak browserManager] in
-                browserManager?.nativeDialogPresentationOwner
+                browserManager?.chromeBundle.nativeDialogPresentationOwner
             },
             recentlyClosedRestore: { [weak browserManager] in
-                browserManager?.recentlyClosedRestoreOwner
+                browserManager?.windowSessionBundle.recentlyClosedRestoreOwner
             },
             themeEditor: { [weak browserManager] in
-                browserManager?.workspaceThemeEditorOwner
+                browserManager?.chromeBundle.workspaceThemeEditorOwner
             },
             floatingBarRouting: { [weak browserManager] in
-                browserManager?.floatingBarRoutingOwner
+                browserManager?.urlBarBundle.floatingBarRoutingOwner
             },
             findManager: { [weak browserManager] in
                 browserManager?.findManager
@@ -257,7 +258,7 @@ extension BrowserShortcutActionRouter.Dependencies {
                 browserManager?.duplicateCurrentTab()
             },
             toggleSidebar: { [weak browserManager] in
-                browserManager?.sidebarPresentationOwner.toggleSidebar()
+                browserManager?.chromeBundle.sidebarPresentationOwner.toggleSidebar()
             }
         )
     }

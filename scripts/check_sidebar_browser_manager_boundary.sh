@@ -4,7 +4,7 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
-ui_paths=(App Sumi Navigation FloatingBar Settings UI)
+ui_paths=(App Sumi SidebarChrome FloatingBar Settings UI)
 
 matches="$(
   grep -rEn --include='*.swift' \

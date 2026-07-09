@@ -6,6 +6,46 @@ the WebKit direction, but the public product name is Sumi Browser.
 
 The current target is macOS 15.5+.
 
+## Target Module Graph
+
+Intended dependency direction (compile-time packages peel outward from the app):
+
+```
+SumiDomain
+    ↓
+SumiWebRuntime
+    ↓
+BrowserCore / Chrome packages
+  (SumiBrowserCore,
+   SumiChromeTokens, SumiChromeContracts,
+   SumiSidebarChrome, SumiFloatingBarChrome)
+    ↓
+Sumi App (composition root, BrowserManager adapters)
+```
+
+- **SumiDomain** — Foundation-only models and policies.
+- **SumiWebRuntime** — WebKit session / navigation runtime (no SwiftUI).
+- **SumiBrowserCore** — intended home for TabSystem / ports; still mostly a
+  scaffold (`BrowserCorePlaceholder`) while TabSystem and ports live in the app.
+- **Chrome packages** — UI chrome peels. Views must depend on
+  `SumiChromeContracts` commanding protocols and `SumiChromeTokens` layout
+  metrics, not on `BrowserManager` / `TabManager`.
+- **Sumi App** — composition root; owns remaining shell, hubs, and adapters that
+  conform to chrome contracts.
+
+## Current Reality
+
+The target graph above is the direction of travel. The Sumi app target still
+owns nearly all browser shell UI and session hubs. SPM packages are linked and
+boundary-checked, but the peel is incomplete — treat package presence as
+scaffolding plus incremental moves, not a finished module split.
+
+Hub façade sizes are frozen by `scripts/check_architecture_hub_metrics.sh`.
+Most behavior lives in peer `*Owner` / bundle types under
+`Sumi/Managers/BrowserManager/` and `Sumi/Managers/TabManager/`. Runtime ports
+live under `Sumi/BrowserRuntime/` in the app target (not yet in
+`Packages/SumiBrowserCore`).
+
 ## Browser Shell
 
 The main browser shell is organized around:

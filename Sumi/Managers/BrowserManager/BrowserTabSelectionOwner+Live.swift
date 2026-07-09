@@ -16,7 +16,7 @@ extension BrowserTabSelectionOwner {
                 windowState.ephemeralTabs.first(where: { $0.id == tabId })
             },
             currentTab: { [weak browserManager] windowState in
-                browserManager?.windowTabContextOwner.currentTab(for: windowState)
+                browserManager?.windowSessionBundle.tabContextOwner.currentTab(for: windowState)
             },
             liveShortcutTabs: { [weak browserManager] windowId in
                 browserManager?.tabManager.shortcutPresentationOwner.liveShortcutTabs(in: windowId) ?? []
@@ -25,16 +25,16 @@ extension BrowserTabSelectionOwner {
                 browserManager?.splitManager.updateActiveSide(for: tabId, in: windowId)
             },
             syncWindowSpaceContext: { [weak browserManager] windowState, animateTheme in
-                browserManager?.windowSpaceStateOwner.syncWindowSpaceContext(
+                browserManager?.windowSessionBundle.spaceStateOwner.syncWindowSpaceContext(
                     in: windowState,
                     animateTheme: animateTheme
                 )
             },
             space: { [weak browserManager] spaceId in
-                browserManager?.windowSpaceStateOwner.space(for: spaceId)
+                browserManager?.windowSessionBundle.spaceStateOwner.space(for: spaceId)
             },
             updateWorkspaceTheme: { [weak browserManager] windowState, theme, animate in
-                browserManager?.workspaceThemeTransitionOwner.updateWorkspaceTheme(for: windowState, to: theme, animate: animate)
+                browserManager?.chromeBundle.workspaceThemeTransitionOwner.updateWorkspaceTheme(for: windowState, to: theme, animate: animate)
             },
             applySettingsSurfaceNavigation: { [weak browserManager] url in
                 browserManager?.sumiSettings?.applyNavigationFromSettingsSurfaceURL(url)
@@ -61,7 +61,7 @@ extension BrowserTabSelectionOwner {
                 }
             },
             dismissFloatingBarAfterSelection: { [weak browserManager] windowState in
-                browserManager?.floatingBarRoutingOwner.dismissFloatingBarAfterSelection(in: windowState)
+                browserManager?.urlBarBundle.floatingBarRoutingOwner.dismissFloatingBarAfterSelection(in: windowState)
             },
             updateFindManagerCurrentTab: { [weak browserManager] in
                 browserManager?.updateFindManagerCurrentTab()
@@ -70,10 +70,10 @@ extension BrowserTabSelectionOwner {
                 browserManager?.findManager.updateCurrentTab(nil, in: nil)
             },
             schedulePrepareVisibleWebViews: { [weak browserManager] windowState in
-                browserManager?.windowVisualMutationOwner.schedulePrepareVisibleWebViews(for: windowState)
+                browserManager?.windowSessionBundle.visualMutationOwner.schedulePrepareVisibleWebViews(for: windowState)
             },
             refreshCompositor: { [weak browserManager] windowState in
-                browserManager?.windowVisualMutationOwner.refreshCompositor(for: windowState)
+                browserManager?.windowSessionBundle.visualMutationOwner.refreshCompositor(for: windowState)
             },
             runtimeNotifications: BrowserManagerRuntimeWiring.tabSelectionRuntimeNotifications(
                 for: browserManager
@@ -82,16 +82,16 @@ extension BrowserTabSelectionOwner {
                 browserManager?.tabManager.activeSelectionOwner.updateActiveTabState(tab)
             },
             persistWindowSession: { [weak browserManager] windowState in
-                browserManager?.windowSessionActivationOwner.persistWindowSession(for: windowState)
+                browserManager?.windowSessionBundle.activationOwner.persistWindowSession(for: windowState)
             },
             selectionTargetForSpaceActivation: { [weak browserManager] space, windowState in
-                browserManager?.windowSpaceStateOwner.selectionTargetForSpaceActivation(
+                browserManager?.windowSessionBundle.spaceStateOwner.selectionTargetForSpaceActivation(
                     in: space,
                     windowState: windowState
                 )
             },
             updateProfileRuntimeStates: { [weak browserManager] windowState in
-                browserManager?.windowSpaceStateOwner.updateProfileRuntimeStates(activeWindowState: windowState)
+                browserManager?.windowSessionBundle.spaceStateOwner.updateProfileRuntimeStates(activeWindowState: windowState)
             }
         )
     }

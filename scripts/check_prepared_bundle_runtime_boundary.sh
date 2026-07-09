@@ -4,7 +4,7 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
-runtime_paths=(App Sumi Settings Navigation UI FloatingBar)
+runtime_paths=(App Sumi Settings SidebarChrome UI FloatingBar)
 content_blocking_paths=(Sumi/ContentBlocking)
 status=0
 

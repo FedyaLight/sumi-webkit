@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 struct SumiPermissionCleanupSettings: Equatable, Sendable {
     static let defaultThresholdDays = 90

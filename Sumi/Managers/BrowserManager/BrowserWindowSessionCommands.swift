@@ -98,8 +98,9 @@ final class BrowserWindowSessionCommands {
             websiteDataCleanupService: browserManager.dataServices.websiteDataCleanupService,
             faviconService: browserManager.dataServices.faviconService,
             visitedLinkStore: browserManager.dataServices.visitedLinkStore,
+            permissionCleanupService: browserManager.permissionRuntime.permissionCleanupService,
             showNotice: { [weak browserManager] notice in
-                browserManager?.nativeDialogPresentationOwner.presentNoticeSheet(
+                browserManager?.chromeBundle.nativeDialogPresentationOwner.presentNoticeSheet(
                     BrowserNoticeSheetModel(
                         title: notice.title,
                         subtitle: notice.subtitle,

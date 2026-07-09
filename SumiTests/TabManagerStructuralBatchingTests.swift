@@ -416,8 +416,8 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
         let firstProfileSpace = tabManager.spaceLifecycleOwner.createSpace(name: "First", profileId: firstProfileId)
         let currentProfileSpace = tabManager.spaceLifecycleOwner.createSpace(name: "Current Profile", profileId: currentProfileId)
         tabManager.spaceStateOwner.replaceCurrentSpace(firstProfileSpace)
-        tabManager.runtimeContextAttachmentOwner.attach(
-            TabManagerRuntimeContext(
+        tabManager.runtimePortsAttachmentOwner.attach(
+            TestRuntimePorts.make(
                 currentProfileId: { currentProfileId },
                 defaultProfileId: { firstProfileId }
             )
@@ -441,8 +441,8 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
         let defaultProfileSpace = tabManager.spaceLifecycleOwner.createSpace(name: "Default Profile", profileId: defaultProfileId)
         let currentProfileSpace = tabManager.spaceLifecycleOwner.createSpace(name: "Current Profile", profileId: currentProfileId)
         tabManager.spaceStateOwner.replaceCurrentSpace(defaultProfileSpace)
-        tabManager.runtimeContextAttachmentOwner.attach(
-            TabManagerRuntimeContext(
+        tabManager.runtimePortsAttachmentOwner.attach(
+            TestRuntimePorts.make(
                 currentProfileId: { currentProfileId },
                 defaultProfileId: { defaultProfileId }
             )
@@ -516,8 +516,8 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
         tabManager.structuralCollectionMutationOwner.setPinnedTabs([globalEssentialPin], for: globalProfileId)
         tabManager.structuralCollectionMutationOwner.setSpacePinnedShortcuts([windowSpacePin], for: windowSpace.id)
         tabManager.spaceStateOwner.replaceCurrentSpace(globalSpace)
-        tabManager.runtimeContextAttachmentOwner.attach(
-            TabManagerRuntimeContext(
+        tabManager.runtimePortsAttachmentOwner.attach(
+            TestRuntimePorts.make(
                 currentProfileId: { globalProfileId },
                 windowState: { id in
                     id == windowState.id ? windowState : nil
@@ -845,8 +845,8 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
         persistenceRecorder: RuntimeWindowSessionPersistenceRecorder? = nil
     ) {
         let statesById = Dictionary(uniqueKeysWithValues: windowStates.map { ($0.id, $0) })
-        tabManager.runtimeContextAttachmentOwner.attach(
-            TabManagerRuntimeContext(
+        tabManager.runtimePortsAttachmentOwner.attach(
+            TestRuntimePorts.make(
                 windowState: { statesById[$0] },
                 windows: { windowStates.map { ($0.id, $0) } },
                 windowStates: { windowStates },

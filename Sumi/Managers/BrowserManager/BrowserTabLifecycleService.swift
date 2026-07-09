@@ -26,12 +26,12 @@ final class BrowserTabLifecycleService {
                 browserManager?.selectTab(tab, in: windowState)
             },
             performImmediateVisualHandoffIfPossible: { [weak browserManager] windowState in
-                _ = browserManager?.windowVisualMutationOwner.performImmediateVisualHandoffIfPossible(
+                _ = browserManager?.windowSessionBundle.visualMutationOwner.performImmediateVisualHandoffIfPossible(
                     in: windowState
                 )
             },
             persistWindowSession: { [weak browserManager] windowState in
-                browserManager?.windowSessionActivationOwner.persistWindowSession(for: windowState)
+                browserManager?.windowSessionBundle.activationOwner.persistWindowSession(for: windowState)
             },
             showEmptyState: { [weak browserManager] windowState in
                 browserManager?.showEmptyState(in: windowState)
@@ -59,7 +59,7 @@ final class BrowserTabLifecycleService {
         closeOrchestration = BrowserTabCloseOrchestrationOwner(
             activeWindow: { [weak browserManager] in browserManager?.windowRegistry?.activeWindow },
             currentTab: { [weak browserManager] windowState in
-                browserManager?.windowTabContextOwner.currentTab(for: windowState)
+                browserManager?.windowSessionBundle.tabContextOwner.currentTab(for: windowState)
             },
             glanceManager: browserManager.glanceManager,
             tabManager: { [weak browserManager, tabManager = browserManager.tabManager] in
@@ -71,7 +71,7 @@ final class BrowserTabLifecycleService {
                 browserManager?.selectTab(tab, in: windowState)
             },
             performImmediateVisualHandoffIfPossible: { [weak browserManager] windowState in
-                _ = browserManager?.windowVisualMutationOwner.performImmediateVisualHandoffIfPossible(
+                _ = browserManager?.windowSessionBundle.visualMutationOwner.performImmediateVisualHandoffIfPossible(
                     in: windowState
                 )
             },
@@ -79,7 +79,7 @@ final class BrowserTabLifecycleService {
                 browserManager?.showEmptyState(in: windowState)
             },
             persistWindowSession: { [weak browserManager] windowState in
-                browserManager?.windowSessionActivationOwner.persistWindowSession(for: windowState)
+                browserManager?.windowSessionBundle.activationOwner.persistWindowSession(for: windowState)
             }
         )
         opening = BrowserTabOpeningOwner(

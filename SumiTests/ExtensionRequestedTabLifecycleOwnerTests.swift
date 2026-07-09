@@ -95,7 +95,7 @@ final class ExtensionRequestedTabLifecycleOwnerTests: XCTestCase {
     func testExtensionTargetSpaceWithoutWindowDoesNotFallbackToGlobalCurrentSpace() throws {
         let harness = try makeProfileRoutingHarness()
 
-        let targetSpace = harness.browserManager.extensionBridgeAdapter.extensionTargetSpace(
+        let targetSpace = harness.browserManager.extensionBridgeBundle.adapter.extensionTargetSpace(
             for: nil as BrowserWindowState?
         )
 
@@ -109,7 +109,7 @@ final class ExtensionRequestedTabLifecycleOwnerTests: XCTestCase {
             name: "No Space"
         )
 
-        let targetSpace = harness.browserManager.extensionBridgeAdapter.extensionTargetSpace(for: tab)
+        let targetSpace = harness.browserManager.extensionBridgeBundle.adapter.extensionTargetSpace(for: tab)
 
         XCTAssertNil(targetSpace)
     }
@@ -123,7 +123,7 @@ final class ExtensionRequestedTabLifecycleOwnerTests: XCTestCase {
         )
 
         XCTAssertEqual(harness.browserManager.tabManager.selectionStateOwner.currentTab?.id, tab.id)
-        XCTAssertNil(harness.browserManager.extensionBridgeAdapter.currentExtensionTabForPopup())
+        XCTAssertNil(harness.browserManager.extensionBridgeBundle.adapter.currentExtensionTabForPopup())
     }
 
     func testPreferredExtensionWindowStateResolvesTransientTabFromDisplayedSpace() throws {
@@ -148,7 +148,7 @@ final class ExtensionRequestedTabLifecycleOwnerTests: XCTestCase {
                 ?? false
         )
         XCTAssertEqual(
-            harness.browserManager.extensionBridgeAdapter.preferredExtensionWindowState(containing: tab)?.id,
+            harness.browserManager.extensionBridgeBundle.adapter.preferredExtensionWindowState(containing: tab)?.id,
             windowState.id
         )
     }
@@ -159,7 +159,7 @@ final class ExtensionRequestedTabLifecycleOwnerTests: XCTestCase {
         windowState.currentProfileId = harness.profileB.id
         windowState.currentSpaceId = harness.spaceA.id
 
-        let targetSpace = harness.browserManager.extensionBridgeAdapter.extensionTargetSpace(for: windowState)
+        let targetSpace = harness.browserManager.extensionBridgeBundle.adapter.extensionTargetSpace(for: windowState)
 
         XCTAssertEqual(targetSpace?.id, harness.spaceB.id)
     }

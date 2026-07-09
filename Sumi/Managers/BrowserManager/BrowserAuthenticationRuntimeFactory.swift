@@ -6,13 +6,13 @@ enum BrowserAuthenticationRuntimeFactory {
         AuthenticationManagerRuntime(
             presentBasicAuthSheet: { [weak browserManager] session, tab in
                 guard let browserManager else { return false }
-                return browserManager.nativeDialogPresentationOwner.presentBasicAuthSheet(
+                return browserManager.chromeBundle.nativeDialogPresentationOwner.presentBasicAuthSheet(
                     session,
-                    in: browserManager.windowTabContextOwner.windowState(containing: tab)
+                    in: browserManager.windowSessionBundle.tabContextOwner.windowState(containing: tab)
                 )
             },
             dismissNativeModalPresentation: { [weak browserManager] in
-                browserManager?.nativeDialogPresentationOwner.dismissNativeModalPresentation()
+                browserManager?.chromeBundle.nativeDialogPresentationOwner.dismissNativeModalPresentation()
             }
         )
     }

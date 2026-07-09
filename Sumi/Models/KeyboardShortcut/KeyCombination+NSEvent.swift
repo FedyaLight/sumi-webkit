@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import SumiDomain
 
 extension KeyCombination {
     private static let physicalKeyMap: [UInt16: String] = [

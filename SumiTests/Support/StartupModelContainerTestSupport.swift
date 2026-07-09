@@ -25,7 +25,7 @@ func makeInMemoryTabManager(
 ) throws -> TabManager {
     let container = try makeInMemoryStartupModelContainer()
     return TabManager(
-        runtimeContext: TabManagerRuntimeContext(
+        runtimePorts: TestRuntimePorts.make(
             currentProfileId: currentProfileId,
             windowState: windowState,
             windows: windows,

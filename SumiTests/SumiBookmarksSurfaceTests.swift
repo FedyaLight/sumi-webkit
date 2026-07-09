@@ -31,13 +31,13 @@ final class SumiBookmarksSurfaceTests: XCTestCase {
     func testOpenBookmarksTabCreatesAndReusesManagerTabInCurrentSpace() throws {
         let harness = try makeHarness()
 
-        harness.browserManager.bookmarkCommandOwner.openBookmarksTab(selecting: "first", in: harness.windowState)
+        harness.browserManager.bookmarkBundle.bookmarkCommandOwner.openBookmarksTab(selecting: "first", in: harness.windowState)
         let firstBookmarksTab = try XCTUnwrap(
             harness.browserManager.tabManager.regularTabCollectionOwner.tabs(in: harness.space).first(where: \.representsSumiBookmarksSurface)
         )
         XCTAssertEqual(SumiSurface.bookmarksSelectedFolderID(from: firstBookmarksTab.url), "first")
 
-        harness.browserManager.bookmarkCommandOwner.openBookmarksTab(selecting: "second", in: harness.windowState)
+        harness.browserManager.bookmarkBundle.bookmarkCommandOwner.openBookmarksTab(selecting: "second", in: harness.windowState)
 
         let bookmarksTabs = harness.browserManager.tabManager.regularTabCollectionOwner.tabs(in: harness.space)
             .filter(\.representsSumiBookmarksSurface)
@@ -69,7 +69,7 @@ final class SumiBookmarksSurfaceTests: XCTestCase {
         )
         let revisionBeforeBatch = harness.browserManager.bookmarkManager.revision
 
-        let result = try harness.browserManager.bookmarkCommandOwner.bookmarkTabs(
+        let result = try harness.browserManager.bookmarkBundle.bookmarkCommandOwner.bookmarkTabs(
             [duplicate, fresh, unsupported],
             folderTitle: "Saved Tabs",
             parentID: nil

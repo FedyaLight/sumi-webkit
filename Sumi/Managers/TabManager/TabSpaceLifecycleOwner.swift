@@ -357,7 +357,7 @@ extension TabSpaceLifecycleOwner.Dependencies {
                 try tabManager.withStructuralUpdateTransaction(operation)
             },
             defaultProfileId: { [weak tabManager] in
-                tabManager?.runtimeContext?.defaultProfileId
+                tabManager?.runtimePorts?.defaultProfileId
             },
             spaceStateOwner: tabManager.spaceStateOwner,
             sendObjectWillChange: { [weak tabManager] in
@@ -406,7 +406,7 @@ extension TabSpaceLifecycleOwner.Dependencies {
                 tabManager?.notifyTransientShortcutStateChanged()
             },
             validateWindowStates: { [weak tabManager] in
-                tabManager?.runtimeContext?.validateWindowStates()
+                tabManager?.runtimePorts?.validateWindowStates()
             },
             assignSpaceProfile: { [weak tabManager] spaceId, profileId in
                 tabManager?.profileAssignmentOwner.assign(spaceId: spaceId, toProfile: profileId)
@@ -425,13 +425,13 @@ extension TabSpaceLifecycleOwner.Dependencies {
                 tabManager?.shortcutPresentationOwner.activeEssentialTabs(for: profileId) ?? []
             },
             currentProfileId: { [weak tabManager] in
-                tabManager?.runtimeContext?.currentProfileId
+                tabManager?.runtimePorts?.currentProfileId
             },
             persistSelection: { [weak tabManager] in
                 tabManager?.structuralPersistence.persistSelection()
             },
             notifications: { [weak tabManager] in
-                tabManager?.runtimeContext?.notifications()
+                tabManager?.runtimePorts?.notifications()
             }
         )
     }

@@ -5,6 +5,7 @@
 //
 
 import AppKit
+import SumiChromeTokens
 import SwiftUI
 
 struct FloatingBarView: View {
@@ -274,9 +275,9 @@ struct FloatingBarView: View {
                             }
                         }
                         .background(tokens.floatingBarBackground)
-                        .clipShape(.rect(cornerRadius: 26))
+                        .clipShape(.rect(cornerRadius: ChromeLayoutTokens.floatingBarCornerRadius))
                         .overlay {
-                            RoundedRectangle(cornerRadius: 26, style: .continuous)
+                            RoundedRectangle(cornerRadius: ChromeLayoutTokens.floatingBarCornerRadius, style: .continuous)
                                 .strokeBorder(
                                     tokens.separator.opacity(
                                         accessibilityReduceTransparency ? 0.95 : 0.72

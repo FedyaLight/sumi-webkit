@@ -1,9 +1,10 @@
 import Foundation
+import SumiDomain
 
 @MainActor
 final class ShortcutPinStoreOwner {
     struct Dependencies {
-        let runtimeContext: @MainActor () -> TabManagerRuntimeContext?
+        let runtimePorts: @MainActor () -> RuntimePortRegistry?
         let pinnedByProfile: @MainActor () -> [UUID: [ShortcutPin]]
         let setPinnedTabs: @MainActor ([ShortcutPin], UUID) -> Void
         let topLevelSpacePinnedItems: @MainActor (UUID) -> [SpacePinnedShortcutOrderOwner.TopLevelItem]
@@ -51,7 +52,7 @@ final class ShortcutPinStoreOwner {
         openTargetFolder: Bool = true
     ) -> ShortcutPin? {
         if let folderId = pin.folderId,
-           dependencies.runtimeContext()?.isLiveFolder(folderId) == true {
+           dependencies.runtimePorts()?.isLiveFolder(folderId) == true {
             return nil
         }
 
@@ -218,8 +219,8 @@ extension ShortcutPinStoreOwner.Dependencies {
     @MainActor
     static func live(tabManager: TabManager) -> Self {
         Self(
-            runtimeContext: { [weak tabManager] in
-                tabManager?.runtimeContext
+            runtimePorts: { [weak tabManager] in
+                tabManager?.runtimePorts
             },
             pinnedByProfile: { [weak tabManager] in
                 tabManager?.shortcutPinCollectionStateOwner.pinnedByProfileSnapshot() ?? [:]

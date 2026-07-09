@@ -59,19 +59,19 @@ private final class SumiCommandsBrowserManagerAdapter:
     }
 
     func activePageTabForActiveWindow() -> Tab? {
-        browserManager?.activePageRoutingOwner.activePageTabForActiveWindow()
+        browserManager?.urlBarBundle.activePageRoutingOwner.activePageTabForActiveWindow()
     }
 
     func activePageURLForActiveWindow() -> URL? {
-        browserManager?.activePageRoutingOwner.activePageURLForActiveWindow()
+        browserManager?.urlBarBundle.activePageRoutingOwner.activePageURLForActiveWindow()
     }
 
     func currentTabIsMuted() -> Bool {
-        browserManager?.activePageRoutingOwner.currentTabIsMuted() ?? false
+        browserManager?.urlBarBundle.activePageRoutingOwner.currentTabIsMuted() ?? false
     }
 
     func currentTabHasAudioContent() -> Bool {
-        browserManager?.activePageRoutingOwner.currentTabHasAudioContent() ?? false
+        browserManager?.urlBarBundle.activePageRoutingOwner.currentTabHasAudioContent() ?? false
     }
 
     func hasCustomizableSpaceForCommands() -> Bool {
@@ -79,7 +79,7 @@ private final class SumiCommandsBrowserManagerAdapter:
     }
 
     func openSettingsTab(selecting pane: SettingsTabs, in windowState: BrowserWindowState?) {
-        browserManager?.urlBarCommands.openSettingsTab(selecting: pane, in: windowState)
+        browserManager?.urlBarBundle.commands.openSettingsTab(selecting: pane, in: windowState)
     }
 
     func setAsDefaultBrowser() {
@@ -90,15 +90,15 @@ private final class SumiCommandsBrowserManagerAdapter:
     }
 
     func clearCurrentPageCookies() {
-        browserManager?.chromeCommands.clearCurrentPageCookies()
+        browserManager?.chromeBundle.commands.clearCurrentPageCookies()
     }
 
     func showGradientEditor() {
-        browserManager?.workspaceThemeEditorOwner.showGradientEditor()
+        browserManager?.chromeBundle.workspaceThemeEditorOwner.showGradientEditor()
     }
 
     func showQuitDialog() {
-        browserManager?.nativeDialogPresentationOwner.showQuitDialog()
+        browserManager?.chromeBundle.nativeDialogPresentationOwner.showQuitDialog()
     }
 
     func closeCurrentTab() {
@@ -110,15 +110,15 @@ private final class SumiCommandsBrowserManagerAdapter:
     }
 
     func closeActiveWindow() {
-        browserManager?.windowSessionCommands.closeActiveWindow()
+        browserManager?.windowSessionBundle.commands.closeActiveWindow()
     }
 
     func closeWindow(_ windowState: BrowserWindowState) {
-        browserManager?.windowSessionCommands.closeWindow(windowState)
+        browserManager?.windowSessionBundle.commands.closeWindow(windowState)
     }
 
     func undoCloseTab() {
-        browserManager?.recentlyClosedRestoreOwner.reopenMostRecentClosedItem()
+        browserManager?.windowSessionBundle.recentlyClosedRestoreOwner.reopenMostRecentClosedItem()
     }
 
     func openNewTabSurfaceInActiveWindow() {
@@ -126,11 +126,11 @@ private final class SumiCommandsBrowserManagerAdapter:
     }
 
     func createNewWindow() {
-        browserManager?.windowSessionCommands.createNewWindow()
+        browserManager?.windowSessionBundle.commands.createNewWindow()
     }
 
     func createIncognitoWindow() {
-        browserManager?.windowSessionCommands.createIncognitoWindow()
+        browserManager?.windowSessionBundle.commands.createIncognitoWindow()
     }
 
     func focusFloatingBarForActiveWindow(
@@ -138,7 +138,7 @@ private final class SumiCommandsBrowserManagerAdapter:
         navigateCurrentTab: Bool,
         presentationReason: FloatingBarPresentationReason
     ) {
-        browserManager?.floatingBarRoutingOwner.focusFloatingBarForActiveWindow(
+        browserManager?.urlBarBundle.floatingBarRoutingOwner.focusFloatingBarForActiveWindow(
             prefill: prefill,
             navigateCurrentTab: navigateCurrentTab,
             presentationReason: presentationReason
@@ -146,11 +146,11 @@ private final class SumiCommandsBrowserManagerAdapter:
     }
 
     func copyCurrentURL() {
-        browserManager?.activePageRoutingOwner.copyCurrentURL()
+        browserManager?.urlBarBundle.activePageRoutingOwner.copyCurrentURL()
     }
 
     func toggleSidebar() {
-        browserManager?.sidebarPresentationOwner.toggleSidebar()
+        browserManager?.chromeBundle.sidebarPresentationOwner.toggleSidebar()
     }
 
     func showFindBar() {
@@ -158,103 +158,103 @@ private final class SumiCommandsBrowserManagerAdapter:
     }
 
     func refreshCurrentTabInActiveWindow() {
-        browserManager?.activePageRoutingOwner.refreshCurrentTabInActiveWindow()
+        browserManager?.urlBarBundle.activePageRoutingOwner.refreshCurrentTabInActiveWindow()
     }
 
     func zoomInCurrentTab() {
-        browserManager?.zoomCommandOwner.zoomInCurrentTab()
+        browserManager?.chromeBundle.zoomCommandOwner.zoomInCurrentTab()
     }
 
     func zoomOutCurrentTab() {
-        browserManager?.zoomCommandOwner.zoomOutCurrentTab()
+        browserManager?.chromeBundle.zoomCommandOwner.zoomOutCurrentTab()
     }
 
     func resetZoomCurrentTab() {
-        browserManager?.zoomCommandOwner.resetZoomCurrentTab()
+        browserManager?.chromeBundle.zoomCommandOwner.resetZoomCurrentTab()
     }
 
     func hardReloadCurrentPage() {
-        browserManager?.chromeCommands.hardReloadCurrentPage()
+        browserManager?.chromeBundle.commands.hardReloadCurrentPage()
     }
 
     func openWebInspector() {
-        browserManager?.activePageRoutingOwner.openWebInspector()
+        browserManager?.urlBarBundle.activePageRoutingOwner.openWebInspector()
     }
 
     func toggleMuteCurrentTabInActiveWindow() {
-        browserManager?.activePageRoutingOwner.toggleMuteCurrentTabInActiveWindow()
+        browserManager?.urlBarBundle.activePageRoutingOwner.toggleMuteCurrentTabInActiveWindow()
     }
 
     var canGoBackInActiveWindow: Bool {
-        browserManager?.historyNavigationOwner.canGoBackInActiveWindow ?? false
+        browserManager?.historyBundle.historyNavigationOwner.canGoBackInActiveWindow ?? false
     }
 
     var canGoForwardInActiveWindow: Bool {
-        browserManager?.historyNavigationOwner.canGoForwardInActiveWindow ?? false
+        browserManager?.historyBundle.historyNavigationOwner.canGoForwardInActiveWindow ?? false
     }
 
     var canRestoreAnyLastSession: Bool {
-        browserManager?.recentlyClosedRestoreOwner.canRestoreAnyLastSession ?? false
+        browserManager?.windowSessionBundle.recentlyClosedRestoreOwner.canRestoreAnyLastSession ?? false
     }
 
     func goBackInActiveWindow() {
-        browserManager?.historyNavigationOwner.goBackInActiveWindow()
+        browserManager?.historyBundle.historyNavigationOwner.goBackInActiveWindow()
     }
 
     func goForwardInActiveWindow() {
-        browserManager?.historyNavigationOwner.goForwardInActiveWindow()
+        browserManager?.historyBundle.historyNavigationOwner.goForwardInActiveWindow()
     }
 
     func reopenMostRecentClosedItem() {
-        browserManager?.recentlyClosedRestoreOwner.reopenMostRecentClosedItem()
+        browserManager?.windowSessionBundle.recentlyClosedRestoreOwner.reopenMostRecentClosedItem()
     }
 
     func reopenRecentlyClosedItem(_ item: RecentlyClosedItem) {
-        browserManager?.recentlyClosedRestoreOwner.reopenRecentlyClosedItem(item)
+        browserManager?.windowSessionBundle.recentlyClosedRestoreOwner.reopenRecentlyClosedItem(item)
     }
 
     func reopenAllWindowsFromLastSession() {
-        browserManager?.recentlyClosedRestoreOwner.reopenAllWindowsFromLastSession()
+        browserManager?.windowSessionBundle.recentlyClosedRestoreOwner.reopenAllWindowsFromLastSession()
     }
 
     func openHistoryURLFromMenuItem(_ url: URL) {
-        browserManager?.historyNavigationOwner.openHistoryURLFromMenuItem(url)
+        browserManager?.historyBundle.historyNavigationOwner.openHistoryURLFromMenuItem(url)
     }
 
     func showHistory() {
-        browserManager?.historyNavigationOwner.openHistoryTab()
+        browserManager?.historyBundle.historyNavigationOwner.openHistoryTab()
     }
 
     func clearAllHistoryFromMenu() {
-        browserManager?.historyMenuOwner.clearAllHistoryFromMenu()
+        browserManager?.historyBundle.historyMenuOwner.clearAllHistoryFromMenu()
     }
 
     func canBookmarkAllTabsInActiveWindow() -> Bool {
-        browserManager?.bookmarkCommandOwner.canBookmarkAllTabsInActiveWindow() ?? false
+        browserManager?.bookmarkBundle.bookmarkCommandOwner.canBookmarkAllTabsInActiveWindow() ?? false
     }
 
     func requestBookmarkEditorForActiveWindowFromMenu() {
-        browserManager?.bookmarkCommandOwner.requestBookmarkEditorForActiveWindowFromMenu()
+        browserManager?.bookmarkBundle.bookmarkCommandOwner.requestBookmarkEditorForActiveWindowFromMenu()
     }
 
     func bookmarkAllTabsFromMenu() {
-        browserManager?.bookmarkCommandOwner.bookmarkAllTabsFromMenu()
+        browserManager?.bookmarkBundle.bookmarkCommandOwner.bookmarkAllTabsFromMenu()
     }
 
     func manageBookmarksFromMenu() {
-        browserManager?.bookmarkCommandOwner.manageBookmarksFromMenu()
+        browserManager?.bookmarkBundle.bookmarkCommandOwner.manageBookmarksFromMenu()
     }
 
     func importBookmarksFromMenu() {
-        browserManager?.bookmarkCommandOwner.importBookmarksFromMenu()
+        browserManager?.bookmarkBundle.bookmarkCommandOwner.importBookmarksFromMenu()
     }
 
     func exportBookmarksFromMenu() {
-        browserManager?.bookmarkCommandOwner.exportBookmarksFromMenu()
+        browserManager?.bookmarkBundle.bookmarkCommandOwner.exportBookmarksFromMenu()
     }
 
     func openBookmarkURLFromMenuItem(_ url: URL) {
-        browserManager?.bookmarkCommandOwner.openBookmarkURLFromMenuItem(url)
+        browserManager?.bookmarkBundle.bookmarkCommandOwner.openBookmarkURLFromMenuItem(url)
     }
 }
 

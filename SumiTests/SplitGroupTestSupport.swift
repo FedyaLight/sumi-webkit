@@ -222,7 +222,7 @@ class SplitGroupTestCase: XCTestCase {
         )
         let browserManager = BrowserManager()
         let tabManager = TabManager(
-            runtimeContext: BrowserTabManagerRuntimeContextFactory.runtime(for: browserManager),
+            runtimePorts: BrowserTabManagerRuntimePortsFactory.registry(for: browserManager),
             context: container.mainContext,
             loadPersistedState: false
         )

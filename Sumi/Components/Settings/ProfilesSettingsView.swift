@@ -5,6 +5,7 @@
 
 import AppKit
 import SwiftUI
+import SumiDomain
 
 /// Profile management (also used in the in-tab settings surface).
 struct SumiProfilesSettingsPane: View {

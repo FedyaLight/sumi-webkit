@@ -39,7 +39,7 @@ final class BrowserNotificationPresenter {
                 browserManager?.keyboardShortcutManager?.shortcutDisplayString(for: .undoCloseTab)
             },
             undoCloseTab: { [weak browserManager] in
-                browserManager?.recentlyClosedRestoreOwner.reopenMostRecentClosedItem()
+                browserManager?.windowSessionBundle.recentlyClosedRestoreOwner.reopenMostRecentClosedItem()
             },
             tabForId: { [weak browserManager] tabId in
                 browserManager?.tabManager.tabCollectionMembershipOwner.tab(for: tabId)

@@ -17,6 +17,62 @@ struct ShortcutHostedSplitGroupRow: View {
     @EnvironmentObject private var splitManager: SplitViewManager
     @Environment(BrowserWindowState.self) private var windowState
 
+    init(
+        group: SplitGroup,
+        items: [SplitGroupSidebarItem],
+        spaceId: UUID,
+        browserContext: SidebarBrowserContext,
+        isAppKitInteractionEnabled: Bool,
+        accessibilityID: String,
+        onActivateTab: @escaping (Tab) -> Void,
+        onActivateGroup: @escaping (SplitGroup) -> Void,
+        onRestoreShortcutSplitMember: @escaping (SplitGroupSidebarItem, SplitGroup) -> Void,
+        onCloseTab: @escaping (Tab) -> Void,
+        onPrepareShortcutRestoreGap: @escaping (SplitGroupSidebarItem, SplitGroup) -> Void,
+        onPerformShortcutRestoreWithPreparedGap: @escaping (SplitGroupSidebarItem, SplitGroup, @escaping () -> Void) -> Void
+    ) {
+        self.group = group
+        self.items = items
+        self.spaceId = spaceId
+        self.tabManager = browserContext.tabManager
+        self.isAppKitInteractionEnabled = isAppKitInteractionEnabled
+        self.accessibilityID = accessibilityID
+        self.onActivateTab = onActivateTab
+        self.onActivateGroup = onActivateGroup
+        self.onRestoreShortcutSplitMember = onRestoreShortcutSplitMember
+        self.onCloseTab = onCloseTab
+        self.onPrepareShortcutRestoreGap = onPrepareShortcutRestoreGap
+        self.onPerformShortcutRestoreWithPreparedGap = onPerformShortcutRestoreWithPreparedGap
+    }
+
+    init(
+        group: SplitGroup,
+        items: [SplitGroupSidebarItem],
+        spaceId: UUID,
+        tabManager: TabManager,
+        isAppKitInteractionEnabled: Bool,
+        accessibilityID: String,
+        onActivateTab: @escaping (Tab) -> Void,
+        onActivateGroup: @escaping (SplitGroup) -> Void,
+        onRestoreShortcutSplitMember: @escaping (SplitGroupSidebarItem, SplitGroup) -> Void,
+        onCloseTab: @escaping (Tab) -> Void,
+        onPrepareShortcutRestoreGap: @escaping (SplitGroupSidebarItem, SplitGroup) -> Void,
+        onPerformShortcutRestoreWithPreparedGap: @escaping (SplitGroupSidebarItem, SplitGroup, @escaping () -> Void) -> Void
+    ) {
+        self.group = group
+        self.items = items
+        self.spaceId = spaceId
+        self.tabManager = tabManager
+        self.isAppKitInteractionEnabled = isAppKitInteractionEnabled
+        self.accessibilityID = accessibilityID
+        self.onActivateTab = onActivateTab
+        self.onActivateGroup = onActivateGroup
+        self.onRestoreShortcutSplitMember = onRestoreShortcutSplitMember
+        self.onCloseTab = onCloseTab
+        self.onPrepareShortcutRestoreGap = onPrepareShortcutRestoreGap
+        self.onPerformShortcutRestoreWithPreparedGap = onPerformShortcutRestoreWithPreparedGap
+    }
+
     var body: some View {
         SplitGroupSidebarRow(
             group: group,

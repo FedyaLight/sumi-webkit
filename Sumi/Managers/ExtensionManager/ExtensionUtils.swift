@@ -9,6 +9,7 @@ import CryptoKit
 import Foundation
 import OSLog
 import WebKit
+import SumiDomain
 
 enum WebExtensionManifestValidationPolicy: Equatable, Sendable {
     /// Safari `.app` / `.appex` imports — WebKit accepts manifest version 2 and 3.

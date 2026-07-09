@@ -136,7 +136,7 @@ Paths below are relative to the repository root.
 │   ├── Utils/              # Helpers and WebKit wrappers
 │   └── Resources/          # Bundled scripts and related assets
 ├── FloatingBar/            # Floating bar UI and accessories
-├── Navigation/             # Sidebar navigation helpers
+├── SidebarChrome/          # Sidebar chrome (spaces sidebar shell)
 ├── Settings/               # Settings-related helpers
 ├── UI/                     # Shared lightweight UI helpers
 ├── Vendor/                 # Vendored third-party components

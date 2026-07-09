@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import WebKit
+import SumiDomain
 
 @MainActor
 final class BrowserActivePageRoutingOwner {

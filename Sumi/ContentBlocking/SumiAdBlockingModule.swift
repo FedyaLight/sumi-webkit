@@ -621,6 +621,9 @@ final class SumiAdBlockingModule {
     private var cachedRuleListStore: AdblockWebKitRuleListStore?
     private var runtimeEnabled = false
     private var preparedBundleRuntimeEnabled = false
+    /// Zero-cost eligibility when the site-policy store is not loaded (module disabled).
+    private let disabledSurfaceNormalizer = SumiProtectionSiteNormalizer()
+    private let disabledSitePolicyChangesSubject = PassthroughSubject<Void, Never>()
 
     init(
         moduleRegistry: SumiModuleRegistry,
@@ -646,9 +649,13 @@ final class SumiAdBlockingModule {
 
     func setEnabled(_ isEnabled: Bool) {
         runtimeEnabled = isEnabled
-        if !isEnabled && !isPreparedBundleRuntimeEnabled {
-            cachedRuleListStore?.contentBlockingService.setPolicy(.disabled)
-            cachedRuleListStore = nil
+        if !isEnabled {
+            // Zero-cost disable: drop site-policy store so disabled paths do not keep it warm.
+            cachedSitePolicyStore = nil
+            if !isPreparedBundleRuntimeEnabled {
+                cachedRuleListStore?.contentBlockingService.setPolicy(.disabled)
+                cachedRuleListStore = nil
+            }
         }
     }
 
@@ -726,30 +733,41 @@ final class SumiAdBlockingModule {
     }
 
     func surfaceEligibility(for url: URL?) -> SumiAdblockSurfaceEligibility {
-        sitePolicyStoreIfEnabled().surfaceEligibility(for: url)
+        if let store = sitePolicyStoreIfEnabled() {
+            return store.surfaceEligibility(for: url)
+        }
+        return SumiAdblockSurfaceEligibility.evaluate(url: url, normalizer: disabledSurfaceNormalizer)
     }
 
     func effectivePolicy(for url: URL?) -> SumiAdblockEffectivePolicy {
-        let store = sitePolicyStoreIfEnabled()
-        guard isEnabled else {
-            return SumiAdblockEffectivePolicy(host: store.normalizedHost(for: url), isEnabled: false)
+        guard let store = sitePolicyStoreIfEnabled() else {
+            let host = SumiAdblockSurfaceEligibility.evaluate(
+                url: url,
+                normalizer: disabledSurfaceNormalizer
+            ).normalizedSiteHost
+            return SumiAdblockEffectivePolicy(host: host, isEnabled: false)
         }
         return store.effectivePolicy(for: url, globalEnabled: true)
     }
 
     func siteOverride(for url: URL?) -> SumiAdblockSiteOverride {
-        sitePolicyStoreIfEnabled().override(for: url)
+        sitePolicyStoreIfEnabled()?.override(for: url) ?? .inherit
     }
 
     func setSiteOverride(_ override: SumiAdblockSiteOverride, for url: URL?) {
-        sitePolicyStoreIfEnabled().setSiteOverride(override, for: url)
+        guard let store = sitePolicyStoreIfEnabled() else { return }
+        store.setSiteOverride(override, for: url)
     }
 
     func sitePolicyChangesPublisher() -> AnyPublisher<Void, Never> {
-        sitePolicyStoreIfEnabled().changesPublisher
+        sitePolicyStoreIfEnabled()?.changesPublisher
+            ?? disabledSitePolicyChangesSubject.eraseToAnyPublisher()
     }
 
-    func sitePolicyStoreIfEnabled() -> AdblockSitePolicyStore {
+    /// Returns the site-policy store only while adblocking is enabled.
+    /// Disabled path must not eagerly create the store (zero-cost).
+    func sitePolicyStoreIfEnabled() -> AdblockSitePolicyStore? {
+        guard isEnabled else { return nil }
         if let cachedSitePolicyStore { return cachedSitePolicyStore }
         let store = sitePolicyFactory()
         cachedSitePolicyStore = store

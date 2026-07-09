@@ -2,6 +2,7 @@ import WebKit
 import XCTest
 
 @testable import Sumi
+import SumiDomain
 
 @MainActor
 final class TabPermissionSurfaceTests: XCTestCase {
@@ -129,7 +130,8 @@ final class TabPermissionSurfaceTests: XCTestCase {
                 handlePermissionLifecycleEvent: { event in
                     lifecycleEvents.append(event)
                 },
-                isActiveGlancePreviewSurface: { _ in false }
+                isActiveGlancePreviewSurface: { _ in false },
+                isAuxiliaryMiniWindow: { false }
             )
         )
         let webView = WKWebView()

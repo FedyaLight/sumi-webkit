@@ -313,7 +313,7 @@ final class GlanceManagerTests: XCTestCase {
         XCTAssertFalse(suggestedTabs.contains { $0.id == previewTab.id })
         XCTAssertFalse(suggestedTabs.contains { $0.id == placeholderId })
 
-        browserManager.floatingBarRoutingOwner.commitFloatingBarSuggestion(
+        browserManager.urlBarBundle.floatingBarRoutingOwner.commitFloatingBarSuggestion(
             SearchManager.SearchSuggestion(text: sourceTab.name, type: .tab(sourceTab)),
             in: sourceWindow
         )

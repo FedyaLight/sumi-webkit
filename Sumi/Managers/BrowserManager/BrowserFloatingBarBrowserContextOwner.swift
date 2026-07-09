@@ -54,10 +54,10 @@ final class BrowserFloatingBarBrowserContextOwner {
                 searchManager.updateProfileContext()
             },
             updateDraft: { [weak browserManager] windowState, text in
-                browserManager?.floatingBarRoutingOwner.updateFloatingBarDraft(in: windowState, text: text)
+                browserManager?.urlBarBundle.floatingBarRoutingOwner.updateFloatingBarDraft(in: windowState, text: text)
             },
             dismiss: { [weak browserManager] windowState, preserveDraft in
-                browserManager?.floatingBarRoutingOwner.dismissFloatingBar(
+                browserManager?.urlBarBundle.floatingBarRoutingOwner.dismissFloatingBar(
                     in: windowState,
                     preserveDraft: preserveDraft,
                     cancelEmptySplitPlaceholder: true
@@ -70,16 +70,16 @@ final class BrowserFloatingBarBrowserContextOwner {
                 )
             },
             commitNavigatesCurrentTab: { [weak browserManager] windowState in
-                browserManager?.floatingBarRoutingOwner.floatingBarCommitNavigatesCurrentTab(in: windowState) ?? false
+                browserManager?.urlBarBundle.floatingBarRoutingOwner.floatingBarCommitNavigatesCurrentTab(in: windowState) ?? false
             },
             commitNavigation: { [weak browserManager] urlString, windowState in
-                browserManager?.floatingBarRoutingOwner.commitFloatingBarNavigation(
+                browserManager?.urlBarBundle.floatingBarRoutingOwner.commitFloatingBarNavigation(
                     to: urlString,
                     in: windowState
                 )
             },
             commitSuggestion: { [weak browserManager] suggestion, windowState in
-                browserManager?.floatingBarRoutingOwner.commitFloatingBarSuggestion(
+                browserManager?.urlBarBundle.floatingBarRoutingOwner.commitFloatingBarSuggestion(
                     suggestion,
                     in: windowState
                 )

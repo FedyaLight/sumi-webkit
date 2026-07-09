@@ -1,5 +1,6 @@
 import Compression
 import Foundation
+import SumiDomain
 
 struct SumiZenImportResult {
     var data: SumiPortableData

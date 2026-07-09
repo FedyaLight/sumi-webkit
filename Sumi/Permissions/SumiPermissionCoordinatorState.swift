@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 struct SumiPermissionCoordinatorState: Equatable, Sendable {
     var activeQueriesByPageId: [String: SumiPermissionAuthorizationQuery]

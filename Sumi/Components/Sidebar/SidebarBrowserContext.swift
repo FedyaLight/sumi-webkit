@@ -82,7 +82,7 @@ struct SidebarBrowserContext {
             liveFolderManager: browserManager.liveFolderManager,
             splitManager: browserManager.splitManager,
             downloadManager: browserManager.downloadManager,
-            downloadsPopoverPresenter: browserManager.chromeCommands.downloadsPopoverPresenter,
+            downloadsPopoverPresenter: browserManager.chromeBundle.commands.downloadsPopoverPresenter,
             glanceManager: browserManager.glanceManager,
             extensionSurfaceStore: browserManager.extensionsModule.surfaceStore,
             regularTabs: SidebarRegularTabsController.live(
@@ -130,7 +130,7 @@ struct SidebarBrowserContext {
                     )
                 },
                 showGradientEditorForSpace: { [weak browserManager] space, source in
-                    browserManager?.workspaceThemeEditorOwner.showGradientEditor(for: space, source: source)
+                    browserManager?.chromeBundle.workspaceThemeEditorOwner.showGradientEditor(for: space, source: source)
                 },
                 confirmDeleteSpace: { [weak browserManager] space, windowState in
                     guard let browserManager else { return }
@@ -141,11 +141,11 @@ struct SidebarBrowserContext {
                     )
                 },
                 presentSharingServicePicker: { [weak browserManager] items, source in
-                    browserManager?.nativeDialogPresentationOwner.presentSharingServicePicker(items, source: source)
+                    browserManager?.chromeBundle.nativeDialogPresentationOwner.presentSharingServicePicker(items, source: source)
                 }
             ),
             headerContext: { windowState in
-                browserManager.urlBarContextOwner.sidebarHeaderContext(for: windowState)
+                browserManager.urlBarBundle.contextOwner.sidebarHeaderContext(for: windowState)
             },
             tabStructuralRevision: { [weak browserManager] in
                 browserManager?.tabStructuralRevision ?? 0
@@ -157,7 +157,7 @@ struct SidebarBrowserContext {
                 browserManager?.currentProfile
             },
             currentTab: { [weak browserManager] windowState in
-                browserManager?.windowTabContextOwner.currentTab(for: windowState)
+                browserManager?.windowSessionBundle.tabContextOwner.currentTab(for: windowState)
             },
             extensionToolbarSlots: { [weak browserManager] enabledExtensions, profileId in
                 guard let browserManager else { return [] }
@@ -174,7 +174,7 @@ struct SidebarBrowserContext {
                 )
             },
             savedSidebarWidth: { [weak browserManager] windowState in
-                browserManager?.sidebarPresentationOwner.savedSidebarWidth(for: windowState) ?? BrowserWindowState.sidebarDefaultWidth
+                browserManager?.chromeBundle.sidebarPresentationOwner.savedSidebarWidth(for: windowState) ?? BrowserWindowState.sidebarDefaultWidth
             },
             performDrop: { [weak browserManager] pasteboard, resolution, windowState in
                 guard let browserManager else { return false }

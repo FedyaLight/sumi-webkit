@@ -4,8 +4,8 @@ import Foundation
 final class TabRemovalOwner {
     struct Dependencies {
         let withStructuralUpdateTransaction: (@MainActor () -> Void) -> Void
-        let runtimeContext: () -> TabManagerRuntimeContext?
-        let requireRuntimeContext: () -> TabManagerRuntimeContext
+        let runtimePorts: () -> RuntimePortRegistry?
+        let requireRuntimePorts: () -> RuntimePortRegistry
         let cancelRuntimeStatePersistence: (UUID) -> Void
         let currentTab: () -> Tab?
         let replaceCurrentTab: (Tab?) -> Void
@@ -36,7 +36,7 @@ final class TabRemovalOwner {
 
     func removeTab(_ id: UUID) {
         dependencies.withStructuralUpdateTransaction {
-            dependencies.runtimeContext()?.handleTabClosure(id)
+            dependencies.runtimePorts()?.handleTabClosure(id)
             dependencies.cancelRuntimeStatePersistence(id)
 
             let wasCurrent = (dependencies.currentTab()?.id == id)
@@ -70,18 +70,18 @@ final class TabRemovalOwner {
             }
 
             guard let tab = removed else { return }
-            let runtimeContext = dependencies.requireRuntimeContext()
+            let runtimePorts = dependencies.requireRuntimePorts()
 
-            runtimeContext.notifyTabClosedIfLoaded(tab)
+            runtimePorts.notifyTabClosedIfLoaded(tab)
 
-            runtimeContext.forEachWindowState { windowState in
+            runtimePorts.forEachWindowState { windowState in
                 windowState.selectionHistory.removeFromRegularTabHistory(tab.id)
             }
 
             captureRecentlyClosedTab(tab, spaceId: removedSpaceId)
 
-            runtimeContext.webViewLifecycle.unloadTab(tab)
-            runtimeContext.webViewLifecycle.requireRemoveAllWebViews(
+            runtimePorts.webViewLifecycle.unloadTab(tab)
+            runtimePorts.webViewLifecycle.requireRemoveAllWebViews(
                 for: tab,
                 closeActiveFullscreenMedia: true
             )
@@ -100,7 +100,7 @@ final class TabRemovalOwner {
             }
 
             dependencies.scheduleStructuralPersistence()
-            runtimeContext.validateWindowStates()
+            runtimePorts.validateWindowStates()
         }
     }
 
@@ -243,9 +243,9 @@ final class TabRemovalOwner {
 
         guard let tab = removed else { return }
 
-        let runtimeContext = dependencies.requireRuntimeContext()
-        runtimeContext.webViewLifecycle.unloadTab(tab)
-        runtimeContext.webViewLifecycle.requireRemoveAllWebViews(
+        let runtimePorts = dependencies.requireRuntimePorts()
+        runtimePorts.webViewLifecycle.unloadTab(tab)
+        runtimePorts.webViewLifecycle.requireRemoveAllWebViews(
             for: tab,
             closeActiveFullscreenMedia: true
         )
@@ -257,7 +257,7 @@ final class TabRemovalOwner {
 
         if wasCurrent {
             if tab.spaceId == nil {
-                let tabs = dependencies.activeEssentialTabs(runtimeContext.currentProfileId)
+                let tabs = dependencies.activeEssentialTabs(runtimePorts.currentProfileId)
                 if let first = tabs.first {
                     dependencies.setActiveTab(first)
                 }
@@ -285,14 +285,14 @@ extension TabRemovalOwner.Dependencies {
                 }
                 tabManager.withStructuralUpdateTransaction(operation)
             },
-            runtimeContext: { [weak tabManager] in
-                tabManager?.runtimeContext
+            runtimePorts: { [weak tabManager] in
+                tabManager?.runtimePorts
             },
-            requireRuntimeContext: { [weak tabManager] in
+            requireRuntimePorts: { [weak tabManager] in
                 guard let tabManager else {
                     preconditionFailure("TabManager dependency used after deallocation")
                 }
-                return tabManager.requireRuntimeContext()
+                return tabManager.requireRuntimePorts()
             },
             cancelRuntimeStatePersistence: { [weak tabManager] tabId in
                 tabManager?.structuralPersistence.cancelRuntimeStatePersistence(for: tabId)
@@ -334,7 +334,7 @@ extension TabRemovalOwner.Dependencies {
                 tabManager?.shortcutPresentationOwner.activeEssentialTabs(for: profileId) ?? []
             },
             currentProfileId: { [weak tabManager] in
-                tabManager?.runtimeContext?.currentProfileId
+                tabManager?.runtimePorts?.currentProfileId
             },
             liveSpacePinnedTabs: { [weak tabManager] spaceId in
                 tabManager?.shortcutPresentationOwner.liveSpacePinnedTabs(for: spaceId) ?? []
@@ -343,10 +343,10 @@ extension TabRemovalOwner.Dependencies {
                 tabManager?.regularTabCollectionOwner.tabs(in: spaceId) ?? []
             },
             captureClosedTab: { [weak tabManager] tab, spaceId in
-                tabManager?.runtimeContext?.captureClosedTab(tab, sourceSpaceId: spaceId)
+                tabManager?.runtimePorts?.captureClosedTab(tab, sourceSpaceId: spaceId)
             },
             notifications: { [weak tabManager] in
-                tabManager?.runtimeContext?.notifications()
+                tabManager?.runtimePorts?.notifications()
             },
             tabsBelow: { [weak tabManager] tab in
                 tabManager?.regularTabCollectionOwner.tabsBelow(tab)

@@ -11,7 +11,7 @@ extension WindowViewBrowserContext {
         WindowViewBrowserContext(
             splitManager: browserManager.splitManager,
             findManager: browserManager.findManager,
-            floatingBarBrowserContext: browserManager.floatingBarBrowserContextOwner.context,
+            floatingBarBrowserContext: browserManager.urlBarBundle.floatingBarBrowserContextOwner.context,
             sidebarBrowserContext: SidebarBrowserContext.live(browserManager: browserManager),
             sidebarHostActions: sidebarHostActions(browserManager: browserManager),
             sidebarStructuralInvalidation: sidebarStructuralInvalidation(browserManager: browserManager),
@@ -24,7 +24,7 @@ extension WindowViewBrowserContext {
                 browserManager?.tabManager.spaceStateOwner.currentSpace != nil
             },
             showGradientEditor: { [weak browserManager] source in
-                browserManager?.workspaceThemeEditorOwner.showGradientEditor(source: source)
+                browserManager?.chromeBundle.workspaceThemeEditorOwner.showGradientEditor(source: source)
             },
             currentProfileID: { [weak browserManager] in
                 browserManager?.currentProfile?.id
@@ -50,20 +50,20 @@ extension WindowViewBrowserContext {
                 )
             },
             currentTab: { [weak browserManager] windowState in
-                browserManager?.windowTabContextOwner.currentTab(for: windowState)
+                browserManager?.windowSessionBundle.tabContextOwner.currentTab(for: windowState)
             },
             workspaceTheme: { [weak browserManager] spaceId in
                 guard let spaceId else { return nil }
-                return browserManager?.windowSpaceStateOwner.space(for: spaceId)?.workspaceTheme
+                return browserManager?.windowSessionBundle.spaceStateOwner.space(for: spaceId)?.workspaceTheme
             },
             isNativeModalPresented: { [weak browserManager] windowId in
-                browserManager?.nativeDialogPresentationOwner.isNativeModalPresented(in: windowId) ?? false
+                browserManager?.chromeBundle.nativeDialogPresentationOwner.isNativeModalPresented(in: windowId) ?? false
             },
             nativeModalPresentationBindingDismissed: { [weak browserManager] windowId in
-                browserManager?.nativeDialogPresentationOwner.nativeModalPresentationBindingDismissed(for: windowId)
+                browserManager?.chromeBundle.nativeDialogPresentationOwner.nativeModalPresentationBindingDismissed(for: windowId)
             },
             dismissNativeModalPresentation: { [weak browserManager] in
-                browserManager?.nativeDialogPresentationOwner.dismissNativeModalPresentation()
+                browserManager?.chromeBundle.nativeDialogPresentationOwner.dismissNativeModalPresentation()
             },
             findCurrentTabId: { [weak browserManager] in
                 browserManager?.findManager.currentTab?.id
@@ -74,13 +74,13 @@ extension WindowViewBrowserContext {
     private static func sidebarHostActions(browserManager: BrowserManager) -> SidebarHostActions {
         SidebarHostActions(
             updateSidebarWidth: { [weak browserManager] width, windowState, persist in
-                browserManager?.sidebarPresentationOwner.updateSidebarWidth(width, for: windowState, persist: persist)
+                browserManager?.chromeBundle.sidebarPresentationOwner.updateSidebarWidth(width, for: windowState, persist: persist)
             },
             persistWindowSession: { [weak browserManager] windowState in
-                browserManager?.windowSessionActivationOwner.persistWindowSession(for: windowState)
+                browserManager?.windowSessionBundle.activationOwner.persistWindowSession(for: windowState)
             },
             dismissThemePickerCommittingIfNeeded: { [weak browserManager] in
-                browserManager?.workspaceThemeEditorOwner.dismissThemePickerCommittingIfNeeded()
+                browserManager?.chromeBundle.workspaceThemeEditorOwner.dismissThemePickerCommittingIfNeeded()
             }
         )
     }
@@ -109,7 +109,7 @@ extension WindowViewBrowserContext {
                     activeCleanupDependencies(browserManager: browserManager)
                 },
                 dismissNativeModalPresentation: { [weak browserManager] in
-                    browserManager?.nativeDialogPresentationOwner.dismissNativeModalPresentation()
+                    browserManager?.chromeBundle.nativeDialogPresentationOwner.dismissNativeModalPresentation()
                 }
             )
         }

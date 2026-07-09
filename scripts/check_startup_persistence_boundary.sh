@@ -4,7 +4,7 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
-runtime_paths=(App Sumi Settings Navigation FloatingBar UI)
+runtime_paths=(App Sumi Settings SidebarChrome FloatingBar UI)
 allowed_file="Sumi/Services/SumiStartupPersistence.swift"
 status=0
 

@@ -5,6 +5,7 @@ import WebKit
 import XCTest
 
 @testable import Sumi
+import SumiDomain
 
 @MainActor
 final class BrowserManagerRuntimeWiringTests: XCTestCase {
@@ -24,8 +25,13 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         browserManager.webViewCoordinator = WebViewCoordinator()
 
         XCTAssertTrue(browserManager.boostsModule.isEnabled)
+        XCTAssertTrue(browserManager.boostsModule.hasAttachedRuntime)
+        XCTAssertFalse(browserManager.extensionsModule.hasAttachedRuntime)
+        XCTAssertFalse(browserManager.userscriptsModule.hasAttachedRuntime)
+        XCTAssertFalse(browserManager.liveFoldersModule.hasAttachedRuntime)
+        XCTAssertFalse(browserManager.liveFolderManager.hasAttachedRuntime)
         XCTAssertTrue(compositorManagerCanUseAttachedRuntime(browserManager))
-        XCTAssertNotNil(browserManager.tabManager.runtimeContext)
+        XCTAssertNotNil(browserManager.tabManager.runtimePorts)
         XCTAssertTrue(tabManagerRuntimeCanPrepareCreatedTabs(browserManager))
         XCTAssertTrue(splitManagerCanUseAttachedRuntime(browserManager))
         XCTAssertTrue(downloadRetryRuntimeCanResolveWindowOwnedWebView(browserManager))
@@ -584,7 +590,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         windowRegistry.register(windowState)
         windowRegistry.setActive(windowState)
 
-        XCTAssertTrue(browserManager.windowVisualMutationOwner.prepareVisibleWebViews(for: windowState))
+        XCTAssertTrue(browserManager.windowSessionBundle.visualMutationOwner.prepareVisibleWebViews(for: windowState))
         XCTAssertNotNil(coordinator.getWebView(for: tab.id, in: windowState.id))
     }
 
@@ -701,7 +707,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         XCTAssertEqual(automaticCleanupService.schedules[0].currentProfileId, initialProfile.id)
         XCTAssertEqual(automaticCleanupService.schedules[0].reason, "settings-attached")
 
-        browserManager.automaticDataCleanupOwner.scheduleAutomaticBrowsingDataCleanup(
+        browserManager.privacyBundle.automaticDataCleanupOwner.scheduleAutomaticBrowsingDataCleanup(
             reason: "unit-test",
             force: true,
             delayNanoseconds: 0

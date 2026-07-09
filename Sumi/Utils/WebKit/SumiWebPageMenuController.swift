@@ -1,5 +1,6 @@
 import AppKit
 import WebKit
+import SumiDomain
 
 /// Shapes the contextual menu after WebKit has resolved the page element under
 /// the pointer. Element commands keep their native WebKit actions and targets.

@@ -17,7 +17,7 @@ final class BrowserBookmarkBundle {
         self.bookmarkCommandOwner = BrowserBookmarkCommandOwner(
             activeWindow: { [weak browserManager] in browserManager?.windowRegistry?.activeWindow },
             activePageTab: { [weak browserManager] windowState in
-                browserManager?.activePageRoutingOwner.activePageTab(for: windowState)
+                browserManager?.urlBarBundle.activePageRoutingOwner.activePageTab(for: windowState)
             },
             bookmarkManager: { [weak browserManager] in browserManager?.bookmarkManager },
             bookmarkEditorPresentationRequest: { [weak browserManager] in
@@ -27,7 +27,7 @@ final class BrowserBookmarkBundle {
                 browserManager?.bookmarkEditorPresentationRequest = request
             },
             openNativeBrowserSurface: { [weak browserManager] kind, url, windowState, preferredSpaceId in
-                browserManager?.nativeSurfaceRoutingOwner.openNativeBrowserSurface(
+                browserManager?.chromeBundle.nativeSurfaceRoutingOwner.openNativeBrowserSurface(
                     kind,
                     url: url,
                     in: windowState,
@@ -35,20 +35,20 @@ final class BrowserBookmarkBundle {
                 )
             },
             openHistoryURL: { [weak browserManager] url, windowState, preferredOpenMode in
-                browserManager?.historyNavigationOwner.openHistoryURL(
+                browserManager?.historyBundle.historyNavigationOwner.openHistoryURL(
                     url,
                     in: windowState,
                     preferredOpenMode: preferredOpenMode
                 )
             },
             openHistoryURLsInNewWindow: { [weak browserManager] urls in
-                browserManager?.historyNavigationOwner.openHistoryURLsInNewWindow(urls)
+                browserManager?.historyBundle.historyNavigationOwner.openHistoryURLsInNewWindow(urls)
             },
             windowIds: { [weak browserManager] in
                 browserManager?.windowRegistry.map { Array($0.windows.keys) } ?? []
             },
             createNewWindow: { [weak browserManager] in
-                browserManager?.windowSessionCommands.createNewWindow()
+                browserManager?.windowSessionBundle.commands.createNewWindow()
             },
             awaitNextRegisteredWindow: { [weak browserManager] existingWindowIDs in
                 await browserManager?.windowRegistry?.awaitNextRegisteredWindow(
@@ -56,7 +56,7 @@ final class BrowserBookmarkBundle {
                 )
             },
             space: { [weak browserManager] spaceId in
-                browserManager?.windowSpaceStateOwner.space(for: spaceId)
+                browserManager?.windowSessionBundle.spaceStateOwner.space(for: spaceId)
             },
             tabsInSpace: { [weak browserManager] space in
                 browserManager?.tabManager.regularTabCollectionOwner.tabs(in: space) ?? []

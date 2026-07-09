@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import SumiDomain
 
 struct ProfileEditorSheet: View {
     enum Mode {

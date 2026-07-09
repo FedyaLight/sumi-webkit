@@ -132,19 +132,19 @@ extension BrowserAppCommandRouter.Dependencies {
     static func live(browserManager: BrowserManager) -> Self {
         Self(
             floatingBarRouting: { [weak browserManager] in
-                browserManager?.floatingBarRoutingOwner
+                browserManager?.urlBarBundle.floatingBarRoutingOwner
             },
             historyNavigation: { [weak browserManager] in
-                browserManager?.historyNavigationOwner
+                browserManager?.historyBundle.historyNavigationOwner
             },
             windowShellCommands: { [weak browserManager] in
-                browserManager?.windowSessionCommands
+                browserManager?.windowSessionBundle.commands
             },
             activePageRouting: { [weak browserManager] in
-                browserManager?.activePageRoutingOwner
+                browserManager?.urlBarBundle.activePageRoutingOwner
             },
             themeEditor: { [weak browserManager] in
-                browserManager?.workspaceThemeEditorOwner
+                browserManager?.chromeBundle.workspaceThemeEditorOwner
             },
             requireTabManager: { [weak browserManager] in
                 guard let browserManager else {
@@ -171,13 +171,13 @@ extension BrowserAppCommandRouter.Dependencies {
                 )
             },
             persistWindowSession: { [weak browserManager] windowState in
-                browserManager?.windowSessionActivationOwner.persistWindowSession(for: windowState)
+                browserManager?.windowSessionBundle.activationOwner.persistWindowSession(for: windowState)
             },
             cleanupAllTabs: { [weak browserManager] in
                 browserManager?.shutdownCleanupOwner.cleanupAllTabs()
             },
             flushPendingWindowSessionPersistence: { [weak browserManager] in
-                browserManager?.windowSessionActivationOwner.flushPendingWindowSessionPersistence()
+                browserManager?.windowSessionBundle.activationOwner.flushPendingWindowSessionPersistence()
             },
             performAllWindowsClosedSiteDataCleanup: { [weak browserManager] in
                 guard let browserManager else { return }
