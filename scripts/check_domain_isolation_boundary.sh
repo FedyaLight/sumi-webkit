@@ -1,41 +1,27 @@
 #!/usr/bin/env bash
-# Domain isolation boundary — Phase 7 enforcement.
+# Domain isolation boundary.
 #
 # Pure domain files that remain in the app target must stay Foundation-only
 # (no SwiftUI / AppKit / WebKit) and must not type-edge into known runtime
 # types (Tab, Profile, ExtensionUtils, ShortcutPin, BrowserWindowState).
-# The closed SumiDomain SPM package is the compile-time home for peeled
-# clusters; this script also guards that package against UI/runtime framework
-# imports.
+# The SumiDomain SPM package is the compile-time home for peeled clusters;
+# this script also guards that package against UI/runtime framework imports.
 #
-# Eventual SPM shape: SumiDomain → SumiWebRuntime → SumiAppUI.
+# Intended dependency direction: SumiDomain → SumiWebRuntime → SumiAppUI.
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
 DOMAIN_FILES=(
-  # W5/X5 peeled into Packages/SumiDomain:
-  #   SumiProfileIcon, SidebarInputRecoveryOwner (+ reason), SumiURLNormalization
-  #   (+ SumiStartupPageURL / SumiNewTabPageURL), BrowserWindowSelectionHistoryItem,
-  #   WindowSelectionHistoryOwner, SumiPermissionState / Persistence / DecisionSource,
-  #   SumiPermissionCoordinatorOutcome, TabPlacementStateOwner
-  # SumiPermissionCoordinatorDecision stays app-target (system snapshot /
-  # prompt-suppression edges); FailClosedMapper stays with it (Foundation-only).
+  # App-target allowlist (Foundation-only). FailClosedMapper stays with
+  # SumiPermissionCoordinatorDecision (system snapshot / prompt-suppression).
   "Sumi/Permissions/SumiPermissionFailClosedMapper.swift"
-  # KeyboardShortcut stays app-target (name collides with SwiftUI.KeyboardShortcut when
-  # re-exported from SumiDomain); Foundation-only after KeyCombination peel.
+  # KeyboardShortcut stays app-target (name collides with SwiftUI.KeyboardShortcut
+  # when re-exported from SumiDomain).
   "Sumi/Models/KeyboardShortcut/KeyboardShortcut.swift"
   "Sumi/Models/KeyboardShortcut/DefaultKeyboardShortcuts.swift"
-  # excluded: references ShortcutPin — Sumi/Models/History/HistoryTypes.swift
   "Sumi/Models/Tab/TabDependencyStateOwner.swift"
-  # excluded: references Tab/Profile — Sumi/Models/Tab/TabProfileResolutionOwner.swift
-  # excluded: references Tab — Sumi/Models/Tab/Tab+Favicon.swift
-  # excluded: references Tab/Profile — Sumi/Models/Tab/Navigation/SumiAutoplayPolicyNavigationResponder.swift
-  # excluded: references Tab — Sumi/Models/Tab/Navigation/SumiInstallNavigationResponder.swift
-  # excluded: references Tab — Sumi/Models/Tab/Navigation/SumiInternalSurfaceNavigationResponder.swift
-  #   (unused Tab init arg dropped; still app-target navigation responder)
-  # AppKit bridge retained in app (NSEvent init): Sumi/Models/KeyboardShortcut/KeyCombination+NSEvent.swift
 )
 
 forbidden_import_pattern='^import (SwiftUI|AppKit|WebKit)\b'

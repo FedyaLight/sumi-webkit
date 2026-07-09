@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# SumiWebRuntime isolation boundary — Phase 7 / V5 enforcement.
+# SumiWebRuntime isolation boundary.
 #
 # The SumiWebRuntime SPM package may use Foundation, WebKit, AppKit, Combine,
 # and OSLog. SwiftUI is forbidden. Sources must not type-edge into app-target
 # BrowserManager / BrowserWindowState / concrete Tab.
 #
-# Eventual SPM shape: SumiDomain → SumiWebRuntime → SumiAppUI.
+# Intended dependency direction: SumiDomain → SumiWebRuntime → SumiAppUI.
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
