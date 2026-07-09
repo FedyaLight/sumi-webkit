@@ -147,17 +147,15 @@ private final class BrowserWindowTabContextOwnerHarness {
 
     func makeOwner() -> BrowserWindowTabContextOwner {
         BrowserWindowTabContextOwner(
-            dependencies: BrowserWindowTabContextOwner.Dependencies(
-                selectionService: { [weak self] in self?.selectionService },
-                tabStore: { [weak self] in self?.tabStore },
-                windows: { [weak self] in self?.windows ?? [] },
-                liveShortcutTabs: { [weak self] windowId in
-                    self?.liveShortcutTabsByWindowId[windowId] ?? []
-                },
-                visibleSplitTabIds: { [weak self] windowId in
-                    self?.visibleSplitTabIdsByWindowId[windowId] ?? []
-                }
-            )
+            selectionService: { [weak self] in self?.selectionService },
+            tabStore: { [weak self] in self?.tabStore },
+            windows: { [weak self] in self?.windows ?? [] },
+            liveShortcutTabs: { [weak self] windowId in
+                self?.liveShortcutTabsByWindowId[windowId] ?? []
+            },
+            visibleSplitTabIds: { [weak self] windowId in
+                self?.visibleSplitTabIdsByWindowId[windowId] ?? []
+            }
         )
     }
 }

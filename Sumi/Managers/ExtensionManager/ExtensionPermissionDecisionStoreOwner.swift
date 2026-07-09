@@ -9,16 +9,14 @@ import WebKit
 final class ExtensionPermissionDecisionStoreOwner {
     private static let log = Logger.sumi(category: "Extensions")
 
-    struct Dependencies {
-        let preferences: UserDefaults
-        let extensionID: @MainActor (WKWebExtensionContext) -> String?
-        let profileId: @MainActor (WKWebExtensionContext) -> UUID?
+    private weak var manager: ExtensionManager?
+
+    init(manager: ExtensionManager) {
+        self.manager = manager
     }
 
-    private let dependencies: Dependencies
-
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
+    private var preferences: UserDefaults {
+        manager?.extensionPreferences ?? .standard
     }
 
     func storedExtensionPermissionDecision(
@@ -103,9 +101,9 @@ final class ExtensionPermissionDecisionStoreOwner {
         extensionContext: WKWebExtensionContext,
         targets: [String]
     ) -> String {
-        let profileKey = dependencies.profileId(extensionContext)?.uuidString.lowercased()
+        let profileKey = manager?.profileId(for: extensionContext)?.uuidString.lowercased()
             ?? "unknown-profile"
-        let extensionKey = dependencies.extensionID(extensionContext)
+        let extensionKey = manager?.extensionID(for: extensionContext)
             ?? extensionContext.uniqueIdentifier
         let targetKey = targets
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
@@ -175,7 +173,7 @@ final class ExtensionPermissionDecisionStoreOwner {
 
     private func loadStoredExtensionPermissionDecisions()
         -> [String: ExtensionManager.ExtensionStoredPermissionDecision] {
-        guard let data = dependencies.preferences.data(
+        guard let data = preferences.data(
             forKey: ExtensionManager.extensionPermissionDecisionsStorageKey
         ) else {
             return [:]
@@ -201,25 +199,9 @@ final class ExtensionPermissionDecisionStoreOwner {
             Self.log.error("Failed to persist extension permission decisions: \(error.localizedDescription, privacy: .public)")
             return
         }
-        dependencies.preferences.set(
+        preferences.set(
             data,
             forKey: ExtensionManager.extensionPermissionDecisionsStorageKey
-        )
-    }
-}
-
-@available(macOS 15.5, *)
-extension ExtensionPermissionDecisionStoreOwner.Dependencies {
-    @MainActor
-    static func live(manager: ExtensionManager) -> Self {
-        Self(
-            preferences: manager.extensionPreferences,
-            extensionID: { [weak manager] extensionContext in
-                manager?.extensionID(for: extensionContext)
-            },
-            profileId: { [weak manager] extensionContext in
-                manager?.profileId(for: extensionContext)
-            }
         )
     }
 }

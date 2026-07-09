@@ -2,17 +2,21 @@ import Foundation
 
 @MainActor
 final class TabManagerSplitGroupRepairOwner {
-    struct Dependencies {
-        let shortcutPin: @MainActor (UUID) -> ShortcutPin?
-        let tab: @MainActor (UUID) -> Tab?
-        let folderSpaceId: @MainActor (UUID) -> UUID?
-        let spaceExists: @MainActor (UUID) -> Bool
-    }
+    private let shortcutPin: @MainActor (UUID) -> ShortcutPin?
+    private let tab: @MainActor (UUID) -> Tab?
+    private let folderSpaceId: @MainActor (UUID) -> UUID?
+    private let spaceExists: @MainActor (UUID) -> Bool
 
-    private let dependencies: Dependencies
-
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
+    init(
+        shortcutPin: @escaping @MainActor (UUID) -> ShortcutPin?,
+        tab: @escaping @MainActor (UUID) -> Tab?,
+        folderSpaceId: @escaping @MainActor (UUID) -> UUID?,
+        spaceExists: @escaping @MainActor (UUID) -> Bool
+    ) {
+        self.shortcutPin = shortcutPin
+        self.tab = tab
+        self.folderSpaceId = folderSpaceId
+        self.spaceExists = spaceExists
     }
 
     func repairingShortcutBackedMembers(in group: SplitGroup) -> SplitGroup {
@@ -86,7 +90,7 @@ final class TabManagerSplitGroupRepairOwner {
             guard resolvedSpacePinnedOriginSpaceId(for: pin, in: group) == spaceId else {
                 return false
             }
-            return folderId.map { dependencies.folderSpaceId($0) == spaceId } ?? true
+            return folderId.map { folderSpaceId($0) == spaceId } ?? true
         case (.spacePinned, .generatedSpacePinnedFromRegular(let spaceId, _)):
             return resolvedSpacePinnedOriginSpaceId(for: pin, in: group) == spaceId
         default:
@@ -95,13 +99,13 @@ final class TabManagerSplitGroupRepairOwner {
     }
 
     private func shortcutPinForSplitLeaf(_ leafId: UUID) -> ShortcutPin? {
-        if let pin = dependencies.shortcutPin(leafId) {
+        if let pin = shortcutPin(leafId) {
             return pin
         }
-        guard let pinId = dependencies.tab(leafId)?.shortcutPinId else {
+        guard let pinId = tab(leafId)?.shortcutPinId else {
             return nil
         }
-        return dependencies.shortcutPin(pinId)
+        return shortcutPin(pinId)
     }
 
     private func splitMemberOrigin(for pin: ShortcutPin, in group: SplitGroup) -> SplitGroupMemberOrigin? {
@@ -115,7 +119,7 @@ final class TabManagerSplitGroupRepairOwner {
             return .spacePinned(
                 spaceId: spaceId,
                 folderId: pin.folderId.flatMap {
-                    dependencies.folderSpaceId($0) == spaceId ? $0 : nil
+                    folderSpaceId($0) == spaceId ? $0 : nil
                 },
                 index: pin.index
             )
@@ -124,33 +128,13 @@ final class TabManagerSplitGroupRepairOwner {
 
     private func resolvedSpacePinnedOriginSpaceId(for pin: ShortcutPin, in group: SplitGroup) -> UUID? {
         if let spaceId = pin.spaceId,
-           dependencies.spaceExists(spaceId) {
+           spaceExists(spaceId) {
             return spaceId
         }
         if let spaceId = group.hostSpaceId,
-           dependencies.spaceExists(spaceId) {
+           spaceExists(spaceId) {
             return spaceId
         }
         return nil
-    }
-}
-
-@MainActor
-extension TabManagerSplitGroupRepairOwner.Dependencies {
-    static func live(tabManager: TabManager) -> Self {
-        Self(
-            shortcutPin: { [weak tabManager] id in
-                tabManager?.shortcutPinCollectionStateOwner.shortcutPin(by: id)
-            },
-            tab: { [weak tabManager] id in
-                tabManager?.tabCollectionMembershipOwner.tab(for: id)
-            },
-            folderSpaceId: { [weak tabManager] folderId in
-                tabManager?.folderCollectionStateOwner.spaceId(for: folderId)
-            },
-            spaceExists: { [weak tabManager] spaceId in
-                tabManager?.spaceStateOwner.contains(spaceId: spaceId) ?? false
-            }
-        )
     }
 }

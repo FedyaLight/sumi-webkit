@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import SumiDomain
 
 struct SumiFaviconPartition: Hashable, Codable, Sendable {
     let profileIdentifier: String

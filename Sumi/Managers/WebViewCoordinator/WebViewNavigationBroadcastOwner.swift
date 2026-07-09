@@ -1,34 +1,43 @@
 import Foundation
 import WebKit
+import SumiWebRuntime
 
 /// Broadcasts navigation state for a tab to every window displaying it:
 /// URL sync, reloads (with configuration-policy rebuilds), and mute state.
 @MainActor
 final class WebViewNavigationBroadcastOwner {
-    struct Dependencies {
-        let crossWindowSyncOwner: WebViewCrossWindowSyncOwner
-        let webViewRegistry: WindowWebViewRegistry
-        let tabWebViewSessionStore: TabWebViewSessionStore
-        let isWebViewProtectedFromCompositorMutation: @MainActor (WKWebView) -> Bool
-        let primaryTrackedWindowId: @MainActor (UUID) -> UUID?
-        let rebuildLiveWebViews: @MainActor (Tab, UUID?, URL?) -> Bool
-    }
+    private let crossWindowSyncOwner: WebViewCrossWindowSyncOwner
+    private let webViewRegistry: WindowWebViewRegistry
+    private let tabWebViewSessionStore: TabWebViewSessionStore
+    private let isWebViewProtectedFromCompositorMutation: @MainActor (WKWebView) -> Bool
+    private let primaryTrackedWindowId: @MainActor (UUID) -> UUID?
+    private let rebuildLiveWebViews: @MainActor (Tab, UUID?, URL?) -> Bool
 
-    private let dependencies: Dependencies
-
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
+    init(
+        crossWindowSyncOwner: WebViewCrossWindowSyncOwner,
+        webViewRegistry: WindowWebViewRegistry,
+        tabWebViewSessionStore: TabWebViewSessionStore,
+        isWebViewProtectedFromCompositorMutation: @escaping @MainActor (WKWebView) -> Bool,
+        primaryTrackedWindowId: @escaping @MainActor (UUID) -> UUID?,
+        rebuildLiveWebViews: @escaping @MainActor (Tab, UUID?, URL?) -> Bool
+    ) {
+        self.crossWindowSyncOwner = crossWindowSyncOwner
+        self.webViewRegistry = webViewRegistry
+        self.tabWebViewSessionStore = tabWebViewSessionStore
+        self.isWebViewProtectedFromCompositorMutation = isWebViewProtectedFromCompositorMutation
+        self.primaryTrackedWindowId = primaryTrackedWindowId
+        self.rebuildLiveWebViews = rebuildLiveWebViews
     }
 
     func syncTab(_ tab: Tab, to url: URL, originatingWebView: WKWebView?) {
         let tabId = tab.id
-        dependencies.crossWindowSyncOwner.syncTab(
+        crossWindowSyncOwner.syncTab(
             tabId,
             to: url,
-            webViews: dependencies.webViewRegistry.webViews(for: tabId),
+            webViews: webViewRegistry.webViews(for: tabId),
             originatingWebView: originatingWebView,
-            isProtected: { [dependencies] webView in
-                dependencies.isWebViewProtectedFromCompositorMutation(webView)
+            isProtected: { [isWebViewProtectedFromCompositorMutation] webView in
+                isWebViewProtectedFromCompositorMutation(webView)
             },
             load: { webView in
                 tab.performMainFrameNavigationAfterHydrationIfNeeded(
@@ -44,9 +53,9 @@ final class WebViewNavigationBroadcastOwner {
         let reloadTargetURL = reloadTargetURL(for: tab)
         let protectionReloadWasRequired = tab.reloadPolicyStateOwner.isProtectionReloadRequired
         if tab.configurationPolicyRequiresNormalWebViewRebuild(for: reloadTargetURL) {
-            if dependencies.rebuildLiveWebViews(
+            if rebuildLiveWebViews(
                 tab,
-                dependencies.primaryTrackedWindowId(tab.id),
+                primaryTrackedWindowId(tab.id),
                 reloadTargetURL
             ), protectionReloadWasRequired {
                 tab.noteProtectionManualReloadResult(
@@ -57,11 +66,11 @@ final class WebViewNavigationBroadcastOwner {
             return
         }
         let tabId = tab.id
-        dependencies.crossWindowSyncOwner.reloadTab(
+        crossWindowSyncOwner.reloadTab(
             tabId,
-            webViews: dependencies.webViewRegistry.webViews(for: tabId),
-            isProtected: { [dependencies] webView in
-                dependencies.isWebViewProtectedFromCompositorMutation(webView)
+            webViews: webViewRegistry.webViews(for: tabId),
+            isProtected: { [isWebViewProtectedFromCompositorMutation] webView in
+                isWebViewProtectedFromCompositorMutation(webView)
             },
             reload: { webView in
                 tab.performMainFrameNavigationAfterHydrationIfNeeded(
@@ -75,10 +84,10 @@ final class WebViewNavigationBroadcastOwner {
 
     @discardableResult
     func reloadTab(_ tab: Tab, in windowId: UUID) -> Bool {
-        guard let webView = dependencies.webViewRegistry.webView(for: tab.id, in: windowId) else {
+        guard let webView = webViewRegistry.webView(for: tab.id, in: windowId) else {
             return false
         }
-        if dependencies.isWebViewProtectedFromCompositorMutation(webView) {
+        if isWebViewProtectedFromCompositorMutation(webView) {
             RuntimeDiagnostics.protectedWebViewTrace(
                 "skipReloadProtected webView=\(ObjectIdentifier(webView)) tab=\(tab.id.uuidString.prefix(8)) window=\(windowId.uuidString.prefix(8))"
             )
@@ -93,44 +102,24 @@ final class WebViewNavigationBroadcastOwner {
     }
 
     func setMuteState(_ muted: Bool, for tabId: UUID) {
-        dependencies.crossWindowSyncOwner.setMuteState(
+        crossWindowSyncOwner.setMuteState(
             muted,
             for: tabId,
-            windowWebViews: dependencies.webViewRegistry.windowWebViews(for: tabId)
+            windowWebViews: webViewRegistry.windowWebViews(for: tabId)
         )
     }
 
     private func reloadTargetURL(for tab: Tab) -> URL {
-        let store = dependencies.tabWebViewSessionStore
-        store.syncFromTabIfNeeded(tab)
-        if let sessionURL = store.untrackedWebView(for: tab.id)?.url
+        let store = tabWebViewSessionStore
+        store.promoteLocalSessionIfNeeded(
+            tabId: tab.id,
+            localSession: tab.webViewOwnershipOwner.localSession
+        )
+        if let sessionURL = store.session(for: tab.id).currentWebView?.url
+            ?? store.untrackedWebView(for: tab.id)?.url
             ?? store.parkedWebView(for: tab.id)?.url {
             return sessionURL
         }
         return tab.url
-    }
-}
-
-extension WebViewNavigationBroadcastOwner.Dependencies {
-    @MainActor
-    static func live(coordinator: WebViewCoordinator) -> Self {
-        Self(
-            crossWindowSyncOwner: coordinator.crossWindowSyncOwner,
-            webViewRegistry: coordinator.webViewRegistry,
-            tabWebViewSessionStore: coordinator.tabWebViewSessionStore,
-            isWebViewProtectedFromCompositorMutation: { [weak coordinator] webView in
-                coordinator?.isWebViewProtectedFromCompositorMutation(webView) ?? false
-            },
-            primaryTrackedWindowId: { [weak coordinator] tabId in
-                coordinator?.primaryTrackedWindowId(for: tabId)
-            },
-            rebuildLiveWebViews: { [weak coordinator] tab, preferredPrimaryWindowId, url in
-                coordinator?.rebuildLiveWebViews(
-                    for: tab,
-                    preferredPrimaryWindowId: preferredPrimaryWindowId,
-                    load: url
-                ) ?? false
-            }
-        )
     }
 }

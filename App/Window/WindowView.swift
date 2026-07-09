@@ -63,7 +63,7 @@ struct WindowView: View {
                                 classification: .presentationOnly,
                                 action: {
                                     browserContext.showGradientEditor(
-                                        source: windowState.resolveSidebarPresentationSource()
+                                        source: windowState.resolveSidebarPresentationSource(in: windowRegistry)
                                     )
                                 }
                             )
@@ -495,7 +495,7 @@ struct WindowView: View {
         // Read the revision so window-scheme "auto" re-evaluates when the
         // AppKit effective appearance changes.
         let _ = effectiveAppearanceRevision
-        return windowState.globalColorScheme(settings: sumiSettings)
+        return windowState.globalColorScheme(settings: sumiSettings, in: windowRegistry)
     }
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion

@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import SumiDomain
 
 /// Owns the ephemeral UI-routing state for the settings surface: which pane is
 /// selected, the privacy sub-route, and the Extensions/Userscripts sub-pane,

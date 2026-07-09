@@ -243,7 +243,7 @@ final class BrowserWindowChromeTests: XCTestCase {
         WindowChromeTestSupport.retain(window)
 
         XCTAssertFalse(window is SumiBrowserWindow)
-        XCTAssertIdentical(windowState.window, window)
+        XCTAssertIdentical(windowRegistry.appKitWindow(for: windowState), window)
         XCTAssertEqual(window.titlebarSeparatorStyle, .none)
         XCTAssertNil(window.toolbar)
         XCTAssertEqual(window.backgroundColor, SumiBrowserWindowShellConfiguration.backgroundColor)
@@ -267,11 +267,11 @@ final class BrowserWindowChromeTests: XCTestCase {
 
         coordinator.attach(to: window)
         WindowChromeTestSupport.retain(window)
-        XCTAssertIdentical(windowState.window, window)
+        XCTAssertIdentical(windowRegistry.appKitWindow(for: windowState), window)
 
         coordinator.detach()
 
-        XCTAssertNil(windowState.window)
+        XCTAssertNil(windowRegistry.appKitWindow(for: windowState))
     }
 
     func testBrowserWindowBridgeCoordinatorUnregistersWindowOnWillCloseNotification() {
@@ -296,7 +296,7 @@ final class BrowserWindowChromeTests: XCTestCase {
         XCTAssertEqual(closedWindowIds, [windowState.id])
         XCTAssertNil(windowRegistry.windows[windowState.id])
         XCTAssertNil(windowRegistry.activeWindowId)
-        XCTAssertNil(windowState.window)
+        XCTAssertNil(windowRegistry.appKitWindow(for: windowState))
     }
 
     func testPromoteToSumiBrowserWindowIfNeededAppliesBrowserChromeConfiguration() {

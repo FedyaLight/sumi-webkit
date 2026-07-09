@@ -12,11 +12,15 @@ struct SidebarDropActionContext {
 
 struct SidebarGlobalDragOverlay: NSViewRepresentable {
     let dropActions: SidebarDropActionContext
+    let dragAutoscrollRegistry: SidebarTabListDragAutoscrollRegistry
     @EnvironmentObject private var dragState: SidebarDragState
     @Environment(BrowserWindowState.self) var windowState
 
     func makeNSView(context: Context) -> SidebarDragNSView {
-        let view = SidebarDragNSView(dragState: dragState)
+        let view = SidebarDragNSView(
+            dragState: dragState,
+            dragAutoscrollRegistry: dragAutoscrollRegistry
+        )
         view.dropActions = dropActions
         view.windowState = windowState
         return view
@@ -25,6 +29,7 @@ struct SidebarGlobalDragOverlay: NSViewRepresentable {
     func updateNSView(_ nsView: SidebarDragNSView, context: Context) {
         nsView.dropActions = dropActions
         nsView.dragState = dragState
+        nsView.dragAutoscrollRegistry = dragAutoscrollRegistry
         nsView.windowState = windowState
     }
 }
@@ -48,10 +53,16 @@ class SidebarDragNSView: NSView {
     var dropActions: SidebarDropActionContext?
     var windowState: BrowserWindowState?
     var dragState: SidebarDragState
+    var dragAutoscrollRegistry: SidebarTabListDragAutoscrollRegistry
     private var cachedDragContext: DragContext?
 
-    init(frame frameRect: NSRect = .zero, dragState: SidebarDragState) {
+    init(
+        frame frameRect: NSRect = .zero,
+        dragState: SidebarDragState,
+        dragAutoscrollRegistry: SidebarTabListDragAutoscrollRegistry
+    ) {
         self.dragState = dragState
+        self.dragAutoscrollRegistry = dragAutoscrollRegistry
         super.init(frame: frameRect)
         registerForDraggedTypes([
             .string,
@@ -100,7 +111,7 @@ class SidebarDragNSView: NSView {
         guard context.canResolveDrop else {
             return []
         }
-        SidebarTabListDragAutoscrollRegistry.shared.autoscrollIfNeeded(
+        dragAutoscrollRegistry.autoscrollIfNeeded(
             sender: sender,
             in: self,
             dragState: dragState
@@ -121,7 +132,7 @@ class SidebarDragNSView: NSView {
             dragState.resetInteractionState()
         }
         cachedDragContext = nil
-        SidebarTabListDragAutoscrollRegistry.shared.stop()
+        dragAutoscrollRegistry.stop()
     }
 
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
@@ -132,7 +143,7 @@ class SidebarDragNSView: NSView {
                 dragState.resetInteractionState()
             }
             cachedDragContext = nil
-            SidebarTabListDragAutoscrollRegistry.shared.stop()
+            dragAutoscrollRegistry.stop()
         }
 
         guard let resolution,
@@ -267,7 +278,6 @@ enum SidebarTabListAutoscrollPolicy {
 
 @MainActor
 final class SidebarTabListDragAutoscrollRegistry {
-    static let shared = SidebarTabListDragAutoscrollRegistry()
     private static let autoscrollTimerInterval: TimeInterval = 1.0 / 60.0
 
     private final class WeakScrollView {
@@ -283,6 +293,8 @@ final class SidebarTabListDragAutoscrollRegistry {
     private var autoscrollTimer: Timer?
     private weak var activeDragWindow: NSWindow?
     private weak var activeDragState: SidebarDragState?
+
+    init() {}
 
     func register(_ scrollView: NSScrollView) {
         cleanupReleasedScrollViews()

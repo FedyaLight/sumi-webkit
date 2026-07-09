@@ -78,12 +78,13 @@ final class WorkspaceAppearanceService {
             return
         }
 
+        let appKitWindow = context.windowRegistry()?.appKitWindow(for: previewWindow)
         let presentationSource = preferredSource
             ?? previewWindow.sidebarTransientSessionCoordinator.preparedPresentationSource(
-                window: previewWindow.window
+                window: appKitWindow
             )
         presentationSource.refresh(
-            window: previewWindow.window ?? presentationSource.window,
+            window: appKitWindow ?? presentationSource.window,
             originOwnerView: presentationSource.originOwnerView
         )
         let transientSessionToken = presentationSource.coordinator?.beginSession(
@@ -92,7 +93,7 @@ final class WorkspaceAppearanceService {
             path: "WorkspaceAppearanceService.showGradientEditor"
         )
 
-        previewWindow.window?.makeKeyAndOrderFront(nil)
+        appKitWindow?.makeKeyAndOrderFront(nil)
         context.presentPicker(
             WorkspaceThemePickerSession(
                 spaceId: space.id,

@@ -2,9 +2,9 @@
 # DI ceremony / god-wiring debt baseline.
 #
 # Caps ratchet downward as Phases 4–5 collapse thin Owners and capability bags.
-# Trajectory (Dependencies): 147 → 144 → 139 (target → 80 → 40)
-# Trajectory (live factories): 170 → 167 → 162 (target → 100 → 50)
-# Trajectory (BM lazy *Owner): 35 → 34 → 28 → 17 (target → 8)
+# Trajectory (Dependencies): 147 → 144 → 139 → 104 → 84 → ~70 → 51 (target → 40)
+# Trajectory (live factories): 170 → 167 → 162 → 130 → 110 → ~100 → 59 (target → 50)
+# Trajectory (BM lazy *Owner): 35 → 34 → 28 → 17 → 10 → 8 → 7 → 6 → 3 (target → ≤3)
 #
 # Tab WebView accessors outside Models/Tab + WebViewCoordinator remain forbidden
 # by scripts/check_tab_webview_ownership_boundary.sh (Phase 6B session-first writers).
@@ -72,10 +72,11 @@ browser_manager_lazy_owners="${browser_manager_lazy_owners:-0}"
 printf '%s\n' 'DI ceremony debt baseline guardrail'
 printf '%s\n' '-----------------------------------'
 # Phase 0 baseline. Lower after each DI-collapse / capability-bag PR.
-check_max "production struct Dependencies" "$dependencies_structs" 139
-check_max "production static func live" "$live_factories" 162
-# Phase 5A: Owners moved into Privacy / URLBar / WindowSession / Profile / Extension bags.
-check_max "BrowserManager lazy var *Owner" "$browser_manager_lazy_owners" 17
+# V3: WVC/EM thin + factory live→make. Caps ratcheted to actual; BM owners stay ≤3.
+check_max "production struct Dependencies" "$dependencies_structs" 51
+check_max "production static func live" "$live_factories" 59
+# Phase 5A / N2 / T3 / T6–T8: thin Owners folded into Privacy / URLBar / WindowSession / Chrome / History / Bookmark / Profile / Extension bags; remaining BM lazy Owners are boot/shutdown/keyboard only.
+check_max "BrowserManager lazy var *Owner" "$browser_manager_lazy_owners" 3
 
 if (( failures > 0 )); then
   exit 1

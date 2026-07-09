@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 struct SumiPermissionDecisionSideEffectOwner {
     typealias NowProvider = @Sendable () -> Date

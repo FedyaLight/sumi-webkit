@@ -3,27 +3,43 @@ import WebKit
 
 @MainActor
 final class BrowserZoomCommandOwner {
-    struct Dependencies {
-        let activeWindow: @MainActor () -> BrowserWindowState?
-        let activePageTab: @MainActor (BrowserWindowState) -> Tab?
-        let activePageWebView: @MainActor (BrowserWindowState) -> WKWebView?
-        let tab: @MainActor (UUID) -> Tab?
-        let windowStateContainingTab: @MainActor (Tab) -> BrowserWindowState?
-        let webView: @MainActor (UUID, UUID) -> WKWebView?
-        let zoomManager: @MainActor () -> ZoomManager
-        let sizeOverride: @MainActor (URL, UUID?) -> Double
-        let incrementZoomStateRevision: @MainActor () -> Void
-        let notifications: @MainActor () -> (any BrowserNotificationPresenting)?
-    }
+    private let activeWindow: @MainActor () -> BrowserWindowState?
+    private let activePageTab: @MainActor (BrowserWindowState) -> Tab?
+    private let activePageWebView: @MainActor (BrowserWindowState) -> WKWebView?
+    private let tab: @MainActor (UUID) -> Tab?
+    private let windowStateContainingTab: @MainActor (Tab) -> BrowserWindowState?
+    private let webView: @MainActor (UUID, UUID) -> WKWebView?
+    private let zoomManager: @MainActor () -> ZoomManager
+    private let sizeOverride: @MainActor (URL, UUID?) -> Double
+    private let incrementZoomStateRevision: @MainActor () -> Void
+    private let notifications: @MainActor () -> (any BrowserNotificationPresenting)?
 
-    private let dependencies: Dependencies
-
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
+    init(
+        activeWindow: @escaping @MainActor () -> BrowserWindowState?,
+        activePageTab: @escaping @MainActor (BrowserWindowState) -> Tab?,
+        activePageWebView: @escaping @MainActor (BrowserWindowState) -> WKWebView?,
+        tab: @escaping @MainActor (UUID) -> Tab?,
+        windowStateContainingTab: @escaping @MainActor (Tab) -> BrowserWindowState?,
+        webView: @escaping @MainActor (UUID, UUID) -> WKWebView?,
+        zoomManager: @escaping @MainActor () -> ZoomManager,
+        sizeOverride: @escaping @MainActor (URL, UUID?) -> Double,
+        incrementZoomStateRevision: @escaping @MainActor () -> Void,
+        notifications: @escaping @MainActor () -> (any BrowserNotificationPresenting)?
+    ) {
+        self.activeWindow = activeWindow
+        self.activePageTab = activePageTab
+        self.activePageWebView = activePageWebView
+        self.tab = tab
+        self.windowStateContainingTab = windowStateContainingTab
+        self.webView = webView
+        self.zoomManager = zoomManager
+        self.sizeOverride = sizeOverride
+        self.incrementZoomStateRevision = incrementZoomStateRevision
+        self.notifications = notifications
     }
 
     func zoomInCurrentTab() {
-        guard let windowState = dependencies.activeWindow() else { return }
+        guard let windowState = activeWindow() else { return }
         zoomInCurrentTab(in: windowState)
     }
 
@@ -32,7 +48,7 @@ final class BrowserZoomCommandOwner {
     }
 
     func zoomOutCurrentTab() {
-        guard let windowState = dependencies.activeWindow() else { return }
+        guard let windowState = activeWindow() else { return }
         zoomOutCurrentTab(in: windowState)
     }
 
@@ -41,14 +57,14 @@ final class BrowserZoomCommandOwner {
     }
 
     func resetZoomCurrentTab() {
-        guard let windowState = dependencies.activeWindow() else { return }
+        guard let windowState = activeWindow() else { return }
         resetZoomCurrentTab(in: windowState)
     }
 
     func resetZoomCurrentTab(in windowState: BrowserWindowState) {
         guard let context = activeZoomContext(in: windowState) else { return }
 
-        dependencies.zoomManager().saveZoomLevel(
+        zoomManager().saveZoomLevel(
             1.0,
             for: context.domain,
             profileId: context.profileId
@@ -58,11 +74,11 @@ final class BrowserZoomCommandOwner {
     }
 
     func loadZoomForTab(_ tabId: UUID) {
-        guard let tab = dependencies.tab(tabId) else { return }
+        guard let tab = tab(tabId) else { return }
 
-        let windowState = dependencies.windowStateContainingTab(tab) ?? dependencies.activeWindow()
+        let windowState = windowStateContainingTab(tab) ?? activeWindow()
         guard let windowState,
-              let webView = dependencies.webView(tabId, windowState.id)
+              let webView = webView(tabId, windowState.id)
         else { return }
 
         applyBoostAwareZoom(for: tab, webView: webView)
@@ -70,22 +86,22 @@ final class BrowserZoomCommandOwner {
     }
 
     func cleanupZoomForTab(_ tabId: UUID) {
-        dependencies.zoomManager().removeTabZoomLevel(for: tabId)
-        dependencies.incrementZoomStateRevision()
+        zoomManager().removeTabZoomLevel(for: tabId)
+        incrementZoomStateRevision()
     }
 
     func applyBoostAwareZoom(for tab: Tab, webView: WKWebView) {
         let context = zoomContext(for: tab)
-        let savedZoom = dependencies.zoomManager().getZoomLevel(
+        let savedZoom = zoomManager().getZoomLevel(
             for: context.domain,
             profileId: context.profileId
         )
-        let boostMultiplier = dependencies.sizeOverride(tab.url, context.profileId)
-        let effectiveZoom = dependencies.zoomManager().effectiveZoom(
+        let boostMultiplier = sizeOverride(tab.url, context.profileId)
+        let effectiveZoom = zoomManager().effectiveZoom(
             baseZoom: savedZoom,
             multiplier: boostMultiplier
         )
-        dependencies.zoomManager().applyTransientZoom(
+        zoomManager().applyTransientZoom(
             effectiveZoom,
             to: webView,
             domain: context.domain,
@@ -99,15 +115,15 @@ final class BrowserZoomCommandOwner {
     ) {
         guard let context = activeZoomContext(in: windowState) else { return }
 
-        let savedZoom = dependencies.zoomManager().getZoomLevel(
+        let savedZoom = zoomManager().getZoomLevel(
             for: context.domain,
             profileId: context.profileId
         )
-        let nextBaseZoom = dependencies.zoomManager().nextZoomLevel(
+        let nextBaseZoom = zoomManager().nextZoomLevel(
             from: savedZoom,
             direction: direction
         )
-        dependencies.zoomManager().saveZoomLevel(
+        zoomManager().saveZoomLevel(
             nextBaseZoom,
             for: context.domain,
             profileId: context.profileId
@@ -117,8 +133,8 @@ final class BrowserZoomCommandOwner {
     }
 
     private func activeZoomContext(in windowState: BrowserWindowState) -> ActiveZoomContext? {
-        guard let tab = dependencies.activePageTab(windowState),
-              let webView = dependencies.activePageWebView(windowState)
+        guard let tab = activePageTab(windowState),
+              let webView = activePageWebView(windowState)
         else { return nil }
 
         let context = zoomContext(for: tab)
@@ -135,12 +151,12 @@ final class BrowserZoomCommandOwner {
         in windowState: BrowserWindowState,
         showNotification: Bool
     ) {
-        dependencies.incrementZoomStateRevision()
+        incrementZoomStateRevision()
         guard showNotification else { return }
 
-        let zoomManager = dependencies.zoomManager()
+        let zoomManager = zoomManager()
         let tabId = tab.id
-        dependencies.notifications()?.presentNotification(
+        notifications()?.presentNotification(
             .zoom(
                 percentage: zoomManager.getZoomPercentageDisplay(for: tabId),
                 isAtMinimum: zoomManager.isAtMinimumZoom(for: tabId),
@@ -177,44 +193,4 @@ private struct ActiveZoomContext {
 private struct ZoomContext {
     let domain: String
     let profileId: UUID?
-}
-
-extension BrowserZoomCommandOwner.Dependencies {
-    @MainActor
-    static func live(browserManager: BrowserManager) -> Self {
-        let fallbackZoomManager = browserManager.zoomManager
-        return Self(
-            activeWindow: { [weak browserManager] in
-                browserManager?.windowRegistry?.activeWindow
-            },
-            activePageTab: { [weak browserManager] windowState in
-                browserManager?.activePageRoutingOwner.activePageTab(for: windowState)
-            },
-            activePageWebView: { [weak browserManager] windowState in
-                browserManager?.activePageRoutingOwner.activePageWebView(for: windowState)
-            },
-            tab: { [weak browserManager] tabId in
-                browserManager?.tabManager.tabCollectionMembershipOwner.tab(for: tabId)
-            },
-            windowStateContainingTab: { [weak browserManager] tab in
-                browserManager?.windowTabContextOwner.windowState(containing: tab)
-            },
-            webView: { [weak browserManager] tabId, windowId in
-                browserManager?.webViewRoutingService.webView(for: tabId, in: windowId)
-            },
-            zoomManager: { [weak browserManager] in
-                browserManager?.zoomManager ?? fallbackZoomManager
-            },
-            sizeOverride: { [weak browserManager] url, profileId in
-                browserManager?.boostsModule.sizeOverride(for: url, profileId: profileId) ?? 1.0
-            },
-            incrementZoomStateRevision: { [weak browserManager] in
-                guard let browserManager else { return }
-                browserManager.zoomStateRevision += 1
-            },
-            notifications: { [weak browserManager] in
-                browserManager?.notificationPresenter
-            }
-        )
-    }
 }

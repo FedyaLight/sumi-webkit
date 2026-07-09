@@ -5,6 +5,7 @@
 
 import AppKit
 import WebKit
+import SumiDomain
 
 enum AuxiliaryWindowCloseReason: String {
     case webViewDidClose
@@ -92,6 +93,7 @@ struct AuxiliaryWindowRuntime {
     typealias CurrentProfileIDProvider = @MainActor () -> UUID?
     typealias CurrentSpaceProvider = @MainActor () -> Space?
     typealias WindowContainingTabProvider = @MainActor (_ tab: Tab) -> BrowserWindowState?
+    typealias AppKitWindowProvider = @MainActor (_ windowState: BrowserWindowState) -> NSWindow?
     typealias MiniWindowTabFactory = @MainActor (
         _ openerTab: Tab?,
         _ profileId: UUID?,
@@ -110,6 +112,7 @@ struct AuxiliaryWindowRuntime {
     let currentProfileID: CurrentProfileIDProvider
     let currentSpace: CurrentSpaceProvider
     let windowContainingTab: WindowContainingTabProvider
+    let appKitWindow: AppKitWindowProvider
     let createMiniWindowTab: MiniWindowTabFactory
     let removeMiniWindowTab: TabHandler
     let notifyTabClosedIfLoaded: TabHandler
@@ -125,6 +128,7 @@ struct AuxiliaryWindowRuntime {
         currentProfileID: @escaping CurrentProfileIDProvider,
         currentSpace: @escaping CurrentSpaceProvider,
         windowContainingTab: @escaping WindowContainingTabProvider,
+        appKitWindow: @escaping AppKitWindowProvider,
         createMiniWindowTab: @escaping MiniWindowTabFactory,
         removeMiniWindowTab: @escaping TabHandler,
         notifyTabClosedIfLoaded: @escaping TabHandler,
@@ -139,6 +143,7 @@ struct AuxiliaryWindowRuntime {
         self.currentProfileID = currentProfileID
         self.currentSpace = currentSpace
         self.windowContainingTab = windowContainingTab
+        self.appKitWindow = appKitWindow
         self.createMiniWindowTab = createMiniWindowTab
         self.removeMiniWindowTab = removeMiniWindowTab
         self.notifyTabClosedIfLoaded = notifyTabClosedIfLoaded
@@ -155,6 +160,7 @@ struct AuxiliaryWindowRuntime {
         currentProfileID: { nil },
         currentSpace: { nil },
         windowContainingTab: { _ in nil },
+        appKitWindow: { _ in nil },
         createMiniWindowTab: { _, _, _, _ in nil },
         removeMiniWindowTab: { _ in /* No-op. */ },
         notifyTabClosedIfLoaded: { _ in /* No-op. */ },
@@ -595,8 +601,13 @@ final class AuxiliaryWindowManager {
     // MARK: - Private
 
     private func parentWindow(for tab: Tab) -> NSWindow? {
-        runtime.windowContainingTab(tab)?.window
-            ?? runtime.activeWindow()?.window
+        if let windowState = runtime.windowContainingTab(tab) {
+            return runtime.appKitWindow(windowState)
+        }
+        if let windowState = runtime.activeWindow() {
+            return runtime.appKitWindow(windowState)
+        }
+        return nil
     }
 
     private func resolveOwnerExtensionID(

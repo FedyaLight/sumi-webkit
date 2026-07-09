@@ -11,20 +11,15 @@ protocol SumiFaviconAccentCaching: AnyObject {
 
 @MainActor
 enum SumiFaviconAccentCacheDefaults {
-    static var cache: any SumiFaviconAccentCaching {
-        SumiFaviconAccentCache.shared
-    }
+    /// Process-scoped accent cache constructed at first use (no singleton accessor).
+    static let cache: any SumiFaviconAccentCaching = SumiFaviconAccentCache()
 }
 
 @MainActor
 final class SumiFaviconAccentCache: SumiFaviconAccentCaching {
-    static let shared = SumiFaviconAccentCache()
-
     private var colorsByKey: [String: Color] = [:]
 
-    private init() {
-        // Shared cache only.
-    }
+    init() {}
 
     func color(forKey key: String) -> Color? {
         colorsByKey[key]
@@ -53,7 +48,7 @@ final class SumiFaviconAccentCache: SumiFaviconAccentCaching {
     }
 
     #if DEBUG
-    /// Clears the shared cache. Test-only hook to keep tests isolated from each
+    /// Clears the process-scoped cache. Test-only hook to keep tests isolated from each
     /// other; the cache has no bulk-reset API on the production surface.
     @MainActor
     func resetForTesting() {

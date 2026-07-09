@@ -30,7 +30,7 @@ final class TabCompositorManagerTests: XCTestCase {
         manager.unloadTab(tab)
 
         XCTAssertEqual(accessedTabIds, [tab.id])
-        XCTAssertNotNil(tab.currentWebView)
+        XCTAssertNotNil(tab.resolvedCurrentWebView())
     }
 
     func testUnloadHiddenTabUnloadsWebView() {
@@ -44,7 +44,7 @@ final class TabCompositorManagerTests: XCTestCase {
         manager.unloadTab(tab)
 
         XCTAssertTrue(accessedTabIds.isEmpty)
-        XCTAssertNil(tab.currentWebView)
+        XCTAssertNil(tab.resolvedCurrentWebView())
     }
 
     private func makeManager(

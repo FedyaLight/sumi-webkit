@@ -1,6 +1,7 @@
 import WebKit
 
 @testable import Sumi
+import SumiDomain
 
 enum SumiRuntimePermissionOperation: Hashable {
     case setCameraMuted(Bool)

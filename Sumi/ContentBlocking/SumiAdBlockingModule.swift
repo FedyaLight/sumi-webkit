@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import SumiDomain
 import OSLog
 
 enum SumiAdblockSiteOverride: String, Codable, CaseIterable, Sendable {
@@ -611,8 +612,6 @@ final class AdblockRetainingCompiledRuleListCatalog: SumiCompiledContentRuleList
 
 @MainActor
 final class SumiAdBlockingModule {
-    static let shared = SumiAdBlockingModule(moduleRegistry: .shared)
-
     private let sitePolicyFactory: @MainActor () -> AdblockSitePolicyStore
     private let ruleListStoreFactory: @MainActor (@escaping @Sendable () async -> Bool) -> AdblockWebKitRuleListStore
     private let preparedBundleResourceURL: URL?

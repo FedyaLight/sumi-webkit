@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 struct SumiPermissionSettingsProfileContext: Equatable, Hashable, Sendable {
     let profilePartitionId: String

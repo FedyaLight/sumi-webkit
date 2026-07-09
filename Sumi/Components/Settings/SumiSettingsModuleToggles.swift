@@ -5,19 +5,27 @@ private struct SumiModuleRegistryEnvironmentKey: EnvironmentKey {
 }
 
 private struct SumiProtectionCoordinatorEnvironmentKey: EnvironmentKey {
-    static let defaultValue = MainActor.assumeIsolated { SumiProtectionCoordinator.shared }
+    static let defaultValue: SumiProtectionCoordinator = MainActor.assumeIsolated {
+        // Bound via `SumiProtectionCoordinator.bindShared` before UI reads this key.
+        SumiProtectionCoordinator.shared!
+    }
 }
 
 private struct SumiExtensionsModuleEnvironmentKey: EnvironmentKey {
-    static let defaultValue = MainActor.assumeIsolated { SumiExtensionsModule.shared }
+    static let defaultValue = MainActor.assumeIsolated { SumiExtensionsModule() }
 }
 
 private struct SumiUserscriptsModuleEnvironmentKey: EnvironmentKey {
-    static let defaultValue = MainActor.assumeIsolated { SumiUserscriptsModule.shared }
+    static let defaultValue = MainActor.assumeIsolated { SumiUserscriptsModule() }
 }
 
 private struct SumiBoostsModuleEnvironmentKey: EnvironmentKey {
-    static let defaultValue = MainActor.assumeIsolated { SumiBoostsModule.shared }
+    static let defaultValue = MainActor.assumeIsolated {
+        SumiBoostsModule(
+            moduleRegistry: .shared,
+            storeFactory: { SumiBoostStore() }
+        )
+    }
 }
 
 extension EnvironmentValues {

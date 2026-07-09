@@ -37,7 +37,10 @@ struct SafariExtensionImportedRecord: Codable, Equatable, Sendable {
 
 /// Minimal registry for scanner output vs explicit user imports.
 final class SafariExtensionImportStore: @unchecked Sendable {
-    static let shared = SafariExtensionImportStore()
+    /// Process-scoped Defaults-backed store constructed at first use.
+    /// Prefer injecting this instance (or a test suite) rather than constructing anew.
+    static let process: SafariExtensionImportStore = SafariExtensionImportStore()
+
     private static let log = Logger.sumi(category: "Extensions")
 
     private let defaults: UserDefaults

@@ -1,6 +1,7 @@
 import XCTest
 
 @testable import Sumi
+import SumiDomain
 
 @MainActor
 final class BrowserBookmarkCommandOwnerTests: XCTestCase {
@@ -201,65 +202,63 @@ private final class BrowserBookmarkCommandOwnerHarness {
 
     func makeOwner(presenter: FakeBookmarkCommandPresenter) -> BrowserBookmarkCommandOwner {
         BrowserBookmarkCommandOwner(
-            dependencies: BrowserBookmarkCommandOwner.Dependencies(
-                activeWindow: { [weak self] in
-                    self?.activeWindow
-                },
-                activePageTab: { [weak self] windowState in
-                    self?.activeTabsByWindowID[windowState.id]
-                },
-                bookmarkManager: { [weak self] in
-                    self?.bookmarkManager
-                },
-                bookmarkEditorPresentationRequest: { [weak self] in
-                    self?.bookmarkEditorPresentationRequest
-                },
-                setBookmarkEditorPresentationRequest: { [weak self] request in
-                    self?.bookmarkEditorPresentationRequest = request
-                },
-                openNativeBrowserSurface: { _, _, _, _ in /* No-op. */ },
-                openHistoryURL: { [weak self] url, windowState, mode in
-                    self?.openedHistoryURLs.append(
-                        OpenedHistoryURL(
-                            url: url,
-                            windowID: windowState.id,
-                            mode: mode
-                        )
+            activeWindow: { [weak self] in
+                self?.activeWindow
+            },
+            activePageTab: { [weak self] windowState in
+                self?.activeTabsByWindowID[windowState.id]
+            },
+            bookmarkManager: { [weak self] in
+                self?.bookmarkManager
+            },
+            bookmarkEditorPresentationRequest: { [weak self] in
+                self?.bookmarkEditorPresentationRequest
+            },
+            setBookmarkEditorPresentationRequest: { [weak self] request in
+                self?.bookmarkEditorPresentationRequest = request
+            },
+            openNativeBrowserSurface: { _, _, _, _ in /* No-op. */ },
+            openHistoryURL: { [weak self] url, windowState, mode in
+                self?.openedHistoryURLs.append(
+                    OpenedHistoryURL(
+                        url: url,
+                        windowID: windowState.id,
+                        mode: mode
                     )
-                },
-                openHistoryURLsInNewWindow: { [weak self] urls in
-                    self?.openedHistoryURLGroupsInNewWindow.append(urls)
-                },
-                windowIds: { [weak self] in
-                    self?.windowIdsValue ?? []
-                },
-                createNewWindow: { [weak self] in
-                    self?.createNewWindowCallCount += 1
-                },
-                awaitNextRegisteredWindow: { [weak self] existingWindowIDs in
-                    self?.awaitedExistingWindowIDs.append(existingWindowIDs)
-                    return self?.nextRegisteredWindow
-                },
-                space: { [weak self] spaceID in
-                    guard let spaceID else { return nil }
-                    return self?.spacesByID[spaceID]
-                },
-                tabsInSpace: { [weak self] space in
-                    self?.tabsBySpaceID[space.id] ?? []
-                },
-                allTabs: { [weak self] in
-                    self?.allTabsValue ?? []
-                },
-                detectedImportSources: { [weak self] in
-                    self?.detectedImportSourcesValue ?? []
-                },
-                readBookmarks: { [weak self] source in
-                    try self?.readBookmarksHandler(source) ?? []
-                },
-                date: { [weak self] in
-                    self?.dateValue ?? Date(timeIntervalSince1970: 0)
-                }
-            ),
+                )
+            },
+            openHistoryURLsInNewWindow: { [weak self] urls in
+                self?.openedHistoryURLGroupsInNewWindow.append(urls)
+            },
+            windowIds: { [weak self] in
+                self?.windowIdsValue ?? []
+            },
+            createNewWindow: { [weak self] in
+                self?.createNewWindowCallCount += 1
+            },
+            awaitNextRegisteredWindow: { [weak self] existingWindowIDs in
+                self?.awaitedExistingWindowIDs.append(existingWindowIDs)
+                return self?.nextRegisteredWindow
+            },
+            space: { [weak self] spaceID in
+                guard let spaceID else { return nil }
+                return self?.spacesByID[spaceID]
+            },
+            tabsInSpace: { [weak self] space in
+                self?.tabsBySpaceID[space.id] ?? []
+            },
+            allTabs: { [weak self] in
+                self?.allTabsValue ?? []
+            },
+            detectedImportSources: { [weak self] in
+                self?.detectedImportSourcesValue ?? []
+            },
+            readBookmarks: { [weak self] source in
+                try self?.readBookmarksHandler(source) ?? []
+            },
+            date: { [weak self] in
+                self?.dateValue ?? Date(timeIntervalSince1970: 0)
+            },
             presenter: presenter
         )
     }

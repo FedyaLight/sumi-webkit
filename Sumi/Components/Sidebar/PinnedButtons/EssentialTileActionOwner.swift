@@ -51,7 +51,7 @@ struct EssentialTileActionOwner {
                     share: {
                         SidebarLinkActions.presentSharePicker(
                             for: pin.launchURL,
-                            source: windowState.resolveSidebarPresentationSource(),
+                            source: windowState.resolveSidebarPresentationSource(in: browserContext.windowRegistry()),
                             presentationActions: browserContext.presentationActions
                         )
                     },
@@ -112,7 +112,7 @@ struct EssentialTileActionOwner {
             kind: .essential,
             title: pin.preferredDisplayTitle,
             url: pin.launchURL,
-            window: windowState.shellWindow(in: nil),
+            window: windowState.shellWindow(in: browserContext.windowRegistry()),
             themeContext: themeContext,
             onDelete: { removeFromEssentials(pin) }
         )
@@ -123,7 +123,7 @@ struct EssentialTileActionOwner {
             pin,
             windowState,
             themeContext,
-            windowState.resolveSidebarPresentationSource()
+            windowState.resolveSidebarPresentationSource(in: browserContext.windowRegistry())
         )
     }
 

@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 import SwiftUI
 
 enum PinnedTileAccentResolver {

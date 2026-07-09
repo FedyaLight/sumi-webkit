@@ -11,9 +11,9 @@ private let drawsBackgroundSetterIsAvailable: Bool = [
     Selector(("_setDrawsBackground:")),
 ].contains { WKWebView.instancesRespond(to: $0) }
 
-private let drawsBackgroundLog = Logger.sumi(category: "WebViewDrawsBackground")
+private let drawsBackgroundLog = SumiWebRuntimeDiagnostics.logger(category: "WebViewDrawsBackground")
 
-extension WKWebView {
+public extension WKWebView {
     func sumiSetDrawsBackground(_ drawsBackground: Bool) {
         guard drawsBackgroundSetterIsAvailable else {
             drawsBackgroundLog.error(

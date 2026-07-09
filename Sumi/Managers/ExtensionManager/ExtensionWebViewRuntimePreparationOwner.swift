@@ -163,7 +163,7 @@ extension ExtensionWebViewRuntimePreparationOwner.Dependencies {
                 manager?.getExtensionDataStore(for: profileId)
             },
             installPermissionsOriginsCompatibilityPreludes: { [weak manager] controller, profileId in
-                manager?.installPermissionsOriginsCompatibilityPreludes(
+                manager?.permissionsOriginsCompatibilityPreludeInstallationOwner.installPreludes(
                     into: controller,
                     profileId: profileId
                 )

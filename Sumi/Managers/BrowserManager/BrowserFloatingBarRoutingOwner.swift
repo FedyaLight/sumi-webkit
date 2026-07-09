@@ -1,29 +1,54 @@
 import Foundation
+import SumiDomain
 
 @MainActor
 final class BrowserFloatingBarRoutingOwner {
-    struct Dependencies {
-        let tabOpeningOwner: @MainActor @Sendable () -> BrowserTabOpeningOwner
-        let windowRegistry: @MainActor @Sendable () -> WindowRegistry?
-        let settings: @MainActor @Sendable () -> SumiSettingsService?
-        let activePageTab: @MainActor @Sendable (BrowserWindowState) -> Tab?
-        let hasValidCurrentSelection: @MainActor @Sendable (BrowserWindowState) -> Bool
-        let cancelEmptySplitPlaceholder: @MainActor @Sendable (BrowserWindowState) -> Void
-        let commitEmptySplitPlaceholder: @MainActor @Sendable (UUID, BrowserWindowState) -> Void
-        let replaceEmptySplitPlaceholder: @MainActor @Sendable (Tab, BrowserWindowState) -> Bool
-        let selectTab: @MainActor @Sendable (Tab, BrowserWindowState) -> Void
-        let loadCurrentPageURL: @MainActor @Sendable (Tab, BrowserWindowState, String) -> Void
-        let navigateCurrentPage: @MainActor @Sendable (Tab, BrowserWindowState, String) -> Void
-        let dismissThemePickerDiscardingIfNeeded: @MainActor @Sendable () -> Void
-        let persistWindowSession: @MainActor @Sendable (BrowserWindowState) -> Void
-        let schedulePersistWindowSession: @MainActor @Sendable (BrowserWindowState, UInt64) -> Void
-    }
-
-    private let dependencies: Dependencies
+    private let tabOpeningOwner: @MainActor @Sendable () -> BrowserTabOpeningOwner
+    private let windowRegistry: @MainActor @Sendable () -> WindowRegistry?
+    private let settings: @MainActor @Sendable () -> SumiSettingsService?
+    private let activePageTab: @MainActor @Sendable (BrowserWindowState) -> Tab?
+    private let hasValidCurrentSelection: @MainActor @Sendable (BrowserWindowState) -> Bool
+    private let cancelEmptySplitPlaceholder: @MainActor @Sendable (BrowserWindowState) -> Void
+    private let commitEmptySplitPlaceholder: @MainActor @Sendable (UUID, BrowserWindowState) -> Void
+    private let replaceEmptySplitPlaceholder: @MainActor @Sendable (Tab, BrowserWindowState) -> Bool
+    private let selectTab: @MainActor @Sendable (Tab, BrowserWindowState) -> Void
+    private let loadCurrentPageURL: @MainActor @Sendable (Tab, BrowserWindowState, String) -> Void
+    private let navigateCurrentPage: @MainActor @Sendable (Tab, BrowserWindowState, String) -> Void
+    private let dismissThemePickerDiscardingIfNeeded: @MainActor @Sendable () -> Void
+    private let persistWindowSession: @MainActor @Sendable (BrowserWindowState) -> Void
+    private let schedulePersistWindowSession: @MainActor @Sendable (BrowserWindowState, UInt64) -> Void
     private let navigationOwner = FloatingBarNavigationOwner()
 
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
+    init(
+        tabOpeningOwner: @escaping @MainActor @Sendable () -> BrowserTabOpeningOwner,
+        windowRegistry: @escaping @MainActor @Sendable () -> WindowRegistry?,
+        settings: @escaping @MainActor @Sendable () -> SumiSettingsService?,
+        activePageTab: @escaping @MainActor @Sendable (BrowserWindowState) -> Tab?,
+        hasValidCurrentSelection: @escaping @MainActor @Sendable (BrowserWindowState) -> Bool,
+        cancelEmptySplitPlaceholder: @escaping @MainActor @Sendable (BrowserWindowState) -> Void,
+        commitEmptySplitPlaceholder: @escaping @MainActor @Sendable (UUID, BrowserWindowState) -> Void,
+        replaceEmptySplitPlaceholder: @escaping @MainActor @Sendable (Tab, BrowserWindowState) -> Bool,
+        selectTab: @escaping @MainActor @Sendable (Tab, BrowserWindowState) -> Void,
+        loadCurrentPageURL: @escaping @MainActor @Sendable (Tab, BrowserWindowState, String) -> Void,
+        navigateCurrentPage: @escaping @MainActor @Sendable (Tab, BrowserWindowState, String) -> Void,
+        dismissThemePickerDiscardingIfNeeded: @escaping @MainActor @Sendable () -> Void,
+        persistWindowSession: @escaping @MainActor @Sendable (BrowserWindowState) -> Void,
+        schedulePersistWindowSession: @escaping @MainActor @Sendable (BrowserWindowState, UInt64) -> Void
+    ) {
+        self.tabOpeningOwner = tabOpeningOwner
+        self.windowRegistry = windowRegistry
+        self.settings = settings
+        self.activePageTab = activePageTab
+        self.hasValidCurrentSelection = hasValidCurrentSelection
+        self.cancelEmptySplitPlaceholder = cancelEmptySplitPlaceholder
+        self.commitEmptySplitPlaceholder = commitEmptySplitPlaceholder
+        self.replaceEmptySplitPlaceholder = replaceEmptySplitPlaceholder
+        self.selectTab = selectTab
+        self.loadCurrentPageURL = loadCurrentPageURL
+        self.navigateCurrentPage = navigateCurrentPage
+        self.dismissThemePickerDiscardingIfNeeded = dismissThemePickerDiscardingIfNeeded
+        self.persistWindowSession = persistWindowSession
+        self.schedulePersistWindowSession = schedulePersistWindowSession
     }
 
     func focusFloatingBarForActiveWindow(
@@ -161,7 +186,7 @@ final class BrowserFloatingBarRoutingOwner {
     func sanitizeFloatingBarState(in windowState: BrowserWindowState) {
         navigationOwner.sanitize(
             in: windowState,
-            hasValidCurrentSelection: dependencies.hasValidCurrentSelection(windowState),
+            hasValidCurrentSelection: hasValidCurrentSelection(windowState),
             actions: actions
         )
     }
@@ -169,24 +194,24 @@ final class BrowserFloatingBarRoutingOwner {
     private var actions: FloatingBarNavigationOwner.Actions {
         FloatingBarNavigationOwner.Actions(
             activeWindow: {
-                self.dependencies.windowRegistry()?.activeWindow
+                self.windowRegistry()?.activeWindow
             },
             window: { windowId in
-                self.dependencies.windowRegistry()?.windows[windowId]
+                self.windowRegistry()?.windows[windowId]
             },
-            activePageTab: dependencies.activePageTab,
-            cancelEmptySplitPlaceholder: dependencies.cancelEmptySplitPlaceholder,
-            commitEmptySplitPlaceholder: dependencies.commitEmptySplitPlaceholder,
-            replaceEmptySplitPlaceholder: dependencies.replaceEmptySplitPlaceholder,
-            selectTab: dependencies.selectTab,
+            activePageTab: activePageTab,
+            cancelEmptySplitPlaceholder: cancelEmptySplitPlaceholder,
+            commitEmptySplitPlaceholder: commitEmptySplitPlaceholder,
+            replaceEmptySplitPlaceholder: replaceEmptySplitPlaceholder,
+            selectTab: selectTab,
             createNewTab: { [weak self] windowState, url in
-                self?.dependencies.tabOpeningOwner().createNewTab(in: windowState, url: url)
+                self?.tabOpeningOwner().createNewTab(in: windowState, url: url)
             },
             createNewTabAfterSidebarInsertion: { [weak self] windowState, url in
-                self?.dependencies.tabOpeningOwner().createNewTabAfterSidebarInsertion(in: windowState, url: url)
+                self?.tabOpeningOwner().createNewTabAfterSidebarInsertion(in: windowState, url: url)
             },
             configuredNewTabPageURL: {
-                guard let settings = self.dependencies.settings(),
+                guard let settings = self.settings(),
                       settings.newTabMode == .specificPage
                 else {
                     return nil
@@ -194,81 +219,25 @@ final class BrowserFloatingBarRoutingOwner {
                 return settings.resolvedNewTabPageURL.absoluteString
             },
             normalizeURL: { text in
-                let template = self.dependencies.settings()?.resolvedSearchEngineTemplate
+                let template = self.settings()?.resolvedSearchEngineTemplate
                     ?? SearchProvider.google.queryTemplate
                 return Sumi.normalizeURL(text, queryTemplate: template)
             },
-            loadCurrentPageURL: dependencies.loadCurrentPageURL,
-            navigateCurrentPage: dependencies.navigateCurrentPage,
+            loadCurrentPageURL: loadCurrentPageURL,
+            navigateCurrentPage: navigateCurrentPage,
             applySettingsSurfaceNavigation: { text in
-                let template = self.dependencies.settings()?.resolvedSearchEngineTemplate
+                let template = self.settings()?.resolvedSearchEngineTemplate
                     ?? SearchProvider.google.queryTemplate
                 let normalized = Sumi.normalizeURL(text, queryTemplate: template)
                 guard let url = URL(string: normalized),
                       SumiSurface.isSettingsSurfaceURL(url)
                 else { return }
-                self.dependencies.settings()?.applyNavigationFromSettingsSurfaceURL(url)
+                self.settings()?.applyNavigationFromSettingsSurfaceURL(url)
             },
-            dismissThemePickerDiscardingIfNeeded: dependencies.dismissThemePickerDiscardingIfNeeded,
-            persistWindowSession: dependencies.persistWindowSession,
+            dismissThemePickerDiscardingIfNeeded: dismissThemePickerDiscardingIfNeeded,
+            persistWindowSession: persistWindowSession,
             schedulePersistWindowSession: { windowState in
-                self.dependencies.schedulePersistWindowSession(windowState, 450_000_000)
-            }
-        )
-    }
-}
-
-extension BrowserFloatingBarRoutingOwner.Dependencies {
-    @MainActor
-    static func live(browserManager: BrowserManager) -> Self {
-        let tabLifecycleService = browserManager.tabLifecycleService
-        return Self(
-            tabOpeningOwner: { tabLifecycleService.opening },
-            windowRegistry: { [weak browserManager] in browserManager?.windowRegistry },
-            settings: { [weak browserManager] in browserManager?.sumiSettings },
-            activePageTab: { [weak browserManager] windowState in
-                browserManager?.activePageRoutingOwner.activePageTab(for: windowState)
-            },
-            hasValidCurrentSelection: { [weak browserManager] windowState in
-                browserManager?.windowSpaceStateOwner.hasValidCurrentSelection(in: windowState) ?? false
-            },
-            cancelEmptySplitPlaceholder: { [weak browserManager] windowState in
-                browserManager?.splitManager.cancelEmptySplitPlaceholder(in: windowState)
-            },
-            commitEmptySplitPlaceholder: { [weak browserManager] tabId, windowState in
-                browserManager?.splitManager.commitEmptySplitPlaceholder(tabId: tabId, in: windowState)
-            },
-            replaceEmptySplitPlaceholder: { [weak browserManager] tab, windowState in
-                browserManager?.splitManager.replaceEmptySplitPlaceholder(with: tab, in: windowState) ?? false
-            },
-            selectTab: { [weak browserManager] tab, windowState in
-                browserManager?.selectTab(tab, in: windowState)
-            },
-            loadCurrentPageURL: { [weak browserManager] tab, windowState, urlString in
-                browserManager?.windowScopedNavigationOwner.loadFloatingBarCurrentPage(
-                    urlString,
-                    tab: tab,
-                    in: windowState
-                )
-            },
-            navigateCurrentPage: { [weak browserManager] tab, windowState, input in
-                browserManager?.windowScopedNavigationOwner.navigateFloatingBarCurrentPage(
-                    input,
-                    tab: tab,
-                    in: windowState
-                )
-            },
-            dismissThemePickerDiscardingIfNeeded: { [weak browserManager] in
-                browserManager?.workspaceThemeEditorOwner.dismissThemePickerDiscardingIfNeeded()
-            },
-            persistWindowSession: { [weak browserManager] windowState in
-                browserManager?.windowSessionActivationOwner.persistWindowSession(for: windowState)
-            },
-            schedulePersistWindowSession: { [weak browserManager] windowState, delayNanoseconds in
-                browserManager?.windowSessionActivationOwner.schedulePersistWindowSession(
-                    for: windowState,
-                    delayNanoseconds: delayNanoseconds
-                )
+                self.schedulePersistWindowSession(windowState, 450_000_000)
             }
         )
     }

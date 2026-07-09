@@ -131,7 +131,7 @@ final class SafariExtensionCommandAndContextMenuTests: XCTestCase {
 
         let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
         webView.owningTab = tab
-        tab._webView = webView
+        tab.replaceUntrackedWebView(webView)
 
         manager.registerTabWithExtensionRuntime(
             tab,

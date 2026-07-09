@@ -32,7 +32,7 @@ extension Tab {
             notifyNowPlayingTabUnloaded: { tabId in
                 self.mediaRuntime.callbacks.notifyNowPlayingTabUnloaded(tabId)
             },
-            currentWebView: { self.currentWebView },
+            currentWebView: { self.resolvedCurrentWebView() },
             clearCurrentWebView: { self.clearCurrentWebViewOwnership() },
             removeAllWebViews: { closeActiveFullscreenMedia in
                 cleanupRuntime.removeAllWebViews(self, closeActiveFullscreenMedia)

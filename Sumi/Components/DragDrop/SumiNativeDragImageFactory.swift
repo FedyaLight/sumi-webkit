@@ -51,10 +51,6 @@ struct SumiNativeDragPreviewDescriptor {
 
 @MainActor
 final class SumiNativeDragImageFactory {
-    static let shared = SumiNativeDragImageFactory()
-
-    private init() {}
-
     func image(
         for style: SumiNativeDragPreviewStyle,
         descriptor: SumiNativeDragPreviewDescriptor,

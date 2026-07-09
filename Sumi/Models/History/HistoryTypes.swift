@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import SumiDomain
 
 struct VisitIdentifier: Hashable, LosslessStringConvertible, Codable {
     let uuid: String

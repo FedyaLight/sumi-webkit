@@ -28,6 +28,7 @@ final class WindowViewBrowserContext {
     private let _nativeModalPresentationBindingDismissed: (UUID) -> Void
     private let _dismissNativeModalPresentation: () -> Void
     private let _findCurrentTabId: () -> UUID?
+    let sidebarHostRecoveryCoordinator: SidebarHostRecoveryHandling
 
     init(
         splitManager: SplitViewManager,
@@ -36,6 +37,7 @@ final class WindowViewBrowserContext {
         sidebarBrowserContext: SidebarBrowserContext,
         sidebarHostActions: SidebarHostActions,
         sidebarStructuralInvalidation: AnyPublisher<Void, Never>,
+        sidebarHostRecoveryCoordinator: SidebarHostRecoveryHandling,
         nativeModalPresentation: @escaping () -> BrowserNativeModalPresentation?,
         browsingDataDialogContext: @escaping () -> SumiBrowsingDataDialogContext,
         hasCurrentSpace: @escaping () -> Bool,
@@ -58,6 +60,7 @@ final class WindowViewBrowserContext {
         self.sidebarBrowserContext = sidebarBrowserContext
         self.sidebarHostActions = sidebarHostActions
         self.sidebarStructuralInvalidation = sidebarStructuralInvalidation
+        self.sidebarHostRecoveryCoordinator = sidebarHostRecoveryCoordinator
         self._nativeModalPresentation = nativeModalPresentation
         self._browsingDataDialogContext = browsingDataDialogContext
         self._hasCurrentSpace = hasCurrentSpace

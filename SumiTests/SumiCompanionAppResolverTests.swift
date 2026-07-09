@@ -60,7 +60,6 @@ final class SumiCompanionAppResolverTests: XCTestCase {
     }
 
     override func tearDown() {
-        SumiCompanionAppLaunchPolicy.shared.clearPendingState()
         super.tearDown()
     }
 

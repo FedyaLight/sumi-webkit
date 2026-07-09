@@ -77,8 +77,6 @@ protocol SumiProtectionStartupRestoreDiagnosticsRecording: AnyObject, Sendable {
 import Darwin
 
 final class SumiProtectionStartupRestoreDiagnostics: SumiProtectionStartupRestoreDiagnosticsRecording, @unchecked Sendable {
-    static let shared = SumiProtectionStartupRestoreDiagnostics()
-
     private struct MutableState {
         var appliedProtectionLevel = "unknown"
         var trackedGenerationId: String?
@@ -107,7 +105,7 @@ final class SumiProtectionStartupRestoreDiagnostics: SumiProtectionStartupRestor
     private var state = MutableState()
     private var lastSnapshotStorage: SumiProtectionStartupRestoreDiagnosticsSnapshot?
 
-    private init() {}
+    init() {}
 
     var latestSnapshot: SumiProtectionStartupRestoreDiagnosticsSnapshot? {
         lock.withLock { lastSnapshotStorage }
@@ -305,9 +303,9 @@ final class SumiProtectionStartupRestoreDiagnostics: SumiProtectionStartupRestor
 }
 
 enum SumiProtectionStartupRestoreDiagnosticsDefaults {
-    static var recorder: any SumiProtectionStartupRestoreDiagnosticsRecording {
-        SumiProtectionStartupRestoreDiagnostics.shared
-    }
+    /// Process-scoped DEBUG recorder constructed at first use (no singleton accessor).
+    static let recorder: any SumiProtectionStartupRestoreDiagnosticsRecording =
+        SumiProtectionStartupRestoreDiagnostics()
 }
 
 enum AdblockProcessMemorySampler {

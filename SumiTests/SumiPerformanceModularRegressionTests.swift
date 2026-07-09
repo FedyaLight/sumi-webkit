@@ -161,7 +161,7 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
 
         tab.setupWebView()
 
-        let webView = try XCTUnwrap(tab.existingWebView)
+        let webView = try XCTUnwrap(tab.resolvedCurrentWebView())
         let controller = try XCTUnwrap(webView.configuration.userContentController.sumiNormalTabUserContentController)
         await controller.waitForContentBlockingAssetsInstalled()
         let provider = try XCTUnwrap(webView.configuration.userContentController.sumiNormalTabUserScriptsProvider)

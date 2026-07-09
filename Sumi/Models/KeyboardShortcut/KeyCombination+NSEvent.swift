@@ -1,25 +1,7 @@
 import AppKit
 import Foundation
 
-struct KeyCombination: Hashable, Codable {
-    let key: String
-    let modifiers: Modifiers
-
-    init(key: String, modifiers: Modifiers = []) {
-        self.key = key.lowercased()
-        self.modifiers = modifiers
-    }
-
-    var lookupKey: String {
-        var parts: [String] = []
-        if modifiers.contains(.command) { parts.append("cmd") }
-        if modifiers.contains(.option) { parts.append("opt") }
-        if modifiers.contains(.control) { parts.append("ctrl") }
-        if modifiers.contains(.shift) { parts.append("shift") }
-        parts.append(key.lowercased())
-        return parts.joined(separator: "+")
-    }
-
+extension KeyCombination {
     private static let physicalKeyMap: [UInt16: String] = [
         0x00: "a", 0x01: "s", 0x02: "d", 0x03: "f", 0x04: "h", 0x05: "g", 0x06: "z", 0x07: "x",
         0x08: "c", 0x09: "v", 0x0B: "b", 0x0C: "q", 0x0D: "w", 0x0E: "e", 0x0F: "r", 0x10: "y",
@@ -55,23 +37,11 @@ struct KeyCombination: Hashable, Codable {
             return nil
         }
 
-        self.key = resolvedKey
-        self.modifiers = Modifiers(eventModifierFlags: event.modifierFlags)
+        self.init(key: resolvedKey, modifiers: Modifiers(eventModifierFlags: event.modifierFlags))
     }
 }
 
-struct Modifiers: OptionSet, Hashable, Codable {
-    let rawValue: Int
-
-    static let command = Modifiers(rawValue: 1 << 0)
-    static let option = Modifiers(rawValue: 1 << 1)
-    static let control = Modifiers(rawValue: 1 << 2)
-    static let shift = Modifiers(rawValue: 1 << 3)
-
-    init(rawValue: Int) {
-        self.rawValue = rawValue
-    }
-
+extension Modifiers {
     init(eventModifierFlags: NSEvent.ModifierFlags) {
         var modifiers: Modifiers = []
         if eventModifierFlags.contains(.command) { modifiers.insert(.command) }

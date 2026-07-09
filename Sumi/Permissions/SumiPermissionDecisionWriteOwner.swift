@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 /// Owns writes of site permission decisions from the settings surface:
 /// applying a chosen option, removing exceptions, and resetting a site's

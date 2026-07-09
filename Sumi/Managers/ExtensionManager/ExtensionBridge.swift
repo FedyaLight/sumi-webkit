@@ -18,7 +18,7 @@ protocol ExtensionBrowserBridgeContext: AnyObject {
     func extensionTab(for tabId: UUID) -> Tab?
     func extensionWindowState(containing tab: Tab) -> BrowserWindowState?
     func extensionWindowState(forAppKitWindow window: NSWindow) -> BrowserWindowState?
-    /// Phase 6A: resolve AppKit window via shell map (falls back to dual-write mirror).
+    /// Resolve AppKit window via the `WindowRegistry` shell map.
     func appKitWindow(for windowState: BrowserWindowState) -> NSWindow?
     func currentExtensionTab(in windowState: BrowserWindowState) -> Tab?
     func currentExtensionTabForActiveWindow() -> Tab?
@@ -373,7 +373,7 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
     }
 
     private func appKitWindow(for windowState: BrowserWindowState) -> NSWindow? {
-        browserContext?.appKitWindow(for: windowState) ?? windowState.window
+        browserContext?.appKitWindow(for: windowState)
     }
 }
 

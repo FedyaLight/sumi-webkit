@@ -8,15 +8,13 @@ final class BrowserMenuCloseRoutingOwnerTests: XCTestCase {
     func testCloseCurrentTabUsesKeyWindowStateInsteadOfActiveWindow() {
         let owner = BrowserMenuCloseRoutingOwner()
         let registry = WindowRegistry()
-        let keyWindowState = makeWindowState()
-        let activeWindowState = makeWindowState()
-        registry.register(keyWindowState)
-        registry.register(activeWindowState)
+        let keyWindowState = makeWindowState(in: registry)
+        let activeWindowState = makeWindowState(in: registry)
         registry.setActive(activeWindowState)
 
         var closedWindowIds: [UUID] = []
         owner.closeCurrentTab(
-            keyWindow: keyWindowState.window,
+            keyWindow: registry.appKitWindow(for: keyWindowState),
             sender: nil,
             windowRegistry: registry,
             closeCurrentTab: { windowState in
@@ -30,15 +28,13 @@ final class BrowserMenuCloseRoutingOwnerTests: XCTestCase {
     func testCloseWindowUsesKeyWindowStateInsteadOfActiveWindow() {
         let owner = BrowserMenuCloseRoutingOwner()
         let registry = WindowRegistry()
-        let keyWindowState = makeWindowState()
-        let activeWindowState = makeWindowState()
-        registry.register(keyWindowState)
-        registry.register(activeWindowState)
+        let keyWindowState = makeWindowState(in: registry)
+        let activeWindowState = makeWindowState(in: registry)
         registry.setActive(activeWindowState)
 
         var closedWindowIds: [UUID] = []
         owner.closeWindow(
-            keyWindow: keyWindowState.window,
+            keyWindow: registry.appKitWindow(for: keyWindowState),
             sender: nil,
             windowRegistry: registry,
             closeWindow: { windowState in
@@ -52,8 +48,7 @@ final class BrowserMenuCloseRoutingOwnerTests: XCTestCase {
     func testCloseCurrentTabFallsBackToActiveWindowWhenNoKeyWindowExists() {
         let owner = BrowserMenuCloseRoutingOwner()
         let registry = WindowRegistry()
-        let activeWindowState = makeWindowState()
-        registry.register(activeWindowState)
+        let activeWindowState = makeWindowState(in: registry)
         registry.setActive(activeWindowState)
 
         var closedWindowIds: [UUID] = []
@@ -72,15 +67,14 @@ final class BrowserMenuCloseRoutingOwnerTests: XCTestCase {
     func testCloseWindowLetsChildWindowHandleClose() {
         let owner = BrowserMenuCloseRoutingOwner()
         let registry = WindowRegistry()
-        let parentWindowState = makeWindowState()
+        let parentWindowState = makeWindowState(in: registry)
         let childWindow = CloseRecordingWindow(
             contentRect: NSRect(x: 0, y: 0, width: 120, height: 80),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
         )
-        parentWindowState.window?.addChildWindow(childWindow, ordered: .above)
-        registry.register(parentWindowState)
+        registry.appKitWindow(for: parentWindowState)?.addChildWindow(childWindow, ordered: .above)
         registry.setActive(parentWindowState)
 
         var closedWindowIds: [UUID] = []
@@ -97,14 +91,16 @@ final class BrowserMenuCloseRoutingOwnerTests: XCTestCase {
         XCTAssertEqual(childWindow.performCloseCount, 1)
     }
 
-    private func makeWindowState() -> BrowserWindowState {
+    private func makeWindowState(in registry: WindowRegistry) -> BrowserWindowState {
         let windowState = BrowserWindowState()
-        windowState.window = NSWindow(
+        let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 200, height: 120),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
         )
+        registry.register(windowState)
+        registry.bindAppKitWindow(window, to: windowState)
         return windowState
     }
 }

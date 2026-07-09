@@ -32,6 +32,8 @@ class BrowserManager: ObservableObject {
     let extensionsModule: SumiExtensionsModule
     let userscriptsModule: SumiUserscriptsModule
     let boostsModule: SumiBoostsModule
+    /// Process-level sidebar hit-testing recovery after transient AppKit UI.
+    let sidebarHostRecoveryCoordinator: SidebarHostRecoveryHandling
     var extensionSurfaceStore: BrowserExtensionSurfaceStore {
         extensionsModule.surfaceStore
     }
@@ -79,79 +81,78 @@ class BrowserManager: ObservableObject {
         return self.splitManager.visibleTabIds(for: windowId)
     }
     lazy var tabLifecycleService = BrowserTabLifecycleService(browserManager: self)
-    lazy var windowTabContextOwner = BrowserWindowTabContextOwner(
-        dependencies: BrowserWindowTabContextOwner.Dependencies(
-            selectionService: { [weak self] in
-                self?.shellSelectionService
-            },
-            tabStore: { [weak self] in
-                self?.tabManager.runtimeStore
-            },
-            windows: { [weak self] in
-                guard let self,
-                      let windowRegistry = self.windowRegistry
-                else {
-                    return []
-                }
-                return Array(windowRegistry.windows.values)
-            },
-            liveShortcutTabs: { [weak self] windowId in
-                self?.tabManager.shortcutPresentationOwner.liveShortcutTabs(in: windowId) ?? []
-            },
-            visibleSplitTabIds: { [weak self] windowId in
-                Set(self?.splitManager.visibleTabIds(for: windowId) ?? [])
-            }
-        )
-    )
-    lazy var windowSpaceStateOwner = BrowserWindowSpaceStateOwner(
-        dependencies: .live(browserManager: self)
-    )
-    lazy var nativeSurfaceRoutingOwner = BrowserNativeSurfaceRoutingOwner(
-        dependencies: .live(browserManager: self)
-    )
-    // Phase 5A capability bags — BM holds bags; bags hold owners.
-    // TODO(5A): remaining peer Owners → BrowserChromeCommands bag (zoom/sidebar chrome)
-    // once chromeCommands façade absorbs more than popover+privacy.
+    // Phase 5A / N2 / T3 / T8 capability bags — BM holds bags; bags hold owners.
     lazy var privacyBundle = BrowserPrivacyBundle(browserManager: self)
     lazy var urlBarBundle = BrowserURLBarBundle(browserManager: self)
     lazy var windowSessionBundle = BrowserWindowSessionBundle(
         browserManager: self,
         startupSessionRestoreOwner: startupSessionRestoreOwner
     )
+    lazy var chromeBundle = BrowserChromeBundle(browserManager: self)
+    lazy var historyBundle = BrowserHistoryBundle(browserManager: self)
+    lazy var bookmarkBundle = BrowserBookmarkBundle(browserManager: self)
     lazy var profileLifecycleBundle = BrowserProfileLifecycleBundle(browserManager: self)
     lazy var extensionBridgeBundle = BrowserExtensionBridgeBundle(browserManager: self)
 
     /// Compatibility forwards — prefer `*Bundle` for new call sites.
     var urlBarCommands: BrowserURLBarCommands { urlBarBundle.commands }
+    var chromeCommands: BrowserChromeCommands { chromeBundle.commands }
+    var windowSpaceStateOwner: BrowserWindowSpaceStateOwner {
+        windowSessionBundle.spaceStateOwner
+    }
+    var windowTabContextOwner: BrowserWindowTabContextOwner {
+        windowSessionBundle.tabContextOwner
+    }
+    var windowVisualMutationOwner: BrowserWindowVisualMutationOwner {
+        windowSessionBundle.visualMutationOwner
+    }
+    var windowScopedNavigationOwner: BrowserWindowScopedNavigationOwner {
+        windowSessionBundle.scopedNavigationOwner
+    }
+    var sidebarActionOwner: BrowserSidebarActionOwner {
+        chromeBundle.sidebarActionOwner
+    }
+    var sidebarPresentationOwner: BrowserSidebarPresentationOwner {
+        chromeBundle.sidebarPresentationOwner
+    }
+    var workspaceThemeTransitionOwner: BrowserWorkspaceThemeTransitionOwner {
+        chromeBundle.workspaceThemeTransitionOwner
+    }
+    var workspaceThemeEditorOwner: BrowserWorkspaceThemeEditorOwner {
+        chromeBundle.workspaceThemeEditorOwner
+    }
+    var nativeSurfaceRoutingOwner: BrowserNativeSurfaceRoutingOwner {
+        chromeBundle.nativeSurfaceRoutingOwner
+    }
+    var zoomCommandOwner: BrowserZoomCommandOwner {
+        chromeBundle.zoomCommandOwner
+    }
+    var sharingPickerPresentationOwner: BrowserSharingPickerPresentationOwner {
+        chromeBundle.sharingPickerPresentationOwner
+    }
+    var nativeDialogPresentationOwner: BrowserNativeDialogPresentationOwner {
+        chromeBundle.nativeDialogPresentationOwner
+    }
+    var windowStateValidationOwner: BrowserWindowStateValidationOwner {
+        windowSessionBundle.windowStateValidationOwner
+    }
     private var permissionSidebarPinningOwner: BrowserPermissionSidebarPinningOwner {
         privacyBundle.permissionSidebarPinningOwner
     }
-    lazy var historyNavigationOwner = BrowserHistoryNavigationOwner(
-        dependencies: .live(browserManager: self)
-    )
-    lazy var bookmarkCommandOwner = BrowserBookmarkCommandOwner(
-        dependencies: .live(browserManager: self),
-        presenter: BrowserBookmarkCommandAppKitPresenter(
-            nativeSurfaceAppearance: { [weak self] in
-                guard let self,
-                      let settings = self.sumiSettings,
-                      let windowState = self.windowRegistry?.activeWindow
-                else { return nil }
-                return windowState.nativeSurfaceAppearance(settings: settings)
-            }
-        )
-    )
-    lazy var nativeDialogPresentationOwner = BrowserNativeDialogPresentationOwner(
-        dependencies: .live(browserManager: self)
-    )
-    lazy var historyMenuOwner = BrowserHistoryMenuOwner(
-        dependencies: .live(browserManager: self)
-    )
+    var historyNavigationOwner: BrowserHistoryNavigationOwner {
+        historyBundle.historyNavigationOwner
+    }
+    var historyMenuOwner: BrowserHistoryMenuOwner {
+        historyBundle.historyMenuOwner
+    }
+    var bookmarkCommandOwner: BrowserBookmarkCommandOwner {
+        bookmarkBundle.bookmarkCommandOwner
+    }
     lazy var shutdownCleanupOwner = BrowserShutdownCleanupOwner(
-        dependencies: .live(browserManager: self)
+        browserManager: self
     )
     lazy var keyboardShortcutCommandOwner = BrowserKeyboardShortcutCommandOwner(
-        dependencies: .live(browserManager: self)
+        browserManager: self
     )
     var floatingBarRoutingOwner: BrowserFloatingBarRoutingOwner {
         urlBarBundle.floatingBarRoutingOwner
@@ -163,31 +164,15 @@ class BrowserManager: ObservableObject {
     var activePageRoutingOwner: BrowserActivePageRoutingOwner {
         urlBarBundle.activePageRoutingOwner
     }
-    private(set) lazy var zoomCommandOwner = BrowserZoomCommandOwner(
-        dependencies: .live(browserManager: self)
-    )
-    lazy var sidebarActionOwner = BrowserSidebarActionOwner(
-        dependencies: .live(browserManager: self)
-    )
     var windowSessionCommands: BrowserWindowSessionCommands { windowSessionBundle.commands }
-    lazy var chromeCommands = BrowserChromeCommands(browserManager: self)
     lazy var webViewCloseRouter = BrowserWebViewCloseRouter(
-        dependencies: .live(browserManager: self)
+        browserManager: self
     )
     var automaticDataCleanupOwner: BrowserAutomaticDataCleanupOwner {
         privacyBundle.automaticDataCleanupOwner
     }
-    lazy var windowScopedNavigationOwner = BrowserWindowScopedNavigationOwner(
-        dependencies: .live(browserManager: self)
-    )
-    lazy var workspaceThemeTransitionOwner = BrowserWorkspaceThemeTransitionOwner(
-        dependencies: .live(browserManager: self)
-    )
-    lazy var workspaceThemeEditorOwner = BrowserWorkspaceThemeEditorOwner(
-        dependencies: .live(browserManager: self)
-    )
     lazy var notificationPresenter = BrowserNotificationPresenter(
-        dependencies: .live(browserManager: self)
+        browserManager: self
     )
     lazy var appCommandRouter = BrowserAppCommandRouter(
         dependencies: .live(browserManager: self)
@@ -237,9 +222,6 @@ class BrowserManager: ObservableObject {
         set { shellRuntime.windowShellContentViewFactory = newValue }
     }
 
-    lazy var sidebarPresentationOwner = BrowserSidebarPresentationOwner(
-        dependencies: .live(browserManager: self)
-    )
     private lazy var initializationWiringOwner = BrowserManagerInitializationWiringOwner(
         dependencies: BrowserManagerInitializationWiringOwner.Dependencies(
             attachShellRuntime: { [weak self] in
@@ -266,33 +248,6 @@ class BrowserManager: ObservableObject {
         )
     )
     private(set) var startupProtectionRuntime: BrowserStartupProtectionRuntime!
-    lazy var windowVisualMutationOwner = BrowserWindowVisualMutationOwner(
-        dependencies: BrowserWindowVisualMutationOwner.Dependencies(
-            hasActiveHistorySwipe: { [weak self] windowId in
-                self?.webViewCoordinator?.hasActiveHistorySwipe(in: windowId) == true
-            },
-            currentTab: { [weak self] windowState in
-                self?.windowTabContextOwner.currentTab(for: windowState)
-            },
-            performImmediateVisualHandoffIfPossible: { [weak self] windowId in
-                self?.webViewCoordinator?.performImmediateVisualHandoffIfPossible(
-                    in: windowId
-                ) ?? false
-            },
-            prepareVisibleWebViews: { [weak self] windowState in
-                guard let self else { return false }
-                return shellRuntime.requireWebViewCoordinator().prepareVisibleWebViews(
-                    for: windowState
-                )
-            },
-            schedulePrepareVisibleWebViews: { [weak self] windowState in
-                guard let self else { return }
-                shellRuntime.requireWebViewCoordinator().schedulePrepareVisibleWebViews(
-                    for: windowState
-                )
-            }
-        )
-    )
     var windowHistorySessionOwner: BrowserWindowHistorySessionOwner {
         windowSessionBundle.historySessionOwner
     }
@@ -339,12 +294,13 @@ class BrowserManager: ObservableObject {
         filePickerPanelPresenter: (any SumiFilePickerPanelPresenting)? = nil,
         permissionIndicatorEventStore: SumiPermissionIndicatorEventStore? = nil,
         permissionRecentActivityStore: SumiPermissionRecentActivityStore? = nil,
-        permissionSiteActivityStore: SumiPermissionSiteActivityStore = .shared,
+        permissionSiteActivityStore: SumiPermissionSiteActivityStore? = nil,
         permissionCleanupService: SumiPermissionCleanupService? = nil,
         blockedPopupStore: SumiBlockedPopupStore? = nil,
-        externalAppResolver: any SumiExternalAppResolving = SumiNSWorkspaceExternalAppResolver.shared,
+        externalAppResolver: any SumiExternalAppResolving = SumiNSWorkspaceExternalAppResolver(),
         externalSchemeSessionStore: SumiExternalSchemeSessionStore? = nil,
-        permissionBridgeOverrides: BrowserPermissionBridgeRegistry.Overrides = BrowserPermissionBridgeRegistry.Overrides()
+        permissionBridgeOverrides: BrowserPermissionBridgeRegistry.Overrides = BrowserPermissionBridgeRegistry.Overrides(),
+        sidebarHostRecoveryCoordinator: SidebarHostRecoveryHandling = SidebarHostRecoveryCoordinator()
     ) {
         let startupTrace = StartupPerformanceTrace.browserManagerInitStarted()
         defer {
@@ -358,6 +314,7 @@ class BrowserManager: ObservableObject {
         let startupModelContext = startupPersistence.mainContext
         self.modelContext = startupModelContext
         self.moduleRegistry = moduleRegistry
+        self.sidebarHostRecoveryCoordinator = sidebarHostRecoveryCoordinator
         let resolvedAdBlockingModule = adBlockingModule
             ?? SumiAdBlockingModule(moduleRegistry: moduleRegistry)
         self.adBlockingModule = resolvedAdBlockingModule
@@ -369,6 +326,7 @@ class BrowserManager: ObservableObject {
                     userDefaults: moduleRegistry.userDefaults
                 )
             )
+        SumiProtectionCoordinator.bindShared(self.protectionCoordinator)
         self.adblockZapperStore = adblockZapperStore
             ?? SumiAdblockZapperStore(userDefaults: moduleRegistry.userDefaults)
         self.userscriptsModule = userscriptsModule
@@ -414,7 +372,8 @@ class BrowserManager: ObservableObject {
         self.historyManager = HistoryManager(
             context: startupModelContext,
             profileId: initialProfile?.id,
-            dependencies: resolvedDataServices.historyManagerDependencies
+            faviconCleaner: resolvedDataServices.historyFaviconCleaner,
+            visitedLinkStore: resolvedDataServices.historyVisitedLinkStore
         )
         self.bookmarkManager = Self.makeBookmarkManager(
             faviconService: resolvedDataServices.faviconService,
@@ -448,7 +407,8 @@ class BrowserManager: ObservableObject {
                 filePickerPanelPresenter: filePickerPanelPresenter,
                 permissionIndicatorEventStore: permissionIndicatorEventStore,
                 permissionRecentActivityStore: permissionRecentActivityStore,
-                permissionSiteActivityStore: permissionSiteActivityStore,
+                permissionSiteActivityStore: permissionSiteActivityStore
+                    ?? SumiPermissionSiteActivityStore(),
                 permissionCleanupService: permissionCleanupService,
                 blockedPopupStore: blockedPopupStore,
                 externalAppResolver: externalAppResolver,
@@ -458,7 +418,7 @@ class BrowserManager: ObservableObject {
         )
         startPermissionEventObservation()
         self.startupProtectionRuntime = BrowserStartupProtectionRuntime(
-            dependencies: .live(browserManager: self)
+            browserManager: self
         )
 
         initializationWiringOwner.finishInitializationWiring()
@@ -589,7 +549,18 @@ class BrowserManager: ObservableObject {
 
     func reconcileStartupSessionIfPossible() {
         startupSessionRestoreOwner.reconcileIfReady(
-            dependencies: .live(browserManager: self)
+            hasLoadedInitialTabData: { [weak self] in
+                self?.tabManager.hasLoadedInitialData ?? false
+            },
+            startupMode: { [weak self] in
+                self?.sumiSettings?.startupMode
+            },
+            startupWindow: { [weak self] in
+                self?.startupPolicyOwner.firstRegularWindowForStartupPolicy
+            },
+            applyStartupPolicy: { [weak self] mode in
+                self?.startupPolicyOwner.applyStartupPolicy(mode)
+            }
         )
     }
 

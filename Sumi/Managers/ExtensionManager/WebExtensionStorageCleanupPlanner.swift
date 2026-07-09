@@ -112,8 +112,6 @@ struct WebExtensionStorageCleanupPlanner {
         let actionableDiagnostics: [ErrorDiagnostic]
     }
 
-    static let shared = WebExtensionStorageCleanupPlanner()
-
     static func isPrunableEntryName(_ entryName: String) -> Bool {
         entryName == StorageSnapshot.stateFileName
     }

@@ -63,10 +63,13 @@ extension NSAlert {
 extension BrowserWindowState {
     /// Canonical global window scheme: Settings ▸ window-scheme override when
     /// set, otherwise the window's (or app's) effective appearance.
-    func globalColorScheme(settings: SumiSettingsService) -> ColorScheme {
+    func globalColorScheme(
+        settings: SumiSettingsService,
+        in registry: WindowRegistry? = nil
+    ) -> ColorScheme {
         switch settings.windowSchemeMode {
         case .auto:
-            let appearance = window?.effectiveAppearance
+            let appearance = shellWindow(in: registry)?.effectiveAppearance
                 ?? NSApplication.shared.effectiveAppearance
             return ColorScheme(sumiChromeAppearance: appearance)
         case .light:
@@ -78,9 +81,12 @@ extension BrowserWindowState {
 
     /// Space-resolved, transition-stable theme context for native surfaces hung
     /// off this window (popovers, sheets, alerts, panels).
-    func nativeSurfaceThemeContext(settings: SumiSettingsService) -> ResolvedThemeContext {
+    func nativeSurfaceThemeContext(
+        settings: SumiSettingsService,
+        in registry: WindowRegistry? = nil
+    ) -> ResolvedThemeContext {
         resolvedThemeContext(
-            global: globalColorScheme(settings: settings),
+            global: globalColorScheme(settings: settings, in: registry),
             settings: settings
         )
         .nativeSurfaceThemeContext
@@ -90,10 +96,11 @@ extension BrowserWindowState {
     /// NSAlert windows, NSPanel).
     func nativeSurfaceAppearance(
         settings: SumiSettingsService,
-        fallback: NSAppearance? = nil
+        fallback: NSAppearance? = nil,
+        in registry: WindowRegistry? = nil
     ) -> NSAppearance {
         NSAppearance.sumiChromeAppearance(
-            for: nativeSurfaceThemeContext(settings: settings).chromeColorScheme,
+            for: nativeSurfaceThemeContext(settings: settings, in: registry).chromeColorScheme,
             fallback: fallback
         )
     }

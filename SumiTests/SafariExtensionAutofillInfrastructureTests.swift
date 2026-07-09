@@ -158,7 +158,7 @@ final class SafariExtensionAutofillInfrastructureTests: XCTestCase {
 
         let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
         webView.owningTab = tab
-        tab._webView = webView
+        tab.replaceUntrackedWebView(webView)
         webView.load(
             URLRequest(url: URL(string: "http://127.0.0.1/login-form.html")!)
         )
@@ -223,7 +223,7 @@ final class SafariExtensionAutofillInfrastructureTests: XCTestCase {
 
         let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
         webView.owningTab = tab
-        tab._webView = webView
+        tab.replaceUntrackedWebView(webView)
         _ = manager.adapterResolutionOwner.stableAdapter(for: tab)
 
         let result = SafariExtensionAutofillInfrastructureClassifier.classifyTab(

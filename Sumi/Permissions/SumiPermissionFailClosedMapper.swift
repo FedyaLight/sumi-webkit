@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 enum SumiPermissionFailClosedMapper {
     static func temporaryPendingDecision(

@@ -2,37 +2,47 @@ import Foundation
 
 @MainActor
 final class BrowserWindowHistorySessionOwner {
-    struct Dependencies {
-        let windowState: @MainActor (UUID) -> BrowserWindowState?
-        let allWindows: @MainActor () -> [BrowserWindowState]
-        let makeWindowSessionSnapshot: @MainActor (BrowserWindowState) -> WindowSessionSnapshot?
-        let windowDisplayTitle: @MainActor (BrowserWindowState) -> String
-        let recentlyClosedManager: @MainActor () -> RecentlyClosedManager
-        let lastSessionWindowsStore: @MainActor () -> LastSessionWindowsStore
-        let startupRestore: any BrowserStartupSessionRestoreProviding
-    }
+    private let windowState: @MainActor (UUID) -> BrowserWindowState?
+    private let allWindows: @MainActor () -> [BrowserWindowState]
+    private let makeWindowSessionSnapshot: @MainActor (BrowserWindowState) -> WindowSessionSnapshot?
+    private let windowDisplayTitle: @MainActor (BrowserWindowState) -> String
+    private let recentlyClosedManager: @MainActor () -> RecentlyClosedManager
+    private let lastSessionWindowsStore: @MainActor () -> LastSessionWindowsStore
+    private let startupRestore: any BrowserStartupSessionRestoreProviding
 
-    private let dependencies: Dependencies
-
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
+    init(
+        windowState: @escaping @MainActor (UUID) -> BrowserWindowState?,
+        allWindows: @escaping @MainActor () -> [BrowserWindowState],
+        makeWindowSessionSnapshot: @escaping @MainActor (BrowserWindowState) -> WindowSessionSnapshot?,
+        windowDisplayTitle: @escaping @MainActor (BrowserWindowState) -> String,
+        recentlyClosedManager: @escaping @MainActor () -> RecentlyClosedManager,
+        lastSessionWindowsStore: @escaping @MainActor () -> LastSessionWindowsStore,
+        startupRestore: any BrowserStartupSessionRestoreProviding
+    ) {
+        self.windowState = windowState
+        self.allWindows = allWindows
+        self.makeWindowSessionSnapshot = makeWindowSessionSnapshot
+        self.windowDisplayTitle = windowDisplayTitle
+        self.recentlyClosedManager = recentlyClosedManager
+        self.lastSessionWindowsStore = lastSessionWindowsStore
+        self.startupRestore = startupRestore
     }
 
     func handleWindowWillClose(_ windowId: UUID) {
-        guard let windowState = dependencies.windowState(windowId),
+        guard let windowState = windowState(windowId),
               !windowState.isIncognito
         else {
             refreshLastSessionWindowsStore(excludingWindowID: windowId)
             return
         }
 
-        guard let snapshot = dependencies.makeWindowSessionSnapshot(windowState) else {
+        guard let snapshot = makeWindowSessionSnapshot(windowState) else {
             refreshLastSessionWindowsStore(excludingWindowID: windowId)
             return
         }
         if snapshot.currentTabId != nil || snapshot.activeSplitGroupId != nil || !snapshot.isShowingEmptyState {
-            dependencies.recentlyClosedManager().captureClosedWindow(
-                title: dependencies.windowDisplayTitle(windowState),
+            recentlyClosedManager().captureClosedWindow(
+                title: windowDisplayTitle(windowState),
                 session: snapshot
             )
         }
@@ -41,10 +51,10 @@ final class BrowserWindowHistorySessionOwner {
     }
 
     func refreshLastSessionWindowsStore(excludingWindowID: UUID?) {
-        if dependencies.startupRestore.canOfferRestoreShortcut,
-           let startupLastSessionTabSnapshot = dependencies.startupRestore.tabSnapshot {
-            dependencies.lastSessionWindowsStore().updateSnapshots(
-                dependencies.startupRestore.windowSnapshots,
+        if startupRestore.canOfferRestoreShortcut,
+           let startupLastSessionTabSnapshot = startupRestore.tabSnapshot {
+            lastSessionWindowsStore().updateSnapshots(
+                startupRestore.windowSnapshots,
                 tabSnapshot: startupLastSessionTabSnapshot
             )
             return
@@ -55,19 +65,19 @@ final class BrowserWindowHistorySessionOwner {
             snapshots = currentRegularWindowSnapshots(excludingWindowID: nil)
         }
         if snapshots.count > 1 {
-            dependencies.startupRestore.markRestoreOfferConsumed()
+            startupRestore.markRestoreOfferConsumed()
         }
-        dependencies.lastSessionWindowsStore().updateSnapshots(snapshots)
+        lastSessionWindowsStore().updateSnapshots(snapshots)
     }
 
     func currentRegularWindowSnapshots(
         excludingWindowID: UUID?
     ) -> [LastSessionWindowSnapshot] {
-        dependencies.allWindows()
+        allWindows()
             .filter { !$0.isIncognito }
             .filter { $0.id != excludingWindowID }
             .compactMap { windowState in
-                guard let session = dependencies.makeWindowSessionSnapshot(windowState) else {
+                guard let session = makeWindowSessionSnapshot(windowState) else {
                     return nil
                 }
                 return LastSessionWindowSnapshot(

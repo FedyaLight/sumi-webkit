@@ -2,6 +2,7 @@ import SwiftData
 import XCTest
 
 @testable import Sumi
+import SumiDomain
 
 @MainActor
 final class SwiftDataPermissionStoreTests: XCTestCase {

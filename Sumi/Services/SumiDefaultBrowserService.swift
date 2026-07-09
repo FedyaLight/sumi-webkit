@@ -41,8 +41,6 @@ struct SumiNSWorkspaceDefaultBrowserResolver: SumiDefaultBrowserWorkspaceResolvi
 
 @MainActor
 final class SumiDefaultBrowserService {
-    static let shared = SumiDefaultBrowserService()
-
     private let workspace: any SumiDefaultBrowserWorkspaceResolving
     private let bundleURL: URL
     private let isSandboxed: () -> Bool

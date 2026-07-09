@@ -2,6 +2,8 @@ import Foundation
 
 @MainActor
 final class SumiPermissionSidebarPinningController {
+    private weak var windowRegistry: WindowRegistry?
+
     private struct SessionRecord {
         let pageId: String
         let windowID: UUID
@@ -14,8 +16,10 @@ final class SumiPermissionSidebarPinningController {
     func reconcile(
         activeQueries: [SumiPermissionAuthorizationQuery],
         windowForPageId: (String) -> BrowserWindowState?,
+        windowRegistry: WindowRegistry? = nil,
         reason: String
     ) {
+        self.windowRegistry = windowRegistry
         let promptableQueries = activeQueries.filter(Self.isPromptable)
         let activeQueryIDs = Set(promptableQueries.map(\.id))
 
@@ -59,7 +63,7 @@ final class SumiPermissionSidebarPinningController {
         reason: String
     ) {
         let source = windowState.sidebarTransientSessionCoordinator.preparedPresentationSource(
-            window: windowState.shellWindow(in: nil)
+            window: windowState.shellWindow(in: windowRegistry)
         )
         let token = windowState.sidebarTransientSessionCoordinator.beginSession(
             kind: .permissionPrompt,

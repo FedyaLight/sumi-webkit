@@ -33,7 +33,7 @@ struct WebExtensionStorageCleanupStore {
             ).first
         },
         fileManager: FileManager = .default,
-        planner: WebExtensionStorageCleanupPlanner = .shared,
+        planner: WebExtensionStorageCleanupPlanner,
         storageDirectoryNameResolver: @escaping (String) -> String = { $0 }
     ) {
         self.controllerStorageId = controllerStorageId

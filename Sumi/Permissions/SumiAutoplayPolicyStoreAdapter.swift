@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 import SwiftData
 
 /// Sync-readable autoplay policy façade over the canonical `SumiPermissionStore`.

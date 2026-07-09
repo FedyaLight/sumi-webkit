@@ -24,10 +24,10 @@ final class TabNormalWebViewRuntimeContextOwner {
                 tab?.isPopupHost ?? false
             },
             currentWebView: { [weak tab] in
-                tab?.currentWebView
+                tab?.resolvedCurrentWebView()
             },
             parkedWebView: { [weak tab] in
-                tab?.parkedWebView
+                tab?.resolvedParkedWebView()
             },
             profileId: { [weak tab, initialProfileId = tab.profileId] in
                 tab?.profileId ?? initialProfileId

@@ -2,6 +2,7 @@ import AppKit
 import Carbon
 import Combine
 import WebKit
+import SumiWebRuntime
 
 enum SumiWebViewInteractionEvent {
     case mouseDown(NSEvent)

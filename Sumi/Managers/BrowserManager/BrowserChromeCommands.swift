@@ -7,16 +7,29 @@ import WebKit
 /// separate `.live(browserManager:)` Owners for thin chrome routing.
 @MainActor
 final class BrowserChromeCommands {
-    let downloadsPopoverPresenter = DownloadsPopoverPresenter()
-    let urlBarHubPopoverPresenter = URLBarHubPopoverPresenter()
+    let downloadsPopoverPresenter: DownloadsPopoverPresenter
+    let urlBarHubPopoverPresenter: URLBarHubPopoverPresenter
 
     private weak var browserManager: BrowserManager?
 
     init(browserManager: BrowserManager) {
         self.browserManager = browserManager
+        let recovery = browserManager.sidebarHostRecoveryCoordinator
+        self.downloadsPopoverPresenter = DownloadsPopoverPresenter(
+            sidebarRecoveryCoordinator: recovery
+        )
+        self.urlBarHubPopoverPresenter = URLBarHubPopoverPresenter(
+            sidebarRecoveryCoordinator: recovery
+        )
     }
 
     // MARK: - Popovers
+
+    private func syncPopoverRegistries() {
+        let registry = browserManager?.windowRegistry
+        downloadsPopoverPresenter.windowRegistry = registry
+        urlBarHubPopoverPresenter.windowRegistry = registry
+    }
 
     func showDownloads() {
         guard let windowState = browserManager?.windowRegistry?.activeWindow else { return }
@@ -24,15 +37,18 @@ final class BrowserChromeCommands {
     }
 
     func toggleDownloadsPopover(in windowState: BrowserWindowState) {
+        syncPopoverRegistries()
         guard let downloadManager = browserManager?.downloadManager else { return }
         downloadsPopoverPresenter.toggle(in: windowState, downloadManager: downloadManager)
     }
 
     func closeDownloadsPopover(in windowState: BrowserWindowState) {
+        syncPopoverRegistries()
         downloadsPopoverPresenter.close(in: windowState)
     }
 
     func toggleURLBarHubPopover(in windowState: BrowserWindowState) {
+        syncPopoverRegistries()
         guard let browserContext = browserManager?.urlBarContextOwner.urlBarHubContext else { return }
         urlBarHubPopoverPresenter.toggle(
             in: windowState,
@@ -41,6 +57,7 @@ final class BrowserChromeCommands {
     }
 
     func presentURLBarHubPopover(in windowState: BrowserWindowState) {
+        syncPopoverRegistries()
         guard let browserContext = browserManager?.urlBarContextOwner.urlBarHubContext else { return }
         urlBarHubPopoverPresenter.present(
             in: windowState,

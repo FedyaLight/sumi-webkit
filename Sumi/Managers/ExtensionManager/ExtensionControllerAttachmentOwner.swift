@@ -328,7 +328,7 @@ extension ExtensionControllerAttachmentOwner.Dependencies {
                 manager?.canLateBindExtensionController(to: webView) ?? false
             },
             installPermissionsOriginsCompatibilityPreludes: { [weak manager] controller, profileId in
-                manager?.installPermissionsOriginsCompatibilityPreludes(
+                manager?.permissionsOriginsCompatibilityPreludeInstallationOwner.installPreludes(
                     into: controller,
                     profileId: profileId
                 )

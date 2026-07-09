@@ -1,30 +1,51 @@
 import Foundation
 import WebKit
+import SumiWebRuntime
 
 /// Owns window-scoped and app-wide cleanup of tracked WebViews, including the
 /// registry/bookkeeping reset once every WebView is released.
 @MainActor
 final class WebViewWindowCleanupOwner {
-    struct Dependencies {
-        let cleanupScopeOwner: WebViewCleanupScopeOwner
-        let webViewRegistry: WindowWebViewRegistry
-        let visibleWebViewRuntimeOwner: VisibleWebViewRuntimeOwner
-        let mediaProtectionOwner: WebViewMediaProtectionOwner
-        let browserRuntimeContext: @MainActor () -> WebViewCoordinatorBrowserRuntimeContext?
-        let isWebViewProtectedFromCompositorMutation: @MainActor (WKWebView) -> Bool
-        let enqueueDeferredProtectedCommand:
-            @MainActor (DeferredWebViewCommand, WKWebView, String) -> Bool
-        let cleanupUnprotectedTrackedWebView:
-            @MainActor (WKWebView, TrackedWebViewOwner, Tab?) -> Void
-        let refreshPrimaryTrackedWebView: @MainActor (Tab) -> Void
-        let removeCompositorContainerView: @MainActor (UUID) -> Void
-        let finishCleanupSuppression: @MainActor ([ObjectIdentifier]) -> Void
-    }
+    private let cleanupScopeOwner: WebViewCleanupScopeOwner
+    private let webViewRegistry: WindowWebViewRegistry
+    private let visibleWebViewRuntimeOwner: VisibleWebViewRuntimeOwner
+    private let mediaProtectionOwner: WebViewMediaProtectionOwner
+    private let browserRuntimeContext: @MainActor () -> WebViewCoordinatorBrowserRuntimeContext?
+    private let isWebViewProtectedFromCompositorMutation: @MainActor (WKWebView) -> Bool
+    private let enqueueDeferredProtectedCommand:
+        @MainActor (DeferredWebViewCommand, WKWebView, String) -> Bool
+    private let cleanupUnprotectedTrackedWebView:
+        @MainActor (WKWebView, TrackedWebViewOwner, Tab?) -> Void
+    private let refreshPrimaryTrackedWebView: @MainActor (Tab) -> Void
+    private let removeCompositorContainerView: @MainActor (UUID) -> Void
+    private let finishCleanupSuppression: @MainActor ([ObjectIdentifier]) -> Void
 
-    private let dependencies: Dependencies
-
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
+    init(
+        cleanupScopeOwner: WebViewCleanupScopeOwner,
+        webViewRegistry: WindowWebViewRegistry,
+        visibleWebViewRuntimeOwner: VisibleWebViewRuntimeOwner,
+        mediaProtectionOwner: WebViewMediaProtectionOwner,
+        browserRuntimeContext: @escaping @MainActor () -> WebViewCoordinatorBrowserRuntimeContext?,
+        isWebViewProtectedFromCompositorMutation: @escaping @MainActor (WKWebView) -> Bool,
+        enqueueDeferredProtectedCommand:
+            @escaping @MainActor (DeferredWebViewCommand, WKWebView, String) -> Bool,
+        cleanupUnprotectedTrackedWebView:
+            @escaping @MainActor (WKWebView, TrackedWebViewOwner, Tab?) -> Void,
+        refreshPrimaryTrackedWebView: @escaping @MainActor (Tab) -> Void,
+        removeCompositorContainerView: @escaping @MainActor (UUID) -> Void,
+        finishCleanupSuppression: @escaping @MainActor ([ObjectIdentifier]) -> Void
+    ) {
+        self.cleanupScopeOwner = cleanupScopeOwner
+        self.webViewRegistry = webViewRegistry
+        self.visibleWebViewRuntimeOwner = visibleWebViewRuntimeOwner
+        self.mediaProtectionOwner = mediaProtectionOwner
+        self.browserRuntimeContext = browserRuntimeContext
+        self.isWebViewProtectedFromCompositorMutation = isWebViewProtectedFromCompositorMutation
+        self.enqueueDeferredProtectedCommand = enqueueDeferredProtectedCommand
+        self.cleanupUnprotectedTrackedWebView = cleanupUnprotectedTrackedWebView
+        self.refreshPrimaryTrackedWebView = refreshPrimaryTrackedWebView
+        self.removeCompositorContainerView = removeCompositorContainerView
+        self.finishCleanupSuppression = finishCleanupSuppression
     }
 
     func cleanupWindow(_ windowId: UUID, tabManager: TabManager) {
@@ -33,93 +54,52 @@ final class WebViewWindowCleanupOwner {
             PerformanceTrace.endInterval("WebViewCoordinator.cleanupWindow", signpostState)
         }
 
-        dependencies.visibleWebViewRuntimeOwner.cancelScheduledPreparation(for: windowId)
-        dependencies.cleanupScopeOwner.cleanupWindow(
+        visibleWebViewRuntimeOwner.cancelScheduledPreparation(for: windowId)
+        cleanupScopeOwner.cleanupWindow(
             windowId,
-            entries: dependencies.webViewRegistry.trackedWebViews(in: windowId),
+            entries: webViewRegistry.trackedWebViews(in: windowId),
             runtime: scopeRuntime(tabManager: tabManager)
         )
-        dependencies.removeCompositorContainerView(windowId)
+        removeCompositorContainerView(windowId)
     }
 
     func cleanupAllWebViews(tabManager: TabManager) {
-        dependencies.cleanupScopeOwner.cleanupAllWebViews(
-            entries: dependencies.webViewRegistry.trackedWebViews(),
-            totalWebViewCount: dependencies.webViewRegistry.totalTrackedWebViewCount,
+        cleanupScopeOwner.cleanupAllWebViews(
+            entries: webViewRegistry.trackedWebViews(),
+            totalWebViewCount: webViewRegistry.totalTrackedWebViewCount,
             runtime: scopeRuntime(tabManager: tabManager)
         )
 
-        if dependencies.webViewRegistry.isEmpty {
-            dependencies.webViewRegistry.removeAll()
-            dependencies.visibleWebViewRuntimeOwner.resetWindowRegistrations()
-            dependencies.mediaProtectionOwner.removeVisualHandoffFullscreenAndNowPlayingState()
+        if webViewRegistry.isEmpty {
+            webViewRegistry.removeAll()
+            visibleWebViewRuntimeOwner.resetWindowRegistrations()
+            mediaProtectionOwner.removeVisualHandoffFullscreenAndNowPlayingState()
         }
 
         RuntimeDiagnostics.debug("Completed full WebView cleanup.", category: "WebViewCoordinator")
 
-        dependencies.finishCleanupSuppression(
-            dependencies.mediaProtectionOwner.pruneStaleBookkeeping(reason: "cleanupAllWebViews")
+        finishCleanupSuppression(
+            mediaProtectionOwner.pruneStaleBookkeeping(reason: "cleanupAllWebViews")
         )
     }
 
     private func scopeRuntime(tabManager: TabManager) -> WebViewCleanupScopeOwner.Runtime {
-        let runtimeContext = dependencies.browserRuntimeContext()
+        let runtimeContext = browserRuntimeContext()
         return WebViewCleanupScopeOwner.Runtime(
             tabForID: { tabID in
                 runtimeContext?.tab(tabID) ?? tabManager.tabCollectionMembershipOwner.tab(for: tabID)
             },
-            isWebViewProtectedFromCompositorMutation: { [dependencies] webView in
-                dependencies.isWebViewProtectedFromCompositorMutation(webView)
+            isWebViewProtectedFromCompositorMutation: { [isWebViewProtectedFromCompositorMutation] webView in
+                isWebViewProtectedFromCompositorMutation(webView)
             },
-            enqueueDeferredProtectedCommand: { [dependencies] command, webView, reason in
-                dependencies.enqueueDeferredProtectedCommand(command, webView, reason)
+            enqueueDeferredProtectedCommand: { [enqueueDeferredProtectedCommand] command, webView, reason in
+                enqueueDeferredProtectedCommand(command, webView, reason)
             },
-            cleanupUnprotectedTrackedWebView: { [dependencies] webView, owner, tab in
-                dependencies.cleanupUnprotectedTrackedWebView(webView, owner, tab)
+            cleanupUnprotectedTrackedWebView: { [cleanupUnprotectedTrackedWebView] webView, owner, tab in
+                cleanupUnprotectedTrackedWebView(webView, owner, tab)
             },
-            refreshPrimaryTrackedWebView: { [dependencies] tab in
-                dependencies.refreshPrimaryTrackedWebView(tab)
-            }
-        )
-    }
-}
-
-extension WebViewWindowCleanupOwner.Dependencies {
-    @MainActor
-    static func live(coordinator: WebViewCoordinator) -> Self {
-        Self(
-            cleanupScopeOwner: coordinator.cleanupScopeOwner,
-            webViewRegistry: coordinator.webViewRegistry,
-            visibleWebViewRuntimeOwner: coordinator.visibleWebViewRuntimeOwner,
-            mediaProtectionOwner: coordinator.mediaProtectionOwner,
-            browserRuntimeContext: { [weak coordinator] in
-                coordinator?.runtimeContextStore.browser
-            },
-            isWebViewProtectedFromCompositorMutation: { [weak coordinator] webView in
-                coordinator?.isWebViewProtectedFromCompositorMutation(webView) ?? false
-            },
-            enqueueDeferredProtectedCommand: { [weak coordinator] command, webView, reason in
-                coordinator?.enqueueDeferredProtectedCommand(
-                    command,
-                    for: webView,
-                    reason: reason
-                ) ?? false
-            },
-            cleanupUnprotectedTrackedWebView: { [weak coordinator] webView, owner, tab in
-                coordinator?.cleanupUnprotectedTrackedWebView(
-                    webView,
-                    owner: owner,
-                    tab: tab
-                )
-            },
-            refreshPrimaryTrackedWebView: { [weak coordinator] tab in
-                coordinator?.refreshPrimaryTrackedWebView(for: tab)
-            },
-            removeCompositorContainerView: { [weak coordinator] windowId in
-                coordinator?.removeCompositorContainerView(for: windowId)
-            },
-            finishCleanupSuppression: { [weak coordinator] webViewIDs in
-                coordinator?.finishDestructiveCleanupSuppression(for: webViewIDs)
+            refreshPrimaryTrackedWebView: { [refreshPrimaryTrackedWebView] tab in
+                refreshPrimaryTrackedWebView(tab)
             }
         )
     }

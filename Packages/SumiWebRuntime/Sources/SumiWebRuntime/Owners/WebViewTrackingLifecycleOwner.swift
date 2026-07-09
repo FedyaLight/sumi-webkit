@@ -9,13 +9,15 @@ import Foundation
 import WebKit
 
 @MainActor
-final class WebViewTrackingLifecycleOwner {
-    typealias ContainerRemoval = (WKWebView) -> Void
-    typealias RuntimeObservationInstaller = (WKWebView) -> Void
-    typealias RuntimeObservationUninstaller = (WKWebView) -> Void
-    typealias DeferredCommandPruner = (String) -> Void
+public final class WebViewTrackingLifecycleOwner {
+    public init() {}
 
-    func registerTrackedWebView(
+    public typealias ContainerRemoval = (WKWebView) -> Void
+    public typealias RuntimeObservationInstaller = (WKWebView) -> Void
+    public typealias RuntimeObservationUninstaller = (WKWebView) -> Void
+    public typealias DeferredCommandPruner = (String) -> Void
+
+    public func registerTrackedWebView(
         _ webView: WKWebView,
         for owner: TrackedWebViewOwner,
         in webViewRegistry: WindowWebViewRegistry,
@@ -57,7 +59,7 @@ final class WebViewTrackingLifecycleOwner {
     }
 
     @discardableResult
-    func unregisterTrackedWebViewSlot(
+    public func unregisterTrackedWebViewSlot(
         owner: TrackedWebViewOwner,
         expectedWebView: WKWebView? = nil,
         removeFromSuperview: Bool = false,

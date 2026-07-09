@@ -33,7 +33,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         let tab = makeTab(profileId: profile.id, url: URL(string: "about:blank")!)
         let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
         webView.owningTab = tab
-        tab._webView = webView
+        tab.replaceUntrackedWebView(webView)
 
         XCTAssertTrue(manager.attachExtensionControllerIfNeeded(to: webView, for: tab))
         XCTAssertIdentical(
@@ -140,7 +140,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         let tab = makeTab(profileId: profile.id, url: URL(string: "https://example.com")!)
         let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
         webView.owningTab = tab
-        tab._webView = webView
+        tab.replaceUntrackedWebView(webView)
         webView.load(URLRequest(url: URL(string: "https://example.com")!))
 
         let extensionContext = try await makeLoadedExtensionContext(
@@ -193,7 +193,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         let tab = makeTab(profileId: profile.id, url: URL(string: "about:blank")!)
         let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
         webView.owningTab = tab
-        tab._webView = webView
+        tab.replaceUntrackedWebView(webView)
 
         let extensionContext = try await makeLoadedExtensionContext(
             manager: manager,
@@ -235,7 +235,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         let tab = makeTab(profileId: profileB.id, url: URL(string: "about:blank")!)
         let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
         webView.owningTab = tab
-        tab._webView = webView
+        tab.replaceUntrackedWebView(webView)
 
         let extensionContext = try await makeLoadedExtensionContext(
             manager: manager,
@@ -334,7 +334,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         )
         let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
         webView.owningTab = tab
-        tab._webView = webView
+        tab.replaceUntrackedWebView(webView)
 
         let extensionContext = try await makeLoadedExtensionContext(
             manager: manager,
@@ -557,7 +557,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             )
         )
         browserManager.selectTab(tab, in: windowState, loadPolicy: .immediate)
-        XCTAssertNil(tab.existingWebView)
+        XCTAssertNil(tab.resolvedCurrentWebView())
         XCTAssertNil(coordinator.getWebView(for: tab.id, in: windowState.id))
 
         await fulfillment(of: [backgroundWakeExpectation], timeout: 3.0)
@@ -579,7 +579,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             }
         }
         let webView = try XCTUnwrap(createdWebView)
-        XCTAssertIdentical(tab.existingWebView, webView)
+        XCTAssertIdentical(tab.resolvedCurrentWebView(), webView)
         XCTAssertIdentical(
             webView.configuration.webExtensionController,
             manager.ensureExtensionController(for: profile.id)
@@ -744,7 +744,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             tab.isUnloaded,
             "Background extension-created internal tabs must not stay browser-discarded"
         )
-        let webView = try XCTUnwrap(tab.existingWebView)
+        let webView = try XCTUnwrap(tab.resolvedCurrentWebView())
         XCTAssertIdentical(webView.configuration.webExtensionController, controller)
 
         let metrics = try await pollExtensionRenderMetrics(in: webView)
@@ -1321,7 +1321,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         )
         let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
         webView.owningTab = tab
-        tab._webView = webView
+        tab.replaceUntrackedWebView(webView)
 
         let didOpenExpectation = expectation(description: "didOpenTab")
         manager.testHooks.didOpenTab = { tabID in
@@ -1374,7 +1374,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         )
         let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
         webView.owningTab = tab
-        tab._webView = webView
+        tab.replaceUntrackedWebView(webView)
 
         var notifyCount = 0
         manager.testHooks.didOpenTab = { tabID in
@@ -1433,7 +1433,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
         let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
         webView.owningTab = tab
-        tab._webView = webView
+        tab.replaceUntrackedWebView(webView)
 
         let extensionContext = try await makeLoadedExtensionContext(
             manager: manager,

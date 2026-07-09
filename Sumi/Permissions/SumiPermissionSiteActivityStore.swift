@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import SumiDomain
 import OSLog
 
 struct SumiPermissionSiteActivityRecord: Codable, Equatable, Hashable, Identifiable, Sendable {
@@ -36,8 +37,6 @@ final class SumiPermissionSiteActivityStore: ObservableObject {
         case resolvedPolicy
         case settingsChanged
     }
-
-    static let shared = SumiPermissionSiteActivityStore()
 
     @Published private(set) var revision = 0
 

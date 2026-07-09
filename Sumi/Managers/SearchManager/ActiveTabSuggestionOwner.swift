@@ -17,21 +17,25 @@ import Foundation
 /// synthetic `BrowserWindowState` instead of a live `TabManager`.
 @MainActor
 final class ActiveTabSuggestionOwner {
-    struct Dependencies {
-        let allTabsForCurrentProfile: @MainActor () -> [Tab]
-        let liveShortcutTabs: @MainActor (_ windowId: UUID) -> [Tab]
-        let shortcutLiveTab: @MainActor (_ pinId: UUID, _ windowId: UUID) -> Tab?
-        let visibleSplitTabIds: @MainActor (_ windowId: UUID) -> Set<UUID>
-    }
+    private let allTabsForCurrentProfile: @MainActor () -> [Tab]
+    private let liveShortcutTabs: @MainActor (_ windowId: UUID) -> [Tab]
+    private let shortcutLiveTab: @MainActor (_ pinId: UUID, _ windowId: UUID) -> Tab?
+    private let visibleSplitTabIds: @MainActor (_ windowId: UUID) -> Set<UUID>
 
-    private let dependencies: Dependencies
-
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
+    init(
+        allTabsForCurrentProfile: @escaping @MainActor () -> [Tab],
+        liveShortcutTabs: @escaping @MainActor (_ windowId: UUID) -> [Tab],
+        shortcutLiveTab: @escaping @MainActor (_ pinId: UUID, _ windowId: UUID) -> Tab?,
+        visibleSplitTabIds: @escaping @MainActor (_ windowId: UUID) -> Set<UUID>
+    ) {
+        self.allTabsForCurrentProfile = allTabsForCurrentProfile
+        self.liveShortcutTabs = liveShortcutTabs
+        self.shortcutLiveTab = shortcutLiveTab
+        self.visibleSplitTabIds = visibleSplitTabIds
     }
 
     func suggestions(for windowState: BrowserWindowState) -> [SearchManager.SearchSuggestion] {
-        let visibleSplitTabIds = dependencies.visibleSplitTabIds(windowState.id)
+        let visibleSplitTabIds = visibleSplitTabIds(windowState.id)
         let rankByTabId = rankById(for: windowState)
         let currentSpaceId = windowState.currentSpaceId
         var seenTabIds = Set<UUID>()
@@ -84,10 +88,10 @@ final class ActiveTabSuggestionOwner {
             candidates.append(tab)
         }
 
-        dependencies.allTabsForCurrentProfile()
+        allTabsForCurrentProfile()
             .filter { $0.isShortcutLiveInstance == false }
             .forEach(append)
-        dependencies.liveShortcutTabs(windowState.id)
+        liveShortcutTabs(windowState.id)
             .forEach(append)
 
         return candidates
@@ -108,7 +112,7 @@ final class ActiveTabSuggestionOwner {
                 case .regularTab(let tabId):
                     append(tabId)
                 case .shortcutPin(let pinId):
-                    append(dependencies.shortcutLiveTab(pinId, windowState.id)?.id)
+                    append(shortcutLiveTab(pinId, windowState.id)?.id)
                 }
             }
         }
@@ -126,24 +130,5 @@ final class ActiveTabSuggestionOwner {
         windowState.activeTabForSpace.values.forEach(append)
 
         return Dictionary(uniqueKeysWithValues: orderedIds.enumerated().map { ($0.element, $0.offset) })
-    }
-}
-
-extension ActiveTabSuggestionOwner.Dependencies {
-    static func live(tabManager: TabManager) -> Self {
-        Self(
-            allTabsForCurrentProfile: { [weak tabManager] in
-                tabManager?.tabCollectionMembershipOwner.allTabsForCurrentProfile() ?? []
-            },
-            liveShortcutTabs: { [weak tabManager] windowId in
-                tabManager?.shortcutPresentationOwner.liveShortcutTabs(in: windowId) ?? []
-            },
-            shortcutLiveTab: { [weak tabManager] pinId, windowId in
-                tabManager?.shortcutPresentationOwner.shortcutLiveTab(for: pinId, in: windowId)
-            },
-            visibleSplitTabIds: { [weak tabManager] windowId in
-                Set(tabManager?.runtimeContext?.visibleSplitTabIds(for: windowId) ?? [])
-            }
-        )
     }
 }

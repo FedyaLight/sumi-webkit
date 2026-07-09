@@ -9,6 +9,7 @@
 import AppKit
 import Carbon
 import Foundation
+import SumiDomain
 import SwiftUI
 import WebKit
 

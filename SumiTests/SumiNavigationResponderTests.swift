@@ -5,6 +5,7 @@ import XCTest
 
 @testable import Navigation
 @testable import Sumi
+import SumiDomain
 
 @MainActor
 final class SumiNavigationResponderTests: SumiNavigationResponderTestCase {

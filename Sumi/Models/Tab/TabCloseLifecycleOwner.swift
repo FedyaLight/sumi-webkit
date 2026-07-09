@@ -1,5 +1,6 @@
 import Foundation
 import WebKit
+import SumiWebRuntime
 
 @MainActor
 final class TabCloseLifecycleOwner {
@@ -73,7 +74,7 @@ extension TabCloseLifecycleOwner.Context {
                 tab.navigationRuntime.closeLifecycleRuntime.updateTabVisibility()
             },
             currentWebView: {
-                tab.currentWebView
+                tab.resolvedCurrentWebView()
             },
             removeNavigationStateObservers: { webView in
                 tab.removeNavigationStateObservers(from: webView)

@@ -152,10 +152,8 @@ final class SumiCommandsBrowserContextTests: XCTestCase {
         )
         return HistoryManager(
             context: ModelContext(container),
-            dependencies: HistoryManager.Dependencies(
-                faviconCleaner: FakeCommandHistoryFaviconCleaner(),
-                visitedLinkStore: FakeCommandHistoryVisitedLinkStore()
-            )
+            faviconCleaner: FakeCommandHistoryFaviconCleaner(),
+            visitedLinkStore: FakeCommandHistoryVisitedLinkStore()
         )
     }
 

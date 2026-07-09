@@ -1,5 +1,6 @@
 import Foundation
 import WebKit
+import SumiWebRuntime
 
 @MainActor
 final class TabOwnedWebViewPreparationOwner {

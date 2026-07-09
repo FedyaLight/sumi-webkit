@@ -34,14 +34,17 @@ class TabManager: ObservableObject {
     var spaceStateOwner: TabSpaceCollectionStateOwner { spaceCollectionStateOwner }
     let regularTabCollectionStateOwner = RegularTabCollectionStateOwner()
     let selectionStateOwner = TabSelectionStateOwner()
-    lazy var profileRuntimeStateOwner = TabProfileRuntimeStateOwner(dependencies: .live(tabManager: self))
-    lazy var runtimePreparationOwner = TabRuntimePreparationOwner(dependencies: .live(tabManager: self))
+    lazy var profileRuntimeStateOwner = TabProfileRuntimeStateOwner(tabManager: self)
+    lazy var runtimePreparationOwner = TabRuntimePreparationOwner(
+        runtimeContext: { [weak self] in self?.runtimeContext },
+        settings: { [weak self] in self?.sumiSettings }
+    )
     lazy var runtimeContextAttachmentOwner = TabRuntimeContextAttachmentOwner(
         dependencies: .live(tabManager: self)
     )
     lazy var regularTabCollectionOwner = RegularTabCollectionOwner(
-        stateOwner: regularTabCollectionStateOwner,
-        dependencies: .live(tabManager: self)
+        tabManager: self,
+        stateOwner: regularTabCollectionStateOwner
     )
     lazy var regularTabLifecycleOwner = TabRegularLifecycleOwner(
         dependencies: .live(tabManager: self)
@@ -52,7 +55,13 @@ class TabManager: ObservableObject {
     )
     lazy var regularTabDragService = SidebarRegularTabDragService(dependencies: .live(tabManager: self))
     lazy var lazyRestoreCoordinator = TabLazyRestoreCoordinator(
-        dependencies: .live(tabManager: self)
+        spaces: { [weak self] in self?.spaceStateOwner.spaces ?? [] },
+        tabsBySpaceSnapshot: { [weak self] in
+            self?.regularTabCollectionStateOwner.tabsBySpaceSnapshot() ?? [:]
+        },
+        resolveTab: { [weak self] id in
+            self?.tabCollectionMembershipOwner.tab(for: id)
+        }
     )
     lazy var spacePinnedStructureOwner = SpacePinnedStructureOwner(dependencies: .live(tabManager: self))
     lazy var spaceLifecycleOwner = TabSpaceLifecycleOwner(dependencies: .live(tabManager: self))
@@ -61,13 +70,22 @@ class TabManager: ObservableObject {
     lazy var shortcutPinCommandOwner = ShortcutPinCommandOwner(dependencies: .live(tabManager: self))
     lazy var sidebarDragRoutingOwner = SidebarDragOperationRoutingOwner(dependencies: .live(tabManager: self))
     lazy var essentialsShortcutPlacementOwner = EssentialsShortcutPlacementOwner(
-        dependencies: .live(tabManager: self)
+        spaces: { [weak self] in self?.spaceStateOwner.spaces ?? [] },
+        runtimeContext: { [weak self] in self?.runtimeContext },
+        essentialPins: { [weak self] profileId in
+            self?.shortcutPinCollectionStateOwner.essentialPins(for: profileId) ?? []
+        }
     )
     lazy var shortcutPinStoreOwner = ShortcutPinStoreOwner(
         dependencies: .live(tabManager: self)
     )
     lazy var shortcutPinRuntimeResolutionOwner = ShortcutPinRuntimeResolutionOwner(
-        dependencies: .live(tabManager: self)
+        spaces: { [weak self] in self?.spaceStateOwner.spaces ?? [] },
+        runtimeContext: { [weak self] in self?.runtimeContext },
+        faviconService: { [weak self] in
+            guard let self else { preconditionFailure("TabManager dependency used after deallocation") }
+            return self.faviconService
+        }
     )
     lazy var shortcutPinConversionOwner = ShortcutPinConversionOwner(
         dependencies: .live(tabManager: self)
@@ -79,18 +97,42 @@ class TabManager: ObservableObject {
         dependencies: .live(tabManager: self)
     )
     lazy var shortcutContainerRemovalOwner = ShortcutContainerRemovalOwner(
-        dependencies: .live(tabManager: self)
+        pinnedByProfile: { [weak self] in
+            self?.shortcutPinCollectionStateOwner.pinnedByProfileSnapshot() ?? [:]
+        },
+        setPinnedTabs: { [weak self] pins, profileId in
+            self?.structuralCollectionMutationOwner.setPinnedTabs(pins, for: profileId)
+        },
+        removeRegularTab: { [weak self] tabId, spaceId, currentSpaceId in
+            _ = self?.regularTabCollectionOwner.remove(
+                tabId,
+                from: spaceId,
+                currentSpaceId: currentSpaceId
+            )
+        },
+        currentSpaceId: { [weak self] in
+            self?.spaceStateOwner.currentSpace?.id
+        }
     )
     lazy var shortcutLiveTabOwner = ShortcutLiveTabOwner(
         dependencies: .live(tabManager: self)
     )
-    lazy var spaceLauncherProjectionOwner = SpaceLauncherProjectionOwner(
-        dependencies: .live(tabManager: self)
-    )
+    lazy var spaceLauncherProjectionOwner = SpaceLauncherProjectionOwner(tabManager: self)
 
     let splitGroupCollectionStateOwner = SplitGroupCollectionStateOwner()
     lazy var splitGroupRepairOwner = TabManagerSplitGroupRepairOwner(
-        dependencies: .live(tabManager: self)
+        shortcutPin: { [weak self] id in
+            self?.shortcutPinCollectionStateOwner.shortcutPin(by: id)
+        },
+        tab: { [weak self] id in
+            self?.tabCollectionMembershipOwner.tab(for: id)
+        },
+        folderSpaceId: { [weak self] folderId in
+            self?.folderCollectionStateOwner.spaceId(for: folderId)
+        },
+        spaceExists: { [weak self] spaceId in
+            self?.spaceStateOwner.contains(spaceId: spaceId) ?? false
+        }
     )
     lazy var splitGroupStructureOwner = TabSplitGroupStructureOwner(
         dependencies: .live(tabManager: self)
@@ -116,22 +158,52 @@ class TabManager: ObservableObject {
         dependencies: .live(tabManager: self)
     )
     lazy var ephemeralLifecycleOwner = TabEphemeralLifecycleOwner(
-        dependencies: .live(tabManager: self)
+        prepareTabForRuntime: { [weak self] tab in
+            self?.runtimePreparationOwner.prepare(tab)
+        },
+        faviconService: { [weak self] in
+            guard let self else { preconditionFailure("TabManager dependency used after deallocation") }
+            return self.faviconService
+        },
+        faviconImageService: { [weak self] in
+            guard let self else { preconditionFailure("TabManager dependency used after deallocation") }
+            return self.faviconImageService
+        },
+        visitedLinkStore: { [weak self] in
+            guard let self else { preconditionFailure("TabManager dependency used after deallocation") }
+            return self.visitedLinkStore
+        }
     )
     /// Emitted when tab structure changes without a corresponding `@Published` update (e.g. transient shortcut live tabs). Not used for persistence completion—`scheduleStructuralPersistence()` does not send this.
     let structuralChanges = PassthroughSubject<Void, Never>()
     lazy var structuralLookupCoordinator = TabStructuralLookupCoordinator(
         structuralChanges: structuralChanges,
-        dependencies: .live(tabManager: self)
+        tabsBySpace: { [weak self] in
+            self?.regularTabCollectionStateOwner.tabsBySpaceSnapshot() ?? [:]
+        },
+        transientShortcutTabsByWindow: { [weak self] in
+            self?.transientTabRegistryOwner.transientShortcutTabsByWindow ?? [:]
+        },
+        transientExtensionTabsByID: { [weak self] in
+            self?.transientTabRegistryOwner.transientExtensionTabsByID ?? [:]
+        },
+        auxiliaryMiniWindowTabsByID: { [weak self] in
+            self?.transientTabRegistryOwner.auxiliaryMiniWindowTabsByID ?? [:]
+        }
     )
     var structuralLookupBatchFlushCount: Int { structuralLookupCoordinator.batchFlushCount }
     var structuralLookupImmediateFlushCount: Int { structuralLookupCoordinator.immediateFlushCount }
     private lazy var faviconPresentationRefreshOwner = TabFaviconPresentationRefreshOwner(
-        dependencies: .live(
-            tabManager: self,
-            notificationCenter: .default,
-            debounceNanoseconds: Self.faviconPresentationRefreshDebounceNanoseconds
-        )
+        notificationCenter: .default,
+        debounceNanoseconds: Self.faviconPresentationRefreshDebounceNanoseconds,
+        tabsNeedingRefresh: { [weak self] in
+            guard let self else { return [] }
+            return self.regularTabCollectionStateOwner.allTabs()
+                + self.transientTabRegistryOwner.transientShortcutTabs
+        },
+        requestStructuralPublish: { [weak self] in
+            self?.requestStructuralPublish()
+        }
     )
     // Space activation to resume after a deferred profile switch
     var pendingSpaceActivation: UUID?

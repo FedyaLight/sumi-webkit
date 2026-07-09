@@ -29,14 +29,14 @@ final class GlanceManagerTests: XCTestCase {
         let firstSession = try XCTUnwrap(browserManager.glanceManager.currentSession)
         let firstPreviewTab = firstSession.previewTab
         _ = try await waitForPreviewWebView(in: firstSession)
-        XCTAssertNotNil(firstPreviewTab.existingWebView)
+        XCTAssertNotNil(firstPreviewTab.resolvedCurrentWebView())
 
         browserManager.glanceManager.presentExternalURL(secondURL, from: sourceTab)
 
         let secondSession = try XCTUnwrap(browserManager.glanceManager.currentSession)
         XCTAssertNotEqual(secondSession.id, firstSession.id)
         XCTAssertEqual(secondSession.currentURL, secondURL)
-        XCTAssertNil(firstPreviewTab.existingWebView)
+        XCTAssertNil(firstPreviewTab.resolvedCurrentWebView())
     }
 
     func testPresentationWithoutSourceUsesActiveWindowSpaceInsteadOfGlobalCurrentSpace() throws {
@@ -67,14 +67,14 @@ final class GlanceManagerTests: XCTestCase {
         let session = try XCTUnwrap(browserManager.glanceManager.currentSession)
         let previewTab = session.previewTab
         _ = try await waitForPreviewWebView(in: session)
-        XCTAssertNotNil(previewTab.existingWebView)
+        XCTAssertNotNil(previewTab.resolvedCurrentWebView())
 
         browserManager.glanceManager.finishAnimatedDismissal(sessionID: session.id)
 
         XCTAssertNil(browserManager.glanceManager.currentSession)
         XCTAssertEqual(browserManager.glanceManager.phase, .idle)
         XCTAssertFalse(browserManager.glanceManager.isActive)
-        XCTAssertNil(previewTab.existingWebView)
+        XCTAssertNil(previewTab.resolvedCurrentWebView())
     }
 
     func testDismissGlanceImmediatelyClearsPreviewInstance() async throws {
@@ -92,8 +92,8 @@ final class GlanceManagerTests: XCTestCase {
         XCTAssertNil(browserManager.glanceManager.currentSession)
         XCTAssertEqual(browserManager.glanceManager.phase, .idle)
         XCTAssertFalse(browserManager.glanceManager.isActive)
-        XCTAssertNil(previewTab.existingWebView)
-        XCTAssertNil(previewTab.primaryWindowId)
+        XCTAssertNil(previewTab.resolvedCurrentWebView())
+        XCTAssertNil(previewTab.resolvedPrimaryWindowId())
     }
 
     func testWebKitCloseDismissesAndCleansPreviewInstance() async throws {
@@ -110,8 +110,8 @@ final class GlanceManagerTests: XCTestCase {
 
         XCTAssertNil(browserManager.glanceManager.currentSession)
         XCTAssertEqual(browserManager.glanceManager.phase, .idle)
-        XCTAssertNil(previewTab.existingWebView)
-        XCTAssertNil(previewTab.primaryWindowId)
+        XCTAssertNil(previewTab.resolvedCurrentWebView())
+        XCTAssertNil(previewTab.resolvedPrimaryWindowId())
     }
 
     func testWebKitCloseForTrackedRegularWebViewClosesOwningTab() {
@@ -175,7 +175,7 @@ final class GlanceManagerTests: XCTestCase {
         XCTAssertNil(browserManager.glanceManager.currentSession)
         XCTAssertEqual(browserManager.glanceManager.phase, .idle)
         XCTAssertIdentical(browserManager.tabManager.tabCollectionMembershipOwner.tab(for: previewTab.id), previewTab)
-        XCTAssertIdentical(previewTab.existingWebView, webView)
+        XCTAssertIdentical(previewTab.resolvedCurrentWebView(), webView)
     }
 
     func testMoveToNewTabPromotesPreviewInSourceWindow() async throws {
@@ -198,7 +198,7 @@ final class GlanceManagerTests: XCTestCase {
         XCTAssertNil(browserManager.glanceManager.currentSession)
         XCTAssertEqual(browserManager.glanceManager.phase, .idle)
         XCTAssertIdentical(browserManager.tabManager.tabCollectionMembershipOwner.tab(for: previewTab.id), previewTab)
-        XCTAssertIdentical(previewTab.existingWebView, webView)
+        XCTAssertIdentical(previewTab.resolvedCurrentWebView(), webView)
         XCTAssertEqual(sourceWindow.currentTabId, previewTab.id)
         XCTAssertNotEqual(otherWindow.currentTabId, previewTab.id)
     }
@@ -219,7 +219,7 @@ final class GlanceManagerTests: XCTestCase {
         XCTAssertIdentical(browserManager.glanceManager.currentSession, session)
         XCTAssertEqual(browserManager.glanceManager.phase, .promoting)
         XCTAssertIdentical(browserManager.tabManager.tabCollectionMembershipOwner.tab(for: previewTab.id), previewTab)
-        XCTAssertNotNil(previewTab.existingWebView)
+        XCTAssertNotNil(previewTab.resolvedCurrentWebView())
         XCTAssertEqual(sourceWindow.currentTabId, previewTab.id)
 
         browserManager.glanceManager.finishPromotedSession(sessionID: session.id)
@@ -300,7 +300,7 @@ final class GlanceManagerTests: XCTestCase {
         XCTAssertTrue(sourceWindow.isFloatingBarVisible)
         XCTAssertEqual(sourceWindow.floatingBarPresentationReason, .splitTabPicker)
         XCTAssertTrue(sourceWindow.floatingBarDraftNavigatesCurrentTab)
-        XCTAssertIdentical(previewTab.existingWebView, webView)
+        XCTAssertIdentical(previewTab.resolvedCurrentWebView(), webView)
 
         let searchManager = SearchManager()
         searchManager.setTabManager(browserManager.tabManager)
@@ -385,7 +385,7 @@ final class GlanceManagerTests: XCTestCase {
         )
 
         XCTAssertFalse(previewTab.isCurrentTab)
-        XCTAssertNil(previewTab.primaryWindowId)
+        XCTAssertNil(previewTab.resolvedPrimaryWindowId())
         XCTAssertTrue(previewTab.permissionRequestIsActiveSurface(for: webView))
         XCTAssertTrue(previewTab.permissionRequestIsVisibleSurface(for: webView))
         XCTAssertFalse(previewTab.permissionRequestIsActiveSurface(for: WKWebView()))
@@ -588,14 +588,14 @@ final class GlanceManagerTests: XCTestCase {
     ) async throws -> WKWebView {
         for _ in 0..<20 {
             if let webView = manager?.runtime?.previewWebView(session.previewTab)
-                ?? session.previewTab.existingWebView {
+                ?? session.previewTab.resolvedCurrentWebView() {
                 return webView
             }
             await Task.yield()
         }
         return try XCTUnwrap(
             manager?.runtime?.previewWebView(session.previewTab)
-                ?? session.previewTab.existingWebView,
+                ?? session.previewTab.resolvedCurrentWebView(),
             file: file,
             line: line
         )
@@ -634,17 +634,17 @@ final class GlanceManagerTests: XCTestCase {
             selectPromotedTabInActiveWindow: { _ in /* No-op. */ },
             createSplitPlaceholder: { _ in /* No-op. */ },
             registerPromotedHost: { _, _, _, _ in false },
-            previewWebView: { tab in tab.existingWebView },
+            previewWebView: { tab in tab.resolvedCurrentWebView() },
             ensurePreviewWebView: { tab, _ in
                 tab.ensureUntrackedNormalWebView(
                     reason: "GlanceManagerTests.ensurePreviewWebView"
                 )
             },
             ownsPreviewWebView: { tab, webView in
-                tab.existingWebView === webView || tab.assignedWebView === webView
+                tab.resolvedCurrentWebView() === webView || tab.resolvedAssignedWebView() === webView
             },
             releasePreviewWebView: { tab in
-                if let webView = tab.existingWebView {
+                if let webView = tab.resolvedCurrentWebView() {
                     tab.cleanupCloneWebView(webView)
                 }
                 // Mirror coordinator.releaseUntrackedOwnedWebView for injected runtime tests.

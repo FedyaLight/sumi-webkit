@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 struct SumiRuntimePermissionReloadRequirement: Equatable, Hashable, Sendable {
     enum Kind: String, Codable, CaseIterable, Hashable, Sendable {

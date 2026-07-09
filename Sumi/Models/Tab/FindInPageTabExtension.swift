@@ -18,6 +18,7 @@
 
 import Combine
 import Foundation
+import SumiDomain
 import UniformTypeIdentifiers
 import WebKit
 

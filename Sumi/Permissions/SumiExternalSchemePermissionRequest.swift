@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 enum SumiExternalSchemeClassification: String, Codable, Equatable, Sendable {
     case directUserActivated

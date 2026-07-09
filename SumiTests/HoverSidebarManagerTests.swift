@@ -462,11 +462,14 @@ final class HoverSidebarManagerTests: XCTestCase {
         let windowState = BrowserWindowState()
 
         windowState.tabManager = browserManager.tabManager
-        windowState.window = NSWindow(
+        windowRegistry.bindAppKitWindow(
+            NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
             styleMask: [.titled],
             backing: .buffered,
             defer: false
+            ),
+            to: windowState
         )
         windowState.isSidebarVisible = false
 
@@ -568,12 +571,15 @@ private func makePointerRevealHarness(
     let windowRegistry = WindowRegistry()
     let windowState = BrowserWindowState()
     windowState.tabManager = browserManager.tabManager
-    windowState.window = NSWindow(
-        contentRect: NSRect(x: 100, y: 100, width: 800, height: 600),
-        styleMask: [.titled],
-        backing: .buffered,
-        defer: false
-    )
+    windowRegistry.bindAppKitWindow(
+            NSWindow(
+            contentRect: NSRect(x: 100, y: 100, width: 800, height: 600),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+            ),
+            to: windowState
+        )
     windowState.isSidebarVisible = false
 
     browserManager.windowRegistry = windowRegistry

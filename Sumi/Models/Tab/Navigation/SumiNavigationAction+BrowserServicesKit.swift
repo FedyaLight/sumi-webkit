@@ -1,6 +1,7 @@
 import AppKit
 import Navigation
 import WebKit
+import SumiDomain
 
 extension SumiNavigationType {
     init(_ navigationType: NavigationType) {

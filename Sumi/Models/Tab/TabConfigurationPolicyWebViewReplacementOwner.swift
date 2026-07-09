@@ -25,9 +25,9 @@ final class TabWebViewReplacementContextOwner {
         TabWebViewReplacementContext(
             tabId: tab.id,
             existingWebView: {
-                tab.existingWebView
+                tab.resolvedCurrentWebView()
             },
-            primaryWindowId: tab.primaryWindowId,
+            primaryWindowId: tab.resolvedPrimaryWindowId(),
             trackedWindowIdContainingWebView: { webView in
                 tab.navigationRuntime.webViewReplacementRuntime
                     .trackedWindowIdContainingWebView(webView)

@@ -2,51 +2,41 @@ import Foundation
 
 @MainActor
 final class BrowserFloatingBarBrowserContextOwner {
-    struct Dependencies {
-        let currentProfileId: @MainActor () -> UUID?
-        let faviconContext: @MainActor () -> FloatingBarFaviconContext
-        let configureSearchManager: @MainActor (SearchManager) -> Void
-        let updateDraft: @MainActor (BrowserWindowState, String) -> Void
-        let dismiss: @MainActor (BrowserWindowState, Bool) -> Void
-        let deleteHistoryEntry: @MainActor (HistoryListItem) async -> Void
-        let commitNavigatesCurrentTab: @MainActor (BrowserWindowState) -> Bool
-        let commitNavigation: @MainActor (String, BrowserWindowState) -> Void
-        let commitSuggestion: @MainActor (SearchManager.SearchSuggestion, BrowserWindowState) -> Void
+    private let currentProfileId: @MainActor () -> UUID?
+    private let faviconContext: @MainActor () -> FloatingBarFaviconContext
+    private let configureSearchManager: @MainActor (SearchManager) -> Void
+    private let updateDraft: @MainActor (BrowserWindowState, String) -> Void
+    private let dismiss: @MainActor (BrowserWindowState, Bool) -> Void
+    private let deleteHistoryEntry: @MainActor (HistoryListItem) async -> Void
+    private let commitNavigatesCurrentTab: @MainActor (BrowserWindowState) -> Bool
+    private let commitNavigation: @MainActor (String, BrowserWindowState) -> Void
+    private let commitSuggestion: @MainActor (SearchManager.SearchSuggestion, BrowserWindowState) -> Void
+
+    init(
+        currentProfileId: @escaping @MainActor () -> UUID?,
+        faviconContext: @escaping @MainActor () -> FloatingBarFaviconContext,
+        configureSearchManager: @escaping @MainActor (SearchManager) -> Void,
+        updateDraft: @escaping @MainActor (BrowserWindowState, String) -> Void,
+        dismiss: @escaping @MainActor (BrowserWindowState, Bool) -> Void,
+        deleteHistoryEntry: @escaping @MainActor (HistoryListItem) async -> Void,
+        commitNavigatesCurrentTab: @escaping @MainActor (BrowserWindowState) -> Bool,
+        commitNavigation: @escaping @MainActor (String, BrowserWindowState) -> Void,
+        commitSuggestion: @escaping @MainActor (SearchManager.SearchSuggestion, BrowserWindowState) -> Void
+    ) {
+        self.currentProfileId = currentProfileId
+        self.faviconContext = faviconContext
+        self.configureSearchManager = configureSearchManager
+        self.updateDraft = updateDraft
+        self.dismiss = dismiss
+        self.deleteHistoryEntry = deleteHistoryEntry
+        self.commitNavigatesCurrentTab = commitNavigatesCurrentTab
+        self.commitNavigation = commitNavigation
+        self.commitSuggestion = commitSuggestion
     }
 
-    private let dependencies: Dependencies
-
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
-    }
-
-    var context: FloatingBarBrowserContext {
-        FloatingBarBrowserContext(
-            currentProfileId: dependencies.currentProfileId(),
-            favicon: dependencies.faviconContext(),
-            configureSearchManager: dependencies.configureSearchManager,
-            updateDraft: dependencies.updateDraft,
-            dismiss: dependencies.dismiss,
-            deleteHistoryEntry: dependencies.deleteHistoryEntry,
-            commitNavigatesCurrentTab: dependencies.commitNavigatesCurrentTab,
-            commitNavigation: dependencies.commitNavigation,
-            commitSuggestion: dependencies.commitSuggestion
-        )
-    }
-
-    static func historyDeletionQuery(for entry: HistoryListItem) -> HistoryQuery {
-        if let visitID = entry.visitID {
-            return .visits([visitID])
-        }
-        return .domainFilter([entry.siteDomain ?? entry.domain])
-    }
-}
-
-extension BrowserFloatingBarBrowserContextOwner.Dependencies {
-    @MainActor
-    static func live(browserManager: BrowserManager) -> Self {
+    convenience init(browserManager: BrowserManager) {
         let dataServices = browserManager.dataServices
-        return Self(
+        self.init(
             currentProfileId: { [weak browserManager] in
                 browserManager?.currentProfile?.id
             },
@@ -95,5 +85,26 @@ extension BrowserFloatingBarBrowserContextOwner.Dependencies {
                 )
             }
         )
+    }
+
+    var context: FloatingBarBrowserContext {
+        FloatingBarBrowserContext(
+            currentProfileId: currentProfileId(),
+            favicon: faviconContext(),
+            configureSearchManager: configureSearchManager,
+            updateDraft: updateDraft,
+            dismiss: dismiss,
+            deleteHistoryEntry: deleteHistoryEntry,
+            commitNavigatesCurrentTab: commitNavigatesCurrentTab,
+            commitNavigation: commitNavigation,
+            commitSuggestion: commitSuggestion
+        )
+    }
+
+    static func historyDeletionQuery(for entry: HistoryListItem) -> HistoryQuery {
+        if let visitID = entry.visitID {
+            return .visits([visitID])
+        }
+        return .domainFilter([entry.siteDomain ?? entry.domain])
     }
 }

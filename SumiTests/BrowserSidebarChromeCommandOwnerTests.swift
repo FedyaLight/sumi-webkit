@@ -28,23 +28,21 @@ final class BrowserSidebarChromeCommandOwnerTests: XCTestCase {
 
     private func makeOwner(spy: Spy) -> BrowserSidebarChromeCommandOwner {
         BrowserSidebarChromeCommandOwner(
-            dependencies: BrowserSidebarChromeCommandOwner.Dependencies(
-                showGradientEditor: { _ in
-                    spy.events.append(.showGradientEditor)
-                },
-                toggleSidebar: { windowState in
-                    spy.events.append(.toggleSidebar(windowState.id))
-                },
-                openAppearanceSettings: { windowState in
-                    spy.events.append(.openAppearanceSettings(windowState.id))
-                },
-                closeDownloadsPopover: { windowState in
-                    spy.events.append(.closeDownloadsPopover(windowState.id))
-                },
-                toggleDownloadsPopover: { windowState in
-                    spy.events.append(.toggleDownloadsPopover(windowState.id))
-                }
-            )
+            showGradientEditor: { _ in
+                spy.events.append(.showGradientEditor)
+            },
+            toggleSidebar: { windowState in
+                spy.events.append(.toggleSidebar(windowState.id))
+            },
+            openAppearanceSettings: { windowState in
+                spy.events.append(.openAppearanceSettings(windowState.id))
+            },
+            closeDownloadsPopover: { windowState in
+                spy.events.append(.closeDownloadsPopover(windowState.id))
+            },
+            toggleDownloadsPopover: { windowState in
+                spy.events.append(.toggleDownloadsPopover(windowState.id))
+            }
         )
     }
 

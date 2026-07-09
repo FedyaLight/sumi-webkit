@@ -3,25 +3,20 @@ import Foundation
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionNativeMessagingRelayOwner {
-    struct Dependencies {
-        let extensionsModuleEnabled: @MainActor () -> ExtensionManagerRuntime.ModuleEnabledState
-        let moduleRegistryExtensionsEnabled: @MainActor () -> Bool
-        let profileRuntimeLoaded: @MainActor () -> Bool
-    }
-
-    private let dependencies: Dependencies
+    private weak var manager: ExtensionManager?
     private var relayStorage: SumiNativeMessagingRelay?
 
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
+    init(manager: ExtensionManager) {
+        self.manager = manager
     }
 
     var extensionsModuleEnabledForCallbacks: Bool {
-        switch dependencies.extensionsModuleEnabled() {
+        guard let manager else { return false }
+        switch manager.runtime.extensionsModuleEnabled() {
         case .enabled(let isEnabled):
             return isEnabled
         case .unavailable:
-            return dependencies.moduleRegistryExtensionsEnabled()
+            return manager.moduleRegistry.isEnabled(.extensions)
         }
     }
 
@@ -35,7 +30,8 @@ final class ExtensionNativeMessagingRelayOwner {
                 self?.extensionsModuleEnabledForCallbacks ?? false
             },
             profileRuntimeLoaded: { [weak self] in
-                self?.dependencies.profileRuntimeLoaded() ?? false
+                guard let manager = self?.manager else { return false }
+                return manager.runtimeState == .ready || manager.runtimeState == .loading
             }
         )
         relayStorage = relay
@@ -44,23 +40,5 @@ final class ExtensionNativeMessagingRelayOwner {
 
     var loadedRelay: SumiNativeMessagingRelay? {
         relayStorage
-    }
-}
-
-@available(macOS 15.5, *)
-extension ExtensionNativeMessagingRelayOwner.Dependencies {
-    static func live(manager: ExtensionManager) -> Self {
-        Self(
-            extensionsModuleEnabled: { [weak manager] in
-                manager?.runtime.extensionsModuleEnabled() ?? .unavailable
-            },
-            moduleRegistryExtensionsEnabled: { [weak manager] in
-                manager?.moduleRegistry.isEnabled(.extensions) ?? false
-            },
-            profileRuntimeLoaded: { [weak manager] in
-                guard let manager else { return false }
-                return manager.runtimeState == .ready || manager.runtimeState == .loading
-            }
-        )
     }
 }

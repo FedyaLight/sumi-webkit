@@ -8,8 +8,8 @@
 import Foundation
 import WebKit
 
-enum WebViewSyncLoadPolicy {
-    static func shouldLoadTarget(
+public enum WebViewSyncLoadPolicy {
+    public static func shouldLoadTarget(
         desiredURL: URL,
         targetURL: URL?,
         targetHistoryURL: URL?,
@@ -23,13 +23,15 @@ enum WebViewSyncLoadPolicy {
 }
 
 @MainActor
-final class WebViewCrossWindowSyncOwner {
-    typealias WebViewProtectionChecker = (WKWebView) -> Bool
-    typealias WebViewAction = (WKWebView) -> Void
+public final class WebViewCrossWindowSyncOwner {
+    public init() {}
+
+    public typealias WebViewProtectionChecker = (WKWebView) -> Bool
+    public typealias WebViewAction = (WKWebView) -> Void
 
     private var syncingTabIds: Set<UUID> = []
 
-    func syncTab(
+    public func syncTab(
         _ tabId: UUID,
         to url: URL,
         webViews: [WKWebView],
@@ -44,7 +46,7 @@ final class WebViewCrossWindowSyncOwner {
 
         for webView in webViews {
             if isProtected(webView) {
-                RuntimeDiagnostics.protectedWebViewTrace(
+                SumiWebRuntimeDiagnostics.protectedWebViewTrace(
                     "skipSyncProtected webView=\(ObjectIdentifier(webView)) tab=\(tabId.uuidString.prefix(8))"
                 )
                 continue
@@ -64,7 +66,7 @@ final class WebViewCrossWindowSyncOwner {
         }
     }
 
-    func reloadTab(
+    public func reloadTab(
         _ tabId: UUID,
         webViews: [WKWebView],
         isProtected: WebViewProtectionChecker,
@@ -72,7 +74,7 @@ final class WebViewCrossWindowSyncOwner {
     ) {
         for webView in webViews {
             if isProtected(webView) {
-                RuntimeDiagnostics.protectedWebViewTrace(
+                SumiWebRuntimeDiagnostics.protectedWebViewTrace(
                     "skipReloadProtected webView=\(ObjectIdentifier(webView)) tab=\(tabId.uuidString.prefix(8))"
                 )
                 continue
@@ -81,7 +83,7 @@ final class WebViewCrossWindowSyncOwner {
         }
     }
 
-    func setMuteState(
+    public func setMuteState(
         _ muted: Bool,
         for tabId: UUID,
         windowWebViews: [UUID: WKWebView]

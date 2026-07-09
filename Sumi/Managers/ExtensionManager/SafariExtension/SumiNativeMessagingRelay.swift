@@ -54,7 +54,7 @@ final class SumiNativeMessagingRelay {
     private let diagnosticsRecorder: SumiNativeMessagingDiagnosticsRecorder
 
     init(
-        importStore: SafariExtensionImportStore = .shared,
+        importStore: SafariExtensionImportStore = .process,
         launcher: SumiHostApplicationLaunching = SumiNSWorkspaceHostApplicationLauncher(),
         adapterRegistry: SumiNativeMessagingAdapterRegistry = .production(),
         companionApplicationRouter: CompanionApplicationMessageRouter =
@@ -120,7 +120,7 @@ final class SumiNativeMessagingRelay {
     }
 
     static func production(
-        importStore: SafariExtensionImportStore = .shared,
+        importStore: SafariExtensionImportStore = .process,
         launcher: SumiHostApplicationLaunching = SumiNSWorkspaceHostApplicationLauncher(),
         extensionsModuleEnabled: @escaping @MainActor () -> Bool,
         isPrivateBrowsing: @escaping @MainActor () -> Bool = { false },

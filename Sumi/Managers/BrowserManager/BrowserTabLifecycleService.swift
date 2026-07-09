@@ -15,75 +15,75 @@ final class BrowserTabLifecycleService {
         self.closeFallbackPlanner = closeFallbackPlanner
 
         let shortcutLiveTabClose = BrowserShortcutLiveTabCloseOwner(
-            dependencies: BrowserShortcutLiveTabCloseOwner.Dependencies(
-                tabManager: { [weak browserManager, tabManager = browserManager.tabManager] in
-                    browserManager?.tabManager ?? tabManager
-                },
-                recentlyClosedManager: { [weak browserManager, recentlyClosedManager = browserManager.recentlyClosedManager] in
-                    browserManager?.recentlyClosedManager ?? recentlyClosedManager
-                },
-                fallbackPlanner: { closeFallbackPlanner },
-                selectTab: { [weak browserManager] tab, windowState in
-                    browserManager?.selectTab(tab, in: windowState)
-                },
-                performImmediateVisualHandoffIfPossible: { [weak browserManager] windowState in
-                    _ = browserManager?.windowVisualMutationOwner.performImmediateVisualHandoffIfPossible(in: windowState)
-                },
-                persistWindowSession: { [weak browserManager] windowState in
-                    browserManager?.windowSessionActivationOwner.persistWindowSession(for: windowState)
-                },
-                showEmptyState: { [weak browserManager] windowState in
-                    browserManager?.showEmptyState(in: windowState)
-                },
-                restoreShortcutSplitMember: { [weak browserManager] itemId, group, windowState, preserveLiveInstance in
-                    browserManager?.sidebarCommandService.splitShortcutRouting.restoreShortcutSplitMember(
-                        itemId,
-                        from: group,
-                        in: windowState,
-                        preserveLiveInstance: preserveLiveInstance
-                    )
-                },
-                unloadShortcutHostedSplitGroup: { [weak browserManager] group, windowState in
-                    browserManager?.sidebarCommandService.splitShortcutRouting.unloadShortcutHostedSplitGroup(
-                        group,
-                        in: windowState
-                    )
-                },
-                notifications: { [weak browserManager] in
-                    browserManager?.notificationPresenter
-                }
-            )
+            tabManager: { [weak browserManager, tabManager = browserManager.tabManager] in
+                browserManager?.tabManager ?? tabManager
+            },
+            recentlyClosedManager: { [weak browserManager, recentlyClosedManager = browserManager.recentlyClosedManager] in
+                browserManager?.recentlyClosedManager ?? recentlyClosedManager
+            },
+            fallbackPlanner: { closeFallbackPlanner },
+            selectTab: { [weak browserManager] tab, windowState in
+                browserManager?.selectTab(tab, in: windowState)
+            },
+            performImmediateVisualHandoffIfPossible: { [weak browserManager] windowState in
+                _ = browserManager?.windowVisualMutationOwner.performImmediateVisualHandoffIfPossible(
+                    in: windowState
+                )
+            },
+            persistWindowSession: { [weak browserManager] windowState in
+                browserManager?.windowSessionActivationOwner.persistWindowSession(for: windowState)
+            },
+            showEmptyState: { [weak browserManager] windowState in
+                browserManager?.showEmptyState(in: windowState)
+            },
+            restoreShortcutSplitMember: { [weak browserManager] itemId, group, windowState, preserveLiveInstance in
+                browserManager?.sidebarCommandService.splitShortcutRouting.restoreShortcutSplitMember(
+                    itemId,
+                    from: group,
+                    in: windowState,
+                    preserveLiveInstance: preserveLiveInstance
+                )
+            },
+            unloadShortcutHostedSplitGroup: { [weak browserManager] group, windowState in
+                browserManager?.sidebarCommandService.splitShortcutRouting.unloadShortcutHostedSplitGroup(
+                    group,
+                    in: windowState
+                )
+            },
+            notifications: { [weak browserManager] in
+                browserManager?.notificationPresenter
+            }
         )
         self.shortcutLiveTabClose = shortcutLiveTabClose
 
         closeOrchestration = BrowserTabCloseOrchestrationOwner(
-            dependencies: BrowserTabCloseOrchestrationOwner.Dependencies(
-                activeWindow: { [weak browserManager] in browserManager?.windowRegistry?.activeWindow },
-                currentTab: { [weak browserManager] windowState in
-                    browserManager?.windowTabContextOwner.currentTab(for: windowState)
-                },
-                glanceManager: browserManager.glanceManager,
-                tabManager: { [weak browserManager, tabManager = browserManager.tabManager] in
-                    browserManager?.tabManager ?? tabManager
-                },
-                fallbackPlanner: { closeFallbackPlanner },
-                shortcutLiveTabCloseOwner: { shortcutLiveTabClose },
-                selectTab: { [weak browserManager] tab, windowState in
-                    browserManager?.selectTab(tab, in: windowState)
-                },
-                performImmediateVisualHandoffIfPossible: { [weak browserManager] windowState in
-                    _ = browserManager?.windowVisualMutationOwner.performImmediateVisualHandoffIfPossible(in: windowState)
-                },
-                showEmptyState: { [weak browserManager] windowState in
-                    browserManager?.showEmptyState(in: windowState)
-                },
-                persistWindowSession: { [weak browserManager] windowState in
-                    browserManager?.windowSessionActivationOwner.persistWindowSession(for: windowState)
-                }
-            )
+            activeWindow: { [weak browserManager] in browserManager?.windowRegistry?.activeWindow },
+            currentTab: { [weak browserManager] windowState in
+                browserManager?.windowTabContextOwner.currentTab(for: windowState)
+            },
+            glanceManager: browserManager.glanceManager,
+            tabManager: { [weak browserManager, tabManager = browserManager.tabManager] in
+                browserManager?.tabManager ?? tabManager
+            },
+            fallbackPlanner: { closeFallbackPlanner },
+            shortcutLiveTabCloseOwner: { shortcutLiveTabClose },
+            selectTab: { [weak browserManager] tab, windowState in
+                browserManager?.selectTab(tab, in: windowState)
+            },
+            performImmediateVisualHandoffIfPossible: { [weak browserManager] windowState in
+                _ = browserManager?.windowVisualMutationOwner.performImmediateVisualHandoffIfPossible(
+                    in: windowState
+                )
+            },
+            showEmptyState: { [weak browserManager] windowState in
+                browserManager?.showEmptyState(in: windowState)
+            },
+            persistWindowSession: { [weak browserManager] windowState in
+                browserManager?.windowSessionActivationOwner.persistWindowSession(for: windowState)
+            }
         )
         opening = BrowserTabOpeningOwner(
-            dependencies: .live(browserManager: browserManager)
+            browserManager: browserManager
         )
     }
 }

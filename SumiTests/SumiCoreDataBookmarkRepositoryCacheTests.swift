@@ -2,6 +2,7 @@ import CoreData
 import XCTest
 
 @testable import Sumi
+import SumiDomain
 
 /// Guards the repository snapshot cache: cached trees must be dropped on
 /// every mutation path (save, import, merge from another context) so reads

@@ -74,7 +74,11 @@ enum TabBrowserActionServiceFactory {
         else {
             return fallback
         }
-        return windowState.nativeSurfaceAppearance(settings: settings, fallback: fallback)
+        return windowState.nativeSurfaceAppearance(
+            settings: settings,
+            fallback: fallback,
+            in: browserManager.windowRegistry
+        )
     }
 
     private static func startContextMenuDownload(

@@ -58,8 +58,8 @@ final class ExtensionRequestedTabLifecycleOwnerTests: XCTestCase {
             manager: manager
         )
 
-        let materializedWebView = try XCTUnwrap(tab.currentWebView)
-        XCTAssertNil(tab.primaryWindowId)
+        let materializedWebView = try XCTUnwrap(tab.resolvedCurrentWebView())
+        XCTAssertNil(tab.resolvedPrimaryWindowId())
         XCTAssertIdentical(
             manager.ownedUntrackedCurrentWebView(for: tab),
             materializedWebView
@@ -76,7 +76,7 @@ final class ExtensionRequestedTabLifecycleOwnerTests: XCTestCase {
             manager: manager
         )
 
-        XCTAssertIdentical(tab.currentWebView, materializedWebView)
+        XCTAssertIdentical(tab.resolvedCurrentWebView(), materializedWebView)
     }
 
     func testRequestedTargetSpaceUsesContextProfileWhenCurrentSpaceBelongsToAnotherProfile() throws {

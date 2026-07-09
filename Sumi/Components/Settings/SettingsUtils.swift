@@ -4,6 +4,7 @@
 //
 //
 import Foundation
+import SumiDomain
 import SwiftUI
 
 enum SettingsPaneGroup: String, CaseIterable, Hashable {

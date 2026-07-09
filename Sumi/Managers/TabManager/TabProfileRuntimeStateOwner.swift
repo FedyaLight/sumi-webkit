@@ -2,48 +2,28 @@ import Foundation
 
 @MainActor
 final class TabProfileRuntimeStateOwner {
-    struct Dependencies {
-        let spaceStateOwner: TabSpaceCollectionStateOwner
-        let regularTabCollectionStateOwner: RegularTabCollectionStateOwner
-        let shortcutPinCollectionStateOwner: ShortcutPinCollectionStateOwner
-        let folderCollectionStateOwner: TabFolderCollectionStateOwner
-        let transientShortcutTabs: @MainActor () -> [Tab]
+    private let spaceStateOwner: TabSpaceCollectionStateOwner
+    private let regularTabCollectionStateOwner: RegularTabCollectionStateOwner
+    private let shortcutPinCollectionStateOwner: ShortcutPinCollectionStateOwner
+    private let folderCollectionStateOwner: TabFolderCollectionStateOwner
+    private let transientShortcutTabs: @MainActor () -> [Tab]
+
+    init(
+        spaceStateOwner: TabSpaceCollectionStateOwner,
+        regularTabCollectionStateOwner: RegularTabCollectionStateOwner,
+        shortcutPinCollectionStateOwner: ShortcutPinCollectionStateOwner,
+        folderCollectionStateOwner: TabFolderCollectionStateOwner,
+        transientShortcutTabs: @escaping @MainActor () -> [Tab]
+    ) {
+        self.spaceStateOwner = spaceStateOwner
+        self.regularTabCollectionStateOwner = regularTabCollectionStateOwner
+        self.shortcutPinCollectionStateOwner = shortcutPinCollectionStateOwner
+        self.folderCollectionStateOwner = folderCollectionStateOwner
+        self.transientShortcutTabs = transientShortcutTabs
     }
 
-    private let dependencies: Dependencies
-
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
-    }
-
-    func hasLiveRuntimeContent(in space: Space) -> Bool {
-        let spaceId = space.id
-
-        if dependencies.regularTabCollectionStateOwner.hasTabs(in: spaceId) { return true }
-        if dependencies.shortcutPinCollectionStateOwner.hasSpacePinnedShortcuts(in: spaceId) { return true }
-        if dependencies.folderCollectionStateOwner.hasFolders(in: spaceId) { return true }
-
-        return dependencies.transientShortcutTabs()
-            .contains { $0.spaceId == spaceId }
-    }
-
-    func reconcile(activeSpaceId: UUID?) {
-        for space in dependencies.spaceStateOwner.spaces {
-            let hasRuntimeContent = hasLiveRuntimeContent(in: space)
-
-            if space.id == activeSpaceId {
-                space.profileRuntimeState = hasRuntimeContent ? .active : .dormant
-            } else {
-                space.profileRuntimeState = hasRuntimeContent ? .loadedInactive : .dormant
-            }
-        }
-    }
-}
-
-extension TabProfileRuntimeStateOwner.Dependencies {
-    @MainActor
-    static func live(tabManager: TabManager) -> Self {
-        Self(
+    convenience init(tabManager: TabManager) {
+        self.init(
             spaceStateOwner: tabManager.spaceStateOwner,
             regularTabCollectionStateOwner: tabManager.regularTabCollectionStateOwner,
             shortcutPinCollectionStateOwner: tabManager.shortcutPinCollectionStateOwner,
@@ -52,5 +32,28 @@ extension TabProfileRuntimeStateOwner.Dependencies {
                 tabManager?.transientTabRegistryOwner.transientShortcutTabs ?? []
             }
         )
+    }
+
+    func hasLiveRuntimeContent(in space: Space) -> Bool {
+        let spaceId = space.id
+
+        if regularTabCollectionStateOwner.hasTabs(in: spaceId) { return true }
+        if shortcutPinCollectionStateOwner.hasSpacePinnedShortcuts(in: spaceId) { return true }
+        if folderCollectionStateOwner.hasFolders(in: spaceId) { return true }
+
+        return transientShortcutTabs()
+            .contains { $0.spaceId == spaceId }
+    }
+
+    func reconcile(activeSpaceId: UUID?) {
+        for space in spaceStateOwner.spaces {
+            let hasRuntimeContent = hasLiveRuntimeContent(in: space)
+
+            if space.id == activeSpaceId {
+                space.profileRuntimeState = hasRuntimeContent ? .active : .dormant
+            } else {
+                space.profileRuntimeState = hasRuntimeContent ? .loadedInactive : .dormant
+            }
+        }
     }
 }

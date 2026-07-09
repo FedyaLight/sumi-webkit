@@ -38,7 +38,7 @@ extension Tab {
             reloadPolicyStateOwner.markProtectionReloadRequiredIfNeeded(
                 afterChangingPolicyFor: changedURL,
                 currentURL: url,
-                existingWebView: existingWebView,
+                existingWebView: resolvedCurrentWebView(),
                 runtime: navigationRuntime.reloadPolicyRuntime
             )
         )
@@ -51,7 +51,7 @@ extension Tab {
             reloadPolicyStateOwner.markSafariContentBlockerReloadRequiredIfNeeded(
                 afterChangingPolicyFor: changedURL,
                 currentURL: url,
-                existingWebView: existingWebView,
+                existingWebView: resolvedCurrentWebView(),
                 runtime: navigationRuntime.reloadPolicyRuntime
             )
         )
@@ -61,7 +61,7 @@ extension Tab {
         publishNavigationStateChangeIfNeeded(
             reloadPolicyStateOwner.updateSafariContentBlockerReloadRequirementForCurrentSite(
                 currentURL: url,
-                existingWebView: existingWebView,
+                existingWebView: resolvedCurrentWebView(),
                 runtime: navigationRuntime.reloadPolicyRuntime
             )
         )
@@ -80,7 +80,7 @@ extension Tab {
         publishNavigationStateChangeIfNeeded(
             reloadPolicyStateOwner.updateProtectionReloadRequirementForCurrentSite(
                 currentURL: url,
-                existingWebView: existingWebView,
+                existingWebView: resolvedCurrentWebView(),
                 runtime: navigationRuntime.reloadPolicyRuntime
             )
         )
@@ -98,7 +98,7 @@ extension Tab {
     func protectionCurrentTabDiagnostics() -> SumiProtectionCurrentTabDiagnostics? {
         reloadPolicyStateOwner.protectionCurrentTabDiagnostics(
             for: url,
-            existingWebView: existingWebView,
+            existingWebView: resolvedCurrentWebView(),
             runtime: navigationRuntime.reloadPolicyRuntime
         )
     }
@@ -119,7 +119,7 @@ extension Tab {
             reloadPolicyStateOwner.markAutoplayReloadRequiredIfNeeded(
                 afterChangingPolicyFor: changedURL,
                 currentURL: url,
-                existingWebView: existingWebView,
+                existingWebView: resolvedCurrentWebView(),
                 profile: resolveProfile(),
                 runtime: navigationRuntime.reloadPolicyRuntime
             )
@@ -130,7 +130,7 @@ extension Tab {
         publishNavigationStateChangeIfNeeded(
             reloadPolicyStateOwner.updateAutoplayReloadRequirementForCurrentSite(
                 currentURL: url,
-                existingWebView: existingWebView,
+                existingWebView: resolvedCurrentWebView(),
                 profile: resolveProfile(),
                 runtime: navigationRuntime.reloadPolicyRuntime
             )
@@ -142,7 +142,7 @@ extension Tab {
             reloadPolicyStateOwner.clearAutoplayReloadRequirementIfResolved(
                 for: committedURL,
                 currentURL: url,
-                existingWebView: existingWebView,
+                existingWebView: resolvedCurrentWebView(),
                 profile: resolveProfile(),
                 runtime: navigationRuntime.reloadPolicyRuntime
             )
@@ -154,7 +154,7 @@ extension Tab {
     ) -> Bool {
         reloadPolicyStateOwner.protectionAttachmentRequiresNormalWebViewRebuild(
             for: targetURL,
-            existingWebView: existingWebView,
+            existingWebView: resolvedCurrentWebView(),
             webViewConfigurationOverride: webViewConfigurationOverride,
             isPopupHost: isPopupHost,
             runtime: navigationRuntime.reloadPolicyRuntime
@@ -166,7 +166,7 @@ extension Tab {
     ) -> Bool {
         reloadPolicyStateOwner.safariContentBlockerAttachmentRequiresNormalWebViewRebuild(
             for: targetURL,
-            existingWebView: existingWebView,
+            existingWebView: resolvedCurrentWebView(),
             webViewConfigurationOverride: webViewConfigurationOverride,
             isPopupHost: isPopupHost,
             runtime: navigationRuntime.reloadPolicyRuntime
@@ -176,7 +176,7 @@ extension Tab {
     func autoplayPolicyRequiresNormalWebViewRebuild(for targetURL: URL?) -> Bool {
         reloadPolicyStateOwner.autoplayPolicyRequiresNormalWebViewRebuild(
             for: targetURL,
-            existingWebView: existingWebView,
+            existingWebView: resolvedCurrentWebView(),
             webViewConfigurationOverride: webViewConfigurationOverride,
             isPopupHost: isPopupHost,
             profile: resolveProfile(),
@@ -234,7 +234,7 @@ extension Tab {
     private func reloadPolicyWebViewRebuildContext() -> TabReloadPolicyWebViewRebuildContext {
         TabReloadPolicyWebViewRebuildContext(
             currentURL: url,
-            existingWebView: { self.existingWebView },
+            existingWebView: { self.resolvedCurrentWebView() },
             webViewConfigurationOverride: webViewConfigurationOverride,
             isPopupHost: isPopupHost,
             profile: resolveProfile(),

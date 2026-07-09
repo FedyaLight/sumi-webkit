@@ -1,10 +1,6 @@
 import Foundation
+import SumiDomain
 import SwiftUI
-
-enum ShortcutPinRole: String, Codable, Sendable {
-    case essential
-    case spacePinned
-}
 
 enum SumiEssentialRuntimeState {
     case launcherOnly

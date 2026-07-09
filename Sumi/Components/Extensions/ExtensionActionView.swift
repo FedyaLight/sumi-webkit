@@ -34,8 +34,6 @@ enum ExtensionActionPlacement: Equatable {
 
 @MainActor
 final class ExtensionIconCache {
-    static let shared = ExtensionIconCache()
-
     typealias Key = String
 
     private struct Entry {
@@ -51,6 +49,8 @@ final class ExtensionIconCache {
 
     private var entries: [Key: Entry] = [:]
     private var entryOrder: [Key] = []
+
+    init() {}
 
     func image(extensionId: String, iconPath: String) -> NSImage? {
         let key = Self.cacheKey(extensionId: extensionId, iconPath: iconPath)
@@ -819,7 +819,7 @@ struct ExtensionActionButton: View {
                 .scaledToFit()
                 .frame(width: 16, height: 16)
         } else if let iconPath = ext.iconPath,
-           let nsImage = ExtensionIconCache.shared.image(
+           let nsImage = extensionSurfaceStore.iconCache.image(
                extensionId: ext.id,
                iconPath: iconPath
            ) {

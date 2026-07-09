@@ -13,7 +13,6 @@ final class ExtensionPermissionsOriginsCompatibilityPreludeInstallationOwnerTest
         var installCount = 0
         var traces: [String] = []
         let owner = ExtensionPermissionsOriginsCompatibilityPreludeInstallationOwner(
-            dependencies: .init(
                 isPrivateUserScriptSPIAvailable: { true },
                 preludeTargets: { requestedProfileId in
                     XCTAssertEqual(requestedProfileId, profileId)
@@ -30,7 +29,6 @@ final class ExtensionPermissionsOriginsCompatibilityPreludeInstallationOwnerTest
                     ]
                 },
                 trace: { traces.append($0) }
-            )
         )
 
         owner.installPreludes(into: userContentController, profileId: profileId)
@@ -45,7 +43,6 @@ final class ExtensionPermissionsOriginsCompatibilityPreludeInstallationOwnerTest
         let userContentController = WKUserContentController()
         var installCount = 0
         let owner = ExtensionPermissionsOriginsCompatibilityPreludeInstallationOwner(
-            dependencies: .init(
                 isPrivateUserScriptSPIAvailable: { true },
                 preludeTargets: { _ in
                     [
@@ -61,7 +58,6 @@ final class ExtensionPermissionsOriginsCompatibilityPreludeInstallationOwnerTest
                     ]
                 },
                 trace: { _ in }
-            )
         )
 
         owner.installPreludes(into: userContentController, profileId: profileId)
@@ -76,7 +72,6 @@ final class ExtensionPermissionsOriginsCompatibilityPreludeInstallationOwnerTest
         let userContentController = WKUserContentController()
         var installCount = 0
         let unavailableOwner = ExtensionPermissionsOriginsCompatibilityPreludeInstallationOwner(
-            dependencies: .init(
                 isPrivateUserScriptSPIAvailable: { false },
                 preludeTargets: { _ in
                     [
@@ -92,7 +87,6 @@ final class ExtensionPermissionsOriginsCompatibilityPreludeInstallationOwnerTest
                     ]
                 },
                 trace: { _ in }
-            )
         )
         unavailableOwner.installPreludes(
             into: userContentController,
@@ -100,7 +94,6 @@ final class ExtensionPermissionsOriginsCompatibilityPreludeInstallationOwnerTest
         )
 
         let unloadedOwner = ExtensionPermissionsOriginsCompatibilityPreludeInstallationOwner(
-            dependencies: .init(
                 isPrivateUserScriptSPIAvailable: { true },
                 preludeTargets: { _ in
                     [
@@ -116,7 +109,6 @@ final class ExtensionPermissionsOriginsCompatibilityPreludeInstallationOwnerTest
                     ]
                 },
                 trace: { _ in }
-            )
         )
         unloadedOwner.installPreludes(into: userContentController, profileId: profileId)
 

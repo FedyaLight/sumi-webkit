@@ -48,7 +48,7 @@ final class TabSuspensionStateOwnerTests: XCTestCase {
         XCTAssertTrue(tab.suspensionStateOwner.isRestoreInProgress)
         XCTAssertEqual(recorder.count, 0)
 
-        tab._webView = WKWebView()
+        tab.replaceUntrackedWebView(WKWebView())
         tab.finishSuspendedRestoreIfNeeded()
 
         XCTAssertFalse(tab.suspensionStateOwner.isSuspended)

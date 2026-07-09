@@ -1,5 +1,6 @@
 import WebKit
 import XCTest
+import SumiWebRuntime
 
 @testable import Sumi
 

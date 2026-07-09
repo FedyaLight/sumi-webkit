@@ -11,6 +11,7 @@ import Foundation
 import Observation
 import QuartzCore
 import WebKit
+import SumiWebRuntime
 
 enum CompositorPaneDestination: String, CaseIterable {
     case single
@@ -51,22 +52,130 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
 
     @ObservationIgnored
     private lazy var trackedRegistrationOwner = WebViewTrackedRegistrationOwner(
-        dependencies: .live(coordinator: self)
+        webViewRegistry: webViewRegistry,
+        mediaProtectionOwner: mediaProtectionOwner,
+        trackingLifecycleOwner: webViewTrackingLifecycleOwner,
+        trackedCleanupExecutionOwner: trackedCleanupExecutionOwner,
+        requireBrowserRuntimeContext: { [weak self] in
+            guard let self else {
+                preconditionFailure("WebViewCoordinator dependency used after deallocation")
+            }
+            return self.runtimeContextStore.requireBrowser()
+        },
+        removeWebViewFromContainers: { [weak self] webView in
+            self?.removeWebViewFromContainers(webView)
+        },
+        pruneInvalidDeferredCommands: { [weak self] reason in
+            self?.pruneInvalidDeferredProtectedCommands(reason: reason)
+        },
+        flushDeferredProtectedCommands: { [weak self] webViewID in
+            self?.flushDeferredProtectedCommands(for: webViewID)
+        },
+        finishDestructiveCleanupNavigation: { [weak self] webView in
+            self?.finishDestructiveDataCleanupNavigation(on: webView)
+        },
+        performFallbackWebViewCleanup: { [weak self] webView, tabID in
+            self?.performFallbackWebViewCleanup(webView, tabId: tabID)
+        },
+        resolvedTab: { [weak self] tabID in
+            self?.resolvedTab(with: tabID)
+        },
+        refreshPrimaryTrackedWebView: { [weak self] tab in
+            self?.refreshPrimaryTrackedWebView(for: tab)
+        }
     )
 
     @ObservationIgnored
     private lazy var tabTeardownOwner = WebViewTabTeardownOwner(
-        dependencies: .live(coordinator: self)
+        webViewRegistry: webViewRegistry,
+        tabWebViewSessionStore: tabWebViewSessionStore,
+        mediaProtectionOwner: mediaProtectionOwner,
+        isWebViewProtectedFromCompositorMutation: { [weak self] webView in
+            self?.isWebViewProtectedFromCompositorMutation(webView) ?? false
+        },
+        enqueueDeferredProtectedCommand: { [weak self] command, webView, reason in
+            self?.enqueueDeferredProtectedCommand(
+                command,
+                for: webView,
+                reason: reason
+            ) ?? false
+        },
+        cleanupUnprotectedTrackedWebView: { [weak self] webView, owner, tab in
+            self?.cleanupUnprotectedTrackedWebView(
+                webView,
+                owner: owner,
+                tab: tab
+            )
+        },
+        refreshPrimaryTrackedWebView: { [weak self] tab in
+            self?.refreshPrimaryTrackedWebView(for: tab)
+        },
+        removeWebViewFromContainers: { [weak self] webView in
+            self?.removeWebViewFromContainers(webView)
+        },
+        unregisterTrackedWebViewSlot: { [weak self] owner, expectedWebView in
+            self?.unregisterTrackedWebViewSlot(
+                owner: owner,
+                expectedWebView: expectedWebView
+            )
+        }
     )
 
     @ObservationIgnored
     private lazy var windowCleanupOwner = WebViewWindowCleanupOwner(
-        dependencies: .live(coordinator: self)
+        cleanupScopeOwner: cleanupScopeOwner,
+        webViewRegistry: webViewRegistry,
+        visibleWebViewRuntimeOwner: visibleWebViewRuntimeOwner,
+        mediaProtectionOwner: mediaProtectionOwner,
+        browserRuntimeContext: { [weak self] in
+            self?.runtimeContextStore.browser
+        },
+        isWebViewProtectedFromCompositorMutation: { [weak self] webView in
+            self?.isWebViewProtectedFromCompositorMutation(webView) ?? false
+        },
+        enqueueDeferredProtectedCommand: { [weak self] command, webView, reason in
+            self?.enqueueDeferredProtectedCommand(
+                command,
+                for: webView,
+                reason: reason
+            ) ?? false
+        },
+        cleanupUnprotectedTrackedWebView: { [weak self] webView, owner, tab in
+            self?.cleanupUnprotectedTrackedWebView(
+                webView,
+                owner: owner,
+                tab: tab
+            )
+        },
+        refreshPrimaryTrackedWebView: { [weak self] tab in
+            self?.refreshPrimaryTrackedWebView(for: tab)
+        },
+        removeCompositorContainerView: { [weak self] windowId in
+            self?.removeCompositorContainerView(for: windowId)
+        },
+        finishCleanupSuppression: { [weak self] webViewIDs in
+            self?.finishDestructiveCleanupSuppression(for: webViewIDs)
+        }
     )
 
     @ObservationIgnored
     private lazy var navigationBroadcastOwner = WebViewNavigationBroadcastOwner(
-        dependencies: .live(coordinator: self)
+        crossWindowSyncOwner: crossWindowSyncOwner,
+        webViewRegistry: webViewRegistry,
+        tabWebViewSessionStore: tabWebViewSessionStore,
+        isWebViewProtectedFromCompositorMutation: { [weak self] webView in
+            self?.isWebViewProtectedFromCompositorMutation(webView) ?? false
+        },
+        primaryTrackedWindowId: { [weak self] tabId in
+            self?.primaryTrackedWindowId(for: tabId)
+        },
+        rebuildLiveWebViews: { [weak self] tab, preferredPrimaryWindowId, url in
+            self?.rebuildLiveWebViews(
+                for: tab,
+                preferredPrimaryWindowId: preferredPrimaryWindowId,
+                load: url
+            ) ?? false
+        }
     )
 
     @ObservationIgnored
@@ -99,7 +208,20 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
 
     @ObservationIgnored
     private lazy var destructiveCleanupFlowOwner = WebViewDestructiveCleanupFlowOwner(
-        dependencies: .live(coordinator: self)
+        browserRuntimeContext: { [weak self] in
+            guard let self else {
+                preconditionFailure(
+                    "WebViewDestructiveCleanupFlowOwner outlived its coordinator"
+                )
+            }
+            return self.runtimeContextStore.requireBrowser()
+        },
+        liveWebViews: { [weak self] tab in
+            self?.suspensionLiveWebViews(for: tab) ?? []
+        },
+        isWebViewProtectedFromCompositorMutation: { [weak self] webView in
+            self?.isWebViewProtectedFromCompositorMutation(webView) ?? false
+        }
     )
 
     // MARK: - Compositor Container Management
@@ -629,10 +751,13 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
 
     func untrackedOwnedWebView(for tab: Tab) -> WKWebView? {
         guard windowIDs(for: tab.id).isEmpty else { return nil }
-        tabWebViewSessionStore.syncFromTabIfNeeded(tab)
-        let sessionWebView = tabWebViewSessionStore.untrackedWebView(for: tab.id)
-            ?? tab.currentWebView
-        guard let webView = sessionWebView else { return nil }
+        tabWebViewSessionStore.promoteLocalSessionIfNeeded(
+            tabId: tab.id,
+            localSession: tab.webViewOwnershipOwner.localSession
+        )
+        guard let webView = tabWebViewSessionStore.untrackedWebView(for: tab.id) else {
+            return nil
+        }
         guard (webView as? FocusableWKWebView)?.owningTab === tab else { return nil }
         return webView
     }
@@ -645,19 +770,24 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         if trackedOwner(containing: webView)?.tabID == tab.id {
             return true
         }
-        tabWebViewSessionStore.syncFromTabIfNeeded(tab)
+        tabWebViewSessionStore.promoteLocalSessionIfNeeded(
+            tabId: tab.id,
+            localSession: tab.webViewOwnershipOwner.localSession
+        )
         let session = tabWebViewSessionStore.session(for: tab.id)
-        if session.untrackedWebView === webView || session.parkedWebView === webView {
-            return true
-        }
-        // Compat mirror until Tab assigned/current fields are removed (Phase 6B).
-        return tab.existingWebView === webView || tab.assignedWebView === webView
+        return session.untrackedWebView === webView
+            || session.parkedWebView === webView
+            || session.primaryWebView === webView
     }
 
     func assignWebView(_ webView: WKWebView, to tab: Tab, in windowId: UUID) {
         // Session note happens inside Tab.assignPrimaryWebView when runtime is attached;
         // note again here so coordinator-only paths stay authoritative even before attach.
-        tabWebViewSessionStore.notePrimaryAssignment(windowId: windowId, for: tab.id)
+        tabWebViewSessionStore.notePrimaryAssignment(
+            windowId: windowId,
+            for: tab.id,
+            webView: webView
+        )
         tab.assignWebViewToWindow(webView, windowId: windowId)
         setWebView(webView, for: tab.id, in: windowId)
     }
@@ -677,12 +807,10 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         let webView = tab.ensureUntrackedNormalWebView(
             reason: "WebViewCoordinator.ensureUntrackedOwnedWebView"
         )
-        // Ensure path writes Tab first when runtime is inactive; import into session.
+        // Ensure path notes session via Tab mutators when runtime is attached;
+        // reinforce here for coordinator-first paths.
         if let webView {
             tabWebViewSessionStore.noteUntrackedWebView(webView, for: tab.id)
-            if let parked = tab.parkedWebView {
-                tabWebViewSessionStore.noteParkedWebView(parked, for: tab.id)
-            }
         }
         return webView
     }

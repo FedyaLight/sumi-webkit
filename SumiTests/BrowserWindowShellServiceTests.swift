@@ -3,6 +3,7 @@ import SwiftData
 import XCTest
 
 @testable import Sumi
+import SumiDomain
 
 @MainActor
 final class BrowserWindowShellServiceTests: XCTestCase {
@@ -30,7 +31,7 @@ final class BrowserWindowShellServiceTests: XCTestCase {
             return XCTFail("Expected an incognito window to be registered.")
         }
         defer {
-            windowState.window?.close()
+            harness.windowRegistry.appKitWindow(for: windowState)?.close()
             harness.windowRegistry.unregister(windowState.id)
         }
 
@@ -58,7 +59,7 @@ final class BrowserWindowShellServiceTests: XCTestCase {
         var factoryWindowStates: [BrowserWindowState] = []
         var registeredWindowHadNSWindow: Bool?
         harness.windowRegistry.onWindowRegister = { windowState in
-            registeredWindowHadNSWindow = windowState.window != nil
+            registeredWindowHadNSWindow = harness.windowRegistry.appKitWindow(for: windowState) != nil
         }
 
         let context = BrowserWindowShellService.Context(
@@ -73,19 +74,20 @@ final class BrowserWindowShellServiceTests: XCTestCase {
                 factoryWindowStates.append(windowState)
                 return NSView()
             },
-            showEmptyState: { _, _ in /* no-op */ }
+            showEmptyState: { _, _ in /* no-op */ },
+            sidebarHostRecoveryCoordinator: SidebarHostRecoveryCoordinator()
         )
 
         service.createNewWindow(using: context)
 
         let windowState = try XCTUnwrap(harness.windowRegistry.allWindows.first)
         defer {
-            windowState.window?.close()
+            harness.windowRegistry.appKitWindow(for: windowState)?.close()
             harness.windowRegistry.unregister(windowState.id)
         }
 
         XCTAssertEqual(factoryWindowStates.map(\.id), [windowState.id])
-        XCTAssertTrue(windowState.window is SumiBrowserWindow)
+        XCTAssertTrue(harness.windowRegistry.appKitWindow(for: windowState) is SumiBrowserWindow)
         XCTAssertIdentical(windowState.tabManager, harness.tabManager)
         XCTAssertEqual(harness.windowRegistry.activeWindowId, windowState.id)
         XCTAssertTrue(try XCTUnwrap(registeredWindowHadNSWindow))
@@ -107,7 +109,7 @@ final class BrowserWindowShellServiceTests: XCTestCase {
 
         let windowState = try XCTUnwrap(harness.windowRegistry.allWindows.first)
         defer {
-            windowState.window?.close()
+            harness.windowRegistry.appKitWindow(for: windowState)?.close()
             harness.windowRegistry.unregister(windowState.id)
         }
 
@@ -228,7 +230,8 @@ final class BrowserWindowShellServiceTests: XCTestCase {
             profileManager: harness.profileManager,
             tabManager: harness.tabManager,
             makeContentView: { _, _, _ in NSView() },
-            showEmptyState: showEmptyState
+            showEmptyState: showEmptyState,
+            sidebarHostRecoveryCoordinator: SidebarHostRecoveryCoordinator()
         )
     }
 

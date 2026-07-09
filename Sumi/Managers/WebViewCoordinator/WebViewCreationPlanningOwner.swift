@@ -7,6 +7,7 @@
 
 import Foundation
 import WebKit
+import SumiWebRuntime
 
 enum InitialDocumentWarmupDeferral {
     case waitForInFlight
@@ -150,12 +151,16 @@ final class WebViewCreationPlanningOwner {
         hasTrackedWebViews: Bool
     ) -> WKWebView? {
         guard hasTrackedWebViews == false else { return nil }
-        // Historical adopt source was Tab.existingWebView (== currentWebView).
-        if let current = tab.currentWebView {
-            return current
-        }
         guard let sessionStore else { return nil }
-        sessionStore.syncFromTabIfNeeded(tab)
-        return sessionStore.untrackedWebView(for: tab.id)
+        sessionStore.promoteLocalSessionIfNeeded(
+            tabId: tab.id,
+            localSession: tab.webViewOwnershipOwner.localSession
+        )
+        let session = sessionStore.session(for: tab.id)
+        // Adopt windowed primary hint or untracked — never parked staging.
+        if session.primaryWindowId != nil, let primary = session.primaryWebView {
+            return primary
+        }
+        return session.untrackedWebView
     }
 }

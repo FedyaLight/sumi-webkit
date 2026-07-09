@@ -212,17 +212,20 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
         windowState.tabManager = browserManager.tabManager
         windowState.currentSpaceId = browserManager.tabManager.spaceStateOwner.currentSpace?.id
         windowState.currentProfileId = browserManager.currentProfile?.id
-        windowState.window = NSWindow(
+        windowRegistry.bindAppKitWindow(
+            NSWindow(
             contentRect: NSRect(x: 120, y: 120, width: 1200, height: 800),
             styleMask: [.titled, .closable, .resizable],
             backing: .buffered,
             defer: false
+            ),
+            to: windowState
         )
         windowRegistry.register(windowState)
         windowRegistry.setActive(windowState)
         browserManager.windowRegistry = windowRegistry
 
-        let originalMainFrame = windowState.window!.frame
+        let originalMainFrame = windowRegistry.appKitWindow(for: windowState)!.frame
         let extensionURL = URL(string: "safari-web-extension://adapter-owner/popup.html")!
         sourceTab.url = extensionURL
 
@@ -235,14 +238,14 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
         )
 
         XCTAssertNotNil(popupWebView)
-        XCTAssertEqual(windowState.window!.frame, originalMainFrame)
+        XCTAssertEqual(windowRegistry.appKitWindow(for: windowState)!.frame, originalMainFrame)
     }
 
     func testActionPopupWindowOpenRoutesExternalURLToNormalTab() async throws {
         let harness = try await makeExtensionHarness(ownerExtensionID: "action-owner")
         let sourceURL = URL(string: "safari-web-extension://action-owner/popup.html")!
         let targetURL = URL(string: "https://account.example.test/login")!
-        let mainWindow = try XCTUnwrap(harness.windowState.window)
+        let mainWindow = try XCTUnwrap(harness.windowRegistry.appKitWindow(for: harness.windowState))
         let originalMainFrame = mainWindow.frame
         let initialRegularTabCount = harness.browserManager.tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[
             harness.browserManager.tabManager.spaceStateOwner.currentSpace!.id
@@ -296,7 +299,7 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
             controller: harness.controller,
             extensionContext: harness.extensionContext,
             extensionManager: harness.extensionManager,
-            parentWindow: harness.windowState.window
+            parentWindow: harness.windowRegistry.appKitWindow(for: harness.windowState)
         )
 
         XCTAssertNil(adapter)
@@ -322,7 +325,7 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
                 controller: harness.controller,
                 extensionContext: harness.extensionContext,
                 extensionManager: harness.extensionManager,
-                parentWindow: harness.windowState.window
+                parentWindow: harness.windowRegistry.appKitWindow(for: harness.windowState)
             )
         let adapter = try XCTUnwrap(maybeAdapter)
         let session = try XCTUnwrap(
@@ -579,7 +582,7 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
 
     func testFocusedWindowForExtensionContextPrefersOwnerMiniWindowBeforeMainWindow() async throws {
         let harness = try await makeExtensionHarness(ownerExtensionID: "adapter-owner")
-        let mainWindow = try XCTUnwrap(harness.windowState.window)
+        let mainWindow = try XCTUnwrap(harness.windowRegistry.appKitWindow(for: harness.windowState))
         mainWindow.makeKeyAndOrderFront(nil)
 
         let popupWebView = try XCTUnwrap(
@@ -667,7 +670,7 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
 
     func testFocusedMiniWindowSetFrameDoesNotMutateParentWindowFrame() async throws {
         let harness = try await makeExtensionHarness(ownerExtensionID: "adapter-owner")
-        let mainWindow = try XCTUnwrap(harness.windowState.window)
+        let mainWindow = try XCTUnwrap(harness.windowRegistry.appKitWindow(for: harness.windowState))
         let originalMainFrame = mainWindow.frame
 
         let popupWebView = try XCTUnwrap(
@@ -739,7 +742,7 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
 
     func testExtensionRequestedExternalTabFromMiniWindowCreatesNormalSameProfileTab() async throws {
         let harness = try await makeExtensionHarness(ownerExtensionID: "adapter-owner")
-        let mainWindow = try XCTUnwrap(harness.windowState.window)
+        let mainWindow = try XCTUnwrap(harness.windowRegistry.appKitWindow(for: harness.windowState))
         let originalMainFrame = mainWindow.frame
         let initialRegularTabCount = harness.browserManager.tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[
             harness.browserManager.tabManager.spaceStateOwner.currentSpace!.id
@@ -793,7 +796,7 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
         XCTAssertEqual(harness.windowState.currentTabId, authTab.id)
 
         harness.extensionManager.allowsRuntimeWithoutEnabledExtensions = true
-        let webView = try XCTUnwrap(authTab.assignedWebView ?? authTab.existingWebView)
+        let webView = try XCTUnwrap(authTab.resolvedAssignedWebView() ?? authTab.resolvedCurrentWebView())
         harness.extensionManager.prepareWebViewForExtensionRuntime(
             webView,
             currentURL: nil,
@@ -817,7 +820,7 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
 
     func testExtensionExternalWindowCreateUsesNormalBrowserTab() async throws {
         let harness = try await makeExtensionHarness(ownerExtensionID: "adapter-owner")
-        let mainWindow = try XCTUnwrap(harness.windowState.window)
+        let mainWindow = try XCTUnwrap(harness.windowRegistry.appKitWindow(for: harness.windowState))
         let originalMainFrame = mainWindow.frame
         let initialRegularTabCount = harness.browserManager.tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[
             harness.browserManager.tabManager.spaceStateOwner.currentSpace!.id
@@ -956,11 +959,14 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
         privateWindow.tabManager = harness.browserManager.tabManager
         privateWindow.isIncognito = true
         privateWindow.ephemeralProfile = privateProfile
-        privateWindow.window = NSWindow(
+        harness.windowRegistry.bindAppKitWindow(
+            NSWindow(
             contentRect: NSRect(x: 160, y: 160, width: 900, height: 700),
             styleMask: [.titled, .closable, .resizable],
             backing: .buffered,
             defer: false
+            ),
+            to: privateWindow
         )
         harness.windowRegistry.register(privateWindow)
 
@@ -1012,11 +1018,14 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
         windowState.tabManager = browserManager.tabManager
         windowState.currentSpaceId = space.id
         windowState.currentProfileId = profile.id
-        windowState.window = NSWindow(
+        windowRegistry.bindAppKitWindow(
+            NSWindow(
             contentRect: NSRect(x: 120, y: 120, width: 1200, height: 800),
             styleMask: [.titled, .closable, .resizable],
             backing: .buffered,
             defer: false
+            ),
+            to: windowState
         )
         windowRegistry.register(windowState)
         windowRegistry.setActive(windowState)
@@ -1079,11 +1088,14 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
         windowState.tabManager = browserManager.tabManager
         windowState.currentSpaceId = space.id
         windowState.currentProfileId = profile.id
-        windowState.window = NSWindow(
+        windowRegistry.bindAppKitWindow(
+            NSWindow(
             contentRect: NSRect(x: 120, y: 120, width: 1200, height: 800),
             styleMask: [.titled, .closable, .resizable],
             backing: .buffered,
             defer: false
+            ),
+            to: windowState
         )
         windowRegistry.register(windowState)
         windowRegistry.setActive(windowState)

@@ -8,6 +8,7 @@ import AppKit
 import ObjectiveC.runtime
 import SwiftUI
 import WebKit
+import SumiWebRuntime
 
 enum BrowserConfigurationAuxiliarySurface: String, CaseIterable {
     case glance
@@ -61,10 +62,10 @@ class BrowserConfiguration {
 
     init(
         autoplayPolicyStore: SumiAutoplayPolicyStoreAdapter = SumiStartupPersistenceComposition.autoplayPolicyStore,
-        visitedLinkStoreProvider: SharedVisitedLinkStoreProvider? = nil
+        visitedLinkStoreProvider: SharedVisitedLinkStoreProvider = SharedVisitedLinkStoreComposition.provider
     ) {
         self.autoplayPolicyStore = autoplayPolicyStore
-        self.visitedLinkStoreProvider = visitedLinkStoreProvider ?? .shared
+        self.visitedLinkStoreProvider = visitedLinkStoreProvider
     }
 
     var resolvedAutoplayPolicyStore: SumiAutoplayPolicyStoreAdapter {

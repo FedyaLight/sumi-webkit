@@ -2,6 +2,7 @@ import WebKit
 import XCTest
 
 @testable import Sumi
+import SumiDomain
 
 @available(macOS 13.0, *)
 @MainActor

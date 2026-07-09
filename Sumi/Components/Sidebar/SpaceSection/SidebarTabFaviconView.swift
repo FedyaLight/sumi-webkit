@@ -7,6 +7,7 @@
 //
 
 import SwiftUI
+import SumiDomain
 
 struct SidebarTabFaviconView: View {
     @ObservedObject var tab: Tab

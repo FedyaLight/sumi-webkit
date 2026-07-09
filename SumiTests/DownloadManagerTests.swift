@@ -190,7 +190,7 @@ final class DownloadManagerTests: XCTestCase {
 
         manager.retry(item)
 
-        XCTAssertNil(tab.currentWebView)
+        XCTAssertNil(tab.resolvedCurrentWebView())
         XCTAssertEqual(item.state, .failed)
         XCTAssertEqual(
             item.error?.errorDescription,

@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 import XCTest
 
 @testable import Sumi
@@ -108,15 +109,13 @@ final class BrowserStartupProtectionRuntimeTests: XCTestCase {
         refreshCompositor: @escaping (BrowserWindowState) -> Void = { _ in /* no-op */ }
     ) -> BrowserStartupProtectionRuntime {
         BrowserStartupProtectionRuntime(
-            dependencies: BrowserStartupProtectionRuntime.Dependencies(
-                appliedProtectionLevel: appliedLevel,
-                restoreAppliedProtectionLevelForStartup: restoreAppliedProtectionLevelForStartup,
-                tab: tab,
-                allWindows: allWindows,
-                prepareBackgroundTabIfNeeded: prepareBackgroundTabIfNeeded,
-                schedulePrepareVisibleWebViews: schedulePrepareVisibleWebViews,
-                refreshCompositor: refreshCompositor
-            )
+            appliedProtectionLevel: appliedLevel,
+            restoreAppliedProtectionLevelForStartup: restoreAppliedProtectionLevelForStartup,
+            tab: tab,
+            allWindows: allWindows,
+            prepareBackgroundTabIfNeeded: prepareBackgroundTabIfNeeded,
+            schedulePrepareVisibleWebViews: schedulePrepareVisibleWebViews,
+            refreshCompositor: refreshCompositor
         )
     }
 }

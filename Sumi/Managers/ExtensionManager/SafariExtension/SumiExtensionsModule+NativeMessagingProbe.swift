@@ -19,6 +19,7 @@ extension SumiExtensionsModule {
             ?? SumiNativeMessagingAdapterRegistry.production()
         let report = SafariExtensionNativeMessagingProbeBuilder.build(
             discovered: discovered,
+            importStore: SafariExtensionImportStore.process,
             installedExtensions: manager?.installedExtensions ?? [],
             extensionManager: manager,
             extensionsModuleEnabled: isEnabled,

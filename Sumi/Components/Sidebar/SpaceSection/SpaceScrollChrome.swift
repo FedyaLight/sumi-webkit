@@ -48,6 +48,7 @@ private struct SpaceScrollView<Content: View>: View {
 
     @Environment(\.resolvedThemeContext) var themeContext
     @Environment(\.sumiSettings) var sumiSettings
+    @EnvironmentObject private var dragState: SidebarDragState
 
     private var tokens: ChromeThemeTokens {
         themeContext.tokens(settings: sumiSettings)
@@ -70,7 +71,8 @@ private struct SpaceScrollView<Content: View>: View {
                         isEnabled: isInteractive,
                         indicatorColor: scrollIndicatorColor,
                         contentViewportWidth: contentWidth,
-                        trailingProjection: scrollIndicatorTrailingProjection
+                        trailingProjection: scrollIndicatorTrailingProjection,
+                        dragAutoscrollRegistry: dragState.dragAutoscrollRegistry
                     )
                     .frame(width: 0, height: 0)
                     .allowsHitTesting(false)
@@ -117,12 +119,16 @@ private struct SidebarTabListScrollRegistrationViewRepresentable: NSViewRepresen
     let indicatorColor: NSColor
     let contentViewportWidth: CGFloat
     let trailingProjection: CGFloat
+    let dragAutoscrollRegistry: SidebarTabListDragAutoscrollRegistry
 
     func makeNSView(context: Context) -> SidebarTabListScrollRegistrationView {
-        SidebarTabListScrollRegistrationView()
+        let view = SidebarTabListScrollRegistrationView()
+        view.dragAutoscrollRegistry = dragAutoscrollRegistry
+        return view
     }
 
     func updateNSView(_ nsView: SidebarTabListScrollRegistrationView, context: Context) {
+        nsView.dragAutoscrollRegistry = dragAutoscrollRegistry
         nsView.indicatorColor = indicatorColor
         nsView.scrollIndicatorContentViewportWidth = contentViewportWidth
         nsView.scrollIndicatorTrailingProjection = trailingProjection
@@ -703,6 +709,8 @@ private final class SidebarTabListScrollRegistrationView: NSView {
         }
     }
 
+    var dragAutoscrollRegistry: SidebarTabListDragAutoscrollRegistry?
+
     var indicatorColor: NSColor = .clear {
         didSet {
             indicatorPresenter.indicatorColor = indicatorColor
@@ -793,7 +801,7 @@ private final class SidebarTabListScrollRegistrationView: NSView {
 
     private func unregisterScrollView() {
         guard let registeredScrollView else { return }
-        SidebarTabListDragAutoscrollRegistry.shared.unregister(registeredScrollView)
+        dragAutoscrollRegistry?.unregister(registeredScrollView)
         self.registeredScrollView = nil
     }
 
@@ -808,14 +816,15 @@ private final class SidebarTabListScrollRegistrationView: NSView {
 
     private func syncRegistration(for scrollView: NSScrollView?) {
         guard isRegistrationEnabled,
-              let scrollView else {
+              let scrollView,
+              let dragAutoscrollRegistry else {
             unregisterScrollView()
             return
         }
 
         guard registeredScrollView !== scrollView else { return }
         unregisterScrollView()
-        SidebarTabListDragAutoscrollRegistry.shared.register(scrollView)
+        dragAutoscrollRegistry.register(scrollView)
         registeredScrollView = scrollView
     }
 
@@ -871,7 +880,7 @@ private final class SidebarTabListScrollRegistrationView: NSView {
 
     private func reportAutoscrollBoundaries(hasContentAbove: Bool, hasContentBelow: Bool) {
         guard let scrollView = scrollBoundsObserver.scrollView else { return }
-        SidebarTabListDragAutoscrollRegistry.shared.updateBoundaries(
+        dragAutoscrollRegistry?.updateBoundaries(
             for: scrollView,
             hasContentAbove: hasContentAbove,
             hasContentBelow: hasContentBelow

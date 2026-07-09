@@ -50,7 +50,7 @@ final class WebViewCreationPlanningOwnerTests: XCTestCase {
         let targetWindowId = UUID()
         let stableRegistryWindowId = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
         let laterRegistryWindowId = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
-        tab.primaryWindowId = laterRegistryWindowId
+        tab.webViewOwnershipOwner.setPrimaryWindowId(laterRegistryWindowId)
 
         let plan = owner.creationPlan(
             for: tab,

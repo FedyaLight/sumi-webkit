@@ -102,12 +102,12 @@ final class ActiveTabSuggestionOwnerTests: XCTestCase {
         shortcutLiveTab: [UUID: Tab] = [:],
         visibleSplitTabIds: Set<UUID> = []
     ) -> ActiveTabSuggestionOwner {
-        ActiveTabSuggestionOwner(dependencies: ActiveTabSuggestionOwner.Dependencies(
+        ActiveTabSuggestionOwner(
             allTabsForCurrentProfile: { allTabs },
             liveShortcutTabs: { windowId in liveShortcutTabs[windowId] ?? [] },
             shortcutLiveTab: { pinId, _ in shortcutLiveTab[pinId] },
             visibleSplitTabIds: { _ in visibleSplitTabIds }
-        ))
+        )
     }
 
     private func makeTab(name: String, url: String) -> Tab {

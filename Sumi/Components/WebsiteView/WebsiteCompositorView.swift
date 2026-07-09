@@ -2,6 +2,7 @@ import AppKit
 import QuartzCore
 import SwiftUI
 import WebKit
+import SumiWebRuntime
 
 @MainActor
 final class WindowWebContentController: NSViewController {

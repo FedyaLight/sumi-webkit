@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 import WebKit
 
 /// Owns presentation assembly for the site settings surface: category and

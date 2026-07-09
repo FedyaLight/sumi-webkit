@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 /// Races a coordinator permission request against a poll that detects a pending prompt-UI
 /// query for the same page, failing closed after a timeout. Shared by the WebKit media,

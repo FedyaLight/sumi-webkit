@@ -295,7 +295,7 @@ class SumiSettingsService {
     init(
         userDefaults: UserDefaults = .standard,
         energySaverSystemMonitor: any SumiEnergySaverSystemMonitoring =
-            SumiEnergySaverSystemMonitor.shared,
+            SumiEnergySaverSystemMonitor(),
         nowPlayingController: any SumiNativeNowPlayingFeatureControlling =
             SumiNativeNowPlayingController(),
         downloadApplicationsStore: SumiDownloadApplicationsStore = SumiDownloadApplicationsStore()

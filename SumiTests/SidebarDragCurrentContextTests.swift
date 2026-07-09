@@ -8,7 +8,7 @@ import XCTest
 final class SidebarDragCurrentContextTests: XCTestCase {
     func testDeferredGeometryWriterUsesInjectedDragState() {
         let injectedState = SidebarDragState()
-        let sharedState = SidebarDragState.shared
+        let otherState = SidebarDragState()
         let spaceId = UUID()
         let frame = CGRect(x: 10, y: 20, width: 30, height: 40)
         let key = SidebarSectionGeometryKey(spaceId: spaceId, section: .spaceRegular)
@@ -23,7 +23,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         injectedState.flushDeferredGeometryForDragStart()
 
         XCTAssertEqual(injectedState.geometrySnapshot.sectionFramesBySpace[key], frame)
-        XCTAssertNil(sharedState.geometrySnapshot.sectionFramesBySpace[key])
+        XCTAssertNil(otherState.geometrySnapshot.sectionFramesBySpace[key])
     }
 
     func testEssentialsNativeDragPreviewUsesActualSourceTileSize() {
@@ -41,7 +41,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            SumiNativeDragImageFactory.shared.size(for: .essentialsTile, descriptor: descriptor),
+            SumiNativeDragImageFactory().size(for: .essentialsTile, descriptor: descriptor),
             sourceSize
         )
     }

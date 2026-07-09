@@ -10,17 +10,21 @@ private enum WindowScopedConfigPreparation {
 /// policy when the destination requires it (floating bar and privacy flows).
 @MainActor
 final class BrowserWindowScopedNavigationOwner {
-    struct Dependencies {
-        let webViewCoordinator: @MainActor () -> WebViewCoordinator?
-        let windowOwnedWebView: @MainActor (Tab, UUID) -> WKWebView?
-        let reloadTab: @MainActor (UUID, UUID) -> Void
-        let resolvedSearchEngineTemplate: @MainActor () -> String?
-    }
+    private let webViewCoordinator: @MainActor () -> WebViewCoordinator?
+    private let windowOwnedWebView: @MainActor (Tab, UUID) -> WKWebView?
+    private let reloadTab: @MainActor (UUID, UUID) -> Void
+    private let resolvedSearchEngineTemplate: @MainActor () -> String?
 
-    private let dependencies: Dependencies
-
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
+    init(
+        webViewCoordinator: @escaping @MainActor () -> WebViewCoordinator?,
+        windowOwnedWebView: @escaping @MainActor (Tab, UUID) -> WKWebView?,
+        reloadTab: @escaping @MainActor (UUID, UUID) -> Void,
+        resolvedSearchEngineTemplate: @escaping @MainActor () -> String?
+    ) {
+        self.webViewCoordinator = webViewCoordinator
+        self.windowOwnedWebView = windowOwnedWebView
+        self.reloadTab = reloadTab
+        self.resolvedSearchEngineTemplate = resolvedSearchEngineTemplate
     }
 
     func loadWindowScopedPage(
@@ -101,7 +105,7 @@ final class BrowserWindowScopedNavigationOwner {
                 targetURL: targetURL
             )
         }
-        dependencies.reloadTab(tab.id, windowState.id)
+        reloadTab(tab.id, windowState.id)
     }
 
     func loadFloatingBarCurrentPage(
@@ -121,7 +125,7 @@ final class BrowserWindowScopedNavigationOwner {
         tab: Tab,
         in windowState: BrowserWindowState
     ) {
-        let template = dependencies.resolvedSearchEngineTemplate()
+        let template = resolvedSearchEngineTemplate()
             ?? SearchProvider.google.queryTemplate
         let normalizedUrl = normalizeURL(input, queryTemplate: template)
 
@@ -155,7 +159,7 @@ final class BrowserWindowScopedNavigationOwner {
         guard tab.configurationPolicyRequiresNormalWebViewRebuild(for: targetURL) else {
             return .ready
         }
-        guard let webViewCoordinator = dependencies.webViewCoordinator() else {
+        guard let webViewCoordinator = webViewCoordinator() else {
             RuntimeDiagnostics.emit(
                 "Cannot rebuild window-scoped WebView for \(reason): coordinator unavailable."
             )
@@ -182,27 +186,7 @@ final class BrowserWindowScopedNavigationOwner {
     }
 
     private func windowOwnedOrCreatedWebView(for tab: Tab, in windowId: UUID) -> WKWebView? {
-        dependencies.windowOwnedWebView(tab, windowId)
-            ?? dependencies.webViewCoordinator()?.getOrCreateWebView(for: tab, in: windowId)
-    }
-}
-
-extension BrowserWindowScopedNavigationOwner.Dependencies {
-    @MainActor
-    static func live(browserManager: BrowserManager) -> Self {
-        Self(
-            webViewCoordinator: { [weak browserManager] in
-                browserManager?.webViewCoordinator
-            },
-            windowOwnedWebView: { [weak browserManager] tab, windowId in
-                browserManager?.webViewRoutingService.windowOwnedWebView(for: tab, in: windowId)
-            },
-            reloadTab: { [weak browserManager] tabId, windowId in
-                browserManager?.webViewRoutingService.reloadTab(tabId, in: windowId)
-            },
-            resolvedSearchEngineTemplate: { [weak browserManager] in
-                browserManager?.sumiSettings?.resolvedSearchEngineTemplate
-            }
-        )
+        windowOwnedWebView(tab, windowId)
+            ?? webViewCoordinator()?.getOrCreateWebView(for: tab, in: windowId)
     }
 }

@@ -9,6 +9,7 @@ final class URLBarHubPageActionOwner: ObservableObject {
     @Published private(set) var isCapturingScreenshot = false
 
     let shareButtonAnchor = URLBarHubShareAnchorStore()
+    weak var windowRegistry: WindowRegistry?
 
     func shareCurrentPage(
         currentTab: Tab?,
@@ -18,7 +19,7 @@ final class URLBarHubPageActionOwner: ObservableObject {
         guard let url = currentTab?.url else { return }
 
         let source = windowState.sidebarTransientSessionCoordinator.preparedPresentationSource(
-            window: windowState.shellWindow(in: nil),
+            window: windowState.shellWindow(in: windowRegistry),
             ownerView: shareButtonAnchor.view
         )
         presentSharingServicePicker([url], source)
@@ -40,7 +41,7 @@ final class URLBarHubPageActionOwner: ObservableObject {
             currentTab: target.tab,
             webView: target.webView,
             options: options,
-            window: windowState.shellWindow(in: nil)
+            window: windowState.shellWindow(in: windowRegistry)
         )
     }
 
@@ -60,7 +61,7 @@ final class URLBarHubPageActionOwner: ObservableObject {
 
         URLBarHubScreenshotSettingsPresenter.present(
             initial: options,
-            window: windowState.shellWindow(in: nil),
+            window: windowState.shellWindow(in: windowRegistry),
             themeContext: themeContext
         ) { selectedOptions in
             guard let selectedOptions else { return }
@@ -69,7 +70,7 @@ final class URLBarHubPageActionOwner: ObservableObject {
                 currentTab: target.tab,
                 webView: target.webView,
                 options: selectedOptions,
-                window: windowState.shellWindow(in: nil)
+                window: windowState.shellWindow(in: self.windowRegistry)
             )
         }
     }

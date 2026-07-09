@@ -18,8 +18,6 @@ protocol SumiCompiledContentRuleListCataloging: AnyObject {
 
 @MainActor
 final class SumiCompiledContentRuleListCatalog: SumiCompiledContentRuleListCataloging {
-    static let shared = SumiCompiledContentRuleListCatalog()
-
     private let userDefaults: UserDefaults
     private let userDefaultsKey = "SumiCompiledContentRuleListIdentifiersByName.v1"
     private var identifiersByName: [String: Set<String>]

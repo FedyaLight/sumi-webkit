@@ -276,7 +276,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         windowRegistry.setActive(windowState)
 
         browserManager.compositorManager.unloadTab(tab)
-        return tab.currentWebView != nil
+        return tab.resolvedCurrentWebView() != nil
     }
 
     private func splitManagerCanUseAttachedRuntime(_ browserManager: BrowserManager) -> Bool {
@@ -400,11 +400,14 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         windowState.tabManager = browserManager.tabManager
         windowState.currentSpaceId = space.id
         windowState.currentTabId = sourceTab.id
-        windowState.window = NSWindow(
+        windowRegistry.bindAppKitWindow(
+            NSWindow(
             contentRect: NSRect(x: 120, y: 120, width: 900, height: 700),
             styleMask: [.titled, .closable, .resizable],
             backing: .buffered,
             defer: false
+            ),
+            to: windowState
         )
         windowRegistry.register(windowState)
         windowRegistry.setActive(windowState)
@@ -830,18 +833,15 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         let runtimeNotifications = BrowserManagerRuntimeWiring.tabSelectionRuntimeNotifications(
             for: browserManager
         )
-        let windowSessionDependencies = BrowserWindowSessionActivationOwner.Dependencies.live(
-            browserManager: browserManager
-        )
-        let closeRouterDependencies = BrowserWebViewCloseRouter.Dependencies.live(
+        let closeRouter = BrowserWebViewCloseRouter(
             browserManager: browserManager
         )
 
-        windowSessionDependencies.notifyExtensionWindowOpened(windowState)
-        windowSessionDependencies.notifyExtensionWindowFocused(windowState)
+        browserManager.extensionsModule.notifyWindowOpenedIfLoaded(windowState)
+        browserManager.extensionsModule.notifyWindowFocusedIfLoaded(windowState)
         runtimeNotifications.tabActivated(tab, nil)
         runtimeNotifications.tabSelectionChanged("test-tab-selection")
-        closeRouterDependencies.notifyExtensionTabClosed(tab)
+        closeRouter.notifyExtensionTabClosed(tab)
 
         XCTAssertFalse(browserManager.extensionsModule.hasLoadedRuntime)
     }

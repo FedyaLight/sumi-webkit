@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 import WebKit
 
 @MainActor
@@ -163,8 +164,6 @@ extension WKWebsiteDataRecord: SumiWebsiteDataRecord {}
 
 @MainActor
 final class SumiWebsiteDataCleanupService: SumiWebsiteDataCleanupServicing {
-    static let shared = SumiWebsiteDataCleanupService()
-
     private let preservationPolicy: any SumiWebsiteDataPreservationPolicy
     private var inFlightCleanups: [CleanupKey: Task<Void, Never>] = [:]
 

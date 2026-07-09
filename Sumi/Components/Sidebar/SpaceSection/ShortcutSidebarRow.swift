@@ -4,6 +4,7 @@
 //
 
 import SwiftUI
+import SumiDomain
 
 struct ShortcutSidebarRow: View {
     @ObservedObject var pin: ShortcutPin

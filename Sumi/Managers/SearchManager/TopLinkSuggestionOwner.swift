@@ -12,16 +12,18 @@ import Foundation
 /// fixture data instead of live History/Bookmark/Tab managers.
 @MainActor
 final class TopLinkSuggestionOwner {
-    struct Dependencies {
-        let topVisitedSites: @MainActor (_ limit: Int) async -> [HistoryListItem]
-        let bookmarks: @MainActor () -> [SumiBookmark]
-        let openTabs: @MainActor () -> [Tab]
-    }
+    private let topVisitedSites: @MainActor (_ limit: Int) async -> [HistoryListItem]
+    private let bookmarks: @MainActor () -> [SumiBookmark]
+    private let openTabs: @MainActor () -> [Tab]
 
-    private let dependencies: Dependencies
-
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
+    init(
+        topVisitedSites: @escaping @MainActor (_ limit: Int) async -> [HistoryListItem],
+        bookmarks: @escaping @MainActor () -> [SumiBookmark],
+        openTabs: @escaping @MainActor () -> [Tab]
+    ) {
+        self.topVisitedSites = topVisitedSites
+        self.bookmarks = bookmarks
+        self.openTabs = openTabs
     }
 
     func suggestions(limit: Int) async -> [SearchManager.SearchSuggestion] {
@@ -35,39 +37,19 @@ final class TopLinkSuggestionOwner {
             suggestions.append(suggestion)
         }
 
-        let topSites = await dependencies.topVisitedSites(max(limit, 1))
+        let topSites = await topVisitedSites(max(limit, 1))
         for entry in topSites {
             append(SearchManager.SearchSuggestion(text: entry.displayTitle, type: .history(entry)), url: entry.url)
         }
 
-        for bookmark in dependencies.bookmarks() {
+        for bookmark in bookmarks() {
             append(SearchManager.SearchSuggestion(text: bookmark.title, type: .bookmark(bookmark)), url: bookmark.url)
         }
 
-        for tab in dependencies.openTabs() {
+        for tab in openTabs() {
             append(SearchManager.SearchSuggestion(text: tab.name, type: .tab(tab)), url: tab.url)
         }
 
         return suggestions
-    }
-}
-
-extension TopLinkSuggestionOwner.Dependencies {
-    static func live(
-        historyManager: HistoryManager?,
-        bookmarkManager: SumiBookmarkManager?,
-        tabManager: TabManager?
-    ) -> Self {
-        Self(
-            topVisitedSites: { [weak historyManager] limit in
-                await historyManager?.topVisitedSites(limit: limit) ?? []
-            },
-            bookmarks: { [weak bookmarkManager] in
-                bookmarkManager?.allBookmarks() ?? []
-            },
-            openTabs: { [weak tabManager] in
-                tabManager?.tabCollectionMembershipOwner.allTabsForCurrentProfile() ?? []
-            }
-        )
     }
 }

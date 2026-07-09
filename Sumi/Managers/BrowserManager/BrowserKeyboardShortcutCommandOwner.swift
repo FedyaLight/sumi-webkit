@@ -3,13 +3,16 @@ import WebKit
 
 @MainActor
 final class BrowserKeyboardShortcutCommandOwner {
-    struct Dependencies {
+    struct TabSelectionCapabilities {
         let activeWindow: @MainActor () -> BrowserWindowState?
         let createNewTab: @MainActor () -> Void
         let openNewTabOrFloatingBar: @MainActor (BrowserWindowState) -> Void
         let tabsForDisplay: @MainActor (BrowserWindowState) -> [Tab]
         let currentTab: @MainActor (BrowserWindowState) -> Tab?
         let selectTab: @MainActor (Tab, BrowserWindowState) -> Void
+    }
+
+    struct SpaceSplitCapabilities {
         let isSplit: @MainActor (UUID) -> Bool
         let setSplitLayoutKind: @MainActor (SplitLayoutKind, UUID) -> Void
         let enterSplitWithTab: @MainActor (Tab, BrowserWindowState) -> Void
@@ -19,25 +22,110 @@ final class BrowserKeyboardShortcutCommandOwner {
         let setActiveSpace: @MainActor (Space, BrowserWindowState) -> Void
         let setAllFoldersOpen: @MainActor (Bool, UUID) -> Void
         let persistWindowSession: @MainActor (BrowserWindowState) -> Void
+    }
+
+    struct ReaderCapabilities {
         let activePageTab: @MainActor () -> Tab?
         let activePageWebView: @MainActor () -> WKWebView?
         let webView: @MainActor (UUID, UUID) -> WKWebView?
         let toggleReaderMode: @MainActor (WKWebView, Tab) async -> Void
     }
 
-    private let dependencies: Dependencies
+    private let tabSelection: TabSelectionCapabilities
+    private let spaceSplit: SpaceSplitCapabilities
+    private let reader: ReaderCapabilities
 
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
+    init(
+        tabSelection: TabSelectionCapabilities,
+        spaceSplit: SpaceSplitCapabilities,
+        reader: ReaderCapabilities
+    ) {
+        self.tabSelection = tabSelection
+        self.spaceSplit = spaceSplit
+        self.reader = reader
+    }
+
+    convenience init(browserManager: BrowserManager) {
+        self.init(
+            tabSelection: TabSelectionCapabilities(
+                activeWindow: { [weak browserManager] in
+                    browserManager?.windowRegistry?.activeWindow
+                },
+                createNewTab: { [weak browserManager] in
+                    browserManager?.tabLifecycleService.opening.createNewTab()
+                },
+                openNewTabOrFloatingBar: { [weak browserManager] windowState in
+                    browserManager?.floatingBarRoutingOwner.openNewTabOrFloatingBar(in: windowState)
+                },
+                tabsForDisplay: { [weak browserManager] windowState in
+                    browserManager?.windowTabContextOwner.tabsForDisplay(in: windowState) ?? []
+                },
+                currentTab: { [weak browserManager] windowState in
+                    browserManager?.windowTabContextOwner.currentTab(for: windowState)
+                },
+                selectTab: { [weak browserManager] tab, windowState in
+                    browserManager?.selectTab(tab, in: windowState)
+                }
+            ),
+            spaceSplit: SpaceSplitCapabilities(
+                isSplit: { [weak browserManager] windowId in
+                    browserManager?.splitManager.isSplit(for: windowId) ?? false
+                },
+                setSplitLayoutKind: { [weak browserManager] layoutKind, windowId in
+                    browserManager?.splitManager.setLayoutKind(layoutKind, for: windowId)
+                },
+                enterSplitWithTab: { [weak browserManager] tab, windowState in
+                    browserManager?.splitManager.enterSplit(with: tab, placeOn: .right, in: windowState)
+                },
+                unsplitActiveGroup: { [weak browserManager] windowId in
+                    browserManager?.splitManager.unsplitActiveGroup(for: windowId)
+                },
+                createEmptySplit: { [weak browserManager] windowState in
+                    browserManager?.splitManager.createEmptySplit(side: .right, in: windowState)
+                },
+                spaces: { [weak browserManager] in
+                    browserManager?.tabManager.spaceStateOwner.spaces ?? []
+                },
+                setActiveSpace: { [weak browserManager] space, windowState in
+                    browserManager?.windowSpaceStateOwner.setActiveSpace(space, in: windowState)
+                },
+                setAllFoldersOpen: { [weak browserManager] isOpen, spaceId in
+                    browserManager?.tabManager.folderMutationOwner.setAllFolders(open: isOpen, in: spaceId)
+                },
+                persistWindowSession: { [weak browserManager] windowState in
+                    browserManager?.windowSessionActivationOwner.persistWindowSession(for: windowState)
+                }
+            ),
+            reader: ReaderCapabilities(
+                activePageTab: { [weak browserManager] in
+                    browserManager?.activePageRoutingOwner.activePageTabForActiveWindow()
+                },
+                activePageWebView: { [weak browserManager] in
+                    browserManager?.activePageRoutingOwner.activePageWebViewForActiveWindow()
+                },
+                webView: { [weak browserManager] tabId, windowId in
+                    browserManager?.webViewRoutingService.webView(for: tabId, in: windowId)
+                },
+                toggleReaderMode: { webView, tab in
+                    do {
+                        try await SumiReaderModeService.toggleReaderMode(on: webView, tab: tab)
+                    } catch {
+                        RuntimeDiagnostics.debug(category: "ReaderMode") {
+                            "Keyboard reader mode toggle failed: \(error.localizedDescription)"
+                        }
+                    }
+                }
+            )
+        )
     }
 
     func openNewTabSurfaceInActiveWindow() {
-        guard let activeWindow = dependencies.activeWindow() else {
-            dependencies.createNewTab()
+        guard let activeWindow = tabSelection.activeWindow() else {
+            tabSelection.createNewTab()
             return
         }
 
-        dependencies.openNewTabOrFloatingBar(activeWindow)
+        tabSelection.openNewTabOrFloatingBar(activeWindow)
     }
 
     func selectNextTabInActiveWindow() {
@@ -49,42 +137,42 @@ final class BrowserKeyboardShortcutCommandOwner {
     }
 
     func selectTabByIndexInActiveWindow(_ index: Int) {
-        guard let activeWindow = dependencies.activeWindow() else { return }
-        let currentTabs = dependencies.tabsForDisplay(activeWindow)
+        guard let activeWindow = tabSelection.activeWindow() else { return }
+        let currentTabs = tabSelection.tabsForDisplay(activeWindow)
         guard currentTabs.indices.contains(index) else { return }
 
-        dependencies.selectTab(currentTabs[index], activeWindow)
+        tabSelection.selectTab(currentTabs[index], activeWindow)
     }
 
     func selectLastTabInActiveWindow() {
-        guard let activeWindow = dependencies.activeWindow(),
-              let lastTab = dependencies.tabsForDisplay(activeWindow).last
+        guard let activeWindow = tabSelection.activeWindow(),
+              let lastTab = tabSelection.tabsForDisplay(activeWindow).last
         else { return }
 
-        dependencies.selectTab(lastTab, activeWindow)
+        tabSelection.selectTab(lastTab, activeWindow)
     }
 
     func setActiveSplitLayout(_ layoutKind: SplitLayoutKind) {
-        guard let activeWindow = dependencies.activeWindow() else { return }
-        if dependencies.isSplit(activeWindow.id) {
-            dependencies.setSplitLayoutKind(layoutKind, activeWindow.id)
+        guard let activeWindow = tabSelection.activeWindow() else { return }
+        if spaceSplit.isSplit(activeWindow.id) {
+            spaceSplit.setSplitLayoutKind(layoutKind, activeWindow.id)
             return
         }
-        guard let current = dependencies.currentTab(activeWindow),
+        guard let current = tabSelection.currentTab(activeWindow),
               current.representsSumiNativeSurface == false
         else { return }
-        dependencies.enterSplitWithTab(current, activeWindow)
-        dependencies.setSplitLayoutKind(layoutKind, activeWindow.id)
+        spaceSplit.enterSplitWithTab(current, activeWindow)
+        spaceSplit.setSplitLayoutKind(layoutKind, activeWindow.id)
     }
 
     func unsplitActiveWindow() {
-        guard let activeWindow = dependencies.activeWindow() else { return }
-        dependencies.unsplitActiveGroup(activeWindow.id)
+        guard let activeWindow = tabSelection.activeWindow() else { return }
+        spaceSplit.unsplitActiveGroup(activeWindow.id)
     }
 
     func createEmptySplitInActiveWindow() {
-        guard let activeWindow = dependencies.activeWindow() else { return }
-        dependencies.createEmptySplit(activeWindow)
+        guard let activeWindow = tabSelection.activeWindow() else { return }
+        spaceSplit.createEmptySplit(activeWindow)
     }
 
     func selectNextSpaceInActiveWindow() {
@@ -96,122 +184,51 @@ final class BrowserKeyboardShortcutCommandOwner {
     }
 
     func expandAllFoldersInSidebar() {
-        guard let windowState = dependencies.activeWindow(),
+        guard let windowState = tabSelection.activeWindow(),
               let currentSpaceId = windowState.currentSpaceId
         else { return }
-        dependencies.setAllFoldersOpen(true, currentSpaceId)
-        dependencies.persistWindowSession(windowState)
+        spaceSplit.setAllFoldersOpen(true, currentSpaceId)
+        spaceSplit.persistWindowSession(windowState)
     }
 
     func toggleReaderModeInActiveWindow() {
-        guard let tab = dependencies.activePageTab(),
+        guard let tab = reader.activePageTab(),
               tab.representsSumiNativeSurface == false,
-              let windowState = dependencies.activeWindow(),
-              let webView = dependencies.activePageWebView()
-                ?? dependencies.webView(tab.id, windowState.id)
+              let windowState = tabSelection.activeWindow(),
+              let webView = reader.activePageWebView()
+                ?? reader.webView(tab.id, windowState.id)
         else {
             return
         }
 
-        Task { @MainActor [dependencies] in
-            await dependencies.toggleReaderMode(webView, tab)
+        Task { @MainActor [reader] in
+            await reader.toggleReaderMode(webView, tab)
         }
     }
 
     private func selectRelativeTab(offset: Int) {
-        guard let activeWindow = dependencies.activeWindow() else { return }
-        let currentTabs = dependencies.tabsForDisplay(activeWindow)
-        guard let currentTab = dependencies.currentTab(activeWindow),
+        guard let activeWindow = tabSelection.activeWindow() else { return }
+        let currentTabs = tabSelection.tabsForDisplay(activeWindow)
+        guard let currentTab = tabSelection.currentTab(activeWindow),
               let currentIndex = currentTabs.firstIndex(where: { $0.id == currentTab.id }),
               !currentTabs.isEmpty
         else { return }
 
         let nextIndex = (currentIndex + offset + currentTabs.count) % currentTabs.count
-        dependencies.selectTab(currentTabs[nextIndex], activeWindow)
+        tabSelection.selectTab(currentTabs[nextIndex], activeWindow)
     }
 
     private func selectRelativeSpace(offset: Int) {
-        guard let activeWindow = dependencies.activeWindow(),
+        guard let activeWindow = tabSelection.activeWindow(),
               let currentSpaceId = activeWindow.currentSpaceId
         else { return }
 
-        let spaces = dependencies.spaces()
+        let spaces = spaceSplit.spaces()
         guard let currentSpaceIndex = spaces.firstIndex(where: { $0.id == currentSpaceId }),
               !spaces.isEmpty
         else { return }
 
         let nextIndex = (currentSpaceIndex + offset + spaces.count) % spaces.count
-        dependencies.setActiveSpace(spaces[nextIndex], activeWindow)
-    }
-}
-
-extension BrowserKeyboardShortcutCommandOwner.Dependencies {
-    @MainActor
-    static func live(browserManager: BrowserManager) -> Self {
-        Self(
-            activeWindow: { [weak browserManager] in
-                browserManager?.windowRegistry?.activeWindow
-            },
-            createNewTab: { [weak browserManager] in
-                browserManager?.tabLifecycleService.opening.createNewTab()
-            },
-            openNewTabOrFloatingBar: { [weak browserManager] windowState in
-                browserManager?.floatingBarRoutingOwner.openNewTabOrFloatingBar(in: windowState)
-            },
-            tabsForDisplay: { [weak browserManager] windowState in
-                browserManager?.windowTabContextOwner.tabsForDisplay(in: windowState) ?? []
-            },
-            currentTab: { [weak browserManager] windowState in
-                browserManager?.windowTabContextOwner.currentTab(for: windowState)
-            },
-            selectTab: { [weak browserManager] tab, windowState in
-                browserManager?.selectTab(tab, in: windowState)
-            },
-            isSplit: { [weak browserManager] windowId in
-                browserManager?.splitManager.isSplit(for: windowId) ?? false
-            },
-            setSplitLayoutKind: { [weak browserManager] layoutKind, windowId in
-                browserManager?.splitManager.setLayoutKind(layoutKind, for: windowId)
-            },
-            enterSplitWithTab: { [weak browserManager] tab, windowState in
-                browserManager?.splitManager.enterSplit(with: tab, placeOn: .right, in: windowState)
-            },
-            unsplitActiveGroup: { [weak browserManager] windowId in
-                browserManager?.splitManager.unsplitActiveGroup(for: windowId)
-            },
-            createEmptySplit: { [weak browserManager] windowState in
-                browserManager?.splitManager.createEmptySplit(side: .right, in: windowState)
-            },
-            spaces: { [weak browserManager] in
-                browserManager?.tabManager.spaceStateOwner.spaces ?? []
-            },
-            setActiveSpace: { [weak browserManager] space, windowState in
-                browserManager?.windowSpaceStateOwner.setActiveSpace(space, in: windowState)
-            },
-            setAllFoldersOpen: { [weak browserManager] isOpen, spaceId in
-                browserManager?.tabManager.folderMutationOwner.setAllFolders(open: isOpen, in: spaceId)
-            },
-            persistWindowSession: { [weak browserManager] windowState in
-                browserManager?.windowSessionActivationOwner.persistWindowSession(for: windowState)
-            },
-            activePageTab: { [weak browserManager] in
-                browserManager?.activePageRoutingOwner.activePageTabForActiveWindow()
-            },
-            activePageWebView: { [weak browserManager] in
-                browserManager?.activePageRoutingOwner.activePageWebViewForActiveWindow()
-            },
-            webView: { [weak browserManager] tabId, windowId in
-                browserManager?.webViewRoutingService.webView(for: tabId, in: windowId)
-            },
-            toggleReaderMode: { webView, tab in
-                do {
-                    try await SumiReaderModeService.toggleReaderMode(on: webView, tab: tab)
-                } catch {
-                    RuntimeDiagnostics.debug(category: "ReaderMode") {
-                        "Keyboard reader mode toggle failed: \(error.localizedDescription)"
-                    }
-                }
-            }
-        )
+        spaceSplit.setActiveSpace(spaces[nextIndex], activeWindow)
     }
 }

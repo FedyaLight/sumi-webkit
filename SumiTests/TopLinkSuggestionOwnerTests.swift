@@ -16,11 +16,11 @@ final class TopLinkSuggestionOwnerTests: XCTestCase {
         let tab = Tab(url: URL(string: "https://open-tab.example")!)
         tab.name = "Open Tab"
 
-        let owner = TopLinkSuggestionOwner(dependencies: TopLinkSuggestionOwner.Dependencies(
+        let owner = TopLinkSuggestionOwner(
             topVisitedSites: { _ in [historyEntry] },
             bookmarks: { [bookmark] },
             openTabs: { [tab] }
-        ))
+        )
 
         let suggestions = await owner.suggestions(limit: 5)
 
@@ -32,11 +32,11 @@ final class TopLinkSuggestionOwnerTests: XCTestCase {
         let historyEntry = makeHistoryEntry(url: sharedURL, title: "From History")
         let bookmark = SumiBookmark(id: "bm", title: "From Bookmark", url: URL(string: sharedURL)!, folderID: nil)
 
-        let owner = TopLinkSuggestionOwner(dependencies: TopLinkSuggestionOwner.Dependencies(
+        let owner = TopLinkSuggestionOwner(
             topVisitedSites: { _ in [historyEntry] },
             bookmarks: { [bookmark] },
             openTabs: { [] }
-        ))
+        )
 
         let suggestions = await owner.suggestions(limit: 5)
 
@@ -47,11 +47,11 @@ final class TopLinkSuggestionOwnerTests: XCTestCase {
     func testRespectsLimitAcrossCombinedSources() async {
         let entries = (0..<5).map { makeHistoryEntry(url: "https://site\($0).example", title: "Site \($0)") }
 
-        let owner = TopLinkSuggestionOwner(dependencies: TopLinkSuggestionOwner.Dependencies(
+        let owner = TopLinkSuggestionOwner(
             topVisitedSites: { _ in entries },
             bookmarks: { [] },
             openTabs: { [] }
-        ))
+        )
 
         let suggestions = await owner.suggestions(limit: 2)
 

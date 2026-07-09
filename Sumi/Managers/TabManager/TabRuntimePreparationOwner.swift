@@ -2,37 +2,23 @@ import Foundation
 
 @MainActor
 final class TabRuntimePreparationOwner {
-    struct Dependencies {
-        let runtimeContext: @MainActor () -> TabManagerRuntimeContext?
-        let settings: @MainActor () -> SumiSettingsService?
-    }
+    private let runtimeContext: @MainActor () -> TabManagerRuntimeContext?
+    private let settings: @MainActor () -> SumiSettingsService?
 
-    private let dependencies: Dependencies
-
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
+    init(
+        runtimeContext: @escaping @MainActor () -> TabManagerRuntimeContext?,
+        settings: @escaping @MainActor () -> SumiSettingsService?
+    ) {
+        self.runtimeContext = runtimeContext
+        self.settings = settings
     }
 
     func prepare(_ tab: Tab) {
-        let runtimeContext = dependencies.runtimeContext()
+        let runtimeContext = runtimeContext()
         runtimeContext?.webViewLifecycle.prepareTab(tab)
 
         if tab.sumiSettings == nil {
-            tab.sumiSettings = dependencies.settings() ?? runtimeContext?.settings
+            tab.sumiSettings = settings() ?? runtimeContext?.settings
         }
-    }
-}
-
-extension TabRuntimePreparationOwner.Dependencies {
-    @MainActor
-    static func live(tabManager: TabManager) -> Self {
-        Self(
-            runtimeContext: { [weak tabManager] in
-                tabManager?.runtimeContext
-            },
-            settings: { [weak tabManager] in
-                tabManager?.sumiSettings
-            }
-        )
     }
 }

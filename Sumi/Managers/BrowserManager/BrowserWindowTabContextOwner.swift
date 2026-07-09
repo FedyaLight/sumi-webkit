@@ -2,24 +2,30 @@ import Foundation
 
 @MainActor
 final class BrowserWindowTabContextOwner {
-    struct Dependencies {
-        let selectionService: @MainActor () -> ShellSelectionService?
-        let tabStore: @MainActor () -> ShellSelectionTabStore?
-        let windows: @MainActor () -> [BrowserWindowState]
-        let liveShortcutTabs: @MainActor (UUID) -> [Tab]
-        let visibleSplitTabIds: @MainActor (UUID) -> Set<UUID>
-    }
+    private let selectionService: @MainActor () -> ShellSelectionService?
+    private let tabStore: @MainActor () -> ShellSelectionTabStore?
+    private let windows: @MainActor () -> [BrowserWindowState]
+    private let liveShortcutTabs: @MainActor (UUID) -> [Tab]
+    private let visibleSplitTabIds: @MainActor (UUID) -> Set<UUID>
 
-    private let dependencies: Dependencies
-
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
+    init(
+        selectionService: @escaping @MainActor () -> ShellSelectionService?,
+        tabStore: @escaping @MainActor () -> ShellSelectionTabStore?,
+        windows: @escaping @MainActor () -> [BrowserWindowState],
+        liveShortcutTabs: @escaping @MainActor (UUID) -> [Tab],
+        visibleSplitTabIds: @escaping @MainActor (UUID) -> Set<UUID>
+    ) {
+        self.selectionService = selectionService
+        self.tabStore = tabStore
+        self.windows = windows
+        self.liveShortcutTabs = liveShortcutTabs
+        self.visibleSplitTabIds = visibleSplitTabIds
     }
 
     func currentTab(for windowState: BrowserWindowState) -> Tab? {
         guard !windowState.isAwaitingInitialSessionResolution,
-              let selectionService = dependencies.selectionService(),
-              let tabStore = dependencies.tabStore()
+              let selectionService = selectionService(),
+              let tabStore = tabStore()
         else {
             return nil
         }
@@ -31,7 +37,7 @@ final class BrowserWindowTabContextOwner {
     }
 
     func windowState(containing tab: Tab) -> BrowserWindowState? {
-        dependencies.windows().first { windowState in
+        windows().first { windowState in
             if windowState.isIncognito {
                 return windowState.ephemeralTabs.contains { $0.id == tab.id }
             }
@@ -40,11 +46,11 @@ final class BrowserWindowTabContextOwner {
                 return true
             }
 
-            if dependencies.liveShortcutTabs(windowState.id).contains(where: { $0.id == tab.id }) {
+            if liveShortcutTabs(windowState.id).contains(where: { $0.id == tab.id }) {
                 return true
             }
 
-            if dependencies.visibleSplitTabIds(windowState.id).contains(tab.id) {
+            if visibleSplitTabIds(windowState.id).contains(tab.id) {
                 return true
             }
 
@@ -53,8 +59,8 @@ final class BrowserWindowTabContextOwner {
     }
 
     func tabsForDisplay(in windowState: BrowserWindowState) -> [Tab] {
-        guard let selectionService = dependencies.selectionService(),
-              let tabStore = dependencies.tabStore()
+        guard let selectionService = selectionService(),
+              let tabStore = tabStore()
         else {
             return []
         }
@@ -66,14 +72,14 @@ final class BrowserWindowTabContextOwner {
     }
 
     func isTabDisplayedInAnyWindow(_ tabId: UUID) -> Bool {
-        dependencies.windows().contains { windowState in
+        windows().contains { windowState in
             tabsForDisplay(in: windowState).contains { $0.id == tabId }
         }
     }
 
     func windowScopedMediaCandidateTabs(in windowState: BrowserWindowState) -> [Tab] {
-        guard let selectionService = dependencies.selectionService(),
-              let tabStore = dependencies.tabStore()
+        guard let selectionService = selectionService(),
+              let tabStore = tabStore()
         else {
             return []
         }

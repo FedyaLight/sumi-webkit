@@ -141,7 +141,8 @@ final class SumiBoostsModuleTests: XCTestCase {
                 applyBoostAwareZoom: { _, _ in /* No-op. */ },
                 openWebInspector: { _, _ in /* No-op. */ },
                 sidebarPosition: { .left },
-                settings: { nil }
+                settings: { nil },
+                windowRegistry: { nil }
             )
         )
         var refreshCount = 0

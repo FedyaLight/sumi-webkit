@@ -7,6 +7,7 @@
 import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
+import SumiDomain
 
 private typealias FolderListItem = SidebarFolderListItem
 private typealias FolderDisplayEntry = SidebarFolderDisplayEntry
@@ -38,6 +39,7 @@ struct TabFolderView: View {
 
     @EnvironmentObject var splitManager: SplitViewManager
     @Environment(BrowserWindowState.self) private var windowState
+    @Environment(WindowRegistry.self) private var windowRegistry
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
     @Environment(\.sidebarPresentationContext) private var sidebarPresentationContext
@@ -819,7 +821,7 @@ struct TabFolderView: View {
         else { return }
 
         let source = windowState.sidebarTransientSessionCoordinator.preparedPresentationSource(
-            window: anchorView.window ?? windowState.shellWindow(in: nil),
+            window: anchorView.window ?? windowState.shellWindow(in: windowRegistry),
             ownerView: anchorView
         )
         browserContext.presentationActions.showFolderSearchPopover(
@@ -875,7 +877,7 @@ struct TabFolderView: View {
             SidebarSavedItemDeletionConfirmationPresenter.confirmDeleteFolder(
                 folderName: childFolder.name,
                 childCount: childCount,
-                window: windowState.shellWindow(in: nil),
+                window: windowState.shellWindow(in: windowRegistry),
                 themeContext: themeContext,
                 onDelete: {
                     mutateFolderContent {

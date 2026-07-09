@@ -271,7 +271,7 @@ final class HistoryBoundedQueryTests: XCTestCase {
             context: ModelContext(harness.container),
             profileId: harness.profileID
         )
-        let provider = SharedVisitedLinkStoreProvider.shared
+        let provider = SharedVisitedLinkStoreComposition.provider
         let currentStore = FakeVisitedLinkStore()
         let otherStore = FakeVisitedLinkStore()
         let otherProfileID = UUID()

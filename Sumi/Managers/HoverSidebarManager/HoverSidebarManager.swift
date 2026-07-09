@@ -301,7 +301,7 @@ final class HoverSidebarManager: ObservableObject {
             return
         }
 
-        guard let window = activeState.window else {
+        guard let window = windowRegistry?.appKitWindow(for: activeState) else {
             resetOverlayVisibilityAndHost()
             return
         }
@@ -520,7 +520,7 @@ final class HoverSidebarManager: ObservableObject {
               registry.activeWindowId == hostedWindowId,
               let activeState = registry.activeWindow,
               activeState.isSidebarVisible == false,
-              let window = activeState.window
+              let window = windowRegistry?.appKitWindow(for: activeState)
         else {
             return false
         }

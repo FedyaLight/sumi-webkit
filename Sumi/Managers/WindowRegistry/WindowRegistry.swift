@@ -111,7 +111,6 @@ class WindowRegistry {
 
         windows.removeValue(forKey: id)
         unbindAppKitWindow(for: id)
-        windowState.window = nil
 
         if windows.isEmpty {
             onAllWindowsClosed?()
@@ -176,9 +175,8 @@ class WindowRegistry {
         Array(windows.values)
     }
 
-    /// Binds the AppKit window into the shell map and dual-writes `BrowserWindowState.window`.
+    /// Binds the AppKit window into the shell map (sole SoT for AppKit window handles).
     func bindAppKitWindow(_ window: NSWindow?, to windowState: BrowserWindowState) {
-        windowState.window = window
         bindAppKitWindow(window, for: windowState.id)
     }
 
@@ -198,12 +196,9 @@ class WindowRegistry {
         shells.removeValue(forKey: windowId)
     }
 
-    /// Preferred AppKit window lookup (shell map). Falls back to the dual-write mirror.
+    /// AppKit window lookup from the shell map.
     func appKitWindow(for windowId: UUID) -> NSWindow? {
-        if let shellWindow = shells[windowId]?.window {
-            return shellWindow
-        }
-        return windows[windowId]?.window
+        shells[windowId]?.window
     }
 
     func appKitWindow(for windowState: BrowserWindowState) -> NSWindow? {

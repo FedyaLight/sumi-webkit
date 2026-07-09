@@ -1,6 +1,7 @@
 import XCTest
 
 @testable import Sumi
+import SumiDomain
 
 @MainActor
 final class PermissionSidebarPinningOwnerTests: XCTestCase {
@@ -12,15 +13,14 @@ final class PermissionSidebarPinningOwnerTests: XCTestCase {
         )
         var requestedPageIds: [String] = []
         let owner = BrowserPermissionSidebarPinningOwner(
-            dependencies: BrowserPermissionSidebarPinningOwner.Dependencies(
-                permissionStateSnapshot: {
-                    snapshot
-                },
-                windowForPermissionPageId: { pageId in
-                    requestedPageIds.append(pageId)
-                    return pageId == query.pageId ? windowState : nil
-                }
-            ),
+            permissionStateSnapshot: {
+                snapshot
+            },
+            windowForPermissionPageId: { pageId in
+                requestedPageIds.append(pageId)
+                return pageId == query.pageId ? windowState : nil
+            },
+            windowRegistry: { nil },
             pinningController: SumiPermissionSidebarPinningController()
         )
 

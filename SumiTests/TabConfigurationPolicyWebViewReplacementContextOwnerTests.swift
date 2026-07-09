@@ -12,7 +12,7 @@ final class TabWebViewReplacementContextOwnerTests: XCTestCase {
         let replacementWebView = WKWebView()
         let windowId = UUID()
 
-        tab._webView = existingWebView
+        tab.replaceUntrackedWebView(existingWebView)
 
         let context = owner.makeContext(for: tab)
 
@@ -24,17 +24,17 @@ final class TabWebViewReplacementContextOwnerTests: XCTestCase {
 
         context.replaceUntrackedWebView(replacementWebView)
 
-        XCTAssertIdentical(tab.existingWebView, replacementWebView)
+        XCTAssertIdentical(tab.resolvedCurrentWebView(), replacementWebView)
 
         context.assignWebViewToWindow(replacementWebView, windowId)
 
-        XCTAssertIdentical(tab.assignedWebView, replacementWebView)
-        XCTAssertEqual(tab.primaryWindowId, windowId)
+        XCTAssertIdentical(tab.resolvedAssignedWebView(), replacementWebView)
+        XCTAssertEqual(tab.resolvedPrimaryWindowId(), windowId)
 
         context.clearCurrentWebViewOwnership()
 
-        XCTAssertNil(tab.existingWebView)
-        XCTAssertNil(tab.primaryWindowId)
+        XCTAssertNil(tab.resolvedCurrentWebView())
+        XCTAssertNil(tab.resolvedPrimaryWindowId())
     }
 
     func testMakeContextUsesInjectedReplacementRuntimeWithoutBrowserManager() {

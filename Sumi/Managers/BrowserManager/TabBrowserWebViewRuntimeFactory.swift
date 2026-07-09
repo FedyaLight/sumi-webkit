@@ -6,7 +6,7 @@ enum TabBrowserWebViewRuntimeFactory {
     static func cleanupRuntime(
         for browserManager: BrowserManager
     ) -> TabWebViewCleanupRuntime {
-        .live(
+        .make(
             userscriptsModule: { [weak browserManager] in
                 browserManager?.userscriptsModule
             },
@@ -19,7 +19,7 @@ enum TabBrowserWebViewRuntimeFactory {
     static func webKitUIRuntime(
         for browserManager: BrowserManager
     ) -> TabWebKitUIRuntime {
-        .live(
+        .make(
             handleWebViewDidClose: { [weak browserManager] webView in
                 browserManager?.webViewCloseRouter.handleWebViewDidClose(webView) == true
             },
@@ -37,7 +37,7 @@ enum TabBrowserWebViewRuntimeFactory {
     static func replacementRuntime(
         for browserManager: BrowserManager
     ) -> TabWebViewReplacementRuntime {
-        .live(
+        .make(
             webViewCoordinator: { [weak browserManager] in
                 browserManager?.webViewCoordinator
             },
@@ -53,7 +53,7 @@ enum TabBrowserWebViewRuntimeFactory {
     static func configurationContext(
         for browserManager: BrowserManager
     ) -> TabWebViewConfigurationContext {
-        .live(
+        .make(
             browserConfiguration: browserManager.browserConfiguration,
             extensionsModule: { [weak browserManager] in
                 browserManager?.extensionsModule
@@ -73,7 +73,7 @@ enum TabBrowserWebViewRuntimeFactory {
 
 @MainActor
 extension TabWebViewReplacementRuntime {
-    static func live(
+    static func make(
         webViewCoordinator: @escaping () -> WebViewCoordinator?,
         windowState: @escaping (UUID) -> BrowserWindowState?,
         refreshCompositor: @escaping (BrowserWindowState) -> Void
@@ -101,7 +101,7 @@ extension TabWebViewReplacementRuntime {
 
 @MainActor
 extension TabWebViewCleanupRuntime {
-    static func live(
+    static func make(
         userscriptsModule: @escaping () -> SumiUserscriptsModule?,
         webViewCoordinator: @escaping () -> WebViewCoordinator?
     ) -> Self {
@@ -134,7 +134,7 @@ extension TabWebViewCleanupRuntime {
 
 @MainActor
 extension TabWebKitUIRuntime {
-    static func live(
+    static func make(
         handleWebViewDidClose: @escaping (WKWebView) -> Bool,
         saveDownloadedData: @escaping (
             _ data: Data,
@@ -152,7 +152,7 @@ extension TabWebKitUIRuntime {
 
 @MainActor
 extension TabWebViewConfigurationContext {
-    static func live(
+    static func make(
         browserConfiguration: BrowserConfiguration,
         extensionsModule: @escaping () -> SumiExtensionsModule?,
         userscriptsModule: @escaping () -> SumiUserscriptsModule?,

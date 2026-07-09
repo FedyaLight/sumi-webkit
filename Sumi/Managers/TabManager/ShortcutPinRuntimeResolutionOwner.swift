@@ -2,16 +2,18 @@ import Foundation
 
 @MainActor
 final class ShortcutPinRuntimeResolutionOwner {
-    struct Dependencies {
-        let spaces: @MainActor () -> [Space]
-        let runtimeContext: @MainActor () -> TabManagerRuntimeContext?
-        let faviconService: @MainActor () -> any BrowserFaviconServicing
-    }
+    private let spaces: @MainActor () -> [Space]
+    private let runtimeContext: @MainActor () -> TabManagerRuntimeContext?
+    private let faviconService: @MainActor () -> any BrowserFaviconServicing
 
-    private let dependencies: Dependencies
-
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
+    init(
+        spaces: @escaping @MainActor () -> [Space],
+        runtimeContext: @escaping @MainActor () -> TabManagerRuntimeContext?,
+        faviconService: @escaping @MainActor () -> any BrowserFaviconServicing
+    ) {
+        self.spaces = spaces
+        self.runtimeContext = runtimeContext
+        self.faviconService = faviconService
     }
 
     func makeShortcutPin(
@@ -59,7 +61,7 @@ final class ShortcutPinRuntimeResolutionOwner {
             return pin.profileId
         case .spacePinned:
             return (pin.spaceId ?? currentSpaceId).flatMap { spaceId in
-                dependencies.spaces().first(where: { $0.id == spaceId })?.profileId
+                spaces().first(where: { $0.id == spaceId })?.profileId
             }
         }
     }
@@ -67,11 +69,11 @@ final class ShortcutPinRuntimeResolutionOwner {
     func resolvedFaviconPartition(for pin: ShortcutPin, currentSpaceId: UUID? = nil) -> SumiFaviconPartition {
         let profileId = resolvedExecutionProfileId(for: pin, currentSpaceId: currentSpaceId)
         guard let profileId,
-              let profile = dependencies.runtimeContext()?.profile(with: profileId)
+              let profile = runtimeContext()?.profile(with: profileId)
         else {
             return .regular(profileId)
         }
-        return dependencies.faviconService().partition(profile: profile)
+        return faviconService().partition(profile: profile)
     }
 }
 
@@ -90,28 +92,10 @@ private extension ShortcutPinRuntimeResolutionOwner {
             containerProfileId = profileId
         case .spacePinned:
             containerProfileId = spaceId.flatMap { targetSpaceId in
-                dependencies.spaces().first(where: { $0.id == targetSpaceId })?.profileId
+                spaces().first(where: { $0.id == targetSpaceId })?.profileId
             }
         }
 
         return tabProfileId == containerProfileId ? nil : tabProfileId
-    }
-}
-
-extension ShortcutPinRuntimeResolutionOwner.Dependencies {
-    @MainActor
-    static func live(tabManager: TabManager) -> Self {
-        Self(
-            spaces: { [weak tabManager] in
-                tabManager?.spaceStateOwner.spaces ?? []
-            },
-            runtimeContext: { [weak tabManager] in
-                tabManager?.runtimeContext
-            },
-            faviconService: { [weak tabManager] in
-                guard let tabManager else { preconditionFailure("TabManager dependency used after deallocation") }
-                return tabManager.faviconService
-            }
-        )
     }
 }

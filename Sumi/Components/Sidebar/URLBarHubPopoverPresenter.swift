@@ -9,6 +9,14 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
         static let maximumHeight: CGFloat = 560
     }
 
+    weak var windowRegistry: WindowRegistry?
+    private let sidebarRecoveryCoordinator: SidebarHostRecoveryHandling
+
+    init(sidebarRecoveryCoordinator: SidebarHostRecoveryHandling = SidebarHostRecoveryCoordinator()) {
+        self.sidebarRecoveryCoordinator = sidebarRecoveryCoordinator
+        super.init()
+    }
+
     private final class AnchorRegistration {
         weak var view: NSView?
         weak var windowState: BrowserWindowState?
@@ -237,7 +245,7 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
         )
         activeSessions[windowState.id] = session
 
-        windowState.shellWindow(in: nil)?.makeKeyAndOrderFront(nil)
+        windowState.shellWindow(in: windowRegistry)?.makeKeyAndOrderFront(nil)
         popover.show(relativeTo: anchorView.bounds, of: anchorView, preferredEdge: .maxY)
 
         if let pendingSize = pendingContentSizes.removeValue(forKey: windowState.id) {
@@ -283,9 +291,9 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
         )
 
         let anchor = anchors[windowID]?.view
-        let window = anchor?.window ?? session?.windowState?.window
-        SidebarHostRecoveryCoordinator.shared.recover(in: window)
-        SidebarHostRecoveryCoordinator.shared.recover(anchor: anchor)
+        let window = anchor?.window ?? session?.windowState.flatMap { windowRegistry?.appKitWindow(for: $0) }
+        sidebarRecoveryCoordinator.recover(in: window)
+        sidebarRecoveryCoordinator.recover(anchor: anchor)
     }
 
     private func update(
@@ -415,7 +423,7 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
 
     private func popoverAppearance(for registration: AnchorRegistration) -> NSAppearance {
         let windowAppearance = registration.view?.window?.effectiveAppearance
-            ?? registration.windowState?.window?.effectiveAppearance
+            ?? registration.windowState.flatMap { windowRegistry?.appKitWindow(for: $0) }?.effectiveAppearance
             ?? NSApplication.shared.effectiveAppearance
         return NSAppearance.sumiChromeAppearance(
             for: popoverColorScheme(for: registration),
@@ -441,7 +449,7 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
         else { return }
 
         let source = windowState.sidebarTransientSessionCoordinator.preparedPresentationSource(
-            window: windowState.shellWindow(in: nil)
+            window: windowState.shellWindow(in: windowRegistry)
         )
         let token = windowState.sidebarTransientSessionCoordinator.beginSession(
             kind: .urlHubPopover,
@@ -461,14 +469,14 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
         let windowID = windowState.id
         if let pendingSession = pendingTransientSessions.removeValue(forKey: windowID) {
             pendingSession.source.refresh(
-                window: anchorView.window ?? windowState.shellWindow(in: nil),
+                window: anchorView.window ?? windowState.shellWindow(in: windowRegistry),
                 originOwnerView: anchorView
             )
             return pendingSession.token
         }
 
         let source = windowState.sidebarTransientSessionCoordinator.preparedPresentationSource(
-            window: anchorView.window ?? windowState.shellWindow(in: nil),
+            window: anchorView.window ?? windowState.shellWindow(in: windowRegistry),
             ownerView: anchorView
         )
         return windowState.sidebarTransientSessionCoordinator.beginSession(

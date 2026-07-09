@@ -309,7 +309,8 @@ extension ExtensionRuntimeStateResetOwner.Dependencies {
                 manager?.actionAnchorStore.clearAnchors(for: extensionId)
             },
             clearPermissionsOriginsCompatibilityInstallations: { [weak manager] in
-                manager?.clearPermissionsOriginsCompatibilityInstallations()
+                manager?.permissionsOriginsCompatibilityPreludeInstallationOwner
+                    .clearInstallations()
             },
             removeAllExtensionPageUserContentControllers: { [weak manager] in
                 manager?.controllerProvisioningOwner

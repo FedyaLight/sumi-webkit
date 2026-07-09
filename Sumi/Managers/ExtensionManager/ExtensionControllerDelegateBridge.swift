@@ -206,7 +206,9 @@ final class ExtensionControllerDelegateBridge: NSObject, WKWebExtensionControlle
                     return
                 }
 
-                let parentWindow = browserContext.activeExtensionWindowState?.window
+                let parentWindow = browserContext.activeExtensionWindowState.flatMap {
+                    browserContext.appKitWindow(for: $0)
+                }
                 let adapter = await browserContext.presentExtensionPopupWindow(
                     configuration: configuration,
                     controller: controller,

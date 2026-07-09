@@ -31,6 +31,9 @@ enum BrowserBoostRuntimeFactory {
             },
             settings: { [weak browserManager] in
                 browserManager?.sumiSettings
+            },
+            windowRegistry: { [weak browserManager] in
+                browserManager?.windowRegistry
             }
         )
     }

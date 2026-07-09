@@ -4,26 +4,57 @@ import Foundation
 
 @MainActor
 final class BrowserSidebarPresentationOwner {
-    struct Dependencies {
-        let activeWindow: @MainActor () -> BrowserWindowState?
-        let allWindows: @MainActor () -> [BrowserWindowState]
-        let setActiveWindow: @MainActor (BrowserWindowState) -> Void
-        let keyWindowState: @MainActor () -> BrowserWindowState?
-        let schedulePersistWindowSession: @MainActor (BrowserWindowState, UInt64) -> Void
-    }
-
     private static let defaultPersistenceDelayNanoseconds: UInt64 = 450_000_000
     private static let togglePersistenceDelayNanoseconds: UInt64 = 150_000_000
 
     private let stateOwner: BrowserSidebarPresentationStateOwner
-    private let dependencies: Dependencies
+    private let activeWindowAction: @MainActor () -> BrowserWindowState?
+    private let allWindowsAction: @MainActor () -> [BrowserWindowState]
+    private let setActiveWindowAction: @MainActor (BrowserWindowState) -> Void
+    private let keyWindowStateAction: @MainActor () -> BrowserWindowState?
+    private let schedulePersistWindowSessionAction: @MainActor (BrowserWindowState, UInt64) -> Void
 
     init(
         stateOwner: BrowserSidebarPresentationStateOwner = BrowserSidebarPresentationStateOwner(),
-        dependencies: Dependencies
+        activeWindow: @escaping @MainActor () -> BrowserWindowState?,
+        allWindows: @escaping @MainActor () -> [BrowserWindowState],
+        setActiveWindow: @escaping @MainActor (BrowserWindowState) -> Void,
+        keyWindowState: @escaping @MainActor () -> BrowserWindowState?,
+        schedulePersistWindowSession: @escaping @MainActor (BrowserWindowState, UInt64) -> Void
     ) {
         self.stateOwner = stateOwner
-        self.dependencies = dependencies
+        self.activeWindowAction = activeWindow
+        self.allWindowsAction = allWindows
+        self.setActiveWindowAction = setActiveWindow
+        self.keyWindowStateAction = keyWindowState
+        self.schedulePersistWindowSessionAction = schedulePersistWindowSession
+    }
+
+    convenience init(browserManager: BrowserManager) {
+        self.init(
+            activeWindow: { [weak browserManager] in
+                browserManager?.windowRegistry?.activeWindow
+            },
+            allWindows: { [weak browserManager] in
+                browserManager?.windowRegistry?.allWindows ?? []
+            },
+            setActiveWindow: { [weak browserManager] windowState in
+                browserManager?.windowRegistry?.setActive(windowState)
+            },
+            keyWindowState: { [weak browserManager] in
+                guard let browserManager,
+                      let keyWindow = NSApp.keyWindow
+                else { return nil }
+
+                return browserManager.windowRegistry?.windowState(containing: keyWindow)
+            },
+            schedulePersistWindowSession: { [weak browserManager] windowState, delayNanoseconds in
+                browserManager?.windowSessionActivationOwner.schedulePersistWindowSession(
+                    for: windowState,
+                    delayNanoseconds: delayNanoseconds
+                )
+            }
+        )
     }
 
     func updateSidebarWidth(
@@ -33,7 +64,7 @@ final class BrowserSidebarPresentationOwner {
     ) {
         stateOwner.updateSidebarWidth(width, for: windowState)
         if persist {
-            dependencies.schedulePersistWindowSession(
+            schedulePersistWindowSessionAction(
                 windowState,
                 Self.defaultPersistenceDelayNanoseconds
             )
@@ -64,7 +95,7 @@ final class BrowserSidebarPresentationOwner {
         windowState.isSidebarVisible.toggle()
         stateOwner.updateSavedSidebarVisibility(windowState.isSidebarVisible)
         stateOwner.updateSavedSidebarWidth(windowState.savedSidebarWidth)
-        dependencies.schedulePersistWindowSession(
+        schedulePersistWindowSessionAction(
             windowState,
             Self.togglePersistenceDelayNanoseconds
         )
@@ -73,7 +104,7 @@ final class BrowserSidebarPresentationOwner {
     func savedSidebarWidth(for windowState: BrowserWindowState? = nil) -> CGFloat {
         stateOwner.savedSidebarWidth(
             for: windowState,
-            activeWindow: dependencies.activeWindow()
+            activeWindow: activeWindowAction()
         )
     }
 
@@ -82,52 +113,22 @@ final class BrowserSidebarPresentationOwner {
     }
 
     private func sidebarToggleTargetWindowState() -> BrowserWindowState? {
-        if let activeWindow = dependencies.activeWindow() {
+        if let activeWindow = activeWindowAction() {
             return activeWindow
         }
 
-        if let keyWindowState = dependencies.keyWindowState() {
-            dependencies.setActiveWindow(keyWindowState)
+        if let keyWindowState = keyWindowStateAction() {
+            setActiveWindowAction(keyWindowState)
             return keyWindowState
         }
 
-        let allWindows = dependencies.allWindows()
+        let allWindows = allWindowsAction()
         if allWindows.count == 1,
            let onlyWindow = allWindows.first {
-            dependencies.setActiveWindow(onlyWindow)
+            setActiveWindowAction(onlyWindow)
             return onlyWindow
         }
 
         return nil
-    }
-}
-
-extension BrowserSidebarPresentationOwner.Dependencies {
-    @MainActor
-    static func live(browserManager: BrowserManager) -> Self {
-        Self(
-            activeWindow: { [weak browserManager] in
-                browserManager?.windowRegistry?.activeWindow
-            },
-            allWindows: { [weak browserManager] in
-                browserManager?.windowRegistry?.allWindows ?? []
-            },
-            setActiveWindow: { [weak browserManager] windowState in
-                browserManager?.windowRegistry?.setActive(windowState)
-            },
-            keyWindowState: { [weak browserManager] in
-                guard let browserManager,
-                      let keyWindow = NSApp.keyWindow
-                else { return nil }
-
-                return browserManager.windowRegistry?.windowState(containing: keyWindow)
-            },
-            schedulePersistWindowSession: { [weak browserManager] windowState, delayNanoseconds in
-                browserManager?.windowSessionActivationOwner.schedulePersistWindowSession(
-                    for: windowState,
-                    delayNanoseconds: delayNanoseconds
-                )
-            }
-        )
     }
 }

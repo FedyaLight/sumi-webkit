@@ -7,8 +7,8 @@
 
 import Foundation
 
-enum VisibleTabPreparationPlan {
-    static func visibleTabIDs(
+public enum VisibleTabPreparationPlan {
+    public static func visibleTabIDs(
         currentTabId: UUID?,
         splitTabIds: [UUID]
     ) -> [UUID] {

@@ -102,7 +102,15 @@ final class SumiGeolocationProviderTests: XCTestCase {
         let provider = FakeSumiGeolocationProvider(currentState: .active)
         let browserManager = BrowserManager(geolocationProvider: provider)
         let controller = BrowserApplicationLifecycleController(
-            dependencies: .live(browserManager: browserManager)
+            scheduleBackgroundMediaReconcile: { [weak browserManager] reason in
+                browserManager?.backgroundMediaOptimizationService.scheduleReconcile(reason: reason)
+            },
+            pauseGeolocationOnAppBackgroundIfNeeded: { [weak browserManager] in
+                browserManager?.permissionRuntime.pauseGeolocationOnAppBackgroundIfNeeded()
+            },
+            resumeGeolocationOnAppForegroundIfNeeded: { [weak browserManager] in
+                browserManager?.permissionRuntime.resumeGeolocationOnAppForegroundIfNeeded()
+            }
         )
 
         controller.handleApplicationWillResignActive()
@@ -118,7 +126,15 @@ final class SumiGeolocationProviderTests: XCTestCase {
         let provider = FakeSumiGeolocationProvider(currentState: .paused)
         let browserManager = BrowserManager(geolocationProvider: provider)
         let controller = BrowserApplicationLifecycleController(
-            dependencies: .live(browserManager: browserManager)
+            scheduleBackgroundMediaReconcile: { [weak browserManager] reason in
+                browserManager?.backgroundMediaOptimizationService.scheduleReconcile(reason: reason)
+            },
+            pauseGeolocationOnAppBackgroundIfNeeded: { [weak browserManager] in
+                browserManager?.permissionRuntime.pauseGeolocationOnAppBackgroundIfNeeded()
+            },
+            resumeGeolocationOnAppForegroundIfNeeded: { [weak browserManager] in
+                browserManager?.permissionRuntime.resumeGeolocationOnAppForegroundIfNeeded()
+            }
         )
 
         controller.handleApplicationWillResignActive()

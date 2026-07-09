@@ -8,45 +8,27 @@ protocol BrowserAppLifecycleHandling: AnyObject {
 
 @MainActor
 final class BrowserApplicationLifecycleController: BrowserAppLifecycleHandling {
-    struct Dependencies {
-        let scheduleBackgroundMediaReconcile: @MainActor (String) -> Void
-        let pauseGeolocationOnAppBackgroundIfNeeded: @MainActor () -> Void
-        let resumeGeolocationOnAppForegroundIfNeeded: @MainActor () -> Void
-    }
+    private let scheduleBackgroundMediaReconcile: @MainActor (String) -> Void
+    private let pauseGeolocationOnAppBackgroundIfNeeded: @MainActor () -> Void
+    private let resumeGeolocationOnAppForegroundIfNeeded: @MainActor () -> Void
 
-    private let dependencies: Dependencies
-
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
+    init(
+        scheduleBackgroundMediaReconcile: @escaping @MainActor (String) -> Void,
+        pauseGeolocationOnAppBackgroundIfNeeded: @escaping @MainActor () -> Void,
+        resumeGeolocationOnAppForegroundIfNeeded: @escaping @MainActor () -> Void
+    ) {
+        self.scheduleBackgroundMediaReconcile = scheduleBackgroundMediaReconcile
+        self.pauseGeolocationOnAppBackgroundIfNeeded = pauseGeolocationOnAppBackgroundIfNeeded
+        self.resumeGeolocationOnAppForegroundIfNeeded = resumeGeolocationOnAppForegroundIfNeeded
     }
 
     func handleApplicationWillResignActive() {
-        dependencies.scheduleBackgroundMediaReconcile("app-will-resign-active")
-        dependencies.pauseGeolocationOnAppBackgroundIfNeeded()
+        scheduleBackgroundMediaReconcile("app-will-resign-active")
+        pauseGeolocationOnAppBackgroundIfNeeded()
     }
 
     func handleApplicationDidBecomeActive() {
-        dependencies.scheduleBackgroundMediaReconcile("app-did-become-active")
-        dependencies.resumeGeolocationOnAppForegroundIfNeeded()
-    }
-}
-
-extension BrowserApplicationLifecycleController.Dependencies {
-    @MainActor
-    static func live(browserManager: BrowserManager) -> Self {
-        let backgroundMediaOptimizationService = browserManager.backgroundMediaOptimizationService
-        let permissionRuntime = browserManager.permissionRuntime
-
-        return Self(
-            scheduleBackgroundMediaReconcile: { reason in
-                backgroundMediaOptimizationService.scheduleReconcile(reason: reason)
-            },
-            pauseGeolocationOnAppBackgroundIfNeeded: {
-                permissionRuntime.pauseGeolocationOnAppBackgroundIfNeeded()
-            },
-            resumeGeolocationOnAppForegroundIfNeeded: {
-                permissionRuntime.resumeGeolocationOnAppForegroundIfNeeded()
-            }
-        )
+        scheduleBackgroundMediaReconcile("app-did-become-active")
+        resumeGeolocationOnAppForegroundIfNeeded()
     }
 }

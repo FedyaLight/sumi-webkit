@@ -7,6 +7,7 @@
 
 import Foundation
 import WebKit
+import SumiWebRuntime
 
 @MainActor
 struct WebViewTabScopedCleanupValidationOwner {
@@ -51,13 +52,22 @@ struct WebViewTabScopedCleanupValidationOwner {
         sessionStore: TabWebViewSessionStore?
     ) -> Bool {
         if let sessionStore {
-            sessionStore.syncFromTabIfNeeded(tab)
+            sessionStore.promoteLocalSessionIfNeeded(
+                tabId: tab.id,
+                localSession: tab.webViewOwnershipOwner.localSession
+            )
             let session = sessionStore.session(for: tab.id)
-            if session.untrackedWebView === webView || session.parkedWebView === webView {
+            if session.untrackedWebView === webView
+                || session.parkedWebView === webView
+                || session.primaryWebView === webView {
                 return true
             }
+            return false
         }
-        // Compat mirror until Tab fields are removed.
-        return tab.currentWebView === webView || tab.parkedWebView === webView
+        // Pre-runtime / tests without a store: Tab-local session notes.
+        let local = tab.webViewOwnershipOwner.localSession
+        return local.untrackedWebView === webView
+            || local.parkedWebView === webView
+            || local.primaryWebView === webView
     }
 }

@@ -63,14 +63,14 @@ struct TabFolderContextMenuActionOwner {
                 share: {
                     SidebarLinkActions.presentSharePicker(
                         for: pin.launchURL,
-                        source: windowState.resolveSidebarPresentationSource(),
+                        source: windowState.resolveSidebarPresentationSource(in: browserContext.windowRegistry()),
                         presentationActions: browserContext.presentationActions
                     )
                 },
                 edit: {
                     presentShortcutLinkEditor(
                         for: pin,
-                        source: windowState.resolveSidebarPresentationSource()
+                        source: windowState.resolveSidebarPresentationSource(in: browserContext.windowRegistry())
                     )
                 },
                 folderTarget: .init(
@@ -115,7 +115,7 @@ struct TabFolderContextMenuActionOwner {
                     .action(.init(title: "Share…", systemImage: "square.and.arrow.up", classification: .presentationOnly) {
                         SidebarLinkActions.presentSharePicker(
                             for: url,
-                            source: windowState.resolveSidebarPresentationSource(),
+                            source: windowState.resolveSidebarPresentationSource(in: browserContext.windowRegistry()),
                             presentationActions: browserContext.presentationActions
                         )
                     }),
@@ -148,7 +148,7 @@ struct TabFolderContextMenuActionOwner {
                         folder,
                         windowState,
                         themeContext,
-                        windowState.resolveSidebarPresentationSource()
+                        windowState.resolveSidebarPresentationSource(in: browserContext.windowRegistry())
                     )
                 },
                 alphabetize: alphabetizeTabs,
@@ -262,7 +262,7 @@ struct TabFolderContextMenuActionOwner {
             pin,
             windowState,
             themeContext,
-            source ?? windowState.resolveSidebarPresentationSource()
+            source ?? windowState.resolveSidebarPresentationSource(in: browserContext.windowRegistry())
         )
     }
 
@@ -289,7 +289,7 @@ struct TabFolderContextMenuActionOwner {
             kind: .pinnedTab,
             title: pin.preferredDisplayTitle,
             url: pin.launchURL,
-            window: windowState.shellWindow(in: nil),
+            window: windowState.shellWindow(in: browserContext.windowRegistry()),
             themeContext: themeContext,
             onDelete: { removeShortcutPin(pin) }
         )

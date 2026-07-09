@@ -1,4 +1,5 @@
 import SwiftUI
+import SumiDomain
 
 struct ShortcutsSettingsView: View {
     let shortcutManager: KeyboardShortcutManager

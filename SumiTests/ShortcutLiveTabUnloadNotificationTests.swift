@@ -67,26 +67,24 @@ final class ShortcutLiveTabUnloadNotificationTests: XCTestCase {
 
         let spy = NotificationPresentingSpy()
         let owner = BrowserShortcutLiveTabCloseOwner(
-            dependencies: BrowserShortcutLiveTabCloseOwner.Dependencies(
-                tabManager: { tabManager },
-                recentlyClosedManager: { RecentlyClosedManager() },
-                fallbackPlanner: {
-                    BrowserTabCloseFallbackPlanner(
-                        selectionService: ShellSelectionService { _ in [] }
-                    )
-                },
-                selectTab: { _, _ in },
-                performImmediateVisualHandoffIfPossible: { _ in },
-                persistWindowSession: { _ in },
-                showEmptyState: { _ in },
-                restoreShortcutSplitMember: { _, _, _, _ in
-                    XCTFail("restoreShortcutSplitMember should not be used")
-                },
-                unloadShortcutHostedSplitGroup: { _, _ in
-                    XCTFail("unloadShortcutHostedSplitGroup should not be used")
-                },
-                notifications: { spy }
-            )
+            tabManager: { tabManager },
+            recentlyClosedManager: { RecentlyClosedManager() },
+            fallbackPlanner: {
+                BrowserTabCloseFallbackPlanner(
+                    selectionService: ShellSelectionService { _ in [] }
+                )
+            },
+            selectTab: { _, _ in },
+            performImmediateVisualHandoffIfPossible: { _ in },
+            persistWindowSession: { _ in },
+            showEmptyState: { _ in },
+            restoreShortcutSplitMember: { _, _, _, _ in
+                XCTFail("restoreShortcutSplitMember should not be used")
+            },
+            unloadShortcutHostedSplitGroup: { _, _ in
+                XCTFail("unloadShortcutHostedSplitGroup should not be used")
+            },
+            notifications: { spy }
         )
 
         owner.close(liveTab, in: windowState)

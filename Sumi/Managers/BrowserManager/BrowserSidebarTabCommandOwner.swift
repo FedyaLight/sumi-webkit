@@ -2,58 +2,34 @@ import Foundation
 
 @MainActor
 final class BrowserSidebarTabCommandOwner {
-    struct Dependencies {
-        let requestUserTabActivation: @MainActor (Tab, BrowserWindowState) -> Void
-        let closeTab: @MainActor (Tab, BrowserWindowState) -> Void
-        let moveTabUp: @MainActor (UUID) -> Void
-        let moveTabDown: @MainActor (UUID) -> Void
-        let openForegroundTab: @MainActor (String, BrowserWindowState, UUID?) -> Tab?
-        let openNewTabOrFloatingBar: @MainActor (BrowserWindowState) -> Void
-        let duplicateTab: @MainActor (Tab, BrowserWindowState) -> Void
+    private let requestUserTabActivationAction: @MainActor (Tab, BrowserWindowState) -> Void
+    private let closeTabAction: @MainActor (Tab, BrowserWindowState) -> Void
+    private let moveTabUpAction: @MainActor (UUID) -> Void
+    private let moveTabDownAction: @MainActor (UUID) -> Void
+    private let openForegroundTabAction: @MainActor (String, BrowserWindowState, UUID?) -> Tab?
+    private let openNewTabOrFloatingBarAction: @MainActor (BrowserWindowState) -> Void
+    private let duplicateTabAction: @MainActor (Tab, BrowserWindowState) -> Void
+
+    init(
+        requestUserTabActivation: @escaping @MainActor (Tab, BrowserWindowState) -> Void,
+        closeTab: @escaping @MainActor (Tab, BrowserWindowState) -> Void,
+        moveTabUp: @escaping @MainActor (UUID) -> Void,
+        moveTabDown: @escaping @MainActor (UUID) -> Void,
+        openForegroundTab: @escaping @MainActor (String, BrowserWindowState, UUID?) -> Tab?,
+        openNewTabOrFloatingBar: @escaping @MainActor (BrowserWindowState) -> Void,
+        duplicateTab: @escaping @MainActor (Tab, BrowserWindowState) -> Void
+    ) {
+        self.requestUserTabActivationAction = requestUserTabActivation
+        self.closeTabAction = closeTab
+        self.moveTabUpAction = moveTabUp
+        self.moveTabDownAction = moveTabDown
+        self.openForegroundTabAction = openForegroundTab
+        self.openNewTabOrFloatingBarAction = openNewTabOrFloatingBar
+        self.duplicateTabAction = duplicateTab
     }
 
-    private let dependencies: Dependencies
-
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
-    }
-
-    func requestUserTabActivation(_ tab: Tab, in windowState: BrowserWindowState) {
-        dependencies.requestUserTabActivation(tab, windowState)
-    }
-
-    func closeTab(_ tab: Tab, in windowState: BrowserWindowState) {
-        dependencies.closeTab(tab, windowState)
-    }
-
-    func moveTabUp(_ tabId: UUID) {
-        dependencies.moveTabUp(tabId)
-    }
-
-    func moveTabDown(_ tabId: UUID) {
-        dependencies.moveTabDown(tabId)
-    }
-
-    func openForegroundTab(
-        _ url: String,
-        in windowState: BrowserWindowState,
-        preferredSpaceId: UUID?
-    ) -> Tab? {
-        dependencies.openForegroundTab(url, windowState, preferredSpaceId)
-    }
-
-    func openNewTabOrFloatingBar(in windowState: BrowserWindowState) {
-        dependencies.openNewTabOrFloatingBar(windowState)
-    }
-
-    func duplicateTab(_ tab: Tab, in windowState: BrowserWindowState) {
-        dependencies.duplicateTab(tab, windowState)
-    }
-}
-
-extension BrowserSidebarTabCommandOwner.Dependencies {
-    static func live(browserManager: BrowserManager) -> Self {
-        Self(
+    convenience init(browserManager: BrowserManager) {
+        self.init(
             requestUserTabActivation: { [weak browserManager] tab, windowState in
                 browserManager?.requestUserTabActivation(tab, in: windowState)
             },
@@ -82,5 +58,37 @@ extension BrowserSidebarTabCommandOwner.Dependencies {
                 browserManager?.tabLifecycleService.opening.duplicateTab(tab, in: windowState)
             }
         )
+    }
+
+    func requestUserTabActivation(_ tab: Tab, in windowState: BrowserWindowState) {
+        requestUserTabActivationAction(tab, windowState)
+    }
+
+    func closeTab(_ tab: Tab, in windowState: BrowserWindowState) {
+        closeTabAction(tab, windowState)
+    }
+
+    func moveTabUp(_ tabId: UUID) {
+        moveTabUpAction(tabId)
+    }
+
+    func moveTabDown(_ tabId: UUID) {
+        moveTabDownAction(tabId)
+    }
+
+    func openForegroundTab(
+        _ url: String,
+        in windowState: BrowserWindowState,
+        preferredSpaceId: UUID?
+    ) -> Tab? {
+        openForegroundTabAction(url, windowState, preferredSpaceId)
+    }
+
+    func openNewTabOrFloatingBar(in windowState: BrowserWindowState) {
+        openNewTabOrFloatingBarAction(windowState)
+    }
+
+    func duplicateTab(_ tab: Tab, in windowState: BrowserWindowState) {
+        duplicateTabAction(tab, windowState)
     }
 }

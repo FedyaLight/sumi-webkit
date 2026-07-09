@@ -22,26 +22,48 @@ enum PinnedToolbarSlot: Identifiable {
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionToolbarPinningOwner {
-    struct Dependencies {
-        let preferences: UserDefaults
-        let currentProfileId: @MainActor () -> UUID?
-        let installedExtensionIDs: @MainActor () -> Set<String>
-        let publishedPinnedIDs: @MainActor () -> [String]
-        let setPublishedPinnedIDs: @MainActor ([String]) -> Void
-    }
-
     static let pinnedToolbarExtensionIDsStorageKey =
         "\(SumiAppIdentity.bundleIdentifier).extensions.toolbarPinnedIDsByProfile"
     private static let globalPinnedToolbarProfileKey = "__global__"
     private static let logger = Logger.sumi(category: "Extensions")
 
-    private let dependencies: Dependencies
+    private let preferences: UserDefaults
+    private let currentProfileId: @MainActor () -> UUID?
+    private let installedExtensionIDs: @MainActor () -> Set<String>
+    private let publishedPinnedIDs: @MainActor () -> [String]
+    private let setPublishedPinnedIDs: @MainActor ([String]) -> Void
     private var idsByProfile: [String: [String]]
 
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
+    init(
+        preferences: UserDefaults,
+        currentProfileId: @escaping @MainActor () -> UUID?,
+        installedExtensionIDs: @escaping @MainActor () -> Set<String>,
+        publishedPinnedIDs: @escaping @MainActor () -> [String],
+        setPublishedPinnedIDs: @escaping @MainActor ([String]) -> Void
+    ) {
+        self.preferences = preferences
+        self.currentProfileId = currentProfileId
+        self.installedExtensionIDs = installedExtensionIDs
+        self.publishedPinnedIDs = publishedPinnedIDs
+        self.setPublishedPinnedIDs = setPublishedPinnedIDs
         self.idsByProfile =
-            Self.loadPinnedToolbarExtensionIDsByProfile(from: dependencies.preferences)
+            Self.loadPinnedToolbarExtensionIDsByProfile(from: preferences)
+    }
+
+    convenience init(manager: ExtensionManager) {
+        self.init(
+            preferences: manager.extensionPreferences,
+            currentProfileId: { [weak manager] in manager?.currentProfileId },
+            installedExtensionIDs: { [weak manager] in
+                Set((manager?.installedExtensions ?? []).map(\.id))
+            },
+            publishedPinnedIDs: { [weak manager] in
+                manager?.pinnedToolbarExtensionIDs ?? []
+            },
+            setPublishedPinnedIDs: { [weak manager] ids in
+                manager?.pinnedToolbarExtensionIDs = ids
+            }
+        )
     }
 
     var pinnedToolbarExtensionIDsByProfile: [String: [String]] {
@@ -57,7 +79,7 @@ final class ExtensionToolbarPinningOwner {
     }
 
     func isPinnedToToolbar(_ extensionId: String) -> Bool {
-        dependencies.publishedPinnedIDs().contains(extensionId)
+        publishedPinnedIDs().contains(extensionId)
     }
 
     func pinToToolbar(_ extensionId: String) {
@@ -86,8 +108,8 @@ final class ExtensionToolbarPinningOwner {
     }
 
     func reloadPinnedToolbarExtensionsForCurrentProfile() {
-        let profileKey = Self.pinnedToolbarProfileKey(for: dependencies.currentProfileId())
-        dependencies.setPublishedPinnedIDs(
+        let profileKey = Self.pinnedToolbarProfileKey(for: currentProfileId())
+        setPublishedPinnedIDs(
             Self.normalizedPinnedToolbarExtensionIDs(
                 idsByProfile[profileKey] ?? []
             )
@@ -95,7 +117,7 @@ final class ExtensionToolbarPinningOwner {
     }
 
     func reconcilePinnedToolbarExtensions() {
-        let installedIDs = dependencies.installedExtensionIDs()
+        let installedIDs = installedExtensionIDs()
         let sumiSlot = SumiScriptsToolbarConstants.nativeToolbarItemID
         guard installedIDs.isEmpty == false else {
             updatePinnedToolbarExtensionIDs { ids in
@@ -140,13 +162,13 @@ final class ExtensionToolbarPinningOwner {
     }
 
     private func updatePinnedToolbarExtensionIDs(_ update: (inout [String]) -> Void) {
-        let profileKey = Self.pinnedToolbarProfileKey(for: dependencies.currentProfileId())
+        let profileKey = Self.pinnedToolbarProfileKey(for: currentProfileId())
         var ids = idsByProfile[profileKey] ?? []
         update(&ids)
 
         let normalized = Self.normalizedPinnedToolbarExtensionIDs(ids)
         idsByProfile[profileKey] = normalized
-        dependencies.setPublishedPinnedIDs(normalized)
+        setPublishedPinnedIDs(normalized)
         persistPinnedToolbarExtensionIDsByProfile()
     }
 
@@ -161,7 +183,7 @@ final class ExtensionToolbarPinningOwner {
             return
         }
 
-        dependencies.preferences.set(
+        preferences.set(
             data,
             forKey: Self.pinnedToolbarExtensionIDsStorageKey
         )
@@ -210,26 +232,6 @@ final class ExtensionToolbarPinningOwner {
         }
 
         return result
-    }
-}
-
-@available(macOS 15.5, *)
-extension ExtensionToolbarPinningOwner.Dependencies {
-    @MainActor
-    static func live(manager: ExtensionManager) -> Self {
-        Self(
-            preferences: manager.extensionPreferences,
-            currentProfileId: { [weak manager] in manager?.currentProfileId },
-            installedExtensionIDs: { [weak manager] in
-                Set((manager?.installedExtensions ?? []).map(\.id))
-            },
-            publishedPinnedIDs: { [weak manager] in
-                manager?.pinnedToolbarExtensionIDs ?? []
-            },
-            setPublishedPinnedIDs: { [weak manager] ids in
-                manager?.pinnedToolbarExtensionIDs = ids
-            }
-        )
     }
 }
 

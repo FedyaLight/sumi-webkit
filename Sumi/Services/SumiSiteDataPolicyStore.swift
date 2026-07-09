@@ -25,7 +25,6 @@ struct SumiSiteDataPolicyStoreDiagnostics: Equatable, Sendable {
 
 @MainActor
 final class SumiSiteDataPolicyStore {
-    static let shared = SumiSiteDataPolicyStore()
     private static let log = Logger.sumi(category: "SiteDataPolicyStore")
 
     private let userDefaults: UserDefaults

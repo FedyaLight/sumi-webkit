@@ -29,10 +29,7 @@ enum WebExtensionManifestValidationPolicy: Equatable, Sendable {
 struct ExtensionUtils {
     private static let log = Logger.sumi(category: "Extensions")
 
-    static let extensionOwnedURLSchemes: Set<String> = [
-        "webkit-extension",
-        "safari-web-extension",
-    ]
+    static let extensionOwnedURLSchemes: Set<String> = SumiExtensionOwnedURL.schemes
 
     static let commonOptionsPageRelativePaths = [
         "ui/options/index.html",
@@ -69,8 +66,7 @@ struct ExtensionUtils {
     }
 
     static func isExtensionOwnedURL(_ url: URL?) -> Bool {
-        guard let scheme = url?.scheme?.lowercased() else { return false }
-        return extensionOwnedURLSchemes.contains(scheme)
+        SumiExtensionOwnedURL.isExtensionOwnedURL(url)
     }
 
     static func extensionID(fromExtensionOwnedURL url: URL?) -> String? {

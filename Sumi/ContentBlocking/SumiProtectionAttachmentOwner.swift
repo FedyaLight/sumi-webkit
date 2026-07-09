@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import SumiDomain
 import OSLog
 
 @MainActor

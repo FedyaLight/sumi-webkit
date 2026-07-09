@@ -16,7 +16,7 @@ protocol SearchSuggestionDataProviding {
 struct DuckDuckGoSearchSuggestionDataProvider: SearchSuggestionDataProviding {
     let session: URLSession
 
-    init(session: URLSession = SumiNonPersistentURLSession.shared) {
+    init(session: URLSession = SumiNonPersistentURLSession.make()) {
         self.session = session
     }
 
@@ -118,11 +118,15 @@ class SearchManager {
         historySuggestionTask?.cancel()
         isLoadingSuggestions = true
         let owner = TopLinkSuggestionOwner(
-            dependencies: .live(
-                historyManager: historyManager,
-                bookmarkManager: bookmarkManager,
-                tabManager: tabManager
-            )
+            topVisitedSites: { [weak historyManager] limit in
+                await historyManager?.topVisitedSites(limit: limit) ?? []
+            },
+            bookmarks: { [weak bookmarkManager] in
+                bookmarkManager?.allBookmarks() ?? []
+            },
+            openTabs: { [weak tabManager] in
+                tabManager?.tabCollectionMembershipOwner.allTabsForCurrentProfile() ?? []
+            }
         )
         historySuggestionTask = Task { @MainActor [weak self] in
             guard let self else { return }
@@ -149,7 +153,20 @@ class SearchManager {
             return
         }
 
-        let owner = ActiveTabSuggestionOwner(dependencies: .live(tabManager: tabManager))
+        let owner = ActiveTabSuggestionOwner(
+            allTabsForCurrentProfile: { [weak tabManager] in
+                tabManager?.tabCollectionMembershipOwner.allTabsForCurrentProfile() ?? []
+            },
+            liveShortcutTabs: { [weak tabManager] windowId in
+                tabManager?.shortcutPresentationOwner.liveShortcutTabs(in: windowId) ?? []
+            },
+            shortcutLiveTab: { [weak tabManager] pinId, windowId in
+                tabManager?.shortcutPresentationOwner.shortcutLiveTab(for: pinId, in: windowId)
+            },
+            visibleSplitTabIds: { [weak tabManager] windowId in
+                Set(tabManager?.runtimeContext?.visibleSplitTabIds(for: windowId) ?? [])
+            }
+        )
         let activeTabs = owner.suggestions(for: windowState)
         if activeTabs.isEmpty {
             clearSuggestions()

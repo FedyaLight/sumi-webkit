@@ -49,22 +49,24 @@ final class EssentialsShortcutPlacementOwner {
         let resolution: TargetResolution
     }
 
-    struct Dependencies {
-        let spaces: @MainActor () -> [Space]
-        let runtimeContext: @MainActor () -> TabManagerRuntimeContext?
-        let essentialPins: @MainActor (UUID?) -> [ShortcutPin]
-    }
+    private let spaces: @MainActor () -> [Space]
+    private let runtimeContext: @MainActor () -> TabManagerRuntimeContext?
+    private let essentialPins: @MainActor (UUID?) -> [ShortcutPin]
 
-    private let dependencies: Dependencies
-
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
+    init(
+        spaces: @escaping @MainActor () -> [Space],
+        runtimeContext: @escaping @MainActor () -> TabManagerRuntimeContext?,
+        essentialPins: @escaping @MainActor (UUID?) -> [ShortcutPin]
+    ) {
+        self.spaces = spaces
+        self.runtimeContext = runtimeContext
+        self.essentialPins = essentialPins
     }
 
     func resolveTarget(using context: TargetContext? = nil) -> TargetResolution {
         let resolvedSpaceId = context?.spaceId ?? context?.windowState?.currentSpaceId
         if let resolvedSpaceId,
-           let profileId = dependencies.spaces().first(where: { $0.id == resolvedSpaceId })?.profileId {
+           let profileId = spaces().first(where: { $0.id == resolvedSpaceId })?.profileId {
             return TargetResolution(profileId: profileId, source: .space)
         }
 
@@ -76,7 +78,7 @@ final class EssentialsShortcutPlacementOwner {
             return TargetResolution(profileId: profileId, source: .explicitProfile)
         }
 
-        if let profileId = dependencies.runtimeContext()?.currentProfileId {
+        if let profileId = runtimeContext()?.currentProfileId {
             return TargetResolution(profileId: profileId, source: .globalFallback)
         }
 
@@ -89,7 +91,7 @@ final class EssentialsShortcutPlacementOwner {
 
     func canAddURL(_ url: URL, using context: TargetContext? = nil) -> Bool {
         guard let profileId = resolvedProfileId(using: context) else { return false }
-        let pins = dependencies.essentialPins(profileId)
+        let pins = essentialPins(profileId)
         guard pins.count < CapacityPolicy.maxItems else { return false }
         return pins.contains { $0.launchURL == url } == false
     }
@@ -98,7 +100,7 @@ final class EssentialsShortcutPlacementOwner {
         let resolution = resolveTarget(using: context.target)
         guard let profileId = resolution.profileId else { return nil }
 
-        var pins = dependencies.essentialPins(profileId)
+        var pins = essentialPins(profileId)
         if let movingPinId = context.movingPinId,
            let existingIndex = pins.firstIndex(where: { $0.id == movingPinId }) {
             pins.remove(at: existingIndex)
@@ -134,23 +136,6 @@ final class EssentialsShortcutPlacementOwner {
 
         RuntimeDiagnostics.emit(
             "⚠️ [Essentials] Fallback profile mismatch visible=\(visibleProfileId.uuidString) resolved=\(resolvedProfileId.uuidString)"
-        )
-    }
-}
-
-extension EssentialsShortcutPlacementOwner.Dependencies {
-    @MainActor
-    static func live(tabManager: TabManager) -> Self {
-        Self(
-            spaces: { [weak tabManager] in
-                tabManager?.spaceStateOwner.spaces ?? []
-            },
-            runtimeContext: { [weak tabManager] in
-                tabManager?.runtimeContext
-            },
-            essentialPins: { [weak tabManager] profileId in
-                tabManager?.shortcutPinCollectionStateOwner.essentialPins(for: profileId) ?? []
-            }
         )
     }
 }

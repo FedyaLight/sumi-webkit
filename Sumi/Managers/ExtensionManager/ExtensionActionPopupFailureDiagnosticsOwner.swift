@@ -17,22 +17,35 @@ final class ExtensionActionPopupFailureDiagnosticsOwner {
         case resolutionFailed(Error)
     }
 
-    struct Dependencies {
-        let installedExtensions: @MainActor () -> [InstalledExtension]
-        let controllerExists: @MainActor (UUID) -> Bool
-        let extensionResourcesRoot: @MainActor (WebExtensionSourceKind, String, String) throws -> URL
-        let lastExtensionLoadError: @MainActor (String, UUID) -> Error?
-        let extensionSnapshot:
-            @MainActor (String, UUID) -> ExtensionProfileRuntimeStateOwner.ExtensionSnapshot?
-        let profileIdForContext: @MainActor (WKWebExtensionContext) -> UUID?
-        let currentProfileId: @MainActor () -> UUID?
-        let runtimeState: @MainActor () -> ExtensionManager.ExtensionRuntimeState
-    }
+    private let installedExtensions: @MainActor () -> [InstalledExtension]
+    private let controllerExists: @MainActor (UUID) -> Bool
+    private let extensionResourcesRoot: @MainActor (WebExtensionSourceKind, String, String) throws -> URL
+    private let lastExtensionLoadError: @MainActor (String, UUID) -> Error?
+    private let extensionSnapshot:
+        @MainActor (String, UUID) -> ExtensionProfileRuntimeStateOwner.ExtensionSnapshot?
+    private let profileIdForContext: @MainActor (WKWebExtensionContext) -> UUID?
+    private let currentProfileId: @MainActor () -> UUID?
+    private let runtimeState: @MainActor () -> ExtensionManager.ExtensionRuntimeState
 
-    private let dependencies: Dependencies
-
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
+    init(
+        installedExtensions: @escaping @MainActor () -> [InstalledExtension],
+        controllerExists: @escaping @MainActor (UUID) -> Bool,
+        extensionResourcesRoot: @escaping @MainActor (WebExtensionSourceKind, String, String) throws -> URL,
+        lastExtensionLoadError: @escaping @MainActor (String, UUID) -> Error?,
+        extensionSnapshot:
+            @escaping @MainActor (String, UUID) -> ExtensionProfileRuntimeStateOwner.ExtensionSnapshot?,
+        profileIdForContext: @escaping @MainActor (WKWebExtensionContext) -> UUID?,
+        currentProfileId: @escaping @MainActor () -> UUID?,
+        runtimeState: @escaping @MainActor () -> ExtensionManager.ExtensionRuntimeState
+    ) {
+        self.installedExtensions = installedExtensions
+        self.controllerExists = controllerExists
+        self.extensionResourcesRoot = extensionResourcesRoot
+        self.lastExtensionLoadError = lastExtensionLoadError
+        self.extensionSnapshot = extensionSnapshot
+        self.profileIdForContext = profileIdForContext
+        self.currentProfileId = currentProfileId
+        self.runtimeState = runtimeState
     }
 
     func classifyActionPopupRuntimeFailure(
@@ -42,9 +55,9 @@ final class ExtensionActionPopupFailureDiagnosticsOwner {
     ) -> ExtensionActionPopupRuntimeFailureBucket {
         let installed =
             installedExtension
-            ?? dependencies.installedExtensions().first(where: { $0.id == extensionId })
+            ?? installedExtensions().first(where: { $0.id == extensionId })
 
-        guard dependencies.controllerExists(profileId) else {
+        guard controllerExists(profileId) else {
             return .profileRuntimeNotFound
         }
 
@@ -68,7 +81,7 @@ final class ExtensionActionPopupFailureDiagnosticsOwner {
             return .sourceResourcesMissing
         }
 
-        if let loadError = dependencies.lastExtensionLoadError(extensionId, profileId) {
+        if let loadError = lastExtensionLoadError(extensionId, profileId) {
             let nsError = loadError as NSError
             if nsError.domain == WKWebExtension.errorDomain {
                 return .webExtensionCreationFailed
@@ -78,19 +91,19 @@ final class ExtensionActionPopupFailureDiagnosticsOwner {
             }
         }
 
-        guard let snapshot = dependencies.extensionSnapshot(extensionId, profileId) else {
+        guard let snapshot = extensionSnapshot(extensionId, profileId) else {
             return .profileRuntimeNotFound
         }
         let context = snapshot.context
         if let context,
-           let currentProfileId = dependencies.currentProfileId(),
-           currentProfileId != profileId,
-           dependencies.profileIdForContext(context) != profileId {
+           let activeProfileId = currentProfileId(),
+           activeProfileId != profileId,
+           profileIdForContext(context) != profileId {
             return .wrongProfileRuntimeLookup
         }
 
         if context == nil {
-            if dependencies.lastExtensionLoadError(extensionId, profileId) != nil {
+            if lastExtensionLoadError(extensionId, profileId) != nil {
                 return .webExtensionCreationFailed
             }
             return .profileContextNotCreated
@@ -100,12 +113,12 @@ final class ExtensionActionPopupFailureDiagnosticsOwner {
             return .profileContextNotLoaded
         }
 
-        let runtimeState = dependencies.runtimeState()
-        if runtimeState == .failed {
+        let currentRuntimeState = runtimeState()
+        if currentRuntimeState == .failed {
             return .globalRuntimeLoadFailed
         }
 
-        if runtimeState != .ready {
+        if currentRuntimeState != .ready {
             return .globalRuntimeUnavailable
         }
 
@@ -119,7 +132,7 @@ final class ExtensionActionPopupFailureDiagnosticsOwner {
         failureBucket: ExtensionActionPopupRuntimeFailureBucket,
         lastLoadError: Error? = nil
     ) -> [String] {
-        guard let snapshot = dependencies.extensionSnapshot(extensionId, profileId) else {
+        guard let snapshot = extensionSnapshot(extensionId, profileId) else {
             return ["failureBucket=\(failureBucket.rawValue)", "extensionId=\(extensionId)"]
         }
         let context = snapshot.context
@@ -142,7 +155,7 @@ final class ExtensionActionPopupFailureDiagnosticsOwner {
             "controllerExists=\(snapshot.controllerExists)",
             "contextExists=\(snapshot.contextExists)",
             "contextLoaded=\(snapshot.contextLoaded)",
-            "runtimeState=\(dependencies.runtimeState().rawValue)",
+            "runtimeState=\(runtimeState().rawValue)",
             "missingEnabledExtensionIDs=\(snapshot.missingEnabledExtensionIDs.joined(separator: ","))",
         ]
 
@@ -151,7 +164,7 @@ final class ExtensionActionPopupFailureDiagnosticsOwner {
             lines.append("lastErrorDomain=\(nsError.domain)")
             lines.append("lastErrorCode=\(nsError.code)")
             lines.append("lastErrorDescription=\(nsError.localizedDescription)")
-        } else if let recordedError = dependencies.lastExtensionLoadError(
+        } else if let recordedError = lastExtensionLoadError(
             extensionId,
             profileId
         ) {
@@ -180,7 +193,7 @@ final class ExtensionActionPopupFailureDiagnosticsOwner {
         for installedExtension: InstalledExtension
     ) -> ResourcesRootState {
         do {
-            let resourcesRoot = try dependencies.extensionResourcesRoot(
+            let resourcesRoot = try extensionResourcesRoot(
                 installedExtension.sourceKind,
                 installedExtension.packagePath,
                 installedExtension.sourceBundlePath
@@ -198,52 +211,6 @@ final class ExtensionActionPopupFailureDiagnosticsOwner {
         case .resolutionFailed:
             return false
         }
-    }
-}
-
-@available(macOS 15.5, *)
-extension ExtensionActionPopupFailureDiagnosticsOwner.Dependencies {
-    @MainActor
-    static func live(manager: ExtensionManager) -> Self {
-        Self(
-            installedExtensions: { [weak manager] in
-                manager?.installedExtensions ?? []
-            },
-            controllerExists: { [weak manager] profileId in
-                manager?.extensionControllersByProfile[profileId] != nil
-            },
-            extensionResourcesRoot: { [weak manager] sourceKind, packagePath, sourceBundlePath in
-                guard let manager else {
-                    throw ExtensionError.installationFailed("Extension manager is unavailable")
-                }
-                return try manager.extensionResourcesRoot(
-                    sourceKind: sourceKind,
-                    packagePath: packagePath,
-                    sourceBundlePath: sourceBundlePath
-                )
-            },
-            lastExtensionLoadError: { [weak manager] extensionId, profileId in
-                manager?.lastExtensionLoadError(
-                    extensionId: extensionId,
-                    profileId: profileId
-                )
-            },
-            extensionSnapshot: { [weak manager] extensionId, profileId in
-                manager?.profileRuntimeStateOwner.extensionSnapshot(
-                    extensionId: extensionId,
-                    profileId: profileId
-                )
-            },
-            profileIdForContext: { [weak manager] context in
-                manager?.profileId(for: context)
-            },
-            currentProfileId: { [weak manager] in
-                manager?.currentProfileId
-            },
-            runtimeState: { [weak manager] in
-                manager?.runtimeState ?? .unavailable
-            }
-        )
     }
 }
 

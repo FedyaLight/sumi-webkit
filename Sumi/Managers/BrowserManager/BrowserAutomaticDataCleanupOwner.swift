@@ -4,65 +4,31 @@ import Foundation
 /// from settings, profile switches, and retention-change notifications.
 @MainActor
 final class BrowserAutomaticDataCleanupOwner {
-    struct Dependencies {
-        let permissionRuntime: @MainActor () -> BrowserManagerPermissionRuntime?
-        let dataServices: @MainActor () -> BrowserManagerDataServices?
-        let retentionPeriod: @MainActor () -> SumiBrowsingDataRetentionPeriod?
-        let historyManager: @MainActor () -> HistoryManager?
-        let profiles: @MainActor () -> [Profile]
-        let currentProfileId: @MainActor () -> UUID?
-    }
+    private let permissionRuntimeAction: @MainActor () -> BrowserManagerPermissionRuntime?
+    private let dataServicesAction: @MainActor () -> BrowserManagerDataServices?
+    private let retentionPeriodAction: @MainActor () -> SumiBrowsingDataRetentionPeriod?
+    private let historyManagerAction: @MainActor () -> HistoryManager?
+    private let profilesAction: @MainActor () -> [Profile]
+    private let currentProfileIdAction: @MainActor () -> UUID?
 
-    private let dependencies: Dependencies
-
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
-    }
-
-    @discardableResult
-    func runAutomaticPermissionCleanupIfNeeded(
-        for profile: Profile?
-    ) async -> SumiPermissionCleanupResult? {
-        guard let profile,
-              let permissionRuntime = dependencies.permissionRuntime(),
-              let dataServices = dependencies.dataServices()
-        else { return nil }
-        let repository = SumiPermissionSettingsRepository(
-            permissionRuntime: permissionRuntime,
-            dataServices: dataServices,
-            autoplayStore: permissionRuntime.autoplayStore
-        )
-        return await repository.runAutomaticCleanupIfNeeded(
-            profile: SumiPermissionSettingsProfileContext(profile: profile)
-        )
-    }
-
-    func scheduleAutomaticBrowsingDataCleanup(
-        reason: String,
-        force: Bool = false,
-        delayNanoseconds: UInt64? = nil
+    init(
+        permissionRuntime: @escaping @MainActor () -> BrowserManagerPermissionRuntime?,
+        dataServices: @escaping @MainActor () -> BrowserManagerDataServices?,
+        retentionPeriod: @escaping @MainActor () -> SumiBrowsingDataRetentionPeriod?,
+        historyManager: @escaping @MainActor () -> HistoryManager?,
+        profiles: @escaping @MainActor () -> [Profile],
+        currentProfileId: @escaping @MainActor () -> UUID?
     ) {
-        guard let retentionPeriod = dependencies.retentionPeriod(),
-              let historyManager = dependencies.historyManager(),
-              let dataServices = dependencies.dataServices()
-        else { return }
-        let request = SumiBrowsingDataCleanupScheduleRequest(
-            retentionPeriod: retentionPeriod,
-            historyManager: historyManager,
-            profiles: dependencies.profiles(),
-            currentProfileId: dependencies.currentProfileId(),
-            force: force,
-            reason: reason,
-            delayNanoseconds: delayNanoseconds
-        )
-        dataServices.automaticBrowsingDataCleanupService.scheduleIfNeeded(request)
+        self.permissionRuntimeAction = permissionRuntime
+        self.dataServicesAction = dataServices
+        self.retentionPeriodAction = retentionPeriod
+        self.historyManagerAction = historyManager
+        self.profilesAction = profiles
+        self.currentProfileIdAction = currentProfileId
     }
-}
 
-extension BrowserAutomaticDataCleanupOwner.Dependencies {
-    @MainActor
-    static func live(browserManager: BrowserManager) -> Self {
-        Self(
+    convenience init(browserManager: BrowserManager) {
+        self.init(
             permissionRuntime: { [weak browserManager] in
                 browserManager?.permissionRuntime
             },
@@ -82,5 +48,44 @@ extension BrowserAutomaticDataCleanupOwner.Dependencies {
                 browserManager?.currentProfile?.id
             }
         )
+    }
+
+    @discardableResult
+    func runAutomaticPermissionCleanupIfNeeded(
+        for profile: Profile?
+    ) async -> SumiPermissionCleanupResult? {
+        guard let profile,
+              let permissionRuntime = permissionRuntimeAction(),
+              let dataServices = dataServicesAction()
+        else { return nil }
+        let repository = SumiPermissionSettingsRepository(
+            permissionRuntime: permissionRuntime,
+            dataServices: dataServices,
+            autoplayStore: permissionRuntime.autoplayStore
+        )
+        return await repository.runAutomaticCleanupIfNeeded(
+            profile: SumiPermissionSettingsProfileContext(profile: profile)
+        )
+    }
+
+    func scheduleAutomaticBrowsingDataCleanup(
+        reason: String,
+        force: Bool = false,
+        delayNanoseconds: UInt64? = nil
+    ) {
+        guard let retentionPeriod = retentionPeriodAction(),
+              let historyManager = historyManagerAction(),
+              let dataServices = dataServicesAction()
+        else { return }
+        let request = SumiBrowsingDataCleanupScheduleRequest(
+            retentionPeriod: retentionPeriod,
+            historyManager: historyManager,
+            profiles: profilesAction(),
+            currentProfileId: currentProfileIdAction(),
+            force: force,
+            reason: reason,
+            delayNanoseconds: delayNanoseconds
+        )
+        dataServices.automaticBrowsingDataCleanupService.scheduleIfNeeded(request)
     }
 }

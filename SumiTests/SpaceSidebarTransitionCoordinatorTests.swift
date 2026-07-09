@@ -902,7 +902,8 @@ private final class TestSidebarBrowserContextHarness {
                 createGitHubIssuesFolderInCurrentSpace: { _ in /* No-op. */ },
                 unloadShortcutPin: { _, _ in /* No-op. */ },
                 unloadShortcutPins: { _, _ in /* No-op. */ }
-            )
+            ),
+            windowRegistry: { nil }
         )
     }
 

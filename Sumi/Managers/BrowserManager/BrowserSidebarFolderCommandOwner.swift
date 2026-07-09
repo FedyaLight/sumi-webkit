@@ -2,59 +2,43 @@ import Foundation
 
 @MainActor
 final class BrowserSidebarFolderCommandOwner {
-    struct Dependencies {
-        let spaceForSidebarActions: @MainActor (BrowserWindowState) -> Space?
-        let createFolderInCurrentSpace: @MainActor (BrowserWindowState) -> Void
-        let createRSSLiveFolderInCurrentSpace: @MainActor (BrowserWindowState) -> Void
-        let createGitHubPRFolderInCurrentSpace: @MainActor (BrowserWindowState) -> Void
-        let createGitHubIssuesFolderInCurrentSpace: @MainActor (BrowserWindowState) -> Void
-    }
+    private let spaceForSidebarActions: @MainActor (BrowserWindowState) -> Space?
+    private let createFolderInCurrentSpaceAction: @MainActor (BrowserWindowState) -> Void
+    private let createRSSLiveFolderInCurrentSpaceAction: @MainActor (BrowserWindowState) -> Void
+    private let createGitHubPRFolderInCurrentSpaceAction: @MainActor (BrowserWindowState) -> Void
+    private let createGitHubIssuesFolderInCurrentSpaceAction: @MainActor (BrowserWindowState) -> Void
 
-    private let dependencies: Dependencies
-
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
+    init(
+        spaceForSidebarActions: @escaping @MainActor (BrowserWindowState) -> Space?,
+        createFolderInCurrentSpace: @escaping @MainActor (BrowserWindowState) -> Void,
+        createRSSLiveFolderInCurrentSpace: @escaping @MainActor (BrowserWindowState) -> Void,
+        createGitHubPRFolderInCurrentSpace: @escaping @MainActor (BrowserWindowState) -> Void,
+        createGitHubIssuesFolderInCurrentSpace: @escaping @MainActor (BrowserWindowState) -> Void
+    ) {
+        self.spaceForSidebarActions = spaceForSidebarActions
+        self.createFolderInCurrentSpaceAction = createFolderInCurrentSpace
+        self.createRSSLiveFolderInCurrentSpaceAction = createRSSLiveFolderInCurrentSpace
+        self.createGitHubPRFolderInCurrentSpaceAction = createGitHubPRFolderInCurrentSpace
+        self.createGitHubIssuesFolderInCurrentSpaceAction = createGitHubIssuesFolderInCurrentSpace
     }
 
     func canCreateFolderInCurrentSpace(in windowState: BrowserWindowState) -> Bool {
-        dependencies.spaceForSidebarActions(windowState) != nil
+        spaceForSidebarActions(windowState) != nil
     }
 
     func createFolderInCurrentSpace(in windowState: BrowserWindowState) {
-        dependencies.createFolderInCurrentSpace(windowState)
+        createFolderInCurrentSpaceAction(windowState)
     }
 
     func createRSSLiveFolderInCurrentSpace(in windowState: BrowserWindowState) {
-        dependencies.createRSSLiveFolderInCurrentSpace(windowState)
+        createRSSLiveFolderInCurrentSpaceAction(windowState)
     }
 
     func createGitHubPRFolderInCurrentSpace(in windowState: BrowserWindowState) {
-        dependencies.createGitHubPRFolderInCurrentSpace(windowState)
+        createGitHubPRFolderInCurrentSpaceAction(windowState)
     }
 
     func createGitHubIssuesFolderInCurrentSpace(in windowState: BrowserWindowState) {
-        dependencies.createGitHubIssuesFolderInCurrentSpace(windowState)
-    }
-}
-
-extension BrowserSidebarFolderCommandOwner.Dependencies {
-    static func live(browserManager: BrowserManager) -> Self {
-        Self(
-            spaceForSidebarActions: { [weak browserManager] windowState in
-                browserManager?.sidebarActionOwner.spaceForSidebarActions(in: windowState)
-            },
-            createFolderInCurrentSpace: { [weak browserManager] windowState in
-                browserManager?.sidebarActionOwner.createFolderInCurrentSpace(in: windowState)
-            },
-            createRSSLiveFolderInCurrentSpace: { [weak browserManager] windowState in
-                browserManager?.sidebarActionOwner.createRSSLiveFolderInCurrentSpace(in: windowState)
-            },
-            createGitHubPRFolderInCurrentSpace: { [weak browserManager] windowState in
-                browserManager?.sidebarActionOwner.createGitHubPRFolderInCurrentSpace(in: windowState)
-            },
-            createGitHubIssuesFolderInCurrentSpace: { [weak browserManager] windowState in
-                browserManager?.sidebarActionOwner.createGitHubIssuesFolderInCurrentSpace(in: windowState)
-            }
-        )
+        createGitHubIssuesFolderInCurrentSpaceAction(windowState)
     }
 }

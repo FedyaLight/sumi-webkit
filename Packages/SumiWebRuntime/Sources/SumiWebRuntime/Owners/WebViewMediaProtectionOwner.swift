@@ -3,47 +3,49 @@ import Combine
 import Foundation
 import WebKit
 
-extension Notification.Name {
+public extension Notification.Name {
     static let sumiWebViewNeedsMediaTouchBarRecovery = Notification.Name(
         "SumiWebViewNeedsMediaTouchBarRecovery"
     )
 }
 
-enum SumiMediaTouchBarRecoveryNotificationKey {
-    static let tabID = "tabID"
-    static let windowID = "windowID"
+public enum SumiMediaTouchBarRecoveryNotificationKey {
+    public static let tabID = "tabID"
+    public static let windowID = "windowID"
 }
 
 @MainActor
-final class WebViewMediaProtectionOwner {
-    typealias WebViewResolver = (ObjectIdentifier) -> WKWebView?
-    typealias TrackedOwnerResolver = (WKWebView) -> TrackedWebViewOwner?
-    typealias WindowIDResolver = (WKWebView) -> UUID?
-    typealias DeferredCommandFlusher = (ObjectIdentifier) -> Void
-    typealias WindowCompositorRefresher = (UUID) -> Void
-    typealias TabSelector = (_ tabID: UUID, _ windowID: UUID) -> Void
-    typealias TabCurrentStateResolver = (_ tabID: UUID, _ windowID: UUID) -> Bool
+public final class WebViewMediaProtectionOwner {
+    public init() {}
+
+    public typealias WebViewResolver = (ObjectIdentifier) -> WKWebView?
+    public typealias TrackedOwnerResolver = (WKWebView) -> TrackedWebViewOwner?
+    public typealias WindowIDResolver = (WKWebView) -> UUID?
+    public typealias DeferredCommandFlusher = (ObjectIdentifier) -> Void
+    public typealias WindowCompositorRefresher = (UUID) -> Void
+    public typealias TabSelector = (_ tabID: UUID, _ windowID: UUID) -> Void
+    public typealias TabCurrentStateResolver = (_ tabID: UUID, _ windowID: UUID) -> Bool
 
     private let protectedCommandOwner = WebViewProtectedCommandOwner()
     private var nowPlayingSessionCancellablesByWebViewID: [ObjectIdentifier: AnyCancellable] = [:]
 
-    func note(_ webView: WKWebView) {
+    public func note(_ webView: WKWebView) {
         protectedCommandOwner.note(webView)
     }
 
-    func resolveWeakWebView(with identifier: ObjectIdentifier) -> WKWebView? {
+    public func resolveWeakWebView(with identifier: ObjectIdentifier) -> WKWebView? {
         protectedCommandOwner.resolveWeakWebView(with: identifier)
     }
 
-    var hasDeferredProtectedCommands: Bool {
+    public var hasDeferredProtectedCommands: Bool {
         protectedCommandOwner.hasDeferredCommands
     }
 
-    func hasDeferredProtectedCommands(for sourceWebViewID: ObjectIdentifier) -> Bool {
+    public func hasDeferredProtectedCommands(for sourceWebViewID: ObjectIdentifier) -> Bool {
         protectedCommandOwner.hasDeferredCommands(for: sourceWebViewID)
     }
 
-    func beginHistorySwipeProtection(
+    public func beginHistorySwipeProtection(
         on webView: WKWebView,
         windowID: UUID?,
         originURL: URL?,
@@ -58,7 +60,7 @@ final class WebViewMediaProtectionOwner {
     }
 
     @discardableResult
-    func finishHistorySwipeProtection(
+    public func finishHistorySwipeProtection(
         on webView: WKWebView?,
         currentURL: URL?,
         currentHistoryItem: WKBackForwardListItem?
@@ -70,31 +72,31 @@ final class WebViewMediaProtectionOwner {
         )
     }
 
-    func hasActiveHistorySwipe(in windowID: UUID) -> Bool {
+    public func hasActiveHistorySwipe(in windowID: UUID) -> Bool {
         protectedCommandOwner.hasActiveHistorySwipe(in: windowID)
     }
 
-    func hasActiveFullscreen(in windowID: UUID) -> Bool {
+    public func hasActiveFullscreen(in windowID: UUID) -> Bool {
         protectedCommandOwner.hasActiveFullscreen(in: windowID)
     }
 
-    func isProtected(_ webView: WKWebView) -> Bool {
+    public func isProtected(_ webView: WKWebView) -> Bool {
         protectedCommandOwner.isProtected(webView)
     }
 
-    func isProtected(_ webViewID: ObjectIdentifier) -> Bool {
+    public func isProtected(_ webViewID: ObjectIdentifier) -> Bool {
         protectedCommandOwner.isProtected(webViewID)
     }
 
-    func beginVisualHandoffProtection(for webView: WKWebView) {
+    public func beginVisualHandoffProtection(for webView: WKWebView) {
         protectedCommandOwner.beginVisualHandoffProtection(for: webView)
     }
 
-    func finishVisualHandoffProtection(for webView: WKWebView) -> ObjectIdentifier? {
+    public func finishVisualHandoffProtection(for webView: WKWebView) -> ObjectIdentifier? {
         protectedCommandOwner.finishVisualHandoffProtection(for: webView)
     }
 
-    func closeActiveFullscreenMedia(
+    public func closeActiveFullscreenMedia(
         in windowID: UUID,
         resolveWebView: WebViewResolver
     ) {
@@ -104,7 +106,7 @@ final class WebViewMediaProtectionOwner {
         }
     }
 
-    func closeFullscreenMediaIfNeeded(on webView: WKWebView) {
+    public func closeFullscreenMediaIfNeeded(on webView: WKWebView) {
         let webViewID = ObjectIdentifier(webView)
         guard webView.sumiIsInFullscreenElementPresentation
             || protectedCommandOwner.isFullscreenProtected(webViewID)
@@ -114,13 +116,13 @@ final class WebViewMediaProtectionOwner {
         requestFullscreenMediaExit(on: webView)
     }
 
-    func removeVisualHandoffFullscreenAndNowPlayingState() {
+    public func removeVisualHandoffFullscreenAndNowPlayingState() {
         protectedCommandOwner.removeVisualHandoffAndFullscreenProtections()
         nowPlayingSessionCancellablesByWebViewID.values.forEach { $0.cancel() }
         nowPlayingSessionCancellablesByWebViewID.removeAll()
     }
 
-    func installFullscreenStateObservationIfNeeded(
+    public func installFullscreenStateObservationIfNeeded(
         on webView: WKWebView,
         trackedOwner: @escaping TrackedOwnerResolver,
         fallbackWindowID: @escaping WindowIDResolver,
@@ -144,7 +146,7 @@ final class WebViewMediaProtectionOwner {
         }
     }
 
-    func installNowPlayingSessionObservationIfNeeded(
+    public func installNowPlayingSessionObservationIfNeeded(
         on webView: WKWebView,
         trackedOwner: @escaping TrackedOwnerResolver,
         fallbackWindowID: @escaping WindowIDResolver
@@ -172,7 +174,7 @@ final class WebViewMediaProtectionOwner {
             }
     }
 
-    func uninstallObservationsIfUntracked(_ webView: WKWebView, isTracked: Bool) {
+    public func uninstallObservationsIfUntracked(_ webView: WKWebView, isTracked: Bool) {
         protectedCommandOwner.uninstallFullscreenStateObservationIfUntracked(
             webView,
             isTracked: isTracked
@@ -184,7 +186,7 @@ final class WebViewMediaProtectionOwner {
     }
 
     @discardableResult
-    func enqueueDeferredCommandIfNeeded(
+    public func enqueueDeferredCommandIfNeeded(
         _ command: DeferredWebViewCommand,
         for webView: WKWebView,
         reason: String,
@@ -204,7 +206,7 @@ final class WebViewMediaProtectionOwner {
         )
     }
 
-    func commandsToFlushIfUnprotected(
+    public func commandsToFlushIfUnprotected(
         for webViewID: ObjectIdentifier,
         resolveWebView: WebViewResolver,
         isCommandValid: WebViewProtectedCommandOwner.CommandValidator,
@@ -221,7 +223,7 @@ final class WebViewMediaProtectionOwner {
     }
 
     @discardableResult
-    func pruneInvalidDeferredCommands(
+    public func pruneInvalidDeferredCommands(
         reason: String,
         resolveWebView: WebViewResolver,
         isCommandValid: WebViewProtectedCommandOwner.CommandValidator,
@@ -236,7 +238,7 @@ final class WebViewMediaProtectionOwner {
     }
 
     @discardableResult
-    func pruneStaleBookkeeping(reason: String) -> [ObjectIdentifier] {
+    public func pruneStaleBookkeeping(reason: String) -> [ObjectIdentifier] {
         protectedCommandOwner.pruneStaleBookkeeping(reason: reason)
     }
 
@@ -313,7 +315,7 @@ final class WebViewMediaProtectionOwner {
             windowID: owner?.windowID ?? fallbackWindowID(webView),
             tabID: owner?.tabID
         )
-        RuntimeDiagnostics.protectedWebViewTrace(
+        SumiWebRuntimeDiagnostics.protectedWebViewTrace(
             "beginFullscreenProtection webView=\(webViewID) tab=\(owner?.tabID.uuidString.prefix(8) ?? "nil") window=\(owner?.windowID.uuidString.prefix(8) ?? "nil")"
         )
     }
@@ -353,7 +355,7 @@ final class WebViewMediaProtectionOwner {
         }
         let owner = trackedOwner(webView)
 
-        RuntimeDiagnostics.protectedWebViewTrace(
+        SumiWebRuntimeDiagnostics.protectedWebViewTrace(
             "finishFullscreenProtection webView=\(result.webViewID)"
         )
         flushDeferredProtectedCommands(result.webViewID)

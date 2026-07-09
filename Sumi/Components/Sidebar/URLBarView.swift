@@ -9,6 +9,7 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 import WebKit
+import SumiDomain
 
 enum URLBarPresentationMode {
     case sidebar
@@ -40,6 +41,7 @@ struct URLBarView: View {
     @EnvironmentObject var glanceManager: GlanceManager
     @EnvironmentObject var extensionSurfaceStore: BrowserExtensionSurfaceStore
     @Environment(BrowserWindowState.self) var windowState
+    @Environment(WindowRegistry.self) private var windowRegistry
     @Environment(\.sumiSettings) var sumiSettings
     @Environment(\.resolvedThemeContext) var themeContext
 
@@ -110,6 +112,9 @@ struct URLBarView: View {
                     isHovering = hovering
                 }
             }
+        }
+        .onAppear {
+            permissionPromptPresenter.windowRegistry = windowRegistry
         }
         .onChange(of: browserContext.bookmarkEditorPresentationRequest) { _, request in
             handleBookmarkEditorPresentationRequest(request)

@@ -8,26 +8,29 @@
 //
 
 import Foundation
+import SumiDomain
 import WebKit
 
 @MainActor
 final class WebViewDestructiveCleanupFlowOwner {
-    struct Dependencies {
-        let browserRuntimeContext: @MainActor () -> WebViewCoordinatorBrowserRuntimeContext
-        let liveWebViews: @MainActor (Tab) -> [WKWebView]
-        let isWebViewProtectedFromCompositorMutation: @MainActor (WKWebView) -> Bool
-    }
-
     private struct PreparationResult {
         var preparedWebViewCount = 0
         var skippedProtectedWebViewCount = 0
     }
 
-    private let dependencies: Dependencies
+    private let browserRuntimeContext: @MainActor () -> WebViewCoordinatorBrowserRuntimeContext
+    private let liveWebViews: @MainActor (Tab) -> [WKWebView]
+    private let isWebViewProtectedFromCompositorMutation: @MainActor (WKWebView) -> Bool
     private var blankingWebViewIDs: Set<ObjectIdentifier> = []
 
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
+    init(
+        browserRuntimeContext: @escaping @MainActor () -> WebViewCoordinatorBrowserRuntimeContext,
+        liveWebViews: @escaping @MainActor (Tab) -> [WKWebView],
+        isWebViewProtectedFromCompositorMutation: @escaping @MainActor (WKWebView) -> Bool
+    ) {
+        self.browserRuntimeContext = browserRuntimeContext
+        self.liveWebViews = liveWebViews
+        self.isWebViewProtectedFromCompositorMutation = isWebViewProtectedFromCompositorMutation
     }
 
     func isSuppressingNavigation(on webView: WKWebView) -> Bool {
@@ -47,7 +50,7 @@ final class WebViewDestructiveCleanupFlowOwner {
 
     func prepareForDestructiveDataCleanup(profileIDs: Set<UUID>) {
         guard !profileIDs.isEmpty else { return }
-        let runtimeContext = dependencies.browserRuntimeContext()
+        let runtimeContext = browserRuntimeContext()
 
         let preparationResult = prepareLiveWebViews(
             pinnedTabs: runtimeContext.pinnedTabs(),
@@ -84,9 +87,9 @@ final class WebViewDestructiveCleanupFlowOwner {
             guard seenTabIDs.insert(tab.id).inserted else { return }
             guard isTabEligible(tab, profileIDs: profileIDs) else { return }
 
-            let tabLiveWebViews = dependencies.liveWebViews(tab)
+            let tabLiveWebViews = liveWebViews(tab)
             let eligibleWebViews = tabLiveWebViews.filter { webView in
-                dependencies.isWebViewProtectedFromCompositorMutation(webView) == false
+                isWebViewProtectedFromCompositorMutation(webView) == false
             }
             guard !eligibleWebViews.isEmpty else {
                 result.skippedProtectedWebViewCount += tabLiveWebViews.count
@@ -134,27 +137,5 @@ final class WebViewDestructiveCleanupFlowOwner {
         }
         return profileIDs.contains(profileId)
             && tab.representsSumiNativeSurface == false
-    }
-}
-
-extension WebViewDestructiveCleanupFlowOwner.Dependencies {
-    @MainActor
-    static func live(coordinator: WebViewCoordinator) -> Self {
-        Self(
-            browserRuntimeContext: { [weak coordinator] in
-                guard let coordinator else {
-                    preconditionFailure(
-                        "WebViewDestructiveCleanupFlowOwner outlived its coordinator"
-                    )
-                }
-                return coordinator.runtimeContextStore.requireBrowser()
-            },
-            liveWebViews: { [weak coordinator] tab in
-                coordinator?.suspensionLiveWebViews(for: tab) ?? []
-            },
-            isWebViewProtectedFromCompositorMutation: { [weak coordinator] webView in
-                coordinator?.isWebViewProtectedFromCompositorMutation(webView) ?? false
-            }
-        )
     }
 }

@@ -1,5 +1,6 @@
 import AppKit
 import WebKit
+import SumiWebRuntime
 
 @MainActor
 final class SumiWebViewContainerView: NSView {

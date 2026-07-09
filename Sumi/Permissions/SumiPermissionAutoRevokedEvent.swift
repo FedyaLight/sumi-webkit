@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 struct SumiPermissionAutoRevokedEvent: Equatable, Identifiable, Sendable {
     let id: String

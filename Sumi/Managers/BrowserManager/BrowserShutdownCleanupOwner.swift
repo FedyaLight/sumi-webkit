@@ -2,59 +2,43 @@ import Foundation
 
 @MainActor
 final class BrowserShutdownCleanupOwner {
-    struct Dependencies {
-        let emitDiagnostic: @MainActor (String) -> Void
-        let cancelNativeMessagingSessions: @MainActor (String) -> Void
-        let closeAllOptionsWindows: @MainActor () -> Void
-        let closeAllAuxiliaryWindows: @MainActor () -> Void
-        let dismissGlance: @MainActor () -> Void
-        let pinnedTabs: @MainActor () -> [Tab]
-        let regularTabs: @MainActor () -> [Tab]
-        let ephemeralTabs: @MainActor () -> [Tab]
-        let cleanupTab: @MainActor (Tab) -> Void
-        let cleanupAllWebViews: @MainActor () -> Void
+    private let emitDiagnostic: @MainActor (String) -> Void
+    private let cancelNativeMessagingSessions: @MainActor (String) -> Void
+    private let closeAllOptionsWindows: @MainActor () -> Void
+    private let closeAllAuxiliaryWindows: @MainActor () -> Void
+    private let dismissGlance: @MainActor () -> Void
+    private let pinnedTabs: @MainActor () -> [Tab]
+    private let regularTabs: @MainActor () -> [Tab]
+    private let ephemeralTabs: @MainActor () -> [Tab]
+    private let cleanupTab: @MainActor (Tab) -> Void
+    private let cleanupAllWebViews: @MainActor () -> Void
+
+    init(
+        emitDiagnostic: @escaping @MainActor (String) -> Void,
+        cancelNativeMessagingSessions: @escaping @MainActor (String) -> Void,
+        closeAllOptionsWindows: @escaping @MainActor () -> Void,
+        closeAllAuxiliaryWindows: @escaping @MainActor () -> Void,
+        dismissGlance: @escaping @MainActor () -> Void,
+        pinnedTabs: @escaping @MainActor () -> [Tab],
+        regularTabs: @escaping @MainActor () -> [Tab],
+        ephemeralTabs: @escaping @MainActor () -> [Tab],
+        cleanupTab: @escaping @MainActor (Tab) -> Void,
+        cleanupAllWebViews: @escaping @MainActor () -> Void
+    ) {
+        self.emitDiagnostic = emitDiagnostic
+        self.cancelNativeMessagingSessions = cancelNativeMessagingSessions
+        self.closeAllOptionsWindows = closeAllOptionsWindows
+        self.closeAllAuxiliaryWindows = closeAllAuxiliaryWindows
+        self.dismissGlance = dismissGlance
+        self.pinnedTabs = pinnedTabs
+        self.regularTabs = regularTabs
+        self.ephemeralTabs = ephemeralTabs
+        self.cleanupTab = cleanupTab
+        self.cleanupAllWebViews = cleanupAllWebViews
     }
 
-    private let dependencies: Dependencies
-
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
-    }
-
-    func cleanupAllTabs() {
-        dependencies.emitDiagnostic("🔄 [BrowserManager] Cleaning up all tabs")
-        dependencies.cancelNativeMessagingSessions("BrowserManager.cleanupAllTabs")
-        dependencies.closeAllOptionsWindows()
-        dependencies.closeAllAuxiliaryWindows()
-        dependencies.dismissGlance()
-
-        for tab in uniqueTabsForCleanup() {
-            dependencies.cleanupTab(tab)
-        }
-
-        dependencies.cleanupAllWebViews()
-    }
-
-    private func uniqueTabsForCleanup() -> [Tab] {
-        var seenTabIDs = Set<UUID>()
-        var tabs: [Tab] = []
-
-        func append(_ tab: Tab) {
-            guard seenTabIDs.insert(tab.id).inserted else { return }
-            tabs.append(tab)
-        }
-
-        dependencies.pinnedTabs().forEach(append)
-        dependencies.regularTabs().forEach(append)
-        dependencies.ephemeralTabs().forEach(append)
-        return tabs
-    }
-}
-
-extension BrowserShutdownCleanupOwner.Dependencies {
-    @MainActor
-    static func live(browserManager: BrowserManager) -> Self {
-        Self(
+    convenience init(browserManager: BrowserManager) {
+        self.init(
             emitDiagnostic: { message in
                 RuntimeDiagnostics.emit(message)
             },
@@ -91,5 +75,34 @@ extension BrowserShutdownCleanupOwner.Dependencies {
                 )
             }
         )
+    }
+
+    func cleanupAllTabs() {
+        emitDiagnostic("🔄 [BrowserManager] Cleaning up all tabs")
+        cancelNativeMessagingSessions("BrowserManager.cleanupAllTabs")
+        closeAllOptionsWindows()
+        closeAllAuxiliaryWindows()
+        dismissGlance()
+
+        for tab in uniqueTabsForCleanup() {
+            cleanupTab(tab)
+        }
+
+        cleanupAllWebViews()
+    }
+
+    private func uniqueTabsForCleanup() -> [Tab] {
+        var seenTabIDs = Set<UUID>()
+        var tabs: [Tab] = []
+
+        func append(_ tab: Tab) {
+            guard seenTabIDs.insert(tab.id).inserted else { return }
+            tabs.append(tab)
+        }
+
+        pinnedTabs().forEach(append)
+        regularTabs().forEach(append)
+        ephemeralTabs().forEach(append)
+        return tabs
     }
 }

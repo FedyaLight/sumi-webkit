@@ -14,6 +14,14 @@ struct FolderSearchPopoverPresentationContext {
 
 @MainActor
 final class FolderSearchPopoverPresenter: NSObject, NSPopoverDelegate {
+
+    weak var windowRegistry: WindowRegistry?
+    private let sidebarRecoveryCoordinator: SidebarHostRecoveryHandling
+
+    init(sidebarRecoveryCoordinator: SidebarHostRecoveryHandling = SidebarHostRecoveryCoordinator()) {
+        self.sidebarRecoveryCoordinator = sidebarRecoveryCoordinator
+        super.init()
+    }
     private final class ActiveSession {
         let id = UUID()
         let folderID: UUID
@@ -93,7 +101,7 @@ final class FolderSearchPopoverPresenter: NSObject, NSPopoverDelegate {
         popover.contentSize = contentSize
         popover.appearance = PopoverPresenterChromeSupport.appearance(
             for: surfaceColorScheme,
-            fallback: anchor.view.window?.effectiveAppearance ?? windowState.shellWindow(in: nil)?.effectiveAppearance
+            fallback: anchor.view.window?.effectiveAppearance ?? windowState.shellWindow(in: windowRegistry)?.effectiveAppearance
         )
         popover.contentViewController = NSHostingController(
             rootView: FolderSearchPopoverView(
@@ -142,7 +150,7 @@ final class FolderSearchPopoverPresenter: NSObject, NSPopoverDelegate {
         activeSession = session
         installDismissalObservers(for: session)
 
-        windowState.shellWindow(in: nil)?.makeKeyAndOrderFront(nil)
+        windowState.shellWindow(in: windowRegistry)?.makeKeyAndOrderFront(nil)
         popover.show(
             relativeTo: anchor.rect,
             of: anchor.view,
@@ -380,7 +388,7 @@ final class FolderSearchPopoverPresenter: NSObject, NSPopoverDelegate {
                 }
             }
         )
-        if let window = activeSession.windowState.shellWindow(in: nil) ?? activeSession.source.window {
+        if let window = activeSession.windowState.shellWindow(in: windowRegistry) ?? activeSession.source.window {
             observers.append(
                 center.addObserver(
                     forName: NSWindow.willCloseNotification,
@@ -431,7 +439,8 @@ final class FolderSearchPopoverPresenter: NSObject, NSPopoverDelegate {
                 windowState: session.windowState,
                 source: session.source,
                 anchor: session.source.originOwnerView,
-                using: SidebarHostRecoveryCoordinator.shared
+                windowRegistry: windowRegistry,
+                using: sidebarRecoveryCoordinator
             )
         }
     }
@@ -448,7 +457,7 @@ final class FolderSearchPopoverPresenter: NSObject, NSPopoverDelegate {
             return (ownerView, ownerView.bounds, preferredEdge)
         }
 
-        guard let contentView = windowState.shellWindow(in: nil)?.contentView ?? source.window?.contentView else {
+        guard let contentView = windowState.shellWindow(in: windowRegistry)?.contentView ?? source.window?.contentView else {
             return nil
         }
 

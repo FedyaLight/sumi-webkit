@@ -18,13 +18,11 @@ final class ExtensionToolbarPinningOwnerTests: XCTestCase {
 
         func makeOwner() -> ExtensionToolbarPinningOwner {
             ExtensionToolbarPinningOwner(
-                dependencies: .init(
-                    preferences: preferences,
-                    currentProfileId: { currentProfileId },
-                    installedExtensionIDs: { installedIDs },
-                    publishedPinnedIDs: { publishedPinnedIDs },
-                    setPublishedPinnedIDs: { publishedPinnedIDs = $0 }
-                )
+                preferences: preferences,
+                currentProfileId: { currentProfileId },
+                installedExtensionIDs: { installedIDs },
+                publishedPinnedIDs: { publishedPinnedIDs },
+                setPublishedPinnedIDs: { publishedPinnedIDs = $0 }
             )
         }
 
@@ -70,13 +68,11 @@ final class ExtensionToolbarPinningOwnerTests: XCTestCase {
 
         func makeOwner() -> ExtensionToolbarPinningOwner {
             ExtensionToolbarPinningOwner(
-                dependencies: .init(
-                    preferences: preferences,
-                    currentProfileId: { profileId },
-                    installedExtensionIDs: { [] },
-                    publishedPinnedIDs: { publishedPinnedIDs },
-                    setPublishedPinnedIDs: { publishedPinnedIDs = $0 }
-                )
+                preferences: preferences,
+                currentProfileId: { profileId },
+                installedExtensionIDs: { [] },
+                publishedPinnedIDs: { publishedPinnedIDs },
+                setPublishedPinnedIDs: { publishedPinnedIDs = $0 }
             )
         }
 

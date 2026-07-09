@@ -180,7 +180,7 @@ final class TabPermissionSurfaceTests: XCTestCase {
         XCTAssertTrue(tab.permissionRequestSurfaceState(for: webView).isActive)
         XCTAssertFalse(tab.permissionRequestSurfaceState(for: webView).isVisible)
 
-        tab.primaryWindowId = windowState.id
+        tab.webViewOwnershipOwner.setPrimaryWindowId(windowState.id)
 
         let context = try XCTUnwrap(tab.popupPermissionTabContext(for: webView))
         XCTAssertTrue(tab.permissionRequestIsActiveSurface(for: webView))

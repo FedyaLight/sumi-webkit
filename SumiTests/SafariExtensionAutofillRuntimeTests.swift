@@ -111,7 +111,7 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
         let tab = makeTab(profileId: profile.id, url: URL(string: "https://example.com")!)
         let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
         webView.owningTab = tab
-        tab._webView = webView
+        tab.replaceUntrackedWebView(webView)
 
         let extensionContext = try await makeLoadedExtensionContext(
             manager: manager,
@@ -237,7 +237,7 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
         )
         let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
         webView.owningTab = tab
-        tab._webView = webView
+        tab.replaceUntrackedWebView(webView)
 
         let didOpenExpectation = expectation(description: "didOpenTab after commit")
         manager.testHooks.didOpenTab = { tabID in

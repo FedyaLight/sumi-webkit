@@ -1,5 +1,6 @@
 @testable import Sumi
 import XCTest
+import SumiWebRuntime
 
 @MainActor
 final class SumiWebViewAudioStateTests: XCTestCase {

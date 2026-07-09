@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 enum SumiPermissionSiteDecisionError: Error, Equatable, LocalizedError {
     case unavailable

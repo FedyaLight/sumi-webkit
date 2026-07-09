@@ -3,38 +3,60 @@ import Foundation
 
 @MainActor
 final class BrowserRecentlyClosedRestoreOwner {
-    struct Dependencies {
-        let recentlyClosedManager: @MainActor () -> RecentlyClosedManager
-        let startupRestore: any BrowserStartupSessionRestoreProviding
-        let lastSessionWindowsStore: @MainActor () -> LastSessionWindowsStore
-        let currentRegularWindowSnapshots: @MainActor (UUID?) -> [LastSessionWindowSnapshot]
-        let refreshLastSessionWindowsStore: @MainActor (UUID?) -> Void
-        let reopenWindow: @MainActor (WindowSessionSnapshot) async -> Void
-        let mergeSnapshotForLastSessionRestore: @MainActor (TabSnapshotRepository.Snapshot) -> Void
-        let activeWindow: @MainActor () -> BrowserWindowState?
-        let windowState: @MainActor (UUID) -> BrowserWindowState?
-        let tabManager: @MainActor () -> TabManager
-        let profileManager: @MainActor () -> ProfileManager
-        let space: @MainActor (UUID) -> Space?
-        let selectTab: @MainActor (Tab, BrowserWindowState) -> Void
-    }
+    private let recentlyClosedManager: @MainActor () -> RecentlyClosedManager
+    private let startupRestore: any BrowserStartupSessionRestoreProviding
+    private let lastSessionWindowsStore: @MainActor () -> LastSessionWindowsStore
+    private let currentRegularWindowSnapshots: @MainActor (UUID?) -> [LastSessionWindowSnapshot]
+    private let refreshLastSessionWindowsStore: @MainActor (UUID?) -> Void
+    private let reopenWindow: @MainActor (WindowSessionSnapshot) async -> Void
+    private let mergeSnapshotForLastSessionRestore: @MainActor (TabSnapshotRepository.Snapshot) -> Void
+    private let activeWindow: @MainActor () -> BrowserWindowState?
+    private let windowState: @MainActor (UUID) -> BrowserWindowState?
+    private let tabManager: @MainActor () -> TabManager
+    private let profileManager: @MainActor () -> ProfileManager
+    private let space: @MainActor (UUID) -> Space?
+    private let selectTab: @MainActor (Tab, BrowserWindowState) -> Void
 
-    private let dependencies: Dependencies
-
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
+    init(
+        recentlyClosedManager: @escaping @MainActor () -> RecentlyClosedManager,
+        startupRestore: any BrowserStartupSessionRestoreProviding,
+        lastSessionWindowsStore: @escaping @MainActor () -> LastSessionWindowsStore,
+        currentRegularWindowSnapshots: @escaping @MainActor (UUID?) -> [LastSessionWindowSnapshot],
+        refreshLastSessionWindowsStore: @escaping @MainActor (UUID?) -> Void,
+        reopenWindow: @escaping @MainActor (WindowSessionSnapshot) async -> Void,
+        mergeSnapshotForLastSessionRestore: @escaping @MainActor (TabSnapshotRepository.Snapshot) -> Void,
+        activeWindow: @escaping @MainActor () -> BrowserWindowState?,
+        windowState: @escaping @MainActor (UUID) -> BrowserWindowState?,
+        tabManager: @escaping @MainActor () -> TabManager,
+        profileManager: @escaping @MainActor () -> ProfileManager,
+        space: @escaping @MainActor (UUID) -> Space?,
+        selectTab: @escaping @MainActor (Tab, BrowserWindowState) -> Void
+    ) {
+        self.recentlyClosedManager = recentlyClosedManager
+        self.startupRestore = startupRestore
+        self.lastSessionWindowsStore = lastSessionWindowsStore
+        self.currentRegularWindowSnapshots = currentRegularWindowSnapshots
+        self.refreshLastSessionWindowsStore = refreshLastSessionWindowsStore
+        self.reopenWindow = reopenWindow
+        self.mergeSnapshotForLastSessionRestore = mergeSnapshotForLastSessionRestore
+        self.activeWindow = activeWindow
+        self.windowState = windowState
+        self.tabManager = tabManager
+        self.profileManager = profileManager
+        self.space = space
+        self.selectTab = selectTab
     }
 
     var canOfferStartupSessionRestoreShortcut: Bool {
-        dependencies.startupRestore.canOfferRestoreShortcut
+        startupRestore.canOfferRestoreShortcut
     }
 
     var canRestoreAnyLastSession: Bool {
-        canOfferStartupSessionRestoreShortcut || dependencies.lastSessionWindowsStore().canRestoreLastSession
+        canOfferStartupSessionRestoreShortcut || lastSessionWindowsStore().canRestoreLastSession
     }
 
     func reopenMostRecentClosedItem() {
-        guard let item = dependencies.recentlyClosedManager().mostRecentItem else { return }
+        guard let item = recentlyClosedManager().mostRecentItem else { return }
         reopenRecentlyClosedItem(item)
     }
 
@@ -49,18 +71,18 @@ final class BrowserRecentlyClosedRestoreOwner {
             didRestore = restoreShortcutLauncher(from: launcherState.pin) != nil
         case .window(let windowState):
             didRestore = true
-            Task { @MainActor [dependencies] in
-                await dependencies.reopenWindow(windowState.session)
+            Task { @MainActor [reopenWindow] in
+                await reopenWindow(windowState.session)
             }
         }
         guard didRestore else { return }
-        dependencies.recentlyClosedManager().remove(item)
-        dependencies.startupRestore.markRestoreOfferConsumed()
+        recentlyClosedManager().remove(item)
+        startupRestore.markRestoreOfferConsumed()
     }
 
     func reopenAllWindowsFromLastSession() {
-        let startupRestore = dependencies.startupRestore
-        let lastSessionWindowsStore = dependencies.lastSessionWindowsStore()
+        let startupRestore = startupRestore
+        let lastSessionWindowsStore = lastSessionWindowsStore()
         let useStartupArchive = startupRestore.canOfferRestoreShortcut
         let sourceSnapshots = useStartupArchive
             ? startupRestore.windowSnapshots
@@ -69,26 +91,26 @@ final class BrowserRecentlyClosedRestoreOwner {
             ? (startupRestore.tabSnapshot ?? lastSessionWindowsStore.tabSnapshot)
             : lastSessionWindowsStore.tabSnapshot
         let existingSessions = Set(
-            dependencies.currentRegularWindowSnapshots(nil).map(\.session)
+            currentRegularWindowSnapshots(nil).map(\.session)
         )
         let snapshotsToRestore = sourceSnapshots.filter { !existingSessions.contains($0.session) }
         guard !snapshotsToRestore.isEmpty else { return }
 
         startupRestore.markRestoreOfferConsumed()
-        Task { @MainActor [dependencies] in
+        Task { @MainActor [reopenWindow, mergeSnapshotForLastSessionRestore, refreshLastSessionWindowsStore] in
             if let sourceTabSnapshot {
-                dependencies.mergeSnapshotForLastSessionRestore(sourceTabSnapshot)
+                mergeSnapshotForLastSessionRestore(sourceTabSnapshot)
             }
             for snapshot in snapshotsToRestore {
-                await dependencies.reopenWindow(snapshot.session)
+                await reopenWindow(snapshot.session)
             }
-            dependencies.refreshLastSessionWindowsStore(nil)
+            refreshLastSessionWindowsStore(nil)
         }
     }
 
     private func reopenClosedTab(_ tabState: RecentlyClosedTabState) -> Bool {
-        let tabManager = dependencies.tabManager()
-        let targetWindow = dependencies.activeWindow()
+        let tabManager = tabManager()
+        let targetWindow = activeWindow()
         guard let targetSpace = restoredSpace(
             sourceSpaceId: tabState.sourceSpaceId,
             sourceProfileId: tabState.profileId,
@@ -108,7 +130,7 @@ final class BrowserRecentlyClosedRestoreOwner {
         restoredTab.applyRestoredNavigationPresentation()
 
         if let targetWindow {
-            dependencies.selectTab(restoredTab, targetWindow)
+            selectTab(restoredTab, targetWindow)
         } else {
             tabManager.activeSelectionOwner.setActiveTab(restoredTab)
         }
@@ -116,7 +138,7 @@ final class BrowserRecentlyClosedRestoreOwner {
     }
 
     private func reopenClosedShortcutLiveInstance(_ shortcutState: RecentlyClosedShortcutLiveState) -> Bool {
-        let tabManager = dependencies.tabManager()
+        let tabManager = tabManager()
         guard let targetWindow = targetWindowForClosedShortcut(shortcutState) else {
             if tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: shortcutState.pin.id) == nil {
                 return restoreShortcutLauncher(from: shortcutState.pin) != nil
@@ -134,16 +156,16 @@ final class BrowserRecentlyClosedRestoreOwner {
             currentSpaceId: targetWindow.currentSpaceId
         )
         applyShortcutLiveState(shortcutState, to: restoredTab)
-        dependencies.selectTab(restoredTab, targetWindow)
+        selectTab(restoredTab, targetWindow)
         return true
     }
 
     private func targetWindowForClosedShortcut(_ shortcutState: RecentlyClosedShortcutLiveState) -> BrowserWindowState? {
         if let sourceWindowId = shortcutState.sourceWindowId,
-           let sourceWindow = dependencies.windowState(sourceWindowId) {
+           let sourceWindow = windowState(sourceWindowId) {
             return sourceWindow
         }
-        return dependencies.activeWindow()
+        return activeWindow()
     }
 
     private func applyShortcutLiveState(
@@ -167,7 +189,7 @@ final class BrowserRecentlyClosedRestoreOwner {
         from pinState: RecentlyClosedShortcutPinState,
         fallbackWindow: BrowserWindowState? = nil
     ) -> ShortcutPin? {
-        let tabManager = dependencies.tabManager()
+        let tabManager = tabManager()
         if let existing = tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: pinState.id) {
             return existing
         }
@@ -230,7 +252,7 @@ final class BrowserRecentlyClosedRestoreOwner {
         from pinState: RecentlyClosedShortcutPinState,
         fallbackWindow: BrowserWindowState?
     ) -> UUID? {
-        let profileManager = dependencies.profileManager()
+        let profileManager = profileManager()
         if let profileId = pinState.profileId,
            profileManager.profiles.contains(where: { $0.id == profileId }) {
             return profileId
@@ -246,7 +268,7 @@ final class BrowserRecentlyClosedRestoreOwner {
         from pinState: RecentlyClosedShortcutPinState,
         fallbackWindow: BrowserWindowState?
     ) -> UUID? {
-        let tabManager = dependencies.tabManager()
+        let tabManager = tabManager()
         if let spaceId = pinState.spaceId,
            tabManager.spaceStateOwner.spaces.contains(where: { $0.id == spaceId }) {
             return spaceId
@@ -267,13 +289,13 @@ final class BrowserRecentlyClosedRestoreOwner {
         sourceProfileId: UUID?,
         fallbackWindow: BrowserWindowState?
     ) -> Space? {
-        let tabManager = dependencies.tabManager()
+        let tabManager = tabManager()
         if let sourceSpaceId,
-           let sourceSpace = dependencies.space(sourceSpaceId) {
+           let sourceSpace = space(sourceSpaceId) {
             return sourceSpace
         }
         if let spaceId = fallbackWindow?.currentSpaceId,
-           let windowSpace = dependencies.space(spaceId) {
+           let windowSpace = space(spaceId) {
             return windowSpace
         }
         if let sourceProfileId,
@@ -299,51 +321,5 @@ final class BrowserRecentlyClosedRestoreOwner {
         tabManager: TabManager
     ) -> Space? {
         tabManager.spaceStateOwner.spaces.first(where: { $0.profileId == profileId })
-    }
-}
-
-extension BrowserRecentlyClosedRestoreOwner.Dependencies {
-    @MainActor
-    static func live(browserManager: BrowserManager) -> Self {
-        let startupRestoreOwner = browserManager.startupSessionRestoreOwner
-        return Self(
-            recentlyClosedManager: { [weak browserManager, recentlyClosedManager = browserManager.recentlyClosedManager] in
-                browserManager?.recentlyClosedManager ?? recentlyClosedManager
-            },
-            startupRestore: startupRestoreOwner,
-            lastSessionWindowsStore: { [weak browserManager, lastSessionWindowsStore = browserManager.lastSessionWindowsStore] in
-                browserManager?.lastSessionWindowsStore ?? lastSessionWindowsStore
-            },
-            currentRegularWindowSnapshots: { [weak browserManager] excludedWindowId in
-                browserManager?.windowHistorySessionOwner.currentRegularWindowSnapshots(excludingWindowID: excludedWindowId) ?? []
-            },
-            refreshLastSessionWindowsStore: { [weak browserManager] excludedWindowId in
-                browserManager?.windowHistorySessionOwner.refreshLastSessionWindowsStore(excludingWindowID: excludedWindowId)
-            },
-            reopenWindow: { [weak browserManager] snapshot in
-                await browserManager?.historyMenuOwner.reopenWindow(from: snapshot)
-            },
-            mergeSnapshotForLastSessionRestore: { [weak browserManager] snapshot in
-                browserManager?.tabManager.lastSessionRestoreOwner.mergeSnapshotForLastSessionRestore(snapshot)
-            },
-            activeWindow: { [weak browserManager] in
-                browserManager?.windowRegistry?.activeWindow
-            },
-            windowState: { [weak browserManager] windowId in
-                browserManager?.windowRegistry?.windows[windowId]
-            },
-            tabManager: { [weak browserManager, tabManager = browserManager.tabManager] in
-                browserManager?.tabManager ?? tabManager
-            },
-            profileManager: { [weak browserManager, profileManager = browserManager.profileManager] in
-                browserManager?.profileManager ?? profileManager
-            },
-            space: { [weak browserManager] spaceId in
-                browserManager?.windowSpaceStateOwner.space(for: spaceId)
-            },
-            selectTab: { [weak browserManager] tab, windowState in
-                browserManager?.selectTab(tab, in: windowState)
-            }
-        )
     }
 }

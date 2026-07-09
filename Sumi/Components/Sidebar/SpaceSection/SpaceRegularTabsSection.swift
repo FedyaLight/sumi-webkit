@@ -646,7 +646,7 @@ extension SpaceView {
                 share: {
                     SidebarLinkActions.presentSharePicker(
                         for: tab.url,
-                        source: windowState.resolveSidebarPresentationSource(),
+                        source: windowState.resolveSidebarPresentationSource(in: windowRegistry),
                         presentationActions: browserContext.presentationActions
                     )
                 },

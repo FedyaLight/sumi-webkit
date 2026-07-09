@@ -5,6 +5,7 @@
 //
 
 import SwiftUI
+import SumiDomain
 
 enum SpaceSidebarSnapshotFolderLayout {
     static let contentLeadingPadding: CGFloat = 14
@@ -345,7 +346,7 @@ enum SpaceSidebarTransitionSnapshotBuilder {
                 )
             case .webExtension(let ext):
                 let actionState = surfaceStore.actionStatesByExtensionID[ext.id]
-                let icon = actionState?.icon ?? extensionIcon(for: ext)
+                let icon = actionState?.icon ?? extensionIcon(for: ext, surfaceStore: surfaceStore)
                 let badgeText = actionState?.badgeText
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                 return ExtensionActionSlotSnapshot(
@@ -361,9 +362,12 @@ enum SpaceSidebarTransitionSnapshotBuilder {
         return ExtensionActionGridSnapshot(slots: snapshots)
     }
 
-    private static func extensionIcon(for extensionRecord: InstalledExtension) -> NSImage? {
+    private static func extensionIcon(
+        for extensionRecord: InstalledExtension,
+        surfaceStore: BrowserExtensionSurfaceStore
+    ) -> NSImage? {
         guard let iconPath = extensionRecord.iconPath else { return nil }
-        return ExtensionIconCache.shared.image(
+        return surfaceStore.iconCache.image(
             extensionId: extensionRecord.id,
             iconPath: iconPath
         )

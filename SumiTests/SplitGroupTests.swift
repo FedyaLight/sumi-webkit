@@ -2,6 +2,8 @@ import SwiftData
 import XCTest
 
 @testable import Sumi
+import SumiDomain
+import SumiWebRuntime
 
 @MainActor
 final class SplitGroupTests: SplitGroupTestCase {

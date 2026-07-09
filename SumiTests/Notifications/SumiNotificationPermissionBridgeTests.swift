@@ -1,6 +1,7 @@
 @testable import Sumi
 import WebKit
 import XCTest
+import SumiDomain
 
 @MainActor
 final class SumiNotificationPermissionBridgeTests: XCTestCase {

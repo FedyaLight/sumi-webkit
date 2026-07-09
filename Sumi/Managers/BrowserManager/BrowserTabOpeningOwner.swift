@@ -1,34 +1,10 @@
 import Foundation
+import SumiDomain
 import WebKit
 
 enum BrowserTabOpenActivationPolicy {
     case foreground(windowState: BrowserWindowState, loadPolicy: TabSelectionLoadPolicy)
     case background
-}
-
-extension BrowserTabOpeningOwner.Dependencies {
-    @MainActor
-    static func live(browserManager: BrowserManager) -> Self {
-        Self(
-            tabManager: { [weak browserManager, tabManager = browserManager.tabManager] in
-                browserManager?.tabManager ?? tabManager
-            },
-            settings: { [weak browserManager] in browserManager?.sumiSettings },
-            activeWindow: { [weak browserManager] in browserManager?.windowRegistry?.activeWindow },
-            windowStateContainingTab: { [weak browserManager] tab in
-                browserManager?.windowTabContextOwner.windowState(containing: tab)
-            },
-            canMaterializeBackgroundTab: { [weak browserManager] tab in
-                browserManager?.startupProtectionRuntime.canMaterializeWebViewDuringStartup(tab) ?? true
-            },
-            deferBackgroundTabUntilStartupReady: { [weak browserManager] tab in
-                browserManager?.startupProtectionRuntime.deferBackgroundTabUntilStartupReady(tab)
-            },
-            selectTab: { [weak browserManager] tab, windowState, loadPolicy in
-                browserManager?.selectTab(tab, in: windowState, loadPolicy: loadPolicy)
-            }
-        )
-    }
 }
 
 struct BrowserTabOpenContext {
@@ -72,29 +48,61 @@ struct BrowserTabOpenContext {
 
 @MainActor
 final class BrowserTabOpeningOwner {
-    struct Dependencies {
-        let tabManager: () -> TabManager
-        let settings: () -> SumiSettingsService?
-        let activeWindow: () -> BrowserWindowState?
-        let windowStateContainingTab: (Tab) -> BrowserWindowState?
-        let canMaterializeBackgroundTab: (Tab) -> Bool
-        let deferBackgroundTabUntilStartupReady: (Tab) -> Void
-        let selectTab: (Tab, BrowserWindowState, TabSelectionLoadPolicy) -> Void
+    private let tabManagerAction: () -> TabManager
+    private let settingsAction: () -> SumiSettingsService?
+    private let activeWindowAction: () -> BrowserWindowState?
+    private let windowStateContainingTabAction: (Tab) -> BrowserWindowState?
+    private let canMaterializeBackgroundTabAction: (Tab) -> Bool
+    private let deferBackgroundTabUntilStartupReadyAction: (Tab) -> Void
+    private let selectTabAction: (Tab, BrowserWindowState, TabSelectionLoadPolicy) -> Void
+
+    init(
+        tabManager: @escaping () -> TabManager,
+        settings: @escaping () -> SumiSettingsService?,
+        activeWindow: @escaping () -> BrowserWindowState?,
+        windowStateContainingTab: @escaping (Tab) -> BrowserWindowState?,
+        canMaterializeBackgroundTab: @escaping (Tab) -> Bool,
+        deferBackgroundTabUntilStartupReady: @escaping (Tab) -> Void,
+        selectTab: @escaping (Tab, BrowserWindowState, TabSelectionLoadPolicy) -> Void
+    ) {
+        self.tabManagerAction = tabManager
+        self.settingsAction = settings
+        self.activeWindowAction = activeWindow
+        self.windowStateContainingTabAction = windowStateContainingTab
+        self.canMaterializeBackgroundTabAction = canMaterializeBackgroundTab
+        self.deferBackgroundTabUntilStartupReadyAction = deferBackgroundTabUntilStartupReady
+        self.selectTabAction = selectTab
     }
 
-    private let dependencies: Dependencies
-
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
+    convenience init(browserManager: BrowserManager) {
+        self.init(
+            tabManager: { [weak browserManager, tabManager = browserManager.tabManager] in
+                browserManager?.tabManager ?? tabManager
+            },
+            settings: { [weak browserManager] in browserManager?.sumiSettings },
+            activeWindow: { [weak browserManager] in browserManager?.windowRegistry?.activeWindow },
+            windowStateContainingTab: { [weak browserManager] tab in
+                browserManager?.windowTabContextOwner.windowState(containing: tab)
+            },
+            canMaterializeBackgroundTab: { [weak browserManager] tab in
+                browserManager?.startupProtectionRuntime.canMaterializeWebViewDuringStartup(tab) ?? true
+            },
+            deferBackgroundTabUntilStartupReady: { [weak browserManager] tab in
+                browserManager?.startupProtectionRuntime.deferBackgroundTabUntilStartupReady(tab)
+            },
+            selectTab: { [weak browserManager] tab, windowState, loadPolicy in
+                browserManager?.selectTab(tab, in: windowState, loadPolicy: loadPolicy)
+            }
+        )
     }
 
     @discardableResult
     func createNewTab() -> Tab {
-        if let activeWindow = dependencies.activeWindow() {
+        if let activeWindow = activeWindowAction() {
             return openNewTab(context: .foreground(windowState: activeWindow))
         }
 
-        let tabManager = dependencies.tabManager()
+        let tabManager = tabManagerAction()
         return tabManager.regularTabLifecycleOwner.createNewTab(in: tabManager.spaceStateOwner.spaces.first)
     }
 
@@ -121,7 +129,7 @@ final class BrowserTabOpeningOwner {
             )
         }
 
-        let tabManager = dependencies.tabManager()
+        let tabManager = tabManagerAction()
         let targetSpace = resolvedTabOpenSpace(
             for: .foreground(windowState: windowState)
         )
@@ -134,8 +142,8 @@ final class BrowserTabOpeningOwner {
         DispatchQueue.main.asyncAfter(deadline: .now() + SidebarDropMotion.contentLayoutDuration) { [weak self, weak newTab] in
             guard let self,
                   let newTab,
-                  self.dependencies.tabManager().tabCollectionMembershipOwner.tab(for: newTab.id) != nil else { return }
-            self.dependencies.selectTab(newTab, windowState, .deferred)
+                  self.tabManagerAction().tabCollectionMembershipOwner.tab(for: newTab.id) != nil else { return }
+            self.selectTabAction(newTab, windowState, .deferred)
         }
 
         return newTab
@@ -146,13 +154,13 @@ final class BrowserTabOpeningOwner {
         url: String = SumiSurface.emptyTabURL.absoluteString,
         context: BrowserTabOpenContext
     ) -> Tab {
-        let tabManager = dependencies.tabManager()
+        let tabManager = tabManagerAction()
         let resolvedWindowState = resolvedWindowState(for: context)
 
         if let resolvedWindowState,
            resolvedWindowState.isIncognito,
            let profile = resolvedWindowState.ephemeralProfile {
-            let template = dependencies.settings()?.resolvedSearchEngineTemplate ?? SearchProvider.google.queryTemplate
+            let template = settingsAction()?.resolvedSearchEngineTemplate ?? SearchProvider.google.queryTemplate
             let normalizedURL = normalizeURL(url, queryTemplate: template)
             guard let resolvedUrl = URL(string: normalizedURL) else {
                 return tabManager.ephemeralLifecycleOwner.createEphemeralTab(
@@ -171,7 +179,7 @@ final class BrowserTabOpeningOwner {
 
             switch context.activationPolicy {
             case .foreground(let windowState, let loadPolicy):
-                dependencies.selectTab(newTab, windowState, loadPolicy)
+                selectTabAction(newTab, windowState, loadPolicy)
             case .background:
                 resolvedWindowState.currentTabId = previousTabId
                 prepareBackgroundTabIfNeeded(
@@ -198,7 +206,7 @@ final class BrowserTabOpeningOwner {
 
         switch context.activationPolicy {
         case .foreground(let windowState, let loadPolicy):
-            dependencies.selectTab(newTab, windowState, loadPolicy)
+            selectTabAction(newTab, windowState, loadPolicy)
         case .background:
             prepareBackgroundTabIfNeeded(
                 newTab,
@@ -210,7 +218,7 @@ final class BrowserTabOpeningOwner {
     }
 
     func duplicateTab(_ tab: Tab, in windowState: BrowserWindowState) {
-        let tabManager = dependencies.tabManager()
+        let tabManager = tabManagerAction()
         let targetSpace = resolvedTabOpenSpace(
             for: .background(
                 windowState: windowState,
@@ -234,7 +242,7 @@ final class BrowserTabOpeningOwner {
         newTab.profileId = tab.profileId
 
         tabManager.regularTabLifecycleOwner.addTab(newTab, regularInsertionIndex: insertIndex)
-        dependencies.selectTab(newTab, windowState, .immediate)
+        selectTabAction(newTab, windowState, .immediate)
     }
 
     @discardableResult
@@ -243,8 +251,8 @@ final class BrowserTabOpeningOwner {
         webViewConfigurationOverride: WKWebViewConfiguration? = nil,
         activate: Bool = true
     ) -> Tab? {
-        let tabManager = dependencies.tabManager()
-        let sourceWindowState = dependencies.windowStateContainingTab(sourceTab)
+        let tabManager = tabManagerAction()
+        let sourceWindowState = windowStateContainingTabAction(sourceTab)
         if sourceTab.isEphemeral || sourceWindowState?.isIncognito == true {
             guard let sourceWindowState,
                   let profile = sourceWindowState.ephemeralProfile,
@@ -288,7 +296,7 @@ final class BrowserTabOpeningOwner {
     }
 
     func resolvedTabOpenSpace(for context: BrowserTabOpenContext) -> Space? {
-        let tabManager = dependencies.tabManager()
+        let tabManager = tabManagerAction()
         let resolvedWindowState = resolvedWindowState(for: context)
 
         if let preferredSpaceId = context.preferredSpaceId,
@@ -324,8 +332,8 @@ final class BrowserTabOpeningOwner {
         in windowState: BrowserWindowState?
     ) {
         guard tab.requiresPrimaryWebView else { return }
-        guard dependencies.canMaterializeBackgroundTab(tab) else {
-            dependencies.deferBackgroundTabUntilStartupReady(tab)
+        guard canMaterializeBackgroundTabAction(tab) else {
+            deferBackgroundTabUntilStartupReadyAction(tab)
             return
         }
         _ = windowState
@@ -338,10 +346,10 @@ final class BrowserTabOpeningOwner {
         }
 
         if let sourceTab = context.sourceTab,
-           let windowState = dependencies.windowStateContainingTab(sourceTab) {
+           let windowState = windowStateContainingTabAction(sourceTab) {
             return windowState
         }
 
-        return dependencies.activeWindow()
+        return activeWindowAction()
     }
 }

@@ -21,17 +21,120 @@ final class BrowserURLBarBundle {
             browserManager: browserManager,
             notifications: { [weak browserManager] in browserManager?.notificationPresenter }
         )
-        self.contextOwner = BrowserURLBarContextOwner(
-            dependencies: .live(browserManager: browserManager)
-        )
+        self.contextOwner = BrowserURLBarContextOwner(browserManager: browserManager)
+        let tabLifecycleService = browserManager.tabLifecycleService
         self.floatingBarRoutingOwner = BrowserFloatingBarRoutingOwner(
-            dependencies: .live(browserManager: browserManager)
+            tabOpeningOwner: { tabLifecycleService.opening },
+            windowRegistry: { [weak browserManager] in browserManager?.windowRegistry },
+            settings: { [weak browserManager] in browserManager?.sumiSettings },
+            activePageTab: { [weak browserManager] windowState in
+                browserManager?.activePageRoutingOwner.activePageTab(for: windowState)
+            },
+            hasValidCurrentSelection: { [weak browserManager] windowState in
+                browserManager?.windowSpaceStateOwner.hasValidCurrentSelection(in: windowState) ?? false
+            },
+            cancelEmptySplitPlaceholder: { [weak browserManager] windowState in
+                browserManager?.splitManager.cancelEmptySplitPlaceholder(in: windowState)
+            },
+            commitEmptySplitPlaceholder: { [weak browserManager] tabId, windowState in
+                browserManager?.splitManager.commitEmptySplitPlaceholder(tabId: tabId, in: windowState)
+            },
+            replaceEmptySplitPlaceholder: { [weak browserManager] tab, windowState in
+                browserManager?.splitManager.replaceEmptySplitPlaceholder(with: tab, in: windowState) ?? false
+            },
+            selectTab: { [weak browserManager] tab, windowState in
+                browserManager?.selectTab(tab, in: windowState)
+            },
+            loadCurrentPageURL: { [weak browserManager] tab, windowState, urlString in
+                browserManager?.windowScopedNavigationOwner.loadFloatingBarCurrentPage(
+                    urlString,
+                    tab: tab,
+                    in: windowState
+                )
+            },
+            navigateCurrentPage: { [weak browserManager] tab, windowState, input in
+                browserManager?.windowScopedNavigationOwner.navigateFloatingBarCurrentPage(
+                    input,
+                    tab: tab,
+                    in: windowState
+                )
+            },
+            dismissThemePickerDiscardingIfNeeded: { [weak browserManager] in
+                browserManager?.workspaceThemeEditorOwner.dismissThemePickerDiscardingIfNeeded()
+            },
+            persistWindowSession: { [weak browserManager] windowState in
+                browserManager?.windowSessionActivationOwner.persistWindowSession(for: windowState)
+            },
+            schedulePersistWindowSession: { [weak browserManager] windowState, delayNanoseconds in
+                browserManager?.windowSessionActivationOwner.schedulePersistWindowSession(
+                    for: windowState,
+                    delayNanoseconds: delayNanoseconds
+                )
+            }
         )
         self.floatingBarBrowserContextOwner = BrowserFloatingBarBrowserContextOwner(
-            dependencies: .live(browserManager: browserManager)
+            browserManager: browserManager
         )
         self.activePageRoutingOwner = BrowserActivePageRoutingOwner(
-            dependencies: .live(browserManager: browserManager)
+            activeWindow: { [weak browserManager] in
+                browserManager?.windowRegistry?.activeWindow
+            },
+            currentTab: { [weak browserManager] windowState in
+                browserManager?.windowTabContextOwner.currentTab(for: windowState)
+            },
+            activePreviewTab: { [weak browserManager] windowState in
+                browserManager?.glanceManager.activePreviewTab(for: windowState)
+            },
+            activePreviewWebView: { [weak browserManager] windowState in
+                browserManager?.glanceManager.activePreviewWebView(for: windowState)
+            },
+            activeSessionURL: { [weak browserManager] windowState in
+                browserManager?.glanceManager.activeSession(for: windowState)?.currentURL
+            },
+            windowOwnedWebView: { [weak browserManager] tab, windowId in
+                browserManager?.webViewRoutingService.windowOwnedWebView(for: tab, in: windowId)
+            },
+            refreshActivePage: { [weak browserManager] tab, windowState in
+                browserManager?.windowScopedNavigationOwner.refreshWindowScopedPage(
+                    tab: tab,
+                    in: windowState,
+                    reason: "BrowserActivePage.refresh"
+                )
+            },
+            createNewTab: { [weak browserManager] windowState, urlString in
+                browserManager?.tabLifecycleService.opening.createNewTab(in: windowState, url: urlString)
+            },
+            openNewTab: { [weak browserManager] urlString, context in
+                browserManager?.tabLifecycleService.opening.openNewTab(url: urlString, context: context)
+            },
+            containsSpace: { [weak browserManager] spaceId in
+                browserManager?.tabManager.spaceStateOwner.spaces.contains { $0.id == spaceId } == true
+            },
+            folderSpaceId: { [weak browserManager] folderId in
+                browserManager?.tabManager.folderCollectionStateOwner.spaceId(for: folderId)
+            },
+            resolveEssentialsInsertion: { [weak browserManager] windowState, index in
+                browserManager?.tabManager.essentialsShortcutPlacementOwner.resolveInsertion(
+                    using: EssentialsShortcutPlacementOwner.InsertionContext(
+                        target: EssentialsShortcutPlacementOwner.TargetContext(windowState: windowState),
+                        targetIndex: index
+                    )
+                )
+            },
+            convertTabToShortcutPin: { [weak browserManager] tab, role, profileId, spaceId, folderId, index, openTargetFolder in
+                browserManager?.tabManager.shortcutPinCommandOwner.convertTabToShortcutPin(
+                    tab,
+                    role: role,
+                    profileId: profileId,
+                    spaceId: spaceId,
+                    folderId: folderId,
+                    at: index,
+                    openTargetFolder: openTargetFolder
+                )
+            },
+            copyURLToPasteboard: { [weak browserManager] url, windowState in
+                browserManager?.urlBarCommands.copyURLToPasteboard(url, in: windowState) ?? false
+            }
         )
     }
 }

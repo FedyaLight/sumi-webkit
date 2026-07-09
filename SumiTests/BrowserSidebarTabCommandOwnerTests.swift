@@ -40,30 +40,28 @@ final class BrowserSidebarTabCommandOwnerTests: XCTestCase {
 
     private func makeOwner(spy: Spy, returnedTab: Tab?) -> BrowserSidebarTabCommandOwner {
         BrowserSidebarTabCommandOwner(
-            dependencies: BrowserSidebarTabCommandOwner.Dependencies(
-                requestUserTabActivation: { tab, windowState in
-                    spy.events.append(.requestUserTabActivation(tab.id, windowState.id))
-                },
-                closeTab: { tab, windowState in
-                    spy.events.append(.closeTab(tab.id, windowState.id))
-                },
-                moveTabUp: { tabId in
-                    spy.events.append(.moveTabUp(tabId))
-                },
-                moveTabDown: { tabId in
-                    spy.events.append(.moveTabDown(tabId))
-                },
-                openForegroundTab: { url, windowState, preferredSpaceId in
-                    spy.events.append(.openForegroundTab(url, windowState.id, preferredSpaceId))
-                    return returnedTab
-                },
-                openNewTabOrFloatingBar: { windowState in
-                    spy.events.append(.openNewTabOrFloatingBar(windowState.id))
-                },
-                duplicateTab: { tab, windowState in
-                    spy.events.append(.duplicateTab(tab.id, windowState.id))
-                }
-            )
+            requestUserTabActivation: { tab, windowState in
+                spy.events.append(.requestUserTabActivation(tab.id, windowState.id))
+            },
+            closeTab: { tab, windowState in
+                spy.events.append(.closeTab(tab.id, windowState.id))
+            },
+            moveTabUp: { tabId in
+                spy.events.append(.moveTabUp(tabId))
+            },
+            moveTabDown: { tabId in
+                spy.events.append(.moveTabDown(tabId))
+            },
+            openForegroundTab: { url, windowState, preferredSpaceId in
+                spy.events.append(.openForegroundTab(url, windowState.id, preferredSpaceId))
+                return returnedTab
+            },
+            openNewTabOrFloatingBar: { windowState in
+                spy.events.append(.openNewTabOrFloatingBar(windowState.id))
+            },
+            duplicateTab: { tab, windowState in
+                spy.events.append(.duplicateTab(tab.id, windowState.id))
+            }
         )
     }
 

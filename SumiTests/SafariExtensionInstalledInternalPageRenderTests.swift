@@ -357,7 +357,7 @@ final class SafariExtensionInstalledInternalPageRenderTests: XCTestCase {
             tab.isUnloaded,
             "Active extension-created internal tab must materialize through window selection"
         )
-        let webView = try XCTUnwrap(tab.existingWebView)
+        let webView = try XCTUnwrap(tab.resolvedCurrentWebView())
         webView.frame = NSRect(x: 0, y: 0, width: 900, height: 700)
         XCTAssertIdentical(webView.configuration.webExtensionController, controller)
         XCTAssertIdentical(

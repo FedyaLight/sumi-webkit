@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 struct SumiSecurityOrigin: Hashable, Sendable {
     let `protocol`: String

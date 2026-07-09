@@ -4,7 +4,7 @@ import XCTest
 @testable import Sumi
 
 final class WebExtensionStorageCleanupPlannerTests: XCTestCase {
-    private let planner = WebExtensionStorageCleanupPlanner.shared
+    private let planner = WebExtensionStorageCleanupPlanner()
     private var temporaryDirectories: [URL] = []
 
     override func tearDownWithError() throws {
@@ -124,7 +124,8 @@ final class WebExtensionStorageCleanupPlannerTests: XCTestCase {
         let libraryDirectory = makeTemporaryLibraryDirectory()
         let store = WebExtensionStorageCleanupStore(
             controllerStorageId: controllerStorageId,
-            libraryDirectoryProvider: { libraryDirectory }
+            libraryDirectoryProvider: { libraryDirectory },
+            planner: planner,
         )
 
         let directory = try XCTUnwrap(store.directory(for: "resolved-extension"))
@@ -182,7 +183,8 @@ final class WebExtensionStorageCleanupPlannerTests: XCTestCase {
             libraryDirectoryProvider: {
                 XCTFail("Library directory should not be resolved without a controller id")
                 return nil
-            }
+            },
+            planner: planner
         )
 
         XCTAssertNil(store.directory(for: "extension-id"))
@@ -197,6 +199,7 @@ final class WebExtensionStorageCleanupPlannerTests: XCTestCase {
         let store = WebExtensionStorageCleanupStore(
             controllerStorageId: UUID(),
             libraryDirectoryProvider: { libraryDirectory },
+            planner: planner,
             storageDirectoryNameResolver: { "\($0) (TEAMID123)" }
         )
 
@@ -208,11 +211,13 @@ final class WebExtensionStorageCleanupPlannerTests: XCTestCase {
         let libraryDirectory = makeTemporaryLibraryDirectory()
         let identityStore = WebExtensionStorageCleanupStore(
             controllerStorageId: UUID(uuidString: "11111111-2222-3333-4444-555555555555")!,
-            libraryDirectoryProvider: { libraryDirectory }
+            libraryDirectoryProvider: { libraryDirectory },
+            planner: planner,
         )
         let composedStore = WebExtensionStorageCleanupStore(
             controllerStorageId: UUID(uuidString: "11111111-2222-3333-4444-555555555555")!,
             libraryDirectoryProvider: { libraryDirectory },
+            planner: planner,
             storageDirectoryNameResolver: { "\($0) (TEAMID123)" }
         )
         let extensionId = "com.vendor.ext"
@@ -239,11 +244,13 @@ final class WebExtensionStorageCleanupPlannerTests: XCTestCase {
         let controllerId = UUID()
         let identityStore = WebExtensionStorageCleanupStore(
             controllerStorageId: controllerId,
-            libraryDirectoryProvider: { libraryDirectory }
+            libraryDirectoryProvider: { libraryDirectory },
+            planner: planner,
         )
         let composedStore = WebExtensionStorageCleanupStore(
             controllerStorageId: controllerId,
             libraryDirectoryProvider: { libraryDirectory },
+            planner: planner,
             storageDirectoryNameResolver: { "\($0) (TEAMID123)" }
         )
         let extensionId = "com.vendor.ext"
@@ -273,11 +280,13 @@ final class WebExtensionStorageCleanupPlannerTests: XCTestCase {
         let controllerId = UUID()
         let identityStore = WebExtensionStorageCleanupStore(
             controllerStorageId: controllerId,
-            libraryDirectoryProvider: { libraryDirectory }
+            libraryDirectoryProvider: { libraryDirectory },
+            planner: planner,
         )
         let composedStore = WebExtensionStorageCleanupStore(
             controllerStorageId: controllerId,
             libraryDirectoryProvider: { libraryDirectory },
+            planner: planner,
             storageDirectoryNameResolver: { "\($0) (TEAMID123)" }
         )
         let extensionId = "com.vendor.ext"
@@ -325,11 +334,13 @@ final class WebExtensionStorageCleanupPlannerTests: XCTestCase {
         let controllerId = UUID()
         let identityStore = WebExtensionStorageCleanupStore(
             controllerStorageId: controllerId,
-            libraryDirectoryProvider: { libraryDirectory }
+            libraryDirectoryProvider: { libraryDirectory },
+            planner: planner,
         )
         let composedStore = WebExtensionStorageCleanupStore(
             controllerStorageId: controllerId,
             libraryDirectoryProvider: { libraryDirectory },
+            planner: planner,
             storageDirectoryNameResolver: { "\($0) (TEAMID123)" }
         )
         let extensionId = "com.vendor.ext"
@@ -361,11 +372,13 @@ final class WebExtensionStorageCleanupPlannerTests: XCTestCase {
         let controllerId = UUID()
         let identityStore = WebExtensionStorageCleanupStore(
             controllerStorageId: controllerId,
-            libraryDirectoryProvider: { libraryDirectory }
+            libraryDirectoryProvider: { libraryDirectory },
+            planner: planner,
         )
         let composedStore = WebExtensionStorageCleanupStore(
             controllerStorageId: controllerId,
             libraryDirectoryProvider: { libraryDirectory },
+            planner: planner,
             storageDirectoryNameResolver: { "\($0) (TEAMID123)" }
         )
         let extensionId = "com.vendor.ext"
@@ -429,7 +442,8 @@ final class WebExtensionStorageCleanupPlannerTests: XCTestCase {
         let libraryDirectory = makeTemporaryLibraryDirectory()
         return WebExtensionStorageCleanupStore(
             controllerStorageId: UUID(),
-            libraryDirectoryProvider: { libraryDirectory }
+            libraryDirectoryProvider: { libraryDirectory },
+            planner: planner,
         )
     }
 

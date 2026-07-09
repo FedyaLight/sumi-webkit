@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 import WebKit
 
 /// Attaches `Sec-GPC: 1` to outgoing main-frame navigation requests, mirroring

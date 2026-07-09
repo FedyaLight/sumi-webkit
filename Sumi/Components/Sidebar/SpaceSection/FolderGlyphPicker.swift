@@ -10,7 +10,7 @@ import SwiftUI
 final class FolderGlyphPickerManager: NSObject, ObservableObject {
     var popover: NSPopover?
     weak var anchorView: NSView?
-    var sidebarRecoveryCoordinator: SidebarHostRecoveryHandling = SidebarHostRecoveryCoordinator.shared
+    var sidebarRecoveryCoordinator: SidebarHostRecoveryHandling
 
     @Published var selectedIcon: String = ""
     @Published var committedIcon: String = ""
@@ -21,6 +21,11 @@ final class FolderGlyphPickerManager: NSObject, ObservableObject {
     private var activeSettings: SumiSettingsService?
     private var activeThemeContext: ResolvedThemeContext?
     private var didSelectIcon = false
+
+    init(sidebarRecoveryCoordinator: SidebarHostRecoveryHandling = SidebarHostRecoveryCoordinator()) {
+        self.sidebarRecoveryCoordinator = sidebarRecoveryCoordinator
+        super.init()
+    }
 
     func toggle(
         settings: SumiSettingsService? = nil,

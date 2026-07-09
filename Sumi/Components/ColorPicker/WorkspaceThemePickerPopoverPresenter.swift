@@ -27,6 +27,14 @@ final class WorkspaceThemePickerPopoverPresenter: NSObject, NSPopoverDelegate {
         }
     }
 
+    weak var windowRegistry: WindowRegistry?
+    private let sidebarRecoveryCoordinator: SidebarHostRecoveryHandling
+
+    init(sidebarRecoveryCoordinator: SidebarHostRecoveryHandling = SidebarHostRecoveryCoordinator()) {
+        self.sidebarRecoveryCoordinator = sidebarRecoveryCoordinator
+        super.init()
+    }
+
     enum CloseDisposition {
         case commit
         case discard
@@ -118,7 +126,7 @@ final class WorkspaceThemePickerPopoverPresenter: NSObject, NSPopoverDelegate {
         popover.appearance = PopoverPresenterChromeSupport.appearance(
             for: windowState.nativeSurfaceThemeContext(settings: settings).chromeColorScheme,
             fallback: resolvedAnchor.view.window?.effectiveAppearance
-                ?? windowState.shellWindow(in: nil)?.effectiveAppearance
+                ?? windowState.shellWindow(in: windowRegistry)?.effectiveAppearance
         )
 
         activeSession = ActiveSession(
@@ -131,7 +139,7 @@ final class WorkspaceThemePickerPopoverPresenter: NSObject, NSPopoverDelegate {
         )
         startObservingDismissNotifications()
 
-        windowState.shellWindow(in: nil)?.makeKeyAndOrderFront(nil)
+        windowState.shellWindow(in: windowRegistry)?.makeKeyAndOrderFront(nil)
         popover.show(
             relativeTo: resolvedAnchor.rect,
             of: resolvedAnchor.view,
@@ -221,9 +229,11 @@ final class WorkspaceThemePickerPopoverPresenter: NSObject, NSPopoverDelegate {
         windowState: BrowserWindowState?,
         source: SidebarTransientPresentationSource?,
         anchor: NSView?,
+        windowRegistry: WindowRegistry? = nil,
         using coordinator: SidebarHostRecoveryHandling
     ) {
-        let window = source?.window ?? windowState?.window
+        let window = source?.window
+            ?? windowState.flatMap { windowRegistry?.appKitWindow(for: $0) }
         performDismissRecovery(
             in: window,
             anchor: anchor,
@@ -278,7 +288,7 @@ final class WorkspaceThemePickerPopoverPresenter: NSObject, NSPopoverDelegate {
             return (ownerView, ownerView.bounds, preferredEdge)
         }
 
-        guard let contentView = windowState.shellWindow(in: nil)?.contentView
+        guard let contentView = windowState.shellWindow(in: windowRegistry)?.contentView
             ?? session.presentationSource?.window?.contentView
         else { return nil }
 
@@ -355,7 +365,8 @@ final class WorkspaceThemePickerPopoverPresenter: NSObject, NSPopoverDelegate {
                 windowState: closedSession.windowState,
                 source: closedSession.session.presentationSource,
                 anchor: closedSession.session.presentationSource?.originOwnerView,
-                using: SidebarHostRecoveryCoordinator.shared
+                windowRegistry: windowRegistry,
+                using: sidebarRecoveryCoordinator
             )
         }
     }
@@ -385,7 +396,8 @@ final class WorkspaceThemePickerPopoverPresenter: NSObject, NSPopoverDelegate {
                 windowState: windowState,
                 source: session.presentationSource,
                 anchor: session.presentationSource?.originOwnerView,
-                using: SidebarHostRecoveryCoordinator.shared
+                windowRegistry: windowRegistry,
+                using: sidebarRecoveryCoordinator
             )
         }
     }
@@ -437,7 +449,7 @@ final class WorkspaceThemePickerPopoverPresenter: NSObject, NSPopoverDelegate {
     @MainActor @objc private func windowDidResignKey(_ notification: Notification) {
         guard let window = notification.object as? NSWindow,
               let activeSession,
-              window === activeSession.windowState?.window
+              window === activeSession.windowState.flatMap({ windowRegistry?.appKitWindow(for: $0) })
         else { return }
 
         if activeSession.popover.contentViewController?.view.window === NSApp.keyWindow {
@@ -455,7 +467,7 @@ final class WorkspaceThemePickerPopoverPresenter: NSObject, NSPopoverDelegate {
         guard let activeSession,
               !activeSession.isClosing,
               let windowState = activeSession.windowState,
-              let window = windowState.shellWindow(in: nil),
+              let window = windowState.shellWindow(in: windowRegistry),
               let contentView = window.contentView,
               event.window === window
         else { return }

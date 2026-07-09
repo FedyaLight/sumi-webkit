@@ -109,8 +109,7 @@ final class BrowserActivePageRoutingOwnerTests: XCTestCase {
         let requestedWindow = BrowserWindowState()
         let owningWindowId = UUID()
         let tab = makeTab("https://tab.example")
-        tab.replaceUntrackedWebView(WKWebView(frame: .zero))
-        tab.primaryWindowId = owningWindowId
+        tab.assignPrimaryWebView(WKWebView(frame: .zero), windowId: owningWindowId)
         let harness = BrowserActivePageRoutingOwnerHarness(activeWindow: requestedWindow)
         harness.currentTabsByWindowId[requestedWindow.id] = tab
         let owner = harness.makeOwner()
@@ -122,8 +121,7 @@ final class BrowserActivePageRoutingOwnerTests: XCTestCase {
         let windowState = BrowserWindowState()
         let tabWebView = WKWebView(frame: .zero)
         let tab = makeTab("https://tab.example")
-        tab.replaceUntrackedWebView(tabWebView)
-        tab.primaryWindowId = windowState.id
+        tab.assignPrimaryWebView(tabWebView, windowId: windowState.id)
         let harness = BrowserActivePageRoutingOwnerHarness(activeWindow: windowState)
         harness.currentTabsByWindowId[windowState.id] = tab
         let owner = harness.makeOwner()
@@ -348,83 +346,81 @@ private final class BrowserActivePageRoutingOwnerHarness {
 
     func makeOwner() -> BrowserActivePageRoutingOwner {
         BrowserActivePageRoutingOwner(
-            dependencies: BrowserActivePageRoutingOwner.Dependencies(
-                activeWindow: { [weak self] in self?.activeWindow },
-                currentTab: { [weak self] windowState in
-                    self?.currentTabsByWindowId[windowState.id]
-                },
-                activePreviewTab: { [weak self] windowState in
-                    self?.previewTabsByWindowId[windowState.id]
-                },
-                activePreviewWebView: { [weak self] windowState in
-                    self?.previewWebViewsByWindowId[windowState.id]
-                },
-                activeSessionURL: { [weak self] windowState in
-                    self?.sessionURLsByWindowId[windowState.id]
-                },
-                windowOwnedWebView: { [weak self] tab, windowId in
-                    guard let self else { return nil }
-                    return webViewsByKey[webViewKey(tabId: tab.id, windowId: windowId)]
-                },
-                refreshActivePage: { [weak self] tab, windowState in
-                    self?.refreshedPages.append(
-                        .init(tabId: tab.id, windowId: windowState.id)
-                    )
-                },
-                createNewTab: { [weak self] windowState, url in
-                    self?.createdTabs.append(.init(windowId: windowState.id, url: url))
-                },
-                openNewTab: { [weak self] url, context in
-                    guard let self, let tabURL = URL(string: url) else { return nil }
-                    let tab = Tab(
-                        url: tabURL,
-                        name: url,
-                        loadsCachedFaviconOnInit: false
-                    )
-                    openedTabs.append(.init(url: url, context: context, returnedTab: tab))
-                    return tab
-                },
-                containsSpace: { [weak self] spaceId in
-                    self?.spaces.contains(spaceId) == true
-                },
-                folderSpaceId: { [weak self] folderId in
-                    self?.folderSpaceIds[folderId]
-                },
-                resolveEssentialsInsertion: { [weak self] _, _ in
-                    self?.essentialsInsertion
-                },
-                convertTabToShortcutPin: { [weak self] tab, role, profileId, spaceId, folderId, index, openTargetFolder in
-                    self?.convertedPins.append(
-                        .init(
-                            tabId: tab.id,
-                            role: role,
-                            profileId: profileId,
-                            spaceId: spaceId,
-                            folderId: folderId,
-                            index: index,
-                            openTargetFolder: openTargetFolder
-                        )
-                    )
-                    return ShortcutPin(
-                        id: UUID(),
+            activeWindow: { [weak self] in self?.activeWindow },
+            currentTab: { [weak self] windowState in
+                self?.currentTabsByWindowId[windowState.id]
+            },
+            activePreviewTab: { [weak self] windowState in
+                self?.previewTabsByWindowId[windowState.id]
+            },
+            activePreviewWebView: { [weak self] windowState in
+                self?.previewWebViewsByWindowId[windowState.id]
+            },
+            activeSessionURL: { [weak self] windowState in
+                self?.sessionURLsByWindowId[windowState.id]
+            },
+            windowOwnedWebView: { [weak self] tab, windowId in
+                guard let self else { return nil }
+                return webViewsByKey[webViewKey(tabId: tab.id, windowId: windowId)]
+            },
+            refreshActivePage: { [weak self] tab, windowState in
+                self?.refreshedPages.append(
+                    .init(tabId: tab.id, windowId: windowState.id)
+                )
+            },
+            createNewTab: { [weak self] windowState, url in
+                self?.createdTabs.append(.init(windowId: windowState.id, url: url))
+            },
+            openNewTab: { [weak self] url, context in
+                guard let self, let tabURL = URL(string: url) else { return nil }
+                let tab = Tab(
+                    url: tabURL,
+                    name: url,
+                    loadsCachedFaviconOnInit: false
+                )
+                openedTabs.append(.init(url: url, context: context, returnedTab: tab))
+                return tab
+            },
+            containsSpace: { [weak self] spaceId in
+                self?.spaces.contains(spaceId) == true
+            },
+            folderSpaceId: { [weak self] folderId in
+                self?.folderSpaceIds[folderId]
+            },
+            resolveEssentialsInsertion: { [weak self] _, _ in
+                self?.essentialsInsertion
+            },
+            convertTabToShortcutPin: { [weak self] tab, role, profileId, spaceId, folderId, index, openTargetFolder in
+                self?.convertedPins.append(
+                    .init(
+                        tabId: tab.id,
                         role: role,
                         profileId: profileId,
                         spaceId: spaceId,
-                        index: index,
                         folderId: folderId,
-                        launchURL: tab.url,
-                        title: tab.name
+                        index: index,
+                        openTargetFolder: openTargetFolder
                     )
-                },
-                copyURLToPasteboard: { [weak self] url, windowState in
-                    guard let self else { return false }
-                    self.copiedURLs.append(url)
-                    if let windowState {
-                        self.copyToastWindowIds.append(windowState.id)
-                    }
-                    return true
+                )
+                return ShortcutPin(
+                    id: UUID(),
+                    role: role,
+                    profileId: profileId,
+                    spaceId: spaceId,
+                    index: index,
+                    folderId: folderId,
+                    launchURL: tab.url,
+                    title: tab.name
+                )
+            },
+            copyURLToPasteboard: { [weak self] url, windowState in
+                guard let self else { return false }
+                self.copiedURLs.append(url)
+                if let windowState {
+                    self.copyToastWindowIds.append(windowState.id)
                 }
-            )
+                return true
+            }
         )
     }
 

@@ -5,25 +5,46 @@ import SwiftUI
 /// popover presenter.
 @MainActor
 final class BrowserWorkspaceThemeEditorOwner {
-    struct Dependencies {
-        let pickerSession: @MainActor () -> WorkspaceThemePickerSession?
-        let setPickerSession: @MainActor (WorkspaceThemePickerSession?) -> Void
-        let currentSpace: @MainActor () -> Space?
-        let spaceLookup: @MainActor (UUID) -> Space?
-        let windowRegistry: @MainActor () -> WindowRegistry?
-        let commitWorkspaceTheme: @MainActor (WorkspaceTheme, BrowserWindowState) -> Void
-        let syncWorkspaceThemeAcrossWindows: @MainActor (Space, Bool) -> Void
-        let scheduleStructuralPersistence: @MainActor () -> Void
-        let presentNotice: @MainActor (BrowserNoticeSheetModel, SidebarTransientPresentationSource?) -> Void
-        let settings: @MainActor () -> SumiSettingsService?
-    }
-
     let workspaceAppearanceService = WorkspaceAppearanceService()
-    let workspaceThemePickerPopoverPresenter = WorkspaceThemePickerPopoverPresenter()
-    private let dependencies: Dependencies
+    let workspaceThemePickerPopoverPresenter: WorkspaceThemePickerPopoverPresenter
 
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
+    private let pickerSession: @MainActor () -> WorkspaceThemePickerSession?
+    private let setPickerSession: @MainActor (WorkspaceThemePickerSession?) -> Void
+    private let currentSpace: @MainActor () -> Space?
+    private let spaceLookup: @MainActor (UUID) -> Space?
+    private let windowRegistry: @MainActor () -> WindowRegistry?
+    private let commitWorkspaceTheme: @MainActor (WorkspaceTheme, BrowserWindowState) -> Void
+    private let syncWorkspaceThemeAcrossWindows: @MainActor (Space, Bool) -> Void
+    private let scheduleStructuralPersistence: @MainActor () -> Void
+    private let presentNotice: @MainActor (BrowserNoticeSheetModel, SidebarTransientPresentationSource?) -> Void
+    private let settings: @MainActor () -> SumiSettingsService?
+
+    init(
+        pickerSession: @escaping @MainActor () -> WorkspaceThemePickerSession?,
+        setPickerSession: @escaping @MainActor (WorkspaceThemePickerSession?) -> Void,
+        currentSpace: @escaping @MainActor () -> Space?,
+        spaceLookup: @escaping @MainActor (UUID) -> Space?,
+        windowRegistry: @escaping @MainActor () -> WindowRegistry?,
+        sidebarHostRecoveryCoordinator: @escaping @MainActor () -> SidebarHostRecoveryHandling,
+        commitWorkspaceTheme: @escaping @MainActor (WorkspaceTheme, BrowserWindowState) -> Void,
+        syncWorkspaceThemeAcrossWindows: @escaping @MainActor (Space, Bool) -> Void,
+        scheduleStructuralPersistence: @escaping @MainActor () -> Void,
+        presentNotice: @escaping @MainActor (BrowserNoticeSheetModel, SidebarTransientPresentationSource?) -> Void,
+        settings: @escaping @MainActor () -> SumiSettingsService?
+    ) {
+        self.pickerSession = pickerSession
+        self.setPickerSession = setPickerSession
+        self.currentSpace = currentSpace
+        self.spaceLookup = spaceLookup
+        self.windowRegistry = windowRegistry
+        self.commitWorkspaceTheme = commitWorkspaceTheme
+        self.syncWorkspaceThemeAcrossWindows = syncWorkspaceThemeAcrossWindows
+        self.scheduleStructuralPersistence = scheduleStructuralPersistence
+        self.presentNotice = presentNotice
+        self.settings = settings
+        self.workspaceThemePickerPopoverPresenter = WorkspaceThemePickerPopoverPresenter(
+            sidebarRecoveryCoordinator: sidebarHostRecoveryCoordinator()
+        )
     }
 
     func showGradientEditor() {
@@ -48,7 +69,7 @@ final class BrowserWorkspaceThemeEditorOwner {
     }
 
     func previewWorkspaceThemePickerDraft(sessionID: UUID) {
-        guard let session = dependencies.pickerSession(),
+        guard let session = pickerSession(),
               session.id == sessionID
         else { return }
 
@@ -59,7 +80,7 @@ final class BrowserWorkspaceThemeEditorOwner {
     }
 
     func dismissWorkspaceThemePicker(sessionID: UUID) {
-        guard let session = dependencies.pickerSession(),
+        guard let session = pickerSession(),
               session.id == sessionID
         else { return }
 
@@ -69,7 +90,7 @@ final class BrowserWorkspaceThemeEditorOwner {
 
     /// Dismisses the theme picker without committing the draft (e.g. another modal took focus).
     func dismissWorkspaceThemePickerDiscarding(sessionID: UUID) {
-        guard let session = dependencies.pickerSession(),
+        guard let session = pickerSession(),
               session.id == sessionID
         else { return }
 
@@ -79,13 +100,13 @@ final class BrowserWorkspaceThemeEditorOwner {
 
     /// Discards any open workspace theme picker session (used before presenting app-wide modals).
     func dismissThemePickerDiscardingIfNeeded() {
-        guard let session = dependencies.pickerSession() else { return }
+        guard let session = pickerSession() else { return }
         dismissWorkspaceThemePickerDiscarding(sessionID: session.id)
     }
 
     /// Commits and closes any open workspace theme picker session.
     func dismissThemePickerCommittingIfNeeded() {
-        guard let session = dependencies.pickerSession() else { return }
+        guard let session = pickerSession() else { return }
         dismissWorkspaceThemePicker(sessionID: session.id)
     }
 
@@ -94,8 +115,8 @@ final class BrowserWorkspaceThemeEditorOwner {
             session,
             using: makeWorkspaceAppearanceContext()
         )
-        if dependencies.pickerSession()?.id == session.id {
-            dependencies.setPickerSession(nil)
+        if pickerSession()?.id == session.id {
+            setPickerSession(nil)
         }
     }
 
@@ -103,7 +124,8 @@ final class BrowserWorkspaceThemeEditorOwner {
         _ session: WorkspaceThemePickerSession,
         in windowState: BrowserWindowState
     ) {
-        dependencies.setPickerSession(session)
+        setPickerSession(session)
+        workspaceThemePickerPopoverPresenter.windowRegistry = windowRegistry()
         workspaceThemePickerPopoverPresenter.present(
             session,
             in: windowState,
@@ -114,7 +136,7 @@ final class BrowserWorkspaceThemeEditorOwner {
     private func makeWorkspaceThemePickerPopoverRuntime() -> WorkspaceThemePickerPopoverRuntime {
         WorkspaceThemePickerPopoverRuntime(
             settings: { [weak self] in
-                self?.dependencies.settings() ?? SumiSettingsService()
+                self?.settings() ?? SumiSettingsService()
             },
             previewDraft: { [weak self] sessionID in
                 self?.previewWorkspaceThemePickerDraft(sessionID: sessionID)
@@ -126,7 +148,7 @@ final class BrowserWorkspaceThemeEditorOwner {
     }
 
     private func closeWorkspaceThemePickerIfPresented() -> Bool {
-        guard let session = dependencies.pickerSession(),
+        guard let session = pickerSession(),
               workspaceThemePickerPopoverPresenter.hasActiveSession
         else { return false }
 
@@ -139,73 +161,28 @@ final class BrowserWorkspaceThemeEditorOwner {
     ) -> WorkspaceAppearanceService.Context {
         WorkspaceAppearanceService.Context(
             currentSpace: { [weak self] in
-                currentSpaceOverride ?? self?.dependencies.currentSpace()
+                currentSpaceOverride ?? self?.currentSpace()
             },
             spaceLookup: { [weak self] spaceID in
-                self?.dependencies.spaceLookup(spaceID)
+                self?.spaceLookup(spaceID)
             },
             windowRegistry: { [weak self] in
-                self?.dependencies.windowRegistry()
+                self?.windowRegistry()
             },
             commitWorkspaceTheme: { [weak self] theme, windowState in
-                self?.dependencies.commitWorkspaceTheme(theme, windowState)
+                self?.commitWorkspaceTheme(theme, windowState)
             },
             syncWorkspaceThemeAcrossWindows: { [weak self] space, animate in
-                self?.dependencies.syncWorkspaceThemeAcrossWindows(space, animate)
+                self?.syncWorkspaceThemeAcrossWindows(space, animate)
             },
             scheduleStructuralPersistence: { [weak self] in
-                self?.dependencies.scheduleStructuralPersistence()
+                self?.scheduleStructuralPersistence()
             },
             presentPicker: { [weak self] session, windowState in
                 self?.presentWorkspaceThemePicker(session, in: windowState)
             },
             presentNotice: { [weak self] notice, source in
-                self?.dependencies.presentNotice(notice, source)
-            }
-        )
-    }
-}
-
-extension BrowserWorkspaceThemeEditorOwner.Dependencies {
-    @MainActor
-    static func live(browserManager: BrowserManager) -> Self {
-        Self(
-            pickerSession: { [weak browserManager] in
-                browserManager?.workspaceThemePickerSession
-            },
-            setPickerSession: { [weak browserManager] session in
-                browserManager?.workspaceThemePickerSession = session
-            },
-            currentSpace: { [weak browserManager] in
-                browserManager?.tabManager.spaceStateOwner.currentSpace
-            },
-            spaceLookup: { [weak browserManager] spaceID in
-                browserManager?.tabManager.spaceStateOwner.spaces.first(where: { $0.id == spaceID })
-            },
-            windowRegistry: { [weak browserManager] in
-                browserManager?.windowRegistry
-            },
-            commitWorkspaceTheme: { [weak browserManager] theme, windowState in
-                browserManager?.workspaceThemeTransitionOwner.commitWorkspaceTheme(
-                    theme,
-                    for: windowState
-                )
-            },
-            syncWorkspaceThemeAcrossWindows: { [weak browserManager] space, animate in
-                browserManager?.workspaceThemeTransitionOwner.syncWorkspaceThemeAcrossWindows(
-                    for: space,
-                    animate: animate
-                )
-            },
-            scheduleStructuralPersistence: { [weak browserManager] in
-                browserManager?.tabManager.structuralPersistence.markAllSpacesStructurallyDirty()
-                browserManager?.tabManager.scheduleStructuralPersistence()
-            },
-            presentNotice: { [weak browserManager] notice, source in
-                browserManager?.nativeDialogPresentationOwner.presentNoticeSheet(notice, source: source)
-            },
-            settings: { [weak browserManager] in
-                browserManager?.sumiSettings
+                self?.presentNotice(notice, source)
             }
         )
     }

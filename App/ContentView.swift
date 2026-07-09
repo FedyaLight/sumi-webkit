@@ -31,7 +31,8 @@ struct ContentView: View {
         _defaultWindowState = State(
             initialValue: BrowserWindowState(
                 initialWorkspaceTheme: initialWorkspaceTheme,
-                awaitsInitialSessionResolution: true
+                awaitsInitialSessionResolution: true,
+                sidebarRecoveryCoordinator: browserContext.sidebarHostRecoveryCoordinator
             )
         )
     }

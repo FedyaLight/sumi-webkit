@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import SumiDomain
 import OSLog
 
 enum SumiProtectionBundleProfile {
@@ -228,8 +229,6 @@ struct SumiProtectionApplyOutcome: Equatable, Sendable {
 
 @MainActor
 final class SumiProtectionSettings: ObservableObject {
-    static let shared = SumiProtectionSettings()
-
     private enum DefaultsKey {
         static let level = "settings.protection.level"
         static let appliedLevel = "settings.protection.appliedLevel"
@@ -300,11 +299,15 @@ final class SumiProtectionSettings: ObservableObject {
 
 @MainActor
 final class SumiProtectionCoordinator {
-    static let shared = SumiProtectionCoordinator(
-        settings: .shared,
-        adBlockingModule: .shared,
-        bundleUpdateStatusStore: .shared
-    )
+    /// Process-scoped settings/env fallback. Must be bound to BrowserManager's
+    /// coordinator via `bindShared` — never constructs its own ad-blocking runtime.
+    private(set) static var shared: SumiProtectionCoordinator!
+
+    /// Installs the BrowserManager-owned coordinator as the process SoT for
+    /// EnvironmentKey / settings fallbacks. Idempotent for the same instance.
+    static func bindShared(_ coordinator: SumiProtectionCoordinator) {
+        shared = coordinator
+    }
 
     let settings: SumiProtectionSettings
     private let adBlockingModule: SumiAdBlockingModule

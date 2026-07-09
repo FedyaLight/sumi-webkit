@@ -8,6 +8,7 @@ import SwiftUI
 
 struct SpacesListItem: View {
     @Environment(BrowserWindowState.self) private var windowState
+    @Environment(WindowRegistry.self) private var windowRegistry
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
 
@@ -140,13 +141,13 @@ struct SpacesListItem: View {
                     space,
                     windowState,
                     themeContext,
-                    windowState.resolveSidebarPresentationSource()
+                    windowState.resolveSidebarPresentationSource(in: windowRegistry)
                 )
             },
             changeTheme: {
                 browserContext.presentationActions.showGradientEditorForSpace(
                     space,
-                    windowState.resolveSidebarPresentationSource()
+                    windowState.resolveSidebarPresentationSource(in: windowRegistry)
                 )
             },
             deleteSpace: deleteSpaceAction

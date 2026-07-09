@@ -82,7 +82,7 @@ final class SidebarDropProjectionTests: XCTestCase {
 
     @MainActor
     func testRegisteredScrollViewPrefersSmallestViewportContainingPoint() {
-        let registry = SidebarTabListDragAutoscrollRegistry.shared
+        let registry = SidebarTabListDragAutoscrollRegistry()
         registry.stop()
 
         let window = NSWindow(

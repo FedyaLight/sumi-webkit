@@ -2,9 +2,14 @@ import AppKit
 import Foundation
 import WebKit
 
-/// Isolation defaults for Models/Managers that must not reach production favicon /
-/// visited-link systems. Composition roots (`BrowserManagerDataServices.production`)
-/// inject real services; tests may inject fakes or rely on these no-ops.
+/// Isolation defaults for `Tab` / `TabManager` construction only.
+///
+/// Composition roots (`BrowserManagerDataServices.production`) inject real services.
+/// Tests may inject fakes or rely on these no-ops.
+///
+/// Do **not** use these as defaults on static UI helpers (`TabFaviconStore`,
+/// `SumiFaviconResolver`): launcher/history/bookmark call sites omit the service
+/// argument and must resolve through the production favicon system.
 @MainActor
 enum TabDependencyIsolationDefaults {
     static let faviconService: any BrowserFaviconServicing = NoOpBrowserFaviconService()

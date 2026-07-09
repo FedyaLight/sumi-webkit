@@ -26,8 +26,4 @@ extension SumiNativeMessagingAdapterRegistry {
         }
         return SumiNativeMessagingAdapterRegistry(adapters: [])
     }
-
-    static let shared: SumiNativeMessagingAdapterRegistry = {
-        production()
-    }()
 }

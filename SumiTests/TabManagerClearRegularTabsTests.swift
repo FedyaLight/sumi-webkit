@@ -207,7 +207,7 @@ final class TabManagerClearRegularTabsTests: XCTestCase {
         actionWindow.currentSpaceId = space.id
         actionWindow.currentProfileId = profileId
         let tab = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com", in: space, activate: false)
-        tab.primaryWindowId = primaryWindow.id
+        tab.assignPrimaryWebView(WKWebView(frame: .zero), windowId: primaryWindow.id)
         primaryWindow.currentTabId = tab.id
         actionWindow.currentTabId = tab.id
 

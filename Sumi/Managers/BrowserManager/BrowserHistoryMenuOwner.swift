@@ -3,49 +3,40 @@ import Foundation
 
 @MainActor
 final class BrowserHistoryMenuOwner {
-    struct Dependencies {
-        let requestCollapsedSidebarOverlayDismissal: @MainActor () -> Void
-        let confirmClearAllHistory: @MainActor () -> Bool
-        let clearAllHistory: @MainActor () async -> Void
-        let existingWindowIds: @MainActor () -> Set<UUID>
-        let createNewWindow: @MainActor () -> Void
-        let awaitNextRegisteredWindow: @MainActor (Set<UUID>) async -> BrowserWindowState?
-        let applyWindowSessionSnapshot: @MainActor (WindowSessionSnapshot, BrowserWindowState) -> Void
-        let bringWindowToFront: @MainActor (BrowserWindowState) -> Void
-        let activateApplication: @MainActor () -> Void
+    private let requestCollapsedSidebarOverlayDismissalAction: @MainActor () -> Void
+    private let confirmClearAllHistoryAction: @MainActor () -> Bool
+    private let clearAllHistoryAction: @MainActor () async -> Void
+    private let existingWindowIdsAction: @MainActor () -> Set<UUID>
+    private let createNewWindowAction: @MainActor () -> Void
+    private let awaitNextRegisteredWindowAction: @MainActor (Set<UUID>) async -> BrowserWindowState?
+    private let applyWindowSessionSnapshotAction: @MainActor (WindowSessionSnapshot, BrowserWindowState) -> Void
+    private let bringWindowToFrontAction: @MainActor (BrowserWindowState) -> Void
+    private let activateApplicationAction: @MainActor () -> Void
+
+    init(
+        requestCollapsedSidebarOverlayDismissal: @escaping @MainActor () -> Void,
+        confirmClearAllHistory: @escaping @MainActor () -> Bool,
+        clearAllHistory: @escaping @MainActor () async -> Void,
+        existingWindowIds: @escaping @MainActor () -> Set<UUID>,
+        createNewWindow: @escaping @MainActor () -> Void,
+        awaitNextRegisteredWindow: @escaping @MainActor (Set<UUID>) async -> BrowserWindowState?,
+        applyWindowSessionSnapshot: @escaping @MainActor (WindowSessionSnapshot, BrowserWindowState) -> Void,
+        bringWindowToFront: @escaping @MainActor (BrowserWindowState) -> Void,
+        activateApplication: @escaping @MainActor () -> Void
+    ) {
+        self.requestCollapsedSidebarOverlayDismissalAction = requestCollapsedSidebarOverlayDismissal
+        self.confirmClearAllHistoryAction = confirmClearAllHistory
+        self.clearAllHistoryAction = clearAllHistory
+        self.existingWindowIdsAction = existingWindowIds
+        self.createNewWindowAction = createNewWindow
+        self.awaitNextRegisteredWindowAction = awaitNextRegisteredWindow
+        self.applyWindowSessionSnapshotAction = applyWindowSessionSnapshot
+        self.bringWindowToFrontAction = bringWindowToFront
+        self.activateApplicationAction = activateApplication
     }
 
-    private let dependencies: Dependencies
-
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
-    }
-
-    func clearAllHistoryFromMenu() {
-        dependencies.requestCollapsedSidebarOverlayDismissal()
-        guard dependencies.confirmClearAllHistory() else { return }
-        Task { @MainActor [dependencies] in
-            await dependencies.clearAllHistory()
-        }
-    }
-
-    func reopenWindow(from snapshot: WindowSessionSnapshot) async {
-        let existingWindowIds = dependencies.existingWindowIds()
-        dependencies.createNewWindow()
-        guard let targetWindow = await dependencies.awaitNextRegisteredWindow(existingWindowIds) else {
-            return
-        }
-
-        dependencies.applyWindowSessionSnapshot(snapshot, targetWindow)
-        dependencies.bringWindowToFront(targetWindow)
-        dependencies.activateApplication()
-    }
-}
-
-extension BrowserHistoryMenuOwner.Dependencies {
-    @MainActor
-    static func live(browserManager: BrowserManager) -> Self {
-        Self(
+    convenience init(browserManager: BrowserManager) {
+        self.init(
             requestCollapsedSidebarOverlayDismissal: { [weak browserManager] in
                 browserManager?.nativeDialogPresentationOwner.requestCollapsedSidebarOverlayDismissal()
             },
@@ -94,5 +85,26 @@ extension BrowserHistoryMenuOwner.Dependencies {
                 NSApp.activate(ignoringOtherApps: true)
             }
         )
+    }
+
+    func clearAllHistoryFromMenu() {
+        requestCollapsedSidebarOverlayDismissalAction()
+        guard confirmClearAllHistoryAction() else { return }
+        let clearAllHistory = clearAllHistoryAction
+        Task { @MainActor in
+            await clearAllHistory()
+        }
+    }
+
+    func reopenWindow(from snapshot: WindowSessionSnapshot) async {
+        let existingWindowIds = existingWindowIdsAction()
+        createNewWindowAction()
+        guard let targetWindow = await awaitNextRegisteredWindowAction(existingWindowIds) else {
+            return
+        }
+
+        applyWindowSessionSnapshotAction(snapshot, targetWindow)
+        bringWindowToFrontAction(targetWindow)
+        activateApplicationAction()
     }
 }

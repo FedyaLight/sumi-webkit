@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import SumiDomain
 
 struct SumiBlockedPopupURLSummary: Equatable, Sendable {
     let origin: SumiPermissionOrigin

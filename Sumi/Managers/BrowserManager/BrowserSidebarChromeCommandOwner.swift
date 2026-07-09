@@ -2,59 +2,43 @@ import Foundation
 
 @MainActor
 final class BrowserSidebarChromeCommandOwner {
-    struct Dependencies {
-        let showGradientEditor: @MainActor (SidebarTransientPresentationSource) -> Void
-        let toggleSidebar: @MainActor (BrowserWindowState) -> Void
-        let openAppearanceSettings: @MainActor (BrowserWindowState) -> Void
-        let closeDownloadsPopover: @MainActor (BrowserWindowState) -> Void
-        let toggleDownloadsPopover: @MainActor (BrowserWindowState) -> Void
-    }
+    private let showGradientEditorAction: @MainActor (SidebarTransientPresentationSource) -> Void
+    private let toggleSidebarAction: @MainActor (BrowserWindowState) -> Void
+    private let openAppearanceSettingsAction: @MainActor (BrowserWindowState) -> Void
+    private let closeDownloadsPopoverAction: @MainActor (BrowserWindowState) -> Void
+    private let toggleDownloadsPopoverAction: @MainActor (BrowserWindowState) -> Void
 
-    private let dependencies: Dependencies
-
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
+    init(
+        showGradientEditor: @escaping @MainActor (SidebarTransientPresentationSource) -> Void,
+        toggleSidebar: @escaping @MainActor (BrowserWindowState) -> Void,
+        openAppearanceSettings: @escaping @MainActor (BrowserWindowState) -> Void,
+        closeDownloadsPopover: @escaping @MainActor (BrowserWindowState) -> Void,
+        toggleDownloadsPopover: @escaping @MainActor (BrowserWindowState) -> Void
+    ) {
+        self.showGradientEditorAction = showGradientEditor
+        self.toggleSidebarAction = toggleSidebar
+        self.openAppearanceSettingsAction = openAppearanceSettings
+        self.closeDownloadsPopoverAction = closeDownloadsPopover
+        self.toggleDownloadsPopoverAction = toggleDownloadsPopover
     }
 
     func showGradientEditor(source: SidebarTransientPresentationSource) {
-        dependencies.showGradientEditor(source)
+        showGradientEditorAction(source)
     }
 
     func toggleSidebar(in windowState: BrowserWindowState) {
-        dependencies.toggleSidebar(windowState)
+        toggleSidebarAction(windowState)
     }
 
     func openAppearanceSettings(in windowState: BrowserWindowState) {
-        dependencies.openAppearanceSettings(windowState)
+        openAppearanceSettingsAction(windowState)
     }
 
     func closeDownloadsPopover(in windowState: BrowserWindowState) {
-        dependencies.closeDownloadsPopover(windowState)
+        closeDownloadsPopoverAction(windowState)
     }
 
     func toggleDownloadsPopover(in windowState: BrowserWindowState) {
-        dependencies.toggleDownloadsPopover(windowState)
-    }
-}
-
-extension BrowserSidebarChromeCommandOwner.Dependencies {
-    static func live(browserManager: BrowserManager) -> Self {
-        Self(
-            showGradientEditor: { [weak browserManager] source in
-                browserManager?.workspaceThemeEditorOwner.showGradientEditor(source: source)
-            },
-            toggleSidebar: { [weak browserManager] windowState in
-                browserManager?.sidebarPresentationOwner.toggleSidebar(for: windowState)
-            },
-            openAppearanceSettings: { [weak browserManager] windowState in
-                browserManager?.urlBarCommands.openSettingsTab(selecting: .appearance, in: windowState)
-            },
-            closeDownloadsPopover: { [weak browserManager] windowState in
-                browserManager?.chromeCommands.closeDownloadsPopover(in: windowState)
-            },
-            toggleDownloadsPopover: { [weak browserManager] windowState in
-                browserManager?.chromeCommands.toggleDownloadsPopover(in: windowState)
-            }
-        )
+        toggleDownloadsPopoverAction(windowState)
     }
 }

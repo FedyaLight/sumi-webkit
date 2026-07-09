@@ -87,7 +87,7 @@ final class SidebarDragPasteboardPayloadTests: XCTestCase {
         pasteboard.clearContents()
         XCTAssertTrue(pasteboard.writeObjects([item.pasteboardItem(scope: scope)]))
 
-        let dragState = SidebarDragState.shared
+        let dragState = SidebarDragState()
         dragState.resetInteractionState()
         defer { dragState.resetInteractionState() }
 
@@ -134,7 +134,7 @@ final class SidebarDragPasteboardPayloadTests: XCTestCase {
         pasteboard.clearContents()
         XCTAssertTrue(pasteboard.writeObjects([item.pasteboardItem(scope: staleScope)]))
 
-        let dragState = SidebarDragState.shared
+        let dragState = SidebarDragState()
         dragState.resetInteractionState()
         dragState.beginInternalDragSession(
             itemId: item.tabId,

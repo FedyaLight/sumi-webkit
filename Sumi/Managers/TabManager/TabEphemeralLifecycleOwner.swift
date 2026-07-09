@@ -2,17 +2,21 @@ import Foundation
 
 @MainActor
 final class TabEphemeralLifecycleOwner {
-    struct Dependencies {
-        let prepareTabForRuntime: @MainActor (Tab) -> Void
-        let faviconService: @MainActor () -> any BrowserFaviconServicing
-        let faviconImageService: @MainActor () -> any BrowserFaviconImageServicing
-        let visitedLinkStore: @MainActor () -> any BrowserVisitedLinkStoreManaging
-    }
+    private let prepareTabForRuntime: @MainActor (Tab) -> Void
+    private let faviconService: @MainActor () -> any BrowserFaviconServicing
+    private let faviconImageService: @MainActor () -> any BrowserFaviconImageServicing
+    private let visitedLinkStore: @MainActor () -> any BrowserVisitedLinkStoreManaging
 
-    private let dependencies: Dependencies
-
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
+    init(
+        prepareTabForRuntime: @escaping @MainActor (Tab) -> Void,
+        faviconService: @escaping @MainActor () -> any BrowserFaviconServicing,
+        faviconImageService: @escaping @MainActor () -> any BrowserFaviconImageServicing,
+        visitedLinkStore: @escaping @MainActor () -> any BrowserVisitedLinkStoreManaging
+    ) {
+        self.prepareTabForRuntime = prepareTabForRuntime
+        self.faviconService = faviconService
+        self.faviconImageService = faviconImageService
+        self.visitedLinkStore = visitedLinkStore
     }
 
     @discardableResult
@@ -28,12 +32,12 @@ final class TabEphemeralLifecycleOwner {
             favicon: "globe",
             spaceId: nil,
             index: nextIndex,
-            faviconService: dependencies.faviconService(),
-            faviconImageService: dependencies.faviconImageService(),
-            visitedLinkStore: dependencies.visitedLinkStore()
+            faviconService: faviconService(),
+            faviconImageService: faviconImageService(),
+            visitedLinkStore: visitedLinkStore()
         )
         newTab.profileId = profile.id
-        dependencies.prepareTabForRuntime(newTab)
+        prepareTabForRuntime(newTab)
 
         windowState.ephemeralTabs.append(newTab)
         windowState.currentTabId = newTab.id
@@ -41,28 +45,5 @@ final class TabEphemeralLifecycleOwner {
         RuntimeDiagnostics.emit("🔒 [TabEphemeralLifecycleOwner] Created ephemeral tab: \(newTab.id) in window: \(windowState.id)")
 
         return newTab
-    }
-}
-
-extension TabEphemeralLifecycleOwner.Dependencies {
-    @MainActor
-    static func live(tabManager: TabManager) -> Self {
-        Self(
-            prepareTabForRuntime: { [weak tabManager] tab in
-                tabManager?.runtimePreparationOwner.prepare(tab)
-            },
-            faviconService: { [weak tabManager] in
-                guard let tabManager else { preconditionFailure("TabManager dependency used after deallocation") }
-                return tabManager.faviconService
-            },
-            faviconImageService: { [weak tabManager] in
-                guard let tabManager else { preconditionFailure("TabManager dependency used after deallocation") }
-                return tabManager.faviconImageService
-            },
-            visitedLinkStore: { [weak tabManager] in
-                guard let tabManager else { preconditionFailure("TabManager dependency used after deallocation") }
-                return tabManager.visitedLinkStore
-            }
-        )
     }
 }

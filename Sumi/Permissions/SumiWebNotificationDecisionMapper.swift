@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 enum SumiWebNotificationPermissionState: String, Codable, Equatable, Sendable {
     case granted

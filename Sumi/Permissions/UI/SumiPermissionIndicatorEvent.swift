@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import SumiDomain
 
 struct SumiPermissionIndicatorEventRecord: Identifiable, Equatable, Sendable {
     let id: String

@@ -7,27 +7,37 @@ import WebKit
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionSiteAccessPolicyCoordinator {
-    struct Dependencies {
-        let siteAccessPolicyStore: SafariExtensionSiteAccessPolicyStore
-        let installCapabilityOwner: SafariExtensionInstallCapabilityOwner
-        let installedExtensions: @MainActor () -> [InstalledExtension]
-        let loadedExtensionManifests: @MainActor () -> [String: [String: Any]]
-        let getExtensionContext: @MainActor (String, UUID) -> WKWebExtensionContext?
-        let reconcileOpenTabsAfterExtensionContextLoad: @MainActor (String, UUID) -> Void
-        let postSiteAccessPoliciesDidChange: @MainActor () -> Void
-    }
+    private let siteAccessPolicyStore: SafariExtensionSiteAccessPolicyStore
+    private let installCapabilityOwner: SafariExtensionInstallCapabilityOwner
+    private let installedExtensions: @MainActor () -> [InstalledExtension]
+    private let loadedExtensionManifests: @MainActor () -> [String: [String: Any]]
+    private let getExtensionContext: @MainActor (String, UUID) -> WKWebExtensionContext?
+    private let reconcileOpenTabsAfterExtensionContextLoad: @MainActor (String, UUID) -> Void
+    private let postSiteAccessPoliciesDidChange: @MainActor () -> Void
 
-    private let dependencies: Dependencies
-
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
+    init(
+        siteAccessPolicyStore: SafariExtensionSiteAccessPolicyStore,
+        installCapabilityOwner: SafariExtensionInstallCapabilityOwner,
+        installedExtensions: @escaping @MainActor () -> [InstalledExtension],
+        loadedExtensionManifests: @escaping @MainActor () -> [String: [String: Any]],
+        getExtensionContext: @escaping @MainActor (String, UUID) -> WKWebExtensionContext?,
+        reconcileOpenTabsAfterExtensionContextLoad: @escaping @MainActor (String, UUID) -> Void,
+        postSiteAccessPoliciesDidChange: @escaping @MainActor () -> Void
+    ) {
+        self.siteAccessPolicyStore = siteAccessPolicyStore
+        self.installCapabilityOwner = installCapabilityOwner
+        self.installedExtensions = installedExtensions
+        self.loadedExtensionManifests = loadedExtensionManifests
+        self.getExtensionContext = getExtensionContext
+        self.reconcileOpenTabsAfterExtensionContextLoad = reconcileOpenTabsAfterExtensionContextLoad
+        self.postSiteAccessPoliciesDidChange = postSiteAccessPoliciesDidChange
     }
 
     func siteAccessPolicy(
         extensionId: String,
         profileId: UUID
     ) -> SafariExtensionSiteAccessPolicy {
-        let result = dependencies.siteAccessPolicyStore.policy(
+        let result = siteAccessPolicyStore.policy(
             extensionId: extensionId,
             profileId: profileId
         )
@@ -39,7 +49,7 @@ final class ExtensionSiteAccessPolicyCoordinator {
         extensionIds: [String],
         profileId: UUID
     ) -> [String: SafariExtensionSiteAccessPolicy] {
-        let result = dependencies.siteAccessPolicyStore.snapshot(
+        let result = siteAccessPolicyStore.snapshot(
             extensionIds: extensionIds,
             profileId: profileId
         )
@@ -51,7 +61,7 @@ final class ExtensionSiteAccessPolicyCoordinator {
         profileId: UUID
     ) -> [String: SafariExtensionSiteAccessPolicy] {
         siteAccessPolicySnapshot(
-            extensionIds: dependencies.installedExtensions().map(\.id),
+            extensionIds: installedExtensions().map(\.id),
             profileId: profileId
         )
     }
@@ -61,7 +71,7 @@ final class ExtensionSiteAccessPolicyCoordinator {
         extensionId: String,
         profileId: UUID
     ) -> SafariExtensionSiteAccessPolicy {
-        let result = dependencies.siteAccessPolicyStore
+        let result = siteAccessPolicyStore
             .seedSafariAppExtensionDefaultAccessIfNeeded(
                 extensionId: extensionId,
                 profileId: profileId
@@ -187,7 +197,7 @@ final class ExtensionSiteAccessPolicyCoordinator {
         webExtension: WKWebExtension,
         manifest: [String: Any]? = nil
     ) {
-        dependencies.installCapabilityOwner.applyConfiguredSiteAccessPolicy(
+        installCapabilityOwner.applyConfiguredSiteAccessPolicy(
             to: extensionContext,
             webExtension: webExtension,
             input: SafariExtensionInstallCapabilityOwner.SiteAccessApplicationInput(
@@ -197,7 +207,7 @@ final class ExtensionSiteAccessPolicyCoordinator {
                     extensionId: extensionId,
                     profileId: profileId
                 ),
-                installedExtension: dependencies.installedExtensions()
+                installedExtension: installedExtensions()
                     .first { $0.id == extensionId },
                 manifest: manifest
             )
@@ -289,7 +299,7 @@ final class ExtensionSiteAccessPolicyCoordinator {
         profileId: UUID,
         update: (inout SafariExtensionSiteAccessPolicy) -> Void
     ) {
-        let didPersist = dependencies.siteAccessPolicyStore.updatePolicy(
+        let didPersist = siteAccessPolicyStore.updatePolicy(
             extensionId: extensionId,
             profileId: profileId,
             update: update
@@ -301,7 +311,7 @@ final class ExtensionSiteAccessPolicyCoordinator {
         extensionId: String,
         profileId: UUID
     ) {
-        guard let extensionContext = dependencies.getExtensionContext(
+        guard let extensionContext = getExtensionContext(
             extensionId,
             profileId
         ) else {
@@ -312,8 +322,8 @@ final class ExtensionSiteAccessPolicyCoordinator {
             extensionId: extensionId,
             profileId: profileId,
             webExtension: extensionContext.webExtension,
-            manifest: dependencies.loadedExtensionManifests()[extensionId]
-                ?? dependencies.installedExtensions()
+            manifest: loadedExtensionManifests()[extensionId]
+                ?? installedExtensions()
                 .first { $0.id == extensionId }?.manifest
         )
         SafariExtensionPermissionLifecycleDiagnostics.logReloadRebuild(
@@ -326,7 +336,7 @@ final class ExtensionSiteAccessPolicyCoordinator {
                 action: .rebindOnly
             )
         )
-        dependencies.reconcileOpenTabsAfterExtensionContextLoad(
+        reconcileOpenTabsAfterExtensionContextLoad(
             "ExtensionManager.siteAccessPolicyChanged",
             profileId
         )
@@ -334,38 +344,7 @@ final class ExtensionSiteAccessPolicyCoordinator {
 
     private func notifySiteAccessPoliciesDidChangeIfNeeded(_ shouldNotify: Bool) {
         guard shouldNotify else { return }
-        dependencies.postSiteAccessPoliciesDidChange()
-    }
-}
-
-@available(macOS 15.5, *)
-extension ExtensionSiteAccessPolicyCoordinator.Dependencies {
-    @MainActor
-    static func live(manager: ExtensionManager) -> Self {
-        Self(
-            siteAccessPolicyStore: manager.siteAccessPolicyStore,
-            installCapabilityOwner: manager.installCapabilityOwner,
-            installedExtensions: { [weak manager] in manager?.installedExtensions ?? [] },
-            loadedExtensionManifests: { [weak manager] in
-                manager?.loadedExtensionManifests ?? [:]
-            },
-            getExtensionContext: { [weak manager] extensionId, profileId in
-                manager?.getExtensionContext(for: extensionId, profileId: profileId)
-            },
-            reconcileOpenTabsAfterExtensionContextLoad: { [weak manager] reason, profileId in
-                manager?.reconcileOpenTabsAfterExtensionContextLoad(
-                    reason: reason,
-                    profileId: profileId
-                )
-            },
-            postSiteAccessPoliciesDidChange: { [weak manager] in
-                guard let manager else { return }
-                NotificationCenter.default.post(
-                    name: .sumiExtensionSiteAccessPoliciesDidChange,
-                    object: manager
-                )
-            }
-        )
+        postSiteAccessPoliciesDidChange()
     }
 }
 

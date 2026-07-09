@@ -6,20 +6,24 @@ import XCTest
 @MainActor
 final class BrowserMouseButtonRoutingOwnerTests: XCTestCase {
     func testSideBackButtonTargetsEventWindowInsteadOfActiveWindow() {
-        let owner = BrowserMouseButtonRoutingOwner()
+        let owner = BrowserMouseButtonRoutingOwner(
+            sidebarMouseButtonCaptureRegistry: SidebarMouseButtonCaptureRegistry()
+        )
         let registry = WindowRegistry()
         let activeWindowState = BrowserWindowState()
         let eventWindowState = BrowserWindowState()
-        activeWindowState.window = NSWindow()
-        eventWindowState.window = NSWindow()
+        let activeAppKitWindow = NSWindow()
+        let eventAppKitWindow = NSWindow()
         registry.register(activeWindowState)
         registry.register(eventWindowState)
+        registry.bindAppKitWindow(activeAppKitWindow, to: activeWindowState)
+        registry.bindAppKitWindow(eventAppKitWindow, to: eventWindowState)
         registry.setActive(activeWindowState)
         let router = RecordingBrowserCommandRouter()
 
         XCTAssertTrue(owner.handleMouseButton(
             3,
-            eventWindow: eventWindowState.window,
+            eventWindow: eventAppKitWindow,
             mouseButtonRouter: router,
             windowRegistry: registry
         ))
@@ -29,7 +33,9 @@ final class BrowserMouseButtonRoutingOwnerTests: XCTestCase {
     }
 
     func testSideForwardButtonFallsBackToActiveWindowWhenEventHasNoWindow() {
-        let owner = BrowserMouseButtonRoutingOwner()
+        let owner = BrowserMouseButtonRoutingOwner(
+            sidebarMouseButtonCaptureRegistry: SidebarMouseButtonCaptureRegistry()
+        )
         let registry = WindowRegistry()
         let activeWindowState = BrowserWindowState()
         registry.register(activeWindowState)
@@ -48,7 +54,9 @@ final class BrowserMouseButtonRoutingOwnerTests: XCTestCase {
     }
 
     func testSidebarDeferredSideButtonsDoNotRouteHistory() {
-        let owner = BrowserMouseButtonRoutingOwner()
+        let owner = BrowserMouseButtonRoutingOwner(
+            sidebarMouseButtonCaptureRegistry: SidebarMouseButtonCaptureRegistry()
+        )
         let registry = WindowRegistry()
         let activeWindowState = BrowserWindowState()
         registry.register(activeWindowState)
@@ -75,7 +83,9 @@ final class BrowserMouseButtonRoutingOwnerTests: XCTestCase {
     }
 
     func testSidebarDeferralDoesNotChangeMiddleMouseButtonRouting() {
-        let owner = BrowserMouseButtonRoutingOwner()
+        let owner = BrowserMouseButtonRoutingOwner(
+            sidebarMouseButtonCaptureRegistry: SidebarMouseButtonCaptureRegistry()
+        )
         let registry = WindowRegistry()
         let activeWindowState = BrowserWindowState()
         registry.register(activeWindowState)
@@ -102,30 +112,31 @@ final class BrowserMouseButtonRoutingOwnerTests: XCTestCase {
             backing: .buffered,
             defer: false
         )
+        let registry = SidebarMouseButtonCaptureRegistry()
         let sidebarView = NSView(frame: NSRect(x: 0, y: 0, width: 80, height: 160))
         window.contentView?.addSubview(sidebarView)
-        SidebarMouseButtonCaptureRegistry.shared.register(sidebarView)
+        registry.register(sidebarView)
 
         defer {
-            SidebarMouseButtonCaptureRegistry.shared.unregister(sidebarView)
+            registry.unregister(sidebarView)
         }
 
-        XCTAssertTrue(SidebarMouseButtonCaptureRegistry.shared.containsWorkspaceMouseButtonLocation(
+        XCTAssertTrue(registry.containsWorkspaceMouseButtonLocation(
             buttonNumber: 3,
             locationInWindow: CGPoint(x: 20, y: 20),
             in: window
         ))
-        XCTAssertTrue(SidebarMouseButtonCaptureRegistry.shared.containsWorkspaceMouseButtonLocation(
+        XCTAssertTrue(registry.containsWorkspaceMouseButtonLocation(
             buttonNumber: 4,
             locationInWindow: CGPoint(x: 20, y: 20),
             in: window
         ))
-        XCTAssertFalse(SidebarMouseButtonCaptureRegistry.shared.containsWorkspaceMouseButtonLocation(
+        XCTAssertFalse(registry.containsWorkspaceMouseButtonLocation(
             buttonNumber: 3,
             locationInWindow: CGPoint(x: 120, y: 20),
             in: window
         ))
-        XCTAssertFalse(SidebarMouseButtonCaptureRegistry.shared.containsWorkspaceMouseButtonLocation(
+        XCTAssertFalse(registry.containsWorkspaceMouseButtonLocation(
             buttonNumber: 2,
             locationInWindow: CGPoint(x: 20, y: 20),
             in: window

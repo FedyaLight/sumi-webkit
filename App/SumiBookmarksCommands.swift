@@ -23,15 +23,17 @@ struct SumiBookmarksCommands: Commands {
     let browserContext: SumiCommandsBrowserContext
     @ObservedObject private var bookmarkManager: SumiBookmarkManager
     @ObservedObject private var snapshotStore: SumiBookmarkMenuSnapshotStore
-    @ObservedObject private var menuFaviconInvalidator = SumiMenuFaviconInvalidator.shared
+    @ObservedObject private var menuFaviconInvalidator: SumiMenuFaviconInvalidator
 
     init(
-        browserContext: SumiCommandsBrowserContext
+        browserContext: SumiCommandsBrowserContext,
+        menuFaviconInvalidator: SumiMenuFaviconInvalidator
     ) {
         self.browserContext = browserContext
         let bookmarkManager = browserContext.bookmarkManager
         self.bookmarkManager = bookmarkManager
         self.snapshotStore = SumiBookmarkMenuSnapshotStore(bookmarkManager: bookmarkManager)
+        self._menuFaviconInvalidator = ObservedObject(wrappedValue: menuFaviconInvalidator)
     }
 
     private var bookmarkMenuSnapshot: SumiBookmarksSnapshot {

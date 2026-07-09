@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 enum SumiCookieMatcher {
     static func cookies(_ cookies: [HTTPCookie], matching url: URL) -> [HTTPCookie] {

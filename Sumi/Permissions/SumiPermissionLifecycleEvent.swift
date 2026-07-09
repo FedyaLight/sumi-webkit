@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 enum SumiPermissionLifecycleEvent: Equatable, Sendable {
     case mainFrameNavigation(pageId: String, tabId: String, profilePartitionId: String?, targetURL: URL?, reason: String)

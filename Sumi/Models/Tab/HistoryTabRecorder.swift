@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 import WebKit
 
 @MainActor
@@ -42,7 +43,7 @@ final class HistoryTabRecorder {
     }
 
     func updateTitle(_ title: String, tab: Tab) {
-        let url = currentURL ?? tab.existingWebView?.url ?? tab.url
+        let url = currentURL ?? tab.resolvedCurrentWebView()?.url ?? tab.url
         let profile = tab.resolveProfile()
         tab.navigationRuntime.historyRecordingRuntime.updateTitleIfNeeded(
             title,
@@ -68,7 +69,7 @@ final class HistoryTabRecorder {
                 tab.visitedLinkStore.recordVisitedLink(
                     url,
                     for: profile,
-                    sourceConfiguration: tab.existingWebView?.configuration
+                    sourceConfiguration: tab.resolvedCurrentWebView()?.configuration
                 )
             }
         }

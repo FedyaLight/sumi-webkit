@@ -13,7 +13,7 @@ enum SafariExtensionNativeMessagingProbeBuilder {
     static func build(
         targets: [SafariExtensionCompatibilityTargets.Target] = SafariExtensionCompatibilityTargets.all,
         discovered: [DiscoveredSafariExtensionCandidate],
-        importStore: SafariExtensionImportStore = .shared,
+        importStore: SafariExtensionImportStore = .process,
         installedExtensions: [InstalledExtension] = [],
         extensionManager: ExtensionManager? = nil,
         extensionsModuleEnabled: Bool = true,

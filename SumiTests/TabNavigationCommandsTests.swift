@@ -25,7 +25,7 @@ final class TabNavigationCommandsTests: XCTestCase {
 
         XCTAssertEqual(resolverCallCount, 1)
         XCTAssertEqual(tab.url, targetURL)
-        XCTAssertNil(tab.existingWebView)
+        XCTAssertNil(tab.resolvedCurrentWebView())
     }
 
     func testNavigationCommandURLRequestUsesReturnCacheDataElseLoadForRegularURL() throws {
@@ -64,7 +64,7 @@ final class TabNavigationCommandsTests: XCTestCase {
             existingWebView: webView,
             loadsCachedFaviconOnInit: false
         )
-        tab._webView = webView
+        tab.replaceUntrackedWebView(webView)
         var didLoad = false
 
         tab.performMainFrameNavigationAfterContentBlockingAssetsIfNeeded(
@@ -101,7 +101,7 @@ final class TabNavigationCommandsTests: XCTestCase {
             existingWebView: webView,
             loadsCachedFaviconOnInit: false
         )
-        tab._webView = webView
+        tab.replaceUntrackedWebView(webView)
         var didLoad = false
 
         tab.performMainFrameNavigationAfterContentBlockingAssetsIfNeeded(

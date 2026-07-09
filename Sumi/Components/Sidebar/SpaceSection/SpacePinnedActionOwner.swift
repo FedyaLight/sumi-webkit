@@ -63,14 +63,14 @@ struct SpacePinnedActionOwner {
                 share: {
                     SidebarLinkActions.presentSharePicker(
                         for: pin.launchURL,
-                        source: windowState.resolveSidebarPresentationSource(),
+                        source: windowState.resolveSidebarPresentationSource(in: browserContext.windowRegistry()),
                         presentationActions: browserContext.presentationActions
                     )
                 },
                 edit: {
                     presentShortcutLinkEditor(
                         for: pin,
-                        source: windowState.resolveSidebarPresentationSource()
+                        source: windowState.resolveSidebarPresentationSource(in: browserContext.windowRegistry())
                     )
                 },
                 folderTarget: .init(
@@ -129,7 +129,7 @@ struct SpacePinnedActionOwner {
             kind: .pinnedTab,
             title: pin.preferredDisplayTitle,
             url: pin.launchURL,
-            window: windowState.shellWindow(in: nil),
+            window: windowState.shellWindow(in: browserContext.windowRegistry()),
             themeContext: themeContext,
             onDelete: { removeShortcutPin(pin) }
         )
@@ -139,7 +139,7 @@ struct SpacePinnedActionOwner {
         SidebarSavedItemDeletionConfirmationPresenter.confirmDeleteFolder(
             folderName: folder.name,
             childCount: childCount,
-            window: windowState.shellWindow(in: nil),
+            window: windowState.shellWindow(in: browserContext.windowRegistry()),
             themeContext: themeContext,
             onDelete: {
                 mutatePinnedContent {
@@ -211,7 +211,7 @@ struct SpacePinnedActionOwner {
             pin,
             windowState,
             themeContext,
-            source ?? windowState.resolveSidebarPresentationSource()
+            source ?? windowState.resolveSidebarPresentationSource(in: browserContext.windowRegistry())
         )
     }
 

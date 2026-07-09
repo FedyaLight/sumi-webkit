@@ -92,8 +92,8 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
             existingWebView: webView,
             loadsCachedFaviconOnInit: false
         )
-        tab._webView = webView
-        tab._existingWebView = nil
+        tab.replaceUntrackedWebView(webView)
+        tab.clearParkedExistingWebView()
 
         NormalTabInitialDocumentRuntimeHandoff.scheduleTabSetupInitialLoad(
             tab: tab,
@@ -139,8 +139,8 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
             existingWebView: webView,
             loadsCachedFaviconOnInit: false
         )
-        tab._webView = webView
-        tab._existingWebView = nil
+        tab.replaceUntrackedWebView(webView)
+        tab.clearParkedExistingWebView()
 
         var warmedProfileIds: [UUID] = []
         tab.navigationRuntime.normalWebViewExtensionRuntime = TabNormalWebViewExtensionRuntime(

@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import WebKit
+import SumiWebRuntime
 
 struct SumiWindowVisibilityState: Equatable {
     var hasAttachedWindow: Bool

@@ -1,5 +1,6 @@
 import WebKit
 import XCTest
+import SumiWebRuntime
 
 @testable import Sumi
 
@@ -26,8 +27,8 @@ final class WebViewAssignmentRebuildOwnerTests: XCTestCase {
         )
 
         XCTAssertEqual(requestedTabIds, [tab.id])
-        XCTAssertIdentical(tab.assignedWebView, webView)
-        XCTAssertEqual(tab.primaryWindowId, windowId)
+        XCTAssertIdentical(tab.resolvedAssignedWebView(), webView)
+        XCTAssertEqual(tab.resolvedPrimaryWindowId(), windowId)
     }
 
     func testRefreshPrimaryTrackedWebViewClearsOwnershipWhenCandidateIsMissing() {
@@ -41,8 +42,8 @@ final class WebViewAssignmentRebuildOwnerTests: XCTestCase {
             runtime: makeRuntime(primaryCandidate: { _ in nil })
         )
 
-        XCTAssertNil(tab.assignedWebView)
-        XCTAssertNil(tab.primaryWindowId)
+        XCTAssertNil(tab.resolvedAssignedWebView())
+        XCTAssertNil(tab.resolvedPrimaryWindowId())
     }
 
     func testRebuildLiveWebViewsDoesNotUseStalePrimaryMirrorAsTargetWindow() {
@@ -57,7 +58,7 @@ final class WebViewAssignmentRebuildOwnerTests: XCTestCase {
         )
 
         XCTAssertFalse(rebuilt)
-        XCTAssertEqual(tab.primaryWindowId, staleWindowId)
+        XCTAssertEqual(tab.resolvedPrimaryWindowId(), staleWindowId)
     }
 
     func testCreatePrimaryUsesFactoryInsteadOfParkedEnsureWebViewReuse() async throws {
@@ -73,9 +74,8 @@ final class WebViewAssignmentRebuildOwnerTests: XCTestCase {
                 reason: "WebViewAssignmentRebuildOwnerTests.parkedForCreatePrimary"
             )
         )
-        tab._webView = nil
-        tab._existingWebView = parkedWebView
-        tab.primaryWindowId = nil
+        tab.clearCurrentWebViewOwnership()
+        tab.parkExistingWebView(parkedWebView)
 
         let windowId = UUID()
         let registry = WindowWebViewRegistry()
@@ -103,9 +103,9 @@ final class WebViewAssignmentRebuildOwnerTests: XCTestCase {
             created === parkedWebView,
             "createPrimary must use makeNormalTabWebView, not ensureWebView/setupWebView parked reuse"
         )
-        XCTAssertIdentical(tab.assignedWebView, created)
-        XCTAssertEqual(tab.primaryWindowId, windowId)
-        XCTAssertIdentical(tab.parkedWebView, parkedWebView)
+        XCTAssertIdentical(tab.resolvedAssignedWebView(), created)
+        XCTAssertEqual(tab.resolvedPrimaryWindowId(), windowId)
+        XCTAssertIdentical(tab.resolvedParkedWebView(), parkedWebView)
         XCTAssertEqual(registered.count, 1)
         XCTAssertEqual(registered[0].0, tab.id)
         XCTAssertEqual(registered[0].1, windowId)
@@ -166,7 +166,7 @@ final class WebViewAssignmentRebuildOwnerTests: XCTestCase {
             registeredReasons.contains(where: { $0.contains("createPrimaryWebView.beforeInitialLoad") }),
             "Factory createPrimary must schedule the initial-document handoff that ensureWebView used to run; reasons=\(registeredReasons)"
         )
-        XCTAssertIdentical(tab.assignedWebView, created)
+        XCTAssertIdentical(tab.resolvedAssignedWebView(), created)
         XCTAssertEqual(tab.url, targetURL)
     }
 
@@ -226,9 +226,9 @@ final class WebViewAssignmentRebuildOwnerTests: XCTestCase {
         )
 
         XCTAssertTrue(rebuilt)
-        let recreated = try XCTUnwrap(tab.assignedWebView)
+        let recreated = try XCTUnwrap(tab.resolvedAssignedWebView())
         XCTAssertFalse(recreated === stalePrimary)
-        XCTAssertEqual(tab.primaryWindowId, windowId)
+        XCTAssertEqual(tab.resolvedPrimaryWindowId(), windowId)
         XCTAssertEqual(registered.count, 1)
         XCTAssertIdentical(registered[0].2, recreated)
         XCTAssertIdentical(registry.webView(for: tab.id, in: windowId), recreated)

@@ -2,17 +2,21 @@ import Foundation
 
 @MainActor
 final class BrowserShortcutPinUnloadOwner {
-    struct Dependencies {
-        let selectedShortcutLiveTab: @MainActor (UUID, BrowserWindowState) -> Tab?
-        let closeTab: @MainActor (Tab, BrowserWindowState) -> Void
-        let userInitiatedUnload: @MainActor (UUID, BrowserWindowState, Bool) -> Bool
-        let notifications: @MainActor () -> (any BrowserNotificationPresenting)?
-    }
+    private let selectedShortcutLiveTab: @MainActor (UUID, BrowserWindowState) -> Tab?
+    private let closeTab: @MainActor (Tab, BrowserWindowState) -> Void
+    private let userInitiatedUnload: @MainActor (UUID, BrowserWindowState, Bool) -> Bool
+    private let notifications: @MainActor () -> (any BrowserNotificationPresenting)?
 
-    private let dependencies: Dependencies
-
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
+    init(
+        selectedShortcutLiveTab: @escaping @MainActor (UUID, BrowserWindowState) -> Tab?,
+        closeTab: @escaping @MainActor (Tab, BrowserWindowState) -> Void,
+        userInitiatedUnload: @escaping @MainActor (UUID, BrowserWindowState, Bool) -> Bool,
+        notifications: @escaping @MainActor () -> (any BrowserNotificationPresenting)?
+    ) {
+        self.selectedShortcutLiveTab = selectedShortcutLiveTab
+        self.closeTab = closeTab
+        self.userInitiatedUnload = userInitiatedUnload
+        self.notifications = notifications
     }
 
     func unloadShortcutPin(_ pin: ShortcutPin, in windowState: BrowserWindowState) {
@@ -29,12 +33,12 @@ final class BrowserShortcutPinUnloadOwner {
         in windowState: BrowserWindowState,
         suppressNotification: Bool
     ) -> Bool {
-        if let current = dependencies.selectedShortcutLiveTab(pin.id, windowState) {
-            dependencies.closeTab(current, windowState)
+        if let current = selectedShortcutLiveTab(pin.id, windowState) {
+            closeTab(current, windowState)
             return false
         }
 
-        return dependencies.userInitiatedUnload(
+        return userInitiatedUnload(
             pin.id,
             windowState,
             !suppressNotification
@@ -50,36 +54,10 @@ final class BrowserShortcutPinUnloadOwner {
         }
 
         if unloadedCount > 0 {
-            dependencies.notifications()?.presentTabUnloadedNotification(
+            notifications()?.presentTabUnloadedNotification(
                 count: unloadedCount,
                 in: windowState
             )
         }
-    }
-}
-
-extension BrowserShortcutPinUnloadOwner.Dependencies {
-    static func live(browserManager: BrowserManager) -> Self {
-        Self(
-            selectedShortcutLiveTab: { [weak browserManager] pinId, windowState in
-                browserManager?.tabManager.shortcutPresentationOwner.selectedShortcutLiveTab(
-                    for: pinId,
-                    in: windowState
-                )
-            },
-            closeTab: { [weak browserManager] tab, windowState in
-                browserManager?.tabLifecycleService.closeOrchestration.closeTab(tab, in: windowState)
-            },
-            userInitiatedUnload: { [weak browserManager] pinId, windowState, presentNotification in
-                browserManager?.tabManager.shortcutLiveTabOwner.userInitiatedUnload(
-                    pinId: pinId,
-                    in: windowState,
-                    presentNotification: presentNotification
-                ) ?? false
-            },
-            notifications: { [weak browserManager] in
-                browserManager?.notificationPresenter
-            }
-        )
     }
 }

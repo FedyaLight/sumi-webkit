@@ -2,38 +2,67 @@ import Foundation
 import WebKit
 
 extension Tab {
-    // MARK: - WebView Ownership
+    // MARK: - WebView Ownership (session/registry resolve + mutator forwards)
 
-    /// Returns the WebView only after it has been attached to a concrete window.
-    var assignedWebView: WKWebView? {
-        primaryWindowId != nil ? _webView : nil
+    /// Session/registry resolve for Tab-internal owners and derived helpers.
+    /// Not a public WebView SoT accessor — live lookup stays on routing/session.
+    func resolvedCurrentWebView() -> WKWebView? {
+        if hasBrowserRuntime {
+            if let windowId = navigationRuntime.webViewRouting.sessionPrimaryWindowId(id)
+                ?? navigationRuntime.webViewRouting.primaryTrackedWindowId(id)
+                ?? webViewOwnershipOwner.localSession.primaryWindowId,
+               let tracked = navigationRuntime.webViewRouting.windowOwnedWebView(id, windowId) {
+                return tracked
+            }
+            return navigationRuntime.webViewRouting.sessionPrimaryWebView(id)
+                ?? navigationRuntime.webViewRouting.sessionUntrackedWebView(id)
+                ?? webViewOwnershipOwner.localSession.currentWebView
+        }
+        return webViewOwnershipOwner.localSession.currentWebView
     }
 
-    /// Returns the current WebView without triggering lazy initialization.
-    var existingWebView: WKWebView? {
-        currentWebView
+    /// Parked/staging WebView from session (or pre-runtime local session).
+    func resolvedParkedWebView() -> WKWebView? {
+        if hasBrowserRuntime {
+            return navigationRuntime.webViewRouting.sessionParkedWebView(id)
+                ?? webViewOwnershipOwner.localSession.parkedWebView
+        }
+        return webViewOwnershipOwner.localSession.parkedWebView
     }
 
-    /// Returns the current WebView without triggering lazy initialization.
-    /// Use this inside runtime owners instead of touching the raw storage bridge.
-    var currentWebView: WKWebView? {
-        _webView
+    /// Primary window id from session/registry (or pre-runtime local session).
+    func resolvedPrimaryWindowId() -> UUID? {
+        if hasBrowserRuntime {
+            return navigationRuntime.webViewRouting.sessionPrimaryWindowId(id)
+                ?? navigationRuntime.webViewRouting.primaryTrackedWindowId(id)
+                ?? webViewOwnershipOwner.localSession.primaryWindowId
+        }
+        return webViewOwnershipOwner.localSession.primaryWindowId
+    }
+
+    /// Window-assigned primary WebView when a primary window id is known.
+    func resolvedAssignedWebView() -> WKWebView? {
+        guard let windowId = resolvedPrimaryWindowId() else { return nil }
+        if hasBrowserRuntime {
+            return navigationRuntime.webViewRouting.windowOwnedWebView(id, windowId)
+                ?? navigationRuntime.webViewRouting.sessionPrimaryWebView(id)
+                ?? webViewOwnershipOwner.localSession.primaryWebView
+        }
+        return webViewOwnershipOwner.localSession.primaryWindowId != nil
+            ? webViewOwnershipOwner.localSession.primaryWebView
+            : nil
     }
 
     var hasCurrentWebView: Bool {
-        currentWebView != nil
-    }
-
-    var parkedWebView: WKWebView? {
-        _existingWebView
+        resolvedCurrentWebView() != nil
     }
 
     var hasParkedWebView: Bool {
-        parkedWebView != nil
+        resolvedParkedWebView() != nil
     }
 
     func currentWebViewIsIdentical(to webView: WKWebView) -> Bool {
-        currentWebView === webView
+        resolvedCurrentWebView() === webView
     }
 
     @discardableResult

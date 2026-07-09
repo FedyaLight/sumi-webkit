@@ -1,15 +1,11 @@
 import AppKit
 import Foundation
+import SumiDomain
 import UniformTypeIdentifiers
 
 struct BrowserBookmarkAllTabsPrompt: Equatable {
     var folderTitle: String
     var parentID: String?
-}
-
-enum BrowserBookmarkImportSelection: Equatable {
-    case htmlFile
-    case source(SumiBookmarkImportSource)
 }
 
 enum BrowserBookmarkCommandOwnerError: LocalizedError {
@@ -24,77 +20,110 @@ enum BrowserBookmarkCommandOwnerError: LocalizedError {
 }
 
 @MainActor
-protocol BrowserBookmarkCommandPresenting: AnyObject {
+protocol BrowserBookmarkCommandPresenting: BrowserBookmarkImportExportPresenting {
     func promptBookmarkAllTabs(
         defaultTitle: String,
         folders: [SumiBookmarkFolder]
     ) -> BrowserBookmarkAllTabsPrompt?
-    func promptImportSource(
-        detectedSources: [SumiBookmarkImportSource]
-    ) -> BrowserBookmarkImportSelection?
-    func promptHTMLImportFile() -> URL?
-    func promptUnreadableSafariBookmarksReplacement(
-        source: SumiBookmarkImportSource,
-        originalError: Error
-    ) -> URL?
-    func promptExportDestination(defaultFileName: String) -> URL?
-    func showBookmarkResultAlert(title: String, message: String)
 }
 
+/// Bookmark command surface: open, bookmark-all, manage, editor presentation, menu commands.
+/// Import/export pipeline lives on `BrowserBookmarkImportExportOwner`.
+@MainActor
 final class BrowserBookmarkCommandOwner {
     private typealias NewWindowRegistrationAwaiter = @MainActor () async -> BrowserWindowState?
 
-    struct Dependencies {
-        let activeWindow: @MainActor @Sendable () -> BrowserWindowState?
-        let activePageTab: @MainActor @Sendable (BrowserWindowState) -> Tab?
-        let bookmarkManager: @MainActor @Sendable () -> SumiBookmarkManager?
-        let bookmarkEditorPresentationRequest: @MainActor @Sendable () -> SumiBookmarkEditorPresentationRequest?
-        let setBookmarkEditorPresentationRequest: @MainActor @Sendable (SumiBookmarkEditorPresentationRequest?) -> Void
-        let openNativeBrowserSurface: @MainActor @Sendable (
+    private let activeWindow: @MainActor @Sendable () -> BrowserWindowState?
+    private let activePageTab: @MainActor @Sendable (BrowserWindowState) -> Tab?
+    private let bookmarkManager: @MainActor @Sendable () -> SumiBookmarkManager?
+    private let bookmarkEditorPresentationRequest: @MainActor @Sendable () -> SumiBookmarkEditorPresentationRequest?
+    private let setBookmarkEditorPresentationRequest: @MainActor @Sendable (SumiBookmarkEditorPresentationRequest?) -> Void
+    private let openNativeBrowserSurface: @MainActor @Sendable (
+        SumiNativeBrowserSurfaceKind,
+        URL,
+        BrowserWindowState,
+        UUID?
+    ) -> Void
+    private let openHistoryURL: @MainActor @Sendable (
+        URL,
+        BrowserWindowState,
+        HistoryOpenMode
+    ) -> Void
+    private let openHistoryURLsInNewWindow: @MainActor @Sendable ([URL]) -> Void
+    private let windowIds: @MainActor @Sendable () -> [UUID]
+    private let createNewWindow: @MainActor @Sendable () -> Void
+    private let awaitNextRegisteredWindow: @MainActor @Sendable (Set<UUID>) async -> BrowserWindowState?
+    private let space: @MainActor @Sendable (UUID?) -> Space?
+    private let tabsInSpace: @MainActor @Sendable (Space) -> [Tab]
+    private let allTabs: @MainActor @Sendable () -> [Tab]
+    private let presenter: any BrowserBookmarkCommandPresenting
+    private let importExportOwner: BrowserBookmarkImportExportOwner
+    private let date: @MainActor @Sendable () -> Date
+
+    init(
+        activeWindow: @escaping @MainActor @Sendable () -> BrowserWindowState?,
+        activePageTab: @escaping @MainActor @Sendable (BrowserWindowState) -> Tab?,
+        bookmarkManager: @escaping @MainActor @Sendable () -> SumiBookmarkManager?,
+        bookmarkEditorPresentationRequest: @escaping @MainActor @Sendable () -> SumiBookmarkEditorPresentationRequest?,
+        setBookmarkEditorPresentationRequest: @escaping @MainActor @Sendable (SumiBookmarkEditorPresentationRequest?) -> Void,
+        openNativeBrowserSurface: @escaping @MainActor @Sendable (
             SumiNativeBrowserSurfaceKind,
             URL,
             BrowserWindowState,
             UUID?
-        ) -> Void
-        let openHistoryURL: @MainActor @Sendable (
+        ) -> Void,
+        openHistoryURL: @escaping @MainActor @Sendable (
             URL,
             BrowserWindowState,
             HistoryOpenMode
-        ) -> Void
-        let openHistoryURLsInNewWindow: @MainActor @Sendable ([URL]) -> Void
-        let windowIds: @MainActor @Sendable () -> [UUID]
-        let createNewWindow: @MainActor @Sendable () -> Void
-        let awaitNextRegisteredWindow: @MainActor @Sendable (Set<UUID>) async -> BrowserWindowState?
-        let space: @MainActor @Sendable (UUID?) -> Space?
-        let tabsInSpace: @MainActor @Sendable (Space) -> [Tab]
-        let allTabs: @MainActor @Sendable () -> [Tab]
-        let detectedImportSources: @MainActor @Sendable () -> [SumiBookmarkImportSource]
-        let readBookmarks: @MainActor @Sendable (SumiBookmarkImportSource) throws -> [SumiBookmarkImportNode]
-        let date: @MainActor @Sendable () -> Date
-    }
-
-    private let dependencies: Dependencies
-    private let presenter: any BrowserBookmarkCommandPresenting
-
-    init(
-        dependencies: Dependencies,
+        ) -> Void,
+        openHistoryURLsInNewWindow: @escaping @MainActor @Sendable ([URL]) -> Void,
+        windowIds: @escaping @MainActor @Sendable () -> [UUID],
+        createNewWindow: @escaping @MainActor @Sendable () -> Void,
+        awaitNextRegisteredWindow: @escaping @MainActor @Sendable (Set<UUID>) async -> BrowserWindowState?,
+        space: @escaping @MainActor @Sendable (UUID?) -> Space?,
+        tabsInSpace: @escaping @MainActor @Sendable (Space) -> [Tab],
+        allTabs: @escaping @MainActor @Sendable () -> [Tab],
+        detectedImportSources: @escaping @MainActor @Sendable () -> [SumiBookmarkImportSource],
+        readBookmarks: @escaping @MainActor @Sendable (SumiBookmarkImportSource) throws -> [SumiBookmarkImportNode],
+        date: @escaping @MainActor @Sendable () -> Date,
         presenter: any BrowserBookmarkCommandPresenting
     ) {
-        self.dependencies = dependencies
+        self.activeWindow = activeWindow
+        self.activePageTab = activePageTab
+        self.bookmarkManager = bookmarkManager
+        self.bookmarkEditorPresentationRequest = bookmarkEditorPresentationRequest
+        self.setBookmarkEditorPresentationRequest = setBookmarkEditorPresentationRequest
+        self.openNativeBrowserSurface = openNativeBrowserSurface
+        self.openHistoryURL = openHistoryURL
+        self.openHistoryURLsInNewWindow = openHistoryURLsInNewWindow
+        self.windowIds = windowIds
+        self.createNewWindow = createNewWindow
+        self.awaitNextRegisteredWindow = awaitNextRegisteredWindow
+        self.space = space
+        self.tabsInSpace = tabsInSpace
+        self.allTabs = allTabs
+        self.date = date
         self.presenter = presenter
+        self.importExportOwner = BrowserBookmarkImportExportOwner(
+            bookmarkManager: bookmarkManager,
+            detectedImportSources: detectedImportSources,
+            readBookmarks: readBookmarks,
+            presenter: presenter
+        )
     }
 
     @MainActor
     func requestBookmarkEditorForActiveWindowFromMenu() {
-        guard let bookmarkManager = dependencies.bookmarkManager(),
-              let windowState = dependencies.activeWindow(),
-              let tab = dependencies.activePageTab(windowState),
+        guard let bookmarkManager = bookmarkManager(),
+              let windowState = activeWindow(),
+              let tab = activePageTab(windowState),
               bookmarkManager.canBookmark(tab)
         else {
             return
         }
 
-        dependencies.setBookmarkEditorPresentationRequest(
+        setBookmarkEditorPresentationRequest(
             SumiBookmarkEditorPresentationRequest(
                 windowID: windowState.id,
                 tabID: tab.id
@@ -104,8 +133,8 @@ final class BrowserBookmarkCommandOwner {
 
     @MainActor
     func clearBookmarkEditorPresentationRequest(_ request: SumiBookmarkEditorPresentationRequest) {
-        guard dependencies.bookmarkEditorPresentationRequest()?.id == request.id else { return }
-        dependencies.setBookmarkEditorPresentationRequest(nil)
+        guard bookmarkEditorPresentationRequest()?.id == request.id else { return }
+        setBookmarkEditorPresentationRequest(nil)
     }
 
     @MainActor
@@ -113,7 +142,7 @@ final class BrowserBookmarkCommandOwner {
         selecting folderID: String? = nil,
         in windowState: BrowserWindowState? = nil
     ) {
-        if let targetWindow = windowState ?? dependencies.activeWindow() {
+        if let targetWindow = windowState ?? activeWindow() {
             openBookmarksTab(inResolvedWindow: targetWindow, selecting: folderID)
             return
         }
@@ -131,10 +160,10 @@ final class BrowserBookmarkCommandOwner {
 
     @MainActor
     func openBookmarkURLFromMenuItem(_ url: URL) {
-        if let activeWindow = dependencies.activeWindow() {
+        if let activeWindow = activeWindow() {
             openBookmarkURL(url, in: activeWindow, preferredOpenMode: .currentTab)
         } else {
-            dependencies.openHistoryURLsInNewWindow([url])
+            openHistoryURLsInNewWindow([url])
         }
     }
 
@@ -144,7 +173,7 @@ final class BrowserBookmarkCommandOwner {
         in windowState: BrowserWindowState,
         preferredOpenMode: HistoryOpenMode
     ) {
-        dependencies.openHistoryURL(url, windowState, preferredOpenMode)
+        openHistoryURL(url, windowState, preferredOpenMode)
     }
 
     @MainActor
@@ -159,8 +188,8 @@ final class BrowserBookmarkCommandOwner {
 
     @MainActor
     func bookmarkAllTabsFromMenu() {
-        guard let activeWindow = dependencies.activeWindow(),
-              let bookmarkManager = dependencies.bookmarkManager()
+        guard let activeWindow = activeWindow(),
+              let bookmarkManager = bookmarkManager()
         else {
             return
         }
@@ -171,7 +200,7 @@ final class BrowserBookmarkCommandOwner {
 
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "yyyy-MM-dd"
-        let defaultTitle = "Bookmarked Tabs \(dateFormatter.string(from: dependencies.date()))"
+        let defaultTitle = "Bookmarked Tabs \(dateFormatter.string(from: date()))"
 
         guard let prompt = presenter.promptBookmarkAllTabs(
             defaultTitle: defaultTitle,
@@ -201,7 +230,7 @@ final class BrowserBookmarkCommandOwner {
         folderTitle: String,
         parentID: String?
     ) throws -> SumiBookmarkAllTabsResult {
-        guard let bookmarkManager = dependencies.bookmarkManager() else {
+        guard let bookmarkManager = bookmarkManager() else {
             throw BrowserBookmarkCommandOwnerError.bookmarkManagerUnavailable
         }
 
@@ -238,38 +267,12 @@ final class BrowserBookmarkCommandOwner {
 
     @MainActor
     func importBookmarksFromMenu() {
-        let detectedSources = dependencies.detectedImportSources()
-        guard !detectedSources.isEmpty else {
-            importBookmarksFromHTMLFile()
-            return
-        }
-
-        guard let selection = presenter.promptImportSource(detectedSources: detectedSources) else { return }
-        switch selection {
-        case .htmlFile:
-            importBookmarksFromHTMLFile()
-        case .source(let source):
-            importBookmarks(from: source)
-        }
+        importExportOwner.importBookmarksFromMenu()
     }
 
     @MainActor
     func exportBookmarksFromMenu() {
-        guard let bookmarkManager = dependencies.bookmarkManager(),
-              let destination = presenter.promptExportDestination(defaultFileName: "Bookmarks.html")
-        else {
-            return
-        }
-
-        do {
-            try bookmarkManager.exportBookmarksHTML(to: destination)
-            presenter.showBookmarkResultAlert(
-                title: "Bookmarks Exported",
-                message: "Bookmarks were exported to \(destination.lastPathComponent)."
-            )
-        } catch {
-            presenter.showBookmarkResultAlert(title: "Export Failed", message: error.localizedDescription)
-        }
+        importExportOwner.exportBookmarksFromMenu()
     }
 
     @MainActor
@@ -277,7 +280,7 @@ final class BrowserBookmarkCommandOwner {
         inResolvedWindow targetWindow: BrowserWindowState,
         selecting folderID: String?
     ) {
-        dependencies.openNativeBrowserSurface(
+        openNativeBrowserSurface(
             .bookmarks,
             SumiSurface.bookmarksSurfaceURL(selecting: folderID),
             targetWindow,
@@ -287,8 +290,8 @@ final class BrowserBookmarkCommandOwner {
 
     @MainActor
     private func bookmarkableRegularTabsForActiveWindow() -> [Tab] {
-        guard let activeWindow = dependencies.activeWindow(),
-              let bookmarkManager = dependencies.bookmarkManager()
+        guard let activeWindow = activeWindow(),
+              let bookmarkManager = bookmarkManager()
         else {
             return []
         }
@@ -298,146 +301,20 @@ final class BrowserBookmarkCommandOwner {
     @MainActor
     private func regularTabs(in windowState: BrowserWindowState) -> [Tab] {
         guard !windowState.isIncognito else { return [] }
-        if let currentSpace = dependencies.space(windowState.currentSpaceId) {
-            return dependencies.tabsInSpace(currentSpace)
+        if let currentSpace = space(windowState.currentSpaceId) {
+            return tabsInSpace(currentSpace)
         }
-        return dependencies.allTabs()
-    }
-
-    @MainActor
-    private func importBookmarksFromHTMLFile() {
-        guard let fileURL = presenter.promptHTMLImportFile() else { return }
-        importBookmarks(
-            from: SumiBookmarkImportSource(
-                id: "html-\(fileURL.path)",
-                title: fileURL.lastPathComponent,
-                fileURL: fileURL,
-                kind: .html
-            )
-        )
-    }
-
-    @MainActor
-    private func importBookmarks(from source: SumiBookmarkImportSource) {
-        guard let bookmarkManager = dependencies.bookmarkManager() else {
-            presenter.showBookmarkResultAlert(
-                title: "Import Failed",
-                message: BrowserBookmarkCommandOwnerError.bookmarkManagerUnavailable.localizedDescription
-            )
-            return
-        }
-
-        do {
-            let nodes = try dependencies.readBookmarks(source)
-            let summary = try bookmarkManager.importBookmarks(nodes)
-            presenter.showBookmarkResultAlert(
-                title: "Bookmarks Imported",
-                message: "\(source.title): \(summary.message)"
-            )
-        } catch {
-            if source.kind == .safariPlist {
-                importUnreadableSafariBookmarks(source: source, originalError: error)
-            } else {
-                presenter.showBookmarkResultAlert(title: "Import Failed", message: error.localizedDescription)
-            }
-        }
-    }
-
-    @MainActor
-    private func importUnreadableSafariBookmarks(
-        source: SumiBookmarkImportSource,
-        originalError: Error
-    ) {
-        guard let fileURL = presenter.promptUnreadableSafariBookmarksReplacement(
-            source: source,
-            originalError: originalError
-        ) else {
-            presenter.showBookmarkResultAlert(title: "Import Failed", message: originalError.localizedDescription)
-            return
-        }
-
-        let replacement = SumiBookmarkImportSource(
-            id: "\(source.id)-manual",
-            title: source.title,
-            fileURL: fileURL,
-            kind: source.kind
-        )
-        importBookmarks(from: replacement)
+        return allTabs()
     }
 
     @MainActor
     private func createNewWindowRegistrationAwaiter() -> NewWindowRegistrationAwaiter {
-        let existingWindowIDs = Set(dependencies.windowIds())
-        dependencies.createNewWindow()
+        let existingWindowIDs = Set(windowIds())
+        createNewWindow()
 
-        return { [dependencies] in
-            await dependencies.awaitNextRegisteredWindow(existingWindowIDs)
+        return { [awaitNextRegisteredWindow] in
+            await awaitNextRegisteredWindow(existingWindowIDs)
         }
-    }
-}
-
-extension BrowserBookmarkCommandOwner.Dependencies {
-    static func live(browserManager: BrowserManager) -> Self {
-        Self(
-            activeWindow: { [weak browserManager] in browserManager?.windowRegistry?.activeWindow },
-            activePageTab: { [weak browserManager] windowState in
-                browserManager?.activePageRoutingOwner.activePageTab(for: windowState)
-            },
-            bookmarkManager: { [weak browserManager] in browserManager?.bookmarkManager },
-            bookmarkEditorPresentationRequest: { [weak browserManager] in
-                browserManager?.bookmarkEditorPresentationRequest
-            },
-            setBookmarkEditorPresentationRequest: { [weak browserManager] request in
-                browserManager?.bookmarkEditorPresentationRequest = request
-            },
-            openNativeBrowserSurface: { [weak browserManager] kind, url, windowState, preferredSpaceId in
-                browserManager?.nativeSurfaceRoutingOwner.openNativeBrowserSurface(
-                    kind,
-                    url: url,
-                    in: windowState,
-                    preferredSpaceId: preferredSpaceId
-                )
-            },
-            openHistoryURL: { [weak browserManager] url, windowState, preferredOpenMode in
-                browserManager?.historyNavigationOwner.openHistoryURL(
-                    url,
-                    in: windowState,
-                    preferredOpenMode: preferredOpenMode
-                )
-            },
-            openHistoryURLsInNewWindow: { [weak browserManager] urls in
-                browserManager?.historyNavigationOwner.openHistoryURLsInNewWindow(urls)
-            },
-            windowIds: { [weak browserManager] in
-                browserManager?.windowRegistry.map { Array($0.windows.keys) } ?? []
-            },
-            createNewWindow: { [weak browserManager] in
-                browserManager?.windowSessionCommands.createNewWindow()
-            },
-            awaitNextRegisteredWindow: { [weak browserManager] existingWindowIDs in
-                await browserManager?.windowRegistry?.awaitNextRegisteredWindow(
-                    excluding: existingWindowIDs
-                )
-            },
-            space: { [weak browserManager] spaceId in
-                browserManager?.windowSpaceStateOwner.space(for: spaceId)
-            },
-            tabsInSpace: { [weak browserManager] space in
-                browserManager?.tabManager.regularTabCollectionOwner.tabs(in: space) ?? []
-            },
-            allTabs: { [weak browserManager] in
-                browserManager?.tabManager.tabCollectionMembershipOwner.allTabs() ?? []
-            },
-            detectedImportSources: {
-                SumiBookmarkImportSource.detectedBrowserSources()
-            },
-            readBookmarks: { source in
-                try source.readBookmarks()
-            },
-            date: {
-                Date()
-            }
-        )
     }
 }
 

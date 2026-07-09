@@ -1,6 +1,7 @@
 import XCTest
 
 @testable import Sumi
+import SumiDomain
 
 @MainActor
 final class BrowserTabSelectionOwnerTests: XCTestCase {

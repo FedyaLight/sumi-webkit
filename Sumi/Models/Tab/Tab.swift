@@ -7,10 +7,13 @@
 import AppKit
 import Combine
 import Foundation
+import SumiDomain
 import WebKit
+import SumiWebRuntime
 
 @MainActor
 public class Tab: NSObject, Identifiable, ObservableObject {
+    public typealias LoadingState = TabLoadingState
     public let id: UUID
     var url: URL
     @Published var name: String
@@ -53,7 +56,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     let faviconRuntime = TabFaviconRuntime()
     let profileResolutionOwner = TabProfileResolutionOwner()
     let extensionPageRuntimeOwner = TabExtensionPageRuntimeOwner()
-    private let webViewOwnershipOwner = TabWebViewOwnershipOwner()
+    lazy var webViewOwnershipOwner = TabWebViewOwnershipOwner(tabId: id)
     private let webViewRuntime = TabWebViewRuntime()
     let webViewConfigurationOwner = TabWebViewConfigurationOwner()
     let normalWebViewSetupOwner = TabNormalWebViewSetupOwner()
@@ -178,7 +181,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
 
     // MARK: - Tab State
     var isUnloaded: Bool {
-        webViewOwnershipOwner.isUnloaded
+        resolvedCurrentWebView() == nil
     }
 
     /// True when the tab row should show the web-content-unloaded favicon affordance.
@@ -187,23 +190,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         requiresPrimaryWebView && isUnloaded
     }
 
-    var _webView: WKWebView? {
-        get { webViewOwnershipOwner.webView }
-        set {
-            // Keep session aligned when tests/compat paths mutate the Tab mirror directly.
-            if primaryWindowId == nil {
-                navigationRuntime.webViewRouting.noteUntrackedWebView(newValue, id)
-            }
-            webViewOwnershipOwner.setCurrentWebView(newValue)
-        }
-    }
-    var _existingWebView: WKWebView? {
-        get { webViewOwnershipOwner.existingWebView }
-        set {
-            navigationRuntime.webViewRouting.noteParkedWebView(newValue, id)
-            webViewOwnershipOwner.setExistingWebView(newValue)
-        }
-    }
     var webViewConfigurationOverride: WKWebViewConfiguration? {
         get { webViewConfigurationOwner.webViewConfigurationOverride }
         set { webViewConfigurationOwner.webViewConfigurationOverride = newValue }
@@ -217,12 +203,9 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     }
 
     // MARK: - WebView Ownership Tracking (Memory Optimization)
-    /// The window ID that currently "owns" the primary WebView for this tab
-    /// If nil, no window is displaying this tab yet
-    var primaryWindowId: UUID? {
-        get { webViewOwnershipOwner.primaryWindowId }
-        set { webViewOwnershipOwner.setPrimaryWindowId(newValue) }
-    }
+    // Primary window id is session/registry SoT via routing mutators
+    // (`assignPrimaryWebView` / `notePrimaryAssignment`). Use
+    // `resolvedPrimaryWindowId()` for Tab-internal reads.
     var lastWebViewInteractionEvent: NSEvent? {
         get { webViewInteractionStateOwner.lastWebViewInteractionEvent }
         set { webViewInteractionStateOwner.lastWebViewInteractionEvent = newValue }
@@ -266,6 +249,12 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         navigationRuntime.webKitUIRuntime = runtime.webKitUIRuntime
         navigationRuntime.webViewReplacementRuntime =
             runtime.webViewReplacementRuntime
+        // Promote Tab-local pre-runtime session notes into the coordinator store.
+        // adoptLocalSession clears the local slot when the coordinator is bound.
+        navigationRuntime.webViewRouting.adoptLocalWebViewSession(
+            webViewOwnershipOwner.localSession,
+            id
+        )
         dependencyStateOwner.attachDataServicesProvider { [weak self] in
             self?.browserRuntime.dataServices()
         }
@@ -443,7 +432,8 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     }
 
     func parkExistingWebView(_ webView: WKWebView?) {
-        // Session first (authoritative when runtime is attached), then Tab mirror.
+        // Coordinator session when runtime is attached; local session is always
+        // a write-through cache for pre-attach and Tab-accessor fallback.
         navigationRuntime.webViewRouting.noteParkedWebView(webView, id)
         webViewOwnershipOwner.parkExistingWebView(webView)
     }
@@ -464,7 +454,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     }
 
     func assignPrimaryWebView(_ webView: WKWebView, windowId: UUID) {
-        navigationRuntime.webViewRouting.notePrimaryAssignment(windowId, id)
+        navigationRuntime.webViewRouting.notePrimaryAssignment(windowId, webView, id)
         webViewOwnershipOwner.assignPrimaryWebView(webView, windowId: windowId)
     }
 
@@ -481,11 +471,8 @@ public class Tab: NSObject, Identifiable, ObservableObject {
 
     @discardableResult
     func clearCurrentWebViewOwnershipIfIdentical(to webView: WKWebView) -> Bool {
-        guard webViewOwnershipOwner.clearCurrentWebViewOwnershipIfIdentical(to: webView) else {
-            return false
-        }
-        navigationRuntime.webViewRouting.clearPrimaryAssignment(id)
-        navigationRuntime.webViewRouting.noteUntrackedWebView(nil, id)
+        guard resolvedCurrentWebView() === webView else { return false }
+        clearCurrentWebViewOwnership()
         return true
     }
 

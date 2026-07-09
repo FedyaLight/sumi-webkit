@@ -3,6 +3,7 @@ import WebKit
 
 struct URLBarHubControlsView: View {
     @Environment(BrowserWindowState.self) private var windowState
+    @Environment(WindowRegistry.self) private var windowRegistry
     @Environment(\.resolvedThemeContext) private var themeContext
 
     let browserContext: URLBarHubBrowserContext

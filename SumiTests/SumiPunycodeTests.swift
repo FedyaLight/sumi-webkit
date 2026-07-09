@@ -1,6 +1,7 @@
 import XCTest
 
 @testable import Sumi
+import SumiDomain
 
 /// Direct coverage for `SumiPunycode`, which is security-relevant for homograph
 /// attacks: a host that visually resembles a trusted domain (via Cyrillic/Latin

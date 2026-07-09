@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 struct SumiPermissionAntiAbuseEvent: Codable, Equatable, Identifiable, Sendable {
     enum EventType: String, Codable, CaseIterable, Hashable, Sendable {

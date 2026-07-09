@@ -1,6 +1,7 @@
 import Combine
 import Foundation
 import WebKit
+import SumiWebRuntime
 
 @MainActor
 extension Tab {
@@ -48,7 +49,7 @@ extension Tab {
     }
 
     func setMuted(_ muted: Bool) {
-        if let webView = currentWebView {
+        if let webView = resolvedCurrentWebView() {
             _ = webView.sumiSetAudioMuted(muted)
         } else {
             RuntimeDiagnostics.emit("🔇 [Tab] Mute state queued at \(muted); base webView not loaded yet")

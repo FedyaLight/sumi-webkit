@@ -322,9 +322,8 @@ final class SumiContentBlockingService {
         }
     }
 
-    private static var defaultCompiledRuleListCatalog: SumiCompiledContentRuleListCataloging {
-        SumiCompiledContentRuleListCatalog.shared
-    }
+    private static let defaultCompiledRuleListCatalog: SumiCompiledContentRuleListCataloging =
+        SumiCompiledContentRuleListCatalog()
 
     isolated deinit {
         cancelScheduledTasksForShutdown()

@@ -3,18 +3,45 @@ import Foundation
 
 @MainActor
 final class BrowserNativeSurfaceRoutingOwner {
-    struct Dependencies {
-        let tabManager: @MainActor @Sendable () -> TabManager
-        let settings: @MainActor @Sendable () -> SumiSettingsService?
-        let openNewTab: @MainActor @Sendable (String, BrowserTabOpenContext) -> Tab
-        let selectTab: @MainActor @Sendable (Tab, BrowserWindowState) -> Void
-        let focusWindow: @MainActor @Sendable (BrowserWindowState) -> Void
+    private let tabManagerAction: @MainActor @Sendable () -> TabManager
+    private let settingsAction: @MainActor @Sendable () -> SumiSettingsService?
+    private let openNewTabAction: @MainActor @Sendable (String, BrowserTabOpenContext) -> Tab
+    private let selectTabAction: @MainActor @Sendable (Tab, BrowserWindowState) -> Void
+    private let focusWindowAction: @MainActor @Sendable (BrowserWindowState) -> Void
+
+    init(
+        tabManager: @escaping @MainActor @Sendable () -> TabManager,
+        settings: @escaping @MainActor @Sendable () -> SumiSettingsService?,
+        openNewTab: @escaping @MainActor @Sendable (String, BrowserTabOpenContext) -> Tab,
+        selectTab: @escaping @MainActor @Sendable (Tab, BrowserWindowState) -> Void,
+        focusWindow: @escaping @MainActor @Sendable (BrowserWindowState) -> Void
+    ) {
+        self.tabManagerAction = tabManager
+        self.settingsAction = settings
+        self.openNewTabAction = openNewTab
+        self.selectTabAction = selectTab
+        self.focusWindowAction = focusWindow
     }
 
-    private let dependencies: Dependencies
-
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
+    convenience init(browserManager: BrowserManager) {
+        let tabLifecycleService = browserManager.tabLifecycleService
+        self.init(
+            tabManager: { [weak browserManager, tabManager = browserManager.tabManager] in
+                browserManager?.tabManager ?? tabManager
+            },
+            settings: { [weak browserManager] in browserManager?.sumiSettings },
+            openNewTab: { url, context in
+                tabLifecycleService.opening.openNewTab(url: url, context: context)
+            },
+            selectTab: { [weak browserManager] tab, windowState in
+                browserManager?.selectTab(tab, in: windowState)
+            },
+            focusWindow: { [weak browserManager] windowState in
+                windowState.shellWindow(in: browserManager?.windowRegistry)?
+                    .makeKeyAndOrderFront(nil)
+                NSApp.activate(ignoringOtherApps: true)
+            }
+        )
     }
 
     func openNativeBrowserSurface(
@@ -23,7 +50,7 @@ final class BrowserNativeSurfaceRoutingOwner {
         in windowState: BrowserWindowState,
         preferredSpaceId: UUID? = nil
     ) {
-        let tabManager = dependencies.tabManager()
+        let tabManager = tabManagerAction()
 
         if windowState.isIncognito, let profile = windowState.ephemeralProfile {
             if let existing = windowState.ephemeralTabs.first(where: { kind.matches($0) }) {
@@ -36,7 +63,7 @@ final class BrowserNativeSurfaceRoutingOwner {
                 )
                 configureAndSelect(newTab, kind: kind, url: url, in: windowState)
             }
-            dependencies.focusWindow(windowState)
+            focusWindowAction(windowState)
             return
         }
 
@@ -50,11 +77,11 @@ final class BrowserNativeSurfaceRoutingOwner {
            let existing = tabManager.regularTabCollectionOwner.tabs(in: sid).first(where: { kind.matches($0) }) {
             configureAndSelect(existing, kind: kind, url: url, in: windowState)
             tabManager.structuralPersistence.scheduleRuntimeStatePersistence(for: existing)
-            dependencies.focusWindow(windowState)
+            focusWindowAction(windowState)
             return
         }
 
-        let newTab = dependencies.openNewTab(
+        let newTab = openNewTabAction(
             url.absoluteString,
             .foreground(
                 windowState: windowState,
@@ -64,7 +91,7 @@ final class BrowserNativeSurfaceRoutingOwner {
         )
         configureSurface(newTab, kind: kind, url: url)
         tabManager.structuralPersistence.scheduleRuntimeStatePersistence(for: newTab)
-        dependencies.focusWindow(windowState)
+        focusWindowAction(windowState)
     }
 
     private func resolvedTargetSpace(
@@ -97,7 +124,7 @@ final class BrowserNativeSurfaceRoutingOwner {
         in windowState: BrowserWindowState
     ) {
         configureSurface(tab, kind: kind, url: url)
-        dependencies.selectTab(tab, windowState)
+        selectTabAction(tab, windowState)
     }
 
     private func configureSurface(
@@ -114,30 +141,6 @@ final class BrowserNativeSurfaceRoutingOwner {
         url: URL
     ) {
         guard case .settings = kind else { return }
-        dependencies.settings()?.applyNavigationFromSettingsSurfaceURL(url)
-    }
-}
-
-extension BrowserNativeSurfaceRoutingOwner.Dependencies {
-    @MainActor
-    static func live(browserManager: BrowserManager) -> Self {
-        let tabLifecycleService = browserManager.tabLifecycleService
-        return Self(
-            tabManager: { [weak browserManager, tabManager = browserManager.tabManager] in
-                browserManager?.tabManager ?? tabManager
-            },
-            settings: { [weak browserManager] in browserManager?.sumiSettings },
-            openNewTab: { url, context in
-                tabLifecycleService.opening.openNewTab(url: url, context: context)
-            },
-            selectTab: { [weak browserManager] tab, windowState in
-                browserManager?.selectTab(tab, in: windowState)
-            },
-            focusWindow: { [weak browserManager] windowState in
-                windowState.shellWindow(in: browserManager?.windowRegistry)?
-                    .makeKeyAndOrderFront(nil)
-                NSApp.activate(ignoringOtherApps: true)
-            }
-        )
+        settingsAction()?.applyNavigationFromSettingsSurfaceURL(url)
     }
 }

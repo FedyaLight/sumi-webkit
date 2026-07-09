@@ -2,55 +2,35 @@ import Foundation
 
 @MainActor
 final class BrowserWindowLifecycleOwner {
-    struct Dependencies {
-        let windowRegistry: WindowRegistry
-        let browserRuntimeIsAvailable: @MainActor () -> Bool
-        let setupWindowState: @MainActor (BrowserWindowState) -> Void
-        let handleWindowWillClose: @MainActor (UUID) -> Void
-        let notifyWindowClosedIfLoaded: @MainActor (UUID) -> Void
-        let cleanupWebViews: @MainActor (UUID) -> Void
-        let cleanupSplitWindow: @MainActor (UUID) -> Void
-        let scheduleWindowClosedMediaReconcile: @MainActor () -> Void
-        let windowState: @MainActor (UUID) -> BrowserWindowState?
-        let closeIncognitoWindow: @MainActor (BrowserWindowState) async -> Void
-        let setActiveWindowState: @MainActor (BrowserWindowState) -> Void
-        let handleWindowVisibilityChanged: @MainActor (BrowserWindowState) -> Void
-        let prepareForAllWindowsClosed: @MainActor () -> Void
-        let performAllWindowsClosedSiteDataCleanup: @MainActor () async -> Void
-        let cleanupWindowAfterRuntimeDeallocation: @MainActor (UUID) -> Void
-    }
-
     private var didAttach = false
 
     @discardableResult
-    func attachIfNeeded(dependencies: Dependencies) -> Bool {
+    func attachIfNeeded(
+        windowRegistry: WindowRegistry,
+        browserRuntimeIsAvailable: @escaping @MainActor () -> Bool,
+        setupWindowState: @escaping @MainActor (BrowserWindowState) -> Void,
+        handleWindowWillClose: @escaping @MainActor (UUID) -> Void,
+        notifyWindowClosedIfLoaded: @escaping @MainActor (UUID) -> Void,
+        cleanupWebViews: @escaping @MainActor (UUID) -> Void,
+        cleanupSplitWindow: @escaping @MainActor (UUID) -> Void,
+        scheduleWindowClosedMediaReconcile: @escaping @MainActor () -> Void,
+        windowState: @escaping @MainActor (UUID) -> BrowserWindowState?,
+        closeIncognitoWindow: @escaping @MainActor (BrowserWindowState) async -> Void,
+        setActiveWindowState: @escaping @MainActor (BrowserWindowState) -> Void,
+        handleWindowVisibilityChanged: @escaping @MainActor (BrowserWindowState) -> Void,
+        prepareForAllWindowsClosed: @escaping @MainActor () -> Void,
+        performAllWindowsClosedSiteDataCleanup: @escaping @MainActor () async -> Void,
+        cleanupWindowAfterRuntimeDeallocation: @escaping @MainActor (UUID) -> Void
+    ) -> Bool {
         guard didAttach == false else { return false }
         didAttach = true
-
-        let windowRegistry = dependencies.windowRegistry
-        let browserRuntimeIsAvailable = dependencies.browserRuntimeIsAvailable
-        let setupWindowState = dependencies.setupWindowState
-        let handleWindowWillClose = dependencies.handleWindowWillClose
-        let notifyWindowClosedIfLoaded = dependencies.notifyWindowClosedIfLoaded
-        let cleanupWebViews = dependencies.cleanupWebViews
-        let cleanupSplitWindow = dependencies.cleanupSplitWindow
-        let scheduleWindowClosedMediaReconcile = dependencies.scheduleWindowClosedMediaReconcile
-        let windowState = dependencies.windowState
-        let closeIncognitoWindow = dependencies.closeIncognitoWindow
-        let setActiveWindowState = dependencies.setActiveWindowState
-        let handleWindowVisibilityChanged = dependencies.handleWindowVisibilityChanged
-        let prepareForAllWindowsClosed = dependencies.prepareForAllWindowsClosed
-        let performAllWindowsClosedSiteDataCleanup =
-            dependencies.performAllWindowsClosedSiteDataCleanup
-        let cleanupWindowAfterRuntimeDeallocation =
-            dependencies.cleanupWindowAfterRuntimeDeallocation
 
         windowRegistry.onWindowRegister = { windowState in
             setupWindowState(windowState)
         }
 
-        for windowState in windowRegistry.allWindows {
-            setupWindowState(windowState)
+        for existingWindowState in windowRegistry.allWindows {
+            setupWindowState(existingWindowState)
         }
 
         windowRegistry.onWindowClose = { windowId in
@@ -65,20 +45,20 @@ final class BrowserWindowLifecycleOwner {
             cleanupSplitWindow(windowId)
             scheduleWindowClosedMediaReconcile()
 
-            if let windowState = windowState(windowId),
-               windowState.isIncognito {
+            if let closingWindowState = windowState(windowId),
+               closingWindowState.isIncognito {
                 Task {
-                    await closeIncognitoWindow(windowState)
+                    await closeIncognitoWindow(closingWindowState)
                 }
             }
         }
 
-        windowRegistry.onActiveWindowChange = { windowState in
-            setActiveWindowState(windowState)
+        windowRegistry.onActiveWindowChange = { activeWindowState in
+            setActiveWindowState(activeWindowState)
         }
 
-        windowRegistry.onWindowVisibilityChange = { windowState in
-            handleWindowVisibilityChanged(windowState)
+        windowRegistry.onWindowVisibilityChange = { visibleWindowState in
+            handleWindowVisibilityChanged(visibleWindowState)
         }
 
         windowRegistry.onAllWindowsClosed = {
@@ -89,72 +69,5 @@ final class BrowserWindowLifecycleOwner {
         }
 
         return true
-    }
-}
-
-extension BrowserWindowLifecycleOwner.Dependencies {
-    static func live(
-        browserManager: BrowserManager,
-        windowRegistry: WindowRegistry,
-        webViewCoordinator: WebViewCoordinator
-    ) -> Self {
-        Self(
-            windowRegistry: windowRegistry,
-            browserRuntimeIsAvailable: { [weak browserManager] in
-                browserManager != nil
-            },
-            setupWindowState: { [weak browserManager] windowState in
-                browserManager?.windowSessionActivationOwner.setupWindowState(windowState)
-            },
-            handleWindowWillClose: { [weak browserManager] windowId in
-                browserManager?.windowHistorySessionOwner.handleWindowWillClose(windowId)
-            },
-            notifyWindowClosedIfLoaded: { [weak browserManager] windowId in
-                browserManager?.extensionsModule.notifyWindowClosedIfLoaded(windowId)
-            },
-            cleanupWebViews: { [webViewCoordinator, weak browserManager] windowId in
-                guard let browserManager else { return }
-                webViewCoordinator.cleanupWindow(
-                    windowId,
-                    tabManager: browserManager.tabManager
-                )
-            },
-            cleanupSplitWindow: { [weak browserManager] windowId in
-                browserManager?.splitManager.cleanupWindow(windowId)
-            },
-            scheduleWindowClosedMediaReconcile: { [weak browserManager] in
-                browserManager?.backgroundMediaOptimizationService.scheduleReconcile(
-                    reason: "window-closed"
-                )
-            },
-            windowState: { [weak browserManager] windowId in
-                browserManager?.windowRegistry?.windows[windowId]
-            },
-            closeIncognitoWindow: { [weak browserManager] windowState in
-                await browserManager?.windowSessionCommands.closeIncognitoWindow(windowState)
-            },
-            setActiveWindowState: { [weak browserManager] windowState in
-                browserManager?.windowSessionActivationOwner.setActiveWindowState(windowState)
-            },
-            handleWindowVisibilityChanged: { [weak browserManager] windowState in
-                browserManager?.windowSessionActivationOwner.handleWindowVisibilityChanged(windowState)
-            },
-            prepareForAllWindowsClosed: { [weak browserManager] in
-                browserManager?.windowSessionService.prepareForAllWindowsClosed()
-            },
-            performAllWindowsClosedSiteDataCleanup: { [weak browserManager] in
-                guard let browserManager else { return }
-                await browserManager.dataServices.siteDataPolicyEnforcementService
-                    .performAllWindowsClosedCleanup(
-                        profiles: browserManager.profileManager.profiles
-                    )
-            },
-            cleanupWindowAfterRuntimeDeallocation: { [webViewCoordinator] windowId in
-                webViewCoordinator.removeCompositorContainerView(for: windowId)
-                RuntimeDiagnostics.emit(
-                    "⚠️ [SumiApp] Window \(windowId) closed after BrowserManager deallocation - performed minimal cleanup"
-                )
-            }
-        )
     }
 }

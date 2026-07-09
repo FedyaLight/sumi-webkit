@@ -13,8 +13,6 @@ protocol SumiExternalAppResolving {
 
 @MainActor
 final class SumiNSWorkspaceExternalAppResolver: SumiExternalAppResolving {
-    static let shared = SumiNSWorkspaceExternalAppResolver()
-
     private let workspace: NSWorkspace
     private let fileManager: FileManager
 

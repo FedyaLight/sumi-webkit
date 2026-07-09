@@ -354,7 +354,7 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
             harness.browserManager.tabManager.regularTabCollectionStateOwner.allTabsSnapshot().last?.id
         )
         let childTab = harness.browserManager.tabManager.regularTabCollectionStateOwner.allTabsSnapshot().last
-        XCTAssertIdentical(childTab?.existingWebView, childWebView)
+        XCTAssertIdentical(childTab?.resolvedCurrentWebView(), childWebView)
         XCTAssertNil(childTab?.webViewConfigurationOverride)
     }
 
@@ -397,7 +397,7 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
         XCTAssertFalse(openedTab.isPopupHost)
         XCTAssertNil(openedTab.webViewConfigurationOverride)
         XCTAssertEqual(harness.windowState.currentTabId, openedTab.id)
-        XCTAssertNotNil(openedTab.assignedWebView ?? openedTab.existingWebView)
+        XCTAssertNotNil(openedTab.resolvedAssignedWebView() ?? openedTab.resolvedCurrentWebView())
     }
 
     func testExtensionPopupExternalCreateWebViewUsesOpenerWindowSpaceWhenSourceSpaceIsMissing()
@@ -483,7 +483,7 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
         XCTAssertFalse(openedTab.isPopupHost)
         XCTAssertNil(openedTab.webViewConfigurationOverride)
         XCTAssertEqual(harness.windowState.currentTabId, openedTab.id)
-        XCTAssertNotNil(openedTab.assignedWebView ?? openedTab.existingWebView)
+        XCTAssertNotNil(openedTab.resolvedAssignedWebView() ?? openedTab.resolvedCurrentWebView())
     }
 
     func testPopupCreateWebViewLeavesCommandClickNewTabInBackground() throws {

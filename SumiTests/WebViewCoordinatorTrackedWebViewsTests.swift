@@ -67,7 +67,7 @@ final class WebViewCoordinatorTrackedWebViewsTests: XCTestCase {
 
         XCTAssertIdentical(first, existing)
         XCTAssertIdentical(first, second)
-        XCTAssertNil(tab.primaryWindowId)
+        XCTAssertNil(tab.resolvedPrimaryWindowId())
         XCTAssertIdentical(coordinator.untrackedOwnedWebView(for: tab), existing)
     }
 }

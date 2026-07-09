@@ -10,12 +10,10 @@ final class TabStructuralLookupCoordinatorTests: XCTestCase {
     ) -> TabStructuralLookupCoordinator {
         TabStructuralLookupCoordinator(
             structuralChanges: changes,
-            dependencies: TabStructuralLookupCoordinator.Dependencies(
-                tabsBySpace: { [:] },
-                transientShortcutTabsByWindow: { [:] },
-                transientExtensionTabsByID: { [:] },
-                auxiliaryMiniWindowTabsByID: { [:] }
-            )
+            tabsBySpace: { [:] },
+            transientShortcutTabsByWindow: { [:] },
+            transientExtensionTabsByID: { [:] },
+            auxiliaryMiniWindowTabsByID: { [:] }
         )
     }
 

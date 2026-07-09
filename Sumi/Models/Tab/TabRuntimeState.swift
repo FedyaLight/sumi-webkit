@@ -1,8 +1,10 @@
 import AppKit
 import Combine
 import Foundation
+import SumiDomain
 import ObjectiveC.runtime
 import WebKit
+import SumiWebRuntime
 
 @MainActor
 struct TabBrowserRuntime {
@@ -103,12 +105,22 @@ struct TabWebViewRoutingRuntime {
     var syncTabAcrossWindows: (UUID, WKWebView?) -> Void
     var reloadTabAcrossWindows: (UUID) -> Void
     var setMuteState: (Bool, UUID) -> Void
-    /// Phase 6B: session-first ownership notes (no-op until browser runtime attaches).
+    /// Phase 6B / N5: session-first ownership notes (no-op until browser runtime attaches).
     var noteParkedWebView: (WKWebView?, UUID) -> Void
     var noteUntrackedWebView: (WKWebView?, UUID) -> Void
-    var notePrimaryAssignment: (UUID, UUID) -> Void
+    var notePrimaryAssignment: (UUID, WKWebView?, UUID) -> Void
     var clearPrimaryAssignment: (UUID) -> Void
     var clearWebViewSession: (UUID) -> Void
+    /// Session/registry readers used by Tab accessors (nil until runtime attaches).
+    var anyLiveWebView: (Tab) -> WKWebView?
+    var sessionParkedWebView: (UUID) -> WKWebView?
+    var sessionUntrackedWebView: (UUID) -> WKWebView?
+    var sessionPrimaryWindowId: (UUID) -> UUID?
+    var sessionPrimaryWebView: (UUID) -> WKWebView?
+    var primaryTrackedWindowId: (UUID) -> UUID?
+    var windowOwnedWebView: (UUID, UUID) -> WKWebView?
+    var hasLiveWebView: (Tab) -> Bool
+    var adoptLocalWebViewSession: (TabWebViewSession, UUID) -> Void
 
     static let inactive = Self(
         syncTabAcrossWindows: { _, _ in /* No-op. */ },
@@ -116,9 +128,18 @@ struct TabWebViewRoutingRuntime {
         setMuteState: { _, _ in /* No-op. */ },
         noteParkedWebView: { _, _ in /* No-op. */ },
         noteUntrackedWebView: { _, _ in /* No-op. */ },
-        notePrimaryAssignment: { _, _ in /* No-op. */ },
+        notePrimaryAssignment: { _, _, _ in /* No-op. */ },
         clearPrimaryAssignment: { _ in /* No-op. */ },
-        clearWebViewSession: { _ in /* No-op. */ }
+        clearWebViewSession: { _ in /* No-op. */ },
+        anyLiveWebView: { _ in nil },
+        sessionParkedWebView: { _ in nil },
+        sessionUntrackedWebView: { _ in nil },
+        sessionPrimaryWindowId: { _ in nil },
+        sessionPrimaryWebView: { _ in nil },
+        primaryTrackedWindowId: { _ in nil },
+        windowOwnedWebView: { _, _ in nil },
+        hasLiveWebView: { _ in false },
+        adoptLocalWebViewSession: { _, _ in /* No-op. */ }
     )
 }
 

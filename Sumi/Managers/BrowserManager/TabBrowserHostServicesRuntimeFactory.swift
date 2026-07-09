@@ -6,19 +6,19 @@ enum TabBrowserHostServicesRuntimeFactory {
     static func webViewRoutingRuntime(
         for browserManager: BrowserManager
     ) -> TabWebViewRoutingRuntime {
-        .live(webViewRoutingService: browserManager.webViewRoutingService)
+        .make(webViewRoutingService: browserManager.webViewRoutingService)
     }
 
     static func persistenceCallbacks(
         for browserManager: BrowserManager
     ) -> TabRuntimePersistenceCallbacks {
-        .live(tabManager: browserManager.tabManager)
+        .make(tabManager: browserManager.tabManager)
     }
 
     static func mediaCallbacks(
         for browserManager: BrowserManager
     ) -> TabMediaRuntimeCallbacks {
-        .live(
+        .make(
             nowPlayingController: browserManager.nativeNowPlayingController,
             backgroundMediaOptimizationService: browserManager.backgroundMediaOptimizationService
         )
@@ -27,13 +27,13 @@ enum TabBrowserHostServicesRuntimeFactory {
     static func scriptMessageRuntime(
         for browserManager: BrowserManager
     ) -> TabScriptMessageRuntime {
-        .live(glanceManager: browserManager.glanceManager)
+        .make(glanceManager: browserManager.glanceManager)
     }
 
     static func closeLifecycleRuntime(
         for browserManager: BrowserManager
     ) -> TabCloseLifecycleRuntime {
-        .live(
+        .make(
             cleanupZoomForTab: { [weak browserManager] tabId in
                 browserManager?.zoomCommandOwner.cleanupZoomForTab(tabId)
             },
@@ -49,7 +49,7 @@ enum TabBrowserHostServicesRuntimeFactory {
     static func permissionRuntime(
         for browserManager: BrowserManager
     ) -> TabPermissionRuntime {
-        .live(
+        .make(
             permissionBridges: { [weak browserManager] in
                 browserManager?.permissionRuntime.permissionBridges
             },
@@ -87,7 +87,7 @@ enum TabBrowserHostServicesRuntimeFactory {
 
 @MainActor
 extension TabWebViewRoutingRuntime {
-    static func live(webViewRoutingService: BrowserWebViewRoutingService) -> Self {
+    static func make(webViewRoutingService: BrowserWebViewRoutingService) -> Self {
         Self(
             syncTabAcrossWindows: { [weak webViewRoutingService] tabId, webView in
                 webViewRoutingService?.syncTabAcrossWindows(
@@ -107,14 +107,45 @@ extension TabWebViewRoutingRuntime {
             noteUntrackedWebView: { [weak webViewRoutingService] webView, tabId in
                 webViewRoutingService?.noteUntrackedWebView(webView, for: tabId)
             },
-            notePrimaryAssignment: { [weak webViewRoutingService] windowId, tabId in
-                webViewRoutingService?.notePrimaryAssignment(windowId: windowId, for: tabId)
+            notePrimaryAssignment: { [weak webViewRoutingService] windowId, webView, tabId in
+                webViewRoutingService?.notePrimaryAssignment(
+                    windowId: windowId,
+                    webView: webView,
+                    for: tabId
+                )
             },
             clearPrimaryAssignment: { [weak webViewRoutingService] tabId in
                 webViewRoutingService?.clearPrimaryAssignment(for: tabId)
             },
             clearWebViewSession: { [weak webViewRoutingService] tabId in
                 webViewRoutingService?.clearWebViewSession(for: tabId)
+            },
+            anyLiveWebView: { [weak webViewRoutingService] tab in
+                webViewRoutingService?.anyLiveWebViewIfAvailable(for: tab)
+            },
+            sessionParkedWebView: { [weak webViewRoutingService] tabId in
+                webViewRoutingService?.sessionParkedWebView(for: tabId)
+            },
+            sessionUntrackedWebView: { [weak webViewRoutingService] tabId in
+                webViewRoutingService?.sessionUntrackedWebView(for: tabId)
+            },
+            sessionPrimaryWindowId: { [weak webViewRoutingService] tabId in
+                webViewRoutingService?.sessionPrimaryWindowId(for: tabId)
+            },
+            sessionPrimaryWebView: { [weak webViewRoutingService] tabId in
+                webViewRoutingService?.sessionPrimaryWebView(for: tabId)
+            },
+            primaryTrackedWindowId: { [weak webViewRoutingService] tabId in
+                webViewRoutingService?.primaryTrackedWindowIdIfAvailable(for: tabId)
+            },
+            windowOwnedWebView: { [weak webViewRoutingService] tabId, windowId in
+                webViewRoutingService?.webViewIfAvailable(for: tabId, in: windowId)
+            },
+            hasLiveWebView: { [weak webViewRoutingService] tab in
+                webViewRoutingService?.hasLiveWebViewIfAvailable(for: tab) ?? false
+            },
+            adoptLocalWebViewSession: { [weak webViewRoutingService] session, tabId in
+                webViewRoutingService?.adoptLocalWebViewSession(session, for: tabId)
             }
         )
     }
@@ -122,7 +153,7 @@ extension TabWebViewRoutingRuntime {
 
 @MainActor
 extension TabRuntimePersistenceCallbacks {
-    static func live(tabManager: TabManager) -> Self {
+    static func make(tabManager: TabManager) -> Self {
         Self(
             updateNavigationState: { [weak tabManager] tab in
                 tabManager?.structuralPersistence.scheduleRuntimeStatePersistence(for: tab)
@@ -136,7 +167,7 @@ extension TabRuntimePersistenceCallbacks {
 
 @MainActor
 extension TabMediaRuntimeCallbacks {
-    static func live(
+    static func make(
         nowPlayingController: any SumiNativeNowPlayingRuntimeControlling,
         backgroundMediaOptimizationService: SumiBackgroundMediaOptimizationService
     ) -> Self {
@@ -157,7 +188,7 @@ extension TabMediaRuntimeCallbacks {
 
 @MainActor
 extension TabScriptMessageRuntime {
-    static func live(glanceManager: GlanceManager) -> Self {
+    static func make(glanceManager: GlanceManager) -> Self {
         Self(
             presentExternalURLInGlance: { [weak glanceManager] url, tab, originRectInWindow in
                 glanceManager?.presentExternalURL(
@@ -172,7 +203,7 @@ extension TabScriptMessageRuntime {
 
 @MainActor
 extension TabCloseLifecycleRuntime {
-    static func live(
+    static func make(
         cleanupZoomForTab: @escaping (UUID) -> Void,
         updateTabVisibility: @escaping () -> Void,
         removeTab: @escaping (UUID) -> Void
@@ -187,7 +218,7 @@ extension TabCloseLifecycleRuntime {
 
 @MainActor
 extension TabPermissionRuntime {
-    static func live(
+    static func make(
         permissionBridges: @escaping () -> BrowserPermissionBridgeRegistry?,
         handlePermissionLifecycleEvent: @escaping (SumiPermissionLifecycleEvent) -> Void,
         isActiveGlancePreviewSurface: @escaping (_ tabId: UUID, _ webView: WKWebView) -> Bool

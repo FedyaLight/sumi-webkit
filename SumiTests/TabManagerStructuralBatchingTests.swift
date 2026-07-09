@@ -664,12 +664,12 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
             spaceId: space.id
         )
         let webView = WKWebView(frame: .zero, configuration: WKWebViewConfiguration())
-        preview._webView = webView
+        preview.replaceUntrackedWebView(webView)
 
         let adopted = tabManager.regularTabLifecycleOwner.adoptGlanceTab(preview, sourceTab: source, in: space)
 
         XCTAssertIdentical(adopted, preview)
-        XCTAssertIdentical(preview.existingWebView, webView)
+        XCTAssertIdentical(preview.resolvedCurrentWebView(), webView)
         XCTAssertEqual(tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[space.id]?.map(\.id), [
             source.id,
             preview.id,

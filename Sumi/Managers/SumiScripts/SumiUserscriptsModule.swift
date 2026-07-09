@@ -4,8 +4,6 @@ import WebKit
 
 @MainActor
 final class SumiUserscriptsModule {
-    static let shared = SumiUserscriptsModule()
-
     private let moduleRegistry: SumiModuleRegistry
     private let context: ModelContext?
     private let managerFactory: @MainActor (ModelContext?) -> SumiScriptsManager

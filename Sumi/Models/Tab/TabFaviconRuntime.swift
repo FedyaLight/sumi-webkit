@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import Foundation
+import SumiDomain
 
 @MainActor
 final class TabFaviconRuntime {
@@ -119,7 +120,7 @@ final class TabFaviconRuntime {
             .receive(on: RunLoop.main)
             .sink { [weak self, weak tab] (image: NSImage?) in
                 guard let self, let tab, let image else { return }
-                let currentURL = tab.existingWebView?.url ?? tab.url
+                let currentURL = tab.resolvedCurrentWebView()?.url ?? tab.url
                 guard let referenceKey = TabFaviconStore.referenceKey(forDocumentURL: currentURL) else { return }
                 tab.faviconPresentation = .bitmap(image)
                 tab.faviconIsTemplateGlobePlaceholder = false

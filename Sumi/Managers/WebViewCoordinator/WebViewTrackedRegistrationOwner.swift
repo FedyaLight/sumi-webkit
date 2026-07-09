@@ -1,30 +1,51 @@
 import Foundation
 import WebKit
+import SumiWebRuntime
 
 /// Owns the tracked-WebView registration lifecycle: registry slots,
 /// media-protection observations installed on registration, and teardown of
 /// unprotected tracked WebViews.
 @MainActor
 final class WebViewTrackedRegistrationOwner {
-    struct Dependencies {
-        let webViewRegistry: WindowWebViewRegistry
-        let mediaProtectionOwner: WebViewMediaProtectionOwner
-        let trackingLifecycleOwner: WebViewTrackingLifecycleOwner
-        let trackedCleanupExecutionOwner: WebViewTrackedCleanupExecutionOwner
-        let requireBrowserRuntimeContext: @MainActor () -> WebViewCoordinatorBrowserRuntimeContext
-        let removeWebViewFromContainers: @MainActor (WKWebView) -> Void
-        let pruneInvalidDeferredCommands: @MainActor (String) -> Void
-        let flushDeferredProtectedCommands: @MainActor (ObjectIdentifier) -> Void
-        let finishDestructiveCleanupNavigation: @MainActor (WKWebView) -> Void
-        let performFallbackWebViewCleanup: @MainActor (WKWebView, UUID) -> Void
-        let resolvedTab: @MainActor (UUID) -> Tab?
-        let refreshPrimaryTrackedWebView: @MainActor (Tab) -> Void
-    }
+    private let webViewRegistry: WindowWebViewRegistry
+    private let mediaProtectionOwner: WebViewMediaProtectionOwner
+    private let trackingLifecycleOwner: WebViewTrackingLifecycleOwner
+    private let trackedCleanupExecutionOwner: WebViewTrackedCleanupExecutionOwner
+    private let requireBrowserRuntimeContext: @MainActor () -> WebViewCoordinatorBrowserRuntimeContext
+    private let removeWebViewFromContainers: @MainActor (WKWebView) -> Void
+    private let pruneInvalidDeferredCommands: @MainActor (String) -> Void
+    private let flushDeferredProtectedCommands: @MainActor (ObjectIdentifier) -> Void
+    private let finishDestructiveCleanupNavigation: @MainActor (WKWebView) -> Void
+    private let performFallbackWebViewCleanup: @MainActor (WKWebView, UUID) -> Void
+    private let resolvedTab: @MainActor (UUID) -> Tab?
+    private let refreshPrimaryTrackedWebView: @MainActor (Tab) -> Void
 
-    private let dependencies: Dependencies
-
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
+    init(
+        webViewRegistry: WindowWebViewRegistry,
+        mediaProtectionOwner: WebViewMediaProtectionOwner,
+        trackingLifecycleOwner: WebViewTrackingLifecycleOwner,
+        trackedCleanupExecutionOwner: WebViewTrackedCleanupExecutionOwner,
+        requireBrowserRuntimeContext: @escaping @MainActor () -> WebViewCoordinatorBrowserRuntimeContext,
+        removeWebViewFromContainers: @escaping @MainActor (WKWebView) -> Void,
+        pruneInvalidDeferredCommands: @escaping @MainActor (String) -> Void,
+        flushDeferredProtectedCommands: @escaping @MainActor (ObjectIdentifier) -> Void,
+        finishDestructiveCleanupNavigation: @escaping @MainActor (WKWebView) -> Void,
+        performFallbackWebViewCleanup: @escaping @MainActor (WKWebView, UUID) -> Void,
+        resolvedTab: @escaping @MainActor (UUID) -> Tab?,
+        refreshPrimaryTrackedWebView: @escaping @MainActor (Tab) -> Void
+    ) {
+        self.webViewRegistry = webViewRegistry
+        self.mediaProtectionOwner = mediaProtectionOwner
+        self.trackingLifecycleOwner = trackingLifecycleOwner
+        self.trackedCleanupExecutionOwner = trackedCleanupExecutionOwner
+        self.requireBrowserRuntimeContext = requireBrowserRuntimeContext
+        self.removeWebViewFromContainers = removeWebViewFromContainers
+        self.pruneInvalidDeferredCommands = pruneInvalidDeferredCommands
+        self.flushDeferredProtectedCommands = flushDeferredProtectedCommands
+        self.finishDestructiveCleanupNavigation = finishDestructiveCleanupNavigation
+        self.performFallbackWebViewCleanup = performFallbackWebViewCleanup
+        self.resolvedTab = resolvedTab
+        self.refreshPrimaryTrackedWebView = refreshPrimaryTrackedWebView
     }
 
     func register(
@@ -33,13 +54,13 @@ final class WebViewTrackedRegistrationOwner {
         in windowId: UUID
     ) {
         let owner = TrackedWebViewOwner(tabID: tabId, windowID: windowId)
-        dependencies.mediaProtectionOwner.note(webView)
-        dependencies.trackingLifecycleOwner.registerTrackedWebView(
+        mediaProtectionOwner.note(webView)
+        trackingLifecycleOwner.registerTrackedWebView(
             webView,
             for: owner,
-            in: dependencies.webViewRegistry,
-            removeFromContainers: { [dependencies] webView in
-                dependencies.removeWebViewFromContainers(webView)
+            in: webViewRegistry,
+            removeFromContainers: { [removeWebViewFromContainers] webView in
+                removeWebViewFromContainers(webView)
             },
             installRuntimeObservations: { [weak self] webView in
                 self?.installMediaProtectionObservationsIfNeeded(on: webView)
@@ -47,8 +68,8 @@ final class WebViewTrackedRegistrationOwner {
             uninstallRuntimeObservationsIfUntracked: { [weak self] webView in
                 self?.uninstallMediaProtectionObservationsIfUntracked(webView)
             },
-            pruneInvalidDeferredCommands: { [dependencies] reason in
-                dependencies.pruneInvalidDeferredCommands(reason)
+            pruneInvalidDeferredCommands: { [pruneInvalidDeferredCommands] reason in
+                pruneInvalidDeferredCommands(reason)
             }
         )
     }
@@ -60,20 +81,20 @@ final class WebViewTrackedRegistrationOwner {
         removeFromSuperview: Bool = false,
         removeRecentVisibility: Bool = true
     ) -> WKWebView? {
-        dependencies.trackingLifecycleOwner.unregisterTrackedWebViewSlot(
+        trackingLifecycleOwner.unregisterTrackedWebViewSlot(
             owner: owner,
             expectedWebView: expectedWebView,
             removeFromSuperview: removeFromSuperview,
             removeRecentVisibility: removeRecentVisibility,
-            in: dependencies.webViewRegistry,
-            removeFromContainers: { [dependencies] webView in
-                dependencies.removeWebViewFromContainers(webView)
+            in: webViewRegistry,
+            removeFromContainers: { [removeWebViewFromContainers] webView in
+                removeWebViewFromContainers(webView)
             },
             uninstallRuntimeObservationsIfUntracked: { [weak self] webView in
                 self?.uninstallMediaProtectionObservationsIfUntracked(webView)
             },
-            pruneInvalidDeferredCommands: { [dependencies] reason in
-                dependencies.pruneInvalidDeferredCommands(reason)
+            pruneInvalidDeferredCommands: { [pruneInvalidDeferredCommands] reason in
+                pruneInvalidDeferredCommands(reason)
             }
         )
     }
@@ -82,14 +103,14 @@ final class WebViewTrackedRegistrationOwner {
         _ webView: WKWebView,
         owner: TrackedWebViewOwner
     ) {
-        let tab = dependencies.resolvedTab(owner.tabID)
+        let tab = resolvedTab(owner.tabID)
         cleanupUnprotectedTrackedWebView(
             webView,
             owner: owner,
             tab: tab
         )
         if let tab {
-            dependencies.refreshPrimaryTrackedWebView(tab)
+            refreshPrimaryTrackedWebView(tab)
         }
     }
 
@@ -98,48 +119,48 @@ final class WebViewTrackedRegistrationOwner {
         owner: TrackedWebViewOwner,
         tab: Tab?
     ) {
-        dependencies.trackedCleanupExecutionOwner.cleanupUnprotectedTrackedWebView(
+        trackedCleanupExecutionOwner.cleanupUnprotectedTrackedWebView(
             webView,
             owner: owner,
             tab: tab,
-            webViewRegistry: dependencies.webViewRegistry,
-            trackingLifecycleOwner: dependencies.trackingLifecycleOwner,
+            webViewRegistry: webViewRegistry,
+            trackingLifecycleOwner: trackingLifecycleOwner,
             runtime: cleanupExecutionRuntime()
         )
     }
 
     func uninstallMediaProtectionObservationsIfUntracked(_ webView: WKWebView) {
-        dependencies.mediaProtectionOwner.uninstallObservationsIfUntracked(
+        mediaProtectionOwner.uninstallObservationsIfUntracked(
             webView,
-            isTracked: dependencies.webViewRegistry.isIndexed(webView)
+            isTracked: webViewRegistry.isIndexed(webView)
         )
     }
 
     private func installMediaProtectionObservationsIfNeeded(on webView: WKWebView) {
-        dependencies.mediaProtectionOwner.installFullscreenStateObservationIfNeeded(
+        mediaProtectionOwner.installFullscreenStateObservationIfNeeded(
             on: webView,
-            trackedOwner: { [dependencies] webView in
-                dependencies.webViewRegistry.trackedOwner(containing: webView)
+            trackedOwner: { [webViewRegistry] webView in
+                webViewRegistry.trackedOwner(containing: webView)
             },
-            fallbackWindowID: { [dependencies] webView in
-                dependencies.webViewRegistry.trackedOwner(containing: webView)?.windowID
+            fallbackWindowID: { [webViewRegistry] webView in
+                webViewRegistry.trackedOwner(containing: webView)?.windowID
             },
-            flushDeferredProtectedCommands: { [dependencies] webViewID in
-                dependencies.flushDeferredProtectedCommands(webViewID)
+            flushDeferredProtectedCommands: { [flushDeferredProtectedCommands] webViewID in
+                flushDeferredProtectedCommands(webViewID)
             },
-            refreshCompositor: { [dependencies] windowID in
-                let runtimeContext = dependencies.requireBrowserRuntimeContext()
+            refreshCompositor: { [requireBrowserRuntimeContext] windowID in
+                let runtimeContext = requireBrowserRuntimeContext()
                 guard let windowState = runtimeContext.window(windowID)
                 else {
                     return
                 }
                 runtimeContext.refreshCompositor(windowState)
             },
-            selectTab: { [dependencies] tabID, windowID in
-                dependencies.requireBrowserRuntimeContext().selectTab(tabID, windowID)
+            selectTab: { [requireBrowserRuntimeContext] tabID, windowID in
+                requireBrowserRuntimeContext().selectTab(tabID, windowID)
             },
-            isOwnerTabCurrent: { [dependencies] tabID, windowID in
-                let runtimeContext = dependencies.requireBrowserRuntimeContext()
+            isOwnerTabCurrent: { [requireBrowserRuntimeContext] tabID, windowID in
+                let runtimeContext = requireBrowserRuntimeContext()
                 guard let windowState = runtimeContext.window(windowID) else {
                     return false
                 }
@@ -147,72 +168,33 @@ final class WebViewTrackedRegistrationOwner {
             }
         )
 
-        dependencies.mediaProtectionOwner.installNowPlayingSessionObservationIfNeeded(
+        mediaProtectionOwner.installNowPlayingSessionObservationIfNeeded(
             on: webView,
-            trackedOwner: { [dependencies] webView in
-                dependencies.webViewRegistry.trackedOwner(containing: webView)
+            trackedOwner: { [webViewRegistry] webView in
+                webViewRegistry.trackedOwner(containing: webView)
             },
-            fallbackWindowID: { [dependencies] webView in
-                dependencies.webViewRegistry.trackedOwner(containing: webView)?.windowID
+            fallbackWindowID: { [webViewRegistry] webView in
+                webViewRegistry.trackedOwner(containing: webView)?.windowID
             }
         )
     }
 
     private func cleanupExecutionRuntime() -> WebViewTrackedCleanupExecutionOwner.Runtime {
         WebViewTrackedCleanupExecutionOwner.Runtime(
-            finishDestructiveCleanupSuppression: { [dependencies] webView in
-                dependencies.finishDestructiveCleanupNavigation(webView)
+            finishDestructiveCleanupSuppression: { [finishDestructiveCleanupNavigation] webView in
+                finishDestructiveCleanupNavigation(webView)
             },
-            removeFromContainers: { [dependencies] webView in
-                dependencies.removeWebViewFromContainers(webView)
+            removeFromContainers: { [removeWebViewFromContainers] webView in
+                removeWebViewFromContainers(webView)
             },
             uninstallRuntimeObservationsIfUntracked: { [weak self] webView in
                 self?.uninstallMediaProtectionObservationsIfUntracked(webView)
             },
-            pruneInvalidDeferredCommands: { [dependencies] reason in
-                dependencies.pruneInvalidDeferredCommands(reason)
+            pruneInvalidDeferredCommands: { [pruneInvalidDeferredCommands] reason in
+                pruneInvalidDeferredCommands(reason)
             },
-            fallbackCleanup: { [dependencies] webView, tabID in
-                dependencies.performFallbackWebViewCleanup(webView, tabID)
-            }
-        )
-    }
-}
-
-extension WebViewTrackedRegistrationOwner.Dependencies {
-    @MainActor
-    static func live(coordinator: WebViewCoordinator) -> Self {
-        Self(
-            webViewRegistry: coordinator.webViewRegistry,
-            mediaProtectionOwner: coordinator.mediaProtectionOwner,
-            trackingLifecycleOwner: coordinator.webViewTrackingLifecycleOwner,
-            trackedCleanupExecutionOwner: coordinator.trackedCleanupExecutionOwner,
-            requireBrowserRuntimeContext: { [weak coordinator] in
-                guard let coordinator else {
-                    preconditionFailure("WebViewCoordinator dependency used after deallocation")
-                }
-                return coordinator.runtimeContextStore.requireBrowser()
-            },
-            removeWebViewFromContainers: { [weak coordinator] webView in
-                coordinator?.removeWebViewFromContainers(webView)
-            },
-            pruneInvalidDeferredCommands: { [weak coordinator] reason in
-                coordinator?.pruneInvalidDeferredProtectedCommands(reason: reason)
-            },
-            flushDeferredProtectedCommands: { [weak coordinator] webViewID in
-                coordinator?.flushDeferredProtectedCommands(for: webViewID)
-            },
-            finishDestructiveCleanupNavigation: { [weak coordinator] webView in
-                coordinator?.finishDestructiveDataCleanupNavigation(on: webView)
-            },
-            performFallbackWebViewCleanup: { [weak coordinator] webView, tabID in
-                coordinator?.performFallbackWebViewCleanup(webView, tabId: tabID)
-            },
-            resolvedTab: { [weak coordinator] tabID in
-                coordinator?.resolvedTab(with: tabID)
-            },
-            refreshPrimaryTrackedWebView: { [weak coordinator] tab in
-                coordinator?.refreshPrimaryTrackedWebView(for: tab)
+            fallbackCleanup: { [performFallbackWebViewCleanup] webView, tabID in
+                performFallbackWebViewCleanup(webView, tabID)
             }
         )
     }

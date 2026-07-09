@@ -1,5 +1,6 @@
 @testable import Sumi
 import XCTest
+import SumiDomain
 
 @MainActor
 final class SettingsNavigationTests: XCTestCase {

@@ -183,13 +183,15 @@ final class BrowserKeyboardShortcutCommandOwnerTests: XCTestCase {
         toggleReaderMode: @escaping @MainActor (WKWebView, Tab) async -> Void = { _, _ in /* No-op. */ }
     ) -> BrowserKeyboardShortcutCommandOwner {
         BrowserKeyboardShortcutCommandOwner(
-            dependencies: BrowserKeyboardShortcutCommandOwner.Dependencies(
+            tabSelection: BrowserKeyboardShortcutCommandOwner.TabSelectionCapabilities(
                 activeWindow: activeWindow,
                 createNewTab: createNewTab,
                 openNewTabOrFloatingBar: openNewTabOrFloatingBar,
                 tabsForDisplay: tabsForDisplay,
                 currentTab: currentTab,
-                selectTab: selectTab,
+                selectTab: selectTab
+            ),
+            spaceSplit: BrowserKeyboardShortcutCommandOwner.SpaceSplitCapabilities(
                 isSplit: isSplit,
                 setSplitLayoutKind: setSplitLayoutKind,
                 enterSplitWithTab: enterSplitWithTab,
@@ -198,7 +200,9 @@ final class BrowserKeyboardShortcutCommandOwnerTests: XCTestCase {
                 spaces: spaces,
                 setActiveSpace: setActiveSpace,
                 setAllFoldersOpen: setAllFoldersOpen,
-                persistWindowSession: persistWindowSession,
+                persistWindowSession: persistWindowSession
+            ),
+            reader: BrowserKeyboardShortcutCommandOwner.ReaderCapabilities(
                 activePageTab: activePageTab,
                 activePageWebView: activePageWebView,
                 webView: webView,

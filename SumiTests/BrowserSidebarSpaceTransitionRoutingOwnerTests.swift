@@ -69,34 +69,32 @@ final class BrowserSpaceTransitionRoutingOwnerTests: XCTestCase {
         returnedIdentity: SpaceTransitionIdentity? = nil
     ) -> BrowserSpaceTransitionRoutingOwner {
         BrowserSpaceTransitionRoutingOwner(
-            dependencies: BrowserSpaceTransitionRoutingOwner.Dependencies(
-                completePendingSplitGroupFocusIfReady: { windowState, spaceId in
-                    spy.events.append(.completePendingSplitGroupFocus(windowState.id, spaceId))
-                },
-                setActiveSpace: { space, windowState in
-                    spy.events.append(.setActiveSpace(space.id, windowState.id))
-                },
-                setActiveSpaceFromTransition: { space, windowState, identity in
-                    spy.events.append(.setActiveSpaceFromTransition(space.id, windowState.id, identity))
-                },
-                beginInteractiveSpaceTransition: { source, destination, identity, windowState in
-                    spy.events.append(
-                        .beginInteractiveSpaceTransition(
-                            source.id,
-                            destination.id,
-                            identity,
-                            windowState.id
-                        )
+            completePendingSplitGroupFocusIfReady: { windowState, spaceId in
+                spy.events.append(.completePendingSplitGroupFocus(windowState.id, spaceId))
+            },
+            setActiveSpace: { space, windowState in
+                spy.events.append(.setActiveSpace(space.id, windowState.id))
+            },
+            setActiveSpaceFromTransition: { space, windowState, identity in
+                spy.events.append(.setActiveSpaceFromTransition(space.id, windowState.id, identity))
+            },
+            beginInteractiveSpaceTransition: { source, destination, identity, windowState in
+                spy.events.append(
+                    .beginInteractiveSpaceTransition(
+                        source.id,
+                        destination.id,
+                        identity,
+                        windowState.id
                     )
-                    return returnedIdentity
-                },
-                updateInteractiveSpaceTransition: { progress, identity, windowState in
-                    spy.events.append(.updateInteractiveSpaceTransition(progress, identity, windowState.id))
-                },
-                cancelInteractiveSpaceTransition: { identity, windowState in
-                    spy.events.append(.cancelInteractiveSpaceTransition(identity, windowState.id))
-                }
-            )
+                )
+                return returnedIdentity
+            },
+            updateInteractiveSpaceTransition: { progress, identity, windowState in
+                spy.events.append(.updateInteractiveSpaceTransition(progress, identity, windowState.id))
+            },
+            cancelInteractiveSpaceTransition: { identity, windowState in
+                spy.events.append(.cancelInteractiveSpaceTransition(identity, windowState.id))
+            }
         )
     }
 }

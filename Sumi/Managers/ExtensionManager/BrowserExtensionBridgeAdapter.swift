@@ -8,49 +8,86 @@ import WebKit
 @available(macOS 15.5, *)
 @MainActor
 final class BrowserExtensionBridgeAdapter {
-    struct Dependencies {
-        let windowRegistry: @MainActor () -> WindowRegistry?
-        let tabManager: @MainActor () -> TabManager?
-        let auxiliaryWindowManager: @MainActor () -> AuxiliaryWindowManager?
-        let webViewCoordinator: @MainActor () -> WebViewCoordinator?
-        let tabsForWebExtensionWindow: @MainActor (BrowserWindowState) -> [Tab]
-        let currentTab: @MainActor (BrowserWindowState) -> Tab?
-        let currentTabForActiveWindow: @MainActor () -> Tab?
-        let windowStateContainingTab: @MainActor (Tab) -> BrowserWindowState?
-        let selectTab: @MainActor (Tab, BrowserWindowState) -> Void
-        let materializeVisibleTabWebViewIfNeeded: @MainActor (Tab, BrowserWindowState) -> Void
-        let windowOwnedWebView: @MainActor (Tab, UUID) -> WKWebView?
-        let assignWebView: @MainActor (WKWebView, Tab, UUID) -> Void
-        let installUntrackedOwnedWebView: @MainActor (WKWebView, Tab) -> Void
-        let replaceLiveWebView: @MainActor (
+    private let windowRegistryProvider: @MainActor () -> WindowRegistry?
+    private let tabManagerProvider: @MainActor () -> TabManager?
+    private let auxiliaryWindowManagerProvider: @MainActor () -> AuxiliaryWindowManager?
+    private let webViewCoordinator: @MainActor () -> WebViewCoordinator?
+    private let tabsForWebExtensionWindow: @MainActor (BrowserWindowState) -> [Tab]
+    private let currentTab: @MainActor (BrowserWindowState) -> Tab?
+    private let currentTabForActiveWindow: @MainActor () -> Tab?
+    private let windowStateContainingTab: @MainActor (Tab) -> BrowserWindowState?
+    private let selectTab: @MainActor (Tab, BrowserWindowState) -> Void
+    private let materializeVisibleTabWebViewIfNeeded: @MainActor (Tab, BrowserWindowState) -> Void
+    private let windowOwnedWebView: @MainActor (Tab, UUID) -> WKWebView?
+    private let assignWebView: @MainActor (WKWebView, Tab, UUID) -> Void
+    private let installUntrackedOwnedWebView: @MainActor (WKWebView, Tab) -> Void
+    private let replaceLiveWebView: @MainActor (
+        Tab,
+        UUID?,
+        String,
+        ((WKWebViewConfiguration) -> Void)?,
+        ((WKWebView) -> Void)?,
+        ((WKWebView) -> Bool)?
+    ) -> WKWebView?
+    private let createNewWindow: @MainActor () -> Void
+    private let urlBarHubAnchorView: @MainActor (UUID) -> NSView?
+    private let sumiSettings: @MainActor () -> SumiSettingsService?
+
+    init(
+        windowRegistry: @escaping @MainActor () -> WindowRegistry?,
+        tabManager: @escaping @MainActor () -> TabManager?,
+        auxiliaryWindowManager: @escaping @MainActor () -> AuxiliaryWindowManager?,
+        webViewCoordinator: @escaping @MainActor () -> WebViewCoordinator?,
+        tabsForWebExtensionWindow: @escaping @MainActor (BrowserWindowState) -> [Tab],
+        currentTab: @escaping @MainActor (BrowserWindowState) -> Tab?,
+        currentTabForActiveWindow: @escaping @MainActor () -> Tab?,
+        windowStateContainingTab: @escaping @MainActor (Tab) -> BrowserWindowState?,
+        selectTab: @escaping @MainActor (Tab, BrowserWindowState) -> Void,
+        materializeVisibleTabWebViewIfNeeded: @escaping @MainActor (Tab, BrowserWindowState) -> Void,
+        windowOwnedWebView: @escaping @MainActor (Tab, UUID) -> WKWebView?,
+        assignWebView: @escaping @MainActor (WKWebView, Tab, UUID) -> Void,
+        installUntrackedOwnedWebView: @escaping @MainActor (WKWebView, Tab) -> Void,
+        replaceLiveWebView: @escaping @MainActor (
             Tab,
             UUID?,
             String,
             ((WKWebViewConfiguration) -> Void)?,
             ((WKWebView) -> Void)?,
             ((WKWebView) -> Bool)?
-        ) -> WKWebView?
-        let createNewWindow: @MainActor () -> Void
-        let urlBarHubAnchorView: @MainActor (UUID) -> NSView?
-        let sumiSettings: @MainActor () -> SumiSettingsService?
-    }
-
-    private let dependencies: Dependencies
-
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
+        ) -> WKWebView?,
+        createNewWindow: @escaping @MainActor () -> Void,
+        urlBarHubAnchorView: @escaping @MainActor (UUID) -> NSView?,
+        sumiSettings: @escaping @MainActor () -> SumiSettingsService?
+    ) {
+        self.windowRegistryProvider = windowRegistry
+        self.tabManagerProvider = tabManager
+        self.auxiliaryWindowManagerProvider = auxiliaryWindowManager
+        self.webViewCoordinator = webViewCoordinator
+        self.tabsForWebExtensionWindow = tabsForWebExtensionWindow
+        self.currentTab = currentTab
+        self.currentTabForActiveWindow = currentTabForActiveWindow
+        self.windowStateContainingTab = windowStateContainingTab
+        self.selectTab = selectTab
+        self.materializeVisibleTabWebViewIfNeeded = materializeVisibleTabWebViewIfNeeded
+        self.windowOwnedWebView = windowOwnedWebView
+        self.assignWebView = assignWebView
+        self.installUntrackedOwnedWebView = installUntrackedOwnedWebView
+        self.replaceLiveWebView = replaceLiveWebView
+        self.createNewWindow = createNewWindow
+        self.urlBarHubAnchorView = urlBarHubAnchorView
+        self.sumiSettings = sumiSettings
     }
 
     private var windowRegistry: WindowRegistry? {
-        dependencies.windowRegistry()
+        windowRegistryProvider()
     }
 
     private var tabManager: TabManager? {
-        dependencies.tabManager()
+        tabManagerProvider()
     }
 
     private var auxiliaryWindowManager: AuxiliaryWindowManager? {
-        dependencies.auxiliaryWindowManager()
+        auxiliaryWindowManagerProvider()
     }
 
     private func requireTabManager(operation: String) -> TabManager {
@@ -94,7 +131,7 @@ extension BrowserExtensionBridgeAdapter: ExtensionBrowserBridgeContext {
     }
 
     func extensionWindowState(containing tab: Tab) -> BrowserWindowState? {
-        dependencies.windowStateContainingTab(tab)
+        windowStateContainingTab(tab)
     }
 
     func extensionWindowState(forAppKitWindow window: NSWindow) -> BrowserWindowState? {
@@ -102,23 +139,23 @@ extension BrowserExtensionBridgeAdapter: ExtensionBrowserBridgeContext {
     }
 
     func appKitWindow(for windowState: BrowserWindowState) -> NSWindow? {
-        windowRegistry?.appKitWindow(for: windowState) ?? windowState.window
+        windowRegistry?.appKitWindow(for: windowState)
     }
 
     func currentExtensionTab(in windowState: BrowserWindowState) -> Tab? {
-        dependencies.currentTab(windowState)
+        currentTab(windowState)
     }
 
     func currentExtensionTabForActiveWindow() -> Tab? {
-        dependencies.currentTabForActiveWindow()
+        currentTabForActiveWindow()
     }
 
     func currentExtensionTabForPopup() -> Tab? {
-        dependencies.currentTabForActiveWindow()
+        currentTabForActiveWindow()
     }
 
     func tabsForExtensionWindow(_ windowState: BrowserWindowState) -> [Tab] {
-        dependencies.tabsForWebExtensionWindow(windowState)
+        tabsForWebExtensionWindow(windowState)
     }
 
     func extensionSpace(for spaceId: UUID?) -> Space? {
@@ -152,12 +189,12 @@ extension BrowserExtensionBridgeAdapter: ExtensionBrowserBridgeContext {
     }
 
     func preferredExtensionWindowState(containing tab: Tab) -> BrowserWindowState? {
-        if let primaryWindowId = dependencies.webViewCoordinator()?.primaryTrackedWindowId(for: tab.id),
+        if let primaryWindowId = webViewCoordinator()?.primaryTrackedWindowId(for: tab.id),
            let primaryWindow = windowRegistry?.windows[primaryWindowId] {
             return primaryWindow
         }
 
-        if let containing = dependencies.windowStateContainingTab(tab) {
+        if let containing = windowStateContainingTab(tab) {
             return containing
         }
 
@@ -197,7 +234,7 @@ extension BrowserExtensionBridgeAdapter: ExtensionBrowserBridgeContext {
     }
 
     func createExtensionWindow() {
-        dependencies.createNewWindow()
+        createNewWindow()
     }
 
     func awaitNextExtensionWindow(excluding existingWindowIDs: Set<UUID>) async -> BrowserWindowState? {
@@ -283,21 +320,21 @@ extension BrowserExtensionBridgeAdapter: ExtensionBrowserBridgeContext {
     }
 
     func selectExtensionTab(_ tab: Tab, in windowState: BrowserWindowState) {
-        dependencies.selectTab(tab, windowState)
+        selectTab(tab, windowState)
     }
 
     func materializeVisibleExtensionTabWebViewIfNeeded(
         _ tab: Tab,
         in windowState: BrowserWindowState
     ) {
-        dependencies.materializeVisibleTabWebViewIfNeeded(tab, windowState)
+        materializeVisibleTabWebViewIfNeeded(tab, windowState)
     }
 
     func extensionWindowOwnedWebView(
         for tab: Tab,
         in windowId: UUID
     ) -> WKWebView? {
-        dependencies.windowOwnedWebView(tab, windowId)
+        windowOwnedWebView(tab, windowId)
     }
 
     func assignExtensionWebView(
@@ -305,14 +342,14 @@ extension BrowserExtensionBridgeAdapter: ExtensionBrowserBridgeContext {
         to tab: Tab,
         in windowState: BrowserWindowState
     ) {
-        dependencies.assignWebView(webView, tab, windowState.id)
+        assignWebView(webView, tab, windowState.id)
     }
 
     func replaceUntrackedExtensionWebView(
         _ webView: WKWebView,
         for tab: Tab
     ) {
-        dependencies.installUntrackedOwnedWebView(webView, tab)
+        installUntrackedOwnedWebView(webView, tab)
     }
 
     func replaceExtensionLiveWebView(
@@ -323,7 +360,7 @@ extension BrowserExtensionBridgeAdapter: ExtensionBrowserBridgeContext {
         prepareReplacement: ((WKWebView) -> Void)?,
         validate: ((WKWebView) -> Bool)?
     ) -> WKWebView? {
-        dependencies.replaceLiveWebView(
+        replaceLiveWebView(
             tab,
             windowState?.id,
             reason,
@@ -417,91 +454,22 @@ extension BrowserExtensionBridgeAdapter: ExtensionBrowserBridgeContext {
     }
 
     func extensionURLHubFallbackAnchorView(for windowId: UUID) -> NSView? {
-        dependencies.urlBarHubAnchorView(windowId)
+        urlBarHubAnchorView(windowId)
     }
 
     func extensionActionPopupAppearance(
         forAnchorWindow window: NSWindow,
         fallback: NSAppearance?
     ) -> NSAppearance? {
-        guard let settings = dependencies.sumiSettings(),
+        guard let settings = sumiSettings(),
               let windowState = extensionWindowState(forAppKitWindow: window)
         else {
             return nil
         }
-        return windowState.nativeSurfaceAppearance(settings: settings, fallback: fallback)
-    }
-}
-
-@available(macOS 15.5, *)
-extension BrowserExtensionBridgeAdapter.Dependencies {
-    @MainActor
-    static func live(browserManager: BrowserManager) -> Self {
-        Self(
-            windowRegistry: { [weak browserManager] in
-                browserManager?.windowRegistry
-            },
-            tabManager: { [weak browserManager] in
-                browserManager?.tabManager
-            },
-            auxiliaryWindowManager: { [weak browserManager] in
-                browserManager?.auxiliaryWindowManager
-            },
-            webViewCoordinator: { [weak browserManager] in
-                browserManager?.webViewCoordinator
-            },
-            tabsForWebExtensionWindow: { [weak browserManager] windowState in
-                guard let browserManager else { return [] }
-                return browserManager.shellSelectionService.tabsForWebExtensionWindow(
-                    in: windowState,
-                    tabStore: browserManager.tabManager.runtimeStore
-                )
-            },
-            currentTab: { [weak browserManager] windowState in
-                browserManager?.windowTabContextOwner.currentTab(for: windowState)
-            },
-            currentTabForActiveWindow: { [weak browserManager] in
-                browserManager?.activePageRoutingOwner.currentTabForActiveWindow()
-            },
-            windowStateContainingTab: { [weak browserManager] tab in
-                browserManager?.windowTabContextOwner.windowState(containing: tab)
-            },
-            selectTab: { [weak browserManager] tab, windowState in
-                browserManager?.selectTab(tab, in: windowState)
-            },
-            materializeVisibleTabWebViewIfNeeded: { [weak browserManager] tab, windowState in
-                browserManager?.materializeVisibleTabWebViewIfNeeded(tab, in: windowState)
-            },
-            windowOwnedWebView: { [weak browserManager] tab, windowId in
-                browserManager?.webViewRoutingService.windowOwnedWebView(for: tab, in: windowId)
-            },
-            assignWebView: { [weak browserManager] webView, tab, windowId in
-                browserManager?.webViewRoutingService.assignWebView(webView, to: tab, in: windowId)
-            },
-            installUntrackedOwnedWebView: { [weak browserManager] webView, tab in
-                browserManager?.webViewRoutingService.installUntrackedOwnedWebView(webView, for: tab)
-            },
-            replaceLiveWebView: { [weak browserManager] tab, windowId, reason, prepareConfiguration, prepareReplacement, validate in
-                browserManager?.webViewRoutingService.replaceLiveWebView(
-                    for: tab,
-                    in: windowId,
-                    reason: reason,
-                    prepareConfiguration: prepareConfiguration,
-                    prepareReplacement: prepareReplacement,
-                    validate: validate
-                )
-            },
-            createNewWindow: { [weak browserManager] in
-                browserManager?.windowSessionCommands.createNewWindow()
-            },
-            urlBarHubAnchorView: { [weak browserManager] windowId in
-                browserManager?.chromeCommands.urlBarHubPopoverPresenter.anchorView(
-                    for: windowId
-                )
-            },
-            sumiSettings: { [weak browserManager] in
-                browserManager?.sumiSettings
-            }
+        return windowState.nativeSurfaceAppearance(
+            settings: settings,
+            fallback: fallback,
+            in: windowRegistry
         )
     }
 }

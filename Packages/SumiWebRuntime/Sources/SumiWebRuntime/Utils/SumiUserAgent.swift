@@ -1,20 +1,20 @@
 import Foundation
 import WebKit
 
-enum SumiUserAgent {
+public enum SumiUserAgent {
     private static let fallbackSafariVersion = "26.5"
     private static let fallbackWebKitVersion = "605.1.15"
 
     /// Dynamically constructs a Safari-compatible application name suffix to avoid Google blocks and bot-detection.
     @MainActor
-    static let safariCompatibleApplicationNameForUserAgent: String = {
+    public static let safariCompatibleApplicationNameForUserAgent: String = {
         let safariVersion = getSafariVersion() ?? fallbackSafariVersion
         let webKitVersion = getWebKitVersion() ?? fallbackWebKitVersion
         return "Version/\(safariVersion) Safari/\(webKitVersion)"
     }()
 
     @MainActor
-    static func apply(to webView: WKWebView) {
+    public static func apply(to webView: WKWebView) {
         webView.customUserAgent = nil
     }
 

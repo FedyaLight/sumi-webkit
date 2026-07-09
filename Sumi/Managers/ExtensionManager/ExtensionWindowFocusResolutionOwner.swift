@@ -14,28 +14,38 @@ import WebKit
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionWindowFocusResolutionOwner {
-    struct Dependencies {
-        let browserBridgeContext: @MainActor () -> (any ExtensionBrowserBridgeContext)?
-        let profileIdForContext: @MainActor (WKWebExtensionContext) -> UUID?
-        let extensionIDForContext: @MainActor (WKWebExtensionContext) -> String?
-        let windowMatchesProfile: @MainActor (BrowserWindowState, UUID) -> Bool
-        let windowAdapter: @MainActor (UUID) -> ExtensionWindowAdapter?
-        let miniWindowAdapters: @MainActor () -> [ExtensionMiniWindowAdapter]
-        let resolvedProfileIdForTab: @MainActor (Tab) -> UUID?
-    }
+    private let browserBridgeContext: @MainActor () -> (any ExtensionBrowserBridgeContext)?
+    private let profileIdForContext: @MainActor (WKWebExtensionContext) -> UUID?
+    private let extensionIDForContext: @MainActor (WKWebExtensionContext) -> String?
+    private let windowMatchesProfile: @MainActor (BrowserWindowState, UUID) -> Bool
+    private let windowAdapter: @MainActor (UUID) -> ExtensionWindowAdapter?
+    private let allMiniWindowAdapters: @MainActor () -> [ExtensionMiniWindowAdapter]
+    private let resolvedProfileIdForTab: @MainActor (Tab) -> UUID?
 
-    private let dependencies: Dependencies
-
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
+    init(
+        browserBridgeContext: @escaping @MainActor () -> (any ExtensionBrowserBridgeContext)?,
+        profileIdForContext: @escaping @MainActor (WKWebExtensionContext) -> UUID?,
+        extensionIDForContext: @escaping @MainActor (WKWebExtensionContext) -> String?,
+        windowMatchesProfile: @escaping @MainActor (BrowserWindowState, UUID) -> Bool,
+        windowAdapter: @escaping @MainActor (UUID) -> ExtensionWindowAdapter?,
+        miniWindowAdapters: @escaping @MainActor () -> [ExtensionMiniWindowAdapter],
+        resolvedProfileIdForTab: @escaping @MainActor (Tab) -> UUID?
+    ) {
+        self.browserBridgeContext = browserBridgeContext
+        self.profileIdForContext = profileIdForContext
+        self.extensionIDForContext = extensionIDForContext
+        self.windowMatchesProfile = windowMatchesProfile
+        self.windowAdapter = windowAdapter
+        self.allMiniWindowAdapters = miniWindowAdapters
+        self.resolvedProfileIdForTab = resolvedProfileIdForTab
     }
 
     func focusedWindow(
         for extensionContext: WKWebExtensionContext
     ) -> (any WKWebExtensionWindow)? {
-        guard let browserContext = dependencies.browserBridgeContext() else { return nil }
-        let contextProfileId = dependencies.profileIdForContext(extensionContext)
-        let ownerExtensionId = dependencies.extensionIDForContext(extensionContext)
+        guard let browserContext = browserBridgeContext() else { return nil }
+        let contextProfileId = profileIdForContext(extensionContext)
+        let ownerExtensionId = extensionIDForContext(extensionContext)
         let ownerMiniWindowAdapters: [ExtensionMiniWindowAdapter] = {
             guard let ownerExtensionId else { return [] }
             return miniWindowAdapters(
@@ -59,13 +69,13 @@ final class ExtensionWindowFocusResolutionOwner {
 
         if let keyWindow = NSApp.keyWindow,
            let mainWindowState = browserContext.extensionWindowState(forAppKitWindow: keyWindow),
-           contextProfileId.map({ dependencies.windowMatchesProfile(mainWindowState, $0) }) ?? true {
-            return dependencies.windowAdapter(mainWindowState.id)
+           contextProfileId.map({ windowMatchesProfile(mainWindowState, $0) }) ?? true {
+            return windowAdapter(mainWindowState.id)
         }
 
         if let activeWindow = browserContext.activeExtensionWindowState,
-           contextProfileId.map({ dependencies.windowMatchesProfile(activeWindow, $0) }) ?? true {
-            return dependencies.windowAdapter(activeWindow.id)
+           contextProfileId.map({ windowMatchesProfile(activeWindow, $0) }) ?? true {
+            return windowAdapter(activeWindow.id)
         }
         return nil
     }
@@ -73,12 +83,12 @@ final class ExtensionWindowFocusResolutionOwner {
     func openWindows(
         for extensionContext: WKWebExtensionContext
     ) -> [any WKWebExtensionWindow] {
-        guard let browserContext = dependencies.browserBridgeContext(),
-              let contextProfileId = dependencies.profileIdForContext(extensionContext)
+        guard let browserContext = browserBridgeContext(),
+              let contextProfileId = profileIdForContext(extensionContext)
         else { return [] }
 
         let ownerMiniWindowAdapters: [ExtensionMiniWindowAdapter] = {
-            guard let ownerExtensionId = dependencies.extensionIDForContext(extensionContext) else {
+            guard let ownerExtensionId = extensionIDForContext(extensionContext) else {
                 return []
             }
             return miniWindowAdapters(
@@ -89,10 +99,10 @@ final class ExtensionWindowFocusResolutionOwner {
 
         var openWindows: [any WKWebExtensionWindow] = ownerMiniWindowAdapters
         openWindows += browserContext.allExtensionWindowStates.compactMap { windowState -> (any WKWebExtensionWindow)? in
-            guard dependencies.windowMatchesProfile(windowState, contextProfileId) else {
+            guard windowMatchesProfile(windowState, contextProfileId) else {
                 return nil
             }
-            return dependencies.windowAdapter(windowState.id)
+            return windowAdapter(windowState.id)
         }
 
         return openWindows
@@ -102,9 +112,9 @@ final class ExtensionWindowFocusResolutionOwner {
         ownerExtensionID: String,
         profileId: UUID?
     ) -> [ExtensionMiniWindowAdapter] {
-        guard let browserContext = dependencies.browserBridgeContext() else { return [] }
+        guard let browserContext = browserBridgeContext() else { return [] }
 
-        var adapters = dependencies.miniWindowAdapters().compactMap { adapter -> ExtensionMiniWindowAdapter? in
+        var adapters = allMiniWindowAdapters().compactMap { adapter -> ExtensionMiniWindowAdapter? in
             guard let session = browserContext.auxiliaryWindowSession(for: adapter.sessionId),
                   session.ownerExtensionID == ownerExtensionID,
                   session.window.isVisible,
@@ -113,7 +123,7 @@ final class ExtensionWindowFocusResolutionOwner {
             else {
                 return nil
             }
-            if let profileId, dependencies.resolvedProfileIdForTab(tab) != profileId {
+            if let profileId, resolvedProfileIdForTab(tab) != profileId {
                 return nil
             }
             return sessionAdapter
@@ -131,35 +141,5 @@ final class ExtensionWindowFocusResolutionOwner {
         }
 
         return adapters
-    }
-}
-
-@available(macOS 15.5, *)
-extension ExtensionWindowFocusResolutionOwner.Dependencies {
-    @MainActor
-    static func live(manager: ExtensionManager) -> Self {
-        Self(
-            browserBridgeContext: { [weak manager] in
-                manager?.browserBridgeContext
-            },
-            profileIdForContext: { [weak manager] context in
-                manager?.profileId(for: context)
-            },
-            extensionIDForContext: { [weak manager] context in
-                manager?.extensionID(for: context)
-            },
-            windowMatchesProfile: { [weak manager] windowState, profileId in
-                manager?.windowMatchesProfile(windowState, profileId: profileId) ?? false
-            },
-            windowAdapter: { [weak manager] windowId in
-                manager?.adapterResolutionOwner.windowAdapter(for: windowId)
-            },
-            miniWindowAdapters: { [weak manager] in
-                manager.map { Array($0.adapterStore.miniWindowAdapters.values) } ?? []
-            },
-            resolvedProfileIdForTab: { [weak manager] tab in
-                manager?.resolvedProfileId(for: tab)
-            }
-        )
     }
 }

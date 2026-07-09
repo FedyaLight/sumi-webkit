@@ -4,6 +4,7 @@
 //
 
 import SwiftUI
+import SumiDomain
 
 struct LivePinnedTileContent: View {
     @ObservedObject var pin: ShortcutPin

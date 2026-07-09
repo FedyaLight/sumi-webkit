@@ -12,18 +12,12 @@ import WebKit
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionErrorObservationOwner {
-    struct Dependencies {
-        let shouldObserveExtensionErrors: @MainActor () -> Bool
-        let recordErrorUpdateDuration: @MainActor (String, TimeInterval) -> Void
-        let trace: @MainActor (() -> String) -> Void
-    }
-
-    private let dependencies: Dependencies
+    private weak var manager: ExtensionManager?
     private var observerTokens: [String: NSObjectProtocol] = [:]
     private var loggedErrorFingerprints: [String: String] = [:]
 
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
+    init(manager: ExtensionManager) {
+        self.manager = manager
     }
 
     var observedExtensionIDs: Set<String> {
@@ -46,7 +40,7 @@ final class ExtensionErrorObservationOwner {
         extensionId: String
     ) {
         removeObserver(for: extensionId)
-        guard dependencies.shouldObserveExtensionErrors() else { return }
+        guard ExtensionManager.shouldObserveExtensionErrors else { return }
 
         let token = NotificationCenter.default.addObserver(
             forName: WKWebExtensionContext.errorsDidUpdateNotification,
@@ -100,14 +94,13 @@ final class ExtensionErrorObservationOwner {
         extensionId: String,
         reason: String
     ) {
-        guard dependencies.shouldObserveExtensionErrors() else { return }
+        guard ExtensionManager.shouldObserveExtensionErrors else { return }
 
         let updateStart = CFAbsoluteTimeGetCurrent()
         defer {
-            dependencies.recordErrorUpdateDuration(
-                extensionId,
-                CFAbsoluteTimeGetCurrent() - updateStart
-            )
+            manager?.runtimeSessionOwner.recordRuntimeMetric(for: extensionId) {
+                $0.errorUpdateDuration = CFAbsoluteTimeGetCurrent() - updateStart
+            }
         }
 
         let errors = extensionContext.errors
@@ -130,9 +123,9 @@ final class ExtensionErrorObservationOwner {
         loggedErrorFingerprints[extensionId] = fingerprint
 
         guard errors.isEmpty == false else {
-            dependencies.trace {
+            manager?.extensionRuntimeTrace(
                 "Extension errors \(reason) for \(extensionId): none"
-            }
+            )
             return
         }
 
@@ -179,25 +172,5 @@ final class ExtensionErrorObservationOwner {
             "\(key)=\(String(describing: userInfo[key] ?? "nil"))"
         }
         return "{\(parts.joined(separator: ", "))}"
-    }
-}
-
-@available(macOS 15.5, *)
-extension ExtensionErrorObservationOwner.Dependencies {
-    @MainActor
-    static func live(manager: ExtensionManager) -> Self {
-        Self(
-            shouldObserveExtensionErrors: {
-                ExtensionManager.shouldObserveExtensionErrors
-            },
-            recordErrorUpdateDuration: { [weak manager] extensionId, duration in
-                manager?.runtimeSessionOwner.recordRuntimeMetric(for: extensionId) {
-                    $0.errorUpdateDuration = duration
-                }
-            },
-            trace: { [weak manager] message in
-                manager?.extensionRuntimeTrace(message())
-            }
-        )
     }
 }

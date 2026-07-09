@@ -2,194 +2,109 @@ import Foundation
 
 @MainActor
 final class BrowserSidebarCommandRoutingOwner {
-    struct Dependencies {
-        let canCreateFolderInCurrentSpace: @MainActor (BrowserWindowState) -> Bool
-        let showGradientEditor: @MainActor (SidebarTransientPresentationSource) -> Void
-        let toggleSidebar: @MainActor (BrowserWindowState) -> Void
-        let openAppearanceSettings: @MainActor (BrowserWindowState) -> Void
-        let closeDownloadsPopover: @MainActor (BrowserWindowState) -> Void
-        let requestUserTabActivation: @MainActor (Tab, BrowserWindowState) -> Void
-        let closeTab: @MainActor (Tab, BrowserWindowState) -> Void
-        let moveTabUp: @MainActor (UUID) -> Void
-        let moveTabDown: @MainActor (UUID) -> Void
-        let focusSplitGroup: @MainActor (SplitGroup, BrowserWindowState) -> Void
-        let restoreShortcutSplitMember: @MainActor (UUID, SplitGroup, BrowserWindowState) -> Void
-        let openForegroundTab: @MainActor (String, BrowserWindowState, UUID?) -> Tab?
-        let openNewTabOrFloatingBar: @MainActor (BrowserWindowState) -> Void
-        let duplicateTab: @MainActor (Tab, BrowserWindowState) -> Void
-        let pinShortcutGlobally: @MainActor (ShortcutPin, BrowserWindowState, UUID, Tab?) -> Void
-        let toggleDownloadsPopover: @MainActor (BrowserWindowState) -> Void
-        let createFolderInCurrentSpace: @MainActor (BrowserWindowState) -> Void
-        let createRSSLiveFolderInCurrentSpace: @MainActor (BrowserWindowState) -> Void
-        let createGitHubPRFolderInCurrentSpace: @MainActor (BrowserWindowState) -> Void
-        let createGitHubIssuesFolderInCurrentSpace: @MainActor (BrowserWindowState) -> Void
-        let unloadShortcutPin: @MainActor (ShortcutPin, BrowserWindowState) -> Void
-        let unloadShortcutPins: @MainActor ([ShortcutPin], BrowserWindowState) -> Void
-    }
+    private let folderCommand: BrowserSidebarFolderCommandOwner
+    private let chromeCommand: BrowserSidebarChromeCommandOwner
+    private let tabCommand: BrowserSidebarTabCommandOwner
+    private let splitShortcutRouting: any BrowserSidebarSplitShortcutRouting
+    private let shortcutPromotion: BrowserSidebarShortcutPromotionOwner
+    private let shortcutPinUnload: BrowserShortcutPinUnloadOwner
 
-    private let dependencies: Dependencies
-
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
+    init(
+        folderCommand: BrowserSidebarFolderCommandOwner,
+        chromeCommand: BrowserSidebarChromeCommandOwner,
+        tabCommand: BrowserSidebarTabCommandOwner,
+        splitShortcutRouting: any BrowserSidebarSplitShortcutRouting,
+        shortcutPromotion: BrowserSidebarShortcutPromotionOwner,
+        shortcutPinUnload: BrowserShortcutPinUnloadOwner
+    ) {
+        self.folderCommand = folderCommand
+        self.chromeCommand = chromeCommand
+        self.tabCommand = tabCommand
+        self.splitShortcutRouting = splitShortcutRouting
+        self.shortcutPromotion = shortcutPromotion
+        self.shortcutPinUnload = shortcutPinUnload
     }
 
     func makeActions() -> SidebarBrowserCommandActions {
         SidebarBrowserCommandActions(
-            canCreateFolderInCurrentSpace: { [weak self] windowState in
-                self?.dependencies.canCreateFolderInCurrentSpace(windowState) ?? false
+            canCreateFolderInCurrentSpace: { [folderCommand] windowState in
+                folderCommand.canCreateFolderInCurrentSpace(in: windowState)
             },
-            showGradientEditor: { [weak self] source in
-                self?.dependencies.showGradientEditor(source)
+            showGradientEditor: { [chromeCommand] source in
+                chromeCommand.showGradientEditor(source: source)
             },
-            toggleSidebar: { [weak self] windowState in
-                self?.dependencies.toggleSidebar(windowState)
+            toggleSidebar: { [chromeCommand] windowState in
+                chromeCommand.toggleSidebar(in: windowState)
             },
-            openAppearanceSettings: { [weak self] windowState in
-                self?.dependencies.openAppearanceSettings(windowState)
+            openAppearanceSettings: { [chromeCommand] windowState in
+                chromeCommand.openAppearanceSettings(in: windowState)
             },
-            closeDownloadsPopover: { [weak self] windowState in
-                self?.dependencies.closeDownloadsPopover(windowState)
+            closeDownloadsPopover: { [chromeCommand] windowState in
+                chromeCommand.closeDownloadsPopover(in: windowState)
             },
-            requestUserTabActivation: { [weak self] tab, windowState in
-                self?.dependencies.requestUserTabActivation(tab, windowState)
+            requestUserTabActivation: { [tabCommand] tab, windowState in
+                tabCommand.requestUserTabActivation(tab, in: windowState)
             },
-            closeTab: { [weak self] tab, windowState in
-                self?.dependencies.closeTab(tab, windowState)
+            closeTab: { [tabCommand] tab, windowState in
+                tabCommand.closeTab(tab, in: windowState)
             },
-            moveTabUp: { [weak self] tabId in
-                self?.dependencies.moveTabUp(tabId)
+            moveTabUp: { [tabCommand] tabId in
+                tabCommand.moveTabUp(tabId)
             },
-            moveTabDown: { [weak self] tabId in
-                self?.dependencies.moveTabDown(tabId)
+            moveTabDown: { [tabCommand] tabId in
+                tabCommand.moveTabDown(tabId)
             },
-            focusSplitGroup: { [weak self] group, windowState in
-                self?.dependencies.focusSplitGroup(group, windowState)
+            focusSplitGroup: { [splitShortcutRouting] group, windowState in
+                splitShortcutRouting.focusSplitGroup(group, in: windowState)
             },
-            restoreShortcutSplitMember: { [weak self] memberId, group, windowState in
-                self?.dependencies.restoreShortcutSplitMember(memberId, group, windowState)
-            },
-            openForegroundTab: { [weak self] url, windowState, preferredSpaceId in
-                self?.dependencies.openForegroundTab(url, windowState, preferredSpaceId)
-            },
-            openNewTabOrFloatingBar: { [weak self] windowState in
-                self?.dependencies.openNewTabOrFloatingBar(windowState)
-            },
-            duplicateTab: { [weak self] tab, windowState in
-                self?.dependencies.duplicateTab(tab, windowState)
-            },
-            pinShortcutGlobally: { [weak self] pin, windowState, spaceId, liveTab in
-                self?.dependencies.pinShortcutGlobally(pin, windowState, spaceId, liveTab)
-            },
-            toggleDownloadsPopover: { [weak self] windowState in
-                self?.dependencies.toggleDownloadsPopover(windowState)
-            },
-            createFolderInCurrentSpace: { [weak self] windowState in
-                self?.dependencies.createFolderInCurrentSpace(windowState)
-            },
-            createRSSLiveFolderInCurrentSpace: { [weak self] windowState in
-                self?.dependencies.createRSSLiveFolderInCurrentSpace(windowState)
-            },
-            createGitHubPRFolderInCurrentSpace: { [weak self] windowState in
-                self?.dependencies.createGitHubPRFolderInCurrentSpace(windowState)
-            },
-            createGitHubIssuesFolderInCurrentSpace: { [weak self] windowState in
-                self?.dependencies.createGitHubIssuesFolderInCurrentSpace(windowState)
-            },
-            unloadShortcutPin: { [weak self] pin, windowState in
-                self?.dependencies.unloadShortcutPin(pin, windowState)
-            },
-            unloadShortcutPins: { [weak self] pins, windowState in
-                self?.dependencies.unloadShortcutPins(pins, windowState)
-            }
-        )
-    }
-}
-
-extension BrowserSidebarCommandRoutingOwner.Dependencies {
-    static func live(browserManager: BrowserManager) -> Self {
-        Self(
-            canCreateFolderInCurrentSpace: { [weak browserManager] windowState in
-                browserManager?.sidebarCommandService.folderCommand.canCreateFolderInCurrentSpace(in: windowState) ?? false
-            },
-            showGradientEditor: { [weak browserManager] source in
-                browserManager?.sidebarCommandService.chromeCommand.showGradientEditor(source: source)
-            },
-            toggleSidebar: { [weak browserManager] windowState in
-                browserManager?.sidebarCommandService.chromeCommand.toggleSidebar(in: windowState)
-            },
-            openAppearanceSettings: { [weak browserManager] windowState in
-                browserManager?.sidebarCommandService.chromeCommand.openAppearanceSettings(in: windowState)
-            },
-            closeDownloadsPopover: { [weak browserManager] windowState in
-                browserManager?.sidebarCommandService.chromeCommand.closeDownloadsPopover(in: windowState)
-            },
-            requestUserTabActivation: { [weak browserManager] tab, windowState in
-                browserManager?.sidebarCommandService.tabCommand.requestUserTabActivation(tab, in: windowState)
-            },
-            closeTab: { [weak browserManager] tab, windowState in
-                browserManager?.sidebarCommandService.tabCommand.closeTab(tab, in: windowState)
-            },
-            moveTabUp: { [weak browserManager] tabId in
-                browserManager?.sidebarCommandService.tabCommand.moveTabUp(tabId)
-            },
-            moveTabDown: { [weak browserManager] tabId in
-                browserManager?.sidebarCommandService.tabCommand.moveTabDown(tabId)
-            },
-            focusSplitGroup: { [weak browserManager] group, windowState in
-                browserManager?.sidebarCommandService.splitShortcutRouting.focusSplitGroup(group, in: windowState)
-            },
-            restoreShortcutSplitMember: { [weak browserManager] memberId, group, windowState in
-                browserManager?.sidebarCommandService.splitShortcutRouting.restoreShortcutSplitMember(
+            restoreShortcutSplitMember: { [splitShortcutRouting] memberId, group, windowState in
+                splitShortcutRouting.restoreShortcutSplitMember(
                     memberId,
                     from: group,
                     in: windowState
                 )
             },
-            openForegroundTab: { [weak browserManager] url, windowState, preferredSpaceId in
-                browserManager?.sidebarCommandService.tabCommand.openForegroundTab(
+            openForegroundTab: { [tabCommand] url, windowState, preferredSpaceId in
+                tabCommand.openForegroundTab(
                     url,
                     in: windowState,
                     preferredSpaceId: preferredSpaceId
                 )
             },
-            openNewTabOrFloatingBar: { [weak browserManager] windowState in
-                browserManager?.sidebarCommandService.tabCommand.openNewTabOrFloatingBar(in: windowState)
+            openNewTabOrFloatingBar: { [tabCommand] windowState in
+                tabCommand.openNewTabOrFloatingBar(in: windowState)
             },
-            duplicateTab: { [weak browserManager] tab, windowState in
-                browserManager?.sidebarCommandService.tabCommand.duplicateTab(tab, in: windowState)
+            duplicateTab: { [tabCommand] tab, windowState in
+                tabCommand.duplicateTab(tab, in: windowState)
             },
-            pinShortcutGlobally: { [weak browserManager] pin, windowState, spaceId, liveTab in
-                browserManager?.sidebarCommandService.shortcutPromotion.pinShortcutGlobally(
+            pinShortcutGlobally: { [shortcutPromotion] pin, windowState, spaceId, liveTab in
+                shortcutPromotion.pinShortcutGlobally(
                     pin,
                     in: windowState,
                     spaceId: spaceId,
                     liveTab: liveTab
                 )
             },
-            toggleDownloadsPopover: { [weak browserManager] windowState in
-                browserManager?.sidebarCommandService.chromeCommand.toggleDownloadsPopover(in: windowState)
+            toggleDownloadsPopover: { [chromeCommand] windowState in
+                chromeCommand.toggleDownloadsPopover(in: windowState)
             },
-            createFolderInCurrentSpace: { [weak browserManager] windowState in
-                browserManager?.sidebarCommandService.folderCommand.createFolderInCurrentSpace(in: windowState)
+            createFolderInCurrentSpace: { [folderCommand] windowState in
+                folderCommand.createFolderInCurrentSpace(in: windowState)
             },
-            createRSSLiveFolderInCurrentSpace: { [weak browserManager] windowState in
-                browserManager?.sidebarCommandService.folderCommand.createRSSLiveFolderInCurrentSpace(in: windowState)
+            createRSSLiveFolderInCurrentSpace: { [folderCommand] windowState in
+                folderCommand.createRSSLiveFolderInCurrentSpace(in: windowState)
             },
-            createGitHubPRFolderInCurrentSpace: { [weak browserManager] windowState in
-                browserManager?.sidebarCommandService.folderCommand.createGitHubPRFolderInCurrentSpace(
-                    in: windowState
-                )
+            createGitHubPRFolderInCurrentSpace: { [folderCommand] windowState in
+                folderCommand.createGitHubPRFolderInCurrentSpace(in: windowState)
             },
-            createGitHubIssuesFolderInCurrentSpace: { [weak browserManager] windowState in
-                browserManager?.sidebarCommandService.folderCommand.createGitHubIssuesFolderInCurrentSpace(
-                    in: windowState
-                )
+            createGitHubIssuesFolderInCurrentSpace: { [folderCommand] windowState in
+                folderCommand.createGitHubIssuesFolderInCurrentSpace(in: windowState)
             },
-            unloadShortcutPin: { [weak browserManager] pin, windowState in
-                browserManager?.sidebarCommandService.shortcutPinUnload.unloadShortcutPin(pin, in: windowState)
+            unloadShortcutPin: { [shortcutPinUnload] pin, windowState in
+                shortcutPinUnload.unloadShortcutPin(pin, in: windowState)
             },
-            unloadShortcutPins: { [weak browserManager] pins, windowState in
-                browserManager?.sidebarCommandService.shortcutPinUnload.unloadShortcutPins(pins, in: windowState)
+            unloadShortcutPins: { [shortcutPinUnload] pins, windowState in
+                shortcutPinUnload.unloadShortcutPins(pins, in: windowState)
             }
         )
     }

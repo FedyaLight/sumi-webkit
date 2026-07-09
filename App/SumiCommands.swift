@@ -7,6 +7,7 @@
 
 import AppKit
 import SwiftUI
+import SumiDomain
 
 struct SumiCommands: Commands {
     let browserContext: SumiCommandsBrowserContext
@@ -14,6 +15,7 @@ struct SumiCommands: Commands {
     let shortcutManager: KeyboardShortcutManager
     private let updaterService: SumiUpdaterService
     @ObservedObject private var recentlyClosedManager: RecentlyClosedManager
+    @ObservedObject private var menuFaviconInvalidator: SumiMenuFaviconInvalidator
     @Environment(\.sumiSettings) var sumiSettings
     private let menuCloseRoutingOwner = BrowserMenuCloseRoutingOwner()
 
@@ -21,13 +23,15 @@ struct SumiCommands: Commands {
         browserContext: SumiCommandsBrowserContext,
         windowRegistry: WindowRegistry,
         shortcutManager: KeyboardShortcutManager,
-        updaterService: SumiUpdaterService
+        updaterService: SumiUpdaterService,
+        menuFaviconInvalidator: SumiMenuFaviconInvalidator = SumiMenuFaviconInvalidator()
     ) {
         self.browserContext = browserContext
         self.windowRegistry = windowRegistry
         self.shortcutManager = shortcutManager
         self.updaterService = updaterService
         self.recentlyClosedManager = browserContext.recentlyClosedManager
+        self._menuFaviconInvalidator = ObservedObject(wrappedValue: menuFaviconInvalidator)
     }
 
     // MARK: - Dynamic Keyboard Shortcuts
@@ -96,11 +100,13 @@ struct SumiCommands: Commands {
     private var secondaryCommandMenus: some Commands {
         SumiHistoryCommands(
             browserContext: browserContext,
-            shortcutManager: shortcutManager
+            shortcutManager: shortcutManager,
+            menuFaviconInvalidator: menuFaviconInvalidator
         )
 
         SumiBookmarksCommands(
-            browserContext: browserContext
+            browserContext: browserContext,
+            menuFaviconInvalidator: menuFaviconInvalidator
         )
 
         CommandMenu("Extensions") {

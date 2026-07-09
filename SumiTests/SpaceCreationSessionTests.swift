@@ -10,7 +10,7 @@ final class SpaceCreationSessionTests: XCTestCase {
         windowState.currentSpaceId = previousSpaceID
 
         let session = windowState.spaceCreationSession.begin(
-            source: windowState.resolveSidebarPresentationSource(),
+            source: windowState.resolveSidebarPresentationSource(in: nil),
             previousSpaceID: windowState.currentSpaceId,
             defaultProfileID: defaultProfileID
         )
@@ -41,7 +41,7 @@ final class SpaceCreationSessionTests: XCTestCase {
         session.createsNewProfile = false
 
         let duplicate = windowState.spaceCreationSession.begin(
-            source: windowState.resolveSidebarPresentationSource(),
+            source: windowState.resolveSidebarPresentationSource(in: nil),
             previousSpaceID: windowState.currentSpaceId,
             defaultProfileID: UUID()
         )

@@ -2,6 +2,12 @@ import AppKit
 
 @MainActor
 final class BrowserMouseButtonRoutingOwner {
+    private let sidebarMouseButtonCaptureRegistry: SidebarMouseButtonCaptureRegistry
+
+    init(sidebarMouseButtonCaptureRegistry: SidebarMouseButtonCaptureRegistry) {
+        self.sidebarMouseButtonCaptureRegistry = sidebarMouseButtonCaptureRegistry
+    }
+
     @discardableResult
     func handleOtherMouseDown(
         _ event: NSEvent,
@@ -17,7 +23,7 @@ final class BrowserMouseButtonRoutingOwner {
                 event,
                 windowRegistry: windowRegistry
             ),
-            deferSideButtonsToSidebar: SidebarMouseButtonCaptureRegistry.shared
+            deferSideButtonsToSidebar: sidebarMouseButtonCaptureRegistry
                 .containsWorkspaceMouseButtonEvent(event)
         )
     }

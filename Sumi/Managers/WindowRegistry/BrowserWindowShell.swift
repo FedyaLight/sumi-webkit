@@ -10,8 +10,7 @@ import Foundation
 
 /// Weak AppKit window handle for a browser window id.
 ///
-/// Owned/keyed by `WindowRegistry`. `BrowserWindowState.window` remains a
-/// dual-write mirror during migration; prefer `shellWindow` / registry lookup.
+/// Owned/keyed by `WindowRegistry` as the sole SoT for AppKit window lookup.
 @MainActor
 final class BrowserWindowShell {
     let windowId: UUID

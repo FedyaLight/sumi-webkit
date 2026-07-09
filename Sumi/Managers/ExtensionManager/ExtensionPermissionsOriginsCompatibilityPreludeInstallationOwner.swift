@@ -11,25 +11,27 @@ final class ExtensionPermissionsOriginsCompatibilityPreludeInstallationOwner {
         let installPrelude: @MainActor (WKUserContentController) -> Bool
     }
 
-    struct Dependencies {
-        let isPrivateUserScriptSPIAvailable: @MainActor () -> Bool
-        let preludeTargets: @MainActor (UUID) -> [PreludeTarget]
-        let trace: @MainActor (String) -> Void
-    }
-
+    private let isPrivateUserScriptSPIAvailable: @MainActor () -> Bool
+    private let preludeTargets: @MainActor (UUID) -> [PreludeTarget]
+    private let trace: @MainActor (String) -> Void
     private var installationKeysByControllerIdentifier:
         [ObjectIdentifier: Set<String>] = [:]
-    private let dependencies: Dependencies
 
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
+    init(
+        isPrivateUserScriptSPIAvailable: @escaping @MainActor () -> Bool,
+        preludeTargets: @escaping @MainActor (UUID) -> [PreludeTarget],
+        trace: @escaping @MainActor (String) -> Void
+    ) {
+        self.isPrivateUserScriptSPIAvailable = isPrivateUserScriptSPIAvailable
+        self.preludeTargets = preludeTargets
+        self.trace = trace
     }
 
     func installPreludes(
         into userContentController: WKUserContentController,
         profileId: UUID
     ) {
-        guard dependencies.isPrivateUserScriptSPIAvailable() else {
+        guard isPrivateUserScriptSPIAvailable() else {
             RuntimeDiagnostics.debug(
                 "Permissions origins compatibility SPI unavailable",
                 category: "Extensions"
@@ -41,7 +43,7 @@ final class ExtensionPermissionsOriginsCompatibilityPreludeInstallationOwner {
         var installedKeys =
             installationKeysByControllerIdentifier[controllerIdentifier] ?? []
 
-        for target in dependencies.preludeTargets(profileId) where target.isLoaded {
+        for target in preludeTargets(profileId) where target.isLoaded {
             let installKey = Self.installationKey(
                 profileId: profileId,
                 extensionId: target.extensionId,
@@ -53,7 +55,7 @@ final class ExtensionPermissionsOriginsCompatibilityPreludeInstallationOwner {
 
             if target.installPrelude(userContentController) {
                 installedKeys.insert(installKey)
-                dependencies.trace(
+                trace(
                     "permissionsOriginsCompatibility installed extensionId=\(target.extensionId) profileId=\(profileId.uuidString)"
                 )
             }
@@ -83,58 +85,5 @@ final class ExtensionPermissionsOriginsCompatibilityPreludeInstallationOwner {
             extensionId,
             baseURL.absoluteString,
         ].joined(separator: ":")
-    }
-}
-
-@available(macOS 15.5, *)
-extension ExtensionPermissionsOriginsCompatibilityPreludeInstallationOwner.Dependencies {
-    @MainActor
-    static func live(manager: ExtensionManager) -> Self {
-        Self(
-            isPrivateUserScriptSPIAvailable: {
-                SafariExtensionPermissionsOriginsCompatibility
-                    .isPrivateUserScriptSPIAvailable
-            },
-            preludeTargets: { [weak manager] profileId in
-                guard let manager else { return [] }
-                return manager.extensionContexts(for: profileId)
-                    .map { extensionId, extensionContext in
-                        ExtensionPermissionsOriginsCompatibilityPreludeInstallationOwner
-                            .PreludeTarget(
-                                extensionId: extensionId,
-                                isLoaded: extensionContext.isLoaded,
-                                baseURL: extensionContext.baseURL,
-                                installPrelude: { userContentController in
-                                    SafariExtensionPermissionsOriginsCompatibility
-                                        .installPrelude(
-                                            into: userContentController,
-                                            extensionContext: extensionContext
-                                        )
-                                }
-                            )
-                    }
-            },
-            trace: { [weak manager] message in
-                manager?.extensionRuntimeTrace(message)
-            }
-        )
-    }
-}
-
-@available(macOS 15.5, *)
-@MainActor
-extension ExtensionManager {
-    func installPermissionsOriginsCompatibilityPreludes(
-        into userContentController: WKUserContentController,
-        profileId: UUID
-    ) {
-        permissionsOriginsCompatibilityPreludeInstallationOwner.installPreludes(
-            into: userContentController,
-            profileId: profileId
-        )
-    }
-
-    func clearPermissionsOriginsCompatibilityInstallations() {
-        permissionsOriginsCompatibilityPreludeInstallationOwner.clearInstallations()
     }
 }

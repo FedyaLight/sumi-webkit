@@ -14,6 +14,14 @@ final class ShortcutEditorPopoverPresenter: NSObject, NSPopoverDelegate {
         static let contentSize = NSSize(width: 360, height: 156)
     }
 
+    weak var windowRegistry: WindowRegistry?
+    private let sidebarRecoveryCoordinator: SidebarHostRecoveryHandling
+
+    init(sidebarRecoveryCoordinator: SidebarHostRecoveryHandling = SidebarHostRecoveryCoordinator()) {
+        self.sidebarRecoveryCoordinator = sidebarRecoveryCoordinator
+        super.init()
+    }
+
     private final class ActiveSession {
         let editorSession: ShortcutLinkEditorSession
         let popover: NSPopover
@@ -98,7 +106,7 @@ final class ShortcutEditorPopoverPresenter: NSObject, NSPopoverDelegate {
         popover.contentSize = Self.Metrics.contentSize
         popover.appearance = PopoverPresenterChromeSupport.appearance(
             for: surfaceColorScheme,
-            fallback: anchor.view.window?.effectiveAppearance ?? windowState.shellWindow(in: nil)?.effectiveAppearance
+            fallback: anchor.view.window?.effectiveAppearance ?? windowState.shellWindow(in: windowRegistry)?.effectiveAppearance
         )
 
         let token = source.coordinator?.beginSession(
@@ -116,7 +124,7 @@ final class ShortcutEditorPopoverPresenter: NSObject, NSPopoverDelegate {
             transientSessionToken: token
         )
 
-        windowState.shellWindow(in: nil)?.makeKeyAndOrderFront(nil)
+        windowState.shellWindow(in: windowRegistry)?.makeKeyAndOrderFront(nil)
         popover.show(
             relativeTo: anchor.rect,
             of: anchor.view,
@@ -191,7 +199,8 @@ final class ShortcutEditorPopoverPresenter: NSObject, NSPopoverDelegate {
                 windowState: closedSession.windowState,
                 source: closedSession.source,
                 anchor: closedSession.source.originOwnerView,
-                using: SidebarHostRecoveryCoordinator.shared
+                windowRegistry: windowRegistry,
+                using: sidebarRecoveryCoordinator
             )
         }
     }
@@ -211,7 +220,7 @@ final class ShortcutEditorPopoverPresenter: NSObject, NSPopoverDelegate {
             return (ownerView, ownerView.bounds, preferredEdge)
         }
 
-        guard let contentView = windowState.shellWindow(in: nil)?.contentView ?? source.window?.contentView else {
+        guard let contentView = windowState.shellWindow(in: windowRegistry)?.contentView ?? source.window?.contentView else {
             return nil
         }
 

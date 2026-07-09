@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 enum SumiStorageAccessDecisionMapper {
     static func webKitDecision(

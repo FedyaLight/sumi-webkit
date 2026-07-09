@@ -1,4 +1,5 @@
 import WebKit
+import SumiWebRuntime
 
 @MainActor
 final class BrowserWebViewRoutingService {
@@ -32,6 +33,11 @@ final class BrowserWebViewRoutingService {
         requireCoordinator().getWebView(for: tabId, in: windowId)
     }
 
+    /// Soft lookup for Tab session-delegating accessors (no precondition).
+    func webViewIfAvailable(for tabId: UUID, in windowId: UUID) -> WKWebView? {
+        coordinatorProvider()?.getWebView(for: tabId, in: windowId)
+    }
+
     func windowOwnedWebView(for tab: Tab, in windowId: UUID) -> WKWebView? {
         webView(for: tab.id, in: windowId)
     }
@@ -52,12 +58,21 @@ final class BrowserWebViewRoutingService {
         requireCoordinator().anyLiveWebView(for: tab)
     }
 
+    /// Soft lookup for Tab session-delegating accessors (no precondition).
+    func anyLiveWebViewIfAvailable(for tab: Tab) -> WKWebView? {
+        coordinatorProvider()?.anyLiveWebView(for: tab)
+    }
+
     func ownsLiveWebView(_ webView: WKWebView, for tab: Tab) -> Bool {
         requireCoordinator().ownsLiveWebView(webView, for: tab)
     }
 
     func hasLiveWebView(for tab: Tab) -> Bool {
         requireCoordinator().hasLiveWebView(for: tab)
+    }
+
+    func hasLiveWebViewIfAvailable(for tab: Tab) -> Bool {
+        coordinatorProvider()?.hasLiveWebView(for: tab) ?? false
     }
 
     func hasUntrackedOwnedWebView(for tab: Tab) -> Bool {
@@ -108,6 +123,11 @@ final class BrowserWebViewRoutingService {
         requireCoordinator().primaryTrackedWindowId(for: tabId)
     }
 
+    /// Soft lookup for Tab session-delegating accessors (no precondition).
+    func primaryTrackedWindowIdIfAvailable(for tabId: UUID) -> UUID? {
+        coordinatorProvider()?.primaryTrackedWindowId(for: tabId)
+    }
+
     func windowIDs(for tabId: UUID) -> [UUID] {
         requireCoordinator().windowIDs(for: tabId)
     }
@@ -137,9 +157,9 @@ final class BrowserWebViewRoutingService {
         requireCoordinator().setMuteState(muted, for: tabId)
     }
 
-    // MARK: - Phase 6B session notes
+    // MARK: - Phase 6B / N5 session notes + readers
 
-    /// Best-effort: no-ops when the coordinator is not bound yet (Tab mirror still written).
+    /// Best-effort: no-ops when the coordinator is not bound yet (Tab-local session still written).
     func noteParkedWebView(_ webView: WKWebView?, for tabId: UUID) {
         coordinatorProvider()?.tabWebViewSessionStore.noteParkedWebView(webView, for: tabId)
     }
@@ -148,10 +168,11 @@ final class BrowserWebViewRoutingService {
         coordinatorProvider()?.tabWebViewSessionStore.noteUntrackedWebView(webView, for: tabId)
     }
 
-    func notePrimaryAssignment(windowId: UUID, for tabId: UUID) {
+    func notePrimaryAssignment(windowId: UUID, webView: WKWebView? = nil, for tabId: UUID) {
         coordinatorProvider()?.tabWebViewSessionStore.notePrimaryAssignment(
             windowId: windowId,
-            for: tabId
+            for: tabId,
+            webView: webView
         )
     }
 
@@ -161,5 +182,33 @@ final class BrowserWebViewRoutingService {
 
     func clearWebViewSession(for tabId: UUID) {
         coordinatorProvider()?.tabWebViewSessionStore.clearAll(for: tabId)
+    }
+
+    func adoptLocalWebViewSession(_ session: TabWebViewSession, for tabId: UUID) {
+        coordinatorProvider()?.tabWebViewSessionStore.adoptLocalSession(session, for: tabId)
+    }
+
+    func sessionParkedWebView(for tabId: UUID) -> WKWebView? {
+        coordinatorProvider()?.tabWebViewSessionStore.parkedWebView(for: tabId)
+    }
+
+    func sessionUntrackedWebView(for tabId: UUID) -> WKWebView? {
+        coordinatorProvider()?.tabWebViewSessionStore.untrackedWebView(for: tabId)
+    }
+
+    func sessionPrimaryWindowId(for tabId: UUID) -> UUID? {
+        coordinatorProvider()?.tabWebViewSessionStore.primaryWindowId(for: tabId)
+            ?? coordinatorProvider()?.primaryTrackedWindowId(for: tabId)
+    }
+
+    func sessionPrimaryWebView(for tabId: UUID) -> WKWebView? {
+        guard let coordinator = coordinatorProvider() else { return nil }
+        let store = coordinator.tabWebViewSessionStore
+        if let windowId = store.primaryWindowId(for: tabId)
+            ?? coordinator.primaryTrackedWindowId(for: tabId),
+           let tracked = coordinator.getWebView(for: tabId, in: windowId) {
+            return tracked
+        }
+        return store.session(for: tabId).primaryWebView
     }
 }

@@ -2,19 +2,25 @@ import Foundation
 
 @MainActor
 final class BrowserWindowVisualMutationOwner {
-    struct Dependencies {
-        let hasActiveHistorySwipe: @MainActor (UUID) -> Bool
-        let currentTab: @MainActor (BrowserWindowState) -> Tab?
-        let performImmediateVisualHandoffIfPossible: @MainActor (UUID) -> Bool
-        let prepareVisibleWebViews: @MainActor (BrowserWindowState) -> Bool
-        let schedulePrepareVisibleWebViews: @MainActor (BrowserWindowState) -> Void
-    }
-
-    private let dependencies: Dependencies
+    private let hasActiveHistorySwipe: @MainActor (UUID) -> Bool
+    private let currentTab: @MainActor (BrowserWindowState) -> Tab?
+    private let performImmediateVisualHandoff: @MainActor (UUID) -> Bool
+    private let prepareVisibleWebViewsHandler: @MainActor (BrowserWindowState) -> Bool
+    private let schedulePrepareVisibleWebViewsHandler: @MainActor (BrowserWindowState) -> Void
     private let historySwipeWindowMutationFlushOwner = HistorySwipeWindowMutationFlushOwner()
 
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
+    init(
+        hasActiveHistorySwipe: @escaping @MainActor (UUID) -> Bool,
+        currentTab: @escaping @MainActor (BrowserWindowState) -> Tab?,
+        performImmediateVisualHandoffIfPossible: @escaping @MainActor (UUID) -> Bool,
+        prepareVisibleWebViews: @escaping @MainActor (BrowserWindowState) -> Bool,
+        schedulePrepareVisibleWebViews: @escaping @MainActor (BrowserWindowState) -> Void
+    ) {
+        self.hasActiveHistorySwipe = hasActiveHistorySwipe
+        self.currentTab = currentTab
+        self.performImmediateVisualHandoff = performImmediateVisualHandoffIfPossible
+        self.prepareVisibleWebViewsHandler = prepareVisibleWebViews
+        self.schedulePrepareVisibleWebViewsHandler = schedulePrepareVisibleWebViews
     }
 
     func refreshCompositor(for windowState: BrowserWindowState) {
@@ -31,12 +37,12 @@ final class BrowserWindowVisualMutationOwner {
     @discardableResult
     func performImmediateVisualHandoffIfPossible(in windowState: BrowserWindowState) -> Bool {
         guard !isBackForwardGestureActive(in: windowState) else { return false }
-        return dependencies.performImmediateVisualHandoffIfPossible(windowState.id)
+        return performImmediateVisualHandoff(windowState.id)
     }
 
     @discardableResult
     func prepareVisibleWebViews(for windowState: BrowserWindowState) -> Bool {
-        dependencies.prepareVisibleWebViews(windowState)
+        prepareVisibleWebViewsHandler(windowState)
     }
 
     func schedulePrepareVisibleWebViews(for windowState: BrowserWindowState) {
@@ -47,7 +53,7 @@ final class BrowserWindowVisualMutationOwner {
             )
             return
         }
-        dependencies.schedulePrepareVisibleWebViews(windowState)
+        schedulePrepareVisibleWebViewsHandler(windowState)
     }
 
     func enqueueWindowMutationDuringHistorySwipe(
@@ -60,8 +66,8 @@ final class BrowserWindowVisualMutationOwner {
     func flushWindowMutationsAfterHistorySwipe(in windowId: UUID) {
         historySwipeWindowMutationFlushOwner.flushPendingMutations(
             in: windowId,
-            prepareVisibleWebViews: { [dependencies] windowState in
-                dependencies.prepareVisibleWebViews(windowState)
+            prepareVisibleWebViews: { [prepareVisibleWebViewsHandler] windowState in
+                prepareVisibleWebViewsHandler(windowState)
             },
             refreshCompositor: { windowState in
                 windowState.compositorInvalidation.refresh()
@@ -74,10 +80,10 @@ final class BrowserWindowVisualMutationOwner {
     }
 
     private func isBackForwardGestureActive(in windowState: BrowserWindowState) -> Bool {
-        if dependencies.hasActiveHistorySwipe(windowState.id) {
+        if hasActiveHistorySwipe(windowState.id) {
             return true
         }
-        guard let currentTab = dependencies.currentTab(windowState) else { return false }
+        guard let currentTab = currentTab(windowState) else { return false }
         return currentTab.navigationRuntime.navigationTransactionOwner.pendingMainFrameNavigationKind == .backForward
             || currentTab.navigationRuntime.navigationTransactionOwner.isFreezingNavDuringBackForwardGesture
     }

@@ -2,91 +2,57 @@ import AppKit
 import Foundation
 
 @MainActor
-private final class SidebarSharingServicePickerRetainer {
-    static let shared = SidebarSharingServicePickerRetainer()
-
-    private var bridges: [ObjectIdentifier: SidebarSharingServicePickerBridge] = [:]
-
-    func retain(_ bridge: SidebarSharingServicePickerBridge) {
-        bridges[ObjectIdentifier(bridge)] = bridge
-    }
-
-    func release(_ bridge: SidebarSharingServicePickerBridge) {
-        bridges.removeValue(forKey: ObjectIdentifier(bridge))
-    }
-}
-
-@MainActor
-private final class SidebarSharingServicePickerBridge: NSObject, @preconcurrency NSSharingServicePickerDelegate {
-    private let token: SidebarTransientSessionToken
-    private weak var coordinator: SidebarTransientSessionCoordinator?
-    private var hasFinished = false
+final class BrowserNativeDialogPresentationOwner {
+    private let windowRegistry: @MainActor @Sendable () -> WindowRegistry?
+    private let nativeModalPresentation: @MainActor @Sendable () -> BrowserNativeModalPresentation?
+    private let setNativeModalPresentation: @MainActor @Sendable (BrowserNativeModalPresentation?) -> Void
+    private let postCollapsedSidebarOverlayDismissal: @MainActor @Sendable () -> Void
+    private let dismissFloatingBarForActiveWindow: @MainActor @Sendable (Bool) -> Void
+    private let dismissThemePickerDiscardingIfNeeded: @MainActor @Sendable () -> Void
+    private let dismissThemePickerCommittingIfNeeded: @MainActor @Sendable () -> Void
+    private let terminateApplication: @MainActor @Sendable () -> Void
+    private let keyWindow: @MainActor @Sendable () -> NSWindow?
+    private let mainWindow: @MainActor @Sendable () -> NSWindow?
+    private let recoverSidebarHost: @MainActor @Sendable (NSWindow?) -> Void
+    private let presentSharingServicePickerAction: @MainActor @Sendable ([Any], SidebarTransientPresentationSource) -> Void
 
     init(
-        token: SidebarTransientSessionToken,
-        coordinator: SidebarTransientSessionCoordinator
+        windowRegistry: @escaping @MainActor @Sendable () -> WindowRegistry?,
+        nativeModalPresentation: @escaping @MainActor @Sendable () -> BrowserNativeModalPresentation?,
+        setNativeModalPresentation: @escaping @MainActor @Sendable (BrowserNativeModalPresentation?) -> Void,
+        postCollapsedSidebarOverlayDismissal: @escaping @MainActor @Sendable () -> Void,
+        dismissFloatingBarForActiveWindow: @escaping @MainActor @Sendable (Bool) -> Void,
+        dismissThemePickerDiscardingIfNeeded: @escaping @MainActor @Sendable () -> Void,
+        dismissThemePickerCommittingIfNeeded: @escaping @MainActor @Sendable () -> Void,
+        terminateApplication: @escaping @MainActor @Sendable () -> Void,
+        keyWindow: @escaping @MainActor @Sendable () -> NSWindow?,
+        mainWindow: @escaping @MainActor @Sendable () -> NSWindow?,
+        recoverSidebarHost: @escaping @MainActor @Sendable (NSWindow?) -> Void,
+        presentSharingServicePicker: @escaping @MainActor @Sendable ([Any], SidebarTransientPresentationSource) -> Void
     ) {
-        self.token = token
-        self.coordinator = coordinator
-        super.init()
-        SidebarSharingServicePickerRetainer.shared.retain(self)
-    }
-
-    func sharingServicePicker(
-        _ _: NSSharingServicePicker,
-        didChoose _: NSSharingService?
-    ) {
-        finish()
-    }
-
-    func scheduleFallbackFinish() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
-            self?.finish()
-        }
-    }
-
-    private func finish() {
-        guard !hasFinished else { return }
-        hasFinished = true
-        coordinator?.finishSession(
-            token,
-            reason: "SidebarSharingServicePickerBridge.finish"
-        )
-        SidebarSharingServicePickerRetainer.shared.release(self)
-    }
-}
-
-@MainActor
-final class BrowserNativeDialogPresentationOwner {
-    struct Dependencies {
-        let windowRegistry: @MainActor @Sendable () -> WindowRegistry?
-        let nativeModalPresentation: @MainActor @Sendable () -> BrowserNativeModalPresentation?
-        let setNativeModalPresentation: @MainActor @Sendable (BrowserNativeModalPresentation?) -> Void
-        let postCollapsedSidebarOverlayDismissal: @MainActor @Sendable () -> Void
-        let dismissFloatingBarForActiveWindow: @MainActor @Sendable (Bool) -> Void
-        let dismissThemePickerDiscardingIfNeeded: @MainActor @Sendable () -> Void
-        let dismissThemePickerCommittingIfNeeded: @MainActor @Sendable () -> Void
-        let terminateApplication: @MainActor @Sendable () -> Void
-        let keyWindow: @MainActor @Sendable () -> NSWindow?
-        let mainWindow: @MainActor @Sendable () -> NSWindow?
-        let recoverSidebarHost: @MainActor @Sendable (NSWindow?) -> Void
-    }
-
-    private let dependencies: Dependencies
-
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
+        self.windowRegistry = windowRegistry
+        self.nativeModalPresentation = nativeModalPresentation
+        self.setNativeModalPresentation = setNativeModalPresentation
+        self.postCollapsedSidebarOverlayDismissal = postCollapsedSidebarOverlayDismissal
+        self.dismissFloatingBarForActiveWindow = dismissFloatingBarForActiveWindow
+        self.dismissThemePickerDiscardingIfNeeded = dismissThemePickerDiscardingIfNeeded
+        self.dismissThemePickerCommittingIfNeeded = dismissThemePickerCommittingIfNeeded
+        self.terminateApplication = terminateApplication
+        self.keyWindow = keyWindow
+        self.mainWindow = mainWindow
+        self.recoverSidebarHost = recoverSidebarHost
+        self.presentSharingServicePickerAction = presentSharingServicePicker
     }
 
     func requestCollapsedSidebarOverlayDismissal() {
-        dependencies.postCollapsedSidebarOverlayDismissal()
+        postCollapsedSidebarOverlayDismissal()
     }
 
     func showQuitDialog() {
         requestCollapsedSidebarOverlayDismissal()
-        dependencies.dismissFloatingBarForActiveWindow(true)
-        dependencies.dismissThemePickerCommittingIfNeeded()
-        dependencies.terminateApplication()
+        dismissFloatingBarForActiveWindow(true)
+        dismissThemePickerCommittingIfNeeded()
+        terminateApplication()
     }
 
     func presentBrowsingDataSheet(windowState: BrowserWindowState? = nil) {
@@ -131,66 +97,31 @@ final class BrowserNativeDialogPresentationOwner {
     }
 
     func isNativeModalPresented(in windowID: UUID?) -> Bool {
-        guard let presentation = dependencies.nativeModalPresentation() else { return false }
+        guard let presentation = nativeModalPresentation() else { return false }
         guard let windowID else { return true }
         return presentation.windowID == windowID
     }
 
     func isNativeModalPresented(in window: NSWindow?) -> Bool {
-        guard let presentation = dependencies.nativeModalPresentation() else { return false }
+        guard let presentation = nativeModalPresentation() else { return false }
         guard let window else { return true }
         if let presentedWindow = presentation.window {
             return presentedWindow === window
         }
-        return dependencies.windowRegistry()?.appKitWindow(for: presentation.windowID) === window
+        return windowRegistry()?.appKitWindow(for: presentation.windowID) === window
     }
 
+    /// Compatibility forward to `BrowserSharingPickerPresentationOwner`.
     func presentSharingServicePicker(
         _ items: [Any],
         source: SidebarTransientPresentationSource
     ) {
-        guard let contentView = source.window?.contentView ?? modalPresentationWindow(for: source)?.contentView else {
-            return
-        }
-
-        let picker = NSSharingServicePicker(items: items)
-        let bridge = source.coordinator.flatMap {
-            SidebarSharingServicePickerBridge(
-                token: $0.beginSession(
-                    kind: .sharingPicker,
-                    source: source,
-                    path: "BrowserManager.presentSharingServicePicker"
-                ),
-                coordinator: $0
-            )
-        }
-        picker.delegate = bridge
-
-        let anchorView: NSView
-        let anchorRect: NSRect
-        if let ownerView = source.originOwnerView,
-           ownerView.window != nil,
-           ownerView.superview != nil,
-           !ownerView.isHiddenOrHasHiddenAncestor,
-           ownerView.alphaValue > 0 {
-            anchorView = ownerView
-            anchorRect = ownerView.bounds
-        } else {
-            anchorView = contentView
-            anchorRect = NSRect(
-                x: contentView.bounds.midX,
-                y: contentView.bounds.midY,
-                width: 1,
-                height: 1
-            )
-        }
-        picker.show(relativeTo: anchorRect, of: anchorView, preferredEdge: .minY)
-        bridge?.scheduleFallbackFinish()
+        presentSharingServicePickerAction(items, source)
     }
 
     private func prepareForNativeModalPresentation() {
         requestCollapsedSidebarOverlayDismissal()
-        dependencies.dismissThemePickerDiscardingIfNeeded()
+        dismissThemePickerDiscardingIfNeeded()
     }
 
     @discardableResult
@@ -207,13 +138,13 @@ final class BrowserNativeDialogPresentationOwner {
             invokeOnDismiss: true
         )
 
-        let targetWindowState = windowState ?? dependencies.windowRegistry()?.activeWindow
+        let targetWindowState = windowState ?? windowRegistry()?.activeWindow
         let windowID = source?.windowID ?? targetWindowState?.id
         guard let windowID else { return false }
 
         let window = source?.window?.parent
             ?? source?.window
-            ?? targetWindowState?.window
+            ?? targetWindowState.flatMap { windowRegistry()?.appKitWindow(for: $0) }
             ?? modalPresentationWindow(for: source)
         let transientSessionToken: SidebarTransientSessionToken?
         if let source {
@@ -226,7 +157,7 @@ final class BrowserNativeDialogPresentationOwner {
             transientSessionToken = nil
         }
 
-        dependencies.setNativeModalPresentation(
+        setNativeModalPresentation(
             BrowserNativeModalPresentation(
                 windowID: windowID,
                 window: window,
@@ -244,10 +175,10 @@ final class BrowserNativeDialogPresentationOwner {
         reason: String,
         invokeOnDismiss: Bool
     ) {
-        guard let presentation = dependencies.nativeModalPresentation() else { return }
+        guard let presentation = nativeModalPresentation() else { return }
         guard windowID == nil || presentation.windowID == windowID else { return }
 
-        dependencies.setNativeModalPresentation(nil)
+        setNativeModalPresentation(nil)
 
         if let transientSessionToken = presentation.transientSessionToken,
            let coordinator = presentation.source?.coordinator {
@@ -256,7 +187,7 @@ final class BrowserNativeDialogPresentationOwner {
                 reason: reason
             )
         } else {
-            dependencies.recoverSidebarHost(presentation.window)
+            recoverSidebarHost(presentation.window)
         }
 
         if invokeOnDismiss {
@@ -269,48 +200,8 @@ final class BrowserNativeDialogPresentationOwner {
     ) -> NSWindow? {
         source?.window?.parent
             ?? source?.window
-            ?? dependencies.windowRegistry()?.activeWindow?.window
-            ?? dependencies.keyWindow()
-            ?? dependencies.mainWindow()
-    }
-}
-
-extension BrowserNativeDialogPresentationOwner.Dependencies {
-    static func live(browserManager: BrowserManager) -> Self {
-        Self(
-            windowRegistry: { [weak browserManager] in browserManager?.windowRegistry },
-            nativeModalPresentation: { [weak browserManager] in browserManager?.nativeModalPresentation },
-            setNativeModalPresentation: { [weak browserManager] presentation in
-                browserManager?.nativeModalPresentation = presentation
-            },
-            postCollapsedSidebarOverlayDismissal: { [weak browserManager] in
-                guard let browserManager else { return }
-                NotificationCenter.default.post(
-                    name: .sumiShouldHideCollapsedSidebarOverlay,
-                    object: browserManager
-                )
-            },
-            dismissFloatingBarForActiveWindow: { [weak browserManager] preserveDraft in
-                browserManager?.floatingBarRoutingOwner.dismissFloatingBarForActiveWindow(preserveDraft: preserveDraft)
-            },
-            dismissThemePickerDiscardingIfNeeded: { [weak browserManager] in
-                browserManager?.workspaceThemeEditorOwner.dismissThemePickerDiscardingIfNeeded()
-            },
-            dismissThemePickerCommittingIfNeeded: { [weak browserManager] in
-                browserManager?.workspaceThemeEditorOwner.dismissThemePickerCommittingIfNeeded()
-            },
-            terminateApplication: {
-                NSApplication.shared.terminate(nil)
-            },
-            keyWindow: {
-                NSApp.keyWindow
-            },
-            mainWindow: {
-                NSApp.mainWindow
-            },
-            recoverSidebarHost: { window in
-                SidebarHostRecoveryCoordinator.shared.recover(in: window)
-            }
-        )
+            ?? windowRegistry()?.activeWindow.flatMap { windowRegistry()?.appKitWindow(for: $0) }
+            ?? keyWindow()
+            ?? mainWindow()
     }
 }

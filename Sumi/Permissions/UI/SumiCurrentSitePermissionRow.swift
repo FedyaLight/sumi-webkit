@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 struct SumiCurrentSitePermissionRow: Identifiable, Equatable, Sendable {
     enum Kind: Hashable, Sendable {

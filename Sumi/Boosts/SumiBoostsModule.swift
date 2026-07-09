@@ -5,11 +5,6 @@ import WebKit
 
 @MainActor
 final class SumiBoostsModule: ObservableObject {
-    static let shared = SumiBoostsModule(
-        moduleRegistry: .shared,
-        storeFactory: { SumiBoostStore() }
-    )
-
     struct LivePage {
         let tab: Tab
         let webView: WKWebView
@@ -23,6 +18,7 @@ final class SumiBoostsModule: ObservableObject {
         let openWebInspector: @MainActor (Tab, BrowserWindowState) -> Void
         let sidebarPosition: @MainActor () -> SidebarPosition
         let settings: @MainActor () -> SumiSettingsService?
+        let windowRegistry: @MainActor () -> WindowRegistry?
 
         static let empty = Runtime(
             windowOwnedWebView: { _, _ in nil },
@@ -31,7 +27,8 @@ final class SumiBoostsModule: ObservableObject {
             applyBoostAwareZoom: { _, _ in /* No-op. */ },
             openWebInspector: { _, _ in /* No-op. */ },
             sidebarPosition: { .left },
-            settings: { nil }
+            settings: { nil },
+            windowRegistry: { nil }
         )
     }
 
@@ -182,7 +179,8 @@ final class SumiBoostsModule: ObservableObject {
             windowState: windowState,
             sidebarPosition: runtime.sidebarPosition(),
             module: self,
-            settings: runtime.settings()
+            settings: runtime.settings(),
+            windowRegistry: runtime.windowRegistry()
         )
     }
 

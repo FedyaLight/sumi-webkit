@@ -135,23 +135,29 @@ final class ExtensionManager: NSObject, ObservableObject {
     lazy var installationFlowOwner = ExtensionInstallationFlowOwner(
         dependencies: .live(manager: self)
     )
-    lazy var backgroundWakeCoordinator = ExtensionBackgroundWakeCoordinator(
-        dependencies: .live(manager: self)
-    )
+    // V3 EM thin capability bags — EM holds bags; bags hold thin owners.
+    lazy var actionBundle = ExtensionActionBundle(manager: self)
+    lazy var runtimeBundle = ExtensionRuntimeBundle(manager: self)
+
+    /// Compatibility forwards — prefer `*Bundle` for new call sites.
+    var backgroundWakeCoordinator: ExtensionBackgroundWakeCoordinator {
+        runtimeBundle.backgroundWakeCoordinator
+    }
     lazy var toolbarPinningOwner = ExtensionToolbarPinningOwner(
-        dependencies: .live(manager: self)
+        manager: self
     )
     lazy var hubOrderingOwner = ExtensionHubOrderingOwner(
-        dependencies: .live(manager: self)
+        preferences: extensionPreferences,
+        currentProfileId: { [weak self] in self?.currentProfileId }
     )
     lazy var permissionDecisionStoreOwner = ExtensionPermissionDecisionStoreOwner(
-        dependencies: .live(manager: self)
+        manager: self
     )
-    lazy var siteAccessPolicyCoordinator = ExtensionSiteAccessPolicyCoordinator(
-        dependencies: .live(manager: self)
-    )
+    var siteAccessPolicyCoordinator: ExtensionSiteAccessPolicyCoordinator {
+        runtimeBundle.siteAccessPolicyCoordinator
+    }
     lazy var pageResolutionOwner = ExtensionPageResolutionOwner(
-        dependencies: .live(manager: self)
+        manager: self
     )
     lazy var pageNavigationPreparationOwner =
         ExtensionPageNavigationPreparationOwner()
@@ -162,13 +168,13 @@ final class ExtensionManager: NSObject, ObservableObject {
         dependencies: .live(manager: self)
     )
     lazy var adapterResolutionOwner = ExtensionAdapterResolutionOwner(
-        dependencies: .live(manager: self)
+        manager: self
     )
-    lazy var actionPopupAnchorResolutionOwner = ExtensionActionPopupAnchorResolutionOwner(
-        dependencies: .live(manager: self)
-    )
+    var actionPopupAnchorResolutionOwner: ExtensionActionPopupAnchorResolutionOwner {
+        actionBundle.actionPopupAnchorResolutionOwner
+    }
     lazy var errorObservationOwner = ExtensionErrorObservationOwner(
-        dependencies: .live(manager: self)
+        manager: self
     )
     lazy var controllerProvisioningOwner = ExtensionControllerProvisioningOwner(
         dependencies: .live(manager: self)
@@ -182,26 +188,51 @@ final class ExtensionManager: NSObject, ObservableObject {
     lazy var controllerAttachmentOwner = ExtensionControllerAttachmentOwner(
         dependencies: .live(manager: self)
     )
-    lazy var actionPopupFailureDiagnosticsOwner = ExtensionActionPopupFailureDiagnosticsOwner(
-        dependencies: .live(manager: self)
-    )
-    lazy var actionSurfacePublicationOwner = ExtensionActionSurfacePublicationOwner(
-        dependencies: .live(manager: self)
-    )
+    var actionPopupFailureDiagnosticsOwner: ExtensionActionPopupFailureDiagnosticsOwner {
+        actionBundle.actionPopupFailureDiagnosticsOwner
+    }
+    var actionSurfacePublicationOwner: ExtensionActionSurfacePublicationOwner {
+        actionBundle.actionSurfacePublicationOwner
+    }
     lazy var actionClickFlowOwner = ExtensionActionClickFlowOwner(
         dependencies: .live(manager: self)
     )
-    lazy var windowFocusResolutionOwner = ExtensionWindowFocusResolutionOwner(
-        dependencies: .live(manager: self)
-    )
+    var windowFocusResolutionOwner: ExtensionWindowFocusResolutionOwner {
+        runtimeBundle.windowFocusResolutionOwner
+    }
     lazy var nativeMessagingRoutingOwner =
         ExtensionNativeMessagingRoutingOwner(manager: self)
     lazy var nativeMessagingRelayOwner = ExtensionNativeMessagingRelayOwner(
-        dependencies: .live(manager: self)
+        manager: self
     )
     lazy var permissionsOriginsCompatibilityPreludeInstallationOwner =
         ExtensionPermissionsOriginsCompatibilityPreludeInstallationOwner(
-            dependencies: .live(manager: self)
+            isPrivateUserScriptSPIAvailable: {
+                SafariExtensionPermissionsOriginsCompatibility
+                    .isPrivateUserScriptSPIAvailable
+            },
+            preludeTargets: { [weak self] profileId in
+                guard let self else { return [] }
+                return self.extensionContexts(for: profileId)
+                    .map { extensionId, extensionContext in
+                        ExtensionPermissionsOriginsCompatibilityPreludeInstallationOwner
+                            .PreludeTarget(
+                                extensionId: extensionId,
+                                isLoaded: extensionContext.isLoaded,
+                                baseURL: extensionContext.baseURL,
+                                installPrelude: { userContentController in
+                                    SafariExtensionPermissionsOriginsCompatibility
+                                        .installPrelude(
+                                            into: userContentController,
+                                            extensionContext: extensionContext
+                                        )
+                                }
+                            )
+                    }
+            },
+            trace: { [weak self] message in
+                self?.extensionRuntimeTrace(message)
+            }
         )
     lazy var deferredRuntimeOwnerStore = ExtensionDeferredRuntimeOwnerStore(manager: self)
     lazy var runtimeDiagnosticsOwner = ExtensionRuntimeDiagnosticsOwner(manager: self)
@@ -209,15 +240,15 @@ final class ExtensionManager: NSObject, ObservableObject {
     lazy var webViewRuntimePreparationOwner = ExtensionWebViewRuntimePreparationOwner(
         dependencies: .live(manager: self)
     )
-    lazy var requestedWindowOpeningOwner = ExtensionRequestedWindowOpeningOwner(
-        dependencies: .live(manager: self)
-    )
+    var requestedWindowOpeningOwner: ExtensionRequestedWindowOpeningOwner {
+        runtimeBundle.requestedWindowOpeningOwner
+    }
     lazy var actionPopupSessionOwner = ExtensionActionPopupSessionOwner(manager: self)
     lazy var keyboardCommandDispatchOwner = ExtensionKeyboardCommandDispatchOwner(
-        dependencies: .live(manager: self)
+        manager: self
     )
     lazy var pageContextMenuItemsOwner = ExtensionPageContextMenuItemsOwner(
-        dependencies: .live(manager: self)
+        manager: self
     )
     let profileRuntimeOwner: ExtensionProfileRuntimeOwner
     var profileRuntimeStateOwner: ExtensionProfileRuntimeStateOwner {
@@ -240,7 +271,8 @@ final class ExtensionManager: NSObject, ObservableObject {
         set { profileRuntimeOwner.replaceContexts(newValue) }
     }
     let runtimeSessionOwner = ExtensionRuntimeSessionOwner()
-    let installCapabilityOwner = SafariExtensionInstallCapabilityOwner()
+    let webExtensionStorageCleanupPlanner: WebExtensionStorageCleanupPlanner
+    let installCapabilityOwner: SafariExtensionInstallCapabilityOwner
     let backgroundRuntimeStateOwner = ExtensionBackgroundRuntimeStateOwner()
     let runtimeTeardownOwner = ExtensionRuntimeTeardownOwner()
     var nativeMessagingBackgroundWakeOwner:
@@ -325,6 +357,11 @@ final class ExtensionManager: NSObject, ObservableObject {
         )
         self.profileRuntimeOwner = ExtensionProfileRuntimeOwner(
             initialProfileId: initialProfile?.id
+        )
+        let storageCleanupPlanner = WebExtensionStorageCleanupPlanner()
+        self.webExtensionStorageCleanupPlanner = storageCleanupPlanner
+        self.installCapabilityOwner = SafariExtensionInstallCapabilityOwner(
+            storageCleanupPlanner: storageCleanupPlanner
         )
         super.init()
         toolbarPinningOwner.reloadPinnedToolbarExtensionsForCurrentProfile()

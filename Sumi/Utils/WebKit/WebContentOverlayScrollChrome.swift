@@ -5,6 +5,7 @@
 
 import AppKit
 import WebKit
+import SumiWebRuntime
 
 /// AppKit overlay scroll indicator for WKWebView page scroll.
 /// Hides WebKit's native scroller via a tiny CSS user script; geometry is

@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 import WebKit
 
 enum SumiPopupPermissionEvent: Equatable, Sendable {

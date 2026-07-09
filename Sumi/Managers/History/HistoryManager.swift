@@ -28,19 +28,6 @@ extension SharedVisitedLinkStoreProvider: HistoryVisitedLinkStoring {}
 
 @MainActor
 final class HistoryManager: ObservableObject {
-    struct Dependencies {
-        let faviconCleaner: any HistoryFaviconCleaning
-        let visitedLinkStore: any HistoryVisitedLinkStoring
-
-        @MainActor
-        static var production: Self {
-            Dependencies(
-                faviconCleaner: SumiFaviconProductionSystem.current,
-                visitedLinkStore: SharedVisitedLinkStoreProvider.shared
-            )
-        }
-    }
-
     @Published private(set) var revision: UInt = 0
     @Published private(set) var canClearHistory = false
 
@@ -74,19 +61,21 @@ final class HistoryManager: ObservableObject {
         self.init(
             context: context,
             profileId: profileId,
-            dependencies: .production
+            faviconCleaner: SumiFaviconProductionSystem.current,
+            visitedLinkStore: SharedVisitedLinkStoreComposition.provider
         )
     }
 
     init(
         context: ModelContext,
         profileId: UUID? = nil,
-        dependencies: Dependencies
+        faviconCleaner: any HistoryFaviconCleaning,
+        visitedLinkStore: any HistoryVisitedLinkStoring
     ) {
         self.store = HistoryStore(container: context.container)
         self.currentProfileId = profileId
-        self.faviconCleaner = dependencies.faviconCleaner
-        self.visitedLinkStore = dependencies.visitedLinkStore
+        self.faviconCleaner = faviconCleaner
+        self.visitedLinkStore = visitedLinkStore
         scheduleDeferredHistoryCleanupIfNeeded()
         preloadVisitedLinksForCurrentProfile()
         Task { [weak self] in

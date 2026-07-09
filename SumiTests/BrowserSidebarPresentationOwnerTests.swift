@@ -113,23 +113,21 @@ private final class BrowserSidebarPresentationOwnerHarness {
 
     func makeOwner() -> BrowserSidebarPresentationOwner {
         BrowserSidebarPresentationOwner(
-            dependencies: BrowserSidebarPresentationOwner.Dependencies(
-                activeWindow: { [weak self] in self?.activeWindow },
-                allWindows: { [weak self] in self?.allWindows ?? [] },
-                setActiveWindow: { [weak self] windowState in
-                    self?.activeWindow = windowState
-                    self?.activatedWindows.append(windowState.id)
-                },
-                keyWindowState: { [weak self] in self?.keyWindowState },
-                schedulePersistWindowSession: { [weak self] windowState, delayNanoseconds in
-                    self?.persistedSessions.append(
-                        PersistedSession(
-                            windowId: windowState.id,
-                            delayNanoseconds: delayNanoseconds
-                        )
+            activeWindow: { [weak self] in self?.activeWindow },
+            allWindows: { [weak self] in self?.allWindows ?? [] },
+            setActiveWindow: { [weak self] windowState in
+                self?.activeWindow = windowState
+                self?.activatedWindows.append(windowState.id)
+            },
+            keyWindowState: { [weak self] in self?.keyWindowState },
+            schedulePersistWindowSession: { [weak self] windowState, delayNanoseconds in
+                self?.persistedSessions.append(
+                    PersistedSession(
+                        windowId: windowState.id,
+                        delayNanoseconds: delayNanoseconds
                     )
-                }
-            )
+                )
+            }
         )
     }
 }

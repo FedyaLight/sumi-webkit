@@ -54,7 +54,7 @@ final class GlanceManager: ObservableObject {
             fallbackWindowId: windowId,
             originRectInWindow: originRectInWindow
                 ?? tab?.glanceOriginRectInWindow()
-                ?? GlanceManager.fallbackOriginRect(in: windowState?.window),
+                ?? GlanceManager.fallbackOriginRect(in: windowState.flatMap { windowRegistry?.appKitWindow(for: $0) }),
             persistsWindowSession: true
         )
     }

@@ -22,6 +22,9 @@ enum BrowserAuxiliaryWindowRuntimeService {
             windowContainingTab: { [weak browserManager] tab in
                 browserManager?.windowTabContextOwner.windowState(containing: tab)
             },
+            appKitWindow: { [weak browserManager] windowState in
+                browserManager?.windowRegistry?.appKitWindow(for: windowState)
+            },
             createMiniWindowTab: { [weak browserManager] openerTab, profileId, urlString, contextOverride in
                 browserManager?.tabManager.transientWebKitTabLifecycleOwner.createAuxiliaryMiniWindowTab(
                     openerTab: openerTab,

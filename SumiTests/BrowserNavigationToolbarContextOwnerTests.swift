@@ -208,22 +208,20 @@ final class NavigationToolbarContextOwnerTests: XCTestCase {
         reload: @escaping @MainActor (Tab, BrowserWindowState) -> Void = { _, _ in /* No-op. */ }
     ) -> BrowserNavigationToolbarContextOwner {
         BrowserNavigationToolbarContextOwner(
-            dependencies: BrowserNavigationToolbarContextOwner.Dependencies(
-                currentTab: currentTab,
-                webView: webView,
-                faviconService: {
-                    BrowserManagerDataServices.productionFaviconService
-                },
-                faviconImageService: {
-                    BrowserManagerDataServices.productionFaviconImageService
-                },
-                openURLInCurrentTab: openURLInCurrentTab,
-                openNewTab: openNewTab,
-                openHistoryURLsInNewWindow: openHistoryURLsInNewWindow,
-                goBack: goBack,
-                goForward: goForward,
-                reload: reload
-            )
+            currentTab: currentTab,
+            webView: webView,
+            faviconService: {
+                BrowserManagerDataServices.productionFaviconService
+            },
+            faviconImageService: {
+                BrowserManagerDataServices.productionFaviconImageService
+            },
+            openURLInCurrentTab: openURLInCurrentTab,
+            openNewTab: openNewTab,
+            openHistoryURLsInNewWindow: openHistoryURLsInNewWindow,
+            goBack: goBack,
+            goForward: goForward,
+            reload: reload
         )
     }
 

@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 struct SumiPendingAuthorizationQuery: Sendable {
     let query: SumiPermissionAuthorizationQuery

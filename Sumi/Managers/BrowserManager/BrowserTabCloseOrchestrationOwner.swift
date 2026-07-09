@@ -2,27 +2,43 @@ import Foundation
 
 @MainActor
 final class BrowserTabCloseOrchestrationOwner {
-    struct Dependencies {
-        let activeWindow: () -> BrowserWindowState?
-        let currentTab: (BrowserWindowState) -> Tab?
-        let glanceManager: GlanceManager
-        let tabManager: () -> TabManager
-        let fallbackPlanner: () -> BrowserTabCloseFallbackPlanner
-        let shortcutLiveTabCloseOwner: () -> BrowserShortcutLiveTabCloseOwner
-        let selectTab: (Tab, BrowserWindowState) -> Void
-        let performImmediateVisualHandoffIfPossible: (BrowserWindowState) -> Void
-        let showEmptyState: (BrowserWindowState) -> Void
-        let persistWindowSession: (BrowserWindowState) -> Void
-    }
+    private let activeWindow: () -> BrowserWindowState?
+    private let currentTab: (BrowserWindowState) -> Tab?
+    private let glanceManager: GlanceManager
+    private let tabManager: () -> TabManager
+    private let fallbackPlanner: () -> BrowserTabCloseFallbackPlanner
+    private let shortcutLiveTabCloseOwner: () -> BrowserShortcutLiveTabCloseOwner
+    private let selectTab: (Tab, BrowserWindowState) -> Void
+    private let performImmediateVisualHandoffIfPossible: (BrowserWindowState) -> Void
+    private let showEmptyState: (BrowserWindowState) -> Void
+    private let persistWindowSession: (BrowserWindowState) -> Void
 
-    private let dependencies: Dependencies
-
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
+    init(
+        activeWindow: @escaping () -> BrowserWindowState?,
+        currentTab: @escaping (BrowserWindowState) -> Tab?,
+        glanceManager: GlanceManager,
+        tabManager: @escaping () -> TabManager,
+        fallbackPlanner: @escaping () -> BrowserTabCloseFallbackPlanner,
+        shortcutLiveTabCloseOwner: @escaping () -> BrowserShortcutLiveTabCloseOwner,
+        selectTab: @escaping (Tab, BrowserWindowState) -> Void,
+        performImmediateVisualHandoffIfPossible: @escaping (BrowserWindowState) -> Void,
+        showEmptyState: @escaping (BrowserWindowState) -> Void,
+        persistWindowSession: @escaping (BrowserWindowState) -> Void
+    ) {
+        self.activeWindow = activeWindow
+        self.currentTab = currentTab
+        self.glanceManager = glanceManager
+        self.tabManager = tabManager
+        self.fallbackPlanner = fallbackPlanner
+        self.shortcutLiveTabCloseOwner = shortcutLiveTabCloseOwner
+        self.selectTab = selectTab
+        self.performImmediateVisualHandoffIfPossible = performImmediateVisualHandoffIfPossible
+        self.showEmptyState = showEmptyState
+        self.persistWindowSession = persistWindowSession
     }
 
     func closeCurrentTab() {
-        guard let activeWindow = dependencies.activeWindow() else {
+        guard let activeWindow = activeWindow() else {
             return
         }
 
@@ -34,13 +50,13 @@ final class BrowserTabCloseOrchestrationOwner {
             return
         }
 
-        if dependencies.glanceManager.activePreviewTab(for: windowState) != nil {
-            dependencies.glanceManager.dismissGlance()
+        if glanceManager.activePreviewTab(for: windowState) != nil {
+            glanceManager.dismissGlance()
             return
         }
 
-        guard let currentTab = dependencies.currentTab(windowState) else {
-            dependencies.showEmptyState(windowState)
+        guard let currentTab = currentTab(windowState) else {
+            showEmptyState(windowState)
             return
         }
 
@@ -48,8 +64,8 @@ final class BrowserTabCloseOrchestrationOwner {
     }
 
     func closeTab(_ tab: Tab, in windowState: BrowserWindowState) {
-        if dependencies.glanceManager.currentSession?.sourceTab?.id == tab.id {
-            dependencies.glanceManager.dismissGlance()
+        if glanceManager.currentSession?.sourceTab?.id == tab.id {
+            glanceManager.dismissGlance()
         }
 
         if windowState.isIncognito {
@@ -58,7 +74,7 @@ final class BrowserTabCloseOrchestrationOwner {
         }
 
         if tab.isShortcutLiveInstance {
-            dependencies.shortcutLiveTabCloseOwner().close(tab, in: windowState)
+            shortcutLiveTabCloseOwner().close(tab, in: windowState)
             return
         }
 
@@ -66,28 +82,28 @@ final class BrowserTabCloseOrchestrationOwner {
     }
 
     private func closeRegularTab(_ tab: Tab, in windowState: BrowserWindowState) {
-        let tabManager = dependencies.tabManager()
+        let tabManager = tabManager()
         let wasCurrent = windowState.currentTabId == tab.id
         let fallback = wasCurrent
-            ? dependencies.fallbackPlanner().fallbackAfterClosingRegularTab(
+            ? fallbackPlanner().fallbackAfterClosingRegularTab(
                 tab,
                 in: windowState,
                 tabStore: tabManager.runtimeStore
             )
             : nil
         if let fallback {
-            dependencies.selectTab(fallback, windowState)
-            dependencies.performImmediateVisualHandoffIfPossible(windowState)
+            selectTab(fallback, windowState)
+            performImmediateVisualHandoffIfPossible(windowState)
         }
         tabManager.tabRemovalOwner.removeTab(tab.id)
         windowState.selectionHistory.removeFromRegularTabHistory(tab.id)
 
         if wasCurrent {
             if fallback == nil {
-                dependencies.showEmptyState(windowState)
+                showEmptyState(windowState)
             }
         } else {
-            dependencies.persistWindowSession(windowState)
+            persistWindowSession(windowState)
         }
     }
 
@@ -99,40 +115,9 @@ final class BrowserTabCloseOrchestrationOwner {
         }
 
         if let nextTab = windowState.ephemeralTabs.last {
-            dependencies.selectTab(nextTab, windowState)
+            selectTab(nextTab, windowState)
         } else {
-            dependencies.showEmptyState(windowState)
+            showEmptyState(windowState)
         }
-    }
-}
-
-extension BrowserTabCloseOrchestrationOwner.Dependencies {
-    @MainActor
-    static func live(browserManager: BrowserManager) -> Self {
-        let tabLifecycleService = browserManager.tabLifecycleService
-        return Self(
-            activeWindow: { [weak browserManager] in browserManager?.windowRegistry?.activeWindow },
-            currentTab: { [weak browserManager] windowState in
-                browserManager?.windowTabContextOwner.currentTab(for: windowState)
-            },
-            glanceManager: browserManager.glanceManager,
-            tabManager: { [weak browserManager, tabManager = browserManager.tabManager] in
-                browserManager?.tabManager ?? tabManager
-            },
-            fallbackPlanner: { tabLifecycleService.closeFallbackPlanner },
-            shortcutLiveTabCloseOwner: { tabLifecycleService.shortcutLiveTabClose },
-            selectTab: { [weak browserManager] tab, windowState in
-                browserManager?.selectTab(tab, in: windowState)
-            },
-            performImmediateVisualHandoffIfPossible: { [weak browserManager] windowState in
-                _ = browserManager?.windowVisualMutationOwner.performImmediateVisualHandoffIfPossible(in: windowState)
-            },
-            showEmptyState: { [weak browserManager] windowState in
-                browserManager?.showEmptyState(in: windowState)
-            },
-            persistWindowSession: { [weak browserManager] windowState in
-                browserManager?.windowSessionActivationOwner.persistWindowSession(for: windowState)
-            }
-        )
     }
 }

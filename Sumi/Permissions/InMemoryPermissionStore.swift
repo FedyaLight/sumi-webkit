@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 actor InMemoryPermissionStore: SumiPermissionStore {
     private struct MemoryKey: Hashable, Sendable {

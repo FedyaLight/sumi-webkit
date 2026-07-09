@@ -151,7 +151,7 @@ enum SidebarDragPreviewSessionFactory {
         descriptor: SumiNativeDragPreviewDescriptor,
         previewKind: SidebarDragPreviewKind
     ) -> [SidebarDragPreviewKind: SidebarDragPreviewAsset] {
-        let factory = SumiNativeDragImageFactory.shared
+        let factory = SumiNativeDragImageFactory()
         var assets: [SidebarDragPreviewKind: SidebarDragPreviewAsset] = [:]
 
         func insert(_ kind: SidebarDragPreviewKind) {

@@ -189,8 +189,6 @@ protocol SumiEnergySaverSystemMonitoring: AnyObject, Sendable {
 
 @MainActor
 final class SumiEnergySaverSystemMonitor: SumiEnergySaverSystemMonitoring {
-    static let shared = SumiEnergySaverSystemMonitor()
-
     private let processInfo: ProcessInfo
     private let notificationCenter: NotificationCenter
     private(set) var snapshot: SumiEnergySaverSystemSnapshot

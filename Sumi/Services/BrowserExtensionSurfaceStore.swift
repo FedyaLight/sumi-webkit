@@ -34,6 +34,7 @@ final class BrowserExtensionSurfaceStore: ObservableObject {
     @Published private(set) var siteAccessPoliciesByExtensionID:
         [String: SafariExtensionSiteAccessPolicy] = [:]
 
+    let iconCache = ExtensionIconCache()
     private var cancellables: Set<AnyCancellable> = []
     private weak var extensionManager: ExtensionManager?
     private var activeSiteAccessProfileId: UUID?

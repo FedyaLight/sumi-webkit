@@ -46,7 +46,7 @@ private final class SpaceEditorViewController: NSViewController, NSTextFieldDele
     private let onDone: () -> Void
     private let onCancel: () -> Void
 
-    private let emojiPicker = EmojiPickerManager()
+    private let emojiPicker: EmojiPickerManager
     private let iconButton = NSButton()
     private let nameField = NSTextField()
     private let profilePicker = NSPopUpButton()
@@ -58,6 +58,7 @@ private final class SpaceEditorViewController: NSViewController, NSTextFieldDele
         profiles: [Profile],
         settings: SumiSettingsService,
         themeContext: ResolvedThemeContext,
+        sidebarRecoveryCoordinator: SidebarHostRecoveryHandling,
         onDone: @escaping () -> Void,
         onCancel: @escaping () -> Void
     ) {
@@ -65,6 +66,7 @@ private final class SpaceEditorViewController: NSViewController, NSTextFieldDele
         self.profiles = profiles
         self.settings = settings
         self.themeContext = themeContext
+        self.emojiPicker = EmojiPickerManager(sidebarRecoveryCoordinator: sidebarRecoveryCoordinator)
         self.onDone = onDone
         self.onCancel = onCancel
         super.init(nibName: nil, bundle: nil)
@@ -306,6 +308,14 @@ final class SpaceEditorPopoverPresenter: NSObject, NSPopoverDelegate {
         }
     }
 
+    weak var windowRegistry: WindowRegistry?
+    private let sidebarRecoveryCoordinator: SidebarHostRecoveryHandling
+
+    init(sidebarRecoveryCoordinator: SidebarHostRecoveryHandling = SidebarHostRecoveryCoordinator()) {
+        self.sidebarRecoveryCoordinator = sidebarRecoveryCoordinator
+        super.init()
+    }
+
     private final class ActiveSession {
         let editorSession: SpaceEditorSession
         let popover: NSPopover
@@ -368,6 +378,7 @@ final class SpaceEditorPopoverPresenter: NSObject, NSPopoverDelegate {
             profiles: profiles,
             settings: presentationContext.settings,
             themeContext: surfaceThemeContext,
+            sidebarRecoveryCoordinator: sidebarRecoveryCoordinator,
             onDone: { [weak self] in
                 self?.closeActive(committing: true)
             },
@@ -385,7 +396,7 @@ final class SpaceEditorPopoverPresenter: NSObject, NSPopoverDelegate {
         popover.contentSize = Self.Metrics.contentSize(profileCount: profiles.count)
         popover.appearance = PopoverPresenterChromeSupport.appearance(
             for: surfaceColorScheme,
-            fallback: anchor.view.window?.effectiveAppearance ?? windowState.shellWindow(in: nil)?.effectiveAppearance
+            fallback: anchor.view.window?.effectiveAppearance ?? windowState.shellWindow(in: windowRegistry)?.effectiveAppearance
         )
 
         let token = source.coordinator?.beginSession(
@@ -402,7 +413,7 @@ final class SpaceEditorPopoverPresenter: NSObject, NSPopoverDelegate {
             transientSessionToken: token
         )
 
-        windowState.shellWindow(in: nil)?.makeKeyAndOrderFront(nil)
+        windowState.shellWindow(in: windowRegistry)?.makeKeyAndOrderFront(nil)
         popover.show(relativeTo: anchor.rect, of: anchor.view, preferredEdge: anchor.preferredEdge)
     }
 
@@ -465,7 +476,8 @@ final class SpaceEditorPopoverPresenter: NSObject, NSPopoverDelegate {
                 windowState: closedSession.windowState,
                 source: closedSession.source,
                 anchor: closedSession.source.originOwnerView,
-                using: SidebarHostRecoveryCoordinator.shared
+                windowRegistry: windowRegistry,
+                using: sidebarRecoveryCoordinator
             )
         }
     }
@@ -485,7 +497,7 @@ final class SpaceEditorPopoverPresenter: NSObject, NSPopoverDelegate {
             return (ownerView, ownerView.bounds, preferredEdge)
         }
 
-        guard let contentView = windowState.shellWindow(in: nil)?.contentView ?? source.window?.contentView else {
+        guard let contentView = windowState.shellWindow(in: windowRegistry)?.contentView ?? source.window?.contentView else {
             return nil
         }
 

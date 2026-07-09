@@ -59,33 +59,31 @@ private final class NativeSurfaceRoutingHarness {
     var focusCount = 0
 
     lazy var owner = BrowserNativeSurfaceRoutingOwner(
-        dependencies: BrowserNativeSurfaceRoutingOwner.Dependencies(
-            tabManager: { [tabManager] in tabManager },
-            settings: { nil },
-            openNewTab: { [self] url, context in
-                openedContexts.append(context)
-                let targetSpace = context.preferredSpaceId.flatMap { preferredSpaceId in
-                    tabManager.spaceStateOwner.spaces.first { $0.id == preferredSpaceId }
-                }
-                let tab = tabManager.regularTabLifecycleOwner.createNewTab(
-                    url: url,
-                    in: targetSpace,
-                    activate: false
-                )
-                selectedTab = tab
-                windowState.currentTabId = tab.id
-                windowState.currentSpaceId = tab.spaceId
-                return tab
-            },
-            selectTab: { [self] tab, windowState in
-                selectedTab = tab
-                windowState.currentTabId = tab.id
-                windowState.currentSpaceId = tab.spaceId
-            },
-            focusWindow: { [self] _ in
-                focusCount += 1
+        tabManager: { [tabManager] in tabManager },
+        settings: { nil },
+        openNewTab: { [self] url, context in
+            openedContexts.append(context)
+            let targetSpace = context.preferredSpaceId.flatMap { preferredSpaceId in
+                tabManager.spaceStateOwner.spaces.first { $0.id == preferredSpaceId }
             }
-        )
+            let tab = tabManager.regularTabLifecycleOwner.createNewTab(
+                url: url,
+                in: targetSpace,
+                activate: false
+            )
+            selectedTab = tab
+            windowState.currentTabId = tab.id
+            windowState.currentSpaceId = tab.spaceId
+            return tab
+        },
+        selectTab: { [self] tab, windowState in
+            selectedTab = tab
+            windowState.currentTabId = tab.id
+            windowState.currentSpaceId = tab.spaceId
+        },
+        focusWindow: { [self] _ in
+            focusCount += 1
+        }
     )
 
     init() {

@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 enum SumiPermissionIndicatorCategory: String, Codable, CaseIterable, Sendable {
     case hidden

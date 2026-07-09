@@ -182,14 +182,14 @@ struct BrowserManagerDataServices {
     }
 
     static var productionVisitedLinkStore: any BrowserVisitedLinkStoreManaging {
-        SharedVisitedLinkStoreProvider.shared
+        SharedVisitedLinkStoreComposition.provider
     }
 
     static var production: Self {
-        let websiteDataCleanupService = SumiWebsiteDataCleanupService.shared
-        let siteDataPolicyStore = SumiSiteDataPolicyStore.shared
+        let websiteDataCleanupService = SumiWebsiteDataCleanupService()
+        let siteDataPolicyStore = SumiSiteDataPolicyStore()
         let faviconSystem = productionFaviconSystem
-        let visitedLinkStore = SharedVisitedLinkStoreProvider.shared
+        let visitedLinkStore = SharedVisitedLinkStoreComposition.provider
         let basicAuthCredentialStore = BasicAuthCredentialStore()
         return BrowserManagerDataServices(
             websiteDataCleanupService: websiteDataCleanupService,
@@ -221,13 +221,6 @@ struct BrowserManagerDataServices {
                     faviconSystem.invalidateSite(domain: domain, profile: profile)
                 }
             )
-        )
-    }
-
-    var historyManagerDependencies: HistoryManager.Dependencies {
-        HistoryManager.Dependencies(
-            faviconCleaner: historyFaviconCleaner,
-            visitedLinkStore: historyVisitedLinkStore
         )
     }
 

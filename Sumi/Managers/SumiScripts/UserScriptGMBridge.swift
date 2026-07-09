@@ -42,7 +42,7 @@ final class UserScriptGMBridge: NSObject {
         downloadManager: DownloadManager?,
         notificationPermissionBridge: SumiNotificationPermissionBridge? = nil,
         notificationTabContextProvider: (@MainActor (WKWebView?) -> SumiWebNotificationTabContext?)? = nil,
-        networkSession: URLSession = SumiNonPersistentURLSession.shared
+        networkSession: URLSession = SumiNonPersistentURLSession.make()
     ) {
         self.script = script
         self.contentWorld = contentWorld

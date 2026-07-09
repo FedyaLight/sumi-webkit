@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import SumiDomain
 import WebKit
 
 enum SumiFaviconResolver {
@@ -13,7 +14,7 @@ enum SumiFaviconResolver {
     static func menuImage(
         for url: URL?,
         partition: SumiFaviconPartition = .regular(nil),
-        faviconImageService: any BrowserFaviconImageServicing = TabDependencyIsolationDefaults.faviconImageService
+        faviconImageService: any BrowserFaviconImageServicing = SumiFaviconProductionSystem.current.service
     ) -> NSImage {
         guard let url else {
             return menuSystemImage("globe")
@@ -52,7 +53,7 @@ enum SumiFaviconResolver {
         for url: URL,
         partition: SumiFaviconPartition = .regular(nil),
         webView: WKWebView? = nil,
-        faviconImageService: any BrowserFaviconImageServicing = TabDependencyIsolationDefaults.faviconImageService
+        faviconImageService: any BrowserFaviconImageServicing = SumiFaviconProductionSystem.current.service
     ) async -> NSImage? {
         if let image = await TabFaviconStore.loadCachedDisplayImage(
             forDocumentURL: url,

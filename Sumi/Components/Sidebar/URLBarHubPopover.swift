@@ -7,6 +7,7 @@
 
 import Combine
 import SwiftUI
+import SumiWebRuntime
 
 private struct URLBarHubPopoverContentSizePreferenceKey: PreferenceKey {
     static let defaultValue: CGSize = .zero
@@ -32,6 +33,7 @@ private struct URLBarHubNativeBackground: View {
 
 struct URLBarHubPopover: View {
     @Environment(BrowserWindowState.self) private var windowState
+    @Environment(WindowRegistry.self) private var windowRegistry
 
     let browserContext: URLBarHubBrowserContext
     @ObservedObject var bookmarkManager: SumiBookmarkManager
@@ -185,6 +187,7 @@ struct URLBarHubPopover: View {
         .clipped()
         .animation(URLBarHubNavigationModel.modeAnimation, value: navigation.containerWidth)
         .onAppear {
+            pageActionOwner.windowRegistry = windowRegistry
             browserContext.extensionActions.ensureActionMetadataLoadedIfNeeded()
             handleBookmarkPresentationRequest(browserContext.bookmarkPresentationRequest)
         }

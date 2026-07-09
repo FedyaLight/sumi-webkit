@@ -2,6 +2,7 @@ import WebKit
 import XCTest
 
 @testable import Sumi
+import SumiDomain
 
 @MainActor
 final class HistoryNavigationTests: XCTestCase {
@@ -196,37 +197,35 @@ private final class HistoryNavigationOwnerHarness {
 
     func makeOwner() -> BrowserHistoryNavigationOwner {
         BrowserHistoryNavigationOwner(
-            dependencies: BrowserHistoryNavigationOwner.Dependencies(
-                activeWindow: { [weak self] in self?.activeWindow },
-                activePageTab: { [weak self] windowState in
-                    self?.activePageTabsByWindowId[windowState.id] ?? self?.activePageTab
-                },
-                activePageWebView: { [weak self] windowState in
-                    self?.webViewsByWindowId[windowState.id]
-                },
-                webView: { [weak self] _, windowId in
-                    self?.webViewsByWindowId[windowId]
-                },
-                openNativeBrowserSurface: { _, _, _, _ in /* No-op. */ },
-                openNewTab: { _, _ in nil },
-                loadCurrentPageURL: { [weak self] tab, windowState, url in
-                    self?.loadedCurrentPages.append(
-                        .init(tabId: tab.id, windowId: windowState.id, url: url)
-                    )
-                },
-                windowIds: { [] },
-                createNewWindow: { /* No-op. */ },
-                awaitNextRegisteredWindow: { _ in nil },
-                scheduleRuntimeStatePersistence: { _ in /* No-op. */ },
-                schedulePrepareVisibleWebViews: { _ in /* No-op. */ },
-                refreshCompositor: { _ in /* No-op. */ },
-                navigateBack: { [weak self] webView in
-                    self?.navigatedBackWebViewIDs.append(ObjectIdentifier(webView))
-                },
-                navigateForward: { [weak self] webView in
-                    self?.navigatedForwardWebViewIDs.append(ObjectIdentifier(webView))
-                }
-            )
+            activeWindow: { [weak self] in self?.activeWindow },
+            activePageTab: { [weak self] windowState in
+                self?.activePageTabsByWindowId[windowState.id] ?? self?.activePageTab
+            },
+            activePageWebView: { [weak self] windowState in
+                self?.webViewsByWindowId[windowState.id]
+            },
+            webView: { [weak self] _, windowId in
+                self?.webViewsByWindowId[windowId]
+            },
+            openNativeBrowserSurface: { _, _, _, _ in /* No-op. */ },
+            openNewTab: { _, _ in nil },
+            loadCurrentPageURL: { [weak self] tab, windowState, url in
+                self?.loadedCurrentPages.append(
+                    .init(tabId: tab.id, windowId: windowState.id, url: url)
+                )
+            },
+            windowIds: { [] },
+            createNewWindow: { /* No-op. */ },
+            awaitNextRegisteredWindow: { _ in nil },
+            scheduleRuntimeStatePersistence: { _ in /* No-op. */ },
+            schedulePrepareVisibleWebViews: { _ in /* No-op. */ },
+            refreshCompositor: { _ in /* No-op. */ },
+            navigateBack: { [weak self] webView in
+                self?.navigatedBackWebViewIDs.append(ObjectIdentifier(webView))
+            },
+            navigateForward: { [weak self] webView in
+                self?.navigatedForwardWebViewIDs.append(ObjectIdentifier(webView))
+            }
         )
     }
 }

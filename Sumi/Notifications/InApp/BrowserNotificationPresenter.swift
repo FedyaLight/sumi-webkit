@@ -4,27 +4,58 @@ import Foundation
 /// honoring the user's browser notification visibility setting.
 @MainActor
 final class BrowserNotificationPresenter {
-    struct Dependencies {
-        let showInAppNotifications: @MainActor () -> Bool
-        let activeWindow: @MainActor () -> BrowserWindowState?
-        let undoCloseTabShortcut: @MainActor () -> String?
-        let undoCloseTab: @MainActor () -> Void
-        let tabForId: @MainActor (UUID) -> Tab?
-        let selectTab: @MainActor (Tab, BrowserWindowState) -> Void
+    private let showInAppNotifications: @MainActor () -> Bool
+    private let activeWindow: @MainActor () -> BrowserWindowState?
+    private let undoCloseTabShortcut: @MainActor () -> String?
+    private let undoCloseTab: @MainActor () -> Void
+    private let tabForId: @MainActor (UUID) -> Tab?
+    private let selectTab: @MainActor (Tab, BrowserWindowState) -> Void
+
+    init(
+        showInAppNotifications: @escaping @MainActor () -> Bool,
+        activeWindow: @escaping @MainActor () -> BrowserWindowState?,
+        undoCloseTabShortcut: @escaping @MainActor () -> String?,
+        undoCloseTab: @escaping @MainActor () -> Void,
+        tabForId: @escaping @MainActor (UUID) -> Tab?,
+        selectTab: @escaping @MainActor (Tab, BrowserWindowState) -> Void
+    ) {
+        self.showInAppNotifications = showInAppNotifications
+        self.activeWindow = activeWindow
+        self.undoCloseTabShortcut = undoCloseTabShortcut
+        self.undoCloseTab = undoCloseTab
+        self.tabForId = tabForId
+        self.selectTab = selectTab
     }
 
-    private let dependencies: Dependencies
-
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
+    convenience init(browserManager: BrowserManager) {
+        self.init(
+            showInAppNotifications: { [weak browserManager] in
+                browserManager?.sumiSettings?.showInAppNotifications != false
+            },
+            activeWindow: { [weak browserManager] in
+                browserManager?.windowRegistry?.activeWindow
+            },
+            undoCloseTabShortcut: { [weak browserManager] in
+                browserManager?.keyboardShortcutManager?.shortcutDisplayString(for: .undoCloseTab)
+            },
+            undoCloseTab: { [weak browserManager] in
+                browserManager?.recentlyClosedRestoreOwner.reopenMostRecentClosedItem()
+            },
+            tabForId: { [weak browserManager] tabId in
+                browserManager?.tabManager.tabCollectionMembershipOwner.tab(for: tabId)
+            },
+            selectTab: { [weak browserManager] tab, windowState in
+                browserManager?.selectTab(tab, in: windowState)
+            }
+        )
     }
 
     func presentNotification(
         _ notification: BrowserNotification,
         in windowState: BrowserWindowState? = nil
     ) {
-        guard dependencies.showInAppNotifications() else { return }
-        guard let targetWindow = windowState ?? dependencies.activeWindow() else { return }
+        guard showInAppNotifications() else { return }
+        guard let targetWindow = windowState ?? activeWindow() else { return }
         targetWindow.inAppNotifications.present(notification)
     }
 
@@ -33,10 +64,11 @@ final class BrowserNotificationPresenter {
     }
 
     func presentTabClosureNotification(tabCount: Int) {
-        let undoAction = BrowserNotificationAction(label: "Undo") { [dependencies] in
-            dependencies.undoCloseTab()
+        let undoCloseTabAction = undoCloseTab
+        let undoAction = BrowserNotificationAction(label: "Undo") {
+            undoCloseTabAction()
         }
-        let shortcut = dependencies.undoCloseTabShortcut()
+        let shortcut = undoCloseTabShortcut()
         presentNotification(
             .tabClosure(
                 count: tabCount,
@@ -58,40 +90,16 @@ final class BrowserNotificationPresenter {
         tabId: UUID,
         in windowState: BrowserWindowState
     ) {
-        let openAction = BrowserNotificationAction(label: "Open") { [dependencies] in
-            guard let tab = dependencies.tabForId(tabId) else { return }
-            dependencies.selectTab(tab, windowState)
+        let tabForIdAction = tabForId
+        let selectTabAction = selectTab
+        let openAction = BrowserNotificationAction(label: "Open") {
+            guard let tab = tabForIdAction(tabId) else { return }
+            selectTabAction(tab, windowState)
         }
         presentNotification(.backgroundTabOpened(openAction: openAction), in: windowState)
     }
 
     func presentSplitViewLimitNotification(in windowState: BrowserWindowState) {
         presentNotification(.splitViewLimit(maximumPanes: SplitGroup.maximumTabs), in: windowState)
-    }
-}
-
-extension BrowserNotificationPresenter.Dependencies {
-    @MainActor
-    static func live(browserManager: BrowserManager) -> Self {
-        Self(
-            showInAppNotifications: { [weak browserManager] in
-                browserManager?.sumiSettings?.showInAppNotifications != false
-            },
-            activeWindow: { [weak browserManager] in
-                browserManager?.windowRegistry?.activeWindow
-            },
-            undoCloseTabShortcut: { [weak browserManager] in
-                browserManager?.keyboardShortcutManager?.shortcutDisplayString(for: .undoCloseTab)
-            },
-            undoCloseTab: { [weak browserManager] in
-                browserManager?.recentlyClosedRestoreOwner.reopenMostRecentClosedItem()
-            },
-            tabForId: { [weak browserManager] tabId in
-                browserManager?.tabManager.tabCollectionMembershipOwner.tab(for: tabId)
-            },
-            selectTab: { [weak browserManager] tab, windowState in
-                browserManager?.selectTab(tab, in: windowState)
-            }
-        )
     }
 }

@@ -10,10 +10,10 @@ import WebKit
 
 @MainActor
 final class SharedVisitedLinkStoreProvider {
-    static let shared = SharedVisitedLinkStoreProvider()
-
     private var storesByProfileId: [UUID: NSObject] = [:]
     private var pendingVisitedLinksByProfileId: [UUID: Set<URL>] = [:]
+
+    init() {}
 
     func applyStore(
         to configuration: WKWebViewConfiguration,
@@ -174,4 +174,12 @@ extension NSObject {
         }
         perform(SumiVisitedLinkStoreSelector.removeAll)
     }
+}
+
+/// Process-level visited-link store composition. Prefer injecting this provider
+/// through BrowserManagerDataServices / BrowserConfiguration rather than
+/// reaching for a `.shared` singleton at call sites.
+enum SharedVisitedLinkStoreComposition {
+    @MainActor
+    static let provider = SharedVisitedLinkStoreProvider()
 }

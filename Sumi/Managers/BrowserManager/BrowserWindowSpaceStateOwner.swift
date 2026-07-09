@@ -2,39 +2,65 @@ import Foundation
 
 @MainActor
 final class BrowserWindowSpaceStateOwner {
-    struct Dependencies {
-        let tabManager: () -> TabManager
-        let windowRegistry: () -> WindowRegistry?
-        let selectionService: ShellSelectionService
-        let sanitizeFloatingBarState: (BrowserWindowState) -> Void
-        let syncShortcutSelectionState: (BrowserWindowState) -> Void
-        let updateWorkspaceTheme: (BrowserWindowState, WorkspaceTheme, Bool) -> Void
-        let commitWorkspaceTheme: (WorkspaceTheme, BrowserWindowState) -> Void
-        let finishInteractiveSpaceTransition: (Space, BrowserWindowState, SpaceTransitionIdentity?) -> Void
-        let applyTabSelection: (Tab, BrowserWindowState, Bool, Bool, Bool, Bool) -> Void
-        let performImmediateVisualHandoffIfPossible: (BrowserWindowState) -> Void
-        let showEmptyState: (BrowserWindowState) -> Void
-        let adoptProfileForSpaceChange: (BrowserWindowState) -> Void
-        let persistWindowSession: (BrowserWindowState) -> Void
-        let completePendingSplitGroupFocusIfReady: (BrowserWindowState, UUID) -> Void
-        let refreshCompositor: (BrowserWindowState) -> Void
-    }
+    private let tabManager: () -> TabManager
+    private let windowRegistry: () -> WindowRegistry?
+    private let selectionService: ShellSelectionService
+    private let sanitizeFloatingBarState: (BrowserWindowState) -> Void
+    private let syncShortcutSelectionState: (BrowserWindowState) -> Void
+    private let updateWorkspaceTheme: (BrowserWindowState, WorkspaceTheme, Bool) -> Void
+    private let finishInteractiveSpaceTransition: (Space, BrowserWindowState, SpaceTransitionIdentity?) -> Void
+    private let applyTabSelection: (Tab, BrowserWindowState, Bool, Bool, Bool, Bool) -> Void
+    private let performImmediateVisualHandoffIfPossible: (BrowserWindowState) -> Void
+    private let showEmptyState: (BrowserWindowState) -> Void
+    private let adoptProfileForSpaceChange: (BrowserWindowState) -> Void
+    private let persistWindowSession: (BrowserWindowState) -> Void
+    private let completePendingSplitGroupFocusIfReady: (BrowserWindowState, UUID) -> Void
+    private let updateProfileRuntimeStatesAction: (BrowserWindowState?) -> Void
+    private let validateWindowStatesAction: () -> Void
 
-    private let dependencies: Dependencies
-
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
+    init(
+        tabManager: @escaping () -> TabManager,
+        windowRegistry: @escaping () -> WindowRegistry?,
+        selectionService: ShellSelectionService,
+        sanitizeFloatingBarState: @escaping (BrowserWindowState) -> Void,
+        syncShortcutSelectionState: @escaping (BrowserWindowState) -> Void,
+        updateWorkspaceTheme: @escaping (BrowserWindowState, WorkspaceTheme, Bool) -> Void,
+        finishInteractiveSpaceTransition: @escaping (Space, BrowserWindowState, SpaceTransitionIdentity?) -> Void,
+        applyTabSelection: @escaping (Tab, BrowserWindowState, Bool, Bool, Bool, Bool) -> Void,
+        performImmediateVisualHandoffIfPossible: @escaping (BrowserWindowState) -> Void,
+        showEmptyState: @escaping (BrowserWindowState) -> Void,
+        adoptProfileForSpaceChange: @escaping (BrowserWindowState) -> Void,
+        persistWindowSession: @escaping (BrowserWindowState) -> Void,
+        completePendingSplitGroupFocusIfReady: @escaping (BrowserWindowState, UUID) -> Void,
+        updateProfileRuntimeStates: @escaping (BrowserWindowState?) -> Void,
+        validateWindowStates: @escaping () -> Void
+    ) {
+        self.tabManager = tabManager
+        self.windowRegistry = windowRegistry
+        self.selectionService = selectionService
+        self.sanitizeFloatingBarState = sanitizeFloatingBarState
+        self.syncShortcutSelectionState = syncShortcutSelectionState
+        self.updateWorkspaceTheme = updateWorkspaceTheme
+        self.finishInteractiveSpaceTransition = finishInteractiveSpaceTransition
+        self.applyTabSelection = applyTabSelection
+        self.performImmediateVisualHandoffIfPossible = performImmediateVisualHandoffIfPossible
+        self.showEmptyState = showEmptyState
+        self.adoptProfileForSpaceChange = adoptProfileForSpaceChange
+        self.persistWindowSession = persistWindowSession
+        self.completePendingSplitGroupFocusIfReady = completePendingSplitGroupFocusIfReady
+        self.updateProfileRuntimeStatesAction = updateProfileRuntimeStates
+        self.validateWindowStatesAction = validateWindowStates
     }
 
     func space(for spaceId: UUID?) -> Space? {
         guard let spaceId else { return nil }
-        return dependencies.tabManager().spaceStateOwner.space(with: spaceId)
+        return tabManager().spaceStateOwner.space(with: spaceId)
     }
 
     func hasValidCurrentSelection(in windowState: BrowserWindowState) -> Bool {
-        dependencies.selectionService.hasValidCurrentSelection(
+        selectionService.hasValidCurrentSelection(
             in: windowState,
-            tabStore: dependencies.tabManager().runtimeStore
+            tabStore: tabManager().runtimeStore
         )
     }
 
@@ -65,10 +91,10 @@ final class BrowserWindowSpaceStateOwner {
            isSameSpace,
            hasValidCurrentSelection(in: windowState),
            currentTabIfSessionResolved(for: windowState) != nil {
-            dependencies.sanitizeFloatingBarState(windowState)
+            sanitizeFloatingBarState(windowState)
             applySpaceContext(space, to: windowState)
-            dependencies.syncShortcutSelectionState(windowState)
-            dependencies.persistWindowSession(windowState)
+            syncShortcutSelectionState(windowState)
+            persistWindowSession(windowState)
             return
         }
 
@@ -76,9 +102,9 @@ final class BrowserWindowSpaceStateOwner {
             in: space,
             windowState: windowState
         )
-        let isActiveWindow = dependencies.windowRegistry()?.activeWindow?.id == windowState.id
+        let isActiveWindow = windowRegistry()?.activeWindow?.id == windowState.id
         if isActiveWindow {
-            dependencies.tabManager().spaceLifecycleOwner.setActiveSpace(
+            tabManager().spaceLifecycleOwner.setActiveSpace(
                 space,
                 preferredTab: selectedTargetTab,
                 contextWindowId: windowState.id
@@ -87,13 +113,13 @@ final class BrowserWindowSpaceStateOwner {
 
         applySpaceContext(space, to: windowState)
         if let identity {
-            dependencies.finishInteractiveSpaceTransition(space, windowState, identity)
+            finishInteractiveSpaceTransition(space, windowState, identity)
         } else {
-            dependencies.updateWorkspaceTheme(windowState, space.workspaceTheme, true)
+            updateWorkspaceTheme(windowState, space.workspaceTheme, true)
         }
 
         if let selectedTargetTab {
-            dependencies.applyTabSelection(
+            applyTabSelection(
                 selectedTargetTab,
                 windowState,
                 false,
@@ -101,172 +127,45 @@ final class BrowserWindowSpaceStateOwner {
                 true,
                 false
             )
-            dependencies.performImmediateVisualHandoffIfPossible(windowState)
+            performImmediateVisualHandoffIfPossible(windowState)
         } else {
-            dependencies.showEmptyState(windowState)
+            showEmptyState(windowState)
         }
 
         if isActiveWindow {
-            dependencies.adoptProfileForSpaceChange(windowState)
+            adoptProfileForSpaceChange(windowState)
         }
-        dependencies.persistWindowSession(windowState)
-        dependencies.completePendingSplitGroupFocusIfReady(windowState, space.id)
+        persistWindowSession(windowState)
+        completePendingSplitGroupFocusIfReady(windowState, space.id)
     }
 
     func selectionTargetForSpaceActivation(
         in space: Space,
         windowState: BrowserWindowState
     ) -> Tab? {
-        dependencies.selectionService.selectionTargetForSpaceActivation(
+        selectionService.selectionTargetForSpaceActivation(
             in: space,
             windowState: windowState,
-            tabStore: dependencies.tabManager().runtimeStore
+            tabStore: tabManager().runtimeStore
         )
     }
 
+    /// Compatibility forward to `BrowserWindowStateValidationOwner`.
     func validateWindowStates() {
-        let tabManager = dependencies.tabManager()
-        for (_, windowState) in dependencies.windowRegistry()?.windows ?? [:] {
-            var needsUpdate = false
-            if let currentTabId = windowState.currentTabId,
-               tabManager.tabCollectionMembershipOwner.tab(for: currentTabId) == nil {
-                windowState.currentTabId = nil
-                needsUpdate = true
-            }
-
-            let resolvedWindowSpace = resolvedWindowOwnedSpace(
-                for: windowState,
-                tabManager: tabManager
-            )
-            if windowState.currentSpaceId != resolvedWindowSpace?.id {
-                windowState.currentSpaceId = resolvedWindowSpace?.id
-                needsUpdate = true
-            }
-
-            if !windowState.isShowingEmptyState && !hasValidCurrentSelection(in: windowState) {
-                if let currentSpace = space(for: windowState.currentSpaceId),
-                   let preferred = preferredTabForSpace(currentSpace, in: windowState) {
-                    dependencies.applyTabSelection(
-                        preferred,
-                        windowState,
-                        false,
-                        false,
-                        false,
-                        false
-                    )
-                } else if let fallback = preferredTabForWindow(windowState) {
-                    dependencies.applyTabSelection(
-                        fallback,
-                        windowState,
-                        false,
-                        false,
-                        false,
-                        false
-                    )
-                } else {
-                    dependencies.showEmptyState(windowState)
-                }
-                needsUpdate = true
-            }
-
-            let previousShortcutSelection = windowState.currentShortcutPinId
-            dependencies.syncShortcutSelectionState(windowState)
-            if previousShortcutSelection != windowState.currentShortcutPinId {
-                needsUpdate = true
-            }
-
-            if let currentSpace = space(for: windowState.currentSpaceId) {
-                dependencies.commitWorkspaceTheme(currentSpace.workspaceTheme, windowState)
-                if windowState.currentProfileId != currentSpace.profileId {
-                    windowState.currentProfileId = currentSpace.profileId
-                    needsUpdate = true
-                }
-            } else if windowState.currentSpaceId == nil {
-                dependencies.commitWorkspaceTheme(.default, windowState)
-                if windowState.currentProfileId != nil {
-                    windowState.currentProfileId = nil
-                    needsUpdate = true
-                }
-            }
-
-            if needsUpdate {
-                dependencies.refreshCompositor(windowState)
-                dependencies.persistWindowSession(windowState)
-            }
-        }
+        validateWindowStatesAction()
     }
 
+    /// Compatibility forward to `BrowserWindowStateValidationOwner`.
     func updateProfileRuntimeStates(activeWindowState: BrowserWindowState? = nil) {
-        let tabManager = dependencies.tabManager()
-        let focusedWindow = activeWindowState ?? dependencies.windowRegistry()?.activeWindow
-        let focusedWindowId = focusedWindow?.id
-
-        for space in tabManager.spaceStateOwner.spaces {
-            let isFocusedSpace = focusedWindow?.currentSpaceId == space.id
-            let hasRegularTabs = !tabManager.regularTabCollectionOwner.tabs(in: space).isEmpty
-            let hasPinnedLiveShortcut: Bool
-            if let windowId = focusedWindowId {
-                hasPinnedLiveShortcut = tabManager.shortcutPresentationOwner.liveShortcutTabs(in: windowId)
-                    .contains(where: { $0.spaceId == space.id && $0.shortcutPinRole != .essential })
-            } else {
-                hasPinnedLiveShortcut = false
-            }
-            let hasActiveShortcutSelection = focusedWindow?.selectedShortcutPinForSpace[space.id] != nil
-
-            if isFocusedSpace {
-                space.profileRuntimeState = hasRegularTabs || hasPinnedLiveShortcut || hasActiveShortcutSelection
-                    ? .active
-                    : .dormant
-            } else if hasRegularTabs || hasPinnedLiveShortcut || hasActiveShortcutSelection {
-                space.profileRuntimeState = .loadedInactive
-            } else {
-                space.profileRuntimeState = .dormant
-            }
-        }
-    }
-
-    private func preferredTabForWindow(_ windowState: BrowserWindowState) -> Tab? {
-        dependencies.selectionService.preferredTabForWindow(
-            windowState,
-            tabStore: dependencies.tabManager().runtimeStore
-        )
+        updateProfileRuntimeStatesAction(activeWindowState)
     }
 
     private func currentTabIfSessionResolved(for windowState: BrowserWindowState) -> Tab? {
         guard !windowState.isAwaitingInitialSessionResolution else { return nil }
-        return dependencies.selectionService.currentTab(
+        return selectionService.currentTab(
             for: windowState,
-            tabStore: dependencies.tabManager().runtimeStore
+            tabStore: tabManager().runtimeStore
         )
-    }
-
-    private func preferredTabForSpace(_ space: Space, in windowState: BrowserWindowState) -> Tab? {
-        dependencies.selectionService.preferredTabForSpace(
-            space,
-            in: windowState,
-            tabStore: dependencies.tabManager().runtimeStore
-        )
-    }
-
-    private func resolvedWindowOwnedSpace(
-        for windowState: BrowserWindowState,
-        tabManager: TabManager
-    ) -> Space? {
-        if let currentSpace = space(for: windowState.currentSpaceId) {
-            return currentSpace
-        }
-
-        if let currentTabId = windowState.currentTabId,
-           let tabSpaceId = tabManager.tabCollectionMembershipOwner.tab(for: currentTabId)?.spaceId,
-           let tabSpace = space(for: tabSpaceId) {
-            return tabSpace
-        }
-
-        if let profileId = windowState.currentProfileId {
-            return tabManager.spaceStateOwner.spaces.first(where: { $0.profileId == profileId })
-        }
-
-        return nil
     }
 
     private func applySpaceContext(
@@ -281,69 +180,5 @@ final class BrowserWindowSpaceStateOwner {
             windowState.currentProfileId = profileId
         }
         updateProfileRuntimeStates(activeWindowState: windowState)
-    }
-}
-
-extension BrowserWindowSpaceStateOwner.Dependencies {
-    @MainActor
-    static func live(browserManager: BrowserManager) -> Self {
-        let selectionService = browserManager.shellSelectionService
-        return Self(
-            tabManager: { [weak browserManager, tabManager = browserManager.tabManager] in
-                browserManager?.tabManager ?? tabManager
-            },
-            windowRegistry: { [weak browserManager] in browserManager?.windowRegistry },
-            selectionService: selectionService,
-            sanitizeFloatingBarState: { [weak browserManager] windowState in
-                browserManager?.floatingBarRoutingOwner.sanitizeFloatingBarState(in: windowState)
-            },
-            syncShortcutSelectionState: { [weak browserManager] windowState in
-                browserManager?.syncShortcutSelectionState(for: windowState)
-            },
-            updateWorkspaceTheme: { [weak browserManager] windowState, theme, animate in
-                browserManager?.workspaceThemeTransitionOwner.updateWorkspaceTheme(for: windowState, to: theme, animate: animate)
-            },
-            commitWorkspaceTheme: { [weak browserManager] theme, windowState in
-                browserManager?.workspaceThemeTransitionOwner.commitWorkspaceTheme(theme, for: windowState)
-            },
-            finishInteractiveSpaceTransition: { [weak browserManager] space, windowState, identity in
-                browserManager?.workspaceThemeTransitionOwner.finishInteractiveSpaceTransition(
-                    to: space,
-                    in: windowState,
-                    identity: identity
-                )
-            },
-            applyTabSelection: { [weak browserManager] tab, windowState, updateSpaceFromTab, updateTheme, rememberSelection, persistSelection in
-                browserManager?.applyTabSelection(
-                    tab,
-                    in: windowState,
-                    updateSpaceFromTab: updateSpaceFromTab,
-                    updateTheme: updateTheme,
-                    rememberSelection: rememberSelection,
-                    persistSelection: persistSelection
-                )
-            },
-            performImmediateVisualHandoffIfPossible: { [weak browserManager] windowState in
-                _ = browserManager?.windowVisualMutationOwner.performImmediateVisualHandoffIfPossible(in: windowState)
-            },
-            showEmptyState: { [weak browserManager] windowState in
-                browserManager?.showEmptyState(in: windowState)
-            },
-            adoptProfileForSpaceChange: { [weak browserManager] windowState in
-                browserManager?.adoptProfileIfNeeded(for: windowState, context: .spaceChange)
-            },
-            persistWindowSession: { [weak browserManager] windowState in
-                browserManager?.windowSessionActivationOwner.persistWindowSession(for: windowState)
-            },
-            completePendingSplitGroupFocusIfReady: { [weak browserManager] windowState, spaceId in
-                browserManager?.sidebarCommandService.splitShortcutRouting.completePendingSplitGroupFocusIfReady(
-                    in: windowState,
-                    spaceId: spaceId
-                )
-            },
-            refreshCompositor: { [weak browserManager] windowState in
-                browserManager?.windowVisualMutationOwner.refreshCompositor(for: windowState)
-            }
-        )
     }
 }

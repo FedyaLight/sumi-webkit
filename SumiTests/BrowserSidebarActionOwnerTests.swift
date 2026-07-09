@@ -64,11 +64,9 @@ final class BrowserSidebarActionOwnerTests: XCTestCase {
         windowState.tabManager = tabManager
 
         let owner = BrowserSidebarActionOwner(
-            dependencies: BrowserSidebarActionOwner.Dependencies(
-                tabManager: { tabManager },
-                liveFolderManager: { liveFolderManager },
-                sumiSettings: { nil }
-            )
+            tabManager: { tabManager },
+            liveFolderManager: { liveFolderManager },
+            sumiSettings: { nil }
         )
 
         return Harness(

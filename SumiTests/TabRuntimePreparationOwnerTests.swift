@@ -8,19 +8,17 @@ final class TabRuntimePreparationOwnerTests: XCTestCase {
         let settings = SumiSettingsService(userDefaults: TestDefaultsHarness().defaults)
         var preparedTabIds: [UUID] = []
         let owner = TabRuntimePreparationOwner(
-            dependencies: TabRuntimePreparationOwner.Dependencies(
-                runtimeContext: {
-                    TabManagerRuntimeContext(
-                        settings: { settings },
-                        webViewLifecycle: TabManagerWebViewLifecycleService(
-                            prepareTab: { tab in
-                                preparedTabIds.append(tab.id)
-                            }
-                        )
+            runtimeContext: {
+                TabManagerRuntimeContext(
+                    settings: { settings },
+                    webViewLifecycle: TabManagerWebViewLifecycleService(
+                        prepareTab: { tab in
+                            preparedTabIds.append(tab.id)
+                        }
                     )
-                },
-                settings: { nil }
-            )
+                )
+            },
+            settings: { nil }
         )
         let tab = Tab()
 
@@ -34,12 +32,10 @@ final class TabRuntimePreparationOwnerTests: XCTestCase {
         let existingSettings = SumiSettingsService(userDefaults: TestDefaultsHarness().defaults)
         let fallbackSettings = SumiSettingsService(userDefaults: TestDefaultsHarness().defaults)
         let owner = TabRuntimePreparationOwner(
-            dependencies: TabRuntimePreparationOwner.Dependencies(
-                runtimeContext: {
-                    TabManagerRuntimeContext(settings: { fallbackSettings })
-                },
-                settings: { nil }
-            )
+            runtimeContext: {
+                TabManagerRuntimeContext(settings: { fallbackSettings })
+            },
+            settings: { nil }
         )
         let tab = Tab()
         tab.sumiSettings = existingSettings

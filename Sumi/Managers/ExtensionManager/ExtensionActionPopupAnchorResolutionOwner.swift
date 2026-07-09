@@ -13,20 +13,30 @@ import WebKit
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionActionPopupAnchorResolutionOwner {
-    struct Dependencies {
-        let actionAnchorStore: ExtensionActionAnchorStore
-        let actionPopupAnchorStore: ExtensionActionPopupAnchorStore
-        let browserBridgeContext: @MainActor () -> (any ExtensionBrowserBridgeContext)?
-        let fallbackProfileId: @MainActor () -> UUID?
-        let resolvedProfileId: @MainActor (BrowserWindowState) -> UUID?
-        let windowMatchesProfile: @MainActor (BrowserWindowState, UUID) -> Bool
-        let trace: @MainActor (() -> String) -> Void
-    }
+    private let actionAnchorStore: ExtensionActionAnchorStore
+    private let actionPopupAnchorStore: ExtensionActionPopupAnchorStore
+    private let browserBridgeContext: @MainActor () -> (any ExtensionBrowserBridgeContext)?
+    private let fallbackProfileId: @MainActor () -> UUID?
+    private let resolvedProfileId: @MainActor (BrowserWindowState) -> UUID?
+    private let windowMatchesProfile: @MainActor (BrowserWindowState, UUID) -> Bool
+    private let trace: @MainActor (() -> String) -> Void
 
-    private let dependencies: Dependencies
-
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
+    init(
+        actionAnchorStore: ExtensionActionAnchorStore,
+        actionPopupAnchorStore: ExtensionActionPopupAnchorStore,
+        browserBridgeContext: @escaping @MainActor () -> (any ExtensionBrowserBridgeContext)?,
+        fallbackProfileId: @escaping @MainActor () -> UUID?,
+        resolvedProfileId: @escaping @MainActor (BrowserWindowState) -> UUID?,
+        windowMatchesProfile: @escaping @MainActor (BrowserWindowState, UUID) -> Bool,
+        trace: @escaping @MainActor (() -> String) -> Void
+    ) {
+        self.actionAnchorStore = actionAnchorStore
+        self.actionPopupAnchorStore = actionPopupAnchorStore
+        self.browserBridgeContext = browserBridgeContext
+        self.fallbackProfileId = fallbackProfileId
+        self.resolvedProfileId = resolvedProfileId
+        self.windowMatchesProfile = windowMatchesProfile
+        self.trace = trace
     }
 
     func captureActionPopupAnchor(
@@ -36,14 +46,14 @@ final class ExtensionActionPopupAnchorResolutionOwner {
     ) -> UUID {
         let captureProfileId =
             profileId
-            ?? dependencies.browserBridgeContext()?.extensionWindowState(for: windowId).flatMap {
-                dependencies.resolvedProfileId($0)
+            ?? browserBridgeContext()?.extensionWindowState(for: windowId).flatMap {
+                resolvedProfileId($0)
             }
-            ?? dependencies.fallbackProfileId()
+            ?? fallbackProfileId()
 
         guard let captureProfileId else {
             let sessionToken = UUID()
-            dependencies.trace {
+            trace {
                 "actionPopupAnchor capture skipped extensionId=\(extensionId) reason=missingProfile"
             }
             return sessionToken
@@ -63,9 +73,9 @@ final class ExtensionActionPopupAnchorResolutionOwner {
             validatedRectInWindow: validatedRectInWindow
         )
 
-        dependencies.actionPopupAnchorStore.store(anchor)
+        actionPopupAnchorStore.store(anchor)
 
-        dependencies.trace {
+        trace {
             "actionPopupAnchor captured extensionId=\(extensionId) profileId=\(captureProfileId.uuidString) windowId=\(windowId.uuidString) sessionToken=\(anchor.sessionToken.uuidString) hasButtonView=\(buttonView != nil) hasRect=\(validatedRectInWindow != nil)"
         }
         return anchor.sessionToken
@@ -82,16 +92,16 @@ final class ExtensionActionPopupAnchorResolutionOwner {
     )? {
         let presentationProfileId =
             profileId
-            ?? dependencies.fallbackProfileId()
+            ?? fallbackProfileId()
 
         var pendingAnchor: ExtensionActionPopupAnchor? =
-            dependencies.actionPopupAnchorStore.latestAnchor(for: extensionId)
+            actionPopupAnchorStore.latestAnchor(for: extensionId)
 
         if let staleAnchor = pendingAnchor,
            let presentationProfileId,
            staleAnchor.profileID != presentationProfileId {
-            dependencies.actionPopupAnchorStore.consume(sessionToken: staleAnchor.sessionToken)
-            dependencies.trace {
+            actionPopupAnchorStore.consume(sessionToken: staleAnchor.sessionToken)
+            trace {
                 "actionPopupAnchor stale session extensionId=\(extensionId) reason=profileMismatch capturedProfile=\(staleAnchor.profileID.uuidString) resolvedProfile=\(presentationProfileId.uuidString)"
             }
             pendingAnchor = nil
@@ -104,7 +114,7 @@ final class ExtensionActionPopupAnchorResolutionOwner {
         )
         let targetWindowId = targetWindow?.id
         let targetWindowProfileMatches = presentationProfileId.map { profileId in
-            targetWindow.map { dependencies.windowMatchesProfile($0, profileId) } ?? false
+            targetWindow.map { windowMatchesProfile($0, profileId) } ?? false
         } ?? true
 
         if presentationProfileId != nil, targetWindowId == nil {
@@ -115,7 +125,7 @@ final class ExtensionActionPopupAnchorResolutionOwner {
                 profileMatch: false,
                 sessionToken: pendingAnchor?.sessionToken
             )
-            dependencies.trace {
+            trace {
                 "actionPopupAnchor unresolved extensionId=\(extensionId) reason=profileWindowUnavailable \(resolution.traceLine)"
             }
             return nil
@@ -124,22 +134,23 @@ final class ExtensionActionPopupAnchorResolutionOwner {
                   isActionPopupAnchorViewReady(buttonView),
                   let window = buttonView.window,
                   let targetWindow,
-                  window === targetWindow.window {
+                  let targetAppKitWindow = browserBridgeContext()?.appKitWindow(for: targetWindow),
+                  window === targetAppKitWindow {
             let resolution = ExtensionActionPopupAnchorResolution(
                 anchorResolved: true,
                 anchorSource: .button,
-                windowMatch: window === targetWindow.window,
+                windowMatch: window === targetAppKitWindow,
                 profileMatch: presentationProfileId.map { pendingAnchor.profileID == $0 } ?? true,
                 sessionToken: pendingAnchor.sessionToken
             )
-            dependencies.trace {
+            trace {
                 "actionPopupAnchor resolved extensionId=\(extensionId) \(resolution.traceLine)"
             }
             return (buttonView, .button, resolution)
         } else if let pendingAnchor,
                   pendingAnchor.buttonView != nil,
                   pendingAnchor.validatedRectInWindow != nil {
-            dependencies.trace {
+            trace {
                 "actionPopupAnchor stale session extensionId=\(extensionId) sessionToken=\(pendingAnchor.sessionToken.uuidString)"
             }
         }
@@ -149,7 +160,7 @@ final class ExtensionActionPopupAnchorResolutionOwner {
            isActionPopupAnchorViewReady(currentView) {
             let windowMatch =
                 currentView.window
-                === targetWindow?.window
+                === targetWindow.flatMap({ browserBridgeContext()?.appKitWindow(for: $0) })
             let resolution = ExtensionActionPopupAnchorResolution(
                 anchorResolved: true,
                 anchorSource: .current,
@@ -157,7 +168,7 @@ final class ExtensionActionPopupAnchorResolutionOwner {
                 profileMatch: targetWindowProfileMatches,
                 sessionToken: pendingAnchor?.sessionToken
             )
-            dependencies.trace {
+            trace {
                 "actionPopupAnchor re-resolved extensionId=\(extensionId) \(resolution.traceLine)"
             }
             return (currentView, .current, resolution)
@@ -173,7 +184,7 @@ final class ExtensionActionPopupAnchorResolutionOwner {
                 profileMatch: targetWindowProfileMatches,
                 sessionToken: pendingAnchor?.sessionToken
             )
-            dependencies.trace {
+            trace {
                 "actionPopupAnchor urlHubFallback extensionId=\(extensionId) windowId=\(targetWindowId.uuidString) \(resolution.traceLine)"
             }
             return (fallbackView, .fallback, resolution)
@@ -188,7 +199,7 @@ final class ExtensionActionPopupAnchorResolutionOwner {
             } ?? false,
             sessionToken: pendingAnchor?.sessionToken
         )
-        dependencies.trace {
+        trace {
             "actionPopupAnchor unresolved extensionId=\(extensionId) \(resolution.traceLine)"
         }
         return nil
@@ -211,7 +222,7 @@ final class ExtensionActionPopupAnchorResolutionOwner {
         }
 
         if let anchorWindow = resolved.anchorView.window,
-           let appearance = dependencies.browserBridgeContext()?.extensionActionPopupAppearance(
+           let appearance = browserBridgeContext()?.extensionActionPopupAppearance(
                forAnchorWindow: anchorWindow,
                fallback: anchorWindow.effectiveAppearance
            ) {
@@ -223,7 +234,7 @@ final class ExtensionActionPopupAnchorResolutionOwner {
             relativeTo: resolved.anchorView,
             preferredEdge: .maxY
         )
-        dependencies.actionPopupAnchorStore.consume(
+        actionPopupAnchorStore.consume(
             sessionToken: resolved.resolution.sessionToken
         )
         return resolved.resolution
@@ -233,9 +244,10 @@ final class ExtensionActionPopupAnchorResolutionOwner {
         for extensionId: String,
         windowId: UUID
     ) -> NSView? {
-        let targetWindow = dependencies.browserBridgeContext()?
-            .extensionWindowState(for: windowId)?.window
-        return dependencies.actionAnchorStore.liveAnchorView(
+        let targetWindow = browserBridgeContext().flatMap { context in
+            context.extensionWindowState(for: windowId).flatMap(context.appKitWindow(for:))
+        }
+        return actionAnchorStore.liveAnchorView(
             for: extensionId,
             matching: targetWindow,
             isReady: { isActionPopupAnchorViewReady($0) }
@@ -243,7 +255,7 @@ final class ExtensionActionPopupAnchorResolutionOwner {
     }
 
     private func urlHubFallbackAnchorView(for windowId: UUID) -> NSView? {
-        dependencies.browserBridgeContext()?.extensionURLHubFallbackAnchorView(for: windowId)
+        browserBridgeContext()?.extensionURLHubFallbackAnchorView(for: windowId)
     }
 
     private func resolveActionPopupTargetWindow(
@@ -254,14 +266,14 @@ final class ExtensionActionPopupAnchorResolutionOwner {
         let candidates = [
             pendingAnchor?.windowID,
             preferredWindowId,
-            dependencies.browserBridgeContext()?.activeExtensionWindowState?.id,
+            browserBridgeContext()?.activeExtensionWindowState?.id,
         ]
         for candidateId in candidates.compactMap(\.self) {
-            guard let windowState = dependencies.browserBridgeContext()?
+            guard let windowState = browserBridgeContext()?
                 .extensionWindowState(for: candidateId) else {
                 continue
             }
-            guard profileId.map({ dependencies.windowMatchesProfile(windowState, $0) }) ?? true else {
+            guard profileId.map({ windowMatchesProfile(windowState, $0) }) ?? true else {
                 continue
             }
             return windowState
@@ -287,31 +299,5 @@ final class ExtensionActionPopupAnchorResolutionOwner {
 
         let anchorRect = ExtensionActionPopupPresentationOwner.anchorRect(for: view)
         return view.convert(anchorRect, to: window.contentView)
-    }
-}
-
-@available(macOS 15.5, *)
-extension ExtensionActionPopupAnchorResolutionOwner.Dependencies {
-    @MainActor
-    static func live(manager: ExtensionManager) -> Self {
-        Self(
-            actionAnchorStore: manager.actionAnchorStore,
-            actionPopupAnchorStore: manager.actionPopupAnchorStore,
-            browserBridgeContext: { [weak manager] in
-                manager?.browserBridgeContext
-            },
-            fallbackProfileId: { [weak manager] in
-                manager?.fallbackProfileId
-            },
-            resolvedProfileId: { [weak manager] windowState in
-                manager?.resolvedProfileId(for: windowState)
-            },
-            windowMatchesProfile: { [weak manager] windowState, profileId in
-                manager?.windowMatchesProfile(windowState, profileId: profileId) ?? false
-            },
-            trace: { [weak manager] message in
-                manager?.extensionRuntimeTrace(message())
-            }
-        )
     }
 }

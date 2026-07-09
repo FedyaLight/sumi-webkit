@@ -57,24 +57,22 @@ final class ExtensionActionPopupFailureDiagnosticsOwnerTests: XCTestCase {
         snapshot: ExtensionProfileRuntimeStateOwner.ExtensionSnapshot? = nil
     ) -> ExtensionActionPopupFailureDiagnosticsOwner {
         ExtensionActionPopupFailureDiagnosticsOwner(
-            dependencies: .init(
-                installedExtensions: { [installedExtension] in
-                    [installedExtension]
-                },
-                controllerExists: { candidateProfileId in
-                    candidateProfileId == profileId
-                },
-                extensionResourcesRoot: { _, _, _ in
-                    throw resourcesError
-                },
-                lastExtensionLoadError: { _, _ in nil },
-                extensionSnapshot: { _, candidateProfileId in
-                    candidateProfileId == profileId ? snapshot : nil
-                },
-                profileIdForContext: { _ in nil },
-                currentProfileId: { profileId },
-                runtimeState: { .ready }
-            )
+            installedExtensions: { [installedExtension] in
+                [installedExtension]
+            },
+            controllerExists: { candidateProfileId in
+                candidateProfileId == profileId
+            },
+            extensionResourcesRoot: { _, _, _ in
+                throw resourcesError
+            },
+            lastExtensionLoadError: { _, _ in nil },
+            extensionSnapshot: { _, candidateProfileId in
+                candidateProfileId == profileId ? snapshot : nil
+            },
+            profileIdForContext: { _ in nil },
+            currentProfileId: { profileId },
+            runtimeState: { .ready }
         )
     }
 

@@ -109,7 +109,7 @@ final class BrowserWebViewRoutingServiceTests: XCTestCase {
             loadsCachedFaviconOnInit: false
         )
         tab.replaceUntrackedWebView(WKWebView())
-        tab.primaryWindowId = UUID()
+        tab.webViewOwnershipOwner.setPrimaryWindowId(UUID())
         let coordinator = RecordingWebViewCoordinator()
         let service = BrowserWebViewRoutingService(
             tabLookup: { tabId in tabId == tab.id ? tab : nil },

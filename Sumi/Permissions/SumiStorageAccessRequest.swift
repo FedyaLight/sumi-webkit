@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 struct SumiStorageAccessRequest: Sendable {
     let id: String

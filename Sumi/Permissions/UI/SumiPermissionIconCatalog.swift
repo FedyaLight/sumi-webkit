@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 struct SumiPermissionIconDescriptor: Equatable, Sendable {
     let chromeIconName: String?

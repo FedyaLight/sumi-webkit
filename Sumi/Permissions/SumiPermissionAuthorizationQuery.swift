@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 struct SumiPermissionAuthorizationQuery: Identifiable, Equatable, Sendable {
     let id: String

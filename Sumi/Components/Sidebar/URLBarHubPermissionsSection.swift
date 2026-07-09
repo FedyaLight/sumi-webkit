@@ -1,4 +1,5 @@
 import SwiftUI
+import SumiDomain
 
 struct URLHubPermissionInlineRow: View {
     private enum IconState {

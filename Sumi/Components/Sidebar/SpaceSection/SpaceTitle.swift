@@ -124,6 +124,7 @@ struct SpaceTitleRowChrome<Icon: View, TitleContent: View, TrailingContent: View
 
 struct SpaceTitle: View {
     @Environment(BrowserWindowState.self) private var windowState
+    @Environment(WindowRegistry.self) private var windowRegistry
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
 
@@ -151,6 +152,10 @@ struct SpaceTitle: View {
         }
         .accessibilityIdentifier("space-title-\(space.id.uuidString)")
         .sidebarDDGHover($isRowHovered, isEnabled: isAppKitInteractionEnabled)
+        .onAppear {
+            emojiManager.sidebarRecoveryCoordinator =
+                windowState.sidebarContextMenuController.sidebarRecoveryCoordinator
+        }
         .onChange(of: nameFieldFocused) { _, focused in
             // When losing focus during rename, commit
             if isRenaming && !focused {
@@ -318,7 +323,7 @@ struct SpaceTitle: View {
     private func toggleSpaceIconPicker() {
         emojiManager.selectedEmoji = SumiPersistentGlyph.presentsAsEmoji(space.icon) ? space.icon : ""
         emojiManager.toggle(
-            source: windowState.resolveSidebarPresentationSource(),
+            source: windowState.resolveSidebarPresentationSource(in: windowRegistry),
             settings: sumiSettings,
             themeContext: themeContext,
             onCommit: commitSpaceIcon

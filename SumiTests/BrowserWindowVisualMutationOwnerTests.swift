@@ -113,15 +113,13 @@ final class BrowserWindowVisualMutationOwnerTests: XCTestCase {
         schedulePrepareVisibleWebViews: @escaping @MainActor (BrowserWindowState) -> Void = { _ in /* No-op. */ }
     ) -> BrowserWindowVisualMutationOwner {
         BrowserWindowVisualMutationOwner(
-            dependencies: BrowserWindowVisualMutationOwner.Dependencies(
-                hasActiveHistorySwipe: { _ in hasActiveHistorySwipe() },
-                currentTab: { _ in currentTab() },
-                performImmediateVisualHandoffIfPossible: { _ in
-                    performImmediateVisualHandoffIfPossible()
-                },
-                prepareVisibleWebViews: { _ in prepareVisibleWebViews() },
-                schedulePrepareVisibleWebViews: schedulePrepareVisibleWebViews
-            )
+            hasActiveHistorySwipe: { _ in hasActiveHistorySwipe() },
+            currentTab: { _ in currentTab() },
+            performImmediateVisualHandoffIfPossible: { _ in
+                performImmediateVisualHandoffIfPossible()
+            },
+            prepareVisibleWebViews: { _ in prepareVisibleWebViews() },
+            schedulePrepareVisibleWebViews: schedulePrepareVisibleWebViews
         )
     }
 }

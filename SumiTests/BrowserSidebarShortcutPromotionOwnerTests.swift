@@ -111,18 +111,16 @@ final class SidebarShortcutPromotionOwnerTests: XCTestCase {
 
     private func makeOwner(spy: Spy) -> BrowserSidebarShortcutPromotionOwner {
         BrowserSidebarShortcutPromotionOwner(
-            dependencies: BrowserSidebarShortcutPromotionOwner.Dependencies(
-                copyShortcutPinToEssentials: { pin, title, context in
-                    spy.events.append(
-                        .copyShortcutPinToEssentials(
-                            pin.id,
-                            title,
-                            context.windowState?.id,
-                            context.spaceId
-                        )
+            copyShortcutPinToEssentials: { pin, title, context in
+                spy.events.append(
+                    .copyShortcutPinToEssentials(
+                        pin.id,
+                        title,
+                        context.windowState?.id,
+                        context.spaceId
                     )
-                }
-            )
+                )
+            }
         )
     }
 

@@ -72,8 +72,8 @@ theme_font_size_literals="$(
 
 printf '%s\n' 'Modernization debt baseline guardrail'
 printf '%s\n' '--------------------------------------'
-check_max "production shared singleton definitions" "$production_shared_definitions" 37
-check_max "production .shared call sites" "$production_shared_call_sites" 122
+check_max "production shared singleton definitions" "$production_shared_definitions" 4
+check_max "production .shared call sites" "$production_shared_call_sites" 53
 # Baseline raised 57 -> 62 when the vendored DDG Bookmarks import readers were
 # ported into Sumi/Bookmarks/Store (5 best-effort try? sites: temp-file
 # cleanup, browser-profile directory discovery, regex compilation).

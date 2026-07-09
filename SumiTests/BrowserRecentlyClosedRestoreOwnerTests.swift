@@ -133,7 +133,6 @@ final class BrowserRecentlyClosedRestoreOwnerTests: XCTestCase {
         var didMergeTabSnapshot = false
 
         let owner = BrowserRecentlyClosedRestoreOwner(
-            dependencies: BrowserRecentlyClosedRestoreOwner.Dependencies(
                 recentlyClosedManager: { RecentlyClosedManager() },
                 startupRestore: startupRestore,
                 lastSessionWindowsStore: { store },
@@ -158,7 +157,6 @@ final class BrowserRecentlyClosedRestoreOwnerTests: XCTestCase {
                 profileManager: { browserManager.profileManager },
                 space: { _ in nil },
                 selectTab: { _, _ in /* No-op. */ }
-            )
         )
 
         XCTAssertTrue(owner.canOfferStartupSessionRestoreShortcut)
@@ -206,7 +204,6 @@ final class BrowserRecentlyClosedRestoreOwnerTests: XCTestCase {
         browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(fallbackSpace)
 
         let owner = BrowserRecentlyClosedRestoreOwner(
-            dependencies: BrowserRecentlyClosedRestoreOwner.Dependencies(
                 recentlyClosedManager: { recentlyClosedManager },
                 startupRestore: startupRestore,
                 lastSessionWindowsStore: { store },
@@ -222,7 +219,6 @@ final class BrowserRecentlyClosedRestoreOwnerTests: XCTestCase {
                     browserManager.tabManager.spaceStateOwner.spaces.first { $0.id == spaceId }
                 },
                 selectTab: { _, _ in /* No-op. */ }
-            )
         )
 
         return RestoreHarness(

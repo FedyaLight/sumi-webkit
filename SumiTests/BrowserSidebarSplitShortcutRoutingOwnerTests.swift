@@ -57,26 +57,24 @@ final class SidebarSplitShortcutRoutingOwnerTests: XCTestCase {
         var didShowEmptyState = false
 
         let owner = BrowserSidebarSplitShortcutRoutingOwner(
-            dependencies: BrowserSidebarSplitShortcutRoutingOwner.Dependencies(
-                tabManager: { tabManager },
-                splitManager: { splitManager },
-                space: { spaceId in
-                    spaceId.flatMap { requested in
-                        tabManager.spaceStateOwner.spaces.first { $0.id == requested }
-                    }
-                },
-                setActiveSpace: { _, _ in /* No-op. */ },
-                selectTab: { tab, _ in
-                    selectedTabs.append(tab.id)
-                },
-                refreshCompositor: { _ in /* No-op. */ },
-                performImmediateVisualHandoffIfPossible: { _ in /* No-op. */ },
-                persistWindowSession: { _ in /* No-op. */ },
-                showEmptyState: { windowState in
-                    didShowEmptyState = true
-                    windowState.isShowingEmptyState = true
+            tabManager: { tabManager },
+            splitManager: { splitManager },
+            space: { spaceId in
+                spaceId.flatMap { requested in
+                    tabManager.spaceStateOwner.spaces.first { $0.id == requested }
                 }
-            )
+            },
+            setActiveSpace: { _, _ in /* No-op. */ },
+            selectTab: { tab, _ in
+                selectedTabs.append(tab.id)
+            },
+            refreshCompositor: { _ in /* No-op. */ },
+            performImmediateVisualHandoffIfPossible: { _ in /* No-op. */ },
+            persistWindowSession: { _ in /* No-op. */ },
+            showEmptyState: { windowState in
+                didShowEmptyState = true
+                windowState.isShowingEmptyState = true
+            }
         )
 
         owner.unloadShortcutHostedSplitGroup(group, in: windowState)

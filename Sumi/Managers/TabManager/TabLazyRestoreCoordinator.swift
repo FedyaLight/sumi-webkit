@@ -128,15 +128,11 @@ enum TabLazyRestorePlanner {
 
 @MainActor
 final class TabLazyRestoreCoordinator {
-    struct Dependencies {
-        let spaces: () -> [Space]
-        let tabsBySpaceSnapshot: () -> [UUID: [Tab]]
-        let tab: (UUID) -> Tab?
-    }
-
     let policy: TabLazyRestorePolicy
 
-    private let dependencies: Dependencies
+    private let spaces: () -> [Space]
+    private let tabsBySpaceSnapshot: () -> [UUID: [Tab]]
+    private let resolveTab: (UUID) -> Tab?
     private var eligibleTabIDs: Set<UUID> = []
     private var queuedTabIDs: [UUID] = []
     private var inFlightTabIDs: Set<UUID> = []
@@ -144,10 +140,14 @@ final class TabLazyRestoreCoordinator {
     private var loadingObserver: NSObjectProtocol?
 
     init(
-        dependencies: Dependencies,
+        spaces: @escaping () -> [Space],
+        tabsBySpaceSnapshot: @escaping () -> [UUID: [Tab]],
+        resolveTab: @escaping (UUID) -> Tab?,
         policy: TabLazyRestorePolicy = .default
     ) {
-        self.dependencies = dependencies
+        self.spaces = spaces
+        self.tabsBySpaceSnapshot = tabsBySpaceSnapshot
+        self.resolveTab = resolveTab
         self.policy = policy
         self.loadingObserver = NotificationCenter.default.addObserver(
             forName: .sumiTabLoadingStateDidChange,
@@ -193,12 +193,12 @@ final class TabLazyRestoreCoordinator {
         }
 
         let remainingBudget = max(0, policy.maxTotalOpportunisticTabs - startedTabIDs.count)
-        let tabsBySpace = dependencies.tabsBySpaceSnapshot()
+        let tabsBySpace = tabsBySpaceSnapshot()
         queuedTabIDs = TabLazyRestorePlanner.plan(
             anchors: anchors,
             tabsBySpace: tabsBySpace,
             fallbackAnchorTabIDsBySpace: lazyRestoreFallbackAnchorTabIDsBySpace(
-                spaces: dependencies.spaces(),
+                spaces: spaces(),
                 tabsBySpace: tabsBySpace
             ),
             eligibleTabIDs: eligibleTabIDs,
@@ -213,11 +213,11 @@ final class TabLazyRestoreCoordinator {
 
     private func pruneEligibility() {
         eligibleTabIDs = eligibleTabIDs.filter { tabID in
-            guard let tab = dependencies.tab(tabID) else { return false }
+            guard let tab = resolveTab(tabID) else { return false }
             return tab.requiresPrimaryWebView && (tab.suspensionStateOwner.isSuspended || tab.isUnloaded)
         }
-        inFlightTabIDs = inFlightTabIDs.filter { dependencies.tab($0) != nil }
-        queuedTabIDs.removeAll { dependencies.tab($0) == nil }
+        inFlightTabIDs = inFlightTabIDs.filter { resolveTab($0) != nil }
+        queuedTabIDs.removeAll { resolveTab($0) == nil }
     }
 
     private func startQueuedLoadsIfNeeded() {
@@ -225,7 +225,7 @@ final class TabLazyRestoreCoordinator {
               let nextTabID = queuedTabIDs.first {
             queuedTabIDs.removeFirst()
             guard startedTabIDs.insert(nextTabID).inserted else { continue }
-            guard let tab = dependencies.tab(nextTabID) else {
+            guard let tab = resolveTab(nextTabID) else {
                 continue
             }
 
@@ -267,8 +267,8 @@ final class TabLazyRestoreCoordinator {
         let spaceId = currentTab?.spaceId ?? windowState.currentSpaceId
         guard let spaceId else { return nil }
 
-        let tabsBySpace = dependencies.tabsBySpaceSnapshot()
-        let spaces = dependencies.spaces()
+        let tabsBySpace = tabsBySpaceSnapshot()
+        let spaces = spaces()
 
         let regularTabId: UUID?
         if let currentTab, currentTab.spaceId == spaceId {
@@ -296,23 +296,6 @@ final class TabLazyRestoreCoordinator {
                     return nil
                 }
                 return (space.id, fallbackTabID)
-            }
-        )
-    }
-}
-
-extension TabLazyRestoreCoordinator.Dependencies {
-    @MainActor
-    static func live(tabManager: TabManager) -> Self {
-        Self(
-            spaces: { [weak tabManager] in
-                tabManager?.spaceStateOwner.spaces ?? []
-            },
-            tabsBySpaceSnapshot: { [weak tabManager] in
-                tabManager?.regularTabCollectionStateOwner.tabsBySpaceSnapshot() ?? [:]
-            },
-            tab: { [weak tabManager] id in
-                tabManager?.tabCollectionMembershipOwner.tab(for: id)
             }
         )
     }

@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 enum SumiURLNormalizationContext: Equatable {
     case searchBar(queryTemplate: String)

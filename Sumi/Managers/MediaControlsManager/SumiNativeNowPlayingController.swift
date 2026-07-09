@@ -24,8 +24,6 @@ protocol SumiNativeNowPlayingRuntimeControlling: SumiNativeNowPlayingFeatureCont
 
 @MainActor
 final class SumiNativeNowPlayingController: ObservableObject, SumiNativeNowPlayingRuntimeControlling {
-    static let shared = SumiNativeNowPlayingController()
-
     typealias Candidate = SumiNativeNowPlayingRuntimeContext.Candidate
     typealias CandidateProvider = @MainActor (SumiNativeNowPlayingRuntimeContext) -> [Candidate]
     typealias InfoProvider = @MainActor (Tab, SumiNativeNowPlayingRuntimeContext, BrowserWindowState) async -> SumiNativeNowPlayingInfo?

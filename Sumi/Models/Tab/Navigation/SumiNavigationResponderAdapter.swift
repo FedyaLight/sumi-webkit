@@ -1,5 +1,6 @@
 import Navigation
 import WebKit
+import SumiDomain
 
 @MainActor
 final class SumiNavigationResponderAdapter: NavigationResponder {

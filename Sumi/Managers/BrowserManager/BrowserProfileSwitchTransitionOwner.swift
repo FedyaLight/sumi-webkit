@@ -10,18 +10,6 @@ protocol BrowserProfileSwitchTransitionHost: AnyObject {
 
 @MainActor
 final class BrowserProfileSwitchTransitionOwner {
-    struct Dependencies {
-        let auxiliaryWindowManager: AuxiliaryWindowManager
-        let bookmarkManager: SumiBookmarkManager
-        let extensionsModule: SumiExtensionsModule
-        let faviconService: any BrowserFaviconServicing
-        let historyManager: HistoryManager
-        let tabManager: TabManager
-        let notifications: @MainActor () -> (any BrowserNotificationPresenting)?
-        let runAutomaticPermissionCleanupIfNeeded: @MainActor (Profile?) async -> Void
-        let scheduleAutomaticBrowsingDataCleanup: @MainActor (String) -> Void
-    }
-
     actor ProfileOps {
         func run(_ body: @MainActor () -> Bool) async -> Bool {
             await body()
@@ -29,15 +17,39 @@ final class BrowserProfileSwitchTransitionOwner {
     }
 
     private unowned let host: BrowserProfileSwitchTransitionHost
-    private let dependencies: Dependencies
+    private let auxiliaryWindowManager: AuxiliaryWindowManager
+    private let bookmarkManager: SumiBookmarkManager
+    private let extensionsModule: SumiExtensionsModule
+    private let faviconService: any BrowserFaviconServicing
+    private let historyManager: HistoryManager
+    private let tabManager: TabManager
+    private let notifications: @MainActor () -> (any BrowserNotificationPresenting)?
+    private let runAutomaticPermissionCleanupIfNeeded: @MainActor (Profile?) async -> Void
+    private let scheduleAutomaticBrowsingDataCleanup: @MainActor (String) -> Void
     private let profileOps = ProfileOps()
 
     init(
         host: BrowserProfileSwitchTransitionHost,
-        dependencies: Dependencies
+        auxiliaryWindowManager: AuxiliaryWindowManager,
+        bookmarkManager: SumiBookmarkManager,
+        extensionsModule: SumiExtensionsModule,
+        faviconService: any BrowserFaviconServicing,
+        historyManager: HistoryManager,
+        tabManager: TabManager,
+        notifications: @escaping @MainActor () -> (any BrowserNotificationPresenting)?,
+        runAutomaticPermissionCleanupIfNeeded: @escaping @MainActor (Profile?) async -> Void,
+        scheduleAutomaticBrowsingDataCleanup: @escaping @MainActor (String) -> Void
     ) {
         self.host = host
-        self.dependencies = dependencies
+        self.auxiliaryWindowManager = auxiliaryWindowManager
+        self.bookmarkManager = bookmarkManager
+        self.extensionsModule = extensionsModule
+        self.faviconService = faviconService
+        self.historyManager = historyManager
+        self.tabManager = tabManager
+        self.notifications = notifications
+        self.runAutomaticPermissionCleanupIfNeeded = runAutomaticPermissionCleanupIfNeeded
+        self.scheduleAutomaticBrowsingDataCleanup = scheduleAutomaticBrowsingDataCleanup
     }
 
     func switchToProfile(
@@ -77,7 +89,7 @@ final class BrowserProfileSwitchTransitionOwner {
             }
 
             if context.shouldProvideFeedback {
-                dependencies.notifications()?.presentProfileSwitchNotification(
+                notifications()?.presentProfileSwitchNotification(
                     to: profile,
                     in: targetWindowState
                 )
@@ -97,8 +109,8 @@ final class BrowserProfileSwitchTransitionOwner {
         }
 
         guard shouldRunCleanup else { return }
-        await dependencies.runAutomaticPermissionCleanupIfNeeded(profile)
-        dependencies.scheduleAutomaticBrowsingDataCleanup("profile-switch")
+        await runAutomaticPermissionCleanupIfNeeded(profile)
+        scheduleAutomaticBrowsingDataCleanup("profile-switch")
     }
 
     private func canApplyProfileSwitch(
@@ -131,43 +143,17 @@ final class BrowserProfileSwitchTransitionOwner {
         animateTransition: Bool
     ) {
         let host = self.host
-        dependencies.auxiliaryWindowManager.closeAll(reason: .profileSwitch)
+        auxiliaryWindowManager.closeAll(reason: .profileSwitch)
         host.isTransitioningProfile = animateTransition
         host.currentProfile = profile
         windowState?.currentProfileId = profile.id
-        dependencies.bookmarkManager.setFaviconPrefetchPartition(
-            dependencies.faviconService.partition(profile: profile)
+        bookmarkManager.setFaviconPrefetchPartition(
+            faviconService.partition(profile: profile)
         )
-        dependencies.extensionsModule.switchProfileIfLoaded(profile)
-        dependencies.historyManager.switchProfile(profile.id)
-        dependencies.tabManager.profileAssignmentOwner.handleProfileSwitch(contextWindowId: windowState?.id)
+        extensionsModule.switchProfileIfLoaded(profile)
+        historyManager.switchProfile(profile.id)
+        tabManager.profileAssignmentOwner.handleProfileSwitch(contextWindowId: windowState?.id)
     }
 }
 
 extension BrowserManager: BrowserProfileSwitchTransitionHost {}
-
-extension BrowserProfileSwitchTransitionOwner.Dependencies {
-    @MainActor
-    static func live(browserManager: BrowserManager) -> Self {
-        Self(
-            auxiliaryWindowManager: browserManager.auxiliaryWindowManager,
-            bookmarkManager: browserManager.bookmarkManager,
-            extensionsModule: browserManager.extensionsModule,
-            faviconService: browserManager.dataServices.faviconService,
-            historyManager: browserManager.historyManager,
-            tabManager: browserManager.tabManager,
-            notifications: { [weak browserManager] in
-                browserManager?.notificationPresenter
-            },
-            runAutomaticPermissionCleanupIfNeeded: { [weak browserManager] profile in
-                _ = await browserManager?.automaticDataCleanupOwner
-                    .runAutomaticPermissionCleanupIfNeeded(for: profile)
-            },
-            scheduleAutomaticBrowsingDataCleanup: { [weak browserManager] reason in
-                browserManager?.automaticDataCleanupOwner.scheduleAutomaticBrowsingDataCleanup(
-                    reason: reason
-                )
-            }
-        )
-    }
-}

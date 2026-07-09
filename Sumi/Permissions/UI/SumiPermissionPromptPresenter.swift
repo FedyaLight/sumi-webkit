@@ -1,8 +1,11 @@
 import Combine
 import Foundation
+import SumiDomain
 
 @MainActor
 final class SumiPermissionPromptPresenter: ObservableObject {
+    weak var windowRegistry: WindowRegistry?
+
     struct SourceSnapshot: Equatable {
         let coordinatorState: SumiPermissionCoordinatorState?
         let tabId: String
@@ -113,7 +116,7 @@ final class SumiPermissionPromptPresenter: ObservableObject {
             tabId: tab.id.uuidString,
             pageId: tab.currentPermissionPageId(),
             displayDomain: Self.displayDomain(for: tab.url),
-            windowIsActive: windowState.shellWindow(in: nil)?.isKeyWindow ?? true
+            windowIsActive: windowState.shellWindow(in: windowRegistry)?.isKeyWindow ?? true
         )
         currentWindowState = windowState
         Task { @MainActor [weak self] in
@@ -311,7 +314,7 @@ final class SumiPermissionPromptPresenter: ObservableObject {
 
         finishSidebarPin(reason: "sync")
         let source = windowState.sidebarTransientSessionCoordinator.preparedPresentationSource(
-            window: windowState.shellWindow(in: nil)
+            window: windowState.shellWindow(in: windowRegistry)
         )
         let token = windowState.sidebarTransientSessionCoordinator.beginSession(
             kind: .permissionPrompt,

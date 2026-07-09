@@ -9,59 +9,39 @@ import Foundation
 /// from `ShortcutLiveTabOwner`'s surface.
 @MainActor
 final class ShortcutContainerRemovalOwner {
-    struct Dependencies {
-        let pinnedByProfile: @MainActor () -> [UUID: [ShortcutPin]]
-        let setPinnedTabs: @MainActor ([ShortcutPin], UUID) -> Void
-        let removeRegularTab: @MainActor (UUID, UUID, UUID?) -> Void
-        let currentSpaceId: @MainActor () -> UUID?
-    }
+    private let pinnedByProfile: @MainActor () -> [UUID: [ShortcutPin]]
+    private let setPinnedTabs: @MainActor ([ShortcutPin], UUID) -> Void
+    private let removeRegularTab: @MainActor (UUID, UUID, UUID?) -> Void
+    private let currentSpaceId: @MainActor () -> UUID?
 
-    private let dependencies: Dependencies
-
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
+    init(
+        pinnedByProfile: @escaping @MainActor () -> [UUID: [ShortcutPin]],
+        setPinnedTabs: @escaping @MainActor ([ShortcutPin], UUID) -> Void,
+        removeRegularTab: @escaping @MainActor (UUID, UUID, UUID?) -> Void,
+        currentSpaceId: @escaping @MainActor () -> UUID?
+    ) {
+        self.pinnedByProfile = pinnedByProfile
+        self.setPinnedTabs = setPinnedTabs
+        self.removeRegularTab = removeRegularTab
+        self.currentSpaceId = currentSpaceId
     }
 
     func removeFromCurrentContainer(_ tab: Tab) {
-        for (profileId, pins) in dependencies.pinnedByProfile() {
+        for (profileId, pins) in pinnedByProfile() {
             if let index = pins.firstIndex(where: { $0.id == tab.id }) {
                 var copy = pins
                 if index < copy.count { copy.remove(at: index) }
-                dependencies.setPinnedTabs(copy, profileId)
+                setPinnedTabs(copy, profileId)
                 return
             }
         }
 
         if let spaceId = tab.spaceId {
-            dependencies.removeRegularTab(
+            removeRegularTab(
                 tab.id,
                 spaceId,
-                dependencies.currentSpaceId()
+                currentSpaceId()
             )
         }
-    }
-}
-
-extension ShortcutContainerRemovalOwner.Dependencies {
-    @MainActor
-    static func live(tabManager: TabManager) -> Self {
-        Self(
-            pinnedByProfile: { [weak tabManager] in
-                tabManager?.shortcutPinCollectionStateOwner.pinnedByProfileSnapshot() ?? [:]
-            },
-            setPinnedTabs: { [weak tabManager] pins, profileId in
-                tabManager?.structuralCollectionMutationOwner.setPinnedTabs(pins, for: profileId)
-            },
-            removeRegularTab: { [weak tabManager] tabId, spaceId, currentSpaceId in
-                _ = tabManager?.regularTabCollectionOwner.remove(
-                    tabId,
-                    from: spaceId,
-                    currentSpaceId: currentSpaceId
-                )
-            },
-            currentSpaceId: { [weak tabManager] in
-                tabManager?.spaceStateOwner.currentSpace?.id
-            }
-        )
     }
 }

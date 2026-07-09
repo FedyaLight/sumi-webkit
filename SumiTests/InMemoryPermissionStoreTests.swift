@@ -1,6 +1,7 @@
 import XCTest
 
 @testable import Sumi
+import SumiDomain
 
 final class InMemoryPermissionStoreTests: XCTestCase {
     func testOneTimeDecisionLookup() async throws {

@@ -3,11 +3,11 @@ import Foundation
 import ObjectiveC
 import WebKit
 
-enum SumiWebViewAudioState: Equatable {
+public enum SumiWebViewAudioState: Equatable {
     case muted(isPlayingAudio: Bool)
     case unmuted(isPlayingAudio: Bool)
 
-    init(mediaMutedStateRaw: UInt, isPlayingAudio: Bool) {
+    public init(mediaMutedStateRaw: UInt, isPlayingAudio: Bool) {
         if mediaMutedStateRaw & Self.audioMutedMask != 0 {
             self = .muted(isPlayingAudio: isPlayingAudio)
         } else {
@@ -15,7 +15,7 @@ enum SumiWebViewAudioState: Equatable {
         }
     }
 
-    var isMuted: Bool {
+    public var isMuted: Bool {
         switch self {
         case .muted:
             return true
@@ -24,33 +24,33 @@ enum SumiWebViewAudioState: Equatable {
         }
     }
 
-    var isPlayingAudio: Bool {
+    public var isPlayingAudio: Bool {
         switch self {
         case .muted(let isPlayingAudio), .unmuted(let isPlayingAudio):
             return isPlayingAudio
         }
     }
 
-    var showsTabAudioButton: Bool {
+    public var showsTabAudioButton: Bool {
         isPlayingAudio
     }
 
-    func withMuted(_ muted: Bool) -> SumiWebViewAudioState {
+    public func withMuted(_ muted: Bool) -> SumiWebViewAudioState {
         muted
             ? .muted(isPlayingAudio: isPlayingAudio)
             : .unmuted(isPlayingAudio: isPlayingAudio)
     }
 
-    func withPlayingAudio(_ isPlayingAudio: Bool) -> SumiWebViewAudioState {
+    public func withPlayingAudio(_ isPlayingAudio: Bool) -> SumiWebViewAudioState {
         isMuted
             ? .muted(isPlayingAudio: isPlayingAudio)
             : .unmuted(isPlayingAudio: isPlayingAudio)
     }
 
-    static let audioMutedMask: UInt = 1 << 0
+    public static let audioMutedMask: UInt = 1 << 0
 }
 
-extension WKWebView {
+public extension WKWebView {
     private enum SumiAudioSelector {
         static let mediaMutedState = NSSelectorFromString("_mediaMutedState")
         static let isPlayingAudio = NSSelectorFromString("_isPlayingAudio")

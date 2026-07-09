@@ -8,16 +8,18 @@ import AppKit
 /// the display/selection ordering rules readable and independently reasoned about.
 @MainActor
 final class ShortcutLiveTabWindowQueryOwner {
-    struct Dependencies {
-        let runtimeContext: @MainActor () -> TabManagerRuntimeContext?
-        let tab: @MainActor (UUID) -> Tab?
-        let primaryTrackedWindowId: @MainActor (UUID) -> UUID?
-    }
+    private let runtimeContext: @MainActor () -> TabManagerRuntimeContext?
+    private let tab: @MainActor (UUID) -> Tab?
+    private let primaryTrackedWindowId: @MainActor (UUID) -> UUID?
 
-    private let dependencies: Dependencies
-
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
+    init(
+        runtimeContext: @escaping @MainActor () -> TabManagerRuntimeContext?,
+        tab: @escaping @MainActor (UUID) -> Tab?,
+        primaryTrackedWindowId: @escaping @MainActor (UUID) -> UUID?
+    ) {
+        self.runtimeContext = runtimeContext
+        self.tab = tab
+        self.primaryTrackedWindowId = primaryTrackedWindowId
     }
 
     func windowIdDisplaying(tabId: UUID, preferredWindowId: UUID? = nil) -> UUID? {
@@ -25,7 +27,7 @@ final class ShortcutLiveTabWindowQueryOwner {
     }
 
     func windowIdsSelecting(tabId: UUID, preferredWindowId: UUID? = nil) -> [UUID] {
-        guard let runtimeContext = dependencies.runtimeContext() else { return [] }
+        guard let runtimeContext = runtimeContext() else { return [] }
 
         func windowSelectsTab(_ windowState: BrowserWindowState) -> Bool {
             windowState.currentTabId == tabId
@@ -33,7 +35,7 @@ final class ShortcutLiveTabWindowQueryOwner {
 
         var orderedWindowIds: [UUID] = []
 
-        if let primaryWindowId = dependencies.primaryTrackedWindowId(tabId),
+        if let primaryWindowId = primaryTrackedWindowId(tabId),
            let primaryWindow = runtimeContext.windowState(for: primaryWindowId),
            windowSelectsTab(primaryWindow) {
             orderedWindowIds.append(primaryWindowId)
@@ -60,7 +62,7 @@ final class ShortcutLiveTabWindowQueryOwner {
     }
 
     func windowIdsDisplaying(tabId: UUID, preferredWindowId: UUID? = nil) -> [UUID] {
-        guard let runtimeContext = dependencies.runtimeContext() else { return [] }
+        guard let runtimeContext = runtimeContext() else { return [] }
 
         func windowDisplaysTab(_ windowId: UUID, _ windowState: BrowserWindowState) -> Bool {
             if windowState.currentTabId == tabId {
@@ -78,7 +80,7 @@ final class ShortcutLiveTabWindowQueryOwner {
             orderedWindowIds.append(preferredWindowId)
         }
 
-        if let primaryWindowId = dependencies.primaryTrackedWindowId(tabId),
+        if let primaryWindowId = primaryTrackedWindowId(tabId),
            let primaryWindow = runtimeContext.windowState(for: primaryWindowId),
            windowDisplaysTab(primaryWindowId, primaryWindow),
            !orderedWindowIds.contains(primaryWindowId) {
@@ -100,6 +102,6 @@ final class ShortcutLiveTabWindowQueryOwner {
 
     func windowStateDisplaying(tabId: UUID) -> BrowserWindowState? {
         guard let windowId = windowIdDisplaying(tabId: tabId) else { return nil }
-        return dependencies.runtimeContext()?.windowState(for: windowId)
+        return runtimeContext()?.windowState(for: windowId)
     }
 }

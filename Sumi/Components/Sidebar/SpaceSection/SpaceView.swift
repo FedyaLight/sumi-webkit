@@ -45,6 +45,7 @@ struct SpaceView: View {
     let scrollHoverCoordinator: NativeSurfaceScrollHoverCoordinator
     @Binding var isSidebarHovered: Bool
     @Environment(BrowserWindowState.self) var windowState
+    @Environment(WindowRegistry.self) var windowRegistry
     @Environment(\.sumiSettings) var sumiSettings
     @EnvironmentObject var dragState: SidebarDragState
     @State var isNewTabHovered = false
@@ -105,13 +106,13 @@ struct SpaceView: View {
                     space,
                     windowState,
                     themeContext,
-                    windowState.resolveSidebarPresentationSource()
+                    windowState.resolveSidebarPresentationSource(in: windowRegistry)
                 )
             },
             changeTheme: {
                 browserContext.presentationActions.showGradientEditorForSpace(
                     space,
-                    windowState.resolveSidebarPresentationSource()
+                    windowState.resolveSidebarPresentationSource(in: windowRegistry)
                 )
             },
             deleteSpace: {

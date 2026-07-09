@@ -1,6 +1,7 @@
 import XCTest
 
 @testable import Sumi
+import SumiDomain
 
 private let permissionCleanupServiceFixedDate = Date(timeIntervalSince1970: 1_800_000_300)
 

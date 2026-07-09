@@ -119,7 +119,8 @@ struct SpacesSideBarView: View {
                     SidebarGlobalDragOverlay(
                         dropActions: SidebarDropActionContext(performDrop: { pasteboard, resolution, windowState in
                             browserContext.performDrop(pasteboard, resolution, windowState)
-                        })
+                        }),
+                        dragAutoscrollRegistry: dragState.dragAutoscrollRegistry
                     )
                         .allowsHitTesting(allowsSidebarInteractiveWork)
                 }
@@ -248,7 +249,8 @@ struct SpacesSideBarView: View {
                                 isEnabled: allowsSidebarInteractiveWork
                                     && spaces.count > 1
                                     && (transitionState.phase == .idle || transitionState.phase == .interactive)
-                                    && sidebarInteractionState.allowsSidebarSwipeCapture
+                                    && sidebarInteractionState.allowsSidebarSwipeCapture,
+                                dragAutoscrollRegistry: dragState.dragAutoscrollRegistry
                             ) { event in
                                 transitionCoordinator.handleSwipeEvent(
                                     event,
@@ -610,7 +612,7 @@ struct SpacesSideBarView: View {
         let changeThemeAction: (() -> Void)? = browserContext.tabManager.spaceStateOwner.currentSpace == nil
             ? nil
             : {
-                browserContext.commands.showGradientEditor(windowState.resolveSidebarPresentationSource())
+                browserContext.commands.showGradientEditor(windowState.resolveSidebarPresentationSource(in: windowRegistry))
             }
 
         return makeSidebarShellContextMenuEntries(
@@ -803,7 +805,7 @@ struct SpacesSideBarView: View {
     }
 
     private func beginSpaceCreationMode() {
-        let source = windowState.resolveSidebarPresentationSource()
+        let source = windowState.resolveSidebarPresentationSource(in: windowRegistry)
         let defaultProfileID = windowState.currentProfileId
             ?? browserContext.currentProfile()?.id
             ?? browserContext.profileManager.profiles.first?.id

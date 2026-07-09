@@ -18,7 +18,6 @@ final class BrowserWindowHistorySessionOwnerTests: XCTestCase {
         let startupRestore = FakeBrowserStartupSessionRestoreProvider()
 
         let owner = BrowserWindowHistorySessionOwner(
-            dependencies: BrowserWindowHistorySessionOwner.Dependencies(
                 windowState: { windowId in
                     [closedWindow.id: closedWindow, survivingWindow.id: survivingWindow][windowId]
                 },
@@ -38,7 +37,6 @@ final class BrowserWindowHistorySessionOwnerTests: XCTestCase {
                     store
                 },
                 startupRestore: startupRestore
-            )
         )
 
         owner.handleWindowWillClose(closedWindow.id)
@@ -68,7 +66,6 @@ final class BrowserWindowHistorySessionOwnerTests: XCTestCase {
         let startupRestore = FakeBrowserStartupSessionRestoreProvider()
 
         let owner = BrowserWindowHistorySessionOwner(
-            dependencies: BrowserWindowHistorySessionOwner.Dependencies(
                 windowState: { _ in nil },
                 allWindows: {
                     [firstWindow, secondWindow]
@@ -84,7 +81,6 @@ final class BrowserWindowHistorySessionOwnerTests: XCTestCase {
                     store
                 },
                 startupRestore: startupRestore
-            )
         )
 
         owner.refreshLastSessionWindowsStore(excludingWindowID: nil)
@@ -120,7 +116,6 @@ final class BrowserWindowHistorySessionOwnerTests: XCTestCase {
         )
 
         let owner = BrowserWindowHistorySessionOwner(
-            dependencies: BrowserWindowHistorySessionOwner.Dependencies(
                 windowState: { _ in currentWindow },
                 allWindows: {
                     [currentWindow]
@@ -136,7 +131,6 @@ final class BrowserWindowHistorySessionOwnerTests: XCTestCase {
                     store
                 },
                 startupRestore: startupRestore
-            )
         )
 
         owner.refreshLastSessionWindowsStore(excludingWindowID: nil)

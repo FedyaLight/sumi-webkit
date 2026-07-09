@@ -56,7 +56,20 @@ final class UserScriptStore {
     private let fileManager = FileManager.default
     private let session: URLSession
     private lazy var resourceCache = UserScriptResourceCache(
-        dependencies: .live(store: self),
+        scriptsDirectory: { [weak self] in
+            self?.scriptsDirectory ?? UserScriptStore.defaultScriptsDirectory()
+        },
+        persistResource: { [weak self] record in
+            self?.persistResource(
+                scriptId: record.scriptId,
+                kind: record.kind,
+                name: record.name,
+                sourceURL: record.sourceURL,
+                localFile: record.localFile,
+                mimeType: record.mimeType,
+                data: record.data
+            )
+        },
         session: session
     )
     private var dispatchSource: DispatchSourceFileSystemObject?
@@ -81,7 +94,7 @@ final class UserScriptStore {
     init(
         directory: URL? = nil,
         context: ModelContext? = nil,
-        session: URLSession = SumiNonPersistentURLSession.shared
+        session: URLSession = SumiNonPersistentURLSession.make()
     ) {
         self.scriptsDirectory = directory ?? Self.defaultScriptsDirectory()
         self.context = context

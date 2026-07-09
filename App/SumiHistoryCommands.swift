@@ -1,20 +1,23 @@
 import SwiftUI
+import SumiDomain
 
 struct SumiHistoryCommands: Commands {
     let browserContext: SumiCommandsBrowserContext
     let shortcutManager: KeyboardShortcutManager
     @ObservedObject private var historyManager: HistoryManager
     @ObservedObject private var recentlyClosedManager: RecentlyClosedManager
-    @ObservedObject private var menuFaviconInvalidator = SumiMenuFaviconInvalidator.shared
+    @ObservedObject private var menuFaviconInvalidator: SumiMenuFaviconInvalidator
 
     init(
         browserContext: SumiCommandsBrowserContext,
-        shortcutManager: KeyboardShortcutManager
+        shortcutManager: KeyboardShortcutManager,
+        menuFaviconInvalidator: SumiMenuFaviconInvalidator
     ) {
         self.browserContext = browserContext
         self.shortcutManager = shortcutManager
         self.historyManager = browserContext.historyManager
         self.recentlyClosedManager = browserContext.recentlyClosedManager
+        self._menuFaviconInvalidator = ObservedObject(wrappedValue: menuFaviconInvalidator)
     }
 
     private func dynamicShortcut(_ action: ShortcutAction) -> some ViewModifier {

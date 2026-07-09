@@ -1,6 +1,7 @@
 import XCTest
 
 @testable import Sumi
+import SumiDomain
 
 /// Parity corpus for the native address-bar classifier, ported from the
 /// vendored DDG URLPredictor reference tests (macOS policy) before the Rust

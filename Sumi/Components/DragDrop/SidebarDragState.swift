@@ -4,8 +4,8 @@ import SwiftUI
 
 @MainActor
 final class SidebarDragState: ObservableObject {
-    static let shared = SidebarDragState()
-
+    /// Window-scoped registry for tab-list drag autoscroll + swipe forwarding.
+    let dragAutoscrollRegistry = SidebarTabListDragAutoscrollRegistry()
     let locationTracker = SidebarDragLocationTracker()
     /// Narrow observable for per-row chrome (hover sensors etc.) that only
     /// cares whether a drag session is active — subscribing rows to the full

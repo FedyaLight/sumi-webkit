@@ -144,7 +144,7 @@ final class SidebarZenMotionTests: XCTestCase {
 
     func testSidebarInteractiveItemUsesInjectedDragStateForArmedGeometry() {
         let injectedDragState = SidebarDragState()
-        let sharedDragState = SidebarDragState.shared
+        let otherDragState = SidebarDragState()
         let itemId = UUID()
         let spaceId = UUID()
         let item = SumiDragItem(
@@ -162,7 +162,7 @@ final class SidebarZenMotionTests: XCTestCase {
         let view = SidebarInteractiveItemView(frame: NSRect(x: 0, y: 0, width: 160, height: 36))
 
         injectedDragState.resetInteractionState()
-        sharedDragState.resetInteractionState()
+        otherDragState.resetInteractionState()
         view.sidebarDragState = injectedDragState
         view.update(
             configuration: SidebarAppKitItemConfiguration(
@@ -178,9 +178,9 @@ final class SidebarZenMotionTests: XCTestCase {
         view.mouseDown(with: mouseEvent(.leftMouseDown))
 
         XCTAssertTrue(injectedDragState.isInternalDragGeometryArmed)
-        XCTAssertFalse(sharedDragState.isInternalDragGeometryArmed)
+        XCTAssertFalse(otherDragState.isInternalDragGeometryArmed)
         XCTAssertEqual(injectedDragState.armedDragScope, scope)
-        XCTAssertNil(sharedDragState.armedDragScope)
+        XCTAssertNil(otherDragState.armedDragScope)
     }
 
     func testPrimaryActionWithSourceIDUsesAppKitOwnerForPressTrackingInDockedSidebar() {

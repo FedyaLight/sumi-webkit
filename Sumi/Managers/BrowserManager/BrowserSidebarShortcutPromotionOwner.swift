@@ -2,18 +2,20 @@ import Foundation
 
 @MainActor
 final class BrowserSidebarShortcutPromotionOwner {
-    struct Dependencies {
-        let copyShortcutPinToEssentials: @MainActor (
+    private let copyShortcutPinToEssentials: @MainActor (
+        ShortcutPin,
+        String,
+        EssentialsShortcutPlacementOwner.TargetContext
+    ) -> Void
+
+    init(
+        copyShortcutPinToEssentials: @escaping @MainActor (
             ShortcutPin,
             String,
             EssentialsShortcutPlacementOwner.TargetContext
         ) -> Void
-    }
-
-    private let dependencies: Dependencies
-
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
+    ) {
+        self.copyShortcutPinToEssentials = copyShortcutPinToEssentials
     }
 
     func pinShortcutGlobally(
@@ -22,27 +24,13 @@ final class BrowserSidebarShortcutPromotionOwner {
         spaceId: UUID,
         liveTab: Tab?
     ) {
-        dependencies.copyShortcutPinToEssentials(
+        copyShortcutPinToEssentials(
             pin,
             pin.resolvedDisplayTitle(liveTab: liveTab),
             EssentialsShortcutPlacementOwner.TargetContext(
                 windowState: windowState,
                 spaceId: spaceId
             )
-        )
-    }
-}
-
-extension BrowserSidebarShortcutPromotionOwner.Dependencies {
-    static func live(browserManager: BrowserManager) -> Self {
-        Self(
-            copyShortcutPinToEssentials: { [weak browserManager] pin, title, context in
-                _ = browserManager?.tabManager.shortcutPinCommandOwner.copyShortcutPinToEssentials(
-                    pin,
-                    title: title,
-                    context: context
-                )
-            }
         )
     }
 }

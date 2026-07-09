@@ -13,16 +13,10 @@ import WebKit
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionKeyboardCommandDispatchOwner {
-    struct Dependencies {
-        let loadedContextsForCurrentProfile:
-            @MainActor () -> [String: WKWebExtensionContext]
-        let trace: @MainActor (@autoclosure () -> String) -> Void
-    }
+    private weak var manager: ExtensionManager?
 
-    private let dependencies: Dependencies
-
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
+    init(manager: ExtensionManager) {
+        self.manager = manager
     }
 
     /// Callers must have already offered the event to Sumi's own shortcuts;
@@ -38,33 +32,18 @@ final class ExtensionKeyboardCommandDispatchOwner {
         }
 
         // Deterministic winner when two extensions declare the same shortcut.
-        let contexts = dependencies.loadedContextsForCurrentProfile()
+        let contexts = (manager?.extensionContexts ?? [:])
             .sorted { $0.key < $1.key }
         for (extensionId, extensionContext) in contexts {
             guard extensionContext.isLoaded else { continue }
             if extensionContext.performCommand(for: event) {
-                dependencies.trace(
+                manager?.extensionRuntimeTrace(
                     "extension keyboard command performed extensionId=\(extensionId)"
                 )
                 return true
             }
         }
         return false
-    }
-}
-
-@available(macOS 15.5, *)
-extension ExtensionKeyboardCommandDispatchOwner.Dependencies {
-    @MainActor
-    static func live(manager: ExtensionManager) -> Self {
-        Self(
-            loadedContextsForCurrentProfile: { [weak manager] in
-                manager?.extensionContexts ?? [:]
-            },
-            trace: { [weak manager] message in
-                manager?.extensionRuntimeTrace(message())
-            }
-        )
     }
 }
 

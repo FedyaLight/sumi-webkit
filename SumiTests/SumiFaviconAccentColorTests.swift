@@ -8,13 +8,13 @@ import XCTest
 final class SumiFaviconAccentColorTests: XCTestCase {
     override func setUp() {
         super.setUp()
-        SumiFaviconAccentCache.shared.resetForTesting()
+        (SumiFaviconAccentCacheDefaults.cache as? SumiFaviconAccentCache)?.resetForTesting()
     }
 
     override func tearDown() {
-        // The accent cache is a shared singleton; clear it between tests so one
+        // The accent cache is process-scoped; clear it between tests so one
         // test's stored colors cannot leak into another.
-        SumiFaviconAccentCache.shared.resetForTesting()
+        (SumiFaviconAccentCacheDefaults.cache as? SumiFaviconAccentCache)?.resetForTesting()
         super.tearDown()
     }
 
@@ -70,23 +70,25 @@ final class SumiFaviconAccentColorTests: XCTestCase {
 
     func testAccentCacheStoresAndReturnsColor() {
         let key = "example.com"
-        SumiFaviconAccentCache.shared.store(color: .red, forKey: key)
-        XCTAssertNotNil(SumiFaviconAccentCache.shared.color(forKey: key))
-        SumiFaviconAccentCache.shared.invalidate(forKey: key)
-        XCTAssertNil(SumiFaviconAccentCache.shared.color(forKey: key))
+        let cache = SumiFaviconAccentCacheDefaults.cache
+        cache.store(color: .red, forKey: key)
+        XCTAssertNotNil(cache.color(forKey: key))
+        cache.invalidate(forKey: key)
+        XCTAssertNil(cache.color(forKey: key))
     }
 
     func testAccentCacheDomainInvalidation() {
-        SumiFaviconAccentCache.shared.store(color: .red, forKey: "example.com")
-        SumiFaviconAccentCache.shared.store(color: .blue, forKey: "example.com|icon")
-        SumiFaviconAccentCache.shared.store(color: .green, forKey: "other.test")
+        let cache = SumiFaviconAccentCacheDefaults.cache
+        cache.store(color: .red, forKey: "example.com")
+        cache.store(color: .blue, forKey: "example.com|icon")
+        cache.store(color: .green, forKey: "other.test")
 
-        SumiFaviconAccentCache.shared.invalidate(domain: "example.com")
+        cache.invalidate(domain: "example.com")
 
-        XCTAssertNil(SumiFaviconAccentCache.shared.color(forKey: "example.com"))
-        XCTAssertNil(SumiFaviconAccentCache.shared.color(forKey: "example.com|icon"))
-        XCTAssertNotNil(SumiFaviconAccentCache.shared.color(forKey: "other.test"))
-        SumiFaviconAccentCache.shared.invalidate(forKey: "other.test")
+        XCTAssertNil(cache.color(forKey: "example.com"))
+        XCTAssertNil(cache.color(forKey: "example.com|icon"))
+        XCTAssertNotNil(cache.color(forKey: "other.test"))
+        cache.invalidate(forKey: "other.test")
     }
 
     func testPinnedTileAccentResolverReadsInjectedPartitionCacheFirst() {

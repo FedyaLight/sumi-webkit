@@ -60,8 +60,6 @@ final class SidebarHostRecoveryCoordinator: SidebarHostRecoveryHandling {
         }
     }
 
-    static let shared = SidebarHostRecoveryCoordinator()
-
     private let invalidateAnchor: @MainActor (NSView?) -> Void
     private var buckets: [ObjectIdentifier: WindowBucket] = [:]
     private var anchorWindowIDs: [ObjectIdentifier: ObjectIdentifier] = [:]

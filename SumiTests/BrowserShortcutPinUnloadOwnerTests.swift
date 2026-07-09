@@ -97,12 +97,10 @@ final class BrowserShortcutPinUnloadOwnerTests: XCTestCase {
         notifications: @escaping @MainActor () -> (any BrowserNotificationPresenting)? = { nil }
     ) -> BrowserShortcutPinUnloadOwner {
         BrowserShortcutPinUnloadOwner(
-            dependencies: BrowserShortcutPinUnloadOwner.Dependencies(
-                selectedShortcutLiveTab: selectedShortcutLiveTab,
-                closeTab: closeTab,
-                userInitiatedUnload: userInitiatedUnload,
-                notifications: notifications
-            )
+            selectedShortcutLiveTab: selectedShortcutLiveTab,
+            closeTab: closeTab,
+            userInitiatedUnload: userInitiatedUnload,
+            notifications: notifications
         )
     }
 }

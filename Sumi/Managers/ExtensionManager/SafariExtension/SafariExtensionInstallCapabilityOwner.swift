@@ -11,6 +11,12 @@ import WebKit
 @available(macOS 15.5, *)
 @MainActor
 final class SafariExtensionInstallCapabilityOwner {
+    private let storageCleanupPlanner: WebExtensionStorageCleanupPlanner
+
+    init(storageCleanupPlanner: WebExtensionStorageCleanupPlanner = WebExtensionStorageCleanupPlanner()) {
+        self.storageCleanupPlanner = storageCleanupPlanner
+    }
+
     struct SiteAccessApplicationInput {
         let extensionId: String
         let profileId: UUID
@@ -321,7 +327,7 @@ final class SafariExtensionInstallCapabilityOwner {
     func webExtensionStoreCapabilitySnapshot(
         for manifest: [String: Any]
     ) -> WebExtensionStorageCleanupPlanner.StoreCapabilitySnapshot {
-        WebExtensionStorageCleanupPlanner.shared.storeCapabilitySnapshot(
+        storageCleanupPlanner.storeCapabilitySnapshot(
             for: manifest,
             unsupportedAPIs: Self.webKitRuntimeUnsupportedAPIs(for: manifest)
         )

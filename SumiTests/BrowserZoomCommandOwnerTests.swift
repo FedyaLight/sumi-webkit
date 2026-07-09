@@ -128,18 +128,16 @@ final class BrowserZoomCommandOwnerTests: XCTestCase {
         notifications: @escaping @MainActor () -> (any BrowserNotificationPresenting)? = { nil }
     ) -> BrowserZoomCommandOwner {
         BrowserZoomCommandOwner(
-            dependencies: BrowserZoomCommandOwner.Dependencies(
-                activeWindow: activeWindow,
-                activePageTab: activePageTab,
-                activePageWebView: activePageWebView,
-                tab: tab,
-                windowStateContainingTab: windowStateContainingTab,
-                webView: webView,
-                zoomManager: { zoomManager },
-                sizeOverride: sizeOverride,
-                incrementZoomStateRevision: incrementZoomStateRevision,
-                notifications: notifications
-            )
+            activeWindow: activeWindow,
+            activePageTab: activePageTab,
+            activePageWebView: activePageWebView,
+            tab: tab,
+            windowStateContainingTab: windowStateContainingTab,
+            webView: webView,
+            zoomManager: { zoomManager },
+            sizeOverride: sizeOverride,
+            incrementZoomStateRevision: incrementZoomStateRevision,
+            notifications: notifications
         )
     }
 

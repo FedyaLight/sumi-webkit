@@ -13,9 +13,15 @@ import Foundation
 @MainActor
 final class WebExtensionStorageCleanupOwner {
     private let manager: ExtensionManager
+    private let storageCleanupPlanner: WebExtensionStorageCleanupPlanner
 
-    init(manager: ExtensionManager) {
+    init(
+        manager: ExtensionManager,
+        storageCleanupPlanner: WebExtensionStorageCleanupPlanner? = nil
+    ) {
         self.manager = manager
+        self.storageCleanupPlanner =
+            storageCleanupPlanner ?? manager.webExtensionStorageCleanupPlanner
     }
 
     func removeStoredData(
@@ -156,6 +162,7 @@ final class WebExtensionStorageCleanupOwner {
         }
         return WebExtensionStorageCleanupStore(
             controllerStorageId: controllerStorageId,
+            planner: storageCleanupPlanner,
             storageDirectoryNameResolver: { [weak manager] extensionId in
                 guard let manager,
                       let installed = manager.installedExtensions.first(where: {
@@ -235,7 +242,7 @@ final class WebExtensionStorageCleanupOwner {
         preCleanupSnapshot: ExtensionManager.WebExtensionStorageSnapshot,
         postCleanupSnapshot: ExtensionManager.WebExtensionStorageSnapshot
     ) -> WebExtensionStorageCleanupPlanner.ErrorClassification {
-        WebExtensionStorageCleanupPlanner.shared.classifyCleanupErrors(
+        storageCleanupPlanner.classifyCleanupErrors(
             errors,
             extensionId: extensionId,
             preCleanupSnapshot: preCleanupSnapshot,

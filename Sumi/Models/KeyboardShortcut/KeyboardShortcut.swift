@@ -1,6 +1,7 @@
 import Foundation
+import SumiDomain
 
-struct KeyboardShortcut: Hashable, Codable {
+struct KeyboardShortcut: Hashable, Codable, Sendable {
     let action: ShortcutAction
     var keyCombination: KeyCombination?
 

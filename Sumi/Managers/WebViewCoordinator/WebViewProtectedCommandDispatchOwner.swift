@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import WebKit
+import SumiWebRuntime
 
 /// Routes WebView mutations that arrive while a WebView is protected from
 /// compositor changes (fullscreen media, history swipe, visual handoff):

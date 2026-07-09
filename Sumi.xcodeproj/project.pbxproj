@@ -9,6 +9,10 @@
 /* Begin PBXBuildFile section */
 		3ABB06E087FC4AB7B21B2B6B /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 3E692AE1701C49119B0EB052 /* Sparkle */; };
 		A11DD020B11D000100000005 /* Navigation in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD010B11D000100000005 /* Navigation */; };
+		B11DD020B11D000100000005 /* SumiDomain in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD020B11D000100000011 /* SumiDomain */; };
+		B11DD021B11D000100000005 /* SumiDomain in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD020B11D000100000012 /* SumiDomain */; };
+		B11DD030B11D000100000005 /* SumiWebRuntime in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD030B11D000100000011 /* SumiWebRuntime */; };
+		B11DD031B11D000100000005 /* SumiWebRuntime in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD030B11D000100000012 /* SumiWebRuntime */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -143,6 +147,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B11DD021B11D000100000005 /* SumiDomain in Frameworks */,
+				B11DD031B11D000100000005 /* SumiWebRuntime in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -158,6 +164,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				A11DD020B11D000100000005 /* Navigation in Frameworks */,
+				B11DD020B11D000100000005 /* SumiDomain in Frameworks */,
+				B11DD030B11D000100000005 /* SumiWebRuntime in Frameworks */,
 				3ABB06E087FC4AB7B21B2B6B /* Sparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -232,6 +240,8 @@
 			);
 			name = SumiTests;
 			packageProductDependencies = (
+				A11DD020B11D000100000012 /* SumiDomain */,
+				A11DD030B11D000100000012 /* SumiWebRuntime */,
 			);
 			productName = SumiTests;
 			productReference = 2C89252E2E88DFF9002236DC /* SumiTests.xctest */;
@@ -258,6 +268,8 @@
 			name = Sumi;
 			packageProductDependencies = (
 				A11DD010B11D000100000005 /* Navigation */,
+				A11DD020B11D000100000011 /* SumiDomain */,
+				A11DD030B11D000100000011 /* SumiWebRuntime */,
 				3E692AE1701C49119B0EB052 /* Sparkle */,
 			);
 			productName = Sumi;
@@ -298,6 +310,8 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				A11DD000B11D000100000001 /* XCLocalSwiftPackageReference "Vendor/DDG/BrowserServicesKit" */,
+				A11DD020B11D000100000010 /* XCLocalSwiftPackageReference "Packages/SumiDomain" */,
+				A11DD030B11D000100000010 /* XCLocalSwiftPackageReference "Packages/SumiWebRuntime" */,
 				9AD90DB4528040A5950C146D /* XCRemoteSwiftPackageReference "Sparkle" */,
 			);
 			preferredProjectObjectVersion = 77;
@@ -740,6 +754,14 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Vendor/DDG/BrowserServicesKit;
 		};
+		A11DD020B11D000100000010 /* XCLocalSwiftPackageReference "Packages/SumiDomain" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/SumiDomain;
+		};
+		A11DD030B11D000100000010 /* XCLocalSwiftPackageReference "Packages/SumiWebRuntime" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/SumiWebRuntime;
+		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
@@ -763,6 +785,26 @@
 			isa = XCSwiftPackageProductDependency;
 			package = A11DD000B11D000100000001 /* XCLocalSwiftPackageReference "Vendor/DDG/BrowserServicesKit" */;
 			productName = Navigation;
+		};
+		A11DD020B11D000100000011 /* SumiDomain */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A11DD020B11D000100000010 /* XCLocalSwiftPackageReference "Packages/SumiDomain" */;
+			productName = SumiDomain;
+		};
+		A11DD020B11D000100000012 /* SumiDomain */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A11DD020B11D000100000010 /* XCLocalSwiftPackageReference "Packages/SumiDomain" */;
+			productName = SumiDomain;
+		};
+		A11DD030B11D000100000011 /* SumiWebRuntime */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A11DD030B11D000100000010 /* XCLocalSwiftPackageReference "Packages/SumiWebRuntime" */;
+			productName = SumiWebRuntime;
+		};
+		A11DD030B11D000100000012 /* SumiWebRuntime */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A11DD030B11D000100000010 /* XCLocalSwiftPackageReference "Packages/SumiWebRuntime" */;
+			productName = SumiWebRuntime;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

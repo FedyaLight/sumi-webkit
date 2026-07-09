@@ -109,7 +109,7 @@ final class NativeDialogPresentationOwnerTests: XCTestCase {
 
     func testSidebarSourcePresentationStartsAndFinishesDialogSessionOnBindingDismiss() throws {
         let windowState = BrowserWindowState()
-        let source = windowState.resolveSidebarPresentationSource()
+        let source = windowState.resolveSidebarPresentationSource(in: nil)
         let harness = NativeDialogOwnerHarness()
 
         harness.owner.presentNoticeSheet(
@@ -156,41 +156,42 @@ private final class NativeDialogOwnerHarness {
     }
 
     lazy var owner = BrowserNativeDialogPresentationOwner(
-        dependencies: BrowserNativeDialogPresentationOwner.Dependencies(
-            windowRegistry: { [weak self] in
-                self?.windowRegistry
-            },
-            nativeModalPresentation: { [weak self] in
-                self?.presentation
-            },
-            setNativeModalPresentation: { [weak self] presentation in
-                self?.presentation = presentation
-            },
-            postCollapsedSidebarOverlayDismissal: { [weak self] in
-                self?.events.append("overlay-dismissal")
-            },
-            dismissFloatingBarForActiveWindow: { [weak self] preserveDraft in
-                self?.events.append("floating-dismissal:\(preserveDraft)")
-            },
-            dismissThemePickerDiscardingIfNeeded: { [weak self] in
-                self?.events.append("theme-discard")
-            },
-            dismissThemePickerCommittingIfNeeded: { [weak self] in
-                self?.events.append("theme-commit")
-            },
-            terminateApplication: { [weak self] in
-                self?.events.append("terminate")
-            },
-            keyWindow: {
-                nil
-            },
-            mainWindow: {
-                nil
-            },
-            recoverSidebarHost: { [weak self] window in
-                self?.recoveredWindows.append(window)
-            }
-        )
+        windowRegistry: { [weak self] in
+            self?.windowRegistry
+        },
+        nativeModalPresentation: { [weak self] in
+            self?.presentation
+        },
+        setNativeModalPresentation: { [weak self] presentation in
+            self?.presentation = presentation
+        },
+        postCollapsedSidebarOverlayDismissal: { [weak self] in
+            self?.events.append("overlay-dismissal")
+        },
+        dismissFloatingBarForActiveWindow: { [weak self] preserveDraft in
+            self?.events.append("floating-dismissal:\(preserveDraft)")
+        },
+        dismissThemePickerDiscardingIfNeeded: { [weak self] in
+            self?.events.append("theme-discard")
+        },
+        dismissThemePickerCommittingIfNeeded: { [weak self] in
+            self?.events.append("theme-commit")
+        },
+        terminateApplication: { [weak self] in
+            self?.events.append("terminate")
+        },
+        keyWindow: {
+            nil
+        },
+        mainWindow: {
+            nil
+        },
+        recoverSidebarHost: { [weak self] window in
+            self?.recoveredWindows.append(window)
+        },
+        presentSharingServicePicker: { _, _ in
+            /* Sharing picker is owned by BrowserSharingPickerPresentationOwner. */
+        }
     )
 
     init(windowRegistry: WindowRegistry? = nil) {

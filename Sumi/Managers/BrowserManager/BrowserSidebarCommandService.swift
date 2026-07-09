@@ -14,31 +14,153 @@ final class BrowserSidebarCommandService {
 
     init(browserManager: BrowserManager) {
         editorPresentation = BrowserSidebarEditorPresentationOwner(
-            dependencies: .live(browserManager: browserManager)
+            sidebarPosition: { [weak browserManager] in
+                browserManager?.sumiSettings?.sidebarPosition ?? .left
+            },
+            settings: { [weak browserManager] in
+                browserManager?.sumiSettings ?? SumiSettingsService()
+            },
+            profiles: { [weak browserManager] in
+                browserManager?.profileManager.profiles ?? []
+            },
+            windowRegistry: { [weak browserManager] in
+                browserManager?.windowRegistry
+            },
+            sidebarHostRecoveryCoordinator: { [weak browserManager] in
+                browserManager?.sidebarHostRecoveryCoordinator ?? SidebarHostRecoveryCoordinator()
+            },
+            renameSpace: { [weak browserManager] spaceID, name in
+                try browserManager?.tabManager.spaceLifecycleOwner.renameSpace(spaceId: spaceID, newName: name)
+            },
+            updateSpaceIcon: { [weak browserManager] spaceID, icon in
+                try browserManager?.tabManager.spaceLifecycleOwner.updateSpaceIcon(spaceId: spaceID, icon: icon)
+            },
+            assignSpaceProfile: { [weak browserManager] spaceID, profileID in
+                browserManager?.tabManager.profileAssignmentOwner.assign(spaceId: spaceID, toProfile: profileID)
+            },
+            renameFolder: { [weak browserManager] folderID, name in
+                browserManager?.tabManager.folderMutationOwner.renameFolder(folderID, newName: name)
+            },
+            updateFolderIcon: { [weak browserManager] folderID, icon in
+                browserManager?.tabManager.folderMutationOwner.updateFolderIcon(folderID, icon: icon)
+            },
+            updateShortcutPin: { [weak browserManager] pin, title, launchURL, iconAsset in
+                _ = browserManager?.tabManager.shortcutPinCommandOwner.updateShortcutPin(
+                    pin,
+                    title: title,
+                    launchURL: launchURL,
+                    iconAsset: .some(iconAsset)
+                )
+            }
         )
         chromeCommand = BrowserSidebarChromeCommandOwner(
-            dependencies: .live(browserManager: browserManager)
+            showGradientEditor: { [weak browserManager] source in
+                browserManager?.workspaceThemeEditorOwner.showGradientEditor(source: source)
+            },
+            toggleSidebar: { [weak browserManager] windowState in
+                browserManager?.sidebarPresentationOwner.toggleSidebar(for: windowState)
+            },
+            openAppearanceSettings: { [weak browserManager] windowState in
+                browserManager?.urlBarCommands.openSettingsTab(selecting: .appearance, in: windowState)
+            },
+            closeDownloadsPopover: { [weak browserManager] windowState in
+                browserManager?.chromeCommands.closeDownloadsPopover(in: windowState)
+            },
+            toggleDownloadsPopover: { [weak browserManager] windowState in
+                browserManager?.chromeCommands.toggleDownloadsPopover(in: windowState)
+            }
         )
         shortcutPromotion = BrowserSidebarShortcutPromotionOwner(
-            dependencies: .live(browserManager: browserManager)
+            copyShortcutPinToEssentials: { [weak browserManager] pin, title, context in
+                _ = browserManager?.tabManager.shortcutPinCommandOwner.copyShortcutPinToEssentials(
+                    pin,
+                    title: title,
+                    context: context
+                )
+            }
         )
         folderCommand = BrowserSidebarFolderCommandOwner(
-            dependencies: .live(browserManager: browserManager)
+            spaceForSidebarActions: { [weak browserManager] windowState in
+                browserManager?.sidebarActionOwner.spaceForSidebarActions(in: windowState)
+            },
+            createFolderInCurrentSpace: { [weak browserManager] windowState in
+                browserManager?.sidebarActionOwner.createFolderInCurrentSpace(in: windowState)
+            },
+            createRSSLiveFolderInCurrentSpace: { [weak browserManager] windowState in
+                browserManager?.sidebarActionOwner.createRSSLiveFolderInCurrentSpace(in: windowState)
+            },
+            createGitHubPRFolderInCurrentSpace: { [weak browserManager] windowState in
+                browserManager?.sidebarActionOwner.createGitHubPRFolderInCurrentSpace(in: windowState)
+            },
+            createGitHubIssuesFolderInCurrentSpace: { [weak browserManager] windowState in
+                browserManager?.sidebarActionOwner.createGitHubIssuesFolderInCurrentSpace(in: windowState)
+            }
         )
-        tabCommand = BrowserSidebarTabCommandOwner(
-            dependencies: .live(browserManager: browserManager)
-        )
+        tabCommand = BrowserSidebarTabCommandOwner(browserManager: browserManager)
+        let tabManager = browserManager.tabManager
+        let splitManager = browserManager.splitManager
         splitShortcutRouting = BrowserSidebarSplitShortcutRoutingOwner(
-            dependencies: .live(browserManager: browserManager)
+            tabManager: { [weak browserManager] in
+                browserManager?.tabManager ?? tabManager
+            },
+            splitManager: { [weak browserManager] in
+                browserManager?.splitManager ?? splitManager
+            },
+            space: { [weak browserManager] spaceId in
+                browserManager?.windowSpaceStateOwner.space(for: spaceId)
+            },
+            setActiveSpace: { [weak browserManager] space, windowState in
+                browserManager?.windowSpaceStateOwner.setActiveSpace(space, in: windowState)
+            },
+            selectTab: { [weak browserManager] tab, windowState in
+                browserManager?.selectTab(tab, in: windowState)
+            },
+            refreshCompositor: { [weak browserManager] windowState in
+                browserManager?.windowVisualMutationOwner.refreshCompositor(for: windowState)
+            },
+            performImmediateVisualHandoffIfPossible: { [weak browserManager] windowState in
+                _ = browserManager?.windowVisualMutationOwner.performImmediateVisualHandoffIfPossible(
+                    in: windowState
+                )
+            },
+            persistWindowSession: { [weak browserManager] windowState in
+                browserManager?.windowSessionActivationOwner.persistWindowSession(for: windowState)
+            },
+            showEmptyState: { [weak browserManager] windowState in
+                browserManager?.showEmptyState(in: windowState)
+            }
         )
         spaceTransitionRouting = BrowserSpaceTransitionRoutingOwner(
-            dependencies: .live(browserManager: browserManager)
+            browserManager: browserManager
         )
         shortcutPinUnload = BrowserShortcutPinUnloadOwner(
-            dependencies: .live(browserManager: browserManager)
+            selectedShortcutLiveTab: { [weak browserManager] pinId, windowState in
+                browserManager?.tabManager.shortcutPresentationOwner.selectedShortcutLiveTab(
+                    for: pinId,
+                    in: windowState
+                )
+            },
+            closeTab: { [weak browserManager] tab, windowState in
+                browserManager?.tabLifecycleService.closeOrchestration.closeTab(tab, in: windowState)
+            },
+            userInitiatedUnload: { [weak browserManager] pinId, windowState, presentNotification in
+                browserManager?.tabManager.shortcutLiveTabOwner.userInitiatedUnload(
+                    pinId: pinId,
+                    in: windowState,
+                    presentNotification: presentNotification
+                ) ?? false
+            },
+            notifications: { [weak browserManager] in
+                browserManager?.notificationPresenter
+            }
         )
         commandRouting = BrowserSidebarCommandRoutingOwner(
-            dependencies: .live(browserManager: browserManager)
+            folderCommand: folderCommand,
+            chromeCommand: chromeCommand,
+            tabCommand: tabCommand,
+            splitShortcutRouting: splitShortcutRouting,
+            shortcutPromotion: shortcutPromotion,
+            shortcutPinUnload: shortcutPinUnload
         )
     }
 

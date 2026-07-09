@@ -176,8 +176,8 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
         XCTAssertNil(harness.browserManager.glanceManager.currentSession)
         XCTAssertEqual(harness.browserManager.glanceManager.phase, .idle)
         XCTAssertFalse(harness.browserManager.glanceManager.isActive)
-        XCTAssertNil(previewTab.existingWebView)
-        XCTAssertNil(previewTab.primaryWindowId)
+        XCTAssertNil(previewTab.resolvedCurrentWebView())
+        XCTAssertNil(previewTab.resolvedPrimaryWindowId())
     }
 
     func testRestorePreviousSessionPolicyDoesNotClearRegularTabsOrLauncherLiveInstances() throws {

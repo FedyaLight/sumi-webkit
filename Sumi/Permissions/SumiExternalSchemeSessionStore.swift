@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import SumiDomain
 
 enum SumiExternalSchemeAttemptResult: String, Codable, Equatable, Sendable {
     case opened

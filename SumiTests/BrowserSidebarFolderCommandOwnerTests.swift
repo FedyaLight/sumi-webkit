@@ -37,24 +37,22 @@ final class BrowserSidebarFolderCommandOwnerTests: XCTestCase {
 
     private func makeOwner(spy: Spy) -> BrowserSidebarFolderCommandOwner {
         BrowserSidebarFolderCommandOwner(
-            dependencies: BrowserSidebarFolderCommandOwner.Dependencies(
-                spaceForSidebarActions: { windowState in
-                    spy.events.append(.spaceForSidebarActions(windowState.id))
-                    return spy.resolvedSpace
-                },
-                createFolderInCurrentSpace: { windowState in
-                    spy.events.append(.createFolder(windowState.id))
-                },
-                createRSSLiveFolderInCurrentSpace: { windowState in
-                    spy.events.append(.createRSSLiveFolder(windowState.id))
-                },
-                createGitHubPRFolderInCurrentSpace: { windowState in
-                    spy.events.append(.createGitHubPullRequestsLiveFolder(windowState.id))
-                },
-                createGitHubIssuesFolderInCurrentSpace: { windowState in
-                    spy.events.append(.createGitHubIssuesLiveFolder(windowState.id))
-                }
-            )
+            spaceForSidebarActions: { windowState in
+                spy.events.append(.spaceForSidebarActions(windowState.id))
+                return spy.resolvedSpace
+            },
+            createFolderInCurrentSpace: { windowState in
+                spy.events.append(.createFolder(windowState.id))
+            },
+            createRSSLiveFolderInCurrentSpace: { windowState in
+                spy.events.append(.createRSSLiveFolder(windowState.id))
+            },
+            createGitHubPRFolderInCurrentSpace: { windowState in
+                spy.events.append(.createGitHubPullRequestsLiveFolder(windowState.id))
+            },
+            createGitHubIssuesFolderInCurrentSpace: { windowState in
+                spy.events.append(.createGitHubIssuesLiveFolder(windowState.id))
+            }
         )
     }
 }

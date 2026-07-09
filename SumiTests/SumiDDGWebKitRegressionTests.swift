@@ -367,13 +367,11 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         let firstWebView = WKWebView()
         let secondWebView = WKWebView()
         let owner = WebViewDestructiveCleanupFlowOwner(
-            dependencies: WebViewDestructiveCleanupFlowOwner.Dependencies(
-                browserRuntimeContext: {
-                    preconditionFailure("Unused in navigation-suppression unit test")
-                },
-                liveWebViews: { _ in [] },
-                isWebViewProtectedFromCompositorMutation: { _ in false }
-            )
+            browserRuntimeContext: {
+                preconditionFailure("Unused in navigation-suppression unit test")
+            },
+            liveWebViews: { _ in [] },
+            isWebViewProtectedFromCompositorMutation: { _ in false }
         )
 
         XCTAssertFalse(owner.isSuppressingNavigation(on: firstWebView))

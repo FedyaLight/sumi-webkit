@@ -5,6 +5,7 @@
 //
 
 import Foundation
+import SumiDomain
 import SwiftUI
 
 struct SplitGroupFocusRequest: Equatable {
@@ -138,14 +139,9 @@ class BrowserWindowState {
     /// Window-scoped owner for compositor/native-surface invalidation counters.
     let compositorInvalidation = WindowCompositorInvalidationOwner()
 
-    /// Dual-write mirror of `WindowRegistry` shell (Phase 6A).
-    /// Prefer `WindowRegistry.appKitWindow(for:)` / `shellWindow(in:)` when a registry is available.
-    /// TODO(Phase 6A): remove after remaining readers migrate off this property.
-    var window: NSWindow?
-
-    /// Resolves the AppKit window from the shell map when possible.
+    /// Resolves the AppKit window from the `WindowRegistry` shell map.
     func shellWindow(in registry: WindowRegistry?) -> NSWindow? {
-        registry?.appKitWindow(for: self) ?? window
+        registry?.appKitWindow(for: self)
     }
 
     /// Physical AppKit visibility used by background media optimization.
@@ -173,7 +169,8 @@ class BrowserWindowState {
     init(
         id: UUID = UUID(),
         initialWorkspaceTheme: WorkspaceTheme? = nil,
-        awaitsInitialSessionResolution: Bool = false
+        awaitsInitialSessionResolution: Bool = false,
+        sidebarRecoveryCoordinator: SidebarHostRecoveryHandling = SidebarHostRecoveryCoordinator()
     ) {
         self.id = id
         self.isAwaitingInitialSessionResolution = awaitsInitialSessionResolution
@@ -185,13 +182,15 @@ class BrowserWindowState {
         let sidebarInteractionState = SidebarInteractionState()
         let sidebarTransientSessionCoordinator = SidebarTransientSessionCoordinator(
             windowID: id,
-            interactionState: sidebarInteractionState
+            interactionState: sidebarInteractionState,
+            sidebarRecoveryCoordinator: sidebarRecoveryCoordinator
         )
         self.sidebarInteractionState = sidebarInteractionState
         self.sidebarTransientSessionCoordinator = sidebarTransientSessionCoordinator
         self.sidebarContextMenuController = SidebarContextMenuController(
             interactionState: sidebarInteractionState,
-            transientSessionCoordinator: sidebarTransientSessionCoordinator
+            transientSessionCoordinator: sidebarTransientSessionCoordinator,
+            sidebarRecoveryCoordinator: sidebarRecoveryCoordinator
         )
         self.sidebarContextMenuController.windowState = self
         self.windowThemeState = initialThemeState
@@ -206,9 +205,12 @@ class BrowserWindowState {
         }
     }
 
-    func resolveSidebarPresentationSource(ownerView: NSView? = nil) -> SidebarTransientPresentationSource {
+    func resolveSidebarPresentationSource(
+        ownerView: NSView? = nil,
+        in registry: WindowRegistry?
+    ) -> SidebarTransientPresentationSource {
         sidebarTransientSessionCoordinator.consumePresentationSource(
-            window: shellWindow(in: nil),
+            window: shellWindow(in: registry),
             ownerView: ownerView
         )
     }

@@ -7,7 +7,7 @@
 
 import Foundation
 
-enum WebViewCoordinatorWebKitClosePreparation {
+public enum WebViewCoordinatorWebKitClosePreparation {
     case deferred
     case ready(trackedOwner: TrackedWebViewOwner?)
 }

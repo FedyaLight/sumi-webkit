@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import SumiDomain
 
 struct SumiPermissionRecentActivityRecord: Identifiable, Equatable, Sendable {
     enum Action: String, Codable, CaseIterable, Hashable, Sendable {

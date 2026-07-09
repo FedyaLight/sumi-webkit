@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 import OSLog
 import WebKit
 
@@ -12,8 +13,6 @@ final class SumiAdblockZapperStore {
 
         static let empty = State(rules: [], disabled: false)
     }
-
-    static let shared = SumiAdblockZapperStore()
 
     private enum DefaultsKey {
         static let statesByPersistentProfileAndHost = "settings.adblock.zapper.statesByPersistentProfileAndHost.v1"
@@ -229,9 +228,8 @@ enum SumiAdblockZapperInjector {
         host: String,
         profilePartitionId: String,
         isEphemeralProfile: Bool,
-        store: SumiAdblockZapperStore? = nil
+        store: SumiAdblockZapperStore
     ) {
-        let store = store ?? .shared
         let state = store.state(
             forHost: host,
             profilePartitionId: profilePartitionId,
@@ -259,9 +257,8 @@ enum SumiAdblockZapperInjector {
         host: String,
         profilePartitionId: String,
         isEphemeralProfile: Bool,
-        store: SumiAdblockZapperStore? = nil
+        store: SumiAdblockZapperStore
     ) async -> Bool {
-        let store = store ?? .shared
         let session = SumiElementZapperSession(
             webView: webView,
             configuration: .contentBlocker,

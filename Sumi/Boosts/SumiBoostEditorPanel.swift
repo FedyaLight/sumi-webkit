@@ -32,7 +32,8 @@ final class SumiBoostEditorPanelController: NSObject, NSWindowDelegate {
         windowState: BrowserWindowState,
         sidebarPosition: SidebarPosition,
         module: SumiBoostsModule,
-        settings: SumiSettingsService?
+        settings: SumiSettingsService?,
+        windowRegistry: WindowRegistry? = nil
     ) {
         let session = SumiBoostEditorSession(
             boost: boost,
@@ -59,12 +60,18 @@ final class SumiBoostEditorPanelController: NSObject, NSWindowDelegate {
         // the editor (and its popovers) follow the space lightness instead of
         // the environment's dark default. Captured at present time.
         if let settings {
-            panel.appearance = windowState.nativeSurfaceAppearance(settings: settings)
+            panel.appearance = windowState.nativeSurfaceAppearance(
+                settings: settings,
+                in: windowRegistry
+            )
             panel.contentViewController = NSHostingController(
                 rootView: SumiBoostEditorView(session: session)
                     .environment(
                         \.resolvedThemeContext,
-                        windowState.nativeSurfaceThemeContext(settings: settings)
+                        windowState.nativeSurfaceThemeContext(
+                            settings: settings,
+                            in: windowRegistry
+                        )
                     )
                     .environment(\.sumiSettings, settings)
             )
@@ -73,7 +80,7 @@ final class SumiBoostEditorPanelController: NSObject, NSWindowDelegate {
                 rootView: SumiBoostEditorView(session: session)
             )
         }
-        let appKitWindow = windowState.shellWindow(in: nil)
+        let appKitWindow = windowState.shellWindow(in: windowRegistry)
         if parentWindow !== appKitWindow {
             parentWindow?.removeChildWindow(panel)
             parentWindow = appKitWindow

@@ -15,6 +15,7 @@ extension WindowViewBrowserContext {
             sidebarBrowserContext: SidebarBrowserContext.live(browserManager: browserManager),
             sidebarHostActions: sidebarHostActions(browserManager: browserManager),
             sidebarStructuralInvalidation: sidebarStructuralInvalidation(browserManager: browserManager),
+            sidebarHostRecoveryCoordinator: browserManager.sidebarHostRecoveryCoordinator,
             nativeModalPresentation: { [weak browserManager] in
                 browserManager?.nativeModalPresentation
             },

@@ -259,10 +259,10 @@ final class SafariExtensionAccountForkPipelineTests: XCTestCase {
             return "adapter=\(adapter == nil ? "nil" : "present") "
                 + "adapterTabMatches=\(adapter?.tab === probedTab) "
                 + "tabManagerLookup=\(lookupTab == nil ? "nil" : (lookupTab === probedTab ? "match" : "OTHER")) "
-                + "adapterWebViewMatchesTab=\(adapterWebView === probedTab._webView) "
+                + "adapterWebViewMatchesTab=\(adapterWebView === probedTab.resolvedCurrentWebView()) "
                 + "tabEligible=\(manager.isTabEligibleForCurrentExtensionRuntime(probedTab)) "
                 + "resolvedProfile=\(String(describing: manager.resolvedProfileId(for: probedTab))) "
-                + "controllerAttached=\(probedTab._webView?.configuration.webExtensionController != nil) "
+                + "controllerAttached=\(probedTab.resolvedCurrentWebView()?.configuration.webExtensionController != nil) "
                 + "tabMatchesContext=\(manager.tabMatchesExtensionContext(probedTab, extensionContext: extensionContext))"
         }
 
@@ -288,9 +288,9 @@ final class SafariExtensionAccountForkPipelineTests: XCTestCase {
                 + "currentSpaceId=\(String(describing: browserManager.tabManager.spaceStateOwner.currentSpace?.id)) "
                 + "adapterWebView=\(adapterWebView == nil ? "nil" : (adapterWebView === webView ? "harnessWebView" : "OTHER webview \(String(describing: adapterWebView))")) "
                 + "tabEligible=\(eligible) "
-                + "tabWebViewIsHarness=\(tab._webView === webView) "
-                + "primaryWindowId=\(String(describing: tab.primaryWindowId)) "
-                + "currentWebViewIsHarness=\(tab.currentWebView === webView) "
+                + "tabWebViewIsHarness=\(tab.resolvedCurrentWebView() === webView) "
+                + "primaryWindowId=\(String(describing: tab.resolvedPrimaryWindowId())) "
+                + "currentWebViewIsHarness=\(tab.resolvedCurrentWebView() === webView) "
                 + "owningTabMatches=\((webView as? FocusableWKWebView)?.owningTab === tab) "
                 + "resolvedProfile=\(String(describing: manager.resolvedProfileId(for: tab))) "
                 + "controllerAttached=\(webView.configuration.webExtensionController != nil) "
@@ -423,7 +423,7 @@ final class SafariExtensionAccountForkPipelineTests: XCTestCase {
 
         let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
         webView.owningTab = tab
-        tab._webView = webView
+        tab.replaceUntrackedWebView(webView)
 
         manager.registerTabWithExtensionRuntime(
             tab,
@@ -551,7 +551,7 @@ final class SafariExtensionAccountForkPipelineTests: XCTestCase {
 
         var materializedWebView: WKWebView?
         for _ in 0..<100 {
-            if let webView = tab._webView {
+            if let webView = tab.resolvedCurrentWebView() {
                 materializedWebView = webView
                 break
             }
@@ -606,7 +606,7 @@ final class SafariExtensionAccountForkPipelineTests: XCTestCase {
 
         // The load may have swapped the tab's web view (replacement path);
         // always talk to the tab's current one from here on.
-        let loadedWebView = tab._webView ?? webView
+        let loadedWebView = tab.resolvedCurrentWebView() ?? webView
 
         var forkInjected = false
         for _ in 0..<100 {

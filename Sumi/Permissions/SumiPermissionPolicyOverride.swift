@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 struct SumiPermissionPolicyOverride: Equatable, Sendable {
     enum Action: String, Codable, Hashable, Sendable {

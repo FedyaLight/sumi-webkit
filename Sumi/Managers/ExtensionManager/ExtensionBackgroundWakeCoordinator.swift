@@ -7,28 +7,46 @@ import WebKit
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionBackgroundWakeCoordinator {
-    struct Dependencies {
-        let backgroundRuntimeStateOwner: ExtensionBackgroundRuntimeStateOwner
-        let nativeMessagingBackgroundWakeOwner: @MainActor () -> ExtensionNativeMessagingBackgroundWakeOwner?
-        let contextIdentity: @MainActor (WKWebExtensionContext) -> (extensionId: String, profileId: UUID)?
-        let resolvedProfileId: @MainActor (UUID?) -> UUID?
-        let recordRuntimeMetric: @MainActor (String, (inout ExtensionManager.ExtensionRuntimeMetrics) -> Void) -> Void
-        let trace: @MainActor (String) -> Void
-        let logBackgroundWakeFailure: @MainActor (
+    private let backgroundRuntimeStateOwner: ExtensionBackgroundRuntimeStateOwner
+    private let nativeMessagingBackgroundWakeOwner: @MainActor () -> ExtensionNativeMessagingBackgroundWakeOwner?
+    private let contextIdentity: @MainActor (WKWebExtensionContext) -> (extensionId: String, profileId: UUID)?
+    private let resolvedProfileId: @MainActor (UUID?) -> UUID?
+    private let recordRuntimeMetric: @MainActor (String, (inout ExtensionManager.ExtensionRuntimeMetrics) -> Void) -> Void
+    private let trace: @MainActor (String) -> Void
+    private let logBackgroundWakeFailure: @MainActor (
+        Error,
+        WKWebExtensionContext,
+        ExtensionManager.ExtensionBackgroundWakeReason,
+        String
+    ) -> Void
+    /// Debug-only wake override; returns nil in release builds.
+    private let debugBackgroundContentWake: @MainActor ()
+        -> (@MainActor (String, WKWebExtensionContext) async throws -> Void)?
+
+    init(
+        backgroundRuntimeStateOwner: ExtensionBackgroundRuntimeStateOwner,
+        nativeMessagingBackgroundWakeOwner: @escaping @MainActor () -> ExtensionNativeMessagingBackgroundWakeOwner?,
+        contextIdentity: @escaping @MainActor (WKWebExtensionContext) -> (extensionId: String, profileId: UUID)?,
+        resolvedProfileId: @escaping @MainActor (UUID?) -> UUID?,
+        recordRuntimeMetric: @escaping @MainActor (String, (inout ExtensionManager.ExtensionRuntimeMetrics) -> Void) -> Void,
+        trace: @escaping @MainActor (String) -> Void,
+        logBackgroundWakeFailure: @escaping @MainActor (
             Error,
             WKWebExtensionContext,
             ExtensionManager.ExtensionBackgroundWakeReason,
             String
-        ) -> Void
-        /// Debug-only wake override; returns nil in release builds.
-        let debugBackgroundContentWake: @MainActor ()
+        ) -> Void,
+        debugBackgroundContentWake: @escaping @MainActor ()
             -> (@MainActor (String, WKWebExtensionContext) async throws -> Void)?
-    }
-
-    private let dependencies: Dependencies
-
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
+    ) {
+        self.backgroundRuntimeStateOwner = backgroundRuntimeStateOwner
+        self.nativeMessagingBackgroundWakeOwner = nativeMessagingBackgroundWakeOwner
+        self.contextIdentity = contextIdentity
+        self.resolvedProfileId = resolvedProfileId
+        self.recordRuntimeMetric = recordRuntimeMetric
+        self.trace = trace
+        self.logBackgroundWakeFailure = logBackgroundWakeFailure
+        self.debugBackgroundContentWake = debugBackgroundContentWake
     }
 
     @discardableResult
@@ -38,21 +56,20 @@ final class ExtensionBackgroundWakeCoordinator {
         reason: ExtensionManager.ExtensionBackgroundWakeReason
     ) async throws -> Bool {
         let wakeKey = backgroundWakeKey(for: extensionContext)
-        let dependencies = dependencies
-        return try await dependencies.backgroundRuntimeStateOwner.ensureBackgroundAvailableIfRequired(
+        return try await backgroundRuntimeStateOwner.ensureBackgroundAvailableIfRequired(
             wakeKey: wakeKey,
             hasBackgroundContent: webExtension.hasBackgroundContent,
             reason: reason,
-            trace: { dependencies.trace($0) },
-            loadBackgroundContent: {
-                if let backgroundContentWake = dependencies.debugBackgroundContentWake() {
+            trace: { [trace] in trace($0) },
+            loadBackgroundContent: { [debugBackgroundContentWake] in
+                if let backgroundContentWake = debugBackgroundContentWake() {
                     try await backgroundContentWake(wakeKey, extensionContext)
                 } else {
                     try await extensionContext.loadBackgroundContent()
                 }
             },
-            recordWakeMetric: { duration, reason, didFail in
-                dependencies.recordRuntimeMetric(wakeKey) {
+            recordWakeMetric: { [recordRuntimeMetric] duration, reason, didFail in
+                recordRuntimeMetric(wakeKey) {
                     $0.backgroundWakeDuration = duration
                     $0.backgroundWakeCount += 1
                     $0.lastBackgroundWakeReason = reason
@@ -67,7 +84,7 @@ final class ExtensionBackgroundWakeCoordinator {
         operation: String
     ) {
         let wakeKey = backgroundWakeKey(for: extensionContext)
-        dependencies.nativeMessagingBackgroundWakeOwner()?.scheduleWake(
+        nativeMessagingBackgroundWakeOwner()?.scheduleWake(
             wakeKey: wakeKey,
             operation: operation,
             wake: { [weak self] in
@@ -79,7 +96,7 @@ final class ExtensionBackgroundWakeCoordinator {
                 )
             },
             logFailure: { [weak self] error, operation in
-                self?.dependencies.logBackgroundWakeFailure(
+                self?.logBackgroundWakeFailure(
                     error,
                     extensionContext,
                     .nativeMessaging,
@@ -92,7 +109,7 @@ final class ExtensionBackgroundWakeCoordinator {
     private func backgroundWakeKey(
         for extensionContext: WKWebExtensionContext
     ) -> String {
-        if let identity = dependencies.contextIdentity(extensionContext) {
+        if let identity = contextIdentity(extensionContext) {
             return ExtensionRuntimeResidencyState.scopedKey(
                 extensionId: identity.extensionId,
                 profileId: identity.profileId
@@ -105,53 +122,14 @@ final class ExtensionBackgroundWakeCoordinator {
         for extensionId: String,
         profileId: UUID?
     ) -> ExtensionManager.BackgroundRuntimeState {
-        let resolvedProfileId = dependencies.resolvedProfileId(profileId)
-        guard let resolvedProfileId else { return .neverLoaded }
+        guard let resolvedProfileId = self.resolvedProfileId(profileId) else {
+            return .neverLoaded
+        }
         let wakeKey = ExtensionRuntimeResidencyState.scopedKey(
             extensionId: extensionId,
             profileId: resolvedProfileId
         )
-        return dependencies.backgroundRuntimeStateOwner.state(for: wakeKey)
-    }
-}
-
-@available(macOS 15.5, *)
-extension ExtensionBackgroundWakeCoordinator.Dependencies {
-    @MainActor
-    static func live(manager: ExtensionManager) -> Self {
-        Self(
-            backgroundRuntimeStateOwner: manager.backgroundRuntimeStateOwner,
-            nativeMessagingBackgroundWakeOwner: { [weak manager] in
-                manager?.nativeMessagingBackgroundWakeOwner
-            },
-            contextIdentity: { [weak manager] extensionContext in
-                manager?.contextIdentity(for: extensionContext)
-            },
-            resolvedProfileId: { [weak manager] explicitProfileId in
-                manager?.resolvedProfileId(explicitProfileId: explicitProfileId)
-            },
-            recordRuntimeMetric: { [weak manager] extensionId, update in
-                manager?.runtimeSessionOwner.recordRuntimeMetric(for: extensionId, update: update)
-            },
-            trace: { [weak manager] message in
-                manager?.extensionRuntimeTrace(message)
-            },
-            logBackgroundWakeFailure: { [weak manager] error, extensionContext, reason, operation in
-                manager?.logBackgroundWakeFailure(
-                    error,
-                    extensionContext: extensionContext,
-                    reason: reason,
-                    operation: operation
-                )
-            },
-            debugBackgroundContentWake: { [weak manager] in
-                #if DEBUG
-                    manager?.testHooks.backgroundContentWake
-                #else
-                    nil
-                #endif
-            }
-        )
+        return backgroundRuntimeStateOwner.state(for: wakeKey)
     }
 }
 

@@ -23,7 +23,8 @@ enum SumiEmojiPickerMetrics {
 class EmojiPickerManager: NSObject, ObservableObject {
     var popover: NSPopover?
     weak var anchorView: NSView?
-    var sidebarRecoveryCoordinator: SidebarHostRecoveryHandling = SidebarHostRecoveryCoordinator.shared
+    var sidebarRecoveryCoordinator: SidebarHostRecoveryHandling
+
     @Published var selectedEmoji: String = ""
     @Published var committedEmoji: String = ""
 
@@ -35,6 +36,11 @@ class EmojiPickerManager: NSObject, ObservableObject {
     private var activeSettings: SumiSettingsService?
     private var activeThemeContext: ResolvedThemeContext?
     private var didSelectGlyph = false
+
+    init(sidebarRecoveryCoordinator: SidebarHostRecoveryHandling = SidebarHostRecoveryCoordinator()) {
+        self.sidebarRecoveryCoordinator = sidebarRecoveryCoordinator
+        super.init()
+    }
 
     func toggle(
         source: SidebarTransientPresentationSource? = nil,

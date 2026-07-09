@@ -5,65 +5,37 @@ import WebKit
 /// auxiliary mini-window tabs.
 @MainActor
 final class BrowserWebViewCloseRouter {
-    struct Dependencies {
-        let glanceHandleWebViewDidClose: @MainActor (WKWebView) -> Bool
-        let auxiliaryContains: @MainActor (WKWebView) -> Bool
-        let auxiliaryTeardown: @MainActor (WKWebView, AuxiliaryWindowCloseReason) -> Void
-        let auxiliarySessionWebView: @MainActor (Tab) -> WKWebView?
-        let isAuxiliaryMiniWindowTab: @MainActor (Tab) -> Bool
-        let removeAuxiliaryMiniWindowTab: @MainActor (Tab) -> Void
-        let notifyExtensionTabClosed: @MainActor (Tab) -> Void
-        let makeWebKitCloseRoutingRuntime: @MainActor () -> BrowserWebKitCloseRoutingOwner.Runtime
-    }
+    private let glanceHandleWebViewDidClose: @MainActor (WKWebView) -> Bool
+    private let auxiliaryContains: @MainActor (WKWebView) -> Bool
+    private let auxiliaryTeardown: @MainActor (WKWebView, AuxiliaryWindowCloseReason) -> Void
+    private let auxiliarySessionWebView: @MainActor (Tab) -> WKWebView?
+    private let isAuxiliaryMiniWindowTab: @MainActor (Tab) -> Bool
+    private let removeAuxiliaryMiniWindowTab: @MainActor (Tab) -> Void
+    private let notifyExtensionTabClosedAction: @MainActor (Tab) -> Void
+    private let makeWebKitCloseRoutingRuntime: @MainActor () -> BrowserWebKitCloseRoutingOwner.Runtime
 
-    private let dependencies: Dependencies
-
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
-    }
-
-    @discardableResult
-    func handleWebViewDidClose(_ webView: WKWebView) -> Bool {
-        if dependencies.glanceHandleWebViewDidClose(webView) {
-            return true
-        }
-
-        if dependencies.auxiliaryContains(webView) {
-            dependencies.auxiliaryTeardown(webView, .webViewDidClose)
-            return true
-        }
-
-        return handleNormalWebViewDidClose(webView)
-    }
-
-    @discardableResult
-    func handleNormalWebViewDidClose(_ webView: WKWebView) -> Bool {
-        BrowserWebKitCloseRoutingOwner().handleWebViewDidClose(
-            webView,
-            runtime: dependencies.makeWebKitCloseRoutingRuntime()
-        )
-    }
-
-    func closeAuxiliaryMiniWindow(
-        for tab: Tab,
-        reason: AuxiliaryWindowCloseReason = .extensionRequestedClose
+    init(
+        glanceHandleWebViewDidClose: @escaping @MainActor (WKWebView) -> Bool,
+        auxiliaryContains: @escaping @MainActor (WKWebView) -> Bool,
+        auxiliaryTeardown: @escaping @MainActor (WKWebView, AuxiliaryWindowCloseReason) -> Void,
+        auxiliarySessionWebView: @escaping @MainActor (Tab) -> WKWebView?,
+        isAuxiliaryMiniWindowTab: @escaping @MainActor (Tab) -> Bool,
+        removeAuxiliaryMiniWindowTab: @escaping @MainActor (Tab) -> Void,
+        notifyExtensionTabClosed: @escaping @MainActor (Tab) -> Void,
+        makeWebKitCloseRoutingRuntime: @escaping @MainActor () -> BrowserWebKitCloseRoutingOwner.Runtime
     ) {
-        guard dependencies.isAuxiliaryMiniWindowTab(tab) else { return }
-
-        if let webView = dependencies.auxiliarySessionWebView(tab) {
-            dependencies.auxiliaryTeardown(webView, reason)
-            return
-        }
-
-        dependencies.removeAuxiliaryMiniWindowTab(tab)
-        dependencies.notifyExtensionTabClosed(tab)
+        self.glanceHandleWebViewDidClose = glanceHandleWebViewDidClose
+        self.auxiliaryContains = auxiliaryContains
+        self.auxiliaryTeardown = auxiliaryTeardown
+        self.auxiliarySessionWebView = auxiliarySessionWebView
+        self.isAuxiliaryMiniWindowTab = isAuxiliaryMiniWindowTab
+        self.removeAuxiliaryMiniWindowTab = removeAuxiliaryMiniWindowTab
+        self.notifyExtensionTabClosedAction = notifyExtensionTabClosed
+        self.makeWebKitCloseRoutingRuntime = makeWebKitCloseRoutingRuntime
     }
-}
 
-extension BrowserWebViewCloseRouter.Dependencies {
-    @MainActor
-    static func live(browserManager: BrowserManager) -> Self {
-        Self(
+    convenience init(browserManager: BrowserManager) {
+        self.init(
             glanceHandleWebViewDidClose: { [weak browserManager] webView in
                 browserManager?.glanceManager.handleWebViewDidClose(webView) ?? false
             },
@@ -124,5 +96,47 @@ extension BrowserWebViewCloseRouter.Dependencies {
                 )
             }
         )
+    }
+
+    @discardableResult
+    func handleWebViewDidClose(_ webView: WKWebView) -> Bool {
+        if glanceHandleWebViewDidClose(webView) {
+            return true
+        }
+
+        if auxiliaryContains(webView) {
+            auxiliaryTeardown(webView, .webViewDidClose)
+            return true
+        }
+
+        return handleNormalWebViewDidClose(webView)
+    }
+
+    @discardableResult
+    func handleNormalWebViewDidClose(_ webView: WKWebView) -> Bool {
+        BrowserWebKitCloseRoutingOwner().handleWebViewDidClose(
+            webView,
+            runtime: makeWebKitCloseRoutingRuntime()
+        )
+    }
+
+    func closeAuxiliaryMiniWindow(
+        for tab: Tab,
+        reason: AuxiliaryWindowCloseReason = .extensionRequestedClose
+    ) {
+        guard isAuxiliaryMiniWindowTab(tab) else { return }
+
+        if let webView = auxiliarySessionWebView(tab) {
+            auxiliaryTeardown(webView, reason)
+            return
+        }
+
+        removeAuxiliaryMiniWindowTab(tab)
+        notifyExtensionTabClosedAction(tab)
+    }
+
+    /// Test seam for lazy-extension wiring checks that previously reached into Dependencies.
+    func notifyExtensionTabClosed(_ tab: Tab) {
+        notifyExtensionTabClosedAction(tab)
     }
 }

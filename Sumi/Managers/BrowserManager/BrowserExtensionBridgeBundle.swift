@@ -15,7 +15,70 @@ final class BrowserExtensionBridgeBundle {
 
     init(browserManager: BrowserManager) {
         self.adapter = BrowserExtensionBridgeAdapter(
-            dependencies: .live(browserManager: browserManager)
+            windowRegistry: { [weak browserManager] in
+                browserManager?.windowRegistry
+            },
+            tabManager: { [weak browserManager] in
+                browserManager?.tabManager
+            },
+            auxiliaryWindowManager: { [weak browserManager] in
+                browserManager?.auxiliaryWindowManager
+            },
+            webViewCoordinator: { [weak browserManager] in
+                browserManager?.webViewCoordinator
+            },
+            tabsForWebExtensionWindow: { [weak browserManager] windowState in
+                guard let browserManager else { return [] }
+                return browserManager.shellSelectionService.tabsForWebExtensionWindow(
+                    in: windowState,
+                    tabStore: browserManager.tabManager.runtimeStore
+                )
+            },
+            currentTab: { [weak browserManager] windowState in
+                browserManager?.windowTabContextOwner.currentTab(for: windowState)
+            },
+            currentTabForActiveWindow: { [weak browserManager] in
+                browserManager?.activePageRoutingOwner.currentTabForActiveWindow()
+            },
+            windowStateContainingTab: { [weak browserManager] tab in
+                browserManager?.windowTabContextOwner.windowState(containing: tab)
+            },
+            selectTab: { [weak browserManager] tab, windowState in
+                browserManager?.selectTab(tab, in: windowState)
+            },
+            materializeVisibleTabWebViewIfNeeded: { [weak browserManager] tab, windowState in
+                browserManager?.materializeVisibleTabWebViewIfNeeded(tab, in: windowState)
+            },
+            windowOwnedWebView: { [weak browserManager] tab, windowId in
+                browserManager?.webViewRoutingService.windowOwnedWebView(for: tab, in: windowId)
+            },
+            assignWebView: { [weak browserManager] webView, tab, windowId in
+                browserManager?.webViewRoutingService.assignWebView(webView, to: tab, in: windowId)
+            },
+            installUntrackedOwnedWebView: { [weak browserManager] webView, tab in
+                browserManager?.webViewRoutingService.installUntrackedOwnedWebView(webView, for: tab)
+            },
+            replaceLiveWebView: { [weak browserManager] tab, windowId, reason, prepareConfiguration, prepareReplacement, validate in
+                browserManager?.webViewRoutingService.replaceLiveWebView(
+                    for: tab,
+                    in: windowId,
+                    reason: reason,
+                    prepareConfiguration: prepareConfiguration,
+                    prepareReplacement: prepareReplacement,
+                    validate: validate
+                )
+            },
+            createNewWindow: { [weak browserManager] in
+                browserManager?.windowSessionCommands.createNewWindow()
+            },
+            urlBarHubAnchorView: { [weak browserManager] windowId in
+                browserManager?.chromeCommands.urlBarHubPopoverPresenter.anchorView(
+                    for: windowId
+                )
+            },
+            sumiSettings: { [weak browserManager] in
+                browserManager?.sumiSettings
+            }
         )
     }
 }

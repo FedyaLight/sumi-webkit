@@ -5,7 +5,7 @@ enum TabBrowserExtensionRuntimeFactory {
     static func extensionPropertiesRuntime(
         for browserManager: BrowserManager
     ) -> TabExtensionPropertiesRuntime {
-        .live(extensionsModule: { [weak browserManager] in
+        .make(extensionsModule: { [weak browserManager] in
             browserManager?.extensionsModule
         })
     }
@@ -13,7 +13,7 @@ enum TabBrowserExtensionRuntimeFactory {
     static func normalWebViewExtensionRuntime(
         for browserManager: BrowserManager
     ) -> TabNormalWebViewExtensionRuntime {
-        .live(
+        .make(
             extensionsModule: { [weak browserManager] in
                 browserManager?.extensionsModule
             },
@@ -32,7 +32,7 @@ enum TabBrowserExtensionRuntimeFactory {
     static func faviconExtensionRuntime(
         for browserManager: BrowserManager
     ) -> TabFaviconExtensionRuntime {
-        .live(
+        .make(
             extensionsModule: { [weak browserManager] in
                 browserManager?.extensionsModule
             },
@@ -45,7 +45,7 @@ enum TabBrowserExtensionRuntimeFactory {
 
 @MainActor
 extension TabNormalWebViewExtensionRuntime {
-    static func live(
+    static func make(
         extensionsModule: @escaping () -> SumiExtensionsModule?,
         windowState: @escaping (UUID) -> BrowserWindowState?,
         currentTab: @escaping (BrowserWindowState) -> Tab?,
@@ -94,7 +94,7 @@ extension TabNormalWebViewExtensionRuntime {
 
 @MainActor
 extension TabFaviconExtensionRuntime {
-    static func live(
+    static func make(
         extensionsModule: @escaping () -> SumiExtensionsModule?,
         extensionSurfaceStore: @escaping () -> BrowserExtensionSurfaceStore?
     ) -> Self {
@@ -110,7 +110,7 @@ extension TabFaviconExtensionRuntime {
 
 @MainActor
 extension TabExtensionPropertiesRuntime {
-    static func live(extensionsModule: @escaping () -> SumiExtensionsModule?) -> Self {
+    static func make(extensionsModule: @escaping () -> SumiExtensionsModule?) -> Self {
         Self(
             notifyTabPropertiesChanged: { tab, properties in
                 extensionsModule()?.notifyTabPropertiesChangedIfLoaded(

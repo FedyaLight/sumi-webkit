@@ -109,7 +109,7 @@ final class WindowRegistryTests: XCTestCase {
         )
         var activatedWindowIds: [UUID] = []
 
-        survivingWindow.window = survivingAppKitWindow
+        registry.bindAppKitWindow(survivingAppKitWindow, to: survivingWindow)
         registry.keyAppKitWindowProvider = { survivingAppKitWindow }
         registry.mainAppKitWindowProvider = { nil }
         registry.register(closingWindow)
@@ -190,7 +190,7 @@ final class WindowRegistryTests: XCTestCase {
         XCTAssertIdentical(windowState.shellWindow(in: registry), parentWindow)
     }
 
-    func testBindAppKitWindowDualWritesShellAndStateMirror() {
+    func testBindAppKitWindowStoresShellHandle() {
         let registry = WindowRegistry()
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 200, height: 120),
@@ -202,11 +202,11 @@ final class WindowRegistryTests: XCTestCase {
         registry.register(windowState)
         registry.bindAppKitWindow(window, to: windowState)
 
-        XCTAssertIdentical(windowState.window, window)
         XCTAssertIdentical(registry.appKitWindow(for: windowState.id), window)
+        XCTAssertIdentical(windowState.shellWindow(in: registry), window)
 
         registry.unregister(windowState.id)
-        XCTAssertNil(windowState.window)
         XCTAssertNil(registry.appKitWindow(for: windowState.id))
+        XCTAssertNil(windowState.shellWindow(in: registry))
     }
 }

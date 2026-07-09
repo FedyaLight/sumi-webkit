@@ -28,7 +28,7 @@ extension Tab {
     private func titleUpdateContext() -> TabTitleUpdateContext {
         TabTitleUpdateContext(
             currentURL: { self.url },
-            existingWebView: { self.existingWebView },
+            existingWebView: { self.resolvedCurrentWebView() },
             currentName: { self.name },
             setName: { title in
                 self.name = title

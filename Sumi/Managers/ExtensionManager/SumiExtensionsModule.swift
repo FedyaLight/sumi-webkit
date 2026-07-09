@@ -31,13 +31,11 @@ struct SafariWebExtensionSyncResult {
 
 @MainActor
 final class SumiExtensionsModule {
-    static let shared = SumiExtensionsModule()
-
     private let moduleRegistry: SumiModuleRegistry
     private let context: ModelContext?
     private let browserConfiguration: BrowserConfiguration
     private let initialProfileProvider: @MainActor () -> Profile?
-    private let safariExtensionImportStore: any SafariExtensionImportStoring & SafariExtensionImportRecordProviding
+    let safariExtensionImportStore: any SafariExtensionImportStoring & SafariExtensionImportRecordProviding
     private let managerFactory: @MainActor (
         ModelContext,
         Profile?,
@@ -84,7 +82,7 @@ final class SumiExtensionsModule {
         context: ModelContext? = nil,
         browserConfiguration: BrowserConfiguration? = nil,
         initialProfileProvider: @escaping @MainActor () -> Profile? = { nil },
-        safariExtensionImportStore: any SafariExtensionImportStoring & SafariExtensionImportRecordProviding = SafariExtensionImportStore.shared,
+        safariExtensionImportStore: any SafariExtensionImportStoring & SafariExtensionImportRecordProviding = SafariExtensionImportStore.process,
         managerFactory: @escaping @MainActor (
             ModelContext,
             Profile?,

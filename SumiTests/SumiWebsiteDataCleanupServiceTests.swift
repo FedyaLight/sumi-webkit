@@ -1078,10 +1078,8 @@ private func makeHistoryHarness() throws -> (
     let historyManager = HistoryManager(
         context: context,
         profileId: profileID,
-        dependencies: HistoryManager.Dependencies(
-            faviconCleaner: FakeFaviconCleaner(),
-            visitedLinkStore: FakeVisitedLinkStore()
-        )
+        faviconCleaner: FakeFaviconCleaner(),
+        visitedLinkStore: FakeVisitedLinkStore()
     )
     return (container, historyManager, profileID)
 }

@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 final class SumiPermissionDomainCache: @unchecked Sendable {
     private enum RegistrableDomainValue: Hashable {

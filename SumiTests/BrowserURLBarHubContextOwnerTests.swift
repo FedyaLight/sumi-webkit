@@ -28,9 +28,7 @@ final class BrowserURLBarHubContextOwnerTests: XCTestCase {
 
     func testLiveContextUsesBrowserManagerStoresAndInjectedExtensionActions() {
         let browserManager = BrowserManager()
-        let permissionContextOwner = BrowserURLBarPermissionContextOwner(
-            dependencies: .live(browserManager: browserManager)
-        )
+        let permissionContextOwner = BrowserURLBarPermissionContextOwner(browserManager: browserManager)
         var metadataLoadCount = 0
         let extensionActions = URLBarExtensionActionContext(
             orderedPinnedToolbarSlotCount: { _ in 7 },
@@ -48,12 +46,10 @@ final class BrowserURLBarHubContextOwnerTests: XCTestCase {
         )
         let resolvedSnapshot = SiteControlsSnapshot.resolve(url: nil, profile: nil)
         let owner = BrowserURLBarHubContextOwner(
-            dependencies: .live(
-                browserManager: browserManager,
-                permissionContextOwner: permissionContextOwner,
-                extensionActionContext: { extensionActions },
-                siteControlsSnapshot: { _, _, _, _ in resolvedSnapshot }
-            )
+            browserManager: browserManager,
+            permissionContextOwner: permissionContextOwner,
+            extensionActionContext: { extensionActions },
+            siteControlsSnapshot: { _, _, _, _ in resolvedSnapshot }
         )
 
         let context = owner.context
@@ -94,9 +90,7 @@ final class BrowserURLBarHubContextOwnerTests: XCTestCase {
             moduleRegistry: registry,
             boostsModule: boostsModule
         )
-        let permissionContextOwner = BrowserURLBarPermissionContextOwner(
-            dependencies: .live(browserManager: browserManager)
-        )
+        let permissionContextOwner = BrowserURLBarPermissionContextOwner(browserManager: browserManager)
         let extensionActions = URLBarExtensionActionContext(
             orderedPinnedToolbarSlotCount: { _ in 0 },
             compactStrip: { _, _ in AnyView(EmptyView()) },
@@ -106,14 +100,12 @@ final class BrowserURLBarHubContextOwnerTests: XCTestCase {
             sumiScriptsManagerEnabled: { false }
         )
         let owner = BrowserURLBarHubContextOwner(
-            dependencies: .live(
-                browserManager: browserManager,
-                permissionContextOwner: permissionContextOwner,
-                extensionActionContext: { extensionActions },
-                siteControlsSnapshot: { url, profile, _, _ in
-                    SiteControlsSnapshot.resolve(url: url, profile: profile)
-                }
-            )
+            browserManager: browserManager,
+            permissionContextOwner: permissionContextOwner,
+            extensionActionContext: { extensionActions },
+            siteControlsSnapshot: { url, profile, _, _ in
+                SiteControlsSnapshot.resolve(url: url, profile: profile)
+            }
         )
         let context = owner.context
         let url = try XCTUnwrap(URL(string: "https://example.test/path"))

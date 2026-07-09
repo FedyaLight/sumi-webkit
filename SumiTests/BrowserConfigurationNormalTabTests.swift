@@ -15,7 +15,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         reason: String
     ) throws -> WKWebView {
         let webView = try XCTUnwrap(tab.makeNormalTabWebView(reason: reason))
-        tab._webView = webView
+        tab.replaceUntrackedWebView(webView)
         return webView
     }
 
@@ -302,7 +302,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
                 reason: "BrowserConfigurationNormalTabTests.safariContentBlockerOverride"
             )
         )
-        let replacementWebView = try XCTUnwrap(tab.existingWebView)
+        let replacementWebView = try XCTUnwrap(tab.resolvedCurrentWebView())
         XCTAssertNotIdentical(replacementWebView, originalWebView)
         let replacementController = try XCTUnwrap(
             replacementWebView.configuration.userContentController.sumiNormalTabUserContentController
@@ -348,11 +348,11 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         )
 
         harness.extensionsModule.setSafariContentBlockerSiteOverride(.disabled, for: tab.url)
-        tab._webView = nil
-        tab._existingWebView = originalWebView
+        tab.clearCurrentWebViewOwnership()
+        tab.parkExistingWebView(originalWebView)
         tab.setupWebView()
 
-        let replacementWebView = try XCTUnwrap(tab.existingWebView)
+        let replacementWebView = try XCTUnwrap(tab.resolvedCurrentWebView())
         XCTAssertNotIdentical(replacementWebView, originalWebView)
         let replacementController = try XCTUnwrap(
             replacementWebView.configuration.userContentController.sumiNormalTabUserContentController
@@ -402,7 +402,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         harness.extensionsModule.setSafariContentBlockerSiteOverride(.disabled, for: tab.url)
         coordinator.reloadTab(tab)
 
-        let replacementWebView = try XCTUnwrap(tab.existingWebView)
+        let replacementWebView = try XCTUnwrap(tab.resolvedCurrentWebView())
         XCTAssertNotIdentical(replacementWebView, originalWebView)
         let replacementController = try XCTUnwrap(
             replacementWebView.configuration.userContentController.sumiNormalTabUserContentController
@@ -474,7 +474,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         XCTAssertEqual(reloadRequest.windowId, activeWindowId)
         XCTAssertEqual(reloadRequest.reason, "BrowserPrivacyService.hardReload")
 
-        let replacementWebView = try XCTUnwrap(tab.existingWebView)
+        let replacementWebView = try XCTUnwrap(tab.resolvedCurrentWebView())
         XCTAssertNotIdentical(replacementWebView, originalWebView)
         let replacementController = try XCTUnwrap(
             replacementWebView.configuration.userContentController.sumiNormalTabUserContentController
@@ -653,7 +653,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
                 reason: "BrowserConfigurationNormalTabTests.safariContentBlockerInheritDisabled"
             )
         )
-        let disabledWebView = try XCTUnwrap(tab.existingWebView)
+        let disabledWebView = try XCTUnwrap(tab.resolvedCurrentWebView())
         XCTAssertNotIdentical(disabledWebView, originalWebView)
         let disabledController = try XCTUnwrap(
             disabledWebView.configuration.userContentController.sumiNormalTabUserContentController
@@ -1361,7 +1361,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         let deadline = Date().addingTimeInterval(timeout)
         var latestSummary: SumiNormalTabContentBlockingAssetSummary?
         while Date() < deadline {
-            guard let controller = tab.existingWebView?
+            guard let controller = tab.resolvedCurrentWebView()?
                 .configuration
                 .userContentController
                 .sumiNormalTabUserContentController

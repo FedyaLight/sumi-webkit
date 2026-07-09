@@ -7,22 +7,20 @@ import Foundation
 
 @MainActor
 final class SumiStartupSessionCoordinator {
-    struct Dependencies {
-        let hasLoadedInitialTabData: @MainActor () -> Bool
-        let startupMode: @MainActor () -> SumiStartupMode?
-        let startupWindow: @MainActor () -> BrowserWindowState?
-        let applyStartupPolicy: @MainActor (SumiStartupMode) -> Void
-    }
-
     private var didApplyStartupPolicy = false
     private var isApplyingStartupPolicy = false
 
-    func applyIfReady(dependencies: Dependencies) {
+    func applyIfReady(
+        hasLoadedInitialTabData: @MainActor () -> Bool,
+        startupMode: @MainActor () -> SumiStartupMode?,
+        startupWindow: @MainActor () -> BrowserWindowState?,
+        applyStartupPolicy: @MainActor (SumiStartupMode) -> Void
+    ) {
         guard !didApplyStartupPolicy,
               !isApplyingStartupPolicy,
-              dependencies.hasLoadedInitialTabData(),
-              let startupMode = dependencies.startupMode(),
-              dependencies.startupWindow() != nil
+              hasLoadedInitialTabData(),
+              let startupMode = startupMode(),
+              startupWindow() != nil
         else {
             return
         }
@@ -30,7 +28,7 @@ final class SumiStartupSessionCoordinator {
         isApplyingStartupPolicy = true
         defer { isApplyingStartupPolicy = false }
 
-        dependencies.applyStartupPolicy(startupMode)
+        applyStartupPolicy(startupMode)
         didApplyStartupPolicy = true
     }
 }
@@ -71,26 +69,6 @@ enum StartupWindowRestorationPlanner {
         return Plan(
             primarySnapshotForStartupWindow: primarySnapshot,
             additionalSnapshots: Array(archivedSnapshots.dropFirst())
-        )
-    }
-}
-
-extension SumiStartupSessionCoordinator.Dependencies {
-    @MainActor
-    static func live(browserManager: BrowserManager) -> Self {
-        Self(
-            hasLoadedInitialTabData: { [weak browserManager] in
-                browserManager?.tabManager.hasLoadedInitialData ?? false
-            },
-            startupMode: { [weak browserManager] in
-                browserManager?.sumiSettings?.startupMode
-            },
-            startupWindow: { [weak browserManager] in
-                browserManager?.startupPolicyOwner.firstRegularWindowForStartupPolicy
-            },
-            applyStartupPolicy: { [weak browserManager] mode in
-                browserManager?.startupPolicyOwner.applyStartupPolicy(mode)
-            }
         )
     }
 }

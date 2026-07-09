@@ -73,6 +73,7 @@ struct SidebarBrowserContext {
     let configureMediaStore: (SumiBackgroundMediaCardStore, BrowserWindowState) -> Void
     let spaceTransitions: SidebarSpaceTransitionActions
     let commands: SidebarBrowserCommandActions
+    let windowRegistry: () -> WindowRegistry?
 
     static func live(browserManager: BrowserManager) -> SidebarBrowserContext {
         SidebarBrowserContext(
@@ -136,7 +137,7 @@ struct SidebarBrowserContext {
                     SpaceDeletionConfirmationPresenter.confirmDelete(
                         space: space,
                         browserManager: browserManager,
-                        window: windowState.shellWindow(in: nil)
+                        window: windowState.shellWindow(in: browserManager.windowRegistry)
                     )
                 },
                 presentSharingServicePicker: { [weak browserManager] items, source in
@@ -194,7 +195,10 @@ struct SidebarBrowserContext {
                 )
             },
             spaceTransitions: browserManager.sidebarCommandService.makeSpaceTransitionActions(),
-            commands: browserManager.sidebarCommandService.makeCommandActions()
+            commands: browserManager.sidebarCommandService.makeCommandActions(),
+            windowRegistry: { [weak browserManager] in
+                browserManager?.windowRegistry
+            }
         )
     }
 }

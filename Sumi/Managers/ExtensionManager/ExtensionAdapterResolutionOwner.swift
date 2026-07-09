@@ -12,20 +12,14 @@ import Foundation
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionAdapterResolutionOwner {
-    struct Dependencies {
-        let adapterStore: ExtensionBrowserAdapterStore
-        let browserBridgeContext: @MainActor () -> (any ExtensionBrowserBridgeContext)?
-        let manager: @MainActor () -> ExtensionManager?
-    }
+    private weak var manager: ExtensionManager?
 
-    private let dependencies: Dependencies
-
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
+    init(manager: ExtensionManager) {
+        self.manager = manager
     }
 
     func miniWindowAdapter(for tab: Tab) -> ExtensionMiniWindowAdapter? {
-        dependencies.browserBridgeContext()?
+        manager?.browserBridgeContext?
             .auxiliaryWindowSession(for: tab)?.miniWindowAdapter
     }
 
@@ -36,9 +30,10 @@ final class ExtensionAdapterResolutionOwner {
         isPrivate: Bool,
         shouldActivateApp: Bool
     ) -> ExtensionMiniWindowAdapter? {
-        dependencies.adapterStore.miniWindowAdapter(for: sessionId) { [dependencies] in
-            guard let manager = dependencies.manager(),
-                  let browserBridgeContext = dependencies.browserBridgeContext() else {
+        guard let manager else { return nil }
+        return manager.adapterStore.miniWindowAdapter(for: sessionId) { [weak manager] in
+            guard let manager,
+                  let browserBridgeContext = manager.browserBridgeContext else {
                 return nil
             }
 
@@ -55,9 +50,10 @@ final class ExtensionAdapterResolutionOwner {
     }
 
     func windowAdapter(for windowId: UUID) -> ExtensionWindowAdapter? {
-        dependencies.adapterStore.windowAdapter(for: windowId) { [dependencies] in
-            guard let manager = dependencies.manager(),
-                  let browserBridgeContext = dependencies.browserBridgeContext(),
+        guard let manager else { return nil }
+        return manager.adapterStore.windowAdapter(for: windowId) { [weak manager] in
+            guard let manager,
+                  let browserBridgeContext = manager.browserBridgeContext,
                   browserBridgeContext.extensionWindowState(for: windowId) != nil else {
                 return nil
             }
@@ -71,9 +67,10 @@ final class ExtensionAdapterResolutionOwner {
     }
 
     func stableAdapter(for tab: Tab) -> ExtensionTabAdapter? {
-        dependencies.adapterStore.tabAdapter(for: tab.id) { [dependencies] in
-            guard let manager = dependencies.manager(),
-                  let browserBridgeContext = dependencies.browserBridgeContext() else {
+        guard let manager else { return nil }
+        return manager.adapterStore.tabAdapter(for: tab.id) { [weak manager] in
+            guard let manager,
+                  let browserBridgeContext = manager.browserBridgeContext else {
                 return nil
             }
 
@@ -83,21 +80,5 @@ final class ExtensionAdapterResolutionOwner {
                 extensionManager: manager
             )
         }
-    }
-}
-
-@available(macOS 15.5, *)
-extension ExtensionAdapterResolutionOwner.Dependencies {
-    @MainActor
-    static func live(manager: ExtensionManager) -> Self {
-        Self(
-            adapterStore: manager.adapterStore,
-            browserBridgeContext: { [weak manager] in
-                manager?.browserBridgeContext
-            },
-            manager: { [weak manager] in
-                manager
-            }
-        )
     }
 }

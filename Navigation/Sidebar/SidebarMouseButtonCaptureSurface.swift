@@ -25,8 +25,6 @@ enum SidebarMouseButtonWorkspaceNavigationPolicy {
 
 @MainActor
 final class SidebarMouseButtonCaptureRegistry {
-    static let shared = SidebarMouseButtonCaptureRegistry()
-
     private final class WeakCaptureView {
         weak var view: NSView?
 
@@ -36,6 +34,8 @@ final class SidebarMouseButtonCaptureRegistry {
     }
 
     private var viewsByIdentifier: [ObjectIdentifier: WeakCaptureView] = [:]
+
+    init() {}
 
     func register(_ view: NSView) {
         cleanupReleasedViews()
@@ -88,9 +88,21 @@ final class SidebarMouseButtonCaptureRegistry {
     }
 }
 
+private struct SidebarMouseButtonCaptureRegistryKey: EnvironmentKey {
+    static let defaultValue: SidebarMouseButtonCaptureRegistry? = nil
+}
+
+extension EnvironmentValues {
+    var sidebarMouseButtonCaptureRegistry: SidebarMouseButtonCaptureRegistry? {
+        get { self[SidebarMouseButtonCaptureRegistryKey.self] }
+        set { self[SidebarMouseButtonCaptureRegistryKey.self] = newValue }
+    }
+}
+
 struct SidebarMouseButtonCaptureSurface: NSViewRepresentable {
     let isEnabled: Bool
     let onNavigate: (Int) -> Void
+    @Environment(\.sidebarMouseButtonCaptureRegistry) private var captureRegistry
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
@@ -99,6 +111,7 @@ struct SidebarMouseButtonCaptureSurface: NSViewRepresentable {
     func makeNSView(context: Context) -> CaptureView {
         let view = CaptureView()
         view.coordinator = context.coordinator
+        view.captureRegistry = captureRegistry
         view.isEnabled = isEnabled
         return view
     }
@@ -106,6 +119,7 @@ struct SidebarMouseButtonCaptureSurface: NSViewRepresentable {
     func updateNSView(_ nsView: CaptureView, context: Context) {
         context.coordinator.parent = self
         nsView.coordinator = context.coordinator
+        nsView.captureRegistry = captureRegistry
         nsView.isEnabled = isEnabled
     }
 }
@@ -136,6 +150,7 @@ extension SidebarMouseButtonCaptureSurface {
 
     final class CaptureView: NSView {
         weak var coordinator: Coordinator?
+        var captureRegistry: SidebarMouseButtonCaptureRegistry?
         var isEnabled = false {
             didSet {
                 updateRegistryRegistration()
@@ -172,12 +187,13 @@ extension SidebarMouseButtonCaptureSurface {
         }
 
         private func updateRegistryRegistration() {
+            guard let captureRegistry else { return }
             guard window != nil, isEnabled else {
-                SidebarMouseButtonCaptureRegistry.shared.unregister(self)
+                captureRegistry.unregister(self)
                 return
             }
 
-            SidebarMouseButtonCaptureRegistry.shared.register(self)
+            captureRegistry.register(self)
         }
     }
 }

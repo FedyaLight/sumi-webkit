@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 enum SumiPermissionCoordinatorOutcome: String, Codable, CaseIterable, Hashable, Sendable {
     case granted

@@ -8,6 +8,7 @@
 import AppKit
 import OSLog
 import UserNotifications
+import SumiDomain
 
 /// Handles application-level lifecycle events and coordinates app termination
 ///
@@ -36,7 +37,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     // Window registry for accessing active window state
     weak var windowRegistry: WindowRegistry?
     private var quitConfirmationInProgress = false
-    private let mouseButtonRoutingOwner = BrowserMouseButtonRoutingOwner()
+    let sidebarMouseButtonCaptureRegistry = SidebarMouseButtonCaptureRegistry()
+    private lazy var mouseButtonRoutingOwner = BrowserMouseButtonRoutingOwner(
+        sidebarMouseButtonCaptureRegistry: sidebarMouseButtonCaptureRegistry
+    )
     private let menuCloseRoutingOwner = BrowserMenuCloseRoutingOwner()
 
     private let urlEventClass = AEEventClass(kInternetEventClass)
@@ -238,7 +242,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     }
 
     private func quitConfirmationWindow() -> NSWindow? {
-        windowRegistry?.activeWindow?.window ?? NSApp.keyWindow ?? NSApp.mainWindow
+        windowRegistry?.activeWindow.flatMap { windowRegistry?.appKitWindow(for: $0) } ?? NSApp.keyWindow ?? NSApp.mainWindow
     }
 
     private func makeQuitConfirmationAlert() -> NSAlert {

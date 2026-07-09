@@ -13,10 +13,13 @@ final class BrowserWindowShellService {
         let tabManager: TabManager
         let makeContentView: ContentViewFactory
         let showEmptyState: EmptyStatePresenter
+        let sidebarHostRecoveryCoordinator: SidebarHostRecoveryHandling
     }
 
     func createNewWindow(using context: Context) {
-        let windowState = BrowserWindowState()
+        let windowState = BrowserWindowState(
+            sidebarRecoveryCoordinator: context.sidebarHostRecoveryCoordinator
+        )
         windowState.tabManager = context.tabManager
 
         let newWindow = makeWindow(
@@ -34,7 +37,9 @@ final class BrowserWindowShellService {
     }
 
     func createIncognitoWindow(using context: Context) {
-        let windowState = BrowserWindowState()
+        let windowState = BrowserWindowState(
+            sidebarRecoveryCoordinator: context.sidebarHostRecoveryCoordinator
+        )
         windowState.isIncognito = true
 
         let ephemeralProfile = context.profileManager.createEphemeralProfile(for: windowState.id)
@@ -133,9 +138,7 @@ final class BrowserWindowShellService {
     }
 
     func closeWindow(_ windowState: BrowserWindowState, in windowRegistry: WindowRegistry? = nil) {
-        let appKitWindow = windowRegistry?.appKitWindow(for: windowState)
-            ?? windowState.window
-        appKitWindow?.performCloseFromBrowserChrome(nil)
+        windowRegistry?.appKitWindow(for: windowState)?.performCloseFromBrowserChrome(nil)
     }
 
     func toggleFullScreenForActiveWindow(in windowRegistry: WindowRegistry) {

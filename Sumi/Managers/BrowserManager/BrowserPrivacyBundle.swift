@@ -16,32 +16,33 @@ final class BrowserPrivacyBundle {
 
     init(browserManager: BrowserManager) {
         self.automaticDataCleanupOwner = BrowserAutomaticDataCleanupOwner(
-            dependencies: .live(browserManager: browserManager)
+            browserManager: browserManager
         )
         self.permissionSidebarPinningOwner = BrowserPermissionSidebarPinningOwner(
-            dependencies: BrowserPermissionSidebarPinningOwner.Dependencies(
-                permissionStateSnapshot: { [weak browserManager] in
-                    guard let browserManager else {
-                        return SumiPermissionCoordinatorState(
-                            activeQueriesByPageId: [:],
-                            queueCountByPageId: [:],
-                            latestEvent: nil,
-                            latestSystemBlockedEvent: nil
-                        )
-                    }
-                    return await browserManager.permissionRuntime.permissionCoordinator.stateSnapshot()
-                },
-                windowForPermissionPageId: { [weak browserManager] pageId in
-                    guard let browserManager else { return nil }
-                    return browserManager.permissionSiteSettingsRoutingOwner.windowState(
-                        displayingPermissionPageId: pageId,
-                        in: browserManager.windowRegistry,
-                        tabsForDisplay: { windowState in
-                            browserManager.windowTabContextOwner.tabsForDisplay(in: windowState)
-                        }
+            permissionStateSnapshot: { [weak browserManager] in
+                guard let browserManager else {
+                    return SumiPermissionCoordinatorState(
+                        activeQueriesByPageId: [:],
+                        queueCountByPageId: [:],
+                        latestEvent: nil,
+                        latestSystemBlockedEvent: nil
                     )
                 }
-            ),
+                return await browserManager.permissionRuntime.permissionCoordinator.stateSnapshot()
+            },
+            windowForPermissionPageId: { [weak browserManager] pageId in
+                guard let browserManager else { return nil }
+                return browserManager.permissionSiteSettingsRoutingOwner.windowState(
+                    displayingPermissionPageId: pageId,
+                    in: browserManager.windowRegistry,
+                    tabsForDisplay: { windowState in
+                        browserManager.windowTabContextOwner.tabsForDisplay(in: windowState)
+                    }
+                )
+            },
+            windowRegistry: { [weak browserManager] in
+                browserManager?.windowRegistry
+            },
             pinningController: SumiPermissionSidebarPinningController()
         )
     }

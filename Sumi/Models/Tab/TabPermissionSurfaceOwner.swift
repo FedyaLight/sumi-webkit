@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 import WebKit
 
 @MainActor
@@ -281,8 +282,8 @@ extension TabPermissionSurfaceOwner.Context {
                 tab?.isCurrentTab ?? false
             },
             isVisibleTab: { [weak tab] in
-                // Visible when assigned to a window slot (coordinator-synced cache).
-                tab?.assignedWebView != nil
+                // Visible when assigned to a window slot (session/registry).
+                tab?.resolvedAssignedWebView() != nil || tab?.resolvedPrimaryWindowId() != nil
             },
             pageIdentity: { [weak tab] in
                 tab?.extensionPageRuntimeOwner.pageIdentity(tabId: tabId)

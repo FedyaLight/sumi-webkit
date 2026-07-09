@@ -77,7 +77,7 @@ final class ExtensionRuntimeTeardownOwner {
         manager.runtimeMetricsByExtensionID.removeAll()
         manager.errorObservationOwner.removeAllLoggedErrorFingerprints()
         manager.requestedTabLifecycleOwner.removeAllRecentlyOpenedTabRequests()
-        manager.clearPermissionsOriginsCompatibilityInstallations()
+        manager.permissionsOriginsCompatibilityPreludeInstallationOwner.clearInstallations()
         manager.controllerProvisioningOwner.removeAllExtensionPageUserContentControllers()
         manager.adapterStore.removeTabAndWindowAdapters()
 

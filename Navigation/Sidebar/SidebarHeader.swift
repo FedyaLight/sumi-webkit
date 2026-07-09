@@ -18,6 +18,7 @@ struct SidebarHeaderBrowserContext {
 struct SidebarHeader: View {
     let browserContext: SidebarHeaderBrowserContext
     @Environment(BrowserWindowState.self) private var windowState
+    @Environment(WindowRegistry.self) private var windowRegistry
     @Environment(\.sumiSettings) var sumiSettings
 
     var body: some View {
@@ -59,6 +60,7 @@ struct SidebarHeader: View {
 // MARK: - Sidebar Window Controls
 struct SidebarWindowControlsView: View {
     @Environment(BrowserWindowState.self) private var windowState
+    @Environment(WindowRegistry.self) private var windowRegistry
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.sidebarPresentationContext) private var sidebarPresentationContext
     @State private var isBrowserWindowFullScreen = false
@@ -101,7 +103,7 @@ struct SidebarWindowControlsView: View {
     @ViewBuilder
     private var trafficLightCluster: some View {
         BrowserWindowTrafficLights(
-            actionProvider: .browserWindow(windowState.shellWindow(in: nil)),
+            actionProvider: .browserWindow(windowState.shellWindow(in: windowRegistry)),
             isVisible: shouldRenderTrafficLightsInSidebarHeader
         )
     }
@@ -122,12 +124,12 @@ struct SidebarWindowControlsView: View {
     }
 
     private var browserWindowIdentity: ObjectIdentifier? {
-        windowState.shellWindow(in: nil).map { ObjectIdentifier($0) }
+        windowState.shellWindow(in: windowRegistry).map { ObjectIdentifier($0) }
     }
 
     private func handleFullScreenNotification(_ notification: Notification) {
         guard let notificationWindow = notification.object as? NSWindow,
-              notificationWindow === windowState.shellWindow(in: nil)
+              notificationWindow === windowState.shellWindow(in: windowRegistry)
         else { return }
 
         switch notification.name {
@@ -147,12 +149,12 @@ struct SidebarWindowControlsView: View {
 
     private func syncFullScreenWindowControls() {
         isBrowserWindowFullScreen =
-            windowState.shellWindow(in: nil)?.styleMask.contains(.fullScreen) == true
+            windowState.shellWindow(in: windowRegistry)?.styleMask.contains(.fullScreen) == true
         syncNativeWindowButtonsForCurrentFullScreenState()
     }
 
     private func syncNativeWindowButtonsForCurrentFullScreenState() {
-        windowState.shellWindow(in: nil)?
+        windowState.shellWindow(in: windowRegistry)?
             .setNativeStandardWindowButtonsForBrowserFullScreenChromeVisible(isBrowserWindowFullScreen)
     }
 }

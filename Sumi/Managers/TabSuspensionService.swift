@@ -1,5 +1,6 @@
 import Foundation
 import WebKit
+import SumiWebRuntime
 
 struct TabSuspensionPolicy: Equatable {
     static let moderateProactiveDeactivationDelay: TimeInterval = 6 * 60 * 60

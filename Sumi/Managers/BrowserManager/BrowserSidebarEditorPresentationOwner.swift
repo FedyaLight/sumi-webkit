@@ -2,36 +2,70 @@ import Foundation
 
 @MainActor
 final class BrowserSidebarEditorPresentationOwner {
-    struct Dependencies {
-        let sidebarPosition: @MainActor () -> SidebarPosition
-        let settings: @MainActor () -> SumiSettingsService
-        let profiles: @MainActor () -> [Profile]
-        let renameSpace: @MainActor (UUID, String) throws -> Void
-        let updateSpaceIcon: @MainActor (UUID, String) throws -> Void
-        let assignSpaceProfile: @MainActor (UUID, UUID) -> Void
-        let renameFolder: @MainActor (UUID, String) -> Void
-        let updateFolderIcon: @MainActor (UUID, String) -> Void
-        let updateShortcutPin: @MainActor (ShortcutPin, String, URL, String?) -> Void
-    }
-
-    private let dependencies: Dependencies
+    private let sidebarPosition: @MainActor () -> SidebarPosition
+    private let settings: @MainActor () -> SumiSettingsService
+    private let profiles: @MainActor () -> [Profile]
+    private let windowRegistry: @MainActor () -> WindowRegistry?
+    private let renameSpace: @MainActor (UUID, String) throws -> Void
+    private let updateSpaceIcon: @MainActor (UUID, String) throws -> Void
+    private let assignSpaceProfile: @MainActor (UUID, UUID) -> Void
+    private let renameFolder: @MainActor (UUID, String) -> Void
+    private let updateFolderIcon: @MainActor (UUID, String) -> Void
+    private let updateShortcutPin: @MainActor (ShortcutPin, String, URL, String?) -> Void
     private let folderEditorPopoverPresenter: FolderEditorPopoverPresenter
     private let folderSearchPopoverPresenter: FolderSearchPopoverPresenter
     private let spaceEditorPopoverPresenter: SpaceEditorPopoverPresenter
     private let shortcutEditorPopoverPresenter: ShortcutEditorPopoverPresenter
 
     init(
-        dependencies: Dependencies,
-        folderEditorPopoverPresenter: FolderEditorPopoverPresenter = FolderEditorPopoverPresenter(),
-        folderSearchPopoverPresenter: FolderSearchPopoverPresenter = FolderSearchPopoverPresenter(),
-        spaceEditorPopoverPresenter: SpaceEditorPopoverPresenter = SpaceEditorPopoverPresenter(),
-        shortcutEditorPopoverPresenter: ShortcutEditorPopoverPresenter = ShortcutEditorPopoverPresenter()
+        sidebarPosition: @escaping @MainActor () -> SidebarPosition,
+        settings: @escaping @MainActor () -> SumiSettingsService,
+        profiles: @escaping @MainActor () -> [Profile],
+        windowRegistry: @escaping @MainActor () -> WindowRegistry?,
+        sidebarHostRecoveryCoordinator: @escaping @MainActor () -> SidebarHostRecoveryHandling,
+        renameSpace: @escaping @MainActor (UUID, String) throws -> Void,
+        updateSpaceIcon: @escaping @MainActor (UUID, String) throws -> Void,
+        assignSpaceProfile: @escaping @MainActor (UUID, UUID) -> Void,
+        renameFolder: @escaping @MainActor (UUID, String) -> Void,
+        updateFolderIcon: @escaping @MainActor (UUID, String) -> Void,
+        updateShortcutPin: @escaping @MainActor (ShortcutPin, String, URL, String?) -> Void,
+        folderEditorPopoverPresenter: FolderEditorPopoverPresenter? = nil,
+        folderSearchPopoverPresenter: FolderSearchPopoverPresenter? = nil,
+        spaceEditorPopoverPresenter: SpaceEditorPopoverPresenter? = nil,
+        shortcutEditorPopoverPresenter: ShortcutEditorPopoverPresenter? = nil
     ) {
-        self.dependencies = dependencies
+        self.sidebarPosition = sidebarPosition
+        self.settings = settings
+        self.profiles = profiles
+        self.windowRegistry = windowRegistry
+        self.renameSpace = renameSpace
+        self.updateSpaceIcon = updateSpaceIcon
+        self.assignSpaceProfile = assignSpaceProfile
+        self.renameFolder = renameFolder
+        self.updateFolderIcon = updateFolderIcon
+        self.updateShortcutPin = updateShortcutPin
+        let recovery = sidebarHostRecoveryCoordinator()
         self.folderEditorPopoverPresenter = folderEditorPopoverPresenter
+            ?? FolderEditorPopoverPresenter(sidebarRecoveryCoordinator: recovery)
         self.folderSearchPopoverPresenter = folderSearchPopoverPresenter
+            ?? FolderSearchPopoverPresenter(sidebarRecoveryCoordinator: recovery)
         self.spaceEditorPopoverPresenter = spaceEditorPopoverPresenter
+            ?? SpaceEditorPopoverPresenter(sidebarRecoveryCoordinator: recovery)
         self.shortcutEditorPopoverPresenter = shortcutEditorPopoverPresenter
+            ?? ShortcutEditorPopoverPresenter(sidebarRecoveryCoordinator: recovery)
+        let registry = windowRegistry()
+        self.folderEditorPopoverPresenter.windowRegistry = registry
+        self.folderSearchPopoverPresenter.windowRegistry = registry
+        self.spaceEditorPopoverPresenter.windowRegistry = registry
+        self.shortcutEditorPopoverPresenter.windowRegistry = registry
+    }
+
+    private func syncPresenterRegistries() {
+        let registry = windowRegistry()
+        folderEditorPopoverPresenter.windowRegistry = registry
+        folderSearchPopoverPresenter.windowRegistry = registry
+        spaceEditorPopoverPresenter.windowRegistry = registry
+        shortcutEditorPopoverPresenter.windowRegistry = registry
     }
 
     func showSpaceEditor(
@@ -40,14 +74,15 @@ final class BrowserSidebarEditorPresentationOwner {
         themeContext: ResolvedThemeContext,
         source: SidebarTransientPresentationSource
     ) {
+        syncPresenterRegistries()
         spaceEditorPopoverPresenter.present(
             space: space,
             in: windowState,
             themeContext: themeContext,
             presentationContext: SpaceEditorPopoverPresentationContext(
-                sidebarPosition: dependencies.sidebarPosition(),
-                profiles: dependencies.profiles(),
-                settings: dependencies.settings(),
+                sidebarPosition: sidebarPosition(),
+                profiles: profiles(),
+                settings: settings(),
                 commit: { [weak self] session in
                     self?.commitSpaceEditorSession(session)
                 }
@@ -62,13 +97,14 @@ final class BrowserSidebarEditorPresentationOwner {
         themeContext: ResolvedThemeContext,
         source: SidebarTransientPresentationSource
     ) {
+        syncPresenterRegistries()
         folderEditorPopoverPresenter.present(
             folder: folder,
             in: windowState,
             themeContext: themeContext,
             presentationContext: FolderEditorPopoverPresentationContext(
-                sidebarPosition: dependencies.sidebarPosition(),
-                settings: dependencies.settings(),
+                sidebarPosition: sidebarPosition(),
+                settings: settings(),
                 commit: { [weak self] session in
                     self?.commitFolderEditorSession(session)
                 }
@@ -83,13 +119,14 @@ final class BrowserSidebarEditorPresentationOwner {
         themeContext: ResolvedThemeContext,
         source: SidebarTransientPresentationSource
     ) {
+        syncPresenterRegistries()
         folderSearchPopoverPresenter.present(
             request: request,
             in: windowState,
             themeContext: themeContext,
             presentationContext: FolderSearchPopoverPresentationContext(
-                sidebarPosition: dependencies.sidebarPosition(),
-                settings: dependencies.settings()
+                sidebarPosition: sidebarPosition(),
+                settings: settings()
             ),
             source: source
         )
@@ -100,6 +137,7 @@ final class BrowserSidebarEditorPresentationOwner {
         in windowState: BrowserWindowState,
         hovering: Bool
     ) {
+        syncPresenterRegistries()
         folderSearchPopoverPresenter.setAnchorHovered(
             folderID: folderID,
             in: windowState,
@@ -113,13 +151,14 @@ final class BrowserSidebarEditorPresentationOwner {
         themeContext: ResolvedThemeContext,
         source: SidebarTransientPresentationSource
     ) {
+        syncPresenterRegistries()
         shortcutEditorPopoverPresenter.present(
             pin: pin,
             in: windowState,
             themeContext: themeContext,
             presentationContext: ShortcutEditorPopoverPresentationContext(
-                sidebarPosition: dependencies.sidebarPosition(),
-                settings: dependencies.settings(),
+                sidebarPosition: sidebarPosition(),
+                settings: settings(),
                 commit: { [weak self] session in
                     self?.commitShortcutEditorSession(session)
                 }
@@ -133,13 +172,13 @@ final class BrowserSidebarEditorPresentationOwner {
 
         do {
             if session.trimmedName != session.originalName {
-                try dependencies.renameSpace(session.spaceID, session.trimmedName)
+                try renameSpace(session.spaceID, session.trimmedName)
             }
             if session.icon != session.originalIcon {
-                try dependencies.updateSpaceIcon(session.spaceID, session.icon)
+                try updateSpaceIcon(session.spaceID, session.icon)
             }
             if let profileID = session.profileID, profileID != session.originalProfileID {
-                dependencies.assignSpaceProfile(session.spaceID, profileID)
+                assignSpaceProfile(session.spaceID, profileID)
             }
         } catch {
             RuntimeDiagnostics.emit("⚠️ Failed to update space \(session.spaceID.uuidString):", error)
@@ -152,10 +191,10 @@ final class BrowserSidebarEditorPresentationOwner {
         else { return }
 
         if session.trimmedName != session.originalName {
-            dependencies.renameFolder(session.folderID, session.trimmedName)
+            renameFolder(session.folderID, session.trimmedName)
         }
         if session.icon != session.originalIcon {
-            dependencies.updateFolderIcon(session.folderID, session.icon)
+            updateFolderIcon(session.folderID, session.icon)
         }
     }
 
@@ -164,50 +203,11 @@ final class BrowserSidebarEditorPresentationOwner {
               let launchURL = session.normalizedURL
         else { return }
 
-        dependencies.updateShortcutPin(
+        updateShortcutPin(
             session.pin,
             session.effectiveTitle,
             launchURL,
             session.iconAsset
-        )
-    }
-}
-
-extension BrowserSidebarEditorPresentationOwner.Dependencies {
-    static func live(browserManager: BrowserManager) -> Self {
-        Self(
-            sidebarPosition: { [weak browserManager] in
-                browserManager?.sumiSettings?.sidebarPosition ?? .left
-            },
-            settings: { [weak browserManager] in
-                browserManager?.sumiSettings ?? SumiSettingsService()
-            },
-            profiles: { [weak browserManager] in
-                browserManager?.profileManager.profiles ?? []
-            },
-            renameSpace: { [weak browserManager] spaceID, name in
-                try browserManager?.tabManager.spaceLifecycleOwner.renameSpace(spaceId: spaceID, newName: name)
-            },
-            updateSpaceIcon: { [weak browserManager] spaceID, icon in
-                try browserManager?.tabManager.spaceLifecycleOwner.updateSpaceIcon(spaceId: spaceID, icon: icon)
-            },
-            assignSpaceProfile: { [weak browserManager] spaceID, profileID in
-                browserManager?.tabManager.profileAssignmentOwner.assign(spaceId: spaceID, toProfile: profileID)
-            },
-            renameFolder: { [weak browserManager] folderID, name in
-                browserManager?.tabManager.folderMutationOwner.renameFolder(folderID, newName: name)
-            },
-            updateFolderIcon: { [weak browserManager] folderID, icon in
-                browserManager?.tabManager.folderMutationOwner.updateFolderIcon(folderID, icon: icon)
-            },
-            updateShortcutPin: { [weak browserManager] pin, title, launchURL, iconAsset in
-                _ = browserManager?.tabManager.shortcutPinCommandOwner.updateShortcutPin(
-                    pin,
-                    title: title,
-                    launchURL: launchURL,
-                    iconAsset: .some(iconAsset)
-                )
-            }
         )
     }
 }

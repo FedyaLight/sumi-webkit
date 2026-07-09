@@ -15,6 +15,14 @@ final class DownloadsPopoverPresenter: NSObject, NSPopoverDelegate {
         static let maximumHeight: CGFloat = 390
     }
 
+    weak var windowRegistry: WindowRegistry?
+    private let sidebarRecoveryCoordinator: SidebarHostRecoveryHandling
+
+    init(sidebarRecoveryCoordinator: SidebarHostRecoveryHandling = SidebarHostRecoveryCoordinator()) {
+        self.sidebarRecoveryCoordinator = sidebarRecoveryCoordinator
+        super.init()
+    }
+
     private final class AnchorRegistration {
         weak var view: NSView?
         weak var windowState: BrowserWindowState?
@@ -232,9 +240,9 @@ final class DownloadsPopoverPresenter: NSObject, NSPopoverDelegate {
         anchors[windowID]?.windowState?.isDownloadsPopoverPresented = false
 
         let anchor = anchors[windowID]?.view
-        let window = anchor?.window ?? session?.windowState?.window
-        SidebarHostRecoveryCoordinator.shared.recover(in: window)
-        SidebarHostRecoveryCoordinator.shared.recover(anchor: anchor)
+        let window = anchor?.window ?? session?.windowState.flatMap { windowRegistry?.appKitWindow(for: $0) }
+        sidebarRecoveryCoordinator.recover(in: window)
+        sidebarRecoveryCoordinator.recover(anchor: anchor)
     }
 
     private func refreshContentSize(for windowID: UUID) {
@@ -349,7 +357,7 @@ final class DownloadsPopoverPresenter: NSObject, NSPopoverDelegate {
         else { return }
 
         let source = windowState.sidebarTransientSessionCoordinator.preparedPresentationSource(
-            window: windowState.shellWindow(in: nil)
+            window: windowState.shellWindow(in: windowRegistry)
         )
         let token = windowState.sidebarTransientSessionCoordinator.beginSession(
             kind: .downloadsPopover,
@@ -369,14 +377,14 @@ final class DownloadsPopoverPresenter: NSObject, NSPopoverDelegate {
         let windowID = windowState.id
         if let pendingSession = pendingTransientSessions.removeValue(forKey: windowID) {
             pendingSession.source.refresh(
-                window: anchorView.window ?? windowState.shellWindow(in: nil),
+                window: anchorView.window ?? windowState.shellWindow(in: windowRegistry),
                 originOwnerView: anchorView
             )
             return pendingSession.token
         }
 
         let source = windowState.sidebarTransientSessionCoordinator.preparedPresentationSource(
-            window: anchorView.window ?? windowState.shellWindow(in: nil),
+            window: anchorView.window ?? windowState.shellWindow(in: windowRegistry),
             ownerView: anchorView
         )
         return windowState.sidebarTransientSessionCoordinator.beginSession(

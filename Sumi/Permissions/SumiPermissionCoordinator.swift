@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 actor SumiPermissionCoordinator {
     typealias NowProvider = @Sendable () -> Date

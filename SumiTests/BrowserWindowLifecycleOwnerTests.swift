@@ -12,13 +12,12 @@ final class BrowserWindowLifecycleOwnerTests: XCTestCase {
 
         registry.register(existingWindow)
 
-        let firstAttach = owner.attachIfNeeded(
-            dependencies: makeDependencies(
-                windowRegistry: registry,
-                setupWindowState: { setupWindowIds.append($0.id) }
-            )
+        let firstAttach = attach(
+            owner,
+            windowRegistry: registry,
+            setupWindowState: { setupWindowIds.append($0.id) }
         )
-        let secondAttach = owner.attachIfNeeded(dependencies: makeDependencies(windowRegistry: registry))
+        let secondAttach = attach(owner, windowRegistry: registry)
 
         XCTAssertTrue(firstAttach)
         XCTAssertFalse(secondAttach)
@@ -42,18 +41,17 @@ final class BrowserWindowLifecycleOwnerTests: XCTestCase {
         var events: [String] = []
 
         registry.register(window)
-        owner.attachIfNeeded(
-            dependencies: makeDependencies(
-                windowRegistry: registry,
-                handleWindowWillClose: { windowId in
-                    events.append("history:\(registry.windows[windowId] != nil)")
-                },
-                notifyWindowClosedIfLoaded: { _ in events.append("extensions") },
-                cleanupWebViews: { _ in events.append("webViews") },
-                cleanupSplitWindow: { _ in events.append("split") },
-                scheduleWindowClosedMediaReconcile: { events.append("media") },
-                windowState: { registry.windows[$0] }
-            )
+        attach(
+            owner,
+            windowRegistry: registry,
+            handleWindowWillClose: { windowId in
+                events.append("history:\(registry.windows[windowId] != nil)")
+            },
+            notifyWindowClosedIfLoaded: { _ in events.append("extensions") },
+            cleanupWebViews: { _ in events.append("webViews") },
+            cleanupSplitWindow: { _ in events.append("split") },
+            scheduleWindowClosedMediaReconcile: { events.append("media") },
+            windowState: { registry.windows[$0] }
         )
 
         registry.unregister(window.id)
@@ -71,15 +69,14 @@ final class BrowserWindowLifecycleOwnerTests: XCTestCase {
 
         window.isIncognito = true
         registry.register(window)
-        owner.attachIfNeeded(
-            dependencies: makeDependencies(
-                windowRegistry: registry,
-                windowState: { registry.windows[$0] },
-                closeIncognitoWindow: { windowState in
-                    closedWindowIds.append(windowState.id)
-                    closeExpectation.fulfill()
-                }
-            )
+        attach(
+            owner,
+            windowRegistry: registry,
+            windowState: { registry.windows[$0] },
+            closeIncognitoWindow: { windowState in
+                closedWindowIds.append(windowState.id)
+                closeExpectation.fulfill()
+            }
         )
 
         registry.unregister(window.id)
@@ -96,17 +93,16 @@ final class BrowserWindowLifecycleOwnerTests: XCTestCase {
         var events: [String] = []
 
         registry.register(window)
-        owner.attachIfNeeded(
-            dependencies: makeDependencies(
-                windowRegistry: registry,
-                prepareForAllWindowsClosed: {
-                    events.append("session")
-                },
-                performAllWindowsClosedSiteDataCleanup: {
-                    events.append("siteData")
-                    siteDataExpectation.fulfill()
-                }
-            )
+        attach(
+            owner,
+            windowRegistry: registry,
+            prepareForAllWindowsClosed: {
+                events.append("session")
+            },
+            performAllWindowsClosedSiteDataCleanup: {
+                events.append("siteData")
+                siteDataExpectation.fulfill()
+            }
         )
 
         registry.unregister(window.id)
@@ -122,17 +118,16 @@ final class BrowserWindowLifecycleOwnerTests: XCTestCase {
         var events: [String] = []
 
         registry.register(window)
-        owner.attachIfNeeded(
-            dependencies: makeDependencies(
-                windowRegistry: registry,
-                browserRuntimeIsAvailable: { false },
-                handleWindowWillClose: { _ in events.append("history") },
-                notifyWindowClosedIfLoaded: { _ in events.append("extensions") },
-                cleanupWebViews: { _ in events.append("webViews") },
-                cleanupSplitWindow: { _ in events.append("split") },
-                scheduleWindowClosedMediaReconcile: { events.append("media") },
-                cleanupWindowAfterRuntimeDeallocation: { _ in events.append("fallback") }
-            )
+        attach(
+            owner,
+            windowRegistry: registry,
+            browserRuntimeIsAvailable: { false },
+            handleWindowWillClose: { _ in events.append("history") },
+            notifyWindowClosedIfLoaded: { _ in events.append("extensions") },
+            cleanupWebViews: { _ in events.append("webViews") },
+            cleanupSplitWindow: { _ in events.append("split") },
+            scheduleWindowClosedMediaReconcile: { events.append("media") },
+            cleanupWindowAfterRuntimeDeallocation: { _ in events.append("fallback") }
         )
 
         registry.unregister(window.id)
@@ -148,13 +143,15 @@ final class BrowserWindowLifecycleOwnerTests: XCTestCase {
             let owner = BrowserWindowLifecycleOwner()
             weakRegistry = registry
 
-            owner.attachIfNeeded(dependencies: makeDependencies(windowRegistry: registry))
+            attach(owner, windowRegistry: registry)
         }
 
         XCTAssertNil(weakRegistry)
     }
 
-    private func makeDependencies(
+    @discardableResult
+    private func attach(
+        _ owner: BrowserWindowLifecycleOwner,
         windowRegistry: WindowRegistry,
         browserRuntimeIsAvailable: @escaping @MainActor () -> Bool = { true },
         setupWindowState: @escaping @MainActor (BrowserWindowState) -> Void = { _ in /* No-op. */ },
@@ -170,8 +167,8 @@ final class BrowserWindowLifecycleOwnerTests: XCTestCase {
         prepareForAllWindowsClosed: @escaping @MainActor () -> Void = { /* No-op. */ },
         performAllWindowsClosedSiteDataCleanup: @escaping @MainActor () async -> Void = { /* No-op. */ },
         cleanupWindowAfterRuntimeDeallocation: @escaping @MainActor (UUID) -> Void = { _ in /* No-op. */ }
-    ) -> BrowserWindowLifecycleOwner.Dependencies {
-        BrowserWindowLifecycleOwner.Dependencies(
+    ) -> Bool {
+        owner.attachIfNeeded(
             windowRegistry: windowRegistry,
             browserRuntimeIsAvailable: browserRuntimeIsAvailable,
             setupWindowState: setupWindowState,

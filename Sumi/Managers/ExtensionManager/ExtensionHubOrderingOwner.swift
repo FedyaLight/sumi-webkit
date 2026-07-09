@@ -14,23 +14,22 @@ import OSLog
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionHubOrderingOwner {
-    struct Dependencies {
-        let preferences: UserDefaults
-        let currentProfileId: @MainActor () -> UUID?
-    }
-
     static let unpinnedOrderStorageKey =
         "\(SumiAppIdentity.bundleIdentifier).extensions.hubUnpinnedOrderByProfile"
     private static let globalProfileKey = "__global__"
     private static let logger = Logger.sumi(category: "Extensions")
 
-    private let dependencies: Dependencies
+    private let preferences: UserDefaults
+    private let currentProfileId: @MainActor () -> UUID?
     private var idsByProfile: [String: [String]]
 
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
-        self.idsByProfile =
-            Self.loadUnpinnedOrderByProfile(from: dependencies.preferences)
+    init(
+        preferences: UserDefaults,
+        currentProfileId: @escaping @MainActor () -> UUID?
+    ) {
+        self.preferences = preferences
+        self.currentProfileId = currentProfileId
+        self.idsByProfile = Self.loadUnpinnedOrderByProfile(from: preferences)
     }
 
     /// The unpinned tiles in their persisted display order. `candidateIDs` are
@@ -65,7 +64,7 @@ final class ExtensionHubOrderingOwner {
         let clamped = min(max(targetIndex, 0), order.count)
         order.insert(item, at: clamped)
 
-        let profileKey = Self.profileKey(for: dependencies.currentProfileId())
+        let profileKey = Self.profileKey(for: currentProfileId())
         idsByProfile[profileKey] = order
         persist()
     }
@@ -73,7 +72,7 @@ final class ExtensionHubOrderingOwner {
     private func persist() {
         do {
             let data = try JSONEncoder().encode(idsByProfile)
-            dependencies.preferences.set(data, forKey: Self.unpinnedOrderStorageKey)
+            preferences.set(data, forKey: Self.unpinnedOrderStorageKey)
         } catch {
             Self.logger.error(
                 "Failed to encode hub unpinned order: \(String(describing: error), privacy: .public)"
@@ -114,17 +113,6 @@ final class ExtensionHubOrderingOwner {
             result.append(normalized)
         }
         return result
-    }
-}
-
-@available(macOS 15.5, *)
-extension ExtensionHubOrderingOwner.Dependencies {
-    @MainActor
-    static func live(manager: ExtensionManager) -> Self {
-        Self(
-            preferences: manager.extensionPreferences,
-            currentProfileId: { [weak manager] in manager?.currentProfileId }
-        )
     }
 }
 

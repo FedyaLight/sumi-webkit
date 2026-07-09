@@ -6,16 +6,10 @@ import WebKit
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionPageResolutionOwner {
-    struct Dependencies {
-        let extensionID: @MainActor (WKWebExtensionContext) -> String?
-        let installedExtensions: @MainActor () -> [InstalledExtension]
-        let loadedExtensionManifests: @MainActor () -> [String: [String: Any]]
-    }
+    private weak var manager: ExtensionManager?
 
-    private let dependencies: Dependencies
-
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
+    init(manager: ExtensionManager) {
+        self.manager = manager
     }
 
     func ownerExtensionID(
@@ -24,12 +18,12 @@ final class ExtensionPageResolutionOwner {
         extensionOwnedSourceURL: URL? = nil
     ) -> String? {
         if let extensionContext,
-           let extensionId = dependencies.extensionID(extensionContext) {
+           let extensionId = manager?.extensionID(for: extensionContext) {
             return extensionId
         }
 
         if let override = openerTab?.webExtensionContextOverride,
-           let extensionId = dependencies.extensionID(override) {
+           let extensionId = manager?.extensionID(for: override) {
             return extensionId
         }
 
@@ -50,8 +44,9 @@ final class ExtensionPageResolutionOwner {
     func computeOptionsPageURL(
         for extensionContext: WKWebExtensionContext
     ) -> URL? {
-        guard let extensionId = dependencies.extensionID(extensionContext),
-              let installedExtension = dependencies.installedExtensions()
+        guard let manager,
+              let extensionId = manager.extensionID(for: extensionContext),
+              let installedExtension = manager.installedExtensions
               .first(where: { $0.id == extensionId })
         else {
             return nil
@@ -61,7 +56,7 @@ final class ExtensionPageResolutionOwner {
             fileURLWithPath: installedExtension.packagePath,
             isDirectory: true
         ).resolvingSymlinksInPath().standardizedFileURL
-        let manifest = dependencies.loadedExtensionManifests()[extensionId]
+        let manifest = manager.loadedExtensionManifests[extensionId]
             ?? installedExtension.manifest
 
         let pagePath: String?
@@ -88,22 +83,6 @@ final class ExtensionPageResolutionOwner {
         return ExtensionUtils.url(
             extensionContext.baseURL,
             appendingManifestRelativePath: pagePath
-        )
-    }
-}
-
-@available(macOS 15.5, *)
-extension ExtensionPageResolutionOwner.Dependencies {
-    @MainActor
-    static func live(manager: ExtensionManager) -> Self {
-        Self(
-            extensionID: { [weak manager] extensionContext in
-                manager?.extensionID(for: extensionContext)
-            },
-            installedExtensions: { [weak manager] in manager?.installedExtensions ?? [] },
-            loadedExtensionManifests: { [weak manager] in
-                manager?.loadedExtensionManifests ?? [:]
-            }
         )
     }
 }

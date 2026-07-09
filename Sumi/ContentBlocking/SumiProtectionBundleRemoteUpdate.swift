@@ -156,7 +156,7 @@ final class SumiProtectionBundleGitHubReleaseClient: SumiProtectionBundleRelease
     init(
         owner: String = SumiProtectionBundleRemoteUpdateConstants.owner,
         repository: String = SumiProtectionBundleRemoteUpdateConstants.repository,
-        session: URLSession = SumiNonPersistentURLSession.shared
+        session: URLSession = SumiNonPersistentURLSession.make()
     ) {
         latestReleaseURL = URL(string: "https://api.github.com/repos/\(owner)/\(repository)/releases/latest")!
         self.session = session
@@ -675,8 +675,6 @@ struct SumiProtectionBundleManualUpdateOutcome: Equatable, Sendable {
 
 @MainActor
 final class SumiProtectionBundleUpdateStatusStore: ObservableObject {
-    static let shared = SumiProtectionBundleUpdateStatusStore()
-
     private enum DefaultsKey {
         static let lastAttemptDate = "settings.protection.bundleUpdate.lastAttemptDate"
         static let lastSuccessDate = "settings.protection.bundleUpdate.lastSuccessDate"

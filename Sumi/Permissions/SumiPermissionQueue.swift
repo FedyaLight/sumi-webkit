@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 struct SumiPermissionQueueEntry: Equatable, Sendable {
     var request: SumiPermissionRequest

@@ -34,8 +34,18 @@ final class BrowserStartupSessionRestoreOwner: BrowserStartupSessionRestoreProvi
         didConsumeRestoreOffer = false
     }
 
-    func reconcileIfReady(dependencies: SumiStartupSessionCoordinator.Dependencies) {
-        coordinator.applyIfReady(dependencies: dependencies)
+    func reconcileIfReady(
+        hasLoadedInitialTabData: @escaping @MainActor () -> Bool,
+        startupMode: @escaping @MainActor () -> SumiStartupMode?,
+        startupWindow: @escaping @MainActor () -> BrowserWindowState?,
+        applyStartupPolicy: @escaping @MainActor (SumiStartupMode) -> Void
+    ) {
+        coordinator.applyIfReady(
+            hasLoadedInitialTabData: hasLoadedInitialTabData,
+            startupMode: startupMode,
+            startupWindow: startupWindow,
+            applyStartupPolicy: applyStartupPolicy
+        )
     }
 
     func archiveLoadedSessionForManualRestore(

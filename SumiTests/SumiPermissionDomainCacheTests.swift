@@ -1,6 +1,7 @@
 import XCTest
 
 @testable import Sumi
+import SumiDomain
 
 final class SumiPermissionDomainCacheTests: XCTestCase {
     func testDisplayDomainFormatterPreservesExistingBehavior() {

@@ -6,7 +6,7 @@ enum TabBrowserNavigationRuntimeFactory {
     static func navigationCommandRuntime(
         for browserManager: BrowserManager
     ) -> TabNavigationCommandRuntime {
-        .live(
+        .make(
             settings: { [weak browserManager] in
                 browserManager?.sumiSettings
             },
@@ -19,7 +19,7 @@ enum TabBrowserNavigationRuntimeFactory {
     static func profileResolutionRuntime(
         for browserManager: BrowserManager
     ) -> TabProfileResolutionRuntime {
-        .live(
+        .make(
             ephemeralProfileForTab: { [weak browserManager] tabId, profileId in
                 browserManager?.windowRegistry?.windows.values.first(where: { window in
                     window.ephemeralTabs.contains(where: { $0.id == tabId })
@@ -51,7 +51,7 @@ enum TabBrowserNavigationRuntimeFactory {
     static func reloadPolicyRuntime(
         for browserManager: BrowserManager
     ) -> TabReloadPolicyRuntime {
-        .live(
+        .make(
             extensionsModule: { [weak browserManager] in
                 browserManager?.extensionsModule
             },
@@ -70,7 +70,7 @@ enum TabBrowserNavigationRuntimeFactory {
     static func historySwipeRuntime(
         for browserManager: BrowserManager
     ) -> TabHistorySwipeRuntime {
-        .live(
+        .make(
             webViewCoordinator: { [weak browserManager] in
                 browserManager?.webViewCoordinator
             },
@@ -86,7 +86,7 @@ enum TabBrowserNavigationRuntimeFactory {
     static func historyRecordingRuntime(
         for browserManager: BrowserManager
     ) -> TabHistoryRecordingRuntime {
-        .live(
+        .make(
             historyManager: { [weak browserManager] in
                 browserManager?.historyManager
             },
@@ -99,7 +99,7 @@ enum TabBrowserNavigationRuntimeFactory {
     static func findInPageRuntime(
         for browserManager: BrowserManager
     ) -> TabFindInPageRuntime {
-        .live(
+        .make(
             webView: { [weak browserManager] tabId, windowId in
                 browserManager?.webViewRoutingService.webView(for: tabId, in: windowId)
             }
@@ -109,7 +109,7 @@ enum TabBrowserNavigationRuntimeFactory {
     static func lifecycleNavigationRuntime(
         for browserManager: BrowserManager
     ) -> TabLifecycleNavigationRuntime {
-        .live(
+        .make(
             dependencies: TabLifecycleNavigationRuntime.LiveDependencies(
                 tabSuspensionService: { [weak browserManager] in
                     browserManager?.tabSuspensionService
@@ -122,6 +122,9 @@ enum TabBrowserNavigationRuntimeFactory {
                 },
                 adBlockingModule: { [weak browserManager] in
                     browserManager?.adBlockingModule
+                },
+                adblockZapperStore: { [weak browserManager] in
+                    browserManager?.adblockZapperStore
                 },
                 enforceSiteDataPolicyAfterNavigation: { [weak browserManager] tab in
                     browserManager?.dataServices.siteDataPolicyEnforcementService
@@ -143,7 +146,7 @@ enum TabBrowserNavigationRuntimeFactory {
     static func navigationDelegateRuntime(
         for browserManager: BrowserManager
     ) -> TabNavigationDelegateRuntime {
-        .live(
+        .make(
             externalSchemePermissionBridge: { [weak browserManager] in
                 browserManager?.permissionRuntime.externalSchemePermissionBridge
             },
@@ -156,7 +159,7 @@ enum TabBrowserNavigationRuntimeFactory {
     static func installNavigationRuntime(
         for browserManager: BrowserManager
     ) -> TabInstallNavigationRuntime {
-        .live(userscriptsModule: { [weak browserManager] in
+        .make(userscriptsModule: { [weak browserManager] in
             browserManager?.userscriptsModule
         })
     }
@@ -164,7 +167,7 @@ enum TabBrowserNavigationRuntimeFactory {
 
 @MainActor
 extension TabHistorySwipeRuntime {
-    static func live(
+    static func make(
         webViewCoordinator: @escaping () -> WebViewCoordinator?,
         cancelWindowMutationsAfterHistorySwipe: @escaping (UUID) -> Void,
         flushWindowMutationsAfterHistorySwipe: @escaping (UUID) -> Void
@@ -202,12 +205,13 @@ extension TabLifecycleNavigationRuntime {
         let extensionsModule: () -> SumiExtensionsModule?
         let loadZoomForTab: (UUID) -> Void
         let adBlockingModule: () -> SumiAdBlockingModule?
+        let adblockZapperStore: () -> SumiAdblockZapperStore?
         let enforceSiteDataPolicyAfterNavigation: (Tab) -> Void
         let authenticationManager: () -> AuthenticationManager?
         let webViewCoordinator: () -> WebViewCoordinator?
     }
 
-    static func live(dependencies: LiveDependencies) -> Self {
+    static func make(dependencies: LiveDependencies) -> Self {
         Self(
             resetRevisitProtection: { tab in
                 dependencies.tabSuspensionService()?.resetRevisitProtection(for: tab)
@@ -238,12 +242,14 @@ extension TabLifecycleNavigationRuntime {
                 if let policy = dependencies.adBlockingModule()?.effectivePolicy(for: url),
                    let host = policy.host,
                    policy.isEnabled,
-                   let profile = tab.resolveProfile() {
+                   let profile = tab.resolveProfile(),
+                   let store = dependencies.adblockZapperStore() {
                     SumiAdblockZapperInjector.applySavedRules(
                         to: webView,
                         host: host,
                         profilePartitionId: profile.id.uuidString,
-                        isEphemeralProfile: profile.isEphemeral
+                        isEphemeralProfile: profile.isEphemeral,
+                        store: store
                     )
                 } else {
                     SumiAdblockZapperInjector.clearAppliedRules(to: webView)
@@ -294,7 +300,7 @@ extension TabLifecycleNavigationRuntime {
 
 @MainActor
 extension TabNavigationDelegateRuntime {
-    static func live(
+    static func make(
         externalSchemePermissionBridge: @escaping () -> SumiExternalSchemePermissionBridge?,
         downloadManager: @escaping () -> DownloadManager?
     ) -> Self {
@@ -307,7 +313,7 @@ extension TabNavigationDelegateRuntime {
 
 @MainActor
 extension TabInstallNavigationRuntime {
-    static func live(userscriptsModule: @escaping () -> SumiUserscriptsModule?) -> Self {
+    static func make(userscriptsModule: @escaping () -> SumiUserscriptsModule?) -> Self {
         Self(
             interceptInstallNavigation: { url in
                 userscriptsModule()?.interceptInstallNavigationIfNeeded(url) == true
@@ -318,7 +324,7 @@ extension TabInstallNavigationRuntime {
 
 @MainActor
 extension TabReloadPolicyRuntime {
-    static func live(
+    static func make(
         extensionsModule: @escaping () -> SumiExtensionsModule?,
         protectionCoordinator: @escaping () -> SumiProtectionCoordinator?,
         browserConfiguration: @escaping () -> BrowserConfiguration?,
@@ -380,7 +386,7 @@ extension TabReloadPolicyRuntime {
 
 @MainActor
 extension TabFindInPageRuntime {
-    static func live(
+    static func make(
         webView: @escaping (_ tabId: UUID, _ windowId: UUID) -> WKWebView?
     ) -> Self {
         Self(
@@ -391,7 +397,7 @@ extension TabFindInPageRuntime {
 
 @MainActor
 extension TabHistoryRecordingRuntime {
-    static func live(
+    static func make(
         historyManager: @escaping () -> HistoryManager?,
         currentProfileId: @escaping () -> UUID?
     ) -> Self {
@@ -421,7 +427,7 @@ extension TabHistoryRecordingRuntime {
 
 @MainActor
 extension TabNavigationCommandRuntime {
-    static func live(settings: @escaping () -> SumiSettingsService?) -> Self {
+    static func make(settings: @escaping () -> SumiSettingsService?) -> Self {
         Self(
             resolvedSearchEngineTemplate: {
                 settings()?.resolvedSearchEngineTemplate
@@ -432,7 +438,7 @@ extension TabNavigationCommandRuntime {
         )
     }
 
-    static func live(
+    static func make(
         settings: @escaping () -> SumiSettingsService?,
         extensionsModule: @escaping () -> SumiExtensionsModule?
     ) -> Self {
@@ -453,7 +459,7 @@ extension TabNavigationCommandRuntime {
 
 @MainActor
 extension TabProfileResolutionRuntime {
-    static func live(
+    static func make(
         ephemeralProfileForTab: @escaping (_ tabId: UUID, _ profileId: UUID) -> Profile?,
         profile: @escaping (UUID) -> Profile?,
         spaceProfile: @escaping (UUID) -> Profile?,

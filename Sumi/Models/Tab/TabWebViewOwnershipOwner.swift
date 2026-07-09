@@ -1,85 +1,98 @@
 import Combine
 import Foundation
 import WebKit
+import SumiWebRuntime
 
-/// Tab-local WebView ownership cache / staging (compatibility mirror).
+/// Tab-local WebView session notes before a browser runtime / coordinator attaches.
 ///
-/// Phase 6B: `TabWebViewSessionStore` is the authoritative writer for parked /
-/// untracked / primary-assignment notes when a browser runtime is attached.
-/// Tab mutators call session `note*` first, then update these fields for readers
-/// that still go through Tab accessors.
-///
-/// - Windowed `webView` + `primaryWindowId`: dual-write cache; live SoT is
-///   `WindowWebViewRegistry` via `WebViewCoordinator` / `BrowserWebViewRoutingService`.
-/// - Untracked `webView` (`primaryWindowId == nil`): mirrored from session notes.
-/// - Parked `existingWebView`: mirrored staging for untracked ensure reuse.
-///
-/// External production code must not mutate these fields; CI enforces Tab + WebViewCoordinator
-/// as the sole writers.
+/// Live SoT after attach is `TabWebViewSessionStore` + `WindowWebViewRegistry`
+/// via `WebViewCoordinator` / `BrowserWebViewRoutingService`. This owner only
+/// holds a local `TabWebViewSession` for pre-runtime park/ensure paths; it does
+/// not expose façade WebView accessors.
 @MainActor
 final class TabWebViewOwnershipOwner {
-    private(set) var webView: WKWebView?
-    private(set) var existingWebView: WKWebView?
-    private(set) var primaryWindowId: UUID?
+    /// Pre-runtime session notes; cleared when adopted into the coordinator store.
+    private(set) var localSession: TabWebViewSession
 
-    var assignedWebView: WKWebView? {
-        primaryWindowId != nil ? webView : nil
+    init(tabId: UUID) {
+        localSession = TabWebViewSession(tabId: tabId)
     }
 
     var isUnloaded: Bool {
-        webView == nil
+        localSession.currentWebView == nil
     }
 
     func setCurrentWebView(_ webView: WKWebView?) {
-        self.webView = webView
+        if let webView {
+            localSession.untrackedWebView = webView
+            localSession.primaryWindowId = nil
+            localSession.primaryWebView = nil
+        } else {
+            localSession.untrackedWebView = nil
+            localSession.primaryWebView = nil
+        }
     }
 
     func setExistingWebView(_ webView: WKWebView?) {
-        existingWebView = webView
+        localSession.parkedWebView = webView
     }
 
     func setPrimaryWindowId(_ primaryWindowId: UUID?) {
-        self.primaryWindowId = primaryWindowId
+        localSession.primaryWindowId = primaryWindowId
+        if primaryWindowId != nil {
+            localSession.untrackedWebView = nil
+        } else {
+            localSession.primaryWebView = nil
+        }
     }
 
     func parkExistingWebView(_ webView: WKWebView?) {
-        existingWebView = webView
+        localSession.parkedWebView = webView
     }
 
     func clearParkedExistingWebView() {
-        existingWebView = nil
+        localSession.parkedWebView = nil
     }
 
     func adoptParkedWebViewAsCurrent(_ webView: WKWebView) {
-        self.webView = webView
+        localSession.untrackedWebView = webView
+        localSession.primaryWindowId = nil
+        localSession.primaryWebView = nil
     }
 
     func replaceUntrackedWebView(_ webView: WKWebView) {
-        self.webView = webView
-        primaryWindowId = nil
+        localSession.untrackedWebView = webView
+        localSession.primaryWindowId = nil
+        localSession.primaryWebView = nil
     }
 
     func assignPrimaryWebView(_ webView: WKWebView, windowId: UUID) {
-        self.webView = webView
-        primaryWindowId = windowId
+        localSession.primaryWindowId = windowId
+        localSession.primaryWebView = webView
+        localSession.untrackedWebView = nil
     }
 
     func clearCurrentWebViewOwnership() {
-        webView = nil
-        primaryWindowId = nil
+        localSession.untrackedWebView = nil
+        localSession.primaryWindowId = nil
+        localSession.primaryWebView = nil
     }
 
     func clearAllWebViewOwnership() {
-        webView = nil
-        existingWebView = nil
-        primaryWindowId = nil
+        localSession.clearAll()
     }
 
     @discardableResult
     func clearCurrentWebViewOwnershipIfIdentical(to webView: WKWebView) -> Bool {
-        guard self.webView === webView else { return false }
+        guard localSession.currentWebView === webView else { return false }
         clearCurrentWebViewOwnership()
         return true
+    }
+
+    /// Hands local notes to the coordinator store and clears the Tab-local slot.
+    func adoptIntoSessionStore(_ store: TabWebViewSessionStore) {
+        store.adoptLocalSession(localSession, for: localSession.tabId)
+        localSession = TabWebViewSession(tabId: localSession.tabId)
     }
 }
 

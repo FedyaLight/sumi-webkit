@@ -8,50 +8,57 @@
 import Foundation
 import WebKit
 
-struct TrackedWebViewOwner: Equatable {
-    let tabID: UUID
-    let windowID: UUID
+public struct TrackedWebViewOwner: Equatable {
+    public let tabID: UUID
+    public let windowID: UUID
+
+    public init(tabID: UUID, windowID: UUID) {
+        self.tabID = tabID
+        self.windowID = windowID
+    }
 }
 
 @MainActor
-final class WindowWebViewRegistry {
+public final class WindowWebViewRegistry {
+    public init() {}
+
     private var webViewsByTabAndWindow: [UUID: [UUID: WKWebView]] = [:]
     private var webViewOwnersByIdentifier: [ObjectIdentifier: TrackedWebViewOwner] = [:]
     private var recentlyVisibleTabIDsByWindow: [UUID: [UUID]] = [:]
 
-    var isEmpty: Bool {
+    public var isEmpty: Bool {
         webViewsByTabAndWindow.isEmpty
     }
 
-    var totalTrackedWebViewCount: Int {
+    public var totalTrackedWebViewCount: Int {
         webViewsByTabAndWindow.values.reduce(0) { count, windowWebViews in
             count + windowWebViews.count
         }
     }
 
-    func webView(for tabId: UUID, in windowId: UUID) -> WKWebView? {
+    public func webView(for tabId: UUID, in windowId: UUID) -> WKWebView? {
         webViewsByTabAndWindow[tabId]?[windowId]
     }
 
-    func webView(for owner: TrackedWebViewOwner) -> WKWebView? {
+    public func webView(for owner: TrackedWebViewOwner) -> WKWebView? {
         webView(for: owner.tabID, in: owner.windowID)
     }
 
-    func webViews(for tabId: UUID) -> [WKWebView] {
+    public func webViews(for tabId: UUID) -> [WKWebView] {
         guard let windowWebViews = webViewsByTabAndWindow[tabId] else { return [] }
         return Array(windowWebViews.values)
     }
 
-    func windowWebViews(for tabId: UUID) -> [UUID: WKWebView] {
+    public func windowWebViews(for tabId: UUID) -> [UUID: WKWebView] {
         webViewsByTabAndWindow[tabId] ?? [:]
     }
 
-    func windowIDs(for tabId: UUID) -> [UUID] {
+    public func windowIDs(for tabId: UUID) -> [UUID] {
         guard let windowWebViews = webViewsByTabAndWindow[tabId] else { return [] }
         return Array(windowWebViews.keys)
     }
 
-    func trackedWebViews() -> [(TrackedWebViewOwner, WKWebView)] {
+    public func trackedWebViews() -> [(TrackedWebViewOwner, WKWebView)] {
         webViewsByTabAndWindow.flatMap { tabId, windowWebViews in
             windowWebViews.map { windowId, webView in
                 (TrackedWebViewOwner(tabID: tabId, windowID: windowId), webView)
@@ -59,20 +66,20 @@ final class WindowWebViewRegistry {
         }
     }
 
-    func trackedWebViews(for tabId: UUID) -> [(TrackedWebViewOwner, WKWebView)] {
+    public func trackedWebViews(for tabId: UUID) -> [(TrackedWebViewOwner, WKWebView)] {
         windowWebViews(for: tabId).map { windowId, webView in
             (TrackedWebViewOwner(tabID: tabId, windowID: windowId), webView)
         }
     }
 
-    func trackedWebViews(in windowId: UUID) -> [(TrackedWebViewOwner, WKWebView)] {
+    public func trackedWebViews(in windowId: UUID) -> [(TrackedWebViewOwner, WKWebView)] {
         webViewsByTabAndWindow.compactMap { tabId, windowWebViews in
             guard let webView = windowWebViews[windowId] else { return nil }
             return (TrackedWebViewOwner(tabID: tabId, windowID: windowId), webView)
         }
     }
 
-    func trackedOwner(with identifier: ObjectIdentifier) -> TrackedWebViewOwner? {
+    public func trackedOwner(with identifier: ObjectIdentifier) -> TrackedWebViewOwner? {
         guard let owner = webViewOwnersByIdentifier[identifier] else { return nil }
         guard let webView = webViewsByTabAndWindow[owner.tabID]?[owner.windowID],
               ObjectIdentifier(webView) == identifier
@@ -84,7 +91,7 @@ final class WindowWebViewRegistry {
         return owner
     }
 
-    func trackedWebView(with identifier: ObjectIdentifier) -> WKWebView? {
+    public func trackedWebView(with identifier: ObjectIdentifier) -> WKWebView? {
         guard let owner = trackedOwner(with: identifier),
               let webView = webViewsByTabAndWindow[owner.tabID]?[owner.windowID]
         else {
@@ -93,19 +100,19 @@ final class WindowWebViewRegistry {
         return webView
     }
 
-    func indexedOwner(containing webView: WKWebView) -> TrackedWebViewOwner? {
+    public func indexedOwner(containing webView: WKWebView) -> TrackedWebViewOwner? {
         webViewOwnersByIdentifier[ObjectIdentifier(webView)]
     }
 
-    func isIndexed(_ webView: WKWebView) -> Bool {
+    public func isIndexed(_ webView: WKWebView) -> Bool {
         webViewOwnersByIdentifier[ObjectIdentifier(webView)] != nil
     }
 
-    func trackedOwner(containing webView: WKWebView) -> TrackedWebViewOwner? {
+    public func trackedOwner(containing webView: WKWebView) -> TrackedWebViewOwner? {
         trackedOwner(with: ObjectIdentifier(webView))
     }
 
-    func setWebView(_ webView: WKWebView, for owner: TrackedWebViewOwner) {
+    public func setWebView(_ webView: WKWebView, for owner: TrackedWebViewOwner) {
         if webViewsByTabAndWindow[owner.tabID] == nil {
             webViewsByTabAndWindow[owner.tabID] = [:]
         }
@@ -113,7 +120,7 @@ final class WindowWebViewRegistry {
         webViewOwnersByIdentifier[ObjectIdentifier(webView)] = owner
     }
 
-    func removeWebView(
+    public func removeWebView(
         owner: TrackedWebViewOwner,
         resolvedWebView: WKWebView?,
         removeRecentVisibility: Bool
@@ -129,20 +136,20 @@ final class WindowWebViewRegistry {
         cleanupEmptyTrackingBuckets(for: owner.tabID)
     }
 
-    func removeReverseIndex(for webView: WKWebView, ifOwnedBy owner: TrackedWebViewOwner) {
+    public func removeReverseIndex(for webView: WKWebView, ifOwnedBy owner: TrackedWebViewOwner) {
         let identifier = ObjectIdentifier(webView)
         if webViewOwnersByIdentifier[identifier] == owner {
             webViewOwnersByIdentifier.removeValue(forKey: identifier)
         }
     }
 
-    func removeAll() {
+    public func removeAll() {
         webViewsByTabAndWindow.removeAll()
         webViewOwnersByIdentifier.removeAll()
         recentlyVisibleTabIDsByWindow.removeAll()
     }
 
-    func noteVisibleTabs(_ tabIDs: [UUID], in windowId: UUID) {
+    public func noteVisibleTabs(_ tabIDs: [UUID], in windowId: UUID) {
         guard tabIDs.isEmpty == false else { return }
         var mru = recentlyVisibleTabIDsByWindow[windowId] ?? []
         for tabId in tabIDs.reversed() {
@@ -155,7 +162,7 @@ final class WindowWebViewRegistry {
         recentlyVisibleTabIDsByWindow[windowId] = mru
     }
 
-    func removeTabFromVisibilityHistory(_ tabId: UUID, in windowId: UUID) {
+    public func removeTabFromVisibilityHistory(_ tabId: UUID, in windowId: UUID) {
         guard var mru = recentlyVisibleTabIDsByWindow[windowId] else { return }
         mru.removeAll { $0 == tabId }
         if mru.isEmpty {
@@ -165,11 +172,11 @@ final class WindowWebViewRegistry {
         }
     }
 
-    func removeVisibilityHistory(for windowId: UUID) {
+    public func removeVisibilityHistory(for windowId: UUID) {
         recentlyVisibleTabIDsByWindow.removeValue(forKey: windowId)
     }
 
-    func recentVisibilityRank(for owner: TrackedWebViewOwner) -> Int {
+    public func recentVisibilityRank(for owner: TrackedWebViewOwner) -> Int {
         recentlyVisibleTabIDsByWindow[owner.windowID]?
             .firstIndex(of: owner.tabID) ?? Int.max
     }
@@ -180,7 +187,7 @@ final class WindowWebViewRegistry {
         }
     }
 
-    func assertTrackingConsistency(_ context: StaticString) {
+    public func assertTrackingConsistency(_ context: StaticString) {
 #if DEBUG
         var indexedWebViewIDs: Set<ObjectIdentifier> = []
 

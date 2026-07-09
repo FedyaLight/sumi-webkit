@@ -7,7 +7,7 @@
 
 import Foundation
 
-enum DeferredWebViewCommandKey: Hashable {
+public enum DeferredWebViewCommandKey: Hashable {
     case removeWebViewFromContainers(ObjectIdentifier)
     case removeAllWebViews(UUID)
     case removeTrackedWebView(ObjectIdentifier, UUID, UUID)
@@ -20,7 +20,7 @@ enum DeferredWebViewCommandKey: Hashable {
     case performFallbackWebViewCleanup(ObjectIdentifier)
 }
 
-enum DeferredWebViewCommand {
+public enum DeferredWebViewCommand {
     case removeWebViewFromContainers(webViewID: ObjectIdentifier)
     case removeAllWebViews(tabID: UUID)
     case removeTrackedWebView(webViewID: ObjectIdentifier, tabID: UUID, windowID: UUID)
@@ -32,7 +32,7 @@ enum DeferredWebViewCommand {
     case cleanupTabWebView(webViewID: ObjectIdentifier, tabID: UUID)
     case performFallbackWebViewCleanup(webViewID: ObjectIdentifier, tabID: UUID)
 
-    var key: DeferredWebViewCommandKey {
+    public var key: DeferredWebViewCommandKey {
         switch self {
         case .removeWebViewFromContainers(let webViewID):
             return .removeWebViewFromContainers(webViewID)
@@ -57,7 +57,7 @@ enum DeferredWebViewCommand {
         }
     }
 
-    var debugSummary: String {
+    public var debugSummary: String {
         switch self {
         case .removeWebViewFromContainers(let webViewID):
             return "removeWebViewFromContainers webView=\(webViewID)"
@@ -83,21 +83,23 @@ enum DeferredWebViewCommand {
     }
 }
 
-enum DeferredProtectedCommandEnqueueOutcome {
+public enum DeferredProtectedCommandEnqueueOutcome {
     case enqueued
     case collapsed
     case droppedAtCapacity
 }
 
-struct DeferredProtectedCommandBuffer {
-    static let maxCommands = 8
+public struct DeferredProtectedCommandBuffer {
+    public static let maxCommands = 8
 
-    private(set) var commands: [DeferredWebViewCommand] = []
+    public private(set) var commands: [DeferredWebViewCommand] = []
 
-    var count: Int { commands.count }
-    var isEmpty: Bool { commands.isEmpty }
+    public init() {}
 
-    mutating func enqueue(_ command: DeferredWebViewCommand) -> DeferredProtectedCommandEnqueueOutcome {
+    public var count: Int { commands.count }
+    public var isEmpty: Bool { commands.isEmpty }
+
+    public mutating func enqueue(_ command: DeferredWebViewCommand) -> DeferredProtectedCommandEnqueueOutcome {
         if let index = commands.firstIndex(where: { $0.key == command.key }) {
             commands[index] = command
             return .collapsed
@@ -109,7 +111,7 @@ struct DeferredProtectedCommandBuffer {
         return .enqueued
     }
 
-    mutating func prune(
+    public mutating func prune(
         where shouldDrop: (DeferredWebViewCommand) -> Bool
     ) -> [DeferredWebViewCommand] {
         var dropped: [DeferredWebViewCommand] = []
@@ -121,7 +123,7 @@ struct DeferredProtectedCommandBuffer {
         return dropped
     }
 
-    mutating func drain() -> [DeferredWebViewCommand] {
+    public mutating func drain() -> [DeferredWebViewCommand] {
         let drained = commands
         commands.removeAll(keepingCapacity: true)
         return drained

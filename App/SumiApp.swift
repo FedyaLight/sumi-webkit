@@ -19,6 +19,7 @@ private struct SumiAppRootDependencies {
     let defaultBrowserService: SumiDefaultBrowserService
     let windowRegistry: WindowRegistry
     let webViewCoordinator: WebViewCoordinator
+    let sidebarMouseButtonCaptureRegistry: SidebarMouseButtonCaptureRegistry
 }
 
 @main
@@ -34,14 +35,15 @@ struct SumiApp: App {
     // are routed through dedicated controllers and narrow protocols before reaching browser services.
     @StateObject private var browserManager: BrowserManager
     @StateObject private var nowPlayingController: SumiNativeNowPlayingController
+    @StateObject private var menuFaviconInvalidator = SumiMenuFaviconInvalidator()
     private let updaterService: SumiUpdaterService
     private let defaultBrowserService: SumiDefaultBrowserService
 
     init() {
         StartupPerformanceTrace.appLaunchStarted()
-        let nowPlayingController = SumiNativeNowPlayingController.shared
-        let updaterService = SumiUpdaterService.shared
-        let defaultBrowserService = SumiDefaultBrowserService.shared
+        let nowPlayingController = SumiNativeNowPlayingController()
+        let updaterService = SumiUpdaterService()
+        let defaultBrowserService = SumiDefaultBrowserService()
         self.updaterService = updaterService
         self.defaultBrowserService = defaultBrowserService
         _nowPlayingController = StateObject(wrappedValue: nowPlayingController)
@@ -50,7 +52,10 @@ struct SumiApp: App {
             wrappedValue: BrowserManager(
                 startupPersistence: SumiStartupPersistenceComposition.browserManagerStartupPersistence,
                 browserConfiguration: BrowserConfiguration.shared,
-                nowPlayingController: nowPlayingController
+                nowPlayingController: nowPlayingController,
+                permissionSiteActivityStore: SumiPermissionSiteActivityStore(),
+                externalAppResolver: SumiNSWorkspaceExternalAppResolver(),
+                sidebarHostRecoveryCoordinator: SidebarHostRecoveryCoordinator()
             )
         )
     }
@@ -71,7 +76,8 @@ struct SumiApp: App {
                 browserContext: makeCommandsBrowserContext(),
                 windowRegistry: windowRegistry,
                 shortcutManager: keyboardShortcutManager,
-                updaterService: updaterService
+                updaterService: updaterService,
+                menuFaviconInvalidator: menuFaviconInvalidator
             )
         }
     }
@@ -117,7 +123,8 @@ struct SumiApp: App {
                     updaterService: updaterService,
                     defaultBrowserService: defaultBrowserService,
                     windowRegistry: windowRegistry,
-                    webViewCoordinator: webViewCoordinator
+                    webViewCoordinator: webViewCoordinator,
+                    sidebarMouseButtonCaptureRegistry: appDelegate.sidebarMouseButtonCaptureRegistry
                 ),
                 windowState: windowState
             )
@@ -146,7 +153,8 @@ struct SumiApp: App {
                 updaterService: updaterService,
                 defaultBrowserService: defaultBrowserService,
                 windowRegistry: windowRegistry,
-                webViewCoordinator: webViewCoordinator
+                webViewCoordinator: webViewCoordinator,
+                sidebarMouseButtonCaptureRegistry: appDelegate.sidebarMouseButtonCaptureRegistry
             ),
             windowState: windowState,
             initialWorkspaceTheme: initialWorkspaceTheme
@@ -195,6 +203,7 @@ struct SumiApp: App {
             .environment(\.sumiExtensionsModule, dependencies.browserManager.extensionsModule)
             .environment(\.sumiUserscriptsModule, dependencies.browserManager.userscriptsModule)
             .environment(\.sumiBoostsModule, dependencies.browserManager.boostsModule)
+            .environment(\.sidebarMouseButtonCaptureRegistry, dependencies.sidebarMouseButtonCaptureRegistry)
             .environment(dependencies.keyboardShortcutManager)
     }
 }

@@ -11,37 +11,35 @@ final class BrowserShutdownCleanupOwnerTests: XCTestCase {
         var events: [String] = []
         var cleanedTabIds: [UUID] = []
         let owner = BrowserShutdownCleanupOwner(
-            dependencies: BrowserShutdownCleanupOwner.Dependencies(
-                emitDiagnostic: { _ in /* No-op. */ },
-                cancelNativeMessagingSessions: { reason in
-                    events.append("native:\(reason)")
-                },
-                closeAllOptionsWindows: {
-                    events.append("options")
-                },
-                closeAllAuxiliaryWindows: {
-                    events.append("aux")
-                },
-                dismissGlance: {
-                    events.append("glance")
-                },
-                pinnedTabs: {
-                    [pinned, regular]
-                },
-                regularTabs: {
-                    [regular]
-                },
-                ephemeralTabs: {
-                    [ephemeral, pinned]
-                },
-                cleanupTab: { tab in
-                    events.append("tab:\(tab.name)")
-                    cleanedTabIds.append(tab.id)
-                },
-                cleanupAllWebViews: {
-                    events.append("webviews")
-                }
-            )
+            emitDiagnostic: { _ in /* No-op. */ },
+            cancelNativeMessagingSessions: { reason in
+                events.append("native:\(reason)")
+            },
+            closeAllOptionsWindows: {
+                events.append("options")
+            },
+            closeAllAuxiliaryWindows: {
+                events.append("aux")
+            },
+            dismissGlance: {
+                events.append("glance")
+            },
+            pinnedTabs: {
+                [pinned, regular]
+            },
+            regularTabs: {
+                [regular]
+            },
+            ephemeralTabs: {
+                [ephemeral, pinned]
+            },
+            cleanupTab: { tab in
+                events.append("tab:\(tab.name)")
+                cleanedTabIds.append(tab.id)
+            },
+            cleanupAllWebViews: {
+                events.append("webviews")
+            }
         )
 
         owner.cleanupAllTabs()

@@ -1,28 +1,30 @@
 import Foundation
 
 final class BrowserPermissionSidebarPinningOwner {
-    struct Dependencies {
-        let permissionStateSnapshot: @MainActor () async -> SumiPermissionCoordinatorState
-        let windowForPermissionPageId: @MainActor (String) -> BrowserWindowState?
-    }
-
-    private let dependencies: Dependencies
+    private let permissionStateSnapshot: @MainActor () async -> SumiPermissionCoordinatorState
+    private let windowForPermissionPageId: @MainActor (String) -> BrowserWindowState?
+    private let windowRegistry: @MainActor () -> WindowRegistry?
     private let pinningController: SumiPermissionSidebarPinningController
 
     init(
-        dependencies: Dependencies,
+        permissionStateSnapshot: @escaping @MainActor () async -> SumiPermissionCoordinatorState,
+        windowForPermissionPageId: @escaping @MainActor (String) -> BrowserWindowState?,
+        windowRegistry: @escaping @MainActor () -> WindowRegistry?,
         pinningController: SumiPermissionSidebarPinningController
     ) {
-        self.dependencies = dependencies
+        self.permissionStateSnapshot = permissionStateSnapshot
+        self.windowForPermissionPageId = windowForPermissionPageId
+        self.windowRegistry = windowRegistry
         self.pinningController = pinningController
     }
 
     @MainActor
     func reconcile(reason: String) async {
-        let state = await dependencies.permissionStateSnapshot()
+        let state = await permissionStateSnapshot()
         pinningController.reconcile(
             activeQueries: Array(state.activeQueriesByPageId.values),
-            windowForPageId: dependencies.windowForPermissionPageId,
+            windowForPageId: windowForPermissionPageId,
+            windowRegistry: windowRegistry(),
             reason: reason
         )
     }

@@ -88,6 +88,7 @@ struct FolderEditorPopover: View {
 private struct FolderEditorIconButton: View {
     @Binding var icon: String
 
+    @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
     @StateObject private var glyphPickerManager = FolderGlyphPickerManager()
@@ -103,6 +104,10 @@ private struct FolderEditorIconButton: View {
         .background(FolderGlyphPickerAnchor(manager: glyphPickerManager))
         .help("Change Icon")
         .accessibilityLabel("Change Icon")
+        .onAppear {
+            glyphPickerManager.sidebarRecoveryCoordinator =
+                windowState.sidebarContextMenuController.sidebarRecoveryCoordinator
+        }
     }
 
     private func toggleIconPicker() {
@@ -150,6 +155,14 @@ struct FolderEditorPopoverPresentationContext {
 final class FolderEditorPopoverPresenter: NSObject, NSPopoverDelegate {
     enum Metrics {
         static let contentSize = NSSize(width: 320, height: 104)
+    }
+
+    weak var windowRegistry: WindowRegistry?
+    private let sidebarRecoveryCoordinator: SidebarHostRecoveryHandling
+
+    init(sidebarRecoveryCoordinator: SidebarHostRecoveryHandling = SidebarHostRecoveryCoordinator()) {
+        self.sidebarRecoveryCoordinator = sidebarRecoveryCoordinator
+        super.init()
     }
 
     private final class ActiveSession {
@@ -236,7 +249,7 @@ final class FolderEditorPopoverPresenter: NSObject, NSPopoverDelegate {
         popover.contentSize = Self.Metrics.contentSize
         popover.appearance = PopoverPresenterChromeSupport.appearance(
             for: surfaceColorScheme,
-            fallback: anchor.view.window?.effectiveAppearance ?? windowState.shellWindow(in: nil)?.effectiveAppearance
+            fallback: anchor.view.window?.effectiveAppearance ?? windowState.shellWindow(in: windowRegistry)?.effectiveAppearance
         )
 
         let token = source.coordinator?.beginSession(
@@ -254,7 +267,7 @@ final class FolderEditorPopoverPresenter: NSObject, NSPopoverDelegate {
             transientSessionToken: token
         )
 
-        windowState.shellWindow(in: nil)?.makeKeyAndOrderFront(nil)
+        windowState.shellWindow(in: windowRegistry)?.makeKeyAndOrderFront(nil)
         popover.show(
             relativeTo: anchor.rect,
             of: anchor.view,
@@ -329,7 +342,8 @@ final class FolderEditorPopoverPresenter: NSObject, NSPopoverDelegate {
                 windowState: closedSession.windowState,
                 source: closedSession.source,
                 anchor: closedSession.source.originOwnerView,
-                using: SidebarHostRecoveryCoordinator.shared
+                windowRegistry: windowRegistry,
+                using: sidebarRecoveryCoordinator
             )
         }
     }
@@ -349,7 +363,7 @@ final class FolderEditorPopoverPresenter: NSObject, NSPopoverDelegate {
             return (ownerView, ownerView.bounds, preferredEdge)
         }
 
-        guard let contentView = windowState.shellWindow(in: nil)?.contentView ?? source.window?.contentView else {
+        guard let contentView = windowState.shellWindow(in: windowRegistry)?.contentView ?? source.window?.contentView else {
             return nil
         }
 

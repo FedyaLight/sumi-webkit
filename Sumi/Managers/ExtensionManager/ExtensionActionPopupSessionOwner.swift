@@ -9,6 +9,7 @@
 
 import AppKit
 import WebKit
+import SumiWebRuntime
 
 @available(macOS 15.5, *)
 @MainActor

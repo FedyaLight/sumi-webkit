@@ -19,13 +19,11 @@ final class ExtensionReorderPersistenceTests: XCTestCase {
         let published = Published()
 
         let owner = ExtensionToolbarPinningOwner(
-            dependencies: .init(
-                preferences: defaults,
-                currentProfileId: { nil },
-                installedExtensionIDs: { ["a", "b", "c"] },
-                publishedPinnedIDs: { published.ids },
-                setPublishedPinnedIDs: { published.ids = $0 }
-            )
+            preferences: defaults,
+            currentProfileId: { nil },
+            installedExtensionIDs: { ["a", "b", "c"] },
+            publishedPinnedIDs: { published.ids },
+            setPublishedPinnedIDs: { published.ids = $0 }
         )
 
         owner.pinToToolbar("a")
@@ -47,13 +45,11 @@ final class ExtensionReorderPersistenceTests: XCTestCase {
 
         func makeOwner() -> ExtensionToolbarPinningOwner {
             ExtensionToolbarPinningOwner(
-                dependencies: .init(
-                    preferences: defaults,
-                    currentProfileId: { nil },
-                    installedExtensionIDs: { ["a", "b", "c"] },
-                    publishedPinnedIDs: { published.ids },
-                    setPublishedPinnedIDs: { published.ids = $0 }
-                )
+                preferences: defaults,
+                currentProfileId: { nil },
+                installedExtensionIDs: { ["a", "b", "c"] },
+                publishedPinnedIDs: { published.ids },
+                setPublishedPinnedIDs: { published.ids = $0 }
             )
         }
 
@@ -77,7 +73,8 @@ final class ExtensionReorderPersistenceTests: XCTestCase {
 
         func makeOwner() -> ExtensionHubOrderingOwner {
             ExtensionHubOrderingOwner(
-                dependencies: .init(preferences: defaults, currentProfileId: { nil })
+                preferences: defaults,
+                currentProfileId: { nil }
             )
         }
 

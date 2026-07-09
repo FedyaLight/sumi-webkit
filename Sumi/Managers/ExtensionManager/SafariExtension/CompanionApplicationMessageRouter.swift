@@ -35,7 +35,6 @@ protocol CompanionApplicationMessageBackend: AnyObject {
 
 @MainActor
 final class CompanionApplicationBackendRegistry {
-    static let shared = CompanionApplicationBackendRegistry.production()
 
     private let backends: [CompanionApplicationMessageBackend]
 

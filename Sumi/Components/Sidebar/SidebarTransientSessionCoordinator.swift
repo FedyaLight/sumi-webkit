@@ -226,7 +226,7 @@ final class SidebarTransientSessionCoordinator {
 
     let windowID: UUID
     let interactionState: SidebarInteractionState
-    var sidebarRecoveryCoordinator: SidebarHostRecoveryHandling = SidebarHostRecoveryCoordinator.shared
+    let sidebarRecoveryCoordinator: SidebarHostRecoveryHandling
     var scheduleSidebarInputRehydrate: ((SidebarInputRecoveryReason) -> Void)?
     var recoverSidebarInteractiveOwners: ((NSWindow?, SidebarTransientPresentationSource) -> SidebarInteractiveOwnerRecoveryResult)?
 
@@ -241,10 +241,12 @@ final class SidebarTransientSessionCoordinator {
 
     init(
         windowID: UUID,
-        interactionState: SidebarInteractionState
+        interactionState: SidebarInteractionState,
+        sidebarRecoveryCoordinator: SidebarHostRecoveryHandling = SidebarHostRecoveryCoordinator()
     ) {
         self.windowID = windowID
         self.interactionState = interactionState
+        self.sidebarRecoveryCoordinator = sidebarRecoveryCoordinator
     }
 
     var currentPresentationWindowID: UUID? {

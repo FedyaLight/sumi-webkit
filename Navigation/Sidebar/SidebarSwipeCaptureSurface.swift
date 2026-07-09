@@ -14,6 +14,7 @@ enum SidebarSwipeScrollForwardingPolicy {
 
 struct SidebarSwipeCaptureSurface: NSViewRepresentable {
     let isEnabled: Bool
+    let dragAutoscrollRegistry: SidebarTabListDragAutoscrollRegistry
     let onEvent: (SpaceSwipeGestureEvent) -> Void
 
     func makeCoordinator() -> Coordinator {
@@ -23,12 +24,14 @@ struct SidebarSwipeCaptureSurface: NSViewRepresentable {
     func makeNSView(context: Context) -> CaptureView {
         let view = CaptureView()
         view.coordinator = context.coordinator
+        view.dragAutoscrollRegistry = dragAutoscrollRegistry
         return view
     }
 
     func updateNSView(_ nsView: CaptureView, context: Context) {
         context.coordinator.parent = self
         nsView.coordinator = context.coordinator
+        nsView.dragAutoscrollRegistry = dragAutoscrollRegistry
     }
 }
 
@@ -73,6 +76,7 @@ extension SidebarSwipeCaptureSurface {
 
     final class CaptureView: NSView {
         weak var coordinator: Coordinator?
+        var dragAutoscrollRegistry: SidebarTabListDragAutoscrollRegistry?
 
         override var isOpaque: Bool {
             false
@@ -102,7 +106,8 @@ extension SidebarSwipeCaptureSurface {
                 scrollingDeltaX: event.scrollingDeltaX,
                 scrollingDeltaY: event.scrollingDeltaY
             ),
-            let target = SidebarTabListDragAutoscrollRegistry.shared.registeredScrollView(
+            let dragAutoscrollRegistry,
+            let target = dragAutoscrollRegistry.registeredScrollView(
                 containingWindowPoint: event.locationInWindow,
                 in: window
             )

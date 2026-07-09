@@ -90,10 +90,8 @@ final class HistoryManagerDependencyInjectionTests: XCTestCase {
         let historyManager = HistoryManager(
             context: ModelContext(container),
             profileId: profileID,
-            dependencies: HistoryManager.Dependencies(
-                faviconCleaner: faviconCleaner,
-                visitedLinkStore: visitedLinkStore
-            )
+            faviconCleaner: faviconCleaner,
+            visitedLinkStore: visitedLinkStore
         )
 
         return HistoryDependencyHarness(

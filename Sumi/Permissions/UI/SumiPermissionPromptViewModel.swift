@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import SumiDomain
 
 @MainActor
 final class SumiPermissionPromptViewModel: ObservableObject {

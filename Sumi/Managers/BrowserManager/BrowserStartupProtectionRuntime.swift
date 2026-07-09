@@ -11,28 +11,66 @@ enum StartupNormalTabMaterializationPolicy {
 
 @MainActor
 final class BrowserStartupProtectionRuntime {
-    struct Dependencies {
-        let appliedProtectionLevel: () -> SumiProtectionLevel
-        let restoreAppliedProtectionLevelForStartup: () async throws -> Void
-        let tab: (UUID) -> Tab?
-        let allWindows: () -> [BrowserWindowState]
-        let prepareBackgroundTabIfNeeded: (Tab) -> Void
-        let schedulePrepareVisibleWebViews: (BrowserWindowState) -> Void
-        let refreshCompositor: (BrowserWindowState) -> Void
-    }
+    private let appliedProtectionLevelAction: () -> SumiProtectionLevel
+    private let restoreAppliedProtectionLevelForStartupAction: () async throws -> Void
+    private let tabAction: (UUID) -> Tab?
+    private let allWindowsAction: () -> [BrowserWindowState]
+    private let prepareBackgroundTabIfNeededAction: (Tab) -> Void
+    private let schedulePrepareVisibleWebViewsAction: (BrowserWindowState) -> Void
+    private let refreshCompositorAction: (BrowserWindowState) -> Void
 
-    private let dependencies: Dependencies
     private var startupProtectionRestoreTask: Task<Void, Never>?
     private(set) var hasFinishedProtectionRestore = false
     private var deferredBackgroundTabIds: Set<UUID> = []
 
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
+    init(
+        appliedProtectionLevel: @escaping () -> SumiProtectionLevel,
+        restoreAppliedProtectionLevelForStartup: @escaping () async throws -> Void,
+        tab: @escaping (UUID) -> Tab?,
+        allWindows: @escaping () -> [BrowserWindowState],
+        prepareBackgroundTabIfNeeded: @escaping (Tab) -> Void,
+        schedulePrepareVisibleWebViews: @escaping (BrowserWindowState) -> Void,
+        refreshCompositor: @escaping (BrowserWindowState) -> Void
+    ) {
+        self.appliedProtectionLevelAction = appliedProtectionLevel
+        self.restoreAppliedProtectionLevelForStartupAction = restoreAppliedProtectionLevelForStartup
+        self.tabAction = tab
+        self.allWindowsAction = allWindows
+        self.prepareBackgroundTabIfNeededAction = prepareBackgroundTabIfNeeded
+        self.schedulePrepareVisibleWebViewsAction = schedulePrepareVisibleWebViews
+        self.refreshCompositorAction = refreshCompositor
+    }
+
+    convenience init(browserManager: BrowserManager) {
+        self.init(
+            appliedProtectionLevel: { [weak browserManager] in
+                browserManager?.protectionCoordinator.settings.appliedLevel ?? .off
+            },
+            restoreAppliedProtectionLevelForStartup: { [weak browserManager] in
+                guard let browserManager else { return }
+                _ = try await browserManager.protectionCoordinator.restoreAppliedLevelForStartup()
+            },
+            tab: { [weak browserManager] tabId in
+                browserManager?.tabManager.tabCollectionMembershipOwner.tab(for: tabId)
+            },
+            allWindows: { [weak browserManager] in
+                browserManager?.windowRegistry?.allWindows ?? []
+            },
+            prepareBackgroundTabIfNeeded: { [weak browserManager] tab in
+                browserManager?.tabLifecycleService.opening.prepareBackgroundTabIfNeeded(tab, in: nil)
+            },
+            schedulePrepareVisibleWebViews: { [weak browserManager] windowState in
+                browserManager?.windowVisualMutationOwner.schedulePrepareVisibleWebViews(for: windowState)
+            },
+            refreshCompositor: { [weak browserManager] windowState in
+                browserManager?.windowVisualMutationOwner.refreshCompositor(for: windowState)
+            }
+        )
     }
 
     var shouldDeferNormalTabMaterializationDuringStartup: Bool {
         StartupNormalTabMaterializationPolicy.shouldDefer(
-            appliedProtectionLevel: dependencies.appliedProtectionLevel(),
+            appliedProtectionLevel: appliedProtectionLevelAction(),
             hasFinishedStartupProtectionRestore: hasFinishedProtectionRestore
         )
     }
@@ -74,7 +112,7 @@ final class BrowserStartupProtectionRuntime {
         }
 
         do {
-            try await dependencies.restoreAppliedProtectionLevelForStartup()
+            try await restoreAppliedProtectionLevelForStartupAction()
         } catch {
             RuntimeDiagnostics.debug(
                 "Protection startup restore failed: \(error.localizedDescription)",
@@ -90,13 +128,13 @@ final class BrowserStartupProtectionRuntime {
         let deferredBackgroundTabs = deferredBackgroundTabIds
         deferredBackgroundTabIds.removeAll()
         for tabId in deferredBackgroundTabs {
-            guard let tab = dependencies.tab(tabId) else { continue }
-            dependencies.prepareBackgroundTabIfNeeded(tab)
+            guard let tab = tabAction(tabId) else { continue }
+            prepareBackgroundTabIfNeededAction(tab)
         }
 
-        for windowState in dependencies.allWindows() {
-            dependencies.schedulePrepareVisibleWebViews(windowState)
-            dependencies.refreshCompositor(windowState)
+        for windowState in allWindowsAction() {
+            schedulePrepareVisibleWebViewsAction(windowState)
+            refreshCompositorAction(windowState)
         }
 
 #if DEBUG
@@ -118,34 +156,4 @@ final class BrowserStartupProtectionRuntime {
         }
     }
 #endif
-}
-
-extension BrowserStartupProtectionRuntime.Dependencies {
-    @MainActor
-    static func live(browserManager: BrowserManager) -> Self {
-        Self(
-            appliedProtectionLevel: { [weak browserManager] in
-                browserManager?.protectionCoordinator.settings.appliedLevel ?? .off
-            },
-            restoreAppliedProtectionLevelForStartup: { [weak browserManager] in
-                guard let browserManager else { return }
-                _ = try await browserManager.protectionCoordinator.restoreAppliedLevelForStartup()
-            },
-            tab: { [weak browserManager] tabId in
-                browserManager?.tabManager.tabCollectionMembershipOwner.tab(for: tabId)
-            },
-            allWindows: { [weak browserManager] in
-                browserManager?.windowRegistry?.allWindows ?? []
-            },
-            prepareBackgroundTabIfNeeded: { [weak browserManager] tab in
-                browserManager?.tabLifecycleService.opening.prepareBackgroundTabIfNeeded(tab, in: nil)
-            },
-            schedulePrepareVisibleWebViews: { [weak browserManager] windowState in
-                browserManager?.windowVisualMutationOwner.schedulePrepareVisibleWebViews(for: windowState)
-            },
-            refreshCompositor: { [weak browserManager] windowState in
-                browserManager?.windowVisualMutationOwner.refreshCompositor(for: windowState)
-            }
-        )
-    }
 }

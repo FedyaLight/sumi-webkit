@@ -257,7 +257,7 @@ enum SidebarContextMenuPopupReturnPolicy {
 final class SidebarContextMenuController {
     let interactionState: SidebarInteractionState
     let transientSessionCoordinator: SidebarTransientSessionCoordinator
-    var sidebarRecoveryCoordinator: SidebarHostRecoveryHandling = SidebarHostRecoveryCoordinator.shared
+    let sidebarRecoveryCoordinator: SidebarHostRecoveryHandling
     weak var windowState: BrowserWindowState?
 
     private let interactiveOwnerRegistry = SidebarInteractiveOwnerRegistry()
@@ -279,10 +279,12 @@ final class SidebarContextMenuController {
 
     init(
         interactionState: SidebarInteractionState,
-        transientSessionCoordinator: SidebarTransientSessionCoordinator
+        transientSessionCoordinator: SidebarTransientSessionCoordinator,
+        sidebarRecoveryCoordinator: SidebarHostRecoveryHandling = SidebarHostRecoveryCoordinator()
     ) {
         self.interactionState = interactionState
         self.transientSessionCoordinator = transientSessionCoordinator
+        self.sidebarRecoveryCoordinator = sidebarRecoveryCoordinator
     }
 
     isolated deinit {

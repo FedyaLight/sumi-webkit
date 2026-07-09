@@ -7,6 +7,7 @@
 //
 
 import Foundation
+import SumiDomain
 
 enum FloatingBarEmptyStateMode: String, CaseIterable, Identifiable, Codable, Sendable {
     case compact

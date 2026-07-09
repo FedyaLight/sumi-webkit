@@ -7,11 +7,9 @@ final class AppLifecycleControllerTests: XCTestCase {
     func testApplicationInactivePausesGeolocationAfterSchedulingMediaReconcile() {
         var events: [String] = []
         let controller = BrowserApplicationLifecycleController(
-            dependencies: BrowserApplicationLifecycleController.Dependencies(
-                scheduleBackgroundMediaReconcile: { events.append("media:\($0)") },
-                pauseGeolocationOnAppBackgroundIfNeeded: { events.append("pause") },
-                resumeGeolocationOnAppForegroundIfNeeded: { events.append("resume") }
-            )
+            scheduleBackgroundMediaReconcile: { events.append("media:\($0)") },
+            pauseGeolocationOnAppBackgroundIfNeeded: { events.append("pause") },
+            resumeGeolocationOnAppForegroundIfNeeded: { events.append("resume") }
         )
 
         controller.handleApplicationWillResignActive()
@@ -22,11 +20,9 @@ final class AppLifecycleControllerTests: XCTestCase {
     func testApplicationActiveResumesGeolocationAfterSchedulingMediaReconcile() {
         var events: [String] = []
         let controller = BrowserApplicationLifecycleController(
-            dependencies: BrowserApplicationLifecycleController.Dependencies(
-                scheduleBackgroundMediaReconcile: { events.append("media:\($0)") },
-                pauseGeolocationOnAppBackgroundIfNeeded: { events.append("pause") },
-                resumeGeolocationOnAppForegroundIfNeeded: { events.append("resume") }
-            )
+            scheduleBackgroundMediaReconcile: { events.append("media:\($0)") },
+            pauseGeolocationOnAppBackgroundIfNeeded: { events.append("pause") },
+            resumeGeolocationOnAppForegroundIfNeeded: { events.append("resume") }
         )
 
         controller.handleApplicationDidBecomeActive()

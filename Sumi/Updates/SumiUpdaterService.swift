@@ -438,8 +438,6 @@ protocol SumiUpdaterBackend: AnyObject {
 
 @MainActor
 final class SumiUpdaterService: ObservableObject {
-    static let shared = SumiUpdaterService()
-
     @Published private(set) var state: SumiUpdateState
     @Published private(set) var sidebarNotice: SumiUpdateSidebarNotice?
 

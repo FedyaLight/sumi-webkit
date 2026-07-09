@@ -13,23 +13,21 @@ struct UserScriptCachedResourceRecord {
 
 @MainActor
 final class UserScriptResourceCache {
-    struct Dependencies {
-        let scriptsDirectory: @MainActor () -> URL
-        let persistResource: @MainActor (UserScriptCachedResourceRecord) -> Void
-    }
-
     private static let log = Logger.sumi(category: "SumiScripts")
 
-    private let dependencies: Dependencies
+    private let scriptsDirectory: @MainActor () -> URL
+    private let persistResource: @MainActor (UserScriptCachedResourceRecord) -> Void
     private let fileManager: FileManager
     private let session: URLSession
 
     init(
-        dependencies: Dependencies,
+        scriptsDirectory: @escaping @MainActor () -> URL,
+        persistResource: @escaping @MainActor (UserScriptCachedResourceRecord) -> Void,
         fileManager: FileManager = .default,
-        session: URLSession = SumiNonPersistentURLSession.shared
+        session: URLSession = SumiNonPersistentURLSession.make()
     ) {
-        self.dependencies = dependencies
+        self.scriptsDirectory = scriptsDirectory
+        self.persistResource = persistResource
         self.fileManager = fileManager
         self.session = session
     }
@@ -98,7 +96,7 @@ final class UserScriptResourceCache {
                 let data = Data(bundled.utf8)
                 try data.write(to: localFile, options: .atomic)
                 if let internalURL = URL(string: urlString.trimmingCharacters(in: .whitespacesAndNewlines)) {
-                    dependencies.persistResource(
+                    persistResource(
                         UserScriptCachedResourceRecord(
                             scriptId: scriptId,
                             kind: "require",
@@ -120,7 +118,7 @@ final class UserScriptResourceCache {
                 UserScriptStore.sanitizeFilename(url.absoluteString)
             )
             try data.write(to: localFile, options: .atomic)
-            dependencies.persistResource(
+            persistResource(
                 UserScriptCachedResourceRecord(
                     scriptId: scriptId,
                     kind: "require",
@@ -155,7 +153,7 @@ final class UserScriptResourceCache {
                 UserScriptStore.sanitizeFilename(name)
             )
             try data.write(to: localFile, options: .atomic)
-            dependencies.persistResource(
+            persistResource(
                 UserScriptCachedResourceRecord(
                     scriptId: scriptId,
                     kind: "resource",
@@ -186,7 +184,7 @@ final class UserScriptResourceCache {
     }
 
     private var requireDirectory: URL {
-        dependencies.scriptsDirectory().appendingPathComponent("require")
+        scriptsDirectory().appendingPathComponent("require")
     }
 
     private func cacheDirectory(for filename: String, kind: String) -> URL {
@@ -229,24 +227,3 @@ final class UserScriptResourceCache {
     }
 }
 
-@MainActor
-extension UserScriptResourceCache.Dependencies {
-    static func live(store: UserScriptStore) -> Self {
-        Self(
-            scriptsDirectory: { [weak store] in
-                store?.scriptsDirectory ?? UserScriptStore.defaultScriptsDirectory()
-            },
-            persistResource: { [weak store] record in
-                store?.persistResource(
-                    scriptId: record.scriptId,
-                    kind: record.kind,
-                    name: record.name,
-                    sourceURL: record.sourceURL,
-                    localFile: record.localFile,
-                    mimeType: record.mimeType,
-                    data: record.data
-                )
-            }
-        )
-    }
-}

@@ -21,7 +21,7 @@ final class TabNavigationCommandOwner {
         loadURL(
             newURL,
             for: tab,
-            resolvedWebView: { [weak tab] in tab?.currentWebView },
+            resolvedWebView: { [weak tab] in tab?.resolvedCurrentWebView() },
             reason: "Tab.loadURL"
         )
     }
@@ -122,7 +122,8 @@ final class TabNavigationCommandOwner {
         guard !tab.representsSumiNativeSurface else { return }
 
         tab.beginLoadingPresentationIfNeeded()
-        let targetURL = tab.currentWebView?.url ?? tab.url
+        let currentWebView = tab.resolvedCurrentWebView()
+        let targetURL = currentWebView?.url ?? tab.url
         let protectionReloadWasRequired = tab.reloadPolicyStateOwner.isProtectionReloadRequired
         let rebuiltForConfigurationPolicy = tab.rebuildNormalWebViewForConfigurationPolicyIfNeeded(
             targetURL: targetURL,
@@ -136,7 +137,7 @@ final class TabNavigationCommandOwner {
             )
         }
 
-        if let webView = tab.currentWebView {
+        if let webView = tab.resolvedCurrentWebView() ?? currentWebView {
             if rebuiltForConfigurationPolicy {
                 performMainFrameNavigationAfterContentBlockingAssetsIfNeeded(
                     on: webView,

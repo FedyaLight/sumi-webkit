@@ -4,78 +4,102 @@ import WebKit
 
 @MainActor
 final class BrowserActivePageRoutingOwner {
-    struct Dependencies {
-        let activeWindow: @MainActor () -> BrowserWindowState?
-        let currentTab: @MainActor (BrowserWindowState) -> Tab?
-        let activePreviewTab: @MainActor (BrowserWindowState) -> Tab?
-        let activePreviewWebView: @MainActor (BrowserWindowState) -> WKWebView?
-        let activeSessionURL: @MainActor (BrowserWindowState) -> URL?
-        let windowOwnedWebView: @MainActor (Tab, UUID) -> WKWebView?
-        let refreshActivePage: @MainActor (Tab, BrowserWindowState) -> Void
-        let createNewTab: @MainActor (BrowserWindowState, String) -> Void
-        let openNewTab: @MainActor (String, BrowserTabOpenContext) -> Tab?
-        let containsSpace: @MainActor (UUID) -> Bool
-        let folderSpaceId: @MainActor (UUID) -> UUID?
-        let resolveEssentialsInsertion:
-            @MainActor (BrowserWindowState, Int) -> EssentialsShortcutPlacementOwner.InsertionPlan?
-        let convertTabToShortcutPin:
-            @MainActor (Tab, ShortcutPinRole, UUID?, UUID?, UUID?, Int, Bool) -> ShortcutPin?
-        let copyURLToPasteboard: @MainActor (String, BrowserWindowState?) -> Bool
-    }
+    private let activeWindow: @MainActor () -> BrowserWindowState?
+    private let currentTab: @MainActor (BrowserWindowState) -> Tab?
+    private let activePreviewTab: @MainActor (BrowserWindowState) -> Tab?
+    private let activePreviewWebView: @MainActor (BrowserWindowState) -> WKWebView?
+    private let activeSessionURL: @MainActor (BrowserWindowState) -> URL?
+    private let windowOwnedWebView: @MainActor (Tab, UUID) -> WKWebView?
+    private let refreshActivePage: @MainActor (Tab, BrowserWindowState) -> Void
+    private let createNewTab: @MainActor (BrowserWindowState, String) -> Void
+    private let openNewTab: @MainActor (String, BrowserTabOpenContext) -> Tab?
+    private let containsSpace: @MainActor (UUID) -> Bool
+    private let folderSpaceId: @MainActor (UUID) -> UUID?
+    private let resolveEssentialsInsertion:
+        @MainActor (BrowserWindowState, Int) -> EssentialsShortcutPlacementOwner.InsertionPlan?
+    private let convertTabToShortcutPin:
+        @MainActor (Tab, ShortcutPinRole, UUID?, UUID?, UUID?, Int, Bool) -> ShortcutPin?
+    private let copyURLToPasteboard: @MainActor (String, BrowserWindowState?) -> Bool
 
-    private let dependencies: Dependencies
-
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
+    init(
+        activeWindow: @escaping @MainActor () -> BrowserWindowState?,
+        currentTab: @escaping @MainActor (BrowserWindowState) -> Tab?,
+        activePreviewTab: @escaping @MainActor (BrowserWindowState) -> Tab?,
+        activePreviewWebView: @escaping @MainActor (BrowserWindowState) -> WKWebView?,
+        activeSessionURL: @escaping @MainActor (BrowserWindowState) -> URL?,
+        windowOwnedWebView: @escaping @MainActor (Tab, UUID) -> WKWebView?,
+        refreshActivePage: @escaping @MainActor (Tab, BrowserWindowState) -> Void,
+        createNewTab: @escaping @MainActor (BrowserWindowState, String) -> Void,
+        openNewTab: @escaping @MainActor (String, BrowserTabOpenContext) -> Tab?,
+        containsSpace: @escaping @MainActor (UUID) -> Bool,
+        folderSpaceId: @escaping @MainActor (UUID) -> UUID?,
+        resolveEssentialsInsertion: @escaping @MainActor (BrowserWindowState, Int) -> EssentialsShortcutPlacementOwner.InsertionPlan?,
+        convertTabToShortcutPin: @escaping @MainActor (Tab, ShortcutPinRole, UUID?, UUID?, UUID?, Int, Bool) -> ShortcutPin?,
+        copyURLToPasteboard: @escaping @MainActor (String, BrowserWindowState?) -> Bool
+    ) {
+        self.activeWindow = activeWindow
+        self.currentTab = currentTab
+        self.activePreviewTab = activePreviewTab
+        self.activePreviewWebView = activePreviewWebView
+        self.activeSessionURL = activeSessionURL
+        self.windowOwnedWebView = windowOwnedWebView
+        self.refreshActivePage = refreshActivePage
+        self.createNewTab = createNewTab
+        self.openNewTab = openNewTab
+        self.containsSpace = containsSpace
+        self.folderSpaceId = folderSpaceId
+        self.resolveEssentialsInsertion = resolveEssentialsInsertion
+        self.convertTabToShortcutPin = convertTabToShortcutPin
+        self.copyURLToPasteboard = copyURLToPasteboard
     }
 
     func currentTabForActiveWindow() -> Tab? {
-        guard let activeWindow = dependencies.activeWindow() else { return nil }
-        return dependencies.currentTab(activeWindow)
+        guard let activeWindow = activeWindow() else { return nil }
+        return currentTab(activeWindow)
     }
 
     func activePageTab(for windowState: BrowserWindowState) -> Tab? {
-        dependencies.activePreviewTab(windowState)
-            ?? dependencies.currentTab(windowState)
+        activePreviewTab(windowState)
+            ?? currentTab(windowState)
     }
 
     func activePageTabForActiveWindow() -> Tab? {
-        guard let activeWindow = dependencies.activeWindow() else { return nil }
+        guard let activeWindow = activeWindow() else { return nil }
         return activePageTab(for: activeWindow)
     }
 
     func activePageWebView(for windowState: BrowserWindowState) -> WKWebView? {
-        if let previewTab = dependencies.activePreviewTab(windowState) {
-            return dependencies.windowOwnedWebView(previewTab, windowState.id)
-                ?? dependencies.activePreviewWebView(windowState)
+        if let previewTab = activePreviewTab(windowState) {
+            return windowOwnedWebView(previewTab, windowState.id)
+                ?? activePreviewWebView(windowState)
         }
 
-        guard let tab = dependencies.currentTab(windowState) else { return nil }
-        return dependencies.windowOwnedWebView(tab, windowState.id)
+        guard let tab = currentTab(windowState) else { return nil }
+        return windowOwnedWebView(tab, windowState.id)
     }
 
     func activePageWebViewForActiveWindow() -> WKWebView? {
-        guard let activeWindow = dependencies.activeWindow() else { return nil }
+        guard let activeWindow = activeWindow() else { return nil }
         return activePageWebView(for: activeWindow)
     }
 
     func activePageURL(for windowState: BrowserWindowState) -> URL? {
-        dependencies.activeSessionURL(windowState)
+        activeSessionURL(windowState)
             ?? activePageTab(for: windowState)?.url
     }
 
     func activePageURLForActiveWindow() -> URL? {
-        guard let activeWindow = dependencies.activeWindow() else { return nil }
+        guard let activeWindow = activeWindow() else { return nil }
         return activePageURL(for: activeWindow)
     }
 
     func refreshCurrentTabInActiveWindow() {
-        guard let activeWindow = dependencies.activeWindow(),
+        guard let activeWindow = activeWindow(),
               let tab = activePageTab(for: activeWindow)
         else {
             return
         }
-        dependencies.refreshActivePage(tab, activeWindow)
+        refreshActivePage(tab, activeWindow)
     }
 
     func toggleMuteCurrentTabInActiveWindow() {
@@ -94,8 +118,8 @@ final class BrowserActivePageRoutingOwner {
         if let url = activePageURLForActiveWindow()?.absoluteString {
             RuntimeDiagnostics.emit("Attempting to copy URL: \(url)")
 
-            let windowState = dependencies.activeWindow()
-            let success = dependencies.copyURLToPasteboard(url, windowState)
+            let windowState = activeWindow()
+            let success = copyURLToPasteboard(url, windowState)
             if success {
                 NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .drawCompleted)
             }
@@ -106,7 +130,7 @@ final class BrowserActivePageRoutingOwner {
     }
 
     func activeFindSession() -> (tab: Tab?, windowId: UUID?) {
-        guard let windowState = dependencies.activeWindow() else {
+        guard let windowState = activeWindow() else {
             return (nil, nil)
         }
         return (activePageTab(for: windowState), windowState.id)
@@ -118,13 +142,13 @@ final class BrowserActivePageRoutingOwner {
             return
         }
 
-        guard let activeWindow = dependencies.activeWindow() else {
+        guard let activeWindow = activeWindow() else {
             RuntimeDiagnostics.emit("No active window to inspect")
             return
         }
 
         guard let tab = activePageTab(for: activeWindow),
-              let webView = dependencies.windowOwnedWebView(tab, activeWindow.id)
+              let webView = windowOwnedWebView(tab, activeWindow.id)
         else {
             RuntimeDiagnostics.emit("No window-owned web view available to inspect")
             return
@@ -139,7 +163,7 @@ final class BrowserActivePageRoutingOwner {
             return
         }
 
-        guard let webView = dependencies.windowOwnedWebView(tab, windowState.id) else {
+        guard let webView = windowOwnedWebView(tab, windowState.id) else {
             RuntimeDiagnostics.emit("No window-owned web view available to inspect")
             return
         }
@@ -148,8 +172,8 @@ final class BrowserActivePageRoutingOwner {
     }
 
     func presentExternalURL(_ url: URL) {
-        guard let windowState = dependencies.activeWindow() else { return }
-        dependencies.createNewTab(windowState, url.absoluteString)
+        guard let windowState = activeWindow() else { return }
+        createNewTab(windowState, url.absoluteString)
     }
 
     @discardableResult
@@ -161,7 +185,7 @@ final class BrowserActivePageRoutingOwner {
         guard slot != .empty else { return false }
 
         if windowState.isIncognito {
-            return dependencies.openNewTab(
+            return openNewTab(
                 url.absoluteString,
                 .foreground(windowState: windowState)
             ) != nil
@@ -169,8 +193,8 @@ final class BrowserActivePageRoutingOwner {
 
         switch slot {
         case .spaceRegular(let spaceId, let index):
-            guard dependencies.containsSpace(spaceId) else { return false }
-            return dependencies.openNewTab(
+            guard containsSpace(spaceId) else { return false }
+            return openNewTab(
                 url.absoluteString,
                 .foreground(
                     windowState: windowState,
@@ -180,12 +204,12 @@ final class BrowserActivePageRoutingOwner {
             ) != nil
 
         case .spacePinned(let spaceId, let index):
-            guard dependencies.containsSpace(spaceId) else { return false }
-            guard let tab = dependencies.openNewTab(
+            guard containsSpace(spaceId) else { return false }
+            guard let tab = openNewTab(
                 url.absoluteString,
                 .foreground(windowState: windowState, preferredSpaceId: spaceId)
             ) else { return false }
-            return dependencies.convertTabToShortcutPin(
+            return convertTabToShortcutPin(
                 tab,
                 .spacePinned,
                 nil,
@@ -196,12 +220,12 @@ final class BrowserActivePageRoutingOwner {
             ) != nil
 
         case .folder(let folderId, let index):
-            guard let spaceId = dependencies.folderSpaceId(folderId) else { return false }
-            guard let tab = dependencies.openNewTab(
+            guard let spaceId = folderSpaceId(folderId) else { return false }
+            guard let tab = openNewTab(
                 url.absoluteString,
                 .foreground(windowState: windowState, preferredSpaceId: spaceId)
             ) else { return false }
-            return dependencies.convertTabToShortcutPin(
+            return convertTabToShortcutPin(
                 tab,
                 .spacePinned,
                 nil,
@@ -212,16 +236,16 @@ final class BrowserActivePageRoutingOwner {
             ) != nil
 
         case .essentials(let index):
-            let insertion = dependencies.resolveEssentialsInsertion(windowState, index)
+            let insertion = resolveEssentialsInsertion(windowState, index)
             guard let insertion else { return false }
-            guard let tab = dependencies.openNewTab(
+            guard let tab = openNewTab(
                 url.absoluteString,
                 .foreground(
                     windowState: windowState,
                     preferredSpaceId: windowState.currentSpaceId
                 )
             ) else { return false }
-            return dependencies.convertTabToShortcutPin(
+            return convertTabToShortcutPin(
                 tab,
                 .essential,
                 insertion.profileId,
@@ -250,72 +274,5 @@ final class BrowserActivePageRoutingOwner {
     private func inspect(_ webView: WKWebView) {
         webView.isInspectable = true
         showWebInspectorAlert()
-    }
-}
-
-extension BrowserActivePageRoutingOwner.Dependencies {
-    @MainActor
-    static func live(browserManager: BrowserManager) -> Self {
-        Self(
-            activeWindow: { [weak browserManager] in
-                browserManager?.windowRegistry?.activeWindow
-            },
-            currentTab: { [weak browserManager] windowState in
-                browserManager?.windowTabContextOwner.currentTab(for: windowState)
-            },
-            activePreviewTab: { [weak browserManager] windowState in
-                browserManager?.glanceManager.activePreviewTab(for: windowState)
-            },
-            activePreviewWebView: { [weak browserManager] windowState in
-                browserManager?.glanceManager.activePreviewWebView(for: windowState)
-            },
-            activeSessionURL: { [weak browserManager] windowState in
-                browserManager?.glanceManager.activeSession(for: windowState)?.currentURL
-            },
-            windowOwnedWebView: { [weak browserManager] tab, windowId in
-                browserManager?.webViewRoutingService.windowOwnedWebView(for: tab, in: windowId)
-            },
-            refreshActivePage: { [weak browserManager] tab, windowState in
-                browserManager?.windowScopedNavigationOwner.refreshWindowScopedPage(
-                    tab: tab,
-                    in: windowState,
-                    reason: "BrowserActivePage.refresh"
-                )
-            },
-            createNewTab: { [weak browserManager] windowState, urlString in
-                browserManager?.tabLifecycleService.opening.createNewTab(in: windowState, url: urlString)
-            },
-            openNewTab: { [weak browserManager] urlString, context in
-                browserManager?.tabLifecycleService.opening.openNewTab(url: urlString, context: context)
-            },
-            containsSpace: { [weak browserManager] spaceId in
-                browserManager?.tabManager.spaceStateOwner.spaces.contains { $0.id == spaceId } == true
-            },
-            folderSpaceId: { [weak browserManager] folderId in
-                browserManager?.tabManager.folderCollectionStateOwner.spaceId(for: folderId)
-            },
-            resolveEssentialsInsertion: { [weak browserManager] windowState, index in
-                browserManager?.tabManager.essentialsShortcutPlacementOwner.resolveInsertion(
-                    using: EssentialsShortcutPlacementOwner.InsertionContext(
-                        target: EssentialsShortcutPlacementOwner.TargetContext(windowState: windowState),
-                        targetIndex: index
-                    )
-                )
-            },
-            convertTabToShortcutPin: { [weak browserManager] tab, role, profileId, spaceId, folderId, index, openTargetFolder in
-                browserManager?.tabManager.shortcutPinCommandOwner.convertTabToShortcutPin(
-                    tab,
-                    role: role,
-                    profileId: profileId,
-                    spaceId: spaceId,
-                    folderId: folderId,
-                    at: index,
-                    openTargetFolder: openTargetFolder
-                )
-            },
-            copyURLToPasteboard: { [weak browserManager] url, windowState in
-                browserManager?.urlBarCommands.copyURLToPasteboard(url, in: windowState) ?? false
-            }
-        )
     }
 }

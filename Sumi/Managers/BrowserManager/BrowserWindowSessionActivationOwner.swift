@@ -2,50 +2,72 @@ import Foundation
 
 @MainActor
 final class BrowserWindowSessionActivationOwner {
-    struct Dependencies {
-        let windowSessionService: WindowSessionService
-        let runtime: @MainActor () -> WindowSessionRuntime?
-        let refreshSplitPublishedState: @MainActor (UUID) -> Void
-        let updateFindManagerCurrentTab: @MainActor () -> Void
-        let notifyExtensionWindowOpened: @MainActor (BrowserWindowState) -> Void
-        let notifyExtensionWindowFocused: @MainActor (BrowserWindowState) -> Void
-        let reconcileStartupSessionIfPossible: @MainActor () -> Void
-        let adoptProfileForWindowActivation: @MainActor (BrowserWindowState) -> Void
-        let scheduleNativeNowPlayingRefresh: @MainActor (UInt64) -> Void
-        let scheduleBackgroundMediaReconcile: @MainActor (String) -> Void
-        let pauseGeolocationOnAppBackgroundIfNeeded: @MainActor () -> Void
-        let resumeGeolocationOnAppForegroundIfNeeded: @MainActor () -> Void
-        let refreshLastSessionWindowsStore: @MainActor () -> Void
-    }
+    private let windowSessionService: WindowSessionService
+    private let runtime: @MainActor () -> WindowSessionRuntime?
+    private let refreshSplitPublishedState: @MainActor (UUID) -> Void
+    private let updateFindManagerCurrentTab: @MainActor () -> Void
+    private let notifyExtensionWindowOpened: @MainActor (BrowserWindowState) -> Void
+    private let notifyExtensionWindowFocused: @MainActor (BrowserWindowState) -> Void
+    private let reconcileStartupSessionIfPossible: @MainActor () -> Void
+    private let adoptProfileForWindowActivation: @MainActor (BrowserWindowState) -> Void
+    private let scheduleNativeNowPlayingRefresh: @MainActor (UInt64) -> Void
+    private let scheduleBackgroundMediaReconcile: @MainActor (String) -> Void
+    private let pauseGeolocationOnAppBackgroundIfNeeded: @MainActor () -> Void
+    private let resumeGeolocationOnAppForegroundIfNeeded: @MainActor () -> Void
+    private let refreshLastSessionWindowsStore: @MainActor () -> Void
 
-    private let dependencies: Dependencies
-
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
+    init(
+        windowSessionService: WindowSessionService,
+        runtime: @escaping @MainActor () -> WindowSessionRuntime?,
+        refreshSplitPublishedState: @escaping @MainActor (UUID) -> Void,
+        updateFindManagerCurrentTab: @escaping @MainActor () -> Void,
+        notifyExtensionWindowOpened: @escaping @MainActor (BrowserWindowState) -> Void,
+        notifyExtensionWindowFocused: @escaping @MainActor (BrowserWindowState) -> Void,
+        reconcileStartupSessionIfPossible: @escaping @MainActor () -> Void,
+        adoptProfileForWindowActivation: @escaping @MainActor (BrowserWindowState) -> Void,
+        scheduleNativeNowPlayingRefresh: @escaping @MainActor (UInt64) -> Void,
+        scheduleBackgroundMediaReconcile: @escaping @MainActor (String) -> Void,
+        pauseGeolocationOnAppBackgroundIfNeeded: @escaping @MainActor () -> Void,
+        resumeGeolocationOnAppForegroundIfNeeded: @escaping @MainActor () -> Void,
+        refreshLastSessionWindowsStore: @escaping @MainActor () -> Void
+    ) {
+        self.windowSessionService = windowSessionService
+        self.runtime = runtime
+        self.refreshSplitPublishedState = refreshSplitPublishedState
+        self.updateFindManagerCurrentTab = updateFindManagerCurrentTab
+        self.notifyExtensionWindowOpened = notifyExtensionWindowOpened
+        self.notifyExtensionWindowFocused = notifyExtensionWindowFocused
+        self.reconcileStartupSessionIfPossible = reconcileStartupSessionIfPossible
+        self.adoptProfileForWindowActivation = adoptProfileForWindowActivation
+        self.scheduleNativeNowPlayingRefresh = scheduleNativeNowPlayingRefresh
+        self.scheduleBackgroundMediaReconcile = scheduleBackgroundMediaReconcile
+        self.pauseGeolocationOnAppBackgroundIfNeeded = pauseGeolocationOnAppBackgroundIfNeeded
+        self.resumeGeolocationOnAppForegroundIfNeeded = resumeGeolocationOnAppForegroundIfNeeded
+        self.refreshLastSessionWindowsStore = refreshLastSessionWindowsStore
     }
 
     func setupWindowState(_ windowState: BrowserWindowState) {
-        guard let runtime = dependencies.runtime() else { return }
-        dependencies.windowSessionService.setupWindowState(
+        guard let runtime = runtime() else { return }
+        windowSessionService.setupWindowState(
             windowState,
             runtime: runtime
         )
-        dependencies.notifyExtensionWindowOpened(windowState)
-        dependencies.reconcileStartupSessionIfPossible()
+        notifyExtensionWindowOpened(windowState)
+        reconcileStartupSessionIfPossible()
     }
 
     func setActiveWindowState(_ windowState: BrowserWindowState) {
-        guard let runtime = dependencies.runtime() else { return }
-        dependencies.refreshSplitPublishedState(windowState.id)
-        dependencies.windowSessionService.setActiveWindowState(
+        guard let runtime = runtime() else { return }
+        refreshSplitPublishedState(windowState.id)
+        windowSessionService.setActiveWindowState(
             windowState,
             runtime: runtime
         )
-        dependencies.updateFindManagerCurrentTab()
-        dependencies.notifyExtensionWindowFocused(windowState)
-        dependencies.adoptProfileForWindowActivation(windowState)
-        dependencies.scheduleNativeNowPlayingRefresh(0)
-        dependencies.scheduleBackgroundMediaReconcile("window-activated")
+        updateFindManagerCurrentTab()
+        notifyExtensionWindowFocused(windowState)
+        adoptProfileForWindowActivation(windowState)
+        scheduleNativeNowPlayingRefresh(0)
+        scheduleBackgroundMediaReconcile("window-activated")
     }
 
     func persistWindowSession(for windowState: BrowserWindowState) {
@@ -56,7 +78,7 @@ final class BrowserWindowSessionActivationOwner {
         for windowState: BrowserWindowState,
         delayNanoseconds: UInt64 = 450_000_000
     ) {
-        dependencies.windowSessionService.schedulePersistWindowSession(
+        windowSessionService.schedulePersistWindowSession(
             for: windowState,
             delayNanoseconds: delayNanoseconds
         ) { [weak self] windowState in
@@ -65,38 +87,38 @@ final class BrowserWindowSessionActivationOwner {
     }
 
     func flushPendingWindowSessionPersistence() {
-        dependencies.windowSessionService.flushPendingWindowSessionPersistence { [weak self] windowState in
+        windowSessionService.flushPendingWindowSessionPersistence { [weak self] windowState in
             self?.persistWindowSessionNow(for: windowState)
         }
     }
 
     func handleApplicationWillResignActive() {
-        dependencies.scheduleBackgroundMediaReconcile("app-will-resign-active")
-        dependencies.pauseGeolocationOnAppBackgroundIfNeeded()
+        scheduleBackgroundMediaReconcile("app-will-resign-active")
+        pauseGeolocationOnAppBackgroundIfNeeded()
     }
 
     func handleApplicationDidBecomeActive() {
-        dependencies.scheduleBackgroundMediaReconcile("app-did-become-active")
-        dependencies.resumeGeolocationOnAppForegroundIfNeeded()
+        scheduleBackgroundMediaReconcile("app-did-become-active")
+        resumeGeolocationOnAppForegroundIfNeeded()
     }
 
     func handleWindowVisibilityChanged(_ windowState: BrowserWindowState) {
         _ = windowState
-        dependencies.scheduleBackgroundMediaReconcile("window-visibility-changed")
+        scheduleBackgroundMediaReconcile("window-visibility-changed")
     }
 
     private func persistWindowSessionNow(for windowState: BrowserWindowState) {
-        guard let runtime = dependencies.runtime() else { return }
+        guard let runtime = runtime() else { return }
         let signpostState = PerformanceTrace.beginInterval("WindowSession.persist")
         defer {
             PerformanceTrace.endInterval("WindowSession.persist", signpostState)
         }
 
-        dependencies.windowSessionService.persistWindowSession(
+        windowSessionService.persistWindowSession(
             for: windowState,
             runtime: runtime
         )
-        dependencies.refreshLastSessionWindowsStore()
+        refreshLastSessionWindowsStore()
     }
 }
 
@@ -153,56 +175,6 @@ enum WindowSessionRuntimeFactory {
                     group,
                     in: windowState
                 )
-            }
-        )
-    }
-}
-
-extension BrowserWindowSessionActivationOwner.Dependencies {
-    @MainActor
-    static func live(browserManager: BrowserManager) -> Self {
-        let windowSessionService = browserManager.windowSessionService
-        let nativeNowPlayingController = browserManager.nativeNowPlayingController
-        let backgroundMediaOptimizationService = browserManager.backgroundMediaOptimizationService
-        let permissionRuntime = browserManager.permissionRuntime
-
-        return Self(
-            windowSessionService: windowSessionService,
-            runtime: { [weak browserManager] in
-                browserManager.map { WindowSessionRuntimeFactory.make(for: $0) }
-            },
-            refreshSplitPublishedState: { [weak browserManager] windowId in
-                browserManager?.splitManager.refreshPublishedState(for: windowId)
-            },
-            updateFindManagerCurrentTab: { [weak browserManager] in
-                browserManager?.updateFindManagerCurrentTab()
-            },
-            notifyExtensionWindowOpened: { [weak browserManager] windowState in
-                browserManager?.extensionsModule.notifyWindowOpenedIfLoaded(windowState)
-            },
-            notifyExtensionWindowFocused: { [weak browserManager] windowState in
-                browserManager?.extensionsModule.notifyWindowFocusedIfLoaded(windowState)
-            },
-            reconcileStartupSessionIfPossible: { [weak browserManager] in
-                browserManager?.reconcileStartupSessionIfPossible()
-            },
-            adoptProfileForWindowActivation: { [weak browserManager] windowState in
-                browserManager?.adoptProfileIfNeeded(for: windowState, context: .windowActivation)
-            },
-            scheduleNativeNowPlayingRefresh: { delayNanoseconds in
-                nativeNowPlayingController.scheduleRefresh(delayNanoseconds: delayNanoseconds)
-            },
-            scheduleBackgroundMediaReconcile: { reason in
-                backgroundMediaOptimizationService.scheduleReconcile(reason: reason)
-            },
-            pauseGeolocationOnAppBackgroundIfNeeded: {
-                permissionRuntime.pauseGeolocationOnAppBackgroundIfNeeded()
-            },
-            resumeGeolocationOnAppForegroundIfNeeded: {
-                permissionRuntime.resumeGeolocationOnAppForegroundIfNeeded()
-            },
-            refreshLastSessionWindowsStore: { [weak browserManager] in
-                browserManager?.windowHistorySessionOwner.refreshLastSessionWindowsStore(excludingWindowID: nil)
             }
         )
     }

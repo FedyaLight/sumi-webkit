@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 protocol SumiPermissionPolicyResolver: Sendable {
     func evaluate(_ context: SumiPermissionSecurityContext) async -> SumiPermissionPolicyResult

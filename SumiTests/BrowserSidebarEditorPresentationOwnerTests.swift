@@ -95,31 +95,31 @@ final class SidebarEditorPresentationOwnerTests: XCTestCase {
 
     private func makeOwner(spy: Spy) -> BrowserSidebarEditorPresentationOwner {
         BrowserSidebarEditorPresentationOwner(
-            dependencies: BrowserSidebarEditorPresentationOwner.Dependencies(
-                sidebarPosition: { .left },
-                settings: { SumiSettingsService() },
-                profiles: { [] },
-                renameSpace: { spaceID, name in
-                    spy.events.append(.renameSpace(spaceID, name))
-                },
-                updateSpaceIcon: { spaceID, icon in
-                    spy.events.append(.updateSpaceIcon(spaceID, icon))
-                },
-                assignSpaceProfile: { spaceID, profileID in
-                    spy.events.append(.assignSpaceProfile(spaceID, profileID))
-                },
-                renameFolder: { folderID, name in
-                    spy.events.append(.renameFolder(folderID, name))
-                },
-                updateFolderIcon: { folderID, icon in
-                    spy.events.append(.updateFolderIcon(folderID, icon))
-                },
-                updateShortcutPin: { pin, title, launchURL, iconAsset in
-                    spy.events.append(
-                        .updateShortcutPin(pin.id, title, launchURL, iconAsset)
-                    )
-                }
-            )
+            sidebarPosition: { .left },
+            settings: { SumiSettingsService() },
+            profiles: { [] },
+            windowRegistry: { nil },
+            sidebarHostRecoveryCoordinator: { SidebarHostRecoveryCoordinator() },
+            renameSpace: { spaceID, name in
+                spy.events.append(.renameSpace(spaceID, name))
+            },
+            updateSpaceIcon: { spaceID, icon in
+                spy.events.append(.updateSpaceIcon(spaceID, icon))
+            },
+            assignSpaceProfile: { spaceID, profileID in
+                spy.events.append(.assignSpaceProfile(spaceID, profileID))
+            },
+            renameFolder: { folderID, name in
+                spy.events.append(.renameFolder(folderID, name))
+            },
+            updateFolderIcon: { folderID, icon in
+                spy.events.append(.updateFolderIcon(folderID, icon))
+            },
+            updateShortcutPin: { pin, title, launchURL, iconAsset in
+                spy.events.append(
+                    .updateShortcutPin(pin.id, title, launchURL, iconAsset)
+                )
+            }
         )
     }
 

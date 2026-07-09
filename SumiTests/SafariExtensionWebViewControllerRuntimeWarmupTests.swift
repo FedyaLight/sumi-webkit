@@ -268,14 +268,14 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         tab.extensionPageRuntimeOwner.noteCommittedMainDocumentNavigation(to: pageURL)
 
         XCTAssertTrue(manager.tabNeedsExtensionContentScriptRebind(tab))
-        let webViewBeforeGesture = try XCTUnwrap(tab.existingWebView)
+        let webViewBeforeGesture = try XCTUnwrap(tab.resolvedCurrentWebView())
 
         manager.reconcileExtensionRuntimeOnUserGestureIfNeeded(
             tab,
             reason: "SafariExtensionWebViewControllerWiringTests"
         )
 
-        XCTAssertIdentical(tab.existingWebView, webViewBeforeGesture)
+        XCTAssertIdentical(tab.resolvedCurrentWebView(), webViewBeforeGesture)
     }
 
     func testExtensionRequestedNormalTabPreloadsContentScriptContextsBeforeOpenNotification() async throws {
@@ -355,7 +355,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         XCTAssertEqual(tab.url, pageURL)
         XCTAssertEqual(tab.spaceId, space.id)
         XCTAssertNil(tab.webViewConfigurationOverride)
-        XCTAssertNotNil(tab.assignedWebView ?? tab.existingWebView)
+        XCTAssertNotNil(tab.resolvedAssignedWebView() ?? tab.resolvedCurrentWebView())
         XCTAssertEqual(
             openedTabIDs.filter { $0 == tab.id }.count,
             1,
@@ -555,7 +555,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         let tab = try XCTUnwrap(
             browserManager.tabManager.tabCollectionMembershipOwner.allTabs().first { $0.url == pageURL }
         )
-        XCTAssertNotNil(tab.assignedWebView ?? tab.existingWebView)
+        XCTAssertNotNil(tab.resolvedAssignedWebView() ?? tab.resolvedCurrentWebView())
         XCTAssertEqual(
             openedTabIDs.count,
             1,
@@ -892,7 +892,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             configuration: controllerConfiguration
         )
         webViewWithController.owningTab = tabWithController
-        tabWithController._webView = webViewWithController
+        tabWithController.replaceUntrackedWebView(webViewWithController)
 
         let tabWithoutController = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://example.com/without-controller",
@@ -907,7 +907,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             configuration: plainConfiguration
         )
         webViewWithoutController.owningTab = tabWithoutController
-        tabWithoutController._webView = webViewWithoutController
+        tabWithoutController.replaceUntrackedWebView(webViewWithoutController)
 
         let affectedIDs = Set(
             manager.tabsAffectedByLoadedUserExtensionRuntime().map(\.id)
@@ -1050,7 +1050,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         )
         let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
         webView.owningTab = tab
-        tab._webView = webView
+        tab.replaceUntrackedWebView(webView)
 
         tab.extensionPageRuntimeOwner.openNotifiedDocumentSequence = 0
         tab.extensionPageRuntimeOwner.openNotifiedContextBindingGeneration = 0

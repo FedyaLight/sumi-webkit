@@ -34,8 +34,6 @@ struct SumiCompanionAppLaunchSessionKey: Hashable, Sendable {
 
 @MainActor
 final class SumiCompanionAppLaunchPolicy {
-    static let shared = SumiCompanionAppLaunchPolicy()
-
     /// Password-manager style hosts: connect to an already-running desktop app only.
     nonisolated static let connectIfRunningHostBundleIdentifiers: Set<String> = [
         BitwardenNativeMessagingIdentifiers.hostBundleIdentifier,

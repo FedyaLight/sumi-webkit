@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 extension NSNotification.Name {
     static let faviconCacheUpdated = NSNotification.Name("FaviconCacheUpdatedNotification")

@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 enum SumiExternalSchemePermissionEvent: Equatable, Sendable {
     case attempted(requestId: String, pageId: String, classification: SumiExternalSchemeClassification)
@@ -24,14 +25,14 @@ final class SumiExternalSchemePermissionBridge {
 
     init(
         coordinator: any SumiPermissionCoordinating,
-        appResolver: (any SumiExternalAppResolving)? = nil,
+        appResolver: any SumiExternalAppResolving,
         sessionStore: SumiExternalSchemeSessionStore? = nil,
         pendingStrategy: SumiExternalSchemePendingStrategy = .waitForPromptUI,
         now: @escaping @Sendable () -> Date = { Date() },
         eventSink: EventSink? = nil
     ) {
         self.coordinator = coordinator
-        self.appResolver = appResolver ?? SumiNSWorkspaceExternalAppResolver.shared
+        self.appResolver = appResolver
         self.sessionStore = sessionStore ?? SumiExternalSchemeSessionStore()
         self.pendingStrategy = pendingStrategy
         self.now = now

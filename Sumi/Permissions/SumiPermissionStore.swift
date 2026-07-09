@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 struct SumiPermissionStoreRecord: Codable, Equatable, Hashable, Sendable {
     let key: SumiPermissionKey

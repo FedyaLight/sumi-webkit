@@ -81,7 +81,8 @@ final class BrowserWindowSessionCommands {
                     in: windowState,
                     presentNewTabFloatingBar: presentNewTabFloatingBar
                 )
-            }
+            },
+            sidebarHostRecoveryCoordinator: browserManager.sidebarHostRecoveryCoordinator
         )
     }
 

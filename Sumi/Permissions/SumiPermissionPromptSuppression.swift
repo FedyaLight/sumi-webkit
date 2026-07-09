@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 struct SumiPermissionPromptSuppression: Codable, Equatable, Sendable {
     enum Kind: String, Codable, CaseIterable, Hashable, Sendable {

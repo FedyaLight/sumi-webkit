@@ -392,7 +392,7 @@ final class TabRuntimeRoutingTests: XCTestCase {
         let webView = WKWebView()
         let tabId = UUID()
         let windowId = UUID()
-        let runtime = TabHistorySwipeRuntime.live(
+        let runtime = TabHistorySwipeRuntime.make(
             webViewCoordinator: { coordinator },
             cancelWindowMutationsAfterHistorySwipe: { _ in /* No-op. */ },
             flushWindowMutationsAfterHistorySwipe: { _ in /* No-op. */ }
@@ -559,9 +559,18 @@ private final class RecordingTabWebViewRouting {
             },
             noteParkedWebView: { _, _ in /* No-op. */ },
             noteUntrackedWebView: { _, _ in /* No-op. */ },
-            notePrimaryAssignment: { _, _ in /* No-op. */ },
+            notePrimaryAssignment: { _, _, _ in /* No-op. */ },
             clearPrimaryAssignment: { _ in /* No-op. */ },
-            clearWebViewSession: { _ in /* No-op. */ }
+            clearWebViewSession: { _ in /* No-op. */ },
+            anyLiveWebView: { _ in nil },
+            sessionParkedWebView: { _ in nil },
+            sessionUntrackedWebView: { _ in nil },
+            sessionPrimaryWindowId: { _ in nil },
+            sessionPrimaryWebView: { _ in nil },
+            primaryTrackedWindowId: { _ in nil },
+            windowOwnedWebView: { _, _ in nil },
+            hasLiveWebView: { _ in false },
+            adoptLocalWebViewSession: { _, _ in /* No-op. */ }
         )
     }
 }

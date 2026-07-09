@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import SumiWebRuntime
 
 @MainActor
 enum BrowserTabRuntimeCompositionService {

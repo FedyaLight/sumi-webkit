@@ -1,32 +1,57 @@
 import Foundation
+import SumiDomain
 
 @MainActor
 final class BrowserStartupPolicyOwner {
-    struct Dependencies {
-        let regularWindows: @MainActor () -> [BrowserWindowState]
-        let startupRestoreOwner: @MainActor () -> BrowserStartupSessionRestoreOwner
-        let tabManager: @MainActor () -> TabManager
-        let startupPageURL: @MainActor () -> URL?
-        let space: @MainActor (UUID?) -> Space?
-        let splitManager: @MainActor () -> SplitViewManager
-        let glanceManager: @MainActor () -> GlanceManager
-        let selectTab: @MainActor (Tab, BrowserWindowState, TabSelectionLoadPolicy) -> Void
-        let showEmptyState: @MainActor (BrowserWindowState, Bool) -> Void
-        let currentRegularWindowSnapshots: @MainActor (UUID?) -> [LastSessionWindowSnapshot]
-        let currentTabSnapshot: @MainActor () -> TabSnapshotRepository.Snapshot
-        let applyWindowSessionSnapshot: @MainActor (WindowSessionSnapshot, BrowserWindowState) -> Void
-        let reopenWindow: @MainActor (WindowSessionSnapshot) async -> Void
-        let refreshLastSessionWindowsStore: @MainActor (UUID?) -> Void
-    }
+    private let regularWindows: @MainActor () -> [BrowserWindowState]
+    private let startupRestoreOwner: @MainActor () -> BrowserStartupSessionRestoreOwner
+    private let tabManager: @MainActor () -> TabManager
+    private let startupPageURL: @MainActor () -> URL?
+    private let space: @MainActor (UUID?) -> Space?
+    private let splitManager: @MainActor () -> SplitViewManager
+    private let glanceManager: @MainActor () -> GlanceManager
+    private let selectTab: @MainActor (Tab, BrowserWindowState, TabSelectionLoadPolicy) -> Void
+    private let showEmptyState: @MainActor (BrowserWindowState, Bool) -> Void
+    private let currentRegularWindowSnapshots: @MainActor (UUID?) -> [LastSessionWindowSnapshot]
+    private let currentTabSnapshot: @MainActor () -> TabSnapshotRepository.Snapshot
+    private let applyWindowSessionSnapshot: @MainActor (WindowSessionSnapshot, BrowserWindowState) -> Void
+    private let reopenWindow: @MainActor (WindowSessionSnapshot) async -> Void
+    private let refreshLastSessionWindowsStore: @MainActor (UUID?) -> Void
 
-    private let dependencies: Dependencies
-
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
+    init(
+        regularWindows: @escaping @MainActor () -> [BrowserWindowState],
+        startupRestoreOwner: @escaping @MainActor () -> BrowserStartupSessionRestoreOwner,
+        tabManager: @escaping @MainActor () -> TabManager,
+        startupPageURL: @escaping @MainActor () -> URL?,
+        space: @escaping @MainActor (UUID?) -> Space?,
+        splitManager: @escaping @MainActor () -> SplitViewManager,
+        glanceManager: @escaping @MainActor () -> GlanceManager,
+        selectTab: @escaping @MainActor (Tab, BrowserWindowState, TabSelectionLoadPolicy) -> Void,
+        showEmptyState: @escaping @MainActor (BrowserWindowState, Bool) -> Void,
+        currentRegularWindowSnapshots: @escaping @MainActor (UUID?) -> [LastSessionWindowSnapshot],
+        currentTabSnapshot: @escaping @MainActor () -> TabSnapshotRepository.Snapshot,
+        applyWindowSessionSnapshot: @escaping @MainActor (WindowSessionSnapshot, BrowserWindowState) -> Void,
+        reopenWindow: @escaping @MainActor (WindowSessionSnapshot) async -> Void,
+        refreshLastSessionWindowsStore: @escaping @MainActor (UUID?) -> Void
+    ) {
+        self.regularWindows = regularWindows
+        self.startupRestoreOwner = startupRestoreOwner
+        self.tabManager = tabManager
+        self.startupPageURL = startupPageURL
+        self.space = space
+        self.splitManager = splitManager
+        self.glanceManager = glanceManager
+        self.selectTab = selectTab
+        self.showEmptyState = showEmptyState
+        self.currentRegularWindowSnapshots = currentRegularWindowSnapshots
+        self.currentTabSnapshot = currentTabSnapshot
+        self.applyWindowSessionSnapshot = applyWindowSessionSnapshot
+        self.reopenWindow = reopenWindow
+        self.refreshLastSessionWindowsStore = refreshLastSessionWindowsStore
     }
 
     var firstRegularWindowForStartupPolicy: BrowserWindowState? {
-        dependencies.regularWindows()
+        regularWindows()
             .min { $0.id.uuidString < $1.id.uuidString }
     }
 
@@ -37,14 +62,14 @@ final class BrowserStartupPolicyOwner {
         case .nothing:
             applyCleanStartupPolicy(opening: nil)
         case .specificPage:
-            applyCleanStartupPolicy(opening: dependencies.startupPageURL() ?? SumiSurface.emptyTabURL)
+            applyCleanStartupPolicy(opening: startupPageURL() ?? SumiSurface.emptyTabURL)
         }
     }
 
     private func applyCleanStartupPolicy(opening startupURL: URL?) {
         archiveLoadedStartupSessionForManualRestore()
 
-        let tabManager = dependencies.tabManager()
+        let tabManager = tabManager()
         tabManager.lastSessionRestoreOwner.resetRegularTabsAndShortcutLiveInstancesForStartup()
 
         guard let windowState = firstRegularWindowForStartupPolicy else { return }
@@ -55,7 +80,7 @@ final class BrowserStartupPolicyOwner {
                 tabManager: tabManager,
                 windowState: windowState
             ) else {
-                dependencies.showEmptyState(windowState, true)
+                showEmptyState(windowState, true)
                 return
             }
             let tab = tabManager.regularTabLifecycleOwner.createNewTab(
@@ -63,32 +88,32 @@ final class BrowserStartupPolicyOwner {
                 in: targetSpace,
                 activate: false
             )
-            dependencies.selectTab(tab, windowState, .deferred)
+            selectTab(tab, windowState, .deferred)
         } else {
-            dependencies.showEmptyState(windowState, true)
+            showEmptyState(windowState, true)
         }
 
         Task { [weak self] in
-            _ = await self?.dependencies.tabManager().persistFullReconcileAwaitingResult(
+            _ = await self?.tabManager().persistFullReconcileAwaitingResult(
                 reason: "startup clean policy"
             )
         }
     }
 
     private func archiveLoadedStartupSessionForManualRestore() {
-        dependencies.startupRestoreOwner().archiveLoadedSessionForManualRestore(
+        startupRestoreOwner().archiveLoadedSessionForManualRestore(
             currentWindowSnapshots: {
-                dependencies.currentRegularWindowSnapshots(nil)
+                self.currentRegularWindowSnapshots(nil)
             },
             currentTabSnapshot: {
-                dependencies.currentTabSnapshot()
+                self.currentTabSnapshot()
             }
         )
     }
 
     private func resetWindowStatesForCleanStartup(selectedWindow: BrowserWindowState) {
-        let tabManager = dependencies.tabManager()
-        for windowState in dependencies.regularWindows() {
+        let tabManager = tabManager()
+        for windowState in regularWindows() {
             let fallbackSpaceId = resolvedStartupSpace(
                 tabManager: tabManager,
                 windowState: windowState
@@ -108,9 +133,9 @@ final class BrowserStartupPolicyOwner {
             windowState.floatingBarDraftText = ""
             windowState.floatingBarDraftNavigatesCurrentTab = false
             windowState.currentSpaceId = fallbackSpaceId
-            windowState.currentProfileId = fallbackSpaceId.flatMap { dependencies.space($0)?.profileId }
+            windowState.currentProfileId = fallbackSpaceId.flatMap { space($0)?.profileId }
             windowState.isAwaitingInitialSessionResolution = false
-            dependencies.glanceManager().restoreSession(nil, in: windowState)
+            glanceManager().restoreSession(nil, in: windowState)
             windowState.compositorInvalidation.refresh()
         }
     }
@@ -119,7 +144,7 @@ final class BrowserStartupPolicyOwner {
         tabManager: TabManager,
         windowState: BrowserWindowState
     ) -> Space? {
-        if let currentSpace = dependencies.space(windowState.currentSpaceId) {
+        if let currentSpace = space(windowState.currentSpaceId) {
             return currentSpace
         }
 
@@ -139,114 +164,40 @@ final class BrowserStartupPolicyOwner {
     }
 
     private func restoreAdditionalStartupWindowsIfNeeded() {
-        let startupRestoreOwner = dependencies.startupRestoreOwner()
+        let startupRestoreOwner = startupRestoreOwner()
         guard !startupRestoreOwner.windowSnapshots.isEmpty else { return }
 
         startupRestoreOwner.markRestoreOfferConsumed()
         Task { @MainActor [weak self] in
             guard let self else { return }
             let existingSessions = Set(
-                self.dependencies.currentRegularWindowSnapshots(nil).map(\.session)
+                self.currentRegularWindowSnapshots(nil).map(\.session)
             )
             let startupWindow = self.firstRegularWindowForStartupPolicy
             let restorationPlan = StartupWindowRestorationPlanner.plan(
-                archivedSnapshots: self.dependencies.startupRestoreOwner().windowSnapshots,
+                archivedSnapshots: self.startupRestoreOwner().windowSnapshots,
                 existingSessions: existingSessions,
                 hasStartupWindow: startupWindow != nil
             )
 
             if let startupWindow,
                let primarySnapshot = restorationPlan.primarySnapshotForStartupWindow {
-                self.dependencies.applyWindowSessionSnapshot(
+                self.applyWindowSessionSnapshot(
                     primarySnapshot.session,
                     startupWindow
                 )
             }
 
             let refreshedExistingSessions = Set(
-                self.dependencies.currentRegularWindowSnapshots(nil).map(\.session)
+                self.currentRegularWindowSnapshots(nil).map(\.session)
             )
             let unresolvedSnapshotsToRestore = restorationPlan.additionalSnapshots.filter {
                 !refreshedExistingSessions.contains($0.session)
             }
             for snapshot in unresolvedSnapshotsToRestore {
-                await self.dependencies.reopenWindow(snapshot.session)
+                await self.reopenWindow(snapshot.session)
             }
-            self.dependencies.refreshLastSessionWindowsStore(nil)
+            self.refreshLastSessionWindowsStore(nil)
         }
-    }
-}
-
-extension BrowserStartupPolicyOwner.Dependencies {
-    @MainActor
-    static func live(browserManager: BrowserManager) -> Self {
-        Self(
-            regularWindows: { [weak browserManager] in
-                browserManager?.windowRegistry?.allWindows
-                    .filter { !$0.isIncognito } ?? []
-            },
-            startupRestoreOwner: { [weak browserManager] in
-                guard let browserManager else {
-                    preconditionFailure("BrowserStartupPolicyOwner used after BrowserManager deallocation")
-                }
-                return browserManager.startupSessionRestoreOwner
-            },
-            tabManager: { [weak browserManager] in
-                guard let browserManager else {
-                    preconditionFailure("BrowserStartupPolicyOwner used after BrowserManager deallocation")
-                }
-                return browserManager.tabManager
-            },
-            startupPageURL: { [weak browserManager] in
-                browserManager?.sumiSettings?.resolvedStartupPageURL
-            },
-            space: { [weak browserManager] spaceId in
-                browserManager?.windowSpaceStateOwner.space(for: spaceId)
-            },
-            splitManager: { [weak browserManager] in
-                guard let browserManager else {
-                    preconditionFailure("BrowserStartupPolicyOwner used after BrowserManager deallocation")
-                }
-                return browserManager.splitManager
-            },
-            glanceManager: { [weak browserManager] in
-                guard let browserManager else {
-                    preconditionFailure("BrowserStartupPolicyOwner used after BrowserManager deallocation")
-                }
-                return browserManager.glanceManager
-            },
-            selectTab: { [weak browserManager] tab, windowState, loadPolicy in
-                browserManager?.selectTab(tab, in: windowState, loadPolicy: loadPolicy)
-            },
-            showEmptyState: { [weak browserManager] windowState, presentNewTabFloatingBar in
-                browserManager?.showEmptyState(
-                    in: windowState,
-                    presentNewTabFloatingBar: presentNewTabFloatingBar
-                )
-            },
-            currentRegularWindowSnapshots: { [weak browserManager] excludingWindowId in
-                browserManager?.windowHistorySessionOwner.currentRegularWindowSnapshots(excludingWindowID: excludingWindowId) ?? []
-            },
-            currentTabSnapshot: { [weak browserManager] in
-                guard let browserManager else {
-                    preconditionFailure("BrowserStartupPolicyOwner used after BrowserManager deallocation")
-                }
-                return browserManager.tabManager.structuralPersistence.buildSnapshot()
-            },
-            applyWindowSessionSnapshot: { [weak browserManager] snapshot, windowState in
-                guard let browserManager else { return }
-                browserManager.windowSessionService.applyWindowSessionSnapshot(
-                    snapshot,
-                    to: windowState,
-                    runtime: WindowSessionRuntimeFactory.make(for: browserManager)
-                )
-            },
-            reopenWindow: { [weak browserManager] snapshot in
-                await browserManager?.historyMenuOwner.reopenWindow(from: snapshot)
-            },
-            refreshLastSessionWindowsStore: { [weak browserManager] excludingWindowId in
-                browserManager?.windowHistorySessionOwner.refreshLastSessionWindowsStore(excludingWindowID: excludingWindowId)
-            }
-        )
     }
 }

@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import SumiDomain
 import ImageIO
 import UniformTypeIdentifiers
 import WebKit
@@ -1528,6 +1529,70 @@ final class SumiFaviconV2ServiceRegressionTests: XCTestCase {
             await service.preparedImage(for: launcherRequest, priority: .pinnedLauncher, scheduleFetchOnMiss: false),
             matches: launcherRequest
         )
+    }
+
+    /// Regression: launcher UI omits `faviconImageService:` and must hit the
+    /// production favicon system — not `TabDependencyIsolationDefaults` NoOp.
+    func testLauncherCacheHelpersDefaultToProductionFaviconServiceNotNoOp() async throws {
+        let host = "launcher-default-\(UUID().uuidString.lowercased()).example"
+        let launchURL = try XCTUnwrap(URL(string: "https://\(host)/app"))
+        let partition = SumiFaviconPartition.regular(nil)
+        let production = SumiFaviconProductionSystem.current.service
+        defer {
+            production.invalidateSite(domain: host, partition: partition)
+        }
+
+        try await production.storeExternalPayload(
+            SumiFaviconTestImages.pngData(width: 32, height: 32),
+            faviconURL: launchURL.appendingPathComponent("favicon.png"),
+            documentURL: launchURL,
+            partition: partition
+        )
+
+        // Warm prepared cache through the same production service the UI defaults to.
+        let warmed = await production.preparedImage(
+            for: SumiPreparedFaviconRequest(
+                pageURL: launchURL,
+                partition: partition,
+                context: .pinnedLauncher,
+                backingScale: SumiFaviconService.defaultBackingScale()
+            ),
+            priority: .pinnedLauncher,
+            scheduleFetchOnMiss: false
+        )
+        XCTAssertNotNil(warmed)
+
+        let cachedViaDefault = TabFaviconStore.getCachedImage(
+            forDocumentURL: launchURL,
+            partition: partition,
+            context: .pinnedLauncher
+        )
+        XCTAssertNotNil(
+            cachedViaDefault,
+            "TabFaviconStore default must resolve production cache for launcher reads"
+        )
+
+        let loadedViaDefault = await TabFaviconStore.loadCachedLauncherImage(
+            forDocumentURL: launchURL,
+            partition: partition
+        )
+        XCTAssertNotNil(
+            loadedViaDefault,
+            "loadCachedLauncherImage default must resolve production cache"
+        )
+
+        XCTAssertNotNil(
+            ShortcutPin.cachedLaunchFavicon(for: launchURL, partition: partition),
+            "ShortcutPin.cachedLaunchFavicon must not silently fall through NoOp defaults"
+        )
+
+        let loader = SidebarStoredFaviconLoader()
+        await loader.load(
+            launchURL: launchURL,
+            partition: partition,
+            isCurrentLaunchURL: { $0 == launchURL }
+        )
+        XCTAssertNotNil(loader.image(for: launchURL))
     }
 
     func testLauncherFaviconAliasesRemainPartitionIsolated() async throws {

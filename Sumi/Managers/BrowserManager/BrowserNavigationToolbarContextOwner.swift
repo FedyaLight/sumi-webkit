@@ -3,23 +3,39 @@ import WebKit
 
 @MainActor
 final class BrowserNavigationToolbarContextOwner {
-    struct Dependencies {
-        let currentTab: @MainActor (BrowserWindowState) -> Tab?
-        let webView: @MainActor (Tab, BrowserWindowState) -> WKWebView?
-        let faviconService: @MainActor () -> any BrowserFaviconServicing
-        let faviconImageService: @MainActor () -> any BrowserFaviconImageServicing
-        let openURLInCurrentTab: @MainActor (URL, BrowserWindowState) -> Void
-        let openNewTab: @MainActor (String, BrowserTabOpenContext) -> Void
-        let openHistoryURLsInNewWindow: @MainActor ([URL]) -> Void
-        let goBack: @MainActor (BrowserWindowState) -> Void
-        let goForward: @MainActor (BrowserWindowState) -> Void
-        let reload: @MainActor (Tab, BrowserWindowState) -> Void
-    }
+    private let currentTab: @MainActor (BrowserWindowState) -> Tab?
+    private let webView: @MainActor (Tab, BrowserWindowState) -> WKWebView?
+    private let faviconService: @MainActor () -> any BrowserFaviconServicing
+    private let faviconImageService: @MainActor () -> any BrowserFaviconImageServicing
+    private let openURLInCurrentTab: @MainActor (URL, BrowserWindowState) -> Void
+    private let openNewTab: @MainActor (String, BrowserTabOpenContext) -> Void
+    private let openHistoryURLsInNewWindow: @MainActor ([URL]) -> Void
+    private let goBack: @MainActor (BrowserWindowState) -> Void
+    private let goForward: @MainActor (BrowserWindowState) -> Void
+    private let reload: @MainActor (Tab, BrowserWindowState) -> Void
 
-    private let dependencies: Dependencies
-
-    init(dependencies: Dependencies) {
-        self.dependencies = dependencies
+    init(
+        currentTab: @escaping @MainActor (BrowserWindowState) -> Tab?,
+        webView: @escaping @MainActor (Tab, BrowserWindowState) -> WKWebView?,
+        faviconService: @escaping @MainActor () -> any BrowserFaviconServicing,
+        faviconImageService: @escaping @MainActor () -> any BrowserFaviconImageServicing,
+        openURLInCurrentTab: @escaping @MainActor (URL, BrowserWindowState) -> Void,
+        openNewTab: @escaping @MainActor (String, BrowserTabOpenContext) -> Void,
+        openHistoryURLsInNewWindow: @escaping @MainActor ([URL]) -> Void,
+        goBack: @escaping @MainActor (BrowserWindowState) -> Void,
+        goForward: @escaping @MainActor (BrowserWindowState) -> Void,
+        reload: @escaping @MainActor (Tab, BrowserWindowState) -> Void
+    ) {
+        self.currentTab = currentTab
+        self.webView = webView
+        self.faviconService = faviconService
+        self.faviconImageService = faviconImageService
+        self.openURLInCurrentTab = openURLInCurrentTab
+        self.openNewTab = openNewTab
+        self.openHistoryURLsInNewWindow = openHistoryURLsInNewWindow
+        self.goBack = goBack
+        self.goForward = goForward
+        self.reload = reload
     }
 
     func navigationToolbarContext(
@@ -28,24 +44,24 @@ final class BrowserNavigationToolbarContextOwner {
         NavigationToolbarBrowserContext(
             currentTab: { [weak self, weak windowState] in
                 guard let self, let windowState else { return nil }
-                return self.dependencies.currentTab(windowState)
+                return self.currentTab(windowState)
             },
             webView: { [weak self, weak windowState] tab in
                 guard let self, let windowState else { return nil }
-                return self.dependencies.webView(tab, windowState)
+                return self.webView(tab, windowState)
             },
             historyContext: navigationHistoryContext(for: windowState),
             goBack: { [weak self, weak windowState] in
                 guard let self, let windowState else { return }
-                self.dependencies.goBack(windowState)
+                self.goBack(windowState)
             },
             goForward: { [weak self, weak windowState] in
                 guard let self, let windowState else { return }
-                self.dependencies.goForward(windowState)
+                self.goForward(windowState)
             },
             reload: { [weak self, weak windowState] tab in
                 guard let self, let windowState else { return }
-                self.dependencies.reload(tab, windowState)
+                self.reload(tab, windowState)
             }
         )
     }
@@ -54,11 +70,11 @@ final class BrowserNavigationToolbarContextOwner {
         for windowState: BrowserWindowState
     ) -> SumiNavigationHistoryContext {
         SumiNavigationHistoryContext(
-            faviconService: dependencies.faviconService(),
-            faviconImageService: dependencies.faviconImageService(),
+            faviconService: faviconService(),
+            faviconImageService: faviconImageService(),
             openURLInCurrentTab: { [weak self, weak windowState] url, _ in
                 guard let self, let windowState else { return }
-                self.dependencies.openURLInCurrentTab(url, windowState)
+                self.openURLInCurrentTab(url, windowState)
             },
             openURLInNewTab: { [weak self, weak windowState] url, selected, sourceTab in
                 self?.openURLFromNavigationHistory(
@@ -68,7 +84,7 @@ final class BrowserNavigationToolbarContextOwner {
                     windowState: windowState
                 )
             },
-            openURLsInNewWindow: dependencies.openHistoryURLsInNewWindow
+            openURLsInNewWindow: openHistoryURLsInNewWindow
         )
     }
 
@@ -94,6 +110,6 @@ final class BrowserNavigationToolbarContextOwner {
             )
         }
 
-        dependencies.openNewTab(url.absoluteString, context)
+        openNewTab(url.absoluteString, context)
     }
 }
