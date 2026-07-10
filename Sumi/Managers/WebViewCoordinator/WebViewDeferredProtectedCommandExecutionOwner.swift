@@ -6,23 +6,43 @@
 //
 
 import Foundation
-import WebKit
 import SumiWebRuntime
+import WebKit
 
 @MainActor
-struct WebViewDeferredProtectedCommandExecutionOwner {
+final class WebViewDeferredProtectedCommandExecutionOwner {
+    private static let initialRetryDelayNanoseconds: UInt64 = 25_000_000
+    private static let maximumRetryDelayNanoseconds: UInt64 = 1_000_000_000
+
     typealias WebViewResolver = (ObjectIdentifier) -> WKWebView?
     typealias TrackedOwnerResolver = (ObjectIdentifier) -> TrackedWebViewOwner?
-    typealias TabWebViewCleanupValidator = (ObjectIdentifier, UUID) -> Bool
+    typealias DetachedWebViewCleanupValidator = (ObjectIdentifier, UUID) -> Bool
+    typealias FallbackWebViewCleanupValidator = (
+        ObjectIdentifier,
+        WebViewPendingCleanupLease
+    ) -> Bool
     typealias TabResolver = (UUID) -> Tab?
     typealias CommandExecutor = (DeferredWebViewCommand) -> Bool
     typealias CleanupSuppressionFinisher = ([ObjectIdentifier]) -> Void
 
+    private var retryAttemptsBySourceWebViewID: [ObjectIdentifier: Int] = [:]
+    private var retryTasksBySourceWebViewID: [ObjectIdentifier: Task<Void, Never>] = [:]
+    private var flushTasksBySourceWebViewID: [ObjectIdentifier: Task<Void, Never>] = [:]
+
+    deinit {
+        retryTasksBySourceWebViewID.values.forEach { $0.cancel() }
+        flushTasksBySourceWebViewID.values.forEach { $0.cancel() }
+    }
+
     struct ValidationContext {
         let resolveWebView: WebViewResolver
         let resolveTrackedOwner: TrackedOwnerResolver
-        let canCleanUpTabWebView: TabWebViewCleanupValidator
+        let canCleanUpDetachedWebView: DetachedWebViewCleanupValidator
+        let canPerformFallbackWebViewCleanup: FallbackWebViewCleanupValidator
         let resolveTab: TabResolver
+        let isSpaceProfileAssignmentValid: (
+            DeferredWebViewSpaceProfileAssignmentIntent
+        ) -> Bool
         let hasTabManager: () -> Bool
         let hasCleanupWindowTarget: (UUID) -> Bool
         let hasTrackedWebViews: () -> Bool
@@ -43,7 +63,23 @@ struct WebViewDeferredProtectedCommandExecutionOwner {
         mediaProtectionOwner: WebViewMediaProtectionOwner,
         runtime: Runtime
     ) -> Bool {
-        mediaProtectionOwner.enqueueDeferredCommandIfNeeded(
+        schedule(
+            command,
+            for: webView,
+            reason: reason,
+            mediaProtectionOwner: mediaProtectionOwner,
+            runtime: runtime
+        ).wasScheduled
+    }
+
+    func schedule(
+        _ command: DeferredWebViewCommand,
+        for webView: WKWebView,
+        reason: String,
+        mediaProtectionOwner: WebViewMediaProtectionOwner,
+        runtime: Runtime
+    ) -> DeferredProtectedCommandSchedulingOutcome {
+        let outcome = mediaProtectionOwner.enqueueDeferredCommandIfNeeded(
             command,
             for: webView,
             reason: reason,
@@ -60,6 +96,10 @@ struct WebViewDeferredProtectedCommandExecutionOwner {
             },
             didPruneStaleWebViewIDs: runtime.finishCleanupSuppression
         )
+        if outcome.wasScheduled {
+            clearRetryState(for: ObjectIdentifier(webView))
+        }
+        return outcome
     }
 
     func flushCommandsIfUnprotected(
@@ -67,23 +107,19 @@ struct WebViewDeferredProtectedCommandExecutionOwner {
         mediaProtectionOwner: WebViewMediaProtectionOwner,
         runtime: Runtime
     ) {
-        let commands = mediaProtectionOwner.commandsToFlushIfUnprotected(
-            for: webViewID,
-            resolveWebView: runtime.validationContext.resolveWebView,
-            isCommandValid: { command in
-                isCommandValid(command, context: runtime.validationContext)
-            },
-            dropCommand: { command, sourceWebViewID, reason in
-                drop(
-                    command,
-                    sourceWebViewID: sourceWebViewID,
-                    reason: reason
-                )
-            },
-            didPruneStaleWebViewIDs: runtime.finishCleanupSuppression
-        )
-        guard !commands.isEmpty else { return }
-        Task { @MainActor in
+        guard mediaProtectionOwner.hasDeferredProtectedCommands(for: webViewID) else {
+            clearRetryState(for: webViewID)
+            return
+        }
+        guard flushTasksBySourceWebViewID[webViewID] == nil else { return }
+        flushTasksBySourceWebViewID[webViewID] = Task { @MainActor [weak self] in
+            guard let self, Task.isCancelled == false else { return }
+            defer {
+                flushTasksBySourceWebViewID.removeValue(forKey: webViewID)
+            }
+            guard mediaProtectionOwner.hasDeferredProtectedCommands(for: webViewID) else {
+                return
+            }
             let signpostState = PerformanceTrace.beginInterval(
                 "WebViewCoordinator.flushDeferredProtectedCommands"
             )
@@ -94,24 +130,53 @@ struct WebViewDeferredProtectedCommandExecutionOwner {
                 )
             }
 
-            RuntimeDiagnostics.protectedWebViewTrace(
-                "flushDeferredCommands sourceWebView=\(webViewID) count=\(commands.count)"
-            )
-
-            for command in commands {
-                if execute(
-                    command,
-                    sourceWebViewID: webViewID,
-                    runtime: runtime
-                ) == false {
+            mediaProtectionOwner.executeDeferredCommandsIfUnprotected(
+                for: webViewID,
+                resolveWebView: runtime.validationContext.resolveWebView,
+                isCommandValid: { command in
+                    isCommandValid(command, context: runtime.validationContext)
+                },
+                dropCommand: { command, sourceWebViewID, reason in
                     drop(
                         command,
-                        sourceWebViewID: webViewID,
-                        reason: "flush.invalidTarget"
+                        sourceWebViewID: sourceWebViewID,
+                        reason: reason
                     )
+                },
+                didPruneStaleWebViewIDs: runtime.finishCleanupSuppression,
+                executeCommand: { [weak self] command in
+                    guard let self else { return false }
+                    let didExecute = runtime.executeCommand(command)
+                    RuntimeDiagnostics.protectedWebViewTrace(
+                        "executeDeferredCommand sourceWebView=\(webViewID) command={\(command.debugSummary)}"
+                    )
+                    if didExecute {
+                        clearRetryState(for: webViewID)
+                        return true
+                    }
+                    scheduleRetry(
+                        for: webViewID,
+                        mediaProtectionOwner: mediaProtectionOwner,
+                        runtime: runtime
+                    )
+                    RuntimeDiagnostics.protectedWebViewTrace(
+                        "retainDeferredCommandAfterExecutionFailure sourceWebView=\(webViewID) command={\(command.debugSummary)}"
+                    )
+                    return false
                 }
+            )
+            if mediaProtectionOwner.hasDeferredProtectedCommands(for: webViewID) == false {
+                clearRetryState(for: webViewID)
             }
         }
+    }
+
+    func resetForTerminalShutdown() {
+        flushTasksBySourceWebViewID.values.forEach { $0.cancel() }
+        flushTasksBySourceWebViewID.removeAll()
+        retryTasksBySourceWebViewID.values.forEach { $0.cancel() }
+        retryTasksBySourceWebViewID.removeAll()
+        retryAttemptsBySourceWebViewID.removeAll()
     }
 
     func pruneInvalidCommands(
@@ -137,23 +202,6 @@ struct WebViewDeferredProtectedCommandExecutionOwner {
         )
     }
 
-    @discardableResult
-    private func execute(
-        _ command: DeferredWebViewCommand,
-        sourceWebViewID: ObjectIdentifier,
-        runtime: Runtime
-    ) -> Bool {
-        guard isCommandValid(command, context: runtime.validationContext) else {
-            return false
-        }
-
-        RuntimeDiagnostics.protectedWebViewTrace(
-            "executeDeferredCommand sourceWebView=\(sourceWebViewID) command={\(command.debugSummary)}"
-        )
-
-        return runtime.executeCommand(command)
-    }
-
     private func isCommandValid(
         _ command: DeferredWebViewCommand,
         context: ValidationContext
@@ -161,8 +209,6 @@ struct WebViewDeferredProtectedCommandExecutionOwner {
         switch command {
         case .removeWebViewFromContainers(let webViewID):
             return context.resolveWebView(webViewID) != nil
-        case .removeAllWebViews(let tabID):
-            return context.resolveTab(tabID) != nil
         case .removeTrackedWebView(let webViewID, let tabID, let windowID):
             return context.resolveTrackedOwner(webViewID) == TrackedWebViewOwner(
                 tabID: tabID,
@@ -176,16 +222,97 @@ struct WebViewDeferredProtectedCommandExecutionOwner {
         case .cleanupAllWebViews:
             return context.hasTabManager()
                 && context.hasTrackedWebViews()
-        case .rebuildLiveWebViews(let tabID, _):
-            return context.resolveTab(tabID) != nil
+        case .rebuildLiveWebViews(let tabID, _, let intent):
+            guard let tab = context.resolveTab(tabID) else { return false }
+            return tab.isCurrentWebViewRebuildIntent(intent.revision)
+        case .assignProfile(let tabID, _, let intent):
+            guard let tab = context.resolveTab(tabID) else { return false }
+            return tab.isCurrentProfileAssignmentIntent(intent)
+        case .assignSpaceProfile(let intent):
+            return context.isSpaceProfileAssignmentValid(intent)
+        case .synchronizeTrackedNavigation(
+            let webViewID,
+            let tabID,
+            let windowID,
+            let intent
+        ):
+            guard context.resolveWebView(webViewID) != nil,
+                  context.resolveTrackedOwner(webViewID) == TrackedWebViewOwner(
+                      tabID: tabID,
+                      windowID: windowID
+                  ),
+                  let tab = context.resolveTab(tabID) else {
+                return false
+            }
+            return tab.isCurrentMainFrameNavigationIntent(
+                revision: intent.revision,
+                targetURL: intent.targetURL
+            )
+        case .reloadTrackedNavigation(
+            let webViewID,
+            let tabID,
+            let windowID,
+            let intent
+        ):
+            guard context.resolveWebView(webViewID) != nil,
+                  context.resolveTrackedOwner(webViewID) == TrackedWebViewOwner(
+                      tabID: tabID,
+                      windowID: windowID
+                  ),
+                  let tab = context.resolveTab(tabID) else {
+                return false
+            }
+            return tab.isCurrentMainFrameNavigationIntent(
+                revision: intent.revision,
+                targetURL: intent.targetURL
+            )
         case .evictHiddenWebViews(let windowID):
             return context.hasTabManager()
                 && context.hasWindow(windowID)
         case .cleanupTabWebView(let webViewID, let tabID):
-            return context.canCleanUpTabWebView(webViewID, tabID)
-        case .performFallbackWebViewCleanup(let webViewID, let tabID):
-            return context.canCleanUpTabWebView(webViewID, tabID)
+            return context.canCleanUpDetachedWebView(webViewID, tabID)
+        case .performFallbackWebViewCleanup(let webViewID, let lease):
+            return context.canPerformFallbackWebViewCleanup(webViewID, lease)
         }
+    }
+
+    private func scheduleRetry(
+        for webViewID: ObjectIdentifier,
+        mediaProtectionOwner: WebViewMediaProtectionOwner,
+        runtime: Runtime
+    ) {
+        guard retryTasksBySourceWebViewID[webViewID] == nil else { return }
+        let attempt = min((retryAttemptsBySourceWebViewID[webViewID] ?? 0) + 1, 64)
+        retryAttemptsBySourceWebViewID[webViewID] = attempt
+        let exponent = min(attempt - 1, 6)
+        let delayNanoseconds = min(
+            Self.initialRetryDelayNanoseconds * (UInt64(1) << UInt64(exponent)),
+            Self.maximumRetryDelayNanoseconds
+        )
+
+        retryTasksBySourceWebViewID[webViewID] = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(nanoseconds: delayNanoseconds)
+            } catch {
+                return
+            }
+            guard Task.isCancelled == false, let self else { return }
+            retryTasksBySourceWebViewID.removeValue(forKey: webViewID)
+            guard mediaProtectionOwner.hasDeferredProtectedCommands(for: webViewID) else {
+                clearRetryState(for: webViewID)
+                return
+            }
+            flushCommandsIfUnprotected(
+                for: webViewID,
+                mediaProtectionOwner: mediaProtectionOwner,
+                runtime: runtime
+            )
+        }
+    }
+
+    private func clearRetryState(for webViewID: ObjectIdentifier) {
+        retryTasksBySourceWebViewID.removeValue(forKey: webViewID)?.cancel()
+        retryAttemptsBySourceWebViewID.removeValue(forKey: webViewID)
     }
 
     private func drop(

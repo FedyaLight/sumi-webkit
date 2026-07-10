@@ -9,7 +9,7 @@ final class BrowserRecentlyClosedRestoreOwner {
     private let currentRegularWindowSnapshots: @MainActor (UUID?) -> [LastSessionWindowSnapshot]
     private let refreshLastSessionWindowsStore: @MainActor (UUID?) -> Void
     private let reopenWindow: @MainActor (WindowSessionSnapshot) async -> Void
-    private let mergeSnapshotForLastSessionRestore: @MainActor (TabSnapshotRepository.Snapshot) -> Void
+    private let mergeSnapshotForLastSessionRestore: @MainActor (TabPersistenceSnapshot) -> Void
     private let activeWindow: @MainActor () -> BrowserWindowState?
     private let windowState: @MainActor (UUID) -> BrowserWindowState?
     private let tabManager: @MainActor () -> TabManager
@@ -24,7 +24,7 @@ final class BrowserRecentlyClosedRestoreOwner {
         currentRegularWindowSnapshots: @escaping @MainActor (UUID?) -> [LastSessionWindowSnapshot],
         refreshLastSessionWindowsStore: @escaping @MainActor (UUID?) -> Void,
         reopenWindow: @escaping @MainActor (WindowSessionSnapshot) async -> Void,
-        mergeSnapshotForLastSessionRestore: @escaping @MainActor (TabSnapshotRepository.Snapshot) -> Void,
+        mergeSnapshotForLastSessionRestore: @escaping @MainActor (TabPersistenceSnapshot) -> Void,
         activeWindow: @escaping @MainActor () -> BrowserWindowState?,
         windowState: @escaping @MainActor (UUID) -> BrowserWindowState?,
         tabManager: @escaping @MainActor () -> TabManager,
@@ -119,12 +119,14 @@ final class BrowserRecentlyClosedRestoreOwner {
             return false
         }
 
+        let restoredURL = tabState.currentURL ?? tabState.url
         let restoredTab = tabManager.regularTabLifecycleOwner.createNewTab(
-            url: (tabState.currentURL ?? tabState.url).absoluteString,
+            url: restoredURL.absoluteString,
             in: targetSpace,
             activate: false
         )
         restoredTab.name = tabState.title
+        restoredTab.loadURL(restoredURL)
         restoredTab.restoredCanGoBack = tabState.canGoBack
         restoredTab.restoredCanGoForward = tabState.canGoForward
         restoredTab.applyRestoredNavigationPresentation()
@@ -173,15 +175,11 @@ final class BrowserRecentlyClosedRestoreOwner {
         to tab: Tab
     ) {
         tab.name = shortcutState.title
-        tab.url = shortcutState.url
+        tab.loadURL(shortcutState.url)
         tab.restoredCanGoBack = shortcutState.canGoBack
         tab.restoredCanGoForward = shortcutState.canGoForward
         tab.applyRestoredNavigationPresentation()
         _ = tab.applyCachedFaviconOrPlaceholder(for: shortcutState.url)
-
-        if tab.hasCurrentWebView {
-            tab.loadURL(shortcutState.url)
-        }
     }
 
     @discardableResult

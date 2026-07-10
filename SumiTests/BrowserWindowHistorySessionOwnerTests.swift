@@ -103,11 +103,11 @@ final class BrowserWindowHistorySessionOwnerTests: XCTestCase {
             id: UUID(),
             session: makeWindowSession(currentTabId: UUID())
         )
-        let startupTabSnapshot = TabSnapshotRepository.Snapshot(
+        let startupTabSnapshot = TabPersistenceSnapshot(
             spaces: [],
             tabs: [],
             folders: [],
-            state: TabSnapshotRepository.SnapshotState(currentTabID: nil, currentSpaceID: nil)
+            state: TabPersistenceSelection(currentTabID: nil, currentSpaceID: nil)
         )
         let startupRestore = FakeBrowserStartupSessionRestoreProvider(
             canOfferRestoreShortcut: true,
@@ -181,13 +181,13 @@ final class BrowserWindowHistorySessionOwnerTests: XCTestCase {
 private final class FakeBrowserStartupSessionRestoreProvider: BrowserStartupSessionRestoreProviding {
     var canOfferRestoreShortcut: Bool
     var windowSnapshots: [LastSessionWindowSnapshot]
-    var tabSnapshot: TabSnapshotRepository.Snapshot?
+    var tabSnapshot: TabPersistenceSnapshot?
     private(set) var didConsumeRestoreOffer = false
 
     init(
         canOfferRestoreShortcut: Bool = false,
         windowSnapshots: [LastSessionWindowSnapshot] = [],
-        tabSnapshot: TabSnapshotRepository.Snapshot? = nil
+        tabSnapshot: TabPersistenceSnapshot? = nil
     ) {
         self.canOfferRestoreShortcut = canOfferRestoreShortcut
         self.windowSnapshots = windowSnapshots

@@ -8,9 +8,14 @@ import XCTest
 @MainActor
 private final class SafariExtensionBrowserManagerTeardownBox {
     var browserManager: BrowserManager?
+    var windowRegistry: WindowRegistry?
 
-    init(browserManager: BrowserManager) {
+    init(
+        browserManager: BrowserManager,
+        windowRegistry: WindowRegistry?
+    ) {
         self.browserManager = browserManager
+        self.windowRegistry = windowRegistry
     }
 }
 
@@ -59,12 +64,14 @@ extension XCTestCase {
         context: ModelContext,
         initialProfile: Profile?,
         browserConfiguration: BrowserConfiguration? = nil,
+        moduleRegistry: SumiModuleRegistry = .shared,
         extensionPreferences: UserDefaults? = nil
     ) -> ExtensionManager {
         let manager = ExtensionManager(
             context: context,
             initialProfile: initialProfile,
             browserConfiguration: browserConfiguration,
+            moduleRegistry: moduleRegistry,
             extensionPreferences: extensionPreferences
                 ?? UserDefaults(suiteName: UUID().uuidString)!
         )
@@ -86,7 +93,8 @@ extension XCTestCase {
     func makeSafariExtensionTestBrowserManager(
         moduleRegistry: SumiModuleRegistry? = nil,
         extensionsModule: SumiExtensionsModule? = nil,
-        profile: Profile? = nil
+        profile: Profile? = nil,
+        windowRegistry: WindowRegistry? = nil
     ) -> BrowserManager {
         let startupPersistence: BrowserManagerStartupPersistence
         do {
@@ -135,16 +143,28 @@ extension XCTestCase {
             protectionCoordinator: protectionCoordinator,
             extensionsModule: extensionsModule
         )
-        browserManager.webViewCoordinator = WebViewCoordinator()
+        browserManager.bindTestWebViewCoordinator()
+        if let windowRegistry {
+            browserManager.windowRegistry = windowRegistry
+        }
         if let profile {
             browserManager.profileManager.profiles = [profile]
             browserManager.currentProfile = profile
         }
-        let teardownBox = SafariExtensionBrowserManagerTeardownBox(browserManager: browserManager)
+        let teardownBox = SafariExtensionBrowserManagerTeardownBox(
+            browserManager: browserManager,
+            windowRegistry: windowRegistry
+        )
         addTeardownBlock { @MainActor in
             guard let browserManager = teardownBox.browserManager else { return }
+            if #available(macOS 15.5, *),
+               let extensionManager = browserManager.extensionsModule
+               .managerIfLoadedAndEnabled() {
+                await extensionManager.drainExtensionRuntimeTasksForTests()
+            }
             await browserManager.drainBrowserRuntimeTasksForTests(cancel: true)
             teardownBox.browserManager = nil
+            teardownBox.windowRegistry = nil
         }
         return browserManager
     }

@@ -27,9 +27,9 @@ final class ExtensionPagePresentationTests: XCTestCase {
             )
         )
         XCTAssertEqual(
-            AuxiliaryWindowManager.windowTitle(
+            AuxiliaryWindowTitleResolver.title(
                 for: url,
-                ownerExtensionID: nil,
+                extensionID: nil,
                 installedExtensions: []
             ),
             "Extension"
@@ -40,9 +40,9 @@ final class ExtensionPagePresentationTests: XCTestCase {
         let url = URL(string: "https://auth.example/login")!
 
         XCTAssertEqual(
-            AuxiliaryWindowManager.windowTitle(
+            AuxiliaryWindowTitleResolver.title(
                 for: url,
-                ownerExtensionID: "ext-bitwarden",
+                extensionID: "ext-bitwarden",
                 installedExtensions: [makeInstalledExtension(id: "ext-bitwarden", name: "Bitwarden")]
             ),
             "auth.example"
@@ -54,9 +54,9 @@ final class ExtensionPagePresentationTests: XCTestCase {
         let url = URL(string: "safari-web-extension://unknown-extension/popup.html")!
 
         XCTAssertEqual(
-            AuxiliaryWindowManager.windowTitle(
+            AuxiliaryWindowTitleResolver.title(
                 for: url,
-                ownerExtensionID: installed.id,
+                extensionID: installed.id,
                 installedExtensions: [installed]
             ),
             "Bitwarden"

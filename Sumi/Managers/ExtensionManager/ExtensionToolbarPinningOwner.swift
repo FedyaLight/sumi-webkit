@@ -53,9 +53,9 @@ final class ExtensionToolbarPinningOwner {
     convenience init(manager: ExtensionManager) {
         self.init(
             preferences: manager.extensionPreferences,
-            currentProfileId: { [weak manager] in manager?.currentProfileId },
+            currentProfileId: { [weak manager] in manager?.profileRuntime.currentProfileId },
             installedExtensionIDs: { [weak manager] in
-                Set((manager?.installedExtensions ?? []).map(\.id))
+                Set((manager?.installedExtensionCollection.records ?? []).map(\.id))
             },
             publishedPinnedIDs: { [weak manager] in
                 manager?.pinnedToolbarExtensionIDs ?? []
@@ -280,7 +280,7 @@ extension ExtensionManager {
         toolbarPinningOwner.orderedPinnedToolbarSlots(
             enabledExtensions: enabledExtensions,
             sumiScriptsManagerEnabled: sumiScriptsManagerEnabled,
-            profileId: currentProfileId
+            profileId: profileRuntime.currentProfileId
         )
     }
 

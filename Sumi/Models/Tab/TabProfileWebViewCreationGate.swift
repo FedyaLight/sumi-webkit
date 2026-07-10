@@ -46,14 +46,16 @@ final class TabProfileWebViewCreationGate {
     }
 
     @MainActor
-    func deferCreationUntilProfileAvailable() {
-        guard currentProfileAwaitCancellable() == nil else { return }
+    func deferCreationUntilProfileAvailable() -> Bool {
+        guard currentProfileAwaitCancellable() == nil else { return true }
 
         RuntimeDiagnostics.emit(
             "[Tab] No profile resolved yet; deferring WebView creation and observing currentProfile..."
         )
 
-        guard let currentProfileUpdates = currentProfileUpdates() else { return }
+        guard let currentProfileUpdates = currentProfileUpdates() else {
+            return false
+        }
         let cancellable = currentProfileUpdates
             .receive(on: RunLoop.main)
             .sink { [weak self] profile in
@@ -62,6 +64,7 @@ final class TabProfileWebViewCreationGate {
                 }
             }
         setCurrentProfileAwaitCancellable(cancellable)
+        return true
     }
 
     @MainActor

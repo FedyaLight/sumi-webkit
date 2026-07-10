@@ -109,16 +109,21 @@ enum TabBrowserNavigationRuntimeFactory {
     static func lifecycleNavigationRuntime(
         for browserManager: BrowserManager
     ) -> TabLifecycleNavigationRuntime {
-        .make(
+        let tabSuspensionController = browserManager.tabSuspensionController
+        return .make(
             dependencies: TabLifecycleNavigationRuntime.LiveDependencies(
-                tabSuspensionService: { [weak browserManager] in
-                    browserManager?.tabSuspensionService
+                resetTabSuspensionRevisitProtection: {
+                    [weak tabSuspensionController] tab in
+                    tabSuspensionController?.navigationDidStart(for: tab)
                 },
                 extensionsModule: { [weak browserManager] in
                     browserManager?.extensionsModule
                 },
-                loadZoomForTab: { [weak browserManager] tabId in
-                    browserManager?.chromeBundle.zoomCommandOwner.loadZoomForTab(tabId)
+                loadZoomForTab: { [weak browserManager] tabId, webView in
+                    browserManager?.chromeBundle.zoomCommandOwner.loadZoomForTab(
+                        tabId,
+                        on: webView
+                    )
                 },
                 adBlockingModule: { [weak browserManager] in
                     browserManager?.adBlockingModule
@@ -152,6 +157,12 @@ enum TabBrowserNavigationRuntimeFactory {
             },
             downloadManager: { [weak browserManager] in
                 browserManager?.downloadManager
+            },
+            autoplayPolicy: { [weak browserManager] url, profile in
+                browserManager?.permissionRuntime.autoplayStore.effectivePolicy(
+                    for: url,
+                    profile: profile
+                ) ?? .default
             }
         )
     }
@@ -174,19 +185,20 @@ extension TabHistorySwipeRuntime {
     ) -> Self {
         Self(
             windowIDContaining: { webView in
-                webViewCoordinator()?.windowID(containing: webView)
+                webViewCoordinator()?.ownershipQuery
+                    .trackedOwner(containing: webView)?.windowID
             },
             beginHistorySwipeProtection: { tabId, webView, originURL, originHistoryItem in
-                webViewCoordinator()?.beginHistorySwipeProtection(
-                    tabId: tabId,
+                webViewCoordinator()?.protectionRuntime.beginHistorySwipe(
+                    tabID: tabId,
                     webView: webView,
                     originURL: originURL,
                     originHistoryItem: originHistoryItem
                 )
             },
             finishHistorySwipeProtection: { tabId, webView, currentURL, currentHistoryItem in
-                webViewCoordinator()?.finishHistorySwipeProtection(
-                    tabId: tabId,
+                webViewCoordinator()?.protectionRuntime.finishHistorySwipe(
+                    tabID: tabId,
                     webView: webView,
                     currentURL: currentURL,
                     currentHistoryItem: currentHistoryItem
@@ -201,9 +213,9 @@ extension TabHistorySwipeRuntime {
 @MainActor
 extension TabLifecycleNavigationRuntime {
     struct LiveDependencies {
-        let tabSuspensionService: () -> TabSuspensionService?
+        let resetTabSuspensionRevisitProtection: (Tab) -> Void
         let extensionsModule: () -> SumiExtensionsModule?
-        let loadZoomForTab: (UUID) -> Void
+        let loadZoomForTab: (UUID, WKWebView) -> Void
         let adBlockingModule: () -> SumiAdBlockingModule?
         let adblockZapperStore: () -> SumiAdblockZapperStore?
         let enforceSiteDataPolicyAfterNavigation: (Tab) -> Void
@@ -214,7 +226,7 @@ extension TabLifecycleNavigationRuntime {
     static func make(dependencies: LiveDependencies) -> Self {
         Self(
             resetRevisitProtection: { tab in
-                dependencies.tabSuspensionService()?.resetRevisitProtection(for: tab)
+                dependencies.resetTabSuspensionRevisitProtection(tab)
             },
             prepareExtensionWebView: { webView, url, reason in
                 dependencies.extensionsModule()?.prepareWebViewForExtensionRuntime(
@@ -287,12 +299,49 @@ extension TabLifecycleNavigationRuntime {
                     }
                 }
             },
-            isPreparingForDataCleanupNavigation: { webView in
-                dependencies.webViewCoordinator()?
-                    .isPreparingForDataCleanupNavigation(on: webView) == true
+            destructiveDataCleanupNavigationWillStart: {
+                webView,
+                navigationID,
+                navigationLifetime,
+                targetURL,
+                semanticRevision in
+                dependencies.webViewCoordinator()?.websiteDataCleanupService
+                    .navigationWillStart(
+                        on: webView,
+                        navigationID: navigationID,
+                        navigationLifetime: navigationLifetime,
+                        targetURL: targetURL,
+                        semanticRevision: semanticRevision
+                    )
             },
-            finishDestructiveDataCleanupNavigation: { webView in
-                dependencies.webViewCoordinator()?.finishDestructiveDataCleanupNavigation(on: webView)
+            isPreparingForDataCleanupNavigation: {
+                webView,
+                navigationID,
+                navigationLifetime in
+                dependencies.webViewCoordinator()?.websiteDataCleanupService
+                    .isSuppressingNavigation(
+                        on: webView,
+                        navigationID: navigationID,
+                        navigationLifetime: navigationLifetime
+                    ) == true
+            },
+            finishDestructiveDataCleanupNavigation: {
+                webView,
+                navigationID,
+                navigationLifetime,
+                succeeded in
+                dependencies.webViewCoordinator()?.websiteDataCleanupService
+                    .navigationDidTerminate(
+                        on: webView,
+                        navigationID: navigationID,
+                        navigationLifetime: navigationLifetime,
+                        succeeded: succeeded
+                    )
+            },
+            handleDestructiveDataCleanupProcessTermination: { webView in
+                dependencies.webViewCoordinator()?.websiteDataCleanupService
+                    .webContentProcessDidTerminate(on: webView)
+                    == true
             }
         )
     }
@@ -302,11 +351,13 @@ extension TabLifecycleNavigationRuntime {
 extension TabNavigationDelegateRuntime {
     static func make(
         externalSchemePermissionBridge: @escaping () -> SumiExternalSchemePermissionBridge?,
-        downloadManager: @escaping () -> DownloadManager?
+        downloadManager: @escaping () -> DownloadManager?,
+        autoplayPolicy: @escaping @MainActor (URL?, Profile?) -> SumiAutoplayPolicy
     ) -> Self {
         Self(
             externalSchemePermissionBridge: externalSchemePermissionBridge,
-            downloadManager: downloadManager
+            downloadManager: downloadManager,
+            autoplayPolicy: autoplayPolicy
         )
     }
 }
@@ -433,7 +484,7 @@ extension TabNavigationCommandRuntime {
                 settings()?.resolvedSearchEngineTemplate
             },
             prepareExtensionPageNavigation: { _, _, _ in
-                false
+                .notNeeded
             }
         )
     }
@@ -447,11 +498,11 @@ extension TabNavigationCommandRuntime {
                 settings()?.resolvedSearchEngineTemplate
             },
             prepareExtensionPageNavigation: { tab, url, reason in
-                extensionsModule()?.prepareExtensionPageNavigationIfLoaded(
+                extensionsModule()?.prepareExtensionPageNavigationIfNeeded(
                     tab,
                     targetURL: url,
                     reason: reason
-                ) ?? false
+                ) ?? .notNeeded
             }
         )
     }

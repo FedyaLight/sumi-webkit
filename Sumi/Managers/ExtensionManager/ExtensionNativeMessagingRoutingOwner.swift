@@ -34,7 +34,8 @@ final class ExtensionNativeMessagingRoutingOwner {
             return
         }
         let extensionId = manager.extensionID(for: extensionContext)
-        let extensionsModuleEnabled = manager.extensionsModuleEnabledForCallbacks
+        let extensionsModuleEnabled =
+            manager.nativeMessagingRelayOwner.extensionsModuleEnabledForCallbacks
 
         SumiNativeMessagingRuntimeCounters.recordDelegateSendMessageInvoked()
         SafariExtensionAutofillFillDiagnostics.recordNativeMessagingActivity(
@@ -50,17 +51,18 @@ final class ExtensionNativeMessagingRoutingOwner {
         let isPrivateBrowsing = manager.isPrivateExtensionRuntimeProfile(profileId)
         let extensionDisplayName = ExtensionUtils.displayName(
             forExtensionID: extensionId,
-            installedExtensions: manager.installedExtensions
+            installedExtensions: manager.installedExtensionCollection.records
         )
-        manager.traceNativeMessagingContextBinding(
+        manager.runtimeDiagnostics.traceNativeMessagingContextBinding(
             phase: "delegateSendMessage",
             extensionId: extensionId,
             profileId: profileId,
-            loadSource: manager.nativeMessagingLoadSource(for: extensionId),
+            loadSource: manager.installedExtensionCollection.nativeMessagingLoadSource(for: extensionId),
             webExtension: extensionContext.webExtension,
             extensionContext: extensionContext,
             controller: controller,
-            configuration: extensionContext.webViewConfiguration
+            configuration: extensionContext.webViewConfiguration,
+            manager: manager
         )
         let messageShape = SafariExtensionNativeMessagingRoutingProbe
             .sanitizedMessageShape(for: message)
@@ -80,14 +82,14 @@ final class ExtensionNativeMessagingRoutingOwner {
                 }
             }
         #endif
-        manager.nativeMessagingRelay.handleSendMessage(
+        manager.nativeMessagingRelayOwner.relay.handleSendMessage(
             applicationIdentifier: applicationIdentifier,
             message: message,
             extensionId: extensionId,
             profileId: profileId,
             isPrivateBrowsing: isPrivateBrowsing,
             privateAccessAllowed: extensionContext.hasAccessToPrivateData,
-            installedExtensions: manager.installedExtensions,
+            installedExtensions: manager.installedExtensionCollection.records,
             extensionDisplayName: extensionDisplayName,
             replyHandler: SumiWebExtensionCallbackRelay.wrapNativeMessagingReplyHandler(
                 api: .runtimeSendNativeMessage,
@@ -114,7 +116,8 @@ final class ExtensionNativeMessagingRoutingOwner {
         SafariExtensionAutofillFillDiagnostics.recordNativeMessagingActivity(
             extensionId: extensionId
         )
-        let extensionsModuleEnabled = manager.extensionsModuleEnabledForCallbacks
+        let extensionsModuleEnabled =
+            manager.nativeMessagingRelayOwner.extensionsModuleEnabledForCallbacks
         if extensionsModuleEnabled {
             manager.scheduleNativeMessagingBackgroundWake(
                 for: extensionContext,
@@ -126,17 +129,18 @@ final class ExtensionNativeMessagingRoutingOwner {
         let isPrivateBrowsing = manager.isPrivateExtensionRuntimeProfile(profileId)
         let extensionDisplayName = ExtensionUtils.displayName(
             forExtensionID: extensionId,
-            installedExtensions: manager.installedExtensions
+            installedExtensions: manager.installedExtensionCollection.records
         )
-        manager.traceNativeMessagingContextBinding(
+        manager.runtimeDiagnostics.traceNativeMessagingContextBinding(
             phase: "delegateConnectNative",
             extensionId: extensionId,
             profileId: profileId,
-            loadSource: manager.nativeMessagingLoadSource(for: extensionId),
+            loadSource: manager.installedExtensionCollection.nativeMessagingLoadSource(for: extensionId),
             webExtension: extensionContext.webExtension,
             extensionContext: extensionContext,
             controller: controller,
-            configuration: extensionContext.webViewConfiguration
+            configuration: extensionContext.webViewConfiguration,
+            manager: manager
         )
         #if DEBUG || SUMI_DIAGNOSTICS
             if RuntimeDiagnostics.isVerboseEnabled {
@@ -153,13 +157,13 @@ final class ExtensionNativeMessagingRoutingOwner {
         #endif
 
         let portKey = ObjectIdentifier(port)
-        _ = manager.nativeMessagingRelay.handleConnect(
+        _ = manager.nativeMessagingRelayOwner.relay.handleConnect(
             port: port,
             extensionId: extensionId,
             profileId: profileId,
             isPrivateBrowsing: isPrivateBrowsing,
             privateAccessAllowed: extensionContext.hasAccessToPrivateData,
-            installedExtensions: manager.installedExtensions,
+            installedExtensions: manager.installedExtensionCollection.records,
             registerHandler: { [weak manager] handler in
                 manager?.nativeMessagingPortRegistry.register(
                     handler: handler,

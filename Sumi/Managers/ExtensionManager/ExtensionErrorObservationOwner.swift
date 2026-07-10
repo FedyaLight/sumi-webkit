@@ -98,7 +98,7 @@ final class ExtensionErrorObservationOwner {
 
         let updateStart = CFAbsoluteTimeGetCurrent()
         defer {
-            manager?.runtimeSessionOwner.recordRuntimeMetric(for: extensionId) {
+            manager?.runtimeSession.recordRuntimeMetric(for: extensionId) {
                 $0.errorUpdateDuration = CFAbsoluteTimeGetCurrent() - updateStart
             }
         }
@@ -123,7 +123,7 @@ final class ExtensionErrorObservationOwner {
         loggedErrorFingerprints[extensionId] = fingerprint
 
         guard errors.isEmpty == false else {
-            manager?.extensionRuntimeTrace(
+            manager?.runtimeDiagnostics.trace(
                 "Extension errors \(reason) for \(extensionId): none"
             )
             return

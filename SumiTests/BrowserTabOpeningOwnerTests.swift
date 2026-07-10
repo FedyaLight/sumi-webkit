@@ -111,7 +111,7 @@ final class BrowserTabOpeningOwnerTests: XCTestCase {
         browserManager.profileManager.profiles = [primaryProfile]
         browserManager.currentProfile = primaryProfile
         browserManager.windowRegistry = windowRegistry
-        browserManager.webViewCoordinator = WebViewCoordinator()
+        browserManager.bindTestWebViewCoordinator()
         browserManager.tabManager.spaceStateOwner.replaceSpaces([primarySpace, secondarySpace])
         browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(primarySpace)
 

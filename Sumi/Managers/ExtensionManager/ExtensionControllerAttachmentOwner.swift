@@ -12,9 +12,9 @@ import WebKit
 
 @available(macOS 15.5, *)
 @MainActor
-final class ExtensionControllerAttachmentOwner {
+final class ExtensionControllerAttachmentOwner: ExtensionControllerBinding {
     struct Dependencies {
-        let profileRuntimeOwner: ExtensionProfileRuntimeOwner
+        let profileRuntime: ExtensionProfileRuntime
         let runtime: @MainActor () -> ExtensionManagerRuntime
         let resolvedProfileId: @MainActor (Tab) -> UUID?
         let profileIdForController: @MainActor (WKWebExtensionController) -> UUID?
@@ -45,7 +45,7 @@ final class ExtensionControllerAttachmentOwner {
 
     func extensionController(for tab: Tab) -> WKWebExtensionController? {
         guard let profileId = dependencies.resolvedProfileId(tab) else { return nil }
-        if let controller = dependencies.profileRuntimeOwner.controller(for: profileId) {
+        if let controller = dependencies.profileRuntime.controller(for: profileId) {
             return controller
         }
         guard dependencies.hasEnabledInstalledExtensions()
@@ -94,7 +94,7 @@ final class ExtensionControllerAttachmentOwner {
         guard let profileId = dependencies.resolvedProfileId(tab) else { return false }
 
         let expectedController: WKWebExtensionController
-        if let existing = dependencies.profileRuntimeOwner.controller(for: profileId) {
+        if let existing = dependencies.profileRuntime.controller(for: profileId) {
             expectedController = existing
         } else if dependencies.hasEnabledInstalledExtensions()
             || dependencies.allowsRuntimeWithoutEnabledExtensions() {
@@ -145,7 +145,7 @@ final class ExtensionControllerAttachmentOwner {
 
         guard attachExtensionControllerIfNeeded(to: webView, for: tab),
               let profileId = dependencies.resolvedProfileId(tab),
-              let expectedController = dependencies.profileRuntimeOwner.controller(for: profileId),
+              let expectedController = dependencies.profileRuntime.controller(for: profileId),
               webView.configuration.webExtensionController === expectedController
         else {
             dependencies.recordFrameResolution(
@@ -242,7 +242,7 @@ final class ExtensionControllerAttachmentOwner {
         }
 
         let expectedController =
-            dependencies.profileRuntimeOwner.controller(for: profileId)
+            dependencies.profileRuntime.controller(for: profileId)
             ?? extensionController(for: tab)
         return ExtensionRuntimeWebViewBindingPolicy.needsRuntimeRebuild(
             currentController: currentController,
@@ -255,7 +255,7 @@ final class ExtensionControllerAttachmentOwner {
         _ profileId: UUID,
         allowWhenExtensionsNotLoaded: Bool = false
     ) {
-        guard dependencies.profileRuntimeOwner.controller(for: profileId) != nil else { return }
+        guard dependencies.profileRuntime.controller(for: profileId) != nil else { return }
         guard dependencies.runtime().browserRuntimeAvailable() else { return }
 
         for tab in dependencies.allKnownTabs() {
@@ -296,7 +296,7 @@ extension ExtensionControllerAttachmentOwner.Dependencies {
     @MainActor
     static func live(manager: ExtensionManager) -> Self {
         Self(
-            profileRuntimeOwner: manager.profileRuntimeOwner,
+            profileRuntime: manager.profileRuntime,
             runtime: { [weak manager] in
                 manager?.runtime ?? .inactive
             },
@@ -313,13 +313,13 @@ extension ExtensionControllerAttachmentOwner.Dependencies {
                 manager?.hasEnabledInstalledExtensions ?? false
             },
             allowsRuntimeWithoutEnabledExtensions: { [weak manager] in
-                manager?.allowsRuntimeWithoutEnabledExtensions ?? false
+                manager?.runtimeSession.allowsRuntimeWithoutEnabledExtensions ?? false
             },
             extensionsLoaded: { [weak manager] in
                 manager?.extensionsLoaded ?? false
             },
             tabOpenNotificationGeneration: { [weak manager] in
-                manager?.tabOpenNotificationGeneration ?? 0
+                manager?.runtimeSession.tabOpenNotificationGeneration ?? 0
             },
             ensureExtensionController: { [weak manager] profileId in
                 manager?.ensureExtensionController(for: profileId)
@@ -346,10 +346,10 @@ extension ExtensionControllerAttachmentOwner.Dependencies {
                 manager?.registerTabWithExtensionRuntime(tab, reason: reason)
             },
             tabDescription: { [weak manager] tab in
-                manager?.runtimeDiagnosticsOwner.tabDescription(tab) ?? "tab=\(tab.id.uuidString.prefix(8))"
+                manager?.runtimeDiagnostics.tabDescription(tab, manager: manager) ?? "tab=\(tab.id.uuidString.prefix(8))"
             },
             webViewDescription: { webView in
-                ExtensionRuntimeDiagnosticsOwner.objectDescription(webView)
+                ExtensionRuntimeDiagnostics.objectDescription(webView)
             },
             recordFrameResolution: { [weak manager] resolved, context, reason in
                 SafariExtensionAutofillFillDiagnostics.recordFrameResolution(
@@ -359,7 +359,7 @@ extension ExtensionControllerAttachmentOwner.Dependencies {
                 )
             },
             trace: { [weak manager] message in
-                manager?.extensionRuntimeTrace(message())
+                manager?.runtimeDiagnostics.trace(message())
             }
         )
     }

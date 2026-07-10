@@ -5,7 +5,6 @@
 //
 
 import AppKit
-import SumiChromeTokens
 import SwiftUI
 
 struct FloatingBarView: View {

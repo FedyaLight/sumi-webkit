@@ -17,6 +17,10 @@ extension BrowserManager {
         set { shellRuntime.bindWebViewCoordinator(newValue) }
     }
 
+    var webViewOwnershipService: WebViewOwnershipService? {
+        shellRuntime.webViewCoordinator?.ownershipService
+    }
+
     /// Use for cleanup and cross-window operations; fails fast if the coordinator was not wired (e.g. tests forgot to assign `webViewCoordinator`).
     var windowRegistry: WindowRegistry? {
         get { shellRuntime.windowRegistry }

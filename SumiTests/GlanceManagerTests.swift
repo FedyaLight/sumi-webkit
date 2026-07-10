@@ -1,3 +1,5 @@
+import AppKit
+import SumiWebRuntime
 import WebKit
 import XCTest
 
@@ -120,16 +122,16 @@ final class GlanceManagerTests: XCTestCase {
         let (windowRegistry, sourceWindow) = makeRegisteredWindow(in: browserManager, selecting: sourceTab)
         let webView = WKWebView()
 
-        browserManager.webViewCoordinator?.setWebView(
+        browserManager.webViewOwnershipService?.registerTrackedWebView(
             webView,
-            for: sourceTab.id,
+            for: sourceTab,
             in: sourceWindow.id
         )
 
         XCTAssertTrue(browserManager.webViewCloseRouter.handleWebViewDidClose(webView))
 
         XCTAssertNil(browserManager.tabManager.tabCollectionMembershipOwner.tab(for: sourceTab.id))
-        XCTAssertNil(browserManager.webViewCoordinator?.getWebView(
+        XCTAssertNil(browserManager.webViewOwnershipQuery.webView(
             for: sourceTab.id,
             in: sourceWindow.id
         ))
@@ -143,9 +145,9 @@ final class GlanceManagerTests: XCTestCase {
         let staleOwnerWindowID = UUID()
         let webView = WKWebView()
 
-        browserManager.webViewCoordinator?.setWebView(
+        browserManager.webViewOwnershipService?.registerTrackedWebView(
             webView,
-            for: sourceTab.id,
+            for: sourceTab,
             in: staleOwnerWindowID
         )
 
@@ -153,7 +155,7 @@ final class GlanceManagerTests: XCTestCase {
 
         XCTAssertNotNil(browserManager.tabManager.tabCollectionMembershipOwner.tab(for: sourceTab.id))
         XCTAssertEqual(visibleWindow.currentTabId, sourceTab.id)
-        XCTAssertNil(browserManager.webViewCoordinator?.getWebView(
+        XCTAssertNil(browserManager.webViewOwnershipQuery.webView(
             for: sourceTab.id,
             in: staleOwnerWindowID
         ))
@@ -227,6 +229,54 @@ final class GlanceManagerTests: XCTestCase {
         XCTAssertNil(browserManager.glanceManager.currentSession)
         XCTAssertEqual(browserManager.glanceManager.phase, .idle)
         withExtendedLifetime(windowRegistry) { /* no-op */ }
+    }
+
+    func testRemovingPromotionWindowReportsCancelledThroughGlanceRuntimeExactlyOnce() async throws {
+        let browserManager = makeBrowserManager()
+        let sourceTab = makeSourceTab(in: browserManager)
+        let (windowRegistry, windowState) = makeRegisteredWindow(
+            in: browserManager,
+            selecting: sourceTab
+        )
+        let url = try XCTUnwrap(URL(string: "https://destination.example/page"))
+
+        browserManager.glanceManager.presentExternalURL(url, from: sourceTab)
+        let session = try XCTUnwrap(browserManager.glanceManager.currentSession)
+        let webView = try await waitForPreviewWebView(in: session)
+        let host = SumiWebViewContainerView(
+            tabID: session.previewTab.id,
+            webView: webView
+        )
+        let compositorContainer = NSView()
+        var outcomes: [PromotedHostAttachmentOutcome] = []
+        browserManager.webViewCoordinator?.compositorRuntime.registerContainer(
+            compositorContainer,
+            for: windowState.id
+        )
+
+        XCTAssertTrue(browserManager.glanceManager.registerPromotedHost(
+            host,
+            for: session,
+            attachmentCompletion: { outcomes.append($0) }
+        ))
+
+        browserManager.webViewCoordinator?.compositorRuntime.removeContainer(
+            for: windowState.id
+        )
+        browserManager.webViewCoordinator?.compositorRuntime.removeContainer(
+            for: windowState.id
+        )
+
+        XCTAssertEqual(outcomes, [.cancelled])
+        var rejectedOutcomes: [PromotedHostAttachmentOutcome] = []
+        XCTAssertFalse(browserManager.glanceManager.registerPromotedHost(
+            host,
+            for: session,
+            attachmentCompletion: { rejectedOutcomes.append($0) }
+        ))
+        XCTAssertTrue(rejectedOutcomes.isEmpty)
+        withExtendedLifetime(compositorContainer) {}
+        withExtendedLifetime(windowRegistry) { /* BrowserManager keeps the registry weak. */ }
     }
 
     func testPromotionTargetLayoutKeepsTopAndBottomChromeGutters() {
@@ -340,7 +390,7 @@ final class GlanceManagerTests: XCTestCase {
         windowState.currentSpaceId = sourceTab.spaceId
         windowState.currentTabId = sourceTab.id
 
-        let previewTab = Tab(
+        let previewTab = browserManager.tabManager.tabFactory.makeTab(
             url: URL(string: "https://destination.example/page")!,
             name: "Destination"
         )
@@ -397,7 +447,10 @@ final class GlanceManagerTests: XCTestCase {
         let browserManager = makeBrowserManager()
         let sourceTab = makeSourceTab(in: browserManager)
         let targetURL = URL(string: "https://destination.example/page")!
-        let previewTab = Tab(url: targetURL, name: "Destination")
+        let previewTab = browserManager.tabManager.tabFactory.makeTab(
+            url: targetURL,
+            name: "Destination"
+        )
         previewTab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
         let session = GlanceSession(
             targetURL: targetURL,
@@ -469,7 +522,7 @@ final class GlanceManagerTests: XCTestCase {
 
     func testGlanceSessionRestoreDoesNotPresentWhenSourceTabIsMissing() {
         let browserManager = makeBrowserManager()
-        browserManager.tabManager.markInitialDataLoadFinished()
+        browserManager.tabManager.startupRestoreLifecycle.markLoadFinished()
         let selectedTab = makeSourceTab(in: browserManager)
         let (_, windowState) = makeRegisteredWindow(in: browserManager, selecting: selectedTab)
         let targetURL = URL(string: "https://destination.example/page")!
@@ -548,7 +601,7 @@ final class GlanceManagerTests: XCTestCase {
     @discardableResult
     private func makeBrowserManager() -> BrowserManager {
         let browserManager = BrowserManager()
-        browserManager.webViewCoordinator = WebViewCoordinator()
+        browserManager.bindTestWebViewCoordinator()
         return browserManager
     }
 

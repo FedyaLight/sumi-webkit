@@ -74,12 +74,96 @@ final class TabNavigationTransactionOwnerTests: XCTestCase {
 
         owner.perform(
             on: webView,
-            performLoad: { _ in loadEvents.append("immediate") }
+            performLoad: { _ in
+                loadEvents.append("immediate")
+                return true
+            }
         )
         preparation?.resume()
         await drainMainActorTasks()
 
         XCTAssertEqual(loadEvents, ["immediate"])
+    }
+
+    func testCancellationCallbackCanScheduleReplacementWithoutBeingErased() async {
+        let owner = TabNavigationTransactionOwner()
+        let webView = WKWebView(frame: .zero)
+        var oldPreparation: CheckedContinuation<Void, Never>?
+        var replacementDidLoad = false
+
+        owner.performAfterPreparation(
+            on: webView,
+            prepare: {
+                await withCheckedContinuation { continuation in
+                    oldPreparation = continuation
+                }
+            },
+            didCancel: {
+                owner.performAfterPreparation(
+                    on: webView,
+                    prepare: {},
+                    performLoad: { _ in replacementDidLoad = true }
+                )
+            },
+            performLoad: { _ in
+                XCTFail("Cancelled preparation must not load")
+            }
+        )
+        await waitUntil { oldPreparation != nil }
+
+        owner.cancelPendingMainFrameNavigation()
+        oldPreparation?.resume()
+        await drainMainActorTasks()
+
+        XCTAssertTrue(replacementDidLoad)
+    }
+
+    func testCancellationCallbackRemainsExactlyOnceAfterOwnerDeallocation() async {
+        var owner: TabNavigationTransactionOwner? = TabNavigationTransactionOwner()
+        let webView = WKWebView(frame: .zero)
+        var preparation: CheckedContinuation<Void, Never>?
+        var cancellationCount = 0
+
+        owner?.performAfterPreparation(
+            on: webView,
+            prepare: {
+                await withCheckedContinuation { continuation in
+                    preparation = continuation
+                }
+            },
+            didCancel: {
+                cancellationCount += 1
+            },
+            performLoad: { _ in
+                XCTFail("Cancelled preparation must not load")
+            }
+        )
+        await waitUntil { preparation != nil }
+
+        owner?.cancelPendingMainFrameNavigation()
+        owner = nil
+        preparation?.resume()
+        await drainMainActorTasks()
+
+        XCTAssertEqual(cancellationCount, 1)
+    }
+
+    func testSynchronousLoadCanSchedulePreparedReplacementWithoutBeingErased() async {
+        let owner = TabNavigationTransactionOwner()
+        let webView = WKWebView(frame: .zero)
+        var replacementDidLoad = false
+
+        XCTAssertTrue(owner.perform(on: webView) { _ in
+            owner.performAfterPreparation(
+                on: webView,
+                prepare: {},
+                performLoad: { _ in replacementDidLoad = true }
+            )
+            return true
+        })
+        await drainMainActorTasks()
+
+        XCTAssertTrue(replacementDidLoad)
     }
 
     func testBackForwardNavigationSupersedesPreparedNavigation() async {
@@ -194,6 +278,111 @@ final class TabNavigationTransactionOwnerTests: XCTestCase {
             "flush-\(windowId)",
             "update-navigation",
         ])
+    }
+
+    func testSubmissionDoesNotEraseHistorySwipeBeforeLifecycleSettlesIt() {
+        let owner = TabNavigationTransactionOwner()
+        let webView = WKWebView(frame: .zero)
+        var finishCount = 0
+
+        owner.beginBackForwardNavigationTracking(
+            on: webView,
+            environment: makeHistorySwipeEnvironment(currentWebView: { webView })
+        )
+        XCTAssertTrue(owner.perform(on: webView) { _ in true })
+        XCTAssertTrue(owner.isFreezingNavDuringBackForwardGesture)
+
+        owner.markRegularMainFrameNavigation(
+            on: webView,
+            environment: makeHistorySwipeEnvironment(
+                currentWebView: { webView },
+                finishHistorySwipeProtection: { _, _, _, _ in
+                    finishCount += 1
+                    return false
+                }
+            )
+        )
+
+        XCTAssertEqual(finishCount, 1)
+        XCTAssertFalse(owner.isFreezingNavDuringBackForwardGesture)
+        XCTAssertEqual(owner.pendingMainFrameNavigationKind, .load)
+    }
+
+    func testCancellationSettlesExactSwipeSourceAfterCurrentWebViewChanges() {
+        let owner = TabNavigationTransactionOwner()
+        let protectedWebView = WKWebView(frame: .zero)
+        let newCurrentWebView = WKWebView(frame: .zero)
+        let protectedWindowID = UUID()
+        let newCurrentWindowID = UUID()
+        var finishedWebViews: [WKWebView] = []
+        var flushedWindowIDs: [UUID] = []
+        let environment = makeHistorySwipeEnvironment(
+            currentWebView: { newCurrentWebView },
+            windowIDContaining: { candidate in
+                candidate === protectedWebView
+                    ? protectedWindowID
+                    : newCurrentWindowID
+            },
+            finishHistorySwipeProtection: { _, webView, _, _ in
+                if let webView { finishedWebViews.append(webView) }
+                return false
+            },
+            flushWindowMutationsAfterHistorySwipe: {
+                flushedWindowIDs.append($0)
+            }
+        )
+
+        owner.beginBackForwardNavigationTracking(
+            on: protectedWebView,
+            environment: environment
+        )
+        owner.cancelPendingMainFrameNavigation(environment: environment)
+
+        XCTAssertEqual(finishedWebViews.count, 1)
+        XCTAssertIdentical(finishedWebViews.first, protectedWebView)
+        XCTAssertEqual(flushedWindowIDs, [protectedWindowID])
+        XCTAssertFalse(owner.isFreezingNavDuringBackForwardGesture)
+    }
+
+    func testOverlappingSwipeFinishesFirstExactSourceBeforeProtectingSecond() {
+        let owner = TabNavigationTransactionOwner()
+        let firstWebView = WKWebView(frame: .zero)
+        let secondWebView = WKWebView(frame: .zero)
+        var beganWebViews: [WKWebView] = []
+        var finishedWebViews: [WKWebView] = []
+        let environment = makeHistorySwipeEnvironment(
+            currentWebView: { secondWebView },
+            beginHistorySwipeProtection: { _, webView, _, _ in
+                beganWebViews.append(webView)
+            },
+            finishHistorySwipeProtection: { _, webView, _, _ in
+                if let webView { finishedWebViews.append(webView) }
+                return false
+            }
+        )
+
+        owner.beginBackForwardNavigationTracking(
+            on: firstWebView,
+            environment: environment
+        )
+        owner.beginBackForwardNavigationTracking(
+            on: secondWebView,
+            environment: environment
+        )
+
+        XCTAssertEqual(beganWebViews.count, 2)
+        XCTAssertIdentical(beganWebViews[0], firstWebView)
+        XCTAssertIdentical(beganWebViews[1], secondWebView)
+        XCTAssertEqual(finishedWebViews.count, 1)
+        XCTAssertIdentical(finishedWebViews[0], firstWebView)
+        XCTAssertTrue(owner.isFreezingNavDuringBackForwardGesture)
+
+        owner.finishBackForwardNavigationTracking(
+            using: secondWebView,
+            environment: environment
+        )
+        XCTAssertEqual(finishedWebViews.count, 2)
+        XCTAssertIdentical(finishedWebViews[1], secondWebView)
     }
 
     func testFinishCancelledHistorySwipeCancelsDeferredWindowMutations() {

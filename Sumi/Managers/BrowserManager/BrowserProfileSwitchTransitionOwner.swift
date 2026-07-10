@@ -17,7 +17,7 @@ final class BrowserProfileSwitchTransitionOwner {
     }
 
     private unowned let host: BrowserProfileSwitchTransitionHost
-    private let auxiliaryWindowManager: AuxiliaryWindowManager
+    private let auxiliaryWindowTeardown: AuxiliaryWindowTeardownService
     private let bookmarkManager: SumiBookmarkManager
     private let extensionsModule: SumiExtensionsModule
     private let faviconService: any BrowserFaviconServicing
@@ -30,7 +30,7 @@ final class BrowserProfileSwitchTransitionOwner {
 
     init(
         host: BrowserProfileSwitchTransitionHost,
-        auxiliaryWindowManager: AuxiliaryWindowManager,
+        auxiliaryWindowTeardown: AuxiliaryWindowTeardownService,
         bookmarkManager: SumiBookmarkManager,
         extensionsModule: SumiExtensionsModule,
         faviconService: any BrowserFaviconServicing,
@@ -41,7 +41,7 @@ final class BrowserProfileSwitchTransitionOwner {
         scheduleAutomaticBrowsingDataCleanup: @escaping @MainActor (String) -> Void
     ) {
         self.host = host
-        self.auxiliaryWindowManager = auxiliaryWindowManager
+        self.auxiliaryWindowTeardown = auxiliaryWindowTeardown
         self.bookmarkManager = bookmarkManager
         self.extensionsModule = extensionsModule
         self.faviconService = faviconService
@@ -143,7 +143,7 @@ final class BrowserProfileSwitchTransitionOwner {
         animateTransition: Bool
     ) {
         let host = self.host
-        auxiliaryWindowManager.closeAll(reason: .profileSwitch)
+        auxiliaryWindowTeardown.closeAll(reason: .profileSwitch)
         host.isTransitioningProfile = animateTransition
         host.currentProfile = profile
         windowState?.currentProfileId = profile.id
@@ -152,7 +152,9 @@ final class BrowserProfileSwitchTransitionOwner {
         )
         extensionsModule.switchProfileIfLoaded(profile)
         historyManager.switchProfile(profile.id)
-        tabManager.profileAssignmentOwner.handleProfileSwitch(contextWindowId: windowState?.id)
+        tabManager.profileAssignments.selection.handleProfileSwitch(
+            contextWindowID: windowState?.id
+        )
     }
 }
 

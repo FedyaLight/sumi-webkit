@@ -8,8 +8,8 @@ final class TabRestoreRepairTests: XCTestCase {
         id: UUID = UUID(),
         spaceId: UUID,
         parentFolderId: UUID? = nil
-    ) -> TabSnapshotRepository.SnapshotFolder {
-        TabSnapshotRepository.SnapshotFolder(
+    ) -> TabPersistenceFolder {
+        TabPersistenceFolder(
             id: id,
             name: "Folder",
             icon: "folder",

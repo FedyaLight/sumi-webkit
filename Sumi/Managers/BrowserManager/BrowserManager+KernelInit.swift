@@ -7,13 +7,14 @@
 //
 
 import Foundation
-import SumiBrowserCore
+import SumiWebRuntime
 
 extension BrowserManager {
     convenience init(
+        webViewSessions: WebViewSessionRepository,
         moduleRegistry: SumiModuleRegistry = .shared,
         startupPersistence: BrowserManagerStartupPersistence = .production,
-        browserConfiguration: BrowserConfiguration = .shared,
+        browserConfiguration: BrowserConfiguration? = nil,
         adBlockingModule: SumiAdBlockingModule? = nil,
         protectionCoordinator: SumiProtectionCoordinator? = nil,
         adblockZapperStore: SumiAdblockZapperStore? = nil,
@@ -41,11 +42,16 @@ extension BrowserManager {
     ) {
         let startupTrace = StartupPerformanceTrace.browserManagerInitStarted()
         defer { StartupPerformanceTrace.browserManagerInitFinished(startupTrace) }
+        let resolvedBrowserConfiguration = browserConfiguration
+            ?? BrowserConfiguration(
+                autoplayPolicyStore: startupPersistence.autoplayPolicyStore
+            )
         self.init(
             kernel: BrowserCompositionRoot.makeKernel(
+                webViewSessions: webViewSessions,
                 moduleRegistry: moduleRegistry,
                 startupPersistence: startupPersistence,
-                browserConfiguration: browserConfiguration,
+                browserConfiguration: resolvedBrowserConfiguration,
                 adBlockingModule: adBlockingModule,
                 protectionCoordinator: protectionCoordinator,
                 adblockZapperStore: adblockZapperStore,

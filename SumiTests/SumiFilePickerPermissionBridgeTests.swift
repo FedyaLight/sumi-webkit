@@ -179,6 +179,57 @@ final class SumiFilePickerPermissionBridgeTests: XCTestCase {
         XCTAssertEqual(results, [nil])
     }
 
+    func testExactDocumentChangeAfterPolicyQueryPreventsPanelPresentation() async {
+        let presenter = FilePickerFakePanelPresenter()
+        let bridge = makeBridge(presenter: presenter)
+        let expectation = XCTestExpectation(description: "File picker stale after query")
+        let document = FilePickerCurrentDocumentState()
+        var results: [[URL]?] = []
+        let webView = WKWebView()
+
+        bridge.handleOpenPanel(
+            filePickerRequest(userActivation: .directWebKit),
+            tabContext: tabContext(isCurrentPage: { document.isCurrent }),
+            webView: webView,
+            currentPageId: { "tab-a:1" }
+        ) { urls in
+            results.append(urls)
+            expectation.fulfill()
+        }
+        document.isCurrent = false
+
+        await fulfillment(of: [expectation], timeout: 2)
+        withExtendedLifetime(webView) { /* no-op */ }
+        XCTAssertEqual(results, [nil])
+        XCTAssertTrue(presenter.requests.isEmpty)
+    }
+
+    func testExactDocumentChangeWhilePanelIsOpenPreventsSelectedFilesFromBeingDelivered() async {
+        let presenter = FilePickerFakePanelPresenter()
+        let bridge = makeBridge(presenter: presenter)
+        let expectation = XCTestExpectation(description: "File picker stale panel result")
+        let document = FilePickerCurrentDocumentState()
+        var results: [[URL]?] = []
+        let webView = WKWebView()
+
+        bridge.handleOpenPanel(
+            filePickerRequest(userActivation: .directWebKit),
+            tabContext: tabContext(isCurrentPage: { document.isCurrent }),
+            webView: webView,
+            currentPageId: { "tab-a:1" }
+        ) { urls in
+            results.append(urls)
+            expectation.fulfill()
+        }
+        await waitUntilPresenterReceivesRequest(presenter)
+        document.isCurrent = false
+        presenter.complete(.selected([fileURL("stale.txt")]))
+
+        await fulfillment(of: [expectation], timeout: 1)
+        withExtendedLifetime(webView) { /* no-op */ }
+        XCTAssertEqual(results, [nil])
+    }
+
     func testWebViewTabCleanupDoesNotDoubleComplete() async {
         let presenter = FilePickerFakePanelPresenter()
         let bridge = makeBridge(presenter: presenter)
@@ -322,7 +373,8 @@ final class SumiFilePickerPermissionBridgeTests: XCTestCase {
         mainFrameURL: URL? = URL(string: "https://example.com"),
         isActiveTab: Bool = true,
         isVisibleTab: Bool = true,
-        navigationOrPageGeneration: String? = "1"
+        navigationOrPageGeneration: String? = "1",
+        isCurrentPage: @escaping @MainActor @Sendable () -> Bool = { true }
     ) -> SumiFilePickerPermissionTabContext {
         SumiFilePickerPermissionTabContext(
             tabId: tabId,
@@ -335,7 +387,8 @@ final class SumiFilePickerPermissionBridgeTests: XCTestCase {
             mainFrameURL: mainFrameURL,
             isActiveTab: isActiveTab,
             isVisibleTab: isVisibleTab,
-            navigationOrPageGeneration: navigationOrPageGeneration
+            navigationOrPageGeneration: navigationOrPageGeneration,
+            isCurrentPage: isCurrentPage
         )
     }
 
@@ -351,6 +404,11 @@ private final class FilePickerCurrentPageID {
     init(_ value: String) {
         self.value = value
     }
+}
+
+@MainActor
+private final class FilePickerCurrentDocumentState {
+    var isCurrent = true
 }
 
 @MainActor

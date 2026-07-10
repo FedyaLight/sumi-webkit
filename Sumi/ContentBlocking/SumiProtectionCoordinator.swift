@@ -3,300 +3,6 @@ import Foundation
 import SumiDomain
 import OSLog
 
-enum SumiProtectionBundleProfile {
-    static let unified = "adguardAdsPrivacy"
-    static let adblock = "adguardAdsPrivacy"
-}
-
-enum SumiProtectionLevel: String, Codable, CaseIterable, Identifiable, Sendable {
-    case off
-    case protection
-    case adblock
-
-    var id: String { rawValue }
-
-    var displayTitle: String {
-        switch self {
-        case .off:
-            return "Off"
-        case .protection:
-            return "Protection"
-        case .adblock:
-            return "Adblock"
-        }
-    }
-
-    var detail: String {
-        switch self {
-        case .off:
-            return "No blocking."
-        case .protection:
-            return "Lightweight tracker protection."
-        case .adblock:
-            return "Recommended native ad blocking with tracker protection."
-        }
-    }
-
-    var requestedGroups: [SumiProtectionGroupKind] {
-        switch self {
-        case .off:
-            return []
-        case .protection:
-            return [.trackingNetwork]
-        case .adblock:
-            return [.trackingNetwork, .adblockAdsPrivacyNetwork]
-        }
-    }
-
-    var preferredBundleProfileId: String? {
-        switch self {
-        case .off:
-            return nil
-        case .protection, .adblock:
-            return SumiProtectionBundleProfile.unified
-        }
-    }
-
-    var adblockRuleGroupKinds: Set<AdblockCompiledRuleGroupKind> {
-        switch self {
-        case .off, .protection:
-            return []
-        case .adblock:
-            return [.network]
-        }
-    }
-}
-
-enum SumiProtectionGroupKind: String, Codable, CaseIterable, Hashable, Sendable {
-    case trackingNetwork
-    case adblockAdsPrivacyNetwork
-    case cosmetic
-}
-
-struct SumiProtectionAttachmentState: Equatable, Sendable {
-    let siteHost: String?
-    let requestedLevel: SumiProtectionLevel
-    let effectiveLevel: SumiProtectionLevel
-    let activeGroups: [SumiProtectionGroupKind]
-    let attachedRuleListIdentifiers: [String]
-    let activeGenerationId: String?
-
-    var isEnabled: Bool {
-        effectiveLevel != .off && !activeGroups.isEmpty
-    }
-
-    init(
-        siteHost: String?,
-        requestedLevel: SumiProtectionLevel,
-        effectiveLevel: SumiProtectionLevel,
-        activeGroups: [SumiProtectionGroupKind],
-        attachedRuleListIdentifiers: [String] = [],
-        activeGenerationId: String? = nil
-    ) {
-        self.siteHost = siteHost
-        self.requestedLevel = requestedLevel
-        self.effectiveLevel = effectiveLevel
-        self.activeGroups = activeGroups.sorted { $0.rawValue < $1.rawValue }
-        self.attachedRuleListIdentifiers = attachedRuleListIdentifiers.sorted()
-        self.activeGenerationId = activeGenerationId
-    }
-
-    static func disabled(
-        siteHost: String?,
-        requestedLevel: SumiProtectionLevel = .off
-    ) -> SumiProtectionAttachmentState {
-        SumiProtectionAttachmentState(
-            siteHost: siteHost,
-            requestedLevel: requestedLevel,
-            effectiveLevel: .off,
-            activeGroups: []
-        )
-    }
-}
-
-struct SumiProtectionReloadRequirement: Equatable {
-    let siteHost: String?
-    let desiredAttachmentState: SumiProtectionAttachmentState
-}
-
-struct SumiProtectionDedupeSummary: Equatable, Sendable {
-    let inputRuleListCount: Int
-    let finalRuleListCount: Int
-    let duplicateIdentifierCountRemoved: Int
-    let duplicateCanonicalJSONCountRemoved: Int
-    let duplicateGroupContentHashCountRemoved: Int
-    let canonicalJSONUnavailableCount: Int
-    let removedIdentifiers: [String]
-
-    static let empty = SumiProtectionDedupeSummary(
-        inputRuleListCount: 0,
-        finalRuleListCount: 0,
-        duplicateIdentifierCountRemoved: 0,
-        duplicateCanonicalJSONCountRemoved: 0,
-        duplicateGroupContentHashCountRemoved: 0,
-        canonicalJSONUnavailableCount: 0,
-        removedIdentifiers: []
-    )
-
-    var reportLine: String {
-        "input=\(inputRuleListCount); final=\(finalRuleListCount); duplicateIdentifiersRemoved=\(duplicateIdentifierCountRemoved); duplicateCanonicalJSONRemoved=\(duplicateCanonicalJSONCountRemoved); duplicateGroupContentHashRemoved=\(duplicateGroupContentHashCountRemoved); canonicalJSONUnavailable=\(canonicalJSONUnavailableCount)"
-    }
-}
-
-struct SumiProtectionOverlapSummary: Equatable, Sendable {
-    let exactCanonicalOverlapCount: Int
-    let domainResourceOverlapCount: Int
-    let exactComparisonAvailable: Bool
-    let notes: [String]
-
-    static let deferred = SumiProtectionOverlapSummary(
-        exactCanonicalOverlapCount: 0,
-        domainResourceOverlapCount: 0,
-        exactComparisonAvailable: false,
-        notes: ["Detailed overlap diagnostics are available in Copy Diagnostics."]
-    )
-
-    var reportLine: String {
-        "exactCanonicalOverlap=\(exactCanonicalOverlapCount); domainResourceOverlap=\(domainResourceOverlapCount); exactComparisonAvailable=\(exactComparisonAvailable); notes=\(notes.joined(separator: " | "))"
-    }
-}
-
-struct SumiProtectionRulePlan: Equatable, Sendable {
-    let requestedLevel: SumiProtectionLevel
-    let effectiveLevel: SumiProtectionLevel
-    let siteHost: String?
-    let siteOverride: SumiAdblockSiteOverride
-    let sitePolicyAllowsProtection: Bool
-    let activeGroups: [SumiProtectionGroupKind]
-    let inactiveGroups: [SumiProtectionGroupKind]
-    let bundleSource: AdblockRuleGenerationSource?
-    let nativeRuleBundleId: String?
-    let bundleProfileId: String?
-    let requiredBundleProfileId: String?
-    let activeGenerationId: String?
-    let previousGenerationId: String?
-    let previousGenerationRetained: Bool
-    let ruleCountsByGroup: [SumiProtectionGroupKind: Int]
-    let shardCountsByGroup: [SumiProtectionGroupKind: Int]
-    let expectedRuleListIdentifiers: [String]
-    let dedupeSummary: SumiProtectionDedupeSummary
-    let overlapSummary: SumiProtectionOverlapSummary
-    let ineligibleSurfaceReason: String?
-    let planningErrors: [String]
-    let ruleDefinitions: [SumiContentRuleListDefinition]
-
-    var attachmentState: SumiProtectionAttachmentState {
-        SumiProtectionAttachmentState(
-            siteHost: siteHost,
-            requestedLevel: requestedLevel,
-            effectiveLevel: effectiveLevel,
-            activeGroups: activeGroups,
-            attachedRuleListIdentifiers: expectedRuleListIdentifiers,
-            activeGenerationId: activeGenerationId
-        )
-    }
-
-    var trackingGroupActive: Bool {
-        activeGroups.contains(.trackingNetwork)
-    }
-
-    var adblockGroupActive: Bool {
-        activeGroups.contains(.adblockAdsPrivacyNetwork)
-    }
-}
-
-struct SumiProtectionNormalTabDecision: Equatable, Sendable {
-    let plan: SumiProtectionRulePlan
-    let contentBlockingService: SumiContentBlockingService?
-
-    var attachmentState: SumiProtectionAttachmentState {
-        plan.attachmentState
-    }
-
-    static func == (lhs: SumiProtectionNormalTabDecision, rhs: SumiProtectionNormalTabDecision) -> Bool {
-        lhs.plan == rhs.plan
-            && (lhs.contentBlockingService == nil) == (rhs.contentBlockingService == nil)
-    }
-}
-
-struct SumiProtectionApplyOutcome: Equatable, Sendable {
-    let selectedLevel: SumiProtectionLevel
-    let previousAppliedLevel: SumiProtectionLevel
-    let appliedLevel: SumiProtectionLevel
-    let installedBundleProfileId: String?
-    let summary: String
-}
-
-@MainActor
-final class SumiProtectionSettings: ObservableObject {
-    private enum DefaultsKey {
-        static let level = "settings.protection.level"
-        static let appliedLevel = "settings.protection.appliedLevel"
-        static let browserRestartRequired = "settings.protection.browserRestartRequired"
-    }
-
-    @Published private(set) var level: SumiProtectionLevel {
-        didSet {
-            userDefaults.set(level.rawValue, forKey: DefaultsKey.level)
-            changesSubject.send(())
-        }
-    }
-
-    @Published private(set) var appliedLevel: SumiProtectionLevel {
-        didSet {
-            userDefaults.set(appliedLevel.rawValue, forKey: DefaultsKey.appliedLevel)
-            changesSubject.send(())
-        }
-    }
-
-    @Published private(set) var browserRestartRequired: Bool {
-        didSet {
-            userDefaults.set(browserRestartRequired, forKey: DefaultsKey.browserRestartRequired)
-            changesSubject.send(())
-        }
-    }
-
-    private let userDefaults: UserDefaults
-    private let changesSubject = PassthroughSubject<Void, Never>()
-
-    var changesPublisher: AnyPublisher<Void, Never> {
-        changesSubject.eraseToAnyPublisher()
-    }
-
-    init(userDefaults: UserDefaults = .standard) {
-        self.userDefaults = userDefaults
-        let rawLevel = userDefaults.string(forKey: DefaultsKey.level)
-        let resolvedLevel = rawLevel.flatMap(SumiProtectionLevel.init(rawValue:)) ?? .off
-        if rawLevel != resolvedLevel.rawValue {
-            userDefaults.set(resolvedLevel.rawValue, forKey: DefaultsKey.level)
-        }
-        level = resolvedLevel
-        browserRestartRequired = userDefaults.bool(forKey: DefaultsKey.browserRestartRequired)
-
-        let rawAppliedLevel = userDefaults.string(forKey: DefaultsKey.appliedLevel)
-        let resolvedAppliedLevel = rawAppliedLevel.flatMap(SumiProtectionLevel.init(rawValue:)) ?? resolvedLevel
-        appliedLevel = resolvedAppliedLevel
-        if rawAppliedLevel != resolvedAppliedLevel.rawValue {
-            userDefaults.set(resolvedAppliedLevel.rawValue, forKey: DefaultsKey.appliedLevel)
-        }
-    }
-
-    func setLevel(_ level: SumiProtectionLevel) {
-        guard self.level != level else { return }
-        self.level = level
-    }
-
-    func setAppliedLevel(_ level: SumiProtectionLevel) {
-        guard appliedLevel != level else { return }
-        appliedLevel = level
-    }
-
-    func setBrowserRestartRequired(_ isRequired: Bool) {
-        guard browserRestartRequired != isRequired else { return }
-        browserRestartRequired = isRequired
-    }
-}
-
 @MainActor
 final class SumiProtectionCoordinator {
     /// Process-scoped settings/env fallback. Must be bound to BrowserManager's
@@ -311,7 +17,7 @@ final class SumiProtectionCoordinator {
 
     let settings: SumiProtectionSettings
     private let adBlockingModule: SumiAdBlockingModule
-    private let attachmentOwner: SumiProtectionAttachmentOwner
+    private let attachmentService: ProtectionAttachmentService
     private let bundleLifecycle: SumiProtectionBundleLifecycle
     #if DEBUG
         private let startupDiagnostics: any SumiProtectionStartupRestoreDiagnosticsRecording
@@ -342,13 +48,13 @@ final class SumiProtectionCoordinator {
             _ = startupDiagnostics
         #endif
         #if DEBUG
-        self.attachmentOwner = SumiProtectionAttachmentOwner(
+        self.attachmentService = ProtectionAttachmentService(
             ruleProvider: adBlockingModule,
             siteNormalizer: siteNormalizer,
             startupDiagnostics: startupDiagnostics
         )
         #else
-        self.attachmentOwner = SumiProtectionAttachmentOwner(
+        self.attachmentService = ProtectionAttachmentService(
             ruleProvider: adBlockingModule,
             siteNormalizer: siteNormalizer
         )
@@ -359,7 +65,7 @@ final class SumiProtectionCoordinator {
             statusStore: bundleUpdateStatusStore
         )
         self.runtimeAppliedLevel = settings.appliedLevel
-        attachmentOwner.syncRuntime(for: runtimeAppliedLevel)
+        attachmentService.syncRuntime(for: runtimeAppliedLevel)
     }
 
     func setLevel(_ level: SumiProtectionLevel) {
@@ -367,7 +73,7 @@ final class SumiProtectionCoordinator {
     }
 
     var applyNeeded: Bool {
-        attachmentOwner.applyNeeded(
+        attachmentService.applyNeeded(
             selectedLevel: settings.level,
             appliedLevel: settings.appliedLevel,
             browserRestartRequired: settings.browserRestartRequired
@@ -378,7 +84,7 @@ final class SumiProtectionCoordinator {
         let selectedLevel = settings.level
         let previousAppliedLevel = settings.appliedLevel
         let wasApplyNeeded = applyNeeded
-        attachmentOwner.syncRuntime(for: selectedLevel)
+        attachmentService.syncRuntime(for: selectedLevel)
 
         do {
             var installedBundleProfileId: String?
@@ -386,12 +92,12 @@ final class SumiProtectionCoordinator {
                 installedBundleProfileId = try await bundleLifecycle.ensurePreparedBundleInstalled(
                     profileId: requiredBundleProfileId
                 )
-                let readinessPlan = attachmentOwner.globalAttachmentPlan(
+                let readinessPlan = attachmentService.globalAttachmentPlan(
                     for: selectedLevel,
                     includeExpensiveDiagnostics: false,
                     loadRuleDefinitions: false
                 )
-                try attachmentOwner.validateRequiredGroupsReady(in: readinessPlan)
+                try attachmentService.validateRequiredGroupsReady(in: readinessPlan)
             } else {
                 clearPreparedBundleLookupDiagnostics()
             }
@@ -401,7 +107,7 @@ final class SumiProtectionCoordinator {
                 settings.setBrowserRestartRequired(true)
             }
             runtimeAppliedLevel = selectedLevel
-            attachmentOwner.syncRuntime(for: runtimeAppliedLevel)
+            attachmentService.syncRuntime(for: runtimeAppliedLevel)
             let summary = applySummary(
                 selectedLevel: selectedLevel,
                 installedBundleProfileId: installedBundleProfileId
@@ -416,7 +122,7 @@ final class SumiProtectionCoordinator {
                 summary: summary
             )
         } catch {
-            attachmentOwner.syncRuntime(for: runtimeAppliedLevel)
+            attachmentService.syncRuntime(for: runtimeAppliedLevel)
             let message: String
             if let applyError = error as? SumiProtectionApplyError {
                 message = applyError.localizedDescription
@@ -427,7 +133,7 @@ final class SumiProtectionCoordinator {
             lastApplySummary = nil
             lastApplyError = message
             if selectedLevel == .off {
-                attachmentOwner.clearCachedAttachmentService()
+                attachmentService.clearCachedAttachmentService()
             }
             throw SumiProtectionApplyError.applyFailed(message)
         }
@@ -435,12 +141,12 @@ final class SumiProtectionCoordinator {
 
     func updatePreparedBundlesManually() async throws -> SumiProtectionBundleManualUpdateOutcome {
         let appliedLevel = settings.appliedLevel
-        attachmentOwner.syncRuntime(for: appliedLevel)
+        attachmentService.syncRuntime(for: appliedLevel)
         return try await bundleLifecycle.updatePreparedBundlesManually(
             appliedLevel: appliedLevel,
             currentBrowserRestartRequired: settings.browserRestartRequired
         ) { summary in
-            try await attachmentOwner.prepareCachedAttachmentService(for: appliedLevel)
+            try await attachmentService.prepareCachedAttachmentService(for: appliedLevel)
             settings.setBrowserRestartRequired(true)
             lastApplySummary = summary
             lastApplyError = nil
@@ -461,10 +167,10 @@ final class SumiProtectionCoordinator {
         }
 #endif
         runtimeAppliedLevel = appliedLevel
-        attachmentOwner.syncRuntime(for: appliedLevel)
+        attachmentService.syncRuntime(for: appliedLevel)
         guard let requiredBundleProfileId = appliedLevel.preferredBundleProfileId else {
             clearPreparedBundleLookupDiagnostics()
-            try await attachmentOwner.prepareCachedAttachmentService(for: appliedLevel)
+            try await attachmentService.prepareCachedAttachmentService(for: appliedLevel)
             settings.setBrowserRestartRequired(false)
             lastApplyError = nil
             return nil
@@ -474,7 +180,7 @@ final class SumiProtectionCoordinator {
             let manifest = try await bundleLifecycle.restorePreparedBundleForStartup(
                 profileId: requiredBundleProfileId
             )
-            try await attachmentOwner.prepareCachedAttachmentService(for: appliedLevel)
+            try await attachmentService.prepareCachedAttachmentService(for: appliedLevel)
             settings.setBrowserRestartRequired(false)
             lastApplySummary = "Restored \(appliedLevel.displayTitle) using prepared bundle \(requiredBundleProfileId)."
             lastApplyError = nil
@@ -496,7 +202,7 @@ final class SumiProtectionCoordinator {
         for url: URL?,
         profileId: UUID?
     ) -> SumiProtectionNormalTabDecision {
-        attachmentOwner.normalTabDecision(
+        attachmentService.normalTabDecision(
             for: url,
             profileId: profileId,
             requestedLevel: runtimeAppliedLevel
@@ -504,7 +210,7 @@ final class SumiProtectionCoordinator {
     }
 
     func desiredAttachmentState(for url: URL?) -> SumiProtectionAttachmentState {
-        attachmentOwner.desiredAttachmentState(
+        attachmentService.desiredAttachmentState(
             for: url,
             requestedLevel: runtimeAppliedLevel
         )
@@ -515,7 +221,7 @@ final class SumiProtectionCoordinator {
         profileId: UUID?,
         includeExpensiveDiagnostics: Bool = false
     ) -> SumiProtectionRulePlan {
-        attachmentOwner.rulePlan(
+        attachmentService.rulePlan(
             for: url,
             profileId: profileId,
             requestedLevel: runtimeAppliedLevel,
@@ -527,7 +233,7 @@ final class SumiProtectionCoordinator {
         for url: URL?,
         profileId: UUID?
     ) -> SumiProtectionRulePlan {
-        attachmentOwner.cachedRulePlan(
+        attachmentService.cachedRulePlan(
             for: url,
             profileId: profileId,
             requestedLevel: runtimeAppliedLevel
@@ -570,7 +276,7 @@ final class SumiProtectionCoordinator {
             urlHubSummaryDuration: urlHubSummaryDuration,
             plan: plan,
             planComputeDuration: planComputeDuration,
-            contentBlockingServiceGenerationId: attachmentOwner.contentBlockingServiceGenerationId,
+            contentBlockingServiceGenerationId: attachmentService.contentBlockingServiceGenerationId,
             bundleLookupDuration: bundleLifecycle.lastBundleLookupDuration
         )
     }
@@ -581,15 +287,19 @@ final class SumiProtectionCoordinator {
         let manifest = selectedLevel == .off && appliedLevel == .off
             ? nil
             : adBlockingModule.activeManifestIfLoaded()
-        let activePreparedProfileId = manifest.flatMap { attachmentOwner.preparedBundleProfileId(in: $0) }
+        let activePreparedProfileId = manifest.flatMap {
+            attachmentService.preparedBundleProfileId(in: $0)
+        }
         let requiredBundleProfileId = selectedLevel.preferredBundleProfileId
         let bundleDiagnostics = bundleLifecycle.diagnostics(
             manifest: manifest,
             requiredBundleProfileId: requiredBundleProfileId,
             activePreparedBundleProfileId: activePreparedProfileId
         )
-        let trackingSourceAvailable = attachmentOwner.trackingSourceAvailable(manifest: manifest)
-        let availableGroups = attachmentOwner.globallyAvailableGroups(
+        let trackingSourceAvailable = attachmentService.trackingSourceAvailable(
+            manifest: manifest
+        )
+        let availableGroups = attachmentService.globallyAvailableGroups(
             manifest: manifest,
             trackingSourceAvailable: trackingSourceAvailable
         )
@@ -612,7 +322,7 @@ final class SumiProtectionCoordinator {
             adblockBundleAvailable: adblockBundleAvailable,
             strictOffActive: selectedLevel == .off
                 && appliedLevel == .off
-                && attachmentOwner.isCacheEmpty
+                && attachmentService.isCacheEmpty
                 && !adBlockingModule.isEnabled
         )
     }
@@ -635,7 +345,7 @@ final class SumiProtectionCoordinator {
             currentTabDiagnostics: currentTabDiagnostics,
             targetDescription: targetDescription,
             requestingURL: requestingURL,
-            contentBlockingServiceGenerationId: attachmentOwner.contentBlockingServiceGenerationId,
+            contentBlockingServiceGenerationId: attachmentService.contentBlockingServiceGenerationId,
             bundleLookupDuration: bundleLifecycle.lastBundleLookupDuration,
             startupSnapshot: startupDiagnostics.latestSnapshot
         )
@@ -651,7 +361,7 @@ final class SumiProtectionCoordinator {
     }
 
     func surfaceEligibility(for url: URL?) -> SumiAdblockSurfaceEligibility {
-        attachmentOwner.surfaceEligibility(for: url)
+        attachmentService.surfaceEligibility(for: url)
     }
 
     private func applySummary(
@@ -662,19 +372,5 @@ final class SumiProtectionCoordinator {
             return "Saved \(selectedLevel.displayTitle) using prepared bundle \(installedBundleProfileId). Restart Sumi to apply global protection changes."
         }
         return "Saved \(selectedLevel.displayTitle). Restart Sumi to apply global protection changes."
-    }
-}
-
-enum SumiProtectionApplyError: LocalizedError {
-    case requiredPreparedBundleUnavailable(profileId: String, detail: String)
-    case applyFailed(String)
-
-    var errorDescription: String? {
-        switch self {
-        case .requiredPreparedBundleUnavailable(let profileId, let detail):
-            return "Required prepared bundle profile \(profileId) is unavailable. \(detail)"
-        case .applyFailed(let message):
-            return message
-        }
     }
 }

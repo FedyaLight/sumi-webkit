@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 @MainActor
 protocol SumiProtectionPreparedBundleManaging: AnyObject {

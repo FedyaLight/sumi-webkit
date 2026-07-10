@@ -14,13 +14,14 @@ import WebKit
 @MainActor
 final class ExtensionRuntimeStateResetOwner {
     struct Dependencies {
-        let profileRuntimeOwner: ExtensionProfileRuntimeOwner
-        let runtimeSessionOwner: ExtensionRuntimeSessionOwner
+        let profileRuntime: ExtensionProfileRuntime
+        let runtimeSession: ExtensionRuntimeSession
         let backgroundRuntimeStateOwner: ExtensionBackgroundRuntimeStateOwner
-        let requestedTabLifecycleOwner: ExtensionRequestedTabLifecycleOwner
+        let recentTabRequests: ExtensionRecentTabRequestHistory
         let nativeMessagingPortRegistry: ExtensionNativeMessagingPortRegistry
         let errorObservationOwner: ExtensionErrorObservationOwner
-        let browserBridgeContext: @MainActor () -> (any ExtensionBrowserBridgeContext)?
+        let auxiliaryWindows:
+            @MainActor () -> (any ExtensionAuxiliaryWindowControl)?
         let runtime: @MainActor () -> ExtensionManagerRuntime
         let loadedNativeMessagingRelay: @MainActor () -> SumiNativeMessagingRelay?
         let cancelNativeMessagingBackgroundWakeTasks: @MainActor (String?) -> Void
@@ -51,7 +52,7 @@ final class ExtensionRuntimeStateResetOwner {
         for extensionId: String,
         removeUIState: Bool
     ) {
-        dependencies.browserBridgeContext()?.closeAuxiliaryWindowSessions(
+        dependencies.auxiliaryWindows()?.closeAuxiliaryWindowSessions(
             forExtensionId: extensionId,
             reason: .extensionDisable
         )
@@ -66,7 +67,7 @@ final class ExtensionRuntimeStateResetOwner {
             )
         }
 
-        for profileId in dependencies.profileRuntimeOwner.contextsByProfile.keys {
+        for profileId in dependencies.profileRuntime.contextsByProfile.keys {
             let wakeKey = ExtensionRuntimeResidencyState.scopedKey(
                 extensionId: extensionId,
                 profileId: profileId
@@ -77,17 +78,17 @@ final class ExtensionRuntimeStateResetOwner {
         dependencies.clearActionSurfaceState(extensionId)
         unloadExtensionContextIfNeeded(for: extensionId)
         dependencies.errorObservationOwner.removeObserver(for: extensionId)
-        dependencies.runtimeSessionOwner.loadedExtensionManifests
+        dependencies.runtimeSession.loadedExtensionManifests
             .removeValue(forKey: extensionId)
-        dependencies.runtimeSessionOwner.cachedWebExtensionsByID
+        dependencies.runtimeSession.cachedWebExtensionsByID
             .removeValue(forKey: extensionId)
-        dependencies.runtimeSessionOwner.cachedWebExtensionRuntimeSourceKeysByID
+        dependencies.runtimeSession.cachedWebExtensionRuntimeSourceKeysByID
             .removeValue(forKey: extensionId)
-        dependencies.runtimeSessionOwner.lastExtensionLoadErrors =
-            dependencies.runtimeSessionOwner.lastExtensionLoadErrors.filter {
+        dependencies.runtimeSession.lastExtensionLoadErrors =
+            dependencies.runtimeSession.lastExtensionLoadErrors.filter {
                 !$0.key.hasSuffix(":\(extensionId)")
             }
-        dependencies.runtimeSessionOwner.extensionRuntimeResidencyState
+        dependencies.runtimeSession.extensionRuntimeResidencyState
             .remove(extensionId: extensionId)
         dependencies.errorObservationOwner.removeLoggedErrorFingerprint(for: extensionId)
         dependencies.closeOptionsWindow(extensionId)
@@ -113,7 +114,7 @@ final class ExtensionRuntimeStateResetOwner {
         }
 
         let loadedIDs = allLoadedExtensionIDs()
-            .union(dependencies.runtimeSessionOwner.loadedExtensionManifests.keys)
+            .union(dependencies.runtimeSession.loadedExtensionManifests.keys)
             .union(dependencies.optionsWindowExtensionIDs())
             .union(dependencies.nativeMessagingPortRegistry.extensionIDs)
 
@@ -121,15 +122,15 @@ final class ExtensionRuntimeStateResetOwner {
             tearDownExtensionRuntimeState(for: extensionId, removeUIState: false)
         }
 
-        dependencies.profileRuntimeOwner.replaceContexts([:])
-        dependencies.runtimeSessionOwner.loadedExtensionManifests.removeAll()
+        dependencies.profileRuntime.replaceContexts([:])
+        dependencies.runtimeSession.loadedExtensionManifests.removeAll()
         dependencies.clearAllActionSurfaceStates()
-        dependencies.runtimeSessionOwner.cachedWebExtensionsByID.removeAll()
-        dependencies.runtimeSessionOwner.cachedWebExtensionRuntimeSourceKeysByID.removeAll()
-        dependencies.runtimeSessionOwner.lastExtensionLoadErrors.removeAll()
-        dependencies.runtimeSessionOwner.extensionRuntimeResidencyState.removeAll()
+        dependencies.runtimeSession.cachedWebExtensionsByID.removeAll()
+        dependencies.runtimeSession.cachedWebExtensionRuntimeSourceKeysByID.removeAll()
+        dependencies.runtimeSession.lastExtensionLoadErrors.removeAll()
+        dependencies.runtimeSession.extensionRuntimeResidencyState.removeAll()
         dependencies.backgroundRuntimeStateOwner.removeAll()
-        dependencies.requestedTabLifecycleOwner.removeAllRecentlyOpenedTabRequests()
+        dependencies.recentTabRequests.removeAll()
         dependencies.clearPermissionsOriginsCompatibilityInstallations()
         dependencies.removeAllExtensionPageUserContentControllers()
         dependencies.cancelInitialDocumentTasks()
@@ -140,8 +141,8 @@ final class ExtensionRuntimeStateResetOwner {
 
     var hasLoadedUserExtensionRuntime: Bool {
         let loadedIDs = allLoadedExtensionIDs()
-            .union(dependencies.runtimeSessionOwner.loadedExtensionManifests.keys)
-            .union(dependencies.runtimeSessionOwner.cachedWebExtensionsByID.keys)
+            .union(dependencies.runtimeSession.loadedExtensionManifests.keys)
+            .union(dependencies.runtimeSession.cachedWebExtensionsByID.keys)
             .union(dependencies.optionsWindowExtensionIDs())
             .union(dependencies.nativeMessagingPortRegistry.extensionIDs)
             .union(dependencies.errorObservationOwner.observedExtensionIDs)
@@ -150,18 +151,18 @@ final class ExtensionRuntimeStateResetOwner {
             return true
         }
 
-        let runtimeState = dependencies.runtimeSessionOwner.runtimeState
+        let runtimeState = dependencies.runtimeSession.runtimeState
         return dependencies.hasEnabledInstalledExtensions()
             && (dependencies.extensionsLoaded()
                 || runtimeState == .loading
                 || runtimeState == .ready
-                || dependencies.profileRuntimeOwner.controllersByProfile.isEmpty == false)
+                || dependencies.profileRuntime.controllersByProfile.isEmpty == false)
     }
 
     func tabsAffectedByLoadedUserExtensionRuntime() -> [Tab] {
         guard hasLoadedUserExtensionRuntime else { return [] }
 
-        let controllers = Array(dependencies.profileRuntimeOwner.controllersByProfile.values)
+        let controllers = Array(dependencies.profileRuntime.controllersByProfile.values)
         var affectedTabs: [Tab] = []
         var seenTabIds: Set<UUID> = []
 
@@ -229,14 +230,14 @@ final class ExtensionRuntimeStateResetOwner {
 
     private func allLoadedExtensionIDs() -> Set<String> {
         var identifiers: Set<String> = []
-        for contexts in dependencies.profileRuntimeOwner.contextsByProfile.values {
+        for contexts in dependencies.profileRuntime.contextsByProfile.values {
             identifiers.formUnion(contexts.keys)
         }
         return identifiers
     }
 
     private func unloadExtensionContextIfNeeded(for extensionId: String) {
-        for (profileId, contexts) in dependencies.profileRuntimeOwner.contextsByProfile {
+        for (profileId, contexts) in dependencies.profileRuntime.contextsByProfile {
             guard let context = contexts[extensionId] else { continue }
             dependencies.backgroundRuntimeStateOwner.removeRuntimeState(
                 for: ExtensionRuntimeResidencyState.scopedKey(
@@ -244,12 +245,12 @@ final class ExtensionRuntimeStateResetOwner {
                     profileId: profileId
                 )
             )
-            _ = dependencies.profileRuntimeOwner.removeContext(
+            _ = dependencies.profileRuntime.removeContext(
                 extensionId: extensionId,
                 profileId: profileId
             )
             do {
-                try dependencies.profileRuntimeOwner.controller(for: profileId)?.unload(context)
+                try dependencies.profileRuntime.controller(for: profileId)?.unload(context)
             } catch {
                 dependencies.trace {
                     "Ignoring failed unload for extension \(extensionId) profile \(profileId.uuidString): \(error.localizedDescription)"
@@ -264,20 +265,20 @@ extension ExtensionRuntimeStateResetOwner.Dependencies {
     @MainActor
     static func live(manager: ExtensionManager) -> Self {
         Self(
-            profileRuntimeOwner: manager.profileRuntimeOwner,
-            runtimeSessionOwner: manager.runtimeSessionOwner,
+            profileRuntime: manager.profileRuntime,
+            runtimeSession: manager.runtimeSession,
             backgroundRuntimeStateOwner: manager.backgroundRuntimeStateOwner,
-            requestedTabLifecycleOwner: manager.requestedTabLifecycleOwner,
+            recentTabRequests: manager.recentExtensionTabRequests,
             nativeMessagingPortRegistry: manager.nativeMessagingPortRegistry,
             errorObservationOwner: manager.errorObservationOwner,
-            browserBridgeContext: { [weak manager] in
-                manager?.browserBridgeContext
+            auxiliaryWindows: { [weak manager] in
+                manager?.extensionAuxiliaryWindows
             },
             runtime: { [weak manager] in
                 manager?.runtime ?? .inactive
             },
             loadedNativeMessagingRelay: { [weak manager] in
-                manager?.loadedNativeMessagingRelay
+                manager?.nativeMessagingRelayOwner.loadedRelay
             },
             cancelNativeMessagingBackgroundWakeTasks: { [weak manager] extensionId in
                 if let extensionId {
@@ -294,16 +295,16 @@ extension ExtensionRuntimeStateResetOwner.Dependencies {
                 manager?.cancelInitialDocumentNativeMessagingWarmupTasks()
             },
             clearActionSurfaceState: { [weak manager] extensionId in
-                manager?.clearActionSurfaceState(for: extensionId)
+                manager?.actionSurfacePublisher.clearActionSurfaceState(for: extensionId)
             },
             clearAllActionSurfaceStates: { [weak manager] in
                 manager?.actionStatesByExtensionID.removeAll()
             },
             closeOptionsWindow: { [weak manager] extensionId in
-                manager?.optionsWindowOwner.closeWindow(for: extensionId)
+                manager?.optionsWindows.closeWindow(for: extensionId)
             },
             optionsWindowExtensionIDs: { [weak manager] in
-                manager?.optionsWindowExtensionIDs ?? []
+                manager?.optionsWindows.extensionIDs ?? []
             },
             clearActionAnchors: { [weak manager] extensionId in
                 manager?.actionAnchorStore.clearAnchors(for: extensionId)
@@ -332,10 +333,10 @@ extension ExtensionRuntimeStateResetOwner.Dependencies {
                 manager?.liveWebViews(for: tab) ?? []
             },
             tabDescription: { [weak manager] tab in
-                manager?.runtimeDiagnosticsOwner.tabDescription(tab) ?? "tab=\(tab.id.uuidString.prefix(8))"
+                manager?.runtimeDiagnostics.tabDescription(tab, manager: manager) ?? "tab=\(tab.id.uuidString.prefix(8))"
             },
             trace: { [weak manager] message in
-                manager?.extensionRuntimeTrace(message())
+                manager?.runtimeDiagnostics.trace(message())
             }
         )
     }

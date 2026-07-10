@@ -10,7 +10,7 @@ final class SafariExtensionProfileIsolationTests: XCTestCase {
     func testProfileRuntimeOwnerResolvesExplicitTabProfileBeforeCurrentFallback() {
         let currentProfileId = UUID()
         let tabProfileId = UUID()
-        let owner = ExtensionProfileRuntimeOwner(initialProfileId: currentProfileId)
+        let owner = ExtensionProfileRuntime(initialProfileId: currentProfileId)
         let tab = Tab()
         tab.profileId = tabProfileId
 
@@ -26,7 +26,7 @@ final class SafariExtensionProfileIsolationTests: XCTestCase {
 
     func testProfileRuntimeOwnerUsesRuntimeProfileFallbacks() {
         let runtimeProfile = Profile(name: "Runtime Profile")
-        let owner = ExtensionProfileRuntimeOwner(initialProfileId: nil)
+        let owner = ExtensionProfileRuntime(initialProfileId: nil)
         let runtime = ExtensionManagerRuntime(
             currentProfile: { runtimeProfile },
             profile: { profileId in
@@ -43,6 +43,8 @@ final class SafariExtensionProfileIsolationTests: XCTestCase {
             untrackedOwnedWebView: { _ in nil },
             trackedWebViews: { _ in [] },
             rebuildLiveWebViews: { _ in /* No-op. */ },
+            websiteDataMutationAdmissionIsBlocked: { _ in false },
+            waitForWebsiteDataMutationAdmission: { _ in true },
             browserRuntimeAvailable: { false },
             extensionsModuleEnabled: { .enabled(true) }
         )
@@ -55,7 +57,7 @@ final class SafariExtensionProfileIsolationTests: XCTestCase {
     }
 
     func testProfileRuntimeOwnerProfileActivationReportsRuntimeDemand() {
-        let owner = ExtensionProfileRuntimeOwner(initialProfileId: nil)
+        let owner = ExtensionProfileRuntime(initialProfileId: nil)
         let profileId = UUID()
 
         XCTAssertFalse(

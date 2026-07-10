@@ -18,7 +18,7 @@ enum BrowserSplitViewRuntimeFactory {
                 browserManager?.windowSessionBundle.visualMutationOwner.refreshCompositor(for: windowState)
             },
             schedulePersistWindowSession: { [weak browserManager] windowState in
-                browserManager?.windowSessionBundle.activationOwner.schedulePersistWindowSession(for: windowState)
+                browserManager?.windowSessionBundle.persistence.schedule(windowState)
             },
             focusFloatingBar: { [weak browserManager] windowState, reason in
                 browserManager?.urlBarBundle.floatingBarRoutingOwner.focusFloatingBar(

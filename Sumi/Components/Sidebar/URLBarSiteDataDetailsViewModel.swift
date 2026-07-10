@@ -11,6 +11,7 @@ final class URLBarSiteDataDetailsViewModel: ObservableObject {
     @Published private(set) var errorMessage: String?
 
     private let cleanupService: any SumiWebsiteDataCleanupServicing
+    private let profileWebsiteDataMutationService: any SumiProfileWebsiteDataMutating
     private let policyStore: any BrowserSiteDataPolicyStoring
     private let enforcementService: any BrowserSiteDataPolicyEnforcing
     private let faviconService: any BrowserFaviconServicing
@@ -22,11 +23,13 @@ final class URLBarSiteDataDetailsViewModel: ObservableObject {
 
     init(
         cleanupService: any SumiWebsiteDataCleanupServicing,
+        profileWebsiteDataMutationService: any SumiProfileWebsiteDataMutating,
         policyStore: any BrowserSiteDataPolicyStoring,
         enforcementService: any BrowserSiteDataPolicyEnforcing,
         faviconService: any BrowserFaviconServicing
     ) {
         self.cleanupService = cleanupService
+        self.profileWebsiteDataMutationService = profileWebsiteDataMutationService
         self.policyStore = policyStore
         self.enforcementService = enforcementService
         self.faviconService = faviconService
@@ -95,15 +98,23 @@ final class URLBarSiteDataDetailsViewModel: ObservableObject {
         deletingHosts.insert(host)
         defer { deletingHosts.remove(host) }
 
-        await cleanupService.removeWebsiteDataForExactHost(
-            host,
-            ofTypes: WKWebsiteDataStore.sumiManualFullCleanupDataTypes,
-            includingCookies: true,
-            in: profile.dataStore
-        )
+        let outcome = await profileWebsiteDataMutationService
+            .deleteExactHostData(
+                host,
+                ofTypes: WKWebsiteDataStore.sumiManualFullCleanupDataTypes,
+                includingCookies: true,
+                profile: profile
+            )
+        guard outcome.didMutate else {
+            errorMessage = "Site data could not be deleted safely."
+            return
+        }
         faviconService.invalidateSite(domain: host, profile: profile)
         await profile.refreshDataStoreStats(cleanupService: cleanupService)
         await load(url: url, profile: profile)
+        if outcome == .restoreFailedAfterMutation {
+            errorMessage = "Site data was deleted, but the page could not be restored."
+        }
     }
 
     func setBlockStorage(

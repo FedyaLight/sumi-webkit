@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 struct SumiProtectionCurrentTabDiagnostics: Equatable, Sendable {
     let urlString: String?

@@ -28,29 +28,20 @@ final class DefaultTabRuntimeStore: ShellSelectionTabStore {
         self.shortcutLiveTabProvider = shortcutLiveTab
     }
 
-    convenience init(tabManager: TabManager) {
+    convenience init(
+        state: TabStateStore,
+        membership: TabCollectionMembershipOwner,
+        regularTabs: RegularTabCollectionOwner,
+        presentation: TabShortcutPresentationOwner
+    ) {
         self.init(
-            spaces: { [weak tabManager] in
-                tabManager?.spaceStateOwner.spaces ?? []
-            },
-            tab: { [weak tabManager] id in
-                tabManager?.tabCollectionMembershipOwner.tab(for: id)
-            },
-            tabs: { [weak tabManager] space in
-                tabManager?.regularTabCollectionOwner.tabs(in: space) ?? []
-            },
-            shortcutPin: { [weak tabManager] id in
-                tabManager?.shortcutPinCollectionStateOwner.shortcutPin(by: id)
-            },
-            activeShortcutTab: { [weak tabManager] windowId in
-                tabManager?.shortcutPresentationOwner.activeShortcutTab(for: windowId)
-            },
-            liveShortcutTabs: { [weak tabManager] windowId in
-                tabManager?.shortcutPresentationOwner.liveShortcutTabs(in: windowId) ?? []
-            },
-            shortcutLiveTab: { [weak tabManager] pinId, windowId in
-                tabManager?.shortcutPresentationOwner.shortcutLiveTab(for: pinId, in: windowId)
-            }
+            spaces: { state.spaces.spaces },
+            tab: { membership.tab(for: $0) },
+            tabs: { regularTabs.tabs(in: $0) },
+            shortcutPin: { state.shortcutPins.shortcutPin(by: $0) },
+            activeShortcutTab: { presentation.activeShortcutTab(for: $0) },
+            liveShortcutTabs: { presentation.liveShortcutTabs(in: $0) },
+            shortcutLiveTab: { presentation.shortcutLiveTab(for: $0, in: $1) }
         )
     }
 

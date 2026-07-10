@@ -76,7 +76,9 @@ final class BrowserAppOrchestrationOwnerTests: XCTestCase {
         settingsManager.sidebarMiniPlayerEnabled = false
         let browserManager = BrowserManager(nowPlayingController: nowPlayingController)
         let windowRegistry = WindowRegistry()
-        let webViewCoordinator = WebViewCoordinator()
+        let webViewCoordinator = WebViewCoordinator(
+            webViewSessions: browserManager.webViewSessions
+        )
         let keyboardShortcutManager = KeyboardShortcutManager(installEventMonitor: false)
         var startUpdaterCallCount = 0
         let factory: BrowserWindowShellService.ContentViewFactory = { _, _, _ in

@@ -366,8 +366,8 @@ enum SafariExtensionContentScriptProbe {
             @MainActor (ExtensionManager) -> (String, Bool, UUID?) -> Void =
                 ExtensionManager.reconcileOpenTabsAfterExtensionContextLoad
         let finalize:
-            @MainActor (ExtensionManager) -> (String, UUID?, ExtensionManager.ExtensionBackgroundWakeReason?) async -> Void =
-                ExtensionManager.finalizeEnabledExtensionRuntime
+            @MainActor (ExtensionActionSurfacePublisher) -> (String, UUID?, ExtensionManager.ExtensionBackgroundWakeReason?) async -> Void =
+                ExtensionActionSurfacePublisher.finalizeEnabledExtensionRuntime
         let rebind:
             @MainActor (ExtensionNormalTabRuntimeBindingOwner) -> (Tab) -> Bool =
                 ExtensionNormalTabRuntimeBindingOwner.tabNeedsExtensionContentScriptRebind
@@ -436,7 +436,7 @@ extension SumiExtensionsModule {
         let matrix = SafariExtensionAcceptanceMatrixBuilder.build(
             discovered: discovered,
             importStore: safariExtensionImportRecordsForDiagnostics(),
-            installedExtensions: manager?.installedExtensions ?? [],
+            installedExtensions: manager?.installedExtensionCollection.records ?? [],
             extensionManager: manager,
             extensionsModuleEnabled: isEnabled
         )

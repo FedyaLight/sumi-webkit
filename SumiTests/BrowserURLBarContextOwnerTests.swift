@@ -123,9 +123,11 @@ final class BrowserURLBarContextOwnerTests: XCTestCase {
             activate: false
         )
         harness.windowState.currentTabId = tab.id
-        harness.browserManager.webViewCoordinator?.setWebView(
-            WKWebView(),
-            for: tab.id,
+        let webView = EmptyReloadRecordingWebView()
+        _ = tab.installNavigationDelegate(on: webView)
+        harness.browserManager.webViewOwnershipService?.registerTrackedWebView(
+            webView,
+            for: tab,
             in: harness.windowState.id
         )
 
@@ -133,7 +135,10 @@ final class BrowserURLBarContextOwnerTests: XCTestCase {
             .navigationToolbarContext(for: harness.windowState)
             .reload(tab)
 
-        XCTAssertTrue(tab.loadingState.isLoading)
+        XCTAssertEqual(webView.reloadCount, 1)
+        XCTAssertEqual(webView.loadedRequests.map(\.url), [tab.url])
+        XCTAssertTrue(webView.didSubmitFallbackLoad)
+        webView.stopLoading()
     }
 
     func testURLBarReloadPageUsesWindowScopedRefreshPath() {
@@ -147,9 +152,11 @@ final class BrowserURLBarContextOwnerTests: XCTestCase {
             activate: false
         )
         harness.windowState.currentTabId = tab.id
-        harness.browserManager.webViewCoordinator?.setWebView(
-            WKWebView(),
-            for: tab.id,
+        let webView = EmptyReloadRecordingWebView()
+        _ = tab.installNavigationDelegate(on: webView)
+        harness.browserManager.webViewOwnershipService?.registerTrackedWebView(
+            webView,
+            for: tab,
             in: harness.windowState.id
         )
 
@@ -159,7 +166,10 @@ final class BrowserURLBarContextOwnerTests: XCTestCase {
             "BrowserURLBarContextOwnerTests.reload"
         )
 
-        XCTAssertTrue(tab.loadingState.isLoading)
+        XCTAssertEqual(webView.reloadCount, 1)
+        XCTAssertEqual(webView.loadedRequests.map(\.url), [tab.url])
+        XCTAssertTrue(webView.didSubmitFallbackLoad)
+        webView.stopLoading()
     }
 
     private func makeHarness() -> Harness {
@@ -172,7 +182,7 @@ final class BrowserURLBarContextOwnerTests: XCTestCase {
         browserManager.profileManager.profiles = [profile]
         browserManager.currentProfile = profile
         browserManager.windowRegistry = windowRegistry
-        browserManager.webViewCoordinator = WebViewCoordinator()
+        browserManager.bindTestWebViewCoordinator()
         browserManager.tabManager.spaceStateOwner.replaceSpaces([primarySpace])
         browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(primarySpace)
 
@@ -192,6 +202,25 @@ final class BrowserURLBarContextOwnerTests: XCTestCase {
 
     private func removePersistedWindowSession() {
         UserDefaults.standard.removeObject(forKey: BrowserManager.lastWindowSessionKey)
+    }
+}
+
+@MainActor
+private final class EmptyReloadRecordingWebView: WKWebView {
+    private(set) var reloadCount = 0
+    private(set) var loadedRequests: [URLRequest] = []
+    private(set) var didSubmitFallbackLoad = false
+
+    override func reload() -> WKNavigation? {
+        reloadCount += 1
+        return nil
+    }
+
+    override func load(_ request: URLRequest) -> WKNavigation? {
+        loadedRequests.append(request)
+        let navigation = super.load(request)
+        didSubmitFallbackLoad = navigation != nil
+        return navigation
     }
 }
 

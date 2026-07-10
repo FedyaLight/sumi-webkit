@@ -23,6 +23,12 @@ protocol SumiBookmarkRepository: AnyObject, Sendable {
         acceptsURL: @escaping (URL) -> Bool,
         urlKeys: @escaping (URL) -> Set<String>
     ) throws -> SumiBookmarksImportSummary
+    func replaceBookmarks(
+        _ bookmarks: [SumiBookmarkImportNode],
+        acceptsURL: @escaping (URL) -> Bool,
+        urlKeys: @escaping (URL) -> Set<String>
+    ) throws -> SumiBookmarksImportSummary
+    func restoreSnapshot(_ snapshot: SumiBookmarksSnapshot) throws
     func exportBookmarksHTML(to destination: URL) throws
     nonisolated func mergeChanges(fromContextDidSave notification: Notification) -> Bool
 }
@@ -102,6 +108,18 @@ final class SumiUnavailableBookmarkRepository: SumiBookmarkRepository {
         acceptsURL: @escaping (URL) -> Bool,
         urlKeys: @escaping (URL) -> Set<String>
     ) throws -> SumiBookmarksImportSummary {
+        throw unavailableError
+    }
+
+    func replaceBookmarks(
+        _ bookmarks: [SumiBookmarkImportNode],
+        acceptsURL: @escaping (URL) -> Bool,
+        urlKeys: @escaping (URL) -> Set<String>
+    ) throws -> SumiBookmarksImportSummary {
+        throw unavailableError
+    }
+
+    func restoreSnapshot(_ snapshot: SumiBookmarksSnapshot) throws {
         throw unavailableError
     }
 

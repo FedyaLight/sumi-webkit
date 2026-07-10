@@ -5,7 +5,6 @@ final class TabFaviconPresentationRefreshOwner {
     private let notificationCenter: NotificationCenter
     private let debounceNanoseconds: UInt64
     private let tabsNeedingRefresh: () -> [Tab]
-    private let requestStructuralPublish: () -> Void
 
     private var faviconCacheObserver: NSObjectProtocol?
     private var pendingRefreshTask: Task<Void, Never>?
@@ -13,13 +12,11 @@ final class TabFaviconPresentationRefreshOwner {
     init(
         notificationCenter: NotificationCenter,
         debounceNanoseconds: UInt64,
-        tabsNeedingRefresh: @escaping () -> [Tab],
-        requestStructuralPublish: @escaping () -> Void
+        tabsNeedingRefresh: @escaping () -> [Tab]
     ) {
         self.notificationCenter = notificationCenter
         self.debounceNanoseconds = debounceNanoseconds
         self.tabsNeedingRefresh = tabsNeedingRefresh
-        self.requestStructuralPublish = requestStructuralPublish
     }
 
     deinit {
@@ -71,6 +68,5 @@ final class TabFaviconPresentationRefreshOwner {
         for tab in tabsNeedingRefresh() where tab.faviconIsTemplateGlobePlaceholder {
             _ = tab.applyCachedFaviconOrPlaceholder(for: tab.url)
         }
-        requestStructuralPublish()
     }
 }

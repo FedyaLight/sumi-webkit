@@ -12,30 +12,30 @@ protocol TabProfileQueryPort {
 
 @MainActor
 struct LiveTabProfileQueryPort: TabProfileQueryPort {
-    private weak var browserManager: BrowserManager?
+    private let runtime: BrowserManagerRuntimeReference
 
-    init(browserManager: BrowserManager) {
-        self.browserManager = browserManager
+    init(runtime: BrowserManagerRuntimeReference) {
+        self.runtime = runtime
     }
 
     var currentProfileId: UUID? {
-        browserManager?.currentProfile?.id
+        runtime.require().currentProfile?.id
     }
 
     var defaultProfileId: UUID? {
-        browserManager?.currentProfile?.id ?? browserManager?.profileManager.profiles.first?.id
+        let browserManager = runtime.require()
+        return browserManager.currentProfile?.id ?? browserManager.profileManager.profiles.first?.id
     }
 
     var settings: SumiSettingsService? {
-        browserManager?.sumiSettings
+        runtime.require().sumiSettings
     }
 
     func profileExists(_ profileId: UUID) -> Bool {
-        guard let browserManager else { return true }
-        return browserManager.profileManager.profiles.contains { $0.id == profileId }
+        runtime.require().profileManager.profiles.contains { $0.id == profileId }
     }
 
     func profile(with profileId: UUID) -> Profile? {
-        browserManager?.profileManager.profiles.first { $0.id == profileId }
+        runtime.require().profileManager.profiles.first { $0.id == profileId }
     }
 }

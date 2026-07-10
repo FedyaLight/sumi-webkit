@@ -64,7 +64,7 @@ final class BrowserExtensionSurfaceStore: ObservableObject {
             return
         }
 
-        extensionManager.$installedExtensions
+        extensionManager.installedExtensionCollection.$records
             .sink { [weak self] installedExtensions in
                 self?.scheduleInstalledExtensionsUpdate(installedExtensions)
                 self?.refreshSiteAccessPoliciesForCurrentProfile(
@@ -131,7 +131,7 @@ final class BrowserExtensionSurfaceStore: ObservableObject {
         }
 
         let resolvedExtensionIds =
-            extensionIds ?? extensionManager.installedExtensions.map(\.id)
+            extensionIds ?? extensionManager.installedExtensionCollection.records.map(\.id)
         scheduleSiteAccessPoliciesUpdate(
             extensionManager.siteAccessPolicySnapshot(
                 extensionIds: resolvedExtensionIds,

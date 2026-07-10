@@ -7,7 +7,7 @@ import SumiWebRuntime
 /// unprotected tracked WebViews.
 @MainActor
 final class WebViewTrackedRegistrationOwner {
-    private let webViewRegistry: WindowWebViewRegistry
+    private let webViewSessions: WebViewSessionRepository
     private let mediaProtectionOwner: WebViewMediaProtectionOwner
     private let trackingLifecycleOwner: WebViewTrackingLifecycleOwner
     private let trackedCleanupExecutionOwner: WebViewTrackedCleanupExecutionOwner
@@ -19,9 +19,10 @@ final class WebViewTrackedRegistrationOwner {
     private let performFallbackWebViewCleanup: @MainActor (WKWebView, UUID) -> Void
     private let resolvedTab: @MainActor (UUID) -> Tab?
     private let refreshPrimaryTrackedWebView: @MainActor (Tab) -> Void
+    private let removeRecentVisibility: @MainActor (TrackedWebViewOwner) -> Void
 
     init(
-        webViewRegistry: WindowWebViewRegistry,
+        webViewSessions: WebViewSessionRepository,
         mediaProtectionOwner: WebViewMediaProtectionOwner,
         trackingLifecycleOwner: WebViewTrackingLifecycleOwner,
         trackedCleanupExecutionOwner: WebViewTrackedCleanupExecutionOwner,
@@ -32,9 +33,10 @@ final class WebViewTrackedRegistrationOwner {
         finishDestructiveCleanupNavigation: @escaping @MainActor (WKWebView) -> Void,
         performFallbackWebViewCleanup: @escaping @MainActor (WKWebView, UUID) -> Void,
         resolvedTab: @escaping @MainActor (UUID) -> Tab?,
-        refreshPrimaryTrackedWebView: @escaping @MainActor (Tab) -> Void
+        refreshPrimaryTrackedWebView: @escaping @MainActor (Tab) -> Void,
+        removeRecentVisibility: @escaping @MainActor (TrackedWebViewOwner) -> Void
     ) {
-        self.webViewRegistry = webViewRegistry
+        self.webViewSessions = webViewSessions
         self.mediaProtectionOwner = mediaProtectionOwner
         self.trackingLifecycleOwner = trackingLifecycleOwner
         self.trackedCleanupExecutionOwner = trackedCleanupExecutionOwner
@@ -46,6 +48,7 @@ final class WebViewTrackedRegistrationOwner {
         self.performFallbackWebViewCleanup = performFallbackWebViewCleanup
         self.resolvedTab = resolvedTab
         self.refreshPrimaryTrackedWebView = refreshPrimaryTrackedWebView
+        self.removeRecentVisibility = removeRecentVisibility
     }
 
     func register(
@@ -58,7 +61,7 @@ final class WebViewTrackedRegistrationOwner {
         trackingLifecycleOwner.registerTrackedWebView(
             webView,
             for: owner,
-            in: webViewRegistry,
+            in: webViewSessions,
             removeFromContainers: { [removeWebViewFromContainers] webView in
                 removeWebViewFromContainers(webView)
             },
@@ -70,7 +73,37 @@ final class WebViewTrackedRegistrationOwner {
             },
             pruneInvalidDeferredCommands: { [pruneInvalidDeferredCommands] reason in
                 pruneInvalidDeferredCommands(reason)
+            },
+            canDisplaceWebView: { [mediaProtectionOwner] webView in
+                mediaProtectionOwner.isProtected(webView) == false
+            },
+            removeRecentVisibility: { [removeRecentVisibility] owner in
+                removeRecentVisibility(owner)
+            },
+            cleanupDisplacedWebView: { [weak self] webView, tabID in
+                guard let self else { return }
+                if let tab = resolvedTab(tabID) {
+                    tab.cleanupCloneWebView(webView)
+                } else {
+                    performFallbackWebViewCleanup(webView, tabID)
+                }
             }
+        )
+        if let tab = resolvedTab(tabId),
+           tab.requiresWebContentProcessRecovery(on: webView) {
+            _ = tab.reconcileWebContentProcessRecovery(on: webView)
+        }
+    }
+
+    @discardableResult
+    func promotePrimary(
+        _ webView: WKWebView,
+        owner: TrackedWebViewOwner
+    ) -> Bool {
+        trackingLifecycleOwner.promoteTrackedWebViewToPrimary(
+            owner: owner,
+            expectedWebView: webView,
+            in: webViewSessions
         )
     }
 
@@ -86,7 +119,7 @@ final class WebViewTrackedRegistrationOwner {
             expectedWebView: expectedWebView,
             removeFromSuperview: removeFromSuperview,
             removeRecentVisibility: removeRecentVisibility,
-            in: webViewRegistry,
+            in: webViewSessions,
             removeFromContainers: { [removeWebViewFromContainers] webView in
                 removeWebViewFromContainers(webView)
             },
@@ -95,6 +128,9 @@ final class WebViewTrackedRegistrationOwner {
             },
             pruneInvalidDeferredCommands: { [pruneInvalidDeferredCommands] reason in
                 pruneInvalidDeferredCommands(reason)
+            },
+            forgetRecentVisibility: { [weak self] owner in
+                self?.removeRecentVisibility(owner)
             }
         )
     }
@@ -123,7 +159,7 @@ final class WebViewTrackedRegistrationOwner {
             webView,
             owner: owner,
             tab: tab,
-            webViewRegistry: webViewRegistry,
+            webViewSessions: webViewSessions,
             trackingLifecycleOwner: trackingLifecycleOwner,
             runtime: cleanupExecutionRuntime()
         )
@@ -132,18 +168,18 @@ final class WebViewTrackedRegistrationOwner {
     func uninstallMediaProtectionObservationsIfUntracked(_ webView: WKWebView) {
         mediaProtectionOwner.uninstallObservationsIfUntracked(
             webView,
-            isTracked: webViewRegistry.isIndexed(webView)
+            isTracked: webViewSessions.isIndexed(webView)
         )
     }
 
-    private func installMediaProtectionObservationsIfNeeded(on webView: WKWebView) {
+    func installMediaProtectionObservationsIfNeeded(on webView: WKWebView) {
         mediaProtectionOwner.installFullscreenStateObservationIfNeeded(
             on: webView,
-            trackedOwner: { [webViewRegistry] webView in
-                webViewRegistry.trackedOwner(containing: webView)
+            trackedOwner: { [webViewSessions] webView in
+                webViewSessions.trackedOwner(containing: webView)
             },
-            fallbackWindowID: { [webViewRegistry] webView in
-                webViewRegistry.trackedOwner(containing: webView)?.windowID
+            fallbackWindowID: { [webViewSessions] webView in
+                webViewSessions.trackedOwner(containing: webView)?.windowID
             },
             flushDeferredProtectedCommands: { [flushDeferredProtectedCommands] webViewID in
                 flushDeferredProtectedCommands(webViewID)
@@ -169,11 +205,11 @@ final class WebViewTrackedRegistrationOwner {
 
         mediaProtectionOwner.installNowPlayingSessionObservationIfNeeded(
             on: webView,
-            trackedOwner: { [webViewRegistry] webView in
-                webViewRegistry.trackedOwner(containing: webView)
+            trackedOwner: { [webViewSessions] webView in
+                webViewSessions.trackedOwner(containing: webView)
             },
-            fallbackWindowID: { [webViewRegistry] webView in
-                webViewRegistry.trackedOwner(containing: webView)?.windowID
+            fallbackWindowID: { [webViewSessions] webView in
+                webViewSessions.trackedOwner(containing: webView)?.windowID
             }
         )
     }
@@ -183,9 +219,6 @@ final class WebViewTrackedRegistrationOwner {
             finishDestructiveCleanupSuppression: { [finishDestructiveCleanupNavigation] webView in
                 finishDestructiveCleanupNavigation(webView)
             },
-            removeFromContainers: { [removeWebViewFromContainers] webView in
-                removeWebViewFromContainers(webView)
-            },
             uninstallRuntimeObservationsIfUntracked: { [weak self] webView in
                 self?.uninstallMediaProtectionObservationsIfUntracked(webView)
             },
@@ -194,6 +227,9 @@ final class WebViewTrackedRegistrationOwner {
             },
             fallbackCleanup: { [performFallbackWebViewCleanup] webView, tabID in
                 performFallbackWebViewCleanup(webView, tabID)
+            },
+            forgetRecentVisibility: { [removeRecentVisibility] owner in
+                removeRecentVisibility(owner)
             }
         )
     }

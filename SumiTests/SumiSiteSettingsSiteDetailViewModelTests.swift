@@ -108,6 +108,22 @@ final class SumiSiteSettingsSiteDetailViewModelTests: XCTestCase {
         XCTAssertTrue(harness.websiteDataService.exactHostRemovals.isEmpty)
     }
 
+    func testDeleteDataUsesPreparedProfileMutationBoundary() async throws {
+        let harness = try SiteSettingsRepositoryHarness()
+        let scope = siteScope(profile: harness.profile)
+        let viewModel = SumiSiteSettingsSiteDetailViewModel(
+            scope: scope,
+            repository: harness.repository
+        )
+        await viewModel.load(profile: harness.profile)
+
+        await viewModel.deleteData()
+
+        XCTAssertEqual(harness.websiteDataService.exactHostRemovals, ["example.com"])
+        XCTAssertEqual(viewModel.statusMessage, SumiSiteSettingsStrings.dataDeleted)
+        XCTAssertNil(viewModel.errorMessage)
+    }
+
     private func siteScope(profile: Profile) -> SumiPermissionSiteScope {
         SumiPermissionSiteScope(
             profilePartitionId: profile.id.uuidString,

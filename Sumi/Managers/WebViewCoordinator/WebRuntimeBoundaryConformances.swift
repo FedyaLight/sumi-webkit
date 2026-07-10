@@ -2,26 +2,22 @@ import Foundation
 import SumiWebRuntime
 
 extension Tab: WebRuntimeTabHandle {
-    public var localSession: TabWebViewSession {
-        webViewOwnershipOwner.localSession
-    }
-
     public var resolvedProfileId: UUID? {
         resolveProfile()?.id ?? profileId
     }
 }
 
-extension Tab: WebRuntimeTabMaterializing, WebRuntimeTabOwnershipMutating, WebRuntimeTabTeardownLifecycle {}
+extension Tab: WebRuntimeTabMaterializing, WebRuntimeTabTeardownLifecycle {}
 
 extension Tab: WebRuntimeTabSiteReloadPolicyNotifying {}
-
-extension Tab: WebRuntimeTabMainFrameLoading {}
 
 extension Tab: WebRuntimeTabAudioMuteSnapshotting {
     public var isAudioMuted: Bool {
         audioState.isMuted
     }
 }
+
+extension Tab: WebRuntimeRebuildableTab {}
 
 extension BrowserWindowState: WebRuntimeWindowHandle {
     var ephemeralTabHandles: [any WebRuntimeTabHandle] {

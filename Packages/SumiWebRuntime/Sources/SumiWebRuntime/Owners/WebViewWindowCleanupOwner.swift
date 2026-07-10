@@ -17,7 +17,7 @@ import WebKit
 @MainActor
 public final class WebViewWindowCleanupOwner {
     private let cleanupScopeOwner: WebViewCleanupScopeOwner
-    private let webViewRegistry: WindowWebViewRegistry
+    private let webViewSessions: WebViewSessionRepository
     private let visibleWebViewRuntimeOwner: any WebRuntimeVisiblePreparationControlling
     private let mediaProtectionOwner: WebViewMediaProtectionOwner
     private let browserRuntimeContext: @MainActor () -> WebViewCoordinatorBrowserRuntimeContext?
@@ -28,11 +28,12 @@ public final class WebViewWindowCleanupOwner {
         @MainActor (WKWebView, TrackedWebViewOwner, (any WebRuntimeTabHandle)?) -> Void
     private let refreshPrimaryTrackedWebView: @MainActor (any WebRuntimeTabHandle) -> Void
     private let removeCompositorContainerView: @MainActor (UUID) -> Void
+    private let flushDeferredProtectedCommands: @MainActor (ObjectIdentifier) -> Void
     private let finishCleanupSuppression: @MainActor ([ObjectIdentifier]) -> Void
 
     public init(
         cleanupScopeOwner: WebViewCleanupScopeOwner,
-        webViewRegistry: WindowWebViewRegistry,
+        webViewSessions: WebViewSessionRepository,
         visibleWebViewRuntimeOwner: any WebRuntimeVisiblePreparationControlling,
         mediaProtectionOwner: WebViewMediaProtectionOwner,
         browserRuntimeContext: @escaping @MainActor () -> WebViewCoordinatorBrowserRuntimeContext?,
@@ -43,10 +44,11 @@ public final class WebViewWindowCleanupOwner {
             @escaping @MainActor (WKWebView, TrackedWebViewOwner, (any WebRuntimeTabHandle)?) -> Void,
         refreshPrimaryTrackedWebView: @escaping @MainActor (any WebRuntimeTabHandle) -> Void,
         removeCompositorContainerView: @escaping @MainActor (UUID) -> Void,
+        flushDeferredProtectedCommands: @escaping @MainActor (ObjectIdentifier) -> Void,
         finishCleanupSuppression: @escaping @MainActor ([ObjectIdentifier]) -> Void
     ) {
         self.cleanupScopeOwner = cleanupScopeOwner
-        self.webViewRegistry = webViewRegistry
+        self.webViewSessions = webViewSessions
         self.visibleWebViewRuntimeOwner = visibleWebViewRuntimeOwner
         self.mediaProtectionOwner = mediaProtectionOwner
         self.browserRuntimeContext = browserRuntimeContext
@@ -55,6 +57,7 @@ public final class WebViewWindowCleanupOwner {
         self.cleanupUnprotectedTrackedWebView = cleanupUnprotectedTrackedWebView
         self.refreshPrimaryTrackedWebView = refreshPrimaryTrackedWebView
         self.removeCompositorContainerView = removeCompositorContainerView
+        self.flushDeferredProtectedCommands = flushDeferredProtectedCommands
         self.finishCleanupSuppression = finishCleanupSuppression
     }
 
@@ -72,7 +75,7 @@ public final class WebViewWindowCleanupOwner {
         visibleWebViewRuntimeOwner.cancelScheduledPreparation(for: windowId)
         cleanupScopeOwner.cleanupWindow(
             windowId,
-            entries: webViewRegistry.trackedWebViews(in: windowId),
+            entries: webViewSessions.queries.trackedWebViews(in: windowId),
             runtime: scopeRuntime()
         )
         removeCompositorContainerView(windowId)
@@ -80,15 +83,16 @@ public final class WebViewWindowCleanupOwner {
 
     public func cleanupAllWebViews() {
         cleanupScopeOwner.cleanupAllWebViews(
-            entries: webViewRegistry.trackedWebViews(),
-            totalWebViewCount: webViewRegistry.totalTrackedWebViewCount,
+            entries: webViewSessions.queries.trackedWebViews(),
+            totalWebViewCount: webViewSessions.queries.totalTrackedWebViewCount,
             runtime: scopeRuntime()
         )
 
-        if webViewRegistry.isEmpty {
-            webViewRegistry.removeAll()
+        if webViewSessions.queries.isTrackingEmpty {
             visibleWebViewRuntimeOwner.resetWindowRegistrations()
-            mediaProtectionOwner.removeVisualHandoffFullscreenAndNowPlayingState()
+            let newlyUnprotectedSourceIDs = mediaProtectionOwner
+                .removeVisualHandoffFullscreenAndNowPlayingState()
+            newlyUnprotectedSourceIDs.forEach(flushDeferredProtectedCommands)
         }
 
         SumiWebRuntimeDiagnostics.debug(

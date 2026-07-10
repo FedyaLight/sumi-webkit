@@ -84,8 +84,8 @@ struct TabFolderContextMenuActionOwner {
                 profileTarget: .init(
                     choices: profileChoices,
                     onSelect: { profileId in
-                        browserContext.tabManager.profileAssignmentOwner.assign(
-                            shortcutPin: pin,
+                        browserContext.tabManager.profileAssignments.shortcuts.assign(
+                            pin,
                             toExecutionProfile: profileId
                         )
                     }

@@ -21,7 +21,7 @@ final class BrowserTabSelectionOwner {
         let applySettingsSurfaceNavigation: (URL) -> Void
         let canMaterializeWebViewDuringStartup: (Tab) -> Bool
         let markTabAccessed: (UUID) -> Void
-        let webViewCoordinator: () -> WebViewCoordinator?
+        let ensureVisibleWebView: (Tab, UUID) -> Void
         let handleNativeNowPlayingTabActivated: (UUID) -> Void
         let scheduleNativeNowPlayingRefresh: (UInt64) -> Void
         let fetchVisibleFavicon: (Tab) -> Void
@@ -116,7 +116,7 @@ final class BrowserTabSelectionOwner {
         }
 
         actions.handleNativeNowPlayingTabActivated(tab.id)
-        tab.suspensionStateOwner.noteAccess()
+        tab.noteAccess()
         actions.dismissFloatingBarAfterSelection(windowState)
         actions.updateActiveSplitSide(tab.id, windowState.id)
 
@@ -269,12 +269,6 @@ final class BrowserTabSelectionOwner {
         actions: Actions
     ) {
         actions.markTabAccessed(tab.id)
-        guard let webViewCoordinator = actions.webViewCoordinator() else {
-            tab.loadWebViewIfNeeded()
-            return
-        }
-        if webViewCoordinator.getWebView(for: tab.id, in: windowState.id) == nil {
-            _ = webViewCoordinator.getOrCreateWebView(for: tab, in: windowState.id)
-        }
+        actions.ensureVisibleWebView(tab, windowState.id)
     }
 }

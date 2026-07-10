@@ -2,7 +2,6 @@ import Foundation
 
 @MainActor
 final class BrowserShellRuntime {
-    private var releaseWebViewCoordinator: (@MainActor (WebViewCoordinator?) -> Void)?
     private var adoptWebViewCoordinator: (@MainActor (WebViewCoordinator?) -> Void)?
     private var setDestructiveCleanupPreparer: (@MainActor (WebViewCoordinator?) -> Void)?
     private var windowRegistryChanged: (@MainActor (WindowRegistry?) -> Void)?
@@ -27,6 +26,10 @@ final class BrowserShellRuntime {
         return retainedWebViewCoordinator
     }
 
+    func requireWebViewOwnershipService() -> WebViewOwnershipService {
+        requireWebViewCoordinator().ownershipService
+    }
+
     func requireWindowRegistry() -> WindowRegistry {
         guard let retainedWindowRegistry else {
             preconditionFailure(
@@ -46,23 +49,34 @@ final class BrowserShellRuntime {
     }
 
     func attach(
-        releaseWebViewCoordinator: @escaping @MainActor (WebViewCoordinator?) -> Void,
         adoptWebViewCoordinator: @escaping @MainActor (WebViewCoordinator?) -> Void,
         setDestructiveCleanupPreparer: @escaping @MainActor (WebViewCoordinator?) -> Void,
         windowRegistryChanged: @escaping @MainActor (WindowRegistry?) -> Void
     ) {
-        self.releaseWebViewCoordinator = releaseWebViewCoordinator
         self.adoptWebViewCoordinator = adoptWebViewCoordinator
         self.setDestructiveCleanupPreparer = setDestructiveCleanupPreparer
         self.windowRegistryChanged = windowRegistryChanged
-        applyWebViewCoordinatorBinding(oldValue: nil, newValue: retainedWebViewCoordinator)
+        applyWebViewCoordinatorBinding(retainedWebViewCoordinator)
         windowRegistryChanged(retainedWindowRegistry)
     }
 
     func bindWebViewCoordinator(_ coordinator: WebViewCoordinator?) {
-        let oldValue = retainedWebViewCoordinator
+        guard let coordinator else {
+            precondition(
+                retainedWebViewCoordinator == nil,
+                "The browser kernel WebViewCoordinator has process lifetime and cannot be detached"
+            )
+            return
+        }
+        if let retainedWebViewCoordinator {
+            precondition(
+                retainedWebViewCoordinator === coordinator,
+                "The browser kernel WebViewCoordinator cannot be replaced"
+            )
+            return
+        }
         retainedWebViewCoordinator = coordinator
-        applyWebViewCoordinatorBinding(oldValue: oldValue, newValue: coordinator)
+        applyWebViewCoordinatorBinding(coordinator)
     }
 
     func bindWindowRegistry(_ registry: WindowRegistry?) {
@@ -70,16 +84,11 @@ final class BrowserShellRuntime {
         windowRegistryChanged?(registry)
     }
 
-    private func applyWebViewCoordinatorBinding(
-        oldValue: WebViewCoordinator?,
-        newValue: WebViewCoordinator?
-    ) {
-        guard let releaseWebViewCoordinator,
-              let adoptWebViewCoordinator,
+    private func applyWebViewCoordinatorBinding(_ coordinator: WebViewCoordinator?) {
+        guard let adoptWebViewCoordinator,
               let setDestructiveCleanupPreparer
         else { return }
-        releaseWebViewCoordinator(oldValue)
-        adoptWebViewCoordinator(newValue)
-        setDestructiveCleanupPreparer(newValue)
+        adoptWebViewCoordinator(coordinator)
+        setDestructiveCleanupPreparer(coordinator)
     }
 }

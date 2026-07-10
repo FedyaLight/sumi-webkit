@@ -1,5 +1,6 @@
 import AppKit
 import QuartzCore
+import SumiWebRuntime
 
 @MainActor
 protocol WindowWebContentVisualHandoffCoverContainer: AnyObject {
@@ -14,21 +15,34 @@ protocol WindowWebContentVisualHandoffCoverContainer: AnyObject {
 
 @MainActor
 final class WindowWebContentVisualHandoffCoverController {
+    private struct Cover {
+        let host: SumiWebViewContainerView
+        let protectionLease: WebViewVisualHandoffProtectionLease
+    }
+
     private static let releaseDelay: TimeInterval = 0.1
 
     private let containerView: any WindowWebContentVisualHandoffCoverContainer
-    private let releaseCover: (ObjectIdentifier, SumiWebViewContainerView) -> Void
-    private var coverHosts: [ObjectIdentifier: SumiWebViewContainerView] = [:]
+    private let releaseCover: (
+        ObjectIdentifier,
+        SumiWebViewContainerView,
+        WebViewVisualHandoffProtectionLease
+    ) -> Void
+    private var coversByWebViewID: [ObjectIdentifier: Cover] = [:]
     private var releaseWorkItem: DispatchWorkItem?
     private var releaseGeneration = 0
 
     var hasCovers: Bool {
-        !coverHosts.isEmpty
+        !coversByWebViewID.isEmpty
     }
 
     init(
         containerView: any WindowWebContentVisualHandoffCoverContainer,
-        releaseCover: @escaping (ObjectIdentifier, SumiWebViewContainerView) -> Void
+        releaseCover: @escaping (
+            ObjectIdentifier,
+            SumiWebViewContainerView,
+            WebViewVisualHandoffProtectionLease
+        ) -> Void
     ) {
         self.containerView = containerView
         self.releaseCover = releaseCover
@@ -36,14 +50,23 @@ final class WindowWebContentVisualHandoffCoverController {
 
     func placeCover(
         _ host: SumiWebViewContainerView,
-        frameInContainer: NSRect
+        frameInContainer: NSRect,
+        protectionLease: WebViewVisualHandoffProtectionLease
     ) {
+        let webViewID = ObjectIdentifier(host.webView)
+        precondition(
+            coversByWebViewID[webViewID] == nil,
+            "A visual handoff cover must release its existing protection lease before replacement"
+        )
         containerView.placeVisualHandoffCover(host, frameInContainer: frameInContainer)
-        coverHosts[ObjectIdentifier(host.webView)] = host
+        coversByWebViewID[webViewID] = Cover(
+            host: host,
+            protectionLease: protectionLease
+        )
     }
 
     func scheduleRelease() {
-        guard !coverHosts.isEmpty else { return }
+        guard !coversByWebViewID.isEmpty else { return }
 
         releaseWorkItem?.cancel()
         releaseGeneration &+= 1
@@ -79,10 +102,10 @@ final class WindowWebContentVisualHandoffCoverController {
         releaseWorkItem?.cancel()
         releaseWorkItem = nil
 
-        let covers = coverHosts
-        coverHosts.removeAll(keepingCapacity: true)
-        for (webViewID, host) in covers {
-            releaseCover(webViewID, host)
+        let covers = coversByWebViewID
+        coversByWebViewID.removeAll(keepingCapacity: true)
+        for (webViewID, cover) in covers {
+            releaseCover(webViewID, cover.host, cover.protectionLease)
         }
     }
 }

@@ -12,13 +12,14 @@ import WebKit
 /// Tab surface visible to WebRuntime owners (teardown, broadcast, planning).
 ///
 /// App-target `Tab` conforms; package code should depend only on this handle
-/// plus `TabWebViewSession` / registry types already in SumiWebRuntime.
+/// plus the WebView session handle already in SumiWebRuntime.
 @MainActor
 public protocol WebRuntimeTabHandle: AnyObject {
     var id: UUID { get }
 
-    /// Pre-runtime / tab-local session notes used by session-store promote paths.
-    var localSession: TabWebViewSession { get }
+    /// Stable ownership handle backed by the process WebView repository once
+    /// browser runtime composition is attached.
+    var webViewSession: WebViewSessionHandle { get }
 
     /// Whether visible preparation should materialize a primary WebView for this tab.
     var requiresPrimaryWebView: Bool { get }
@@ -81,18 +82,6 @@ extension WebRuntimeTabMaterializing {
     }
 }
 
-/// Ownership-mirror mutations used by assignment/rebuild (assign / clear / identity).
-///
-/// App-target `Tab` conforms. Only the AssignmentRebuild ownership-mirror
-/// surface — not full session teardown or clone cleanup.
-@MainActor
-public protocol WebRuntimeTabOwnershipMutating: AnyObject {
-    func assignWebViewToWindow(_ webView: WKWebView, windowId: UUID)
-    func clearCurrentWebViewOwnership()
-    func clearAllWebViewOwnership()
-    func currentWebViewIsIdentical(to webView: WKWebView) -> Bool
-}
-
 /// Tab-owned WebView teardown surface used by tab/window cleanup owners.
 ///
 /// App-target `Tab` conforms. Kept separate from `WebRuntimeTabHandle` and
@@ -101,7 +90,6 @@ public protocol WebRuntimeTabOwnershipMutating: AnyObject {
 public protocol WebRuntimeTabTeardownLifecycle: AnyObject {
     func cleanupCloneWebView(_ webView: WKWebView)
     func cancelPendingMainFrameNavigation()
-    func clearAllWebViewOwnership()
 }
 
 /// Site reload-policy flag refresh used after live WebView rebuild.
@@ -115,27 +103,6 @@ public protocol WebRuntimeTabSiteReloadPolicyNotifying: AnyObject {
     func updateAutoplayReloadRequirementForCurrentSite()
 }
 
-/// Main-frame load / extension-registration surface used by assignment/rebuild.
-///
-/// App-target `Tab` conforms. Initial-document handoff orchestration stays an
-/// app Runtime callback; this protocol covers the Tab-owned load primitives.
-@MainActor
-public protocol WebRuntimeTabMainFrameLoading: AnyObject {
-    func performMainFrameNavigationAfterContentBlockingAssetsIfNeeded(
-        on webView: WKWebView,
-        waitForContentBlockingAssets: Bool,
-        performLoad: @escaping @MainActor @Sendable (WKWebView) -> Void
-    )
-
-    func loadURL(
-        _ url: URL,
-        resolvedWebView: @escaping @MainActor @Sendable () -> WKWebView?,
-        reason: String
-    )
-
-    func registerTabWithExtensionRuntimeIfNeeded(reason: String)
-}
-
 /// Mute snapshot used when applying audio state to newly created clone WebViews.
 ///
 /// App-target `Tab` conforms (`audioState.isMuted`). Kept separate from
@@ -144,6 +111,18 @@ public protocol WebRuntimeTabMainFrameLoading: AnyObject {
 public protocol WebRuntimeTabAudioMuteSnapshotting: AnyObject {
     var isAudioMuted: Bool { get }
 }
+
+/// Complete tab capability required by assignment/rebuild orchestration.
+/// Ownership mutations themselves go through `webViewSession`; this composite
+/// keeps concrete app-target `Tab` out of SumiWebRuntime.
+@MainActor
+public protocol WebRuntimeRebuildableTab:
+    WebRuntimeTabHandle,
+    WebRuntimeTabMaterializing,
+    WebRuntimeTabTeardownLifecycle,
+    WebRuntimeTabSiteReloadPolicyNotifying,
+    WebRuntimeTabAudioMuteSnapshotting
+{}
 
 /// Visible-preparation bookkeeping used by window cleanup.
 ///

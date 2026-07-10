@@ -359,7 +359,7 @@ final class TabReloadPolicyStateOwner {
         reason: String,
         runtime: TabReloadPolicyRuntime,
         context: TabReloadPolicyWebViewRebuildContext
-    ) -> Bool {
+    ) -> TabWebViewReplacementOutcome {
         let requiresProtectionRebuild = protectionAttachmentRequiresNormalWebViewRebuild(
             for: targetURL,
             existingWebView: context.existingWebView(),
@@ -376,22 +376,24 @@ final class TabReloadPolicyStateOwner {
         )
         guard requiresProtectionRebuild || requiresSafariContentBlockerRebuild,
               context.existingWebView() != nil
-        else { return false }
+        else { return .notNeeded }
 
         let rebuildStart = Date()
         let previousProtectionState = protectionAppliedAttachmentState
         let previousSafariContentBlockerState = safariContentBlockerAppliedAttachmentState
 
-        guard rebuildNormalWebViewForConfigurationPolicy(
+        let replacementOutcome = rebuildNormalWebViewForConfigurationPolicy(
+            targetURL: targetURL ?? context.currentURL,
             reason: reason,
             context: context,
-            onTrackedWebViewRemovalFailure: {
+            onReplacementFailure: {
                 noteContentBlockingWebViewRebuildFailed(
                     restoringProtectionState: previousProtectionState,
                     restoringSafariContentBlockerState: previousSafariContentBlockerState
                 )
             }
-        ) else { return false }
+        )
+        guard replacementOutcome.didReplace else { return replacementOutcome }
 
         context.publishNavigationStateChangeIfNeeded(
             updateSafariContentBlockerReloadRequirementForCurrentSite(
@@ -418,7 +420,7 @@ final class TabReloadPolicyStateOwner {
                 runtime: runtime
             )
         )
-        return true
+        return replacementOutcome
     }
 
     @discardableResult
@@ -427,7 +429,7 @@ final class TabReloadPolicyStateOwner {
         reason: String,
         runtime: TabReloadPolicyRuntime,
         context: TabReloadPolicyWebViewRebuildContext
-    ) -> Bool {
+    ) -> TabWebViewReplacementOutcome {
         guard autoplayPolicyRequiresNormalWebViewRebuild(
             for: targetURL,
             existingWebView: context.existingWebView(),
@@ -436,12 +438,14 @@ final class TabReloadPolicyStateOwner {
             profile: context.profile,
             runtime: runtime
         ), context.existingWebView() != nil
-        else { return false }
+        else { return .notNeeded }
 
-        guard rebuildNormalWebViewForConfigurationPolicy(
+        let replacementOutcome = rebuildNormalWebViewForConfigurationPolicy(
+            targetURL: targetURL ?? context.currentURL,
             reason: reason,
             context: context
-        ) else { return false }
+        )
+        guard replacementOutcome.didReplace else { return replacementOutcome }
 
         context.publishNavigationStateChangeIfNeeded(
             updateAutoplayReloadRequirementForCurrentSite(
@@ -451,7 +455,7 @@ final class TabReloadPolicyStateOwner {
                 runtime: runtime
             )
         )
-        return true
+        return replacementOutcome
     }
 
     @discardableResult
@@ -556,14 +560,16 @@ final class TabReloadPolicyStateOwner {
 
     @discardableResult
     private func rebuildNormalWebViewForConfigurationPolicy(
+        targetURL: URL,
         reason: String,
         context: TabReloadPolicyWebViewRebuildContext,
-        onTrackedWebViewRemovalFailure: () -> Void = { /* No-op. */ }
-    ) -> Bool {
+        onReplacementFailure: () -> Void = { /* No-op. */ }
+    ) -> TabWebViewReplacementOutcome {
         webViewReplacementOwner.replaceNormalWebView(
+            targetURL: targetURL,
             reason: reason,
             context: context.replacementContext,
-            onTrackedWebViewRemovalFailure: onTrackedWebViewRemovalFailure
+            onReplacementFailure: onReplacementFailure
         )
     }
 

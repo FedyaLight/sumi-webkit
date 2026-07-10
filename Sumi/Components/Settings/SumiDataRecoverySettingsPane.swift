@@ -12,11 +12,7 @@ struct SumiDataRecoveryActions {
     let importBookmarksFromMenu: () -> Void
     let exportBrowser2ZenDocument: () throws -> Data
     let writeBackup: (URL) throws -> Void
-    let applyImport: (
-        _ data: SumiPortableData,
-        _ categories: Set<SumiImportCategory>,
-        _ mode: SumiImportApplyMode
-    ) async throws -> SumiImportApplyResult
+    let applyImport: (SumiImportRequest) async throws -> SumiImportReport
 }
 
 struct SumiDataRecoverySettingsPane: View {
@@ -244,11 +240,12 @@ struct SumiDataRecoverySettingsPane: View {
         Task { @MainActor in
             defer { isWorking = false }
             do {
-                let result = try await actions.applyImport(
-                    importPreview.data,
-                    selectedCategories,
-                    applyMode
-                )
+                let result = try await actions.applyImport(SumiImportRequest(
+                    sourceKind: importPreview.sourceKind,
+                    data: importPreview.data,
+                    categories: selectedCategories,
+                    mode: applyMode
+                ))
                 var messages = result.warnings
                 if let preRestoreBackupURL = result.preRestoreBackupURL {
                     messages.append("Pre-restore backup: \(preRestoreBackupURL.lastPathComponent)")

@@ -12,14 +12,12 @@ final class WebViewScopedCleanupValidationTests: XCTestCase {
         let webView = WKWebView()
         tab.replaceUntrackedWebView(webView)
 
-        XCTAssertFalse(validator.canCleanUpTabScopedWebView(
+        XCTAssertFalse(validator.canCleanUpDetachedWebView(
             with: ObjectIdentifier(webView),
             tabID: tab.id,
             context: makeContext(
                 webView: webView,
-                trackedOwner: TrackedWebViewOwner(tabID: tab.id, windowID: UUID()),
-                resolvedTab: tab,
-                allTabs: [tab]
+                residence: .window(.init(tabID: tab.id, windowID: UUID()))
             )
         ))
     }
@@ -30,24 +28,27 @@ final class WebViewScopedCleanupValidationTests: XCTestCase {
         let webView = WKWebView()
         tab.replaceUntrackedWebView(webView)
 
-        XCTAssertTrue(validator.canCleanUpTabScopedWebView(
+        XCTAssertTrue(validator.canCleanUpDetachedWebView(
             with: ObjectIdentifier(webView),
             tabID: tab.id,
-            context: makeContext(webView: webView, resolvedTab: tab, allTabs: [tab])
+            context: makeContext(
+                webView: webView,
+                residence: .untracked(tabID: tab.id)
+            )
         ))
     }
 
-    func testAllowsUnownedWebViewAfterTargetTabClearsOwnership() {
+    func testRejectsOwnerlessWebViewAfterTargetTabClearsOwnership() {
         let validator = WebViewTabScopedCleanupValidationOwner()
         let tab = makeTab()
         let webView = WKWebView()
         tab.replaceUntrackedWebView(webView)
         tab.clearCurrentWebViewOwnership()
 
-        XCTAssertTrue(validator.canCleanUpTabScopedWebView(
+        XCTAssertFalse(validator.canCleanUpDetachedWebView(
             with: ObjectIdentifier(webView),
             tabID: tab.id,
-            context: makeContext(webView: webView, resolvedTab: tab, allTabs: [tab])
+            context: makeContext(webView: webView)
         ))
     }
 
@@ -58,13 +59,12 @@ final class WebViewScopedCleanupValidationTests: XCTestCase {
         let webView = WKWebView()
         otherTab.replaceUntrackedWebView(webView)
 
-        XCTAssertFalse(validator.canCleanUpTabScopedWebView(
+        XCTAssertFalse(validator.canCleanUpDetachedWebView(
             with: ObjectIdentifier(webView),
             tabID: targetTab.id,
             context: makeContext(
                 webView: webView,
-                resolvedTab: targetTab,
-                allTabs: [targetTab, otherTab]
+                residence: .untracked(tabID: otherTab.id)
             )
         ))
     }
@@ -74,34 +74,48 @@ final class WebViewScopedCleanupValidationTests: XCTestCase {
         let tab = makeTab()
         let webView = WKWebView()
 
-        XCTAssertFalse(validator.canCleanUpTabScopedWebView(
+        XCTAssertFalse(validator.canCleanUpDetachedWebView(
             with: ObjectIdentifier(webView),
             tabID: tab.id,
-            context: makeContext(webView: nil, resolvedTab: tab, allTabs: [tab])
+            context: makeContext(webView: nil)
+        ))
+    }
+
+    func testFallbackCleanupRequiresExactPendingCleanupLease() {
+        let validator = WebViewTabScopedCleanupValidationOwner()
+        let webView = WKWebView()
+        let lease = WebViewPendingCleanupLease(id: UUID(), tabID: UUID())
+        let context = makeContext(
+            webView: webView,
+            residence: .pendingCleanup(lease)
+        )
+
+        XCTAssertTrue(validator.canPerformFallbackCleanup(
+            with: ObjectIdentifier(webView),
+            lease: lease,
+            context: context
+        ))
+        XCTAssertFalse(validator.canPerformFallbackCleanup(
+            with: ObjectIdentifier(webView),
+            lease: .init(id: UUID(), tabID: lease.tabID),
+            context: context
         ))
     }
 
     private func makeContext(
         webView: WKWebView?,
-        trackedOwner: TrackedWebViewOwner? = nil,
-        resolvedTab: Tab?,
-        allTabs: [Tab]
+        residence: WebViewResidence? = nil
     ) -> WebViewTabScopedCleanupValidationOwner.Context {
         let webViewID = webView.map(ObjectIdentifier.init)
         return WebViewTabScopedCleanupValidationOwner.Context(
-            trackedOwner: { candidateID in
-                guard let webViewID, candidateID == webViewID else { return nil }
-                return trackedOwner
-            },
             resolveWebView: { candidateID in
                 guard let webViewID, candidateID == webViewID else { return nil }
                 return webView
             },
-            resolveTab: { candidateTabID in
-                resolvedTab?.id == candidateTabID ? resolvedTab : nil
-            },
-            allTabs: { allTabs },
-            sessionStore: nil
+            residence: { candidateWebView in
+                guard candidateWebView === webView else { return nil }
+                return residence
+            }
         )
     }
 

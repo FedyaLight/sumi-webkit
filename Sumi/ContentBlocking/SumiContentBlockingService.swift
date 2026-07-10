@@ -1,269 +1,52 @@
 import Combine
-import CryptoKit
 import Foundation
-import WebKit
 
-struct SumiContentRuleListDefinition: Equatable, Sendable {
-    let name: String
-    let encodedContentRuleList: String
-    let storeIdentifierOverride: String?
-    private let contentHashOverride: String?
-
-    init(
-        name: String,
-        encodedContentRuleList: String,
-        storeIdentifierOverride: String? = nil,
-        contentHashOverride: String? = nil
-    ) {
-        self.name = name
-        self.encodedContentRuleList = encodedContentRuleList
-        self.storeIdentifierOverride = storeIdentifierOverride
-        self.contentHashOverride = contentHashOverride
-    }
-
-    var contentHash: String {
-        if let contentHashOverride {
-            return contentHashOverride
-        }
-        let digest = SHA256.hash(data: Data(encodedContentRuleList.utf8))
-        return digest.prefix(12).map { String(format: "%02x", $0) }.joined()
-    }
-
-    var webKitStoreIdentifier: String {
-        storeIdentifierOverride ?? SumiContentBlockerRulesIdentifier(
-            name: name,
-            tdsEtag: contentHash,
-            tempListId: nil,
-            allowListId: nil,
-            unprotectedSitesHash: nil
-        ).stringValue
-    }
-
-    func metadataOnly() -> SumiContentRuleListDefinition {
-        SumiContentRuleListDefinition(
-            name: name,
-            encodedContentRuleList: "",
-            storeIdentifierOverride: storeIdentifierOverride,
-            contentHashOverride: contentHash
-        )
-    }
-
-    static func == (lhs: SumiContentRuleListDefinition, rhs: SumiContentRuleListDefinition) -> Bool {
-        lhs.name == rhs.name
-            && lhs.storeIdentifierOverride == rhs.storeIdentifierOverride
-            && lhs.contentHash == rhs.contentHash
-    }
-}
-
-enum SumiContentBlockingPolicy: Equatable, Sendable {
-    case disabled
-    case enabled(ruleLists: [SumiContentRuleListDefinition])
-
-    static let defaultPolicy: SumiContentBlockingPolicy = .disabled
-
-    var ruleLists: [SumiContentRuleListDefinition] {
-        switch self {
-        case .disabled:
-            return []
-        case .enabled(let ruleLists):
-            return ruleLists
-        }
-    }
-
-    var shouldEnableContentBlockingFeature: Bool {
-        !ruleLists.isEmpty
-    }
-}
-
-protocol SumiContentRuleListCompiling: AnyObject, Sendable {
-    @MainActor
-    func lookUpContentRuleList(forIdentifier identifier: String) async -> WKContentRuleList?
-
-    @MainActor
-    func canLookUpContentRuleList(forIdentifier identifier: String) async -> Bool
-
-    @MainActor
-    func compileContentRuleList(forIdentifier identifier: String, encodedContentRuleList: String) async throws -> WKContentRuleList
-
-    @MainActor
-    func availableContentRuleListIdentifiers() async -> [String]
-
-    @MainActor
-    func removeContentRuleList(forIdentifier identifier: String) async throws
-}
-
-final class SumiWKContentRuleListCompiler: SumiContentRuleListCompiling, @unchecked Sendable {
-    private let storeOverride: WKContentRuleListStore?
-
-    init(store: WKContentRuleListStore? = nil) {
-        storeOverride = store
-    }
-
-    @MainActor
-    func lookUpContentRuleList(forIdentifier identifier: String) async -> WKContentRuleList? {
-        let store = store
-        return await withCheckedContinuation { continuation in
-            store.lookUpContentRuleList(forIdentifier: identifier) { ruleList, _ in
-                continuation.resume(returning: ruleList)
-            }
-        }
-    }
-
-    @MainActor
-    func canLookUpContentRuleList(forIdentifier identifier: String) async -> Bool {
-        await lookUpContentRuleList(forIdentifier: identifier) != nil
-    }
-
-    @MainActor
-    func compileContentRuleList(forIdentifier identifier: String, encodedContentRuleList: String) async throws -> WKContentRuleList {
-        let store = store
-        return try await withCheckedThrowingContinuation { continuation in
-            store.compileContentRuleList(
-                forIdentifier: identifier,
-                encodedContentRuleList: encodedContentRuleList
-            ) { ruleList, error in
-                if let error {
-                    continuation.resume(throwing: error)
-                } else if let ruleList {
-                    continuation.resume(returning: ruleList)
-                } else {
-                    continuation.resume(throwing: SumiContentBlockingCompilationError.missingCompiledRuleList(identifier))
-                }
-            }
-        }
-    }
-
-    @MainActor
-    func availableContentRuleListIdentifiers() async -> [String] {
-        let store = store
-        return await withCheckedContinuation { continuation in
-            store.getAvailableContentRuleListIdentifiers { identifiers in
-                continuation.resume(returning: identifiers ?? [])
-            }
-        }
-    }
-
-    @MainActor
-    func removeContentRuleList(forIdentifier identifier: String) async throws {
-        let store = store
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            store.removeContentRuleList(forIdentifier: identifier) { error in
-                if let error {
-                    continuation.resume(throwing: error)
-                } else {
-                    continuation.resume()
-                }
-            }
-        }
-    }
-
-    @MainActor
-    private var store: WKContentRuleListStore {
-        storeOverride ?? Self.defaultStore()
-    }
-
-    @MainActor
-    private static func defaultStore() -> WKContentRuleListStore {
-        #if DEBUG
-            if let testStore = xctestProcessIsolatedStore() {
-                return testStore
-            }
-        #endif
-
-        return WKContentRuleListStore.default()
-    }
-
-    #if DEBUG
-        @MainActor
-        private static func xctestProcessIsolatedStore() -> WKContentRuleListStore? {
-            let environment = ProcessInfo.processInfo.environment
-            guard environment["XCTestConfigurationFilePath"] != nil else { return nil }
-
-            let processID = ProcessInfo.processInfo.processIdentifier
-            let storeURL = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
-                .appendingPathComponent("SumiContentRuleListStore-XCTest", isDirectory: true)
-                .appendingPathComponent("\(processID)", isDirectory: true)
-            do {
-                try FileManager.default.createDirectory(
-                    at: storeURL,
-                    withIntermediateDirectories: true
-                )
-            } catch {
-                RuntimeDiagnostics.debug(category: "SafariContentBlocker") {
-                    "Could not create isolated XCTest content rule list store: \(error.localizedDescription)"
-                }
-                return nil
-            }
-            return WKContentRuleListStore(url: storeURL)
-        }
-    #endif
-}
-
-enum SumiContentBlockingCompilationError: Error, LocalizedError {
-    case missingCompiledRuleList(String)
-    case failedToCompileRuleList(String, String)
-
-    var identifier: String {
-        switch self {
-        case .missingCompiledRuleList(let identifier),
-             .failedToCompileRuleList(let identifier, _):
-            return identifier
-        }
-    }
-
-    var errorDescription: String? {
-        switch self {
-        case .missingCompiledRuleList(let identifier):
-            return "Compiled content rule list could not be looked up: \(identifier)"
-        case .failedToCompileRuleList(let identifier, let reason):
-            return "Failed to compile content rule list \(identifier): \(reason)"
-        }
-    }
-}
-
-struct SumiPreparedContentBlockingUpdate {
-    let policy: SumiContentBlockingPolicy
-    let updateEvent: SumiContentBlockerRulesUpdate
-}
-
+/// Coordinates policy transitions and refresh task lifetime. WebKit IO,
+/// transition decisions, observer publication, and compiled-list retirement
+/// are delegated to components that own those states directly.
 @MainActor
 final class SumiContentBlockingService {
+    private enum TaskKey: Hashable {
+        case compilation
+    }
+
     let privacyConfigurationManager: SumiContentBlockingPrivacyConfigurationManager
 
     private let ruleListMaterializer: SumiContentRuleListMaterializer
-    private let updatesSubject: CurrentValueSubject<SumiContentBlockerRulesUpdate?, Never>
-    private let ruleListProvider: SumiContentRuleListSetProviding?
-    private let compiledRuleListCleanupOwner: SumiCompiledContentRuleListCleanupOwner
-    private let scheduledTasks = SumiContentBlockingScheduledTaskOwner()
-    private var currentPolicy: SumiContentBlockingPolicy
-    private var compilationGeneration = 0
-    private var ruleListRefreshGeneration = 0
-    private var profileRefreshGenerations: [String: Int] = [:]
-    private var profileUpdateSubjects: [String: CurrentValueSubject<SumiContentBlockerRulesUpdate?, Never>] = [:]
-    private var cancellables = Set<AnyCancellable>()
+    private let publication: SumiContentBlockingPublication
+    private let profileRuntime: SumiProfileContentBlockingRuntime?
+    private let taskRegistry = ContentBlockingTaskRegistry<TaskKey>()
+    private let stateMachine: SumiContentBlockingStateMachine
+    private var ruleListProviderRuntime: SumiRuleListProviderRuntime?
 
-    private(set) var latestUpdate: SumiContentBlockerRulesUpdate?
+    var latestUpdate: SumiContentBlockerRulesUpdate? {
+        publication.latestUpdate
+    }
 
     var latestRuleListIdentifiers: [String] {
-        latestUpdate?.rules.map(\.storeIdentifier).sorted() ?? []
+        publication.latestRuleListIdentifiers
     }
 
     #if DEBUG
         convenience init(
             policy: SumiContentBlockingPolicy = .defaultPolicy,
-            compiler: SumiContentRuleListCompiling = SumiWKContentRuleListCompiler(),
+            compiler: SumiContentRuleListCompiling =
+                SumiWKContentRuleListCompiler(),
             ruleListProvider: SumiContentRuleListSetProviding? = nil,
-            compiledRuleListCatalog: SumiCompiledContentRuleListCataloging = SumiContentBlockingService.defaultCompiledRuleListCatalog,
-            startupDiagnostics: any SumiProtectionStartupRestoreDiagnosticsRecording = SumiProtectionStartupRestoreDiagnosticsDefaults.recorder
+            compiledRuleListCatalog: SumiCompiledContentRuleListCataloging =
+                SumiContentBlockingService.defaultCompiledRuleListCatalog,
+            startupDiagnostics: any SumiProtectionStartupRestoreDiagnosticsRecording =
+                SumiProtectionStartupRestoreDiagnosticsDefaults.recorder
         ) {
+            let materializer = SumiContentRuleListMaterializer(
+                compiler: compiler,
+                startupDiagnostics: startupDiagnostics
+            )
             self.init(
                 policy: policy,
                 ruleListProvider: ruleListProvider,
-                ruleListMaterializer: SumiContentRuleListMaterializer(
-                    compiler: compiler,
-                    startupDiagnostics: startupDiagnostics
-                ),
-                compiledRuleListCleanupOwner: SumiCompiledContentRuleListCleanupOwner(
+                ruleListMaterializer: materializer,
+                retirement: SumiCompiledContentRuleListRetirement(
                     compiler: compiler,
                     catalog: compiledRuleListCatalog,
                     startupDiagnostics: startupDiagnostics
@@ -271,122 +54,130 @@ final class SumiContentBlockingService {
             )
         }
     #else
-    convenience init(
-        policy: SumiContentBlockingPolicy = .defaultPolicy,
-        compiler: SumiContentRuleListCompiling = SumiWKContentRuleListCompiler(),
-        ruleListProvider: SumiContentRuleListSetProviding? = nil,
-        compiledRuleListCatalog: SumiCompiledContentRuleListCataloging = SumiContentBlockingService.defaultCompiledRuleListCatalog
-    ) {
-        self.init(
-            policy: policy,
-            ruleListProvider: ruleListProvider,
-            ruleListMaterializer: SumiContentRuleListMaterializer(compiler: compiler),
-            compiledRuleListCleanupOwner: SumiCompiledContentRuleListCleanupOwner(
-                compiler: compiler,
-                catalog: compiledRuleListCatalog
+        convenience init(
+            policy: SumiContentBlockingPolicy = .defaultPolicy,
+            compiler: SumiContentRuleListCompiling =
+                SumiWKContentRuleListCompiler(),
+            ruleListProvider: SumiContentRuleListSetProviding? = nil,
+            compiledRuleListCatalog: SumiCompiledContentRuleListCataloging =
+                SumiContentBlockingService.defaultCompiledRuleListCatalog
+        ) {
+            let materializer = SumiContentRuleListMaterializer(compiler: compiler)
+            self.init(
+                policy: policy,
+                ruleListProvider: ruleListProvider,
+                ruleListMaterializer: materializer,
+                retirement: SumiCompiledContentRuleListRetirement(
+                    compiler: compiler,
+                    catalog: compiledRuleListCatalog
+                )
             )
-        )
-    }
+        }
     #endif
 
     private init(
         policy: SumiContentBlockingPolicy,
         ruleListProvider: SumiContentRuleListSetProviding?,
         ruleListMaterializer: SumiContentRuleListMaterializer,
-        compiledRuleListCleanupOwner: SumiCompiledContentRuleListCleanupOwner
+        retirement: SumiCompiledContentRuleListRetirement
     ) {
-        currentPolicy = policy
         self.ruleListMaterializer = ruleListMaterializer
-        self.ruleListProvider = ruleListProvider
-        self.compiledRuleListCleanupOwner = compiledRuleListCleanupOwner
-        privacyConfigurationManager = SumiContentBlockingPrivacyConfigurationManager(
-            isContentBlockingEnabled: policy.shouldEnableContentBlockingFeature
+        let stateMachine = SumiContentBlockingStateMachine(policy: policy)
+        self.stateMachine = stateMachine
+        let privacyConfigurationManager =
+            SumiContentBlockingPrivacyConfigurationManager(
+                isContentBlockingEnabled: policy.shouldEnableContentBlockingFeature
+            )
+        self.privacyConfigurationManager = privacyConfigurationManager
+        let initialUpdate: SumiContentBlockerRulesUpdate? =
+            policy.ruleLists.isEmpty && ruleListProvider == nil
+                ? SumiContentBlockingPublication.emptyUpdate()
+                : nil
+        let publication = SumiContentBlockingPublication(
+            initialUpdate: initialUpdate,
+            retirement: retirement,
+            materializer: ruleListMaterializer
         )
-
-        let usesDynamicRuleSource = ruleListProvider != nil
-
-        let initialUpdate: SumiContentBlockerRulesUpdate?
-        if policy.ruleLists.isEmpty, !usesDynamicRuleSource {
-            initialUpdate = Self.emptyUpdate()
+        self.publication = publication
+        if let ruleListProvider,
+           ruleListProvider.hasProfileSpecificRuleLists {
+            profileRuntime = SumiProfileContentBlockingRuntime(
+                ruleListProvider: ruleListProvider,
+                materializer: ruleListMaterializer,
+                publication: publication,
+                privacyConfigurationManager: privacyConfigurationManager,
+                globalState: stateMachine
+            )
         } else {
-            initialUpdate = nil
+            profileRuntime = nil
         }
-        latestUpdate = initialUpdate
-        updatesSubject = CurrentValueSubject(initialUpdate)
 
         if let ruleListProvider {
-            bindRuleListProvider(ruleListProvider)
-            scheduleRuleListProviderRefresh(delayNanoseconds: 0)
-        } else if !policy.ruleLists.isEmpty {
-            scheduleCompilation(for: policy)
+            ruleListProviderRuntime = SumiRuleListProviderRuntime(
+                provider: ruleListProvider,
+                updateTarget: self
+            )
+        } else if let request = stateMachine.beginInitialCompilation() {
+            scheduleCompilation(request)
         }
     }
 
-    private static let defaultCompiledRuleListCatalog: SumiCompiledContentRuleListCataloging =
-        SumiCompiledContentRuleListCatalog()
+    private static let defaultCompiledRuleListCatalog:
+        SumiCompiledContentRuleListCataloging =
+            SumiCompiledContentRuleListCatalog()
 
     isolated deinit {
-        cancelScheduledTasksForShutdown()
+        taskRegistry.cancelAll()
+        ruleListProviderRuntime?.stop()
+        profileRuntime?.stop()
     }
 
     var updatesPublisher: AnyPublisher<SumiContentBlockerRulesUpdate, Never> {
-        updatesSubject.compactMap { $0 }.eraseToAnyPublisher()
+        publication.updatesPublisher
     }
 
-    func userContentPublisher(for scriptsProvider: SumiNormalTabUserScripts) -> AnyPublisher<SumiNormalTabUserContent, Never> {
-        updatesPublisher
-            .map { update in
-                SumiNormalTabUserContent(
-                    contentBlockingUpdate: Self.normalTabContentBlockingUpdate(for: update),
-                    sourceProvider: scriptsProvider
-                )
-            }
-            .eraseToAnyPublisher()
+    func userContentPublisher(
+        for scriptsProvider: SumiNormalTabUserScripts
+    ) -> AnyPublisher<SumiNormalTabUserContent, Never> {
+        publication.userContentPublisher(scriptsProvider: scriptsProvider)
     }
 
     func userContentPublisher(
         for scriptsProvider: SumiNormalTabUserScripts,
         profileId: UUID?
     ) -> AnyPublisher<SumiNormalTabUserContent, Never> {
-        guard let profileId else {
-            return userContentPublisher(for: scriptsProvider)
+        guard let profileId, let profileRuntime
+        else {
+            return publication.userContentPublisher(
+                scriptsProvider: scriptsProvider
+            )
         }
-        guard ruleListProvider?.hasProfileSpecificRuleLists == true else {
-            return userContentPublisher(for: scriptsProvider)
-        }
-
-        let subject = profileSubject(for: profileId)
-        scheduleProfilePolicyRefresh(profileId: profileId, delayNanoseconds: 0)
-        return subject
-            .compactMap { $0 }
-            .map { update in
-                SumiNormalTabUserContent(
-                    contentBlockingUpdate: Self.normalTabContentBlockingUpdate(for: update),
-                    sourceProvider: scriptsProvider
-                )
-            }
-            .eraseToAnyPublisher()
+        return profileRuntime.userContentPublisher(
+            scriptsProvider: scriptsProvider,
+            profileId: profileId
+        )
     }
 
     func setPolicy(_ policy: SumiContentBlockingPolicy) {
-        guard policy != currentPolicy else {
-            if latestUpdate == nil, policy.ruleLists.isEmpty {
-                scheduledTasks.cancelCompilationTask()
-                privacyConfigurationManager.setContentBlockingEnabled(false)
-                publish(Self.emptyUpdate(), cleaningUpAfter: nil)
-            }
+        let request = stateMachine.requestPolicy(
+            policy,
+            hasPublishedUpdate: latestUpdate != nil
+        )
+        switch request {
+        case .ignored:
             return
-        }
-
-        let previousPolicy = currentPolicy
-        currentPolicy = policy
-        privacyConfigurationManager.setContentBlockingEnabled(policy.shouldEnableContentBlockingFeature)
-
-        if policy.ruleLists.isEmpty {
-            scheduledTasks.cancelCompilationTask()
-            publish(Self.emptyUpdate(), cleaningUpAfter: latestUpdate)
-        } else {
-            scheduleCompilation(for: policy, previousPolicy: previousPolicy)
+        case .publishDisabled:
+            taskRegistry.cancelTask(for: .compilation)
+            privacyConfigurationManager.setContentBlockingEnabled(false)
+            publication.publish(
+                SumiContentBlockingPublication.emptyUpdate(),
+                replacing: latestUpdate
+            )
+        case .compile(let compilation):
+            privacyConfigurationManager.setContentBlockingEnabled(
+                policy.shouldEnableContentBlockingFeature
+            )
+            scheduleCompilation(compilation)
         }
     }
 
@@ -401,27 +192,26 @@ final class SumiContentBlockingService {
                     ? definitions
                     : definitions.map { $0.metadataOnly() }
             )
-        let update = try await ruleListMaterializer.updateEvent(for: definitions)
         return SumiPreparedContentBlockingUpdate(
             policy: policy,
-            updateEvent: update
+            updateEvent: try await ruleListMaterializer.updateEvent(
+                for: definitions
+            )
         )
     }
 
-    /// Restores already-compiled WebKit rule lists without rehydrating their encoded JSON payloads.
-    /// Use this only for persisted generations that must already exist in `WKContentRuleListStore`;
-    /// callers that need repair-on-miss should fall back to `prepareRuleListUpdate`.
     func prepareExistingRuleListUpdate(
         ruleLists definitions: [SumiContentRuleListDefinition]
     ) async throws -> SumiPreparedContentBlockingUpdate {
-        let metadataOnlyDefinitions = definitions.map { $0.metadataOnly() }
-        let policy: SumiContentBlockingPolicy = metadataOnlyDefinitions.isEmpty
+        let definitions = definitions.map { $0.metadataOnly() }
+        let policy: SumiContentBlockingPolicy = definitions.isEmpty
             ? .disabled
-            : .enabled(ruleLists: metadataOnlyDefinitions)
-        let update = try await ruleListMaterializer.existingUpdateEvent(for: metadataOnlyDefinitions)
+            : .enabled(ruleLists: definitions)
         return SumiPreparedContentBlockingUpdate(
             policy: policy,
-            updateEvent: update
+            updateEvent: try await ruleListMaterializer.existingUpdateEvent(
+                for: definitions
+            )
         )
     }
 
@@ -429,277 +219,126 @@ final class SumiContentBlockingService {
         _ preparedUpdate: SumiPreparedContentBlockingUpdate,
         refreshProfileSubjects: Bool = true
     ) {
-        compilationGeneration += 1
-        ruleListRefreshGeneration += 1
-        currentPolicy = preparedUpdate.policy
+        guard let staged = stagePreparedContentBlockingUpdate(
+            preparedUpdate,
+            refreshProfileSubjects: refreshProfileSubjects
+        ) else { return }
+        publishStagedContentBlockingUpdate(staged)
+    }
+
+    func stagePreparedContentBlockingUpdate(
+        _ preparedUpdate: SumiPreparedContentBlockingUpdate,
+        refreshProfileSubjects: Bool = true
+    ) -> SumiStagedContentBlockingPublication? {
+        guard let generation = stateMachine.stagePreparedPolicy(
+            preparedUpdate.policy
+        ) else { return nil }
+        ruleListProviderRuntime?.invalidatePendingRefresh()
         privacyConfigurationManager.setContentBlockingEnabled(
             preparedUpdate.policy.shouldEnableContentBlockingFeature
         )
-        publish(preparedUpdate.updateEvent, cleaningUpAfter: latestUpdate)
-        if refreshProfileSubjects {
-            scheduleActiveProfilePolicyRefreshes(delayNanoseconds: 0)
-        }
+        return SumiStagedContentBlockingPublication(
+            compilationGeneration: generation,
+            updateEvent: preparedUpdate.updateEvent,
+            previousUpdate: publication.stage(preparedUpdate.updateEvent),
+            refreshProfileSubjects: refreshProfileSubjects
+        )
     }
 
-    private func bindRuleListProvider(_ provider: SumiContentRuleListSetProviding) {
-        provider.changesPublisher
-            .sink { [weak self] in
-                self?.scheduleRuleListProviderRefresh(refreshProfileSubjects: true)
-            }
-            .store(in: &cancellables)
-    }
-
-    private func scheduleRuleListProviderRefresh(
-        refreshProfileSubjects: Bool = false,
-        delayNanoseconds: UInt64 = 150_000_000
+    func publishStagedContentBlockingUpdate(
+        _ staged: SumiStagedContentBlockingPublication
     ) {
-        ruleListRefreshGeneration += 1
-        let generation = ruleListRefreshGeneration
-
-        scheduledTasks.scheduleRuleListRefreshTask { token in
-            Task { [weak self] in
-                if delayNanoseconds > 0 {
-                    try? await Task.sleep(nanoseconds: delayNanoseconds)
-                }
-                guard let self else { return }
-                defer {
-                    self.scheduledTasks.finishRuleListRefreshTask(token: token)
-                }
-                guard !Task.isCancelled,
-                      generation == self.ruleListRefreshGeneration
-                else { return }
-
-                do {
-                    let ruleLists = try self.ruleLists(profileId: nil)
-                    guard generation == self.ruleListRefreshGeneration else { return }
-                    self.setPolicy(ruleLists.isEmpty ? .disabled : .enabled(ruleLists: ruleLists))
-                    if refreshProfileSubjects {
-                        self.scheduleActiveProfilePolicyRefreshes(delayNanoseconds: 0)
-                    }
-                } catch {
-                    guard generation == self.ruleListRefreshGeneration else { return }
-                    if self.latestUpdate == nil {
-                        self.currentPolicy = .disabled
-                        self.privacyConfigurationManager.setContentBlockingEnabled(false)
-                        self.publish(Self.emptyUpdate(), cleaningUpAfter: nil)
-                    }
-                    if refreshProfileSubjects {
-                        self.scheduleActiveProfilePolicyRefreshes(delayNanoseconds: 0)
-                    }
-                }
-            }
+        guard stateMachine.canPublishStagedUpdate(
+            generation: staged.compilationGeneration
+        ) else { return }
+        publication.publishStaged(
+            staged.updateEvent,
+            replacing: staged.previousUpdate
+        )
+        if staged.refreshProfileSubjects {
+            profileRuntime?.scheduleActiveRefreshes(delayNanoseconds: 0)
         }
     }
 
-    private func scheduleActiveProfilePolicyRefreshes(delayNanoseconds: UInt64 = 150_000_000) {
-        for key in Array(profileUpdateSubjects.keys) {
-            if let profileId = UUID(uuidString: key) {
-                scheduleProfilePolicyRefresh(
-                    profileId: profileId,
-                    delayNanoseconds: delayNanoseconds
-                )
-            }
-        }
-    }
-
-    private func scheduleProfilePolicyRefresh(
-        profileId: UUID,
-        delayNanoseconds: UInt64 = 150_000_000
-    ) {
-        let key = profileId.uuidString.lowercased()
-        let generation = (profileRefreshGenerations[key] ?? 0) + 1
-        profileRefreshGenerations[key] = generation
-
-        scheduledTasks.scheduleProfileRefreshTask(key: key) { token in
-            Task { [weak self] in
-                if delayNanoseconds > 0 {
-                    try? await Task.sleep(nanoseconds: delayNanoseconds)
-                }
-                guard let self else { return }
-                defer {
-                    self.scheduledTasks.finishProfileRefreshTask(key: key, token: token)
-                }
-                guard !Task.isCancelled,
-                      self.profileRefreshGenerations[key] == generation
-                else { return }
-
-                do {
-                    let ruleLists = try self.ruleLists(profileId: profileId)
-                    guard self.profileRefreshGenerations[key] == generation else { return }
-                    let update = try await self.ruleListMaterializer.updateEvent(for: ruleLists)
-                    guard self.profileRefreshGenerations[key] == generation else { return }
-                    if !ruleLists.isEmpty {
-                        self.privacyConfigurationManager.setContentBlockingEnabled(true)
-                    } else if self.currentPolicy.ruleLists.isEmpty {
-                        self.privacyConfigurationManager.setContentBlockingEnabled(false)
-                    }
-                    self.publishProfileUpdate(update, for: profileId)
-                } catch {
-                    guard self.profileRefreshGenerations[key] == generation else { return }
-                    let subject = self.profileSubject(for: profileId)
-                    if subject.value == nil {
-                        subject.send(Self.emptyUpdate())
-                    }
-                }
-            }
-        }
-    }
-
-    private func ruleLists(profileId: UUID?) throws -> [SumiContentRuleListDefinition] {
-        if let ruleListProvider {
-            return try ruleListProvider.ruleListSet(profileId: profileId).allDefinitions
-        }
-
-        return currentPolicy.ruleLists
-    }
-
-    private func scheduleCompilation(
-        for policy: SumiContentBlockingPolicy,
-        previousPolicy: SumiContentBlockingPolicy? = nil
-    ) {
-        compilationGeneration += 1
-        let generation = compilationGeneration
-
-        scheduledTasks.scheduleCompilationTask { token in
-            Task { [weak self] in
-                guard let self else { return }
-                defer {
-                    self.scheduledTasks.finishCompilationTask(token: token)
-                }
-                guard !Task.isCancelled else { return }
-                await self.compileAndPublish(
-                    policy: policy,
-                    generation: generation,
-                    previousPolicy: previousPolicy
-                )
-            }
-        }
-    }
-
-    private func cancelScheduledTasksForShutdown() {
-        compilationGeneration += 1
-        ruleListRefreshGeneration += 1
-        scheduledTasks.cancelAllTasksForShutdown()
-        profileRefreshGenerations = profileRefreshGenerations.mapValues { $0 + 1 }
+    func stopRuntime() {
+        guard stateMachine.stop() else { return }
+        ruleListProviderRuntime?.stop()
+        taskRegistry.cancelAll()
+        profileRuntime?.stop()
     }
 
     #if DEBUG
         func drainScheduledTasksForTests(cancel: Bool = false) async {
-            await scheduledTasks.drainScheduledTasksForTests(cancel: cancel)
+            await taskRegistry.drainTasksForTests(cancel: cancel)
+            await ruleListProviderRuntime?.drainTasksForTests(cancel: cancel)
+            await profileRuntime?.drainTasksForTests(cancel: cancel)
         }
     #endif
 
+    private func scheduleCompilation(
+        _ request: SumiContentBlockingCompilationRequest
+    ) {
+        taskRegistry.replaceTask(for: .compilation) { [weak self] in
+            guard let self, !Task.isCancelled else { return }
+            await self.compileAndPublish(request)
+        }
+    }
+
     private func compileAndPublish(
-        policy: SumiContentBlockingPolicy,
-        generation: Int,
-        previousPolicy: SumiContentBlockingPolicy?
+        _ request: SumiContentBlockingCompilationRequest
     ) async {
         do {
-            let update = try await ruleListMaterializer.updateEvent(for: policy.ruleLists)
-
-            guard generation == compilationGeneration, policy == currentPolicy else { return }
-            currentPolicy = Self.metadataOnlyPolicy(policy)
-            privacyConfigurationManager.setContentBlockingEnabled(policy.shouldEnableContentBlockingFeature)
-            publish(update, cleaningUpAfter: latestUpdate)
+            let update = try await ruleListMaterializer.updateEvent(
+                for: request.policy.ruleLists
+            )
+            guard stateMachine.acceptCompilation(request) else { return }
+            privacyConfigurationManager.setContentBlockingEnabled(
+                request.policy.shouldEnableContentBlockingFeature
+            )
+            publication.publish(update, replacing: latestUpdate)
         } catch {
-            guard generation == compilationGeneration, policy == currentPolicy else { return }
-            if let previousPolicy,
-               latestUpdate?.rules.isEmpty == false {
-                currentPolicy = previousPolicy
+            switch stateMachine.rejectCompilation(
+                request,
+                hasPublishedRules: latestUpdate?.rules.isEmpty == false
+            ) {
+            case .stale:
+                return
+            case .restore(let policy):
                 privacyConfigurationManager.setContentBlockingEnabled(
-                    previousPolicy.shouldEnableContentBlockingFeature
+                    policy.shouldEnableContentBlockingFeature
                 )
-            } else {
-                currentPolicy = .disabled
+            case .disable:
                 privacyConfigurationManager.setContentBlockingEnabled(false)
-                publish(Self.emptyUpdate(), cleaningUpAfter: latestUpdate)
+                publication.publish(
+                    SumiContentBlockingPublication.emptyUpdate(),
+                    replacing: latestUpdate
+                )
             }
         }
     }
+}
 
-    private func profileSubject(
-        for profileId: UUID
-    ) -> CurrentValueSubject<SumiContentBlockerRulesUpdate?, Never> {
-        let key = profileId.uuidString.lowercased()
-        if let subject = profileUpdateSubjects[key] {
-            return subject
-        }
-        let subject = CurrentValueSubject<SumiContentBlockerRulesUpdate?, Never>(nil)
-        profileUpdateSubjects[key] = subject
-        return subject
-    }
-
-    private func publishProfileUpdate(
-        _ update: SumiContentBlockerRulesUpdate,
-        for profileId: UUID
+extension SumiContentBlockingService: SumiRuleListProviderUpdateApplying {
+    func applyGlobalRuleListDefinitions(
+        _ definitions: [SumiContentRuleListDefinition],
+        refreshProfiles: Bool
     ) {
-        let subject = profileSubject(for: profileId)
-        let previousUpdate = subject.value
-        subject.send(update)
-        cleanupOrphanedCompiledRuleLists(
-            replacing: previousUpdate?.rules ?? [],
-            with: update.rules
+        setPolicy(
+            definitions.isEmpty
+                ? .disabled
+                : .enabled(ruleLists: definitions)
         )
-    }
-
-    private func publish(
-        _ update: SumiContentBlockerRulesUpdate,
-        cleaningUpAfter previousUpdate: SumiContentBlockerRulesUpdate? = nil
-    ) {
-        latestUpdate = update
-        updatesSubject.send(update)
-        cleanupOrphanedCompiledRuleLists(
-            replacing: previousUpdate?.rules ?? [],
-            with: update.rules
-        )
-    }
-
-    private func cleanupOrphanedCompiledRuleLists(
-        replacing previousRules: [SumiContentBlockerRules],
-        with activeRules: [SumiContentBlockerRules]
-    ) {
-        compiledRuleListCleanupOwner.cleanupOrphanedCompiledRuleLists(
-            replacing: previousRules,
-            with: activeRules,
-            forgetCachedRuleLists: { [ruleListMaterializer] identifiers in
-                ruleListMaterializer.forgetCachedCompiledRuleLists(withIdentifiers: identifiers)
-            }
-        )
-    }
-
-    private static func metadataOnlyPolicy(
-        _ policy: SumiContentBlockingPolicy
-    ) -> SumiContentBlockingPolicy {
-        switch policy {
-        case .disabled:
-            return .disabled
-        case .enabled(let ruleLists):
-            return .enabled(ruleLists: ruleLists.map { $0.metadataOnly() })
+        if refreshProfiles {
+            profileRuntime?.scheduleActiveRefreshes(delayNanoseconds: 0)
         }
     }
 
-    private static func emptyUpdate() -> SumiContentBlockerRulesUpdate {
-        SumiContentBlockerRulesUpdate(
-            rules: [],
-            changes: [:],
-            completionTokens: [],
-            lookupSucceededIdentifiers: [],
-            lookupFailedIdentifiers: [],
-            ruleListLookupDuration: nil
-        )
-    }
-
-    private static func normalTabContentBlockingUpdate(
-        for update: SumiContentBlockerRulesUpdate
-    ) -> SumiNormalTabContentBlockingUpdate {
-        SumiNormalTabContentBlockingUpdate(
-            globalRuleLists: update.rules.reduce(into: [:]) { result, rules in
-                result[rules.storeIdentifier] = rules.rulesList
-            },
-            updateRuleCount: update.rules.count,
-            lookupSucceededIdentifiers: update.lookupSucceededIdentifiers,
-            lookupFailedIdentifiers: update.lookupFailedIdentifiers,
-            ruleListLookupDuration: update.ruleListLookupDuration
-        )
+    func handleGlobalRuleListProviderFailure(refreshProfiles: Bool) {
+        if latestUpdate == nil {
+            setPolicy(.disabled)
+        }
+        if refreshProfiles {
+            profileRuntime?.scheduleActiveRefreshes(delayNanoseconds: 0)
+        }
     }
 }

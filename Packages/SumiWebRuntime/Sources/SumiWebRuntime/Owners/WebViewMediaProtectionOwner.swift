@@ -18,6 +18,19 @@ public enum SumiMediaTouchBarRecoveryNotificationKey {
 public final class WebViewMediaProtectionOwner {
     public init() {}
 
+    private final class UnprotectedWaiter {
+        let webViewReference: WebViewIdentityWitness
+        let continuation: CheckedContinuation<Bool, Never>
+
+        init(
+            webView: WKWebView,
+            continuation: CheckedContinuation<Bool, Never>
+        ) {
+            webViewReference = WebViewIdentityWitness(webView)
+            self.continuation = continuation
+        }
+    }
+
     public typealias WebViewResolver = (ObjectIdentifier) -> WKWebView?
     public typealias TrackedOwnerResolver = (WKWebView) -> TrackedWebViewOwner?
     public typealias WindowIDResolver = (WKWebView) -> UUID?
@@ -28,6 +41,9 @@ public final class WebViewMediaProtectionOwner {
 
     private let protectedCommandOwner = WebViewProtectedCommandOwner()
     private var nowPlayingSessionCancellablesByWebViewID: [ObjectIdentifier: AnyCancellable] = [:]
+    private var unprotectedWaitersByWebViewID: [
+        ObjectIdentifier: [UUID: UnprotectedWaiter]
+    ] = [:]
 
     public func note(_ webView: WKWebView) {
         protectedCommandOwner.note(webView)
@@ -65,11 +81,15 @@ public final class WebViewMediaProtectionOwner {
         currentURL: URL?,
         currentHistoryItem: WKBackForwardListItem?
     ) -> (webViewID: ObjectIdentifier, wasCancelled: Bool)? {
-        protectedCommandOwner.finishHistorySwipeProtection(
+        let result = protectedCommandOwner.finishHistorySwipeProtection(
             on: webView,
             currentURL: currentURL,
             currentHistoryItem: currentHistoryItem
         )
+        if let webViewID = result?.webViewID {
+            resumeUnprotectedWaitersIfPossible(for: webViewID)
+        }
+        return result
     }
 
     public func hasActiveHistorySwipe(in windowID: UUID) -> Bool {
@@ -88,12 +108,55 @@ public final class WebViewMediaProtectionOwner {
         protectedCommandOwner.isProtected(webViewID)
     }
 
-    public func beginVisualHandoffProtection(for webView: WKWebView) {
+    /// Suspends active maintenance work until all compositor/media ownership
+    /// claims for this exact WebView have ended. This is event-driven: disabled
+    /// maintenance installs no timers or polling work.
+    public func waitUntilUnprotected(_ webView: WKWebView) async -> Bool {
+        note(webView)
+        guard isProtected(webView) else { return true }
+
+        let webViewID = ObjectIdentifier(webView)
+        let waiterID = UUID()
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                if Task.isCancelled {
+                    continuation.resume(returning: false)
+                    return
+                }
+                if isProtected(webView) == false {
+                    continuation.resume(returning: true)
+                    return
+                }
+                unprotectedWaitersByWebViewID[webViewID, default: [:]][waiterID] =
+                    UnprotectedWaiter(
+                        webView: webView,
+                        continuation: continuation
+                    )
+            }
+        } onCancel: { [weak self] in
+            Task { @MainActor in
+                self?.cancelUnprotectedWaiter(
+                    waiterID,
+                    webViewID: webViewID
+                )
+            }
+        }
+    }
+
+    public func beginVisualHandoffProtection(
+        for webView: WKWebView
+    ) -> WebViewVisualHandoffProtectionLease {
         protectedCommandOwner.beginVisualHandoffProtection(for: webView)
     }
 
-    public func finishVisualHandoffProtection(for webView: WKWebView) -> ObjectIdentifier? {
-        protectedCommandOwner.finishVisualHandoffProtection(for: webView)
+    public func finishVisualHandoffProtection(
+        _ lease: WebViewVisualHandoffProtectionLease
+    ) -> ObjectIdentifier? {
+        let webViewID = protectedCommandOwner.finishVisualHandoffProtection(lease)
+        if let webViewID {
+            resumeUnprotectedWaitersIfPossible(for: webViewID)
+        }
+        return webViewID
     }
 
     public func closeActiveFullscreenMedia(
@@ -116,8 +179,19 @@ public final class WebViewMediaProtectionOwner {
         requestFullscreenMediaExit(on: webView)
     }
 
-    public func removeVisualHandoffFullscreenAndNowPlayingState() {
-        protectedCommandOwner.removeVisualHandoffAndFullscreenProtections()
+    @discardableResult
+    public func removeVisualHandoffFullscreenAndNowPlayingState() -> [ObjectIdentifier] {
+        let newlyUnprotectedSourceIDs = protectedCommandOwner
+            .removeVisualHandoffAndFullscreenProtections()
+        newlyUnprotectedSourceIDs.forEach(resumeUnprotectedWaitersIfPossible)
+        nowPlayingSessionCancellablesByWebViewID.values.forEach { $0.cancel() }
+        nowPlayingSessionCancellablesByWebViewID.removeAll()
+        return newlyUnprotectedSourceIDs
+    }
+
+    public func resetForTerminalShutdown() {
+        protectedCommandOwner.resetForTerminalShutdown()
+        resumeAllUnprotectedWaiters(returning: false)
         nowPlayingSessionCancellablesByWebViewID.values.forEach { $0.cancel() }
         nowPlayingSessionCancellablesByWebViewID.removeAll()
     }
@@ -183,6 +257,7 @@ public final class WebViewMediaProtectionOwner {
         nowPlayingSessionCancellablesByWebViewID.removeValue(
             forKey: ObjectIdentifier(webView)
         )?.cancel()
+        resumeUnprotectedWaitersIfPossible(for: ObjectIdentifier(webView))
     }
 
     @discardableResult
@@ -194,7 +269,7 @@ public final class WebViewMediaProtectionOwner {
         isCommandValid: WebViewProtectedCommandOwner.CommandValidator,
         dropCommand: WebViewProtectedCommandOwner.CommandDropper,
         didPruneStaleWebViewIDs: ([ObjectIdentifier]) -> Void
-    ) -> Bool {
+    ) -> DeferredProtectedCommandSchedulingOutcome {
         protectedCommandOwner.enqueueDeferredCommandIfNeeded(
             command,
             for: webView,
@@ -206,19 +281,22 @@ public final class WebViewMediaProtectionOwner {
         )
     }
 
-    public func commandsToFlushIfUnprotected(
+    @discardableResult
+    public func executeDeferredCommandsIfUnprotected(
         for webViewID: ObjectIdentifier,
         resolveWebView: WebViewResolver,
         isCommandValid: WebViewProtectedCommandOwner.CommandValidator,
         dropCommand: WebViewProtectedCommandOwner.CommandDropper,
-        didPruneStaleWebViewIDs: ([ObjectIdentifier]) -> Void
-    ) -> [DeferredWebViewCommand] {
-        protectedCommandOwner.commandsToFlushIfUnprotected(
+        didPruneStaleWebViewIDs: ([ObjectIdentifier]) -> Void,
+        executeCommand: (DeferredWebViewCommand) -> Bool
+    ) -> Int {
+        protectedCommandOwner.executeDeferredCommandsIfUnprotected(
             for: webViewID,
             resolveWebView: resolveWebView,
             isCommandValid: isCommandValid,
             dropCommand: dropCommand,
-            didPruneStaleWebViewIDs: didPruneStaleWebViewIDs
+            didPruneStaleWebViewIDs: didPruneStaleWebViewIDs,
+            executeCommand: executeCommand
         )
     }
 
@@ -358,6 +436,7 @@ public final class WebViewMediaProtectionOwner {
         SumiWebRuntimeDiagnostics.protectedWebViewTrace(
             "finishFullscreenProtection webView=\(result.webViewID)"
         )
+        resumeUnprotectedWaitersIfPossible(for: result.webViewID)
         flushDeferredProtectedCommands(result.webViewID)
 
         if let tabID = result.tabID,
@@ -396,5 +475,44 @@ public final class WebViewMediaProtectionOwner {
             object: webView,
             userInfo: userInfo
         )
+    }
+
+    private func resumeUnprotectedWaitersIfPossible(
+        for webViewID: ObjectIdentifier
+    ) {
+        guard isProtected(webViewID) == false,
+              let waiters = unprotectedWaitersByWebViewID.removeValue(
+                  forKey: webViewID
+              )
+        else {
+            return
+        }
+        for waiter in waiters.values {
+            waiter.continuation.resume(
+                returning: waiter.webViewReference.identifier == webViewID
+                    && waiter.webViewReference.resolve() != nil
+            )
+        }
+    }
+
+    private func cancelUnprotectedWaiter(
+        _ waiterID: UUID,
+        webViewID: ObjectIdentifier
+    ) {
+        guard let waiter = unprotectedWaitersByWebViewID[webViewID]?
+            .removeValue(forKey: waiterID)
+        else {
+            return
+        }
+        if unprotectedWaitersByWebViewID[webViewID]?.isEmpty == true {
+            unprotectedWaitersByWebViewID.removeValue(forKey: webViewID)
+        }
+        waiter.continuation.resume(returning: false)
+    }
+
+    private func resumeAllUnprotectedWaiters(returning result: Bool) {
+        let waiters = unprotectedWaitersByWebViewID.values.flatMap(\.values)
+        unprotectedWaitersByWebViewID.removeAll()
+        waiters.forEach { $0.continuation.resume(returning: result) }
     }
 }

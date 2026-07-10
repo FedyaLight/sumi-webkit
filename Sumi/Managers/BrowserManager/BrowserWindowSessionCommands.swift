@@ -93,7 +93,14 @@ final class BrowserWindowSessionCommands {
                 browserManager?.currentProfile
             },
             profileManager: browserManager.profileManager,
-            tabManager: browserManager.tabManager,
+            migrateProfileReferences: { [weak browserManager] deleted, fallback in
+                guard let browserManager else { return .rejected }
+                return await browserManager.tabManager.profileAssignments
+                    .deletion.migrate(
+                        deletedProfileID: deleted,
+                        fallbackProfileID: fallback
+                    )
+            },
             browsingDataCleanupService: browserManager.browsingDataCleanupService,
             websiteDataCleanupService: browserManager.dataServices.websiteDataCleanupService,
             faviconService: browserManager.dataServices.faviconService,

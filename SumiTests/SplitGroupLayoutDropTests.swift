@@ -51,7 +51,11 @@ final class SplitGroupLayoutDropTests: SplitGroupTestCase {
         let resized = SplitGroup(
             id: initial.id,
             layoutKind: initial.layoutKind,
-            layoutTree: initial.layoutTree.updatingChildSizes(at: [], sizes: [0.8, 0.2]),
+            layoutTree: SplitLayoutSizing.updatingChildSizes(
+                in: initial.layoutTree,
+                at: [],
+                sizes: [0.8, 0.2]
+            ),
             activeTabId: ids[0]
         )
 
@@ -67,7 +71,11 @@ final class SplitGroupLayoutDropTests: SplitGroupTestCase {
         let resized = SplitGroup(
             id: initial.id,
             layoutKind: initial.layoutKind,
-            layoutTree: initial.layoutTree.updatingChildSizes(at: [], sizes: [0.2, 0.5, 0.3]),
+            layoutTree: SplitLayoutSizing.updatingChildSizes(
+                in: initial.layoutTree,
+                at: [],
+                sizes: [0.2, 0.5, 0.3]
+            ),
             activeTabId: ids[1]
         )
 
@@ -85,7 +93,11 @@ final class SplitGroupLayoutDropTests: SplitGroupTestCase {
             relativeTo: ids[1],
             side: .center
         )
-        let resizedTree = replacedTree.updatingChildSizes(at: [], sizes: [0.2, 0.3, 0.5])
+        let resizedTree = SplitLayoutSizing.updatingChildSizes(
+            in: replacedTree,
+            at: [],
+            sizes: [0.2, 0.3, 0.5]
+        )
 
         XCTAssertEqual(replacedTree.tabIds, [ids[0], ids[3], ids[2]])
         guard case .split(_, _, let children) = resizedTree else {
@@ -99,7 +111,11 @@ final class SplitGroupLayoutDropTests: SplitGroupTestCase {
     func testLayoutStructureIgnoresResizeSizes() throws {
         let ids = makeIDs(3)
         let group = try XCTUnwrap(SplitGroup.make(tabIds: ids, layoutKind: .vertical))
-        let resized = group.layoutTree.updatingChildSizes(at: [], sizes: [0.2, 0.3, 0.5])
+        let resized = SplitLayoutSizing.updatingChildSizes(
+            in: group.layoutTree,
+            at: [],
+            sizes: [0.2, 0.3, 0.5]
+        )
 
         XCTAssertTrue(group.layoutTree.hasSameStructure(as: resized))
         XCTAssertFalse(group.layoutTree.hasSameStructure(as: group.layoutTree.swappingTabs(ids[0], ids[1])))
@@ -150,8 +166,22 @@ final class SplitGroupLayoutDropTests: SplitGroupTestCase {
         let group = try XCTUnwrap(SplitGroup.make(tabIds: ids, layoutKind: .horizontal))
         let bounds = CGRect(x: 0, y: 0, width: 800, height: 600)
 
-        XCTAssertEqual(group.layoutTree.leafHit(at: CGPoint(x: 400, y: 500), in: bounds)?.tabId, ids[0])
-        XCTAssertEqual(group.layoutTree.leafHit(at: CGPoint(x: 400, y: 100), in: bounds)?.tabId, ids[1])
+        XCTAssertEqual(
+            SplitLayoutGeometry.leafHit(
+                in: group.layoutTree,
+                at: CGPoint(x: 400, y: 500),
+                in: bounds
+            )?.tabId,
+            ids[0]
+        )
+        XCTAssertEqual(
+            SplitLayoutGeometry.leafHit(
+                in: group.layoutTree,
+                at: CGPoint(x: 400, y: 100),
+                in: bounds
+            )?.tabId,
+            ids[1]
+        )
     }
 
     func testNestedLeafHitReturnsPaneRect() throws {
@@ -159,10 +189,34 @@ final class SplitGroupLayoutDropTests: SplitGroupTestCase {
         let group = try XCTUnwrap(SplitGroup.make(tabIds: ids, layoutKind: .grid))
         let bounds = CGRect(x: 0, y: 0, width: 1000, height: 800)
 
-        let topLeft = try XCTUnwrap(group.layoutTree.leafHit(at: CGPoint(x: 250, y: 700), in: bounds))
-        let bottomLeft = try XCTUnwrap(group.layoutTree.leafHit(at: CGPoint(x: 250, y: 100), in: bounds))
-        let topRight = try XCTUnwrap(group.layoutTree.leafHit(at: CGPoint(x: 750, y: 700), in: bounds))
-        let bottomRight = try XCTUnwrap(group.layoutTree.leafHit(at: CGPoint(x: 750, y: 100), in: bounds))
+        let topLeft = try XCTUnwrap(
+            SplitLayoutGeometry.leafHit(
+                in: group.layoutTree,
+                at: CGPoint(x: 250, y: 700),
+                in: bounds
+            )
+        )
+        let bottomLeft = try XCTUnwrap(
+            SplitLayoutGeometry.leafHit(
+                in: group.layoutTree,
+                at: CGPoint(x: 250, y: 100),
+                in: bounds
+            )
+        )
+        let topRight = try XCTUnwrap(
+            SplitLayoutGeometry.leafHit(
+                in: group.layoutTree,
+                at: CGPoint(x: 750, y: 700),
+                in: bounds
+            )
+        )
+        let bottomRight = try XCTUnwrap(
+            SplitLayoutGeometry.leafHit(
+                in: group.layoutTree,
+                at: CGPoint(x: 750, y: 100),
+                in: bounds
+            )
+        )
 
         XCTAssertEqual(topLeft.tabId, ids[0])
         XCTAssertEqual(topLeft.rect, CGRect(x: 0, y: 400, width: 500, height: 400))
@@ -179,13 +233,20 @@ final class SplitGroupLayoutDropTests: SplitGroupTestCase {
         let group = try XCTUnwrap(SplitGroup.make(tabIds: ids, layoutKind: .grid))
         let bounds = CGRect(x: 0, y: 0, width: 1000, height: 800)
 
-        let planes = group.layoutTree.tilePlanes(in: bounds)
+        let planes = SplitLayoutGeometry.tilePlanes(
+            in: group.layoutTree,
+            rect: bounds,
+            includeChildPlanes: SplitLayoutGeometry.hasSecondaryPlane(in: group.layoutTree)
+        )
 
         XCTAssertEqual(planes.count, 3)
-        XCTAssertEqual(planes[0], SplitTilePlaneHit(path: [], rect: bounds, tabIds: ids))
+        XCTAssertEqual(
+            planes[0],
+            SplitLayoutGeometry.TilePlane(path: [], rect: bounds, tabIds: ids)
+        )
         XCTAssertEqual(
             planes[1],
-            SplitTilePlaneHit(
+            SplitLayoutGeometry.TilePlane(
                 path: [0],
                 rect: CGRect(x: 0, y: 0, width: 500, height: 800),
                 tabIds: Array(ids[0...1])
@@ -193,7 +254,7 @@ final class SplitGroupLayoutDropTests: SplitGroupTestCase {
         )
         XCTAssertEqual(
             planes[2],
-            SplitTilePlaneHit(
+            SplitLayoutGeometry.TilePlane(
                 path: [1],
                 rect: CGRect(x: 500, y: 0, width: 500, height: 800),
                 tabIds: Array(ids[2...3])
@@ -1249,7 +1310,7 @@ final class SplitGroupLayoutDropTests: SplitGroupTestCase {
             harness.tabManager.splitGroupStructureOwner.replaceSplitGroups([group], schedulePersistence: false)
             let canonical = try XCTUnwrap(group.canonicalizedForTiles(), "Invalid topology \(name)")
             assertZenCanonicalTree(canonical.layoutTree, name)
-            let hits = canonical.layoutTree.leafHits(in: bounds)
+            let hits = SplitLayoutGeometry.leafHits(in: canonical.layoutTree, rect: bounds)
             for dragged in ids {
                 for hit in hits where hit.tabId != dragged {
                     for side in sides {
@@ -1278,7 +1339,11 @@ final class SplitGroupLayoutDropTests: SplitGroupTestCase {
                             assertZenCanonicalTree(resolvedTree, "\(name) -> \(side)")
                             assertEqualChildSizesRecursively(resolvedTree, "\(name) -> \(side)")
                             let expectedRect = try XCTUnwrap(
-                                resolvedTree.leafRect(for: dragged, in: bounds),
+                                SplitLayoutGeometry.leafRect(
+                                    for: dragged,
+                                    in: resolvedTree,
+                                    rect: bounds
+                                ),
                                 "Missing dragged rect for topology \(name), side \(side), dragged \(idNames[dragged] ?? dragged.uuidString), hit \(idNames[hit.tabId] ?? hit.tabId.uuidString)"
                             )
                             if target.usesPaneLocalPreview {
@@ -1325,7 +1390,9 @@ final class SplitGroupLayoutDropTests: SplitGroupTestCase {
             ]
         )
 
-        let canonical = try XCTUnwrap(mixedTree.canonicalizedForTiles())
+        let canonical = try XCTUnwrap(
+            SplitLayoutReconciler.canonicalizedForTiles(mixedTree)
+        )
 
         guard case .split(let axis, _, let children) = canonical else {
             return XCTFail("Expected mixed tree to restore as a constrained split.")
@@ -1393,8 +1460,14 @@ final class SplitGroupLayoutDropTests: SplitGroupTestCase {
     func testManualResizeSurvivesCanonicalTileNormalization() throws {
         let ids = makeIDs(4)
         let group = try XCTUnwrap(SplitGroup.make(tabIds: ids, layoutKind: .vertical))
-        let resized = group.layoutTree.updatingChildSizes(at: [], sizes: [0.1, 0.2, 0.3, 0.4])
-        let canonical = try XCTUnwrap(resized.canonicalizedForTiles())
+        let resized = SplitLayoutSizing.updatingChildSizes(
+            in: group.layoutTree,
+            at: [],
+            sizes: [0.1, 0.2, 0.3, 0.4]
+        )
+        let canonical = try XCTUnwrap(
+            SplitLayoutReconciler.canonicalizedForTiles(resized)
+        )
 
         guard case .split(_, _, let children) = canonical else {
             return XCTFail("Expected a flat split.")

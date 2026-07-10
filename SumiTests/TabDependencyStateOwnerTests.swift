@@ -35,7 +35,7 @@ final class TabDependencyStateOwnerTests: XCTestCase {
     private func makeOwner(fallback: Services) -> TabDependencyStateOwner {
         TabDependencyStateOwner(
             faviconService: fallback.faviconService,
-            faviconImageService: fallback.faviconImageService,
+            faviconCapabilities: fallback.capabilityBundle,
             visitedLinkStore: fallback.visitedLinkStore
         )
     }
@@ -43,7 +43,7 @@ final class TabDependencyStateOwnerTests: XCTestCase {
     private func makeServices() -> Services {
         Services(
             faviconService: FakeTabDependencyFaviconService(),
-            faviconImageService: FakeTabDependencyFaviconImageService(),
+            faviconCapabilities: FakeTabDependencyFaviconCapabilities(),
             visitedLinkStore: FakeTabDependencyVisitedLinkStore()
         )
     }
@@ -55,19 +55,31 @@ final class TabDependencyStateOwnerTests: XCTestCase {
         line: UInt = #line
     ) {
         XCTAssertIdentical(owner.faviconService as AnyObject, expected.faviconService, file: file, line: line)
-        XCTAssertIdentical(owner.faviconImageService as AnyObject, expected.faviconImageService, file: file, line: line)
+        XCTAssertIdentical(owner.faviconCapabilities.images as AnyObject, expected.faviconCapabilities, file: file, line: line)
+        XCTAssertIdentical(owner.faviconCapabilities.liveDiscovery as AnyObject, expected.faviconCapabilities, file: file, line: line)
+        XCTAssertIdentical(owner.faviconCapabilities.localIconIngestion as AnyObject, expected.faviconCapabilities, file: file, line: line)
+        XCTAssertIdentical(owner.faviconCapabilities.prefetch as AnyObject, expected.faviconCapabilities, file: file, line: line)
         XCTAssertIdentical(owner.visitedLinkStore as AnyObject, expected.visitedLinkStore, file: file, line: line)
     }
 
     private struct Services {
         let faviconService: FakeTabDependencyFaviconService
-        let faviconImageService: FakeTabDependencyFaviconImageService
+        let faviconCapabilities: FakeTabDependencyFaviconCapabilities
         let visitedLinkStore: FakeTabDependencyVisitedLinkStore
+
+        var capabilityBundle: BrowserFaviconCapabilities {
+            BrowserFaviconCapabilities(
+                images: faviconCapabilities,
+                liveDiscovery: faviconCapabilities,
+                localIconIngestion: faviconCapabilities,
+                prefetch: faviconCapabilities
+            )
+        }
 
         var dataServices: TabDependencyDataServices {
             TabDependencyDataServices(
                 faviconService: faviconService,
-                faviconImageService: faviconImageService,
+                faviconCapabilities: capabilityBundle,
                 visitedLinkStore: visitedLinkStore
             )
         }
@@ -87,7 +99,12 @@ private final class FakeTabDependencyFaviconService: BrowserFaviconServicing {
     #endif
 }
 
-private final class FakeTabDependencyFaviconImageService: BrowserFaviconImageServicing {
+private final class FakeTabDependencyFaviconCapabilities:
+    BrowserFaviconImageReading,
+    BrowserFaviconLiveDiscoveryIngesting,
+    BrowserFaviconLocalIconIngesting,
+    BrowserFaviconPrefetchScheduling
+{
     func cachedPreparedImage(for _: SumiPreparedFaviconRequest) -> NSImage? { nil }
     func cachedSelection(for _: URL, partition _: SumiFaviconPartition) -> SumiStoredFaviconSelection? { nil }
     func preparedImage(

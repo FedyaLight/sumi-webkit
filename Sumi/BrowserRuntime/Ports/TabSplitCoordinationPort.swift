@@ -1,31 +1,39 @@
 import Foundation
-import SumiBrowserCore
+
+@MainActor
+protocol TabSplitCoordinationPort {
+    func handleTabClosure(_ tabId: UUID)
+    func visibleSplitTabIds(for windowId: UUID) -> [UUID]
+    func isTabVisibleInSplit(_ tabId: UUID, in windowId: UUID) -> Bool
+    func isTabActiveInSplit(_ tabId: UUID, in windowId: UUID) -> Bool
+    func updateActiveSplitSide(for tabId: UUID, in windowId: UUID)
+}
 
 @MainActor
 struct LiveTabSplitCoordinationPort: TabSplitCoordinationPort {
-    private weak var browserManager: BrowserManager?
+    private let runtime: BrowserManagerRuntimeReference
 
-    init(browserManager: BrowserManager) {
-        self.browserManager = browserManager
+    init(runtime: BrowserManagerRuntimeReference) {
+        self.runtime = runtime
     }
 
     func handleTabClosure(_ tabId: UUID) {
-        browserManager?.splitManager.handleTabClosure(tabId)
+        runtime.require().splitManager.handleTabClosure(tabId)
     }
 
     func visibleSplitTabIds(for windowId: UUID) -> [UUID] {
-        browserManager?.splitManager.visibleTabIds(for: windowId) ?? []
+        runtime.require().splitManager.visibleTabIds(for: windowId)
     }
 
     func isTabVisibleInSplit(_ tabId: UUID, in windowId: UUID) -> Bool {
-        browserManager?.splitManager.isTabVisibleInSplit(tabId, in: windowId) == true
+        runtime.require().splitManager.isTabVisibleInSplit(tabId, in: windowId)
     }
 
     func isTabActiveInSplit(_ tabId: UUID, in windowId: UUID) -> Bool {
-        browserManager?.splitManager.isTabActiveInSplit(tabId, in: windowId) == true
+        runtime.require().splitManager.isTabActiveInSplit(tabId, in: windowId)
     }
 
     func updateActiveSplitSide(for tabId: UUID, in windowId: UUID) {
-        browserManager?.splitManager.updateActiveSide(for: tabId, in: windowId)
+        runtime.require().splitManager.updateActiveSide(for: tabId, in: windowId)
     }
 }

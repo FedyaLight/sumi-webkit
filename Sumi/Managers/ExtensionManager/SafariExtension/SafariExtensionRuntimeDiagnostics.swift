@@ -655,12 +655,13 @@ extension SumiExtensionsModule {
         refreshDiscoveredSafariWebExtensionCandidates(discovered)
 
         let manager = managerIfLoadedAndEnabled()
-        let adapterRegistry = manager?.loadedNativeMessagingRelay?.diagnosticsAdapterRegistry
+        let adapterRegistry =
+            manager?.nativeMessagingRelayOwner.loadedRelay?.diagnosticsAdapterRegistry
             ?? SumiNativeMessagingAdapterRegistry.production()
         let report = SafariExtensionRuntimeDiagnosticsBuilder.build(
             discovered: discovered,
             importStore: safariExtensionImportRecordsForDiagnostics(),
-            installedExtensions: manager?.installedExtensions ?? [],
+            installedExtensions: manager?.installedExtensionCollection.records ?? [],
             contentBlockerRecords: installedSafariContentBlockers(),
             attachedSafariContentRuleListIdentifiers: safariContentBlockerAttachedRuleListIdentifiers(),
             extensionManager: manager,

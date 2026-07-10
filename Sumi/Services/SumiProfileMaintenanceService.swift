@@ -11,7 +11,10 @@ final class SumiProfileMaintenanceService {
     struct Context {
         var currentProfile: @MainActor () -> Profile?
         var profileManager: ProfileManager
-        var tabManager: TabManager
+        var migrateProfileReferences: @MainActor (
+            UUID,
+            UUID
+        ) async -> ProfileDeletionMigrationOutcome
         var browsingDataCleanupService: SumiBrowsingDataCleanupService
         var websiteDataCleanupService: any SumiWebsiteDataCleanupServicing
         var faviconService: any BrowserFaviconServicing
@@ -38,14 +41,34 @@ final class SumiProfileMaintenanceService {
                 return
             }
 
-            if context.currentProfile()?.id == profile.id {
-                await context.switchToProfile(replacement)
+            let migration = await context.migrateProfileReferences(
+                profile.id,
+                replacement.id
+            )
+            guard migration == .committed else {
+                context.showNotice(
+                    Notice(
+                        title: "Couldn't Delete Profile",
+                        subtitle: profile.name,
+                        message: "Open tabs could not be migrated safely. Please try again."
+                    )
+                )
+                return
             }
 
-            context.tabManager.profileAssignmentOwner.cleanupProfileReferences(
-                profile.id,
-                fallbackProfileId: replacement.id
-            )
+            if context.currentProfile()?.id == profile.id {
+                await context.switchToProfile(replacement)
+                guard context.currentProfile()?.id != profile.id else {
+                    context.showNotice(
+                        Notice(
+                            title: "Couldn't Delete Profile",
+                            subtitle: profile.name,
+                            message: "The browser could not leave this profile safely. Please try again."
+                        )
+                    )
+                    return
+                }
+            }
 
             do {
                 try await makeDeletionCleanupOrchestrator(for: profile, using: context)
@@ -87,10 +110,12 @@ final class SumiProfileMaintenanceService {
         var participants: [any ProfileCleanupParticipant] = [
             BrowsingDataProfileCleanupParticipant { profileId in
                 guard profile.id == profileId else { return }
-                await profile.clearAllData(
+                guard await profile.clearAllData(
                     browsingDataCleanupService: context.browsingDataCleanupService,
                     websiteDataCleanupService: context.websiteDataCleanupService
-                )
+                ) else {
+                    throw ProfileDeletionCleanupError.websiteDataQuiesceFailed
+                }
             },
             FaviconProfileCleanupParticipant { profileId in
                 guard profile.id == profileId else { return }
@@ -112,4 +137,8 @@ final class SumiProfileMaintenanceService {
 
         return ProfileDeletionCleanupOrchestrator(participants: participants)
     }
+}
+
+private enum ProfileDeletionCleanupError: Error {
+    case websiteDataQuiesceFailed
 }

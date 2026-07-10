@@ -1,6 +1,6 @@
 import Foundation
 import SwiftData
-import SumiBrowserCore
+import SumiWebRuntime
 
 /// Composition root for browser kernel assembly (architecture plan A1).
 /// Owns construction of always-on managers and optional module shells so
@@ -16,7 +16,6 @@ enum BrowserCompositionRoot {
     }
 
     struct PermissionRuntimeBootstrap {
-        let startupPersistence: BrowserManagerStartupPersistence
         let browserConfiguration: BrowserConfiguration
         let systemPermissionService: (any SumiSystemPermissionService)?
         let permissionCoordinator: (any SumiPermissionCoordinating)?
@@ -90,11 +89,6 @@ enum BrowserCompositionRoot {
             )
     }
 
-    /// Shared tab-structure event bus for the process browser session.
-    static func makeTabStructureEventBus() -> TabStructureEventBus {
-        TabStructureEventBus()
-    }
-
     static func makeBookmarkManager(
         faviconService: any BrowserFaviconServicing,
         initialProfile: Profile?
@@ -119,7 +113,7 @@ enum BrowserCompositionRoot {
         let lastSessionWindowsStore: LastSessionWindowsStore
         let startupSessionRestoreOwner: BrowserStartupSessionRestoreOwner
         let compositorManager: TabCompositorManager
-        let tabSuspensionService: TabSuspensionService
+        let tabSuspensionController: TabSuspensionController
         let splitManager: SplitViewManager
         let workspaceThemeCoordinator: WorkspaceThemeCoordinator
         let findManager: FindManager
@@ -139,6 +133,7 @@ enum BrowserCompositionRoot {
     static func makeSessionManagers(
         modelContext: ModelContext,
         tabStructureEventBus: TabStructureEventBus,
+        webViewSessions: WebViewSessionRepository,
         dataServices: BrowserManagerDataServices,
         initialProfile: Profile?
     ) -> AssembledSessionManagers {
@@ -146,9 +141,11 @@ enum BrowserCompositionRoot {
         return AssembledSessionManagers(
             tabManager: TabManager(
                 context: modelContext,
+                webViewSessions: webViewSessions,
+                automaticallyStartPersistedStateLoad: false,
                 tabStructureEventBus: tabStructureEventBus,
                 faviconService: dataServices.faviconService,
-                faviconImageService: dataServices.faviconImageService,
+                faviconCapabilities: dataServices.faviconCapabilities,
                 visitedLinkStore: dataServices.visitedLinkStore
             ),
             downloadManager: DownloadManager(),
@@ -169,7 +166,7 @@ enum BrowserCompositionRoot {
                 lastSessionWindowsStore: lastSessionWindowsStore
             ),
             compositorManager: TabCompositorManager(),
-            tabSuspensionService: TabSuspensionService(
+            tabSuspensionController: TabSuspensionController(
                 memoryMonitor: SumiMemoryPressureMonitor()
             ),
             splitManager: SplitViewManager(),
@@ -183,7 +180,6 @@ enum BrowserCompositionRoot {
     ) -> BrowserManagerPermissionRuntime {
         BrowserManagerPermissionRuntime(
             dependencies: BrowserManagerPermissionRuntime.Dependencies(
-                startupPersistence: bootstrap.startupPersistence,
                 browserConfiguration: bootstrap.browserConfiguration,
                 systemPermissionService: bootstrap.systemPermissionService,
                 permissionCoordinator: bootstrap.permissionCoordinator,
@@ -204,7 +200,6 @@ enum BrowserCompositionRoot {
     }
 
     static func makePermissionRuntimeBootstrap(
-        startupPersistence: BrowserManagerStartupPersistence,
         browserConfiguration: BrowserConfiguration,
         systemPermissionService: (any SumiSystemPermissionService)?,
         permissionCoordinator: (any SumiPermissionCoordinating)?,
@@ -222,7 +217,6 @@ enum BrowserCompositionRoot {
         permissionBridgeOverrides: BrowserPermissionBridgeRegistry.Overrides
     ) -> PermissionRuntimeBootstrap {
         PermissionRuntimeBootstrap(
-            startupPersistence: startupPersistence,
             browserConfiguration: browserConfiguration,
             systemPermissionService: systemPermissionService,
             permissionCoordinator: permissionCoordinator,
@@ -244,6 +238,7 @@ enum BrowserCompositionRoot {
 
     /// Builds the always-on kernel graph so `BrowserManager` init only assigns fields.
     static func makeKernel(
+        webViewSessions: WebViewSessionRepository,
         moduleRegistry: SumiModuleRegistry,
         startupPersistence: BrowserManagerStartupPersistence,
         browserConfiguration: BrowserConfiguration,
@@ -276,7 +271,7 @@ enum BrowserCompositionRoot {
             dataServices.replacing(browsingDataCleanupService: $0)
         } ?? dataServices
         let startupModelContext = startupPersistence.mainContext
-        let tabStructureEventBus = makeTabStructureEventBus()
+        let tabStructureEventBus = TabStructureEventBus()
         let modules = assembleModules(
             moduleRegistry: moduleRegistry,
             modelContext: startupModelContext,
@@ -295,15 +290,16 @@ enum BrowserCompositionRoot {
         let session = makeSessionManagers(
             modelContext: startupModelContext,
             tabStructureEventBus: tabStructureEventBus,
+            webViewSessions: webViewSessions,
             dataServices: resolvedDataServices,
             initialProfile: initialProfile
         )
         return BrowserKernelGraph(
+            webViewSessions: webViewSessions,
             modelContext: startupModelContext,
             moduleRegistry: moduleRegistry,
             liveFoldersModule: SumiLiveFoldersModule(moduleRegistry: moduleRegistry),
             sidebarHostRecoveryCoordinator: sidebarHostRecoveryCoordinator,
-            tabStructureEventBus: tabStructureEventBus,
             adBlockingModule: modules.adBlockingModule,
             protectionCoordinator: modules.protectionCoordinator,
             adblockZapperStore: modules.adblockZapperStore,
@@ -331,7 +327,7 @@ enum BrowserCompositionRoot {
             lastSessionWindowsStore: session.lastSessionWindowsStore,
             startupSessionRestoreOwner: session.startupSessionRestoreOwner,
             compositorManager: session.compositorManager,
-            tabSuspensionService: session.tabSuspensionService,
+            tabSuspensionController: session.tabSuspensionController,
             splitManager: session.splitManager,
             workspaceThemeCoordinator: session.workspaceThemeCoordinator,
             findManager: session.findManager,
@@ -341,7 +337,6 @@ enum BrowserCompositionRoot {
             nativeNowPlayingController: nowPlayingController,
             permissionRuntime: makePermissionRuntime(
                 makePermissionRuntimeBootstrap(
-                    startupPersistence: startupPersistence,
                     browserConfiguration: browserConfiguration,
                     systemPermissionService: systemPermissionService,
                     permissionCoordinator: permissionCoordinator,
@@ -362,57 +357,4 @@ enum BrowserCompositionRoot {
         )
     }
 
-    /// Wires shell-runtime callbacks that need a live BrowserManager session.
-    static func attachShellRuntime(to browserManager: BrowserManager) {
-        browserManager.shellRuntime.attach(
-            releaseWebViewCoordinator: { [weak browserManager] coordinator in
-                guard browserManager != nil else { return }
-                coordinator?.detachVisiblePreparationRuntimeContext()
-                coordinator?.detachInitialDocumentRuntimeContext()
-                coordinator?.detachShutdownRuntimeContext()
-                coordinator?.detachBrowserRuntimeContext()
-            },
-            adoptWebViewCoordinator: { [weak browserManager] coordinator in
-                guard let browserManager else { return }
-                guard let coordinator else { return }
-                coordinator.attachBrowserRuntimeContext(
-                    BrowserWebViewRuntimeFactory.browserRuntimeContext(
-                        for: browserManager
-                    )
-                )
-                coordinator.attachInitialDocumentRuntimeContext(
-                    BrowserWebViewRuntimeFactory.initialDocumentContext(
-                        for: browserManager
-                    )
-                )
-                coordinator.attachShutdownRuntimeContext(
-                    BrowserWebViewRuntimeFactory.shutdownContext(
-                        for: browserManager
-                    )
-                )
-                coordinator.attachVisiblePreparationRuntimeContext(
-                    BrowserWebViewRuntimeFactory.visiblePreparationContext(
-                        for: browserManager
-                    )
-                )
-            },
-            setDestructiveCleanupPreparer: { [weak browserManager] coordinator in
-                browserManager?.browsingDataCleanupService.destructiveCleanupPreparer = coordinator
-            },
-            windowRegistryChanged: { [weak browserManager] registry in
-                guard let browserManager else { return }
-                browserManager.glanceManager.windowRegistry = registry
-                browserManager.splitManager.windowRegistry = registry
-                Task { @MainActor [weak browserManager] in
-                    await browserManager?.privacyBundle.permissionSidebarPinningOwner.reconcile(
-                        reason: "window-registry-updated"
-                    )
-                }
-                browserManager.backgroundMediaOptimizationService.scheduleReconcile(
-                    reason: "window-registry-updated"
-                )
-                browserManager.reconcileStartupSessionIfPossible()
-            }
-        )
-    }
 }

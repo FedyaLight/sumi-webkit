@@ -2,7 +2,7 @@ import Foundation
 
 struct TabDependencyDataServices {
     let faviconService: any BrowserFaviconServicing
-    let faviconImageService: any BrowserFaviconImageServicing
+    let faviconCapabilities: BrowserFaviconCapabilities
     let visitedLinkStore: any BrowserVisitedLinkStoreManaging
 }
 
@@ -12,16 +12,16 @@ final class TabDependencyStateOwner {
 
     private var dataServicesProvider: (@MainActor () -> TabDependencyDataServices?)?
     private let fallbackFaviconService: any BrowserFaviconServicing
-    private let fallbackFaviconImageService: any BrowserFaviconImageServicing
+    private let fallbackFaviconCapabilities: BrowserFaviconCapabilities
     private let fallbackVisitedLinkStore: any BrowserVisitedLinkStoreManaging
 
     init(
         faviconService: any BrowserFaviconServicing,
-        faviconImageService: any BrowserFaviconImageServicing,
+        faviconCapabilities: BrowserFaviconCapabilities,
         visitedLinkStore: any BrowserVisitedLinkStoreManaging
     ) {
         self.fallbackFaviconService = faviconService
-        self.fallbackFaviconImageService = faviconImageService
+        self.fallbackFaviconCapabilities = faviconCapabilities
         self.fallbackVisitedLinkStore = visitedLinkStore
     }
 
@@ -33,8 +33,8 @@ final class TabDependencyStateOwner {
         dataServicesProvider?()?.faviconService ?? fallbackFaviconService
     }
 
-    var faviconImageService: any BrowserFaviconImageServicing {
-        dataServicesProvider?()?.faviconImageService ?? fallbackFaviconImageService
+    var faviconCapabilities: BrowserFaviconCapabilities {
+        dataServicesProvider?()?.faviconCapabilities ?? fallbackFaviconCapabilities
     }
 
     var visitedLinkStore: any BrowserVisitedLinkStoreManaging {

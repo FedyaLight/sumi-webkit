@@ -71,10 +71,10 @@ final class BrowserHistoryMenuOwner {
             },
             applyWindowSessionSnapshot: { [weak browserManager] snapshot, windowState in
                 guard let browserManager else { return }
-                browserManager.windowSessionService.applyWindowSessionSnapshot(
+                browserManager.windowSessionBundle.restoreService
+                    .applyWindowSessionSnapshot(
                     snapshot,
-                    to: windowState,
-                    runtime: WindowSessionRuntimeFactory.make(for: browserManager)
+                    to: windowState
                 )
             },
             bringWindowToFront: { [weak browserManager] windowState in

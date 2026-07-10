@@ -49,7 +49,9 @@ final class BrowserShutdownCleanupOwner {
                 browserManager?.extensionsModule.closeAllOptionsWindowsIfLoaded()
             },
             closeAllAuxiliaryWindows: { [weak browserManager] in
-                browserManager?.auxiliaryWindowManager.closeAll(reason: .appQuit)
+                browserManager?.auxiliaryWindows.teardown.closeAll(
+                    reason: .appQuit
+                )
             },
             dismissGlance: { [weak browserManager] in
                 browserManager?.glanceManager.dismissGlance(persistsWindowSession: false)
@@ -69,7 +71,8 @@ final class BrowserShutdownCleanupOwner {
                 tab.performComprehensiveWebViewCleanup()
             },
             cleanupAllWebViews: { [weak browserManager] in
-                browserManager?.webViewCoordinator?.cleanupAllWebViews()
+                browserManager?.webViewCoordinator?.lifecycleService
+                    .cleanupAllWebViews()
             }
         )
     }

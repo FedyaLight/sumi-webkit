@@ -80,7 +80,7 @@ enum TabBrowserHostServicesRuntimeFactory {
     ) -> TabDependencyDataServices? {
         TabDependencyDataServices(
             faviconService: browserManager.dataServices.faviconService,
-            faviconImageService: browserManager.dataServices.faviconImageService,
+            faviconCapabilities: browserManager.dataServices.faviconCapabilities,
             visitedLinkStore: browserManager.dataServices.visitedLinkStore
         )
     }
@@ -96,57 +96,43 @@ extension TabWebViewRoutingRuntime {
                     originatingWebView: webView
                 )
             },
-            reloadTabAcrossWindows: { [weak webViewRoutingService] tabId in
-                webViewRoutingService?.reloadTabAcrossWindows(tabId)
+            reloadTabAcrossWindows: { [weak webViewRoutingService] tabId, intent, policy in
+                webViewRoutingService?.reloadTabAcrossWindows(
+                    tabId,
+                    intent: intent,
+                    policy: policy
+                )
+            },
+            reloadTabInWindow: { [weak webViewRoutingService] tabId, windowId, intent, policy in
+                webViewRoutingService?.reloadTab(
+                    tabId,
+                    in: windowId,
+                    intent: intent,
+                    policy: policy
+                ) ?? .failed
+            },
+            retainWebContentProcessRecovery: { [weak webViewRoutingService] tabId, webView in
+                webViewRoutingService?.retainWebContentProcessRecovery(
+                    tabId,
+                    on: webView
+                ) ?? false
+            },
+            recoverWebContentProcess: { [weak webViewRoutingService] tabId, webView in
+                webViewRoutingService?.recoverWebContentProcess(
+                    tabId,
+                    on: webView
+                ) ?? .failed
+            },
+            cancelWebContentProcessRecovery: { [weak webViewRoutingService] webView in
+                webViewRoutingService?.cancelWebContentProcessRecovery(
+                    on: webView
+                )
             },
             setMuteState: { [weak webViewRoutingService] muted, tabId in
                 webViewRoutingService?.setMuteState(muted, for: tabId)
             },
-            noteParkedWebView: { [weak webViewRoutingService] webView, tabId in
-                webViewRoutingService?.noteParkedWebView(webView, for: tabId)
-            },
-            noteUntrackedWebView: { [weak webViewRoutingService] webView, tabId in
-                webViewRoutingService?.noteUntrackedWebView(webView, for: tabId)
-            },
-            notePrimaryAssignment: { [weak webViewRoutingService] windowId, webView, tabId in
-                webViewRoutingService?.notePrimaryAssignment(
-                    windowId: windowId,
-                    webView: webView,
-                    for: tabId
-                )
-            },
-            clearPrimaryAssignment: { [weak webViewRoutingService] tabId in
-                webViewRoutingService?.clearPrimaryAssignment(for: tabId)
-            },
-            clearWebViewSession: { [weak webViewRoutingService] tabId in
-                webViewRoutingService?.clearWebViewSession(for: tabId)
-            },
-            anyLiveWebView: { [weak webViewRoutingService] tab in
-                webViewRoutingService?.anyLiveWebViewIfAvailable(for: tab)
-            },
-            sessionParkedWebView: { [weak webViewRoutingService] tabId in
-                webViewRoutingService?.sessionParkedWebView(for: tabId)
-            },
-            sessionUntrackedWebView: { [weak webViewRoutingService] tabId in
-                webViewRoutingService?.sessionUntrackedWebView(for: tabId)
-            },
-            sessionPrimaryWindowId: { [weak webViewRoutingService] tabId in
-                webViewRoutingService?.sessionPrimaryWindowId(for: tabId)
-            },
-            sessionPrimaryWebView: { [weak webViewRoutingService] tabId in
-                webViewRoutingService?.sessionPrimaryWebView(for: tabId)
-            },
-            primaryTrackedWindowId: { [weak webViewRoutingService] tabId in
-                webViewRoutingService?.primaryTrackedWindowIdIfAvailable(for: tabId)
-            },
-            windowOwnedWebView: { [weak webViewRoutingService] tabId, windowId in
-                webViewRoutingService?.webViewIfAvailable(for: tabId, in: windowId)
-            },
-            hasLiveWebView: { [weak webViewRoutingService] tab in
-                webViewRoutingService?.hasLiveWebViewIfAvailable(for: tab) ?? false
-            },
-            adoptLocalWebViewSession: { [weak webViewRoutingService] session, tabId in
-                webViewRoutingService?.adoptLocalWebViewSession(session, for: tabId)
+            bindWebViewSession: { [weak webViewRoutingService] handle in
+                webViewRoutingService?.bindWebViewSession(handle)
             }
         )
     }
@@ -178,6 +164,9 @@ extension TabMediaRuntimeCallbacks {
             },
             scheduleBackgroundMediaReconcile: { [weak backgroundMediaOptimizationService] reason in
                 backgroundMediaOptimizationService?.scheduleReconcile(reason: reason)
+            },
+            invalidateBackgroundMediaCommand: { [weak backgroundMediaOptimizationService] webView in
+                backgroundMediaOptimizationService?.invalidateAppliedCommand(for: webView)
             },
             notifyNowPlayingTabUnloaded: { [weak nowPlayingController] tabId in
                 nowPlayingController?.handleTabUnloaded(tabId)

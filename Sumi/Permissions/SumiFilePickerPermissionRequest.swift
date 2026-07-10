@@ -89,6 +89,7 @@ struct SumiFilePickerPermissionTabContext: Sendable {
     let isActiveTab: Bool
     let isVisibleTab: Bool
     let navigationOrPageGeneration: String?
+    let isCurrentPage: @MainActor @Sendable () -> Bool
 
     init(
         tabId: String,
@@ -101,7 +102,8 @@ struct SumiFilePickerPermissionTabContext: Sendable {
         mainFrameURL: URL?,
         isActiveTab: Bool,
         isVisibleTab: Bool,
-        navigationOrPageGeneration: String?
+        navigationOrPageGeneration: String?,
+        isCurrentPage: @escaping @MainActor @Sendable () -> Bool
     ) {
         self.tabId = tabId.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         self.pageId = pageId.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -115,5 +117,6 @@ struct SumiFilePickerPermissionTabContext: Sendable {
         self.isVisibleTab = isVisibleTab
         self.navigationOrPageGeneration = navigationOrPageGeneration?
             .trimmingCharacters(in: .whitespacesAndNewlines)
+        self.isCurrentPage = isCurrentPage
     }
 }

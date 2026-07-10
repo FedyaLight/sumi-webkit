@@ -12,7 +12,7 @@ final class ExtensionPageNavigationPreparationOwner {
         targetURL: URL,
         reason: String,
         manager: ExtensionManager
-    ) -> Bool {
+    ) -> TabWebViewReplacementOutcome {
         if ExtensionUtils.isExtensionOwnedURL(targetURL) {
             return prepareExtensionOwnedNavigation(
                 tab,
@@ -23,6 +23,7 @@ final class ExtensionPageNavigationPreparationOwner {
         }
         return clearExtensionPageOverrideIfNeeded(
             tab,
+            targetURL: targetURL,
             reason: reason,
             manager: manager
         )
@@ -33,15 +34,16 @@ final class ExtensionPageNavigationPreparationOwner {
         targetURL: URL,
         reason: String,
         manager: ExtensionManager
-    ) -> Bool {
+    ) -> TabWebViewReplacementOutcome {
         guard let extensionContext = extensionContext(
             for: targetURL,
             tab: tab,
             manager: manager
         ) else {
-            return false
+            return .notNeeded
         }
 
+        let previousExtensionContext = tab.webExtensionContextOverride
         tab.webExtensionContextOverride = extensionContext
         guard let configuration = extensionContext.webViewConfiguration,
               needsExtensionPageWebViewReplacement(
@@ -50,11 +52,13 @@ final class ExtensionPageNavigationPreparationOwner {
                   manager: manager
               )
         else {
-            return false
+            return .notNeeded
         }
 
-        return webViewReplacementOwner.replaceCurrentWebView(
+        let outcome = webViewReplacementOwner.replaceCurrentWebView(
+            targetURL: targetURL,
             reason: "\(reason).extensionPageConfiguration",
+            configuration: .currentExtensionPage,
             context: tab.webViewReplacementContextOwner.makeContext(for: tab),
             makeReplacementWebView: { replacementReason in
                 tab.makeAuxiliaryOverrideTabWebView(
@@ -63,28 +67,39 @@ final class ExtensionPageNavigationPreparationOwner {
                 )
             }
         )
+        if outcome == .failed {
+            tab.webExtensionContextOverride = previousExtensionContext
+        }
+        return outcome
     }
 
     private func clearExtensionPageOverrideIfNeeded(
         _ tab: Tab,
+        targetURL: URL,
         reason: String,
         manager: ExtensionManager
-    ) -> Bool {
+    ) -> TabWebViewReplacementOutcome {
         guard tab.webExtensionContextOverride != nil else {
-            return false
+            return .notNeeded
         }
+        let previousExtensionContext = tab.webExtensionContextOverride
         tab.webExtensionContextOverride = nil
 
         guard let currentWebView = manager.resolvedLiveWebView(for: tab),
               currentWebView.configuration.sumiIsNormalTabWebViewConfiguration == false
         else {
-            return false
+            return .notNeeded
         }
 
-        return webViewReplacementOwner.replaceNormalWebView(
+        let outcome = webViewReplacementOwner.replaceNormalWebView(
+            targetURL: targetURL,
             reason: "\(reason).normalPageConfiguration",
             context: tab.webViewReplacementContextOwner.makeContext(for: tab)
         )
+        if outcome == .failed {
+            tab.webExtensionContextOverride = previousExtensionContext
+        }
+        return outcome
     }
 
     private func extensionContext(
@@ -126,7 +141,7 @@ extension ExtensionManager {
         _ tab: Tab,
         targetURL: URL,
         reason: String
-    ) -> Bool {
+    ) -> TabWebViewReplacementOutcome {
         pageNavigationPreparationOwner.prepareNavigation(
             tab,
             targetURL: targetURL,

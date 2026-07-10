@@ -11,23 +11,18 @@ import Foundation
 /// Owners on the TabManager façade.
 @MainActor
 final class TabLifecycleOwnerBag {
-    private weak var tabManager: TabManager?
+    private unowned let tabManager: TabManager
     private let faviconPresentationRefreshDebounceNanoseconds: UInt64
 
-    init(faviconPresentationRefreshDebounceNanoseconds: UInt64) {
+    init(
+        tabManager: TabManager,
+        faviconPresentationRefreshDebounceNanoseconds: UInt64
+    ) {
+        self.tabManager = tabManager
         self.faviconPresentationRefreshDebounceNanoseconds = faviconPresentationRefreshDebounceNanoseconds
     }
 
-    func bind(_ tabManager: TabManager) {
-        self.tabManager = tabManager
-    }
-
-    private var tm: TabManager {
-        guard let tabManager else {
-            preconditionFailure("TabLifecycleOwnerBag used before bind(tabManager:)")
-        }
-        return tabManager
-    }
+    private var tm: TabManager { tabManager }
 
     lazy var profileRuntimeStateOwner = TabProfileRuntimeStateOwner(tabManager: tm)
     lazy var runtimePreparationOwner = TabRuntimePreparationOwner(
@@ -45,7 +40,7 @@ final class TabLifecycleOwnerBag {
         dependencies: .live(tabManager: tm)
     )
     lazy var spaceLifecycleOwner = TabSpaceLifecycleOwner(dependencies: .live(tabManager: tm))
-    lazy var profileAssignmentOwner = TabProfileAssignmentOwner(dependencies: .live(tabManager: tm))
+    lazy var profileAssignments = ProfileAssignmentServices(tabManager: tm)
     lazy var transientWebKitTabLifecycleOwner = TabTransientWebKitTabLifecycleOwner(
         dependencies: .live(tabManager: tm)
     )
@@ -53,18 +48,7 @@ final class TabLifecycleOwnerBag {
         prepareTabForRuntime: { [weak self] tab in
             self?.tm.runtimePreparationOwner.prepare(tab)
         },
-        faviconService: { [weak self] in
-            guard let self else { preconditionFailure("TabManager dependency used after deallocation") }
-            return self.tm.faviconService
-        },
-        faviconImageService: { [weak self] in
-            guard let self else { preconditionFailure("TabManager dependency used after deallocation") }
-            return self.tm.faviconImageService
-        },
-        visitedLinkStore: { [weak self] in
-            guard let self else { preconditionFailure("TabManager dependency used after deallocation") }
-            return self.tm.visitedLinkStore
-        }
+        tabFactory: tm.tabFactory
     )
     lazy var faviconPresentationRefreshOwner = TabFaviconPresentationRefreshOwner(
         notificationCenter: .default,
@@ -73,9 +57,6 @@ final class TabLifecycleOwnerBag {
             guard let self else { return [] }
             return self.tm.regularTabCollectionStateOwner.allTabs()
                 + self.tm.transientTabRegistryOwner.transientShortcutTabs
-        },
-        requestStructuralPublish: { [weak self] in
-            self?.tm.requestStructuralPublish()
         }
     )
 }

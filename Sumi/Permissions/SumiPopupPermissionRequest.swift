@@ -123,6 +123,7 @@ struct SumiPopupPermissionTabContext: Sendable {
     let isVisibleTab: Bool
     let navigationOrPageGeneration: String?
     let displayDomain: String?
+    let isCurrentPage: @MainActor @Sendable () -> Bool
 
     init(
         tabId: String,
@@ -136,7 +137,8 @@ struct SumiPopupPermissionTabContext: Sendable {
         isActiveTab: Bool,
         isVisibleTab: Bool,
         navigationOrPageGeneration: String?,
-        displayDomain: String? = nil
+        displayDomain: String? = nil,
+        isCurrentPage: @escaping @MainActor @Sendable () -> Bool
     ) {
         self.tabId = tabId.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         self.pageId = pageId.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -151,6 +153,7 @@ struct SumiPopupPermissionTabContext: Sendable {
         self.navigationOrPageGeneration = navigationOrPageGeneration?
             .trimmingCharacters(in: .whitespacesAndNewlines)
         self.displayDomain = displayDomain?.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.isCurrentPage = isCurrentPage
     }
 }
 

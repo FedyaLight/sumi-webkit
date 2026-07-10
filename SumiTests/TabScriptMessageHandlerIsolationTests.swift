@@ -202,7 +202,7 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
         )
 
         await waitForPageVeto(.pageReportedUnableToSuspend, on: secondTab)
-        XCTAssertEqual(firstTab.suspensionStateOwner.pageSuspensionVeto, .none)
+        XCTAssertEqual(firstTab.suspensionProtection.pageVeto, .none)
     }
 
     func testMalformedAndIrrelevantTabSuspensionMessagesAreIgnoredSafely() async throws {
@@ -235,7 +235,7 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
         )
 
         try await Task.sleep(nanoseconds: 200_000_000)
-        XCTAssertEqual(tab.suspensionStateOwner.pageSuspensionVeto, .none)
+        XCTAssertEqual(tab.suspensionProtection.pageVeto, .none)
     }
 
     private func linkContext(for tab: Tab) -> String {
@@ -320,13 +320,13 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
         line: UInt = #line
     ) async {
         for _ in 0..<100 {
-            if tab.suspensionStateOwner.pageSuspensionVeto == expected {
+            if tab.suspensionProtection.pageVeto == expected {
                 return
             }
             try? await Task.sleep(nanoseconds: 20_000_000)
         }
 
-        XCTAssertEqual(tab.suspensionStateOwner.pageSuspensionVeto, expected, file: file, line: line)
+        XCTAssertEqual(tab.suspensionProtection.pageVeto, expected, file: file, line: line)
     }
 
     private func loadBlankDocument(into webView: WKWebView) async {

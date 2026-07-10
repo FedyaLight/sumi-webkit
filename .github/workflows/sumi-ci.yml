@@ -39,8 +39,8 @@ jobs:
           swift --version
           xcodebuild -showsdks | sed -n '/macOS SDKs:/,/iOS SDKs:/p'
 
-      - name: Test SumiDomain package
-        run: swift test --package-path Packages/SumiDomain
+      - name: Test architecture packages
+        run: scripts/ci/run_tests.sh packages
 
       - name: Build Sumi app
         run: |
@@ -66,7 +66,7 @@ jobs:
           SUMI_CI_RESULT_BUNDLE: ${{ env.TEST_RESULT_BUNDLE_PATH }}
         run: |
           set -euo pipefail
-          # Domain already tested above; run xcode smoke only
+          # Architecture packages already tested above; run xcode smoke only.
           mkdir -p "$(dirname "$SUMI_CI_RESULT_BUNDLE")"
           rm -rf "$SUMI_CI_RESULT_BUNDLE"
           xcodebuild \
@@ -81,6 +81,7 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             -only-testing:SumiTests/TabManagerStructuralPersistenceTests \
             -only-testing:SumiTests/TabManagerStructuralBatchingTests \
+            -only-testing:SumiTests/TabStructureEventBusTests \
             -only-testing:SumiTests/RuntimeStateCoalescerTests \
             -only-testing:SumiTests/BrowserManagerRuntimeWiringTests \
             -only-testing:SumiTests/BrowserManagerInitializationWiringOwnerTests \
@@ -91,7 +92,7 @@ jobs:
             -only-testing:SumiTests/BrowserSidebarActionOwnerTests \
             -only-testing:SumiTests/SidebarRegularTabsControllerTests \
             -only-testing:SumiTests/SidebarSpaceBodyInjectionRegressionTests \
-            -only-testing:SumiTests/TabWebViewOwnershipOwnerTests \
+            -only-testing:SumiTests/TabWebViewMaterializationAndRebuildTests \
             -only-testing:SumiTests/BrowserShortcutPinUnloadOwnerTests \
             test
 

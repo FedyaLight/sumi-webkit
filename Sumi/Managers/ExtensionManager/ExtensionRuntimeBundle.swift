@@ -20,8 +20,14 @@ final class ExtensionRuntimeBundle {
 
     init(manager: ExtensionManager) {
         self.windowFocusResolutionOwner = ExtensionWindowFocusResolutionOwner(
-            browserBridgeContext: { [weak manager] in
-                manager?.browserBridgeContext
+            windowQuery: { [weak manager] in
+                manager?.extensionWindowQuery
+            },
+            tabQuery: { [weak manager] in
+                manager?.extensionTabQuery
+            },
+            auxiliaryWindows: { [weak manager] in
+                manager?.extensionAuxiliaryWindows
             },
             profileIdForContext: { [weak manager] context in
                 manager?.profileId(for: context)
@@ -45,9 +51,9 @@ final class ExtensionRuntimeBundle {
         self.siteAccessPolicyCoordinator = ExtensionSiteAccessPolicyCoordinator(
             siteAccessPolicyStore: manager.siteAccessPolicyStore,
             installCapabilityOwner: manager.installCapabilityOwner,
-            installedExtensions: { [weak manager] in manager?.installedExtensions ?? [] },
+            installedExtensions: { [weak manager] in manager?.installedExtensionCollection.records ?? [] },
             loadedExtensionManifests: { [weak manager] in
-                manager?.loadedExtensionManifests ?? [:]
+                manager?.runtimeSession.loadedExtensionManifests ?? [:]
             },
             getExtensionContext: { [weak manager] extensionId, profileId in
                 manager?.getExtensionContext(for: extensionId, profileId: profileId)
@@ -78,10 +84,10 @@ final class ExtensionRuntimeBundle {
                 manager?.resolvedProfileId(explicitProfileId: explicitProfileId)
             },
             recordRuntimeMetric: { [weak manager] extensionId, update in
-                manager?.runtimeSessionOwner.recordRuntimeMetric(for: extensionId, update: update)
+                manager?.runtimeSession.recordRuntimeMetric(for: extensionId, update: update)
             },
             trace: { [weak manager] message in
-                manager?.extensionRuntimeTrace(message)
+                manager?.runtimeDiagnostics.trace(message)
             },
             logBackgroundWakeFailure: { [weak manager] error, extensionContext, reason, operation in
                 manager?.logBackgroundWakeFailure(
@@ -100,8 +106,14 @@ final class ExtensionRuntimeBundle {
             }
         )
         self.requestedWindowOpeningOwner = ExtensionRequestedWindowOpeningOwner(
-            browserBridgeContext: { [weak manager] in
-                manager?.browserBridgeContext
+            windowQuery: { [weak manager] in
+                manager?.extensionWindowQuery
+            },
+            requestedTabTargets: { [weak manager] in
+                manager?.requestedTabTargetQuery
+            },
+            tabMutation: { [weak manager] in
+                manager?.extensionTabMutation
             },
             profileIdForContext: { [weak manager] context in
                 manager?.profileId(for: context)
@@ -110,12 +122,20 @@ final class ExtensionRuntimeBundle {
                 manager?.windowMatchesProfile(windowState, profileId: profileId) ?? false
             },
             extensionLoadURL: { [weak manager] url, controller in
-                manager?.requestedTabLifecycleOwner.loadURL(for: url, controller: controller) ?? (nil, nil)
+                guard let manager else { return (nil, nil) }
+                let load = manager.requestedTabLoadResolver.resolve(
+                    url,
+                    controller: controller
+                )
+                return (load.url, load.extensionContext)
             },
             prepareContentScriptContextsForInitialLoad: { [weak manager] loadURL, contextOverride, targetWindow, targetSpace, controller in
-                _ = await manager?.prepareContentScriptContextsForExtensionRequestedInitialLoad(
-                    loadURL: loadURL,
-                    webExtensionContextOverride: contextOverride,
+                guard let manager else { return }
+                _ = await manager.requestedTabContextPreloader.prepare(
+                    load: ExtensionRequestedTabLoad(
+                        url: loadURL,
+                        extensionContext: contextOverride
+                    ),
                     targetWindow: targetWindow,
                     targetSpace: targetSpace,
                     controller: controller
@@ -125,7 +145,7 @@ final class ExtensionRuntimeBundle {
                 guard let manager else {
                     throw ExtensionManagerCallbackError.extensionManagerUnavailable.nsError()
                 }
-                return try manager.openExtensionRequestedTab(
+                return try manager.requestedTabOpening.open(
                     url: url,
                     shouldBeActive: shouldBeActive,
                     shouldBePinned: shouldBePinned,
@@ -139,16 +159,18 @@ final class ExtensionRuntimeBundle {
                 manager?.adapterResolutionOwner.windowAdapter(for: windowId)
             },
             materializeNormalTabIfNeeded: { [weak manager] tab, isActive, targetWindow in
-                manager?.materializeExtensionRequestedNormalTabIfNeeded(
+                guard let manager else { return }
+                manager.requestedTabWebViewMaterializer
+                    .materializeNormalTabIfNeeded(
                     tab,
                     isActive: isActive,
                     targetWindow: targetWindow
                 )
             },
             registerCreatedTabWithExtensionRuntime: { [weak manager] tab, reason in
-                manager?.registerExtensionCreatedTabWithExtensionRuntime(
-                    tab,
-                    reason: reason
+                guard let manager else { return }
+                manager.extensionCreatedTabRegistrar.register(
+                    tab, reason: reason
                 )
             }
         )

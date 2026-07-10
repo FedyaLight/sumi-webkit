@@ -89,7 +89,7 @@ final class BrowserAppOrchestrationOwner {
                 browserManager != nil
             },
             setupWindowState: { [weak browserManager] windowState in
-                browserManager?.windowSessionBundle.activationOwner.setupWindowState(windowState)
+                browserManager?.windowSessionBundle.restoration.restore(windowState)
             },
             handleWindowWillClose: { [weak browserManager] windowId in
                 browserManager?.windowSessionBundle.historySessionOwner.handleWindowWillClose(windowId)
@@ -98,7 +98,7 @@ final class BrowserAppOrchestrationOwner {
                 browserManager?.extensionsModule.notifyWindowClosedIfLoaded(windowId)
             },
             cleanupWebViews: { windowId in
-                webViewCoordinator.cleanupWindow(windowId)
+                webViewCoordinator.lifecycleService.cleanupWindow(windowId)
             },
             cleanupSplitWindow: { [weak browserManager] windowId in
                 browserManager?.splitManager.cleanupWindow(windowId)
@@ -115,13 +115,14 @@ final class BrowserAppOrchestrationOwner {
                 await browserManager?.windowSessionBundle.commands.closeIncognitoWindow(windowState)
             },
             setActiveWindowState: { [weak browserManager] windowState in
-                browserManager?.windowSessionBundle.activationOwner.setActiveWindowState(windowState)
+                browserManager?.windowSessionBundle.activation.activate(windowState)
             },
             handleWindowVisibilityChanged: { [weak browserManager] windowState in
-                browserManager?.windowSessionBundle.activationOwner.handleWindowVisibilityChanged(windowState)
+                browserManager?.windowSessionBundle.activation.handleVisibilityChanged(windowState)
             },
             prepareForAllWindowsClosed: { [weak browserManager] in
-                browserManager?.windowSessionService.prepareForAllWindowsClosed()
+                browserManager?.windowSessionBundle.restoreService
+                    .prepareForAllWindowsClosed()
             },
             performAllWindowsClosedSiteDataCleanup: { [weak browserManager] in
                 guard let browserManager else { return }
@@ -131,9 +132,13 @@ final class BrowserAppOrchestrationOwner {
                     )
             },
             cleanupWindowAfterRuntimeDeallocation: { windowId in
-                webViewCoordinator.removeCompositorContainerView(for: windowId)
+                // BrowserManager is the model/runtime root. If it has already
+                // gone away, every remaining normal-tab WebView belongs to a
+                // dead session, including detached and deferred-cleanup views.
+                webViewCoordinator.lifecycleService
+                    .cleanupAfterBrowserRuntimeDeallocation()
                 RuntimeDiagnostics.emit(
-                    "⚠️ [SumiApp] Window \(windowId) closed after BrowserManager deallocation - performed minimal cleanup"
+                    "⚠️ [SumiApp] Window \(windowId) closed after BrowserManager deallocation - performed terminal browser-session cleanup"
                 )
             }
         )

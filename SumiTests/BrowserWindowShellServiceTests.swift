@@ -4,6 +4,7 @@ import XCTest
 
 @testable import Sumi
 import SumiDomain
+import SumiWebRuntime
 
 @MainActor
 final class BrowserWindowShellServiceTests: XCTestCase {
@@ -190,8 +191,12 @@ final class BrowserWindowShellServiceTests: XCTestCase {
     private func makeHarness() throws -> Harness {
         let startupContainer = try makeInMemoryStartupContainer()
         let context = startupContainer.mainContext
+        let webViewSessions = WebViewSessionRepository()
         let profileManager = ProfileManager(context: context)
-        let tabManager = TabManager(context: context)
+        let tabManager = TabManager(
+            context: context,
+            webViewSessions: webViewSessions
+        )
         let permissionCoordinator = RecordingPermissionCoordinator()
         let permissionLifecycleController = SumiPermissionGrantLifecycleController(
             coordinator: permissionCoordinator,
@@ -204,7 +209,7 @@ final class BrowserWindowShellServiceTests: XCTestCase {
         return Harness(
             startupContainer: startupContainer,
             windowRegistry: WindowRegistry(),
-            webViewCoordinator: WebViewCoordinator(),
+            webViewCoordinator: WebViewCoordinator(webViewSessions: webViewSessions),
             permissionCoordinator: permissionCoordinator,
             permissionLifecycleController: permissionLifecycleController,
             profileManager: profileManager,

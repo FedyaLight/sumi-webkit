@@ -103,43 +103,35 @@ struct TabBrowserActionService {
 @MainActor
 struct TabWebViewRoutingRuntime {
     var syncTabAcrossWindows: (UUID, WKWebView?) -> Void
-    var reloadTabAcrossWindows: (UUID) -> Void
+    var reloadTabAcrossWindows: (
+        UUID,
+        TabMainFrameNavigationIntent,
+        WebRuntimeMainFrameReloadPolicy
+    ) -> Void
+    var reloadTabInWindow: (
+        UUID,
+        UUID,
+        TabMainFrameNavigationIntent,
+        WebRuntimeMainFrameReloadPolicy
+    ) -> TabMainFrameReloadCommandOutcome
+    var retainWebContentProcessRecovery: (UUID, WKWebView) -> Bool
+    var recoverWebContentProcess: (
+        UUID,
+        WKWebView
+    ) -> TabMainFrameReloadCommandOutcome
+    var cancelWebContentProcessRecovery: (WKWebView) -> Void
     var setMuteState: (Bool, UUID) -> Void
-    /// Phase 6B / N5: session-first ownership notes (no-op until browser runtime attaches).
-    var noteParkedWebView: (WKWebView?, UUID) -> Void
-    var noteUntrackedWebView: (WKWebView?, UUID) -> Void
-    var notePrimaryAssignment: (UUID, WKWebView?, UUID) -> Void
-    var clearPrimaryAssignment: (UUID) -> Void
-    var clearWebViewSession: (UUID) -> Void
-    /// Session/registry readers used by Tab accessors (nil until runtime attaches).
-    var anyLiveWebView: (Tab) -> WKWebView?
-    var sessionParkedWebView: (UUID) -> WKWebView?
-    var sessionUntrackedWebView: (UUID) -> WKWebView?
-    var sessionPrimaryWindowId: (UUID) -> UUID?
-    var sessionPrimaryWebView: (UUID) -> WKWebView?
-    var primaryTrackedWindowId: (UUID) -> UUID?
-    var windowOwnedWebView: (UUID, UUID) -> WKWebView?
-    var hasLiveWebView: (Tab) -> Bool
-    var adoptLocalWebViewSession: (TabWebViewSession, UUID) -> Void
+    var bindWebViewSession: (WebViewSessionHandle) -> Void
 
     static let inactive = Self(
         syncTabAcrossWindows: { _, _ in /* No-op. */ },
-        reloadTabAcrossWindows: { _ in /* No-op. */ },
+        reloadTabAcrossWindows: { _, _, _ in /* No-op. */ },
+        reloadTabInWindow: { _, _, _, _ in .failed },
+        retainWebContentProcessRecovery: { _, _ in false },
+        recoverWebContentProcess: { _, _ in .failed },
+        cancelWebContentProcessRecovery: { _ in /* No-op. */ },
         setMuteState: { _, _ in /* No-op. */ },
-        noteParkedWebView: { _, _ in /* No-op. */ },
-        noteUntrackedWebView: { _, _ in /* No-op. */ },
-        notePrimaryAssignment: { _, _, _ in /* No-op. */ },
-        clearPrimaryAssignment: { _ in /* No-op. */ },
-        clearWebViewSession: { _ in /* No-op. */ },
-        anyLiveWebView: { _ in nil },
-        sessionParkedWebView: { _ in nil },
-        sessionUntrackedWebView: { _ in nil },
-        sessionPrimaryWindowId: { _ in nil },
-        sessionPrimaryWebView: { _ in nil },
-        primaryTrackedWindowId: { _ in nil },
-        windowOwnedWebView: { _, _ in nil },
-        hasLiveWebView: { _ in false },
-        adoptLocalWebViewSession: { _, _ in /* No-op. */ }
+        bindWebViewSession: { _ in /* No-op. */ }
     )
 }
 
@@ -158,11 +150,13 @@ struct TabRuntimePersistenceCallbacks {
 struct TabMediaRuntimeCallbacks {
     var scheduleNowPlayingRefresh: (UInt64) -> Void
     var scheduleBackgroundMediaReconcile: (String) -> Void
+    var invalidateBackgroundMediaCommand: (WKWebView) -> Void
     var notifyNowPlayingTabUnloaded: (UUID) -> Void
 
     static let inactive = Self(
         scheduleNowPlayingRefresh: { _ in /* No-op. */ },
         scheduleBackgroundMediaReconcile: { _ in /* No-op. */ },
+        invalidateBackgroundMediaCommand: { _ in /* No-op. */ },
         notifyNowPlayingTabUnloaded: { _ in /* No-op. */ }
     )
 }
@@ -206,11 +200,13 @@ struct TabHistorySwipeRuntime {
 @MainActor
 struct TabNavigationCommandRuntime {
     var resolvedSearchEngineTemplate: () -> String?
-    var prepareExtensionPageNavigation: (Tab, URL, String) -> Bool
+    var prepareExtensionPageNavigation: (Tab, URL, String) -> TabWebViewReplacementOutcome
 
     init(
         resolvedSearchEngineTemplate: @escaping () -> String?,
-        prepareExtensionPageNavigation: @escaping (Tab, URL, String) -> Bool = { _, _, _ in false }
+        prepareExtensionPageNavigation: @escaping (Tab, URL, String) -> TabWebViewReplacementOutcome = {
+            _, _, _ in .notNeeded
+        }
     ) {
         self.resolvedSearchEngineTemplate = resolvedSearchEngineTemplate
         self.prepareExtensionPageNavigation = prepareExtensionPageNavigation
@@ -284,27 +280,46 @@ struct TabLifecycleNavigationRuntime {
     var prepareExtensionWebView: (WKWebView, URL, String) -> Void
     var prepareExtensionRuntimeBeforeCommit: (Tab, URL, String) -> Void
     var markExtensionEligibleAfterCommit: (Tab, String) -> Void
-    var loadZoomForTab: (UUID) -> Void
+    var loadZoomForTab: (UUID, WKWebView) -> Void
     var applyAdblockZapperRulesAfterNavigation: (WKWebView, URL, Tab) -> Void
     var enforceSiteDataPolicyAfterNavigation: (Tab) -> Void
     var resolveAuthenticationChallenge: (
         _ challenge: URLAuthenticationChallenge,
         _ tab: Tab
     ) async -> SumiAuthChallengeDisposition?
-    var isPreparingForDataCleanupNavigation: (WKWebView) -> Bool
-    var finishDestructiveDataCleanupNavigation: (WKWebView) -> Void
+    var destructiveDataCleanupNavigationWillStart: (
+        WKWebView,
+        ObjectIdentifier,
+        AnyObject,
+        URL?,
+        UInt64?
+    ) -> Void
+    var isPreparingForDataCleanupNavigation: (
+        WKWebView,
+        ObjectIdentifier,
+        AnyObject
+    ) -> Bool
+    var finishDestructiveDataCleanupNavigation: (
+        WKWebView,
+        ObjectIdentifier,
+        AnyObject,
+        Bool
+    ) -> Void
+    var handleDestructiveDataCleanupProcessTermination: (WKWebView) -> Bool
 
     static let inactive = Self(
         resetRevisitProtection: { _ in /* No-op. */ },
         prepareExtensionWebView: { _, _, _ in /* No-op. */ },
         prepareExtensionRuntimeBeforeCommit: { _, _, _ in /* No-op. */ },
         markExtensionEligibleAfterCommit: { _, _ in /* No-op. */ },
-        loadZoomForTab: { _ in /* No-op. */ },
+        loadZoomForTab: { _, _ in /* No-op. */ },
         applyAdblockZapperRulesAfterNavigation: { _, _, _ in /* No-op. */ },
         enforceSiteDataPolicyAfterNavigation: { _ in /* No-op. */ },
         resolveAuthenticationChallenge: { _, _ in .next },
-        isPreparingForDataCleanupNavigation: { _ in false },
-        finishDestructiveDataCleanupNavigation: { _ in /* No-op. */ }
+        destructiveDataCleanupNavigationWillStart: { _, _, _, _, _ in /* No-op. */ },
+        isPreparingForDataCleanupNavigation: { _, _, _ in false },
+        finishDestructiveDataCleanupNavigation: { _, _, _, _ in /* No-op. */ },
+        handleDestructiveDataCleanupProcessTermination: { _ in false }
     )
 }
 
@@ -324,15 +339,32 @@ struct TabPermissionRuntime {
 @MainActor
 struct TabWebViewCleanupRuntime {
     var deferProtectedWebViewCleanup: (WKWebView, UUID, String) -> Bool
+    var deferWebsiteDataMutationWebViewMaterialization: (
+        Tab,
+        @MainActor @Sendable @escaping () -> Void
+    ) -> Bool
+    var deferWebsiteDataMutationMainFrameSubmission: (
+        Tab,
+        WKWebView,
+        UInt64,
+        @MainActor @Sendable @escaping () -> Void
+    ) -> Bool
+    var retireParkedWebView: (Tab, WKWebView, String) -> Bool
     var cleanupUserScripts: (WKUserContentController, UUID) -> Void
     var removeWebViewFromContainers: (WKWebView) -> Void
-    var removeAllWebViews: (_ tab: Tab, _ closeActiveFullscreenMedia: Bool) -> Bool
+    var removeAllWebViews: (
+        _ tab: Tab,
+        _ closeActiveFullscreenMedia: Bool
+    ) -> WebViewTabTeardownResult
 
     static let inactive = Self(
         deferProtectedWebViewCleanup: { _, _, _ in false },
+        deferWebsiteDataMutationWebViewMaterialization: { _, _ in false },
+        deferWebsiteDataMutationMainFrameSubmission: { _, _, _, _ in false },
+        retireParkedWebView: { _, _, _ in false },
         cleanupUserScripts: { _, _ in /* No-op. */ },
         removeWebViewFromContainers: { _ in /* No-op. */ },
-        removeAllWebViews: { _, _ in false }
+        removeAllWebViews: { _, _ in .none }
     )
 }
 
@@ -355,6 +387,9 @@ struct TabNormalWebViewExtensionRuntime {
 struct TabNavigationDelegateRuntime {
     var externalSchemePermissionBridge: () -> SumiExternalSchemePermissionBridge?
     var downloadManager: () -> DownloadManager?
+    var autoplayPolicy: @MainActor (URL?, Profile?) -> SumiAutoplayPolicy = {
+        _, _ in .default
+    }
 
     static let inactive = Self(
         externalSchemePermissionBridge: { nil },
@@ -441,18 +476,23 @@ struct TabInstallNavigationRuntime {
 
 @MainActor
 struct TabWebViewReplacementRuntime {
-    var trackedWindowIdContainingWebView: (WKWebView) -> UUID?
-    var hasTrackedWebViews: (UUID) -> Bool
-    var setTrackedWebView: (WKWebView, UUID, UUID) -> Void
-    var removeTrackedWebViews: (Tab) -> Bool
-    var refreshWindowAfterWebViewReplacement: (UUID) -> Void
+    var rebuildTrackedWebViews: (
+        Tab,
+        UUID?,
+        URL,
+        String,
+        DeferredWebViewRebuildConfiguration
+    ) -> TabWebViewRebuildResult
+    var commitUntrackedReplacement: (
+        Tab,
+        WKWebView,
+        WKWebView,
+        String
+    ) -> WebViewDetachedReplacementCommitOutcome
 
     static let inactive = Self(
-        trackedWindowIdContainingWebView: { _ in nil },
-        hasTrackedWebViews: { _ in false },
-        setTrackedWebView: { _, _, _ in /* No-op. */ },
-        removeTrackedWebViews: { _ in false },
-        refreshWindowAfterWebViewReplacement: { _ in /* No-op. */ }
+        rebuildTrackedWebViews: { _, _, _, _, _ in .failed },
+        commitUntrackedReplacement: { _, _, _, _ in .rejected }
     )
 }
 
@@ -484,6 +524,7 @@ enum SumiHistoryNavigationKind {
 }
 
 struct TabBackForwardNavigationContext {
+    let webView: WKWebView
     let originURL: URL?
     let originHistoryURL: URL?
     let originHistoryItem: WKBackForwardListItem?

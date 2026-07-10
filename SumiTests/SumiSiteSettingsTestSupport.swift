@@ -261,6 +261,19 @@ final class SiteSettingsFakeWebsiteDataService: SumiWebsiteDataCleanupServicing 
 }
 
 @MainActor
+private final class SiteSettingsImmediateDestructiveCleanupPreparer:
+    SumiDestructiveBrowsingDataCleanupPreparing {
+    func performDestructiveDataCleanup(
+        profileIDs: Set<UUID>,
+        deletion: @escaping @MainActor () async -> Void
+    ) async -> Bool {
+        guard profileIDs.isEmpty == false else { return false }
+        await deletion()
+        return true
+    }
+}
+
+@MainActor
 struct SiteSettingsRepositoryHarness {
     let profile: Profile
     let coordinator: SiteSettingsFakePermissionCoordinator
@@ -313,6 +326,13 @@ struct SiteSettingsRepositoryHarness {
             now: { Date(timeIntervalSince1970: 1_800_000_000) }
         )
         self.permissionCleanupService = cleanupService
+        let profileWebsiteDataMutationService =
+            SumiProfileWebsiteDataMutationService(
+                cleanupService: websiteDataService
+            )
+        profileWebsiteDataMutationService.attachDestructiveCleanupPreparer(
+            SiteSettingsImmediateDestructiveCleanupPreparer()
+        )
         self.repository = SumiPermissionSettingsRepository(
             coordinator: coordinator,
             systemPermissionService: system,
@@ -323,6 +343,7 @@ struct SiteSettingsRepositoryHarness {
             externalSchemeSessionStore: externalSchemeStore,
             indicatorEventStore: indicatorStore,
             websiteDataCleanupService: websiteDataService,
+            profileWebsiteDataMutationService: profileWebsiteDataMutationService,
             permissionCleanupService: cleanupService,
             userDefaults: userDefaults,
             now: { Date(timeIntervalSince1970: 1_800_000_000) }

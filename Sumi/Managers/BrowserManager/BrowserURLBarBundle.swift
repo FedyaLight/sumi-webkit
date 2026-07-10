@@ -63,11 +63,11 @@ final class BrowserURLBarBundle {
                 browserManager?.chromeBundle.workspaceThemeEditorOwner.dismissThemePickerDiscardingIfNeeded()
             },
             persistWindowSession: { [weak browserManager] windowState in
-                browserManager?.windowSessionBundle.activationOwner.persistWindowSession(for: windowState)
+                browserManager?.windowSessionBundle.persistence.persist(windowState)
             },
             schedulePersistWindowSession: { [weak browserManager] windowState, delayNanoseconds in
-                browserManager?.windowSessionBundle.activationOwner.schedulePersistWindowSession(
-                    for: windowState,
+                browserManager?.windowSessionBundle.persistence.schedule(
+                    windowState,
                     delayNanoseconds: delayNanoseconds
                 )
             }

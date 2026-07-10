@@ -25,15 +25,26 @@ enum CompositorPaneDestination: String, CaseIterable {
 
 @MainActor
 @Observable
-class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
+class WebViewCoordinator {
     @ObservationIgnored
-    let webViewRegistry = WindowWebViewRegistry()
+    let webViewSessions: WebViewSessionRepository
 
-    /// Phase 6B: parked + untracked session material outside Tab fields (Tab remains a mirror).
     @ObservationIgnored
-    private(set) lazy var tabWebViewSessionStore = TabWebViewSessionStore(
-        webViewRegistry: webViewRegistry
-    )
+    let runtimeTabs: WebViewRuntimeTabRegistry
+
+    @ObservationIgnored
+    let ownershipQuery: WebViewOwnershipQuery
+
+    init(webViewSessions: WebViewSessionRepository) {
+        self.webViewSessions = webViewSessions
+        let runtimeTabs = WebViewRuntimeTabRegistry(
+            webViewSessions: webViewSessions
+        )
+        self.runtimeTabs = runtimeTabs
+        ownershipQuery = WebViewOwnershipQuery(
+            webViewSessions: webViewSessions
+        )
+    }
 
     @ObservationIgnored
     let visibleWebViewRuntimeOwner = VisibleWebViewRuntimeOwner()
@@ -42,7 +53,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     let crossWindowSyncOwner = WebViewCrossWindowSyncOwner()
 
     @ObservationIgnored
-    private let webViewAssignmentRebuildOwner = WebViewAssignmentRebuildOwner()
+    private let backgroundTransitionLedger = WebViewBackgroundTransitionLedger()
 
     @ObservationIgnored
     let webViewTrackingLifecycleOwner = WebViewTrackingLifecycleOwner()
@@ -52,7 +63,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
 
     @ObservationIgnored
     private lazy var trackedRegistrationOwner = WebViewTrackedRegistrationOwner(
-        webViewRegistry: webViewRegistry,
+        webViewSessions: webViewSessions,
         mediaProtectionOwner: mediaProtectionOwner,
         trackingLifecycleOwner: webViewTrackingLifecycleOwner,
         trackedCleanupExecutionOwner: trackedCleanupExecutionOwner,
@@ -63,120 +74,66 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
             return self.runtimeContextStore.requireBrowser()
         },
         removeWebViewFromContainers: { [weak self] webView in
-            self?.removeWebViewFromContainers(webView)
+            self?.compositorRuntime.removeWebViewFromContainers(webView)
         },
         pruneInvalidDeferredCommands: { [weak self] reason in
-            self?.pruneInvalidDeferredProtectedCommands(reason: reason)
+            self?.protectionRuntime.pruneInvalidCommands(reason: reason)
         },
         flushDeferredProtectedCommands: { [weak self] webViewID in
-            self?.flushDeferredProtectedCommands(for: webViewID)
+            self?.protectionRuntime.flush(for: webViewID)
         },
         finishDestructiveCleanupNavigation: { [weak self] webView in
-            self?.finishDestructiveDataCleanupNavigation(on: webView)
+            self?.websiteDataCleanupService.webViewDidLeaveRuntime(webView)
         },
         performFallbackWebViewCleanup: { [weak self] webView, tabID in
-            self?.performFallbackWebViewCleanup(webView, tabId: tabID)
+            self?.physicalCleanupService.clean(webView, tabID: tabID)
         },
         resolvedTab: { [weak self] tabID in
-            self?.resolvedTab(with: tabID)
+            guard let self else { return nil }
+            if let tab = self.runtimeTabs.boundTab(tabID) {
+                return tab
+            }
+            return self.runtimeTabs.resolve(
+                tabID,
+                runtime: self.runtimeContextStore.requireBrowser()
+            )
         },
         refreshPrimaryTrackedWebView: { [weak self] tab in
-            self?.refreshPrimaryTrackedWebView(for: tab)
+            self?.visibilityRuntime.refreshPrimaryWebView(for: tab)
+        },
+        removeRecentVisibility: { [visibleWebViewRuntimeOwner] owner in
+            visibleWebViewRuntimeOwner.removeRecentVisibility(for: owner)
         }
     )
 
     @ObservationIgnored
-    private lazy var tabTeardownOwner = WebViewTabTeardownOwner(
-        webViewRegistry: webViewRegistry,
-        tabWebViewSessionStore: tabWebViewSessionStore,
-        mediaProtectionOwner: mediaProtectionOwner,
-        isWebViewProtectedFromCompositorMutation: { [weak self] webView in
-            self?.isWebViewProtectedFromCompositorMutation(webView) ?? false
-        },
-        enqueueDeferredProtectedCommand: { [weak self] command, webView, reason in
-            self?.enqueueDeferredProtectedCommand(
-                command,
-                for: webView,
-                reason: reason
-            ) ?? false
-        },
-        cleanupUnprotectedTrackedWebView: { [weak self] webView, owner, tabHandle in
-            self?.cleanupUnprotectedTrackedWebView(
-                webView,
-                owner: owner,
-                tab: tabHandle.flatMap { $0.concreteTab }
-            )
-        },
-        refreshPrimaryTrackedWebView: { [weak self] tabHandle in
-            guard let tab = tabHandle.concreteTab else { return }
-            self?.refreshPrimaryTrackedWebView(for: tab)
-        },
-        removeWebViewFromContainers: { [weak self] webView in
-            self?.removeWebViewFromContainers(webView)
-        },
-        unregisterTrackedWebViewSlot: { [weak self] owner, expectedWebView in
-            self?.unregisterTrackedWebViewSlot(
-                owner: owner,
-                expectedWebView: expectedWebView
-            )
-        }
-    )
-
-    @ObservationIgnored
-    private lazy var windowCleanupOwner = WebViewWindowCleanupOwner(
-        cleanupScopeOwner: cleanupScopeOwner,
-        webViewRegistry: webViewRegistry,
-        visibleWebViewRuntimeOwner: visibleWebViewRuntimeOwner,
-        mediaProtectionOwner: mediaProtectionOwner,
-        browserRuntimeContext: { [weak self] in
-            self?.runtimeContextStore.browser
-        },
-        isWebViewProtectedFromCompositorMutation: { [weak self] webView in
-            self?.isWebViewProtectedFromCompositorMutation(webView) ?? false
-        },
-        enqueueDeferredProtectedCommand: { [weak self] command, webView, reason in
-            self?.enqueueDeferredProtectedCommand(
-                command,
-                for: webView,
-                reason: reason
-            ) ?? false
-        },
-        cleanupUnprotectedTrackedWebView: { [weak self] webView, owner, tabHandle in
-            self?.cleanupUnprotectedTrackedWebView(
-                webView,
-                owner: owner,
-                tab: tabHandle.flatMap { $0.concreteTab }
-            )
-        },
-        refreshPrimaryTrackedWebView: { [weak self] tabHandle in
-            guard let tab = tabHandle.concreteTab else { return }
-            self?.refreshPrimaryTrackedWebView(for: tab)
-        },
-        removeCompositorContainerView: { [weak self] windowId in
-            self?.removeCompositorContainerView(for: windowId)
-        },
-        finishCleanupSuppression: { [weak self] webViewIDs in
-            self?.finishDestructiveCleanupSuppression(for: webViewIDs)
-        }
-    )
-
-    @ObservationIgnored
-    private lazy var navigationBroadcastOwner = WebViewNavigationBroadcastOwner(
+    private(set) lazy var navigationBroadcastOwner = WebViewNavigationBroadcastOwner(
         crossWindowSyncOwner: crossWindowSyncOwner,
-        webViewRegistry: webViewRegistry,
-        tabWebViewSessionStore: tabWebViewSessionStore,
+        webViewSessions: webViewSessions,
         isWebViewProtectedFromCompositorMutation: { [weak self] webView in
-            self?.isWebViewProtectedFromCompositorMutation(webView) ?? false
+            self?.protectionRuntime.isProtected(webView) ?? false
         },
-        primaryTrackedWindowId: { [weak self] tabId in
-            self?.primaryTrackedWindowId(for: tabId)
+        deferProtectedNavigation: { [weak self] command, webView in
+            self?.protectionRuntime.schedule(
+                command,
+                for: webView,
+                reason: "WebViewNavigationBroadcastOwner.protectedTarget"
+            ) ?? .invalidTarget
+        }
+    )
+
+    @ObservationIgnored
+    private(set) lazy var processRecoveryService = WebContentProcessRecoveryService(
+        isProtected: { [mediaProtectionOwner] webView in
+            mediaProtectionOwner.isProtected(webView)
         },
-        rebuildLiveWebViews: { [weak self] tab, preferredPrimaryWindowId, url in
-            self?.rebuildLiveWebViews(
-                for: tab,
-                preferredPrimaryWindowId: preferredPrimaryWindowId,
-                load: url
-            ) ?? false
+        submit: { tab, webView, intent in
+            tab.navigationCommandOwner.submitExactReload(
+                on: webView,
+                tab: tab,
+                intent: intent,
+                policy: .standard
+            )
         }
     )
 
@@ -209,750 +166,352 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     )
 
     @ObservationIgnored
-    private lazy var destructiveCleanupFlowOwner = WebViewDestructiveCleanupFlowOwner(
+    private(set) lazy var physicalCleanupService =
+        WebViewPhysicalCleanupService(
+            webViewSessions: webViewSessions,
+            processRecovery: processRecoveryService,
+            mediaProtection: mediaProtectionOwner,
+            protectedCommands: protectedCommandDispatchOwner,
+            runtimeAssembler: runtimeAssembler
+        )
+
+    @ObservationIgnored
+    private let webViewCreationPlanner = WebViewCreationPlanner()
+
+    @ObservationIgnored
+    private let replacementTransitionRegistry =
+        WebViewReplacementTransitionRegistry()
+
+    @ObservationIgnored
+    private lazy var replacementPipeline: WebViewReplacementPipeline = {
+        let pipeline = WebViewReplacementPipeline(runtime: .init(
+            webViewSessions: webViewSessions,
+            quiesce: { [weak self] webView in
+                self?.processRecoveryService.cancel(webView)
+                self?.compositorRuntime.removeWebViewFromContainers(webView)
+            },
+            destroy: { [weak self] tabID, webView in
+                guard let self else { return }
+                self.websiteDataCleanupService.webViewDidLeaveRuntime(webView)
+                self.physicalCleanupService.clean(webView, tabID: tabID)
+            },
+            restore: { [weak self] tabID, snapshot in
+                guard let self else { return }
+                let context = self.runtimeContextStore.requireBrowser()
+                if let tab = self.runtimeTabs.resolve(tabID, runtime: context) {
+                    self.visibilityRuntime.refreshPrimaryWebView(for: tab)
+                }
+                for windowID in snapshot.windowWebViews.keys
+                    where context.window(windowID) != nil {
+                    context.refreshCompositor(windowID)
+                }
+            },
+            uninstallObservationsIfUntracked: { [weak self] webView in
+                self?.trackedRegistrationOwner
+                    .uninstallMediaProtectionObservationsIfUntracked(webView)
+            }
+        ))
+        replacementTransitionRegistry.install { [weak pipeline]
+            profileIDs,
+            reason in
+            pipeline?.abort(profileIDs: profileIDs, reason: reason) ?? 0
+        }
+        return pipeline
+    }()
+
+    @ObservationIgnored
+    private lazy var replacementActivation = ReplacementNavigationActivation(
+        runtime: .init(
+            webViewSessions: webViewSessions,
+            pipeline: replacementPipeline,
+            installTrackedObservations: { [weak self] webView in
+                self?.trackedRegistrationOwner
+                    .installMediaProtectionObservationsIfNeeded(on: webView)
+            },
+            restorePresentation: { [weak self] tabID, snapshot in
+                guard let self else { return }
+                let context = self.runtimeContextStore.requireBrowser()
+                if let tab = self.runtimeTabs.resolve(tabID, runtime: context) {
+                    self.visibilityRuntime.refreshPrimaryWebView(for: tab)
+                }
+                for windowID in snapshot.windowWebViews.keys
+                    where context.window(windowID) != nil {
+                    context.refreshCompositor(windowID)
+                }
+            },
+            pruneDeferredCommands: { [weak self] reason in
+                self?.protectionRuntime.pruneInvalidCommands(reason: reason)
+            }
+        )
+    )
+
+    @ObservationIgnored
+    lazy var tabWebViewMaterialization:
+        TabWebViewMaterializationService = makeTabWebViewMaterializationService()
+
+    private func makeTabWebViewMaterializationService()
+        -> TabWebViewMaterializationService {
+        TabWebViewMaterializationService(
+            runtime: .init(
+                webViewSessions: webViewSessions,
+                initialDocumentWarmup: { [weak self] in
+                    guard let self else {
+                        preconditionFailure("WebViewCoordinator deallocated")
+                    }
+                    let context = self.runtimeContextStore
+                        .requireInitialDocument()
+                    return InitialDocumentWarmupRuntime(
+                        needsInitialDocumentExtensionContextLoad: {
+                            context.needsInitialDocumentExtensionContextLoad($0)
+                        },
+                        ensureInitialExtensionContextsLoaded: {
+                            await context.ensureInitialExtensionContextsLoaded($0)
+                        },
+                        refreshCompositorForWindow: {
+                            context.refreshCompositorForWindow($0)
+                        }
+                    )
+                },
+                register: { [weak self] webView, tabID, windowID in
+                    self?.trackedRegistrationOwner.register(
+                        webView,
+                        for: tabID,
+                        in: windowID
+                    )
+                },
+                promotePrimary: { [weak self] owner, webView in
+                    guard let self else { return false }
+                    return self.webViewTrackingLifecycleOwner
+                        .promoteTrackedWebViewToPrimary(
+                            owner: owner,
+                            expectedWebView: webView,
+                            in: self.webViewSessions
+                        )
+                },
+                primaryCandidate: { [weak self] tabID in
+                    guard let self else { return nil }
+                    return self.visibleWebViewRuntimeOwner
+                        .preferredPrimaryWebViewCandidate(
+                            for: tabID,
+                            runtime: self.runtimeAssembler
+                                .requireVisiblePreparationRuntime(),
+                            webViewSessions: self.webViewSessions
+                        )
+                },
+                notifyActivatedIfCurrent: { [weak self] tab, windowID in
+                    guard let self else { return }
+                    let context = self.runtimeContextStore.requireBrowser()
+                    guard let window = context.window(windowID),
+                          context.currentTab(window)?.id == tab.id else {
+                        return
+                    }
+                    context.notifyTabActivatedIfLoaded(tab)
+                }
+            ),
+            planner: webViewCreationPlanner
+        )
+    }
+
+    @ObservationIgnored
+    private(set) lazy var ownershipService = WebViewOwnershipService(
+        webViewSessions: webViewSessions,
+        runtimeTabs: runtimeTabs,
+        query: ownershipQuery,
+        trackedRegistration: trackedRegistrationOwner,
+        materialization: tabWebViewMaterialization,
+        websiteDataCleanup: websiteDataCleanupService,
+        processRecovery: processRecoveryService,
+        mediaProtection: mediaProtectionOwner,
+        protectedCommands: protectedCommandDispatchOwner,
+        replacementPipeline: replacementPipeline
+    )
+
+    @ObservationIgnored
+    private(set) lazy var protectionRuntime = WebViewProtectionRuntime(
+        mediaProtection: mediaProtectionOwner,
+        protectedCommands: protectedCommandDispatchOwner,
+        processRecovery: processRecoveryService,
+        webViewSessions: webViewSessions,
+        visibleRuntime: visibleWebViewRuntimeOwner,
+        websiteDataCleanup: websiteDataCleanupService
+    )
+
+    @ObservationIgnored
+    private(set) lazy var compositorRuntime = WebViewCompositorRuntime(
+        visibleRuntime: visibleWebViewRuntimeOwner,
+        backgroundTransitions: backgroundTransitionLedger,
+        scheduleProtectedCommand: { [weak self] command, webView, reason in
+            self?.protectionRuntime.schedule(
+                command,
+                for: webView,
+                reason: reason
+            ) ?? .invalidTarget
+        },
+        pruneInvalidProtectedCommands: { [weak self] reason in
+            self?.protectionRuntime.pruneInvalidCommands(reason: reason)
+        }
+    )
+
+    @ObservationIgnored
+    private(set) lazy var visibilityRuntime = WebViewVisibilityRuntime(
+        visibleRuntime: visibleWebViewRuntimeOwner,
+        materialization: tabWebViewMaterialization,
+        runtimeAssembler: runtimeAssembler,
+        runtimeContextStore: runtimeContextStore
+    )
+
+    @ObservationIgnored
+    private(set) lazy var lifecycleService = WebViewLifecycleService(
+        webViewSessions: webViewSessions,
+        runtimeContextStore: runtimeContextStore,
+        ownershipQuery: ownershipQuery,
+        processRecovery: processRecoveryService,
+        deferredProtectedCommands: deferredProtectedCommandExecutionOwner,
+        mediaProtection: mediaProtectionOwner,
+        websiteDataCleanup: websiteDataCleanupService,
+        protection: protectionRuntime,
+        compositor: compositorRuntime,
+        visibility: visibilityRuntime,
+        visibleRuntime: visibleWebViewRuntimeOwner,
+        cleanupScope: cleanupScopeOwner,
+        trackedRegistration: trackedRegistrationOwner,
+        physicalCleanup: physicalCleanupService,
+        runtimeAssembler: runtimeAssembler
+    )
+
+    @ObservationIgnored
+    private(set) lazy var visiblePreparationService =
+        WebViewVisiblePreparationService(
+            visibility: visibilityRuntime,
+            webViewSessions: webViewSessions,
+            ownershipQuery: ownershipQuery,
+            ownershipService: ownershipService
+        )
+
+    @ObservationIgnored
+    private lazy var tabWebViewRebuild = TabWebViewRebuildService(
+        runtime: .init(
+            webViewSessions: webViewSessions,
+            pipeline: replacementPipeline,
+            activation: replacementActivation,
+            isProtected: { [weak self] webView in
+                self?.protectionRuntime.isProtected(webView) ?? false
+            },
+            deferProtected: { [weak self] command, webView, reason in
+                self?.protectionRuntime.schedule(
+                    command,
+                    for: webView,
+                    reason: reason
+                ) ?? .invalidTarget
+            },
+            liveWindowIDs: { [weak self] in
+                guard let self else { return [] }
+                return Set(
+                    self.runtimeContextStore.requireBrowser().allWindows().map(\.id)
+                )
+            },
+            primaryCandidate: { [weak self] tabID in
+                guard let self else { return nil }
+                return self.visibleWebViewRuntimeOwner
+                    .preferredPrimaryWebViewCandidate(
+                        for: tabID,
+                        runtime: self.runtimeAssembler
+                            .requireVisiblePreparationRuntime(),
+                        webViewSessions: self.webViewSessions
+                    )?.owner
+            }
+        )
+    )
+
+    @ObservationIgnored
+    private(set) lazy var rebuildService = WebViewRebuildService(
+        runtimeTabs: runtimeTabs,
+        websiteDataCleanup: websiteDataCleanupService,
+        engine: tabWebViewRebuild
+    )
+
+    @ObservationIgnored
+    private lazy var profileTransitionService = ProfileTransitionService(
+        runtime: .init(
+            webViewSessions: webViewSessions,
+            admissionIsBlocked: { [weak self] profileID in
+                self?.websiteDataCleanupService.admissionIsBlocked(
+                    profileID: profileID
+                ) ?? true
+            },
+            deferAdmission: { [weak self] profileID, key, replay in
+                self?.websiteDataCleanupService.deferOrdinaryAdmission(
+                    profileID: profileID,
+                    key: key,
+                    replay: replay
+                ) ?? false
+            },
+            isProtected: { [weak self] webView in
+                self?.protectionRuntime.isProtected(webView) ?? false
+            },
+            deferProtectedCommand: { [weak self] command, webView, reason in
+                self?.protectionRuntime.schedule(
+                    command,
+                    for: webView,
+                    reason: reason
+                ) ?? .invalidTarget
+            },
+            provisioning: ProfileReplacementProvisioning(),
+            pipeline: replacementPipeline,
+            activation: replacementActivation
+        )
+    )
+
+    @ObservationIgnored
+    private(set) lazy var profileAssignmentService =
+        WebViewProfileAssignmentService(
+            runtimeTabs: runtimeTabs,
+            runtimeContextStore: runtimeContextStore,
+            transitions: profileTransitionService,
+            replacementPipeline: replacementPipeline
+        )
+
+    @ObservationIgnored
+    private(set) lazy var websiteDataCleanupService = WebsiteDataCleanupService(
         browserRuntimeContext: { [weak self] in
             guard let self else {
                 preconditionFailure(
-                    "WebViewDestructiveCleanupFlowOwner outlived its coordinator"
+                    "WebsiteDataCleanupService outlived its coordinator"
                 )
             }
             return self.runtimeContextStore.requireBrowser()
         },
         liveWebViews: { [weak self] tab in
-            self?.suspensionLiveWebViews(for: tab) ?? []
+            self?.ownershipQuery.suspensionLiveWebViews(for: tab) ?? []
         },
-        isWebViewProtectedFromCompositorMutation: { [weak self] webView in
-            self?.isWebViewProtectedFromCompositorMutation(webView) ?? false
+        waitForMutationPermission: { [weak self] webView in
+            guard let self else { return false }
+            return await self.mediaProtectionOwner.waitUntilUnprotected(webView)
+        },
+        restoreSubmission: { tab, targetURL in
+            tab.navigationCommandOwner.restoreAfterDestructiveDataCleanup(
+                tab,
+                targetURL: targetURL
+            )
+        },
+        abortOwnershipTransitions: { [weak self] profileIDs in
+            _ = self?.replacementTransitionRegistry.abort(
+                profileIDs: profileIDs,
+                reason: .destructiveDataCleanup
+            )
+        },
+        waitForOwnershipTransitions: { [webViewSessions] in
+            await webViewSessions.waitUntilOwnershipTransitionsAreSettled()
+        },
+        runtimeMutationGeneration: { [webViewSessions] in
+            webViewSessions.residenceGeneration
+        },
+        runtimeTabs: { [weak self] in
+            guard let self else { return nil }
+            return self.runtimeTabs.canonicalRuntimeOwnedTabs(
+                runtime: self.runtimeContextStore.requireBrowser()
+            )
         }
     )
 
-    // MARK: - Compositor Container Management
-
-    func setCompositorContainerView(_ view: NSView?, for windowId: UUID) {
-        visibleWebViewRuntimeOwner.setCompositorContainerView(view, for: windowId)
-    }
-
-    func setImmediateVisualHandoffHandler(
-        _ handler: (@MainActor () -> Bool)?,
-        for windowId: UUID
-    ) {
-        visibleWebViewRuntimeOwner.setImmediateVisualHandoffHandler(handler, for: windowId)
-    }
-
-    @discardableResult
-    func performImmediateVisualHandoffIfPossible(in windowId: UUID) -> Bool {
-        visibleWebViewRuntimeOwner.performImmediateVisualHandoffIfPossible(in: windowId)
-    }
-
-    func compositorContainerView(for windowId: UUID) -> NSView? {
-        visibleWebViewRuntimeOwner.compositorContainerView(for: windowId)
-    }
-
-    func removeCompositorContainerView(for windowId: UUID) {
-        visibleWebViewRuntimeOwner.removeCompositorContainerView(
-            for: windowId,
-            webViewRegistry: webViewRegistry,
-            pruneInvalidDeferredCommands: { [self] reason in
-                pruneInvalidDeferredProtectedCommands(reason: reason)
-            }
-        )
-    }
-
-    func compositorContainers() -> [(UUID, NSView)] {
-        visibleWebViewRuntimeOwner.compositorContainers()
-    }
-
-    // MARK: - WebView Pool Management
-
-    func getWebView(for tabId: UUID, in windowId: UUID) -> WKWebView? {
-        webViewRegistry.webView(for: tabId, in: windowId)
-    }
-
-    func getAllWebViews(for tabId: UUID) -> [WKWebView] {
-        webViewRegistry.webViews(for: tabId)
-    }
-
-    func trackedLiveWebViews(for tab: Tab) -> [WKWebView] {
-        uniqueWebViews(Array(webViewRegistry.windowWebViews(for: tab.id).values))
-    }
-
-    func suspensionLiveWebViews(for tab: Tab) -> [WKWebView] {
-        allKnownWebViews(for: tab)
-    }
-
-    private func allKnownWebViews(for tab: Tab) -> [WKWebView] {
-        tabTeardownOwner.allKnownWebViews(for: tab)
-    }
-
-    func isPreparingForDataCleanupNavigation(on webView: WKWebView) -> Bool {
-        destructiveCleanupFlowOwner.isSuppressingNavigation(on: webView)
-    }
-
-    func finishDestructiveDataCleanupNavigation(on webView: WKWebView) {
-        destructiveCleanupFlowOwner.finishNavigationSuppression(on: webView)
-    }
-
-    func prepareForDestructiveDataCleanup(profileIDs: Set<UUID>) async {
-        destructiveCleanupFlowOwner.prepareForDestructiveDataCleanup(profileIDs: profileIDs)
-    }
-
-    func windowIDs(for tabId: UUID) -> [UUID] {
-        webViewRegistry.windowIDs(for: tabId)
-    }
-
-    /// Registry-backed primary window for a tab (preferred tracked candidate).
-    /// Does not require a wired visible-runtime context — safe for bare coordinators/tests.
-    func primaryTrackedWindowId(for tabId: UUID) -> UUID? {
-        visibleWebViewRuntimeOwner.preferredPrimaryWebViewCandidate(
-            for: tabId,
-            runtime: nil,
-            webViewRegistry: webViewRegistry
-        )?.owner.windowID
-            ?? windowIDs(for: tabId).sorted { $0.uuidString < $1.uuidString }.first
-    }
-
-    func setWebView(_ webView: WKWebView, for tabId: UUID, in windowId: UUID) {
-        registerTrackedWebView(webView, for: tabId, in: windowId)
-    }
-
-    func registerPromotedHost(
-        _ host: any WebRuntimePromotedHost,
-        for tabId: UUID,
-        in windowId: UUID,
-        attachmentCompletion: (@MainActor () -> Void)? = nil
-    ) {
-        visibleWebViewRuntimeOwner.registerPromotedHost(
-            host,
-            for: tabId,
-            in: windowId,
-            attachmentCompletion: attachmentCompletion
-        )
-    }
-
-    func takePromotedHost(
-        for tabId: UUID,
-        in windowId: UUID,
-        expectedWebView: WKWebView
-    ) -> (any WebRuntimePromotedHost)? {
-        visibleWebViewRuntimeOwner.takePromotedHost(
-            for: tabId,
-            in: windowId,
-            expectedWebView: expectedWebView
-        )
-    }
-
-    func completePromotedHostAttachment(for tabId: UUID, in windowId: UUID) {
-        visibleWebViewRuntimeOwner.completePromotedHostAttachment(for: tabId, in: windowId)
-    }
-
-    @discardableResult
-    func prepareVisibleWebViews(
-        for windowState: BrowserWindowState
-    ) -> Bool {
-        let runtime = runtimeAssembler.requireVisiblePreparationRuntime()
-        return prepareVisibleWebViews(
-            for: windowState,
-            runtime: runtime
-        )
-    }
-
-    @discardableResult
-    func prepareVisibleWebViews(
-        for windowState: BrowserWindowState,
-        runtime: VisibleWebViewPreparationRuntime
-    ) -> Bool {
-        visibleWebViewRuntimeOwner.prepareVisibleWebViews(
-            for: windowState,
-            runtime: runtime,
-            webViewRegistry: webViewRegistry,
-            existingWebView: { [self] tabId, windowId in
-                getWebView(for: tabId, in: windowId)
-            },
-            createWebView: { [self] tabHandle, windowId in
-                guard let tab = tabHandle.concreteTab else { return nil }
-                return getOrCreateWebView(for: tab, in: windowId)
-            }
-        )
-    }
-
-    func schedulePrepareVisibleWebViews(
-        for windowState: BrowserWindowState
-    ) {
-        let runtime = runtimeAssembler.requireVisiblePreparationRuntime()
-        visibleWebViewRuntimeOwner.schedulePrepareVisibleWebViews(
-            for: windowState,
-            runtime: runtime,
-            prepareVisibleWebViews: { [weak self] windowHandle in
-                guard let self,
-                      let windowState = windowHandle.concreteWindowState
-                else { return false }
-                return self.prepareVisibleWebViews(
-                    for: windowState,
-                    runtime: runtime
-                )
-            }
-        )
-    }
-
-    func attachVisiblePreparationRuntimeContext(_ context: WebViewCoordinatorVisibleRuntimeContext) {
-        runtimeContextStore.visible = context
-    }
-
-    func detachVisiblePreparationRuntimeContext() {
-        runtimeContextStore.visible = nil
-    }
-
-    func attachBrowserRuntimeContext(_ context: WebViewCoordinatorBrowserRuntimeContext) {
-        runtimeContextStore.browser = context
-    }
-
-    func detachBrowserRuntimeContext() {
-        runtimeContextStore.browser = nil
-    }
-
-    func attachInitialDocumentRuntimeContext(
-        _ context: InitialDocumentWebViewRuntimeContext
-    ) {
-        runtimeContextStore.initialDocument = context
-    }
-
-    func detachInitialDocumentRuntimeContext() {
-        runtimeContextStore.initialDocument = nil
-    }
-
-    func attachShutdownRuntimeContext(_ context: WebViewCoordinatorShutdownRuntimeContext) {
-        runtimeContextStore.shutdown = context
-    }
-
-    func detachShutdownRuntimeContext() {
-        runtimeContextStore.shutdown = nil
-    }
-
-    // MARK: - Window Cleanup
-
-    func cleanupWindow(_ windowId: UUID) {
-        windowCleanupOwner.cleanupWindow(windowId)
-    }
-
-    func cleanupAllWebViews() {
-        windowCleanupOwner.cleanupAllWebViews()
-    }
-
-    // MARK: - History Swipe Protection
-
-    func beginHistorySwipeProtection(
-        tabId: UUID,
-        webView: WKWebView,
-        originURL: URL?,
-        originHistoryItem: WKBackForwardListItem?
-    ) {
-        let windowId = windowId(containing: webView)
-        let webViewID = mediaProtectionOwner.beginHistorySwipeProtection(
-            on: webView,
-            windowID: windowId,
-            originURL: originURL,
-            originHistoryItem: originHistoryItem
-        )
-        RuntimeDiagnostics.swipeTrace(
-            "begin tab=\(tabId.uuidString.prefix(8)) window=\(windowId?.uuidString.prefix(8) ?? "nil") webView=\(webViewID) url=\((originURL ?? originHistoryItem?.url)?.absoluteString ?? "nil")"
-        )
-    }
-
-    @discardableResult
-    func finishHistorySwipeProtection(
-        tabId: UUID,
-        webView: WKWebView?,
-        currentURL: URL?,
-        currentHistoryItem: WKBackForwardListItem?
-    ) -> Bool {
-        guard let result = mediaProtectionOwner.finishHistorySwipeProtection(
-            on: webView,
-            currentURL: currentURL,
-            currentHistoryItem: currentHistoryItem
-        ) else { return false }
-        RuntimeDiagnostics.swipeTrace(
-            "finish tab=\(tabId.uuidString.prefix(8)) webView=\(result.webViewID) cancelled=\(result.wasCancelled) url=\((currentURL ?? currentHistoryItem?.url)?.absoluteString ?? "nil")"
-        )
-        flushDeferredProtectedCommands(for: result.webViewID)
-        return result.wasCancelled
-    }
-
-    func hasActiveHistorySwipe(in windowId: UUID) -> Bool {
-        mediaProtectionOwner.hasActiveHistorySwipe(in: windowId)
-    }
-
-    func hasActiveFullscreen(in windowId: UUID) -> Bool {
-        mediaProtectionOwner.hasActiveFullscreen(in: windowId)
-    }
-
-    func closeActiveFullscreenMedia(in windowId: UUID) {
-        mediaProtectionOwner.closeActiveFullscreenMedia(in: windowId) { [self] webViewID in
-            resolveWebView(with: webViewID)
-        }
-    }
-
-    func isWebViewProtectedFromCompositorMutation(_ webView: WKWebView) -> Bool {
-        mediaProtectionOwner.isProtected(webView)
-    }
-
-    func beginVisualHandoffProtection(for webView: WKWebView) {
-        mediaProtectionOwner.beginVisualHandoffProtection(for: webView)
-    }
-
-    func finishVisualHandoffProtection(for webView: WKWebView) {
-        guard let webViewID = mediaProtectionOwner.finishVisualHandoffProtection(for: webView) else {
-            return
-        }
-        flushDeferredProtectedCommands(for: webViewID)
-    }
-
-    func windowID(containing webView: WKWebView) -> UUID? {
-        windowId(containing: webView)
-    }
-
-    func prepareWebKitClose(
-        _ webView: WKWebView
-    ) -> WebViewCoordinatorWebKitClosePreparation {
-        let webViewID = ObjectIdentifier(webView)
-        mediaProtectionOwner.note(webView)
-        finishDestructiveDataCleanupNavigation(on: webView)
-
-        if enqueueDeferredProtectedCommand(
-            .closeWebViewFromWebKit(webViewID: webViewID),
-            for: webView,
-            reason: "webViewDidClose"
-        ) {
-            mediaProtectionOwner.closeFullscreenMediaIfNeeded(on: webView)
-            return .deferred
-        }
-
-        return .ready(trackedOwner: trackedOwner(containing: webView))
-    }
-
-    func cleanupTrackedWebViewAfterWebKitClose(
-        _ webView: WKWebView,
-        owner: TrackedWebViewOwner
-    ) {
-        cleanupTrackedWebView(webView, owner: owner)
-    }
-
-    func flushDeferredProtectedCommands(for webViewID: ObjectIdentifier) {
-        protectedCommandDispatchOwner.flushCommands(for: webViewID)
-    }
-
-    // MARK: - Smart WebView Assignment (Memory Optimization)
-
-    /// Gets or creates a WebView for the specified tab and window.
-    /// Implements smart assignment to prevent duplicate WebViews:
-    /// - If no window is displaying this tab yet, creates a "primary" WebView
-    /// - If another window is already displaying this tab, creates a "clone" WebView
-    /// - Returns existing WebView if this window already has one
-    func getOrCreateWebView(for tab: Tab, in windowId: UUID) -> WKWebView? {
-        webViewAssignmentRebuildOwner.getOrCreateWebView(
-            for: tab,
-            in: windowId,
-            runtime: runtimeAssembler.assignmentRebuildRuntime(for: tab)
-        )
-    }
-
-    func removeWebViewFromContainers(_ webView: WKWebView) {
-        if enqueueDeferredProtectedCommand(
-            .removeWebViewFromContainers(webViewID: ObjectIdentifier(webView)),
-            for: webView,
-            reason: "removeWebViewFromContainers"
-        ) {
-            return
-        }
-
-        for (_, container) in compositorContainers() {
-            removeMatchingWebView(webView, from: container)
-        }
-    }
-
-    /// `WKWebView` instances live under pane views, not only as direct children of the compositor container.
-    private func removeMatchingWebView(_ webView: WKWebView, from root: NSView) {
-        for subview in Array(root.subviews) {
-            if let host = subview as? SumiWebViewContainerView,
-               host.webView === webView {
-                host.removeFromSuperview()
-            } else if subview === webView {
-                subview.removeFromSuperview()
-            } else {
-                removeMatchingWebView(webView, from: subview)
-            }
-        }
-    }
-
-    private func windowId(containing webView: WKWebView) -> UUID? {
-        guard let owner = trackedOwner(containing: webView) else { return nil }
-        return owner.windowID
-    }
-
-    @discardableResult
-    func removeAllWebViews(
-        for tab: Tab,
-        closeActiveFullscreenMedia: Bool = false
-    ) -> Bool {
-        tabTeardownOwner.removeAllWebViews(
-            for: tab,
-            closeActiveFullscreenMedia: closeActiveFullscreenMedia
-        )
-    }
-
-    @discardableResult
-    func suspendWebViews(for tab: Tab, reason: String) -> Bool {
-        tabTeardownOwner.suspendWebViews(for: tab, reason: reason)
-    }
-
-    // MARK: - WebView Creation & Cross-Window Sync
-
-    @available(macOS 15.5, *)
-    @discardableResult
-    func rebuildLiveWebViews(
-        for tab: Tab,
-        preferredPrimaryWindowId: UUID? = nil,
-        load url: URL? = nil
-    ) -> Bool {
-        webViewAssignmentRebuildOwner.rebuildLiveWebViews(
-            for: tab,
-            preferredPrimaryWindowId: preferredPrimaryWindowId,
-            load: url,
-            runtime: runtimeAssembler.assignmentRebuildRuntime(for: tab)
-        )
-    }
-
-    @discardableResult
-    func deferProtectedWebViewCleanup(
-        _ webView: WKWebView,
-        tabID: UUID,
-        reason: String
-    ) -> Bool {
-        enqueueDeferredProtectedCommand(
-            .cleanupTabWebView(
-                webViewID: ObjectIdentifier(webView),
-                tabID: tabID
-            ),
-            for: webView,
-            reason: reason
-        )
-    }
-
-    // MARK: - Private Helpers
-
-    @discardableResult
-    func enqueueDeferredProtectedCommand(
-        _ command: DeferredWebViewCommand,
-        for webView: WKWebView,
-        reason: String
-    ) -> Bool {
-        protectedCommandDispatchOwner.enqueue(command, for: webView, reason: reason)
-    }
-
-    func resolveWebView(
-        with identifier: ObjectIdentifier
-    ) -> WKWebView? {
-        if let webView = webViewRegistry.trackedWebView(with: identifier) {
-            mediaProtectionOwner.note(webView)
-            return webView
-        }
-        return mediaProtectionOwner.resolveWeakWebView(with: identifier)
-    }
-
-    func resolvedTab(with tabID: UUID) -> Tab? {
-        let runtimeContext = requireBrowserRuntimeContext()
-        return resolvedTab(with: tabID, runtimeContext: runtimeContext)
-    }
-
-    func resolvedTab(
-        with tabID: UUID,
-        runtimeContext: WebViewCoordinatorBrowserRuntimeContext
-    ) -> Tab? {
-        runtimeContext.resolveWebRuntimeTab(tabID)?.concreteTab
-    }
-
-    func pruneInvalidDeferredProtectedCommands(reason: String) {
-        finishDestructiveCleanupSuppression(
-            for: mediaProtectionOwner.pruneStaleBookkeeping(reason: "\(reason).staleBookkeeping")
-        )
-        protectedCommandDispatchOwner.pruneInvalidCommands(reason: reason)
-    }
-
-    func finishDestructiveCleanupSuppression(for webViewIDs: [ObjectIdentifier]) {
-        destructiveCleanupFlowOwner.finishNavigationSuppression(for: webViewIDs)
-    }
-
-    func cleanupTrackedWebView(
-        _ webView: WKWebView,
-        owner: TrackedWebViewOwner
-    ) {
-        trackedRegistrationOwner.cleanupTrackedWebView(webView, owner: owner)
-    }
-
-    func cleanupUnprotectedTrackedWebView(
-        _ webView: WKWebView,
-        owner: TrackedWebViewOwner,
-        tab: Tab?
-    ) {
-        trackedRegistrationOwner.cleanupUnprotectedTrackedWebView(
-            webView,
-            owner: owner,
-            tab: tab
-        )
-    }
-
-    func visibleTabIDSet(in windowId: UUID) -> Set<UUID> {
-        visibleWebViewRuntimeOwner.visibleTabIDSet(
-            in: windowId,
-            runtime: runtimeAssembler.requireVisiblePreparationRuntime()
-        )
-    }
-
-    private func requireBrowserRuntimeContext() -> WebViewCoordinatorBrowserRuntimeContext {
-        runtimeContextStore.requireBrowser()
-    }
-
-    private func registerTrackedWebView(
-        _ webView: WKWebView,
-        for tabId: UUID,
-        in windowId: UUID
-    ) {
-        trackedRegistrationOwner.register(webView, for: tabId, in: windowId)
-    }
-
-    @discardableResult
-    func unregisterTrackedWebViewSlot(
-        owner: TrackedWebViewOwner,
-        expectedWebView: WKWebView? = nil,
-        removeFromSuperview: Bool = false,
-        removeRecentVisibility: Bool = true
-    ) -> WKWebView? {
-        trackedRegistrationOwner.unregisterSlot(
-            owner: owner,
-            expectedWebView: expectedWebView,
-            removeFromSuperview: removeFromSuperview,
-            removeRecentVisibility: removeRecentVisibility
-        )
-    }
-
-    func trackedOwner(containing webView: WKWebView) -> TrackedWebViewOwner? {
-        webViewRegistry.trackedOwner(containing: webView)
-    }
-
-    /// Window-tracked WebViews first; then an untracked tab-owned instance if present.
-    func anyLiveWebView(for tab: Tab) -> WKWebView? {
-        if let primaryWindowId = primaryTrackedWindowId(for: tab.id),
-           let tracked = getWebView(for: tab.id, in: primaryWindowId) {
-            return tracked
-        }
-        if let firstTracked = getAllWebViews(for: tab.id).first {
-            return firstTracked
-        }
-        return untrackedOwnedWebView(for: tab)
-    }
-
-    func untrackedOwnedWebView(for tab: Tab) -> WKWebView? {
-        guard windowIDs(for: tab.id).isEmpty else { return nil }
-        tabWebViewSessionStore.promoteLocalSessionIfNeeded(
-            tabId: tab.id,
-            localSession: tab.webViewOwnershipOwner.localSession
-        )
-        guard let webView = tabWebViewSessionStore.untrackedWebView(for: tab.id) else {
-            return nil
-        }
-        guard (webView as? FocusableWKWebView)?.owningTab === tab else { return nil }
-        return webView
-    }
-
-    func hasLiveWebView(for tab: Tab) -> Bool {
-        anyLiveWebView(for: tab) != nil
-    }
-
-    func ownsLiveWebView(_ webView: WKWebView, for tab: Tab) -> Bool {
-        if trackedOwner(containing: webView)?.tabID == tab.id {
-            return true
-        }
-        tabWebViewSessionStore.promoteLocalSessionIfNeeded(
-            tabId: tab.id,
-            localSession: tab.webViewOwnershipOwner.localSession
-        )
-        let session = tabWebViewSessionStore.session(for: tab.id)
-        return session.untrackedWebView === webView
-            || session.parkedWebView === webView
-            || session.primaryWebView === webView
-    }
-
-    func assignWebView(_ webView: WKWebView, to tab: Tab, in windowId: UUID) {
-        // Session note happens inside Tab.assignPrimaryWebView when runtime is attached;
-        // note again here so coordinator-only paths stay authoritative even before attach.
-        tabWebViewSessionStore.notePrimaryAssignment(
-            windowId: windowId,
-            for: tab.id,
-            webView: webView
-        )
-        tab.assignWebViewToWindow(webView, windowId: windowId)
-        setWebView(webView, for: tab.id, in: windowId)
-    }
-
-    func installUntrackedOwnedWebView(_ webView: WKWebView, for tab: Tab) {
-        tabWebViewSessionStore.noteUntrackedWebView(webView, for: tab.id)
-        tab.replaceUntrackedWebView(webView)
-    }
-
-    /// Materializes a tab-owned WebView without assigning a window slot.
-    /// Used by Glance previews and other pre-window surfaces.
-    @discardableResult
-    func ensureUntrackedOwnedWebView(for tab: Tab) -> WKWebView? {
-        if let existing = anyLiveWebView(for: tab) {
-            return existing
-        }
-        let webView = tab.ensureUntrackedNormalWebView(
-            reason: "WebViewCoordinator.ensureUntrackedOwnedWebView"
-        )
-        // Ensure path notes session via Tab mutators when runtime is attached;
-        // reinforce here for coordinator-first paths.
-        if let webView {
-            tabWebViewSessionStore.noteUntrackedWebView(webView, for: tab.id)
-        }
-        return webView
-    }
-
-    /// Releases an untracked tab-owned WebView (Glance dismiss, pre-window teardown).
-    func releaseUntrackedOwnedWebView(for tab: Tab) {
-        if let webView = anyLiveWebView(for: tab) {
-            tab.cleanupCloneWebView(webView)
-        }
-        tab.clearCurrentWebViewOwnership()
-        tabWebViewSessionStore.clearAll(for: tab.id)
-        _ = removeAllWebViews(for: tab)
-    }
-
-    /// Atomically replaces the live WebView for a tab (windowed or untracked).
-    /// Creates via Tab factory, optionally validates before install, then cleans up the previous instance.
-    @discardableResult
-    func replaceLiveWebView(
-        for tab: Tab,
-        in windowId: UUID?,
-        reason: String,
-        prepareConfiguration: ((WKWebViewConfiguration) -> Void)? = nil,
-        prepareReplacement: ((WKWebView) -> Void)? = nil,
-        validate: ((WKWebView) -> Bool)? = nil
-    ) -> WKWebView? {
-        let previousWebView = {
-            if let windowId {
-                return getWebView(for: tab.id, in: windowId) ?? anyLiveWebView(for: tab)
-            }
-            return anyLiveWebView(for: tab)
-        }()
-
-        guard let replacementWebView = tab.makeNormalTabWebView(
-            reason: reason,
-            prepareConfiguration: prepareConfiguration
-        ) else {
-            return nil
-        }
-        prepareReplacement?(replacementWebView)
-        if let validate, validate(replacementWebView) == false {
-            tab.cleanupCloneWebView(replacementWebView)
-            return nil
-        }
-
-        if let windowId {
-            assignWebView(replacementWebView, to: tab, in: windowId)
-        } else {
-            installUntrackedOwnedWebView(replacementWebView, for: tab)
-        }
-
-        if let previousWebView, previousWebView !== replacementWebView {
-            tab.cleanupCloneWebView(previousWebView)
-        }
-
-        return replacementWebView
-    }
-
-    private func uniqueWebViews(_ webViews: [WKWebView]) -> [WKWebView] {
-        var seen: Set<ObjectIdentifier> = []
-        var unique: [WKWebView] = []
-        for webView in webViews {
-            let identifier = ObjectIdentifier(webView)
-            if seen.insert(identifier).inserted {
-                unique.append(webView)
-            }
-        }
-        return unique
-    }
-
-    func refreshPrimaryTrackedWebView(for tab: Tab) {
-        webViewAssignmentRebuildOwner.refreshPrimaryTrackedWebView(
-            for: tab,
-            runtime: runtimeAssembler.assignmentRebuildRuntime(for: tab)
-        )
-    }
-
-    func evictHiddenWebViewsIfNeeded(
-        in windowId: UUID,
-        visibleTabIDs: Set<UUID>
-    ) {
-        let runtimeContext = requireBrowserRuntimeContext()
-        runtimeAssembler.evictHiddenWebViews(
-            in: windowId,
-            visibleTabIDs: visibleTabIDs,
-            globallyVisibleTabIDs: {
-                runtimeContext.globallyVisibleTabIDs()
-            },
-            runtimeContext: runtimeContext
-        )
-    }
-
-    func performFallbackWebViewCleanup(
-        _ webView: WKWebView,
-        tabId: UUID
-    ) {
-        if enqueueDeferredProtectedCommand(
-            .performFallbackWebViewCleanup(
-                webViewID: ObjectIdentifier(webView),
-                tabID: tabId
-            ),
-            for: webView,
-            reason: "performFallbackWebViewCleanup"
-        ) {
-            return
-        }
-
-        RuntimeDiagnostics.debug(category: "WebViewCoordinator") {
-            "Performing fallback WebView cleanup for tab=\(tabId.uuidString.prefix(8))."
-        }
-
-        SumiWebViewShutdown.perform(
-            on: webView,
-            tabId: tabId,
-            runtime: runtimeAssembler.shutdownRuntime()
-        )
-
-        RuntimeDiagnostics.debug(category: "WebViewCoordinator") {
-            "Fallback WebView cleanup completed for tab=\(tabId.uuidString.prefix(8))."
-        }
-    }
-
-    // MARK: - Cross-Window Sync
-
-    /// Sync a tab's URL across all windows displaying it
-    func syncTab(_ tab: Tab, to url: URL, originatingWebView: WKWebView? = nil) {
-        navigationBroadcastOwner.syncTab(tab, to: url, originatingWebView: originatingWebView)
-    }
-
-    /// Reload a tab across all windows displaying it
-    func reloadTab(_ tab: Tab) {
-        navigationBroadcastOwner.reloadTab(tab)
-    }
-
-    /// Reload a tab only in the requested window.
-    @discardableResult
-    func reloadTab(_ tab: Tab, in windowId: UUID) -> Bool {
-        navigationBroadcastOwner.reloadTab(tab, in: windowId)
-    }
-
-    /// Set mute state for a tab across all windows
-    func setMuteState(_ muted: Bool, for tabId: UUID) {
-        navigationBroadcastOwner.setMuteState(muted, for: tabId)
-    }
 }

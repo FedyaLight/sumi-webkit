@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 struct SumiProtectionStartupRestoreDiagnosticsSnapshot: Equatable, Sendable {
     let appliedProtectionLevel: String

@@ -30,7 +30,7 @@ final class SafariExtensionInlineOverlayRuntimeTests: XCTestCase {
             manager: manager,
             scratchDirectory: makeScratchDirectory()
         )
-        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
+        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
         manager.setDefaultSiteAccess(
             .allow,
             extensionId: installed.id,
@@ -679,7 +679,7 @@ final class SafariExtensionInlineOverlayRuntimeTests: XCTestCase {
             existingEntity: nil
         )
         try manager.persist(record: record)
-        _ = manager.installationFlowOwner.loadInstalledExtensionMetadata()
+        _ = manager.installedExtensionCatalog.load()
         return record
     }
 

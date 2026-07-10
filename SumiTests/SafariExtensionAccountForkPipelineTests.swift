@@ -303,7 +303,7 @@ final class SafariExtensionAccountForkPipelineTests: XCTestCase {
         @MainActor
         var controllerIdentityDiagnostics: String {
             let profileId = manager.resolvedProfileId(for: tab)
-            let expected = profileId.flatMap { manager.profileRuntimeOwner.controller(for: $0) }
+            let expected = profileId.flatMap { manager.profileRuntime.controller(for: $0) }
             let attached = webView.configuration.webExtensionController
             let expectedDescription = expected.map { "\(ObjectIdentifier($0))" } ?? "nil"
             let attachedDescription = attached.map { "\(ObjectIdentifier($0))" } ?? "nil"
@@ -382,7 +382,7 @@ final class SafariExtensionAccountForkPipelineTests: XCTestCase {
             manager: manager,
             scratchDirectory: makeScratchDirectory()
         )
-        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
+        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
         manager.setDefaultSiteAccess(
             .allow,
             extensionId: installed.id,
@@ -1185,7 +1185,7 @@ final class SafariExtensionAccountForkPipelineTests: XCTestCase {
             existingEntity: nil
         )
         try manager.persist(record: record)
-        _ = manager.installationFlowOwner.loadInstalledExtensionMetadata()
+        _ = manager.installedExtensionCatalog.load()
         return record
     }
 

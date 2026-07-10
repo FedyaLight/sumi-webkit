@@ -95,7 +95,10 @@ final class BrowserWindowShellService {
         )
 
         for tab in windowState.ephemeralTabs {
-            context.webViewCoordinator.removeAllWebViews(for: tab, closeActiveFullscreenMedia: true)
+            context.webViewCoordinator.lifecycleService.removeAllWebViews(
+                for: tab,
+                closeActiveFullscreenMedia: true
+            )
         }
 
         for tab in windowState.ephemeralTabs {

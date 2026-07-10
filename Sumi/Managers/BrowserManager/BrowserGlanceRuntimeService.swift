@@ -9,7 +9,7 @@ enum BrowserGlanceRuntimeService {
                 browserManager?.windowSessionBundle.tabContextOwner.windowState(containing: tab)
             },
             hasLoadedInitialTabData: { [weak browserManager] in
-                browserManager?.tabManager.hasLoadedInitialData ?? false
+                browserManager?.tabManager.startupRestoreLifecycle.hasLoadedInitialData ?? false
             },
             tab: { [weak browserManager] tabId in
                 browserManager?.tabManager.tabCollectionMembershipOwner.tab(for: tabId)
@@ -20,9 +20,9 @@ enum BrowserGlanceRuntimeService {
             shortcutLiveTab: { [weak browserManager] pinId, windowId in
                 browserManager?.tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pinId, in: windowId)
             },
-            activateShortcutPin: { [weak browserManager] pin, windowId, currentSpaceId in
+            activateShortcutPin: { [weak browserManager, tabFactory = browserManager.tabManager.tabFactory] pin, windowId, currentSpaceId in
                 guard let browserManager else {
-                    return Tab(url: pin.launchURL, name: pin.title)
+                    return tabFactory.makeTab(url: pin.launchURL, name: pin.title)
                 }
                 return browserManager.tabManager.shortcutLiveTabOwner.activateShortcutPin(
                     pin,
@@ -66,11 +66,11 @@ enum BrowserGlanceRuntimeService {
                 browserManager?.updateFindManagerCurrentTab()
             },
             persistWindowSession: { [weak browserManager] windowState in
-                browserManager?.windowSessionBundle.activationOwner.persistWindowSession(for: windowState)
+                browserManager?.windowSessionBundle.persistence.persist(windowState)
             },
-            makePreviewTab: { [weak browserManager] url, sourceTab, windowState in
+            makePreviewTab: { [weak browserManager, tabFactory = browserManager.tabManager.tabFactory] url, sourceTab, windowState in
                 guard let browserManager else {
-                    return Tab(
+                    return tabFactory.makeTab(
                         url: url,
                         name: url.host ?? "Glance",
                         favicon: "globe",
@@ -113,25 +113,24 @@ enum BrowserGlanceRuntimeService {
                 guard let webViewCoordinator = browserManager?.webViewCoordinator else {
                     return false
                 }
-                webViewCoordinator.registerPromotedHost(
+                return webViewCoordinator.compositorRuntime.registerPromotedHost(
                     host,
                     for: tabId,
                     in: windowId,
                     attachmentCompletion: attachmentCompletion
                 )
-                return true
             },
             previewWebView: { [weak browserManager] tab in
                 browserManager?.webViewRoutingService.anyLiveWebView(for: tab)
             },
             ensurePreviewWebView: { [weak browserManager] tab, _ in
-                browserManager?.webViewRoutingService.ensureUntrackedOwnedWebView(for: tab)
+                browserManager?.webViewOwnershipService?.ensureUntracked(for: tab)
             },
             ownsPreviewWebView: { [weak browserManager] tab, webView in
                 browserManager?.webViewRoutingService.ownsLiveWebView(webView, for: tab) ?? false
             },
             releasePreviewWebView: { [weak browserManager] tab in
-                browserManager?.webViewRoutingService.releaseUntrackedOwnedWebView(for: tab)
+                browserManager?.webViewOwnershipService?.releaseUntracked(for: tab)
             }
         )
     }
@@ -149,7 +148,7 @@ enum BrowserGlanceRuntimeService {
             browserManager: browserManager
         )
 
-        let tab = Tab(
+        let tab = browserManager.tabManager.tabFactory.makeTab(
             url: url,
             name: url.host ?? "Glance",
             favicon: "globe",

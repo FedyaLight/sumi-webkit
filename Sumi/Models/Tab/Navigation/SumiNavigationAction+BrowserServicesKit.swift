@@ -98,7 +98,8 @@ extension SumiNavigationAction {
             modifierFlags: navigationAction.modifierFlags,
             shouldDownload: navigationAction.shouldDownload,
             isUserEnteredURL: navigationAction.sumiIsUserEnteredURL,
-            isCustom: navigationAction.sumiIsCustom
+            isCustom: navigationAction.sumiIsCustom,
+            isClientRedirect: navigationAction.navigationType.redirect?.isClient == true
         )
     }
 }

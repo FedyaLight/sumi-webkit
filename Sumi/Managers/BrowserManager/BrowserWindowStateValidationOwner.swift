@@ -63,7 +63,7 @@ final class BrowserWindowStateValidationOwner {
                 browserManager?.showEmptyState(in: windowState)
             },
             persistWindowSession: { [weak browserManager] windowState in
-                browserManager?.windowSessionBundle.activationOwner.persistWindowSession(for: windowState)
+                browserManager?.windowSessionBundle.persistence.persist(windowState)
             },
             refreshCompositor: { [weak browserManager] windowState in
                 browserManager?.windowSessionBundle.visualMutationOwner.refreshCompositor(for: windowState)

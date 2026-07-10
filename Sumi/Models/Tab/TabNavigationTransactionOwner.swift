@@ -29,49 +29,69 @@ final class TabNavigationTransactionOwner {
 
     private var pendingTask: Task<Void, Never>?
     private var pendingToken: UUID?
+    private var pendingCancellation: (@MainActor () -> Void)?
     private var pendingBackForwardNavigationContext: TabBackForwardNavigationContext?
     private var pendingBackForwardSettleTask: Task<Void, Never>?
     var pendingMainFrameNavigationKind: TabMainFrameNavigationKind?
     var isFreezingNavDuringBackForwardGesture = false
 
     func cancelPendingMainFrameNavigation() {
+        precondition(
+            isFreezingNavDuringBackForwardGesture == false,
+            "History-swipe cancellation requires its runtime environment"
+        )
         cancelPendingPreparedLoad()
         clearRelatedNavigationState()
     }
 
+    func cancelPendingMainFrameNavigation(environment: HistorySwipeEnvironment) {
+        cancelPendingPreparedLoad()
+        guard isFreezingNavDuringBackForwardGesture else {
+            clearRelatedNavigationState()
+            return
+        }
+        finishBackForwardNavigationTracking(
+            using: nil,
+            environment: environment
+        )
+    }
+
     func perform(
         on webView: WKWebView,
-        performLoad: @MainActor (WKWebView) -> Void
-    ) {
-        cancelPendingMainFrameNavigation()
-
-        let token = UUID()
-        pendingToken = token
-
-        performLoad(webView)
-        pendingTask = nil
-        pendingToken = nil
+        performLoad: @MainActor (WKWebView) -> Bool
+    ) -> Bool {
+        cancelPendingPreparedLoad()
+        return performLoad(webView)
     }
 
     func performAfterPreparation(
         on webView: WKWebView,
         prepare: @escaping @MainActor () async -> Void,
+        didCancel: @escaping @MainActor () -> Void = {},
         performLoad: @escaping @MainActor @Sendable (WKWebView) -> Void
     ) {
-        cancelPendingMainFrameNavigation()
+        cancelPendingPreparedLoad()
 
         let token = UUID()
         pendingToken = token
+        pendingCancellation = didCancel
         pendingTask = Task { @MainActor [weak self, weak webView] in
             await prepare()
-            guard let self,
-                  let webView,
-                  self.pendingToken == token
-            else { return }
+            guard Task.isCancelled == false else { return }
+            guard let self else {
+                didCancel()
+                return
+            }
+            guard self.pendingToken == token else { return }
+            guard let webView else {
+                self.cancelPendingPreparedLoad()
+                return
+            }
 
-            performLoad(webView)
             self.pendingTask = nil
             self.pendingToken = nil
+            self.pendingCancellation = nil
+            performLoad(webView)
         }
     }
 
@@ -88,35 +108,14 @@ final class TabNavigationTransactionOwner {
         environment: HistorySwipeEnvironment
     ) {
         cancelPendingPreparedLoad()
-
-        let wasFreezingNavigationState = isFreezingNavDuringBackForwardGesture
-        let protectedWebView = webView ?? environment.currentWebView()
-        let settledWindowId = protectedWebView.flatMap(environment.windowIDContaining)
-
-        pendingBackForwardSettleTask?.cancel()
-        pendingBackForwardSettleTask = nil
+        if isFreezingNavDuringBackForwardGesture {
+            finishBackForwardNavigationTracking(using: webView, environment: environment)
+        } else {
+            pendingBackForwardSettleTask?.cancel()
+            pendingBackForwardSettleTask = nil
+            pendingBackForwardNavigationContext = nil
+        }
         pendingMainFrameNavigationKind = .load
-        pendingBackForwardNavigationContext = nil
-        isFreezingNavDuringBackForwardGesture = false
-
-        if wasFreezingNavigationState {
-            let wasCancelled = environment.finishHistorySwipeProtection(
-                environment.tabId,
-                protectedWebView,
-                protectedWebView?.url,
-                protectedWebView?.backForwardList.currentItem
-            )
-
-            applyWindowMutationResult(
-                wasCancelled: wasCancelled,
-                settledWindowId: settledWindowId,
-                environment: environment
-            )
-        }
-
-        if wasFreezingNavigationState {
-            environment.updateNavStateIfCurrentWebViewExists()
-        }
     }
 
     func beginBackForwardNavigationTracking(
@@ -124,12 +123,19 @@ final class TabNavigationTransactionOwner {
         environment: HistorySwipeEnvironment
     ) {
         cancelPendingPreparedLoad()
-        pendingBackForwardSettleTask?.cancel()
+        if isFreezingNavDuringBackForwardGesture {
+            finishBackForwardNavigationTracking(using: nil, environment: environment)
+        } else {
+            pendingBackForwardSettleTask?.cancel()
+            pendingBackForwardSettleTask = nil
+            pendingBackForwardNavigationContext = nil
+        }
         pendingMainFrameNavigationKind = .backForward
 
         let originURL = webView.url ?? environment.currentURL()
         let originHistoryItem = webView.backForwardList.currentItem
         pendingBackForwardNavigationContext = TabBackForwardNavigationContext(
+            webView: webView,
             originURL: originURL,
             originHistoryURL: originHistoryItem?.url,
             originHistoryItem: originHistoryItem
@@ -158,8 +164,7 @@ final class TabNavigationTransactionOwner {
         environment: HistorySwipeEnvironment
     ) {
         let wasFreezingNavigationState = isFreezingNavDuringBackForwardGesture
-        let resolvedWebView = webView ?? environment.currentWebView()
-        let settledWindowId = resolvedWebView.flatMap(environment.windowIDContaining)
+        let context = pendingBackForwardNavigationContext
 
         pendingBackForwardSettleTask?.cancel()
         pendingBackForwardSettleTask = nil
@@ -167,11 +172,25 @@ final class TabNavigationTransactionOwner {
         pendingBackForwardNavigationContext = nil
         isFreezingNavDuringBackForwardGesture = false
 
+        guard wasFreezingNavigationState else { return }
+        guard let context else {
+            assertionFailure("A frozen history swipe must retain its exact WebView context")
+            return
+        }
+        let protectedWebView = context.webView
+        if let webView, webView !== protectedWebView {
+            RuntimeDiagnostics.debug(
+                "Ignoring non-owning history-swipe finish WebView.",
+                category: "TabNavigation"
+            )
+        }
+        let settledWindowId = environment.windowIDContaining(protectedWebView)
+
         let wasCancelled = environment.finishHistorySwipeProtection(
             environment.tabId,
-            resolvedWebView,
-            resolvedWebView?.url,
-            resolvedWebView?.backForwardList.currentItem
+            protectedWebView,
+            protectedWebView.url,
+            protectedWebView.backForwardList.currentItem
         )
 
         applyWindowMutationResult(
@@ -180,9 +199,23 @@ final class TabNavigationTransactionOwner {
             environment: environment
         )
 
-        if wasFreezingNavigationState {
-            environment.updateNavStateIfCurrentWebViewExists()
+        environment.updateNavStateIfCurrentWebViewExists()
+    }
+
+    @discardableResult
+    func finishBackForwardNavigationTrackingIfOwned(
+        by webView: WKWebView,
+        environment: HistorySwipeEnvironment
+    ) -> Bool {
+        guard isFreezingNavDuringBackForwardGesture,
+              pendingBackForwardNavigationContext?.webView === webView else {
+            return false
         }
+        finishBackForwardNavigationTracking(
+            using: webView,
+            environment: environment
+        )
+        return true
     }
 
     func scheduleBackForwardSameDocumentSettle(
@@ -227,9 +260,13 @@ final class TabNavigationTransactionOwner {
     }
 
     private func cancelPendingPreparedLoad() {
-        pendingTask?.cancel()
+        let cancellation = pendingCancellation
+        let task = pendingTask
+        pendingCancellation = nil
         pendingTask = nil
         pendingToken = nil
+        task?.cancel()
+        cancellation?()
     }
 
     private func applyWindowMutationResult(

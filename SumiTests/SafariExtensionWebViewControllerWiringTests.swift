@@ -51,12 +51,15 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         ).manager
         let browserManager = makeBrowserManager(profile: profile)
         let windowRegistry = WindowRegistry()
-        let coordinator = WebViewCoordinator()
+        let coordinator = WebViewCoordinator(
+            webViewSessions: browserManager.webViewSessions
+        )
         browserManager.windowRegistry = windowRegistry
-        browserManager.webViewCoordinator = coordinator
+        browserManager.bindTestWebViewCoordinator(coordinator)
         browserManager.tabManager = TabManager(
             runtimePorts: BrowserTabManagerRuntimePortsFactory.registry(for: browserManager),
             context: container.mainContext,
+            webViewSessions: browserManager.webViewSessions,
             loadPersistedState: false
         )
         let space = browserManager.tabManager.spaceLifecycleOwner.createSpace(
@@ -72,14 +75,19 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
 
         let tab = makeTab(
             profileId: profile.id,
-            url: URL(string: "https://example.com")!
+            url: URL(string: "https://example.com")!,
+            browserManager: browserManager
         )
         tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
         windowState.currentTabId = tab.id
         let staleWebView = WKWebView()
         let trackedWebView = WKWebView()
-        tab.assignWebViewToWindow(staleWebView, windowId: windowState.id)
-        coordinator.setWebView(trackedWebView, for: tab.id, in: windowState.id)
+        tab.replaceUntrackedWebView(staleWebView)
+        coordinator.ownershipService.registerTrackedWebView(
+            trackedWebView,
+            for: tab,
+            in: windowState.id
+        )
 
         XCTAssertIdentical(manager.resolvedLiveWebView(for: tab), trackedWebView)
         let liveWebViews = manager.liveWebViews(for: tab)
@@ -251,16 +259,17 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             context: container.mainContext,
             profile: ephemeralProfile
         ).manager
-        manager.tabOpenNotificationGeneration = 7
+        manager.runtimeSession.tabOpenNotificationGeneration = 7
 
         let browserManager = makeBrowserManager(profile: ephemeralProfile)
 
         let tab = makeTab(
             profileId: ephemeralProfile.id,
-            url: URL(string: "https://example.com")!
+            url: URL(string: "https://example.com")!,
+            browserManager: browserManager
         )
         tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
-        tab.extensionPageRuntimeOwner.eligibleGeneration = manager.tabOpenNotificationGeneration
+        tab.extensionPageRuntimeOwner.eligibleGeneration = manager.runtimeSession.tabOpenNotificationGeneration
 
         XCTAssertTrue(ephemeralProfile.isEphemeral)
         XCTAssertTrue(tab.isEphemeral)
@@ -280,17 +289,18 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         )
         _ = manager.ensureExtensionController(for: ephemeralProfile.id)
         manager.extensionsLoaded = true
-        manager.tabOpenNotificationGeneration = 9
+        manager.runtimeSession.tabOpenNotificationGeneration = 9
 
         let browserManager = makeBrowserManager(profile: ephemeralProfile)
         manager.attach(browserManager: browserManager)
 
         let tab = makeTab(
             profileId: ephemeralProfile.id,
-            url: URL(string: "https://example.com")!
+            url: URL(string: "https://example.com")!,
+            browserManager: browserManager
         )
         tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
-        tab.extensionPageRuntimeOwner.eligibleGeneration = manager.tabOpenNotificationGeneration
+        tab.extensionPageRuntimeOwner.eligibleGeneration = manager.runtimeSession.tabOpenNotificationGeneration
 
         var activatedTabIDs: [UUID] = []
         manager.testHooks.didActivateTab = { activatedTabIDs.append($0) }
@@ -316,7 +326,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         )
         _ = manager.ensureExtensionController(for: profile.id)
         manager.extensionsLoaded = true
-        manager.tabOpenNotificationGeneration = 3
+        manager.runtimeSession.tabOpenNotificationGeneration = 3
 
         let browserManager = makeBrowserManager(profile: profile)
         manager.attach(browserManager: browserManager)
@@ -327,7 +337,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             activate: false
         )
         tab.profileId = profile.id
-        tab.extensionPageRuntimeOwner.eligibleGeneration = manager.tabOpenNotificationGeneration
+        tab.extensionPageRuntimeOwner.eligibleGeneration = manager.runtimeSession.tabOpenNotificationGeneration
 
         let configuration = browserConfiguration.auxiliaryWebViewConfiguration(
             surface: .extensionOptions
@@ -372,7 +382,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             scratchDirectory: scratchDirectory,
             name: "WebViewWiringExtension"
         )
-        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
+        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
         manager.extensionsLoaded = true
 
         let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
@@ -412,6 +422,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         browserManager.tabManager = TabManager(
             runtimePorts: BrowserTabManagerRuntimePortsFactory.registry(for: browserManager),
             context: container.mainContext,
+            webViewSessions: browserManager.webViewSessions,
             loadPersistedState: false
         )
         let space = browserManager.tabManager.spaceLifecycleOwner.createSpace(
@@ -425,7 +436,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             manager: manager,
             scratchDirectory: scratchDirectory
         )
-        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
+        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
         manager.unloadExtensionContextIfLoaded(
             extensionId: installed.id,
             profileId: profile.id
@@ -500,10 +511,11 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         )
         let windowRegistry = WindowRegistry()
         browserManager.windowRegistry = windowRegistry
-        browserManager.webViewCoordinator = WebViewCoordinator()
+        browserManager.bindTestWebViewCoordinator()
         browserManager.tabManager = TabManager(
             runtimePorts: BrowserTabManagerRuntimePortsFactory.registry(for: browserManager),
             context: container.mainContext,
+            webViewSessions: browserManager.webViewSessions,
             loadPersistedState: false
         )
         let space = browserManager.tabManager.spaceLifecycleOwner.createSpace(
@@ -522,7 +534,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             manager: manager,
             scratchDirectory: scratchDirectory
         )
-        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
+        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
         manager.unloadExtensionContextIfLoaded(
             extensionId: installed.id,
             profileId: profile.id
@@ -558,7 +570,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         )
         browserManager.selectTab(tab, in: windowState, loadPolicy: .immediate)
         XCTAssertNil(tab.resolvedCurrentWebView())
-        XCTAssertNil(coordinator.getWebView(for: tab.id, in: windowState.id))
+        XCTAssertNil(coordinator.ownershipQuery.webView(for: tab.id, in: windowState.id))
 
         await fulfillment(of: [backgroundWakeExpectation], timeout: 3.0)
         XCTAssertEqual(backgroundWakeCount, 1)
@@ -570,7 +582,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         var createdWebView: WKWebView?
         for _ in 0..<20 {
             await Task.yield()
-            createdWebView = coordinator.getOrCreateWebView(
+            createdWebView = coordinator.ownershipService.webView(
                 for: tab,
                 in: windowState.id
             )
@@ -616,6 +628,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         browserManager.tabManager = TabManager(
             runtimePorts: BrowserTabManagerRuntimePortsFactory.registry(for: browserManager),
             context: container.mainContext,
+            webViewSessions: browserManager.webViewSessions,
             loadPersistedState: false
         )
         let space = browserManager.tabManager.spaceLifecycleOwner.createSpace(
@@ -631,7 +644,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             scratchDirectory: scratchDirectory,
             name: "ExtensionRequestedPage"
         )
-        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
+        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
 
         let loadedContext = try await manager.ensureExtensionLoaded(
             extensionId: installed.id,
@@ -639,12 +652,12 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         )
         let extensionContext = try XCTUnwrap(loadedContext)
         let controller = try XCTUnwrap(
-            manager.extensionControllersByProfile[profile.id]
+            manager.profileRuntime.controllersByProfile[profile.id]
         )
         let extensionURL = extensionContext.baseURL
             .appendingPathComponent("popup.html")
 
-        let tab = try manager.openExtensionRequestedTab(
+        let tab = try manager.requestedTabOpening.open(
             url: extensionURL,
             shouldBeActive: true,
             shouldBePinned: false,
@@ -697,6 +710,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         browserManager.tabManager = TabManager(
             runtimePorts: BrowserTabManagerRuntimePortsFactory.registry(for: browserManager),
             context: container.mainContext,
+            webViewSessions: browserManager.webViewSessions,
             loadPersistedState: false
         )
         let space = browserManager.tabManager.spaceLifecycleOwner.createSpace(
@@ -711,7 +725,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             scratchDirectory: scratchDirectory,
             name: "ExtensionRequestedBackgroundPage"
         )
-        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
+        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
 
         let loadedContext = try await manager.ensureExtensionLoaded(
             extensionId: installed.id,
@@ -719,12 +733,12 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         )
         let extensionContext = try XCTUnwrap(loadedContext)
         let controller = try XCTUnwrap(
-            manager.extensionControllersByProfile[profile.id]
+            manager.profileRuntime.controllersByProfile[profile.id]
         )
         let extensionURL = extensionContext.baseURL
             .appendingPathComponent("popup.html")
 
-        let tab = try manager.openExtensionRequestedTab(
+        let tab = try manager.requestedTabOpening.open(
             url: extensionURL,
             shouldBeActive: false,
             shouldBePinned: false,
@@ -786,13 +800,14 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         )
         _ = manager.ensureExtensionController(for: profile.id)
         manager.extensionsLoaded = true
-        manager.tabOpenNotificationGeneration = 11
+        manager.runtimeSession.tabOpenNotificationGeneration = 11
 
         let browserManager = makeBrowserManager(profile: profile)
-        browserManager.webViewCoordinator = WebViewCoordinator()
+        browserManager.bindTestWebViewCoordinator()
         browserManager.tabManager = TabManager(
             runtimePorts: BrowserTabManagerRuntimePortsFactory.registry(for: browserManager),
             context: container.mainContext,
+            webViewSessions: browserManager.webViewSessions,
             loadPersistedState: false
         )
         let visibleSpace = browserManager.tabManager.spaceLifecycleOwner.createSpace(
@@ -814,7 +829,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             activate: false
         )
         targetTab.profileId = profile.id
-        targetTab.extensionPageRuntimeOwner.eligibleGeneration = manager.tabOpenNotificationGeneration
+        targetTab.extensionPageRuntimeOwner.eligibleGeneration = manager.runtimeSession.tabOpenNotificationGeneration
 
         let windowRegistry = WindowRegistry()
         browserManager.windowRegistry = windowRegistry
@@ -848,6 +863,101 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         XCTAssertEqual(browserManager.tabManager.selectionStateOwner.currentTab?.id, selectedTab.id)
     }
 
+    func testExtensionTabAdapterReloadCreatesTabOwnedSemanticCommand() async throws {
+        let container = try makeTestContainer()
+        let profile = Profile(name: "Extension Reload Profile")
+        let browserConfiguration = BrowserConfiguration()
+        let manager = makeManager(
+            context: container.mainContext,
+            profile: profile,
+            browserConfiguration: browserConfiguration
+        ).manager
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(
+                userDefaults: UserDefaults(suiteName: UUID().uuidString)!
+            )
+        )
+        registry.enable(.extensions)
+        let extensionsModule = SumiExtensionsModule(
+            moduleRegistry: registry,
+            context: container.mainContext,
+            browserConfiguration: browserConfiguration,
+            initialProfileProvider: { profile },
+            managerFactory: { _, _, _, _ in manager }
+        )
+        let browserManager = makeBrowserManager(
+            moduleRegistry: registry,
+            extensionsModule: extensionsModule,
+            profile: profile
+        )
+        browserManager.tabManager = TabManager(
+            runtimePorts: BrowserTabManagerRuntimePortsFactory.registry(for: browserManager),
+            context: container.mainContext,
+            webViewSessions: browserManager.webViewSessions,
+            loadPersistedState: false
+        )
+        _ = browserManager.tabManager.spaceLifecycleOwner.createSpace(
+            name: "Work",
+            profileId: profile.id
+        )
+        manager.attach(browserManager: browserManager)
+
+        let scratchDirectory = try makeScratchDirectory()
+        let installed = try await installUnpackedExtension(
+            manager: manager,
+            scratchDirectory: scratchDirectory,
+            name: "ExtensionReloadSemanticCommand"
+        )
+        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
+        let loadedContext = try await manager.ensureExtensionLoaded(
+            extensionId: installed.id,
+            profileId: profile.id
+        )
+        let extensionContext = try XCTUnwrap(loadedContext)
+        let controller = try XCTUnwrap(
+            manager.profileRuntime.controllersByProfile[profile.id]
+        )
+        let extensionURL = extensionContext.baseURL
+            .appendingPathComponent("popup.html")
+        let tab = try manager.requestedTabOpening.open(
+            url: extensionURL,
+            shouldBeActive: false,
+            shouldBePinned: false,
+            requestedWindow: nil,
+            controller: controller,
+            reason: "SafariExtensionWebViewControllerWiringTests.reload"
+        )
+        let adapter = try XCTUnwrap(
+            manager.adapterResolutionOwner.stableAdapter(for: tab)
+        )
+        let previousNavigationIntent = try XCTUnwrap(
+            tab.currentMainFrameNavigationIntent(matching: extensionURL)
+        )
+        let previousRebuildRevision = tab.currentWebViewRebuildIntentRevision
+
+        let reloaded = expectation(description: "extension tab reload accepted")
+        var reloadError: NSError?
+        adapter.reload(fromOrigin: true, for: extensionContext) { error in
+            reloadError = error as NSError?
+            reloaded.fulfill()
+        }
+        await fulfillment(of: [reloaded], timeout: 1.0)
+
+        XCTAssertNil(reloadError)
+        let currentNavigationIntent = try XCTUnwrap(
+            tab.currentMainFrameNavigationIntent(matching: extensionURL)
+        )
+        XCTAssertGreaterThan(
+            currentNavigationIntent.revision,
+            previousNavigationIntent.revision,
+            "WebExtension reload must enter the same Tab-owned semantic revision pipeline as browser reload"
+        )
+        XCTAssertGreaterThan(
+            tab.currentWebViewRebuildIntentRevision,
+            previousRebuildRevision
+        )
+    }
+
     func testExtensionRequestedSafariURLUsesNativeWebKitContext() async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Extension Page Profile")
@@ -878,6 +988,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         browserManager.tabManager = TabManager(
             runtimePorts: BrowserTabManagerRuntimePortsFactory.registry(for: browserManager),
             context: container.mainContext,
+            webViewSessions: browserManager.webViewSessions,
             loadPersistedState: false
         )
         _ = browserManager.tabManager.spaceLifecycleOwner.createSpace(
@@ -893,7 +1004,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             scratchDirectory: scratchDirectory,
             name: "ExtensionRequestedPublicURLPage"
         )
-        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
+        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
 
         let loadedContext = try await manager.ensureExtensionLoaded(
             extensionId: installed.id,
@@ -901,13 +1012,13 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         )
         let extensionContext = try XCTUnwrap(loadedContext)
         let controller = try XCTUnwrap(
-            manager.extensionControllersByProfile[profile.id]
+            manager.profileRuntime.controllersByProfile[profile.id]
         )
         XCTAssertEqual(extensionContext.baseURL.scheme, "safari-web-extension")
         let extensionURL = extensionContext.baseURL
             .appendingPathComponent("popup.html")
 
-        let tab = try manager.openExtensionRequestedTab(
+        let tab = try manager.requestedTabOpening.open(
             url: extensionURL,
             shouldBeActive: true,
             shouldBePinned: false,
@@ -955,10 +1066,11 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         )
         let windowRegistry = WindowRegistry()
         browserManager.windowRegistry = windowRegistry
-        browserManager.webViewCoordinator = WebViewCoordinator()
+        browserManager.bindTestWebViewCoordinator()
         browserManager.tabManager = TabManager(
             runtimePorts: BrowserTabManagerRuntimePortsFactory.registry(for: browserManager),
             context: container.mainContext,
+            webViewSessions: browserManager.webViewSessions,
             loadPersistedState: false
         )
         let space = browserManager.tabManager.spaceLifecycleOwner.createSpace(
@@ -974,7 +1086,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             scratchDirectory: scratchDirectory,
             name: "ExtensionRequestedWindowPage"
         )
-        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
+        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
 
         let loadedContext = try await manager.ensureExtensionLoaded(
             extensionId: installed.id,
@@ -982,7 +1094,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         )
         let extensionContext = try XCTUnwrap(loadedContext)
         let controller = try XCTUnwrap(
-            manager.extensionControllersByProfile[profile.id]
+            manager.profileRuntime.controllersByProfile[profile.id]
         )
         XCTAssertEqual(extensionContext.baseURL.scheme, "safari-web-extension")
         let extensionURL = extensionContext.baseURL
@@ -1064,6 +1176,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         browserManager.tabManager = TabManager(
             runtimePorts: BrowserTabManagerRuntimePortsFactory.registry(for: browserManager),
             context: container.mainContext,
+            webViewSessions: browserManager.webViewSessions,
             loadPersistedState: false
         )
         _ = browserManager.tabManager.spaceLifecycleOwner.createSpace(
@@ -1078,7 +1191,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             scratchDirectory: scratchDirectory,
             name: "ExtensionRequestedRenderedPage"
         )
-        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
+        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
 
         let loadedContext = try await manager.ensureExtensionLoaded(
             extensionId: installed.id,
@@ -1086,12 +1199,12 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         )
         let extensionContext = try XCTUnwrap(loadedContext)
         let controller = try XCTUnwrap(
-            manager.extensionControllersByProfile[profile.id]
+            manager.profileRuntime.controllersByProfile[profile.id]
         )
         let extensionURL = extensionContext.baseURL
             .appendingPathComponent("popup.html")
 
-        let tab = try manager.openExtensionRequestedTab(
+        let tab = try manager.requestedTabOpening.open(
             url: extensionURL,
             shouldBeActive: true,
             shouldBePinned: false,
@@ -1154,7 +1267,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             name: "ExtensionOptionsRenderedPage",
             optionsPage: "options.html"
         )
-        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
+        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
 
         let loadedContext = try await manager.ensureExtensionLoaded(
             extensionId: installed.id,
@@ -1162,19 +1275,22 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         )
         let extensionContext = try XCTUnwrap(loadedContext)
         let controller = try XCTUnwrap(
-            manager.extensionControllersByProfile[profile.id]
+            manager.profileRuntime.controllersByProfile[profile.id]
         )
 
         let openedOptions = expectation(description: "options page opened")
         var completionError: Error?
-        manager.presentOptionsPageWindow(for: extensionContext) { error in
+        manager.optionsWindows.presentOptionsPageWindow(
+            for: extensionContext,
+            manager: manager
+        ) { error in
             completionError = error
             openedOptions.fulfill()
         }
         await fulfillment(of: [openedOptions], timeout: 2.0)
         XCTAssertNil(completionError)
 
-        let window = try XCTUnwrap(manager.optionsWindows[installed.id])
+        let window = try XCTUnwrap(manager.optionsWindows.windows[installed.id])
         let contentView = try XCTUnwrap(window.contentView)
         let webView = try XCTUnwrap(Self.firstWebView(in: contentView))
 
@@ -1221,6 +1337,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         browserManager.tabManager = TabManager(
             runtimePorts: BrowserTabManagerRuntimePortsFactory.registry(for: browserManager),
             context: container.mainContext,
+            webViewSessions: browserManager.webViewSessions,
             loadPersistedState: false
         )
         _ = browserManager.tabManager.spaceLifecycleOwner.createSpace(
@@ -1236,7 +1353,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             scratchDirectory: scratchDirectory,
             name: "ExtensionRequestedPage"
         )
-        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
+        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
 
         let loadedContext = try await manager.ensureExtensionLoaded(
             extensionId: installed.id,
@@ -1244,7 +1361,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         )
         let extensionContext = try XCTUnwrap(loadedContext)
         let controller = try XCTUnwrap(
-            manager.extensionControllersByProfile[profile.id]
+            manager.profileRuntime.controllersByProfile[profile.id]
         )
         let extensionURL = extensionContext.baseURL
             .appendingPathComponent("popup.html")
@@ -1256,7 +1373,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             }
         }
 
-        let tab = try manager.openExtensionRequestedTab(
+        let tab = try manager.requestedTabOpening.open(
             url: extensionURL,
             shouldBeActive: true,
             shouldBePinned: false,
@@ -1281,7 +1398,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         )
         XCTAssertEqual(
             tab.extensionPageRuntimeOwner.lastOpenNotificationGeneration,
-            manager.tabOpenNotificationGeneration
+            manager.runtimeSession.tabOpenNotificationGeneration
         )
         XCTAssertEqual(
             tab.extensionPageRuntimeOwner.openNotifiedDocumentSequence,
@@ -1303,12 +1420,16 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         )
         _ = manager.ensureExtensionController(for: profile.id)
         manager.extensionsLoaded = true
-        manager.tabOpenNotificationGeneration = 9
+        manager.runtimeSession.tabOpenNotificationGeneration = 9
 
         let browserManager = makeBrowserManager(profile: profile)
         manager.attach(browserManager: browserManager)
 
-        let tab = makeTab(profileId: profile.id, url: URL(string: "about:blank")!)
+        let tab = makeTab(
+            profileId: profile.id,
+            url: URL(string: "about:blank")!,
+            browserManager: browserManager
+        )
         tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
 
         let configuration = BrowserConfiguration().auxiliaryWebViewConfiguration(
@@ -1338,7 +1459,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         wait(for: [didOpenExpectation], timeout: 2)
         XCTAssertEqual(
             tab.extensionPageRuntimeOwner.lastOpenNotificationGeneration,
-            manager.tabOpenNotificationGeneration
+            manager.runtimeSession.tabOpenNotificationGeneration
         )
         XCTAssertTrue(tab.extensionPageRuntimeOwner.didNotifyOpenToExtensions)
     }
@@ -1356,12 +1477,16 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         )
         _ = manager.ensureExtensionController(for: profile.id)
         manager.extensionsLoaded = true
-        manager.tabOpenNotificationGeneration = 11
+        manager.runtimeSession.tabOpenNotificationGeneration = 11
 
         let browserManager = makeBrowserManager(profile: profile)
         manager.attach(browserManager: browserManager)
 
-        let tab = makeTab(profileId: profile.id, url: URL(string: "about:blank")!)
+        let tab = makeTab(
+            profileId: profile.id,
+            url: URL(string: "about:blank")!,
+            browserManager: browserManager
+        )
         tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
 
         let configuration = BrowserConfiguration().auxiliaryWebViewConfiguration(
@@ -1429,7 +1554,11 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             reason: "SafariExtensionWebViewControllerWiringTests"
         )
 
-        let tab = makeTab(profileId: profile.id, url: pageURL)
+        let tab = makeTab(
+            profileId: profile.id,
+            url: pageURL,
+            browserManager: browserManager
+        )
         tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
         let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
         webView.owningTab = tab

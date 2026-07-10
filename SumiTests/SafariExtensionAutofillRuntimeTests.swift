@@ -20,7 +20,7 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
             manager: seedManager,
             scratchDirectory: scratchDirectory
         )
-        _ = try await seedManager.installationFlowOwner.enableExtension(installed.id)
+        _ = try await seedManager.installedExtensionLifecycle.enable(installed.id)
 
         let registry = SumiModuleRegistry(
             settingsStore: SumiModuleSettingsStore(
@@ -121,7 +121,7 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
 
         let adapter = try XCTUnwrap(manager.adapterResolutionOwner.stableAdapter(for: tab))
         manager.extensionsLoaded = true
-        tab.extensionPageRuntimeOwner.eligibleGeneration = manager.tabOpenNotificationGeneration
+        tab.extensionPageRuntimeOwner.eligibleGeneration = manager.runtimeSession.tabOpenNotificationGeneration
         XCTAssertNil(adapter.webView(for: extensionContext))
     }
 
@@ -141,7 +141,7 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
             manager: manager,
             scratchDirectory: scratchDirectory
         )
-        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
+        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
         await manager.ensureContentScriptContextsLoaded(for: profile.id)
         manager.extensionsLoaded = true
 
@@ -179,7 +179,7 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
             profileId: profile.id,
             url: URL(string: "https://example.com")!
         )
-        tab.extensionPageRuntimeOwner.eligibleGeneration = manager.tabOpenNotificationGeneration
+        tab.extensionPageRuntimeOwner.eligibleGeneration = manager.runtimeSession.tabOpenNotificationGeneration
 
         let extensionContext = try await makeLoadedExtensionContext(
             manager: manager,
@@ -218,13 +218,17 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
         )
         _ = manager.ensureExtensionController(for: profile.id)
         manager.extensionsLoaded = true
-        manager.tabOpenNotificationGeneration = 4
+        manager.runtimeSession.tabOpenNotificationGeneration = 4
 
         let browserManager = BrowserManager()
         manager.attach(browserManager: browserManager)
         browserManager.profileManager.profiles = [profile]
 
-        let tab = makeTab(profileId: profile.id, url: URL(string: "about:blank")!)
+        let tab = browserManager.tabManager.tabFactory.makeTab(
+            url: URL(string: "about:blank")!,
+            name: "Autofill"
+        )
+        tab.profileId = profile.id
         tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
 
         let configuration = BrowserConfiguration().auxiliaryWebViewConfiguration(
@@ -288,7 +292,7 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
             manager: manager,
             scratchDirectory: scratchDirectory
         )
-        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
+        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
         let context = try await manager.ensureExtensionLoaded(
             extensionId: installed.id,
             profileId: profile.id
@@ -328,7 +332,7 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
         try Data("<!doctype html><title>popup</title>".utf8)
             .write(to: directoryURL.appendingPathComponent("popup.html"), options: [.atomic])
 
-        return try await manager.installationFlowOwner.performInstallation(
+        return try await manager.extensionInstaller.install(
             from: directoryURL,
             enableOnInstall: false
         )

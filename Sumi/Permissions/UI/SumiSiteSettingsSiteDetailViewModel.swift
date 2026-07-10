@@ -82,9 +82,19 @@ final class SumiSiteSettingsSiteDetailViewModel: ObservableObject {
         guard let profileObject else { return }
         isDeletingData = true
         defer { isDeletingData = false }
-        await repository.deleteSiteData(scope: scope, profile: profileObject)
+        let outcome = await repository.deleteSiteData(
+            scope: scope,
+            profile: profileObject
+        )
+        guard outcome.didMutate else {
+            errorMessage = "Site data could not be deleted safely."
+            return
+        }
         statusMessage = SumiSiteSettingsStrings.dataDeleted
         await load(profile: profileObject)
+        if outcome == .restoreFailedAfterMutation {
+            errorMessage = "Site data was deleted, but the page could not be restored."
+        }
     }
 
     func openSystemSettings(for row: SumiSiteSettingsPermissionRow) async {

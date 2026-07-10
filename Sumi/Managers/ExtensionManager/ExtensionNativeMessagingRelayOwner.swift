@@ -31,7 +31,7 @@ final class ExtensionNativeMessagingRelayOwner {
             },
             profileRuntimeLoaded: { [weak self] in
                 guard let manager = self?.manager else { return false }
-                return manager.runtimeState == .ready || manager.runtimeState == .loading
+                return manager.runtimeSession.runtimeState == .ready || manager.runtimeSession.runtimeState == .loading
             }
         )
         relayStorage = relay

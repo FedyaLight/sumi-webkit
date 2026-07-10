@@ -4,7 +4,6 @@ import SumiDomain
 @MainActor
 final class BrowserManagerPermissionRuntime {
     struct Dependencies {
-        let startupPersistence: BrowserManagerStartupPersistence
         let browserConfiguration: BrowserConfiguration
         let systemPermissionService: (any SumiSystemPermissionService)?
         let permissionCoordinator: (any SumiPermissionCoordinating)?
@@ -22,7 +21,6 @@ final class BrowserManagerPermissionRuntime {
         let permissionBridgeOverrides: BrowserPermissionBridgeRegistry.Overrides
 
         init(
-            startupPersistence: BrowserManagerStartupPersistence,
             browserConfiguration: BrowserConfiguration,
             systemPermissionService: (any SumiSystemPermissionService)? = nil,
             permissionCoordinator: (any SumiPermissionCoordinating)? = nil,
@@ -39,7 +37,6 @@ final class BrowserManagerPermissionRuntime {
             externalSchemeSessionStore: SumiExternalSchemeSessionStore? = nil,
             permissionBridgeOverrides: BrowserPermissionBridgeRegistry.Overrides = BrowserPermissionBridgeRegistry.Overrides()
         ) {
-            self.startupPersistence = startupPersistence
             self.browserConfiguration = browserConfiguration
             self.systemPermissionService = systemPermissionService
             self.permissionCoordinator = permissionCoordinator

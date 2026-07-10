@@ -3,7 +3,9 @@ import WebKit
 
 @available(macOS 15.5, *)
 @MainActor
-final class ExtensionInitialDocumentRuntimePreparationOwner {
+final class ExtensionInitialDocumentRuntimePreparationOwner:
+    ExtensionContentScriptContextLoading
+{
     private weak var manager: ExtensionManager?
 
     private var contentScriptContextLoadTasksByProfile: [UUID: Task<Void, Never>] = [:]
@@ -22,15 +24,15 @@ final class ExtensionInitialDocumentRuntimePreparationOwner {
         guard let manager else { return true }
         guard manager.extensionsModuleEnabledForRuntimeBoundary() else { return true }
 
-        let contentScriptEntities = manager.enabledPersistedExtensionEntities().filter {
+        let contentScriptExtensions = manager.installedExtensionCollection.records.filter {
             $0.isEnabled && $0.hasContentScripts
         }
-        guard contentScriptEntities.isEmpty == false else { return true }
+        guard contentScriptExtensions.isEmpty == false else { return true }
 
-        return contentScriptEntities.allSatisfy { entity in
+        return contentScriptExtensions.allSatisfy { installedExtension in
             guard
                 let context = manager.getExtensionContext(
-                    for: entity.id,
+                    for: installedExtension.id,
                     profileId: profileId
                 )
             else {
@@ -66,18 +68,19 @@ final class ExtensionInitialDocumentRuntimePreparationOwner {
             }
             guard Task.isCancelled == false else { return }
 
-            for entity in manager.enabledPersistedExtensionEntities()
-                where entity.isEnabled && entity.hasContentScripts {
+            for installedExtension in manager.installedExtensionCollection.records
+                where installedExtension.isEnabled
+                    && installedExtension.hasContentScripts {
                 guard Task.isCancelled == false else { return }
                 do {
                     _ = try await manager.ensureExtensionLoaded(
-                        extensionId: entity.id,
+                        extensionId: installedExtension.id,
                         profileId: profileId
                     )
                 } catch {
                     manager.logExtensionLoadFailure(
                         error,
-                        extensionId: entity.id,
+                        extensionId: installedExtension.id,
                         profileId: profileId,
                         operation: "preload content-script context"
                     )
@@ -105,7 +108,7 @@ final class ExtensionInitialDocumentRuntimePreparationOwner {
 
     func profileNeedsInitialDocumentNativeMessagingWarmup(profileId: UUID) -> Bool {
         guard let manager else { return false }
-        return initialDocumentNativeMessagingWarmupEntities(profileId: profileId).contains {
+        return initialDocumentNativeMessagingWarmupExtensions(profileId: profileId).contains {
             manager.backgroundRuntimeState(for: $0.id, profileId: profileId) != .loaded
         }
     }
@@ -128,17 +131,17 @@ final class ExtensionInitialDocumentRuntimePreparationOwner {
             }
 
             guard Task.isCancelled == false,
-                  manager.extensionLoadGeneration == extensionLoadGeneration
+                  manager.runtimeSession.extensionLoadGeneration == extensionLoadGeneration
             else { return }
 
             await self.ensureInitialExtensionContextsLoaded(for: profileId)
 
             guard Task.isCancelled == false,
-                  manager.extensionLoadGeneration == extensionLoadGeneration
+                  manager.runtimeSession.extensionLoadGeneration == extensionLoadGeneration
             else { return }
 
             guard
-                let resolvedTab = manager.browserBridgeContext?.extensionTab(
+                let resolvedTab = manager.extensionTabQuery?.extensionTab(
                     for: tabId
                 )
             else {
@@ -209,14 +212,14 @@ final class ExtensionInitialDocumentRuntimePreparationOwner {
             }
             guard Task.isCancelled == false else { return }
 
-            for entity in self.initialDocumentNativeMessagingWarmupEntities(
+            for installedExtension in self.initialDocumentNativeMessagingWarmupExtensions(
                 profileId: profileId
             ) {
                 guard Task.isCancelled == false else { return }
                 do {
                     guard
                         let extensionContext = try await manager.ensureExtensionLoaded(
-                            extensionId: entity.id,
+                            extensionId: installedExtension.id,
                             profileId: profileId
                         )
                     else {
@@ -230,7 +233,7 @@ final class ExtensionInitialDocumentRuntimePreparationOwner {
                 } catch {
                     manager.logExtensionLoadFailure(
                         error,
-                        extensionId: entity.id,
+                        extensionId: installedExtension.id,
                         profileId: profileId,
                         operation: "warm initial-document native messaging runtime"
                     )
@@ -273,29 +276,32 @@ final class ExtensionInitialDocumentRuntimePreparationOwner {
         }
     }
 
-    private func initialDocumentNativeMessagingWarmupEntities(
+    private func initialDocumentNativeMessagingWarmupExtensions(
         profileId: UUID
-    ) -> [ExtensionEntity] {
+    ) -> [InstalledExtension] {
         guard let manager else { return [] }
         guard manager.extensionsModuleEnabledForRuntimeBoundary() else { return [] }
 
-        return manager.enabledPersistedExtensionEntities().filter { entity in
-            entity.isEnabled
-                && entity.hasContentScripts
-                && entity.hasBackground
-                && extensionDeclaresNativeMessaging(entity)
-                && manager.backgroundRuntimeState(for: entity.id, profileId: profileId)
+        return manager.installedExtensionCollection.records.filter { installedExtension in
+            installedExtension.isEnabled
+                && installedExtension.hasContentScripts
+                && installedExtension.hasBackground
+                && extensionDeclaresNativeMessaging(installedExtension)
+                && manager.backgroundRuntimeState(
+                    for: installedExtension.id,
+                    profileId: profileId
+                )
                     != .loaded
         }
     }
 
-    private func extensionDeclaresNativeMessaging(_ entity: ExtensionEntity) -> Bool {
+    private func extensionDeclaresNativeMessaging(
+        _ installedExtension: InstalledExtension
+    ) -> Bool {
         guard let manager else { return false }
         let manifest =
-            manager.loadedExtensionManifests[entity.id]
-            ?? manager.installedExtensions.first(where: { $0.id == entity.id })?.manifest
-            ?? InstalledExtensionRecord(from: entity)?.manifest
-            ?? [:]
+            manager.runtimeSession.loadedExtensionManifests[installedExtension.id]
+            ?? installedExtension.manifest
         let permissions = Self.manifestStringArray(from: manifest["permissions"])
         return permissions.contains("nativeMessaging")
     }
@@ -361,7 +367,7 @@ extension ExtensionManager {
             .scheduleDeferredTabNotificationAfterContextLoad(
                 tab,
                 profileId: profileId,
-                extensionLoadGeneration: extensionLoadGeneration,
+                extensionLoadGeneration: runtimeSession.extensionLoadGeneration,
                 reason: reason
             )
     }

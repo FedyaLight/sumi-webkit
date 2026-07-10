@@ -2,11 +2,10 @@ import AppKit
 import Combine
 import Observation
 import SwiftData
-import WebKit
-import SumiBrowserCore
+import SumiWebRuntime
 
 @MainActor
-class TabManager: ObservableObject, TabStructureStore {
+class TabManager: ObservableObject {
     private static let faviconPresentationRefreshDebounceNanoseconds: UInt64 = 250_000_000
 
     enum TabManagerError: LocalizedError {
@@ -23,97 +22,140 @@ class TabManager: ObservableObject, TabStructureStore {
     private(set) var runtimePorts: RuntimePortRegistry?
     weak var sumiSettings: SumiSettingsService?
     let context: ModelContext
-    let persistence: TabSnapshotRepository
+    let structuralSnapshotStore: TabStructuralSnapshotStore
+    let selectionStore: TabSelectionStore
+    let runtimeStateStore: TabRuntimeStateStore
     let runtimeStateCoalescer: RuntimeStateCoalescer
     let faviconService: any BrowserFaviconServicing
-    let faviconImageService: any BrowserFaviconImageServicing
+    let faviconCapabilities: BrowserFaviconCapabilities
     let visitedLinkStore: any BrowserVisitedLinkStoreManaging
+    let tabFactory: TabFactory
 
-    private let spaceCollectionStateOwner = TabSpaceCollectionStateOwner()
-    var spaceStateOwner: TabSpaceCollectionStateOwner { spaceCollectionStateOwner }
-    let regularTabCollectionStateOwner = RegularTabCollectionStateOwner()
-    let selectionStateOwner = TabSelectionStateOwner()
-    let splitGroupCollectionStateOwner = SplitGroupCollectionStateOwner()
-    let folderCollectionStateOwner = TabFolderCollectionStateOwner()
-    let shortcutPinCollectionStateOwner = ShortcutPinCollectionStateOwner()
-    let transientTabRegistryOwner = TabTransientTabRegistryOwner()
-    let structuralChanges = PassthroughSubject<Void, Never>()
+    let stateStore = TabStateStore()
+    var spaceStateOwner: TabSpaceCollectionStateOwner { stateStore.spaces }
+    var regularTabCollectionStateOwner: RegularTabCollectionStateOwner { stateStore.regularTabs }
+    var selectionStateOwner: TabSelectionStateOwner { stateStore.selection }
+    var splitGroupCollectionStateOwner: SplitGroupCollectionStateOwner { stateStore.splitGroups }
+    var folderCollectionStateOwner: TabFolderCollectionStateOwner { stateStore.folders }
+    var shortcutPinCollectionStateOwner: ShortcutPinCollectionStateOwner { stateStore.shortcutPins }
+    var transientTabRegistryOwner: TabTransientTabRegistryOwner { stateStore.transientTabs }
     let tabStructureEventBus: TabStructureEventBus
+    let startupRestoreLifecycle: TabStartupRestoreLifecycle
 
-    let structureOwners: TabStructureOwnerBag
-    let shortcutOwners: TabShortcutOwnerBag
-    let lifecycleOwners: TabLifecycleOwnerBag
-    let persistenceOwners: TabPersistenceOwnerBag
+    lazy var structureOwners = TabStructureOwnerBag(tabManager: self)
+    lazy var shortcutOwners = TabShortcutOwnerBag(tabManager: self)
+    lazy var lifecycleOwners = TabLifecycleOwnerBag(
+        tabManager: self,
+        faviconPresentationRefreshDebounceNanoseconds: Self.faviconPresentationRefreshDebounceNanoseconds
+    )
+    lazy var runtimeStore = DefaultTabRuntimeStore(
+        state: stateStore,
+        membership: tabCollectionMembershipOwner,
+        regularTabs: regularTabCollectionOwner,
+        presentation: shortcutPresentationOwner
+    )
+    lazy var structuralPersistence = TabStructuralPersistenceService(
+        structuralStore: structuralSnapshotStore,
+        selectionStore: selectionStore,
+        runtimeStateCoalescer: runtimeStateCoalescer,
+        state: stateStore,
+        profileRuntimeState: profileRuntimeStateOwner
+    )
+    lazy var storeRestore = TabStoreRestoreService(
+        modelContainer: context.container,
+        structuralStore: structuralSnapshotStore,
+        tabFactory: tabFactory,
+        runtimePorts: { [weak self] in self?.runtimePorts },
+        structuralLookup: structuralLookupCoordinator,
+        loadLifecycle: startupRestoreLifecycle,
+        structuralInstaller: structuralInstallOwner,
+        splitGroupStructure: splitGroupStructureOwner,
+        runtimePreparation: runtimePreparationOwner,
+        lazyRestore: lazyRestoreCoordinator,
+        persistence: structuralPersistence
+    )
+    lazy var startupStateReset = TabStartupStateReset(
+        runtimePortsProvider: { [weak self] in self?.runtimePorts },
+        state: stateStore,
+        lazyRestore: lazyRestoreCoordinator,
+        persistence: structuralPersistence,
+        membership: tabCollectionMembershipOwner,
+        structuralMutations: structuralCollectionMutationOwner,
+        structuralLookup: structuralLookupCoordinator
+    )
+    lazy var lastSessionMergeMaterializer = TabLastSessionMergeMaterializer(
+        state: stateStore,
+        structuralMutations: structuralCollectionMutationOwner,
+        membership: tabCollectionMembershipOwner,
+        normalizeSpacePinnedShortcuts: {
+            [spacePinnedStructureOwner] in
+            spacePinnedStructureOwner.normalizedSpacePinnedShortcuts($0)
+        },
+        tabFactory: tabFactory,
+        lazyRestore: lazyRestoreCoordinator,
+        structuralLookup: structuralLookupCoordinator,
+        persistence: structuralPersistence,
+        announceStateChange: { [objectWillChange] in objectWillChange.send() }
+    )
 
     var structuralLookupBatchFlushCount: Int { structuralLookupCoordinator.batchFlushCount }
     var structuralLookupImmediateFlushCount: Int { structuralLookupCoordinator.immediateFlushCount }
+    var structuralMutationRevision: UInt64 { structuralLookupCoordinator.mutationRevision }
     var pendingSpaceActivation: UUID?
-    private(set) var hasLoadedInitialData = false
-
-    func markInitialDataLoadStarted() { hasLoadedInitialData = false }
-    func markInitialDataLoadFinished() {
-        hasLoadedInitialData = true
-        tabStructureEventBus.publishInitialDataLoaded()
-    }
 
     init(
         runtimePorts: RuntimePortRegistry? = nil,
         context: ModelContext,
+        webViewSessions: WebViewSessionRepository,
         loadPersistedState: Bool = true,
+        automaticallyStartPersistedStateLoad: Bool = true,
         tabStructureEventBus: TabStructureEventBus? = nil,
         faviconService: any BrowserFaviconServicing = TabDependencyIsolationDefaults.faviconService,
-        faviconImageService: any BrowserFaviconImageServicing = TabDependencyIsolationDefaults.faviconImageService,
+        faviconCapabilities: BrowserFaviconCapabilities = TabDependencyIsolationDefaults.faviconCapabilities,
         visitedLinkStore: any BrowserVisitedLinkStoreManaging = TabDependencyIsolationDefaults.visitedLinkStore
     ) {
         self.runtimePorts = runtimePorts
         self.context = context
-        self.tabStructureEventBus = tabStructureEventBus ?? BrowserCompositionRoot.makeTabStructureEventBus()
+        let eventBus = tabStructureEventBus ?? TabStructureEventBus()
+        self.tabStructureEventBus = eventBus
+        self.startupRestoreLifecycle = TabStartupRestoreLifecycle(
+            shouldLoadPersistedState: loadPersistedState,
+            automaticallyStartAfterRuntimeAttachment: automaticallyStartPersistedStateLoad,
+            eventBus: eventBus
+        )
         self.faviconService = faviconService
-        self.faviconImageService = faviconImageService
+        self.faviconCapabilities = faviconCapabilities
         self.visitedLinkStore = visitedLinkStore
-        let persistence = TabSnapshotRepository(container: context.container)
-        self.persistence = persistence
+        self.tabFactory = TabFactory(
+            webViewSessions: webViewSessions,
+            faviconService: faviconService,
+            faviconCapabilities: faviconCapabilities,
+            visitedLinkStore: visitedLinkStore
+        )
+        let writes = TabStoreWriteExecutor(container: context.container)
+        let structuralSnapshotStore = TabStructuralSnapshotStore(writes: writes)
+        let selectionStore = TabSelectionStore(writes: writes)
+        let runtimeStateStore = TabRuntimeStateStore(writes: writes)
+        self.structuralSnapshotStore = structuralSnapshotStore
+        self.selectionStore = selectionStore
+        self.runtimeStateStore = runtimeStateStore
         self.runtimeStateCoalescer = RuntimeStateCoalescer(
             debounceNanoseconds: Self.defaultRuntimeStatePersistDebounceNanoseconds,
             persistBatch: { runtimeStates in
-                await persistence.persistRuntimeStates(runtimeStates)
+                await runtimeStateStore.persist(runtimeStates)
             }
         )
-        let structureOwners = TabStructureOwnerBag()
-        let shortcutOwners = TabShortcutOwnerBag()
-        let lifecycleOwners = TabLifecycleOwnerBag(
-            faviconPresentationRefreshDebounceNanoseconds: Self.faviconPresentationRefreshDebounceNanoseconds
-        )
-        let persistenceOwners = TabPersistenceOwnerBag()
-        self.structureOwners = structureOwners
-        self.shortcutOwners = shortcutOwners
-        self.lifecycleOwners = lifecycleOwners
-        self.persistenceOwners = persistenceOwners
-        structureOwners.bind(self)
-        shortcutOwners.bind(self)
-        lifecycleOwners.bind(self)
-        persistenceOwners.bind(self)
         lifecycleOwners.faviconPresentationRefreshOwner.startObserving()
-        if loadPersistedState {
-            // Capture `self` weakly so a short-lived TabManager (tests) does not
-            // touch persistence bags after deallocation.
-            Task { @MainActor [weak self] in
-                self?.persistenceOwners.storeRestore.loadFromStore()
-            }
+        if let runtimePorts {
+            lifecycleOwners.runtimePortsAttachmentOwner.attach(runtimePorts)
         }
     }
 
     deinit {
         MainActor.assumeIsolated {
             lifecycleOwners.faviconPresentationRefreshOwner.stop()
-            regularTabCollectionStateOwner.removeAll()
-            splitGroupCollectionStateOwner.removeAll()
-            folderCollectionStateOwner.removeAll()
-            shortcutPinCollectionStateOwner.removeAll()
-            transientTabRegistryOwner.removeAll()
+            stateStore.removeAll()
             structuralLookupCoordinator.removeAll()
-            spaceCollectionStateOwner.removeAll()
-            selectionStateOwner.replaceCurrentTab(nil)
             runtimePorts = nil
         }
         RuntimeDiagnostics.debug("Cleaned up all tab resources.", category: "TabManager")

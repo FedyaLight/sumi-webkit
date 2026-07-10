@@ -9,12 +9,13 @@ final class WebViewCoordinatorTrackedWebViewsTests: XCTestCase {
         let coordinator = WebViewCoordinator()
         let tab = Tab(
             url: try XCTUnwrap(URL(string: "https://example.com")),
+            webViewSessions: coordinator.webViewSessions,
             loadsCachedFaviconOnInit: false
         )
         let untrackedWebView = WKWebView(frame: .zero)
         tab.replaceUntrackedWebView(untrackedWebView)
 
-        XCTAssertTrue(coordinator.trackedLiveWebViews(for: tab).isEmpty)
+        XCTAssertTrue(coordinator.ownershipQuery.trackedLiveWebViews(for: tab).isEmpty)
     }
 
     func testSuspensionLiveWebViewsIncludesCurrentAndParkedUntrackedWebViews() throws {
@@ -23,51 +24,61 @@ final class WebViewCoordinatorTrackedWebViewsTests: XCTestCase {
         let tab = Tab(
             url: try XCTUnwrap(URL(string: "https://example.com")),
             existingWebView: parkedWebView,
+            webViewSessions: coordinator.webViewSessions,
             loadsCachedFaviconOnInit: false
         )
         let currentWebView = WKWebView(frame: .zero)
         tab.replaceUntrackedWebView(currentWebView)
 
-        let liveWebViews = coordinator.suspensionLiveWebViews(for: tab)
+        let liveWebViews = coordinator.ownershipQuery.suspensionLiveWebViews(for: tab)
 
         XCTAssertEqual(liveWebViews.count, 2)
         XCTAssertTrue(liveWebViews.contains { $0 === currentWebView })
         XCTAssertTrue(liveWebViews.contains { $0 === parkedWebView })
-        XCTAssertTrue(coordinator.trackedLiveWebViews(for: tab).isEmpty)
+        XCTAssertTrue(coordinator.ownershipQuery.trackedLiveWebViews(for: tab).isEmpty)
     }
 
     func testTrackedLiveWebViewsReturnsOnlyCoordinatorRegisteredWebViews() throws {
         let coordinator = WebViewCoordinator()
         let tab = Tab(
             url: try XCTUnwrap(URL(string: "https://example.com")),
+            webViewSessions: coordinator.webViewSessions,
             loadsCachedFaviconOnInit: false
         )
         tab.replaceUntrackedWebView(WKWebView(frame: .zero))
         let windowId = UUID()
         let trackedWebView = WKWebView(frame: .zero)
 
-        coordinator.setWebView(trackedWebView, for: tab.id, in: windowId)
+        coordinator.ownershipService.registerTrackedWebView(
+            trackedWebView,
+            for: tab,
+            in: windowId
+        )
 
-        XCTAssertEqual(coordinator.trackedLiveWebViews(for: tab).count, 1)
-        XCTAssertIdentical(coordinator.trackedLiveWebViews(for: tab).first, trackedWebView)
+        XCTAssertEqual(coordinator.ownershipQuery.trackedLiveWebViews(for: tab).count, 1)
+        XCTAssertIdentical(
+            coordinator.ownershipQuery.trackedLiveWebViews(for: tab).first,
+            trackedWebView
+        )
     }
 
     func testEnsureUntrackedOwnedWebViewReturnsExistingLiveWebView() throws {
+        let coordinator = WebViewCoordinator()
         let tab = Tab(
             url: try XCTUnwrap(URL(string: "https://example.com/ensure-untracked-reuse")),
+            webViewSessions: coordinator.webViewSessions,
             loadsCachedFaviconOnInit: false
         )
         let existing = FocusableWKWebView(frame: .zero, configuration: WKWebViewConfiguration())
         existing.owningTab = tab
         tab.replaceUntrackedWebView(existing)
 
-        let coordinator = WebViewCoordinator()
-        let first = try XCTUnwrap(coordinator.ensureUntrackedOwnedWebView(for: tab))
-        let second = try XCTUnwrap(coordinator.ensureUntrackedOwnedWebView(for: tab))
+        let first = try XCTUnwrap(coordinator.ownershipService.ensureUntracked(for: tab))
+        let second = try XCTUnwrap(coordinator.ownershipService.ensureUntracked(for: tab))
 
         XCTAssertIdentical(first, existing)
         XCTAssertIdentical(first, second)
         XCTAssertNil(tab.resolvedPrimaryWindowId())
-        XCTAssertIdentical(coordinator.untrackedOwnedWebView(for: tab), existing)
+        XCTAssertIdentical(coordinator.ownershipQuery.untrackedOwnedWebView(for: tab), existing)
     }
 }

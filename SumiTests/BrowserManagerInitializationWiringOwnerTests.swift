@@ -11,18 +11,17 @@ final class BrowserManagerInitializationWiringOwnerTests: XCTestCase {
 
         owner.finishInitializationWiring()
 
-        XCTAssertEqual(harness.attachShellRuntimeCount, 1)
         XCTAssertEqual(harness.attachRuntimeWiringCount, 1)
         XCTAssertEqual(harness.beginProtectionRestoreCount, 1)
         XCTAssertEqual(harness.runtimeWiringCancelCount, 0)
     }
 
-    func testObservedNotificationsRouteToLifecycleHandlers() async {
+    func testInitialDataEventAndRetentionNotificationRouteToLifecycleHandlers() async {
         let harness = Harness()
         let owner = harness.makeOwner()
         owner.finishInitializationWiring()
 
-        harness.notificationCenter.post(name: .tabManagerDidLoadInitialData, object: nil)
+        harness.eventBus.publishInitialDataLoaded()
         harness.notificationCenter.post(name: .sumiBrowsingDataRetentionChanged, object: nil)
         await Task.yield()
         await Task.yield()
@@ -37,7 +36,7 @@ final class BrowserManagerInitializationWiringOwnerTests: XCTestCase {
         owner.finishInitializationWiring()
 
         owner.cancel()
-        harness.notificationCenter.post(name: .tabManagerDidLoadInitialData, object: nil)
+        harness.eventBus.publishInitialDataLoaded()
         harness.notificationCenter.post(name: .sumiBrowsingDataRetentionChanged, object: nil)
         await Task.yield()
         await Task.yield()
@@ -50,7 +49,7 @@ final class BrowserManagerInitializationWiringOwnerTests: XCTestCase {
     @MainActor
     private final class Harness {
         let notificationCenter = NotificationCenter()
-        var attachShellRuntimeCount = 0
+        let eventBus = TabStructureEventBus()
         var attachRuntimeWiringCount = 0
         var runtimeWiringCancelCount = 0
         var tabManagerDataLoadedCount = 0
@@ -61,9 +60,7 @@ final class BrowserManagerInitializationWiringOwnerTests: XCTestCase {
             BrowserManagerInitializationWiringOwner(
                 notificationCenter: notificationCenter,
                 notificationQueue: nil,
-                attachShellRuntime: {
-                    self.attachShellRuntimeCount += 1
-                },
+                tabStructureEventBus: eventBus,
                 attachRuntimeWiring: {
                     self.attachRuntimeWiringCount += 1
                     return AnyCancellable {

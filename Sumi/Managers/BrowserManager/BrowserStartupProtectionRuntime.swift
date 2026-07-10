@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 enum StartupNormalTabMaterializationPolicy {
     static func shouldDefer(

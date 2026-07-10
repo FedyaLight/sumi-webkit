@@ -95,8 +95,10 @@ final class BrowserChromeBundle {
             activePageTab: { [weak browserManager] windowState in
                 browserManager?.urlBarBundle.activePageRoutingOwner.activePageTab(for: windowState)
             },
-            activePageWebView: { [weak browserManager] windowState in
-                browserManager?.urlBarBundle.activePageRoutingOwner.activePageWebView(for: windowState)
+            activePresentationWebView: { [weak browserManager] windowState in
+                browserManager?.urlBarBundle.activePageRoutingOwner.activePresentationWebView(
+                    for: windowState
+                )
             },
             tab: { [weak browserManager] tabId in
                 browserManager?.tabManager.tabCollectionMembershipOwner.tab(for: tabId)

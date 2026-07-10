@@ -4,7 +4,7 @@ import Foundation
 protocol BrowserStartupSessionRestoreProviding: AnyObject {
     var canOfferRestoreShortcut: Bool { get }
     var windowSnapshots: [LastSessionWindowSnapshot] { get }
-    var tabSnapshot: TabSnapshotRepository.Snapshot? { get }
+    var tabSnapshot: TabPersistenceSnapshot? { get }
     func markRestoreOfferConsumed()
 }
 
@@ -14,7 +14,7 @@ final class BrowserStartupSessionRestoreOwner: BrowserStartupSessionRestoreProvi
     private var lastSessionWindowsStore: LastSessionWindowsStore
 
     private(set) var windowSnapshots: [LastSessionWindowSnapshot]
-    private(set) var tabSnapshot: TabSnapshotRepository.Snapshot?
+    private(set) var tabSnapshot: TabPersistenceSnapshot?
     private var didConsumeRestoreOffer = false
 
     var canOfferRestoreShortcut: Bool {
@@ -50,7 +50,7 @@ final class BrowserStartupSessionRestoreOwner: BrowserStartupSessionRestoreProvi
 
     func archiveLoadedSessionForManualRestore(
         currentWindowSnapshots: @MainActor () -> [LastSessionWindowSnapshot],
-        currentTabSnapshot: @MainActor () -> TabSnapshotRepository.Snapshot
+        currentTabSnapshot: @MainActor () -> TabPersistenceSnapshot
     ) {
         let archivedWindowSnapshots = windowSnapshots.isEmpty
             ? currentWindowSnapshots()

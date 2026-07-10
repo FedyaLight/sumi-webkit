@@ -1,10 +1,8 @@
-import Combine
 import Foundation
-import SumiBrowserCore
 
 /// Coordinates the structural-lookup index and structural-publish batching that used to
 /// live directly on `TabManager`. It owns the `TabStructuralLookupOwner` (the id→tab index)
-/// and the `TabStructuralPublishOwner` (transaction depth + coalesced `structuralChanges`
+/// and the `TabStructuralPublishOwner` (transaction depth + coalesced event-bus
 /// emission), and rebuilds the lookup snapshot from the live tab collections supplied via
 /// the initializer closures. `TabManager` keeps thin facades (`withStructuralUpdateTransaction`,
 /// `requestStructuralPublish`, `rebuildTabLookup`, `notifyTransientShortcutStateChanged`,
@@ -22,18 +20,14 @@ final class TabStructuralLookupCoordinator {
     private let publishOwner: TabStructuralPublishOwner
 
     init(
-        structuralChanges: PassthroughSubject<Void, Never>,
-        eventBus: TabStructureEventBus? = nil,
+        eventBus: TabStructureEventBus,
         tabsBySpace: @escaping @MainActor () -> [UUID: [Tab]],
         transientShortcutTabsByWindow: @escaping @MainActor () -> [UUID: [UUID: Tab]],
         transientExtensionTabsByID: @escaping @MainActor () -> [UUID: Tab],
         auxiliaryMiniWindowTabsByID: @escaping @MainActor () -> [UUID: Tab]
     ) {
         self.lookupOwner = TabStructuralLookupOwner()
-        self.publishOwner = TabStructuralPublishOwner(
-            structuralChanges: structuralChanges,
-            eventBus: eventBus
-        )
+        self.publishOwner = TabStructuralPublishOwner(eventBus: eventBus)
         self.tabsBySpace = tabsBySpace
         self.transientShortcutTabsByWindow = transientShortcutTabsByWindow
         self.transientExtensionTabsByID = transientExtensionTabsByID
@@ -42,6 +36,7 @@ final class TabStructuralLookupCoordinator {
 
     var batchFlushCount: Int { lookupOwner.batchFlushCount }
     var immediateFlushCount: Int { lookupOwner.immediateFlushCount }
+    var mutationRevision: UInt64 { publishOwner.mutationRevision }
 
     private var structuralLookupSnapshot: TabStructuralLookupSnapshot {
         TabStructuralLookupSnapshot(

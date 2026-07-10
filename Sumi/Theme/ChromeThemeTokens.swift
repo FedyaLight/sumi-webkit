@@ -1,9 +1,8 @@
 import AppKit
-import SumiChromeTokens
 import SwiftUI
 
 /// SwiftUI color recipe for browser chrome. Non-color spacing/metrics live in
-/// `SumiChromeTokens.ChromeLayoutTokens` (Foundation + CoreGraphics only).
+/// `ChromeLayoutTokens` owns numeric layout metrics; this type owns colors.
 struct ChromeThemeTokens {
     let accent: Color
     let fieldBackground: Color

@@ -4,16 +4,30 @@ import SumiDomain
 @MainActor
 final class SumiAutoplayPolicyNavigationResponder: SumiNavigationActionResponding {
     private weak var tab: Tab?
-    private let autoplayPolicyStore: SumiAutoplayPolicyStoreAdapter
+    private let autoplayPolicy: @MainActor (URL?, Profile?) -> SumiAutoplayPolicy
     private let profileProvider: @MainActor (Tab) -> Profile?
 
-    init(
+    convenience init(
         tab: Tab,
         autoplayPolicyStore: SumiAutoplayPolicyStoreAdapter,
         profileProvider: (@MainActor (Tab) -> Profile?)? = nil
     ) {
+        self.init(
+            tab: tab,
+            autoplayPolicy: { url, profile in
+                autoplayPolicyStore.effectivePolicy(for: url, profile: profile)
+            },
+            profileProvider: profileProvider
+        )
+    }
+
+    init(
+        tab: Tab,
+        autoplayPolicy: @escaping @MainActor (URL?, Profile?) -> SumiAutoplayPolicy,
+        profileProvider: (@MainActor (Tab) -> Profile?)? = nil
+    ) {
         self.tab = tab
-        self.autoplayPolicyStore = autoplayPolicyStore
+        self.autoplayPolicy = autoplayPolicy
         self.profileProvider = profileProvider ?? { $0.resolveProfile() }
     }
 
@@ -28,10 +42,7 @@ final class SumiAutoplayPolicyNavigationResponder: SumiNavigationActionRespondin
               let profile = profileProvider(tab)
         else { return .next }
 
-        let policy = autoplayPolicyStore.effectivePolicy(
-            for: url,
-            profile: profile
-        )
+        let policy = autoplayPolicy(url, profile)
         preferences.mustApplyAutoplayPolicy = true
         preferences.autoplayPolicy = policy.navigationAutoplayPolicy
 

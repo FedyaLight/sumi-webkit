@@ -152,7 +152,7 @@ final class HistoryMenuModelTests: XCTestCase {
     ) -> SumiNavigationHistoryContext {
         SumiNavigationHistoryContext(
             faviconService: BrowserManagerDataServices.productionFaviconService,
-            faviconImageService: BrowserManagerDataServices.productionFaviconImageService,
+            faviconImageReader: BrowserManagerDataServices.productionFaviconCapabilities.images,
             openURLInCurrentTab: openURLInCurrentTab,
             openURLInNewTab: openURLInNewTab,
             openURLsInNewWindow: openURLsInNewWindow

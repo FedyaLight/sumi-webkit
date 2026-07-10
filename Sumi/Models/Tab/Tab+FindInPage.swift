@@ -10,6 +10,6 @@ extension Tab {
             targetWebView = resolvedCurrentWebView()
         }
 
-        return targetWebView as? FocusableWKWebView
+        return targetWebView?.sumiActivePresentationWebView as? FocusableWKWebView
     }
 }

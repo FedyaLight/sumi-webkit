@@ -4,7 +4,6 @@
 //
 //
 
-import SumiSidebarChrome
 import SwiftUI
 
 extension SpacesSideBarView {

@@ -15,6 +15,7 @@ final class TabRuntimePortsAttachmentOwner {
         let replaceCurrentTab: @MainActor (Tab?) -> Void
         let currentSpace: @MainActor () -> Space?
         let reconcileSpaceProfilesIfNeeded: @MainActor () -> Void
+        let startPersistedStateLoadAfterRuntimeAttachmentIfConfigured: @MainActor () -> Void
     }
 
     private let dependencies: Dependencies
@@ -50,6 +51,7 @@ final class TabRuntimePortsAttachmentOwner {
         }
 
         dependencies.reconcileSpaceProfilesIfNeeded()
+        dependencies.startPersistedStateLoadAfterRuntimeAttachmentIfConfigured()
     }
 }
 
@@ -93,7 +95,20 @@ extension TabRuntimePortsAttachmentOwner.Dependencies {
                 tabManager?.spaceStateOwner.currentSpace
             },
             reconcileSpaceProfilesIfNeeded: { [weak tabManager] in
-                tabManager?.profileAssignmentOwner.reconcileSpaceProfilesIfNeeded()
+                tabManager?.profileAssignments.selection
+                    .reconcileSpaceProfilesIfNeeded()
+            },
+            startPersistedStateLoadAfterRuntimeAttachmentIfConfigured: { [weak tabManager] in
+                guard let tabManager else { return }
+                tabManager.startupRestoreLifecycle
+                    .startAfterRuntimeAttachmentIfConfigured(
+                        runtimeIsAttached: tabManager.runtimePorts != nil,
+                        restore: { [weak tabManager] revision in
+                            tabManager?.storeRestore.loadFromStore(
+                                expectedStructuralRevision: revision
+                            )
+                        }
+                    )
             }
         )
     }

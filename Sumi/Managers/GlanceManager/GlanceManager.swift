@@ -5,6 +5,7 @@
 //
 
 import AppKit
+import SumiWebRuntime
 import SwiftUI
 import WebKit
 
@@ -174,7 +175,7 @@ final class GlanceManager: ObservableObject {
     func registerPromotedHost(
         _ host: SumiWebViewContainerView,
         for session: GlanceSession,
-        attachmentCompletion: @escaping @MainActor () -> Void
+        attachmentCompletion: @escaping PromotedHostAttachmentCompletion
     ) -> Bool {
         runtime?.registerPromotedHost(
             host,

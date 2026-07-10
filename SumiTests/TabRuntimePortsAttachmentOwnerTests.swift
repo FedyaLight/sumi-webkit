@@ -27,6 +27,7 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
         var replacedCurrentTab: Tab?
         var syncedSpaceIds: [UUID] = []
         var didReconcileSpaceProfiles = false
+        var didStartPersistedStateLoad = false
 
         let owner = TabRuntimePortsAttachmentOwner(
             dependencies: TabRuntimePortsAttachmentOwner.Dependencies(
@@ -59,6 +60,9 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
                 currentSpace: { space },
                 reconcileSpaceProfilesIfNeeded: {
                     didReconcileSpaceProfiles = true
+                },
+                startPersistedStateLoadAfterRuntimeAttachmentIfConfigured: {
+                    didStartPersistedStateLoad = true
                 }
             )
         )
@@ -81,5 +85,6 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
         XCTAssertIdentical(replacedCurrentTab, knownTab)
         XCTAssertEqual(syncedSpaceIds, [space.id])
         XCTAssertTrue(didReconcileSpaceProfiles)
+        XCTAssertTrue(didStartPersistedStateLoad)
     }
 }

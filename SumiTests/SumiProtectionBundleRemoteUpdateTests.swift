@@ -80,7 +80,8 @@ final class SumiProtectionBundleRemoteUpdateTests: XCTestCase {
             options: .atomic
         )
 
-        let metadata = SumiRemoteAdblockBundleCache.remoteMetadata(bundleURL: bundleURL, fileManager: fileManager)
+        let metadata = SumiProtectionBundleCacheMetadataReader(fileManager: fileManager)
+            .read(from: bundleURL)
 
         XCTAssertNil(metadata)
     }
@@ -342,7 +343,8 @@ final class SumiProtectionBundleRemoteUpdateTests: XCTestCase {
             manifest: manifest
         )
 
-        let compiled = bundle.compiledGenerationManifest(
+        let compiled = SumiAdblockNativeGenerationProjector().compiledManifest(
+            from: bundle.manifest,
             previousManifest: nil,
             installedDate: Date(timeIntervalSince1970: 0)
         )
@@ -380,7 +382,8 @@ final class SumiProtectionBundleRemoteUpdateTests: XCTestCase {
             )
         )
 
-        let staged = try bundle.stagedShardURLs()
+        let staged = try SumiAdblockNativeBundleReader()
+            .stagedShardURLs(from: bundle)
 
         XCTAssertEqual(Array(staged.keys), ["network-0001"])
     }
@@ -390,28 +393,28 @@ final class SumiProtectionBundleRemoteUpdateTests: XCTestCase {
         let root = fileManager.temporaryDirectory
             .appendingPathComponent("SumiProtectionBundleCleanupTests-\(UUID().uuidString)", isDirectory: true)
         defer { try? fileManager.removeItem(at: root) }
-        let manifestStore = AdblockUpdateManifestStore(rootDirectory: root)
+        let generationArchive = AdblockGenerationArchive(rootDirectory: root)
         let activeManifest = Self.makeCompiledManifest(
             bundleId: "active-bundle",
             generationId: "active-generation",
             profileId: SumiProtectionBundleProfile.adblock
         )
-        try await manifestStore.commit(manifest: activeManifest, stagedCompiledShardURLs: [:])
-        let staleGenerationURL = await manifestStore.generationDirectoryURL(generationId: "stale-generation")
+        try await generationArchive.commit(manifest: activeManifest, stagedCompiledShardURLs: [:])
+        let staleGenerationURL = try await generationArchive.generationDirectoryURL(generationId: "stale-generation")
         try fileManager.createDirectory(at: staleGenerationURL, withIntermediateDirectories: true)
         let staleFileURL = staleGenerationURL.appendingPathComponent("stale.json")
         try Data("[]".utf8).write(to: staleFileURL)
-        let staleStagingURL = await manifestStore.stagingDirectoryURL()
+        let staleStagingURL = await generationArchive.stagingDirectoryURL()
             .appendingPathComponent("stale-staging", isDirectory: true)
         try fileManager.createDirectory(at: staleStagingURL, withIntermediateDirectories: true)
         try Data("[]".utf8).write(to: staleStagingURL.appendingPathComponent("stale.json"))
-        let collector = AdblockGenerationGarbageCollector(
-            manifestStore: manifestStore,
+        let retention = AdblockGenerationRetention(
+            archive: generationArchive,
             contentRuleListStore: FakeAdblockCleanupRuleListStore(),
             fileManager: FileManager()
         )
 
-        let report = await collector.cleanupAfterSuccessfulUpdate()
+        let report = await retention.removeUnrecoverableGenerations()
 
         let removedPaths = Set(report.removedFilePaths.map(Self.canonicalTemporaryPath))
         let expectedRemovedPaths = Set([staleGenerationURL, staleStagingURL].map {

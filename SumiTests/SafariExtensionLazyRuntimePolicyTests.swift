@@ -16,7 +16,7 @@ final class SafariExtensionLazyRuntimePolicyTests: XCTestCase {
         )
 
         XCTAssertEqual(manager.countLoadedExtensionContexts(), 0)
-        XCTAssertTrue(manager.extensionContextsByProfile.isEmpty)
+        XCTAssertTrue(manager.profileRuntime.contextsByProfile.isEmpty)
     }
 
     func testDetachedDelegateModuleStateUsesInjectedRegistry() throws {
@@ -33,7 +33,7 @@ final class SafariExtensionLazyRuntimePolicyTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            manager.extensionsModuleEnabledForCallbacks,
+            manager.nativeMessagingRelayOwner.extensionsModuleEnabledForCallbacks,
             !sharedEnabled
         )
     }
@@ -54,7 +54,7 @@ final class SafariExtensionLazyRuntimePolicyTests: XCTestCase {
         registry.setEnabled(!sharedEnabled, for: .extensions)
 
         XCTAssertEqual(
-            manager.extensionsModuleEnabledForCallbacks,
+            manager.nativeMessagingRelayOwner.extensionsModuleEnabledForCallbacks,
             !sharedEnabled
         )
     }
@@ -113,8 +113,8 @@ final class SafariExtensionLazyRuntimePolicyTests: XCTestCase {
         )
 
         XCTAssertEqual(manager.countLoadedExtensionContexts(), 0)
-        XCTAssertTrue(manager.extensionContextsByProfile.isEmpty)
-        XCTAssertTrue(manager.extensionControllersByProfile.isEmpty)
+        XCTAssertTrue(manager.profileRuntime.contextsByProfile.isEmpty)
+        XCTAssertTrue(manager.profileRuntime.controllersByProfile.isEmpty)
     }
 
     func testEightProfilesWithOneExtensionCreatesAtMostOneContextUntilUsed() async throws {
@@ -135,7 +135,7 @@ final class SafariExtensionLazyRuntimePolicyTests: XCTestCase {
             scratchDirectory: scratchDirectory,
             name: "LazyPolicyExtension"
         )
-        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
+        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
 
         XCTAssertEqual(
             manager.countLoadedExtensionContexts(),
@@ -188,7 +188,7 @@ final class SafariExtensionLazyRuntimePolicyTests: XCTestCase {
             scratchDirectory: scratchDirectory,
             name: "CacheReuseExtension"
         )
-        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
+        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
 
         let contextA = try XCTUnwrap(
             manager.getExtensionContext(for: installed.id, profileId: profileA.id)
@@ -226,17 +226,53 @@ final class SafariExtensionLazyRuntimePolicyTests: XCTestCase {
             scratchDirectory: scratchDirectory,
             name: "DisableUnloadExtension"
         )
-        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
+        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
         _ = try await manager.ensureExtensionLoaded(
             extensionId: installed.id,
             profileId: profileB.id
         )
         XCTAssertEqual(manager.countLoadedExtensionContexts(), 2)
 
-        try await manager.installationFlowOwner.disableExtension(installed.id)
+        try await manager.installedExtensionLifecycle.disable(installed.id)
 
         XCTAssertEqual(manager.countLoadedExtensionContexts(), 0)
-        XCTAssertNil(manager.cachedWebExtensionsByID[installed.id])
+        XCTAssertNil(manager.runtimeSession.cachedWebExtensionsByID[installed.id])
+    }
+
+    func testWebsiteDataMutationQuiescesTargetProfileAndReloadsOnlyOnDemand() async throws {
+        let container = try makeTestContainer()
+        let profile = Profile(name: "Mutation Quiesce")
+        let manager = ExtensionManager(
+            context: container.mainContext,
+            initialProfile: profile
+        )
+        let scratchDirectory = try makeScratchDirectory()
+        let installed = try await installUnpackedExtension(
+            manager: manager,
+            scratchDirectory: scratchDirectory,
+            name: "MutationQuiesceExtension"
+        )
+        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
+        XCTAssertNotNil(
+            manager.getExtensionContext(for: installed.id, profileId: profile.id)
+        )
+
+        let generationBeforeQuiesce = manager.runtimeSession.extensionLoadGeneration
+        XCTAssertTrue(
+            manager.quiesceForWebsiteDataMutation(profileIDs: [profile.id])
+        )
+        XCTAssertGreaterThan(manager.runtimeSession.extensionLoadGeneration, generationBeforeQuiesce)
+        XCTAssertNil(
+            manager.getExtensionContext(for: installed.id, profileId: profile.id)
+        )
+
+        _ = try await manager.ensureExtensionLoaded(
+            extensionId: installed.id,
+            profileId: profile.id
+        )
+        XCTAssertNotNil(
+            manager.getExtensionContext(for: installed.id, profileId: profile.id)
+        )
     }
 
     private func makeTestContainer() throws -> ModelContainer {
@@ -282,7 +318,7 @@ final class SafariExtensionLazyRuntimePolicyTests: XCTestCase {
             name: name,
             manifestVersion: manifestVersion
         )
-        return try await manager.installationFlowOwner.performInstallation(
+        return try await manager.extensionInstaller.install(
             from: directoryURL,
             enableOnInstall: false
         )

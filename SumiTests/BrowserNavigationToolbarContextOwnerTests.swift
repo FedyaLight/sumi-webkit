@@ -213,8 +213,8 @@ final class NavigationToolbarContextOwnerTests: XCTestCase {
             faviconService: {
                 BrowserManagerDataServices.productionFaviconService
             },
-            faviconImageService: {
-                BrowserManagerDataServices.productionFaviconImageService
+            faviconImageReader: {
+                BrowserManagerDataServices.productionFaviconCapabilities.images
             },
             openURLInCurrentTab: openURLInCurrentTab,
             openNewTab: openNewTab,

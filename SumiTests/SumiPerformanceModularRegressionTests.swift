@@ -205,6 +205,7 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
                 probe: userscriptsProbe
             )
         )
+        browserManager.bindTestWebViewCoordinator()
         let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://example.com/prompt-20-default-normal-tab",
             in: browserManager.tabManager.spaceStateOwner.currentSpace,

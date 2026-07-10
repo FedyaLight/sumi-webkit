@@ -1,4 +1,5 @@
 import Foundation
+import SumiWebRuntime
 
 @MainActor
 final class GlancePromotionHandoffOwner {
@@ -29,6 +30,11 @@ final class GlancePromotionHandoffOwner {
         isAnimating = false
     }
 
+    func cancelCompositorHandoff() {
+        isCompletingHandoff = false
+        isAnimating = false
+    }
+
     func reset() {
         isAnimating = false
         isCompletingHandoff = false
@@ -38,7 +44,7 @@ final class GlancePromotionHandoffOwner {
         _ previewHostView: SumiWebViewContainerView?,
         for session: GlanceSession,
         manager: GlanceManager?,
-        attachmentCompletion: @escaping @MainActor () -> Void
+        attachmentCompletion: @escaping PromotedHostAttachmentCompletion
     ) -> Bool {
         guard canRegisterPreviewHost(previewHostView, for: session, manager: manager),
               let previewHostView,

@@ -36,10 +36,11 @@ final class TabNormalWebViewRuntimeContextOwner {
                 tab?.resolveProfile()
             },
             deferWebViewUntilProfileAvailable: { [weak tab] in
-                tab?.profileWebViewCreationGate.deferCreationUntilProfileAvailable()
+                tab?.profileWebViewCreationGate
+                    .deferCreationUntilProfileAvailable() == true
             },
             beginSuspendedRestoreIfNeeded: { [weak tab] in
-                tab?.suspensionStateOwner.beginRestoreIfNeeded()
+                tab?.beginSuspendedRestoreIfNeeded()
             },
             finishSuspendedRestoreIfNeeded: { [weak tab] in
                 tab?.finishSuspendedRestoreIfNeeded()
@@ -47,17 +48,27 @@ final class TabNormalWebViewRuntimeContextOwner {
             setupWebView: { [weak tab] in
                 _ = tab?.ensureUntrackedNormalWebView(reason: "TabNormalWebViewRuntimeContext.setupWebView")
             },
+            deferWebsiteDataMutationWebViewMaterialization: { [weak tab] replay in
+                guard let tab else { return false }
+                return tab.navigationRuntime.webViewCleanupRuntime
+                    .deferWebsiteDataMutationWebViewMaterialization(tab, replay)
+            },
             adoptParkedWebViewAsCurrent: { [weak tab] webView in
                 tab?.adoptParkedWebViewAsCurrent(webView)
             },
             clearParkedExistingWebView: { [weak tab] in
                 tab?.clearParkedExistingWebView()
             },
+            retireParkedWebView: { [weak tab] webView, reason in
+                guard let tab else { return false }
+                return tab.navigationRuntime.webViewCleanupRuntime.retireParkedWebView(
+                    tab,
+                    webView,
+                    reason
+                )
+            },
             replaceUntrackedWebView: { [weak tab] webView in
                 tab?.replaceUntrackedWebView(webView)
-            },
-            assignPrimaryWebView: { [weak tab] webView, windowId in
-                tab?.assignPrimaryWebView(webView, windowId: windowId)
             },
             cleanupCloneWebView: { [weak tab] webView in
                 tab?.cleanupCloneWebView(webView)
@@ -121,8 +132,11 @@ final class TabNormalWebViewRuntimeContextOwner {
                     ownedWebViewPreparationOwner.applyOwnedWebViewNavPreferences(to: webView)
                 }
             ),
-            normalTabUserScriptsProvider: { [weak tab] targetURL in
-                tab?.normalTabUserScriptsProvider(for: targetURL)
+            normalTabUserScriptsProvider: { [weak tab] targetURL, profileID in
+                tab?.normalTabUserScriptsProvider(
+                    for: targetURL,
+                    profileIDOverride: profileID
+                )
                     ?? SumiNormalTabUserScripts(managedUserScripts: [])
             },
             replaceNormalTabUserScripts: { [weak tab] userContentController, targetURL in
@@ -147,15 +161,14 @@ final class TabNormalWebViewRuntimeContextOwner {
                     reason
                 )
             },
-            scheduleInitialDocumentRuntimeHandoff: { [weak tab] webView, targetURL, profileId, registrationReason, registrationGuard in
+            scheduleInitialDocumentRuntimeHandoff: { [weak tab] webView, targetURL, profileId, registrationReason in
                 guard let tab else { return }
                 NormalTabInitialDocumentRuntimeHandoff.scheduleTabSetupInitialLoad(
                     tab: tab,
                     webView: webView,
                     targetURL: targetURL,
                     profileId: profileId,
-                    registrationReason: registrationReason,
-                    registrationGuard: registrationGuard
+                    registrationReason: registrationReason
                 )
             }
         )

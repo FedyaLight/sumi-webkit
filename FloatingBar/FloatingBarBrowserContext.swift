@@ -3,7 +3,8 @@ import Foundation
 @MainActor
 struct FloatingBarFaviconContext {
     let partition: SumiFaviconPartition
-    let imageService: any BrowserFaviconImageServicing
+    let imageReader: any BrowserFaviconImageReading
+    let prefetch: any BrowserFaviconPrefetchScheduling
 }
 
 @MainActor

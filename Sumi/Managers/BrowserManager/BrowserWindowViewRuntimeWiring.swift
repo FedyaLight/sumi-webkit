@@ -77,7 +77,7 @@ extension WindowViewBrowserContext {
                 browserManager?.chromeBundle.sidebarPresentationOwner.updateSidebarWidth(width, for: windowState, persist: persist)
             },
             persistWindowSession: { [weak browserManager] windowState in
-                browserManager?.windowSessionBundle.activationOwner.persistWindowSession(for: windowState)
+                browserManager?.windowSessionBundle.persistence.persist(windowState)
             },
             dismissThemePickerCommittingIfNeeded: { [weak browserManager] in
                 browserManager?.chromeBundle.workspaceThemeEditorOwner.dismissThemePickerCommittingIfNeeded()

@@ -4,10 +4,22 @@ import SumiWebRuntime
 
 @MainActor
 enum BrowserWebViewRuntimeFactory {
-    static func browserRuntimeContext(
+    static func environment(
+        for browserManager: BrowserManager
+    ) -> WebViewRuntimeEnvironment {
+        WebViewRuntimeEnvironment(
+            visible: visiblePreparationContext(for: browserManager),
+            browser: browserRuntimeContext(for: browserManager),
+            initialDocument: initialDocumentContext(for: browserManager),
+            shutdown: shutdownContext(for: browserManager)
+        )
+    }
+
+    private static func browserRuntimeContext(
         for browserManager: BrowserManager
     ) -> WebViewCoordinatorBrowserRuntimeContext {
-        WebViewCoordinatorBrowserRuntimeContext(
+        let tabSuspensionController = browserManager.tabSuspensionController
+        return WebViewCoordinatorBrowserRuntimeContext(
             tab: { [weak browserManager] tabId in
                 requireBrowserManager(browserManager, operation: "resolve tab").tabManager.tabCollectionMembershipOwner.tab(for: tabId)
             },
@@ -72,16 +84,50 @@ enum BrowserWebViewRuntimeFactory {
                     previous: nil
                 )
             },
-            globallyVisibleTabIDs: { [weak browserManager] in
+            executeDeferredProfileAssignment: {
+                [weak browserManager]
+                tabID,
+                _,
+                intent in
+                let manager = requireBrowserManager(
+                    browserManager,
+                    operation: "execute deferred profile assignment"
+                )
+                guard let tab = manager.tabManager.tabCollectionMembershipOwner
+                    .tab(for: tabID) else {
+                    return false
+                }
+                return manager.tabManager.profileAssignments.tabs
+                    .executeDeferred(
+                        tab: tab,
+                        intent: intent
+                    )
+            },
+            validateDeferredSpaceProfileAssignment: {
+                [weak browserManager]
+                intent in
                 requireBrowserManager(
                     browserManager,
-                    operation: "resolve globally visible tabs"
-                ).tabSuspensionService.suspensionEvaluationContext().visibleTabIDs
+                    operation: "validate deferred space profile assignment"
+                ).tabManager.profileAssignments.spaces
+                    .isCurrentDeferred(intent)
+            },
+            executeDeferredSpaceProfileAssignment: {
+                [weak browserManager]
+                intent in
+                requireBrowserManager(
+                    browserManager,
+                    operation: "execute deferred space profile assignment"
+                ).tabManager.profileAssignments.spaces
+                    .executeDeferred(intent)
+            },
+            globallyVisibleTabIDs: { [weak tabSuspensionController] in
+                tabSuspensionController?.globallyVisibleTabIDs() ?? []
             }
         )
     }
 
-    static func initialDocumentContext(
+    private static func initialDocumentContext(
         for browserManager: BrowserManager
     ) -> InitialDocumentWebViewRuntimeContext {
         InitialDocumentWebViewRuntimeContext(
@@ -104,15 +150,16 @@ enum BrowserWebViewRuntimeFactory {
         )
     }
 
-    static func shutdownContext(
+    private static func shutdownContext(
         for browserManager: BrowserManager
     ) -> WebViewCoordinatorShutdownRuntimeContext {
-        WebViewCoordinatorShutdownRuntimeContext(
-            cleanupUserScripts: { [weak browserManager] controller, webViewId in
-                requireBrowserManager(
-                    browserManager,
-                    operation: "cleanup user scripts"
-                ).userscriptsModule.cleanupWebViewIfLoaded(
+        // Shutdown outlives BrowserManager in the app-shell fallback. Retain
+        // only the manager-independent module that owns the injected script
+        // bookkeeping; its own runtime ports reference BrowserManager weakly.
+        let userscriptsModule = browserManager.userscriptsModule
+        return WebViewCoordinatorShutdownRuntimeContext(
+            cleanupUserScripts: { controller, webViewId in
+                userscriptsModule.cleanupWebViewIfLoaded(
                     controller: controller,
                     webViewId: webViewId
                 )
@@ -120,10 +167,11 @@ enum BrowserWebViewRuntimeFactory {
         )
     }
 
-    static func visiblePreparationContext(
+    private static func visiblePreparationContext(
         for browserManager: BrowserManager
     ) -> WebViewCoordinatorVisibleRuntimeContext {
-        WebViewCoordinatorVisibleRuntimeContext(
+        let tabSuspensionController = browserManager.tabSuspensionController
+        return WebViewCoordinatorVisibleRuntimeContext(
             windowState: { [weak browserManager] windowId in
                 requireWindowRegistry(browserManager, operation: "resolve visible window").windows[windowId]
             },
@@ -156,15 +204,11 @@ enum BrowserWebViewRuntimeFactory {
                 requireBrowserManager(browserManager, operation: "mark visible tab accessed")
                     .compositorManager.markTabAccessed(tabId)
             },
-            globallyVisibleTabIDs: { [weak browserManager] in
-                requireBrowserManager(
-                    browserManager,
-                    operation: "resolve globally visible tabs"
-                ).tabSuspensionService.suspensionEvaluationContext().visibleTabIDs
+            globallyVisibleTabIDs: { [weak tabSuspensionController] in
+                tabSuspensionController?.globallyVisibleTabIDs() ?? []
             },
-            scheduleTabSuspensionReconcile: { [weak browserManager] reason in
-                requireBrowserManager(browserManager, operation: "schedule tab suspension reconcile")
-                    .tabSuspensionService.scheduleProactiveTimerReconcile(reason: reason)
+            scheduleTabSuspensionReconcile: { [weak tabSuspensionController] reason in
+                tabSuspensionController?.scheduleReconciliation(reason: reason)
             },
             scheduleBackgroundMediaReconcile: { [weak browserManager] reason in
                 requireBrowserManager(browserManager, operation: "schedule background media reconcile")

@@ -559,7 +559,7 @@ final class SumiFaviconV2SchedulerAndCacheTests: XCTestCase {
             )
         }
         await fetcher.waitUntilStarted(1)
-        await scheduler.cancelColdFetches()
+        await scheduler.cancelAll()
 
         let secondTask = Task {
             await scheduler.fetch(
@@ -739,7 +739,7 @@ final class SumiFaviconV2SchedulerAndCacheTests: XCTestCase {
             .appendingPathComponent("SumiFaviconV2Isolation-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
 
-        let store = SumiFaviconBlobStore(rootDirectory: directory)
+        let storage = SumiFaviconBlobStorage(rootDirectory: directory)
         let pageURL = try XCTUnwrap(URL(string: "https://example.com/private"))
         let iconURL = try XCTUnwrap(URL(string: "https://example.com/icon.png"))
         let profileA = SumiFaviconPartition.regular(UUID())
@@ -754,7 +754,7 @@ final class SumiFaviconV2SchedulerAndCacheTests: XCTestCase {
             pixelHeight: 32,
             byteCount: imageData.count
         )
-        _ = try store.storeValidatedPayload(
+        _ = try storage.writer.storeValidatedPayload(
             payload,
             for: SumiFaviconCandidate(
                 pageURL: pageURL,
@@ -765,9 +765,9 @@ final class SumiFaviconV2SchedulerAndCacheTests: XCTestCase {
             )
         )
 
-        XCTAssertNotNil(store.cachedSelection(for: pageURL, partition: profileA))
-        XCTAssertNil(store.cachedSelection(for: pageURL, partition: profileB))
-        XCTAssertNil(store.cachedSelection(for: pageURL, partition: privateA))
+        XCTAssertNotNil(storage.reader.cachedSelection(for: pageURL, partition: profileA))
+        XCTAssertNil(storage.reader.cachedSelection(for: pageURL, partition: profileB))
+        XCTAssertNil(storage.reader.cachedSelection(for: pageURL, partition: privateA))
     }
 
     func testBlobStoreDoesNotRecordNoIconOverFreshPositiveMapping() throws {
@@ -775,7 +775,7 @@ final class SumiFaviconV2SchedulerAndCacheTests: XCTestCase {
             .appendingPathComponent("SumiFaviconV2NoIconRace-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
 
-        let store = SumiFaviconBlobStore(rootDirectory: directory)
+        let storage = SumiFaviconBlobStorage(rootDirectory: directory)
         let pageURL = try XCTUnwrap(URL(string: "https://shield.turtlecute.org/"))
         let iconURL = try XCTUnwrap(URL(string: "https://shield.turtlecute.org/assets/styled/icon.svg"))
         let partition = SumiFaviconPartition.regular(nil)
@@ -788,7 +788,7 @@ final class SumiFaviconV2SchedulerAndCacheTests: XCTestCase {
             byteCount: SumiFaviconTestImages.styledSVGData().count
         )
 
-        _ = try store.storeValidatedPayload(
+        _ = try storage.writer.storeValidatedPayload(
             payload,
             for: SumiFaviconCandidate(
                 pageURL: pageURL,
@@ -799,10 +799,46 @@ final class SumiFaviconV2SchedulerAndCacheTests: XCTestCase {
             )
         )
 
-        store.recordNoIconFound(for: pageURL, partition: partition)
+        storage.writer.recordNoIconFound(for: pageURL, partition: partition)
 
-        XCTAssertFalse(store.isNoIconFresh(for: pageURL, partition: partition))
-        XCTAssertNotNil(store.cachedSelection(for: pageURL, partition: partition))
+        XCTAssertFalse(storage.reader.isNoIconFresh(for: pageURL, partition: partition))
+        XCTAssertNotNil(storage.reader.cachedSelection(for: pageURL, partition: partition))
+    }
+
+    func testClearingPartitionCancelsPendingMetadataPersist() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SumiFaviconV2PendingClear-\(UUID().uuidString)", isDirectory: true)
+        defer {
+            if FileManager.default.fileExists(atPath: directory.path) {
+                do {
+                    try FileManager.default.removeItem(at: directory)
+                } catch {
+                    XCTFail("Failed to remove favicon fixture: \(error)")
+                }
+            }
+        }
+
+        let storage = SumiFaviconBlobStorage(
+            rootDirectory: directory,
+            persistCoalesceInterval: 60
+        )
+        let partition = SumiFaviconPartition.regular(UUID())
+        let partitionDirectory = directory.appendingPathComponent(
+            partition.storageComponent,
+            isDirectory: true
+        )
+        let candidateURL = try XCTUnwrap(URL(string: "https://clear-pending.example/favicon.ico"))
+
+        storage.writer.recordFailure(
+            candidateURL: candidateURL,
+            partition: partition,
+            failureKind: .notFound,
+            ttl: 60
+        )
+        storage.maintenance.clearPartition(partition)
+        storage.maintenance.flushPendingPersists()
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: partitionDirectory.path))
     }
 
     func testSessionCookieMatchingUsesOnlyCandidateOriginCookies() throws {
@@ -889,7 +925,7 @@ final class SumiFaviconV2SchedulerAndCacheTests: XCTestCase {
 }
 
 @MainActor
-final class SumiFaviconV2ServiceRegressionTests: XCTestCase {
+final class SumiFaviconV2PipelineRegressionTests: XCTestCase {
     func testLocalExtensionIconIsPreparedThroughFaviconPipeline() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("SumiFaviconV2ExtensionIcon-\(UUID().uuidString)", isDirectory: true)
@@ -902,9 +938,9 @@ final class SumiFaviconV2ServiceRegressionTests: XCTestCase {
         let pageURL = try XCTUnwrap(URL(string: "webkit-extension://ext-test/onboarding.html"))
         XCTAssertNotNil(SumiFaviconLookupKey.cacheKey(for: pageURL))
 
-        let service = SumiFaviconService(rootDirectory: directory.appendingPathComponent("store", isDirectory: true))
+        let runtime = SumiFaviconRuntime(rootDirectory: directory.appendingPathComponent("store", isDirectory: true))
         let partition = SumiFaviconPartition.regular(UUID())
-        let image = await service.ingestLocalExtensionIcon(
+        let image = await runtime.payloadIngestion.ingestLocalExtensionIcon(
             fileURL: iconURL,
             documentURL: pageURL,
             partition: partition,
@@ -913,12 +949,12 @@ final class SumiFaviconV2ServiceRegressionTests: XCTestCase {
         let request = request(pageURL: pageURL, partition: partition, context: .tabSidebar)
         try assertPreparedImage(image, matches: request)
 
-        let selection = try XCTUnwrap(service.cachedSelection(for: pageURL, partition: partition))
+        let selection = try XCTUnwrap(runtime.images.cachedSelection(for: pageURL, partition: partition))
         XCTAssertEqual(selection.sourceKind, .extensionManifest)
         XCTAssertEqual(selection.sourceURL.standardizedFileURL.path, iconURL.standardizedFileURL.path)
 
         try assertPreparedImage(
-            service.cachedPreparedImage(for: request),
+            runtime.images.cachedPreparedImage(for: request),
             matches: request
         )
     }
@@ -948,10 +984,10 @@ final class SumiFaviconV2ServiceRegressionTests: XCTestCase {
         let partition = SumiFaviconPartition.regular(nil)
         let imageData = try SumiFaviconTestImages.pngData(width: 64, height: 64)
 
-        // Use an isolated service rooted in a temp directory instead of the
+        // Use an isolated runtime rooted in a temp directory instead of the
         // shared system so this test does not persist blobs across runs.
-        let service = SumiFaviconService(rootDirectory: directory)
-        try await service.storeExternalPayload(
+        let runtime = SumiFaviconRuntime(rootDirectory: directory)
+        try runtime.payloadIngestion.storeExternalPayload(
             imageData,
             faviconURL: pageURL.appendingPathComponent("favicon.png"),
             documentURL: pageURL,
@@ -963,7 +999,7 @@ final class SumiFaviconV2ServiceRegressionTests: XCTestCase {
             partition: partition,
             context: .tabSidebar,
             priority: .visibleSidebarOrTabStrip,
-            faviconImageService: service
+            imageReader: runtime.images
         )
         XCTAssertNotNil(loadedImage)
 
@@ -972,12 +1008,12 @@ final class SumiFaviconV2ServiceRegressionTests: XCTestCase {
             forReferenceKey: referenceKey,
             partition: partition,
             context: .tabSidebar,
-            faviconImageService: service
+            imageReader: runtime.images
         )
         let imageByDocumentURL = TabFaviconStore.getCachedImage(
             forDocumentURL: pageURL,
             partition: partition,
-            faviconImageService: service
+            imageReader: runtime.images
         )
 
         XCTAssertNotNil(imageByReference)
@@ -998,9 +1034,9 @@ final class SumiFaviconV2ServiceRegressionTests: XCTestCase {
         let corruptPayload = Data("{ not valid favicon metadata".utf8)
         try corruptPayload.write(to: metadataURL, options: [.atomic])
 
-        let service = SumiFaviconService(rootDirectory: directory, fetcher: RoutingFaviconNetworkFetcher(responses: [:]))
+        let runtime = SumiFaviconRuntime(rootDirectory: directory, fetcher: RoutingFaviconNetworkFetcher(responses: [:]))
         XCTAssertNil(
-            service.cachedSelection(
+            runtime.images.cachedSelection(
                 for: try XCTUnwrap(URL(string: "https://example.com/")),
                 partition: partition
             )
@@ -1028,10 +1064,10 @@ final class SumiFaviconV2ServiceRegressionTests: XCTestCase {
                 ),
             ]
         )
-        let service = SumiFaviconService(rootDirectory: directory, fetcher: fetcher)
+        let runtime = SumiFaviconRuntime(rootDirectory: directory, fetcher: fetcher)
         let partition = SumiFaviconPartition.regular(nil)
 
-        let visibleImage = await service.ingestVisibleTabDiscovery(
+        let visibleImage = await runtime.liveDiscovery.ingest(
             links: [
                 SumiFaviconDiscoveredLink(
                     href: "resources/favicon.png",
@@ -1048,21 +1084,21 @@ final class SumiFaviconV2ServiceRegressionTests: XCTestCase {
         XCTAssertNotNil(visibleImage)
         let requestedURLs = await fetcher.requestedURLs.map(\.absoluteString)
         XCTAssertEqual(requestedURLs, [iconURL.absoluteString])
-        let selection = try XCTUnwrap(service.cachedSelection(for: pageURL, partition: partition))
+        let selection = try XCTUnwrap(runtime.images.cachedSelection(for: pageURL, partition: partition))
         XCTAssertEqual(selection.sourceURL.absoluteString, iconURL.absoluteString)
         let cachedSidebarImage = TabFaviconStore.getCachedImage(
             forDocumentURL: pageURL,
             partition: partition,
             context: .tabSidebar,
-            faviconImageService: service
+            imageReader: runtime.images
         )
         XCTAssertNotNil(cachedSidebarImage)
 
-        let restartedService = SumiFaviconService(
+        let restartedRuntime = SumiFaviconRuntime(
             rootDirectory: directory,
             fetcher: RoutingFaviconNetworkFetcher(responses: [:])
         )
-        let coldImage = await restartedService.preparedImage(
+        let coldImage = await restartedRuntime.images.preparedImage(
             for: SumiPreparedFaviconRequest(
                 pageURL: pageURL,
                 partition: partition,
@@ -1093,10 +1129,10 @@ final class SumiFaviconV2ServiceRegressionTests: XCTestCase {
                 ),
             ]
         )
-        let service = SumiFaviconService(rootDirectory: directory, fetcher: fetcher)
+        let runtime = SumiFaviconRuntime(rootDirectory: directory, fetcher: fetcher)
         let partition = SumiFaviconPartition.regular(nil)
 
-        let coldMiss = await service.preparedImage(
+        let coldMiss = await runtime.images.preparedImage(
             for: SumiPreparedFaviconRequest(
                 pageURL: pageURL,
                 partition: partition,
@@ -1119,7 +1155,7 @@ final class SumiFaviconV2ServiceRegressionTests: XCTestCase {
         XCTAssertTrue(requestedURLs.contains("https://browserbench.org/favicon.ico"))
         XCTAssertTrue(requestedURLs.contains("https://browserbench.org/apple-touch-icon-152x152.png"))
 
-        let visibleImage = await service.ingestVisibleTabDiscovery(
+        let visibleImage = await runtime.liveDiscovery.ingest(
             links: [
                 SumiFaviconDiscoveredLink(
                     href: "resources/favicon.png",
@@ -1164,10 +1200,10 @@ final class SumiFaviconV2ServiceRegressionTests: XCTestCase {
                 ),
             ]
         )
-        let service = SumiFaviconService(rootDirectory: directory, fetcher: fetcher)
+        let runtime = SumiFaviconRuntime(rootDirectory: directory, fetcher: fetcher)
         let partition = SumiFaviconPartition.regular(nil)
 
-        let coldMiss = await service.preparedImage(
+        let coldMiss = await runtime.images.preparedImage(
             for: SumiPreparedFaviconRequest(
                 pageURL: pageURL,
                 partition: partition,
@@ -1180,7 +1216,7 @@ final class SumiFaviconV2ServiceRegressionTests: XCTestCase {
         XCTAssertNil(coldMiss)
 
         for _ in 0..<20 {
-            if service.hasFavicon(for: pageURL, partition: partition) {
+            if runtime.images.hasFavicon(for: pageURL, partition: partition) {
                 break
             }
             try await Task.sleep(nanoseconds: 50_000_000)
@@ -1188,7 +1224,7 @@ final class SumiFaviconV2ServiceRegressionTests: XCTestCase {
 
         var requestedURLs = await fetcher.requestedURLs.map(\.absoluteString)
         XCTAssertTrue(
-            service.hasFavicon(for: pageURL, partition: partition),
+            runtime.images.hasFavicon(for: pageURL, partition: partition),
             "Expected cold root fallback to be cached before live discovery. Requests: \(requestedURLs)"
         )
         XCTAssertTrue(
@@ -1197,7 +1233,7 @@ final class SumiFaviconV2ServiceRegressionTests: XCTestCase {
         )
         XCTAssertFalse(requestedURLs.contains(documentIconURL.absoluteString))
 
-        let visibleImage = await service.ingestVisibleTabDiscovery(
+        let visibleImage = await runtime.liveDiscovery.ingest(
             links: [
                 SumiFaviconDiscoveredLink(
                     href: "/assets/favicon-96.png",
@@ -1248,7 +1284,7 @@ final class SumiFaviconV2ServiceRegressionTests: XCTestCase {
                 ),
             ]
         )
-        let service = SumiFaviconService(rootDirectory: directory, fetcher: fetcher)
+        let runtime = SumiFaviconRuntime(rootDirectory: directory, fetcher: fetcher)
         let partition = SumiFaviconPartition.regular(UUID())
         let request = SumiPreparedFaviconRequest(
             pageURL: pageURL,
@@ -1257,7 +1293,7 @@ final class SumiFaviconV2ServiceRegressionTests: XCTestCase {
             backingScale: 2
         )
 
-        let placeholderPathResult = await service.preparedImage(
+        let placeholderPathResult = await runtime.images.preparedImage(
             for: request,
             priority: .pinnedLauncher,
             scheduleFetchOnMiss: true
@@ -1265,7 +1301,7 @@ final class SumiFaviconV2ServiceRegressionTests: XCTestCase {
         XCTAssertNil(placeholderPathResult)
 
         for _ in 0..<20 {
-            if service.hasFavicon(for: pageURL, partition: partition) {
+            if runtime.images.hasFavicon(for: pageURL, partition: partition) {
                 break
             }
             try await Task.sleep(nanoseconds: 50_000_000)
@@ -1277,7 +1313,7 @@ final class SumiFaviconV2ServiceRegressionTests: XCTestCase {
             "Expected inactive pinned cold lookup to schedule bounded root fallback without a WebView. Requests: \(requestedURLs)"
         )
 
-        let prepared = await service.preparedImage(
+        let prepared = await runtime.images.preparedImage(
             for: request,
             priority: .pinnedLauncher,
             scheduleFetchOnMiss: false
@@ -1304,10 +1340,10 @@ final class SumiFaviconV2ServiceRegressionTests: XCTestCase {
                 ),
             ]
         )
-        let service = SumiFaviconService(rootDirectory: directory, fetcher: fetcher)
+        let runtime = SumiFaviconRuntime(rootDirectory: directory, fetcher: fetcher)
         let partition = SumiFaviconPartition.regular(nil)
 
-        let visibleImage = await service.ingestVisibleTabDiscovery(
+        let visibleImage = await runtime.liveDiscovery.ingest(
             links: [
                 SumiFaviconDiscoveredLink(
                     href: "/s/desktop/favicon_96x96.png",
@@ -1330,7 +1366,7 @@ final class SumiFaviconV2ServiceRegressionTests: XCTestCase {
                 context: context,
                 backingScale: 2
             )
-            let image = await service.preparedImage(
+            let image = await runtime.images.preparedImage(
                 for: request,
                 priority: .visibleSidebarOrTabStrip,
                 scheduleFetchOnMiss: false
@@ -1347,11 +1383,11 @@ final class SumiFaviconV2ServiceRegressionTests: XCTestCase {
         let pageURL = try XCTUnwrap(URL(string: "https://testsafebrowsing.example/"))
         let iconURL = try XCTUnwrap(URL(string: "https://testsafebrowsing.example/favicon.svg"))
         let partition = SumiFaviconPartition.regular(nil)
-        let service = SumiFaviconService(
+        let runtime = SumiFaviconRuntime(
             rootDirectory: directory,
             fetcher: RoutingFaviconNetworkFetcher(responses: [:])
         )
-        try await service.storeExternalPayload(
+        try runtime.payloadIngestion.storeExternalPayload(
             SumiFaviconTestImages.tallSVGData(),
             faviconURL: iconURL,
             documentURL: pageURL,
@@ -1364,7 +1400,7 @@ final class SumiFaviconV2ServiceRegressionTests: XCTestCase {
             context: .pinnedLauncher,
             backingScale: 2
         )
-        let image = await service.preparedImage(
+        let image = await runtime.images.preparedImage(
             for: request,
             priority: .pinnedLauncher,
             scheduleFetchOnMiss: false
@@ -1397,10 +1433,10 @@ final class SumiFaviconV2ServiceRegressionTests: XCTestCase {
                 ),
             ]
         )
-        let service = SumiFaviconService(rootDirectory: directory, fetcher: fetcher)
+        let runtime = SumiFaviconRuntime(rootDirectory: directory, fetcher: fetcher)
         let partition = SumiFaviconPartition.regular(UUID())
 
-        let visibleImage = await service.ingestVisibleTabDiscovery(
+        let visibleImage = await runtime.liveDiscovery.ingest(
             links: [
                 SumiFaviconDiscoveredLink(
                     href: "/assets/icon-96.png",
@@ -1417,29 +1453,29 @@ final class SumiFaviconV2ServiceRegressionTests: XCTestCase {
         )
         XCTAssertNotNil(visibleImage)
 
-        let liveSelection = try XCTUnwrap(service.cachedSelection(for: documentURL, partition: partition))
-        let launcherSelection = try XCTUnwrap(service.cachedSelection(for: launchURL, partition: partition))
+        let liveSelection = try XCTUnwrap(runtime.images.cachedSelection(for: documentURL, partition: partition))
+        let launcherSelection = try XCTUnwrap(runtime.images.cachedSelection(for: launchURL, partition: partition))
         assertSameStoredFaviconSource(liveSelection, launcherSelection, expectedSourceURL: iconURL)
 
         let tabRequest = request(pageURL: documentURL, partition: partition, context: .tabSidebar)
         let launcherRequest = request(pageURL: launchURL, partition: partition, context: .pinnedLauncher)
-        let tabImage = await service.preparedImage(for: tabRequest, priority: .visibleSidebarOrTabStrip, scheduleFetchOnMiss: false)
-        let launcherImage = await service.preparedImage(for: launcherRequest, priority: .pinnedLauncher, scheduleFetchOnMiss: false)
+        let tabImage = await runtime.images.preparedImage(for: tabRequest, priority: .visibleSidebarOrTabStrip, scheduleFetchOnMiss: false)
+        let launcherImage = await runtime.images.preparedImage(for: launcherRequest, priority: .pinnedLauncher, scheduleFetchOnMiss: false)
         try assertPreparedImage(tabImage, matches: tabRequest)
         try assertPreparedImage(launcherImage, matches: launcherRequest)
         XCTAssertNotEqual(tabRequest.pixelSize, launcherRequest.pixelSize)
 
-        let restartedService = SumiFaviconService(
+        let restartedRuntime = SumiFaviconRuntime(
             rootDirectory: directory,
             fetcher: RoutingFaviconNetworkFetcher(responses: [:])
         )
-        let coldLauncherImage = await restartedService.preparedImage(
+        let coldLauncherImage = await restartedRuntime.images.preparedImage(
             for: launcherRequest,
             priority: .pinnedLauncher,
             scheduleFetchOnMiss: false
         )
         try assertPreparedImage(coldLauncherImage, matches: launcherRequest)
-        let restartedLauncherSelection = try XCTUnwrap(restartedService.cachedSelection(for: launchURL, partition: partition))
+        let restartedLauncherSelection = try XCTUnwrap(restartedRuntime.images.cachedSelection(for: launchURL, partition: partition))
         XCTAssertEqual(restartedLauncherSelection.blobID, liveSelection.blobID)
         XCTAssertEqual(restartedLauncherSelection.revision, liveSelection.revision)
     }
@@ -1471,10 +1507,10 @@ final class SumiFaviconV2ServiceRegressionTests: XCTestCase {
                 ),
             ]
         )
-        let service = SumiFaviconService(rootDirectory: directory, fetcher: fetcher)
+        let runtime = SumiFaviconRuntime(rootDirectory: directory, fetcher: fetcher)
         let partition = SumiFaviconPartition.regular(nil)
 
-        let initialLauncherImage = await service.preparedImage(
+        let initialLauncherImage = await runtime.images.preparedImage(
             for: request(pageURL: launchURL, partition: partition, context: .pinnedLauncher),
             priority: .pinnedLauncher,
             scheduleFetchOnMiss: true
@@ -1482,7 +1518,7 @@ final class SumiFaviconV2ServiceRegressionTests: XCTestCase {
         XCTAssertNil(initialLauncherImage)
 
         for _ in 0..<60 {
-            if service.hasFavicon(for: launchURL, partition: partition) {
+            if runtime.images.hasFavicon(for: launchURL, partition: partition) {
                 break
             }
             try await Task.sleep(nanoseconds: 50_000_000)
@@ -1490,14 +1526,14 @@ final class SumiFaviconV2ServiceRegressionTests: XCTestCase {
 
         let requestedURLs = await fetcher.requestedURLs.map(\.absoluteString)
         XCTAssertTrue(
-            service.hasFavicon(for: launchURL, partition: partition),
+            runtime.images.hasFavicon(for: launchURL, partition: partition),
             "Expected cold root fallback to be cached for launcher before live discovery. Requests: \(requestedURLs)"
         )
-        let rootSelection = try XCTUnwrap(service.cachedSelection(for: launchURL, partition: partition))
+        let rootSelection = try XCTUnwrap(runtime.images.cachedSelection(for: launchURL, partition: partition))
         XCTAssertEqual(rootSelection.sourceKind, .rootFavicon)
         XCTAssertEqual(rootSelection.sourceURL, rootIconURL)
 
-        let visibleImage = await service.ingestVisibleTabDiscovery(
+        let visibleImage = await runtime.liveDiscovery.ingest(
             links: [
                 SumiFaviconDiscoveredLink(
                     href: "/assets/favicon-96.png",
@@ -1514,48 +1550,48 @@ final class SumiFaviconV2ServiceRegressionTests: XCTestCase {
         )
         XCTAssertNotNil(visibleImage)
 
-        let liveSelection = try XCTUnwrap(service.cachedSelection(for: documentURL, partition: partition))
-        let launcherSelection = try XCTUnwrap(service.cachedSelection(for: launchURL, partition: partition))
+        let liveSelection = try XCTUnwrap(runtime.images.cachedSelection(for: documentURL, partition: partition))
+        let launcherSelection = try XCTUnwrap(runtime.images.cachedSelection(for: launchURL, partition: partition))
         assertSameStoredFaviconSource(liveSelection, launcherSelection, expectedSourceURL: documentIconURL)
         XCTAssertNotEqual(launcherSelection.revision, rootSelection.revision)
 
         let tabRequest = request(pageURL: documentURL, partition: partition, context: .tabSidebar)
         let launcherRequest = request(pageURL: launchURL, partition: partition, context: .pinnedLauncher)
         try assertPreparedImage(
-            await service.preparedImage(for: tabRequest, priority: .visibleSidebarOrTabStrip, scheduleFetchOnMiss: false),
+            await runtime.images.preparedImage(for: tabRequest, priority: .visibleSidebarOrTabStrip, scheduleFetchOnMiss: false),
             matches: tabRequest
         )
         try assertPreparedImage(
-            await service.preparedImage(for: launcherRequest, priority: .pinnedLauncher, scheduleFetchOnMiss: false),
+            await runtime.images.preparedImage(for: launcherRequest, priority: .pinnedLauncher, scheduleFetchOnMiss: false),
             matches: launcherRequest
         )
     }
 
-    /// Regression: launcher UI omits `faviconImageService:` and must hit the
+    /// Regression: launcher UI omits `imageReader:` and must hit the
     /// production favicon system — not `TabDependencyIsolationDefaults` NoOp.
     func testLauncherCacheHelpersDefaultToProductionFaviconServiceNotNoOp() async throws {
         let host = "launcher-default-\(UUID().uuidString.lowercased()).example"
         let launchURL = try XCTUnwrap(URL(string: "https://\(host)/app"))
         let partition = SumiFaviconPartition.regular(nil)
-        let production = SumiFaviconProductionSystem.current.service
+        let production = SumiFaviconProductionSystem.current.runtime
         defer {
-            production.invalidateSite(domain: host, partition: partition)
+            production.maintenance.invalidateSite(domain: host, partition: partition)
         }
 
-        try await production.storeExternalPayload(
+        try production.payloadIngestion.storeExternalPayload(
             SumiFaviconTestImages.pngData(width: 32, height: 32),
             faviconURL: launchURL.appendingPathComponent("favicon.png"),
             documentURL: launchURL,
             partition: partition
         )
 
-        // Warm prepared cache through the same production service the UI defaults to.
-        let warmed = await production.preparedImage(
+        // Warm prepared cache through the same production runtime the UI defaults to.
+        let warmed = await production.images.preparedImage(
             for: SumiPreparedFaviconRequest(
                 pageURL: launchURL,
                 partition: partition,
                 context: .pinnedLauncher,
-                backingScale: SumiFaviconService.defaultBackingScale()
+                backingScale: SumiFaviconPresentationMetrics.defaultBackingScale()
             ),
             priority: .pinnedLauncher,
             scheduleFetchOnMiss: false
@@ -1614,12 +1650,12 @@ final class SumiFaviconV2ServiceRegressionTests: XCTestCase {
                 ),
             ]
         )
-        let service = SumiFaviconService(rootDirectory: directory, fetcher: fetcher)
+        let runtime = SumiFaviconRuntime(rootDirectory: directory, fetcher: fetcher)
         let profileA = SumiFaviconPartition.regular(UUID())
         let profileB = SumiFaviconPartition.regular(UUID())
         let privateA = SumiFaviconPartition.privateEphemeral(UUID())
 
-        _ = await service.ingestVisibleTabDiscovery(
+        _ = await runtime.liveDiscovery.ingest(
             links: [
                 SumiFaviconDiscoveredLink(
                     href: "/icon.png",
@@ -1635,9 +1671,9 @@ final class SumiFaviconV2ServiceRegressionTests: XCTestCase {
             aliasPageURLs: [launchURL]
         )
 
-        XCTAssertNotNil(service.cachedSelection(for: launchURL, partition: profileA))
-        XCTAssertNil(service.cachedSelection(for: launchURL, partition: profileB))
-        XCTAssertNil(service.cachedSelection(for: launchURL, partition: privateA))
+        XCTAssertNotNil(runtime.images.cachedSelection(for: launchURL, partition: profileA))
+        XCTAssertNil(runtime.images.cachedSelection(for: launchURL, partition: profileB))
+        XCTAssertNil(runtime.images.cachedSelection(for: launchURL, partition: privateA))
     }
 
     func testSiteCleanupClearsLauncherAliasMappingsAndPreparedVariants() async throws {
@@ -1659,9 +1695,9 @@ final class SumiFaviconV2ServiceRegressionTests: XCTestCase {
                 ),
             ]
         )
-        let service = SumiFaviconService(rootDirectory: directory, fetcher: fetcher)
+        let runtime = SumiFaviconRuntime(rootDirectory: directory, fetcher: fetcher)
         let partition = SumiFaviconPartition.regular(UUID())
-        _ = await service.ingestVisibleTabDiscovery(
+        _ = await runtime.liveDiscovery.ingest(
             links: [
                 SumiFaviconDiscoveredLink(
                     href: "/icon.png",
@@ -1680,20 +1716,20 @@ final class SumiFaviconV2ServiceRegressionTests: XCTestCase {
         let launcherRequest = request(pageURL: launchURL, partition: partition, context: .pinnedLauncher)
         let tabRequest = request(pageURL: documentURL, partition: partition, context: .tabSidebar)
         try assertPreparedImage(
-            await service.preparedImage(for: launcherRequest, priority: .pinnedLauncher, scheduleFetchOnMiss: false),
+            await runtime.images.preparedImage(for: launcherRequest, priority: .pinnedLauncher, scheduleFetchOnMiss: false),
             matches: launcherRequest
         )
         try assertPreparedImage(
-            await service.preparedImage(for: tabRequest, priority: .visibleSidebarOrTabStrip, scheduleFetchOnMiss: false),
+            await runtime.images.preparedImage(for: tabRequest, priority: .visibleSidebarOrTabStrip, scheduleFetchOnMiss: false),
             matches: tabRequest
         )
 
-        service.invalidateSite(domain: "cleanup.example", partition: partition)
+        runtime.maintenance.invalidateSite(domain: "cleanup.example", partition: partition)
 
-        XCTAssertNil(service.cachedSelection(for: launchURL, partition: partition))
-        XCTAssertNil(service.cachedSelection(for: documentURL, partition: partition))
-        let clearedLauncherImage = await service.preparedImage(for: launcherRequest, priority: .pinnedLauncher, scheduleFetchOnMiss: false)
-        let clearedTabImage = await service.preparedImage(for: tabRequest, priority: .visibleSidebarOrTabStrip, scheduleFetchOnMiss: false)
+        XCTAssertNil(runtime.images.cachedSelection(for: launchURL, partition: partition))
+        XCTAssertNil(runtime.images.cachedSelection(for: documentURL, partition: partition))
+        let clearedLauncherImage = await runtime.images.preparedImage(for: launcherRequest, priority: .pinnedLauncher, scheduleFetchOnMiss: false)
+        let clearedTabImage = await runtime.images.preparedImage(for: tabRequest, priority: .visibleSidebarOrTabStrip, scheduleFetchOnMiss: false)
         XCTAssertNil(clearedLauncherImage)
         XCTAssertNil(clearedTabImage)
     }
@@ -1703,7 +1739,7 @@ final class SumiFaviconV2ServiceRegressionTests: XCTestCase {
             .appendingPathComponent("SumiFaviconV2Cleanup-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
 
-        let service = SumiFaviconService(rootDirectory: directory, fetcher: RoutingFaviconNetworkFetcher(responses: [:]))
+        let runtime = SumiFaviconRuntime(rootDirectory: directory, fetcher: RoutingFaviconNetworkFetcher(responses: [:]))
         let profileA = SumiFaviconPartition.regular(UUID())
         let profileB = SumiFaviconPartition.regular(UUID())
         let privateA = SumiFaviconPartition.privateEphemeral(UUID())
@@ -1713,42 +1749,42 @@ final class SumiFaviconV2ServiceRegressionTests: XCTestCase {
         let clearPrivate = try XCTUnwrap(URL(string: "https://clear.example/private"))
         let imageData = try SumiFaviconTestImages.pngData(width: 64, height: 64)
 
-        try await service.storeExternalPayload(imageData, faviconURL: clearA.appendingPathComponent("favicon.png"), documentURL: clearA, partition: profileA)
-        try await service.storeExternalPayload(imageData, faviconURL: keepA.appendingPathComponent("favicon.png"), documentURL: keepA, partition: profileA)
-        try await service.storeExternalPayload(imageData, faviconURL: clearB.appendingPathComponent("favicon.png"), documentURL: clearB, partition: profileB)
-        try await service.storeExternalPayload(imageData, faviconURL: clearPrivate.appendingPathComponent("favicon.png"), documentURL: clearPrivate, partition: privateA)
+        try runtime.payloadIngestion.storeExternalPayload(imageData, faviconURL: clearA.appendingPathComponent("favicon.png"), documentURL: clearA, partition: profileA)
+        try runtime.payloadIngestion.storeExternalPayload(imageData, faviconURL: keepA.appendingPathComponent("favicon.png"), documentURL: keepA, partition: profileA)
+        try runtime.payloadIngestion.storeExternalPayload(imageData, faviconURL: clearB.appendingPathComponent("favicon.png"), documentURL: clearB, partition: profileB)
+        try runtime.payloadIngestion.storeExternalPayload(imageData, faviconURL: clearPrivate.appendingPathComponent("favicon.png"), documentURL: clearPrivate, partition: privateA)
 
         let clearARequest = request(pageURL: clearA, partition: profileA)
         let keepARequest = request(pageURL: keepA, partition: profileA)
         let clearBRequest = request(pageURL: clearB, partition: profileB)
         let clearPrivateRequest = request(pageURL: clearPrivate, partition: privateA)
-        let initialClearA = await service.preparedImage(for: clearARequest, priority: .visibleSidebarOrTabStrip, scheduleFetchOnMiss: false)
-        let initialKeepA = await service.preparedImage(for: keepARequest, priority: .visibleSidebarOrTabStrip, scheduleFetchOnMiss: false)
-        let initialClearB = await service.preparedImage(for: clearBRequest, priority: .visibleSidebarOrTabStrip, scheduleFetchOnMiss: false)
-        let initialClearPrivate = await service.preparedImage(for: clearPrivateRequest, priority: .visibleSidebarOrTabStrip, scheduleFetchOnMiss: false)
+        let initialClearA = await runtime.images.preparedImage(for: clearARequest, priority: .visibleSidebarOrTabStrip, scheduleFetchOnMiss: false)
+        let initialKeepA = await runtime.images.preparedImage(for: keepARequest, priority: .visibleSidebarOrTabStrip, scheduleFetchOnMiss: false)
+        let initialClearB = await runtime.images.preparedImage(for: clearBRequest, priority: .visibleSidebarOrTabStrip, scheduleFetchOnMiss: false)
+        let initialClearPrivate = await runtime.images.preparedImage(for: clearPrivateRequest, priority: .visibleSidebarOrTabStrip, scheduleFetchOnMiss: false)
         XCTAssertNotNil(initialClearA)
         XCTAssertNotNil(initialKeepA)
         XCTAssertNotNil(initialClearB)
         XCTAssertNotNil(initialClearPrivate)
 
-        service.invalidateSite(domain: "clear.example", partition: profileA)
-        let siteInvalidatedClearA = await service.preparedImage(for: clearARequest, priority: .visibleSidebarOrTabStrip, scheduleFetchOnMiss: false)
-        let siteInvalidatedKeepA = await service.preparedImage(for: keepARequest, priority: .visibleSidebarOrTabStrip, scheduleFetchOnMiss: false)
-        let siteInvalidatedClearB = await service.preparedImage(for: clearBRequest, priority: .visibleSidebarOrTabStrip, scheduleFetchOnMiss: false)
-        let siteInvalidatedClearPrivate = await service.preparedImage(for: clearPrivateRequest, priority: .visibleSidebarOrTabStrip, scheduleFetchOnMiss: false)
+        runtime.maintenance.invalidateSite(domain: "clear.example", partition: profileA)
+        let siteInvalidatedClearA = await runtime.images.preparedImage(for: clearARequest, priority: .visibleSidebarOrTabStrip, scheduleFetchOnMiss: false)
+        let siteInvalidatedKeepA = await runtime.images.preparedImage(for: keepARequest, priority: .visibleSidebarOrTabStrip, scheduleFetchOnMiss: false)
+        let siteInvalidatedClearB = await runtime.images.preparedImage(for: clearBRequest, priority: .visibleSidebarOrTabStrip, scheduleFetchOnMiss: false)
+        let siteInvalidatedClearPrivate = await runtime.images.preparedImage(for: clearPrivateRequest, priority: .visibleSidebarOrTabStrip, scheduleFetchOnMiss: false)
         XCTAssertNil(siteInvalidatedClearA)
         XCTAssertNotNil(siteInvalidatedKeepA)
         XCTAssertNotNil(siteInvalidatedClearB)
         XCTAssertNotNil(siteInvalidatedClearPrivate)
 
-        service.clearPartition(profileB)
-        let clearedProfileB = await service.preparedImage(for: clearBRequest, priority: .visibleSidebarOrTabStrip, scheduleFetchOnMiss: false)
-        let afterProfileClearPrivate = await service.preparedImage(for: clearPrivateRequest, priority: .visibleSidebarOrTabStrip, scheduleFetchOnMiss: false)
+        runtime.maintenance.clearPartition(profileB)
+        let clearedProfileB = await runtime.images.preparedImage(for: clearBRequest, priority: .visibleSidebarOrTabStrip, scheduleFetchOnMiss: false)
+        let afterProfileClearPrivate = await runtime.images.preparedImage(for: clearPrivateRequest, priority: .visibleSidebarOrTabStrip, scheduleFetchOnMiss: false)
         XCTAssertNil(clearedProfileB)
         XCTAssertNotNil(afterProfileClearPrivate)
 
-        service.clearPartition(privateA)
-        let clearedPrivate = await service.preparedImage(for: clearPrivateRequest, priority: .visibleSidebarOrTabStrip, scheduleFetchOnMiss: false)
+        runtime.maintenance.clearPartition(privateA)
+        let clearedPrivate = await runtime.images.preparedImage(for: clearPrivateRequest, priority: .visibleSidebarOrTabStrip, scheduleFetchOnMiss: false)
         XCTAssertNil(clearedPrivate)
     }
 
@@ -1759,11 +1795,11 @@ final class SumiFaviconV2ServiceRegressionTests: XCTestCase {
 
         let profileID = UUID()
         let partition = SumiFaviconPartition.regular(profileID)
-        let service = SumiFaviconService(rootDirectory: directory, fetcher: RoutingFaviconNetworkFetcher(responses: [:]))
+        let runtime = SumiFaviconRuntime(rootDirectory: directory, fetcher: RoutingFaviconNetworkFetcher(responses: [:]))
         let pageURL = try XCTUnwrap(URL(string: "https://profile-delete.example/page"))
         let imageData = try SumiFaviconTestImages.pngData(width: 64, height: 64)
 
-        try await service.storeExternalPayload(
+        try runtime.payloadIngestion.storeExternalPayload(
             imageData,
             faviconURL: pageURL.appendingPathComponent("favicon.png"),
             documentURL: pageURL,
@@ -1774,10 +1810,10 @@ final class SumiFaviconV2ServiceRegressionTests: XCTestCase {
             .appendingPathComponent("profile-\(profileID.uuidString.lowercased())", isDirectory: true)
         XCTAssertTrue(FileManager.default.fileExists(atPath: profileDirectory.path))
 
-        service.clearPartition(partition)
+        runtime.maintenance.clearPartition(partition)
 
         XCTAssertFalse(FileManager.default.fileExists(atPath: profileDirectory.path))
-        XCTAssertNil(service.cachedPreparedImage(
+        XCTAssertNil(runtime.images.cachedPreparedImage(
             for: SumiPreparedFaviconRequest(
                 pageURL: pageURL,
                 partition: partition,
@@ -1792,22 +1828,22 @@ final class SumiFaviconV2ServiceRegressionTests: XCTestCase {
             .appendingPathComponent("SumiFaviconV2PrivateLifecycle-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
 
-        let service = SumiFaviconService(rootDirectory: directory, fetcher: RoutingFaviconNetworkFetcher(responses: [:]))
+        let runtime = SumiFaviconRuntime(rootDirectory: directory, fetcher: RoutingFaviconNetworkFetcher(responses: [:]))
         let partition = SumiFaviconPartition.privateEphemeral(UUID())
         let pageURL = try XCTUnwrap(URL(string: "https://private.example/page"))
         let imageData = try SumiFaviconTestImages.pngData(width: 64, height: 64)
 
-        try await service.storeExternalPayload(
+        try runtime.payloadIngestion.storeExternalPayload(
             imageData,
             faviconURL: pageURL.appendingPathComponent("favicon.png"),
             documentURL: pageURL,
             partition: partition
         )
-        XCTAssertTrue(service.hasFavicon(for: pageURL, partition: partition))
+        XCTAssertTrue(runtime.images.hasFavicon(for: pageURL, partition: partition))
 
-        service.clearPartition(partition)
+        runtime.maintenance.clearPartition(partition)
 
-        XCTAssertFalse(service.hasFavicon(for: pageURL, partition: partition))
+        XCTAssertFalse(runtime.images.hasFavicon(for: pageURL, partition: partition))
         let privateEntries = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
             .map(\.lastPathComponent)
             .filter { $0.hasPrefix("private-") }
@@ -1832,10 +1868,10 @@ final class SumiFaviconV2ServiceRegressionTests: XCTestCase {
                 ),
             ]
         )
-        let service = SumiFaviconService(rootDirectory: directory, fetcher: fetcher)
+        let runtime = SumiFaviconRuntime(rootDirectory: directory, fetcher: fetcher)
         let partition = SumiFaviconPartition.regular(nil)
 
-        let visibleImage = await service.ingestVisibleTabDiscovery(
+        let visibleImage = await runtime.liveDiscovery.ingest(
             links: [
                 SumiFaviconDiscoveredLink(
                     href: "/assets/styled/icon.svg",
@@ -1853,11 +1889,11 @@ final class SumiFaviconV2ServiceRegressionTests: XCTestCase {
         let requestedURLs = await fetcher.requestedURLs.map(\.absoluteString)
         XCTAssertEqual(requestedURLs, [iconURL.absoluteString])
 
-        let restartedService = SumiFaviconService(
+        let restartedRuntime = SumiFaviconRuntime(
             rootDirectory: directory,
             fetcher: RoutingFaviconNetworkFetcher(responses: [:])
         )
-        let coldImage = await restartedService.preparedImage(
+        let coldImage = await restartedRuntime.images.preparedImage(
             for: SumiPreparedFaviconRequest(
                 pageURL: pageURL,
                 partition: partition,
@@ -1965,7 +2001,7 @@ final class FaviconURLNormalizationRegressionTests: XCTestCase {
     }
 }
 
-private enum SumiFaviconTestImages {
+enum SumiFaviconTestImages {
     static func styledSVGData() -> Data {
         Data(
             """

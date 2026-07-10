@@ -60,7 +60,50 @@ check_absent \
   'if extensionId ==|switch extensionId' \
   Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingRelayLoopGuard.swift \
   Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingDiagnosticCoalescer.swift \
-  Sumi/Managers/ExtensionManager/ExtensionActionPopupAnchorResolutionOwner.swift
+  Sumi/Managers/ExtensionManager/ExtensionActionPopupAnchorResolver.swift
+
+requested_tab_sources=(
+  Sumi/Managers/ExtensionManager/ExtensionCreatedTabRuntimeRegistrar.swift
+  Sumi/Managers/ExtensionManager/ExtensionRequestedTabContextPreloader.swift
+  Sumi/Managers/ExtensionManager/ExtensionRequestedTabOpeningService.swift
+  Sumi/Managers/ExtensionManager/ExtensionRequestedTabRuntimeCapabilities.swift
+  Sumi/Managers/ExtensionManager/ExtensionRequestedTabTargetResolver.swift
+  Sumi/Managers/ExtensionManager/ExtensionRequestedTabWebViewMaterializer.swift
+)
+
+if [[ -e Sumi/Managers/ExtensionManager/ExtensionRequestedTabLifecycleOwner.swift ]]; then
+  printf 'disallowed requested-tab lifecycle god surface still exists\n' >&2
+  status=1
+fi
+
+check_absent \
+  "requested-tab ExtensionManager dependency" \
+  'manager:[[:space:]]*ExtensionManager' \
+  "${requested_tab_sources[@]}"
+
+check_absent \
+  "requested-tab manager facade" \
+  'func (prepareExtensionRequestedTabForInitialLoad|prepareContentScriptContextsForExtensionRequestedInitialLoad|openExtensionRequestedTab|materializeExtensionRequestedNormalTabIfNeeded|registerExtensionCreatedTabWithExtensionRuntime)[[:space:]]*\(' \
+  Sumi/Managers/ExtensionManager
+
+requested_tab_size_limits=(
+  'Sumi/Managers/ExtensionManager/ExtensionCreatedTabRuntimeRegistrar.swift:120'
+  'Sumi/Managers/ExtensionManager/ExtensionRequestedTabContextPreloader.swift:120'
+  'Sumi/Managers/ExtensionManager/ExtensionRequestedTabOpeningService.swift:200'
+  'Sumi/Managers/ExtensionManager/ExtensionRequestedTabRuntimeCapabilities.swift:80'
+  'Sumi/Managers/ExtensionManager/ExtensionRequestedTabTargetResolver.swift:180'
+  'Sumi/Managers/ExtensionManager/ExtensionRequestedTabWebViewMaterializer.swift:180'
+)
+for entry in "${requested_tab_size_limits[@]}"; do
+  file="${entry%:*}"
+  limit="${entry##*:}"
+  lines="$(wc -l < "$file")"
+  if (( lines > limit )); then
+    printf 'requested-tab component exceeds honest size boundary: %s has %s lines (limit %s)\n' \
+      "$file" "$lines" "$limit" >&2
+    status=1
+  fi
+done
 
 if [[ ! -f SumiTests/Fixtures/Extensions/login-form.html ]]; then
   printf 'missing PM autofill manual fixture: SumiTests/Fixtures/Extensions/login-form.html\n' >&2

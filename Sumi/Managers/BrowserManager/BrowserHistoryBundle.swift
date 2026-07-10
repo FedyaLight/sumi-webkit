@@ -27,7 +27,10 @@ final class BrowserHistoryBundle {
                 browserManager?.urlBarBundle.activePageRoutingOwner.activePageWebView(for: windowState)
             },
             webView: { [weak browserManager] tabId, windowId in
-                browserManager?.webViewCoordinator?.getWebView(for: tabId, in: windowId)
+                browserManager?.webViewOwnershipQuery.webView(
+                    for: tabId,
+                    in: windowId
+                )
             },
             openNativeBrowserSurface: { [weak browserManager] kind, url, windowState, preferredSpaceId in
                 browserManager?.chromeBundle.nativeSurfaceRoutingOwner.openNativeBrowserSurface(

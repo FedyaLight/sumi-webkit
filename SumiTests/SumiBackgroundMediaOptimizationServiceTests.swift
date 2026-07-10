@@ -8,7 +8,7 @@ final class BackgroundMediaOptimizationTests: XCTestCase {
     func testReconcileUsesInjectedRuntimeForHiddenSilentTabWithoutBrowserManager() {
         let harness = BackgroundMediaOptimizationHarness()
         let windowID = UUID()
-        let tab = makeTab()
+        let tab = harness.makeTab()
         let webView = harness.attach(tab, windowID: windowID)
         harness.visibleTabIDsByWindow = [windowID: []]
 
@@ -27,7 +27,7 @@ final class BackgroundMediaOptimizationTests: XCTestCase {
     func testHiddenAudibleTabPreservesAudio() {
         let harness = BackgroundMediaOptimizationHarness()
         let windowID = UUID()
-        let tab = makeTab()
+        let tab = harness.makeTab()
         tab.applyAudioState(.unmuted(isPlayingAudio: true))
         harness.attach(tab, windowID: windowID)
         harness.visibleTabIDsByWindow = [windowID: []]
@@ -41,8 +41,10 @@ final class BackgroundMediaOptimizationTests: XCTestCase {
     func testVisibleAndIneligibleHiddenTabsUseVisibleMode() {
         let harness = BackgroundMediaOptimizationHarness()
         let windowID = UUID()
-        let visibleTab = makeTab()
-        let ineligibleHiddenTab = makeTab(url: URL(fileURLWithPath: "/tmp/local-video.html"))
+        let visibleTab = harness.makeTab()
+        let ineligibleHiddenTab = harness.makeTab(
+            url: URL(fileURLWithPath: "/tmp/local-video.html")
+        )
         harness.attach(visibleTab, windowID: windowID)
         harness.attach(ineligibleHiddenTab, windowID: windowID)
         harness.visibleTabIDsByWindow = [windowID: [visibleTab.id]]
@@ -57,7 +59,7 @@ final class BackgroundMediaOptimizationTests: XCTestCase {
     func testEnergySaverRuntimeUsesShortHiddenGraceInterval() {
         let harness = BackgroundMediaOptimizationHarness()
         let windowID = UUID()
-        let tab = makeTab()
+        let tab = harness.makeTab()
         harness.energySaverActive = true
         harness.attach(tab, windowID: windowID)
         harness.visibleTabIDsByWindow = [windowID: []]
@@ -68,26 +70,35 @@ final class BackgroundMediaOptimizationTests: XCTestCase {
         XCTAssertEqual(harness.recorder.commands[0].graceMilliseconds, 2_000)
     }
 
-    func testDuplicateCommandsAreSuppressedUntilNavigationFinishResetsCache() {
+    func testNavigationInvalidationReappliesOnlyTheNavigatedWebViewCommand() {
         let harness = BackgroundMediaOptimizationHarness()
         let windowID = UUID()
-        let tab = makeTab()
-        harness.attach(tab, windowID: windowID)
+        let navigatedTab = harness.makeTab()
+        let unaffectedTab = harness.makeTab()
+        let navigatedWebView = harness.attach(navigatedTab, windowID: windowID)
+        let unaffectedWebView = harness.attach(unaffectedTab, windowID: windowID)
         harness.visibleTabIDsByWindow = [windowID: []]
 
         harness.service.reconcileNow(reason: "first")
         harness.service.reconcileNow(reason: "second")
+        harness.service.invalidateAppliedCommand(for: navigatedWebView)
         harness.service.reconcileNow(reason: "navigation-did-finish")
 
-        XCTAssertEqual(harness.recorder.commands.count, 2)
+        XCTAssertEqual(harness.recorder.commands.count, 3)
         XCTAssertEqual(harness.recorder.commands[0].reason, "first")
-        XCTAssertEqual(harness.recorder.commands[1].reason, "navigation-did-finish")
+        XCTAssertEqual(harness.recorder.commands[1].reason, "first")
+        XCTAssertIdentical(harness.recorder.commands[2].webView, navigatedWebView)
+        XCTAssertEqual(harness.recorder.commands[2].reason, "navigation-did-finish")
+        XCTAssertEqual(
+            harness.recorder.commands.filter { $0.webView === unaffectedWebView }.count,
+            1
+        )
     }
 
     func testScheduleReconcileCoalescesPendingReasons() async {
         let harness = BackgroundMediaOptimizationHarness()
         let windowID = UUID()
-        let tab = makeTab()
+        let tab = harness.makeTab()
         harness.attach(tab, windowID: windowID)
         harness.visibleTabIDsByWindow = [windowID: []]
         let commandRecorded = expectation(description: "background media command recorded")
@@ -111,7 +122,8 @@ final class BackgroundMediaOptimizationTests: XCTestCase {
         var commandCount = 0
         service.attach(
             runtime: SumiBackgroundMediaOptimizationRuntime(
-                webViewCoordinator: { nil },
+                webViewRuntimeAvailable: { false },
+                liveWebViewEntries: { _ in [] },
                 energySaverActive: {
                     energySaverReadCount += 1
                     return false
@@ -138,13 +150,6 @@ final class BackgroundMediaOptimizationTests: XCTestCase {
         XCTAssertEqual(commandCount, 0)
     }
 
-    private func makeTab(url: URL = URL(string: "https://example.com/video")!) -> Tab {
-        Tab(
-            url: url,
-            name: "Example",
-            loadsCachedFaviconOnInit: false
-        )
-    }
 }
 
 @MainActor
@@ -160,6 +165,17 @@ private final class BackgroundMediaOptimizationHarness {
         service.attach(runtime: makeRuntime())
     }
 
+    func makeTab(
+        url: URL = URL(string: "https://example.com/video")!
+    ) -> Tab {
+        Tab(
+            url: url,
+            name: "Example",
+            webViewSessions: coordinator.webViewSessions,
+            loadsCachedFaviconOnInit: false
+        )
+    }
+
     @discardableResult
     func attach(
         _ tab: Tab,
@@ -167,14 +183,28 @@ private final class BackgroundMediaOptimizationHarness {
         webView: WKWebView = WKWebView()
     ) -> WKWebView {
         tabs.append(tab)
-        coordinator.setWebView(webView, for: tab.id, in: windowID)
+        coordinator.ownershipService.registerTrackedWebView(
+            webView,
+            for: tab,
+            in: windowID
+        )
         return webView
     }
 
     private func makeRuntime() -> SumiBackgroundMediaOptimizationRuntime {
         SumiBackgroundMediaOptimizationRuntime(
-            webViewCoordinator: { [weak self] in
-                self?.coordinator
+            webViewRuntimeAvailable: { [weak self] in
+                self != nil
+            },
+            liveWebViewEntries: { [weak self] tab in
+                guard let self else { return [] }
+                return coordinator.ownershipQuery.windowIDs(for: tab.id)
+                    .compactMap { windowID in
+                        coordinator.ownershipQuery.webView(
+                            for: tab.id,
+                            in: windowID
+                        ).map { (windowID: Optional(windowID), webView: $0) }
+                    }
             },
             energySaverActive: { [weak self] in
                 self?.energySaverActive ?? false

@@ -44,4 +44,24 @@ if [[ -n "$matches" ]]; then
   exit 1
 fi
 
-echo "no TabManagerRuntimeContext / makeLegacyRuntimeContext in source"
+fail_open_port_hits="$(
+  rg -n 'weak\s+var\s+browserManager|weak\s+let\s+browserManager|guard\s+let\s+browserManager\s+else\s*\{\s*return' \
+    Sumi/BrowserRuntime/Ports -g 'Tab*Port.swift' 2>/dev/null || true
+)"
+if [[ -n "$fail_open_port_hits" ]]; then
+  printf 'error: Tab runtime ports must use BrowserManagerRuntimeReference and fail on a broken lifetime graph:\n%s\n' \
+    "$fail_open_port_hits" >&2
+  exit 1
+fi
+
+inactive_registry_hits="$(
+  rg -n 'RuntimePortRegistry\.inactive|TabManagerWebViewLifecycleService\.inactive|static\s+(let|var)\s+inactive\s*(:\s*RuntimePortRegistry|=\s*RuntimePortRegistry)' \
+    Sumi -g '*.swift' 2>/dev/null || true
+)"
+if [[ -n "$inactive_registry_hits" ]]; then
+  printf 'error: no-op runtime registries belong in test support, not the production graph:\n%s\n' \
+    "$inactive_registry_hits" >&2
+  exit 1
+fi
+
+echo "no legacy/fail-open TabManager runtime context in source"

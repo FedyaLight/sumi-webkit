@@ -45,7 +45,7 @@ final class TabFaviconRuntime {
                 forReferenceKey: referenceKey,
                 partition: partition,
                 context: .tabSidebar,
-                faviconImageService: tab.faviconImageService
+                imageReader: tab.faviconCapabilities.images
               )
         else {
             if resolvedCacheKey == referenceKey,
@@ -90,7 +90,7 @@ final class TabFaviconRuntime {
             partition: partition,
             context: .tabSidebar,
             priority: .visibleSidebarOrTabStrip,
-            faviconImageService: tab.faviconImageService
+            imageReader: tab.faviconCapabilities.images
         ),
            !Task.isCancelled,
            tab.url == requestedURL {
@@ -110,7 +110,8 @@ final class TabFaviconRuntime {
             scriptsPublisher: Just(scriptsProvider).eraseToAnyPublisher(),
             tab: tab,
             faviconService: tab.faviconService,
-            faviconImageService: tab.faviconImageService
+            imageReader: tab.faviconCapabilities.images,
+            liveDiscovery: tab.faviconCapabilities.liveDiscovery
         )
         tabExtension = extensionInstance
         extensionInstance.loadCachedFavicon(previousURL: nil, error: nil)
@@ -153,7 +154,8 @@ final class TabFaviconRuntime {
             iconFileURL: URL(fileURLWithPath: iconPath),
             partition: partition,
             context: .tabSidebar,
-            faviconImageService: tab.faviconImageService
+            imageReader: tab.faviconCapabilities.images,
+            localIconIngestion: tab.faviconCapabilities.localIconIngestion
         )
     }
 }

@@ -21,7 +21,7 @@ protocol BrowserFaviconServicing: AnyObject {
 
 extension SumiFaviconSystem: BrowserFaviconServicing {}
 
-protocol BrowserFaviconImageServicing: AnyObject, Sendable {
+protocol BrowserFaviconImageReading: AnyObject, Sendable {
     func cachedPreparedImage(for request: SumiPreparedFaviconRequest) -> NSImage?
     func cachedSelection(
         for pageURL: URL,
@@ -32,6 +32,9 @@ protocol BrowserFaviconImageServicing: AnyObject, Sendable {
         priority: SumiFaviconFetchPriority,
         scheduleFetchOnMiss: Bool
     ) async -> NSImage?
+}
+
+protocol BrowserFaviconLiveDiscoveryIngesting: AnyObject, Sendable {
     @MainActor
     func ingestVisibleTabDiscovery(
         links: [SumiFaviconDiscoveredLink],
@@ -41,11 +44,9 @@ protocol BrowserFaviconImageServicing: AnyObject, Sendable {
         webView: WKWebView?,
         aliasPageURLs: [URL]
     ) async -> NSImage?
-    func scheduleColdFetch(
-        for pageURL: URL,
-        partition: SumiFaviconPartition,
-        priority: SumiFaviconFetchPriority
-    )
+}
+
+protocol BrowserFaviconLocalIconIngesting: AnyObject, Sendable {
     func ingestLocalExtensionIcon(
         fileURL: URL,
         documentURL: URL,
@@ -54,10 +55,60 @@ protocol BrowserFaviconImageServicing: AnyObject, Sendable {
     ) async -> NSImage?
 }
 
-extension SumiFaviconService: BrowserFaviconImageServicing {}
+protocol BrowserFaviconPrefetchScheduling: AnyObject, Sendable {
+    func scheduleColdFetch(
+        for pageURL: URL,
+        partition: SumiFaviconPartition,
+        priority: SumiFaviconFetchPriority
+    )
+}
+
+struct BrowserFaviconCapabilities: Sendable {
+    let images: any BrowserFaviconImageReading
+    let liveDiscovery: any BrowserFaviconLiveDiscoveryIngesting
+    let localIconIngestion: any BrowserFaviconLocalIconIngesting
+    let prefetch: any BrowserFaviconPrefetchScheduling
+}
+
+extension SumiFaviconImageRepository: BrowserFaviconImageReading {}
+
+extension SumiFaviconLiveDiscoveryPipeline: BrowserFaviconLiveDiscoveryIngesting {
+    func ingestVisibleTabDiscovery(
+        links: [SumiFaviconDiscoveredLink],
+        documentURL: URL,
+        baseURL: URL?,
+        partition: SumiFaviconPartition,
+        webView: WKWebView?,
+        aliasPageURLs: [URL]
+    ) async -> NSImage? {
+        await ingest(
+            links: links,
+            documentURL: documentURL,
+            baseURL: baseURL,
+            partition: partition,
+            webView: webView,
+            aliasPageURLs: aliasPageURLs
+        )
+    }
+}
+
+extension SumiFaviconPayloadIngestion: BrowserFaviconLocalIconIngesting {}
+
+extension SumiFaviconColdFetchService: BrowserFaviconPrefetchScheduling {
+    func scheduleColdFetch(
+        for pageURL: URL,
+        partition: SumiFaviconPartition,
+        priority: SumiFaviconFetchPriority
+    ) {
+        schedule(pageURL: pageURL, partition: partition, priority: priority)
+    }
+}
 
 @MainActor
 protocol BrowserSiteDataPolicyEnforcing: AnyObject {
+    func attachDestructiveCleanupPreparer(
+        _ preparer: (any SumiDestructiveBrowsingDataCleanupPreparing)?
+    )
     func setBlockStorage(
         _ isEnabled: Bool,
         forHost host: String,
@@ -96,6 +147,9 @@ struct SumiBrowsingDataCleanupScheduleRequest {
 
 @MainActor
 protocol BrowsingDataCleanupScheduling: AnyObject {
+    func attachDestructiveCleanupPreparer(
+        _ preparer: (any SumiDestructiveBrowsingDataCleanupPreparing)?
+    )
     func scheduleIfNeeded(_ request: SumiBrowsingDataCleanupScheduleRequest)
 }
 
@@ -103,6 +157,9 @@ extension SumiAutomaticBrowsingDataCleanupService: BrowsingDataCleanupScheduling
 
 @MainActor
 protocol BrowserPrivacyServicing: AnyObject {
+    func attachDestructiveCleanupPreparer(
+        _ preparer: (any SumiDestructiveBrowsingDataCleanupPreparing)?
+    )
     func clearCurrentPageCookies(using context: BrowserPrivacyService.Context)
     func hardReloadCurrentPage(using context: BrowserPrivacyService.Context)
 }
@@ -132,12 +189,13 @@ extension SharedVisitedLinkStoreProvider: BrowserVisitedLinkStoreManaging {}
 @MainActor
 struct BrowserManagerDataServices {
     let websiteDataCleanupService: any SumiWebsiteDataCleanupServicing
+    let profileWebsiteDataMutationService: any SumiProfileWebsiteDataMutating
     let browsingDataCleanupService: SumiBrowsingDataCleanupService
     let automaticBrowsingDataCleanupService: any BrowsingDataCleanupScheduling
     let siteDataPolicyStore: any BrowserSiteDataPolicyStoring
     let siteDataPolicyEnforcementService: any BrowserSiteDataPolicyEnforcing
     let faviconService: any BrowserFaviconServicing
-    let faviconImageService: any BrowserFaviconImageServicing
+    let faviconCapabilities: BrowserFaviconCapabilities
     let visitedLinkStore: any BrowserVisitedLinkStoreManaging
     let historyFaviconCleaner: any HistoryFaviconCleaning
     let historyVisitedLinkStore: any HistoryVisitedLinkStoring
@@ -150,19 +208,24 @@ struct BrowserManagerDataServices {
         siteDataPolicyStore: any BrowserSiteDataPolicyStoring,
         siteDataPolicyEnforcementService: any BrowserSiteDataPolicyEnforcing,
         faviconService: any BrowserFaviconServicing,
-        faviconImageService: any BrowserFaviconImageServicing = Self.productionFaviconImageService,
+        faviconCapabilities: BrowserFaviconCapabilities = Self.productionFaviconCapabilities,
         visitedLinkStore: any BrowserVisitedLinkStoreManaging,
         historyFaviconCleaner: any HistoryFaviconCleaning,
         historyVisitedLinkStore: any HistoryVisitedLinkStoring,
-        privacyService: any BrowserPrivacyServicing
+        privacyService: any BrowserPrivacyServicing,
+        profileWebsiteDataMutationService: (any SumiProfileWebsiteDataMutating)? = nil
     ) {
         self.websiteDataCleanupService = websiteDataCleanupService
+        self.profileWebsiteDataMutationService = profileWebsiteDataMutationService
+            ?? SumiProfileWebsiteDataMutationService(
+                cleanupService: websiteDataCleanupService
+            )
         self.browsingDataCleanupService = browsingDataCleanupService
         self.automaticBrowsingDataCleanupService = automaticBrowsingDataCleanupService
         self.siteDataPolicyStore = siteDataPolicyStore
         self.siteDataPolicyEnforcementService = siteDataPolicyEnforcementService
         self.faviconService = faviconService
-        self.faviconImageService = faviconImageService
+        self.faviconCapabilities = faviconCapabilities
         self.visitedLinkStore = visitedLinkStore
         self.historyFaviconCleaner = historyFaviconCleaner
         self.historyVisitedLinkStore = historyVisitedLinkStore
@@ -177,8 +240,8 @@ struct BrowserManagerDataServices {
         productionFaviconSystem
     }
 
-    static var productionFaviconImageService: any BrowserFaviconImageServicing {
-        productionFaviconSystem.service
+    static var productionFaviconCapabilities: BrowserFaviconCapabilities {
+        productionFaviconSystem.capabilities
     }
 
     static var productionVisitedLinkStore: any BrowserVisitedLinkStoreManaging {
@@ -211,7 +274,7 @@ struct BrowserManagerDataServices {
                 cleanupService: websiteDataCleanupService
             ),
             faviconService: faviconSystem,
-            faviconImageService: faviconSystem.service,
+            faviconCapabilities: faviconSystem.capabilities,
             visitedLinkStore: visitedLinkStore,
             historyFaviconCleaner: faviconSystem,
             historyVisitedLinkStore: visitedLinkStore,
@@ -236,6 +299,10 @@ struct BrowserManagerDataServices {
             (privacyService as? BrowserPrivacyService)?
             .replacingCleanupService(websiteDataCleanupService)
             ?? privacyService
+        let resolvedProfileWebsiteDataMutationService =
+            (profileWebsiteDataMutationService as? SumiProfileWebsiteDataMutationService)?
+            .replacingCleanupService(websiteDataCleanupService)
+            ?? profileWebsiteDataMutationService
         return BrowserManagerDataServices(
             websiteDataCleanupService: websiteDataCleanupService,
             browsingDataCleanupService: browsingDataCleanupService,
@@ -243,11 +310,12 @@ struct BrowserManagerDataServices {
             siteDataPolicyStore: siteDataPolicyStore,
             siteDataPolicyEnforcementService: resolvedSiteDataPolicyEnforcementService,
             faviconService: faviconService,
-            faviconImageService: faviconImageService,
+            faviconCapabilities: faviconCapabilities,
             visitedLinkStore: visitedLinkStore,
             historyFaviconCleaner: historyFaviconCleaner,
             historyVisitedLinkStore: historyVisitedLinkStore,
-            privacyService: resolvedPrivacyService
+            privacyService: resolvedPrivacyService,
+            profileWebsiteDataMutationService: resolvedProfileWebsiteDataMutationService
         )
     }
 }

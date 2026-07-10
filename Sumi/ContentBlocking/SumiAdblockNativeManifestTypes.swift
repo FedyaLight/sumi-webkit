@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 enum AdblockCompiledRuleGroupKind: String, Codable, CaseIterable, Hashable, Sendable {
     case network

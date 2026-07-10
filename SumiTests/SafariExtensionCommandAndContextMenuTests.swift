@@ -25,7 +25,7 @@ final class SafariExtensionCommandAndContextMenuTests: XCTestCase {
             manager: manager,
             scratchDirectory: makeScratchDirectory()
         )
-        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
+        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
         let extensionContext = try XCTUnwrap(
             manager.getExtensionContext(for: installed.id, profileId: profile.id)
         )
@@ -93,7 +93,7 @@ final class SafariExtensionCommandAndContextMenuTests: XCTestCase {
             manager: manager,
             scratchDirectory: makeScratchDirectory()
         )
-        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
+        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
         manager.setDefaultSiteAccess(
             .allow,
             extensionId: installed.id,
@@ -258,7 +258,7 @@ final class SafariExtensionCommandAndContextMenuTests: XCTestCase {
                 options: [.atomic]
             )
 
-        return try await manager.installationFlowOwner.performInstallation(
+        return try await manager.extensionInstaller.install(
             from: directoryURL,
             enableOnInstall: false
         )

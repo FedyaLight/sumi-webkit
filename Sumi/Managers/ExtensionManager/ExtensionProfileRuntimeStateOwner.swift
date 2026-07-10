@@ -36,15 +36,15 @@ struct ExtensionProfileRuntimeStateOwner {
     }
 
     var currentController: WKWebExtensionController? {
-        manager.profileRuntimeOwner.controllerForCurrentProfile()
+        manager.profileRuntime.controllerForCurrentProfile()
     }
 
     var currentContexts: [String: WKWebExtensionContext] {
-        manager.profileRuntimeOwner.contextsForCurrentProfile()
+        manager.profileRuntime.contextsForCurrentProfile()
     }
 
     func contexts(for profileId: UUID) -> [String: WKWebExtensionContext] {
-        manager.profileRuntimeOwner.contexts(for: profileId)
+        manager.profileRuntime.contexts(for: profileId)
     }
 
     func context(
@@ -59,35 +59,35 @@ struct ExtensionProfileRuntimeStateOwner {
     }
 
     func allLoadedExtensionIDs() -> Set<String> {
-        manager.profileRuntimeOwner.allLoadedExtensionIDs()
+        manager.profileRuntime.allLoadedExtensionIDs()
     }
 
     func profileId(for extensionContext: WKWebExtensionContext) -> UUID? {
-        manager.profileRuntimeOwner.profileId(for: extensionContext)
+        manager.profileRuntime.profileId(for: extensionContext)
     }
 
     func contextIdentity(
         for extensionContext: WKWebExtensionContext
     ) -> (extensionId: String, profileId: UUID)? {
-        manager.profileRuntimeOwner.contextIdentity(for: extensionContext)
+        manager.profileRuntime.contextIdentity(for: extensionContext)
     }
 
     func profileId(for controller: WKWebExtensionController) -> UUID? {
-        manager.profileRuntimeOwner.profileId(for: controller)
+        manager.profileRuntime.profileId(for: controller)
     }
 
     func countLoadedContexts() -> Int {
-        manager.profileRuntimeOwner.countLoadedExtensionContexts()
+        manager.profileRuntime.countLoadedExtensionContexts()
     }
 
     func readinessContext(
         for profileId: UUID
     ) -> ExtensionRuntimeReadinessContext {
-        manager.profileRuntimeOwner.readinessContext(
+        manager.profileRuntime.readinessContext(
             for: profileId,
             hasEnabledExtensionDemand: manager.hasEnabledInstalledExtensions,
             enabledExtensionIDs: Set(manager.enabledPersistedExtensionEntities().map(\.id)),
-            globalRuntimeReady: manager.runtimeState == .ready
+            globalRuntimeReady: manager.runtimeSession.runtimeState == .ready
         )
     }
 
@@ -114,7 +114,7 @@ struct ExtensionProfileRuntimeStateOwner {
         ExtensionSnapshot(
             extensionId: extensionId,
             profileId: profileId,
-            controller: manager.extensionControllersByProfile[profileId],
+            controller: manager.profileRuntime.controllersByProfile[profileId],
             context: context(for: extensionId, profileId: profileId),
             readiness: readinessContext(for: profileId)
         )
@@ -141,7 +141,7 @@ extension ExtensionManager {
         extensionId: String,
         profileId: UUID
     ) {
-        let generation = profileRuntimeOwner.setContext(
+        let generation = profileRuntime.setContext(
             context,
             extensionId: extensionId,
             profileId: profileId
@@ -154,14 +154,14 @@ extension ExtensionManager {
     }
 
     func extensionContextBindingGeneration(for profileId: UUID) -> UInt64 {
-        profileRuntimeOwner.contextBindingGeneration(for: profileId)
+        profileRuntime.contextBindingGeneration(for: profileId)
     }
 
     func bumpExtensionContextBindingGeneration(
         for profileId: UUID,
         reason: String
     ) {
-        let next = profileRuntimeOwner.bumpContextBindingGeneration(for: profileId)
+        let next = profileRuntime.bumpContextBindingGeneration(for: profileId)
         traceExtensionContextBindingGeneration(
             profileId: profileId,
             generation: next,
@@ -174,7 +174,7 @@ extension ExtensionManager {
         generation: UInt64,
         reason: String
     ) {
-        extensionRuntimeTrace(
+        runtimeDiagnostics.trace(
             "extensionContextBindingGeneration profile=\(profileId.uuidString) generation=\(generation) reason=\(reason)"
         )
     }
@@ -184,7 +184,7 @@ extension ExtensionManager {
         extensionId: String,
         profileId: UUID
     ) -> WKWebExtensionContext? {
-        guard let removed = profileRuntimeOwner.removeContext(
+        guard let removed = profileRuntime.removeContext(
             extensionId: extensionId,
             profileId: profileId
         ) else { return nil }
@@ -215,21 +215,21 @@ extension ExtensionManager {
     }
 
     func resolvedProfileId(for tab: Tab?) -> UUID? {
-        profileRuntimeOwner.resolvedProfileId(
+        profileRuntime.resolvedProfileId(
             for: tab,
             runtime: runtime
         )
     }
 
     func resolvedProfileId(for windowState: BrowserWindowState) -> UUID? {
-        profileRuntimeOwner.resolvedProfileId(
+        profileRuntime.resolvedProfileId(
             for: windowState,
             runtime: runtime
         )
     }
 
     func resolvedProfileId(explicitProfileId: UUID?) -> UUID? {
-        profileRuntimeOwner.resolvedProfileId(
+        profileRuntime.resolvedProfileId(
             explicitProfileId: explicitProfileId,
             runtime: runtime
         )
@@ -240,14 +240,14 @@ extension ExtensionManager {
     }
 
     func isPrivateExtensionRuntimeProfile(_ profileId: UUID?) -> Bool {
-        profileRuntimeOwner.isPrivateRuntimeProfile(profileId)
+        profileRuntime.isPrivateRuntimeProfile(profileId)
     }
 
     func windowMatchesProfile(
         _ windowState: BrowserWindowState,
         profileId: UUID
     ) -> Bool {
-        profileRuntimeOwner.windowMatchesProfile(
+        profileRuntime.windowMatchesProfile(
             windowState,
             profileId: profileId,
             runtime: runtime

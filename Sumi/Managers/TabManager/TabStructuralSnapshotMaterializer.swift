@@ -3,9 +3,9 @@ import Foundation
 
 @MainActor
 struct TabStructuralSnapshotMaterializer {
-    typealias SnapshotSpace = TabSnapshotRepository.SnapshotSpace
-    typealias SnapshotTab = TabSnapshotRepository.SnapshotTab
-    typealias SnapshotFolder = TabSnapshotRepository.SnapshotFolder
+    typealias SnapshotSpace = TabPersistenceSpace
+    typealias SnapshotTab = TabPersistenceTab
+    typealias SnapshotFolder = TabPersistenceFolder
 
     func makeSnapshot(
         spaces: [SnapshotSpace],
@@ -14,8 +14,8 @@ struct TabStructuralSnapshotMaterializer {
         splitGroups: [SplitGroup],
         currentTabId: UUID?,
         currentSpaceId: UUID?
-    ) -> TabSnapshotRepository.Snapshot {
-        TabSnapshotRepository.Snapshot(
+    ) -> TabPersistenceSnapshot {
+        TabPersistenceSnapshot(
             spaces: spaces,
             tabs: tabs,
             folders: folders,
@@ -35,8 +35,8 @@ struct TabStructuralSnapshotMaterializer {
         currentTabId: UUID?,
         currentSpaceId: UUID?,
         shouldPersistRegularTab: (Tab) -> Bool
-    ) -> TabSnapshotRepository.StructuralDelta {
-        TabSnapshotRepository.StructuralDelta(
+    ) -> TabStructuralPersistenceDelta {
+        TabStructuralPersistenceDelta(
             spaces: makeDirtySpaceSnapshots(spaces: spaces, ids: dirtySet.dirtySpaceIds),
             tabs: makeDirtyTabSnapshots(
                 ids: dirtySet.dirtyTabIds,
@@ -64,7 +64,7 @@ struct TabStructuralSnapshotMaterializer {
         )
     }
 
-    func makeSpaceSnapshots(spaces: [Space]) -> [TabSnapshotRepository.SnapshotSpace] {
+    func makeSpaceSnapshots(spaces: [Space]) -> [TabPersistenceSpace] {
         spaces.enumerated().map { index, space in
             SnapshotSpace(
                 id: space.id,
@@ -84,7 +84,7 @@ struct TabStructuralSnapshotMaterializer {
     func makePinnedTabSnapshots(
         profileId: UUID,
         pins: [ShortcutPin]
-    ) -> [TabSnapshotRepository.SnapshotTab] {
+    ) -> [TabPersistenceTab] {
         pins.sorted { $0.index < $1.index }.map { pin in
             makePinnedTabSnapshot(pin: pin, profileId: profileId)
         }
@@ -93,7 +93,7 @@ struct TabStructuralSnapshotMaterializer {
     func makeSpacePinnedTabSnapshots(
         spaceId: UUID,
         pins: [ShortcutPin]
-    ) -> [TabSnapshotRepository.SnapshotTab] {
+    ) -> [TabPersistenceTab] {
         pins.sorted { $0.index < $1.index }.map { pin in
             makeSpacePinnedTabSnapshot(pin: pin, spaceId: spaceId)
         }
@@ -103,7 +103,7 @@ struct TabStructuralSnapshotMaterializer {
         spaceId: UUID,
         tabs: [Tab],
         shouldPersistRegularTab: (Tab) -> Bool
-    ) -> [TabSnapshotRepository.SnapshotTab] {
+    ) -> [TabPersistenceTab] {
         tabs.filter(shouldPersistRegularTab).map { tab in
             makeRegularTabSnapshot(tab: tab, spaceId: spaceId)
         }
@@ -112,7 +112,7 @@ struct TabStructuralSnapshotMaterializer {
     func makeFolderSnapshots(
         spaceId: UUID,
         folders: [TabFolder]
-    ) -> [TabSnapshotRepository.SnapshotFolder] {
+    ) -> [TabPersistenceFolder] {
         folders.sorted { $0.index < $1.index }.map { folder in
             makeFolderSnapshot(folder: folder, spaceId: spaceId)
         }
@@ -121,8 +121,8 @@ struct TabStructuralSnapshotMaterializer {
     private func makeState(
         currentTabId: UUID?,
         currentSpaceId: UUID?
-    ) -> TabSnapshotRepository.SnapshotState {
-        TabSnapshotRepository.SnapshotState(
+    ) -> TabPersistenceSelection {
+        TabPersistenceSelection(
             currentTabID: currentTabId,
             currentSpaceID: currentSpaceId
         )
@@ -131,7 +131,7 @@ struct TabStructuralSnapshotMaterializer {
     private func makeDirtySpaceSnapshots(
         spaces: [Space],
         ids: Set<UUID>
-    ) -> [TabSnapshotRepository.SnapshotSpace] {
+    ) -> [TabPersistenceSpace] {
         guard ids.isEmpty == false else { return [] }
         return spaces.enumerated().compactMap { index, space in
             guard ids.contains(space.id) else { return nil }
@@ -153,7 +153,7 @@ struct TabStructuralSnapshotMaterializer {
         spacePinnedShortcuts: [UUID: [ShortcutPin]],
         tabsBySpace: [UUID: [Tab]],
         shouldPersistRegularTab: (Tab) -> Bool
-    ) -> [TabSnapshotRepository.SnapshotTab] {
+    ) -> [TabPersistenceTab] {
         guard ids.isEmpty == false else { return [] }
         var snapshots: [SnapshotTab] = []
 
@@ -183,7 +183,7 @@ struct TabStructuralSnapshotMaterializer {
         ids: Set<UUID>,
         spaces: [Space],
         foldersBySpace: [UUID: [TabFolder]]
-    ) -> [TabSnapshotRepository.SnapshotFolder] {
+    ) -> [TabPersistenceFolder] {
         guard ids.isEmpty == false else { return [] }
         var snapshots: [SnapshotFolder] = []
         for space in spaces {
@@ -198,7 +198,7 @@ struct TabStructuralSnapshotMaterializer {
     private func makePinnedTabSnapshot(
         pin: ShortcutPin,
         profileId: UUID
-    ) -> TabSnapshotRepository.SnapshotTab {
+    ) -> TabPersistenceTab {
         SnapshotTab(
             id: pin.id,
             urlString: pin.launchURL.absoluteString,
@@ -220,7 +220,7 @@ struct TabStructuralSnapshotMaterializer {
     private func makeSpacePinnedTabSnapshot(
         pin: ShortcutPin,
         spaceId: UUID
-    ) -> TabSnapshotRepository.SnapshotTab {
+    ) -> TabPersistenceTab {
         SnapshotTab(
             id: pin.id,
             urlString: pin.launchURL.absoluteString,
@@ -242,7 +242,7 @@ struct TabStructuralSnapshotMaterializer {
     private func makeRegularTabSnapshot(
         tab: Tab,
         spaceId: UUID
-    ) -> TabSnapshotRepository.SnapshotTab {
+    ) -> TabPersistenceTab {
         SnapshotTab(
             id: tab.id,
             urlString: tab.url.absoluteString,
@@ -264,7 +264,7 @@ struct TabStructuralSnapshotMaterializer {
     private func makeFolderSnapshot(
         folder: TabFolder,
         spaceId: UUID
-    ) -> TabSnapshotRepository.SnapshotFolder {
+    ) -> TabPersistenceFolder {
         SnapshotFolder(
             id: folder.id,
             name: folder.name,

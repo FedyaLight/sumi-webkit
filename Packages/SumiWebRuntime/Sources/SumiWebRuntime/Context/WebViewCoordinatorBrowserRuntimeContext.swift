@@ -15,6 +15,19 @@ public struct WebViewCoordinatorBrowserRuntimeContext {
     /// Compositor refresh is UUID-keyed so package owners need not see BrowserWindowState.
     public let refreshCompositor: (UUID) -> Void
     public let notifyTabActivatedIfLoaded: (any WebRuntimeTabHandle) -> Void
+    /// Re-enters the TabManager-owned profile transaction when compositor
+    /// protection releases a deferred immutable assignment intent.
+    public let executeDeferredProfileAssignment: (
+        UUID,
+        UUID?,
+        DeferredWebViewProfileAssignmentIntent
+    ) -> Bool
+    public let validateDeferredSpaceProfileAssignment: (
+        DeferredWebViewSpaceProfileAssignmentIntent
+    ) -> Bool
+    public let executeDeferredSpaceProfileAssignment: (
+        DeferredWebViewSpaceProfileAssignmentIntent
+    ) -> Bool
     public let globallyVisibleTabIDs: @MainActor @Sendable () -> Set<UUID>
 
     public init(
@@ -29,6 +42,17 @@ public struct WebViewCoordinatorBrowserRuntimeContext {
         handleUnprotectedWebViewDidClose: @escaping (WKWebView) -> Bool,
         refreshCompositor: @escaping (UUID) -> Void,
         notifyTabActivatedIfLoaded: @escaping (any WebRuntimeTabHandle) -> Void,
+        executeDeferredProfileAssignment: @escaping (
+            UUID,
+            UUID?,
+            DeferredWebViewProfileAssignmentIntent
+        ) -> Bool = { _, _, _ in false },
+        validateDeferredSpaceProfileAssignment: @escaping (
+            DeferredWebViewSpaceProfileAssignmentIntent
+        ) -> Bool = { _ in false },
+        executeDeferredSpaceProfileAssignment: @escaping (
+            DeferredWebViewSpaceProfileAssignmentIntent
+        ) -> Bool = { _ in false },
         globallyVisibleTabIDs: @escaping @MainActor @Sendable () -> Set<UUID>
     ) {
         self.tab = tab
@@ -42,6 +66,11 @@ public struct WebViewCoordinatorBrowserRuntimeContext {
         self.handleUnprotectedWebViewDidClose = handleUnprotectedWebViewDidClose
         self.refreshCompositor = refreshCompositor
         self.notifyTabActivatedIfLoaded = notifyTabActivatedIfLoaded
+        self.executeDeferredProfileAssignment = executeDeferredProfileAssignment
+        self.validateDeferredSpaceProfileAssignment =
+            validateDeferredSpaceProfileAssignment
+        self.executeDeferredSpaceProfileAssignment =
+            executeDeferredSpaceProfileAssignment
         self.globallyVisibleTabIDs = globallyVisibleTabIDs
     }
 }

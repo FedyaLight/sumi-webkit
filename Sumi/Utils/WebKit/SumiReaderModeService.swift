@@ -9,57 +9,45 @@ enum SumiReaderModeService {
     }
 
     static func toggleReaderMode(on webView: WKWebView, tab: Tab?) async throws {
-        if let readerSourceURL = try await readerModeSourceURL(on: webView) {
-            if let tab {
-                tab.loadURL(readerSourceURL)
-            } else {
-                webView.load(URLRequest(url: readerSourceURL))
-            }
+        guard let tab,
+              let host = webView.sumiReaderPresentationHost,
+              let documentLease = tab.mainFrameDocumentLease(for: webView) else {
+            throw ReaderError.unavailable
+        }
+        host.invalidateReaderPresentation(unless: documentLease)
+        if host.hasReaderPresentation(matching: documentLease) {
+            host.dismissReader()
             return
         }
 
-        guard let sourceURL = webView.url ?? tab?.url,
-              sourceURL.isSumiReaderEligibleURL
-        else {
+        let sourceURL = documentLease.presentationURL
+        guard sourceURL.isSumiReaderEligibleURL else {
             throw ReaderError.unavailable
         }
 
         guard let article = try await extractArticle(from: webView) else {
             throw ReaderError.extractionFailed
         }
+        guard tab.mainFrameDocumentLease(for: webView) == documentLease,
+              webView.sumiReaderPresentationHost === host else {
+            throw ReaderError.unavailable
+        }
 
         let html = readerHTML(for: article, sourceURL: sourceURL)
-        load(html, sourceURL: sourceURL, into: webView)
-        reconcileReaderPresentation(
-            tab: tab,
-            webView: webView,
+        guard host.presentReader(
+            html: html,
             sourceURL: sourceURL,
-            title: article.title
-        )
-    }
-
-    static func isReaderModeActive(on webView: WKWebView) async -> Bool {
-        do {
-            return try await readerModeSourceURL(on: webView) != nil
-        } catch {
-            RuntimeDiagnostics.debug(category: "ReaderMode") {
-                "Reader mode active probe failed: \(error.localizedDescription)"
+            documentLease: documentLease,
+            navigate: { [weak tab] destinationURL in
+                tab?.loadURL(destinationURL)
             }
-            return false
+        ) else {
+            throw ReaderError.unavailable
         }
     }
 
-    private static func readerModeSourceURL(on webView: WKWebView) async throws -> URL? {
-        let value = try await webView.evaluateJavaScript("""
-            (() => {
-              const root = document.documentElement;
-              return root.dataset.sumiReaderMode === "true"
-                ? root.dataset.sumiReaderSourceUrl || ""
-                : "";
-            })();
-        """)
-        guard let source = value as? String, !source.isEmpty else { return nil }
-        return URL(string: source)
+    static func isReaderModeActive(on webView: WKWebView) async -> Bool {
+        webView.sumiReaderPresentationHost?.hasReaderPresentation() == true
     }
 
     private static func extractArticle(from webView: WKWebView) async throws -> Article? {
@@ -84,57 +72,6 @@ enum SumiReaderModeService {
             siteName: siteName,
             byline: byline,
             publishedTime: publishedTime
-        )
-    }
-
-    private static func load(_ html: String, sourceURL: URL, into webView: WKWebView) {
-        webView.loadHTMLString(html, baseURL: sourceURL)
-    }
-
-    private static func reconcileReaderPresentation(
-        tab: Tab?,
-        webView: WKWebView,
-        sourceURL: URL,
-        title: String
-    ) {
-        applyReaderPresentation(tab: tab, sourceURL: sourceURL, title: title)
-
-        Task { @MainActor [weak webView, weak tab] in
-            do {
-                try await Task.sleep(nanoseconds: 150_000_000)
-            } catch {
-                return
-            }
-            guard let webView else {
-                return
-            }
-            do {
-                guard try await readerModeSourceURL(on: webView) == sourceURL else {
-                    return
-                }
-            } catch {
-                RuntimeDiagnostics.debug(category: "ReaderMode") {
-                    "Reader mode presentation reconciliation probe failed: \(error.localizedDescription)"
-                }
-                return
-            }
-            applyReaderPresentation(tab: tab, sourceURL: sourceURL, title: title)
-        }
-    }
-
-    private static func applyReaderPresentation(
-        tab: Tab?,
-        sourceURL: URL,
-        title: String
-    ) {
-        guard let tab else { return }
-        tab.url = sourceURL
-        tab.name = title
-        tab.updateNavigationState()
-        NotificationCenter.default.post(
-            name: .sumiTabNavigationStateDidChange,
-            object: tab,
-            userInfo: ["tabId": tab.id]
         )
     }
 

@@ -9,7 +9,9 @@ extension BrowserManager {
 
     /// Called when TabManager finishes loading initial data from persistence
     func handleTabManagerDataLoaded() {
-        windowSessionService.handleTabManagerDataLoaded(runtime: WindowSessionRuntimeFactory.make(for: self))
+        windowSessionBundle.restoreService.handleTabManagerDataLoaded(
+            windows: windowRegistry?.allWindows ?? []
+        )
         liveFolderManager.startAfterTabRestore(isEnabled: liveFoldersModule.isEnabled)
         reconcileStartupSessionIfPossible()
     }
@@ -21,7 +23,7 @@ extension BrowserManager {
     func reconcileStartupSessionIfPossible() {
         startupSessionRestoreOwner.reconcileIfReady(
             hasLoadedInitialTabData: { [weak self] in
-                self?.tabManager.hasLoadedInitialData ?? false
+                self?.tabManager.startupRestoreLifecycle.hasLoadedInitialData ?? false
             },
             startupMode: { [weak self] in
                 self?.sumiSettings?.startupMode

@@ -1,11 +1,7 @@
 import Foundation
 import WebKit
 import SumiDomain
-
-private enum WindowScopedConfigPreparation {
-    case ready
-    case rebuiltAndLoaded
-}
+import SumiWebRuntime
 
 /// Loads and reloads pages in window-scoped WebViews, rebuilding configuration
 /// policy when the destination requires it (floating bar and privacy flows).
@@ -13,17 +9,30 @@ private enum WindowScopedConfigPreparation {
 final class BrowserWindowScopedNavigationOwner {
     private let webViewCoordinator: @MainActor () -> WebViewCoordinator?
     private let windowOwnedWebView: @MainActor (Tab, UUID) -> WKWebView?
-    private let reloadTab: @MainActor (UUID, UUID) -> Void
+    private let materializeWebView: @MainActor (Tab, UUID) -> WKWebView?
+    private let reloadTab: @MainActor (
+        UUID,
+        UUID,
+        TabMainFrameNavigationIntent,
+        WebRuntimeMainFrameReloadPolicy
+    ) -> TabMainFrameReloadCommandOutcome
     private let resolvedSearchEngineTemplate: @MainActor () -> String?
 
     init(
         webViewCoordinator: @escaping @MainActor () -> WebViewCoordinator?,
         windowOwnedWebView: @escaping @MainActor (Tab, UUID) -> WKWebView?,
-        reloadTab: @escaping @MainActor (UUID, UUID) -> Void,
+        materializeWebView: @escaping @MainActor (Tab, UUID) -> WKWebView?,
+        reloadTab: @escaping @MainActor (
+            UUID,
+            UUID,
+            TabMainFrameNavigationIntent,
+            WebRuntimeMainFrameReloadPolicy
+        ) -> TabMainFrameReloadCommandOutcome,
         resolvedSearchEngineTemplate: @escaping @MainActor () -> String?
     ) {
         self.webViewCoordinator = webViewCoordinator
         self.windowOwnedWebView = windowOwnedWebView
+        self.materializeWebView = materializeWebView
         self.reloadTab = reloadTab
         self.resolvedSearchEngineTemplate = resolvedSearchEngineTemplate
     }
@@ -34,79 +43,54 @@ final class BrowserWindowScopedNavigationOwner {
         in windowState: BrowserWindowState,
         reason: String
     ) {
-        guard let preparation = prepareWindowScopedConfigurationPolicy(
-            for: tab,
-            targetURL: url,
-            in: windowState,
-            reason: reason
-        ) else {
-            return
-        }
-
-        if preparation == .rebuiltAndLoaded {
-            tab.beginLoadingPresentationIfNeeded()
-            tab.resetPlaybackActivity()
-            tab.applyCachedFaviconOrPlaceholder(for: url)
-            return
-        }
-
         tab.navigationCommandOwner.loadURL(
             url,
             for: tab,
             resolvedWebView: windowScopedWebViewResolver(tab: tab, in: windowState),
             reason: reason,
-            rebuildConfigurationPolicy: false
+            configurationPolicyRebuilder: { [weak self, weak tab, weak windowState] targetURL, reason in
+                guard let self, let tab, let windowState else { return .failed }
+                return self.rebuildWindowScopedConfigurationPolicy(
+                    for: tab,
+                    targetURL: targetURL,
+                    in: windowState,
+                    reason: reason
+                )
+            }
         )
     }
 
+    @discardableResult
     func refreshWindowScopedPage(
         tab: Tab,
         in windowState: BrowserWindowState,
-        reason: String
-    ) {
-        guard !tab.representsSumiNativeSurface else { return }
-
-        let targetWebView = windowOwnedOrCreatedWebView(for: tab, in: windowState.id)
-        let targetURL = targetWebView?.url ?? tab.url
-        let protectionReloadWasRequired = tab.reloadPolicyStateOwner.isProtectionReloadRequired
-        if tab.configurationPolicyRequiresNormalWebViewRebuild(for: targetURL) {
-            guard let preparation = prepareWindowScopedConfigurationPolicy(
-                for: tab,
-                targetURL: targetURL,
-                in: windowState,
-                reason: reason
-            ) else {
-                return
-            }
-            tab.beginLoadingPresentationIfNeeded()
-            if protectionReloadWasRequired {
-                tab.noteProtectionManualReloadResult(
-                    rebuiltForConfigurationPolicy: true,
-                    targetURL: targetURL
+        reason: String,
+        policy: WebRuntimeMainFrameReloadPolicy = .standard
+    ) -> TabMainFrameReloadCommandOutcome {
+        tab.navigationCommandOwner.refresh(
+            tab,
+            resolvedWebView: windowScopedWebViewResolver(tab: tab, in: windowState),
+            reason: reason,
+            policy: policy,
+            configurationPolicyRebuilder: { [weak self, weak tab, weak windowState] targetURL, reason in
+                guard let self, let tab, let windowState else { return .failed }
+                return self.rebuildWindowScopedConfigurationPolicy(
+                    for: tab,
+                    targetURL: targetURL,
+                    in: windowState,
+                    reason: reason
+                )
+            },
+            deliverTrackedReload: { [weak self, weak tab, weak windowState] intent, policy in
+                guard let self, let tab, let windowState else { return .failed }
+                return self.reloadTab(
+                    tab.id,
+                    windowState.id,
+                    intent,
+                    policy
                 )
             }
-            if preparation == .rebuiltAndLoaded {
-                return
-            }
-            tab.navigationCommandOwner.loadURL(
-                targetURL,
-                for: tab,
-                resolvedWebView: windowScopedWebViewResolver(tab: tab, in: windowState),
-                reason: reason,
-                rebuildConfigurationPolicy: false
-            )
-            return
-        }
-
-        guard targetWebView != nil else { return }
-        tab.beginLoadingPresentationIfNeeded()
-        if protectionReloadWasRequired {
-            tab.noteProtectionManualReloadResult(
-                rebuiltForConfigurationPolicy: false,
-                targetURL: targetURL
-            )
-        }
-        reloadTab(tab.id, windowState.id)
+        )
     }
 
     func loadFloatingBarCurrentPage(
@@ -151,29 +135,38 @@ final class BrowserWindowScopedNavigationOwner {
         )
     }
 
-    private func prepareWindowScopedConfigurationPolicy(
+    private func rebuildWindowScopedConfigurationPolicy(
         for tab: Tab,
         targetURL: URL,
         in windowState: BrowserWindowState,
         reason: String
-    ) -> WindowScopedConfigPreparation? {
+    ) -> TabWebViewReplacementOutcome {
         guard tab.configurationPolicyRequiresNormalWebViewRebuild(for: targetURL) else {
-            return .ready
+            return .notNeeded
         }
         guard let webViewCoordinator = webViewCoordinator() else {
             RuntimeDiagnostics.emit(
                 "Cannot rebuild window-scoped WebView for \(reason): coordinator unavailable."
             )
-            return nil
+            return .failed
         }
-        guard webViewCoordinator.rebuildLiveWebViews(
+        let rebuildResult = webViewCoordinator.rebuildService
+            .rebuildLiveWebViewsResult(
             for: tab,
-            preferredPrimaryWindowId: windowState.id,
-            load: targetURL
-        ) else {
-            return nil
+            preferredPrimaryWindowID: windowState.id,
+            load: targetURL,
+            reason: reason,
+            intentRevision: tab.currentWebViewRebuildIntentRevision,
+            rebuildKind: .semanticNavigation
+        )
+        switch rebuildResult {
+        case .committed:
+            return .replacedAndScheduledNavigation
+        case .deferred:
+            return .deferred
+        case .noLiveWindows, .failed:
+            return .failed
         }
-        return .rebuiltAndLoaded
     }
 
     private func windowScopedWebViewResolver(
@@ -188,6 +181,6 @@ final class BrowserWindowScopedNavigationOwner {
 
     private func windowOwnedOrCreatedWebView(for tab: Tab, in windowId: UUID) -> WKWebView? {
         windowOwnedWebView(tab, windowId)
-            ?? webViewCoordinator()?.getOrCreateWebView(for: tab, in: windowId)
+            ?? materializeWebView(tab, windowId)
     }
 }

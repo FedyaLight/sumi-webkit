@@ -70,7 +70,6 @@ extension TabDragManager.DragContainer: Codable {
 
 extension Notification.Name {
     static let tabDragDidEnd = Notification.Name("tabDragDidEnd")
-    static let tabManagerDidLoadInitialData = Notification.Name("tabManagerDidLoadInitialData")
 }
 
 // MARK: - Drag Operation Result

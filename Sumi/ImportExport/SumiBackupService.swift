@@ -2,6 +2,11 @@ import Foundation
 import OSLog
 
 @MainActor
+protocol SumiImportBackupWriting: AnyObject {
+    func writeAutomaticPreRestoreBackup(data: SumiPortableData) throws -> URL
+}
+
+@MainActor
 final class SumiBackupService {
     private static let maxAutomaticPreRestoreBackups = 5
     private static let log = Logger.sumi(category: "ImportExport")
@@ -19,6 +24,10 @@ final class SumiBackupService {
 
     func backupData(from browserManager: BrowserManager) -> SumiPortableArchive {
         let data = SumiImportExportSnapshot.makeData(from: browserManager)
+        return backupData(data: data)
+    }
+
+    private func backupData(data: SumiPortableData) -> SumiPortableArchive {
         return SumiPortableArchive(
             includedCategories: Array(data.nonEmptyCategories).sorted { $0.rawValue < $1.rawValue },
             warnings: [
@@ -59,10 +68,17 @@ final class SumiBackupService {
     }
 
     func writeAutomaticPreRestoreBackup(from browserManager: BrowserManager) throws -> URL {
+        try writeAutomaticPreRestoreBackup(
+            data: SumiImportExportSnapshot.makeData(from: browserManager)
+        )
+    }
+
+    func writeAutomaticPreRestoreBackup(data: SumiPortableData) throws -> URL {
         let directory = try automaticBackupDirectory()
         let filename = "pre-restore-\(Self.timestamp()).sumibackup"
         let destination = directory.appendingPathComponent(filename, isDirectory: false)
-        try writeBackup(from: browserManager, to: destination)
+        let payload = try encoder.encode(backupData(data: data))
+        try payload.write(to: destination, options: .atomic)
         try pruneAutomaticPreRestoreBackups(in: directory, keeping: Self.maxAutomaticPreRestoreBackups)
         return destination
     }
@@ -110,6 +126,8 @@ final class SumiBackupService {
         }
     }
 }
+
+extension SumiBackupService: SumiImportBackupWriting {}
 
 enum SumiImportExportError: LocalizedError {
     case unsupportedFile(String)

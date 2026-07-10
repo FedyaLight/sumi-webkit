@@ -30,7 +30,7 @@ final class SafariExtensionAutofillInfrastructureTests: XCTestCase {
             initialProfile: profile
         )
         let installed = try await installProbeExtension(manager: manager)
-        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
+        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
         manager.setDefaultSiteAccess(
             .allow,
             extensionId: installed.id,
@@ -58,7 +58,7 @@ final class SafariExtensionAutofillInfrastructureTests: XCTestCase {
             initialProfile: profile
         )
         let installed = try await installProbeExtension(manager: manager)
-        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
+        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
         manager.setDefaultSiteAccess(
             .allow,
             extensionId: installed.id,
@@ -96,7 +96,7 @@ final class SafariExtensionAutofillInfrastructureTests: XCTestCase {
         manager.attach(browserManager: browserManager)
         manager.extensionsLoaded = true
         let installed = try await installProbeExtension(manager: manager)
-        let tab = Tab(
+        let tab = browserManager.tabManager.tabFactory.makeTab(
             url: URL(string: "http://127.0.0.1/login-form.html")!,
             name: "Private"
         )
@@ -132,7 +132,7 @@ final class SafariExtensionAutofillInfrastructureTests: XCTestCase {
         manager.extensionsLoaded = true
 
         let installed = try await installProbeExtension(manager: manager)
-        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
+        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
         manager.setDefaultSiteAccess(
             .allow,
             extensionId: installed.id,
@@ -147,13 +147,13 @@ final class SafariExtensionAutofillInfrastructureTests: XCTestCase {
         let configuration = browserConfiguration.auxiliaryWebViewConfiguration(
             surface: .extensionOptions
         )
-        let tab = Tab(
+        let tab = browserManager.tabManager.tabFactory.makeTab(
             url: URL(string: "http://127.0.0.1/login-form.html")!,
             name: "Loaded"
         )
         tab.profileId = profile.id
         tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
-        tab.extensionPageRuntimeOwner.eligibleGeneration = manager.tabOpenNotificationGeneration
+        tab.extensionPageRuntimeOwner.eligibleGeneration = manager.runtimeSession.tabOpenNotificationGeneration
         _ = manager.adapterResolutionOwner.stableAdapter(for: tab)
 
         let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
@@ -192,7 +192,7 @@ final class SafariExtensionAutofillInfrastructureTests: XCTestCase {
         manager.extensionsLoaded = true
 
         let installed = try await installProbeExtension(manager: manager)
-        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
+        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
         manager.setDefaultSiteAccess(
             .allow,
             extensionId: installed.id,
@@ -213,13 +213,13 @@ final class SafariExtensionAutofillInfrastructureTests: XCTestCase {
             reason: "SafariExtensionAutofillInfrastructureTests"
         )
 
-        let tab = Tab(
+        let tab = browserManager.tabManager.tabFactory.makeTab(
             url: URL(string: "http://127.0.0.1/login-form.html")!,
             name: "Ready"
         )
         tab.profileId = profile.id
         tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
-        tab.extensionPageRuntimeOwner.eligibleGeneration = manager.tabOpenNotificationGeneration
+        tab.extensionPageRuntimeOwner.eligibleGeneration = manager.runtimeSession.tabOpenNotificationGeneration
 
         let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
         webView.owningTab = tab
@@ -282,7 +282,7 @@ final class SafariExtensionAutofillInfrastructureTests: XCTestCase {
         try Data("true;".utf8)
             .write(to: directoryURL.appendingPathComponent("content.js"), options: [.atomic])
 
-        return try await manager.installationFlowOwner.performInstallation(
+        return try await manager.extensionInstaller.install(
             from: directoryURL,
             enableOnInstall: false
         )

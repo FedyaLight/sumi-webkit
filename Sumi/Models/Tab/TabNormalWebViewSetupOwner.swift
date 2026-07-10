@@ -1,5 +1,18 @@
 import Foundation
 import WebKit
+import SumiWebRuntime
+
+@MainActor
+enum TabUntrackedWebViewEnsureOutcome {
+    case available(WKWebView)
+    case deferred
+    case failed
+
+    var webView: WKWebView? {
+        guard case .available(let webView) = self else { return nil }
+        return webView
+    }
+}
 
 @MainActor
 final class TabNormalWebViewSetupOwner {
@@ -10,19 +23,21 @@ final class TabNormalWebViewSetupOwner {
         context: TabNormalWebViewRuntimeContext,
         provisioningOwner: TabWebViewProvisioningOwner,
         reason: String
-    ) -> WKWebView? {
-        if context.hasCurrentWebView {
-            return context.currentWebView()
+    ) -> TabUntrackedWebViewEnsureOutcome {
+        if let currentWebView = context.currentWebView() {
+            return .available(currentWebView)
         }
 
         context.beginSuspendedRestoreIfNeeded()
         let reusableExistingWebView = context.parkedWebView()
         var didReuseExistingWebView = false
         var didCreateAuxiliaryOverrideWebView = false
+        var didCreateNormalWebView = false
 
         guard let profile = context.resolveProfile() else {
-            context.deferWebViewUntilProfileAvailable()
-            return nil
+            return context.deferWebViewUntilProfileAvailable()
+                ? .deferred
+                : .failed
         }
 
         let configurationContext = context.configurationContext()
@@ -45,12 +60,22 @@ final class TabNormalWebViewSetupOwner {
                     )
                 }
             } else {
-                context.cleanupCloneWebView(existingWebView)
-                context.clearParkedExistingWebView()
+                if context.retireParkedWebView(
+                    existingWebView,
+                    "\(reason).discardIncompatibleParkedWebView"
+                ) == false {
+                    context.cleanupCloneWebView(existingWebView)
+                    context.clearParkedExistingWebView()
+                }
             }
         }
 
         if !context.hasCurrentWebView {
+            if context.deferWebsiteDataMutationWebViewMaterialization(
+                context.setupWebView
+            ) {
+                return .deferred
+            }
             if let auxiliaryOverrideConfiguration {
                 configurationContext.prepareWebViewConfigForExtensionRuntime(
                     auxiliaryOverrideConfiguration,
@@ -70,6 +95,7 @@ final class TabNormalWebViewSetupOwner {
                 reason: reason
             ) {
                 context.replaceUntrackedWebView(normalWebView)
+                didCreateNormalWebView = true
             }
         }
 
@@ -103,27 +129,24 @@ final class TabNormalWebViewSetupOwner {
            let webView = context.currentWebView() {
             loadExtensionOwnedInitialURL(context.currentURL(), on: webView, context: context)
             context.finishSuspendedRestoreIfNeeded()
-            return webView
+            return .available(webView)
         }
 
-        if shouldDelayInitialTabRuntimeRegistration {
+        if didCreateNormalWebView && context.isPopupHost() == false {
             let initialWebView = context.currentWebView()
-            let hasInitialUserContentController = initialWebView?.configuration
-                .userContentController
-                .sumiNormalTabUserContentController != nil
             context.scheduleInitialDocumentRuntimeHandoff(
                 initialWebView,
                 context.currentURL(),
                 profile.id,
-                "\(reason).beforeInitialLoad",
-                hasInitialUserContentController
-                    ? .currentWebViewIdentity
-                    : .noExistingWebView
+                "\(reason).beforeInitialLoad"
             )
         }
 
         context.finishSuspendedRestoreIfNeeded()
-        return context.currentWebView()
+        guard let currentWebView = context.currentWebView() else {
+            return .failed
+        }
+        return .available(currentWebView)
     }
 
     func shouldDelayInitialTabRuntimeRegistration(
@@ -148,10 +171,10 @@ final class TabNormalWebViewSetupOwner {
         on webView: WKWebView,
         context: TabNormalWebViewRuntimeContext
     ) {
-        var request = URLRequest(url: targetURL)
-        request.cachePolicy = .reloadIgnoringLocalCacheData
-        request.timeoutInterval = 30.0
-        context.loadMainFrameRequest(webView, request)
+        context.loadMainFrameRequest(
+            webView,
+            WebRuntimeNavigationRequestFactory.navigationRequest(for: targetURL)
+        )
         context.applyCachedFaviconOrPlaceholder(targetURL)
     }
 

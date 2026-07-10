@@ -5,7 +5,6 @@
 //
 
 import CoreGraphics
-import SumiChromeTokens
 
 enum FloatingBarLayoutPolicy {
     static let idealWidth: CGFloat = 765

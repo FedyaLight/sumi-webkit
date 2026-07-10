@@ -98,7 +98,9 @@ enum SumiImportExportSnapshot {
                 }
         }
 
-        let bookmarks = portableBookmarks(from: browserManager.bookmarkManager.snapshot(sortMode: .manual).root.children)
+        let bookmarks = portableBookmarks(
+            from: browserManager.bookmarkManager.snapshot(sortMode: .manual).root.children
+        )
 
         return SumiPortableData(
             profiles: profiles,
@@ -111,7 +113,9 @@ enum SumiImportExportSnapshot {
         )
     }
 
-    private static func portableBookmarks(from entities: [SumiBookmarkEntity]) -> [SumiPortableBookmarkNode] {
+    private static func portableBookmarks(
+        from entities: [SumiBookmarkEntity]
+    ) -> [SumiPortableBookmarkNode] {
         entities.compactMap { entity in
             switch entity.kind {
             case .bookmark:

@@ -31,7 +31,7 @@ final class BrowserTabLifecycleService {
                 )
             },
             persistWindowSession: { [weak browserManager] windowState in
-                browserManager?.windowSessionBundle.activationOwner.persistWindowSession(for: windowState)
+                browserManager?.windowSessionBundle.persistence.persist(windowState)
             },
             showEmptyState: { [weak browserManager] windowState in
                 browserManager?.showEmptyState(in: windowState)
@@ -79,7 +79,7 @@ final class BrowserTabLifecycleService {
                 browserManager?.showEmptyState(in: windowState)
             },
             persistWindowSession: { [weak browserManager] windowState in
-                browserManager?.windowSessionBundle.activationOwner.persistWindowSession(for: windowState)
+                browserManager?.windowSessionBundle.persistence.persist(windowState)
             }
         )
         opening = BrowserTabOpeningOwner(

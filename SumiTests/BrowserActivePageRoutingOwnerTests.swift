@@ -67,6 +67,45 @@ final class BrowserActivePageRoutingOwnerTests: XCTestCase {
         XCTAssertIdentical(try XCTUnwrap(owner.activePageWebView(for: windowState)), coordinatorWebView)
     }
 
+    func testPresentationRoutingUsesReaderWithoutChangingCanonicalPageRouting() throws {
+        let windowState = BrowserWindowState()
+        let tab = makeTab("https://tab.example/article")
+        let canonicalWebView = WKWebView(frame: .zero)
+        let host = SumiWebViewContainerView(tabID: tab.id, webView: canonicalWebView)
+        let sourceURL = try XCTUnwrap(URL(string: "https://tab.example/article"))
+        let lease = TabMainFrameDocumentLease(
+            revision: 1,
+            documentGeneration: 1,
+            webViewID: ObjectIdentifier(canonicalWebView),
+            participantID: UUID(),
+            committedURL: sourceURL,
+            presentationURL: sourceURL,
+            isPDF: false,
+            isAuthority: true
+        )
+        XCTAssertTrue(host.presentReader(
+            html: "<html><body><article>Reader</article></body></html>",
+            sourceURL: sourceURL,
+            documentLease: lease,
+            navigate: { _ in XCTFail("Reader navigation was not requested") }
+        ))
+
+        let harness = BrowserActivePageRoutingOwnerHarness(activeWindow: windowState)
+        harness.currentTabsByWindowId[windowState.id] = tab
+        harness.webViewsByKey[harness.webViewKey(
+            tabId: tab.id,
+            windowId: windowState.id
+        )] = canonicalWebView
+        let owner = harness.makeOwner()
+
+        XCTAssertIdentical(owner.activePageWebView(for: windowState), canonicalWebView)
+        XCTAssertIdentical(
+            owner.activePresentationWebView(for: windowState),
+            host.activePresentationWebView
+        )
+        XCTAssertFalse(owner.activePresentationWebView(for: windowState) === canonicalWebView)
+    }
+
     func testActivePageWebViewDoesNotUseUntrackedTabCurrentWebView() {
         let windowState = BrowserWindowState()
         let tabWebView = WKWebView(frame: .zero)
@@ -109,8 +148,16 @@ final class BrowserActivePageRoutingOwnerTests: XCTestCase {
     func testActivePageWebViewDoesNotUseTabAssignedWebViewForAnotherWindow() {
         let requestedWindow = BrowserWindowState()
         let owningWindowId = UUID()
-        let tab = makeTab("https://tab.example")
-        tab.assignPrimaryWebView(WKWebView(frame: .zero), windowId: owningWindowId)
+        let coordinator = WebViewCoordinator()
+        let tab = Tab(
+            url: URL(string: "https://tab.example")!,
+            webViewSessions: coordinator.webViewSessions
+        )
+        coordinator.ownershipService.assign(
+            WKWebView(frame: .zero),
+            to: tab,
+            in: owningWindowId
+        )
         let harness = BrowserActivePageRoutingOwnerHarness(activeWindow: requestedWindow)
         harness.currentTabsByWindowId[requestedWindow.id] = tab
         let owner = harness.makeOwner()
@@ -121,8 +168,12 @@ final class BrowserActivePageRoutingOwnerTests: XCTestCase {
     func testActivePageWebViewDoesNotUseWindowAssignedTabWebViewWithoutCoordinatorTracking() {
         let windowState = BrowserWindowState()
         let tabWebView = WKWebView(frame: .zero)
-        let tab = makeTab("https://tab.example")
-        tab.assignPrimaryWebView(tabWebView, windowId: windowState.id)
+        let coordinator = WebViewCoordinator()
+        let tab = Tab(
+            url: URL(string: "https://tab.example")!,
+            webViewSessions: coordinator.webViewSessions
+        )
+        coordinator.ownershipService.assign(tabWebView, to: tab, in: windowState.id)
         let harness = BrowserActivePageRoutingOwnerHarness(activeWindow: windowState)
         harness.currentTabsByWindowId[windowState.id] = tab
         let owner = harness.makeOwner()

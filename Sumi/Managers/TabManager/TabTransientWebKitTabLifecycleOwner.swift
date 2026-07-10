@@ -18,9 +18,7 @@ final class TabTransientWebKitTabLifecycleOwner {
         let scheduleStructuralPersistence: () -> Void
         let setActiveTab: (Tab) -> Void
         let tabForID: (UUID) -> Tab?
-        let faviconService: () -> any BrowserFaviconServicing
-        let faviconImageService: () -> any BrowserFaviconImageServicing
-        let visitedLinkStore: () -> any BrowserVisitedLinkStoreManaging
+        let tabFactory: TabFactory
     }
 
     private let dependencies: Dependencies
@@ -49,15 +47,12 @@ final class TabTransientWebKitTabLifecycleOwner {
 
         let sid = targetSpace.id
         let nextIndex = dependencies.regularTabCollectionOwner().appendIndex(in: sid)
-        let tab = Tab(
+        let tab = dependencies.tabFactory.makeTab(
             url: validURL,
             name: "New Tab",
             favicon: "globe",
             spaceId: sid,
-            index: nextIndex,
-            faviconService: dependencies.faviconService(),
-            faviconImageService: dependencies.faviconImageService(),
-            visitedLinkStore: dependencies.visitedLinkStore()
+            index: nextIndex
         )
         tab.profileId = targetSpace.profileId
         tab.webExtensionContextOverride = webExtensionContextOverride
@@ -80,15 +75,12 @@ final class TabTransientWebKitTabLifecycleOwner {
             ?? openerTab?.resolveProfile()?.id
             ?? dependencies.runtimePorts()?.currentProfileId
 
-        let tab = Tab(
+        let tab = dependencies.tabFactory.makeTab(
             url: resolvedURL,
             name: "Popup",
             favicon: "globe",
             spaceId: openerTab?.spaceId,
-            index: -1,
-            faviconService: dependencies.faviconService(),
-            faviconImageService: dependencies.faviconImageService(),
-            visitedLinkStore: dependencies.visitedLinkStore()
+            index: -1
         )
         tab.isAuxiliaryMiniWindow = true
         tab.profileId = resolvedProfileId
@@ -207,18 +199,7 @@ extension TabTransientWebKitTabLifecycleOwner.Dependencies {
             scheduleStructuralPersistence: { [weak tabManager] in tabManager?.scheduleStructuralPersistence() },
             setActiveTab: { [weak tabManager] tab in tabManager?.activeSelectionOwner.setActiveTab(tab) },
             tabForID: { [weak tabManager] id in tabManager?.tabCollectionMembershipOwner.tab(for: id) },
-            faviconService: { [weak tabManager] in
-                guard let tabManager else { preconditionFailure("TabManager dependency used after deallocation") }
-                return tabManager.faviconService
-            },
-            faviconImageService: { [weak tabManager] in
-                guard let tabManager else { preconditionFailure("TabManager dependency used after deallocation") }
-                return tabManager.faviconImageService
-            },
-            visitedLinkStore: { [weak tabManager] in
-                guard let tabManager else { preconditionFailure("TabManager dependency used after deallocation") }
-                return tabManager.visitedLinkStore
-            }
+            tabFactory: tabManager.tabFactory
         )
     }
 }

@@ -100,7 +100,7 @@ extension TabFaviconExtensionRuntime {
     ) -> Self {
         Self(
             installedExtensions: {
-                extensionsModule()?.managerIfLoadedAndEnabled()?.installedExtensions
+                extensionsModule()?.managerIfLoadedAndEnabled()?.installedExtensionCollection.records
                     ?? extensionSurfaceStore()?.installedExtensions
                     ?? []
             }

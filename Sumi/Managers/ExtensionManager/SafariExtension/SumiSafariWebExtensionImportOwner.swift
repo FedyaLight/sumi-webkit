@@ -46,11 +46,11 @@ final class SumiSafariWebExtensionImportOwner {
         }
 
         var installedSourcePaths = Set(
-            manager.installedExtensions.map {
+            manager.installedExtensionCollection.records.map {
                 Self.standardizedFilePath($0.sourceBundlePath)
             }
         )
-        let installedExtensionIDs = Set(manager.installedExtensions.map(\.id))
+        let installedExtensionIDs = Set(manager.installedExtensionCollection.records.map(\.id))
         let installedImportedBundleIDs = Set(
             importStore.importedRecords()
                 .filter { installedExtensionIDs.contains($0.installedExtensionId) }
@@ -115,7 +115,7 @@ final class SumiSafariWebExtensionImportOwner {
             throw ExtensionError.unsupportedOS
         }
 
-        let installed = try await manager.installationFlowOwner.performInstallation(
+        let installed = try await manager.extensionInstaller.install(
             from: candidate.appexURL,
             enableOnInstall: enableOnInstall
         )

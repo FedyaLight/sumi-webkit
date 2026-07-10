@@ -122,7 +122,9 @@ final class WindowWebContentSplitHostLayoutView: NSView, WindowWebContentVisualH
     }
 
     func removeVisualHandoffCover(_ host: SumiWebViewContainerView) {
-        host.removeFromSuperview()
+        if host.superview === visualHandoffOverlayView {
+            host.removeFromSuperview()
+        }
         visualHandoffOverlayView.isHidden = visualHandoffOverlayView.subviews.isEmpty
     }
 

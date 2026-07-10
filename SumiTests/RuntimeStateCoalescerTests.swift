@@ -72,8 +72,8 @@ final class RuntimeStateCoalescerTests: XCTestCase {
         name: String,
         canGoBack: Bool = false,
         canGoForward: Bool = false
-    ) -> TabSnapshotRepository.RuntimeTabState {
-        TabSnapshotRepository.RuntimeTabState(
+    ) -> TabRuntimeStateUpdate {
+        TabRuntimeStateUpdate(
             id: id,
             urlString: urlString,
             currentURLString: urlString,
@@ -86,7 +86,7 @@ final class RuntimeStateCoalescerTests: XCTestCase {
     private func waitForBatches(
         count expectedCount: Int,
         recorder: RuntimeStateBatchRecorder
-    ) async throws -> [[TabSnapshotRepository.RuntimeTabState]] {
+    ) async throws -> [[TabRuntimeStateUpdate]] {
         for _ in 0..<50 {
             let batches = await recorder.allBatches()
             if batches.count >= expectedCount {
@@ -102,13 +102,13 @@ final class RuntimeStateCoalescerTests: XCTestCase {
 }
 
 private actor RuntimeStateBatchRecorder {
-    private var batches: [[TabSnapshotRepository.RuntimeTabState]] = []
+    private var batches: [[TabRuntimeStateUpdate]] = []
 
-    func record(_ states: [TabSnapshotRepository.RuntimeTabState]) {
+    func record(_ states: [TabRuntimeStateUpdate]) {
         batches.append(states)
     }
 
-    func allBatches() -> [[TabSnapshotRepository.RuntimeTabState]] {
+    func allBatches() -> [[TabRuntimeStateUpdate]] {
         batches
     }
 }

@@ -12,8 +12,8 @@ final class TabSnapshotValidatorTests: XCTestCase {
         isPinned: Bool = false,
         isSpacePinned: Bool = false,
         folderId: UUID? = nil
-    ) -> TabSnapshotRepository.SnapshotTab {
-        TabSnapshotRepository.SnapshotTab(
+    ) -> TabPersistenceTab {
+        TabPersistenceTab(
             id: id,
             urlString: "https://example.com",
             name: "Tab",
@@ -31,8 +31,8 @@ final class TabSnapshotValidatorTests: XCTestCase {
         )
     }
 
-    private func space(id: UUID) -> TabSnapshotRepository.SnapshotSpace {
-        TabSnapshotRepository.SnapshotSpace(
+    private func space(id: UUID) -> TabPersistenceSpace {
+        TabPersistenceSpace(
             id: id,
             name: "Space",
             icon: "circle",
@@ -46,8 +46,8 @@ final class TabSnapshotValidatorTests: XCTestCase {
         id: UUID = UUID(),
         spaceId: UUID,
         parentFolderId: UUID? = nil
-    ) -> TabSnapshotRepository.SnapshotFolder {
-        TabSnapshotRepository.SnapshotFolder(
+    ) -> TabPersistenceFolder {
+        TabPersistenceFolder(
             id: id,
             name: "Folder",
             icon: "folder",
@@ -60,15 +60,15 @@ final class TabSnapshotValidatorTests: XCTestCase {
     }
 
     private func snapshot(
-        spaces: [TabSnapshotRepository.SnapshotSpace],
-        tabs: [TabSnapshotRepository.SnapshotTab],
-        folders: [TabSnapshotRepository.SnapshotFolder] = []
-    ) -> TabSnapshotRepository.Snapshot {
-        TabSnapshotRepository.Snapshot(
+        spaces: [TabPersistenceSpace],
+        tabs: [TabPersistenceTab],
+        folders: [TabPersistenceFolder] = []
+    ) -> TabPersistenceSnapshot {
+        TabPersistenceSnapshot(
             spaces: spaces,
             tabs: tabs,
             folders: folders,
-            state: TabSnapshotRepository.SnapshotState(currentTabID: nil, currentSpaceID: nil)
+            state: TabPersistenceSelection(currentTabID: nil, currentSpaceID: nil)
         )
     }
 
@@ -80,7 +80,7 @@ final class TabSnapshotValidatorTests: XCTestCase {
     ) {
         XCTAssertThrowsError(try body(), message, file: file, line: line) { error in
             XCTAssertEqual(
-                error as? TabSnapshotRepository.PersistenceError,
+                error as? TabPersistenceError,
                 .invalidModelState,
                 message,
                 file: file,
@@ -156,7 +156,7 @@ final class TabSnapshotValidatorTests: XCTestCase {
 
     func testValidDeltaPasses() throws {
         let spaceId = UUID()
-        let delta = TabSnapshotRepository.StructuralDelta(
+        let delta = TabStructuralPersistenceDelta(
             spaces: [space(id: spaceId)],
             tabs: [tab(spaceId: spaceId)],
             folders: [],
@@ -164,14 +164,14 @@ final class TabSnapshotValidatorTests: XCTestCase {
             deletedSpaceIds: [],
             deletedTabIds: [],
             deletedFolderIds: [],
-            state: TabSnapshotRepository.SnapshotState(currentTabID: nil, currentSpaceID: nil)
+            state: TabPersistenceSelection(currentTabID: nil, currentSpaceID: nil)
         )
         XCTAssertNoThrow(try TabSnapshotValidator.validateDelta(delta))
     }
 
     func testDeltaTabInDeletedSpaceIsRejected() {
         let spaceId = UUID()
-        let delta = TabSnapshotRepository.StructuralDelta(
+        let delta = TabStructuralPersistenceDelta(
             spaces: [],
             tabs: [tab(spaceId: spaceId)],
             folders: [],
@@ -179,7 +179,7 @@ final class TabSnapshotValidatorTests: XCTestCase {
             deletedSpaceIds: [spaceId],
             deletedTabIds: [],
             deletedFolderIds: [],
-            state: TabSnapshotRepository.SnapshotState(currentTabID: nil, currentSpaceID: nil)
+            state: TabPersistenceSelection(currentTabID: nil, currentSpaceID: nil)
         )
         assertInvalidModelState({ try TabSnapshotValidator.validateDelta(delta) }, "tab in deleted space must be rejected")
     }
@@ -187,7 +187,7 @@ final class TabSnapshotValidatorTests: XCTestCase {
     // Missing parent is allowed for an incremental delta (requiresCompleteParentSet: false).
     func testDeltaFolderWithMissingParentIsAllowed() throws {
         let spaceId = UUID()
-        let delta = TabSnapshotRepository.StructuralDelta(
+        let delta = TabStructuralPersistenceDelta(
             spaces: [space(id: spaceId)],
             tabs: [],
             folders: [folder(spaceId: spaceId, parentFolderId: UUID())],
@@ -195,7 +195,7 @@ final class TabSnapshotValidatorTests: XCTestCase {
             deletedSpaceIds: [],
             deletedTabIds: [],
             deletedFolderIds: [],
-            state: TabSnapshotRepository.SnapshotState(currentTabID: nil, currentSpaceID: nil)
+            state: TabPersistenceSelection(currentTabID: nil, currentSpaceID: nil)
         )
         XCTAssertNoThrow(try TabSnapshotValidator.validateDelta(delta))
     }

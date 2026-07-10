@@ -40,7 +40,7 @@ final class WebExtensionStorageCleanupOwner {
                 extensionId: extensionId
             )
             if RuntimeDiagnostics.isVerboseEnabled {
-                manager.extensionRuntimeTrace(
+                manager.runtimeDiagnostics.trace(
                     "Skipped WebExtension data cleanup for \(extensionId): no stored data candidate"
                 )
             }
@@ -62,7 +62,7 @@ final class WebExtensionStorageCleanupOwner {
         let dataCleanupOwner = WebExtensionControllerDataCleanupOwner()
         let matchingRecords = await dataCleanupOwner.matchingRecords(
             for: extensionId,
-            controllersByProfile: manager.extensionControllersByProfile,
+            controllersByProfile: manager.profileRuntime.controllersByProfile,
             additionalUniqueIdentifiers: safariRuntimeIdentifiers(for: extensionId)
         )
 
@@ -75,7 +75,7 @@ final class WebExtensionStorageCleanupOwner {
                 extensionId: extensionId
             )
             if RuntimeDiagnostics.isVerboseEnabled {
-                manager.extensionRuntimeTrace(
+                manager.runtimeDiagnostics.trace(
                     "No stored WebExtension data found for \(extensionId)"
                 )
             }
@@ -85,7 +85,7 @@ final class WebExtensionStorageCleanupOwner {
         await dataCleanupOwner.remove(
             matchingRecords,
             extensionId: extensionId,
-            using: manager.extensionControllersByProfile
+            using: manager.profileRuntime.controllersByProfile
         )
 
         let errors = matchingRecords.errors
@@ -99,20 +99,20 @@ final class WebExtensionStorageCleanupOwner {
         )
         if RuntimeDiagnostics.isVerboseEnabled {
             if errors.isEmpty {
-                manager.extensionRuntimeTrace(
+                manager.runtimeDiagnostics.trace(
                     "Removed stored WebExtension data for \(extensionId)"
                 )
             } else if classifiedErrors.actionableDiagnostics.isEmpty {
-                manager.extensionRuntimeTrace(
+                manager.runtimeDiagnostics.trace(
                     "Removed stored WebExtension data for \(extensionId); ignored \(classifiedErrors.benignOptionalStoreDiagnostics.count) missing optional store errors"
                 )
             } else {
-                manager.extensionRuntimeTrace(
+                manager.runtimeDiagnostics.trace(
                     "Removed stored WebExtension data for \(extensionId) with \(classifiedErrors.actionableDiagnostics.count) actionable record errors"
                 )
                 let diagnosticsSummary = classifiedErrors.actionableDiagnostics.map(\.logSummary)
                     .joined(separator: " | ")
-                manager.extensionRuntimeTrace(
+                manager.runtimeDiagnostics.trace(
                     "Actionable WebExtension cleanup diagnostics for \(extensionId): \(diagnosticsSummary)"
                 )
             }
@@ -127,7 +127,7 @@ final class WebExtensionStorageCleanupOwner {
     /// "<bundleId> (<teamId>)" identifier (see `configureContextIdentity`), so
     /// cleanup must recognize that identifier in addition to the internal id.
     private func safariRuntimeIdentifiers(for extensionId: String) -> Set<String> {
-        guard let installed = manager.installedExtensions.first(where: {
+        guard let installed = manager.installedExtensionCollection.records.first(where: {
             $0.id == extensionId
         }) else {
             return []
@@ -165,7 +165,7 @@ final class WebExtensionStorageCleanupOwner {
             planner: storageCleanupPlanner,
             storageDirectoryNameResolver: { [weak manager] extensionId in
                 guard let manager,
-                      let installed = manager.installedExtensions.first(where: {
+                      let installed = manager.installedExtensionCollection.records.first(where: {
                           $0.id == extensionId
                       })
                 else {
@@ -266,7 +266,7 @@ final class WebExtensionStorageCleanupOwner {
                 " webKitCompat=\(capabilities.usesWebKitCompatibilityPrelude) mayTouchDynamicContentScripts=\(capabilities.mayTouchDynamicContentScriptStore) mayTouchSyncStorage=\(capabilities.mayTouchSyncStorageStore) permissions=\(capabilities.declaredPermissions.joined(separator: ",")) unsupportedAPIs=\(capabilities.unsupportedAPIs.joined(separator: ","))"
         }
 
-        manager.extensionRuntimeTrace(message)
+        manager.runtimeDiagnostics.trace(message)
     }
 }
 

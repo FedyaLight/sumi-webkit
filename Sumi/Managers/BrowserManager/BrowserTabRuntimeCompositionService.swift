@@ -1,11 +1,12 @@
 import Combine
 import Foundation
 import SumiWebRuntime
+import WebKit
 
 @MainActor
 enum BrowserTabRuntimeCompositionService {
     struct Dependencies {
-        let attachTabSuspensionRuntime: @MainActor (TabSuspensionRuntime) -> Void
+        let installTabSuspensionRuntime: @MainActor () -> Void
         let attachBackgroundMediaOptimizationRuntime: @MainActor (
             SumiBackgroundMediaOptimizationRuntime
         ) -> Void
@@ -13,18 +14,13 @@ enum BrowserTabRuntimeCompositionService {
         let incrementTabStructuralRevision: @MainActor () -> Void
         let scheduleTabSuspensionReconcile: @MainActor (_ reason: String) -> Void
         let scheduleBackgroundMediaReconcile: @MainActor (_ reason: String) -> Void
-        let webViewCoordinator: @MainActor () -> WebViewCoordinator?
-        let memoryMode: @MainActor () -> SumiMemoryMode
-        let customDeactivationDelay: @MainActor () -> TimeInterval
-        let tabEnergySaverActive: @MainActor () -> Bool
+        let webViewRuntimeAvailable: @MainActor () -> Bool
+        let trackedWebViewEntries: @MainActor (Tab) -> [
+            (windowID: UUID, webView: WKWebView)
+        ]
         let backgroundMediaEnergySaverActive: @MainActor () -> Bool
         let allKnownTabs: @MainActor () -> [Tab]
-        let selectedTabIDs: @MainActor () -> Set<UUID>
-        let tabSuspensionVisibleTabIDsByWindow: @MainActor () -> [UUID: Set<UUID>]
         let backgroundMediaVisibleTabIDsByWindow: @MainActor () -> [UUID: Set<UUID>]
-        let refreshLazyRestoreQueue: @MainActor (
-            _ context: TabSuspensionEvaluationContext
-        ) -> Void
         let notifyTabActivatedIfLoaded: @MainActor (_ newTab: Tab, _ previousTab: Tab?) -> Void
     }
 
@@ -33,9 +29,7 @@ enum BrowserTabRuntimeCompositionService {
     }
 
     static func attach(dependencies: Dependencies) -> AnyCancellable {
-        dependencies.attachTabSuspensionRuntime(
-            tabSuspensionRuntime(dependencies: dependencies)
-        )
+        dependencies.installTabSuspensionRuntime()
         dependencies.attachBackgroundMediaOptimizationRuntime(
             backgroundMediaOptimizationRuntime(dependencies: dependencies)
         )
@@ -94,8 +88,13 @@ enum BrowserTabRuntimeCompositionService {
         dependencies: Dependencies
     ) -> SumiBackgroundMediaOptimizationRuntime {
         SumiBackgroundMediaOptimizationRuntime(
-            webViewCoordinator: {
-                dependencies.webViewCoordinator()
+            webViewRuntimeAvailable: {
+                dependencies.webViewRuntimeAvailable()
+            },
+            liveWebViewEntries: { tab in
+                dependencies.trackedWebViewEntries(tab).map {
+                    (windowID: Optional($0.windowID), webView: $0.webView)
+                }
             },
             energySaverActive: {
                 dependencies.backgroundMediaEnergySaverActive()
@@ -109,75 +108,74 @@ enum BrowserTabRuntimeCompositionService {
         )
     }
 
-    private static func tabSuspensionRuntime(
-        dependencies: Dependencies
-    ) -> TabSuspensionRuntime {
-        TabSuspensionRuntime(
-            webViewCoordinator: {
-                dependencies.webViewCoordinator()
-            },
-            memoryMode: {
-                dependencies.memoryMode()
-            },
-            customDeactivationDelay: {
-                dependencies.customDeactivationDelay()
-            },
-            energySaverActive: {
-                dependencies.tabEnergySaverActive()
-            },
-            allKnownTabs: {
-                dependencies.allKnownTabs()
-            },
-            selectedTabIDs: {
-                dependencies.selectedTabIDs()
-            },
-            visibleTabIDsByWindow: {
-                dependencies.tabSuspensionVisibleTabIDsByWindow()
-            },
-            refreshLazyRestoreQueue: { context in
-                dependencies.refreshLazyRestoreQueue(context)
-            }
-        )
-    }
 }
 
 @MainActor
 extension BrowserTabRuntimeCompositionService.Dependencies {
     static func live(browserManager: BrowserManager) -> Self {
-        Self(
-            attachTabSuspensionRuntime: { [weak browserManager] runtime in
-                browserManager?.tabSuspensionService.attach(runtime: runtime)
+        let tabSuspensionController = browserManager.tabSuspensionController
+        let shellRuntime = browserManager.shellRuntime
+        let suspensionWebViewOwnership = browserManager.webViewOwnershipQuery
+        let regularTabs = browserManager.tabManager.tabCollectionMembershipOwner
+        let lazyRestore = browserManager.tabManager.lazyRestoreCoordinator
+        let windowTabs = browserManager.windowSessionBundle.tabContextOwner
+        let splitManager = browserManager.splitManager
+
+        return Self(
+            installTabSuspensionRuntime: {
+                tabSuspensionController.install(
+                    runtime: BrowserTabSuspensionRuntimeFactory.ports(
+                        windowRegistry: { shellRuntime.windowRegistry },
+                        regularTabs: regularTabs,
+                        lazyRestore: lazyRestore,
+                        windowTabs: windowTabs,
+                        splitManager: splitManager,
+                        webView: TabSuspensionWebViewRuntime(
+                            isAvailable: {
+                                shellRuntime.webViewCoordinator != nil
+                            },
+                            liveWebViews: { tab in
+                                suspensionWebViewOwnership.suspensionLiveWebViews(for: tab)
+                            },
+                            suspendWebViews: { tab, reason in
+                                shellRuntime.webViewCoordinator?.lifecycleService
+                                    .suspendWebViews(for: tab, reason: reason) ?? false
+                            },
+                            isProtectedFromCompositorMutation: { webView in
+                                shellRuntime.webViewCoordinator?.protectionRuntime
+                                    .isProtected(webView) ?? false
+                            }
+                        )
+                    )
+                )
             },
             attachBackgroundMediaOptimizationRuntime: { [weak browserManager] runtime in
                 browserManager?.backgroundMediaOptimizationService.attach(runtime: runtime)
             },
-            tabStructuralChanges: browserManager.tabStructureEventBus.structureChangedPublisher,
+            tabStructuralChanges: browserManager.tabManager.tabStructureEventBus.structureChangedPublisher,
             incrementTabStructuralRevision: { [weak browserManager] in
                 browserManager?.tabStructuralRevision &+= 1
             },
-            scheduleTabSuspensionReconcile: { [weak browserManager] reason in
-                browserManager?.tabSuspensionService.scheduleProactiveTimerReconcile(
-                    reason: reason
-                )
+            scheduleTabSuspensionReconcile: { reason in
+                tabSuspensionController.scheduleReconciliation(reason: reason)
             },
             scheduleBackgroundMediaReconcile: { [weak browserManager] reason in
                 browserManager?.backgroundMediaOptimizationService.scheduleReconcile(
                     reason: reason
                 )
             },
-            webViewCoordinator: { [weak browserManager] in
-                browserManager?.webViewCoordinator
+            webViewRuntimeAvailable: { [weak browserManager] in
+                browserManager?.webViewCoordinator != nil
             },
-            memoryMode: { [weak browserManager] in
-                browserManager?.sumiSettings?.memoryMode ?? .balanced
-            },
-            customDeactivationDelay: { [weak browserManager] in
-                browserManager?.sumiSettings?.memorySaverCustomDeactivationDelay
-                    ?? SumiMemorySaverCustomDelay.defaultDelay
-            },
-            tabEnergySaverActive: { [weak browserManager] in
-                browserManager?.sumiSettings?
-                    .energySaverApplies(.deactivateInactiveTabsSooner) ?? false
+            trackedWebViewEntries: { [weak browserManager] tab in
+                guard let browserManager else { return [] }
+                return browserManager.webViewOwnershipQuery.windowIDs(for: tab.id)
+                    .compactMap { windowID in
+                        browserManager.webViewOwnershipQuery.webView(
+                            for: tab.id,
+                            in: windowID
+                        ).map { (windowID: windowID, webView: $0) }
+                    }
             },
             backgroundMediaEnergySaverActive: { [weak browserManager] in
                 browserManager?.sumiSettings?.energySaverActivation.isActive ?? false
@@ -186,21 +184,9 @@ extension BrowserTabRuntimeCompositionService.Dependencies {
                 guard let browserManager else { return [] }
                 return allRuntimeTabs(for: browserManager)
             },
-            selectedTabIDs: { [weak browserManager] in
-                guard let browserManager else { return [] }
-                return tabSuspensionSelectedTabIDs(for: browserManager)
-            },
-            tabSuspensionVisibleTabIDsByWindow: { [weak browserManager] in
-                guard let browserManager else { return [:] }
-                return tabSuspensionVisibleTabIDsByWindow(for: browserManager)
-            },
             backgroundMediaVisibleTabIDsByWindow: { [weak browserManager] in
                 guard let browserManager else { return [:] }
                 return backgroundMediaVisibleTabIDsByWindow(for: browserManager)
-            },
-            refreshLazyRestoreQueue: { [weak browserManager] context in
-                guard let browserManager else { return }
-                refreshTabSuspensionLazyRestoreQueue(context, for: browserManager)
             },
             notifyTabActivatedIfLoaded: { [weak browserManager] newTab, previousTab in
                 browserManager?.extensionsModule.notifyTabActivatedIfLoaded(
@@ -225,63 +211,6 @@ extension BrowserTabRuntimeCompositionService.Dependencies {
             visibleTabIDsByWindow[windowState.id] = Set(tabIDs)
         }
         return visibleTabIDsByWindow
-    }
-
-    private static func tabSuspensionSelectedTabIDs(
-        for browserManager: BrowserManager
-    ) -> Set<UUID> {
-        var selectedIDs = Set<UUID>()
-        for windowState in browserManager.windowRegistry.map({ Array($0.windows.values) }) ?? [] {
-            if let current = browserManager.windowSessionBundle.tabContextOwner.currentTab(for: windowState) {
-                selectedIDs.insert(current.id)
-            }
-        }
-        return selectedIDs
-    }
-
-    private static func tabSuspensionVisibleTabIDsByWindow(
-        for browserManager: BrowserManager
-    ) -> [UUID: Set<UUID>] {
-        var visible: [UUID: Set<UUID>] = [:]
-        for windowState in browserManager.windowRegistry.map({ Array($0.windows.values) }) ?? [] {
-            let tabIDs = VisibleTabPreparationPlan.visibleTabIDs(
-                currentTabId: browserManager.windowSessionBundle.tabContextOwner.currentTab(for: windowState)?.id,
-                splitTabIds: browserManager.splitManager.visibleTabIds(for: windowState.id)
-            )
-            visible[windowState.id] = Set(tabIDs)
-        }
-        return visible
-    }
-
-    private static func refreshTabSuspensionLazyRestoreQueue(
-        _ context: TabSuspensionEvaluationContext,
-        for browserManager: BrowserManager
-    ) {
-        guard let windowRegistry = browserManager.windowRegistry else { return }
-
-        let activeWindowId = windowRegistry.activeWindow?.id
-        let anchors = windowRegistry.allWindows
-            .sorted { lhs, rhs in
-                let lhsPriority = lhs.id == activeWindowId ? 0 : 1
-                let rhsPriority = rhs.id == activeWindowId ? 0 : 1
-                if lhsPriority != rhsPriority {
-                    return lhsPriority < rhsPriority
-                }
-                return lhs.id.uuidString < rhs.id.uuidString
-            }
-            .compactMap { windowState in
-                let currentTab = browserManager.windowSessionBundle.tabContextOwner.currentTab(for: windowState)
-                return browserManager.tabManager.lazyRestoreCoordinator.opportunisticRestoreAnchor(
-                    in: windowState,
-                    currentTab: currentTab
-                )
-            }
-
-        browserManager.tabManager.lazyRestoreCoordinator.refresh(
-            anchors: anchors,
-            selectedTabIDs: context.selectedTabIDs,
-            visibleTabIDs: context.visibleTabIDs
-        )
     }
 
     private static func allRuntimeTabs(

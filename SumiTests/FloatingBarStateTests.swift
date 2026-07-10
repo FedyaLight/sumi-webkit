@@ -128,7 +128,7 @@ final class FloatingBarStateTests: XCTestCase {
         let space = Space(name: "Primary", profileId: profile.id)
         let windowState = BrowserWindowState()
 
-        browserManager.webViewCoordinator = WebViewCoordinator()
+        browserManager.bindTestWebViewCoordinator()
         browserManager.profileManager.profiles = [profile]
         browserManager.currentProfile = profile
         browserManager.windowRegistry = windowRegistry

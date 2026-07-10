@@ -139,12 +139,20 @@ enum SumiFaviconProductionSystem {
 
 @MainActor
 final class SumiFaviconSystem {
-    let service: SumiFaviconService
+    let runtime: SumiFaviconRuntime
+    let capabilities: BrowserFaviconCapabilities
     private var bookmarkHosts: Set<String> = []
 
     init() {
-        service = SumiFaviconService(
+        let runtime = SumiFaviconRuntime(
             rootDirectory: SumiFaviconPersistence.directory(named: "Favicons/v2")
+        )
+        self.runtime = runtime
+        capabilities = BrowserFaviconCapabilities(
+            images: runtime.images,
+            liveDiscovery: runtime.liveDiscovery,
+            localIconIngestion: runtime.payloadIngestion,
+            prefetch: runtime.coldFetches
         )
     }
 
@@ -153,8 +161,8 @@ final class SumiFaviconSystem {
         let hosts = Set(pins.compactMap { normalizer.host(for: $0.launchURL) })
         bookmarkHosts.formUnion(hosts)
         for pin in pins {
-            service.scheduleColdFetch(
-                for: pin.launchURL,
+            runtime.coldFetches.schedule(
+                pageURL: pin.launchURL,
                 partition: .regular(pin.executionProfileId),
                 priority: .pinnedLauncher
             )
@@ -169,8 +177,8 @@ final class SumiFaviconSystem {
         let hosts = Set(bookmarks.compactMap { normalizer.host(for: $0.url) })
         bookmarkHosts.formUnion(hosts)
         for bookmark in bookmarks {
-            service.scheduleColdFetch(
-                for: bookmark.url,
+            runtime.coldFetches.schedule(
+                pageURL: bookmark.url,
                 partition: partition,
                 priority: .backgroundPrefetch
             )
@@ -178,18 +186,18 @@ final class SumiFaviconSystem {
     }
 
     func invalidateSite(domain: String, profile: Profile?) {
-        service.invalidateSite(
+        runtime.maintenance.invalidateSite(
             domain: domain,
             partition: partition(profile: profile)
         )
     }
 
     func clearFaviconPartition(for profile: Profile) {
-        service.clearPartition(partition(profile: profile))
+        runtime.maintenance.clearPartition(partition(profile: profile))
     }
 
     func burnAfterHistoryClear(savedLogins: Set<String>) async {
-        service.burnAfterHistoryClear(
+        runtime.maintenance.burnAfterHistoryClear(
             savedLogins: savedLogins,
             bookmarkHosts: bookmarkHosts
         )
@@ -200,7 +208,7 @@ final class SumiFaviconSystem {
         remainingHistoryHosts: Set<String>,
         savedLogins: Set<String>
     ) async {
-        service.burnDomains(
+        runtime.maintenance.burnDomains(
             domains,
             remainingHistoryHosts: remainingHistoryHosts,
             savedLogins: savedLogins,
@@ -216,12 +224,12 @@ final class SumiFaviconSystem {
     }
 
     func invalidateSite(domain: String, partition: SumiFaviconPartition) {
-        service.invalidateSite(domain: domain, partition: partition)
+        runtime.maintenance.invalidateSite(domain: domain, partition: partition)
     }
 
     #if DEBUG
         func drainRuntimeTasksForTests(cancel: Bool = true) async {
-            await service.drainRuntimeTasksForTests(cancel: cancel)
+            await runtime.coldFetches.drainForTests(cancel: cancel)
         }
     #endif
 }

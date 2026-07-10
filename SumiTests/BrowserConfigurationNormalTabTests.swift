@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import SumiDomain
 import SwiftData
 import WebKit
 import XCTest
@@ -114,16 +115,16 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
         )
         let settings = SumiProtectionSettings(userDefaults: harness.defaults)
-        let manifestStore = AdblockUpdateManifestStore(rootDirectory: fixture.manifestStoreRoot)
+        let generationArchive = AdblockGenerationArchive(rootDirectory: fixture.manifestStoreRoot)
         let adBlockingModule = SumiAdBlockingModule(
             moduleRegistry: registry,
             preparedBundleResourceURL: fixture.resourceRoot,
             preparedBundleRemoteRootURL: fixture.remoteRoot,
             preparedBundleGeneratedRootURL: nil,
-            ruleListStoreFactory: { isEnabled in
-                AdblockWebKitRuleListStore(
-                    isAdblockEnabled: isEnabled,
-                    manifestStore: manifestStore,
+            ruleListRuntimeFactory: { isEnabled in
+                AdblockRuleListRuntime(
+                    isRuntimeEnabled: isEnabled,
+                    generationArchive: generationArchive,
                     embeddedBundleURLProvider: { fixture.bundleURL }
                 )
             }
@@ -140,7 +141,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             protectionCoordinator: protectionCoordinator
         )
         await waitForStartupProtectionRestore(on: browserManager)
-        await waitForInitialTabManagerDataLoad(on: browserManager)
+        markIsolatedTabManagerReady(browserManager)
 
         settings.setLevel(.protection)
         settings.setAppliedLevel(.protection)
@@ -198,16 +199,16 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             from: safariContentBlocker.candidate
         )
         let settings = SumiProtectionSettings(userDefaults: harness.defaults)
-        let manifestStore = AdblockUpdateManifestStore(rootDirectory: fixture.manifestStoreRoot)
+        let generationArchive = AdblockGenerationArchive(rootDirectory: fixture.manifestStoreRoot)
         let adBlockingModule = SumiAdBlockingModule(
             moduleRegistry: registry,
             preparedBundleResourceURL: fixture.resourceRoot,
             preparedBundleRemoteRootURL: fixture.remoteRoot,
             preparedBundleGeneratedRootURL: nil,
-            ruleListStoreFactory: { isEnabled in
-                AdblockWebKitRuleListStore(
-                    isAdblockEnabled: isEnabled,
-                    manifestStore: manifestStore,
+            ruleListRuntimeFactory: { isEnabled in
+                AdblockRuleListRuntime(
+                    isRuntimeEnabled: isEnabled,
+                    generationArchive: generationArchive,
                     embeddedBundleURLProvider: { fixture.bundleURL }
                 )
             }
@@ -225,7 +226,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             extensionsModule: extensionsModule
         )
         await waitForStartupProtectionRestore(on: browserManager)
-        await waitForInitialTabManagerDataLoad(on: browserManager)
+        markIsolatedTabManagerReady(browserManager)
 
         settings.setLevel(.protection)
         settings.setAppliedLevel(.protection)
@@ -390,9 +391,12 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         windowState.currentTabId = tab.id
         windowRegistry.register(windowState)
         windowRegistry.setActive(windowState)
-        tab.assignWebViewToWindow(originalWebView, windowId: windowState.id)
         let coordinator = try XCTUnwrap(harness.browserManager.webViewCoordinator)
-        coordinator.setWebView(originalWebView, for: tab.id, in: windowState.id)
+        coordinator.ownershipService.assign(
+            originalWebView,
+            to: tab,
+            in: windowState.id
+        )
 
         let originalController = try XCTUnwrap(
             originalWebView.configuration.userContentController.sumiNormalTabUserContentController
@@ -400,7 +404,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         await originalController.waitForContentBlockingAssetsInstalled()
 
         harness.extensionsModule.setSafariContentBlockerSiteOverride(.disabled, for: tab.url)
-        coordinator.reloadTab(tab)
+        tab.refresh()
 
         let replacementWebView = try XCTUnwrap(tab.resolvedCurrentWebView())
         XCTAssertNotIdentical(replacementWebView, originalWebView)
@@ -454,10 +458,8 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
                 },
                 currentTab: { tab },
                 activeWindowId: { activeWindowId },
-                webViewLookup: { candidateTab, windowId in
-                    candidateTab === tab && windowId == activeWindowId ? originalWebView : nil
-                },
-                reloadWindowScopedPage: { requestTab, windowId, reason in
+                reloadWindowScopedPage: { requestTab, windowId, reason, policy in
+                    XCTAssertEqual(policy, .fromOrigin)
                     reloadRequests.append(BrowserConfigurationReloadRequest(
                         tab: requestTab,
                         windowId: windowId,
@@ -467,6 +469,10 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
                 }
             )
         )
+
+        for _ in 0..<100 where reloadRequests.isEmpty {
+            await Task.yield()
+        }
 
         XCTAssertEqual(reloadRequests.count, 1)
         let reloadRequest = try XCTUnwrap(reloadRequests.first)
@@ -486,6 +492,32 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
                 with: Set(replacementController.contentBlockingAssetSummary.globalRuleListIdentifiers)
             )
         )
+    }
+
+    func testPrivacyHardReloadBypassesOriginWithoutDeletingSiteStorage() throws {
+        let originalURL = try XCTUnwrap(URL(string: "https://example.com/original"))
+        let tab = Tab(url: originalURL, loadsCachedFaviconOnInit: false)
+        let cleanupService = FakeWebsiteDataCleanupService()
+        var reloadCount = 0
+        var invalidationCount = 0
+        let privacyService = BrowserPrivacyService(
+            cleanupService: cleanupService,
+            faviconInvalidator: { _, _ in invalidationCount += 1 }
+        )
+        let windowID = UUID()
+
+        privacyService.hardReloadCurrentPage(
+            using: BrowserPrivacyService.Context(
+                currentDataStore: { WKWebsiteDataStore.default() },
+                currentTab: { tab },
+                activeWindowId: { windowID },
+                reloadWindowScopedPage: { _, _, _, _ in reloadCount += 1 }
+            )
+        )
+
+        XCTAssertEqual(reloadCount, 1)
+        XCTAssertEqual(invalidationCount, 1)
+        XCTAssertTrue(cleanupService.domainRemovalCalls.isEmpty)
     }
 
     func testSafariContentBlockerGlobalDisableMarksLiveTabsReloadRequired() async throws {
@@ -791,7 +823,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             moduleRegistry: registry,
             userscriptsModule: module
         )
-        await waitForInitialTabManagerDataLoad(on: browserManager)
+        markIsolatedTabManagerReady(browserManager)
         let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://example.com/userscripts-disabled",
             in: browserManager.tabManager.spaceStateOwner.currentSpace,
@@ -833,7 +865,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             moduleRegistry: registry,
             extensionsModule: module
         )
-        await waitForInitialTabManagerDataLoad(on: browserManager)
+        markIsolatedTabManagerReady(browserManager)
         let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://example.com/extensions-disabled",
             in: browserManager.tabManager.spaceStateOwner.currentSpace,
@@ -871,7 +903,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             moduleRegistry: registry,
             boostsModule: module
         )
-        await waitForInitialTabManagerDataLoad(on: browserManager)
+        markIsolatedTabManagerReady(browserManager)
         let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://example.com/boosts-disabled",
             in: browserManager.tabManager.spaceStateOwner.currentSpace,
@@ -1489,9 +1521,9 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             startupPersistence: BrowserManagerStartupPersistence(container: startupContainer),
             extensionsModule: extensionsModule
         )
-        browserManager.webViewCoordinator = WebViewCoordinator()
+        browserManager.bindTestWebViewCoordinator()
         await waitForStartupProtectionRestore(on: browserManager)
-        await waitForInitialTabManagerDataLoad(on: browserManager)
+        markIsolatedTabManagerReady(browserManager)
         return SafariContentBlockerBrowserHarness(
             defaults: defaults,
             extensionsModule: extensionsModule,
@@ -1630,13 +1662,12 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         XCTFail("Timed out waiting for initial startup protection restore")
     }
 
-    private func waitForInitialTabManagerDataLoad(on browserManager: BrowserManager) async {
-        let deadline = Date().addingTimeInterval(5)
-        while Date() < deadline {
-            if browserManager.tabManager.hasLoadedInitialData { return }
-            try? await Task.sleep(nanoseconds: 10_000_000)
-        }
-        XCTFail("Timed out waiting for initial tab manager data load")
+    private func markIsolatedTabManagerReady(_ browserManager: BrowserManager) {
+        XCTAssertFalse(
+            browserManager.tabManager.startupRestoreLifecycle.didStartPersistedStateLoad,
+            "Isolated configuration tests must not race a real restore task"
+        )
+        browserManager.tabManager.startupRestoreLifecycle.markLoadFinished()
     }
 
     private static func makeInMemoryExtensionContainer() throws -> ModelContainer {
@@ -1711,6 +1742,13 @@ private final class NormalTabBoostsRuntimeProbe {
 }
 
 private final class FakeWebsiteDataCleanupService: SumiWebsiteDataCleanupServicing {
+    private let domainRemovalDelayNanoseconds: UInt64
+    private(set) var domainRemovalCalls: [(domain: String, includingCookies: Bool)] = []
+
+    init(domainRemovalDelayNanoseconds: UInt64 = 0) {
+        self.domainRemovalDelayNanoseconds = domainRemovalDelayNanoseconds
+    }
+
     func fetchCookies(in _: WKWebsiteDataStore) async -> [HTTPCookie] {
         []
     }
@@ -1742,10 +1780,18 @@ private final class FakeWebsiteDataCleanupService: SumiWebsiteDataCleanupServici
     ) async { /* No-op. */ }
 
     func removeWebsiteDataForDomain(
-        _ _: String,
-        includingCookies _: Bool,
+        _ domain: String,
+        includingCookies: Bool,
         in _: WKWebsiteDataStore
-    ) async { /* No-op. */ }
+    ) async {
+        domainRemovalCalls.append((domain, includingCookies))
+        guard domainRemovalDelayNanoseconds > 0 else { return }
+        do {
+            try await Task.sleep(nanoseconds: domainRemovalDelayNanoseconds)
+        } catch {
+            return
+        }
+    }
 
     func removeWebsiteDataForExactHost(
         _ _: String,

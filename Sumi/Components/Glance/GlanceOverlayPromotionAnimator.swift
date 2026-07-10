@@ -1,5 +1,6 @@
 import AppKit
 import QuartzCore
+import SumiWebRuntime
 import WebKit
 
 @MainActor
@@ -144,14 +145,13 @@ final class GlanceOverlayPromotionAnimator {
             previewHostAttachment.promotedHostCandidate,
             for: session,
             manager: managerProvider(),
-            attachmentCompletion: { [weak self, weak manager, sessionID = session.id] in
-                guard let self,
-                      self.sessionProvider()?.id == sessionID
-                else {
+            attachmentCompletion: { [weak self, weak manager, sessionID = session.id] outcome in
+                guard let self else {
                     manager?.finishPromotedSession(sessionID: sessionID)
                     return
                 }
-                self.completePromotionAfterCompositorAttachment(
+                self.completePromotionHandoff(
+                    outcome: outcome,
                     sessionID: sessionID,
                     manager: manager
                 )
@@ -169,6 +169,23 @@ final class GlanceOverlayPromotionAnimator {
 
         promotionHandoff.beginCompositorHandoff()
         manager?.moveToNewTab(finishesAfterDisplayUpdate: true)
+    }
+
+    private func completePromotionHandoff(
+        outcome: PromotedHostAttachmentOutcome,
+        sessionID: UUID,
+        manager: GlanceManager?
+    ) {
+        switch outcome {
+        case .attached:
+            completePromotionAfterCompositorAttachment(
+                sessionID: sessionID,
+                manager: manager
+            )
+        case .cancelled:
+            promotionHandoff.cancelCompositorHandoff()
+            manager?.finishPromotedSession(sessionID: sessionID)
+        }
     }
 
     private func completePromotionAfterCompositorAttachment(

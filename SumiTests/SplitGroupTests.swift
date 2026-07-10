@@ -1019,10 +1019,10 @@ final class SplitGroupTests: SplitGroupTestCase {
 
     func testSnapshotDecodesMissingSplitGroupsAsEmpty() throws {
         struct LegacySnapshot: Codable {
-            let spaces: [TabSnapshotRepository.SnapshotSpace]
-            let tabs: [TabSnapshotRepository.SnapshotTab]
-            let folders: [TabSnapshotRepository.SnapshotFolder]
-            let state: TabSnapshotRepository.SnapshotState
+            let spaces: [TabPersistenceSpace]
+            let tabs: [TabPersistenceTab]
+            let folders: [TabPersistenceFolder]
+            let state: TabPersistenceSelection
         }
 
         let data = try JSONEncoder().encode(
@@ -1030,11 +1030,11 @@ final class SplitGroupTests: SplitGroupTestCase {
                 spaces: [],
                 tabs: [],
                 folders: [],
-                state: TabSnapshotRepository.SnapshotState(currentTabID: nil, currentSpaceID: nil)
+                state: TabPersistenceSelection(currentTabID: nil, currentSpaceID: nil)
             )
         )
 
-        let decoded = try JSONDecoder().decode(TabSnapshotRepository.Snapshot.self, from: data)
+        let decoded = try JSONDecoder().decode(TabPersistenceSnapshot.self, from: data)
 
         XCTAssertTrue(decoded.splitGroups.isEmpty)
     }

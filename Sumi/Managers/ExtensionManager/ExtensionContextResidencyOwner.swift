@@ -14,8 +14,8 @@ import WebKit
 @MainActor
 final class ExtensionContextResidencyOwner {
     struct Dependencies {
-        let profileRuntimeOwner: ExtensionProfileRuntimeOwner
-        let runtimeSessionOwner: ExtensionRuntimeSessionOwner
+        let profileRuntime: ExtensionProfileRuntime
+        let runtimeSession: ExtensionRuntimeSession
         let backgroundRuntimeStateOwner: ExtensionBackgroundRuntimeStateOwner
         let isExtensionSupportAvailable: @MainActor () -> Bool
         let extensionsModuleEnabledForRuntimeBoundary: @MainActor () -> Bool
@@ -37,7 +37,7 @@ final class ExtensionContextResidencyOwner {
     }
 
     func touchLiveExtensionContext(extensionId: String, profileId: UUID) {
-        dependencies.runtimeSessionOwner.extensionRuntimeResidencyState.touch(
+        dependencies.runtimeSession.extensionRuntimeResidencyState.touch(
             extensionId: extensionId,
             profileId: profileId
         )
@@ -48,7 +48,7 @@ final class ExtensionContextResidencyOwner {
         keepingExtensionId: String
     ) {
         let evictionCandidates =
-            dependencies.runtimeSessionOwner.extensionRuntimeResidencyState
+            dependencies.runtimeSession.extensionRuntimeResidencyState
                 .touchAndEvictionCandidates(
                     loadedContextCount: dependencies.countLoadedContexts(),
                     limit: ExtensionManager.maxLiveExtensionContexts,
@@ -65,7 +65,7 @@ final class ExtensionContextResidencyOwner {
     }
 
     func unloadExtensionContextsForInactiveProfiles(keepingProfileId: UUID) {
-        for identity in dependencies.profileRuntimeOwner.inactiveLoadedContextIdentities(
+        for identity in dependencies.profileRuntime.inactiveLoadedContextIdentities(
             keepingProfileId: keepingProfileId
         ) {
             unloadExtensionContextIfLoaded(
@@ -79,8 +79,44 @@ final class ExtensionContextResidencyOwner {
         extensionId: String,
         profileId: UUID
     ) {
+        _ = unloadExtensionContext(
+            extensionId: extensionId,
+            profileId: profileId
+        )
+    }
+
+    /// Invalidates in-flight lazy loads and synchronously unloads every
+    /// context backed by a profile whose website data is about to mutate.
+    /// A failed WebKit unload aborts deletion instead of pretending the
+    /// profile store is quiescent.
+    func quiesceForWebsiteDataMutation(profileIDs: Set<UUID>) -> Bool {
+        guard profileIDs.isEmpty == false else { return true }
+        dependencies.runtimeSession.extensionLoadGeneration &+= 1
+
+        let identities = profileIDs.flatMap { profileID in
+            dependencies.profileRuntime.contexts(for: profileID).keys.map {
+                (extensionID: $0, profileID: profileID)
+            }
+        }
+        var didUnloadAll = true
+        for identity in identities {
+            if unloadExtensionContext(
+                extensionId: identity.extensionID,
+                profileId: identity.profileID
+            ) == false {
+                didUnloadAll = false
+            }
+        }
+        return didUnloadAll
+    }
+
+    @discardableResult
+    private func unloadExtensionContext(
+        extensionId: String,
+        profileId: UUID
+    ) -> Bool {
         guard let context = dependencies.getExtensionContext(extensionId, profileId) else {
-            return
+            return true
         }
 
         let wakeKey = ExtensionRuntimeResidencyState.scopedKey(
@@ -88,28 +124,34 @@ final class ExtensionContextResidencyOwner {
             profileId: profileId
         )
         dependencies.backgroundRuntimeStateOwner.cancelAndRemoveRuntime(for: wakeKey)
-        dependencies.runtimeSessionOwner.extensionRuntimeResidencyState.remove(
-            extensionId: extensionId,
-            profileId: profileId
-        )
-
-        _ = dependencies.profileRuntimeOwner.removeContext(
-            extensionId: extensionId,
-            profileId: profileId
-        )
-        if let controller = dependencies.profileRuntimeOwner.controller(for: profileId) {
-            do {
-                try controller.unload(context)
-            } catch {
-                dependencies.trace {
-                    "Ignoring failed unload for extension \(extensionId) profile \(profileId.uuidString): \(error.localizedDescription)"
-                }
+        guard let controller = dependencies.profileRuntime.controller(for: profileId) else {
+            dependencies.trace {
+                "Unable to unload extension \(extensionId) for profile \(profileId.uuidString): missing controller"
             }
+            return false
         }
+        do {
+            try controller.unload(context)
+        } catch {
+            dependencies.trace {
+                "Failed to unload extension \(extensionId) profile \(profileId.uuidString): \(error.localizedDescription)"
+            }
+            return false
+        }
+
+        dependencies.runtimeSession.extensionRuntimeResidencyState.remove(
+            extensionId: extensionId,
+            profileId: profileId
+        )
+        _ = dependencies.profileRuntime.removeContext(
+            extensionId: extensionId,
+            profileId: profileId
+        )
 
         dependencies.trace {
             "unloadExtensionContext extensionId=\(extensionId) profileId=\(profileId.uuidString) remainingContexts=\(self.dependencies.countLoadedContexts())"
         }
+        return true
     }
 
     @discardableResult
@@ -146,7 +188,7 @@ final class ExtensionContextResidencyOwner {
         try await dependencies.loadEnabledExtension(
             entity,
             profileId,
-            dependencies.runtimeSessionOwner.extensionLoadGeneration
+            dependencies.runtimeSession.extensionLoadGeneration
         )
         touchLiveExtensionContext(extensionId: extensionId, profileId: profileId)
         enforceBoundedLiveExtensionContexts(
@@ -173,7 +215,7 @@ final class ExtensionContextResidencyOwner {
                 try await dependencies.loadEnabledExtension(
                     entity,
                     profileId,
-                    dependencies.runtimeSessionOwner.extensionLoadGeneration
+                    dependencies.runtimeSession.extensionLoadGeneration
                 )
             } catch {
                 ExtensionManager.logger.error(
@@ -186,16 +228,16 @@ final class ExtensionContextResidencyOwner {
     }
 
     func markExtensionRuntimeReadyIfProfileContextsLoaded(for profileId: UUID) {
-        guard dependencies.profileRuntimeOwner.controller(for: profileId) != nil else { return }
+        guard dependencies.profileRuntime.controller(for: profileId) != nil else { return }
         guard let readiness = dependencies.readinessContext(profileId) else { return }
         dependencies.setExtensionsLoaded(true)
         if readiness.isProfileReady {
-            dependencies.runtimeSessionOwner.runtimeState = .ready
-        } else if dependencies.runtimeSessionOwner.runtimeState != .failed {
-            dependencies.runtimeSessionOwner.runtimeState = .loading
+            dependencies.runtimeSession.runtimeState = .ready
+        } else if dependencies.runtimeSession.runtimeState != .failed {
+            dependencies.runtimeSession.runtimeState = .loading
         }
         dependencies.trace {
-            "markExtensionRuntimeReady profile=\(profileId.uuidString) loadedContexts=\(self.dependencies.profileRuntimeOwner.contexts(for: profileId).count) allEnabledLoaded=\(readiness.isProfileReady) unloadedEnabledExtensionIDs=\(readiness.unloadedEnabledExtensionIDs.joined(separator: ","))"
+            "markExtensionRuntimeReady profile=\(profileId.uuidString) loadedContexts=\(self.dependencies.profileRuntime.contexts(for: profileId).count) allEnabledLoaded=\(readiness.isProfileReady) unloadedEnabledExtensionIDs=\(readiness.unloadedEnabledExtensionIDs.joined(separator: ","))"
         }
     }
 }
@@ -205,8 +247,8 @@ extension ExtensionContextResidencyOwner.Dependencies {
     @MainActor
     static func live(manager: ExtensionManager) -> Self {
         Self(
-            profileRuntimeOwner: manager.profileRuntimeOwner,
-            runtimeSessionOwner: manager.runtimeSessionOwner,
+            profileRuntime: manager.profileRuntime,
+            runtimeSession: manager.runtimeSession,
             backgroundRuntimeStateOwner: manager.backgroundRuntimeStateOwner,
             isExtensionSupportAvailable: { [weak manager] in
                 manager?.isExtensionSupportAvailable ?? false
@@ -233,9 +275,9 @@ extension ExtensionContextResidencyOwner.Dependencies {
                 manager?.enabledPersistedExtensionEntities() ?? []
             },
             loadEnabledExtension: { [weak manager] entity, profileId, generation in
-                _ = try await manager?.installationFlowOwner.loadEnabledExtension(
+                _ = try await manager?.extensionRuntimeLoader.loadEnabled(
                     from: entity,
-                    profileId: profileId,
+                    profileID: profileId,
                     expectedLoadGeneration: generation
                 )
             },
@@ -243,7 +285,7 @@ extension ExtensionContextResidencyOwner.Dependencies {
                 manager?.extensionsLoaded = loaded
             },
             trace: { [weak manager] message in
-                manager?.extensionRuntimeTrace(message())
+                manager?.runtimeDiagnostics.trace(message())
             }
         )
     }
@@ -282,6 +324,14 @@ extension ExtensionManager {
         contextResidencyOwner.unloadExtensionContextIfLoaded(
             extensionId: extensionId,
             profileId: profileId
+        )
+    }
+
+    func quiesceForWebsiteDataMutation(profileIDs: Set<UUID>) -> Bool {
+        optionsWindows.closeWindows(backedBy: profileIDs)
+        actionPopupSessionOwner.closePopup(backedBy: profileIDs)
+        return contextResidencyOwner.quiesceForWebsiteDataMutation(
+            profileIDs: profileIDs
         )
     }
 

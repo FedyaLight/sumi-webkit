@@ -48,6 +48,7 @@ struct URLBarHubBrowserContext {
     let protectionCoordinator: SumiProtectionCoordinator
     let adblockZapperStore: SumiAdblockZapperStore
     let cleanupService: any SumiWebsiteDataCleanupServicing
+    let profileWebsiteDataMutationService: any SumiProfileWebsiteDataMutating
     let siteDataPolicyStore: any BrowserSiteDataPolicyStoring
     let siteDataPolicyEnforcementService: any BrowserSiteDataPolicyEnforcing
     let faviconService: any BrowserFaviconServicing

@@ -779,7 +779,7 @@ private final class TestSidebarBrowserContextHarness {
         tabManager = TabManager(context: container.mainContext, loadPersistedState: false)
         tabManager.spaceStateOwner.replaceSpaces(spaces)
         tabManager.spaceStateOwner.replaceCurrentSpace(spaces.first)
-        tabManager.markInitialDataLoadFinished()
+        tabManager.startupRestoreLifecycle.markLoadFinished()
         profileManager = ProfileManager(context: container.mainContext)
         profileManager.ensureDefaultProfile()
 

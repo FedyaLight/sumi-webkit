@@ -10,6 +10,7 @@ final class SumiWebViewContainerView: NSView, WebRuntimePromotedHost {
     private var viewportCornerRadii: ChromeCornerRadii = .uniform(0)
     private var preservesDisplayedContentOnNextRemoval = false
     private let overlayScrollChrome = WebContentOverlayScrollChrome()
+    private var readerPresentationSession: ReaderPresentationSession?
 
     override var constraints: [NSLayoutConstraint] { [] }
 
@@ -22,6 +23,9 @@ final class SumiWebViewContainerView: NSView, WebRuntimePromotedHost {
     }
 
     private func configure(webView: WKWebView) {
+        let transferredReaderPresentation = webView.sumiReaderPresentationHost?
+            .takeReaderPresentationForTransfer()
+
         autoresizingMask = [.width, .height]
         wantsLayer = true
         // Clips AppKit subviews (WKWebView) to the tab viewport. In-page extension overlays
@@ -38,6 +42,9 @@ final class SumiWebViewContainerView: NSView, WebRuntimePromotedHost {
         overlayScrollChrome.install(in: self, webView: webView)
         if let focusable = webView as? FocusableWKWebView {
             focusable.overlayScrollChrome = overlayScrollChrome
+        }
+        if let transferredReaderPresentation {
+            installReaderPresentation(transferredReaderPresentation)
         }
         updateViewportMask()
         recordInlineUIContainerClippingIfNeeded()
@@ -60,13 +67,81 @@ final class SumiWebViewContainerView: NSView, WebRuntimePromotedHost {
             if subview === overlayScrollChrome.indicatorHostingView {
                 continue
             }
+            if subview === readerPresentationSession?.webView {
+                continue
+            }
             subview.removeFromSuperview()
         }
         if displayedView.superview !== self {
             addDisplayedContent(displayedView)
         }
         overlayScrollChrome.ensureIndicatorAboveContent()
+        ensureReaderPresentationAboveContent()
         recenterFullscreenPlaceholderLabelIfNeeded(displayedView)
+    }
+
+    @discardableResult
+    func presentReader(
+        html: String,
+        sourceURL: URL,
+        documentLease: TabMainFrameDocumentLease,
+        navigate: @escaping (URL) -> Void
+    ) -> Bool {
+        guard ObjectIdentifier(webView) == documentLease.webViewID else {
+            return false
+        }
+
+        dismissReader()
+        let session = ReaderPresentationSession(
+            sourceDocumentLease: documentLease,
+            sourceURL: sourceURL,
+            navigate: navigate
+        )
+        session.webView.pageZoom = webView.pageZoom
+        installReaderPresentation(session)
+        session.load(html)
+        return true
+    }
+
+    func dismissReader() {
+        guard let readerPresentationSession else { return }
+        let ownsCanonicalContent = webView.sumiFullscreenPresentation
+            .tabContentView.superview === self
+        readerPresentationSession.webView.navigationDelegate = nil
+        readerPresentationSession.webView.stopLoading()
+        readerPresentationSession.webView.removeFromSuperview()
+        readerPresentationSession.detach(from: self)
+        self.readerPresentationSession = nil
+        if ownsCanonicalContent {
+            webView.pageZoom = readerPresentationSession.webView.pageZoom
+            webView.sumiFullscreenPresentation.tabContentView.isHidden = false
+        }
+        overlayScrollChrome.refreshGeometry(revealIfChanged: false)
+    }
+
+    /// The WebView that owns presentation-scoped interaction in this host.
+    /// Navigation, lifecycle, permissions and history continue to use `webView`.
+    var activePresentationWebView: WKWebView {
+        readerPresentationSession?.webView ?? webView
+    }
+
+    func hasReaderPresentation(
+        matching documentLease: TabMainFrameDocumentLease? = nil
+    ) -> Bool {
+        guard let readerPresentationSession else { return false }
+        return documentLease.map {
+            $0 == readerPresentationSession.sourceDocumentLease
+        } ?? true
+    }
+
+    func invalidateReaderPresentation(
+        unless documentLease: TabMainFrameDocumentLease?
+    ) {
+        guard let readerPresentationSession,
+              documentLease != readerPresentationSession.sourceDocumentLease else {
+            return
+        }
+        dismissReader()
     }
 
     /// WebKit centres the "exit full screen" label for the fullscreen screen's
@@ -100,6 +175,24 @@ final class SumiWebViewContainerView: NSView, WebRuntimePromotedHost {
         addSubview(displayedView)
     }
 
+    private func installReaderPresentation(_ session: ReaderPresentationSession) {
+        readerPresentationSession = session
+        session.attach(to: self)
+        session.webView.frame = bounds
+        session.webView.autoresizingMask = [.width, .height]
+        webView.sumiFullscreenPresentation.tabContentView.isHidden = true
+        addSubview(session.webView)
+        overlayScrollChrome.hideImmediately()
+    }
+
+    private func takeReaderPresentationForTransfer() -> ReaderPresentationSession? {
+        guard let session = readerPresentationSession else { return nil }
+        session.webView.removeFromSuperview()
+        session.detach(from: self)
+        readerPresentationSession = nil
+        return session
+    }
+
     private func frameDisplayedContent(_ displayedView: NSView) {
         displayedView.frame = bounds
         displayedView.autoresizingMask = [.width, .height]
@@ -114,6 +207,7 @@ final class SumiWebViewContainerView: NSView, WebRuntimePromotedHost {
         super.layout()
         let displayedView = webView.sumiFullscreenPresentation.tabContentView
         displayedView.frame = bounds
+        readerPresentationSession?.webView.frame = bounds
         recenterFullscreenPlaceholderLabelIfNeeded(displayedView)
         overlayScrollChrome.layoutIndicator()
         updateViewportMask()
@@ -130,6 +224,7 @@ final class SumiWebViewContainerView: NSView, WebRuntimePromotedHost {
 
     deinit {
         MainActor.assumeIsolated {
+            dismissReader()
             if let focusable = webView as? FocusableWKWebView,
                focusable.overlayScrollChrome === overlayScrollChrome {
                 focusable.overlayScrollChrome = nil
@@ -149,7 +244,11 @@ final class SumiWebViewContainerView: NSView, WebRuntimePromotedHost {
         if preservesDisplayedContentOnNextRemoval {
             preservesDisplayedContentOnNextRemoval = false
         } else {
-            webView.sumiFullscreenPresentation.tabContentView.removeFromSuperview()
+            let displayedContent = webView.sumiFullscreenPresentation.tabContentView
+            if displayedContent.superview === self {
+                dismissReader()
+                displayedContent.removeFromSuperview()
+            }
         }
         super.removeFromSuperview()
     }
@@ -160,6 +259,12 @@ final class SumiWebViewContainerView: NSView, WebRuntimePromotedHost {
             masksToBounds: layer?.masksToBounds == true,
             inRoundedViewportContainer: clampedViewportCornerRadii.maxRadius > 0
         )
+    }
+
+    private func ensureReaderPresentationAboveContent() {
+        guard let readerWebView = readerPresentationSession?.webView,
+              readerWebView.superview === self else { return }
+        addSubview(readerWebView, positioned: .above, relativeTo: nil)
     }
 
     private func updateViewportMask() {
@@ -265,5 +370,26 @@ private extension NSView {
             }
         }
         return nil
+    }
+}
+
+@MainActor
+extension WKWebView {
+    var sumiReaderPresentationHost: SumiWebViewContainerView? {
+        var candidate = superview
+        while let view = candidate {
+            if let host = view as? SumiWebViewContainerView,
+               host.webView === self {
+                return host
+            }
+            candidate = view.superview
+        }
+        return nil
+    }
+
+    /// Presentation-only command target. It intentionally does not participate
+    /// in Tab navigation or WebKit lifecycle authority.
+    var sumiActivePresentationWebView: WKWebView {
+        sumiReaderPresentationHost?.activePresentationWebView ?? self
     }
 }

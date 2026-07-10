@@ -23,9 +23,7 @@ final class ShortcutPinCommandOwner {
         let tabCollectionMembershipOwner: TabCollectionMembershipOwner
         let regularTabCollectionOwner: RegularTabCollectionOwner
         let spaceStateOwner: TabSpaceCollectionStateOwner
-        let faviconService: any BrowserFaviconServicing
-        let faviconImageService: any BrowserFaviconImageServicing
-        let visitedLinkStore: any BrowserVisitedLinkStoreManaging
+        let tabFactory: TabFactory
         let runtimePorts: @MainActor () -> RuntimePortRegistry?
         let scheduleStructuralPersistence: @MainActor () -> Void
     }
@@ -312,15 +310,12 @@ final class ShortcutPinCommandOwner {
                 guard let targetSpaceId = pin.spaceId ?? windowState.currentSpaceId else {
                     return nil
                 }
-                let duplicateTab = Tab(
+                let duplicateTab = dependencies.tabFactory.makeTab(
                     url: liveTab.url,
                     name: liveTab.name,
                     favicon: SumiPersistentGlyph.launcherSystemImageFallback,
                     spaceId: targetSpaceId,
-                    index: 0,
-                    faviconService: dependencies.faviconService,
-                    faviconImageService: dependencies.faviconImageService,
-                    visitedLinkStore: dependencies.visitedLinkStore
+                    index: 0
                 )
                 duplicateTab.faviconPresentation = liveTab.faviconPresentation
                 duplicateTab.faviconIsTemplateGlobePlaceholder = liveTab.faviconIsTemplateGlobePlaceholder
@@ -470,9 +465,7 @@ extension ShortcutPinCommandOwner.Dependencies {
             tabCollectionMembershipOwner: tabManager.tabCollectionMembershipOwner,
             regularTabCollectionOwner: tabManager.regularTabCollectionOwner,
             spaceStateOwner: tabManager.spaceStateOwner,
-            faviconService: tabManager.faviconService,
-            faviconImageService: tabManager.faviconImageService,
-            visitedLinkStore: tabManager.visitedLinkStore,
+            tabFactory: tabManager.tabFactory,
             runtimePorts: { [weak tabManager] in
                 tabManager?.runtimePorts
             },

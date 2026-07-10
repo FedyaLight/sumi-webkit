@@ -27,14 +27,14 @@ final class ExtensionControllerDelegateBridge: NSObject, WKWebExtensionControlle
         _ controller: WKWebExtensionController,
         focusedWindowFor extensionContext: WKWebExtensionContext
     ) -> (any WKWebExtensionWindow)? {
-        manager?.windowFocusResolutionOwner.focusedWindow(for: extensionContext)
+        manager?.runtimeBundle.windowFocusResolutionOwner.focusedWindow(for: extensionContext)
     }
 
     func webExtensionController(
         _ controller: WKWebExtensionController,
         openWindowsFor extensionContext: WKWebExtensionContext
     ) -> [any WKWebExtensionWindow] {
-        manager?.windowFocusResolutionOwner.openWindows(for: extensionContext) ?? []
+        manager?.runtimeBundle.windowFocusResolutionOwner.openWindows(for: extensionContext) ?? []
     }
 
     // MARK: - Actions
@@ -44,7 +44,7 @@ final class ExtensionControllerDelegateBridge: NSObject, WKWebExtensionControlle
         didUpdate action: WKWebExtension.Action,
         forExtensionContext extensionContext: WKWebExtensionContext
     ) {
-        manager?.updateActionSurfaceState(
+        manager?.actionSurfacePublisher.updateActionSurfaceState(
             for: action,
             extensionContext: extensionContext
         )
@@ -149,13 +149,13 @@ final class ExtensionControllerDelegateBridge: NSObject, WKWebExtensionControlle
             }
 
             do {
-                try await manager.prepareExtensionRequestedTabForInitialLoad(
+                try await manager.requestedTabContextPreloader.prepare(
                     url: configuration.url,
                     requestedWindow: configuration.window,
                     controller: controller,
                     extensionContext: extensionContext
                 )
-                let newTab = try manager.openExtensionRequestedTab(
+                let newTab = try manager.requestedTabOpening.open(
                     url: configuration.url,
                     shouldBeActive: configuration.shouldBeActive,
                     shouldBePinned: configuration.shouldBePinned,
@@ -198,7 +198,9 @@ final class ExtensionControllerDelegateBridge: NSObject, WKWebExtensionControlle
         if configuration.windowType == .popup {
             Task { @MainActor [weak self] in
                 guard let manager = self?.manager,
-                      let browserContext = manager.browserBridgeContext else {
+                      let windowQuery = manager.extensionWindowQuery,
+                      let windowPresentation = manager.extensionWindowPresentation
+                else {
                     completionHandler(
                         nil,
                         ExtensionManagerCallbackError.browserManagerUnavailable.nsError()
@@ -206,10 +208,10 @@ final class ExtensionControllerDelegateBridge: NSObject, WKWebExtensionControlle
                     return
                 }
 
-                let parentWindow = browserContext.activeExtensionWindowState.flatMap {
-                    browserContext.appKitWindow(for: $0)
+                let parentWindow = windowQuery.activeExtensionWindowState.flatMap {
+                    windowQuery.appKitWindow(for: $0)
                 }
-                let adapter = await browserContext.presentExtensionPopupWindow(
+                let adapter = await windowPresentation.presentExtensionPopupWindow(
                     configuration: configuration,
                     controller: controller,
                     extensionContext: extensionContext,
@@ -234,10 +236,11 @@ final class ExtensionControllerDelegateBridge: NSObject, WKWebExtensionControlle
             controller: controller,
             extensionContext: extensionContext,
             createWindow: { [weak manager] in
-                manager?.browserBridgeContext?.createExtensionWindow()
+                manager?.extensionWindowPresentation?.createExtensionWindow()
             },
             awaitWindowRegistration: { [weak manager] existingWindowIDs in
-                await manager?.browserBridgeContext?.awaitNextExtensionWindow(
+                await manager?.extensionWindowPresentation?
+                    .awaitNextExtensionWindow(
                     excluding: existingWindowIDs
                 )
             },
@@ -303,8 +306,9 @@ final class ExtensionControllerDelegateBridge: NSObject, WKWebExtensionControlle
             )
             return
         }
-        manager.presentOptionsPageWindow(
+        manager.optionsWindows.presentOptionsPageWindow(
             for: extensionContext,
+            manager: manager,
             completionHandler: completionHandler
         )
     }

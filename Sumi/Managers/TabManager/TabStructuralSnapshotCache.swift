@@ -19,9 +19,9 @@ struct TabStructuralSnapshotSource {
 /// snapshot rebuilds only re-materialize the structures that changed.
 @MainActor
 struct TabStructuralSnapshotCache {
-    private typealias SnapshotSpace = TabSnapshotRepository.SnapshotSpace
-    private typealias SnapshotTab = TabSnapshotRepository.SnapshotTab
-    private typealias SnapshotFolder = TabSnapshotRepository.SnapshotFolder
+    private typealias SnapshotSpace = TabPersistenceSpace
+    private typealias SnapshotTab = TabPersistenceTab
+    private typealias SnapshotFolder = TabPersistenceFolder
 
     private var spaceSnapshots: [SnapshotSpace] = []
     private var splitGroupSnapshots: [SplitGroup] = []
@@ -75,7 +75,7 @@ struct TabStructuralSnapshotCache {
         dirtyFolderSpaceIds.insert(spaceId)
     }
 
-    mutating func makeSnapshot(from source: TabStructuralSnapshotSource) -> TabSnapshotRepository.Snapshot {
+    mutating func makeSnapshot(from source: TabStructuralSnapshotSource) -> TabPersistenceSnapshot {
         let orderedSpaces = source.spaces
         let liveSpaceIds = Set(orderedSpaces.map(\.id))
 

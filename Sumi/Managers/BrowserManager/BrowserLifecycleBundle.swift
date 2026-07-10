@@ -25,11 +25,7 @@ final class BrowserLifecycleBundle {
             browserManager: browserManager
         )
         self.initializationWiringOwner = BrowserManagerInitializationWiringOwner(
-            tabStructureEventBus: browserManager.tabStructureEventBus,
-            attachShellRuntime: { [weak browserManager] in
-                guard let browserManager else { return }
-                BrowserCompositionRoot.attachShellRuntime(to: browserManager)
-            },
+            tabStructureEventBus: browserManager.tabManager.tabStructureEventBus,
             attachRuntimeWiring: { [weak browserManager] in
                 guard let browserManager else { return AnyCancellable {} }
                 return BrowserManagerRuntimeWiring.attach(to: browserManager)

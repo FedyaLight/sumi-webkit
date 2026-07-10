@@ -45,6 +45,18 @@ public struct Navigator {
             .expectedNavigation(with: expectedNavigationType, distributedNavigationDelegate: distributedNavigationDelegate)
     }
 
+    /// Associates a browser-owned WKNavigation with the exact logical
+    /// Navigation object that will later be delivered to responders.
+    public func expect(
+        _ navigation: WKNavigation,
+        as expectedNavigationType: NavigationType? = nil
+    ) -> ExpectedNavigation {
+        navigation.expectedNavigation(
+            with: expectedNavigationType,
+            distributedNavigationDelegate: distributedNavigationDelegate
+        )
+    }
+
 }
 
 @MainActor
@@ -54,6 +66,17 @@ public final class ExpectedNavigation {
 
     internal init(navigation: Navigation) {
         self.navigation = navigation
+    }
+
+    public var stableIdentifier: ObjectIdentifier {
+        ObjectIdentifier(navigation)
+    }
+
+    /// Exact object lifetime paired with `stableIdentifier`. Clients that
+    /// retain only an ObjectIdentifier cannot distinguish a late callback from
+    /// address reuse after the original Navigation is deallocated.
+    public var identityLifetime: AnyObject {
+        navigation
     }
 
     public var navigationResponders: ResponderChain {

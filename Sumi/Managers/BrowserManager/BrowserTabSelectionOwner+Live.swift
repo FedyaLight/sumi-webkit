@@ -45,8 +45,22 @@ extension BrowserTabSelectionOwner {
             markTabAccessed: { [weak browserManager] tabId in
                 browserManager?.compositorManager.markTabAccessed(tabId)
             },
-            webViewCoordinator: { [weak browserManager] in
-                browserManager?.webViewCoordinator
+            ensureVisibleWebView: { [weak browserManager] tab, windowID in
+                guard let browserManager else {
+                    tab.loadWebViewIfNeeded()
+                    return
+                }
+                guard browserManager.webViewOwnershipQuery.webView(
+                    for: tab.id,
+                    in: windowID
+                ) == nil else {
+                    return
+                }
+                guard let ownershipService = browserManager.webViewOwnershipService else {
+                    tab.loadWebViewIfNeeded()
+                    return
+                }
+                _ = ownershipService.webView(for: tab, in: windowID)
             },
             handleNativeNowPlayingTabActivated: { [weak browserManager] tabId in
                 browserManager?.nativeNowPlayingController.handleTabActivated(tabId)
@@ -82,7 +96,7 @@ extension BrowserTabSelectionOwner {
                 browserManager?.tabManager.activeSelectionOwner.updateActiveTabState(tab)
             },
             persistWindowSession: { [weak browserManager] windowState in
-                browserManager?.windowSessionBundle.activationOwner.persistWindowSession(for: windowState)
+                browserManager?.windowSessionBundle.persistence.persist(windowState)
             },
             selectionTargetForSpaceActivation: { [weak browserManager] space, windowState in
                 browserManager?.windowSessionBundle.spaceStateOwner.selectionTargetForSpaceActivation(

@@ -171,13 +171,13 @@ extension BrowserAppCommandRouter.Dependencies {
                 )
             },
             persistWindowSession: { [weak browserManager] windowState in
-                browserManager?.windowSessionBundle.activationOwner.persistWindowSession(for: windowState)
+                browserManager?.windowSessionBundle.persistence.persist(windowState)
             },
             cleanupAllTabs: { [weak browserManager] in
                 browserManager?.shutdownCleanupOwner.cleanupAllTabs()
             },
             flushPendingWindowSessionPersistence: { [weak browserManager] in
-                browserManager?.windowSessionBundle.activationOwner.flushPendingWindowSessionPersistence()
+                browserManager?.windowSessionBundle.persistence.flush()
             },
             performAllWindowsClosedSiteDataCleanup: { [weak browserManager] in
                 guard let browserManager else { return }

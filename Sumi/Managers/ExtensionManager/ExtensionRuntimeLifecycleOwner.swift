@@ -9,7 +9,7 @@ import WebKit
 final class ExtensionRuntimeLifecycleOwner {
     struct Dependencies {
         let modelContext: ModelContext
-        let profileRuntimeOwner: ExtensionProfileRuntimeOwner
+        let profileRuntime: ExtensionProfileRuntime
         let browserConfiguration: BrowserConfiguration
         let runtime: @MainActor () -> ExtensionManagerRuntime
         let isExtensionSupportAvailable: @MainActor () -> Bool
@@ -55,7 +55,7 @@ final class ExtensionRuntimeLifecycleOwner {
         }
 
         let runtimeState = dependencies.runtimeState()
-        let runtimeInitialized = dependencies.profileRuntimeOwner.activateProfile(
+        let runtimeInitialized = dependencies.profileRuntime.activateProfile(
             profileId,
             hasExtensionDemand: dependencies.hasEnabledInstalledExtensions(),
             runtimeIsReadyOrLoading: runtimeState == .ready || runtimeState == .loading
@@ -206,7 +206,7 @@ final class ExtensionRuntimeLifecycleOwner {
     ) -> WKWebExtensionController {
         let profileId =
             dependencies.currentProfileId()
-            ?? dependencies.profileRuntimeOwner.currentProfile(in: dependencies.runtime())?.id
+            ?? dependencies.profileRuntime.currentProfile(in: dependencies.runtime())?.id
             ?? UUID()
         let controller = dependencies.ensureExtensionController(profileId)
         dependencies.trace(
@@ -279,7 +279,7 @@ extension ExtensionRuntimeLifecycleOwner.Dependencies {
     static func live(manager: ExtensionManager) -> Self {
         Self(
             modelContext: manager.context,
-            profileRuntimeOwner: manager.profileRuntimeOwner,
+            profileRuntime: manager.profileRuntime,
             browserConfiguration: manager.browserConfiguration,
             runtime: { [weak manager] in manager?.runtime ?? .inactive },
             isExtensionSupportAvailable: { [weak manager] in
@@ -288,24 +288,24 @@ extension ExtensionRuntimeLifecycleOwner.Dependencies {
             hasEnabledInstalledExtensions: { [weak manager] in
                 manager?.hasEnabledInstalledExtensions ?? false
             },
-            currentProfileId: { [weak manager] in manager?.currentProfileId },
+            currentProfileId: { [weak manager] in manager?.profileRuntime.currentProfileId },
             resolvedProfileId: { [weak manager] explicitProfileId in
                 manager?.resolvedProfileId(explicitProfileId: explicitProfileId)
             },
-            runtimeState: { [weak manager] in manager?.runtimeState ?? .idle },
-            setRuntimeState: { [weak manager] state in manager?.runtimeState = state },
+            runtimeState: { [weak manager] in manager?.runtimeSession.runtimeState ?? .idle },
+            setRuntimeState: { [weak manager] state in manager?.runtimeSession.runtimeState = state },
             setExtensionsLoaded: { [weak manager] loaded in
                 manager?.extensionsLoaded = loaded
             },
             setAllowsRuntimeWithoutEnabledExtensions: { [weak manager] allows in
-                manager?.allowsRuntimeWithoutEnabledExtensions = allows
+                manager?.runtimeSession.allowsRuntimeWithoutEnabledExtensions = allows
             },
             runtimeInitializationTask: { [weak manager] in
-                manager?.runtimeInitializationTask
+                manager?.runtimeSession.runtimeInitializationTask
             },
             cancelRuntimeInitializationTask: { [weak manager] in
-                manager?.runtimeInitializationTask?.cancel()
-                manager?.runtimeInitializationTask = nil
+                manager?.runtimeSession.runtimeInitializationTask?.cancel()
+                manager?.runtimeSession.runtimeInitializationTask = nil
             },
             ensureExtensionController: { [weak manager] profileId in
                 guard let manager else {
@@ -341,31 +341,31 @@ extension ExtensionRuntimeLifecycleOwner.Dependencies {
                 manager?.resetLoadedExtensionRuntimeStateForReload()
             },
             clearCachedWebExtensions: { [weak manager] in
-                manager?.cachedWebExtensionsByID.removeAll()
-                manager?.cachedWebExtensionRuntimeSourceKeysByID.removeAll()
+                manager?.runtimeSession.cachedWebExtensionsByID.removeAll()
+                manager?.runtimeSession.cachedWebExtensionRuntimeSourceKeysByID.removeAll()
             },
             clearLoadErrorsAndResidency: { [weak manager] in
-                manager?.lastExtensionLoadErrors.removeAll()
-                manager?.extensionRuntimeResidencyState.removeAll()
+                manager?.runtimeSession.lastExtensionLoadErrors.removeAll()
+                manager?.runtimeSession.extensionRuntimeResidencyState.removeAll()
             },
             countLoadedExtensionContexts: { [weak manager] in
                 manager?.countLoadedExtensionContexts() ?? 0
             },
             extensionLoadGeneration: { [weak manager] in
-                manager?.extensionLoadGeneration ?? 0
+                manager?.runtimeSession.extensionLoadGeneration ?? 0
             },
             installCapabilityOwner: manager.installCapabilityOwner,
             loadedExtensionManifests: { [weak manager] in
-                manager?.loadedExtensionManifests ?? [:]
+                manager?.runtimeSession.loadedExtensionManifests ?? [:]
             },
             controllersByProfile: { [weak manager] in
-                manager?.extensionControllersByProfile ?? [:]
+                manager?.profileRuntime.controllersByProfile ?? [:]
             },
-            extensionControllerDescription: { [weak manager] controller in
-                manager?.extensionRuntimeControllerDescription(controller) ?? "nil"
+            extensionControllerDescription: { controller in
+                ExtensionRuntimeDiagnostics.objectDescription(controller)
             },
             trace: { [weak manager] message in
-                manager?.extensionRuntimeTrace(message)
+                manager?.runtimeDiagnostics.trace(message)
             }
         )
     }
@@ -377,7 +377,15 @@ extension ExtensionRuntimeLifecycleOwner.Dependencies {
 @MainActor
 extension ExtensionManager {
     func attach(browserManager: BrowserManager) {
-        browserBridgeContext = browserManager.extensionBridgeBundle.adapter
+        let bridge = browserManager.extensionBridgeComposition
+        extensionWindowQuery = bridge.windows
+        extensionTabQuery = bridge.tabs
+        requestedTabTargetQuery = bridge.requestedTabTargets
+        extensionTabMutation = bridge.tabMutation
+        extensionWindowActivation = bridge.windowActivation
+        extensionWebViewHosting = bridge.webViews
+        extensionAuxiliaryWindows = bridge.auxiliaryWindows
+        extensionWindowPresentation = bridge.presentation
         runtime = BrowserExtensionManagerRuntimeFactory.runtime(for: browserManager)
 
         if runtime.activeWindowState() == nil,
@@ -386,10 +394,10 @@ extension ExtensionManager {
         }
 
         if let controller = extensionController {
-            extensionRuntimeTrace(
-                "attach browserManager controller=\(extensionRuntimeControllerDescription(controller)) windows=\(runtime.allWindowStates().count) tabs=\(runtime.allTabs().count)"
+            runtimeDiagnostics.trace(
+                "attach browserManager controller=\(ExtensionRuntimeDiagnostics.objectDescription(controller)) windows=\(runtime.allWindowStates().count) tabs=\(runtime.allTabs().count)"
             )
-            if let profileId = currentProfileId {
+            if let profileId = profileRuntime.currentProfileId {
                 updateWebViewsForProfile(profileId)
             }
             registerExistingWindowStateIfAttached()
@@ -397,7 +405,7 @@ extension ExtensionManager {
     }
 
     var hasEnabledInstalledExtensions: Bool {
-        installedExtensions.contains { $0.isEnabled }
+        installedExtensionCollection.records.contains { $0.isEnabled }
     }
 
     func switchProfile(_ profile: Profile) {

@@ -39,7 +39,7 @@ final class SafariExtensionScriptingRuntimeTests: XCTestCase {
             manager: manager,
             scratchDirectory: makeScratchDirectory()
         )
-        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
+        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
         let extensionContext = try XCTUnwrap(
             manager.getExtensionContext(for: installed.id, profileId: profile.id)
         )
@@ -394,7 +394,7 @@ final class SafariExtensionScriptingRuntimeTests: XCTestCase {
             existingEntity: nil
         )
         try manager.persist(record: record)
-        _ = manager.installationFlowOwner.loadInstalledExtensionMetadata()
+        _ = manager.installedExtensionCatalog.load()
         return record
     }
 

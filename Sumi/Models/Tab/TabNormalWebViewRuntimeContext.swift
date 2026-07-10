@@ -79,19 +79,22 @@ struct TabNormalWebViewRuntimeContext {
     let parkedWebView: () -> WKWebView?
     let profileId: () -> UUID?
     let resolveProfile: () -> Profile?
-    let deferWebViewUntilProfileAvailable: () -> Void
+    let deferWebViewUntilProfileAvailable: () -> Bool
     let beginSuspendedRestoreIfNeeded: () -> Void
     let finishSuspendedRestoreIfNeeded: () -> Void
-    let setupWebView: () -> Void
+    let setupWebView: @MainActor @Sendable () -> Void
+    let deferWebsiteDataMutationWebViewMaterialization: (
+        @MainActor @Sendable @escaping () -> Void
+    ) -> Bool
     let adoptParkedWebViewAsCurrent: (WKWebView) -> Void
     let clearParkedExistingWebView: () -> Void
+    let retireParkedWebView: (WKWebView, String) -> Bool
     let replaceUntrackedWebView: (WKWebView) -> Void
-    let assignPrimaryWebView: (WKWebView, UUID) -> Void
     let cleanupCloneWebView: (WKWebView) -> Void
     let configurationContext: () -> TabWebViewConfigurationContext
     let configurationRuntime: TabNormalWebViewConfigurationRuntime
     let preparationRuntime: TabNormalWebViewPreparationRuntime
-    let normalTabUserScriptsProvider: (URL?) -> SumiNormalTabUserScripts
+    let normalTabUserScriptsProvider: (URL?, UUID?) -> SumiNormalTabUserScripts
     let replaceNormalTabUserScripts: (WKUserContentController, URL?) async -> Void
     let loadMainFrameRequest: (WKWebView, URLRequest) -> Void
     let applyCachedFaviconOrPlaceholder: (URL) -> Void
@@ -100,8 +103,7 @@ struct TabNormalWebViewRuntimeContext {
         WKWebView?,
         URL,
         UUID?,
-        String,
-        NormalTabInitialDocumentRuntimeHandoff.TabSetupRegistrationGuard
+        String
     ) -> Void
 
     var hasCurrentWebView: Bool {

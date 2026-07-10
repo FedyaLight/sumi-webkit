@@ -31,7 +31,7 @@ class SafariExtensionWebViewControllerWiringTestCase: XCTestCase {
             extensionsModule: extensionsModule,
             profile: profile
         )
-        browserManager.webViewCoordinator = WebViewCoordinator()
+        browserManager.bindTestWebViewCoordinator()
         return browserManager
     }
 
@@ -60,6 +60,12 @@ class SafariExtensionWebViewControllerWiringTestCase: XCTestCase {
         return tab
     }
 
+    func makeTab(profileId: UUID, url: URL, browserManager: BrowserManager) -> Tab {
+        let tab = browserManager.tabManager.tabFactory.makeTab(url: url, name: "Test")
+        tab.profileId = profileId
+        return tab
+    }
+
     func makeLoadedExtensionContext(
         manager: ExtensionManager,
         profile: Profile
@@ -70,7 +76,7 @@ class SafariExtensionWebViewControllerWiringTestCase: XCTestCase {
             scratchDirectory: scratchDirectory,
             name: "ContextProbeExtension"
         )
-        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
+        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
         let context = try await manager.ensureExtensionLoaded(
             extensionId: installed.id,
             profileId: profile.id
@@ -173,7 +179,7 @@ class SafariExtensionWebViewControllerWiringTestCase: XCTestCase {
         try Data("<!doctype html><title>overlay</title>".utf8)
             .write(to: directoryURL.appendingPathComponent("overlay.html"), options: [.atomic])
 
-        return try await manager.installationFlowOwner.performInstallation(
+        return try await manager.extensionInstaller.install(
             from: directoryURL,
             enableOnInstall: false
         )
@@ -213,7 +219,7 @@ class SafariExtensionWebViewControllerWiringTestCase: XCTestCase {
         try Data("globalThis.__sumiBackgroundProbe = true;".utf8)
             .write(to: directoryURL.appendingPathComponent("background.js"), options: [.atomic])
 
-        return try await manager.installationFlowOwner.performInstallation(
+        return try await manager.extensionInstaller.install(
             from: directoryURL,
             enableOnInstall: false
         )
@@ -254,7 +260,7 @@ class SafariExtensionWebViewControllerWiringTestCase: XCTestCase {
         try Data("globalThis.__sumiNativeMessagingBackgroundProbe = true;".utf8)
             .write(to: directoryURL.appendingPathComponent("background.js"), options: [.atomic])
 
-        return try await manager.installationFlowOwner.performInstallation(
+        return try await manager.extensionInstaller.install(
             from: directoryURL,
             enableOnInstall: false
         )
@@ -314,7 +320,7 @@ class SafariExtensionWebViewControllerWiringTestCase: XCTestCase {
         )
             .write(to: directoryURL.appendingPathComponent("popup.js"), options: [.atomic])
 
-        return try await manager.installationFlowOwner.performInstallation(
+        return try await manager.extensionInstaller.install(
             from: directoryURL,
             enableOnInstall: false
         )

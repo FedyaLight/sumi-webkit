@@ -1,9 +1,15 @@
 import Foundation
 import SumiDomain
+import SumiWebRuntime
 import WebKit
 
 @MainActor
 final class TabPermissionSurfaceOwner {
+    private struct ExactPermissionDocument {
+        let lease: TabMainFrameDocumentLease
+        let committedURL: URL
+    }
+
     struct Context {
         let tabId: UUID
         let currentURL: @MainActor () -> URL
@@ -11,7 +17,7 @@ final class TabPermissionSurfaceOwner {
         let isActiveTab: @MainActor () -> Bool
         let isVisibleTab: @MainActor () -> Bool
         let pageIdentity: @MainActor () -> TabExtensionPageIdentity
-        let committedMainDocumentURL: @MainActor () -> URL?
+        let documentLease: @MainActor (WKWebView) -> TabMainFrameDocumentLease?
         let isCurrentPage: @MainActor (_ pageId: String, _ pageGeneration: String) -> Bool
         let invalidatePageForWebViewReplacement: @MainActor () -> Void
         let handlePermissionLifecycleEvent: @MainActor (SumiPermissionLifecycleEvent) -> Void
@@ -59,10 +65,13 @@ final class TabPermissionSurfaceOwner {
     }
 
     func popupContext(for webView: WKWebView) -> SumiPopupPermissionTabContext? {
-        guard let profile = context.resolveProfile() else { return nil }
+        guard let profile = context.resolveProfile(),
+              let document = exactPermissionDocument(for: webView) else {
+            return nil
+        }
 
         let identity = pageIdentity()
-        let committedURL = committedExtensionRuntimeMainDocumentURL()
+        let committedURL = document.committedURL
         let currentURL = context.currentURL()
         return SumiPopupPermissionTabContext(
             tabId: identity.tabId,
@@ -72,18 +81,27 @@ final class TabPermissionSurfaceOwner {
             isEphemeralProfile: profile.isEphemeral,
             committedURL: committedURL,
             visibleURL: webView.url ?? currentURL,
-            mainFrameURL: committedURL ?? webView.url ?? currentURL,
+            mainFrameURL: committedURL,
             isActiveTab: context.isActiveTab(),
             isVisibleTab: context.isVisibleTab(),
-            navigationOrPageGeneration: identity.pageGeneration
+            navigationOrPageGeneration: identity.pageGeneration,
+            isCurrentPage: isCurrentPageClosure(
+                pageId: identity.pageId,
+                pageGeneration: identity.pageGeneration,
+                webView: webView,
+                documentLease: document.lease
+            )
         )
     }
 
     func externalSchemeContext(for webView: WKWebView) -> SumiExternalSchemePermissionTabContext? {
-        guard let profile = context.resolveProfile() else { return nil }
+        guard let profile = context.resolveProfile(),
+              let document = exactPermissionDocument(for: webView) else {
+            return nil
+        }
 
         let identity = pageIdentity()
-        let committedURL = committedExtensionRuntimeMainDocumentURL()
+        let committedURL = document.committedURL
         let currentURL = context.currentURL()
         return SumiExternalSchemePermissionTabContext(
             tabId: identity.tabId,
@@ -93,22 +111,27 @@ final class TabPermissionSurfaceOwner {
             isEphemeralProfile: profile.isEphemeral,
             committedURL: committedURL,
             visibleURL: webView.url ?? currentURL,
-            mainFrameURL: committedURL ?? webView.url ?? currentURL,
+            mainFrameURL: committedURL,
             isActiveTab: context.isActiveTab(),
             isVisibleTab: context.isVisibleTab(),
             navigationOrPageGeneration: identity.pageGeneration,
             isCurrentPage: isCurrentPageClosure(
                 pageId: identity.pageId,
-                pageGeneration: identity.pageGeneration
+                pageGeneration: identity.pageGeneration,
+                webView: webView,
+                documentLease: document.lease
             )
         )
     }
 
     func geolocationContext(for webView: WKWebView) -> SumiWebKitGeolocationTabContext? {
-        guard let profile = context.resolveProfile() else { return nil }
+        guard let profile = context.resolveProfile(),
+              let document = exactPermissionDocument(for: webView) else {
+            return nil
+        }
 
         let identity = pageIdentity()
-        let committedURL = committedExtensionRuntimeMainDocumentURL()
+        let committedURL = document.committedURL
         let surfaceState = surfaceState(for: webView)
         let currentURL = context.currentURL()
         return SumiWebKitGeolocationTabContext(
@@ -119,25 +142,27 @@ final class TabPermissionSurfaceOwner {
             isEphemeralProfile: profile.isEphemeral,
             committedURL: committedURL,
             visibleURL: webView.url ?? currentURL,
-            mainFrameURL: committedURL ?? webView.url ?? currentURL,
+            mainFrameURL: committedURL,
             isActiveTab: surfaceState.isActive,
             isVisibleTab: surfaceState.isVisible,
             navigationOrPageGeneration: identity.pageGeneration,
             isCurrentPage: isCurrentPageClosure(
                 pageId: identity.pageId,
-                pageGeneration: identity.pageGeneration
+                pageGeneration: identity.pageGeneration,
+                webView: webView,
+                documentLease: document.lease
             )
         )
     }
 
-    func mediaCaptureContext(
-        for webView: WKWebView,
-        fallbackMainFrameURL: URL? = nil
-    ) -> SumiWebKitMediaCaptureTabContext? {
-        guard let profile = context.resolveProfile() else { return nil }
+    func mediaCaptureContext(for webView: WKWebView) -> SumiWebKitMediaCaptureTabContext? {
+        guard let profile = context.resolveProfile(),
+              let document = exactPermissionDocument(for: webView) else {
+            return nil
+        }
 
         let identity = pageIdentity()
-        let committedURL = committedExtensionRuntimeMainDocumentURL()
+        let committedURL = document.committedURL
         let surfaceState = surfaceState(for: webView)
         let currentURL = context.currentURL()
         return SumiWebKitMediaCaptureTabContext(
@@ -148,22 +173,27 @@ final class TabPermissionSurfaceOwner {
             isEphemeralProfile: profile.isEphemeral,
             committedURL: committedURL,
             visibleURL: webView.url ?? currentURL,
-            mainFrameURL: committedURL ?? fallbackMainFrameURL ?? webView.url ?? currentURL,
+            mainFrameURL: committedURL,
             isActiveTab: surfaceState.isActive,
             isVisibleTab: surfaceState.isVisible,
             navigationOrPageGeneration: identity.pageGeneration,
             isCurrentPage: isCurrentPageClosure(
                 pageId: identity.pageId,
-                pageGeneration: identity.pageGeneration
+                pageGeneration: identity.pageGeneration,
+                webView: webView,
+                documentLease: document.lease
             )
         )
     }
 
     func filePickerContext(for webView: WKWebView) -> SumiFilePickerPermissionTabContext? {
-        guard let profile = context.resolveProfile() else { return nil }
+        guard let profile = context.resolveProfile(),
+              let document = exactPermissionDocument(for: webView) else {
+            return nil
+        }
 
         let identity = pageIdentity()
-        let committedURL = committedExtensionRuntimeMainDocumentURL()
+        let committedURL = document.committedURL
         let surfaceState = surfaceState(for: webView)
         let currentURL = context.currentURL()
         return SumiFilePickerPermissionTabContext(
@@ -174,18 +204,27 @@ final class TabPermissionSurfaceOwner {
             isEphemeralProfile: profile.isEphemeral,
             committedURL: committedURL,
             visibleURL: webView.url ?? currentURL,
-            mainFrameURL: committedURL ?? webView.url ?? currentURL,
+            mainFrameURL: committedURL,
             isActiveTab: surfaceState.isActive,
             isVisibleTab: surfaceState.isVisible,
-            navigationOrPageGeneration: identity.pageGeneration
+            navigationOrPageGeneration: identity.pageGeneration,
+            isCurrentPage: isCurrentPageClosure(
+                pageId: identity.pageId,
+                pageGeneration: identity.pageGeneration,
+                webView: webView,
+                documentLease: document.lease
+            )
         )
     }
 
     func storageAccessContext(for webView: WKWebView) -> SumiStorageAccessTabContext? {
-        guard let profile = context.resolveProfile() else { return nil }
+        guard let profile = context.resolveProfile(),
+              let document = exactPermissionDocument(for: webView) else {
+            return nil
+        }
 
         let identity = pageIdentity()
-        let committedURL = committedExtensionRuntimeMainDocumentURL()
+        let committedURL = document.committedURL
         let surfaceState = surfaceState(for: webView)
         let currentURL = context.currentURL()
         return SumiStorageAccessTabContext(
@@ -196,13 +235,15 @@ final class TabPermissionSurfaceOwner {
             isEphemeralProfile: profile.isEphemeral,
             committedURL: committedURL,
             visibleURL: webView.url ?? currentURL,
-            mainFrameURL: committedURL ?? webView.url ?? currentURL,
+            mainFrameURL: committedURL,
             isActiveTab: surfaceState.isActive,
             isVisibleTab: surfaceState.isVisible,
             navigationOrPageGeneration: identity.pageGeneration,
             isCurrentPage: isCurrentPageClosure(
                 pageId: identity.pageId,
-                pageGeneration: identity.pageGeneration
+                pageGeneration: identity.pageGeneration,
+                webView: webView,
+                documentLease: document.lease
             )
         )
     }
@@ -256,17 +297,43 @@ final class TabPermissionSurfaceOwner {
         context.pageIdentity()
     }
 
-    private func committedExtensionRuntimeMainDocumentURL() -> URL? {
-        context.committedMainDocumentURL()
+    private func exactPermissionDocument(
+        for webView: WKWebView
+    ) -> ExactPermissionDocument? {
+        guard let callbackCommittedURL = webView.committedURL,
+              let lease = context.documentLease(webView),
+              lease.webViewID == ObjectIdentifier(webView),
+              WebRuntimeNavigationIdentity.matches(
+                  callbackCommittedURL,
+                  lease.committedURL
+              ) else {
+            return nil
+        }
+        return ExactPermissionDocument(
+            lease: lease,
+            committedURL: callbackCommittedURL
+        )
     }
 
     private func isCurrentPageClosure(
         pageId: String,
-        pageGeneration: String
+        pageGeneration: String,
+        webView: WKWebView,
+        documentLease: TabMainFrameDocumentLease
     ) -> @MainActor @Sendable () -> Bool {
         let isCurrentPage = context.isCurrentPage
-        return {
-            isCurrentPage(pageId, pageGeneration)
+        let currentDocumentLease = context.documentLease
+        return { [weak webView] in
+            guard let webView,
+                  currentDocumentLease(webView) == documentLease,
+                  let committedURL = webView.committedURL,
+                  WebRuntimeNavigationIdentity.matches(
+                      committedURL,
+                      documentLease.committedURL
+                  ) else {
+                return false
+            }
+            return isCurrentPage(pageId, pageGeneration)
         }
     }
 }
@@ -294,8 +361,8 @@ extension TabPermissionSurfaceOwner.Context {
                 tab?.extensionPageRuntimeOwner.pageIdentity(tabId: tabId)
                     ?? fallbackPageIdentity(tabId: tabId)
             },
-            committedMainDocumentURL: { [weak tab] in
-                tab?.extensionPageRuntimeOwner.committedMainDocumentURLForCurrentPage()
+            documentLease: { [weak tab] webView in
+                tab?.mainFrameDocumentLease(for: webView)
             },
             isCurrentPage: { [weak tab] pageId, pageGeneration in
                 guard let tab else { return false }

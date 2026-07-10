@@ -38,6 +38,7 @@ final class ShortcutLiveTabOwner {
         let activeShortcutTab: @MainActor (UUID) -> Tab?
         let resolvedLiveSpaceId: @MainActor (ShortcutPin, UUID?) -> UUID?
         let resolvedExecutionProfileId: @MainActor (ShortcutPin, UUID?) -> UUID?
+        let prepareForSpaceTransition: @MainActor (Tab, UUID?, UUID?) -> Void
         let assignProfile: @MainActor (UUID?, Tab) -> Void
         let attach: @MainActor (Tab) -> Void
         let detach: @MainActor (Tab) -> Void
@@ -46,9 +47,7 @@ final class ShortcutLiveTabOwner {
         let removeFromCurrentContainer: @MainActor (Tab) -> Void
         let insertRegularTab: @MainActor (Tab, UUID, Int?) -> Void
         let notifications: @MainActor () -> (any BrowserNotificationPresenting)?
-        let faviconService: @MainActor () -> any BrowserFaviconServicing
-        let faviconImageService: @MainActor () -> any BrowserFaviconImageServicing
-        let visitedLinkStore: @MainActor () -> any BrowserVisitedLinkStoreManaging
+        let tabFactory: TabFactory
     }
 
     private let dependencies: Dependencies
@@ -76,8 +75,12 @@ final class ShortcutLiveTabOwner {
         tab.isSpacePinned = false
         tab.bindToShortcutPin(pin)
         let currentSpaceId = dependencies.runtimePorts()?.windowState(for: windowId)?.currentSpaceId
-        tab.spaceId = dependencies.resolvedLiveSpaceId(pin, currentSpaceId)
+        let targetSpaceID = dependencies.resolvedLiveSpaceId(pin, currentSpaceId)
+        let targetProfileID = dependencies.resolvedExecutionProfileId(pin, currentSpaceId)
+        dependencies.prepareForSpaceTransition(tab, targetSpaceID, targetProfileID)
+        tab.spaceId = targetSpaceID
         tab.folderId = pin.folderId
+        dependencies.assignProfile(targetProfileID, tab)
         dependencies.updateTransientShortcutTabsByWindow { liveTabsByWindow in
             var liveTabs = liveTabsByWindow[windowId] ?? [:]
             liveTabs[pin.id] = tab
@@ -163,12 +166,15 @@ final class ShortcutLiveTabOwner {
 
         tab.bindToShortcutPin(insertedPin)
         let currentSpaceId = dependencies.runtimePorts()?.windowState(for: windowId)?.currentSpaceId
-        tab.spaceId = dependencies.resolvedLiveSpaceId(insertedPin, currentSpaceId)
-        tab.folderId = nil
-        dependencies.assignProfile(
-            dependencies.resolvedExecutionProfileId(insertedPin, currentSpaceId),
-            tab
+        let targetSpaceID = dependencies.resolvedLiveSpaceId(insertedPin, currentSpaceId)
+        let targetProfileID = dependencies.resolvedExecutionProfileId(
+            insertedPin,
+            currentSpaceId
         )
+        dependencies.prepareForSpaceTransition(tab, targetSpaceID, targetProfileID)
+        tab.spaceId = targetSpaceID
+        tab.folderId = nil
+        dependencies.assignProfile(targetProfileID, tab)
 
         if let windowState = dependencies.runtimePorts()?.windowState(for: windowId),
            windowState.currentShortcutPinId == sourcePin.id {
@@ -183,12 +189,22 @@ final class ShortcutLiveTabOwner {
             if let tab = tabsByPin[pin.id] {
                 tab.bindToShortcutPin(pin)
                 let windowCurrentSpaceId = dependencies.runtimePorts()?.windowState(for: windowId)?.currentSpaceId
-                tab.spaceId = dependencies.resolvedLiveSpaceId(pin, windowCurrentSpaceId)
-                tab.folderId = pin.folderId
-                dependencies.assignProfile(
-                    dependencies.resolvedExecutionProfileId(pin, windowCurrentSpaceId),
-                    tab
+                let targetSpaceID = dependencies.resolvedLiveSpaceId(
+                    pin,
+                    windowCurrentSpaceId
                 )
+                let targetProfileID = dependencies.resolvedExecutionProfileId(
+                    pin,
+                    windowCurrentSpaceId
+                )
+                dependencies.prepareForSpaceTransition(
+                    tab,
+                    targetSpaceID,
+                    targetProfileID
+                )
+                tab.spaceId = targetSpaceID
+                tab.folderId = pin.folderId
+                dependencies.assignProfile(targetProfileID, tab)
                 if let windowState = dependencies.runtimePorts()?.windowState(for: windowId) {
                     if windowState.currentShortcutPinId == pin.id {
                         windowState.currentShortcutPinRole = pin.role
@@ -213,26 +229,30 @@ final class ShortcutLiveTabOwner {
         let currentLiveTabsByWindow = dependencies.transientShortcutTabsByWindow()
         if let existing = currentLiveTabsByWindow[windowId]?[pin.id] {
             existing.bindToShortcutPin(pin)
-            existing.spaceId = dependencies.resolvedLiveSpaceId(pin, currentSpaceId)
-            existing.folderId = pin.folderId
-            dependencies.assignProfile(
-                dependencies.resolvedExecutionProfileId(pin, currentSpaceId),
-                existing
+            let targetSpaceID = dependencies.resolvedLiveSpaceId(pin, currentSpaceId)
+            let targetProfileID = dependencies.resolvedExecutionProfileId(
+                pin,
+                currentSpaceId
             )
+            dependencies.prepareForSpaceTransition(
+                existing,
+                targetSpaceID,
+                targetProfileID
+            )
+            existing.spaceId = targetSpaceID
+            existing.folderId = pin.folderId
+            dependencies.assignProfile(targetProfileID, existing)
             dependencies.attach(existing)
             return existing
         }
 
         let resolvedSpaceId = dependencies.resolvedLiveSpaceId(pin, currentSpaceId)
-        let tab = Tab(
+        let tab = dependencies.tabFactory.makeTab(
             url: pin.launchURL,
             name: pin.title,
             favicon: SumiPersistentGlyph.launcherSystemImageFallback,
             spaceId: resolvedSpaceId,
-            index: 0,
-            faviconService: dependencies.faviconService(),
-            faviconImageService: dependencies.faviconImageService(),
-            visitedLinkStore: dependencies.visitedLinkStore()
+            index: 0
         )
         tab.bindToShortcutPin(pin)
         tab.profileId = dependencies.resolvedExecutionProfileId(pin, currentSpaceId)
@@ -354,7 +374,6 @@ final class ShortcutLiveTabOwner {
             }
             dependencies.notifyTransientShortcutStateChanged()
             existingLiveTab.clearShortcutBinding()
-            existingLiveTab.spaceId = targetSpaceId
             existingLiveTab.folderId = nil
             existingLiveTab.isPinned = false
             existingLiveTab.isSpacePinned = false
@@ -370,15 +389,12 @@ final class ShortcutLiveTabOwner {
             return existingLiveTab
         }
 
-        let tab = Tab(
+        let tab = dependencies.tabFactory.makeTab(
             url: pin.launchURL,
             name: pin.title,
             favicon: SumiPersistentGlyph.launcherSystemImageFallback,
             spaceId: targetSpaceId,
-            index: 0,
-            faviconService: dependencies.faviconService(),
-            faviconImageService: dependencies.faviconImageService(),
-            visitedLinkStore: dependencies.visitedLinkStore()
+            index: 0
         )
         _ = tab.applyCachedFaviconOrPlaceholder(for: pin.launchURL)
         dependencies.attach(tab)
@@ -519,8 +535,19 @@ extension ShortcutLiveTabOwner.Dependencies {
             resolvedExecutionProfileId: { [weak tabManager] pin, currentSpaceId in
                 tabManager?.shortcutPinRuntimeResolutionOwner.resolvedExecutionProfileId(for: pin, currentSpaceId: currentSpaceId)
             },
+            prepareForSpaceTransition: {
+                [weak tabManager]
+                tab,
+                targetSpaceID,
+                targetProfileID in
+                _ = tabManager?.profileAssignments.tabs.prepareForSpaceTransition(
+                    tab: tab,
+                    targetSpaceID: targetSpaceID,
+                    desiredProfileID: targetProfileID
+                )
+            },
             assignProfile: { [weak tabManager] profileId, tab in
-                tabManager?.profileAssignmentOwner.assignProfile(profileId, to: tab)
+                tabManager?.profileAssignments.tabs.assignProfile(profileId, to: tab)
             },
             attach: { [weak tabManager] tab in
                 tabManager?.tabCollectionMembershipOwner.attach(tab)
@@ -543,18 +570,7 @@ extension ShortcutLiveTabOwner.Dependencies {
             notifications: { [weak tabManager] in
                 tabManager?.runtimePorts?.notifications()
             },
-            faviconService: { [weak tabManager] in
-                guard let tabManager else { preconditionFailure("TabManager dependency used after deallocation") }
-                return tabManager.faviconService
-            },
-            faviconImageService: { [weak tabManager] in
-                guard let tabManager else { preconditionFailure("TabManager dependency used after deallocation") }
-                return tabManager.faviconImageService
-            },
-            visitedLinkStore: { [weak tabManager] in
-                guard let tabManager else { preconditionFailure("TabManager dependency used after deallocation") }
-                return tabManager.visitedLinkStore
-            }
+            tabFactory: tabManager.tabFactory
         )
     }
 }

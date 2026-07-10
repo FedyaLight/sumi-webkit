@@ -51,6 +51,10 @@ final class TabWebViewCleanupOwnerTests: XCTestCase {
             removeNavigationDelegateBundle: { candidateWebView in
                 XCTAssertIdentical(candidateWebView, webView)
                 events.append(.removeNavigationDelegateBundle)
+            },
+            webViewDidLeaveRuntime: { candidateWebView in
+                XCTAssertIdentical(candidateWebView, webView)
+                events.append(.leaveNavigationRuntime)
             }
         )
 
@@ -71,8 +75,9 @@ final class TabWebViewCleanupOwnerTests: XCTestCase {
         XCTAssertEqual(
             events,
             [
-                .permissionEvent,
                 .protectedCleanupCheck,
+                .permissionEvent,
+                .leaveNavigationRuntime,
                 .cleanupUserScripts(tabId),
                 .unbindAudio,
                 .removeNavigationStateObservers,
@@ -112,12 +117,15 @@ final class TabWebViewCleanupOwnerTests: XCTestCase {
             },
             removeNavigationDelegateBundle: { _ in
                 XCTFail("Deferred cleanup must not remove delegate bundle")
+            },
+            webViewDidLeaveRuntime: { _ in
+                XCTFail("Deferred cleanup must not leave navigation runtime")
             }
         )
 
         TabWebViewCleanupOwner.cleanupWebView(webView, context: context)
 
-        XCTAssertEqual(events, [.permissionEvent, .protectedCleanupCheck])
+        XCTAssertEqual(events, [.protectedCleanupCheck])
     }
 
     private func makeContext(
@@ -132,7 +140,8 @@ final class TabWebViewCleanupOwnerTests: XCTestCase {
         profilePartitionId: @escaping () -> String? = { nil },
         unbindAudioState: @escaping (WKWebView) -> Void = { _ in /* No-op. */ },
         removeNavigationStateObservers: @escaping (WKWebView) -> Void = { _ in /* No-op. */ },
-        removeNavigationDelegateBundle: @escaping (WKWebView) -> Void = { _ in /* No-op. */ }
+        removeNavigationDelegateBundle: @escaping (WKWebView) -> Void = { _ in /* No-op. */ },
+        webViewDidLeaveRuntime: @escaping (WKWebView) -> Void = { _ in /* No-op. */ }
     ) -> TabWebViewCleanupOwner.Context {
         TabWebViewCleanupOwner.Context(
             tabId: tabId,
@@ -141,15 +150,16 @@ final class TabWebViewCleanupOwnerTests: XCTestCase {
             deferProtectedWebViewCleanup: deferProtectedWebViewCleanup,
             shutdownRuntime: shutdownRuntime,
             notifyNowPlayingTabUnloaded: { _ in /* No-op. */ },
-            currentWebView: { nil },
-            clearCurrentWebView: { /* No-op. */ },
-            removeAllWebViews: { _ in false },
+            remainingOwnedWebViews: { [] },
+            clearDetachedWebViews: { /* No-op. */ },
+            removeAllWebViews: { _ in .none },
             currentPermissionPageId: currentPermissionPageId,
             profilePartitionId: profilePartitionId,
             invalidatePermissionPageForReplacement: { _ in /* No-op. */ },
             unbindAudioState: unbindAudioState,
             removeNavigationStateObservers: removeNavigationStateObservers,
             removeNavigationDelegateBundle: removeNavigationDelegateBundle,
+            webViewDidLeaveRuntime: webViewDidLeaveRuntime,
             resetPlaybackActivity: { /* No-op. */ },
             setLoadingIdle: { /* No-op. */ }
         )
@@ -159,6 +169,7 @@ final class TabWebViewCleanupOwnerTests: XCTestCase {
 private enum Event: Equatable {
     case permissionEvent
     case protectedCleanupCheck
+    case leaveNavigationRuntime
     case cleanupUserScripts(UUID)
     case unbindAudio
     case removeNavigationStateObservers

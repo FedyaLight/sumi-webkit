@@ -1,4 +1,3 @@
-import SumiChromeTokens
 import SwiftUI
 
 enum SidebarChromeMetrics {

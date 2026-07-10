@@ -376,7 +376,7 @@ final class SumiImportExportTests: XCTestCase {
             sourceSpaceId: spaceId
         )
 
-        let normalized = SumiImportApplier.normalizedSidebarContainerIndices(
+        let normalized = SumiImportDataNormalizer.normalizedSidebarContainerIndices(
             folders: [childFolder],
             pinnedLaunchers: [firstPin, secondPin]
         )

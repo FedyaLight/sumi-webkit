@@ -124,7 +124,8 @@ enum BrowserUserscriptRuntimeFactory {
     ) -> SourceContext? {
         guard let sourceWebView else { return nil }
 
-        if let auxiliarySession = browserManager.auxiliaryWindowManager.session(for: sourceWebView) {
+        if let auxiliarySession = browserManager.auxiliaryWindows.sessions
+            .session(for: sourceWebView) {
             let openerWindowState = auxiliarySession.openerWindow.flatMap {
                 browserManager.windowRegistry?.windowState(containing: $0)
             }

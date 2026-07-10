@@ -122,7 +122,7 @@ final class TabWebKitPermissionUIDelegateOwner {
         )
         guard !permissionTypes.isEmpty,
               let permissionBridges = tab.navigationRuntime.permissionRuntime.permissionBridges(),
-              let tabContext = mediaCaptureTabContext(for: webView, fallbackMainFrameURL: mainFrameURL)
+              let tabContext = mediaCaptureTabContext(for: webView)
         else {
             RuntimeDiagnostics.emit(
                 "🔐 [Tab] Denying legacy media capture because browser/profile context is unavailable or devices are unsupported."
@@ -275,13 +275,9 @@ final class TabWebKitPermissionUIDelegateOwner {
     }
 
     private func mediaCaptureTabContext(
-        for webView: WKWebView,
-        fallbackMainFrameURL: URL? = nil
+        for webView: WKWebView
     ) -> SumiWebKitMediaCaptureTabContext? {
-        tab.permissionSurfaceOwner.mediaCaptureContext(
-            for: webView,
-            fallbackMainFrameURL: fallbackMainFrameURL
-        )
+        tab.permissionSurfaceOwner.mediaCaptureContext(for: webView)
     }
 
     private func filePickerPermissionTabContext(

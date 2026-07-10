@@ -5,6 +5,7 @@ import WebKit
 final class SumiSiteDataPolicyEnforcementService {
     private let policyStore: SumiSiteDataPolicyStore
     private let cleanupService: any SumiWebsiteDataCleanupServicing
+    var destructiveCleanupPreparer: (any SumiDestructiveBrowsingDataCleanupPreparing)?
 
     init(
         policyStore: SumiSiteDataPolicyStore,
@@ -17,10 +18,18 @@ final class SumiSiteDataPolicyEnforcementService {
     func replacingCleanupService(
         _ cleanupService: any SumiWebsiteDataCleanupServicing
     ) -> SumiSiteDataPolicyEnforcementService {
-        SumiSiteDataPolicyEnforcementService(
+        let replacement = SumiSiteDataPolicyEnforcementService(
             policyStore: policyStore,
             cleanupService: cleanupService
         )
+        replacement.destructiveCleanupPreparer = destructiveCleanupPreparer
+        return replacement
+    }
+
+    func attachDestructiveCleanupPreparer(
+        _ preparer: (any SumiDestructiveBrowsingDataCleanupPreparing)?
+    ) {
+        destructiveCleanupPreparer = preparer
     }
 
     func setBlockStorage(
@@ -83,12 +92,18 @@ final class SumiSiteDataPolicyEnforcementService {
     }
 
     private func removeAllData(forHost host: String, profile: Profile) async {
-        await cleanupService.removeWebsiteDataForExactHost(
-            host,
-            ofTypes: WKWebsiteDataStore.sumiManualFullCleanupDataTypes,
-            includingCookies: true,
-            in: profile.dataStore
-        )
+        guard let destructiveCleanupPreparer else { return }
+        let didRemove = await destructiveCleanupPreparer.performDestructiveDataCleanup(
+            profileIDs: [profile.id]
+        ) {
+            await self.cleanupService.removeWebsiteDataForExactHost(
+                host,
+                ofTypes: WKWebsiteDataStore.sumiManualFullCleanupDataTypes,
+                includingCookies: true,
+                in: profile.dataStore
+            )
+        }
+        guard didRemove else { return }
         await profile.refreshDataStoreStats(cleanupService: cleanupService)
     }
 

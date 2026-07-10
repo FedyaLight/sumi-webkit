@@ -77,7 +77,7 @@ enum BrowserBoostRuntimeFactory {
         }
 
         for tab in browserManager.tabManager.tabCollectionMembershipOwner.allTabs() where tabMatches(tab) {
-            for webView in browserManager.webViewCoordinator?.getAllWebViews(for: tab.id) ?? [] {
+            for webView in browserManager.webViewOwnershipQuery.trackedWebViews(for: tab.id) {
                 visit(tab, webView)
             }
         }

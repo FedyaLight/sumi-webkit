@@ -80,7 +80,7 @@ struct HistorySuggestionItem: View {
             Image(nsImage: SumiFaviconResolver.menuImage(
                 for: entry.url,
                 partition: faviconContext.partition,
-                faviconImageService: faviconContext.imageService
+                imageReader: faviconContext.imageReader
             ))
                 .accessibilityHidden(true)
         }
@@ -164,7 +164,8 @@ struct HistorySuggestionItem: View {
         guard let image = await SumiFaviconResolver.image(
             for: url,
             partition: faviconContext.partition,
-            faviconImageService: faviconContext.imageService
+            imageReader: faviconContext.imageReader,
+            prefetch: faviconContext.prefetch
         ) else {
             await MainActor.run { self.resolvedFavicon = nil }
             return

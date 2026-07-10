@@ -17,11 +17,11 @@ final class LastSessionWindowsStore: ObservableObject {
 
     private struct Archive: Codable {
         var snapshots: [LastSessionWindowSnapshot]
-        var tabSnapshot: TabSnapshotRepository.Snapshot?
+        var tabSnapshot: TabPersistenceSnapshot?
     }
 
     @Published private(set) var snapshots: [LastSessionWindowSnapshot]
-    private(set) var tabSnapshot: TabSnapshotRepository.Snapshot?
+    private(set) var tabSnapshot: TabPersistenceSnapshot?
 
     init(userDefaults: UserDefaults = .standard) {
         self.userDefaults = userDefaults
@@ -36,7 +36,7 @@ final class LastSessionWindowsStore: ObservableObject {
 
     func updateSnapshots(
         _ snapshots: [LastSessionWindowSnapshot],
-        tabSnapshot: TabSnapshotRepository.Snapshot? = nil
+        tabSnapshot: TabPersistenceSnapshot? = nil
     ) {
         let normalized = snapshots.uniqued(by: \.session)
         self.snapshots = normalized

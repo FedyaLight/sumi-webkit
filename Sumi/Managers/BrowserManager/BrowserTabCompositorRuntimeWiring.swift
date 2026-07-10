@@ -6,13 +6,13 @@ extension TabCompositorRuntime {
         Self(
             markTabAccessed: { [weak browserManager] tabId in
                 if let tab = browserManager?.tabManager.tabCollectionMembershipOwner.tab(for: tabId) {
-                    tab.suspensionStateOwner.noteAccess()
+                    tab.noteAccess()
                     return
                 }
                 browserManager?.windowRegistry?.windows.values
                     .flatMap(\.ephemeralTabs)
                     .first { $0.id == tabId }?
-                    .suspensionStateOwner.noteAccess()
+                    .noteAccess()
             },
             isTabDisplayedInAnyWindow: { [weak browserManager] tabId in
                 browserManager?.windowSessionBundle.tabContextOwner.isTabDisplayedInAnyWindow(tabId) ?? false
@@ -23,7 +23,7 @@ extension TabCompositorRuntime {
                       let coordinator = browserManager.webViewCoordinator
                 else { return [] }
 
-                return coordinator.compositorContainers().compactMap { windowId, _ in
+                return coordinator.compositorRuntime.containers().compactMap { windowId, _ in
                     windowRegistry.windows[windowId]
                 }
             },

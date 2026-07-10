@@ -2,6 +2,18 @@ import CoreGraphics
 import Foundation
 
 enum SplitLayoutGeometry {
+    struct LeafHit: Equatable {
+        let tabId: UUID
+        let rect: CGRect
+        let path: [Int]
+    }
+
+    struct TilePlane: Equatable {
+        let path: [Int]
+        let rect: CGRect
+        let tabIds: [UUID]
+    }
+
     static func leafTabId(
         in tree: SplitLayoutTree,
         at point: CGPoint,
@@ -14,14 +26,14 @@ enum SplitLayoutGeometry {
         in tree: SplitLayoutTree,
         at point: CGPoint,
         in rect: CGRect
-    ) -> SplitLayoutLeafHit? {
+    ) -> LeafHit? {
         leafHit(in: tree, at: point, in: rect, path: [])
     }
 
     static func leafHits(
         in tree: SplitLayoutTree,
         rect: CGRect
-    ) -> [SplitLayoutLeafHit] {
+    ) -> [LeafHit] {
         leafHits(in: tree, rect: rect, path: [])
     }
 
@@ -82,7 +94,7 @@ enum SplitLayoutGeometry {
         in tree: SplitLayoutTree,
         rect: CGRect,
         includeChildPlanes: Bool
-    ) -> [SplitTilePlaneHit] {
+    ) -> [TilePlane] {
         tilePlanes(in: tree, rect: rect, path: [], includeChildPlanes: includeChildPlanes)
     }
 
@@ -91,11 +103,11 @@ enum SplitLayoutGeometry {
         at point: CGPoint,
         in rect: CGRect,
         path: [Int]
-    ) -> SplitLayoutLeafHit? {
+    ) -> LeafHit? {
         guard rect.width > 0, rect.height > 0, rect.contains(point) else { return nil }
         switch tree {
         case .leaf(let tabId, _):
-            return SplitLayoutLeafHit(tabId: tabId, rect: rect, path: path)
+            return LeafHit(tabId: tabId, rect: rect, path: path)
         case .split(let axis, _, let children):
             let childRects = childRects(in: rect, axis: axis, children: children)
             guard childRects.count == children.count else { return nil }
@@ -114,15 +126,15 @@ enum SplitLayoutGeometry {
         in tree: SplitLayoutTree,
         rect: CGRect,
         path: [Int]
-    ) -> [SplitLayoutLeafHit] {
+    ) -> [LeafHit] {
         guard rect.width > 0, rect.height > 0 else { return [] }
         switch tree {
         case .leaf(let tabId, _):
-            return [SplitLayoutLeafHit(tabId: tabId, rect: rect, path: path)]
+            return [LeafHit(tabId: tabId, rect: rect, path: path)]
         case .split(let axis, _, let children):
             let childRects = childRects(in: rect, axis: axis, children: children)
             guard childRects.count == children.count else { return [] }
-            return children.enumerated().flatMap { index, child -> [SplitLayoutLeafHit] in
+            return children.enumerated().flatMap { index, child -> [LeafHit] in
                 leafHits(in: child, rect: childRects[index], path: path + [index])
             }
         }
@@ -133,11 +145,11 @@ enum SplitLayoutGeometry {
         in tree: SplitLayoutTree,
         rect: CGRect,
         path: [Int]
-    ) -> SplitLayoutLeafHit? {
+    ) -> LeafHit? {
         guard rect.width > 0, rect.height > 0 else { return nil }
         switch tree {
         case .leaf(let id, _):
-            return id == tabId ? SplitLayoutLeafHit(tabId: id, rect: rect, path: path) : nil
+            return id == tabId ? LeafHit(tabId: id, rect: rect, path: path) : nil
         case .split(let axis, _, let children):
             let childRects = childRects(in: rect, axis: axis, children: children)
             guard childRects.count == children.count else { return nil }
@@ -161,9 +173,9 @@ enum SplitLayoutGeometry {
         rect: CGRect,
         path: [Int],
         includeChildPlanes: Bool
-    ) -> [SplitTilePlaneHit] {
+    ) -> [TilePlane] {
         var planes = [
-            SplitTilePlaneHit(path: path, rect: rect, tabIds: tree.tabIds),
+            TilePlane(path: path, rect: rect, tabIds: tree.tabIds),
         ]
         guard includeChildPlanes,
               case .split(let axis, _, let children) = tree
@@ -174,7 +186,7 @@ enum SplitLayoutGeometry {
         let childRects = childRects(in: rect, axis: axis, children: children)
         for (index, child) in children.enumerated() {
             planes.append(
-                SplitTilePlaneHit(
+                TilePlane(
                     path: path + [index],
                     rect: childRects[index],
                     tabIds: child.tabIds
@@ -189,18 +201,24 @@ enum SplitLayoutGeometry {
         axis: SplitAxis,
         children: [SplitLayoutTree]
     ) -> [CGRect] {
-        let total = children.reduce(0) { $0 + max(0.01, $1.sizeInParent) }
-        guard total > 0 else { return [] }
+        let weights = SplitLayoutSizing.normalizedWeights(children.map(\.sizeInParent))
+        guard weights.count == children.count else { return [] }
         var cursor: CGFloat = 0
-        return children.map { child in
-            let fraction = CGFloat(max(0.01, child.sizeInParent) / total)
+        return weights.enumerated().map { index, weight in
+            let fraction = CGFloat(weight)
             switch axis {
             case .row:
-                let width = rect.width * fraction
+                let remaining = max(0, rect.width - cursor)
+                let width = index == weights.count - 1
+                    ? remaining
+                    : min(remaining, rect.width * fraction)
                 defer { cursor += width }
                 return CGRect(x: rect.minX + cursor, y: rect.minY, width: width, height: rect.height)
             case .column:
-                let height = rect.height * fraction
+                let remaining = max(0, rect.height - cursor)
+                let height = index == weights.count - 1
+                    ? remaining
+                    : min(remaining, rect.height * fraction)
                 defer { cursor += height }
                 return CGRect(x: rect.minX, y: rect.maxY - cursor - height, width: rect.width, height: height)
             }
@@ -210,31 +228,5 @@ enum SplitLayoutGeometry {
     private static func isLeaf(_ tree: SplitLayoutTree) -> Bool {
         if case .leaf = tree { return true }
         return false
-    }
-}
-
-extension SplitLayoutTree {
-    func leafTabId(at point: CGPoint, in rect: CGRect) -> UUID? {
-        SplitLayoutGeometry.leafTabId(in: self, at: point, in: rect)
-    }
-
-    func leafHit(at point: CGPoint, in rect: CGRect) -> SplitLayoutLeafHit? {
-        SplitLayoutGeometry.leafHit(in: self, at: point, in: rect)
-    }
-
-    func leafHits(in rect: CGRect) -> [SplitLayoutLeafHit] {
-        SplitLayoutGeometry.leafHits(in: self, rect: rect)
-    }
-
-    func leafRects(in rect: CGRect) -> [UUID: CGRect] {
-        SplitLayoutGeometry.leafRects(in: self, rect: rect)
-    }
-
-    func leafRect(for tabId: UUID, in rect: CGRect) -> CGRect? {
-        SplitLayoutGeometry.leafRect(for: tabId, in: self, rect: rect)
-    }
-
-    func edgeTabId(for side: SplitDropSide, in rect: CGRect) -> UUID? {
-        SplitLayoutGeometry.edgeTabId(in: self, for: side, in: rect)
     }
 }

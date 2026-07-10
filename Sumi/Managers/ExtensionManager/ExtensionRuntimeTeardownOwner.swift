@@ -19,7 +19,7 @@ final class ExtensionRuntimeTeardownOwner {
             )
         }
 
-        manager.extensionRuntimeTrace(
+        manager.runtimeDiagnostics.trace(
             "runtimeTeardown start reason=\(reason) removeUIState=\(removeUIState) releaseController=\(releaseController)"
         )
 
@@ -27,9 +27,9 @@ final class ExtensionRuntimeTeardownOwner {
             manager.clearDebugState()
         #endif
 
-        manager.extensionLoadGeneration &+= 1
-        manager.runtimeInitializationTask?.cancel()
-        manager.runtimeInitializationTask = nil
+        manager.runtimeSession.extensionLoadGeneration &+= 1
+        manager.runtimeSession.runtimeInitializationTask?.cancel()
+        manager.runtimeSession.runtimeInitializationTask = nil
         manager.loadedInitialDocumentRuntimePreparationOwner?
             .cancelContentScriptContextLoadTasks()
         manager.cancelInitialDocumentNativeMessagingWarmupTasks()
@@ -40,8 +40,8 @@ final class ExtensionRuntimeTeardownOwner {
 
         let uiStateIDs = removeUIState ? manager.actionAnchorStore.extensionIDs : []
         let loadedIDs = manager.allLoadedExtensionIDs()
-            .union(manager.loadedExtensionManifests.keys)
-            .union(manager.optionsWindowExtensionIDs)
+            .union(manager.runtimeSession.loadedExtensionManifests.keys)
+            .union(manager.optionsWindows.extensionIDs)
             .union(manager.nativeMessagingPortRegistry.extensionIDs)
             .union(manager.errorObservationOwner.observedExtensionIDs)
             .union(uiStateIDs)
@@ -61,38 +61,38 @@ final class ExtensionRuntimeTeardownOwner {
             }
         }
 
-        manager.optionsWindowExtensionIDs.forEach {
-            manager.optionsWindowOwner.closeWindow(for: $0)
+        manager.optionsWindows.extensionIDs.forEach {
+            manager.optionsWindows.closeWindow(for: $0)
         }
         manager.cancelNativeMessagingSessions(reason: reason)
 
-        manager.extensionContextsByProfile.removeAll()
-        manager.loadedExtensionManifests.removeAll()
+        manager.profileRuntime.replaceContexts([:])
+        manager.runtimeSession.loadedExtensionManifests.removeAll()
         manager.actionStatesByExtensionID.removeAll()
-        manager.cachedWebExtensionsByID.removeAll()
-        manager.cachedWebExtensionRuntimeSourceKeysByID.removeAll()
-        manager.lastExtensionLoadErrors.removeAll()
-        manager.extensionRuntimeResidencyState.removeAll()
+        manager.runtimeSession.cachedWebExtensionsByID.removeAll()
+        manager.runtimeSession.cachedWebExtensionRuntimeSourceKeysByID.removeAll()
+        manager.runtimeSession.lastExtensionLoadErrors.removeAll()
+        manager.runtimeSession.extensionRuntimeResidencyState.removeAll()
         manager.backgroundRuntimeStateOwner.removeAll()
-        manager.runtimeMetricsByExtensionID.removeAll()
+        manager.runtimeSession.runtimeMetricsByExtensionID.removeAll()
         manager.errorObservationOwner.removeAllLoggedErrorFingerprints()
-        manager.requestedTabLifecycleOwner.removeAllRecentlyOpenedTabRequests()
+        manager.recentExtensionTabRequests.removeAll()
         manager.permissionsOriginsCompatibilityPreludeInstallationOwner.clearInstallations()
         manager.controllerProvisioningOwner.removeAllExtensionPageUserContentControllers()
         manager.adapterStore.removeTabAndWindowAdapters()
 
         if releaseController {
             manager.browserConfiguration.webViewConfiguration.webExtensionController = nil
-            for controller in manager.extensionControllersByProfile.values {
+            for controller in manager.profileRuntime.controllersByProfile.values {
                 controller.delegate = nil
             }
-            manager.extensionControllersByProfile.removeAll()
-            manager.profileRuntimeOwner.removeAllWebsiteDataStores()
-            manager.allowsRuntimeWithoutEnabledExtensions = false
-            manager.runtimeState = manager.isExtensionSupportAvailable ? .idle : .unavailable
+            manager.profileRuntime.replaceControllers([:])
+            manager.profileRuntime.removeAllWebsiteDataStores()
+            manager.runtimeSession.allowsRuntimeWithoutEnabledExtensions = false
+            manager.runtimeSession.runtimeState = manager.isExtensionSupportAvailable ? .idle : .unavailable
             manager.extensionsLoaded = false
         }
 
-        manager.extensionRuntimeTrace("runtimeTeardown complete reason=\(reason)")
+        manager.runtimeDiagnostics.trace("runtimeTeardown complete reason=\(reason)")
     }
 }

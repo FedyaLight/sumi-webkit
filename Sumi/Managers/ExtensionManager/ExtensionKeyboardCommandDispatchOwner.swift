@@ -37,7 +37,7 @@ final class ExtensionKeyboardCommandDispatchOwner {
         for (extensionId, extensionContext) in contexts {
             guard extensionContext.isLoaded else { continue }
             if extensionContext.performCommand(for: event) {
-                manager?.extensionRuntimeTrace(
+                manager?.runtimeDiagnostics.trace(
                     "extension keyboard command performed extensionId=\(extensionId)"
                 )
                 return true

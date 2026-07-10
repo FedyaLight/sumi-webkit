@@ -376,6 +376,7 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
             policyStore: store,
             cleanupService: cleanupService
         )
+        service.attachDestructiveCleanupPreparer(FakeDestructiveCleanupPreparer())
         let profile = Profile(
             name: "Primary",
             icon: "🏠",
@@ -404,6 +405,7 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
             policyStore: store,
             cleanupService: cleanupService
         )
+        service.attachDestructiveCleanupPreparer(FakeDestructiveCleanupPreparer())
         let profile = Profile(
             name: "Primary",
             icon: "🏠",
@@ -445,9 +447,20 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
             policyStore: policyStore,
             cleanupService: cleanupService
         )
+        enforcementService.attachDestructiveCleanupPreparer(
+            FakeDestructiveCleanupPreparer()
+        )
+        let profileWebsiteDataMutationService =
+            SumiProfileWebsiteDataMutationService(
+                cleanupService: cleanupService
+            )
+        profileWebsiteDataMutationService.attachDestructiveCleanupPreparer(
+            FakeDestructiveCleanupPreparer()
+        )
         let faviconService = FakeBrowserFaviconService()
         let viewModel = URLBarSiteDataDetailsViewModel(
             cleanupService: cleanupService,
+            profileWebsiteDataMutationService: profileWebsiteDataMutationService,
             policyStore: policyStore,
             enforcementService: enforcementService,
             faviconService: faviconService
@@ -478,6 +491,74 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
             cleanupService.removedExactHosts[0].dataTypes,
             WKWebsiteDataStore.sumiManualFullCleanupDataTypes
         )
+    }
+
+    func testURLBarSiteDataDeleteFailsClosedWithoutPreparedMutationBoundary() async {
+        let suiteName = "URLBarSiteDataDeleteFailClosedTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let policyStore = SumiSiteDataPolicyStore(userDefaults: defaults)
+        let cleanupService = FakeCleanupService()
+        let profileWebsiteDataMutationService =
+            SumiProfileWebsiteDataMutationService(
+                cleanupService: cleanupService
+            )
+        let viewModel = URLBarSiteDataDetailsViewModel(
+            cleanupService: cleanupService,
+            profileWebsiteDataMutationService: profileWebsiteDataMutationService,
+            policyStore: policyStore,
+            enforcementService: SumiSiteDataPolicyEnforcementService(
+                policyStore: policyStore,
+                cleanupService: cleanupService
+            ),
+            faviconService: FakeBrowserFaviconService()
+        )
+        let profile = Profile(
+            name: "Primary",
+            icon: "person",
+            dataStore: .nonPersistent()
+        )
+
+        await viewModel.delete(
+            entry: SumiSiteDataEntry(
+                domain: "example.com",
+                cookieCount: 1,
+                recordCount: 1
+            ),
+            url: URL(string: "https://example.com"),
+            profile: profile
+        )
+
+        XCTAssertTrue(cleanupService.removedExactHosts.isEmpty)
+        XCTAssertEqual(
+            viewModel.errorMessage,
+            "Site data could not be deleted safely."
+        )
+    }
+
+    func testProfileMutationReportsRestoreFailureAfterDeletionRan() async {
+        let cleanupService = FakeCleanupService()
+        let preparer = FakeDestructiveCleanupPreparer()
+        preparer.result = false
+        let service = SumiProfileWebsiteDataMutationService(
+            cleanupService: cleanupService
+        )
+        service.attachDestructiveCleanupPreparer(preparer)
+        let profile = Profile(
+            name: "Primary",
+            icon: "person",
+            dataStore: .nonPersistent()
+        )
+
+        let outcome = await service.deleteExactHostData(
+            "Example.COM",
+            ofTypes: WKWebsiteDataStore.sumiManualFullCleanupDataTypes,
+            includingCookies: true,
+            profile: profile
+        )
+
+        XCTAssertEqual(outcome, .restoreFailedAfterMutation)
+        XCTAssertEqual(cleanupService.removedExactHosts.map(\.host), ["example.com"])
     }
 
     func testBrowsingDataFiniteRangeDeletesHistoryAndVisitedDomainData() async throws {
@@ -672,6 +753,27 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
         )
     }
 
+    func testBrowsingDataWebsiteMutationFailsClosedWithoutPreparer() async throws {
+        let harness = try makeHistoryHarness()
+        let cleanupService = FakeCleanupService()
+        let service = makeBrowsingDataCleanupService(
+            websiteDataCleanupService: cleanupService,
+            destructiveCleanupPreparer: nil
+        )
+
+        await service.clear(
+            range: .allTime,
+            categories: [.siteData, .cache],
+            historyManager: harness.historyManager,
+            profiles: [testProfile(id: harness.profileID)],
+            includeAllProfiles: false
+        )
+
+        XCTAssertTrue(cleanupService.removedWebsiteDataTypes.isEmpty)
+        XCTAssertTrue(cleanupService.cookieRemovalSelections.isEmpty)
+        XCTAssertEqual(cleanupService.clearedProfileStores, 0)
+    }
+
     func testBrowsingDataPartialCleanupDoesNotClearSavedHTTPAuth() async throws {
         let harness = try makeHistoryHarness()
         let cleanupService = FakeCleanupService()
@@ -769,7 +871,7 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
         XCTAssertEqual(appResidueCleaner.clearFaviconNegativeCacheCallCount, 1)
     }
 
-    func testBrowsingDataFiniteRangeDoesNotPrepareLiveWebViewsForCleanup() async throws {
+    func testBrowsingDataFiniteRangePreparesLiveWebViewsForCleanup() async throws {
         let harness = try makeHistoryHarness()
         let cleanupService = FakeCleanupService()
         let destructiveCleanupPreparer = FakeDestructiveCleanupPreparer()
@@ -794,7 +896,10 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
             includeAllProfiles: false
         )
 
-        XCTAssertTrue(destructiveCleanupPreparer.preparedProfileIDSets.isEmpty)
+        XCTAssertEqual(
+            destructiveCleanupPreparer.preparedProfileIDSets,
+            [Set([harness.profileID])]
+        )
         XCTAssertEqual(cleanupService.removedDomainSets.count, 1)
     }
 
@@ -1105,7 +1210,8 @@ private func makeBrowsingDataCleanupService(
     appResidueCleaner: FakeAppResidueCleaner? = nil,
     basicAuthCredentialStore: FakeBasicAuthCredentialStore? = nil,
     visitedLinkStore: FakeVisitedLinkStore? = nil,
-    destructiveCleanupPreparer: FakeDestructiveCleanupPreparer? = nil,
+    destructiveCleanupPreparer: FakeDestructiveCleanupPreparer? =
+        FakeDestructiveCleanupPreparer(),
     sharedWebsiteDataStoreProvider: @escaping @MainActor () -> WKWebsiteDataStore = {
         .default()
     },
@@ -1128,16 +1234,19 @@ private func makeAutomaticBrowsingDataCleanupService(
     websiteDataCleanupService: FakeCleanupService,
     faviconCacheCleaner: FakeFaviconCleaner? = nil,
     basicAuthCredentialStore: FakeBasicAuthCredentialStore? = nil,
+    destructiveCleanupPreparer: FakeDestructiveCleanupPreparer = FakeDestructiveCleanupPreparer(),
     userDefaults: UserDefaults,
     referenceDateProvider: @escaping @MainActor () -> Date = { Date() }
 ) -> SumiAutomaticBrowsingDataCleanupService {
-    SumiAutomaticBrowsingDataCleanupService(
+    let service = SumiAutomaticBrowsingDataCleanupService(
         websiteDataCleanupService: websiteDataCleanupService,
         faviconCacheCleaner: faviconCacheCleaner ?? FakeFaviconCleaner(),
         basicAuthCredentialStore: basicAuthCredentialStore ?? FakeBasicAuthCredentialStore(),
         userDefaults: userDefaults,
         referenceDateProvider: referenceDateProvider
     )
+    service.attachDestructiveCleanupPreparer(destructiveCleanupPreparer)
+    return service
 }
 
 @MainActor
@@ -1468,9 +1577,15 @@ private final class FakeBasicAuthCredentialStore: SumiBasicAuthCredentialCleanin
 @MainActor
 private final class FakeDestructiveCleanupPreparer: SumiDestructiveBrowsingDataCleanupPreparing {
     private(set) var preparedProfileIDSets: [Set<UUID>] = []
+    var result = true
 
-    func prepareForDestructiveDataCleanup(profileIDs: Set<UUID>) async {
+    func performDestructiveDataCleanup(
+        profileIDs: Set<UUID>,
+        deletion: @escaping @MainActor () async -> Void
+    ) async -> Bool {
         preparedProfileIDSets.append(profileIDs)
+        await deletion()
+        return result
     }
 }
 

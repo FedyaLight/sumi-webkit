@@ -144,7 +144,7 @@ extension ExtensionManager {
         context extensionContext: WKWebExtensionContext,
         reason: ExtensionBackgroundWakeReason
     ) async throws -> Bool {
-        try await backgroundWakeCoordinator.ensureBackgroundAvailableIfRequired(
+        try await runtimeBundle.backgroundWakeCoordinator.ensureBackgroundAvailableIfRequired(
             for: webExtension,
             context: extensionContext,
             reason: reason
@@ -155,7 +155,7 @@ extension ExtensionManager {
         for extensionContext: WKWebExtensionContext,
         operation: String
     ) {
-        backgroundWakeCoordinator.scheduleNativeMessagingBackgroundWake(
+        runtimeBundle.backgroundWakeCoordinator.scheduleNativeMessagingBackgroundWake(
             for: extensionContext,
             operation: operation
         )
@@ -182,7 +182,7 @@ extension ExtensionManager {
         for extensionId: String,
         profileId: UUID? = nil
     ) -> BackgroundRuntimeState {
-        backgroundWakeCoordinator.backgroundRuntimeState(
+        runtimeBundle.backgroundWakeCoordinator.backgroundRuntimeState(
             for: extensionId,
             profileId: profileId
         )

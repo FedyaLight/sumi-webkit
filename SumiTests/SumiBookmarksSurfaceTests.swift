@@ -101,7 +101,7 @@ final class SumiBookmarksSurfaceTests: XCTestCase {
         let space = Space(name: "Primary", profileId: profile.id)
         let windowState = BrowserWindowState()
 
-        browserManager.webViewCoordinator = WebViewCoordinator()
+        browserManager.bindTestWebViewCoordinator()
         browserManager.modelContext = context
         browserManager.profileManager.profiles = [profile]
         browserManager.currentProfile = profile
@@ -138,7 +138,7 @@ final class SumiBookmarksSurfaceTests: XCTestCase {
         name: String,
         browserManager: BrowserManager
     ) -> Tab {
-        let tab = Tab(url: url, name: name)
+        let tab = browserManager.tabManager.tabFactory.makeTab(url: url, name: name)
         tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
         return tab
     }

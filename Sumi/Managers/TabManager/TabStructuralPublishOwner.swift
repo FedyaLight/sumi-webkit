@@ -1,21 +1,15 @@
-import Combine
 import Foundation
 import OSLog
-import SumiBrowserCore
 
 @MainActor
 final class TabStructuralPublishOwner {
-    private let structuralChanges: PassthroughSubject<Void, Never>
-    private weak var eventBus: TabStructureEventBus?
+    private let eventBus: TabStructureEventBus
     private var structuralUpdateDepth = 0
     private var pendingStructuralPublish = false
     private var structuralTransactionSignpostState: OSSignpostIntervalState?
+    private(set) var mutationRevision: UInt64 = 0
 
-    init(
-        structuralChanges: PassthroughSubject<Void, Never>,
-        eventBus: TabStructureEventBus? = nil
-    ) {
-        self.structuralChanges = structuralChanges
+    init(eventBus: TabStructureEventBus) {
         self.eventBus = eventBus
     }
 
@@ -41,17 +35,18 @@ final class TabStructuralPublishOwner {
             return
         }
 
+        mutationRevision += 1
         PerformanceTrace.emitEvent("TabManager.structuralPublish.immediate")
         emitStructureChanged()
     }
 
     private func emitStructureChanged() {
-        structuralChanges.send()
-        eventBus?.publishStructureChanged()
+        eventBus.publishStructureChanged()
     }
 
     private func begin() {
         if structuralUpdateDepth == 0 {
+            mutationRevision += 1
             structuralTransactionSignpostState = PerformanceTrace.beginInterval("TabManager.structuralTransaction")
         }
         structuralUpdateDepth += 1

@@ -19,7 +19,7 @@ final class BrowserZoomCommandOwnerTests: XCTestCase {
             zoomManager: zoomManager,
             activeWindow: { windowState },
             activePageTab: { _ in tab },
-            activePageWebView: { _ in webView },
+            activePresentationWebView: { _ in webView },
             sizeOverride: { url, profileId in
                 boostRequest = (url, profileId)
                 return 2.0
@@ -84,6 +84,42 @@ final class BrowserZoomCommandOwnerTests: XCTestCase {
         XCTAssertTrue(spy.presentNotificationCalls.isEmpty)
     }
 
+    func testZoomTargetsReaderPresentationWithoutMutatingHiddenCanonicalWebView() {
+        let zoomManager = makeZoomManager()
+        let tab = makeTab(url: "https://example.com/article", profileId: nil)
+        let canonicalWebView = WKWebView()
+        canonicalWebView.pageZoom = 1
+        let host = SumiWebViewContainerView(tabID: tab.id, webView: canonicalWebView)
+        let lease = TabMainFrameDocumentLease(
+            revision: 1,
+            documentGeneration: 1,
+            webViewID: ObjectIdentifier(canonicalWebView),
+            participantID: UUID(),
+            committedURL: tab.url,
+            presentationURL: tab.url,
+            isPDF: false,
+            isAuthority: true
+        )
+        XCTAssertTrue(host.presentReader(
+            html: "<html><body><article>Reader</article></body></html>",
+            sourceURL: tab.url,
+            documentLease: lease,
+            navigate: { _ in XCTFail("Reader navigation was not requested") }
+        ))
+        let windowState = BrowserWindowState()
+        let owner = makeOwner(
+            zoomManager: zoomManager,
+            activeWindow: { windowState },
+            activePageTab: { _ in tab },
+            activePresentationWebView: { _ in canonicalWebView.sumiActivePresentationWebView }
+        )
+
+        owner.zoomInCurrentTab()
+
+        XCTAssertEqual(host.activePresentationWebView.pageZoom, 1.15, accuracy: 0.001)
+        XCTAssertEqual(canonicalWebView.pageZoom, 1, accuracy: 0.001)
+    }
+
     func testCleanupRemovesTabZoomAndBumpsRevision() {
         let zoomManager = makeZoomManager()
         let tabId = UUID()
@@ -119,7 +155,7 @@ final class BrowserZoomCommandOwnerTests: XCTestCase {
         zoomManager: ZoomManager,
         activeWindow: @escaping @MainActor () -> BrowserWindowState? = { nil },
         activePageTab: @escaping @MainActor (BrowserWindowState) -> Tab? = { _ in nil },
-        activePageWebView: @escaping @MainActor (BrowserWindowState) -> WKWebView? = { _ in nil },
+        activePresentationWebView: @escaping @MainActor (BrowserWindowState) -> WKWebView? = { _ in nil },
         tab: @escaping @MainActor (UUID) -> Tab? = { _ in nil },
         windowStateContainingTab: @escaping @MainActor (Tab) -> BrowserWindowState? = { _ in nil },
         webView: @escaping @MainActor (UUID, UUID) -> WKWebView? = { _, _ in nil },
@@ -130,7 +166,7 @@ final class BrowserZoomCommandOwnerTests: XCTestCase {
         BrowserZoomCommandOwner(
             activeWindow: activeWindow,
             activePageTab: activePageTab,
-            activePageWebView: activePageWebView,
+            activePresentationWebView: activePresentationWebView,
             tab: tab,
             windowStateContainingTab: windowStateContainingTab,
             webView: webView,

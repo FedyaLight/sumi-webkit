@@ -30,8 +30,4 @@ extension Tab {
     func navigateToURL(_ input: String) {
         navigationCommandOwner.navigateToURL(input, for: self)
     }
-
-    nonisolated static func navigationCommandURLRequest(for url: URL) -> URLRequest {
-        TabNavigationCommandOwner.navigationCommandURLRequest(for: url)
-    }
 }

@@ -36,7 +36,10 @@ final class BrowserSidebarCommandService {
                 try browserManager?.tabManager.spaceLifecycleOwner.updateSpaceIcon(spaceId: spaceID, icon: icon)
             },
             assignSpaceProfile: { [weak browserManager] spaceID, profileID in
-                browserManager?.tabManager.profileAssignmentOwner.assign(spaceId: spaceID, toProfile: profileID)
+                browserManager?.tabManager.profileAssignments.spaces.assign(
+                    spaceID: spaceID,
+                    toProfile: profileID
+                )
             },
             renameFolder: { [weak browserManager] folderID, name in
                 browserManager?.tabManager.folderMutationOwner.renameFolder(folderID, newName: name)
@@ -124,7 +127,7 @@ final class BrowserSidebarCommandService {
                 )
             },
             persistWindowSession: { [weak browserManager] windowState in
-                browserManager?.windowSessionBundle.activationOwner.persistWindowSession(for: windowState)
+                browserManager?.windowSessionBundle.persistence.persist(windowState)
             },
             showEmptyState: { [weak browserManager] windowState in
                 browserManager?.showEmptyState(in: windowState)

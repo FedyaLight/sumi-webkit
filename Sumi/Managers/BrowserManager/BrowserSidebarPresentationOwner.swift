@@ -49,8 +49,8 @@ final class BrowserSidebarPresentationOwner {
                 return browserManager.windowRegistry?.windowState(containing: keyWindow)
             },
             schedulePersistWindowSession: { [weak browserManager] windowState, delayNanoseconds in
-                browserManager?.windowSessionBundle.activationOwner.schedulePersistWindowSession(
-                    for: windowState,
+                browserManager?.windowSessionBundle.persistence.schedule(
+                    windowState,
                     delayNanoseconds: delayNanoseconds
                 )
             }

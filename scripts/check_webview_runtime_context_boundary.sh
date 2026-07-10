@@ -6,7 +6,7 @@ cd "$repo_root"
 
 runtime_paths=(App Sumi Settings SidebarChrome FloatingBar UI)
 allowed_files=(
-  "Sumi/Managers/BrowserManager/BrowserManager.swift"
+  "Sumi/Managers/BrowserManager/BrowserManagerRuntimeWiring.swift"
   "Sumi/Managers/WebViewCoordinator/WebViewCoordinator.swift"
 )
 status=0
@@ -24,8 +24,7 @@ is_allowed_file() {
 
 matches="$(
   grep -rEn --include='*.swift' \
-    -e 'attach(BrowserRuntimeContext|InitialDocumentRuntimeContext|ShutdownRuntimeContext|VisiblePreparationRuntimeContext)' \
-    -e 'detach(BrowserRuntimeContext|InitialDocumentRuntimeContext|ShutdownRuntimeContext|VisiblePreparationRuntimeContext)' \
+    -e '(attach|detach)RuntimeEnvironment' \
     "${runtime_paths[@]}" || [[ $? -eq 1 ]]
 )"
 
@@ -33,10 +32,22 @@ while IFS= read -r match; do
   [[ -z "$match" ]] && continue
   relative_path="${match%%:*}"
   if ! is_allowed_file "$relative_path"; then
-    printf 'disallowed WebView runtime context attachment outside BrowserManager shell binding: %s\n' "$match" >&2
+    printf 'disallowed WebView runtime context attachment outside composition wiring/coordinator store: %s\n' "$match" >&2
     status=1
   fi
 done <<< "$matches"
+
+legacy_partial_context_hits="$(
+  grep -rEn --include='*.swift' \
+    -e 'attach(BrowserRuntimeContext|InitialDocumentRuntimeContext|ShutdownRuntimeContext|VisiblePreparationRuntimeContext)' \
+    -e 'detach(BrowserRuntimeContext|InitialDocumentRuntimeContext|ShutdownRuntimeContext|VisiblePreparationRuntimeContext)' \
+    "${runtime_paths[@]}" || [[ $? -eq 1 ]]
+)"
+if [[ -n "$legacy_partial_context_hits" ]]; then
+  printf 'partial WebView runtime context attachment reintroduced:\n%s\n' \
+    "$legacy_partial_context_hits" >&2
+  status=1
+fi
 
 if [[ "$status" -ne 0 ]]; then
   echo "WebView runtime context boundary audit failed" >&2

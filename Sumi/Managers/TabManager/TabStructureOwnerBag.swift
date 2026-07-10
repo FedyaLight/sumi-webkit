@@ -11,19 +11,13 @@ import Foundation
 /// Owners on the TabManager façade.
 @MainActor
 final class TabStructureOwnerBag {
-    private weak var tabManager: TabManager?
+    private unowned let tabManager: TabManager
 
-    /// Called from `TabManager.init` after all stored properties are assigned.
-    func bind(_ tabManager: TabManager) {
+    init(tabManager: TabManager) {
         self.tabManager = tabManager
     }
 
-    private var tm: TabManager {
-        guard let tabManager else {
-            preconditionFailure("TabStructureOwnerBag used before bind(tabManager:)")
-        }
-        return tabManager
-    }
+    private var tm: TabManager { tabManager }
 
     lazy var folderMutationOwner = TabFolderMutationOwner(dependencies: .live(tabManager: tm))
     lazy var regularTabCollectionOwner = RegularTabCollectionOwner(
@@ -67,7 +61,6 @@ final class TabStructureOwnerBag {
         dependencies: .live(tabManager: tm)
     )
     lazy var structuralLookupCoordinator = TabStructuralLookupCoordinator(
-        structuralChanges: tm.structuralChanges,
         eventBus: tm.tabStructureEventBus,
         tabsBySpace: { [weak self] in
             self?.tm.regularTabCollectionStateOwner.tabsBySpaceSnapshot() ?? [:]

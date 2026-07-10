@@ -8,7 +8,7 @@ import SumiWebRuntime
 final class VisibleWebViewRuntimeOwnerTests: XCTestCase {
     func testPrepareVisibleWebViewsUsesRuntimeWithoutBrowserManager() {
         let owner = VisibleWebViewRuntimeOwner()
-        let webViewRegistry = WindowWebViewRegistry()
+        let webViewSessions = WebViewSessionRepository()
         let windowState = BrowserWindowState()
         let currentTab = makeWebTab()
         let splitTab = makeWebTab(urlString: "https://example.com/split")
@@ -39,7 +39,7 @@ final class VisibleWebViewRuntimeOwnerTests: XCTestCase {
                 scheduleTabSuspensionReconcile: { suspensionReasons.append($0) },
                 scheduleBackgroundMediaReconcile: { mediaReasons.append($0) }
             ),
-            webViewRegistry: webViewRegistry,
+            webViewSessions: webViewSessions,
             existingWebView: { _, _ in nil },
             createWebView: { tab, windowId in
                 createdPairs.append((tab.id, windowId))
@@ -98,7 +98,7 @@ final class VisibleWebViewRuntimeOwnerTests: XCTestCase {
 
     func testPreferredPrimaryWebViewCandidatePrioritizesVisibleRuntimeWindow() {
         let owner = VisibleWebViewRuntimeOwner()
-        let webViewRegistry = WindowWebViewRegistry()
+        let webViewSessions = WebViewSessionRepository()
         let visibleWindow = BrowserWindowState()
         let hiddenWindow = BrowserWindowState()
         let tab = makeWebTab()
@@ -108,8 +108,8 @@ final class VisibleWebViewRuntimeOwnerTests: XCTestCase {
         let hiddenWebView = WKWebView()
 
         visibleWindow.currentTabId = tab.id
-        webViewRegistry.setWebView(hiddenWebView, for: hiddenOwner)
-        webViewRegistry.setWebView(visibleWebView, for: visibleOwner)
+        register(hiddenWebView, owner: hiddenOwner, in: webViewSessions)
+        register(visibleWebView, owner: visibleOwner, in: webViewSessions)
 
         let candidate = owner.preferredPrimaryWebViewCandidate(
             for: tab.id,
@@ -121,7 +121,7 @@ final class VisibleWebViewRuntimeOwnerTests: XCTestCase {
                 currentTabId: { $0.concreteWindowState?.currentTabId },
                 resolveTab: { tabId, _ in tabId == tab.id ? tab : nil }
             ),
-            webViewRegistry: webViewRegistry
+            webViewSessions: webViewSessions
         )
 
         XCTAssertEqual(candidate?.owner, visibleOwner)
@@ -161,6 +161,25 @@ final class VisibleWebViewRuntimeOwnerTests: XCTestCase {
         Tab(
             url: URL(string: urlString)!,
             loadsCachedFaviconOnInit: false
+        )
+    }
+
+    private func register(
+        _ webView: WKWebView,
+        owner: TrackedWebViewOwner,
+        in repository: WebViewSessionRepository
+    ) {
+        WebViewTrackingLifecycleOwner().registerTrackedWebView(
+            webView,
+            for: owner,
+            in: repository,
+            removeFromContainers: { _ in },
+            installRuntimeObservations: { _ in },
+            uninstallRuntimeObservationsIfUntracked: { _ in },
+            pruneInvalidDeferredCommands: { _ in },
+            canDisplaceWebView: { _ in true },
+            removeRecentVisibility: { _ in },
+            cleanupDisplacedWebView: { _, _ in }
         )
     }
 }

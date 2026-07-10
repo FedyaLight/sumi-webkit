@@ -40,13 +40,18 @@ final class BrowserWebViewCloseRouter {
                 browserManager?.glanceManager.handleWebViewDidClose(webView) ?? false
             },
             auxiliaryContains: { [weak browserManager] webView in
-                browserManager?.auxiliaryWindowManager.contains(webView: webView) ?? false
+                browserManager?.auxiliaryWindows.sessions.contains(webView)
+                    ?? false
             },
             auxiliaryTeardown: { [weak browserManager] webView, reason in
-                browserManager?.auxiliaryWindowManager.teardown(for: webView, reason: reason)
+                browserManager?.auxiliaryWindows.teardown.teardown(
+                    for: webView,
+                    reason: reason
+                )
             },
             auxiliarySessionWebView: { [weak browserManager] tab in
-                browserManager?.auxiliaryWindowManager.session(for: tab)?.webView
+                browserManager?.auxiliaryWindows.sessions.session(for: tab)?
+                    .webView
             },
             isAuxiliaryMiniWindowTab: { [weak browserManager] tab in
                 browserManager?.tabManager.transientWebKitTabLifecycleOwner.isAuxiliaryMiniWindowTab(tab) ?? false
@@ -60,14 +65,16 @@ final class BrowserWebViewCloseRouter {
             makeWebKitCloseRoutingRuntime: { [weak browserManager] in
                 BrowserWebKitCloseRoutingOwner.Runtime(
                     prepareClose: { [weak browserManager] webView in
-                        browserManager?.shellRuntime.requireWebViewCoordinator().prepareWebKitClose(webView)
+                        browserManager?.shellRuntime.requireWebViewCoordinator()
+                            .lifecycleService.prepareWebKitClose(webView)
                             ?? .ready(trackedOwner: nil)
                     },
                     cleanupTrackedWebView: { [weak browserManager] webView, owner in
-                        browserManager?.shellRuntime.requireWebViewCoordinator().cleanupTrackedWebViewAfterWebKitClose(
-                            webView,
-                            owner: owner
-                        )
+                        browserManager?.shellRuntime.requireWebViewCoordinator()
+                            .lifecycleService.cleanupTrackedWebViewAfterWebKitClose(
+                                webView,
+                                owner: owner
+                            )
                     },
                     tab: { [weak browserManager] tabID in
                         browserManager?.tabManager.tabCollectionMembershipOwner.tab(for: tabID)

@@ -127,7 +127,7 @@ extension ExtensionManager {
     ) -> [String] {
         hubOrderingOwner.orderedUnpinnedExtensionIDs(
             candidateIDs: candidateIDs,
-            profileId: profileId ?? currentProfileId
+            profileId: profileId ?? profileRuntime.currentProfileId
         )
     }
 

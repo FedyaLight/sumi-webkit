@@ -1,10 +1,169 @@
 import SwiftData
+import SumiWebRuntime
+import WebKit
 import XCTest
 
 @testable import Sumi
 
+private actor SuspendedTabRestorePayloadLoader: TabRestorePayloadLoading {
+    private let loader: TabRestoreLoader
+    private var didCapturePayload = false
+    private var captureWaiters: [CheckedContinuation<Void, Never>] = []
+    private var releaseContinuation: CheckedContinuation<Void, Never>?
+    private var wasReleased = false
+
+    init(container: ModelContainer) {
+        loader = TabRestoreLoader(container: container)
+    }
+
+    func load(defaultProfileId: UUID?) async throws -> TabRestorePayload {
+        let payload = try await loader.load(defaultProfileId: defaultProfileId)
+        didCapturePayload = true
+        let waiters = captureWaiters
+        captureWaiters.removeAll()
+        waiters.forEach { $0.resume() }
+
+        if wasReleased == false {
+            await withCheckedContinuation { continuation in
+                releaseContinuation = continuation
+            }
+        }
+        return payload
+    }
+
+    func waitUntilPayloadIsCaptured() async {
+        guard didCapturePayload == false else { return }
+        await withCheckedContinuation { continuation in
+            captureWaiters.append(continuation)
+        }
+    }
+
+    func releaseCapturedPayload() {
+        wasReleased = true
+        releaseContinuation?.resume()
+        releaseContinuation = nil
+    }
+}
+
 @MainActor
 final class TabManagerStructuralPersistenceTests: XCTestCase {
+    func testStartupRestoreRequestedAtConstructionCannotOverwritePreReadinessMutation() async throws {
+        let container = try makeInMemoryContainer()
+        let persistedFixture = try insertCurrentFormatRestoreFixture(in: container)
+        let webViewSessions = WebViewSessionRepository()
+        let tabManager = TabManager(
+            context: ModelContext(container),
+            webViewSessions: webViewSessions,
+            loadPersistedState: true,
+            automaticallyStartPersistedStateLoad: false
+        )
+        tabManager.runtimePortsAttachmentOwner.attach(TestRuntimePorts.inactive)
+
+        let liveSpace = tabManager.spaceLifecycleOwner.createSpace(
+            name: "Created Before Shell Readiness",
+            profileId: persistedFixture.profileId
+        )
+        let liveTab = tabManager.regularTabLifecycleOwner.createNewTab(
+            url: "https://example.com/pre-readiness",
+            in: liveSpace,
+            activate: true
+        )
+
+        tabManager.startupRestoreLifecycle.startIfNeeded(
+            runtimeIsAttached: tabManager.runtimePorts != nil,
+            restore: { [weak tabManager] revision in
+                tabManager?.storeRestore.loadFromStore(
+                    expectedStructuralRevision: revision
+                )
+            }
+        )
+        for _ in 0..<50
+        where tabManager.startupRestoreLifecycle.hasLoadedInitialData == false {
+            await Task.yield()
+        }
+
+        XCTAssertTrue(tabManager.startupRestoreLifecycle.didStartPersistedStateLoad)
+        XCTAssertTrue(tabManager.startupRestoreLifecycle.hasLoadedInitialData)
+        XCTAssertEqual(tabManager.spaceStateOwner.spaces.map(\.id), [liveSpace.id])
+        XCTAssertEqual(
+            tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[liveSpace.id]?.map(\.id),
+            [liveTab.id]
+        )
+        XCTAssertFalse(tabManager.spaceStateOwner.spaces.contains { $0.id == persistedFixture.spaceAId })
+        XCTAssertTrue(liveTab.webViewSession.isBacked(by: webViewSessions))
+    }
+
+    func testStartupRestoreDoesNotOverwriteTabCreatedWhileSnapshotLoadIsSuspended() async throws {
+        let container = try makeInMemoryContainer()
+        let persistedFixture = try insertCurrentFormatRestoreFixture(in: container)
+        let payloadLoader = SuspendedTabRestorePayloadLoader(container: container)
+        let webViewSessions = WebViewSessionRepository()
+        let tabManager = TabManager(
+            context: ModelContext(container),
+            webViewSessions: webViewSessions,
+            loadPersistedState: false
+        )
+        tabManager.runtimePortsAttachmentOwner.attach(TestRuntimePorts.inactive)
+        let restoreService = TabStoreRestoreService(
+            payloadLoader: payloadLoader,
+            structuralStore: tabManager.structuralSnapshotStore,
+            tabFactory: tabManager.tabFactory,
+            defaultProfileId: { [weak tabManager] in
+                tabManager?.runtimePorts?.defaultProfileId
+            },
+            structuralRevision: { [weak tabManager] in
+                tabManager?.structuralMutationRevision ?? 0
+            },
+            loadLifecycle: tabManager.startupRestoreLifecycle,
+            structuralInstaller: tabManager.structuralInstallOwner,
+            splitGroupStructure: tabManager.splitGroupStructureOwner,
+            runtimePreparation: tabManager.runtimePreparationOwner,
+            lazyRestore: tabManager.lazyRestoreCoordinator,
+            persistence: tabManager.structuralPersistence,
+            syncWorkspaceTheme: { [weak tabManager] space in
+                tabManager?.runtimePorts?.syncWorkspaceThemeAcrossWindows(
+                    for: space,
+                    animate: false
+                )
+            }
+        )
+
+        let restoreTask = Task { @MainActor in
+            await restoreService.loadFromStoreAwaitingResult()
+        }
+        await payloadLoader.waitUntilPayloadIsCaptured()
+
+        let liveSpace = tabManager.spaceLifecycleOwner.createSpace(
+            name: "Created During Restore",
+            profileId: persistedFixture.profileId
+        )
+        let liveWebView = WKWebView()
+        let liveTab = tabManager.regularTabLifecycleOwner.createNewTabWithWebView(
+            url: "https://example.com/live",
+            in: liveSpace,
+            existingWebView: liveWebView
+        )
+
+        await payloadLoader.releaseCapturedPayload()
+        let didInstallPersistedSnapshot = await restoreTask.value
+
+        XCTAssertFalse(didInstallPersistedSnapshot)
+        XCTAssertTrue(tabManager.startupRestoreLifecycle.hasLoadedInitialData)
+        XCTAssertEqual(tabManager.spaceStateOwner.spaces.map(\.id), [liveSpace.id])
+        XCTAssertEqual(
+            tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[liveSpace.id]?.map(\.id),
+            [liveTab.id]
+        )
+        XCTAssertTrue(tabManager.tabCollectionMembershipOwner.tab(for: liveTab.id) === liveTab)
+        XCTAssertTrue(liveTab.webViewSession.isBacked(by: webViewSessions))
+        XCTAssertTrue(liveTab.webViewSession.parkedWebView === liveWebView)
+        XCTAssertFalse(tabManager.spaceStateOwner.spaces.contains { $0.id == persistedFixture.spaceAId })
+
+        try await waitForStore(in: container) { context in
+            try fetchTab(liveTab.id, in: context) != nil
+        }
+    }
+
     func testIncrementalAddAndRemoveRegularTabPersistence() async throws {
         let container = try makeInMemoryContainer()
         let tabManager = makeTabManager(context: container.mainContext)
@@ -551,7 +710,11 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         let resizedGroup = SplitGroup(
             id: baseGroup.id,
             layoutKind: .vertical,
-            layoutTree: baseGroup.layoutTree.updatingChildSizes(at: [], sizes: [0.2, 0.3, 0.5]),
+            layoutTree: SplitLayoutSizing.updatingChildSizes(
+                in: baseGroup.layoutTree,
+                at: [],
+                sizes: [0.2, 0.3, 0.5]
+            ),
             activeTabId: tabs[1].id
         )
 

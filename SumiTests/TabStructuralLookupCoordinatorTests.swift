@@ -6,10 +6,10 @@ import XCTest
 @MainActor
 final class TabStructuralLookupCoordinatorTests: XCTestCase {
     private func makeCoordinator(
-        changes: PassthroughSubject<Void, Never>
+        eventBus: TabStructureEventBus
     ) -> TabStructuralLookupCoordinator {
         TabStructuralLookupCoordinator(
-            structuralChanges: changes,
+            eventBus: eventBus,
             tabsBySpace: { [:] },
             transientShortcutTabsByWindow: { [:] },
             transientExtensionTabsByID: { [:] },
@@ -18,10 +18,10 @@ final class TabStructuralLookupCoordinatorTests: XCTestCase {
     }
 
     func testRequestPublishOutsideTransactionEmitsImmediately() {
-        let changes = PassthroughSubject<Void, Never>()
-        let coordinator = makeCoordinator(changes: changes)
+        let eventBus = TabStructureEventBus()
+        let coordinator = makeCoordinator(eventBus: eventBus)
         var eventCount = 0
-        let cancellable = changes.sink { eventCount += 1 }
+        let cancellable = eventBus.structureChangedPublisher.sink { eventCount += 1 }
 
         withExtendedLifetime(cancellable) {
             coordinator.requestPublish()
@@ -35,10 +35,10 @@ final class TabStructuralLookupCoordinatorTests: XCTestCase {
     // entries). Here we assert the coordinator's own contract: nested transactions publish
     // exactly once, on outermost exit, with nothing emitted while still batching.
     func testNestedTransactionCoalescesPublishToExactlyOneEmission() {
-        let changes = PassthroughSubject<Void, Never>()
-        let coordinator = makeCoordinator(changes: changes)
+        let eventBus = TabStructureEventBus()
+        let coordinator = makeCoordinator(eventBus: eventBus)
         var eventCount = 0
-        let cancellable = changes.sink { eventCount += 1 }
+        let cancellable = eventBus.structureChangedPublisher.sink { eventCount += 1 }
 
         withExtendedLifetime(cancellable) {
             coordinator.withTransaction {
@@ -55,10 +55,10 @@ final class TabStructuralLookupCoordinatorTests: XCTestCase {
     }
 
     func testTransactionWithoutPublishRequestDoesNotEmit() {
-        let changes = PassthroughSubject<Void, Never>()
-        let coordinator = makeCoordinator(changes: changes)
+        let eventBus = TabStructureEventBus()
+        let coordinator = makeCoordinator(eventBus: eventBus)
         var eventCount = 0
-        let cancellable = changes.sink { eventCount += 1 }
+        let cancellable = eventBus.structureChangedPublisher.sink { eventCount += 1 }
 
         withExtendedLifetime(cancellable) {
             coordinator.withTransaction {
@@ -70,10 +70,10 @@ final class TabStructuralLookupCoordinatorTests: XCTestCase {
     }
 
     func testNotifyTransientShortcutStateChangedEmitsPublish() {
-        let changes = PassthroughSubject<Void, Never>()
-        let coordinator = makeCoordinator(changes: changes)
+        let eventBus = TabStructureEventBus()
+        let coordinator = makeCoordinator(eventBus: eventBus)
         var eventCount = 0
-        let cancellable = changes.sink { eventCount += 1 }
+        let cancellable = eventBus.structureChangedPublisher.sink { eventCount += 1 }
 
         withExtendedLifetime(cancellable) {
             coordinator.notifyTransientShortcutStateChanged()
@@ -83,8 +83,8 @@ final class TabStructuralLookupCoordinatorTests: XCTestCase {
     }
 
     func testWithTransactionReturnsOperationValue() {
-        let changes = PassthroughSubject<Void, Never>()
-        let coordinator = makeCoordinator(changes: changes)
+        let eventBus = TabStructureEventBus()
+        let coordinator = makeCoordinator(eventBus: eventBus)
 
         let result = coordinator.withTransaction { 42 }
 

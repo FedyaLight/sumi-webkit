@@ -117,11 +117,11 @@ final class BrowserRecentlyClosedRestoreOwnerTests: XCTestCase {
             id: UUID(),
             session: makeWindowSession(currentTabId: UUID())
         )
-        let startupTabSnapshot = TabSnapshotRepository.Snapshot(
+        let startupTabSnapshot = TabPersistenceSnapshot(
             spaces: [],
             tabs: [],
             folders: [],
-            state: TabSnapshotRepository.SnapshotState(currentTabID: nil, currentSpaceID: nil)
+            state: TabPersistenceSelection(currentTabID: nil, currentSpaceID: nil)
         )
         let startupRestore = FakeRecentlyClosedStartupRestoreProvider(
             canOfferRestoreShortcut: true,
@@ -277,13 +277,13 @@ private struct RestoreHarness {
 private final class FakeRecentlyClosedStartupRestoreProvider: BrowserStartupSessionRestoreProviding {
     var canOfferRestoreShortcut: Bool
     var windowSnapshots: [LastSessionWindowSnapshot]
-    var tabSnapshot: TabSnapshotRepository.Snapshot?
+    var tabSnapshot: TabPersistenceSnapshot?
     private(set) var didConsumeRestoreOffer = false
 
     init(
         canOfferRestoreShortcut: Bool,
         windowSnapshots: [LastSessionWindowSnapshot],
-        tabSnapshot: TabSnapshotRepository.Snapshot?
+        tabSnapshot: TabPersistenceSnapshot?
     ) {
         self.canOfferRestoreShortcut = canOfferRestoreShortcut
         self.windowSnapshots = windowSnapshots

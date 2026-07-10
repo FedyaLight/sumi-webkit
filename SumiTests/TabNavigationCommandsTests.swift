@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import SumiWebRuntime
 import WebKit
 import XCTest
 
@@ -7,7 +8,264 @@ import XCTest
 
 @MainActor
 final class TabNavigationCommandsTests: XCTestCase {
-    func testResolverBasedLoadURLRecordsTargetWhenWebViewIsDeferred() throws {
+    func testExactSubmittedNavigationRevisionCannotBeRelabeledByNewerSameURLIntent() throws {
+        let targetURL = try XCTUnwrap(
+            URL(string: "https://example.com/same-url-overlap")
+        )
+        let webView = WKWebView()
+        let tab = Tab(
+            url: targetURL,
+            existingWebView: webView,
+            loadsCachedFaviconOnInit: false
+        )
+        tab.replaceUntrackedWebView(webView)
+        let firstIntent = tab.beginMainFrameNavigationIntent(to: targetURL)
+        XCTAssertTrue(tab.markDeferredMainFrameLoad(on: webView, intent: firstIntent))
+        XCTAssertEqual(
+            tab.claimDeferredMainFrameLoad(
+                on: webView,
+                revision: firstIntent.revision,
+                targetURL: targetURL
+            ),
+            .claimed
+        )
+        let lease = try XCTUnwrap(
+            tab.submittedMainFrameLoadLease(
+                on: webView,
+                revision: firstIntent.revision,
+                targetURL: targetURL
+            )
+        )
+        let firstLifetime = NSObject()
+        let firstNavigationID = ObjectIdentifier(firstLifetime)
+        XCTAssertTrue(
+            tab.bindSubmittedMainFrameLoad(
+                on: webView,
+                navigationID: firstNavigationID,
+                navigationLifetime: firstLifetime,
+                matching: lease
+            )
+        )
+        XCTAssertEqual(
+            tab.submittedMainFrameSemanticRevision(
+                on: webView,
+                navigationID: firstNavigationID,
+                navigationLifetime: firstLifetime
+            ),
+            firstIntent.revision
+        )
+
+        let newerIntent = tab.beginMainFrameNavigationIntent(to: targetURL)
+        XCTAssertGreaterThan(newerIntent.revision, firstIntent.revision)
+        XCTAssertNotEqual(
+            tab.submittedMainFrameSemanticRevision(
+                on: webView,
+                navigationID: firstNavigationID,
+                navigationLifetime: firstLifetime
+            ),
+            newerIntent.revision
+        )
+    }
+
+    func testWebsiteDataMutationDefersPhysicalSubmissionAndReplaysCurrentIntent() throws {
+        let targetURL = try XCTUnwrap(
+            URL(string: "https://example.com/deferred-cleanup-intent")
+        )
+        let webView = NavigationRecordingWebView()
+        let tab = Tab(
+            url: targetURL,
+            existingWebView: webView,
+            loadsCachedFaviconOnInit: false
+        )
+        tab.replaceUntrackedWebView(webView)
+        _ = tab.installNavigationDelegate(on: webView)
+        _ = tab.beginMainFrameNavigationIntent(to: targetURL)
+        var shouldDefer = true
+        var replay: (@MainActor () -> Void)?
+        var cleanupRuntime = TabWebViewCleanupRuntime.inactive
+        cleanupRuntime.deferWebsiteDataMutationMainFrameSubmission = {
+            _, _, _, candidateReplay in
+            guard shouldDefer else { return false }
+            replay = candidateReplay
+            return true
+        }
+        tab.navigationRuntime.webViewCleanupRuntime = cleanupRuntime
+
+        let initialOutcome = tab.performMainFrameNavigation(on: webView) {
+            $0.load(URLRequest(url: targetURL))
+        }
+        XCTAssertEqual(initialOutcome, .alreadyScheduled)
+        XCTAssertTrue(webView.loadedRequests.isEmpty)
+
+        shouldDefer = false
+        replay?()
+        XCTAssertEqual(webView.loadedRequests.map(\.url), [targetURL])
+    }
+
+
+    func testRefreshMaterializesEmptyUntrackedWebViewAtExactTarget() throws {
+        let targetURL = try XCTUnwrap(URL(string: "https://example.com/empty-untracked"))
+        let webView = NavigationRecordingWebView()
+        let tab = Tab(
+            url: targetURL,
+            existingWebView: webView,
+            loadsCachedFaviconOnInit: false
+        )
+        tab.replaceUntrackedWebView(webView)
+        _ = tab.installNavigationDelegate(on: webView)
+
+        tab.refresh()
+
+        XCTAssertEqual(webView.standardReloadCount, 1)
+        XCTAssertEqual(webView.loadedRequests.map(\.url), [targetURL])
+        XCTAssertEqual(
+            webView.loadedRequests.map(\.cachePolicy),
+            [.useProtocolCachePolicy]
+        )
+    }
+
+    func testDeferredHardReloadMaterializesEmptyCloneWithBypassPolicy() throws {
+        let targetURL = try XCTUnwrap(URL(string: "https://example.com/empty-protected"))
+        let webView = NavigationRecordingWebView()
+        let tab = Tab(
+            url: targetURL,
+            existingWebView: webView,
+            loadsCachedFaviconOnInit: false
+        )
+        tab.replaceUntrackedWebView(webView)
+        _ = tab.installNavigationDelegate(on: webView)
+        let intent = tab.beginMainFrameNavigationIntent(to: targetURL)
+        XCTAssertTrue(tab.markDeferredMainFrameLoad(on: webView, intent: intent))
+
+        let result = tab.performDeferredMainFrameNavigation(
+            on: webView,
+            revision: intent.revision,
+            targetURL: targetURL
+        ) {
+            WebRuntimeMainFrameReloader.reloadOrLoad(
+                targetURL,
+                on: $0,
+                policy: .fromOrigin
+            )
+        }
+
+        XCTAssertEqual(result, .submissionFailed)
+        XCTAssertEqual(webView.fromOriginReloadCount, 1)
+        XCTAssertEqual(webView.loadedRequests.map(\.url), [targetURL])
+        XCTAssertEqual(
+            webView.loadedRequests.map(\.cachePolicy),
+            [.reloadIgnoringLocalAndRemoteCacheData]
+        )
+    }
+
+    func testScopedLoadCreatesNavigationAndRebuildIntentsBeforePolicyReplacement() throws {
+        let targetURL = try XCTUnwrap(URL(string: "https://example.com/same-target"))
+        let webView = NavigationRecordingWebView()
+        let tab = Tab(
+            url: targetURL,
+            existingWebView: webView,
+            loadsCachedFaviconOnInit: false
+        )
+        tab.replaceUntrackedWebView(webView)
+        var navigationRevisions: [UInt64] = []
+        var rebuildRevisions: [UInt64] = []
+
+        for _ in 0..<2 {
+            tab.navigationCommandOwner.loadURL(
+                targetURL,
+                for: tab,
+                resolvedWebView: { webView },
+                reason: "TabNavigationCommandsTests.scopedLoad",
+                configurationPolicyRebuilder: { candidateURL, _ in
+                    guard let intent = tab.currentMainFrameNavigationIntent(
+                        matching: candidateURL
+                    ) else {
+                        XCTFail("Expected navigation intent before policy replacement")
+                        return .failed
+                    }
+                    navigationRevisions.append(intent.revision)
+                    rebuildRevisions.append(tab.currentWebViewRebuildIntentRevision)
+                    return .replacedAndScheduledNavigation
+                }
+            )
+        }
+
+        XCTAssertEqual(navigationRevisions.count, 2)
+        XCTAssertEqual(navigationRevisions[1], navigationRevisions[0] + 1)
+        XCTAssertEqual(rebuildRevisions.count, 2)
+        XCTAssertEqual(rebuildRevisions[1], rebuildRevisions[0] + 1)
+        XCTAssertTrue(webView.loadedRequests.isEmpty)
+    }
+
+    func testWindowScopedHardReloadOwnsFreshSemanticRevisionBeforeDelivery() throws {
+        let targetURL = try XCTUnwrap(URL(string: "https://example.com/hard-reload"))
+        let webView = NavigationRecordingWebView()
+        let tab = Tab(
+            url: targetURL,
+            existingWebView: webView,
+            loadsCachedFaviconOnInit: false
+        )
+        tab.replaceUntrackedWebView(webView)
+        var policyRevision: UInt64?
+        var policyRebuildRevision: UInt64?
+        var deliveredIntent: TabMainFrameNavigationIntent?
+        var deliveredPolicy: WebRuntimeMainFrameReloadPolicy?
+
+        tab.navigationCommandOwner.refresh(
+            tab,
+            resolvedWebView: { webView },
+            reason: "TabNavigationCommandsTests.hardReload",
+            policy: .fromOrigin,
+            configurationPolicyRebuilder: { candidateURL, _ in
+                policyRevision = tab.currentMainFrameNavigationIntent(
+                    matching: candidateURL
+                )?.revision
+                policyRebuildRevision = tab.currentWebViewRebuildIntentRevision
+                return .notNeeded
+            },
+            deliverTrackedReload: { intent, policy in
+                deliveredIntent = intent
+                deliveredPolicy = policy
+                return .accepted
+            }
+        )
+
+        XCTAssertEqual(policyRevision, deliveredIntent?.revision)
+        XCTAssertEqual(policyRebuildRevision, 1)
+        XCTAssertEqual(deliveredIntent?.targetURL, targetURL)
+        XCTAssertEqual(deliveredPolicy, .fromOrigin)
+    }
+
+    func testTrackedReplacementWithScheduledNavigationDoesNotLoadAgainInCaller() throws {
+        let webView = NavigationRecordingWebView()
+        let tab = Tab(
+            url: try XCTUnwrap(URL(string: "https://example.com/start")),
+            existingWebView: webView,
+            loadsCachedFaviconOnInit: false
+        )
+        tab.replaceUntrackedWebView(webView)
+        tab.navigationRuntime.navigationCommandRuntime = TabNavigationCommandRuntime(
+            resolvedSearchEngineTemplate: { nil },
+            prepareExtensionPageNavigation: { _, _, _ in
+                .replacedAndScheduledNavigation
+            }
+        )
+        let targetURL = try XCTUnwrap(
+            URL(string: "safari-web-extension://extension-id/page.html")
+        )
+
+        tab.navigationCommandOwner.loadURL(
+            targetURL,
+            for: tab,
+            resolvedWebView: { webView },
+            reason: "TabNavigationCommandsTests.scheduledReplacement"
+        )
+
+        XCTAssertEqual(tab.url, targetURL)
+        XCTAssertTrue(webView.loadedRequests.isEmpty)
+    }
+
+    func testResolverBasedLoadURLRollsBackWhenNoWebViewCanReceiveIt() throws {
         let originalURL = try XCTUnwrap(URL(string: "https://example.com/start"))
         let targetURL = try XCTUnwrap(URL(string: "https://target.example/path"))
         let tab = Tab(url: originalURL, loadsCachedFaviconOnInit: false)
@@ -24,34 +282,171 @@ final class TabNavigationCommandsTests: XCTestCase {
         )
 
         XCTAssertEqual(resolverCallCount, 1)
-        XCTAssertEqual(tab.url, targetURL)
+        XCTAssertEqual(tab.url, originalURL)
+        XCTAssertNotNil(tab.currentMainFrameNavigationIntent(matching: originalURL))
         XCTAssertNil(tab.resolvedCurrentWebView())
     }
 
-    func testNavigationCommandURLRequestUsesReturnCacheDataElseLoadForRegularURL() throws {
-        let url = try XCTUnwrap(URL(string: "https://example.com/path"))
+    func testFailedChainedSubmissionRollsBackToLastCommittedDocument() throws {
+        let committedURL = try XCTUnwrap(URL(string: "https://example.com/committed"))
+        let firstPendingURL = try XCTUnwrap(URL(string: "https://example.com/first-pending"))
+        let failedURL = try XCTUnwrap(URL(string: "https://example.com/failed"))
+        let webView = NavigationRecordingWebView()
+        let tab = Tab(
+            url: committedURL,
+            existingWebView: webView,
+            loadsCachedFaviconOnInit: false
+        )
+        tab.replaceUntrackedWebView(webView)
+        _ = tab.installNavigationDelegate(on: webView)
+        webView.reportedCommittedURL = committedURL
+        let committedNavigation = NSObject()
+        let committedNavigationID = ObjectIdentifier(committedNavigation)
+        XCTAssertEqual(tab.beginMainFrameLifecycle(
+            from: webView,
+            navigationID: committedNavigationID,
+            navigationLifetime: committedNavigation,
+            targetURL: committedURL,
+            allowsUserInitiatedSupersession: true,
+            continuationKind: nil
+        ), .authority)
+        XCTAssertTrue(tab.recordMainFrameCommitSnapshot(
+            from: webView,
+            navigationID: committedNavigationID,
+            committedURL: committedURL,
+            isPDF: false
+        ).shouldPublishSharedEffects)
+        tab.finishMainFrameLifecycle(
+            from: webView,
+            navigationID: committedNavigationID
+        )
+        _ = tab.beginMainFrameNavigationIntent(to: firstPendingURL)
+        tab.url = firstPendingURL
 
-        let request = Tab.navigationCommandURLRequest(for: url)
+        tab.navigationCommandOwner.loadURL(
+            failedURL,
+            for: tab,
+            resolvedWebView: { webView },
+            reason: "TabNavigationCommandsTests.failedChainedSubmission",
+            configurationPolicyRebuilder: { _, _ in .notNeeded }
+        )
 
-        XCTAssertEqual(request.url, url)
-        XCTAssertEqual(request.cachePolicy, .returnCacheDataElseLoad)
-        XCTAssertEqual(request.timeoutInterval, 30.0)
+        XCTAssertEqual(webView.loadedRequests.map(\.url), [failedURL])
+        XCTAssertEqual(tab.url, committedURL)
+        XCTAssertNotNil(tab.currentMainFrameNavigationIntent(matching: committedURL))
+        let restoredDocument = try XCTUnwrap(
+            tab.mainFrameDocumentLease(for: webView)
+        )
+        XCTAssertEqual(restoredDocument.committedURL, committedURL)
+        XCTAssertTrue(restoredDocument.isAuthority)
+        XCTAssertFalse(tab.loadingState.isLoading)
     }
 
-    func testNavigationCommandURLRequestBypassesLocalCacheForExtensionSchemes() throws {
-        let urls = [
-            try XCTUnwrap(URL(string: "webkit-extension://extension-id/options.html")),
-            try XCTUnwrap(URL(string: "safari-web-extension://extension-id/options.html")),
-            try XCTUnwrap(URL(string: "WebKit-Extension://extension-id/options.html")),
-        ]
+    func testRollbackRejectsSameURLReplicaWithDifferentDocumentKind() throws {
+        let committedURL = try XCTUnwrap(URL(string: "https://example.com/document"))
+        let pendingURL = try XCTUnwrap(URL(string: "https://example.com/pending"))
+        let htmlWebView = NavigationRecordingWebView()
+        let pdfWebView = NavigationRecordingWebView()
+        htmlWebView.reportedCommittedURL = committedURL
+        pdfWebView.reportedCommittedURL = committedURL
+        let tab = Tab(url: committedURL, loadsCachedFaviconOnInit: false)
+        _ = tab.beginMainFrameNavigationIntent(to: committedURL)
 
-        for url in urls {
-            let request = Tab.navigationCommandURLRequest(for: url)
+        let htmlNavigation = NSObject()
+        let pdfNavigation = NSObject()
+        XCTAssertTrue(tab.claimDirectMainFrameLoad(on: htmlWebView))
+        XCTAssertTrue(tab.bindSubmittedMainFrameLoad(
+            on: htmlWebView,
+            navigationID: ObjectIdentifier(htmlNavigation),
+            navigationLifetime: htmlNavigation
+        ))
+        XCTAssertTrue(tab.claimDirectMainFrameLoad(on: pdfWebView))
+        XCTAssertTrue(tab.bindSubmittedMainFrameLoad(
+            on: pdfWebView,
+            navigationID: ObjectIdentifier(pdfNavigation),
+            navigationLifetime: pdfNavigation
+        ))
+        XCTAssertTrue(tab.recordMainFrameCommitSnapshot(
+            from: htmlWebView,
+            navigationID: ObjectIdentifier(htmlNavigation),
+            committedURL: committedURL,
+            isPDF: false
+        ).shouldPublishSharedEffects)
+        XCTAssertEqual(tab.recordMainFrameCommitSnapshot(
+            from: pdfWebView,
+            navigationID: ObjectIdentifier(pdfNavigation),
+            committedURL: committedURL,
+            isPDF: true
+        ).role, .participant)
+        tab.finishMainFrameLifecycle(
+            from: htmlWebView,
+            navigationID: ObjectIdentifier(htmlNavigation)
+        )
+        tab.finishMainFrameLifecycle(
+            from: pdfWebView,
+            navigationID: ObjectIdentifier(pdfNavigation)
+        )
 
-            XCTAssertEqual(request.url, url)
-            XCTAssertEqual(request.cachePolicy, .reloadIgnoringLocalCacheData)
-            XCTAssertEqual(request.timeoutInterval, 30.0)
-        }
+        _ = tab.beginMainFrameNavigationIntent(to: pendingURL)
+        tab.cancelMainFrameNavigationIntent()
+
+        let restoredLease = try XCTUnwrap(
+            tab.mainFrameDocumentLease(for: htmlWebView)
+        )
+        XCTAssertEqual(restoredLease.committedURL, committedURL)
+        XCTAssertFalse(restoredLease.isPDF)
+        XCTAssertTrue(restoredLease.isAuthority)
+        XCTAssertNil(tab.mainFrameDocumentLease(for: pdfWebView))
+        XCTAssertNotNil(tab.currentMainFrameNavigationIntent(matching: committedURL))
+    }
+
+    func testFailedSubmissionDoesNotReapplyTargetFaviconAfterRollback() throws {
+        let committedURL = try XCTUnwrap(URL(string: "sumi://settings?pane=general"))
+        let failedURL = try XCTUnwrap(URL(string: "sumi://history?range=all"))
+        let webView = NavigationRecordingWebView()
+        let tab = Tab(
+            url: committedURL,
+            existingWebView: webView,
+            loadsCachedFaviconOnInit: false
+        )
+        tab.replaceUntrackedWebView(webView)
+        _ = tab.installNavigationDelegate(on: webView)
+        tab.applyCachedFaviconOrPlaceholder(for: committedURL)
+        XCTAssertEqual(tab.faviconPresentation, .systemSymbol("gearshape.fill"))
+
+        tab.navigationCommandOwner.loadURL(
+            failedURL,
+            for: tab,
+            resolvedWebView: { webView },
+            reason: "TabNavigationCommandsTests.failedFaviconRollback",
+            configurationPolicyRebuilder: { _, _ in .notNeeded }
+        )
+
+        XCTAssertEqual(tab.url, committedURL)
+        XCTAssertEqual(tab.faviconPresentation, .systemSymbol("gearshape.fill"))
+    }
+
+    func testInitialExtensionLoadRollsBackIfMaterializationFailsAfterPolicy() throws {
+        let initialURL = try XCTUnwrap(URL(string: "https://example.com/start"))
+        let extensionURL = try XCTUnwrap(
+            URL(string: "safari-web-extension://extension-id/page.html")
+        )
+        let tab = Tab(url: initialURL, loadsCachedFaviconOnInit: false)
+        var preparedURLs: [URL] = []
+        tab.navigationRuntime.navigationCommandRuntime = TabNavigationCommandRuntime(
+            resolvedSearchEngineTemplate: { nil },
+            prepareExtensionPageNavigation: { _, url, _ in
+                preparedURLs.append(url)
+                return .notNeeded
+            }
+        )
+
+        tab.loadURL(extensionURL)
+
+        XCTAssertEqual(preparedURLs, [extensionURL])
+        XCTAssertEqual(tab.url, initialURL)
+        XCTAssertNil(tab.currentMainFrameNavigationIntent(matching: extensionURL))
+        XCTAssertNotNil(tab.currentMainFrameNavigationIntent(matching: initialURL))
     }
 
     func testContentBlockingAssetWaitDelaysMainFrameLoad() async throws {
@@ -65,14 +460,16 @@ final class TabNavigationCommandsTests: XCTestCase {
             loadsCachedFaviconOnInit: false
         )
         tab.replaceUntrackedWebView(webView)
+        _ = tab.installNavigationDelegate(on: webView)
         var didLoad = false
 
         tab.performMainFrameNavigationAfterContentBlockingAssetsIfNeeded(
             on: webView,
             waitForContentBlockingAssets: true
-        ) { resolvedWebView in
+        ) { resolvedWebView, _ in
             XCTAssertIdentical(resolvedWebView, webView)
             didLoad = true
+            return resolvedWebView.loadHTMLString("", baseURL: nil)
         }
 
         for _ in 0..<20 where controller.waitCallCount == 0 {
@@ -102,18 +499,58 @@ final class TabNavigationCommandsTests: XCTestCase {
             loadsCachedFaviconOnInit: false
         )
         tab.replaceUntrackedWebView(webView)
+        _ = tab.installNavigationDelegate(on: webView)
         var didLoad = false
 
         tab.performMainFrameNavigationAfterContentBlockingAssetsIfNeeded(
             on: webView,
             waitForContentBlockingAssets: false
-        ) { resolvedWebView in
+        ) { resolvedWebView, _ in
             XCTAssertIdentical(resolvedWebView, webView)
             didLoad = true
+            return resolvedWebView.loadHTMLString("", baseURL: nil)
         }
 
         XCTAssertEqual(controller.waitCallCount, 0)
         XCTAssertTrue(didLoad)
+    }
+}
+
+@MainActor
+private final class NavigationRecordingWebView: WKWebView {
+    private(set) var loadedRequests: [URLRequest] = []
+    private(set) var standardReloadCount = 0
+    private(set) var fromOriginReloadCount = 0
+    var reportedCommittedURL: URL?
+
+    override func responds(to selector: Selector!) -> Bool {
+        if selector == NSSelectorFromString("_committedURL")
+            || selector == NSSelectorFromString("committedURL") {
+            return true
+        }
+        return super.responds(to: selector)
+    }
+
+    override func value(forKey key: String) -> Any? {
+        if key == "committedURL" {
+            return MainActor.assumeIsolated { reportedCommittedURL }
+        }
+        return super.value(forKey: key)
+    }
+
+    override func reload() -> WKNavigation? {
+        standardReloadCount += 1
+        return nil
+    }
+
+    override func reloadFromOrigin() -> WKNavigation? {
+        fromOriginReloadCount += 1
+        return nil
+    }
+
+    override func load(_ request: URLRequest) -> WKNavigation? {
+        loadedRequests.append(request)
+        return nil
     }
 }
 

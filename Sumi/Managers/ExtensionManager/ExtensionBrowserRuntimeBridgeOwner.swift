@@ -11,7 +11,9 @@ final class ExtensionBrowserRuntimeBridgeOwner {
     struct Dependencies {
         let adapterStore: ExtensionBrowserAdapterStore
         let runtime: @MainActor () -> ExtensionManagerRuntime
-        let browserBridgeContext: @MainActor () -> (any ExtensionBrowserBridgeContext)?
+        let windowQuery: @MainActor () -> (any ExtensionWindowQuery)?
+        let auxiliaryWindows:
+            @MainActor () -> (any ExtensionAuxiliaryWindowControl)?
         let controllersByProfile: @MainActor () -> [UUID: WKWebExtensionController]
         let currentProfileId: @MainActor () -> UUID?
         let resolvedProfileIdForWindow: @MainActor (BrowserWindowState) -> UUID?
@@ -67,7 +69,8 @@ final class ExtensionBrowserRuntimeBridgeOwner {
 
         extensionContext.didOpenWindow(adapter)
         if session.shouldActivateApp {
-            dependencies.browserBridgeContext()?.recordAuxiliaryWindowSessionFocus(session.id)
+            dependencies.auxiliaryWindows()?
+                .recordAuxiliaryWindowSessionFocus(session.id)
             extensionContext.didFocusWindow(adapter)
         }
     }
@@ -100,7 +103,8 @@ final class ExtensionBrowserRuntimeBridgeOwner {
         }
 
         extensionContext.didCloseWindow(adapter)
-        if let activeWindow = dependencies.browserBridgeContext()?.activeExtensionWindowState,
+        if let activeWindow = dependencies.windowQuery()?
+            .activeExtensionWindowState,
            let profileId = dependencies.resolvedProfileIdForTab(session.tab),
            dependencies.windowMatchesProfile(activeWindow, profileId),
            let focusedAdapter = dependencies.windowAdapter(activeWindow.id) {
@@ -130,9 +134,11 @@ final class ExtensionBrowserRuntimeBridgeOwner {
 
     func notifyWindowFocused(_ windowState: BrowserWindowState) {
         if let keyWindow = NSApp.keyWindow,
-           let auxiliarySession = dependencies.browserBridgeContext()?
-           .auxiliaryWindowSession(for: keyWindow) {
-            dependencies.browserBridgeContext()?.focusAuxiliaryWindowSession(auxiliarySession.id)
+           let auxiliaryWindows = dependencies.auxiliaryWindows(),
+           let auxiliarySession = auxiliaryWindows.auxiliaryWindowSession(
+            for: keyWindow
+           ) {
+            auxiliaryWindows.focusAuxiliaryWindowSession(auxiliarySession.id)
             return
         }
 
@@ -239,9 +245,9 @@ final class ExtensionBrowserRuntimeBridgeOwner {
             )
         }
 
-        if let browserContext = dependencies.browserBridgeContext(),
-           let activeWindow = browserContext.activeExtensionWindowState,
-           let currentTab = browserContext.currentExtensionTab(in: activeWindow),
+        if let windowQuery = dependencies.windowQuery(),
+           let activeWindow = windowQuery.activeExtensionWindowState,
+           let currentTab = windowQuery.currentExtensionTab(in: activeWindow),
            dependencies.isTabEligibleForCurrentExtensionRuntime(currentTab) {
             dependencies.notifyTabActivated(currentTab, nil)
         }
@@ -252,9 +258,9 @@ final class ExtensionBrowserRuntimeBridgeOwner {
     }
 
     func registerExistingWindowStateIfAttached() {
-        guard let browserContext = dependencies.browserBridgeContext() else { return }
+        guard let windowQuery = dependencies.windowQuery() else { return }
 
-        let windows = browserContext.allExtensionWindowStates
+        let windows = windowQuery.allExtensionWindowStates
         dependencies.trace(
             "registerExistingWindowState start generation=\(dependencies.extensionLoadGeneration()) notifyGeneration=\(dependencies.tabOpenNotificationGeneration()) windows=\(windows.count) controller=\(dependencies.extensionControllerDescription(dependencies.currentExtensionController()))"
         )
@@ -263,7 +269,7 @@ final class ExtensionBrowserRuntimeBridgeOwner {
             notifyWindowOpened(windowState)
         }
 
-        if let activeWindow = browserContext.activeExtensionWindowState {
+        if let activeWindow = windowQuery.activeExtensionWindowState {
             notifyWindowFocused(activeWindow)
         }
 
@@ -329,11 +335,14 @@ extension ExtensionBrowserRuntimeBridgeOwner.Dependencies {
         Self(
             adapterStore: manager.adapterStore,
             runtime: { [weak manager] in manager?.runtime ?? .inactive },
-            browserBridgeContext: { [weak manager] in manager?.browserBridgeContext },
-            controllersByProfile: { [weak manager] in
-                manager?.extensionControllersByProfile ?? [:]
+            windowQuery: { [weak manager] in manager?.extensionWindowQuery },
+            auxiliaryWindows: { [weak manager] in
+                manager?.extensionAuxiliaryWindows
             },
-            currentProfileId: { [weak manager] in manager?.currentProfileId },
+            controllersByProfile: { [weak manager] in
+                manager?.profileRuntime.controllersByProfile ?? [:]
+            },
+            currentProfileId: { [weak manager] in manager?.profileRuntime.currentProfileId },
             resolvedProfileIdForWindow: { [weak manager] windowState in
                 manager?.resolvedProfileId(for: windowState)
             },
@@ -363,12 +372,12 @@ extension ExtensionBrowserRuntimeBridgeOwner.Dependencies {
             },
             extensionsLoaded: { [weak manager] in manager?.extensionsLoaded ?? false },
             tabOpenNotificationGeneration: { [weak manager] in
-                manager?.tabOpenNotificationGeneration ?? 0
+                manager?.runtimeSession.tabOpenNotificationGeneration ?? 0
             },
             bumpTabOpenNotificationGeneration: { [weak manager] in
                 guard let manager else { return 0 }
-                manager.tabOpenNotificationGeneration &+= 1
-                return manager.tabOpenNotificationGeneration
+                manager.runtimeSession.tabOpenNotificationGeneration &+= 1
+                return manager.runtimeSession.tabOpenNotificationGeneration
             },
             updateWebViewsForProfile: { [weak manager] profileId, allowWhenExtensionsNotLoaded in
                 manager?.updateWebViewsForProfile(
@@ -387,17 +396,17 @@ extension ExtensionBrowserRuntimeBridgeOwner.Dependencies {
                 manager?.notifyTabActivated(newTab: newTab, previous: previous)
             },
             extensionLoadGeneration: { [weak manager] in
-                manager?.extensionLoadGeneration ?? 0
+                manager?.runtimeSession.extensionLoadGeneration ?? 0
             },
-            extensionControllerDescription: { [weak manager] controller in
-                manager?.extensionRuntimeControllerDescription(controller) ?? "nil"
+            extensionControllerDescription: { controller in
+                ExtensionRuntimeDiagnostics.objectDescription(controller)
             },
             currentExtensionController: { [weak manager] in manager?.extensionController },
             ownedUntrackedCurrentWebView: { [weak manager] tab in
                 manager?.ownedUntrackedCurrentWebView(for: tab)
             },
             trace: { [weak manager] message in
-                manager?.extensionRuntimeTrace(message)
+                manager?.runtimeDiagnostics.trace(message)
             },
             debugDidActivateTab: { [weak manager] in
                 #if DEBUG

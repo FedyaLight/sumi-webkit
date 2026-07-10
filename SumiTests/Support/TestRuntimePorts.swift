@@ -1,5 +1,5 @@
 import Foundation
-import SumiBrowserCore
+import SumiWebRuntime
 
 @testable import Sumi
 
@@ -7,6 +7,40 @@ import SumiBrowserCore
 /// constructed the legacy closure-bag runtime context with provider/handler bags.
 @MainActor
 enum TestRuntimePorts {
+    static func webViewLifecycle(
+        materializeVisibleTabWebViewIfNeeded: @escaping (Tab, BrowserWindowState) -> Void = { _, _ in },
+        loadTab: @escaping (Tab) -> Void = { _ in },
+        unloadTab: @escaping (Tab) -> Void = { _ in },
+        requireRemoveAllWebViews: @escaping (Tab, Bool) -> Void = { _, _ in },
+        windowIDsTrackingWebViews: @escaping (UUID) -> [UUID] = { _ in [] },
+        primaryTrackedWindowId: @escaping (UUID) -> UUID? = { _ in nil },
+        rebuildLiveWebViews: @escaping (Tab, UUID?, URL?) -> Void = { _, _, _ in },
+        prepareTab: @escaping (Tab) -> Void = { _ in },
+        anyLiveWebView: @escaping (Tab) -> WKWebView? = { _ in nil },
+        hasUntrackedOwnedWebView: @escaping (Tab) -> Bool = { _ in false },
+        executeProfileAssignment: @escaping (
+            Tab,
+            Profile,
+            DeferredWebViewProfileAssignmentIntent
+        ) -> TabProfileAssignmentExecutionOutcome = { tab, _, intent in
+            tab.commitProfileAssignmentIntent(intent) ? .committed : .stale
+        }
+    ) -> TabManagerWebViewLifecycleService {
+        TabManagerWebViewLifecycleService(
+            materializeVisibleTabWebViewIfNeeded: materializeVisibleTabWebViewIfNeeded,
+            loadTab: loadTab,
+            unloadTab: unloadTab,
+            requireRemoveAllWebViews: requireRemoveAllWebViews,
+            windowIDsTrackingWebViews: windowIDsTrackingWebViews,
+            primaryTrackedWindowId: primaryTrackedWindowId,
+            rebuildLiveWebViews: rebuildLiveWebViews,
+            prepareTab: prepareTab,
+            anyLiveWebView: anyLiveWebView,
+            hasUntrackedOwnedWebView: hasUntrackedOwnedWebView,
+            executeProfileAssignment: executeProfileAssignment
+        )
+    }
+
     static func make(
         currentProfileId: @escaping () -> UUID? = { nil },
         defaultProfileId: @escaping () -> UUID? = { nil },
@@ -17,7 +51,7 @@ enum TestRuntimePorts {
         windows: @escaping () -> [(UUID, BrowserWindowState)] = { [] },
         windowStates: @escaping () -> [BrowserWindowState] = { [] },
         updateTabVisibility: @escaping () -> Void = { /* No-op. */ },
-        webViewLifecycle: TabManagerWebViewLifecycleService = .inactive,
+        webViewLifecycle: TabManagerWebViewLifecycleService? = nil,
         handleTabClosure: @escaping (UUID) -> Void = { _ in /* No-op. */ },
         visibleSplitTabIds: @escaping (UUID) -> [UUID] = { _ in [] },
         isTabVisibleInSplit: @escaping (UUID, UUID) -> Bool = { _, _ in false },
@@ -71,11 +105,11 @@ enum TestRuntimePorts {
                 isLiveFolder: isLiveFolder,
                 deleteLiveFolderState: deleteLiveFolderState
             ),
-            webViewLifecycle: webViewLifecycle
+            webViewLifecycle: webViewLifecycle ?? self.webViewLifecycle()
         )
     }
 
-    static var inactive: RuntimePortRegistry { .inactive }
+    static var inactive: RuntimePortRegistry { make() }
 }
 
 @MainActor

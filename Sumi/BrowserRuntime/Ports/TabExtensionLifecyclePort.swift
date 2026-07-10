@@ -8,18 +8,18 @@ protocol TabExtensionLifecyclePort {
 
 @MainActor
 struct LiveTabExtensionLifecyclePort: TabExtensionLifecyclePort {
-    private weak var browserManager: BrowserManager?
+    private let runtime: BrowserManagerRuntimeReference
 
-    init(browserManager: BrowserManager) {
-        self.browserManager = browserManager
+    init(runtime: BrowserManagerRuntimeReference) {
+        self.runtime = runtime
     }
 
     func notifyTabClosedIfLoaded(_ tab: Tab) {
-        browserManager?.extensionsModule.notifyTabClosedIfLoaded(tab)
+        runtime.require().extensionsModule.notifyTabClosedIfLoaded(tab)
     }
 
     func notifyTabActivatedIfLoaded(newTab: Tab, previous: Tab?) {
-        browserManager?.extensionsModule.notifyTabActivatedIfLoaded(
+        runtime.require().extensionsModule.notifyTabActivatedIfLoaded(
             newTab: newTab,
             previous: previous
         )

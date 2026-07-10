@@ -8,12 +8,12 @@ import XCTest
 @MainActor
 final class TabManagerStructuralBatchingTests: XCTestCase {
     func testStructuralPublishOwnerCoalescesNestedTransactionsAndFlushesBeforePublish() {
-        let changes = PassthroughSubject<Void, Never>()
-        let owner = TabStructuralPublishOwner(structuralChanges: changes)
+        let eventBus = TabStructureEventBus()
+        let owner = TabStructuralPublishOwner(eventBus: eventBus)
         var eventCount = 0
         var flushCount = 0
         var flushCountsAtPublish: [Int] = []
-        let cancellable = changes.sink {
+        let cancellable = eventBus.structureChangedPublisher.sink {
             eventCount += 1
             flushCountsAtPublish.append(flushCount)
         }
@@ -878,7 +878,7 @@ private final class StructuralEventRecorder {
     private(set) var count = 0
 
     init(tabManager: TabManager) {
-        cancellable = tabManager.structuralChanges.sink { [weak self] _ in
+        cancellable = tabManager.tabStructureEventBus.structureChangedPublisher.sink { [weak self] _ in
             self?.count += 1
         }
     }

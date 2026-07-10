@@ -13,7 +13,15 @@ import WebKit
 @MainActor
 enum TabDependencyIsolationDefaults {
     static let faviconService: any BrowserFaviconServicing = NoOpBrowserFaviconService()
-    static let faviconImageService: any BrowserFaviconImageServicing = NoOpBrowserFaviconImageService()
+    static let faviconCapabilities: BrowserFaviconCapabilities = {
+        let noOp = NoOpBrowserFaviconCapabilities()
+        return BrowserFaviconCapabilities(
+            images: noOp,
+            liveDiscovery: noOp,
+            localIconIngestion: noOp,
+            prefetch: noOp
+        )
+    }()
     static let visitedLinkStore: any BrowserVisitedLinkStoreManaging = NoOpBrowserVisitedLinkStore()
 }
 
@@ -30,7 +38,12 @@ private final class NoOpBrowserFaviconService: BrowserFaviconServicing {
 #endif
 }
 
-private final class NoOpBrowserFaviconImageService: BrowserFaviconImageServicing {
+private final class NoOpBrowserFaviconCapabilities:
+    BrowserFaviconImageReading,
+    BrowserFaviconLiveDiscoveryIngesting,
+    BrowserFaviconLocalIconIngesting,
+    BrowserFaviconPrefetchScheduling
+{
     func cachedPreparedImage(for _: SumiPreparedFaviconRequest) -> NSImage? { nil }
     func cachedSelection(for _: URL, partition _: SumiFaviconPartition) -> SumiStoredFaviconSelection? { nil }
     func preparedImage(

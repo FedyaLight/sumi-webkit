@@ -88,12 +88,20 @@ public final class WebViewCleanupScopeOwner {
     ) {
         for (owner, webView) in entries {
             if runtime.isWebViewProtectedFromCompositorMutation(webView) {
-                _ = runtime.enqueueDeferredProtectedCommand(
+                let wasScheduled = runtime.enqueueDeferredProtectedCommand(
                     protectedCommand,
                     webView,
                     reason
                 )
-                continue
+                if wasScheduled {
+                    continue
+                }
+                guard runtime.isWebViewProtectedFromCompositorMutation(webView) == false else {
+                    SumiWebRuntimeDiagnostics.protectedWebViewTrace(
+                        "Unable to schedule protected cleanup owner=\(owner) reason=\(reason)."
+                    )
+                    continue
+                }
             }
 
             let tab = runtime.tabForID(owner.tabID)

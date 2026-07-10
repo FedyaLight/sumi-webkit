@@ -41,7 +41,8 @@ enum BrowserConfigurationAuxiliarySurface: String, CaseIterable {
 @MainActor
 class BrowserConfiguration {
     static let shared = BrowserConfiguration(
-        autoplayPolicyStore: SumiStartupPersistenceComposition.autoplayPolicyStore
+        autoplayPolicyStore: SumiStartupPersistenceComposition
+            .browserManagerStartupPersistence.autoplayPolicyStore
     )
 
     let webKitProcessPoolContext = SumiWebKitProcessPoolContext()
@@ -61,7 +62,8 @@ class BrowserConfiguration {
     ]
 
     init(
-        autoplayPolicyStore: SumiAutoplayPolicyStoreAdapter = SumiStartupPersistenceComposition.autoplayPolicyStore,
+        autoplayPolicyStore: SumiAutoplayPolicyStoreAdapter = SumiStartupPersistenceComposition
+            .browserManagerStartupPersistence.autoplayPolicyStore,
         visitedLinkStoreProvider: SharedVisitedLinkStoreProvider = SharedVisitedLinkStoreComposition.provider
     ) {
         self.autoplayPolicyStore = autoplayPolicyStore

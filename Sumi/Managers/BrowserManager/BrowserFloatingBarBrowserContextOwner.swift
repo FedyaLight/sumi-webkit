@@ -43,7 +43,8 @@ final class BrowserFloatingBarBrowserContextOwner {
             faviconContext: { [weak browserManager] in
                 FloatingBarFaviconContext(
                     partition: dataServices.faviconService.partition(profile: browserManager?.currentProfile),
-                    imageService: dataServices.faviconImageService
+                    imageReader: dataServices.faviconCapabilities.images,
+                    prefetch: dataServices.faviconCapabilities.prefetch
                 )
             },
             configureSearchManager: { [weak browserManager] searchManager in

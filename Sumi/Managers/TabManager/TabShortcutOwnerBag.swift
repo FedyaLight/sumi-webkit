@@ -11,18 +11,13 @@ import Foundation
 /// Owners on the TabManager façade.
 @MainActor
 final class TabShortcutOwnerBag {
-    private weak var tabManager: TabManager?
+    private unowned let tabManager: TabManager
 
-    func bind(_ tabManager: TabManager) {
+    init(tabManager: TabManager) {
         self.tabManager = tabManager
     }
 
-    private var tm: TabManager {
-        guard let tabManager else {
-            preconditionFailure("TabShortcutOwnerBag used before bind(tabManager:)")
-        }
-        return tabManager
-    }
+    private var tm: TabManager { tabManager }
 
     lazy var shortcutPinCommandOwner = ShortcutPinCommandOwner(dependencies: .live(tabManager: tm))
     lazy var essentialsShortcutPlacementOwner = EssentialsShortcutPlacementOwner(

@@ -306,7 +306,7 @@ final class SumiUserscriptsModuleTests: XCTestCase {
         let probe = UserscriptsRuntimeProbe()
         let module = makeModule(registry: registry, probe: probe)
         let browserManager = BrowserManager()
-        browserManager.webViewCoordinator = WebViewCoordinator()
+        browserManager.bindTestWebViewCoordinator()
         let sourceSpace = browserManager.tabManager.spaceLifecycleOwner.createSpace(name: "Userscripts Source")
         let globalSpace = browserManager.tabManager.spaceLifecycleOwner.createSpace(name: "Userscripts Global")
         browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(globalSpace)
@@ -332,7 +332,11 @@ final class SumiUserscriptsModuleTests: XCTestCase {
         )
         globalWindow.currentTabId = globalTab.id
         let sourceWebView = WKWebView()
-        browserManager.webViewCoordinator?.setWebView(sourceWebView, for: sourceTab.id, in: sourceWindow.id)
+        browserManager.webViewOwnershipService?.registerTrackedWebView(
+            sourceWebView,
+            for: sourceTab,
+            in: sourceWindow.id
+        )
         let initialSourceTabCount = browserManager.tabManager.regularTabCollectionOwner.tabs(in: sourceSpace).count
         let initialGlobalTabCount = browserManager.tabManager.regularTabCollectionOwner.tabs(in: globalSpace).count
 

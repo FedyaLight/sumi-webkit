@@ -22,9 +22,7 @@ final class TabRegularLifecycleOwner {
         let clampedInsertionIndex: @MainActor (Int, UUID) -> Int
         let scheduleStructuralPersistence: @MainActor () -> Void
         let setActiveTab: @MainActor (Tab) -> Void
-        let faviconService: @MainActor () -> any BrowserFaviconServicing
-        let faviconImageService: @MainActor () -> any BrowserFaviconImageServicing
-        let visitedLinkStore: @MainActor () -> any BrowserVisitedLinkStoreManaging
+        let tabFactory: TabFactory
         let liveDocumentURL: @MainActor (Tab) -> URL?
     }
 
@@ -131,15 +129,12 @@ final class TabRegularLifecycleOwner {
             let nextIndex = regularInsertionIndex
                 ?? dependencies.appendIndex(sid)
 
-            let newTab = Tab(
+            let newTab = dependencies.tabFactory.makeTab(
                 url: validURL,
                 name: "New Tab",
                 favicon: "globe",
                 spaceId: sid,
-                index: nextIndex,
-                faviconService: dependencies.faviconService(),
-                faviconImageService: dependencies.faviconImageService(),
-                visitedLinkStore: dependencies.visitedLinkStore()
+                index: nextIndex
             )
             newTab.profileId = targetSpace.profileId
             newTab.webExtensionContextOverride = webExtensionContextOverride
@@ -185,17 +180,15 @@ final class TabRegularLifecycleOwner {
 
             let nextIndex = dependencies.appendIndex(sid)
 
-            let newTab = Tab(
+            let newTab = dependencies.tabFactory.makeTab(
                 url: validURL,
                 name: "New Tab",
                 favicon: "globe",
                 spaceId: sid,
                 index: nextIndex,
-                existingWebView: existingWebView,
-                faviconService: dependencies.faviconService(),
-                faviconImageService: dependencies.faviconImageService(),
-                visitedLinkStore: dependencies.visitedLinkStore()
+                existingWebView: existingWebView
             )
+            newTab.profileId = targetSpace.profileId
             addTab(newTab, regularInsertionIndex: nil)
             dependencies.setActiveTab(newTab)
             return newTab
@@ -222,16 +215,14 @@ final class TabRegularLifecycleOwner {
             guard let blankURL = URL(string: "about:blank") else {
                 preconditionFailure("TabManager: invalid about:blank URL")
             }
-            let newTab = Tab(
+            let newTab = dependencies.tabFactory.makeTab(
                 url: blankURL,
                 name: "New Tab",
                 favicon: "globe",
                 spaceId: sid,
-                index: resolvedIndex,
-                faviconService: dependencies.faviconService(),
-                faviconImageService: dependencies.faviconImageService(),
-                visitedLinkStore: dependencies.visitedLinkStore()
+                index: resolvedIndex
             )
+            newTab.profileId = targetSpace.profileId
             newTab.isPopupHost = true
             if let webViewConfigurationOverride {
                 newTab.applyWebViewConfigurationOverride(webViewConfigurationOverride)
@@ -259,16 +250,14 @@ final class TabRegularLifecycleOwner {
         dependencies.withStructuralUpdateTransaction {
             let targetSpace = dependencies.resolvedTargetSpace(nil, anchor.spaceId)
 
-            let newTab = Tab(
+            let newTab = dependencies.tabFactory.makeTab(
                 url: source.url,
                 name: source.name,
                 favicon: "globe",
                 spaceId: targetSpace.id,
-                index: 0,
-                faviconService: dependencies.faviconService(),
-                faviconImageService: dependencies.faviconImageService(),
-                visitedLinkStore: dependencies.visitedLinkStore()
+                index: 0
             )
+            newTab.profileId = targetSpace.profileId ?? source.profileId
 
             let insertionIndex = dependencies.firstIndex(anchor, targetSpace.id)
                 .map { $0 + (placeAfterAnchor ? 1 : 0) }
@@ -279,15 +268,12 @@ final class TabRegularLifecycleOwner {
     }
 
     private func makeFallbackTab() -> Tab {
-        Tab(
+        dependencies.tabFactory.makeTab(
             url: SumiSurface.emptyTabURL,
             name: "New Tab",
             favicon: "globe",
             spaceId: nil,
-            index: 0,
-            faviconService: dependencies.faviconService(),
-            faviconImageService: dependencies.faviconImageService(),
-            visitedLinkStore: dependencies.visitedLinkStore()
+            index: 0
         )
     }
 }
@@ -361,18 +347,7 @@ extension TabRegularLifecycleOwner.Dependencies {
             setActiveTab: { [weak tabManager] tab in
                 tabManager?.activeSelectionOwner.setActiveTab(tab)
             },
-            faviconService: { [weak tabManager] in
-                guard let tabManager else { preconditionFailure("TabManager dependency used after deallocation") }
-                return tabManager.faviconService
-            },
-            faviconImageService: { [weak tabManager] in
-                guard let tabManager else { preconditionFailure("TabManager dependency used after deallocation") }
-                return tabManager.faviconImageService
-            },
-            visitedLinkStore: { [weak tabManager] in
-                guard let tabManager else { preconditionFailure("TabManager dependency used after deallocation") }
-                return tabManager.visitedLinkStore
-            },
+            tabFactory: tabManager.tabFactory,
             liveDocumentURL: { [weak tabManager] tab in
                 tabManager?.runtimePorts?.webViewLifecycle.anyLiveWebView(for: tab)?.url
             }

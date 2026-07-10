@@ -10,6 +10,7 @@ import OSLog
 import SwiftUI
 import WebKit
 import SumiDomain
+import SumiWebRuntime
 
 private struct SumiAppRootDependencies {
     let browserManager: BrowserManager
@@ -26,7 +27,7 @@ private struct SumiAppRootDependencies {
 @main
 struct SumiApp: App {
     @State private var windowRegistry = WindowRegistry()
-    @State private var webViewCoordinator = WebViewCoordinator()
+    @State private var webViewCoordinator: WebViewCoordinator
     @State private var settingsManager: SumiSettingsService
     @State private var keyboardShortcutManager = KeyboardShortcutManager()
     @State private var appOrchestrationOwner = BrowserAppOrchestrationOwner()
@@ -45,19 +46,23 @@ struct SumiApp: App {
         let nowPlayingController = SumiNativeNowPlayingController()
         let updaterService = SumiUpdaterService()
         let defaultBrowserService = SumiDefaultBrowserService()
+        let webViewSessions = WebViewSessionRepository()
+        let browserManager = BrowserManager(
+            webViewSessions: webViewSessions,
+            startupPersistence: SumiStartupPersistenceComposition.browserManagerStartupPersistence,
+            browserConfiguration: BrowserConfiguration.shared,
+            nowPlayingController: nowPlayingController,
+            permissionSiteActivityStore: SumiPermissionSiteActivityStore(),
+            externalAppResolver: SumiNSWorkspaceExternalAppResolver(),
+            sidebarHostRecoveryCoordinator: SidebarHostRecoveryCoordinator()
+        )
         self.updaterService = updaterService
         self.defaultBrowserService = defaultBrowserService
         _nowPlayingController = StateObject(wrappedValue: nowPlayingController)
         _settingsManager = State(initialValue: SumiSettingsService(nowPlayingController: nowPlayingController))
-        _browserManager = StateObject(
-            wrappedValue: BrowserManager(
-                startupPersistence: SumiStartupPersistenceComposition.browserManagerStartupPersistence,
-                browserConfiguration: BrowserConfiguration.shared,
-                nowPlayingController: nowPlayingController,
-                permissionSiteActivityStore: SumiPermissionSiteActivityStore(),
-                externalAppResolver: SumiNSWorkspaceExternalAppResolver(),
-                sidebarHostRecoveryCoordinator: SidebarHostRecoveryCoordinator()
-            )
+        _browserManager = StateObject(wrappedValue: browserManager)
+        _webViewCoordinator = State(
+            initialValue: WebViewCoordinator(webViewSessions: webViewSessions)
         )
     }
 

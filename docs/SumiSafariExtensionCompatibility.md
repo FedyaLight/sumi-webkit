@@ -270,7 +270,7 @@ shows the Safari-settings error.
   keep winning). Freshly created Safari-appex policies seed `Allow` even when
   legacy prompt decisions migrate in as rules.
 - Existing dirty field states self-heal on the next context load
-  (`ExtensionRuntimeContextLoadOwner` seeds before policy application).
+  (`ExtensionRuntimeContextLoader` seeds before policy application).
 
 ### WebKit behavior contract captured (permissions API, UI-process sources)
 
@@ -431,7 +431,7 @@ WebKit root proved three distinct defects:
     place, removed when state-only, or renamed to `.sumi-legacy-retired-*`
     with bytes preserved), so the destructive branch can never re-arm;
   - resolves the storage identity from the load request's
-    `sourceKind`/`sourceBundlePath` (`ExtensionRuntimeContextLoadOwner` →
+    `sourceKind`/`sourceBundlePath` (`ExtensionRuntimeContextLoader` →
     `adoptLegacyWebExtensionStorageIfNeeded`), not from possibly-unloaded
     `installedExtensions`.
 - `ExtensionControllerProvisioningOwner.extensionControllerIdentifier(for:)`

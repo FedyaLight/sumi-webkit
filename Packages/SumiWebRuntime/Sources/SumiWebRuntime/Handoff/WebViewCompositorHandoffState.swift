@@ -11,116 +11,215 @@ import AppKit
 import Foundation
 import WebKit
 
+/// Terminal result of a promoted-host compositor handoff.
+///
+/// A completion is resolved exactly once. `attached` means the compositor took
+/// and installed the registered host. `cancelled` means the pending handoff was
+/// invalidated before attachment (replacement, stale/removed window, or global
+/// runtime teardown).
+public enum PromotedHostAttachmentOutcome: Sendable, Equatable {
+    case attached
+    case cancelled
+}
+
+public typealias PromotedHostAttachmentCompletion =
+    @MainActor (PromotedHostAttachmentOutcome) -> Void
+
+/// Identity lease for one compositor-container installation.
+///
+/// A later installation for the same window supersedes this lease. Conditional
+/// teardown with the stale lease then becomes a no-op instead of unregistering
+/// the replacement controller's container and handoff handler.
+public struct WebViewCompositorContainerRegistration: Hashable, Sendable {
+    public let windowID: UUID
+    fileprivate let id: UUID
+
+    fileprivate init(windowID: UUID) {
+        self.windowID = windowID
+        self.id = UUID()
+    }
+}
+
 @MainActor
 public final class WebViewCompositorHandoffState {
-    private struct WeakNSView { weak var view: NSView? }
+    private struct ContainerRegistrationRecord {
+        let registration: WebViewCompositorContainerRegistration
+        weak var view: NSView?
+        let immediateVisualHandoffHandler: (@MainActor () -> Bool)?
+    }
 
-    private var containerViews: [UUID: WeakNSView] = [:]
-    private var immediateVisualHandoffHandlersByWindow: [UUID: @MainActor () -> Bool] = [:]
-    private var promotedHostsByTabAndWindow: [UUID: [UUID: any WebRuntimePromotedHost]] = [:]
-    private var promotedHostAttachmentCompletionsByTabAndWindow: [UUID: [UUID: @MainActor () -> Void]] = [:]
+    private struct PromotionKey: Hashable {
+        let tabID: UUID
+        let windowID: UUID
+    }
+
+    private struct PendingPromotion {
+        var host: (any WebRuntimePromotedHost)?
+        let containerRegistration: WebViewCompositorContainerRegistration
+        let attachmentCompletion: PromotedHostAttachmentCompletion?
+    }
+
+    private var containerRegistrationsByWindow: [UUID: ContainerRegistrationRecord] = [:]
+    private var pendingPromotions: [PromotionKey: PendingPromotion] = [:]
 
     public init() {}
 
-    public func setContainerView(_ view: NSView?, for windowID: UUID) {
-        if let view {
-            containerViews[windowID] = WeakNSView(view: view)
-        } else {
-            containerViews.removeValue(forKey: windowID)
+    @discardableResult
+    public func registerContainerView(
+        _ view: NSView,
+        for windowID: UUID,
+        immediateVisualHandoffHandler: (@MainActor () -> Bool)? = nil
+    ) -> WebViewCompositorContainerRegistration {
+        let registration = WebViewCompositorContainerRegistration(windowID: windowID)
+        let previous = containerRegistrationsByWindow.updateValue(
+            ContainerRegistrationRecord(
+                registration: registration,
+                view: view,
+                immediateVisualHandoffHandler: immediateVisualHandoffHandler
+            ),
+            forKey: windowID
+        )
+        if previous != nil {
+            finishAndRemovePromotions(in: windowID)
         }
-    }
-
-    public func setImmediateVisualHandoffHandler(
-        _ handler: (@MainActor () -> Bool)?,
-        for windowID: UUID
-    ) {
-        immediateVisualHandoffHandlersByWindow[windowID] = handler
+        return registration
     }
 
     @discardableResult
     public func performImmediateVisualHandoffIfPossible(in windowID: UUID) -> Bool {
-        immediateVisualHandoffHandlersByWindow[windowID]?() ?? false
+        guard containerView(for: windowID) != nil else { return false }
+        return containerRegistrationsByWindow[windowID]?
+            .immediateVisualHandoffHandler?() ?? false
     }
 
     public func containerView(for windowID: UUID) -> NSView? {
-        if let view = containerViews[windowID]?.view {
+        guard let record = containerRegistrationsByWindow[windowID] else {
+            return nil
+        }
+        if let view = record.view {
             return view
         }
-        containerViews.removeValue(forKey: windowID)
-        immediateVisualHandoffHandlersByWindow.removeValue(forKey: windowID)
+        _ = removeContainerView(record.registration)
         return nil
     }
 
     public func removeContainerView(for windowID: UUID) {
-        containerViews.removeValue(forKey: windowID)
-        immediateVisualHandoffHandlersByWindow.removeValue(forKey: windowID)
+        containerRegistrationsByWindow.removeValue(forKey: windowID)
+        finishAndRemovePromotions(in: windowID)
+    }
+
+    public func isCurrentContainerRegistration(
+        _ registration: WebViewCompositorContainerRegistration
+    ) -> Bool {
+        containerRegistrationsByWindow[registration.windowID]?.registration == registration
+    }
+
+    @discardableResult
+    public func removeContainerView(
+        _ registration: WebViewCompositorContainerRegistration
+    ) -> Bool {
+        guard isCurrentContainerRegistration(registration) else { return false }
+
+        containerRegistrationsByWindow.removeValue(forKey: registration.windowID)
+        finishAndRemovePromotions(in: registration.windowID)
+        return true
     }
 
     public func containerViewsByWindow() -> [(UUID, NSView)] {
         var result: [(UUID, NSView)] = []
-        var staleWindowIDs: [UUID] = []
-        for (windowID, entry) in containerViews {
-            if let view = entry.view {
+        var staleRegistrations: [WebViewCompositorContainerRegistration] = []
+        for (windowID, record) in containerRegistrationsByWindow {
+            if let view = record.view {
                 result.append((windowID, view))
             } else {
-                staleWindowIDs.append(windowID)
+                staleRegistrations.append(record.registration)
             }
         }
-        for windowID in staleWindowIDs {
-            containerViews.removeValue(forKey: windowID)
-            immediateVisualHandoffHandlersByWindow.removeValue(forKey: windowID)
+        for registration in staleRegistrations {
+            _ = removeContainerView(registration)
         }
         return result
     }
 
     public func removeAllWindowRegistrations() {
-        containerViews.removeAll()
-        immediateVisualHandoffHandlersByWindow.removeAll()
+        containerRegistrationsByWindow.removeAll()
+        let completions = pendingPromotions.values.compactMap(\.attachmentCompletion)
+        pendingPromotions.removeAll()
+        completions.forEach { $0(.cancelled) }
     }
 
+    @discardableResult
     public func registerPromotedHost(
         _ host: any WebRuntimePromotedHost,
         for tabID: UUID,
         in windowID: UUID,
-        attachmentCompletion: (@MainActor () -> Void)? = nil
-    ) {
-        promotedHostsByTabAndWindow[tabID, default: [:]][windowID] = host
-        if let attachmentCompletion {
-            promotedHostAttachmentCompletionsByTabAndWindow[tabID, default: [:]][windowID] = attachmentCompletion
-        } else {
-            promotedHostAttachmentCompletionsByTabAndWindow[tabID]?[windowID] = nil
-            if promotedHostAttachmentCompletionsByTabAndWindow[tabID]?.isEmpty == true {
-                promotedHostAttachmentCompletionsByTabAndWindow[tabID] = nil
-            }
-        }
+        attachmentCompletion: PromotedHostAttachmentCompletion? = nil
+    ) -> Bool {
+        guard containerView(for: windowID) != nil,
+              let containerRegistration = containerRegistrationsByWindow[windowID]?.registration
+        else { return false }
+
+        let key = PromotionKey(tabID: tabID, windowID: windowID)
+        let previous = pendingPromotions.updateValue(
+            PendingPromotion(
+                host: host,
+                containerRegistration: containerRegistration,
+                attachmentCompletion: attachmentCompletion
+            ),
+            forKey: key
+        )
+        previous?.attachmentCompletion?(.cancelled)
+        return true
     }
 
     public func takePromotedHost(
         for tabID: UUID,
         in windowID: UUID,
+        containerRegistration: WebViewCompositorContainerRegistration,
         expectedWebView: WKWebView
     ) -> (any WebRuntimePromotedHost)? {
-        guard let host = promotedHostsByTabAndWindow[tabID]?[windowID] else { return nil }
+        let key = PromotionKey(tabID: tabID, windowID: windowID)
+        guard var promotion = pendingPromotions[key],
+              containerRegistration.windowID == windowID,
+              isCurrentContainerRegistration(containerRegistration),
+              promotion.containerRegistration == containerRegistration,
+              let host = promotion.host
+        else { return nil }
         guard host.webView === expectedWebView else { return nil }
 
-        promotedHostsByTabAndWindow[tabID]?[windowID] = nil
-        if promotedHostsByTabAndWindow[tabID]?.isEmpty == true {
-            promotedHostsByTabAndWindow[tabID] = nil
+        promotion.host = nil
+        if promotion.attachmentCompletion == nil {
+            pendingPromotions.removeValue(forKey: key)
+        } else {
+            pendingPromotions[key] = promotion
         }
 
         host.prepareForSuperviewTransferPreservingDisplayedContent()
         return host
     }
 
-    public func completePromotedHostAttachment(for tabID: UUID, in windowID: UUID) {
-        guard let completion = promotedHostAttachmentCompletionsByTabAndWindow[tabID]?[windowID] else {
-            return
-        }
+    public func completePromotedHostAttachment(
+        for tabID: UUID,
+        in windowID: UUID,
+        containerRegistration: WebViewCompositorContainerRegistration
+    ) {
+        let key = PromotionKey(tabID: tabID, windowID: windowID)
+        guard let promotion = pendingPromotions[key],
+              containerRegistration.windowID == windowID,
+              isCurrentContainerRegistration(containerRegistration),
+              promotion.containerRegistration == containerRegistration,
+              promotion.host == nil
+        else { return }
 
-        promotedHostAttachmentCompletionsByTabAndWindow[tabID]?[windowID] = nil
-        if promotedHostAttachmentCompletionsByTabAndWindow[tabID]?.isEmpty == true {
-            promotedHostAttachmentCompletionsByTabAndWindow[tabID] = nil
+        pendingPromotions.removeValue(forKey: key)
+        promotion.attachmentCompletion?(.attached)
+    }
+
+    private func finishAndRemovePromotions(in windowID: UUID) {
+        let keys = pendingPromotions.keys.filter { $0.windowID == windowID }
+        let completions = keys.compactMap { key in
+            pendingPromotions.removeValue(forKey: key)?.attachmentCompletion
         }
-        completion()
+        completions.forEach { $0(.cancelled) }
     }
 }

@@ -7,6 +7,7 @@ import OSLog
 final class SumiCoreDataBookmarkRepository: SumiBookmarkRepository, @unchecked Sendable {
     private static let log = Logger.sumi(category: "Bookmarks")
 
+    private let database: SumiBookmarkDatabase
     private let context: NSManagedObjectContext
 
     /// Snapshot tree builds are O(store size); cache them per sort mode and
@@ -17,6 +18,7 @@ final class SumiCoreDataBookmarkRepository: SumiBookmarkRepository, @unchecked S
     private nonisolated(unsafe) var cachedSnapshots: [SumiBookmarkSortMode: SumiBookmarksSnapshot] = [:]
 
     init(database: SumiBookmarkDatabase) {
+        self.database = database
         context = database.makeContext(
             concurrencyType: .mainQueueConcurrencyType,
             name: "SumiBookmarksMain"
@@ -374,6 +376,39 @@ final class SumiCoreDataBookmarkRepository: SumiBookmarkRepository, @unchecked S
         return SumiBookmarksImportSummary(storeImportSummary: summary)
     }
 
+    func replaceBookmarks(
+        _ bookmarks: [SumiBookmarkImportNode],
+        acceptsURL: @escaping (URL) -> Bool,
+        urlKeys: @escaping (URL) -> Set<String>
+    ) throws -> SumiBookmarksImportSummary {
+        let root = try requiredFolderEntity(for: nil)
+        for child in root.childrenArray {
+            root.removeFromChildren(child)
+            deleteRecursively(child)
+        }
+        let importer = BookmarkCoreDataImporter(
+            context: context,
+            acceptsURL: acceptsURL,
+            urlKeys: urlKeys
+        )
+        defer { invalidateSnapshotCache() }
+        let summary = try importer.importBookmarks(
+            bookmarks.map(\.storeBookmarkOrFolder),
+            parent: root
+        )
+        return SumiBookmarksImportSummary(storeImportSummary: summary)
+    }
+
+    func restoreSnapshot(_ snapshot: SumiBookmarksSnapshot) throws {
+        let transactionContext = database.makeContext(
+            concurrencyType: .mainQueueConcurrencyType,
+            name: "SumiBookmarksSnapshotRestore"
+        )
+        try SumiBookmarkSnapshotRestorer(context: transactionContext).restore(snapshot)
+        context.reset()
+        invalidateSnapshotCache()
+    }
+
     func exportBookmarksHTML(to destination: URL) throws {
         try BookmarkHTMLExporter.exportBookmarksHTML(from: context, to: destination)
     }
@@ -642,6 +677,77 @@ final class SumiCoreDataBookmarkRepository: SumiBookmarkRepository, @unchecked S
             return ascending ? lhs < rhs : lhs > rhs
         }
         return ascending ? result == .orderedAscending : result == .orderedDescending
+    }
+}
+
+@MainActor
+private final class SumiBookmarkSnapshotRestorer {
+    private let context: NSManagedObjectContext
+
+    init(context: NSManagedObjectContext) {
+        self.context = context
+    }
+
+    func restore(_ snapshot: SumiBookmarksSnapshot) throws {
+        guard let root = BookmarkUtils.fetchRootFolder(context) else {
+            throw SumiBookmarkError.missingRootFolder
+        }
+        do {
+            for child in root.childrenArray {
+                root.removeFromChildren(child)
+                deleteRecursively(child)
+            }
+            for child in snapshot.root.children {
+                try restore(child, into: root)
+            }
+            if context.hasChanges {
+                try context.save()
+            }
+        } catch {
+            context.rollback()
+            if let error = error as? SumiBookmarkError {
+                throw error
+            }
+            throw SumiBookmarkError.saveFailed(error.localizedDescription)
+        }
+    }
+
+    private func restore(
+        _ snapshot: SumiBookmarkEntity,
+        into parent: BookmarkEntity
+    ) throws {
+        let restored: BookmarkEntity
+        switch snapshot.kind {
+        case .folder:
+            restored = BookmarkEntity.makeFolder(
+                title: snapshot.title,
+                parent: parent,
+                context: context
+            )
+        case .bookmark:
+            guard let url = snapshot.url else {
+                throw SumiBookmarkError.invalidURL
+            }
+            restored = BookmarkEntity.makeBookmark(
+                title: snapshot.title,
+                url: url.absoluteString,
+                parent: parent,
+                context: context
+            )
+        }
+        restored.uuid = snapshot.id
+        for child in snapshot.children {
+            try restore(child, into: restored)
+        }
+    }
+
+    private func deleteRecursively(_ entity: BookmarkEntity) {
+        if entity.isFolder {
+            for child in entity.childrenArray {
+                deleteRecursively(child)
+            }
+        }
+        context.delete(entity)
     }
 }
 

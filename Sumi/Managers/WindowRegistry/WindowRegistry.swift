@@ -99,7 +99,7 @@ class WindowRegistry {
 
     /// Unregister a window when it closes
     func unregister(_ id: UUID) {
-        guard let windowState = windows[id] else {
+        guard windows[id] != nil else {
             RuntimeDiagnostics.emit {
                 "🪟 [WindowRegistry] Ignored duplicate unregister for window: \(id)"
             }

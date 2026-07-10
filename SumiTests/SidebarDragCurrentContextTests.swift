@@ -1568,10 +1568,11 @@ final class SidebarDragCurrentContextTests: XCTestCase {
     private func makeLiveWindowHarness() throws -> LiveWindowHarness {
         let container = try makeInMemoryStartupModelContainer()
         let browserManager = BrowserManager()
-        browserManager.webViewCoordinator = WebViewCoordinator()
+        browserManager.bindTestWebViewCoordinator()
         let tabManager = TabManager(
             runtimePorts: BrowserTabManagerRuntimePortsFactory.registry(for: browserManager),
             context: container.mainContext,
+            webViewSessions: browserManager.webViewSessions,
             loadPersistedState: false
         )
         let windowRegistry = WindowRegistry()

@@ -34,7 +34,7 @@ final class SumiExtensionToolbarSiteAccessOwner {
         return manager.orderedPinnedToolbarSlots(
             enabledExtensions: enabledExtensions,
             sumiScriptsManagerEnabled: sumiScriptsManagerEnabled,
-            profileId: profileId ?? manager.currentProfileId
+            profileId: profileId ?? manager.profileRuntime.currentProfileId
         )
     }
 
@@ -154,7 +154,7 @@ final class SumiExtensionToolbarSiteAccessOwner {
         manager: ExtensionManager
     ) -> UUID? {
         profileId
-            ?? manager.currentProfileId
+            ?? manager.profileRuntime.currentProfileId
             ?? fallbackProfileId()
     }
 }

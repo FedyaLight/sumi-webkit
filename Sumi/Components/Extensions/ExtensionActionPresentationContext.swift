@@ -42,7 +42,7 @@ struct ExtensionActionBrowserContext {
                 browserManager?.currentProfile?.id
             },
             hasLoadedInitialData: { [weak browserManager] in
-                browserManager?.tabManager.hasLoadedInitialData ?? true
+                browserManager?.tabManager.startupRestoreLifecycle.hasLoadedInitialData ?? true
             },
             webView: { [weak browserManager, weak windowState] tab in
                 guard let browserManager else { return nil }

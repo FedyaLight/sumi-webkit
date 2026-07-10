@@ -186,6 +186,82 @@ final class SumiBookmarkImportExportTests: XCTestCase {
         XCTAssertEqual(bookmarkOutline(in: secondManager), bookmarkOutline(in: firstManager))
     }
 
+    @MainActor
+    func testReplaceBookmarksCommitsDeletionAndImportAsOneRepositoryMutation() throws {
+        let manager = try makeBookmarkManager()
+        _ = try manager.importBookmarks([
+            .bookmark(name: "Old", url: URL(string: "https://old.example")!)
+        ])
+
+        let summary = try manager.replaceBookmarks([
+            .bookmark(name: "New", url: URL(string: "https://old.example")!)
+        ])
+
+        XCTAssertEqual(summary, SumiBookmarksImportSummary(successful: 1, duplicates: 0, failed: 0))
+        XCTAssertEqual(bookmarkOutline(in: manager), [
+            "bookmark:New|https://old.example"
+        ])
+    }
+
+    @MainActor
+    func testSnapshotRestorePreservesBookmarkAndFolderIdentity() throws {
+        let manager = try makeBookmarkManager()
+        _ = try manager.importBookmarks([
+            .folder(
+                name: "Saved",
+                children: [
+                    .bookmark(
+                        name: "Original",
+                        url: try XCTUnwrap(URL(string: "https://original.example"))
+                    )
+                ]
+            )
+        ])
+        let checkpoint = manager.snapshot(sortMode: .manual)
+
+        _ = try manager.replaceBookmarks([
+            .bookmark(
+                name: "Replacement",
+                url: try XCTUnwrap(URL(string: "https://replacement.example"))
+            )
+        ])
+        try manager.restoreSnapshot(checkpoint)
+
+        XCTAssertEqual(manager.snapshot(sortMode: .manual), checkpoint)
+    }
+
+    @MainActor
+    func testInvalidSnapshotRestoreRollsBackItsOwnDeletion() throws {
+        let manager = try makeBookmarkManager()
+        _ = try manager.importBookmarks([
+            .bookmark(
+                name: "Survivor",
+                url: try XCTUnwrap(URL(string: "https://survivor.example"))
+            )
+        ])
+        let checkpoint = manager.snapshot(sortMode: .manual)
+        var invalidRoot = checkpoint.root
+        invalidRoot.children = [SumiBookmarkEntity(
+            id: "invalid-bookmark",
+            kind: .bookmark,
+            title: "Invalid",
+            url: nil,
+            parentID: invalidRoot.id,
+            parentTitle: invalidRoot.title,
+            children: [],
+            childBookmarkCount: 0
+        )]
+        let invalidSnapshot = SumiBookmarksSnapshot(
+            root: invalidRoot,
+            flattenedFolders: checkpoint.flattenedFolders,
+            entitiesByID: [invalidRoot.id: invalidRoot]
+        )
+
+        XCTAssertThrowsError(try manager.restoreSnapshot(invalidSnapshot))
+
+        XCTAssertEqual(manager.snapshot(sortMode: .manual), checkpoint)
+    }
+
     private func temporaryFile(named name: String) throws -> URL {
         let directory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
             .appendingPathComponent("SumiBookmarkImportExportTests-\(UUID().uuidString)", isDirectory: true)

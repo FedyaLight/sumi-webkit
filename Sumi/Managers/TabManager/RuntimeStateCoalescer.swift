@@ -1,7 +1,7 @@
 import Foundation
 
 actor RuntimeStateCoalescer {
-    typealias RuntimeTabState = TabSnapshotRepository.RuntimeTabState
+    typealias RuntimeTabState = TabRuntimeStateUpdate
     typealias PersistBatch = @Sendable ([RuntimeTabState]) async -> Void
 
     private enum Command: Sendable {

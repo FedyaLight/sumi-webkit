@@ -6,12 +6,14 @@ enum TabBrowserWebViewRuntimeFactory {
     static func cleanupRuntime(
         for browserManager: BrowserManager
     ) -> TabWebViewCleanupRuntime {
-        .make(
-            userscriptsModule: { [weak browserManager] in
-                browserManager?.userscriptsModule
+        let runtime = BrowserManagerRuntimeReference(browserManager)
+        return .make(
+            userscriptsModule: { runtime.require().userscriptsModule },
+            webViewCoordinator: {
+                runtime.require().shellRuntime.requireWebViewCoordinator()
             },
-            webViewCoordinator: { [weak browserManager] in
-                browserManager?.webViewCoordinator
+            webViewOwnershipService: {
+                runtime.require().shellRuntime.requireWebViewOwnershipService()
             }
         )
     }
@@ -37,15 +39,13 @@ enum TabBrowserWebViewRuntimeFactory {
     static func replacementRuntime(
         for browserManager: BrowserManager
     ) -> TabWebViewReplacementRuntime {
-        .make(
-            webViewCoordinator: { [weak browserManager] in
-                browserManager?.webViewCoordinator
+        let runtime = BrowserManagerRuntimeReference(browserManager)
+        return .make(
+            webViewCoordinator: {
+                runtime.require().shellRuntime.requireWebViewCoordinator()
             },
-            windowState: { [weak browserManager] windowId in
-                browserManager?.windowRegistry?.windows[windowId]
-            },
-            refreshCompositor: { [weak browserManager] windowState in
-                browserManager?.windowSessionBundle.visualMutationOwner.refreshCompositor(for: windowState)
+            webViewOwnershipService: {
+                runtime.require().shellRuntime.requireWebViewOwnershipService()
             }
         )
     }
@@ -74,26 +74,31 @@ enum TabBrowserWebViewRuntimeFactory {
 @MainActor
 extension TabWebViewReplacementRuntime {
     static func make(
-        webViewCoordinator: @escaping () -> WebViewCoordinator?,
-        windowState: @escaping (UUID) -> BrowserWindowState?,
-        refreshCompositor: @escaping (BrowserWindowState) -> Void
+        webViewCoordinator: @escaping () -> WebViewCoordinator,
+        webViewOwnershipService: @escaping () -> WebViewOwnershipService
     ) -> Self {
         Self(
-            trackedWindowIdContainingWebView: { webView in
-                webViewCoordinator()?.windowID(containing: webView)
+            rebuildTrackedWebViews: {
+                tab, preferredPrimaryWindowId, targetURL, reason, configuration in
+                guard #available(macOS 15.5, *) else {
+                    return .failed
+                }
+                return webViewCoordinator().rebuildService
+                    .rebuildLiveWebViewsResult(
+                    for: tab,
+                    preferredPrimaryWindowID: preferredPrimaryWindowId,
+                    load: targetURL,
+                    configuration: configuration,
+                    reason: reason
+                )
             },
-            hasTrackedWebViews: { tabId in
-                webViewCoordinator()?.windowIDs(for: tabId).isEmpty == false
-            },
-            setTrackedWebView: { webView, tabId, windowId in
-                webViewCoordinator()?.setWebView(webView, for: tabId, in: windowId)
-            },
-            removeTrackedWebViews: { tab in
-                webViewCoordinator()?.removeAllWebViews(for: tab) ?? false
-            },
-            refreshWindowAfterWebViewReplacement: { windowId in
-                guard let windowState = windowState(windowId) else { return }
-                refreshCompositor(windowState)
+            commitUntrackedReplacement: { tab, previous, replacement, reason in
+                webViewOwnershipService().replaceDetached(
+                    previous,
+                    with: replacement,
+                    for: tab,
+                    reason: reason
+                )
             }
         )
     }
@@ -102,31 +107,60 @@ extension TabWebViewReplacementRuntime {
 @MainActor
 extension TabWebViewCleanupRuntime {
     static func make(
-        userscriptsModule: @escaping () -> SumiUserscriptsModule?,
-        webViewCoordinator: @escaping () -> WebViewCoordinator?
+        userscriptsModule: @escaping () -> SumiUserscriptsModule,
+        webViewCoordinator: @escaping () -> WebViewCoordinator,
+        webViewOwnershipService: @escaping () -> WebViewOwnershipService
     ) -> Self {
         Self(
             deferProtectedWebViewCleanup: { webView, tabId, reason in
-                webViewCoordinator()?.deferProtectedWebViewCleanup(
-                    webView,
+                webViewCoordinator().protectionRuntime.deferCleanup(
+                    of: webView,
                     tabID: tabId,
                     reason: reason
-                ) ?? false
+                )
+            },
+            deferWebsiteDataMutationWebViewMaterialization: { tab, replay in
+                webViewCoordinator().websiteDataCleanupService
+                    .deferWebViewMaterialization(
+                    for: tab,
+                    replay: replay
+                )
+            },
+            deferWebsiteDataMutationMainFrameSubmission: {
+                tab,
+                webView,
+                semanticRevision,
+                replay in
+                webViewCoordinator().websiteDataCleanupService
+                    .deferMainFrameSubmission(
+                    for: tab,
+                    on: webView,
+                    semanticRevision: semanticRevision,
+                    replay: replay
+                )
+            },
+            retireParkedWebView: { tab, webView, reason in
+                webViewOwnershipService().releaseParked(
+                    webView,
+                    for: tab,
+                    reason: reason
+                )
             },
             cleanupUserScripts: { controller, webViewId in
-                userscriptsModule()?.cleanupWebViewIfLoaded(
+                userscriptsModule().cleanupWebViewIfLoaded(
                     controller: controller,
                     webViewId: webViewId
                 )
             },
             removeWebViewFromContainers: { webView in
-                webViewCoordinator()?.removeWebViewFromContainers(webView)
+                webViewCoordinator().compositorRuntime
+                    .removeWebViewFromContainers(webView)
             },
             removeAllWebViews: { tab, closeActiveFullscreenMedia in
-                webViewCoordinator()?.removeAllWebViews(
+                webViewCoordinator().lifecycleService.removeAllWebViews(
                     for: tab,
                     closeActiveFullscreenMedia: closeActiveFullscreenMedia
-                ) ?? false
+                )
             }
         )
     }

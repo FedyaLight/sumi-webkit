@@ -1055,13 +1055,13 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         let profileId = UUID()
         let source = Space(name: "Source", profileId: profileId)
         let destination = Space(name: "Destination", profileId: profileId)
-        let first = Tab(
+        let first = browserManager.tabManager.tabFactory.makeTab(
             url: URL(string: "https://example.com/first")!,
             name: "First",
             spaceId: source.id,
             index: 0
         )
-        let second = Tab(
+        let second = browserManager.tabManager.tabFactory.makeTab(
             url: URL(string: "https://example.com/second")!,
             name: "Second",
             spaceId: source.id,
@@ -1096,7 +1096,7 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         let profileId = UUID()
         let source = Space(name: "Source", profileId: profileId)
         let destination = Space(name: "Destination", profileId: profileId)
-        let unloadedTab = Tab(
+        let unloadedTab = browserManager.tabManager.tabFactory.makeTab(
             url: URL(string: "https://example.com/unloaded")!,
             name: "Unloaded",
             spaceId: source.id,

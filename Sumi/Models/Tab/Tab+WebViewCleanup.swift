@@ -32,8 +32,8 @@ extension Tab {
             notifyNowPlayingTabUnloaded: { tabId in
                 self.mediaRuntime.callbacks.notifyNowPlayingTabUnloaded(tabId)
             },
-            currentWebView: { self.resolvedCurrentWebView() },
-            clearCurrentWebView: { self.clearCurrentWebViewOwnership() },
+            remainingOwnedWebViews: { self.webViewSession.allKnownWebViews },
+            clearDetachedWebViews: { self.clearAllWebViewOwnership() },
             removeAllWebViews: { closeActiveFullscreenMedia in
                 cleanupRuntime.removeAllWebViews(self, closeActiveFullscreenMedia)
             },
@@ -50,6 +50,9 @@ extension Tab {
             },
             removeNavigationDelegateBundle: { webView in
                 self.removeNavigationDelegateBundle(for: webView)
+            },
+            webViewDidLeaveRuntime: { webView in
+                self.webViewDidLeaveNavigationRuntime(webView)
             },
             resetPlaybackActivity: {
                 self.resetPlaybackActivity()

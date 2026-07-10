@@ -119,15 +119,20 @@ final class Profile: NSObject, Identifiable {
     }
 
     // MARK: - Cleanup
+    @discardableResult
     func clearAllData(
         browsingDataCleanupService: SumiBrowsingDataCleanupService,
         websiteDataCleanupService: any SumiWebsiteDataCleanupServicing
-    ) async {
-        await browsingDataCleanupService.prepareForDestructiveWebsiteDataCleanup(
-            profileIDs: [id]
-        )
-        await websiteDataCleanupService.clearAllProfileWebsiteData(in: dataStore)
+    ) async -> Bool {
+        let didClear = await browsingDataCleanupService
+            .performDestructiveWebsiteDataCleanup(profileIDs: [id]) {
+                await websiteDataCleanupService.clearAllProfileWebsiteData(
+                    in: self.dataStore
+                )
+            }
+        guard didClear else { return false }
         await refreshDataStoreStats(cleanupService: websiteDataCleanupService)
+        return true
     }
 
     @discardableResult

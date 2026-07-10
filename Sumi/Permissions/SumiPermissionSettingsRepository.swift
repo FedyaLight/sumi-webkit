@@ -9,6 +9,8 @@ import SumiDomain
 final class SumiPermissionSettingsRepository {
     private let systemPermissionService: any SumiSystemPermissionService
     private let websiteDataCleanupService: (any SumiWebsiteDataCleanupServicing)?
+    private let profileWebsiteDataMutationService:
+        (any SumiProfileWebsiteDataMutating)?
     private let cleanupSettingsOwner: SumiPermissionCleanupSettingsOwner
     private let aggregator: SumiPermissionRecordAggregator
     private let presentationBuilder: SumiSiteSettingsPresentationBuilder
@@ -24,12 +26,14 @@ final class SumiPermissionSettingsRepository {
         externalSchemeSessionStore: SumiExternalSchemeSessionStore,
         indicatorEventStore: SumiPermissionIndicatorEventStore,
         websiteDataCleanupService: (any SumiWebsiteDataCleanupServicing)? = nil,
+        profileWebsiteDataMutationService: (any SumiProfileWebsiteDataMutating)? = nil,
         permissionCleanupService: SumiPermissionCleanupService? = nil,
         userDefaults: UserDefaults = .standard,
         now: @escaping () -> Date = Date.init
     ) {
         self.systemPermissionService = systemPermissionService
         self.websiteDataCleanupService = websiteDataCleanupService
+        self.profileWebsiteDataMutationService = profileWebsiteDataMutationService
         self.cleanupSettingsOwner = SumiPermissionCleanupSettingsOwner(
             permissionCleanupService: permissionCleanupService,
             userDefaults: userDefaults,
@@ -77,6 +81,7 @@ final class SumiPermissionSettingsRepository {
             externalSchemeSessionStore: permissionRuntime.externalSchemeSessionStore,
             indicatorEventStore: permissionRuntime.permissionIndicatorEventStore,
             websiteDataCleanupService: dataServices.websiteDataCleanupService,
+            profileWebsiteDataMutationService: dataServices.profileWebsiteDataMutationService,
             permissionCleanupService: permissionRuntime.permissionCleanupService,
             userDefaults: userDefaults,
             now: now
@@ -193,18 +198,23 @@ final class SumiPermissionSettingsRepository {
     func deleteSiteData(
         scope: SumiPermissionSiteScope,
         profile: Profile
-    ) async {
+    ) async -> SumiProfileWebsiteDataMutationOutcome {
         guard let host = scope.requestingOrigin.host,
-              let websiteDataCleanupService
-        else { return }
+              let websiteDataCleanupService,
+              let profileWebsiteDataMutationService else {
+            return .rejected
+        }
 
-        await websiteDataCleanupService.removeWebsiteDataForExactHost(
-            host,
-            ofTypes: WKWebsiteDataStore.allWebsiteDataTypesExceptCookies,
-            includingCookies: true,
-            in: profile.dataStore
-        )
+        let outcome = await profileWebsiteDataMutationService
+            .deleteExactHostData(
+                host,
+                ofTypes: WKWebsiteDataStore.allWebsiteDataTypesExceptCookies,
+                includingCookies: true,
+                profile: profile
+            )
+        guard outcome.didMutate else { return outcome }
         await profile.refreshDataStoreStats(cleanupService: websiteDataCleanupService)
+        return outcome
     }
 
     @discardableResult

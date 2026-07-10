@@ -13,7 +13,7 @@ final class BrowserStartupPolicyOwner {
     private let selectTab: @MainActor (Tab, BrowserWindowState, TabSelectionLoadPolicy) -> Void
     private let showEmptyState: @MainActor (BrowserWindowState, Bool) -> Void
     private let currentRegularWindowSnapshots: @MainActor (UUID?) -> [LastSessionWindowSnapshot]
-    private let currentTabSnapshot: @MainActor () -> TabSnapshotRepository.Snapshot
+    private let currentTabSnapshot: @MainActor () -> TabPersistenceSnapshot
     private let applyWindowSessionSnapshot: @MainActor (WindowSessionSnapshot, BrowserWindowState) -> Void
     private let reopenWindow: @MainActor (WindowSessionSnapshot) async -> Void
     private let refreshLastSessionWindowsStore: @MainActor (UUID?) -> Void
@@ -29,7 +29,7 @@ final class BrowserStartupPolicyOwner {
         selectTab: @escaping @MainActor (Tab, BrowserWindowState, TabSelectionLoadPolicy) -> Void,
         showEmptyState: @escaping @MainActor (BrowserWindowState, Bool) -> Void,
         currentRegularWindowSnapshots: @escaping @MainActor (UUID?) -> [LastSessionWindowSnapshot],
-        currentTabSnapshot: @escaping @MainActor () -> TabSnapshotRepository.Snapshot,
+        currentTabSnapshot: @escaping @MainActor () -> TabPersistenceSnapshot,
         applyWindowSessionSnapshot: @escaping @MainActor (WindowSessionSnapshot, BrowserWindowState) -> Void,
         reopenWindow: @escaping @MainActor (WindowSessionSnapshot) async -> Void,
         refreshLastSessionWindowsStore: @escaping @MainActor (UUID?) -> Void
@@ -70,7 +70,7 @@ final class BrowserStartupPolicyOwner {
         archiveLoadedStartupSessionForManualRestore()
 
         let tabManager = tabManager()
-        tabManager.lastSessionRestoreOwner.resetRegularTabsAndShortcutLiveInstancesForStartup()
+        tabManager.startupStateReset.resetRegularTabsAndShortcutLiveInstances()
 
         guard let windowState = firstRegularWindowForStartupPolicy else { return }
         resetWindowStatesForCleanStartup(selectedWindow: windowState)

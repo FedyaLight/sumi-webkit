@@ -115,15 +115,32 @@ enum WebsiteViewContextFactory {
                     }
                     try SumiBackupService().writeBackup(from: browserManager, to: url)
                 },
-                applyImport: { [weak browserManager] data, categories, mode in
+                applyImport: { [weak browserManager] request in
                     guard let browserManager else {
                         throw SumiImportExportError.browserUnavailable
                     }
-                    return try await SumiImportApplier().apply(
-                        data,
-                        to: browserManager,
-                        categories: categories,
-                        mode: mode
+                    let plan = SumiImportPlanBuilder().makePlan(
+                        request: request,
+                        baseline: SumiImportExportSnapshot.makeData(from: browserManager)
+                    )
+                    let runtime = SumiImportRuntimeStore(
+                        profileManager: browserManager.profileManager,
+                        tabManager: browserManager.tabManager,
+                        profileSelection: browserManager
+                    )
+                    let materializer = SumiImportRuntimeMaterializer(
+                        tabFactory: browserManager.tabManager.tabFactory,
+                        tabBrowserRuntime: TabBrowserRuntimeFactory.make(for: browserManager)
+                    )
+                    return try await SumiImportTransaction(
+                        materializer: materializer,
+                        runtime: runtime,
+                        bookmarks: SumiImportBookmarkStore(
+                            bookmarkManager: browserManager.bookmarkManager
+                        ),
+                        backupWriter: SumiBackupService()
+                    ).commit(
+                        plan
                     )
                 }
             )
@@ -222,3 +239,5 @@ enum WebsiteViewContextFactory {
         )
     }
 }
+
+extension BrowserManager: SumiImportProfileSelection {}

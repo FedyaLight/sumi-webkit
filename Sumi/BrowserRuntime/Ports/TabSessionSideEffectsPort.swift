@@ -12,14 +12,14 @@ protocol TabSessionSideEffectsPort {
 
 @MainActor
 struct LiveTabSessionSideEffectsPort: TabSessionSideEffectsPort {
-    private weak var browserManager: BrowserManager?
+    private let runtime: BrowserManagerRuntimeReference
 
-    init(browserManager: BrowserManager) {
-        self.browserManager = browserManager
+    init(runtime: BrowserManagerRuntimeReference) {
+        self.runtime = runtime
     }
 
     func captureClosedTab(_ tab: Tab, sourceSpaceId: UUID?) {
-        browserManager?.recentlyClosedManager.captureClosedTab(
+        runtime.require().recentlyClosedManager.captureClosedTab(
             tab,
             sourceSpaceId: sourceSpaceId,
             currentURL: tab.url,
@@ -29,22 +29,22 @@ struct LiveTabSessionSideEffectsPort: TabSessionSideEffectsPort {
     }
 
     func captureDeletedShortcutLauncher(_ pin: ShortcutPin) {
-        browserManager?.recentlyClosedManager.captureDeletedShortcutLauncher(pin)
+        runtime.require().recentlyClosedManager.captureDeletedShortcutLauncher(pin)
     }
 
     func notifications() -> (any BrowserNotificationPresenting)? {
-        browserManager?.notificationPresenter
+        runtime.require().notificationPresenter
     }
 
     func closeAuxiliaryMiniWindow(for tab: Tab, reason: AuxiliaryWindowCloseReason) {
-        browserManager?.webViewCloseRouter.closeAuxiliaryMiniWindow(for: tab, reason: reason)
+        runtime.require().webViewCloseRouter.closeAuxiliaryMiniWindow(for: tab, reason: reason)
     }
 
     func isLiveFolder(_ folderId: UUID) -> Bool {
-        browserManager?.liveFolderManager.isLiveFolder(folderId) == true
+        runtime.require().liveFolderManager.isLiveFolder(folderId)
     }
 
     func deleteLiveFolderState(forFolderIds folderIds: Set<UUID>) {
-        browserManager?.liveFolderManager.deleteState(forFolderIds: folderIds)
+        runtime.require().liveFolderManager.deleteState(forFolderIds: folderIds)
     }
 }

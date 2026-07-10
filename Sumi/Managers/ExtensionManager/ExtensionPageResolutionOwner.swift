@@ -46,7 +46,7 @@ final class ExtensionPageResolutionOwner {
     ) -> URL? {
         guard let manager,
               let extensionId = manager.extensionID(for: extensionContext),
-              let installedExtension = manager.installedExtensions
+              let installedExtension = manager.installedExtensionCollection.records
               .first(where: { $0.id == extensionId })
         else {
             return nil
@@ -56,7 +56,7 @@ final class ExtensionPageResolutionOwner {
             fileURLWithPath: installedExtension.packagePath,
             isDirectory: true
         ).resolvingSymlinksInPath().standardizedFileURL
-        let manifest = manager.loadedExtensionManifests[extensionId]
+        let manifest = manager.runtimeSession.loadedExtensionManifests[extensionId]
             ?? installedExtension.manifest
 
         let pagePath: String?
@@ -95,7 +95,7 @@ extension ExtensionManager {
     func extensionID(
         for extensionContext: WKWebExtensionContext
     ) -> String? {
-        profileRuntimeOwner.extensionId(for: extensionContext)
+        profileRuntime.extensionId(for: extensionContext)
     }
 
     func ownerExtensionID(

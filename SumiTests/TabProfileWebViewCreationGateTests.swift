@@ -10,12 +10,12 @@ final class TabProfileWebViewCreationGateTests: XCTestCase {
         let harness = TabProfileWebViewCreationGateHarness()
         let owner = harness.makeOwner()
 
-        owner.deferCreationUntilProfileAvailable()
+        XCTAssertTrue(owner.deferCreationUntilProfileAvailable())
 
         XCTAssertEqual(harness.currentProfileUpdatesCallCount, 1)
         XCTAssertNotNil(harness.cancellable)
 
-        owner.deferCreationUntilProfileAvailable()
+        XCTAssertTrue(owner.deferCreationUntilProfileAvailable())
 
         XCTAssertEqual(harness.currentProfileUpdatesCallCount, 1)
 
@@ -43,7 +43,7 @@ final class TabProfileWebViewCreationGateTests: XCTestCase {
 
         harness.hasCurrentWebView = true
 
-        owner.deferCreationUntilProfileAvailable()
+        XCTAssertTrue(owner.deferCreationUntilProfileAvailable())
         harness.subject.send(Profile(name: "Ready"))
         drainMainRunLoop()
 
@@ -63,11 +63,19 @@ final class TabProfileWebViewCreationGateTests: XCTestCase {
             }
         )
 
-        owner.deferCreationUntilProfileAvailable()
+        XCTAssertTrue(owner.deferCreationUntilProfileAvailable())
 
         XCTAssertFalse(tab.hasBrowserRuntime)
         XCTAssertEqual(currentProfileUpdatesCallCount, 1)
         XCTAssertNotNil(tab.profileAwaitCancellable)
+    }
+
+    func testCannotDeferWithoutAProfileUpdateSource() {
+        let harness = TabProfileWebViewCreationGateHarness()
+        let owner = harness.makeOwner(currentProfileUpdates: { nil })
+
+        XCTAssertFalse(owner.deferCreationUntilProfileAvailable())
+        XCTAssertNil(harness.cancellable)
     }
 }
 
@@ -79,10 +87,15 @@ private final class TabProfileWebViewCreationGateHarness {
     var hasCurrentWebView = false
     var setupWebViewCallCount = 0
 
-    func makeOwner() -> TabProfileWebViewCreationGate {
+    func makeOwner(
+        currentProfileUpdates: (() -> AnyPublisher<Profile?, Never>?)? = nil
+    ) -> TabProfileWebViewCreationGate {
         TabProfileWebViewCreationGate(
             currentProfileUpdates: { [weak self] in
                 self?.currentProfileUpdatesCallCount += 1
+                if let currentProfileUpdates {
+                    return currentProfileUpdates()
+                }
                 return self?.subject.eraseToAnyPublisher()
             },
             currentProfileAwaitCancellable: { [weak self] in

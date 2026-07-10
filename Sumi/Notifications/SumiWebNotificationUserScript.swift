@@ -1,5 +1,6 @@
 import Foundation
 import os.log
+import SumiWebRuntime
 import WebKit
 
 @MainActor
@@ -540,10 +541,18 @@ private struct SumiWebNotificationMessagePayload {
 
 extension Tab {
     func webNotificationTabContext(for webView: WKWebView?) -> SumiWebNotificationTabContext? {
-        guard let profile = resolveProfile() else { return nil }
+        guard let profile = resolveProfile(),
+              let webView,
+              let callbackCommittedURL = webView.committedURL,
+              let documentLease = mainFrameDocumentLease(for: webView),
+              WebRuntimeNavigationIdentity.matches(
+                  callbackCommittedURL,
+                  documentLease.committedURL
+              ) else {
+            return nil
+        }
 
         let identity = extensionPageRuntimeOwner.pageIdentity(tabId: id)
-        let committedURL = extensionPageRuntimeOwner.committedMainDocumentURLForCurrentPage()
         let surfaceState = permissionRequestSurfaceState(for: webView)
         return SumiWebNotificationTabContext(
             tabId: identity.tabId,
@@ -551,14 +560,22 @@ extension Tab {
             surface: permissionSurfaceOwner.permissionSurface(for: webView),
             profilePartitionId: profile.id.uuidString.lowercased(),
             isEphemeralProfile: profile.isEphemeral,
-            committedURL: committedURL,
-            visibleURL: webView?.url ?? url,
-            mainFrameURL: committedURL ?? webView?.url ?? url,
+            committedURL: callbackCommittedURL,
+            visibleURL: webView.url ?? callbackCommittedURL,
+            mainFrameURL: callbackCommittedURL,
             isActiveTab: surfaceState.isActive,
             isVisibleTab: surfaceState.isVisible,
             navigationOrPageGeneration: identity.pageGeneration,
-            isCurrentPage: { [weak self] in
-                guard let self else { return false }
+            isCurrentPage: { [weak self, weak webView] in
+                guard let self, let webView,
+                      self.mainFrameDocumentLease(for: webView) == documentLease,
+                      let currentCommittedURL = webView.committedURL,
+                      WebRuntimeNavigationIdentity.matches(
+                          currentCommittedURL,
+                          documentLease.committedURL
+                      ) else {
+                    return false
+                }
                 return self.extensionPageRuntimeOwner.isCurrentPage(
                     tabId: self.id,
                     pageId: identity.pageId,

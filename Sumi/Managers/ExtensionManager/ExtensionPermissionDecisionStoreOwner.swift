@@ -174,7 +174,7 @@ final class ExtensionPermissionDecisionStoreOwner {
     private func loadStoredExtensionPermissionDecisions()
         -> [String: ExtensionManager.ExtensionStoredPermissionDecision] {
         guard let data = preferences.data(
-            forKey: ExtensionManager.extensionPermissionDecisionsStorageKey
+            forKey: SafariExtensionSiteAccessPolicyStore.legacyPermissionDecisionsStorageKey
         ) else {
             return [:]
         }
@@ -201,7 +201,7 @@ final class ExtensionPermissionDecisionStoreOwner {
         }
         preferences.set(
             data,
-            forKey: ExtensionManager.extensionPermissionDecisionsStorageKey
+            forKey: SafariExtensionSiteAccessPolicyStore.legacyPermissionDecisionsStorageKey
         )
     }
 }

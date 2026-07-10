@@ -283,6 +283,23 @@ final class SumiBookmarkManager: ObservableObject {
         return summary
     }
 
+    func replaceBookmarks(
+        _ bookmarks: [SumiBookmarkImportNode]
+    ) throws -> SumiBookmarksImportSummary {
+        let summary = try repository.replaceBookmarks(
+            bookmarks,
+            acceptsURL: Self.canBookmark(_:),
+            urlKeys: { Set($0.sumiBookmarkButtonURLVariants().map(Self.urlKey)) }
+        )
+        reload()
+        return summary
+    }
+
+    func restoreSnapshot(_ snapshot: SumiBookmarksSnapshot) throws {
+        try repository.restoreSnapshot(snapshot)
+        reload()
+    }
+
     func exportBookmarksHTML(to destination: URL) throws {
         try repository.exportBookmarksHTML(to: destination)
     }

@@ -230,7 +230,7 @@ final class BrowserTabOpeningOwner {
             in: targetSpace
         )
 
-        let newTab = Tab(
+        let newTab = tabManager.tabFactory.makeTab(
             url: tab.url,
             name: tab.name,
             favicon: "globe",

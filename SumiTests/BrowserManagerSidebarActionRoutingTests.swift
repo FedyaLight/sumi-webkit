@@ -31,7 +31,7 @@ final class BrowserManagerSidebarActionRoutingTests: XCTestCase {
         XCTAssertTrue(harness.windowState.isSidebarVisible)
 
         harness.browserManager.chromeBundle.sidebarPresentationOwner.toggleSidebar()
-        harness.browserManager.windowSessionBundle.activationOwner.flushPendingWindowSessionPersistence()
+        harness.browserManager.windowSessionBundle.persistence.flush()
 
         XCTAssertEqual(harness.windowRegistry.activeWindowId, harness.windowState.id)
         XCTAssertFalse(harness.windowState.isSidebarVisible)

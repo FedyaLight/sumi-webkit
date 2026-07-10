@@ -5,7 +5,7 @@ import WebKit
 final class BrowserZoomCommandOwner {
     private let activeWindow: @MainActor () -> BrowserWindowState?
     private let activePageTab: @MainActor (BrowserWindowState) -> Tab?
-    private let activePageWebView: @MainActor (BrowserWindowState) -> WKWebView?
+    private let activePresentationWebView: @MainActor (BrowserWindowState) -> WKWebView?
     private let tab: @MainActor (UUID) -> Tab?
     private let windowStateContainingTab: @MainActor (Tab) -> BrowserWindowState?
     private let webView: @MainActor (UUID, UUID) -> WKWebView?
@@ -17,7 +17,7 @@ final class BrowserZoomCommandOwner {
     init(
         activeWindow: @escaping @MainActor () -> BrowserWindowState?,
         activePageTab: @escaping @MainActor (BrowserWindowState) -> Tab?,
-        activePageWebView: @escaping @MainActor (BrowserWindowState) -> WKWebView?,
+        activePresentationWebView: @escaping @MainActor (BrowserWindowState) -> WKWebView?,
         tab: @escaping @MainActor (UUID) -> Tab?,
         windowStateContainingTab: @escaping @MainActor (Tab) -> BrowserWindowState?,
         webView: @escaping @MainActor (UUID, UUID) -> WKWebView?,
@@ -28,7 +28,7 @@ final class BrowserZoomCommandOwner {
     ) {
         self.activeWindow = activeWindow
         self.activePageTab = activePageTab
-        self.activePageWebView = activePageWebView
+        self.activePresentationWebView = activePresentationWebView
         self.tab = tab
         self.windowStateContainingTab = windowStateContainingTab
         self.webView = webView
@@ -85,6 +85,15 @@ final class BrowserZoomCommandOwner {
         didUpdateZoom(for: tab, in: windowState, showNotification: false)
     }
 
+    func loadZoomForTab(_ tabId: UUID, on webView: WKWebView) {
+        guard let tab = tab(tabId) else { return }
+        let previousZoom = webView.pageZoom
+        applyBoostAwareZoom(for: tab, webView: webView)
+        if webView.pageZoom != previousZoom {
+            incrementZoomStateRevision()
+        }
+    }
+
     func cleanupZoomForTab(_ tabId: UUID) {
         zoomManager().removeTabZoomLevel(for: tabId)
         incrementZoomStateRevision()
@@ -134,7 +143,7 @@ final class BrowserZoomCommandOwner {
 
     private func activeZoomContext(in windowState: BrowserWindowState) -> ActiveZoomContext? {
         guard let tab = activePageTab(windowState),
-              let webView = activePageWebView(windowState)
+              let webView = activePresentationWebView(windowState)
         else { return nil }
 
         let context = zoomContext(for: tab)

@@ -9,7 +9,6 @@
 import Foundation
 
 extension TabManager {
-    var runtimeStore: DefaultTabRuntimeStore { persistenceOwners.runtimeStore }
     var folderMutationOwner: TabFolderMutationOwner { structureOwners.folderMutationOwner }
     var profileRuntimeStateOwner: TabProfileRuntimeStateOwner { lifecycleOwners.profileRuntimeStateOwner }
     var runtimePreparationOwner: TabRuntimePreparationOwner { lifecycleOwners.runtimePreparationOwner }
@@ -24,8 +23,9 @@ extension TabManager {
     var lazyRestoreCoordinator: TabLazyRestoreCoordinator { structureOwners.lazyRestoreCoordinator }
     var spacePinnedStructureOwner: SpacePinnedStructureOwner { structureOwners.spacePinnedStructureOwner }
     var spaceLifecycleOwner: TabSpaceLifecycleOwner { lifecycleOwners.spaceLifecycleOwner }
-    var profileAssignmentOwner: TabProfileAssignmentOwner { lifecycleOwners.profileAssignmentOwner }
-    var lastSessionRestoreOwner: TabLastSessionRestoreOwner { persistenceOwners.lastSessionRestoreOwner }
+    var profileAssignments: ProfileAssignmentServices {
+        lifecycleOwners.profileAssignments
+    }
     var shortcutPinCommandOwner: ShortcutPinCommandOwner { shortcutOwners.shortcutPinCommandOwner }
     var sidebarDragRoutingOwner: SidebarDragOperationRoutingOwner { structureOwners.sidebarDragRoutingOwner }
     var essentialsShortcutPlacementOwner: EssentialsShortcutPlacementOwner {
@@ -61,6 +61,4 @@ extension TabManager {
     var structuralLookupCoordinator: TabStructuralLookupCoordinator {
         structureOwners.structuralLookupCoordinator
     }
-    var structuralPersistence: TabStructuralPersistenceOwner { persistenceOwners.structuralPersistence }
-    var storeRestore: TabStoreRestoreOwner { persistenceOwners.storeRestore }
 }

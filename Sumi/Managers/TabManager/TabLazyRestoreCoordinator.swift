@@ -61,7 +61,7 @@ enum TabLazyRestorePlanner {
                 guard let tab = orderedTabs.first(where: { $0.id == tabID }) else { continue }
                 guard eligibleTabIDs.contains(tabID) else { continue }
                 guard tab.requiresPrimaryWebView else { continue }
-                guard tab.suspensionStateOwner.isSuspended || tab.isUnloaded else { continue }
+                guard tab.suspensionState.isSuspended || tab.isUnloaded else { continue }
                 plannedTabIDs.append(tabID)
             }
         }
@@ -214,7 +214,7 @@ final class TabLazyRestoreCoordinator {
     private func pruneEligibility() {
         eligibleTabIDs = eligibleTabIDs.filter { tabID in
             guard let tab = resolveTab(tabID) else { return false }
-            return tab.requiresPrimaryWebView && (tab.suspensionStateOwner.isSuspended || tab.isUnloaded)
+            return tab.requiresPrimaryWebView && (tab.suspensionState.isSuspended || tab.isUnloaded)
         }
         inFlightTabIDs = inFlightTabIDs.filter { resolveTab($0) != nil }
         queuedTabIDs.removeAll { resolveTab($0) == nil }

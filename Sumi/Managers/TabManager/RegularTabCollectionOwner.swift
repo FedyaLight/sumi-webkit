@@ -15,6 +15,14 @@ final class RegularTabCollectionOwner {
     private let isSpacePinned: @MainActor (Tab) -> Bool
     private let withStructuralUpdateTransaction: @MainActor (@MainActor () -> Bool) -> Bool
     private let scheduleStructuralPersistence: @MainActor () -> Void
+    private let prepareForSpaceTransition: @MainActor (
+        Tab,
+        UUID
+    ) -> TabSpaceProfileTransitionPreparation?
+    private let finishSpaceTransition: @MainActor (
+        TabSpaceProfileTransitionPreparation,
+        Tab
+    ) -> Void
 
     init(
         stateOwner: RegularTabCollectionStateOwner,
@@ -23,7 +31,15 @@ final class RegularTabCollectionOwner {
         isGlobalPinned: @escaping @MainActor (Tab) -> Bool,
         isSpacePinned: @escaping @MainActor (Tab) -> Bool,
         withStructuralUpdateTransaction: @escaping @MainActor (@MainActor () -> Bool) -> Bool,
-        scheduleStructuralPersistence: @escaping @MainActor () -> Void
+        scheduleStructuralPersistence: @escaping @MainActor () -> Void,
+        prepareForSpaceTransition: @escaping @MainActor (
+            Tab,
+            UUID
+        ) -> TabSpaceProfileTransitionPreparation?,
+        finishSpaceTransition: @escaping @MainActor (
+            TabSpaceProfileTransitionPreparation,
+            Tab
+        ) -> Void
     ) {
         self.stateOwner = stateOwner
         self.setTabs = setTabs
@@ -32,6 +48,8 @@ final class RegularTabCollectionOwner {
         self.isSpacePinned = isSpacePinned
         self.withStructuralUpdateTransaction = withStructuralUpdateTransaction
         self.scheduleStructuralPersistence = scheduleStructuralPersistence
+        self.prepareForSpaceTransition = prepareForSpaceTransition
+        self.finishSpaceTransition = finishSpaceTransition
     }
 
     convenience init(tabManager: TabManager, stateOwner: RegularTabCollectionStateOwner) {
@@ -63,6 +81,18 @@ final class RegularTabCollectionOwner {
             },
             scheduleStructuralPersistence: { [weak tabManager] in
                 tabManager?.scheduleStructuralPersistence()
+            },
+            prepareForSpaceTransition: { [weak tabManager] tab, targetSpaceID in
+                tabManager?.profileAssignments.tabs.prepareForSpaceTransition(
+                    tab: tab,
+                    targetSpaceID: targetSpaceID
+                )
+            },
+            finishSpaceTransition: { [weak tabManager] preparation, tab in
+                _ = tabManager?.profileAssignments.tabs.finishSpaceTransition(
+                    preparation,
+                    for: tab
+                )
             }
         )
     }
@@ -116,6 +146,7 @@ final class RegularTabCollectionOwner {
     }
 
     func insert(_ tab: Tab, in spaceId: UUID, at insertionIndex: Int?) {
+        let profileTransition = prepareForSpaceTransition(tab, spaceId)
         var regularTabs = stateOwner.tabs(in: spaceId)
         let safeIndex = max(0, min(insertionIndex ?? regularTabs.count, regularTabs.count))
         tab.spaceId = spaceId
@@ -125,6 +156,9 @@ final class RegularTabCollectionOwner {
         regularTabs.insert(tab, at: safeIndex)
         reindex(regularTabs)
         setTabs(regularTabs, spaceId)
+        if let profileTransition {
+            finishSpaceTransition(profileTransition, tab)
+        }
     }
 
     func remove(_ tabId: UUID, in spaces: [Space], currentSpaceId: UUID?) -> Removal? {

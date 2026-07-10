@@ -14,7 +14,10 @@ import WebKit
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionRequestedWindowOpeningOwner {
-    private let browserBridgeContext: @MainActor () -> (any ExtensionBrowserBridgeContext)?
+    private let windowQuery: @MainActor () -> (any ExtensionWindowQuery)?
+    private let requestedTabTargets:
+        @MainActor () -> (any ExtensionTabTargetQuery)?
+    private let tabMutation: @MainActor () -> (any ExtensionTabMutation)?
     private let profileIdForContext: @MainActor (WKWebExtensionContext) -> UUID?
     private let windowMatchesProfile: @MainActor (BrowserWindowState, UUID) -> Bool
     private let extensionLoadURL:
@@ -28,7 +31,10 @@ final class ExtensionRequestedWindowOpeningOwner {
     private let registerCreatedTabWithExtensionRuntime: @MainActor (Tab, String) -> Void
 
     init(
-        browserBridgeContext: @escaping @MainActor () -> (any ExtensionBrowserBridgeContext)?,
+        windowQuery: @escaping @MainActor () -> (any ExtensionWindowQuery)?,
+        requestedTabTargets:
+            @escaping @MainActor () -> (any ExtensionTabTargetQuery)?,
+        tabMutation: @escaping @MainActor () -> (any ExtensionTabMutation)?,
         profileIdForContext: @escaping @MainActor (WKWebExtensionContext) -> UUID?,
         windowMatchesProfile: @escaping @MainActor (BrowserWindowState, UUID) -> Bool,
         extensionLoadURL:
@@ -41,7 +47,9 @@ final class ExtensionRequestedWindowOpeningOwner {
         materializeNormalTabIfNeeded: @escaping @MainActor (Tab, Bool, BrowserWindowState?) -> Void,
         registerCreatedTabWithExtensionRuntime: @escaping @MainActor (Tab, String) -> Void
     ) {
-        self.browserBridgeContext = browserBridgeContext
+        self.windowQuery = windowQuery
+        self.requestedTabTargets = requestedTabTargets
+        self.tabMutation = tabMutation
         self.profileIdForContext = profileIdForContext
         self.windowMatchesProfile = windowMatchesProfile
         self.extensionLoadURL = extensionLoadURL
@@ -60,7 +68,7 @@ final class ExtensionRequestedWindowOpeningOwner {
         awaitWindowRegistration: @escaping @MainActor (Set<UUID>) async -> BrowserWindowState?,
         completionHandler: @escaping ((any WKWebExtensionWindow)?, (any Error)?) -> Void
     ) {
-        guard let browserContext = browserBridgeContext() else {
+        guard let windowQuery = windowQuery() else {
             completionHandler(
                 nil,
                 ExtensionManagerCallbackError.browserManagerUnavailable.nsError()
@@ -70,20 +78,23 @@ final class ExtensionRequestedWindowOpeningOwner {
 
         if let extensionContext,
            let firstURL = tabURLs.first,
-           ExtensionActionPopupPresentationOwner.isExtensionExternalWebPopupURL(firstURL),
+           ExtensionActionPopupPresentation.isExtensionExternalWebPopupURL(firstURL),
            let contextProfileId = profileIdForContext(extensionContext),
-           let activeWindow = browserContext.activeExtensionWindowState,
+           let activeWindow = windowQuery.activeExtensionWindowState,
            windowMatchesProfile(activeWindow, contextProfileId) {
             Task { @MainActor [weak self] in
                 guard let self,
-                      let browserContext = self.browserBridgeContext() else {
+                      let requestedTabTargets = self.requestedTabTargets()
+                else {
                     completionHandler(
                         nil,
                         ExtensionManagerCallbackError.browserManagerUnavailable.nsError()
                     )
                     return
                 }
-                let targetSpace = browserContext.extensionTargetSpace(for: activeWindow)
+                let targetSpace = requestedTabTargets.extensionTargetSpace(
+                    for: activeWindow
+                )
 
                 let resolvedExtensionLoad = self.extensionLoadURL(
                     firstURL,
@@ -117,12 +128,14 @@ final class ExtensionRequestedWindowOpeningOwner {
             return
         }
 
-        let existingWindowIDs = Set(browserContext.allExtensionWindowStates.map(\.id))
+        let existingWindowIDs = Set(windowQuery.allExtensionWindowStates.map(\.id))
         createWindow()
 
         Task { @MainActor [weak self] in
             guard let self,
-                  let browserContext = self.browserBridgeContext() else {
+                  let requestedTabTargets = self.requestedTabTargets(),
+                  let tabMutation = self.tabMutation()
+            else {
                 completionHandler(
                     nil,
                     ExtensionManagerCallbackError.browserManagerUnavailable.nsError()
@@ -143,7 +156,9 @@ final class ExtensionRequestedWindowOpeningOwner {
             }
             if let contextProfileId {
                 windowState.currentProfileId = contextProfileId
-                if let targetSpace = browserContext.extensionTargetSpace(for: windowState),
+                if let targetSpace = requestedTabTargets.extensionTargetSpace(
+                    for: windowState
+                ),
                    targetSpace.profileId == contextProfileId {
                     windowState.currentSpaceId = targetSpace.id
                 } else {
@@ -155,7 +170,9 @@ final class ExtensionRequestedWindowOpeningOwner {
                 }
             }
 
-            let targetSpace = browserContext.extensionTargetSpace(for: windowState)
+            let targetSpace = requestedTabTargets.extensionTargetSpace(
+                for: windowState
+            )
 
             let createdTab: Tab
             if let firstURL = tabURLs.first {
@@ -170,14 +187,14 @@ final class ExtensionRequestedWindowOpeningOwner {
                     targetSpace,
                     controller
                 )
-                createdTab = browserContext.createExtensionTab(
+                createdTab = tabMutation.createExtensionTab(
                     url: resolvedExtensionLoad.url ?? firstURL,
                     in: targetSpace,
                     activate: false,
                     webExtensionContextOverride: resolvedExtensionLoad.context
                 )
             } else {
-                createdTab = browserContext.createExtensionTab(
+                createdTab = tabMutation.createExtensionTab(
                     url: nil,
                     in: targetSpace,
                     activate: false,
@@ -190,7 +207,7 @@ final class ExtensionRequestedWindowOpeningOwner {
                 true,
                 windowState
             )
-            browserContext.selectExtensionTab(createdTab, in: windowState)
+            tabMutation.selectExtensionTab(createdTab, in: windowState)
             self.registerCreatedTabWithExtensionRuntime(
                 createdTab,
                 "webExtensionController.openNewWindowUsing"
@@ -229,7 +246,7 @@ extension ExtensionManager {
         awaitWindowRegistration: @escaping @MainActor (Set<UUID>) async -> BrowserWindowState?,
         completionHandler: @escaping ((any WKWebExtensionWindow)?, (any Error)?) -> Void
     ) {
-        requestedWindowOpeningOwner.openExtensionWindowUsingTabURLs(
+        runtimeBundle.requestedWindowOpeningOwner.openExtensionWindowUsingTabURLs(
             tabURLs,
             controller: controller,
             extensionContext: extensionContext,

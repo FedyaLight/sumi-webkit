@@ -34,7 +34,7 @@ enum TabPopupRuntimeFactory {
                     browserManager?.materializeVisibleTabWebViewIfNeeded(tab, in: windowState)
                 },
                 presentWebPopup: { [weak browserManager] configuration, request, windowFeatures, openerTab, isExtensionOriginated in
-                    browserManager?.auxiliaryWindowManager.presentWebPopup(
+                    browserManager?.auxiliaryWindows.popups.presentWebPopup(
                         configuration: configuration,
                         request: request,
                         windowFeatures: windowFeatures,
@@ -59,10 +59,8 @@ enum TabPopupRuntimeFactory {
                     )
                 },
                 installUntrackedOwnedWebView: { [weak browserManager] webView, tab in
-                    browserManager?.webViewRoutingService.installUntrackedOwnedWebView(
-                        webView,
-                        for: tab
-                    )
+                    browserManager?.webViewOwnershipService?
+                        .installUntracked(webView, for: tab)
                 },
                 windowStateContainingTab: { [weak browserManager] tab in
                     browserManager?.windowSessionBundle.tabContextOwner.windowState(containing: tab)

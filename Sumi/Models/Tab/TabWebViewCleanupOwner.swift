@@ -1,5 +1,6 @@
 import Foundation
 import SumiDomain
+import SumiWebRuntime
 import WebKit
 
 enum SumiWebViewShutdown {
@@ -28,6 +29,22 @@ enum SumiWebViewShutdown {
         )
     }
 
+    /// Terminal browser-session shutdown cannot initiate another navigation:
+    /// its delegates and model runtime are already unavailable by definition.
+    @MainActor
+    static func performTerminalShutdown(
+        on webView: WKWebView,
+        tabId: UUID,
+        runtime: NormalTabRuntime
+    ) {
+        performLifecycle(
+            on: webView,
+            scope: .normal(tabId: tabId),
+            normalTabRuntime: runtime,
+            prepareForRelease: false
+        )
+    }
+
     @MainActor
     fileprivate static func performAuxiliary(
         on webView: WKWebView
@@ -44,7 +61,8 @@ enum SumiWebViewShutdown {
         on webView: WKWebView,
         scope: Scope,
         normalTabRuntime: NormalTabRuntime?,
-        additionalTabCleanup: (() -> Void)? = nil
+        additionalTabCleanup: (() -> Void)? = nil,
+        prepareForRelease: Bool = true
     ) {
         webView.stopLoading()
         stopNativeMedia(on: webView)
@@ -60,7 +78,9 @@ enum SumiWebViewShutdown {
             controller.cleanUpBeforeClosing()
         }
 
-        prepareForReleaseIfNeeded(webView, scope: scope)
+        if prepareForRelease {
+            prepareForReleaseIfNeeded(webView, scope: scope)
+        }
         additionalTabCleanup?()
 
         webView.navigationDelegate = nil
@@ -112,32 +132,24 @@ enum TabWebViewCleanupOwner {
         let deferProtectedWebViewCleanup: ProtectedWebViewCleanupDeferrer
         let shutdownRuntime: SumiWebViewShutdown.NormalTabRuntime
         let notifyNowPlayingTabUnloaded: (UUID) -> Void
-        let currentWebView: () -> WKWebView?
-        let clearCurrentWebView: () -> Void
-        let removeAllWebViews: (_ closeActiveFullscreenMedia: Bool) -> Bool
+        let remainingOwnedWebViews: () -> [WKWebView]
+        let clearDetachedWebViews: () -> Void
+        let removeAllWebViews: (
+            _ closeActiveFullscreenMedia: Bool
+        ) -> WebViewTabTeardownResult
         let currentPermissionPageId: () -> String
         let profilePartitionId: () -> String?
         let invalidatePermissionPageForReplacement: (String) -> Void
         let unbindAudioState: (WKWebView) -> Void
         let removeNavigationStateObservers: (WKWebView) -> Void
         let removeNavigationDelegateBundle: (WKWebView) -> Void
+        let webViewDidLeaveRuntime: (WKWebView) -> Void
         let resetPlaybackActivity: () -> Void
         let setLoadingIdle: () -> Void
     }
 
     @MainActor
     static func cleanupWebView(_ webView: WKWebView, context: Context) {
-        let pageId = context.currentPermissionPageId()
-        let tabId = context.tabId.uuidString.lowercased()
-        context.handlePermissionLifecycleEvent(
-            .webViewDeallocated(
-                pageId: pageId,
-                tabId: tabId,
-                profilePartitionId: context.profilePartitionId(),
-                reason: "normal-tab-webview-cleanup"
-            )
-        )
-
         if context.deferProtectedWebViewCleanup(
             webView,
             context.tabId,
@@ -145,6 +157,23 @@ enum TabWebViewCleanupOwner {
         ) {
             return
         }
+
+        let hasSurvivingOwnedWebView = context.remainingOwnedWebViews().contains {
+            $0 !== webView
+        }
+        if hasSurvivingOwnedWebView == false {
+            let pageId = context.currentPermissionPageId()
+            let tabId = context.tabId.uuidString.lowercased()
+            context.handlePermissionLifecycleEvent(
+                .webViewDeallocated(
+                    pageId: pageId,
+                    tabId: tabId,
+                    profilePartitionId: context.profilePartitionId(),
+                    reason: "normal-tab-last-webview-cleanup"
+                )
+            )
+        }
+        context.webViewDidLeaveRuntime(webView)
 
         SumiWebViewShutdown.perform(
             on: webView,
@@ -159,22 +188,26 @@ enum TabWebViewCleanupOwner {
 
     @MainActor
     static func performComprehensiveCleanup(context: Context) {
-        let removedTrackedWebViews = context.removeAllWebViews(true)
-        guard removedTrackedWebViews || context.currentWebView() != nil else { return }
+        let teardown = context.removeAllWebViews(true)
+        let remainingWebViews = uniqueWebViews(context.remainingOwnedWebViews())
+        guard teardown.foundWebViews || remainingWebViews.isEmpty == false else { return }
 
         RuntimeDiagnostics.debug(
             "Performing comprehensive WebView cleanup for '\(context.tabName())'.",
             category: "Tab"
         )
 
-        if let webView = context.currentWebView() {
-            cleanupWebView(webView, context: context)
+        if teardown.isComplete {
+            for webView in remainingWebViews {
+                cleanupWebView(webView, context: context)
+            }
+            context.clearDetachedWebViews()
         }
 
-        context.clearCurrentWebView()
-
         RuntimeDiagnostics.debug(
-            "Completed WebView cleanup for '\(context.tabName())'.",
+            teardown.isComplete
+                ? "Completed WebView cleanup for '\(context.tabName())'."
+                : "Deferred \(teardown.deferredWebViewCount) protected WebView cleanup(s) for '\(context.tabName())'.",
             category: "Tab"
         )
     }
@@ -183,20 +216,28 @@ enum TabWebViewCleanupOwner {
     static func unloadWebView(context: Context) {
         context.invalidatePermissionPageForReplacement("normal-tab-webview-unload")
 
-        let removedTrackedWebViews = context.removeAllWebViews(true)
+        let teardown = context.removeAllWebViews(true)
+        let remainingWebViews = uniqueWebViews(context.remainingOwnedWebViews())
 
-        guard removedTrackedWebViews || context.currentWebView() != nil else {
+        guard teardown.foundWebViews || remainingWebViews.isEmpty == false else {
             context.notifyNowPlayingTabUnloaded(context.tabId)
             return
         }
 
-        if let webView = context.currentWebView() {
-            cleanupWebView(webView, context: context)
+        if teardown.isComplete {
+            for webView in remainingWebViews {
+                cleanupWebView(webView, context: context)
+            }
+            context.clearDetachedWebViews()
         }
-        context.clearCurrentWebView()
 
         context.resetPlaybackActivity()
         context.setLoadingIdle()
         context.notifyNowPlayingTabUnloaded(context.tabId)
+    }
+
+    private static func uniqueWebViews(_ webViews: [WKWebView]) -> [WKWebView] {
+        var seen: Set<ObjectIdentifier> = []
+        return webViews.filter { seen.insert(ObjectIdentifier($0)).inserted }
     }
 }

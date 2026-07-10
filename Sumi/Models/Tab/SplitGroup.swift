@@ -322,8 +322,9 @@ struct SplitGroup: Identifiable, Codable, Equatable, Hashable, Sendable {
     ) {
         self.id = id
         self.layoutKind = layoutKind
-        let normalizedTree = layoutTree.normalizingSiblingSizes()
-        self.layoutTree = normalizedTree.canonicalizedForTiles() ?? normalizedTree
+        let normalizedTree = SplitLayoutSizing.normalizingSiblingSizes(in: layoutTree)
+        self.layoutTree = SplitLayoutReconciler.canonicalizedForTiles(normalizedTree)
+            ?? normalizedTree
         self.activeTabId = activeTabId
         self.host = host
         self.members = Self.sanitizedMembers(members, validTabIds: Set(self.layoutTree.tabIds))
@@ -334,8 +335,9 @@ struct SplitGroup: Identifiable, Codable, Equatable, Hashable, Sendable {
         id = try container.decode(UUID.self, forKey: .id)
         layoutKind = try container.decode(SplitLayoutKind.self, forKey: .layoutKind)
         let decodedTree = try container.decode(SplitLayoutTree.self, forKey: .layoutTree)
-        let normalizedTree = decodedTree.normalizingSiblingSizes()
-        layoutTree = normalizedTree.canonicalizedForTiles() ?? normalizedTree
+        let normalizedTree = SplitLayoutSizing.normalizingSiblingSizes(in: decodedTree)
+        layoutTree = SplitLayoutReconciler.canonicalizedForTiles(normalizedTree)
+            ?? normalizedTree
         activeTabId = try container.decodeIfPresent(UUID.self, forKey: .activeTabId)
         host = try container.decodeIfPresent(SplitGroupHost.self, forKey: .host) ?? .regular(spaceId: nil)
         members = Self.sanitizedMembers(
@@ -401,7 +403,7 @@ struct SplitGroup: Identifiable, Codable, Equatable, Hashable, Sendable {
         SplitGroup(
             id: id,
             layoutKind: kind,
-            layoutTree: .make(kind: kind, tabIds: tabIds),
+            layoutTree: SplitLayoutFactory.make(kind: kind, tabIds: tabIds),
             activeTabId: activeTabId,
             host: host,
             members: members
@@ -415,7 +417,9 @@ struct SplitGroup: Identifiable, Codable, Equatable, Hashable, Sendable {
     }
 
     func canonicalizedForTiles() -> SplitGroup? {
-        guard let tree = layoutTree.canonicalizedForTiles() else { return nil }
+        guard let tree = SplitLayoutReconciler.canonicalizedForTiles(layoutTree) else {
+            return nil
+        }
         let resolvedActiveTabId = activeTabId.flatMap { tree.contains($0) ? $0 : nil } ?? tree.tabIds.first
         return SplitGroup(
             id: id,
@@ -472,18 +476,6 @@ struct SplitGroup: Identifiable, Codable, Equatable, Hashable, Sendable {
             activeTabId: tabId,
             host: host,
             members: members
-        )
-    }
-
-    func resolvingDrop(
-        draggedTabId: UUID,
-        target: SplitDropTarget,
-        bounds: CGRect
-    ) -> SplitResolvedDrop? {
-        layoutTree.resolvingDrop(
-            draggedTabId: draggedTabId,
-            target: target,
-            bounds: bounds
         )
     }
 
@@ -607,7 +599,7 @@ struct SplitGroup: Identifiable, Codable, Equatable, Hashable, Sendable {
         guard uniqueIds.count >= minimumTabs, uniqueIds.count <= maximumTabs else { return nil }
         return SplitGroup(
             layoutKind: layoutKind,
-            layoutTree: .make(kind: layoutKind, tabIds: uniqueIds),
+            layoutTree: SplitLayoutFactory.make(kind: layoutKind, tabIds: uniqueIds),
             activeTabId: activeTabId ?? uniqueIds.last,
             host: host,
             members: members

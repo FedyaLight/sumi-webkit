@@ -16,13 +16,59 @@ extension Tab {
         SumiWebViewNavigator.goForward(on: webView)
     }
 
+    func beginBrowserOwnedHistoryNavigation(
+        to targetURL: URL,
+        on webView: WKWebView
+    ) -> TabMainFrameSubmissionLease {
+        cancelPendingMainFrameNavigation()
+        _ = beginMainFrameNavigationIntent(to: targetURL)
+        _ = beginWebViewRebuildIntent()
+        beginLoadingPresentationIfNeeded()
+        guard let lease = claimDirectMainFrameLoadLease(on: webView) else {
+            preconditionFailure(
+                "Browser-owned history navigation could not claim its exact WebView"
+            )
+        }
+        return lease
+    }
+
+    func failBrowserOwnedHistoryNavigation(
+        on webView: WKWebView,
+        matching lease: TabMainFrameSubmissionLease
+    ) {
+        let result = failSubmittedMainFrameLoad(
+            on: webView,
+            matching: lease
+        )
+        if case .authoritativeTerminated = result {
+            rollbackMainFrameNavigationAfterFailedSubmission(on: webView)
+        }
+    }
+
     func stopLoading(on webView: WKWebView? = nil) {
-        let resolvedWebView = webView ?? resolvedCurrentWebView()
-        resolvedWebView?.stopLoading()
+        var loadingWebViews = mainFrameLoadingWebViews()
+        if let webView, loadingWebViews.contains(where: { $0 === webView }) == false {
+            loadingWebViews.append(webView)
+        }
+        if let currentWebView = resolvedCurrentWebView(),
+           loadingWebViews.contains(where: { $0 === currentWebView }) == false {
+            loadingWebViews.append(currentWebView)
+        }
+        cancelPendingMainFrameNavigation()
+        cancelMainFrameNavigationIntent()
+        _ = beginWebViewRebuildIntent()
+        for loadingWebView in loadingWebViews {
+            loadingWebView.stopLoading()
+        }
 
         if loadingState.isLoading {
             loadingState = .idle
         }
+        updateNavigationState()
+        navigationRuntime.extensionPropertiesRuntime.notifyTabPropertiesChanged(
+            self,
+            [.loading]
+        )
     }
 
     func refresh() {
@@ -32,6 +78,12 @@ extension Tab {
     func updateNavigationState() {
         guard !navigationRuntime.navigationTransactionOwner.isFreezingNavDuringBackForwardGesture else { return }
         guard let webView = resolvedCurrentWebView() else { return }
+        updateNavigationState(from: webView)
+    }
+
+    func updateNavigationState(from webView: WKWebView) {
+        guard !navigationRuntime.navigationTransactionOwner
+            .isFreezingNavDuringBackForwardGesture else { return }
 
         let newCanGoBack = webView.canGoBack
         let newCanGoForward = webView.canGoForward
@@ -72,11 +124,23 @@ extension Tab {
         }
     }
 
-    func handleSameDocumentNavigation(to newURL: URL) {
+    func handleSameDocumentNavigation(
+        to newURL: URL,
+        from webView: WKWebView? = nil,
+        navigationID: ObjectIdentifier? = nil
+    ) {
         let urlChanged = self.url.absoluteString != newURL.absoluteString
         if !urlChanged { return }
 
-        self.url = newURL
+        if let webView {
+            applyAcceptedMainFrameLifecycleURL(
+                newURL,
+                from: webView,
+                navigationID: navigationID
+            )
+        } else {
+            self.url = newURL
+        }
 
         if urlChanged {
             applyCachedFaviconOrPlaceholder(for: newURL)
@@ -88,7 +152,7 @@ extension Tab {
     public func performMainFrameNavigationAfterContentBlockingAssetsIfNeeded(
         on webView: WKWebView,
         waitForContentBlockingAssets: Bool,
-        performLoad: @escaping @MainActor @Sendable (WKWebView) -> Void
+        performLoad: @escaping @MainActor @Sendable (WKWebView, URL) -> WKNavigation?
     ) {
         navigationCommandOwner.performMainFrameNavigationAfterContentBlockingAssetsIfNeeded(
             on: webView,
@@ -119,6 +183,17 @@ extension Tab {
         )
     }
 
+    @discardableResult
+    func finishBackForwardNavigationTrackingIfOwned(
+        by webView: WKWebView
+    ) -> Bool {
+        navigationRuntime.navigationTransactionOwner
+            .finishBackForwardNavigationTrackingIfOwned(
+                by: webView,
+                environment: navigationTransactionEnvironment()
+            )
+    }
+
     func scheduleBackForwardSameDocumentSettle(using webView: WKWebView) {
         navigationRuntime.navigationTransactionOwner.scheduleBackForwardSameDocumentSettle(
             using: webView,
@@ -126,7 +201,7 @@ extension Tab {
         )
     }
 
-    private func navigationTransactionEnvironment() -> TabNavigationTransactionOwner.HistorySwipeEnvironment {
+    func navigationTransactionEnvironment() -> TabNavigationTransactionOwner.HistorySwipeEnvironment {
         TabNavigationTransactionOwner.HistorySwipeEnvironment(
             tabId: id,
             currentWebView: { [weak self] in

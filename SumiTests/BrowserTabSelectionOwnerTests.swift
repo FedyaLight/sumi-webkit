@@ -334,7 +334,7 @@ final class BrowserTabSelectionOwnerTests: XCTestCase {
             applySettingsSurfaceNavigation: { _ in probe.events.append("settingsNavigation") },
             canMaterializeWebViewDuringStartup: { _ in true },
             markTabAccessed: { _ in probe.events.append("markTabAccessed") },
-            webViewCoordinator: { nil },
+            ensureVisibleWebView: { _, _ in },
             handleNativeNowPlayingTabActivated: { _ in probe.events.append("nowPlayingActivated") },
             scheduleNativeNowPlayingRefresh: { _ in probe.events.append("nowPlayingRefresh") },
             fetchVisibleFavicon: { _ in probe.events.append("fetchFavicon") },

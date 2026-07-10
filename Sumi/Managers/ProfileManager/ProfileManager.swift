@@ -92,28 +92,47 @@ final class ProfileManager: ObservableObject {
 
     func persistProfiles() {
         do {
-            // Fetch all existing entities
-            let all = try context.fetch(FetchDescriptor<ProfileEntity>())
-            var byId: [UUID: ProfileEntity] = Dictionary(uniqueKeysWithValues: all.map { ($0.id, $0) })
-
-            // Update or insert to match runtime profiles order
-            for (index, p) in profiles.enumerated() {
-                if let e = byId[p.id] {
-                    e.name = p.name
-                    e.icon = p.icon
-                    e.index = index
-                } else {
-                    let e = ProfileEntity(id: p.id, name: p.name, icon: p.icon, index: index)
-                    context.insert(e)
-                    byId[p.id] = e
-                }
-            }
-            // Optionally, remove entities not present in runtime array
-            let keep = Set(profiles.map { $0.id })
-            for (id, e) in byId where !keep.contains(id) { context.delete(e) }
-            try context.save()
+            try persistProfileSnapshot(profiles)
         } catch {
             RuntimeDiagnostics.emit("[ProfileManager] Persist failed: \(error)")
+        }
+    }
+
+    /// Atomically persists a complete profile snapshot before publishing it to runtime readers.
+    /// Import rollback uses the same operation, so a failed save never exposes an unpersisted list.
+    func replaceProfiles(with replacement: [Profile]) throws {
+        try persistProfileSnapshot(replacement)
+        profiles = replacement
+    }
+
+    private func persistProfileSnapshot(_ snapshot: [Profile]) throws {
+        do {
+            let all = try context.fetch(FetchDescriptor<ProfileEntity>())
+            var byId = Dictionary(uniqueKeysWithValues: all.map { ($0.id, $0) })
+            for (index, profile) in snapshot.enumerated() {
+                if let entity = byId[profile.id] {
+                    entity.name = profile.name
+                    entity.icon = profile.icon
+                    entity.index = index
+                } else {
+                    let entity = ProfileEntity(
+                        id: profile.id,
+                        name: profile.name,
+                        icon: profile.icon,
+                        index: index
+                    )
+                    context.insert(entity)
+                    byId[profile.id] = entity
+                }
+            }
+            let keep = Set(snapshot.map(\.id))
+            for (id, entity) in byId where !keep.contains(id) {
+                context.delete(entity)
+            }
+            try context.save()
+        } catch {
+            context.rollback()
+            throw error
         }
     }
 

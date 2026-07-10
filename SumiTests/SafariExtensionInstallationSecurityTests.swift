@@ -90,7 +90,7 @@ final class SafariExtensionInstallationSecurityTests: XCTestCase {
         }
 
         do {
-            _ = try await manager.installationFlowOwner.performInstallation(
+            _ = try await manager.extensionInstaller.install(
                 from: source,
                 enableOnInstall: false
             )
@@ -102,7 +102,7 @@ final class SafariExtensionInstallationSecurityTests: XCTestCase {
         }
 
         XCTAssertFalse(FileManager.default.fileExists(atPath: escapedDestination.path))
-        XCTAssertFalse(manager.installedExtensions.contains { $0.id == maliciousID })
+        XCTAssertFalse(manager.installedExtensionCollection.records.contains { $0.id == maliciousID })
     }
 
     func testInstallKeepsLegitimateGeckoIDInsideExtensionsRoot() async throws {
@@ -124,7 +124,7 @@ final class SafariExtensionInstallationSecurityTests: XCTestCase {
             geckoId: extensionId
         )
 
-        let installed = try await manager.installationFlowOwner.performInstallation(
+        let installed = try await manager.extensionInstaller.install(
             from: source,
             enableOnInstall: false
         )
@@ -171,7 +171,7 @@ final class SafariExtensionInstallationSecurityTests: XCTestCase {
             )
         )
 
-        let installed = try await manager.installationFlowOwner.performInstallation(
+        let installed = try await manager.extensionInstaller.install(
             from: appexURL,
             enableOnInstall: false
         )
@@ -187,7 +187,7 @@ final class SafariExtensionInstallationSecurityTests: XCTestCase {
             context: container.mainContext,
             initialProfile: profile
         )
-        let installed = try await manager.installationFlowOwner.performInstallation(
+        let installed = try await manager.extensionInstaller.install(
             from: try makeUnpackedExtension(
                 name: "OptionalNativeMessaging",
                 geckoId: "optional-native-\(UUID().uuidString)@example.com",
@@ -220,7 +220,7 @@ final class SafariExtensionInstallationSecurityTests: XCTestCase {
             context: container.mainContext,
             initialProfile: profile
         )
-        let installed = try await manager.installationFlowOwner.performInstallation(
+        let installed = try await manager.extensionInstaller.install(
             from: try makeUnpackedExtension(
                 name: "OptionalTabs",
                 geckoId: "optional-tabs-\(UUID().uuidString)@example.com",
@@ -255,7 +255,7 @@ final class SafariExtensionInstallationSecurityTests: XCTestCase {
             context: container.mainContext,
             initialProfile: profile
         )
-        let installed = try await manager.installationFlowOwner.performInstallation(
+        let installed = try await manager.extensionInstaller.install(
             from: try makeUnpackedExtension(
                 name: "RequiredNativeMessaging",
                 geckoId: "required-native-\(UUID().uuidString)@example.com",
@@ -277,6 +277,111 @@ final class SafariExtensionInstallationSecurityTests: XCTestCase {
         XCTAssertEqual(
             context.permissionStatus(for: .nativeMessaging),
             .grantedExplicitly
+        )
+    }
+
+    func testFailedReinstallRestoresPackageAndPersistedRecord() async throws {
+        let container = try makeTestContainer()
+        let manager = ExtensionManager(
+            context: container.mainContext,
+            initialProfile: Profile(name: "Rollback Profile")
+        )
+        let extensionID = "rollback-\(UUID().uuidString)@example.com"
+        let originalSource = try makeUnpackedExtension(
+            name: "RollbackOriginal",
+            geckoId: extensionID
+        )
+        let originalMarker = originalSource.appendingPathComponent("marker.txt")
+        try Data("original".utf8).write(to: originalMarker)
+
+        let original = try await manager.extensionInstaller.install(
+            from: originalSource,
+            enableOnInstall: false
+        )
+        let installedRoot = URL(
+            fileURLWithPath: original.packagePath,
+            isDirectory: true
+        )
+        addTeardownBlock {
+            if FileManager.default.fileExists(atPath: installedRoot.path) {
+                try FileManager.default.removeItem(at: installedRoot)
+            }
+        }
+
+        let replacementSource = try makeUnpackedExtension(
+            name: "RollbackReplacement",
+            geckoId: extensionID
+        )
+        try Data("replacement".utf8).write(
+            to: replacementSource.appendingPathComponent("marker.txt")
+        )
+        manager.testHooks.beforePersistInstalledRecord = { _ in
+            throw ExtensionError.installationFailed("injected persistence failure")
+        }
+        defer { manager.testHooks.beforePersistInstalledRecord = nil }
+
+        do {
+            _ = try await manager.extensionInstaller.install(
+                from: replacementSource,
+                enableOnInstall: false
+            )
+            XCTFail("Reinstall should fail at the persistence boundary")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("injected persistence failure"))
+        }
+
+        let restoredMarker = try Data(
+            contentsOf: installedRoot.appendingPathComponent("marker.txt")
+        )
+        XCTAssertEqual(restoredMarker, Data("original".utf8))
+        XCTAssertEqual(
+            manager.installedExtensionCollection.records.first(where: { $0.id == extensionID })?.name,
+            original.name
+        )
+        let persisted = try XCTUnwrap(
+            manager.installationMetadataStore.extensionEntity(for: extensionID)
+        )
+        XCTAssertEqual(persisted.name, original.name)
+    }
+
+    func testEnableWithoutRuntimeProfileRollsBackEnabledState() async throws {
+        let container = try makeTestContainer()
+        let manager = ExtensionManager(
+            context: container.mainContext,
+            initialProfile: nil
+        )
+        let installed = try await manager.extensionInstaller.install(
+            from: try makeUnpackedExtension(
+                name: "EnableRollback",
+                geckoId: "enable-rollback-\(UUID().uuidString)@example.com"
+            ),
+            enableOnInstall: false
+        )
+        let installedRoot = URL(
+            fileURLWithPath: installed.packagePath,
+            isDirectory: true
+        )
+        addTeardownBlock {
+            if FileManager.default.fileExists(atPath: installedRoot.path) {
+                try FileManager.default.removeItem(at: installedRoot)
+            }
+        }
+
+        do {
+            _ = try await manager.installedExtensionLifecycle.enable(installed.id)
+            XCTFail("Enable should fail without a runtime profile")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("profile is unavailable"))
+        }
+
+        let entity = try XCTUnwrap(
+            manager.installationMetadataStore.extensionEntity(for: installed.id)
+        )
+        XCTAssertFalse(entity.isEnabled)
+        XCTAssertFalse(
+            try XCTUnwrap(
+                manager.installedExtensionCollection.records.first(where: { $0.id == installed.id })
+            ).isEnabled
         )
     }
 

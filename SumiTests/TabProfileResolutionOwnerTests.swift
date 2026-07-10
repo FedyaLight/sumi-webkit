@@ -123,7 +123,7 @@ final class TabProfileResolutionOwnerTests: XCTestCase {
     }
 
     private func makeRuntimeTab(in browserManager: BrowserManager) -> Tab {
-        let tab = Tab(loadsCachedFaviconOnInit: false)
+        let tab = browserManager.tabManager.tabFactory.makeTab(loadsCachedFaviconOnInit: false)
         tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
         return tab
     }

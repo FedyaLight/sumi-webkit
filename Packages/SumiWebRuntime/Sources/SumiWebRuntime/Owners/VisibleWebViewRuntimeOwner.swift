@@ -12,21 +12,24 @@ import WebKit
 @MainActor
 public final class VisibleWebViewRuntimeOwner: WebRuntimeVisiblePreparationControlling {
     private let compositorHandoffState = WebViewCompositorHandoffState()
+    private let visibilityIndex = WebViewVisibilityIndex()
     private var scheduledPrepareWindowIds: Set<UUID> = []
 
     public init() {}
 
     // MARK: - Compositor Containers
 
-    public func setCompositorContainerView(_ view: NSView?, for windowId: UUID) {
-        compositorHandoffState.setContainerView(view, for: windowId)
-    }
-
-    public func setImmediateVisualHandoffHandler(
-        _ handler: (@MainActor () -> Bool)?,
-        for windowId: UUID
-    ) {
-        compositorHandoffState.setImmediateVisualHandoffHandler(handler, for: windowId)
+    @discardableResult
+    public func registerCompositorContainerView(
+        _ view: NSView,
+        for windowId: UUID,
+        immediateVisualHandoffHandler: (@MainActor () -> Bool)? = nil
+    ) -> WebViewCompositorContainerRegistration {
+        compositorHandoffState.registerContainerView(
+            view,
+            for: windowId,
+            immediateVisualHandoffHandler: immediateVisualHandoffHandler
+        )
     }
 
     @discardableResult
@@ -38,15 +41,56 @@ public final class VisibleWebViewRuntimeOwner: WebRuntimeVisiblePreparationContr
         compositorHandoffState.containerView(for: windowId)
     }
 
+    public func isCurrentCompositorContainerRegistration(
+        _ registration: WebViewCompositorContainerRegistration
+    ) -> Bool {
+        compositorHandoffState.isCurrentContainerRegistration(registration)
+    }
+
     public func removeCompositorContainerView(
         for windowId: UUID,
-        webViewRegistry: WindowWebViewRegistry,
         pruneInvalidDeferredCommands: (String) -> Void
     ) {
         compositorHandoffState.removeContainerView(for: windowId)
         scheduledPrepareWindowIds.remove(windowId)
-        webViewRegistry.removeVisibilityHistory(for: windowId)
+        visibilityIndex.removeWindow(windowId)
         pruneInvalidDeferredCommands("removeCompositorContainerView")
+    }
+
+    @discardableResult
+    public func removeCompositorContainerView(
+        _ registration: WebViewCompositorContainerRegistration,
+        pruneInvalidDeferredCommands: (String) -> Void
+    ) -> Bool {
+        guard compositorHandoffState.removeContainerView(registration) else {
+            return false
+        }
+        scheduledPrepareWindowIds.remove(registration.windowID)
+        visibilityIndex.removeWindow(registration.windowID)
+        pruneInvalidDeferredCommands("removeCompositorContainerView")
+        return true
+    }
+
+    /// Runs window-global controller teardown only for the registration that
+    /// still owns the window's compositor slot. A superseded controller may
+    /// stop its private observers, but it cannot mutate the replacement's
+    /// fullscreen, handoff, host, visibility, or preparation state.
+    @discardableResult
+    public func tearDownCompositorContainerView(
+        _ registration: WebViewCompositorContainerRegistration,
+        teardown: () -> Void,
+        pruneInvalidDeferredCommands: (String) -> Void
+    ) -> Bool {
+        guard compositorHandoffState.isCurrentContainerRegistration(registration) else {
+            return false
+        }
+
+        teardown()
+        _ = removeCompositorContainerView(
+            registration,
+            pruneInvalidDeferredCommands: pruneInvalidDeferredCommands
+        )
+        return true
     }
 
     public func compositorContainers() -> [(UUID, NSView)] {
@@ -56,20 +100,26 @@ public final class VisibleWebViewRuntimeOwner: WebRuntimeVisiblePreparationContr
     public func resetWindowRegistrations() {
         compositorHandoffState.removeAllWindowRegistrations()
         scheduledPrepareWindowIds.removeAll()
+        visibilityIndex.removeAll()
     }
 
     public func cancelScheduledPreparation(for windowId: UUID) {
         scheduledPrepareWindowIds.remove(windowId)
     }
 
+    public func removeRecentVisibility(for owner: TrackedWebViewOwner) {
+        visibilityIndex.removeTab(owner.tabID, in: owner.windowID)
+    }
+
     // MARK: - Promoted Host Handoff
 
+    @discardableResult
     public func registerPromotedHost(
         _ host: any WebRuntimePromotedHost,
         for tabId: UUID,
         in windowId: UUID,
-        attachmentCompletion: (@MainActor () -> Void)? = nil
-    ) {
+        attachmentCompletion: PromotedHostAttachmentCompletion? = nil
+    ) -> Bool {
         compositorHandoffState.registerPromotedHost(
             host,
             for: tabId,
@@ -81,17 +131,27 @@ public final class VisibleWebViewRuntimeOwner: WebRuntimeVisiblePreparationContr
     public func takePromotedHost(
         for tabId: UUID,
         in windowId: UUID,
+        containerRegistration: WebViewCompositorContainerRegistration,
         expectedWebView: WKWebView
     ) -> (any WebRuntimePromotedHost)? {
         compositorHandoffState.takePromotedHost(
             for: tabId,
             in: windowId,
+            containerRegistration: containerRegistration,
             expectedWebView: expectedWebView
         )
     }
 
-    public func completePromotedHostAttachment(for tabId: UUID, in windowId: UUID) {
-        compositorHandoffState.completePromotedHostAttachment(for: tabId, in: windowId)
+    public func completePromotedHostAttachment(
+        for tabId: UUID,
+        in windowId: UUID,
+        containerRegistration: WebViewCompositorContainerRegistration
+    ) {
+        compositorHandoffState.completePromotedHostAttachment(
+            for: tabId,
+            in: windowId,
+            containerRegistration: containerRegistration
+        )
     }
 
     // MARK: - Visible WebView Preparation
@@ -100,7 +160,7 @@ public final class VisibleWebViewRuntimeOwner: WebRuntimeVisiblePreparationContr
     public func prepareVisibleWebViews(
         for windowHandle: any WebRuntimeWindowHandle,
         runtime: VisibleWebViewPreparationRuntime,
-        webViewRegistry: WindowWebViewRegistry,
+        webViewSessions: WebViewSessionRepository,
         existingWebView: (UUID, UUID) -> WKWebView?,
         createWebView: (any WebRuntimeTabHandle, UUID) -> WKWebView?
     ) -> Bool {
@@ -118,7 +178,7 @@ public final class VisibleWebViewRuntimeOwner: WebRuntimeVisiblePreparationContr
             for: windowHandle,
             runtime: runtime
         )
-        webViewRegistry.noteVisibleTabs(visibleTabIDs, in: windowHandle.id)
+        visibilityIndex.noteVisibleTabs(visibleTabIDs, in: windowHandle.id)
 
         var didCreateWebView = false
         for tabId in visibleTabIDs {
@@ -201,21 +261,21 @@ public final class VisibleWebViewRuntimeOwner: WebRuntimeVisiblePreparationContr
     public func preferredPrimaryWebViewCandidate(
         for tabId: UUID,
         runtime: VisibleWebViewPreparationRuntime?,
-        webViewRegistry: WindowWebViewRegistry
+        webViewSessions: WebViewSessionRepository
     ) -> (owner: TrackedWebViewOwner, webView: WKWebView)? {
-        let candidates = webViewRegistry.trackedWebViews(for: tabId)
+        let candidates = webViewSessions.queries.trackedWebViews(for: tabId)
         guard candidates.isEmpty == false else { return nil }
 
         return candidates.min { lhs, rhs in
             candidatePriority(
                 for: lhs.0,
                 runtime: runtime,
-                webViewRegistry: webViewRegistry
+                webViewSessions: webViewSessions
             )
                 < candidatePriority(
                     for: rhs.0,
                     runtime: runtime,
-                    webViewRegistry: webViewRegistry
+                    webViewSessions: webViewSessions
                 )
         }
     }
@@ -223,7 +283,7 @@ public final class VisibleWebViewRuntimeOwner: WebRuntimeVisiblePreparationContr
     private func candidatePriority(
         for owner: TrackedWebViewOwner,
         runtime: VisibleWebViewPreparationRuntime?,
-        webViewRegistry: WindowWebViewRegistry
+        webViewSessions: WebViewSessionRepository
     ) -> (Int, Int, String) {
         let visibleRank: Int
         if let runtime,
@@ -237,7 +297,7 @@ public final class VisibleWebViewRuntimeOwner: WebRuntimeVisiblePreparationContr
             visibleRank = 1
         }
 
-        let mruRank = webViewRegistry.recentVisibilityRank(for: owner)
+        let mruRank = visibilityIndex.rank(for: owner)
         return (visibleRank, mruRank, owner.windowID.uuidString)
     }
 }

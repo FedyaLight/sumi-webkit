@@ -69,6 +69,8 @@ final class BrowserActivePageRoutingOwner {
         return activePageTab(for: activeWindow)
     }
 
+    /// Canonical page target for navigation, lifecycle and Reader extraction.
+    /// Presentation-scoped commands must use `activePresentationWebView`.
     func activePageWebView(for windowState: BrowserWindowState) -> WKWebView? {
         if let previewTab = activePreviewTab(windowState) {
             return windowOwnedWebView(previewTab, windowState.id)
@@ -82,6 +84,15 @@ final class BrowserActivePageRoutingOwner {
     func activePageWebViewForActiveWindow() -> WKWebView? {
         guard let activeWindow = activeWindow() else { return nil }
         return activePageWebView(for: activeWindow)
+    }
+
+    func activePresentationWebView(for windowState: BrowserWindowState) -> WKWebView? {
+        activePageWebView(for: windowState)?.sumiActivePresentationWebView
+    }
+
+    func activePresentationWebViewForActiveWindow() -> WKWebView? {
+        guard let activeWindow = activeWindow() else { return nil }
+        return activePresentationWebView(for: activeWindow)
     }
 
     func activePageURL(for windowState: BrowserWindowState) -> URL? {
@@ -155,7 +166,7 @@ final class BrowserActivePageRoutingOwner {
             return
         }
 
-        inspect(webView)
+        inspect(webView.sumiActivePresentationWebView)
     }
 
     func openWebInspector(for tab: Tab, in windowState: BrowserWindowState) {
@@ -169,7 +180,7 @@ final class BrowserActivePageRoutingOwner {
             return
         }
 
-        inspect(webView)
+        inspect(webView.sumiActivePresentationWebView)
     }
 
     func presentExternalURL(_ url: URL) {

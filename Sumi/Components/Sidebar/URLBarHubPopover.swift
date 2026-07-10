@@ -77,6 +77,7 @@ struct URLBarHubPopover: View {
         self._siteDataDetailsModel = StateObject(
             wrappedValue: URLBarSiteDataDetailsViewModel(
                 cleanupService: browserContext.cleanupService,
+                profileWebsiteDataMutationService: browserContext.profileWebsiteDataMutationService,
                 policyStore: browserContext.siteDataPolicyStore,
                 enforcementService: browserContext.siteDataPolicyEnforcementService,
                 faviconService: browserContext.faviconService

@@ -137,6 +137,12 @@ final class SumiExtensionsModule {
         let wasEnabled = self.isEnabled
         moduleRegistry.setEnabled(isEnabled, for: .extensions)
         if isEnabled == false {
+            if wasEnabled {
+                // The desired policy already reflects the disabled module, but
+                // live-tab discovery still needs the attached browser runtime.
+                // Mark reloads before tearing that runtime down.
+                contentBlockerAPI.markReloadRequiredForLiveTabs()
+            }
             tearDownLoadedRuntime(reason: "SumiExtensionsModule.setEnabled(false)")
             contentBlockerAPI.clearRuntime()
             pendingActionAnchors.removeAll()
@@ -145,8 +151,6 @@ final class SumiExtensionsModule {
             // Bind runtime only; do not eagerly load ExtensionManager / action
             // metadata — that stays on first real use (managerIfEnabled paths).
             attachRuntimeFromProviderIfNeeded()
-        }
-        if wasEnabled != isEnabled {
             contentBlockerAPI.markReloadRequiredForLiveTabs()
         }
     }
@@ -165,6 +169,17 @@ final class SumiExtensionsModule {
     func managerIfLoadedAndEnabled() -> ExtensionManager? {
         guard isEnabled else { return nil }
         return cachedManager
+    }
+
+    /// Does not materialize the optional extension runtime solely for cleanup.
+    /// If it is already resident, every targeted profile context must leave
+    /// WebKit before the shared website data store is mutated.
+    func quiesceForWebsiteDataMutation(profileIDs: Set<UUID>) -> Bool {
+        guard #available(macOS 15.5, *) else { return true }
+        guard let cachedManager else { return true }
+        return cachedManager.quiesceForWebsiteDataMutation(
+            profileIDs: profileIDs
+        )
     }
 
     func managerIfEnabled() -> ExtensionManager? {
@@ -235,23 +250,23 @@ final class SumiExtensionsModule {
     }
 
     @discardableResult
-    func prepareExtensionPageNavigationIfLoaded(
+    func prepareExtensionPageNavigationIfNeeded(
         _ tab: Tab,
         targetURL: URL,
         reason: String
-    ) -> Bool {
-        managerIfLoadedAndEnabled()?.prepareExtensionPageNavigation(
+    ) -> TabWebViewReplacementOutcome {
+        managerIfNeededForNormalTabRuntime()?.prepareExtensionPageNavigation(
             tab,
             targetURL: targetURL,
             reason: reason
-        ) ?? false
+        ) ?? .notNeeded
     }
 
     func registerTabWithExtensionRuntimeIfLoaded(
         _ tab: Tab,
         reason: String
     ) {
-        managerIfLoadedAndEnabled()?.registerTabWithExtensionRuntime(
+        managerIfNeededForNormalTabRuntime()?.registerTabWithExtensionRuntime(
             tab,
             reason: reason
         )
@@ -353,16 +368,16 @@ final class SumiExtensionsModule {
     }
 
     func consumeRecentlyOpenedExtensionTabRequestIfLoaded(for url: URL) -> Bool {
-        managerIfLoadedAndEnabled()?.requestedTabLifecycleOwner.consumeRecentlyOpenedTabRequest(
-            for: url
-        ) ?? false
+        managerIfLoadedAndEnabled()?.recentExtensionTabRequests.consume(url)
+            ?? false
     }
 
     func registerExtensionCreatedTabWithExtensionRuntimeIfLoaded(
         _ tab: Tab,
         reason: String
     ) {
-        managerIfLoadedAndEnabled()?.registerExtensionCreatedTabWithExtensionRuntime(
+        guard let manager = managerIfNeededForNormalTabRuntime() else { return }
+        manager.extensionCreatedTabRegistrar.register(
             tab,
             reason: reason
         )
@@ -372,14 +387,14 @@ final class SumiExtensionsModule {
         guard let manager = managerIfEnabled() else {
             throw ExtensionError.unsupportedOS
         }
-        let enabled = try await manager.installationFlowOwner.enableExtension(extensionId)
+        let enabled = try await manager.installedExtensionLifecycle.enable(extensionId)
         _ = safariExtensionCompatibilityReport()
         return enabled
     }
 
     func disableExtension(_ extensionId: String) async throws {
         guard let manager = managerIfEnabled() else { return }
-        try await manager.installationFlowOwner.disableExtension(extensionId)
+        try await manager.installedExtensionLifecycle.disable(extensionId)
     }
 
     func uninstallExtension(_ extensionId: String) async throws {
@@ -387,7 +402,7 @@ final class SumiExtensionsModule {
         safariWebExtensionImport.removeImportedRecord(
             forInstalledExtensionId: extensionId
         )
-        try await manager.installationFlowOwner.uninstallExtension(extensionId)
+        try await manager.installedExtensionLifecycle.uninstall(extensionId)
     }
 
     func enableSafariAppExtension(
@@ -602,7 +617,7 @@ final class SumiExtensionsModule {
         guard let manager = managerIfEnabled() else { return }
         let resolvedProfileId =
             profileId
-            ?? manager.currentProfileId
+            ?? manager.profileRuntime.currentProfileId
             ?? runtime.currentProfile()?.id
         guard let resolvedProfileId else {
             return
@@ -627,7 +642,10 @@ final class SumiExtensionsModule {
         }
 
         await withCheckedContinuation { continuation in
-            manager.presentOptionsPageWindow(for: context) { error in
+            manager.optionsWindows.presentOptionsPageWindow(
+                for: context,
+                manager: manager
+            ) { error in
                 if let error {
                     RuntimeDiagnostics.debug(category: "Extensions") {
                         "Unable to open extension options for \(extensionId): \(error.localizedDescription)"
@@ -655,8 +673,8 @@ final class SumiExtensionsModule {
             )
         }
         transferPendingActionAnchors(to: manager)
-        return await manager.openActionPopupFromURLHub(
-            extensionId: extensionId,
+        return await manager.extensionActionInvocation.openPopup(
+            extensionID: extensionId,
             currentTab: currentTab
         )
     }
@@ -679,7 +697,7 @@ final class SumiExtensionsModule {
         windowId: UUID,
         profileId: UUID?
     ) -> UUID {
-        managerIfEnabled()?.actionPopupAnchorResolutionOwner.captureActionPopupAnchor(
+        managerIfEnabled()?.actionPopupAnchorResolver.captureActionPopupAnchor(
             extensionId: extensionId,
             windowId: windowId,
             profileId: profileId
@@ -691,7 +709,7 @@ final class SumiExtensionsModule {
     }
 
     func closeAllOptionsWindowsIfLoaded() {
-        cachedManager?.optionsWindowOwner.closeAllWindows()
+        cachedManager?.optionsWindows.closeAllWindows()
     }
 
     private func storePendingActionAnchor(
@@ -716,7 +734,15 @@ final class SumiExtensionsModule {
     /// Boots the profile-scoped `WKWebExtensionController` for normal-tab WebViews when
     /// persisted extensions are enabled. Does not require extension contexts to be loaded.
     private func managerIfNeededForNormalTabRuntime() -> ExtensionManager? {
-        guard isEnabled, hasEnabledPersistedExtensions() else { return nil }
+        guard isEnabled else { return nil }
+        if let cachedManager {
+            let hasRuntimeDemand =
+                cachedManager.hasEnabledInstalledExtensions
+                || cachedManager.runtimeSession
+                .allowsRuntimeWithoutEnabledExtensions
+            return hasRuntimeDemand ? cachedManager : nil
+        }
+        guard hasEnabledPersistedExtensions() else { return nil }
         return managerIfEnabled()
     }
 

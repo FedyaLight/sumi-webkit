@@ -15,6 +15,7 @@ RESULT_BUNDLE="${SUMI_CI_RESULT_BUNDLE:-$repo_root/build/BuildResults/SumiTests.
 PR_SMOKE_TESTS=(
   "-only-testing:SumiTests/TabManagerStructuralPersistenceTests"
   "-only-testing:SumiTests/TabManagerStructuralBatchingTests"
+  "-only-testing:SumiTests/TabStructureEventBusTests"
   "-only-testing:SumiTests/RuntimeStateCoalescerTests"
   "-only-testing:SumiTests/BrowserManagerRuntimeWiringTests"
   "-only-testing:SumiTests/BrowserManagerInitializationWiringOwnerTests"
@@ -25,13 +26,17 @@ PR_SMOKE_TESTS=(
   "-only-testing:SumiTests/BrowserSidebarActionOwnerTests"
   "-only-testing:SumiTests/SidebarRegularTabsControllerTests"
   "-only-testing:SumiTests/SidebarSpaceBodyInjectionRegressionTests"
-  "-only-testing:SumiTests/TabWebViewOwnershipOwnerTests"
+  "-only-testing:SumiTests/TabWebViewMaterializationAndRebuildTests"
+  "-only-testing:SumiTests/DeferredProtectedCommandTests"
+  "-only-testing:SumiTests/InitialDocumentRuntimeHandoffTests"
+  "-only-testing:SumiTests/GlanceManagerTests"
   "-only-testing:SumiTests/BrowserShortcutPinUnloadOwnerTests"
 )
 
 usage() {
   cat <<USAGE
 Usage:
+  scripts/ci/run_tests.sh packages
   scripts/ci/run_tests.sh pr-smoke
   scripts/ci/run_tests.sh full
   scripts/ci/run_tests.sh ui-smoke
@@ -58,14 +63,22 @@ run_xcodebuild() {
     "$@"
 }
 
+run_architecture_packages() {
+  swift test --package-path Packages/SumiDomain
+  swift test --package-path Packages/SumiWebRuntime
+}
+
 cmd="${1:-}"
 case "$cmd" in
+  packages)
+    run_architecture_packages
+    ;;
   domain)
     swift test --package-path Packages/SumiDomain
     ;;
   pr-smoke)
-    echo "==> SumiDomain package tests"
-    swift test --package-path Packages/SumiDomain
+    echo "==> Architecture package tests"
+    run_architecture_packages
     echo "==> Sumi PR smoke unit tests"
     run_xcodebuild "${PR_SMOKE_TESTS[@]}" test
     ;;

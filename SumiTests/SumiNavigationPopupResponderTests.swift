@@ -53,7 +53,9 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
         let settings = SumiSettingsService(userDefaults: TestDefaultsHarness().defaults)
         let browserManager = try makePopupBrowserManager()
         browserManager.sumiSettings = settings
-        let tab = Tab(url: URL(string: "https://source.example/page")!)
+        let tab = browserManager.tabManager.tabFactory.makeTab(
+            url: URL(string: "https://source.example/page")!
+        )
         tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
         tab.sumiSettings = settings
         let targetURL = URL(string: "https://destination.example/page")!
@@ -112,7 +114,9 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
         let settings = SumiSettingsService(userDefaults: TestDefaultsHarness().defaults)
         let browserManager = try makePopupBrowserManager()
         browserManager.sumiSettings = settings
-        let tab = Tab(url: URL(string: "https://source.example/page")!)
+        let tab = browserManager.tabManager.tabFactory.makeTab(
+            url: URL(string: "https://source.example/page")!
+        )
         tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
         tab.sumiSettings = settings
         tab.shortcutPinRole = .essential
@@ -157,7 +161,9 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
         let settings = SumiSettingsService(userDefaults: TestDefaultsHarness().defaults)
         let browserManager = try makePopupBrowserManager()
         browserManager.sumiSettings = settings
-        let tab = Tab(url: URL(string: "https://source.example/page")!)
+        let tab = browserManager.tabManager.tabFactory.makeTab(
+            url: URL(string: "https://source.example/page")!
+        )
         tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
         tab.sumiSettings = settings
         tab.setClickModifierFlags([.option])
@@ -184,7 +190,9 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
         let settings = SumiSettingsService(userDefaults: TestDefaultsHarness().defaults)
         let browserManager = try makePopupBrowserManager()
         browserManager.sumiSettings = settings
-        let tab = Tab(url: URL(string: "https://source.example/page")!)
+        let tab = browserManager.tabManager.tabFactory.makeTab(
+            url: URL(string: "https://source.example/page")!
+        )
         tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
         tab.sumiSettings = settings
         tab.shortcutPinRole = .essential
@@ -210,7 +218,9 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
         let settings = SumiSettingsService(userDefaults: TestDefaultsHarness().defaults)
         let browserManager = try makePopupBrowserManager()
         browserManager.sumiSettings = settings
-        let tab = Tab(url: URL(string: "https://source.example/page")!)
+        let tab = browserManager.tabManager.tabFactory.makeTab(
+            url: URL(string: "https://source.example/page")!
+        )
         tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
         tab.sumiSettings = settings
         let responder = SumiPopupHandlingNavigationResponder(tab: tab)
@@ -234,7 +244,9 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
         let settings = SumiSettingsService(userDefaults: TestDefaultsHarness().defaults)
         let browserManager = try makePopupBrowserManager()
         browserManager.sumiSettings = settings
-        let tab = Tab(url: URL(string: "https://source.example/page")!)
+        let tab = browserManager.tabManager.tabFactory.makeTab(
+            url: URL(string: "https://source.example/page")!
+        )
         tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
         tab.sumiSettings = settings
         tab.setClickModifierFlags([.command])
@@ -545,7 +557,7 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
             )
         )
         if needsWebViewCoordinator {
-            browserManager.webViewCoordinator = WebViewCoordinator()
+            browserManager.bindTestWebViewCoordinator()
         }
         return browserManager
     }
@@ -606,7 +618,11 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
         browserManager.selectTab(sourceTab, in: windowState)
 
         let sourceWebView = WKWebView(frame: .zero)
-        sourceTab.assignWebViewToWindow(sourceWebView, windowId: windowState.id)
+        browserManager.webViewOwnershipService?.assign(
+            sourceWebView,
+            to: sourceTab,
+            in: windowState.id
+        )
         sourceTab.extensionPageRuntimeOwner.noteCommittedMainDocumentNavigation(to: sourceTab.url)
 
         return PopupFocusHarness(

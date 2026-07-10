@@ -22,20 +22,12 @@ final class ExtensionManager: NSObject, ObservableObject {
             safariWebExtensionURLScheme
         )
     }()
-    nonisolated static let extensionPermissionDecisionsStorageKey =
-        SafariExtensionSiteAccessPolicyStore.legacyPermissionDecisionsStorageKey
-    nonisolated static let extensionSiteAccessStorageKey =
-        SafariExtensionSiteAccessPolicyStore.siteAccessStorageKey
-    @Published var installedExtensions: [InstalledExtension] = []
     @Published var actionStatesByExtensionID:
         [String: BrowserExtensionActionSurfaceState] = [:]
     @Published private(set) var isExtensionSupportAvailable =
         ExtensionUtils.isExtensionSupportAvailable
     @Published var extensionsLoaded = false
     @Published var isPopupActive = false
-    var activePopupIdentity: ExtensionActionPopupIdentity? {
-        actionPopupSessionOwner.activeIdentity
-    }
     @Published var pinnedToolbarExtensionIDs: [String] = []
 
     enum ExtensionBackgroundWakeReason: String, Codable, CaseIterable {
@@ -125,37 +117,95 @@ final class ExtensionManager: NSObject, ObservableObject {
     let installationMetadataStore: ExtensionInstallationMetadataStore
     let siteAccessPolicyStore: SafariExtensionSiteAccessPolicyStore
     let extensionPreferences: UserDefaults
-    let requestedTabLifecycleOwner = ExtensionRequestedTabLifecycleOwner()
+    let recentExtensionTabRequests = ExtensionRecentTabRequestHistory()
+    let requestedTabLoadResolver = ExtensionRequestedTabLoadResolver()
+    lazy var requestedTabTargetResolver = ExtensionRequestedTabTargetResolver(
+        browserContext: { [weak self] in self?.requestedTabTargetQuery },
+        profileRuntime: profileRuntime,
+        runtime: { [weak self] in self?.runtime ?? .inactive },
+        miniWindows: { [weak self] ownerExtensionID, profileID in
+            self?.runtimeBundle.windowFocusResolutionOwner.miniWindowAdapters(
+                ownerExtensionID: ownerExtensionID,
+                profileId: profileID
+            ) ?? []
+        }
+    )
+    lazy var requestedTabWebViewMaterializer =
+        ExtensionRequestedTabWebViewMaterializer(
+            browserContext: { [weak self] in self?.extensionWebViewHosting },
+            profileRuntime: profileRuntime,
+            runtime: { [weak self] in self?.runtime ?? .inactive },
+            runtimePreparation: webViewRuntimePreparationOwner,
+            controllerBinding: controllerAttachmentOwner
+        )
+    lazy var extensionCreatedTabRegistrar = ExtensionCreatedTabRuntimeRegistrar(
+        runtimeSession: runtimeSession,
+        profileRuntime: profileRuntime,
+        runtime: { [weak self] in self?.runtime ?? .inactive },
+        tabOpenNotifier: normalTabRuntimeBindingOwner,
+        contextLoading: initialDocumentRuntimePreparationOwner,
+        diagnostics: runtimeDiagnostics
+    )
+    lazy var requestedTabContextPreloader =
+        ExtensionRequestedTabContextPreloader(
+            loadResolver: requestedTabLoadResolver,
+            targetResolver: requestedTabTargetResolver,
+            profileRuntime: profileRuntime,
+            runtime: { [weak self] in self?.runtime ?? .inactive },
+            contextLoading: initialDocumentRuntimePreparationOwner
+        )
+    lazy var requestedTabOpening = ExtensionRequestedTabOpeningService(
+        recentRequests: recentExtensionTabRequests,
+        loadResolver: requestedTabLoadResolver,
+        targetResolver: requestedTabTargetResolver,
+        materializer: requestedTabWebViewMaterializer,
+        registrar: extensionCreatedTabRegistrar,
+        browserContext: { [weak self] in self?.extensionTabMutation },
+        profileRuntime: profileRuntime,
+        runtime: { [weak self] in self?.runtime ?? .inactive },
+        hasTabAdapter: { [weak self] tab in
+            self?.adapterResolutionOwner.stableAdapter(for: tab) != nil
+        }
+    )
     #if DEBUG || SUMI_DIAGNOSTICS
         /// Single long-lived instance: the user-script registry keeps only a
         /// weak reference to the message handler.
         let accountForkDiagnosticsUserScript = SafariExtensionAccountForkDiagnosticsUserScript()
     #endif
-    lazy var installedRecordsOwner = ExtensionInstalledRecordsOwner(manager: self)
-    lazy var installationFlowOwner = ExtensionInstallationFlowOwner(
-        dependencies: .live(manager: self)
+    let installedExtensionCollection = InstalledExtensionCollection()
+    lazy var installedExtensionCatalog = InstalledExtensionCatalog(
+        environment: .makeLive(manager: self)
     )
-    // V3 EM thin capability bags — EM holds bags; bags hold thin owners.
-    lazy var actionBundle = ExtensionActionBundle(manager: self)
+    lazy var extensionRuntimeLoader = ExtensionRuntimeLoader(
+        environment: .makeLive(manager: self)
+    )
+    lazy var installedExtensionLifecycle = InstalledExtensionLifecycleService(
+        environment: .makeLive(manager: self)
+    )
+    lazy var extensionInstaller = ExtensionInstallationService(
+        environment: .makeLive(manager: self)
+    )
+    lazy var actionPopupAnchorResolver = ExtensionActionPopupAnchorResolver(
+        manager: self
+    )
+    lazy var actionPopupFailureDiagnostics = ExtensionActionPopupFailureDiagnostics(
+        manager: self
+    )
+    lazy var actionSurfacePublisher = ExtensionActionSurfacePublisher(
+        manager: self
+    )
     lazy var runtimeBundle = ExtensionRuntimeBundle(manager: self)
 
-    /// Compatibility forwards — prefer `*Bundle` for new call sites.
-    var backgroundWakeCoordinator: ExtensionBackgroundWakeCoordinator {
-        runtimeBundle.backgroundWakeCoordinator
-    }
     lazy var toolbarPinningOwner = ExtensionToolbarPinningOwner(
         manager: self
     )
     lazy var hubOrderingOwner = ExtensionHubOrderingOwner(
         preferences: extensionPreferences,
-        currentProfileId: { [weak self] in self?.currentProfileId }
+        currentProfileId: { [weak self] in self?.profileRuntime.currentProfileId }
     )
     lazy var permissionDecisionStoreOwner = ExtensionPermissionDecisionStoreOwner(
         manager: self
     )
-    var siteAccessPolicyCoordinator: ExtensionSiteAccessPolicyCoordinator {
-        runtimeBundle.siteAccessPolicyCoordinator
-    }
     lazy var pageResolutionOwner = ExtensionPageResolutionOwner(
         manager: self
     )
@@ -170,9 +220,6 @@ final class ExtensionManager: NSObject, ObservableObject {
     lazy var adapterResolutionOwner = ExtensionAdapterResolutionOwner(
         manager: self
     )
-    var actionPopupAnchorResolutionOwner: ExtensionActionPopupAnchorResolutionOwner {
-        actionBundle.actionPopupAnchorResolutionOwner
-    }
     lazy var errorObservationOwner = ExtensionErrorObservationOwner(
         manager: self
     )
@@ -188,18 +235,9 @@ final class ExtensionManager: NSObject, ObservableObject {
     lazy var controllerAttachmentOwner = ExtensionControllerAttachmentOwner(
         dependencies: .live(manager: self)
     )
-    var actionPopupFailureDiagnosticsOwner: ExtensionActionPopupFailureDiagnosticsOwner {
-        actionBundle.actionPopupFailureDiagnosticsOwner
-    }
-    var actionSurfacePublicationOwner: ExtensionActionSurfacePublicationOwner {
-        actionBundle.actionSurfacePublicationOwner
-    }
-    lazy var actionClickFlowOwner = ExtensionActionClickFlowOwner(
-        dependencies: .live(manager: self)
+    lazy var extensionActionInvocation = ExtensionActionInvocationService(
+        environment: .makeLive(manager: self)
     )
-    var windowFocusResolutionOwner: ExtensionWindowFocusResolutionOwner {
-        runtimeBundle.windowFocusResolutionOwner
-    }
     lazy var nativeMessagingRoutingOwner =
         ExtensionNativeMessagingRoutingOwner(manager: self)
     lazy var nativeMessagingRelayOwner = ExtensionNativeMessagingRelayOwner(
@@ -231,18 +269,15 @@ final class ExtensionManager: NSObject, ObservableObject {
                     }
             },
             trace: { [weak self] message in
-                self?.extensionRuntimeTrace(message)
+                self?.runtimeDiagnostics.trace(message)
             }
         )
     lazy var deferredRuntimeOwnerStore = ExtensionDeferredRuntimeOwnerStore(manager: self)
-    lazy var runtimeDiagnosticsOwner = ExtensionRuntimeDiagnosticsOwner(manager: self)
+    let runtimeDiagnostics = ExtensionRuntimeDiagnostics()
     lazy var controllerDelegateBridge = ExtensionControllerDelegateBridge(manager: self)
     lazy var webViewRuntimePreparationOwner = ExtensionWebViewRuntimePreparationOwner(
         dependencies: .live(manager: self)
     )
-    var requestedWindowOpeningOwner: ExtensionRequestedWindowOpeningOwner {
-        runtimeBundle.requestedWindowOpeningOwner
-    }
     lazy var actionPopupSessionOwner = ExtensionActionPopupSessionOwner(manager: self)
     lazy var keyboardCommandDispatchOwner = ExtensionKeyboardCommandDispatchOwner(
         manager: self
@@ -250,7 +285,7 @@ final class ExtensionManager: NSObject, ObservableObject {
     lazy var pageContextMenuItemsOwner = ExtensionPageContextMenuItemsOwner(
         manager: self
     )
-    let profileRuntimeOwner: ExtensionProfileRuntimeOwner
+    let profileRuntime: ExtensionProfileRuntime
     var profileRuntimeStateOwner: ExtensionProfileRuntimeStateOwner {
         ExtensionProfileRuntimeStateOwner(manager: self)
     }
@@ -260,17 +295,16 @@ final class ExtensionManager: NSObject, ObservableObject {
         controllerIdentifierOwner.identifier
     }
 
-    weak var browserBridgeContext: (any ExtensionBrowserBridgeContext)?
+    weak var extensionWindowQuery: (any ExtensionWindowQuery)?
+    weak var extensionTabQuery: (any ExtensionTabQuery)?
+    weak var requestedTabTargetQuery: (any ExtensionTabTargetQuery)?
+    weak var extensionTabMutation: (any ExtensionTabMutation)?
+    weak var extensionWindowActivation: (any ExtensionWindowActivation)?
+    weak var extensionWebViewHosting: (any ExtensionTabWebViewHosting)?
+    weak var extensionAuxiliaryWindows: (any ExtensionAuxiliaryWindowControl)?
+    weak var extensionWindowPresentation: (any ExtensionWindowPresentation)?
     var runtime = ExtensionManagerRuntime.inactive
-    var extensionControllersByProfile: [UUID: WKWebExtensionController] {
-        get { profileRuntimeOwner.controllersByProfile }
-        set { profileRuntimeOwner.replaceControllers(newValue) }
-    }
-    var extensionContextsByProfile: [UUID: [String: WKWebExtensionContext]] {
-        get { profileRuntimeOwner.contextsByProfile }
-        set { profileRuntimeOwner.replaceContexts(newValue) }
-    }
-    let runtimeSessionOwner = ExtensionRuntimeSessionOwner()
+    let runtimeSession = ExtensionRuntimeSession()
     let webExtensionStorageCleanupPlanner: WebExtensionStorageCleanupPlanner
     let installCapabilityOwner: SafariExtensionInstallCapabilityOwner
     let backgroundRuntimeStateOwner = ExtensionBackgroundRuntimeStateOwner()
@@ -299,37 +333,13 @@ final class ExtensionManager: NSObject, ObservableObject {
     }
     let actionAnchorStore = ExtensionActionAnchorStore()
     let actionPopupAnchorStore = ExtensionActionPopupAnchorStore()
-    let optionsWindowOwner = ExtensionOptionsWindowOwner()
-    var optionsWindows: [String: NSWindow] {
-        optionsWindowOwner.windows
-    }
-    var optionsWindowExtensionIDs: Set<String> {
-        optionsWindowOwner.extensionIDs
-    }
+    let optionsWindows = ExtensionOptionsWindowService()
     let adapterStore = ExtensionBrowserAdapterStore()
     let nativeMessagingPortRegistry = ExtensionNativeMessagingPortRegistry()
-    var extensionsModuleEnabledForCallbacks: Bool {
-        nativeMessagingRelayOwner.extensionsModuleEnabledForCallbacks
-    }
-
-    var nativeMessagingRelay: SumiNativeMessagingRelay {
-        nativeMessagingRelayOwner.relay
-    }
-
-    var safariNativeMessagingHost: SumiNativeMessagingRelay { nativeMessagingRelay }
-
-    var loadedNativeMessagingRelay: SumiNativeMessagingRelay? {
-        nativeMessagingRelayOwner.loadedRelay
-    }
     let extensionPermissionPromptPresentationOwner =
         ExtensionPermissionPromptPresentationOwner()
     let permissionDelegateCallbackOwner =
         ExtensionPermissionDelegateCallbackOwner()
-
-    var currentProfileId: UUID? {
-        get { profileRuntimeOwner.currentProfileId }
-        set { profileRuntimeOwner.currentProfileId = newValue }
-    }
 
     nonisolated static let maxLiveExtensionContexts = 8
     init(
@@ -355,7 +365,7 @@ final class ExtensionManager: NSObject, ObservableObject {
         self.siteAccessPolicyStore = SafariExtensionSiteAccessPolicyStore(
             preferences: extensionPreferences
         )
-        self.profileRuntimeOwner = ExtensionProfileRuntimeOwner(
+        self.profileRuntime = ExtensionProfileRuntime(
             initialProfileId: initialProfile?.id
         )
         let storageCleanupPlanner = WebExtensionStorageCleanupPlanner()
@@ -364,6 +374,9 @@ final class ExtensionManager: NSObject, ObservableObject {
             storageCleanupPlanner: storageCleanupPlanner
         )
         super.init()
+        installedExtensionCollection.connectRecordChanges { [weak self] in
+            self?.toolbarPinningOwner.reconcilePinnedToolbarExtensions()
+        }
         toolbarPinningOwner.reloadPinnedToolbarExtensionsForCurrentProfile()
         SafariExtensionAutofillFillDiagnostics.deferredFillCompletionHandler = {
             [weak self] extensionId in
@@ -384,11 +397,11 @@ final class ExtensionManager: NSObject, ObservableObject {
 
         guard isExtensionSupportAvailable else {
             extensionsLoaded = true
-            runtimeState = .unavailable
+            runtimeSession.runtimeState = .unavailable
             return
         }
 
-        installationFlowOwner.loadInstalledExtensionMetadata()
+        installedExtensionCatalog.load()
         PerformanceTrace.emitEvent("ExtensionManager.lazyRuntimeDeferred")
     }
 
@@ -418,201 +431,9 @@ final class ExtensionManager: NSObject, ObservableObject {
         #endif
     }
 
-    // MARK: - Extension Requested Tab Facades
-
-    @discardableResult
-    func prepareExtensionRequestedTabForInitialLoad(
-        url: URL?,
-        requestedWindow: (any WKWebExtensionWindow)?,
-        controller: WKWebExtensionController,
-        extensionContext: WKWebExtensionContext? = nil
-    ) async throws -> UUID? {
-        try await requestedTabLifecycleOwner.prepareInitialLoad(
-            url: url,
-            requestedWindow: requestedWindow,
-            controller: controller,
-            extensionContext: extensionContext,
-            manager: self
-        )
-    }
-
-    @discardableResult
-    func prepareContentScriptContextsForExtensionRequestedInitialLoad(
-        loadURL: URL?,
-        webExtensionContextOverride: WKWebExtensionContext?,
-        targetWindow: BrowserWindowState?,
-        targetSpace: Space?,
-        controller: WKWebExtensionController
-    ) async -> UUID? {
-        await requestedTabLifecycleOwner.prepareContentScriptContextsForInitialLoad(
-            loadURL: loadURL,
-            webExtensionContextOverride: webExtensionContextOverride,
-            targetWindow: targetWindow,
-            targetSpace: targetSpace,
-            controller: controller,
-            manager: self
-        )
-    }
-
-    @discardableResult
-    func openExtensionRequestedTab(
-        url: URL?,
-        shouldBeActive: Bool,
-        shouldBePinned: Bool,
-        requestedWindow: (any WKWebExtensionWindow)?,
-        controller: WKWebExtensionController,
-        extensionContext: WKWebExtensionContext? = nil,
-        reason: String = #function
-    ) throws -> Tab {
-        try requestedTabLifecycleOwner.openTab(
-            url: url,
-            shouldBeActive: shouldBeActive,
-            shouldBePinned: shouldBePinned,
-            requestedWindow: requestedWindow,
-            controller: controller,
-            extensionContext: extensionContext,
-            reason: reason,
-            manager: self
-        )
-    }
-
-    func materializeExtensionRequestedNormalTabIfNeeded(
-        _ tab: Tab,
-        isActive: Bool,
-        targetWindow: BrowserWindowState?
-    ) {
-        requestedTabLifecycleOwner.materializeNormalTabIfNeeded(
-            tab,
-            isActive: isActive,
-            targetWindow: targetWindow,
-            manager: self
-        )
-    }
-
-    func registerExtensionCreatedTabWithExtensionRuntime(
-        _ tab: Tab,
-        reason: String = #function
-    ) {
-        requestedTabLifecycleOwner.registerCreatedTabWithExtensionRuntime(
-            tab,
-            reason: reason,
-            manager: self
-        )
-    }
-
     // MARK: - Extension Window Facades
 
-    // MARK: - Runtime Session State
-
-    var cachedWebExtensionsByID: [String: WKWebExtension] {
-        get { runtimeSessionOwner.cachedWebExtensionsByID }
-        set { runtimeSessionOwner.cachedWebExtensionsByID = newValue }
-    }
-
-    var cachedWebExtensionRuntimeSourceKeysByID: [String: WebExtensionRuntimeSourceKey] {
-        get { runtimeSessionOwner.cachedWebExtensionRuntimeSourceKeysByID }
-        set { runtimeSessionOwner.cachedWebExtensionRuntimeSourceKeysByID = newValue }
-    }
-
-    var lastExtensionLoadErrors: [String: Error] {
-        get { runtimeSessionOwner.lastExtensionLoadErrors }
-        set { runtimeSessionOwner.lastExtensionLoadErrors = newValue }
-    }
-
-    var extensionRuntimeResidencyState: ExtensionRuntimeResidencyState {
-        get { runtimeSessionOwner.extensionRuntimeResidencyState }
-        set { runtimeSessionOwner.extensionRuntimeResidencyState = newValue }
-    }
-
-    var runtimeState: ExtensionRuntimeState {
-        get { runtimeSessionOwner.runtimeState }
-        set { runtimeSessionOwner.runtimeState = newValue }
-    }
-
-    var allowsRuntimeWithoutEnabledExtensions: Bool {
-        get { runtimeSessionOwner.allowsRuntimeWithoutEnabledExtensions }
-        set { runtimeSessionOwner.allowsRuntimeWithoutEnabledExtensions = newValue }
-    }
-
-    var runtimeInitializationTask: Task<Void, Never>? {
-        get { runtimeSessionOwner.runtimeInitializationTask }
-        set { runtimeSessionOwner.runtimeInitializationTask = newValue }
-    }
-
-    var loadedExtensionManifests: [String: [String: Any]] {
-        get { runtimeSessionOwner.loadedExtensionManifests }
-        set { runtimeSessionOwner.loadedExtensionManifests = newValue }
-    }
-
-    var runtimeMetricsByExtensionID: [String: ExtensionRuntimeMetrics] {
-        get { runtimeSessionOwner.runtimeMetricsByExtensionID }
-        set { runtimeSessionOwner.runtimeMetricsByExtensionID = newValue }
-    }
-
-    var extensionLoadGeneration: UInt64 {
-        get { runtimeSessionOwner.extensionLoadGeneration }
-        set { runtimeSessionOwner.extensionLoadGeneration = newValue }
-    }
-
-    var tabOpenNotificationGeneration: UInt64 {
-        get { runtimeSessionOwner.tabOpenNotificationGeneration }
-        set { runtimeSessionOwner.tabOpenNotificationGeneration = newValue }
-    }
-
     // MARK: - Action Anchors & Options Windows
-
-    func presentOptionsPageWindow(
-        for extensionContext: WKWebExtensionContext,
-        completionHandler: @escaping (Error?) -> Void
-    ) {
-        optionsWindowOwner.presentOptionsPageWindow(
-            for: extensionContext,
-            manager: self,
-            completionHandler: completionHandler
-        )
-    }
-
-    func createAuxiliaryWebViewFromActionPopup(
-        _ popupWebView: WKWebView,
-        with configuration: WKWebViewConfiguration,
-        for navigationAction: WKNavigationAction,
-        windowFeatures: WKWindowFeatures
-    ) -> WKWebView? {
-        ExtensionActionPopupPresentationOwner.createAuxiliaryWebViewFromActionPopup(
-            popupWebView,
-            with: configuration,
-            for: navigationAction,
-            windowFeatures: windowFeatures,
-            manager: self
-        )
-    }
-
-    // MARK: - Load Error Bookkeeping
-
-    func recordExtensionLoadError(
-        _ error: Error,
-        extensionId: String,
-        profileId: UUID
-    ) {
-        lastExtensionLoadErrors[
-            backgroundScopedKey(extensionId: extensionId, profileId: profileId)
-        ] = error
-    }
-
-    func clearExtensionLoadError(extensionId: String, profileId: UUID) {
-        lastExtensionLoadErrors.removeValue(
-            forKey: backgroundScopedKey(extensionId: extensionId, profileId: profileId)
-        )
-    }
-
-    func lastExtensionLoadError(
-        extensionId: String,
-        profileId: UUID
-    ) -> Error? {
-        lastExtensionLoadErrors[
-            backgroundScopedKey(extensionId: extensionId, profileId: profileId)
-        ]
-    }
 
     func logExtensionLoadFailure(
         _ error: Error,
@@ -638,24 +459,6 @@ final class ExtensionManager: NSObject, ObservableObject {
         )
     }
 
-    func backgroundScopedKey(
-        extensionId: String,
-        profileId: UUID
-    ) -> String {
-        ExtensionRuntimeResidencyState.scopedKey(
-            extensionId: extensionId,
-            profileId: profileId
-        )
-    }
-
-    nonisolated static func detachedMainActorRuntimeTask(
-        _ operation: @escaping @MainActor @Sendable () async -> Void
-    ) -> Task<Void, Never> {
-        Task.detached {
-            await operation()
-        }
-    }
-
     func extensionsModuleEnabledForRuntimeBoundary() -> Bool {
         switch runtime.extensionsModuleEnabled() {
         case .enabled(let isEnabled):
@@ -666,27 +469,11 @@ final class ExtensionManager: NSObject, ObservableObject {
     }
 
     func refreshActionSurfaceStateForCurrentProfile() {
-        guard let profileId = currentProfileId else { return }
+        guard let profileId = profileRuntime.currentProfileId else { return }
         for (extensionId, context) in extensionContexts(for: profileId) {
-            publishActionSurfaceStateForLoadedContext(context)
+            actionSurfacePublisher.publishActionSurfaceStateForLoadedContext(context)
             _ = extensionId
         }
-    }
-
-    func sortInstalledExtensions() {
-        installedExtensions.sort {
-            $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
-        }
-    }
-
-    func upsertInstalledExtension(_ record: InstalledExtension) {
-        if let index = installedExtensions.firstIndex(where: { $0.id == record.id }) {
-            installedExtensions[index] = record
-        } else {
-            installedExtensions.append(record)
-        }
-        sortInstalledExtensions()
-        reconcilePinnedToolbarExtensions()
     }
 
     nonisolated static var isWebKitRuntimeTraceEnabled: Bool {
@@ -695,82 +482,6 @@ final class ExtensionManager: NSObject, ObservableObject {
 
     nonisolated static var shouldObserveExtensionErrors: Bool {
         RuntimeDiagnostics.isVerboseEnabled
-    }
-
-    nonisolated static func isExtensionOwnedURL(_ url: URL?) -> Bool {
-        ExtensionUtils.isExtensionOwnedURL(url)
-    }
-
-    func extensionRuntimeTrace(
-        _ message: @autoclosure () -> String
-    ) {
-        guard Self.isWebKitRuntimeTraceEnabled else { return }
-        runtimeDiagnosticsOwner.trace(message())
-    }
-
-    func extensionRuntimeControllerDescription(
-        _ controller: WKWebExtensionController?
-    ) -> String {
-        ExtensionRuntimeDiagnosticsOwner.objectDescription(controller)
-    }
-
-    func extensionRuntimeConfigurationDescription(
-        _ configuration: WKWebViewConfiguration?
-    ) -> String {
-        ExtensionRuntimeDiagnosticsOwner.objectDescription(configuration)
-    }
-
-    func extensionRuntimeUserContentControllerDescription(
-        _ userContentController: WKUserContentController?
-    ) -> String {
-        ExtensionRuntimeDiagnosticsOwner.objectDescription(userContentController)
-    }
-
-    func traceNativeMessagingContextBinding(
-        phase: String,
-        extensionId: String?,
-        profileId: UUID?,
-        loadSource: SafariAppExtensionRuntimeLoadSource? = nil,
-        webExtension: WKWebExtension? = nil,
-        extensionContext: WKWebExtensionContext? = nil,
-        controller: WKWebExtensionController? = nil,
-        configuration: WKWebViewConfiguration? = nil,
-        webView: WKWebView? = nil
-    ) {
-        #if DEBUG || SUMI_DIAGNOSTICS
-            runtimeDiagnosticsOwner.traceNativeMessagingContextBinding(
-                phase: phase,
-                extensionId: extensionId,
-                profileId: profileId,
-                loadSource: loadSource,
-                webExtension: webExtension,
-                extensionContext: extensionContext,
-                controller: controller,
-                configuration: configuration,
-                webView: webView
-            )
-        #else
-            _ = (
-                phase,
-                extensionId,
-                profileId,
-                loadSource,
-                webExtension,
-                extensionContext,
-                controller,
-                configuration,
-                webView
-            )
-        #endif
-    }
-
-    func nativeMessagingLoadSource(for extensionId: String?) -> SafariAppExtensionRuntimeLoadSource? {
-        guard let extensionId,
-              let installed = installedExtensions.first(where: { $0.id == extensionId })
-        else { return nil }
-        return installed.sourceKind == .safariAppExtension
-            ? .originalAppexBundle
-            : .copiedPackage
     }
 
     #if DEBUG

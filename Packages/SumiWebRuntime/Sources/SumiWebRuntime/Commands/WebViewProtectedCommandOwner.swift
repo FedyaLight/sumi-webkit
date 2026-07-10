@@ -2,6 +2,19 @@ import Combine
 import Foundation
 import WebKit
 
+/// Exact ownership token for one visual-handoff protection claim.
+/// Multiple compositor generations may temporarily protect the same WebView;
+/// releasing an older claim must not remove a newer controller's protection.
+public struct WebViewVisualHandoffProtectionLease: Hashable {
+    public let webViewID: ObjectIdentifier
+    fileprivate let id: UUID
+
+    fileprivate init(webViewID: ObjectIdentifier) {
+        self.webViewID = webViewID
+        self.id = UUID()
+    }
+}
+
 private struct HistorySwipeProtectionContext {
     let windowID: UUID?
     let originURL: URL?
@@ -96,19 +109,16 @@ private final class FullscreenWebViewProtection {
     }
 }
 
-private struct WeakWKWebView {
-    weak var value: WKWebView?
-}
-
 private struct WeakWebViewRegistry {
-    private var webViewsByIdentifier: [ObjectIdentifier: WeakWKWebView] = [:]
+    private var webViewsByIdentifier: [ObjectIdentifier: WebViewIdentityWitness] = [:]
 
     mutating func note(_ webView: WKWebView) {
-        webViewsByIdentifier[ObjectIdentifier(webView)] = WeakWKWebView(value: webView)
+        let witness = WebViewIdentityWitness(webView)
+        webViewsByIdentifier[witness.identifier] = witness
     }
 
     mutating func resolve(with identifier: ObjectIdentifier) -> WKWebView? {
-        if let webView = webViewsByIdentifier[identifier]?.value {
+        if let webView = webViewsByIdentifier[identifier]?.resolve() {
             return webView
         }
         webViewsByIdentifier.removeValue(forKey: identifier)
@@ -117,12 +127,16 @@ private struct WeakWebViewRegistry {
 
     mutating func pruneStaleIdentifiers() -> [ObjectIdentifier] {
         let staleIDs = webViewsByIdentifier.compactMap { key, entry -> ObjectIdentifier? in
-            entry.value == nil ? key : nil
+            entry.resolve() == nil ? key : nil
         }
         for id in staleIDs {
             webViewsByIdentifier.removeValue(forKey: id)
         }
         return staleIDs
+    }
+
+    mutating func removeAll() {
+        webViewsByIdentifier.removeAll()
     }
 }
 
@@ -144,12 +158,12 @@ private struct DeferredProtectedWebViewCommandStore {
     mutating func enqueue(
         _ command: DeferredWebViewCommand,
         sourceWebViewID: ObjectIdentifier
-    ) -> (outcome: DeferredProtectedCommandEnqueueOutcome, count: Int) {
+    ) -> DeferredProtectedCommandEnqueueResult {
         var buffer = buffersBySourceWebViewID[sourceWebViewID]
             ?? DeferredProtectedCommandBuffer()
-        let outcome = buffer.enqueue(command)
+        let result = buffer.enqueueReportingSupersededCommands(command)
         buffersBySourceWebViewID[sourceWebViewID] = buffer
-        return (outcome, buffer.count)
+        return result
     }
 
     mutating func drainCommands(for sourceWebViewID: ObjectIdentifier) -> [DeferredWebViewCommand] {
@@ -157,8 +171,43 @@ private struct DeferredProtectedWebViewCommandStore {
         return buffer?.drain() ?? []
     }
 
+    func firstCommand(for sourceWebViewID: ObjectIdentifier) -> DeferredWebViewCommand? {
+        buffersBySourceWebViewID[sourceWebViewID]?.commands.first
+    }
+
+    mutating func popFirstCommand(
+        for sourceWebViewID: ObjectIdentifier
+    ) -> DeferredWebViewCommand? {
+        guard var buffer = buffersBySourceWebViewID[sourceWebViewID] else {
+            return nil
+        }
+        let command = buffer.popFirst()
+        if buffer.isEmpty {
+            buffersBySourceWebViewID.removeValue(forKey: sourceWebViewID)
+        } else {
+            buffersBySourceWebViewID[sourceWebViewID] = buffer
+        }
+        return command
+    }
+
+    @discardableResult
+    mutating func restoreFirstCommandIfNoNewerCommandExists(
+        _ command: DeferredWebViewCommand,
+        for sourceWebViewID: ObjectIdentifier
+    ) -> [DeferredWebViewCommand] {
+        var buffer = buffersBySourceWebViewID[sourceWebViewID]
+            ?? DeferredProtectedCommandBuffer()
+        let supersededCommands = buffer.restoreFirstIfNoNewerCommandExists(command)
+        buffersBySourceWebViewID[sourceWebViewID] = buffer
+        return supersededCommands
+    }
+
     mutating func removeAllCommands(for sourceWebViewID: ObjectIdentifier) {
         buffersBySourceWebViewID.removeValue(forKey: sourceWebViewID)
+    }
+
+    mutating func removeAllCommands() {
+        buffersBySourceWebViewID.removeAll()
     }
 
     mutating func pruneCommands(
@@ -188,7 +237,9 @@ public final class WebViewProtectedCommandOwner {
     public typealias WebViewResolver = (ObjectIdentifier) -> WKWebView?
 
     private var activeHistorySwipeProtections: [ObjectIdentifier: HistorySwipeProtectionContext] = [:]
-    private var visualHandoffProtectedWebViewIDs: Set<ObjectIdentifier> = []
+    private var visualHandoffProtectionLeasesByWebViewID: [
+        ObjectIdentifier: Set<WebViewVisualHandoffProtectionLease>
+    ] = [:]
     private let fullscreenProtection = FullscreenWebViewProtection()
     private var deferredProtectedWebViewCommands = DeferredProtectedWebViewCommandStore()
     private var weakWebViewRegistry = WeakWebViewRegistry()
@@ -234,7 +285,9 @@ public final class WebViewProtectedCommandOwner {
     ) -> (webViewID: ObjectIdentifier, wasCancelled: Bool)? {
         guard let webView else { return nil }
         let webViewID = ObjectIdentifier(webView)
-        let context = activeHistorySwipeProtections.removeValue(forKey: webViewID)
+        guard let context = activeHistorySwipeProtections.removeValue(
+            forKey: webViewID
+        ) else { return nil }
         let wasCancelled = isCancelledHistorySwipe(
             context: context,
             currentURL: currentURL,
@@ -289,20 +342,33 @@ public final class WebViewProtectedCommandOwner {
 
     public func isProtected(_ webViewID: ObjectIdentifier) -> Bool {
         activeHistorySwipeProtections[webViewID] != nil
-            || visualHandoffProtectedWebViewIDs.contains(webViewID)
+            || visualHandoffProtectionLeasesByWebViewID[webViewID]?.isEmpty == false
             || fullscreenProtection.isProtected(webViewID)
     }
 
-    public func beginVisualHandoffProtection(for webView: WKWebView) {
+    public func beginVisualHandoffProtection(
+        for webView: WKWebView
+    ) -> WebViewVisualHandoffProtectionLease {
         let webViewID = ObjectIdentifier(webView)
         note(webView)
-        visualHandoffProtectedWebViewIDs.insert(webViewID)
+        let lease = WebViewVisualHandoffProtectionLease(webViewID: webViewID)
+        visualHandoffProtectionLeasesByWebViewID[webViewID, default: []].insert(lease)
+        return lease
     }
 
-    public func finishVisualHandoffProtection(for webView: WKWebView) -> ObjectIdentifier? {
-        let webViewID = ObjectIdentifier(webView)
-        guard visualHandoffProtectedWebViewIDs.remove(webViewID) != nil else { return nil }
-        return webViewID
+    public func finishVisualHandoffProtection(
+        _ lease: WebViewVisualHandoffProtectionLease
+    ) -> ObjectIdentifier? {
+        guard var leases = visualHandoffProtectionLeasesByWebViewID[lease.webViewID],
+              leases.remove(lease) != nil else {
+            return nil
+        }
+        if leases.isEmpty {
+            visualHandoffProtectionLeasesByWebViewID.removeValue(forKey: lease.webViewID)
+        } else {
+            visualHandoffProtectionLeasesByWebViewID[lease.webViewID] = leases
+        }
+        return lease.webViewID
     }
 
     public func beginFullscreenProtection(
@@ -328,9 +394,30 @@ public final class WebViewProtectedCommandOwner {
         return (webViewID, context.windowID, context.tabID)
     }
 
-    public func removeVisualHandoffAndFullscreenProtections() {
-        visualHandoffProtectedWebViewIDs.removeAll()
+    /// Removes protection owned by window/compositor runtime teardown and
+    /// returns deferred-command sources that became executable as a result.
+    /// History-swipe protection is intentionally preserved and those sources
+    /// remain queued until the swipe ends.
+    public func removeVisualHandoffAndFullscreenProtections() -> [ObjectIdentifier] {
+        let deferredSourceIDs = deferredProtectedWebViewCommands.sourceWebViewIDs
+        visualHandoffProtectionLeasesByWebViewID.removeAll()
         fullscreenProtection.removeAll()
+        return deferredSourceIDs
+            .filter { isProtected($0) == false }
+            .sorted {
+                UInt(bitPattern: $0) < UInt(bitPattern: $1)
+            }
+    }
+
+    /// Drops every protection claim and deferred command when the owning
+    /// browser runtime has ended. Unlike window cleanup, terminal shutdown
+    /// cannot wait for a history gesture or execute model-dependent commands.
+    public func resetForTerminalShutdown() {
+        activeHistorySwipeProtections.removeAll()
+        visualHandoffProtectionLeasesByWebViewID.removeAll()
+        fullscreenProtection.removeAll()
+        deferredProtectedWebViewCommands.removeAllCommands()
+        weakWebViewRegistry.removeAll()
     }
 
     public func installFullscreenStateObservationIfNeeded(
@@ -360,11 +447,11 @@ public final class WebViewProtectedCommandOwner {
         isCommandValid: CommandValidator,
         dropCommand: CommandDropper,
         didPruneStaleWebViewIDs: ([ObjectIdentifier]) -> Void
-    ) -> Bool {
+    ) -> DeferredProtectedCommandSchedulingOutcome {
         let sourceWebViewID = ObjectIdentifier(webView)
         note(webView)
         guard isProtected(sourceWebViewID) else {
-            return false
+            return .notProtected
         }
 
         didPruneStaleWebViewIDs(
@@ -381,24 +468,38 @@ public final class WebViewProtectedCommandOwner {
                 sourceWebViewID,
                 "\(reason).invalidTarget"
             )
-            return true
+            return .invalidTarget
         }
 
         let enqueueResult = deferredProtectedWebViewCommands.enqueue(
             command,
             sourceWebViewID: sourceWebViewID
         )
+        for supersededCommand in enqueueResult.supersededCommands {
+            dropCommand(
+                supersededCommand,
+                sourceWebViewID,
+                "\(reason).superseded"
+            )
+        }
+        for displacedCommand in enqueueResult.capacityDisplacedCommands {
+            dropCommand(
+                displacedCommand,
+                sourceWebViewID,
+                "\(reason).capacityReplacement"
+            )
+        }
 
         switch enqueueResult.outcome {
         case .enqueued:
             SumiWebRuntimeDiagnostics.emitPerformanceEvent("WebViewCoordinator.enqueueDeferredProtectedCommand")
             SumiWebRuntimeDiagnostics.protectedWebViewTrace(
-                "enqueueDeferredCommand reason=\(reason) sourceWebView=\(sourceWebViewID) command={\(command.debugSummary)} count=\(enqueueResult.count)"
+                "enqueueDeferredCommand reason=\(reason) sourceWebView=\(sourceWebViewID) command={\(command.debugSummary)} count=\(enqueueResult.queuedCommandCount)"
             )
         case .collapsed:
             SumiWebRuntimeDiagnostics.emitPerformanceEvent("WebViewCoordinator.collapseDeferredProtectedCommand")
             SumiWebRuntimeDiagnostics.protectedWebViewTrace(
-                "collapseDeferredCommand reason=\(reason) sourceWebView=\(sourceWebViewID) command={\(command.debugSummary)} count=\(enqueueResult.count)"
+                "collapseDeferredCommand reason=\(reason) sourceWebView=\(sourceWebViewID) command={\(command.debugSummary)} count=\(enqueueResult.queuedCommandCount)"
             )
         case .droppedAtCapacity:
             dropCommand(
@@ -407,18 +508,28 @@ public final class WebViewProtectedCommandOwner {
                 "\(reason).capacity"
             )
         }
-
-        return true
+        switch enqueueResult.outcome {
+        case .enqueued, .collapsed:
+            return .scheduled
+        case .droppedAtCapacity:
+            return .droppedAtCapacity
+        }
     }
 
-    public func commandsToFlushIfUnprotected(
+    /// Executes valid deferred commands while their source remains unprotected.
+    /// Each final protection check, queue removal, and callback are contiguous
+    /// on the main actor so callers cannot create a check/execute gap by taking
+    /// ownership of a command first.
+    @discardableResult
+    public func executeDeferredCommandsIfUnprotected(
         for webViewID: ObjectIdentifier,
         resolveWebView: WebViewResolver,
         isCommandValid: CommandValidator,
         dropCommand: CommandDropper,
-        didPruneStaleWebViewIDs: ([ObjectIdentifier]) -> Void
-    ) -> [DeferredWebViewCommand] {
-        guard isProtected(webViewID) == false else { return [] }
+        didPruneStaleWebViewIDs: ([ObjectIdentifier]) -> Void,
+        executeCommand: (DeferredWebViewCommand) -> Bool
+    ) -> Int {
+        guard isProtected(webViewID) == false else { return 0 }
         didPruneStaleWebViewIDs(
             pruneInvalidDeferredCommands(
                 reason: "flush.preflight",
@@ -427,7 +538,42 @@ public final class WebViewProtectedCommandOwner {
                 dropCommand: dropCommand
             )
         )
-        return deferredProtectedWebViewCommands.drainCommands(for: webViewID)
+        guard isProtected(webViewID) == false else { return 0 }
+
+        var executedCommandCount = 0
+        while isProtected(webViewID) == false,
+              let command = deferredProtectedWebViewCommands.firstCommand(for: webViewID) {
+            let isValid = isCommandValid(command)
+            guard isProtected(webViewID) == false else {
+                return executedCommandCount
+            }
+
+            guard isValid else {
+                _ = deferredProtectedWebViewCommands.popFirstCommand(for: webViewID)
+                dropCommand(command, webViewID, "flush.invalidTarget")
+                continue
+            }
+            guard let command = deferredProtectedWebViewCommands.popFirstCommand(
+                for: webViewID
+            ) else { continue }
+            guard executeCommand(command) else {
+                let supersededCommands = deferredProtectedWebViewCommands
+                    .restoreFirstCommandIfNoNewerCommandExists(
+                    command,
+                    for: webViewID
+                )
+                for supersededCommand in supersededCommands {
+                    dropCommand(
+                        supersededCommand,
+                        webViewID,
+                        "flush.restore.superseded"
+                    )
+                }
+                return executedCommandCount
+            }
+            executedCommandCount += 1
+        }
+        return executedCommandCount
     }
 
     @discardableResult
@@ -475,7 +621,7 @@ public final class WebViewProtectedCommandOwner {
         guard staleIDs.isEmpty == false else { return [] }
         for id in staleIDs {
             activeHistorySwipeProtections.removeValue(forKey: id)
-            visualHandoffProtectedWebViewIDs.remove(id)
+            visualHandoffProtectionLeasesByWebViewID.removeValue(forKey: id)
             fullscreenProtection.remove(id)
             deferredProtectedWebViewCommands.removeAllCommands(for: id)
         }

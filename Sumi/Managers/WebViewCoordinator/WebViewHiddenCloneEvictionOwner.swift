@@ -59,12 +59,20 @@ final class WebViewHiddenCloneEvictionOwner {
             guard runtime.liveWebViews(tab).count > 1 else { continue }
 
             if runtime.isWebViewProtectedFromCompositorMutation(webView) {
-                _ = runtime.enqueueDeferredProtectedCommand(
+                let wasScheduled = runtime.enqueueDeferredProtectedCommand(
                     .evictHiddenWebViews(windowID: windowId),
                     webView,
                     "hiddenCloneCleanup"
                 )
-                continue
+                if wasScheduled {
+                    continue
+                }
+                guard runtime.isWebViewProtectedFromCompositorMutation(webView) == false else {
+                    RuntimeDiagnostics.protectedWebViewTrace(
+                        "Unable to schedule hidden clone eviction tab=\(owner.tabID.uuidString.prefix(8)) window=\(windowId.uuidString.prefix(8))."
+                    )
+                    continue
+                }
             }
 
             runtime.cleanupUnprotectedTrackedWebView(

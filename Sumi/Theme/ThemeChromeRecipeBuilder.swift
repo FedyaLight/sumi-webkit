@@ -1,5 +1,4 @@
 import AppKit
-import SumiChromeTokens
 import SwiftUI
 
 struct ThemeContrastDecision: Equatable {

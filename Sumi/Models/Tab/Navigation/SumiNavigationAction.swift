@@ -20,6 +20,7 @@ struct SumiNavigationAction: Equatable {
     let shouldDownload: Bool
     let isUserEnteredURL: Bool
     let isCustom: Bool
+    let isClientRedirect: Bool
 
     var redirectInitialAction: SumiNavigationRedirectAction? {
         redirectHistory.first
@@ -70,7 +71,8 @@ extension SumiNavigationAction {
             modifierFlags: navigationAction.modifierFlags,
             shouldDownload: navigationAction.shouldDownload,
             isUserEnteredURL: false,
-            isCustom: false
+            isCustom: false,
+            isClientRedirect: false
         )
     }
 }

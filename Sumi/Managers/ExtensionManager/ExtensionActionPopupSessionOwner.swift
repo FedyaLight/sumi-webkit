@@ -15,6 +15,8 @@ import SumiWebRuntime
 @MainActor
 final class ExtensionActionPopupSessionOwner: NSObject, NSPopoverDelegate {
     private weak var manager: ExtensionManager?
+    private weak var activePopover: NSPopover?
+    private weak var activePopupWebView: WKWebView?
 
     private(set) var activeIdentity: ExtensionActionPopupIdentity?
     private var popupUIDelegates: [String: ExtensionActionPopupUIDelegate] = [:]
@@ -40,7 +42,43 @@ final class ExtensionActionPopupSessionOwner: NSObject, NSPopoverDelegate {
             return
         }
 
-        manager.updateActionSurfaceState(
+        let admissionExtensionID = manager.extensionID(for: extensionContext)
+        let admissionProfileID = manager.profileId(for: extensionContext)
+        if let admissionProfileID,
+           manager.runtime.websiteDataMutationAdmissionIsBlocked(admissionProfileID) {
+            Task { @MainActor [weak self, weak manager] in
+                guard let self, let manager,
+                      await manager.runtime.waitForWebsiteDataMutationAdmission(
+                          admissionProfileID
+                      ),
+                      let admissionExtensionID else {
+                    completionHandler(CancellationError())
+                    return
+                }
+                let refreshedContext: WKWebExtensionContext
+                do {
+                    guard let loadedContext = try await manager.ensureExtensionLoaded(
+                          extensionId: admissionExtensionID,
+                          profileId: admissionProfileID
+                    ) else {
+                        completionHandler(CancellationError())
+                        return
+                    }
+                    refreshedContext = loadedContext
+                } catch {
+                    completionHandler(error)
+                    return
+                }
+                self.presentActionPopup(
+                    action,
+                    for: refreshedContext,
+                    completionHandler: completionHandler
+                )
+            }
+            return
+        }
+
+        manager.actionSurfacePublisher.updateActionSurfaceState(
             for: action,
             extensionContext: extensionContext
         )
@@ -49,7 +87,7 @@ final class ExtensionActionPopupSessionOwner: NSObject, NSPopoverDelegate {
         let popupPhase: SafariExtensionPopupLifecyclePhase =
             manager.isPopupActive ? .reopened : .opened
 
-        let manifest = extensionId.flatMap { manager.loadedExtensionManifests[$0] } ?? [:]
+        let manifest = extensionId.flatMap { manager.runtimeSession.loadedExtensionManifests[$0] } ?? [:]
 
         manager.grantRequestedPermissions(
             to: extensionContext,
@@ -60,7 +98,8 @@ final class ExtensionActionPopupSessionOwner: NSObject, NSPopoverDelegate {
             to: extensionContext,
             webExtension: extensionContext.webExtension
         )
-        if let activeTab = manager.browserBridgeContext?.currentExtensionTabForActiveWindow() {
+        if let activeTab = manager.extensionWindowQuery?
+            .currentExtensionTabForActiveWindow() {
             let seesCurrentTab =
                 manager.adapterResolutionOwner.stableAdapter(for: activeTab) != nil
                 && manager.isTabEligibleForCurrentExtensionRuntime(activeTab)
@@ -98,6 +137,8 @@ final class ExtensionActionPopupSessionOwner: NSObject, NSPopoverDelegate {
         popover.behavior = .transient
 
         let popupWebView = action.popupWebView
+        activePopover = popover
+        activePopupWebView = popupWebView
 
         if let popupWebView {
             if RuntimeDiagnostics.isDeveloperInspectionEnabled {
@@ -149,11 +190,12 @@ final class ExtensionActionPopupSessionOwner: NSObject, NSPopoverDelegate {
             }
 
             let profileId = manager.profileId(for: extensionContext)
-            let preferredWindowId = manager.browserBridgeContext?.activeExtensionWindowState.flatMap { windowState in
+            let preferredWindowId = manager.extensionWindowQuery?
+                .activeExtensionWindowState.flatMap { windowState in
                 guard let profileId else { return windowState.id }
                 return manager.windowMatchesProfile(windowState, profileId: profileId) ? windowState.id : nil
             }
-            let resolution = manager.actionPopupAnchorResolutionOwner.presentResolvedExtensionActionPopup(
+            let resolution = manager.actionPopupAnchorResolver.presentResolvedExtensionActionPopup(
                 popover,
                 for: extensionId,
                 profileId: profileId,
@@ -204,6 +246,8 @@ final class ExtensionActionPopupSessionOwner: NSObject, NSPopoverDelegate {
 
     func popoverDidClose(_ notification: Notification) {
         manager?.isPopupActive = false
+        activePopover = nil
+        activePopupWebView = nil
         if let popupIdentity = activeIdentity {
             let extensionId = popupIdentity.extensionId
             SafariExtensionAutofillFillDiagnostics.setPopupActive(false, extensionId: extensionId)
@@ -235,6 +279,23 @@ final class ExtensionActionPopupSessionOwner: NSObject, NSPopoverDelegate {
         }
     }
 
+    func closePopup(backedBy profileIDs: Set<UUID>) {
+        guard let activeIdentity else { return }
+        if let profileID = activeIdentity.profileId,
+           profileIDs.contains(profileID) == false {
+            return
+        }
+        if let activePopupWebView {
+            SumiAuxiliaryWebViewShutdown.perform(on: activePopupWebView)
+        }
+        activePopover?.close()
+        manager?.isPopupActive = false
+        popupUIDelegates.removeValue(forKey: activeIdentity.extensionId)
+        self.activeIdentity = nil
+        activePopover = nil
+        activePopupWebView = nil
+    }
+
     private func restoreInlineUIHostingFocusIfNeeded() {
         guard SafariExtensionAutofillFillDiagnostics
             .shouldRestoreInlineUIHostingFocusAfterPopupClose()
@@ -242,7 +303,8 @@ final class ExtensionActionPopupSessionOwner: NSObject, NSPopoverDelegate {
             return
         }
         guard let manager,
-              let tab = manager.browserBridgeContext?.currentExtensionTabForActiveWindow(),
+              let tab = manager.extensionWindowQuery?
+                .currentExtensionTabForActiveWindow(),
               let webView = manager.resolvedLiveWebView(for: tab),
               let window = webView.window,
               webView.superview != nil
@@ -265,7 +327,7 @@ final class ExtensionActionPopupSessionOwner: NSObject, NSPopoverDelegate {
         profileId: UUID?
     ) {
         guard let manager else { return }
-        manager.safariNativeMessagingHost.clearLaunchSessionOnExtensionContextUnload(
+        manager.nativeMessagingRelayOwner.relay.clearLaunchSessionOnExtensionContextUnload(
             forExtensionId: extensionId,
             profileId: profileId
         )
@@ -304,9 +366,14 @@ final class ExtensionActionPopupSessionOwner: NSObject, NSPopoverDelegate {
         )
         cancelDeferredContextUnload(identity)
         deferredContextUnloadTasks[identity] = Task { @MainActor [weak self] in
-            try? await Task.sleep(
-                for: SafariExtensionAutofillFillDiagnostics.deferredFillTeardownTimeout
-            )
+            do {
+                try await Task.sleep(
+                    for: SafariExtensionAutofillFillDiagnostics
+                        .deferredFillTeardownTimeout
+                )
+            } catch {
+                return
+            }
             guard !Task.isCancelled else { return }
             self?.completeDeferredContextUnload(
                 identity,

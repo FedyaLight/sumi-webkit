@@ -63,12 +63,12 @@ final class LastSessionWindowsStoreTests: XCTestCase {
         )
     }
 
-    private func makeTabSnapshot() -> TabSnapshotRepository.Snapshot {
+    private func makeTabSnapshot() -> TabPersistenceSnapshot {
         let spaceId = UUID()
         let tabId = UUID()
-        return TabSnapshotRepository.Snapshot(
+        return TabPersistenceSnapshot(
             spaces: [
-                TabSnapshotRepository.SnapshotSpace(
+                TabPersistenceSpace(
                     id: spaceId,
                     name: "Restored",
                     icon: "globe",
@@ -78,7 +78,7 @@ final class LastSessionWindowsStoreTests: XCTestCase {
                 ),
             ],
             tabs: [
-                TabSnapshotRepository.SnapshotTab(
+                TabPersistenceTab(
                     id: tabId,
                     urlString: "https://example.com",
                     name: "Example",
@@ -97,7 +97,7 @@ final class LastSessionWindowsStoreTests: XCTestCase {
             ],
             folders: [],
             splitGroups: [],
-            state: TabSnapshotRepository.SnapshotState(
+            state: TabPersistenceSelection(
                 currentTabID: tabId,
                 currentSpaceID: spaceId
             )

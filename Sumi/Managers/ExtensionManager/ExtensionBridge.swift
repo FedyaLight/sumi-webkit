@@ -7,31 +7,24 @@
 
 import AppKit
 import Foundation
+import SumiWebRuntime
 import WebKit
 
 @available(macOS 15.5, *)
 @MainActor
-protocol ExtensionBrowserBridgeContext: AnyObject {
+protocol ExtensionTabTargetQuery: AnyObject {
     func extensionWindowState(for windowId: UUID) -> BrowserWindowState?
     var activeExtensionWindowState: BrowserWindowState? { get }
-    var allExtensionWindowStates: [BrowserWindowState] { get }
-    func extensionTab(for tabId: UUID) -> Tab?
     func extensionWindowState(containing tab: Tab) -> BrowserWindowState?
-    func extensionWindowState(forAppKitWindow window: NSWindow) -> BrowserWindowState?
-    /// Resolve AppKit window via the `WindowRegistry` shell map.
-    func appKitWindow(for windowState: BrowserWindowState) -> NSWindow?
-    func currentExtensionTab(in windowState: BrowserWindowState) -> Tab?
-    func currentExtensionTabForActiveWindow() -> Tab?
-    func currentExtensionTabForPopup() -> Tab?
-    func tabsForExtensionWindow(_ windowState: BrowserWindowState) -> [Tab]
-    func extensionSpace(for spaceId: UUID?) -> Space?
     func extensionTargetSpace(for windowState: BrowserWindowState?) -> Space?
     func extensionTargetSpace(for tab: Tab) -> Space?
     func extensionTargetSpace(matchingProfile profileId: UUID) -> Space?
-    func preferredExtensionWindowState(containing tab: Tab) -> BrowserWindowState?
-    func setActiveExtensionWindow(_ windowState: BrowserWindowState)
-    func createExtensionWindow()
-    func awaitNextExtensionWindow(excluding existingWindowIDs: Set<UUID>) async -> BrowserWindowState?
+    func auxiliaryWindowSession(for sessionId: UUID) -> AuxiliaryWindowSession?
+}
+
+@available(macOS 15.5, *)
+@MainActor
+protocol ExtensionTabCreation: AnyObject {
     func createExtensionTab(
         url: URL?,
         in space: Space?,
@@ -48,11 +41,12 @@ protocol ExtensionBrowserBridgeContext: AnyObject {
         targetWindow: BrowserWindowState?,
         targetSpace: Space?
     )
-    func isTransientExtensionTab(_ tab: Tab) -> Bool
-    func promoteTransientExtensionTab(_ tab: Tab) -> Bool
-    func isAuxiliaryMiniWindowTab(_ tab: Tab) -> Bool
-    func isPinnedExtensionTab(_ tab: Tab) -> Bool
     func selectExtensionTab(_ tab: Tab, in windowState: BrowserWindowState)
+}
+
+@available(macOS 15.5, *)
+@MainActor
+protocol ExtensionTabWebViewHosting: AnyObject {
     func materializeVisibleExtensionTabWebViewIfNeeded(
         _ tab: Tab,
         in windowState: BrowserWindowState
@@ -61,23 +55,62 @@ protocol ExtensionBrowserBridgeContext: AnyObject {
         for tab: Tab,
         in windowId: UUID
     ) -> WKWebView?
-    func assignExtensionWebView(
-        _ webView: WKWebView,
-        to tab: Tab,
-        in windowState: BrowserWindowState
-    )
-    func replaceUntrackedExtensionWebView(
-        _ webView: WKWebView,
-        for tab: Tab
-    )
     func replaceExtensionLiveWebView(
         for tab: Tab,
         in windowState: BrowserWindowState?,
         reason: String,
         prepareConfiguration: ((WKWebViewConfiguration) -> Void)?,
-        prepareReplacement: ((WKWebView) -> Void)?,
+        prepareCommittedReplacement: ((WKWebView) -> Void)?,
         validate: ((WKWebView) -> Bool)?
     ) -> WKWebView?
+    func reloadExtensionTab(
+        _ tab: Tab,
+        webView: WKWebView,
+        in windowState: BrowserWindowState?,
+        policy: WebRuntimeMainFrameReloadPolicy
+    ) -> TabMainFrameReloadCommandOutcome
+}
+
+@available(macOS 15.5, *)
+@MainActor
+protocol ExtensionWindowQuery: AnyObject {
+    var allExtensionWindowStates: [BrowserWindowState] { get }
+    var activeExtensionWindowState: BrowserWindowState? { get }
+    func extensionWindowState(for windowId: UUID) -> BrowserWindowState?
+    func extensionWindowState(containing tab: Tab) -> BrowserWindowState?
+    func extensionWindowState(forAppKitWindow window: NSWindow) -> BrowserWindowState?
+    func appKitWindow(for windowState: BrowserWindowState) -> NSWindow?
+    func currentExtensionTab(in windowState: BrowserWindowState) -> Tab?
+    func currentExtensionTabForActiveWindow() -> Tab?
+    func currentExtensionTabForPopup() -> Tab?
+    func tabsForExtensionWindow(_ windowState: BrowserWindowState) -> [Tab]
+    func preferredExtensionWindowState(containing tab: Tab) -> BrowserWindowState?
+}
+
+@available(macOS 15.5, *)
+@MainActor
+protocol ExtensionTabQuery: AnyObject {
+    func extensionTab(for tabId: UUID) -> Tab?
+    func isTransientExtensionTab(_ tab: Tab) -> Bool
+    func isAuxiliaryMiniWindowTab(_ tab: Tab) -> Bool
+    func isPinnedExtensionTab(_ tab: Tab) -> Bool
+}
+
+@available(macOS 15.5, *)
+@MainActor
+protocol ExtensionTabMutation: ExtensionTabCreation {
+    func promoteTransientExtensionTab(_ tab: Tab) -> Bool
+}
+
+@available(macOS 15.5, *)
+@MainActor
+protocol ExtensionWindowActivation: AnyObject {
+    func setActiveExtensionWindow(_ windowState: BrowserWindowState)
+}
+
+@available(macOS 15.5, *)
+@MainActor
+protocol ExtensionAuxiliaryWindowControl: AnyObject {
     func auxiliaryWindowSession(for tab: Tab) -> AuxiliaryWindowSession?
     func auxiliaryWindowSession(for sessionId: UUID) -> AuxiliaryWindowSession?
     func auxiliaryWindowSession(for window: NSWindow) -> AuxiliaryWindowSession?
@@ -91,6 +124,13 @@ protocol ExtensionBrowserBridgeContext: AnyObject {
         reason: AuxiliaryWindowCloseReason
     )
     func containsAuxiliaryWebView(_ webView: WKWebView) -> Bool
+}
+
+@available(macOS 15.5, *)
+@MainActor
+protocol ExtensionWindowPresentation: AnyObject {
+    func createExtensionWindow()
+    func awaitNextExtensionWindow(excluding existingWindowIDs: Set<UUID>) async -> BrowserWindowState?
     func presentExtensionExternalWebPopup(
         configuration: WKWebViewConfiguration,
         request: URLRequest?,
@@ -117,7 +157,7 @@ protocol ExtensionBrowserBridgeContext: AnyObject {
 }
 
 @available(macOS 15.5, *)
-extension ExtensionBrowserBridgeContext {
+extension ExtensionWindowPresentation {
     func extensionActionPopupAppearance(
         forAnchorWindow window: NSWindow,
         fallback: NSAppearance?
@@ -159,22 +199,25 @@ enum ExtensionBridgeCallbackSupport {
 final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
     let windowId: UUID
 
-    private weak var browserContext: (any ExtensionBrowserBridgeContext)?
+    private weak var windowQuery: (any ExtensionWindowQuery)?
+    private weak var windowActivation: (any ExtensionWindowActivation)?
     private weak var extensionManager: ExtensionManager?
 
     init(
         windowId: UUID,
-        browserContext: any ExtensionBrowserBridgeContext,
+        windowQuery: any ExtensionWindowQuery,
+        windowActivation: any ExtensionWindowActivation,
         extensionManager: ExtensionManager
     ) {
         self.windowId = windowId
-        self.browserContext = browserContext
+        self.windowQuery = windowQuery
+        self.windowActivation = windowActivation
         self.extensionManager = extensionManager
         super.init()
     }
 
     private var windowState: BrowserWindowState? {
-        browserContext?.extensionWindowState(for: windowId)
+        windowQuery?.extensionWindowState(for: windowId)
     }
 
     private func profileMatchedWindowState(
@@ -201,12 +244,12 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
 
     func activeTab(for extensionContext: WKWebExtensionContext) -> (any WKWebExtensionTab)? {
         guard
-            let browserContext,
+            let windowQuery,
             let extensionManager,
             let windowState,
             let contextProfileId = extensionManager.profileId(for: extensionContext),
             extensionManager.windowMatchesProfile(windowState, profileId: contextProfileId),
-            let tab = browserContext.currentExtensionTab(in: windowState),
+            let tab = windowQuery.currentExtensionTab(in: windowState),
             extensionManager.resolvedProfileId(for: tab) == contextProfileId,
             extensionManager.isTabEligibleForCurrentExtensionRuntime(tab)
         else {
@@ -228,14 +271,14 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
     }
 
     func tabs(for extensionContext: WKWebExtensionContext) -> [any WKWebExtensionTab] {
-        guard let browserContext,
+        guard let windowQuery,
               let extensionManager,
               let windowState,
               let contextProfileId = extensionManager.profileId(for: extensionContext),
               extensionManager.windowMatchesProfile(windowState, profileId: contextProfileId)
         else { return [] }
 
-        return browserContext.tabsForExtensionWindow(windowState).filter {
+        return windowQuery.tabsForExtensionWindow(windowState).filter {
             extensionManager.resolvedProfileId(for: $0) == contextProfileId
                 && extensionManager.isTabEligibleForCurrentExtensionRuntime($0)
         }.compactMap {
@@ -267,7 +310,7 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
         }
 
         appKitWindow(for: windowState)?.makeKeyAndOrderFront(nil)
-        browserContext?.setActiveExtensionWindow(windowState)
+        windowActivation?.setActiveExtensionWindow(windowState)
         NSApp.activate(ignoringOtherApps: true)
         ExtensionBridgeCallbackSupport.complete(completionHandler, api: .windowAdapterCompletion, error: nil)
     }
@@ -373,7 +416,7 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
     }
 
     private func appKitWindow(for windowState: BrowserWindowState) -> NSWindow? {
-        browserContext?.appKitWindow(for: windowState)
+        windowQuery?.appKitWindow(for: windowState)
     }
 }
 
@@ -383,7 +426,8 @@ final class ExtensionMiniWindowAdapter: NSObject, WKWebExtensionWindow {
     let sessionId: UUID
     let tabId: UUID
 
-    private weak var browserContext: (any ExtensionBrowserBridgeContext)?
+    private weak var tabQuery: (any ExtensionTabQuery)?
+    private weak var auxiliaryWindows: (any ExtensionAuxiliaryWindowControl)?
     private weak var extensionManager: ExtensionManager?
     private weak var window: NSWindow?
     private let isPrivateWindow: Bool
@@ -393,7 +437,8 @@ final class ExtensionMiniWindowAdapter: NSObject, WKWebExtensionWindow {
         sessionId: UUID,
         tabId: UUID,
         window: NSWindow,
-        browserContext: any ExtensionBrowserBridgeContext,
+        tabQuery: any ExtensionTabQuery,
+        auxiliaryWindows: any ExtensionAuxiliaryWindowControl,
         extensionManager: ExtensionManager,
         isPrivate: Bool,
         shouldActivateApp: Bool
@@ -401,7 +446,8 @@ final class ExtensionMiniWindowAdapter: NSObject, WKWebExtensionWindow {
         self.sessionId = sessionId
         self.tabId = tabId
         self.window = window
-        self.browserContext = browserContext
+        self.tabQuery = tabQuery
+        self.auxiliaryWindows = auxiliaryWindows
         self.extensionManager = extensionManager
         self.isPrivateWindow = isPrivate
         self.shouldActivateApp = shouldActivateApp
@@ -409,7 +455,7 @@ final class ExtensionMiniWindowAdapter: NSObject, WKWebExtensionWindow {
     }
 
     private var tab: Tab? {
-        browserContext?.extensionTab(for: tabId)
+        tabQuery?.extensionTab(for: tabId)
     }
 
     override func isEqual(_ object: Any?) -> Bool {
@@ -524,7 +570,7 @@ final class ExtensionMiniWindowAdapter: NSObject, WKWebExtensionWindow {
             NSApp.activate(ignoringOtherApps: true)
         }
         window?.makeKeyAndOrderFront(nil)
-        browserContext?.focusAuxiliaryWindowSession(sessionId)
+        auxiliaryWindows?.focusAuxiliaryWindowSession(sessionId)
         ExtensionBridgeCallbackSupport.complete(completionHandler, api: .windowAdapterCompletion, error: nil)
     }
 
@@ -532,8 +578,8 @@ final class ExtensionMiniWindowAdapter: NSObject, WKWebExtensionWindow {
         for _: WKWebExtensionContext,
         completionHandler: @escaping (Error?) -> Void
     ) {
-        guard let browserContext,
-              let session = browserContext.auxiliaryWindowSession(for: sessionId)
+        guard let auxiliaryWindows,
+              let session = auxiliaryWindows.auxiliaryWindowSession(for: sessionId)
         else {
             ExtensionBridgeCallbackSupport.complete(
                 completionHandler,
@@ -545,7 +591,7 @@ final class ExtensionMiniWindowAdapter: NSObject, WKWebExtensionWindow {
             return
         }
 
-        browserContext.closeAuxiliaryWindowSession(session)
+        auxiliaryWindows.closeAuxiliaryWindowSession(session)
         ExtensionBridgeCallbackSupport.complete(completionHandler, api: .windowAdapterCompletion, error: nil)
     }
 }

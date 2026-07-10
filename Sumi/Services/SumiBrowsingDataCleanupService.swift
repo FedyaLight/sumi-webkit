@@ -151,7 +151,16 @@ protocol SumiBrowsingDataAppResidueCleaning: AnyObject {
 
 @MainActor
 protocol SumiDestructiveBrowsingDataCleanupPreparing: AnyObject {
-    func prepareForDestructiveDataCleanup(profileIDs: Set<UUID>) async
+    /// Executes destructive WebKit storage mutation inside a live-page
+    /// quiesce/restore transaction. Implementations must not invoke `deletion`
+    /// until every affected live document has crossed its quiesce barrier, and
+    /// must not return until those documents have been restored or explicitly
+    /// abandoned because their WebView left the runtime.
+    @discardableResult
+    func performDestructiveDataCleanup(
+        profileIDs: Set<UUID>,
+        deletion: @escaping @MainActor () async -> Void
+    ) async -> Bool
 }
 
 @MainActor
@@ -187,11 +196,11 @@ final class SumiBrowsingDataCleanupService {
     let websiteDataCleanupService: any SumiWebsiteDataCleanupServicing
     private let localCleanupOwner: SumiBrowsingDataLocalCleanupOwner
     private let domainInventory: SumiBrowsingDataDomainInventory
-    private let manualWebsiteDataCleanupOwner: SumiManualWebsiteDataCleanupOwner
+    private let manualWebsiteDataCleanupService: SumiManualWebsiteDataCleanupService
     private let referenceDateProvider: @MainActor () -> Date
     var destructiveCleanupPreparer: (any SumiDestructiveBrowsingDataCleanupPreparing)? {
-        get { manualWebsiteDataCleanupOwner.destructiveCleanupPreparer }
-        set { manualWebsiteDataCleanupOwner.destructiveCleanupPreparer = newValue }
+        get { manualWebsiteDataCleanupService.destructiveCleanupPreparer }
+        set { manualWebsiteDataCleanupService.destructiveCleanupPreparer = newValue }
     }
 
     init(
@@ -216,7 +225,7 @@ final class SumiBrowsingDataCleanupService {
             visitedLinkStore: visitedLinkStore
         )
         self.domainInventory = domainInventory
-        self.manualWebsiteDataCleanupOwner = SumiManualWebsiteDataCleanupOwner(
+        self.manualWebsiteDataCleanupService = SumiManualWebsiteDataCleanupService(
             websiteDataCleanupService: websiteDataCleanupService,
             appResidueCleaner: appResidueCleaner,
             domainInventory: domainInventory,
@@ -227,9 +236,14 @@ final class SumiBrowsingDataCleanupService {
         self.referenceDateProvider = referenceDateProvider
     }
 
-    func prepareForDestructiveWebsiteDataCleanup(profileIDs: Set<UUID>) async {
-        await manualWebsiteDataCleanupOwner.prepareForDestructiveWebsiteDataCleanup(
-            profileIDs: profileIDs
+    @discardableResult
+    func performDestructiveWebsiteDataCleanup(
+        profileIDs: Set<UUID>,
+        deletion: @escaping @MainActor () async -> Void
+    ) async -> Bool {
+        await manualWebsiteDataCleanupService.performDestructiveWebsiteDataCleanup(
+            profileIDs: profileIDs,
+            deletion: deletion
         )
     }
 
@@ -358,67 +372,80 @@ final class SumiBrowsingDataCleanupService {
             )
         )
 
-        if categories.contains(.history) {
-            await localCleanupOwner.clearHistory(SumiBrowsingHistoryCleanupRequest(
-                query: query,
-                range: range,
-                historyProfileId: historyProfileId,
-                targetProfileIds: targetProfileIds,
-                includeAllProfiles: includeAllProfiles,
-                historyManager: historyManager,
-                referenceDate: referenceDate,
-                domains: domains
-            ))
-        }
-
-        await manualWebsiteDataCleanupOwner.prepareForDestructiveWebsiteDataCleanupIfNeeded(
-            range: range,
-            categories: categories,
-            targetProfiles: targetProfiles
-        )
-
-        let dataTypes = manualWebsiteDataCleanupOwner.websiteDataTypes(for: categories)
-        let includesCookies = categories.contains(.siteData)
-        for profile in targetProfiles {
-            let siteDataFaviconDomains = await manualWebsiteDataCleanupOwner.clearProfileWebsiteData(
+        let didCompleteCleanup = await manualWebsiteDataCleanupService
+            .performDestructiveWebsiteDataCleanupIfNeeded(
                 range: range,
                 categories: categories,
-                domains: domains,
-                dataTypes: dataTypes,
-                includesCookies: includesCookies,
-                dataStore: profile.dataStore
+                targetProfiles: targetProfiles,
+                deletion: { [self] in
+                    if categories.contains(.history) {
+                        await localCleanupOwner.clearHistory(
+                            SumiBrowsingHistoryCleanupRequest(
+                                query: query,
+                                range: range,
+                                historyProfileId: historyProfileId,
+                                targetProfileIds: targetProfileIds,
+                                includeAllProfiles: includeAllProfiles,
+                                historyManager: historyManager,
+                                referenceDate: referenceDate,
+                                domains: domains
+                            )
+                        )
+                    }
+
+                    let dataTypes = manualWebsiteDataCleanupService.websiteDataTypes(
+                        for: categories
+                    )
+                    let includesCookies = categories.contains(.siteData)
+                    for profile in targetProfiles {
+                        let siteDataFaviconDomains = await manualWebsiteDataCleanupService
+                            .clearProfileWebsiteData(
+                                range: range,
+                                categories: categories,
+                                domains: domains,
+                                dataTypes: dataTypes,
+                                includesCookies: includesCookies,
+                                dataStore: profile.dataStore
+                            )
+                        localCleanupOwner.invalidateSiteDataFavicons(
+                            domains: siteDataFaviconDomains,
+                            partition: SumiFaviconPartition.regular(profile.id)
+                        )
+                    }
+
+                    await manualWebsiteDataCleanupService.clearAppLevelWebsiteResidueIfNeeded(
+                        range: range,
+                        categories: categories,
+                        dataTypes: dataTypes,
+                        includesCookies: includesCookies
+                    )
+
+                    await manualWebsiteDataCleanupService.prunePersistentDataStoresIfNeeded(
+                        range: range,
+                        categories: categories,
+                        targetProfiles: targetProfiles,
+                        targetProfileIds: targetProfileIds,
+                        includeAllProfiles: includeAllProfiles
+                    )
+
+                    localCleanupOwner.clearSavedHTTPAuthCredentialsIfNeeded(
+                        range: range,
+                        categories: categories,
+                        targetProfileIds: targetProfileIds
+                    )
+                    await localCleanupOwner.clearFaviconCacheIfNeeded(
+                        range: range,
+                        categories: categories,
+                        domains: domains
+                    )
+                }
             )
-            localCleanupOwner.invalidateSiteDataFavicons(
-                domains: siteDataFaviconDomains,
-                partition: SumiFaviconPartition.regular(profile.id)
+        if didCompleteCleanup == false {
+            RuntimeDiagnostics.debug(
+                "Browsing-data cleanup was aborted because live WebKit documents could not be quiesced safely.",
+                category: "BrowsingDataCleanup"
             )
         }
-
-        await manualWebsiteDataCleanupOwner.clearAppLevelWebsiteResidueIfNeeded(
-            range: range,
-            categories: categories,
-            dataTypes: dataTypes,
-            includesCookies: includesCookies
-        )
-
-        await manualWebsiteDataCleanupOwner.prunePersistentDataStoresIfNeeded(
-            range: range,
-            categories: categories,
-            targetProfiles: targetProfiles,
-            targetProfileIds: targetProfileIds,
-            includeAllProfiles: includeAllProfiles
-        )
-
-        localCleanupOwner.clearSavedHTTPAuthCredentialsIfNeeded(
-            range: range,
-            categories: categories,
-            targetProfileIds: targetProfileIds
-        )
-        await localCleanupOwner.clearFaviconCacheIfNeeded(
-            range: range,
-            categories: categories,
-            domains: domains
-        )
     }
 }
 
@@ -430,6 +457,7 @@ final class SumiAutomaticBrowsingDataCleanupService {
     private let userDefaults: UserDefaults
     private let referenceDateProvider: @MainActor () -> Date
     private var scheduledTask: Task<Void, Never>?
+    var destructiveCleanupPreparer: (any SumiDestructiveBrowsingDataCleanupPreparing)?
 
     private let lastRunKey =
         "\(SumiAppIdentity.runtimeBundleIdentifier).browsingData.autoCleanup.lastRunAt"
@@ -454,6 +482,12 @@ final class SumiAutomaticBrowsingDataCleanupService {
 
     deinit {
         scheduledTask?.cancel()
+    }
+
+    func attachDestructiveCleanupPreparer(
+        _ preparer: (any SumiDestructiveBrowsingDataCleanupPreparing)?
+    ) {
+        destructiveCleanupPreparer = preparer
     }
 
     func scheduleIfNeeded(_ request: SumiBrowsingDataCleanupScheduleRequest) {
@@ -554,12 +588,18 @@ final class SumiAutomaticBrowsingDataCleanupService {
                 referenceDate: referenceDate
             )
 
-            await websiteDataCleanupService.removeWebsiteData(
-                ofTypes: WKWebsiteDataStore.sumiAutomaticCleanupDataTypes,
-                modifiedSince: .distantPast,
-                in: profile.dataStore
-            )
-            result.cleanedWebsiteDataProfileCount += 1
+            guard let destructiveCleanupPreparer else { continue }
+            let didCleanWebsiteData = await destructiveCleanupPreparer
+                .performDestructiveDataCleanup(profileIDs: [profile.id]) {
+                    await self.websiteDataCleanupService.removeWebsiteData(
+                        ofTypes: WKWebsiteDataStore.sumiAutomaticCleanupDataTypes,
+                        modifiedSince: .distantPast,
+                        in: profile.dataStore
+                    )
+                }
+            if didCleanWebsiteData {
+                result.cleanedWebsiteDataProfileCount += 1
+            }
         }
 
         RuntimeDiagnostics.debug(

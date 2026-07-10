@@ -7,6 +7,7 @@
 import AppKit
 import Combine
 import Foundation
+import Navigation
 import SumiDomain
 import WebKit
 import SumiWebRuntime
@@ -15,6 +16,9 @@ import SumiWebRuntime
 public class Tab: NSObject, Identifiable, ObservableObject {
     public typealias LoadingState = TabLoadingState
     public let id: UUID
+    /// Presentation/persistence URL. Navigation authority is advanced only by
+    /// explicit commands or exact WebKit lifecycle identities, never by an
+    /// incidental model assignment.
     public var url: URL
     @Published var name: String
     /// Model-neutral favicon representation; the UI layer maps this to `SwiftUI.Image`
@@ -33,6 +37,11 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         set { placementStateOwner.index = newValue }
     }
     var profileId: UUID?
+    private var profileAssignmentIntentRevision: UInt64 = 0
+    private var pendingProfileAssignmentIntent:
+        DeferredWebViewProfileAssignmentIntent?
+    private var settlingProfileAssignmentIntent:
+        DeferredWebViewProfileAssignmentIntent?
     // If true, this tab is created to host a popup window; do not perform initial load.
     var isPopupHost: Bool {
         get { surfaceStateOwner.isPopupHost }
@@ -56,8 +65,8 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     let faviconRuntime = TabFaviconRuntime()
     let profileResolutionOwner = TabProfileResolutionOwner()
     let extensionPageRuntimeOwner = TabExtensionPageRuntimeOwner()
-    lazy var webViewOwnershipOwner = TabWebViewOwnershipOwner(tabId: id)
-    private let webViewRuntime = TabWebViewRuntime()
+    public let webViewSession: WebViewSessionHandle
+    private let mainFrameRuntimeTransaction: TabMainFrameRuntimeTransaction
     let webViewConfigurationOwner = TabWebViewConfigurationOwner()
     let normalWebViewSetupOwner = TabNormalWebViewSetupOwner()
     let webViewProvisioningOwner = TabWebViewProvisioningOwner()
@@ -75,7 +84,9 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     lazy var ownedWebViewPreparationOwner = TabOwnedWebViewPreparationOwner(
         dependencies: .live(tab: self)
     )
-    let suspensionStateOwner = TabSuspensionStateOwner()
+    var suspensionState = TabSuspensionState()
+    var suspensionProtection = TabSuspensionProtectionState()
+    var lastSelectedAt: Date?
     private let webViewInteractionStateOwner = TabWebViewInteractionStateOwner()
     lazy var permissionSurfaceOwner = TabPermissionSurfaceOwner(context: .live(tab: self))
     lazy var webKitUIDelegateOwner = TabWebKitUIDelegateOwner(tab: self)
@@ -169,13 +180,8 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     @Published var isRenaming: Bool = false
     @Published var editingName: String = ""
 
-    var profileAwaitCancellable: AnyCancellable? {
-        get { webViewRuntime.profileAwaitCancellable }
-        set { webViewRuntime.profileAwaitCancellable = newValue }
-    }
-    var findInPage: FindInPageTabExtension {
-        webViewRuntime.findInPage
-    }
+    var profileAwaitCancellable: AnyCancellable?
+    let findInPage = FindInPageTabExtension()
 
     // MARK: - Tab State
     var isUnloaded: Bool {
@@ -196,14 +202,497 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         get { webViewConfigurationOwner.webExtensionContextOverride }
         set { webViewConfigurationOwner.webExtensionContextOverride = newValue }
     }
-    var reloadPolicyStateOwner: TabReloadPolicyStateOwner {
-        webViewRuntime.reloadPolicyStateOwner
+    let reloadPolicyStateOwner = TabReloadPolicyStateOwner()
+
+    func beginWebViewRebuildIntent() -> UInt64 {
+        mainFrameRuntimeTransaction.beginRebuildIntent()
     }
 
-    // MARK: - WebView Ownership Tracking (Memory Optimization)
-    // Primary window id is session/registry SoT via routing mutators
-    // (`assignPrimaryWebView` / `notePrimaryAssignment`). Use
-    // `resolvedPrimaryWindowId()` for Tab-internal reads.
+    var currentWebViewRebuildIntentRevision: UInt64 {
+        mainFrameRuntimeTransaction.rebuildIntentRevision
+    }
+
+    func isCurrentWebViewRebuildIntent(_ revision: UInt64) -> Bool {
+        mainFrameRuntimeTransaction.rebuildIntentRevision == revision
+    }
+
+    @discardableResult
+    func beginMainFrameNavigationIntent(to targetURL: URL) -> TabMainFrameNavigationIntent {
+        mainFrameRuntimeTransaction.beginExplicitIntent(to: targetURL)
+    }
+
+    func currentMainFrameNavigationIntent(
+        matching targetURL: URL
+    ) -> TabMainFrameNavigationIntent? {
+        mainFrameRuntimeTransaction.currentIntent(matching: targetURL)
+    }
+
+    func currentMainFrameNavigationIntent() -> TabMainFrameNavigationIntent {
+        mainFrameRuntimeTransaction.currentIntent
+    }
+
+    func currentMainFrameNavigationIntent(
+        revision: UInt64
+    ) -> TabMainFrameNavigationIntent? {
+        mainFrameRuntimeTransaction.currentIntent(revision: revision)
+    }
+
+    func isCurrentMainFrameNavigationIntent(
+        _ intent: TabMainFrameNavigationIntent
+    ) -> Bool {
+        mainFrameRuntimeTransaction.isCurrentIntent(intent)
+    }
+
+    func submittedMainFrameSemanticRevision(
+        on webView: WKWebView,
+        navigationID: ObjectIdentifier,
+        navigationLifetime: AnyObject
+    ) -> UInt64? {
+        mainFrameRuntimeTransaction.semanticRevision(
+            for: webView,
+            navigationID: navigationID,
+            navigationLifetime: navigationLifetime
+        )
+    }
+
+    func isCurrentMainFrameNavigationIntent(
+        revision: UInt64,
+        targetURL: URL
+    ) -> Bool {
+        mainFrameRuntimeTransaction.isCurrentIntent(
+            revision: revision,
+            targetURL: targetURL
+        )
+    }
+
+    @discardableResult
+    func claimDirectMainFrameLoad(on webView: WKWebView) -> Bool {
+        mainFrameRuntimeTransaction.claimDirectSubmission(on: webView) != nil
+    }
+
+    func claimDirectMainFrameLoadLease(
+        on webView: WKWebView
+    ) -> TabMainFrameSubmissionLease? {
+        mainFrameRuntimeTransaction.claimDirectSubmission(on: webView)
+    }
+
+    func claimDeferredMainFrameLoad(
+        on webView: WKWebView,
+        revision: UInt64,
+        targetURL: URL
+    ) -> TabDeferredMainFrameLoadClaim {
+        mainFrameRuntimeTransaction.claimDeferredSubmission(
+            on: webView,
+            revision: revision,
+            targetURL: targetURL
+        )
+    }
+
+    func submittedMainFrameLoadLease(
+        on webView: WKWebView,
+        revision: UInt64,
+        targetURL: URL
+    ) -> TabMainFrameSubmissionLease? {
+        mainFrameRuntimeTransaction.submittedLease(
+            on: webView,
+            revision: revision,
+            targetURL: targetURL
+        )
+    }
+
+    @discardableResult
+    func bindSubmittedMainFrameLoad(
+        on webView: WKWebView,
+        navigationID: ObjectIdentifier,
+        navigationLifetime: AnyObject,
+        matching lease: TabMainFrameSubmissionLease? = nil
+    ) -> Bool {
+        mainFrameRuntimeTransaction.bindSubmittedLoad(
+            on: webView,
+            navigationID: navigationID,
+            navigationLifetime: navigationLifetime,
+            matching: lease
+        )
+    }
+
+    @discardableResult
+    func failSubmittedMainFrameLoad(
+        on webView: WKWebView,
+        matching lease: TabMainFrameSubmissionLease? = nil
+    ) -> TabMainFrameNavigationAbortResult {
+        mainFrameRuntimeTransaction.failSubmittedLoad(
+            on: webView,
+            matching: lease
+        )
+    }
+
+    func restoreDeferredMainFrameLoadAfterFailedSubmission(
+        on webView: WKWebView,
+        revision: UInt64,
+        targetURL: URL,
+        matching lease: TabMainFrameSubmissionLease? = nil
+    ) {
+        mainFrameRuntimeTransaction.restoreDeferredLoadAfterFailedSubmission(
+            on: webView,
+            revision: revision,
+            targetURL: targetURL,
+            matching: lease
+        )
+    }
+
+    @discardableResult
+    func webViewDidLeaveNavigationRuntime(
+        _ webView: WKWebView
+    ) -> TabMainFrameRuntimeDepartureResult {
+        navigationRuntime.webViewRouting.cancelWebContentProcessRecovery(
+            webView
+        )
+        let preferredWebView = resolvedCurrentWebView().flatMap {
+            $0 === webView ? nil : $0
+        }
+        let result = mainFrameRuntimeTransaction.webViewDidLeaveRuntime(
+            webView,
+            preferredAuthorityWebView: preferredWebView
+        )
+        if let continuation = result.continuation {
+            TabMainFrameLifecycleReducer.replayIfNeeded(
+                continuation,
+                tab: self
+            )
+        }
+        return result
+    }
+
+    func abortMainFrameNavigation(
+        from webView: WKWebView,
+        navigationID: ObjectIdentifier,
+        navigationLifetime: AnyObject,
+        rollsBackWhenUnreplaced: Bool = true
+    ) -> TabMainFrameNavigationAbortResult {
+        let result = mainFrameRuntimeTransaction.abortNavigation(
+            from: webView,
+            navigationID: navigationID,
+            navigationLifetime: navigationLifetime,
+            survivingCommittedURL: webView.committedURL,
+            rollsBackWhenUnreplaced: rollsBackWhenUnreplaced
+        )
+        if case .authoritativeRollback(let rollbackURL) = result {
+            _ = beginWebViewRebuildIntent()
+            url = rollbackURL
+        }
+        return result
+    }
+
+    func beginWebContentProcessRecovery(
+        on webView: WKWebView
+    ) -> TabWebContentProcessRecoveryPlan {
+        mainFrameRuntimeTransaction.beginWebContentProcessRecovery(on: webView)
+    }
+
+    func requiresWebContentProcessRecovery(on webView: WKWebView) -> Bool {
+        mainFrameRuntimeTransaction.requiresWebContentProcessRecovery(on: webView)
+    }
+
+    func mainFrameDocumentLease(
+        for webView: WKWebView
+    ) -> TabMainFrameDocumentLease? {
+        mainFrameRuntimeTransaction.documentLease(for: webView)
+    }
+
+    func beginPreparedMainFrameLoad(
+        on webView: WKWebView,
+        intent: TabMainFrameNavigationIntent
+    ) -> TabMainFramePreparedLoadTicket? {
+        mainFrameRuntimeTransaction.beginPreparedLoad(
+            on: webView,
+            intent: intent
+        )
+    }
+
+    func finishPreparedMainFrameLoad(
+        _ ticket: TabMainFramePreparedLoadTicket
+    ) {
+        mainFrameRuntimeTransaction.finishPreparedLoad(ticket)
+    }
+
+    @discardableResult
+    func markDeferredMainFrameLoad(
+        on webView: WKWebView,
+        intent: TabMainFrameNavigationIntent
+    ) -> Bool {
+        mainFrameRuntimeTransaction.markDeferredLoad(
+            on: webView,
+            intent: intent
+        )
+    }
+
+    func clearDeferredMainFrameLoad(
+        on webView: WKWebView,
+        intent: TabMainFrameNavigationIntent
+    ) {
+        mainFrameRuntimeTransaction.clearDeferredLoad(
+            on: webView,
+            intent: intent
+        )
+    }
+
+    func hasOutstandingMainFrameLoad(on webView: WKWebView, targetURL: URL) -> Bool {
+        mainFrameRuntimeTransaction.hasOutstandingLoad(
+            on: webView,
+            targetURL: targetURL
+        )
+    }
+
+    func mainFrameLoadingWebViews() -> [WKWebView] {
+        mainFrameRuntimeTransaction.loadingWebViews()
+    }
+
+    func beginMainFrameLifecycle(
+        from webView: WKWebView,
+        navigationID: ObjectIdentifier?,
+        navigationLifetime: AnyObject,
+        targetURL: URL?,
+        allowsUserInitiatedSupersession: Bool,
+        continuationKind: TabMainFrameContinuationKind?
+    ) -> TabMainFrameLifecycleRole {
+        let acceptance = mainFrameRuntimeTransaction.beginLifecycle(
+            from: webView,
+            navigationID: navigationID,
+            navigationLifetime: navigationLifetime,
+            targetURL: targetURL,
+            allowsUserInitiatedSupersession: allowsUserInitiatedSupersession,
+            continuationKind: continuationKind
+        )
+        if acceptance.beganNewIntent {
+            _ = beginWebViewRebuildIntent()
+        }
+        return acceptance.role
+    }
+
+    func mainFrameLifecycleRole(
+        from webView: WKWebView,
+        navigationID: ObjectIdentifier?,
+        isCurrent: Bool?
+    ) -> TabMainFrameLifecycleRole {
+        mainFrameRuntimeTransaction.lifecycleRole(
+            from: webView,
+            navigationID: navigationID,
+            isCurrent: isCurrent
+        )
+    }
+
+    func shouldAcceptMainFrameLifecycle(
+        from webView: WKWebView,
+        navigationID: ObjectIdentifier?,
+        isCurrent: Bool?
+    ) -> Bool {
+        mainFrameRuntimeTransaction.lifecycleRole(
+            from: webView,
+            navigationID: navigationID,
+            isCurrent: isCurrent
+        ).isAuthority
+    }
+
+    func prepareMainFrameAuthorityForCommit(
+        from webView: WKWebView,
+        navigationID: ObjectIdentifier
+    ) -> TabMainFrameLifecycleRole {
+        mainFrameRuntimeTransaction.prepareAuthorityForCommit(
+            from: webView,
+            navigationID: navigationID
+        )
+    }
+
+    func recordMainFrameCommitSnapshot(
+        from webView: WKWebView,
+        navigationID: ObjectIdentifier,
+        committedURL: URL,
+        isPDF: Bool
+    ) -> TabMainFrameCommitSnapshotClaim {
+        mainFrameRuntimeTransaction.recordCommit(
+            from: webView,
+            navigationID: navigationID,
+            committedURL: committedURL,
+            isPDF: isPDF
+        )
+    }
+
+    func claimMainFrameTransactionStartEffects(
+        from webView: WKWebView,
+        navigationID: ObjectIdentifier
+    ) -> Bool {
+        mainFrameRuntimeTransaction.claimTransactionStartEffects(
+            from: webView,
+            navigationID: navigationID
+        )
+    }
+
+    func claimMainFrameAuthorityTargetPreparation(
+        from webView: WKWebView,
+        navigationID: ObjectIdentifier
+    ) -> Bool {
+        mainFrameRuntimeTransaction.claimAuthorityTargetPreparation(
+            from: webView,
+            navigationID: navigationID
+        )
+    }
+
+    func claimMainFrameLocalStartEffects(
+        from webView: WKWebView,
+        navigationID: ObjectIdentifier
+    ) -> Bool {
+        mainFrameRuntimeTransaction.claimLocalStartEffects(
+            from: webView,
+            navigationID: navigationID
+        )
+    }
+
+    func claimMainFrameAuthorityForTerminalSuccess(
+        from webView: WKWebView,
+        navigationID: ObjectIdentifier,
+        terminalURL: URL?,
+        completesDocumentNavigation: Bool
+    ) -> TabMainFrameLifecycleRole {
+        mainFrameRuntimeTransaction.claimAuthorityForTerminalSuccess(
+            from: webView,
+            navigationID: navigationID,
+            terminalURL: terminalURL,
+            completesDocumentNavigation: completesDocumentNavigation
+        )
+    }
+
+    func claimSharedMainFrameFinishEffects(
+        from webView: WKWebView,
+        navigationID: ObjectIdentifier
+    ) -> Bool {
+        mainFrameRuntimeTransaction.claimSharedFinishEffects(
+            from: webView,
+            navigationID: navigationID
+        )
+    }
+
+    func claimPromotedSharedCommitEffects(
+        matching continuation: TabMainFrameAuthorityContinuation
+    ) -> Bool {
+        mainFrameRuntimeTransaction.claimPromotedSharedCommitEffects(
+            matching: continuation
+        )
+    }
+
+    func claimPromotedSharedFinishEffects(
+        matching continuation: TabMainFrameAuthorityContinuation
+    ) -> Bool {
+        mainFrameRuntimeTransaction.claimPromotedSharedFinishEffects(
+            matching: continuation
+        )
+    }
+
+    func applyPromotedAuthorityURL(
+        _ targetURL: URL,
+        matching continuation: TabMainFrameAuthorityContinuation
+    ) {
+        guard mainFrameRuntimeTransaction.acceptPromotedAuthorityTarget(
+            targetURL,
+            matching: continuation
+        ) else { return }
+        url = targetURL
+    }
+
+    @discardableResult
+    func recordMainFrameResponse(
+        isPDF: Bool,
+        from webView: WKWebView,
+        navigationID: ObjectIdentifier
+    ) -> TabMainFrameLifecycleRole {
+        mainFrameRuntimeTransaction.recordResponse(
+            isPDF: isPDF,
+            from: webView,
+            navigationID: navigationID
+        )
+    }
+
+    func mainFrameResponseIsPDF(
+        from webView: WKWebView,
+        navigationID: ObjectIdentifier
+    ) -> Bool? {
+        mainFrameRuntimeTransaction.responseIsPDF(
+            from: webView,
+            navigationID: navigationID
+        )
+    }
+
+    func applyAcceptedMainFrameLifecycleURL(
+        _ targetURL: URL,
+        from webView: WKWebView,
+        navigationID: ObjectIdentifier?
+    ) {
+        guard mainFrameRuntimeTransaction.acceptLifecycleTarget(
+            targetURL,
+            from: webView,
+            navigationID: navigationID
+        ) else { return }
+        url = targetURL
+    }
+
+    func finishMainFrameLifecycle(
+        from webView: WKWebView,
+        navigationID: ObjectIdentifier?
+    ) {
+        mainFrameRuntimeTransaction.finishLifecycle(
+            from: webView,
+            navigationID: navigationID
+        )
+    }
+
+    func cancelMainFrameNavigationIntent() {
+        _ = mainFrameRuntimeTransaction.rollbackToDurableDocument()
+    }
+
+    func rollbackMainFrameNavigationAfterFailedSubmission(
+        on webView: WKWebView?
+    ) {
+        var survivingWebViews = webViewSession.allKnownWebViews
+        if let webView,
+           survivingWebViews.contains(where: { $0 === webView }) == false {
+            survivingWebViews.append(webView)
+        }
+        let rollback = mainFrameRuntimeTransaction.rollbackAfterFailedSubmission(
+            survivingWebViews: survivingWebViews
+        )
+        let rollbackURL = rollback.targetURL
+        _ = beginWebViewRebuildIntent()
+        url = rollbackURL
+        if loadingState.isLoading {
+            loadingState = .idle
+        }
+        applyCachedFaviconOrPlaceholder(for: rollbackURL)
+        refreshFaviconExtensionCache()
+        if let navigationStateSource = rollback.navigationStateSource {
+            updateNavigationState(from: navigationStateSource)
+        } else if let webView,
+                  let committedURL = webView.committedURL,
+                  WebRuntimeNavigationIdentity(committedURL)
+                    == WebRuntimeNavigationIdentity(rollbackURL) {
+            updateNavigationState(from: webView)
+        } else {
+            updateNavigationState()
+        }
+        stateChangeEmitter.postNavigationStateDidChange(for: self)
+        navigationRuntime.persistenceCallbacks.scheduleRuntimeStatePersistence(self)
+        navigationRuntime.extensionPropertiesRuntime.notifyTabPropertiesChanged(
+            self,
+            [.URL, .loading]
+        )
+        mediaRuntime.callbacks.scheduleBackgroundMediaReconcile(
+            "navigation-submission-failed"
+        )
+    }
+
+    func isCurrentMainFrameNavigationRevision(_ revision: UInt64) -> Bool {
+        mainFrameRuntimeTransaction.currentIntent.revision == revision
+    }
+
+    // MARK: - WebView Interaction State
     var lastWebViewInteractionEvent: NSEvent? {
         get { webViewInteractionStateOwner.lastWebViewInteractionEvent }
         set { webViewInteractionStateOwner.lastWebViewInteractionEvent = newValue }
@@ -247,12 +736,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         navigationRuntime.webKitUIRuntime = runtime.webKitUIRuntime
         navigationRuntime.webViewReplacementRuntime =
             runtime.webViewReplacementRuntime
-        // Promote Tab-local pre-runtime session notes into the coordinator store.
-        // adoptLocalSession clears the local slot when the coordinator is bound.
-        navigationRuntime.webViewRouting.adoptLocalWebViewSession(
-            webViewOwnershipOwner.localSession,
-            id
-        )
+        navigationRuntime.webViewRouting.bindWebViewSession(webViewSession)
         dependencyStateOwner.attachDataServicesProvider { [weak self] in
             self?.browserRuntime.dataServices()
         }
@@ -272,8 +756,8 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         dependencyStateOwner.faviconService
     }
 
-    var faviconImageService: any BrowserFaviconImageServicing {
-        dependencyStateOwner.faviconImageService
+    var faviconCapabilities: BrowserFaviconCapabilities {
+        dependencyStateOwner.faviconCapabilities
     }
 
     var visitedLinkStore: any BrowserVisitedLinkStoreManaging {
@@ -402,19 +886,31 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         spaceId: UUID? = nil,
         index: Int = 0,
         existingWebView: WKWebView? = nil,
+        webViewSessions: WebViewSessionRepository? = nil,
         loadsCachedFaviconOnInit: Bool = true,
         faviconService: any BrowserFaviconServicing = TabDependencyIsolationDefaults.faviconService,
-        faviconImageService: any BrowserFaviconImageServicing = TabDependencyIsolationDefaults.faviconImageService,
+        faviconCapabilities: BrowserFaviconCapabilities = TabDependencyIsolationDefaults.faviconCapabilities,
         visitedLinkStore: any BrowserVisitedLinkStoreManaging = TabDependencyIsolationDefaults.visitedLinkStore
     ) {
         self.id = id
         self.url = url
+        self.mainFrameRuntimeTransaction = TabMainFrameRuntimeTransaction(
+            initialURL: url
+        )
         self.name = name
         self.faviconPresentation = .systemSymbol(favicon)
         self.faviconIsTemplateGlobePlaceholder = (favicon == "globe")
+        if let webViewSessions {
+            self.webViewSession = WebViewSessionHandle(
+                tabID: id,
+                repository: webViewSessions
+            )
+        } else {
+            self.webViewSession = WebViewSessionHandle(tabID: id)
+        }
         self.dependencyStateOwner = TabDependencyStateOwner(
             faviconService: faviconService,
-            faviconImageService: faviconImageService,
+            faviconCapabilities: faviconCapabilities,
             visitedLinkStore: visitedLinkStore
         )
         super.init()
@@ -430,48 +926,148 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     }
 
     func parkExistingWebView(_ webView: WKWebView?) {
-        // Coordinator session when runtime is attached; local session is always
-        // a write-through cache for pre-attach and Tab-accessor fallback.
-        navigationRuntime.webViewRouting.noteParkedWebView(webView, id)
-        webViewOwnershipOwner.parkExistingWebView(webView)
+        webViewSession.park(webView)
     }
 
     func clearParkedExistingWebView() {
-        navigationRuntime.webViewRouting.noteParkedWebView(nil, id)
-        webViewOwnershipOwner.clearParkedExistingWebView()
+        webViewSession.clearParked()
     }
 
     func adoptParkedWebViewAsCurrent(_ webView: WKWebView) {
-        navigationRuntime.webViewRouting.noteUntrackedWebView(webView, id)
-        webViewOwnershipOwner.adoptParkedWebViewAsCurrent(webView)
+        precondition(
+            webViewSession.adoptParkedAsUntracked(webView),
+            "Only this tab's parked WebView can be adopted"
+        )
     }
 
     func replaceUntrackedWebView(_ webView: WKWebView) {
-        navigationRuntime.webViewRouting.noteUntrackedWebView(webView, id)
-        webViewOwnershipOwner.replaceUntrackedWebView(webView)
+        webViewSession.replaceUntracked(with: webView)
     }
 
-    func assignPrimaryWebView(_ webView: WKWebView, windowId: UUID) {
-        navigationRuntime.webViewRouting.notePrimaryAssignment(windowId, webView, id)
-        webViewOwnershipOwner.assignPrimaryWebView(webView, windowId: windowId)
+    func beginProfileAssignmentIntent(
+        desiredProfileID: UUID?,
+        resolvedProfileID: UUID,
+        targetURL: URL,
+        requiresStructuralPersistence: Bool
+    ) -> DeferredWebViewProfileAssignmentIntent {
+        precondition(
+            settlingProfileAssignmentIntent == nil,
+            "A profile transition must settle before another transition begins"
+        )
+        profileAssignmentIntentRevision &+= 1
+        let intent = DeferredWebViewProfileAssignmentIntent(
+            revision: profileAssignmentIntentRevision,
+            expectedProfileID: profileId,
+            desiredProfileID: desiredProfileID,
+            resolvedProfileID: resolvedProfileID,
+            targetURL: targetURL,
+            requiresStructuralPersistence: requiresStructuralPersistence
+        )
+        pendingProfileAssignmentIntent = intent
+        return intent
+    }
+
+    func isCurrentProfileAssignmentIntent(
+        _ intent: DeferredWebViewProfileAssignmentIntent
+    ) -> Bool {
+        pendingProfileAssignmentIntent == intent
+            && profileAssignmentIntentRevision == intent.revision
+            && profileId == intent.expectedProfileID
+    }
+
+    func hasPendingProfileAssignment(to desiredProfileID: UUID?) -> Bool {
+        let intent = pendingProfileAssignmentIntent
+            ?? settlingProfileAssignmentIntent
+        return intent?.desiredProfileID == desiredProfileID
+    }
+
+    var hasUnsettledProfileAssignment: Bool {
+        pendingProfileAssignmentIntent != nil
+            || settlingProfileAssignmentIntent != nil
+    }
+
+    @discardableResult
+    func cancelPendingProfileAssignment() -> Bool {
+        guard pendingProfileAssignmentIntent != nil else { return false }
+        pendingProfileAssignmentIntent = nil
+        return true
+    }
+
+    @discardableResult
+    func commitProfileAssignmentIntent(
+        _ intent: DeferredWebViewProfileAssignmentIntent
+    ) -> Bool {
+        guard isCurrentProfileAssignmentIntent(intent) else { return false }
+        profileId = intent.desiredProfileID
+        pendingProfileAssignmentIntent = nil
+        return true
+    }
+
+    /// Applies the model half of a replacement transaction while retaining
+    /// the exact intent until the repository retirement lease settles.
+    @discardableResult
+    func stageProfileAssignmentIntent(
+        _ intent: DeferredWebViewProfileAssignmentIntent
+    ) -> Bool {
+        guard settlingProfileAssignmentIntent == nil,
+              isCurrentProfileAssignmentIntent(intent) else {
+            return false
+        }
+        profileId = intent.desiredProfileID
+        pendingProfileAssignmentIntent = nil
+        settlingProfileAssignmentIntent = intent
+        return true
+    }
+
+    func isCurrentStagedProfileAssignmentIntent(
+        _ intent: DeferredWebViewProfileAssignmentIntent
+    ) -> Bool {
+        settlingProfileAssignmentIntent == intent
+            && profileAssignmentIntentRevision == intent.revision
+            && profileId == intent.desiredProfileID
+    }
+
+    @discardableResult
+    func finishStagedProfileAssignmentIntent(
+        _ intent: DeferredWebViewProfileAssignmentIntent
+    ) -> Bool {
+        guard isCurrentStagedProfileAssignmentIntent(intent) else {
+            return false
+        }
+        settlingProfileAssignmentIntent = nil
+        return true
+    }
+
+    @discardableResult
+    func rollbackStagedProfileAssignmentIntent(
+        _ intent: DeferredWebViewProfileAssignmentIntent
+    ) -> Bool {
+        guard isCurrentStagedProfileAssignmentIntent(intent) else {
+            return false
+        }
+        profileId = intent.expectedProfileID
+        settlingProfileAssignmentIntent = nil
+        return true
+    }
+
+    func abortProfileAssignmentIntent(
+        _ intent: DeferredWebViewProfileAssignmentIntent
+    ) {
+        guard pendingProfileAssignmentIntent == intent else { return }
+        pendingProfileAssignmentIntent = nil
     }
 
     public func clearCurrentWebViewOwnership() {
-        navigationRuntime.webViewRouting.clearPrimaryAssignment(id)
-        navigationRuntime.webViewRouting.noteUntrackedWebView(nil, id)
-        webViewOwnershipOwner.clearCurrentWebViewOwnership()
+        webViewSession.clearUntracked()
     }
 
     public func clearAllWebViewOwnership() {
-        navigationRuntime.webViewRouting.clearWebViewSession(id)
-        webViewOwnershipOwner.clearAllWebViewOwnership()
+        webViewSession.clearDetachedOwnership()
     }
 
     @discardableResult
     func clearCurrentWebViewOwnershipIfIdentical(to webView: WKWebView) -> Bool {
-        guard resolvedCurrentWebView() === webView else { return false }
-        clearCurrentWebViewOwnership()
-        return true
+        webViewSession.clearUntracked(ifIdenticalTo: webView)
     }
 
     func bindToShortcutPin(_ pin: ShortcutPin) {
@@ -514,7 +1110,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
 
     func loadWebViewIfNeeded() {
         if !hasCurrentWebView {
-            suspensionStateOwner.beginRestoreIfNeeded()
+            beginSuspendedRestoreIfNeeded()
             _ = ensureUntrackedNormalWebView(reason: "Tab.loadWebViewIfNeeded")
             finishSuspendedRestoreIfNeeded()
         }
@@ -525,12 +1121,30 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         stateChangeEmitter.publishNavigationStateDidChange(for: self)
     }
 
+    func noteAccess(at date: Date = Date()) {
+        lastSelectedAt = date
+    }
+
+    func beginSuspendedRestoreIfNeeded() {
+        suspensionState.beginRestoreIfNeeded()
+    }
+
     func markSuspended(at date: Date = Date()) {
-        suspensionStateOwner.markSuspended(tab: self, at: date)
+        objectWillChange.send()
+        suspensionState.markSuspended(url: url)
+        if lastSelectedAt == nil {
+            lastSelectedAt = date
+        }
+        resetPlaybackActivity()
+        loadingState = .idle
+        stateChangeEmitter.postLifecycleDidChange(for: self)
     }
 
     func finishSuspendedRestoreIfNeeded() {
-        suspensionStateOwner.finishRestoreIfNeeded(tab: self, hasWebView: hasCurrentWebView)
+        guard suspensionState.isRestoreInProgress, hasCurrentWebView else { return }
+        objectWillChange.send()
+        suspensionState.finishRestore()
+        stateChangeEmitter.postLifecycleDidChange(for: self)
     }
 
     // MARK: - Navigation State Observation

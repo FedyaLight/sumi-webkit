@@ -93,7 +93,7 @@ struct SafariCompatibilityReportRuntime {
         guard let extensionManager else { return .inactive }
         return Self(
             currentTab: { [weak extensionManager] in
-                extensionManager?.browserBridgeContext?
+                extensionManager?.extensionWindowQuery?
                     .currentExtensionTabForActiveWindow()
             },
             stableAdapter: { [weak extensionManager] tab in
@@ -388,7 +388,7 @@ enum SafariExtensionCompatibilityReportBuilder {
         guard isEnabled else { return .disabled }
 
         if let extensionManager {
-            switch extensionManager.runtimeState {
+            switch extensionManager.runtimeSession.runtimeState {
             case .failed:
                 return .runtimeLoadFailed
             case .unavailable:
@@ -418,7 +418,7 @@ extension SumiExtensionsModule {
         refreshDiscoveredSafariWebExtensionCandidates(discovered)
 
         let manager = managerIfLoadedAndEnabled()
-        let installed = manager?.installedExtensions ?? []
+        let installed = manager?.installedExtensionCollection.records ?? []
         let report = SafariExtensionCompatibilityReportBuilder.build(
             discovered: discovered,
             importStore: safariExtensionImportRecordsForDiagnostics(),

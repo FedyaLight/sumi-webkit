@@ -3,7 +3,6 @@
 //  Sumi
 //
 
-import SumiChromeTokens
 import SwiftUI
 
 enum SpaceViewRenderMode {

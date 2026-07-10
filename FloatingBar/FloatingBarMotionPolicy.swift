@@ -4,7 +4,6 @@
 //
 //
 
-import SumiChromeTokens
 import SwiftUI
 
 enum FloatingBarMotionPolicy {

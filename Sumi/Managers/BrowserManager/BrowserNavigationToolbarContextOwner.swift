@@ -7,7 +7,7 @@ final class BrowserNavigationToolbarContextOwner {
     private let currentTab: @MainActor (BrowserWindowState) -> Tab?
     private let webView: @MainActor (Tab, BrowserWindowState) -> WKWebView?
     private let faviconService: @MainActor () -> any BrowserFaviconServicing
-    private let faviconImageService: @MainActor () -> any BrowserFaviconImageServicing
+    private let faviconImageReader: @MainActor () -> any BrowserFaviconImageReading
     private let openURLInCurrentTab: @MainActor (URL, BrowserWindowState) -> Void
     private let openNewTab: @MainActor (String, BrowserTabOpenContext) -> Void
     private let openHistoryURLsInNewWindow: @MainActor ([URL]) -> Void
@@ -19,7 +19,7 @@ final class BrowserNavigationToolbarContextOwner {
         currentTab: @escaping @MainActor (BrowserWindowState) -> Tab?,
         webView: @escaping @MainActor (Tab, BrowserWindowState) -> WKWebView?,
         faviconService: @escaping @MainActor () -> any BrowserFaviconServicing,
-        faviconImageService: @escaping @MainActor () -> any BrowserFaviconImageServicing,
+        faviconImageReader: @escaping @MainActor () -> any BrowserFaviconImageReading,
         openURLInCurrentTab: @escaping @MainActor (URL, BrowserWindowState) -> Void,
         openNewTab: @escaping @MainActor (String, BrowserTabOpenContext) -> Void,
         openHistoryURLsInNewWindow: @escaping @MainActor ([URL]) -> Void,
@@ -30,7 +30,7 @@ final class BrowserNavigationToolbarContextOwner {
         self.currentTab = currentTab
         self.webView = webView
         self.faviconService = faviconService
-        self.faviconImageService = faviconImageService
+        self.faviconImageReader = faviconImageReader
         self.openURLInCurrentTab = openURLInCurrentTab
         self.openNewTab = openNewTab
         self.openHistoryURLsInNewWindow = openHistoryURLsInNewWindow
@@ -72,7 +72,7 @@ final class BrowserNavigationToolbarContextOwner {
     ) -> SumiNavigationHistoryContext {
         SumiNavigationHistoryContext(
             faviconService: faviconService(),
-            faviconImageService: faviconImageService(),
+            faviconImageReader: faviconImageReader(),
             openURLInCurrentTab: { [weak self, weak windowState] url, _ in
                 guard let self, let windowState else { return }
                 self.openURLInCurrentTab(url, windowState)

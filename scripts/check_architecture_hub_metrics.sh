@@ -67,6 +67,11 @@ live_tm="$(
   count_matches 'static\s+func\s+live\s*\(\s*tabManager' \
     App FloatingBar SidebarChrome Settings Sumi UI
 )"
+legacy_runtime_context_handlers="$(
+  count_matches \
+    '\b(visibleWebViewPreparationRuntime|cleanupScopeRuntime|hiddenCloneEvictionRuntime|deferredProtectedCommandRuntime|trackedCleanupExecutionRuntime|webViewShutdownRuntime)\s*\(' \
+    App FloatingBar SidebarChrome Settings Sumi UI
+)"
 
 # Folder collision: chrome must not live under Navigation/ (DDG product name).
 if [[ -d Navigation ]] && [[ ! -L Navigation ]]; then
@@ -82,8 +87,8 @@ check_max "BrowserManager peer lazy *Owner" "$bm_peer_owners" 0
 check_max "TabManager peer lazy *Owner" "$tm_peer_owners" 5
 check_max "static func live(browserManager:)" "$live_bm" 40
 check_max "static func live(tabManager:)" "$live_tm" 40
-# W1: legacy closure runtime context deleted; keep metric at 0 so it cannot return.
-check_max "Legacy runtime-context handlers" 0 0
+# W1: direct closure-runtime factories were replaced by typed attached contexts.
+check_max "Legacy runtime-context handlers" "$legacy_runtime_context_handlers" 0
 
 if (( failures > 0 )); then
   exit 1

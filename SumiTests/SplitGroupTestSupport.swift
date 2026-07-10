@@ -224,13 +224,14 @@ class SplitGroupTestCase: XCTestCase {
         let tabManager = TabManager(
             runtimePorts: BrowserTabManagerRuntimePortsFactory.registry(for: browserManager),
             context: container.mainContext,
+            webViewSessions: browserManager.webViewSessions,
             loadPersistedState: false
         )
         let windowRegistry = WindowRegistry()
         let windowState = BrowserWindowState()
         windowState.tabManager = tabManager
         browserManager.tabManager = tabManager
-        browserManager.webViewCoordinator = WebViewCoordinator()
+        browserManager.bindTestWebViewCoordinator()
         browserManager.windowRegistry = windowRegistry
         windowRegistry.register(windowState)
         windowRegistry.setActive(windowState)

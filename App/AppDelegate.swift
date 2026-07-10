@@ -17,8 +17,9 @@ import SumiDomain
 /// - **Mouse Button Events**: Maps mouse buttons 2/3/4 to floating bar, back, and forward
 /// - **App Termination**: Coordinates graceful shutdown with data persistence
 ///
-/// Quit path: `applicationShouldTerminate` confirms with AppKit when needed, then schedules persistence +
-/// WKWebView cleanup on the next main turn.
+/// Quit path: `applicationShouldTerminate` confirms with AppKit when needed,
+/// then keeps termination pending until persistence + WKWebView cleanup finish
+/// or the bounded shutdown timeout expires.
 @MainActor
 class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     private static let log = Logger.sumi(category: "AppTermination")
@@ -33,10 +34,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     weak var settingsHandler: SumiSettingsService?
     var shortcutManager: KeyboardShortcutManager?
     var fallbackPersistenceSave: (@MainActor () throws -> Void)?
+    var terminationReply: @MainActor (NSApplication, Bool) -> Void = {
+        application,
+        shouldTerminate in
+        application.reply(toApplicationShouldTerminate: shouldTerminate)
+    }
 
     // Window registry for accessing active window state
     weak var windowRegistry: WindowRegistry?
     private var quitConfirmationInProgress = false
+    private let terminationFinalizer: AppTerminationFinalizer
     let sidebarMouseButtonCaptureRegistry = SidebarMouseButtonCaptureRegistry()
     private lazy var mouseButtonRoutingOwner = BrowserMouseButtonRoutingOwner(
         sidebarMouseButtonCaptureRegistry: sidebarMouseButtonCaptureRegistry
@@ -45,6 +52,26 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     private let urlEventClass = AEEventClass(kInternetEventClass)
     private let urlEventID = AEEventID(kAEGetURL)
+
+    override convenience init() {
+        self.init(terminationFinalizer: AppTerminationFinalizer(
+            observeReply: { reason in
+                switch reason {
+                case .completed:
+                    AppDelegate.log.info("Termination: durable finalization completed")
+                case .timedOut:
+                    AppDelegate.log.error(
+                        "Termination: durable finalization exceeded bounded timeout"
+                    )
+                }
+            }
+        ))
+    }
+
+    init(terminationFinalizer: AppTerminationFinalizer) {
+        self.terminationFinalizer = terminationFinalizer
+        super.init()
+    }
 
     // MARK: - Application Lifecycle
 
@@ -194,8 +221,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     // MARK: - Application Termination
 
-    /// Confirms user-initiated quits when enabled, then schedules best-effort persistence.
+    /// Confirms user-initiated quits when enabled, then holds AppKit's
+    /// termination request until durable finalization completes.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if terminationFinalizer.isFinalizing {
+            AppDelegate.log.info("Termination: duplicate quit joined in-flight finalization")
+            return .terminateLater
+        }
+        if terminationFinalizer.didReply {
+            return .terminateNow
+        }
+
         terminationHandler?.dismissFloatingBarForActiveWindow(preserveDraft: true)
         terminationHandler?.dismissThemePickerCommittingIfNeeded()
         NotificationCenter.default.post(
@@ -204,15 +240,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         )
 
         guard shouldAskBeforeQuit else {
-            scheduleTerminationPersistenceBestEffortAfterReturningFromDelegate(
-                shouldTerminate: true
-            )
-            return .terminateNow
+            beginTerminationFinalization(for: sender)
+            return .terminateLater
         }
 
         guard !quitConfirmationInProgress else {
-            AppDelegate.log.info("Termination: cancel duplicate quit confirmation request")
-            return .terminateCancel
+            AppDelegate.log.info("Termination: duplicate quit joined pending confirmation")
+            return .terminateLater
         }
 
         if let window = quitConfirmationWindow() {
@@ -225,10 +259,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         let alert = makeQuitConfirmationAlert()
         let shouldTerminate = handleQuitConfirmationResponse(alert.runModal(), alert: alert)
         if shouldTerminate {
-            scheduleTerminationPersistenceBestEffortAfterReturningFromDelegate(
-                shouldTerminate: true
-            )
-            return .terminateNow
+            beginTerminationFinalization(for: sender)
+            return .terminateLater
         }
         return .terminateCancel
     }
@@ -265,22 +297,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     private func presentQuitConfirmationSheet(for application: NSApplication, window: NSWindow) {
         let alert = makeQuitConfirmationAlert()
-        alert.beginSheetModal(for: window) { [weak self, alert, application] response in
+        let terminationReply = self.terminationReply
+        alert.beginSheetModal(
+            for: window
+        ) { [weak self, alert, application, terminationReply] response in
             MainActor.assumeIsolated {
                 guard let self else {
-                    application.reply(toApplicationShouldTerminate: false)
+                    terminationReply(application, false)
                     return
                 }
 
                 self.quitConfirmationInProgress = false
                 let shouldTerminate = self.handleQuitConfirmationResponse(response, alert: alert)
                 if shouldTerminate {
-                    self.scheduleTerminationPersistenceBestEffortAfterReturningFromDelegate(
-                        shouldTerminate: true
-                    )
+                    self.beginTerminationFinalization(for: application)
+                } else {
+                    self.terminationReply(application, false)
                 }
-
-                application.reply(toApplicationShouldTerminate: shouldTerminate)
             }
         }
     }
@@ -301,78 +334,86 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         return true
     }
 
-    /// Best-effort persistence and WK teardown after `applicationShouldTerminate` returns (next main turn).
-    private func scheduleTerminationPersistenceBestEffortAfterReturningFromDelegate(
-        shouldTerminate: Bool
-    ) {
+    func beginTerminationFinalization(for application: NSApplication) {
         let persistenceHandlerSnapshot = self.persistenceHandler
         let terminationHandlerSnapshot = self.terminationHandler
         let fallbackPersistenceSaveSnapshot = self.fallbackPersistenceSave
+        let reply = terminationReply
 
-        DispatchQueue.main.async {
-            Task { @MainActor in
-                guard shouldTerminate else {
-                    AppDelegate.log.info("Termination: cancel (shouldTerminate false)")
-                    return
-                }
-
-                guard let persistenceHandler = persistenceHandlerSnapshot else {
-                    guard let fallbackPersistenceSave = fallbackPersistenceSaveSnapshot else {
-                        AppDelegate.log.info("Termination: fallback skipped (no persistenceHandler or fallback save)")
-                        return
-                    }
-                    do {
-                        try fallbackPersistenceSave()
-                        AppDelegate.log.info("Fallback save without BrowserManager succeeded")
-                    } catch {
-                        AppDelegate.log.error(
-                            "Fallback save without BrowserManager failed: \(String(describing: error))"
-                        )
-                    }
-                    AppDelegate.log.info("Termination: fallback path complete (no persistenceHandler)")
-                    return
-                }
-
-                AppDelegate.log.info("Termination: MainActor task began")
-
-                persistenceHandler.flushPendingWindowSessionPersistence()
-
-                let runtimePersistStart = CFAbsoluteTimeGetCurrent()
-                let flushedRuntimeStates = await persistenceHandler
-                    .flushRuntimeStatePersistenceAwaitingResult()
-                let rdt = CFAbsoluteTimeGetCurrent() - runtimePersistStart
-                AppDelegate.log.info(
-                    "Runtime-state persistence flushed \(flushedRuntimeStates) tab(s) in \(String(format: "%.3f", rdt))s"
+        _ = terminationFinalizer.begin(
+            finalize: {
+                await Self.performTerminationFinalization(
+                    persistenceHandler: persistenceHandlerSnapshot,
+                    terminationHandler: terminationHandlerSnapshot,
+                    fallbackPersistenceSave: fallbackPersistenceSaveSnapshot
                 )
+            },
+            reply: { shouldTerminate in
+                reply(application, shouldTerminate)
+            }
+        )
+    }
 
-                let persistStart = CFAbsoluteTimeGetCurrent()
-                let didDirectFullReconcile: Bool = await persistenceHandler.persistFullReconcileAwaitingResult(
-                    reason: "app termination"
-                )
-                let pdt = CFAbsoluteTimeGetCurrent() - persistStart
-                AppDelegate.log.info(
-                    "Full reconcile persistence \(didDirectFullReconcile ? "succeeded" : "used recovery fallback") in \(String(format: "%.3f", pdt))s"
-                )
-
-                AppDelegate.log.info("Termination: MainActor finalize (context save + cleanup)")
-
-                let contextSaveStart = CFAbsoluteTimeGetCurrent()
+    private static func performTerminationFinalization(
+        persistenceHandler: (any BrowserPersistenceHandling)?,
+        terminationHandler: (any BrowserAppTerminationHandling)?,
+        fallbackPersistenceSave: (@MainActor () throws -> Void)?
+    ) async {
+        guard let persistenceHandler else {
+            if let fallbackPersistenceSave {
                 do {
-                    try persistenceHandler.modelContext.save()
-                    let sdt = CFAbsoluteTimeGetCurrent() - contextSaveStart
-                    AppDelegate.log.info("Context save completed in \(String(format: "%.3f", sdt))s")
+                    try fallbackPersistenceSave()
+                    AppDelegate.log.info("Fallback save without BrowserManager succeeded")
                 } catch {
-                    let sdt = CFAbsoluteTimeGetCurrent() - contextSaveStart
                     AppDelegate.log.error(
-                        "Context save failed in \(String(format: "%.3f", sdt))s: \(String(describing: error))"
+                        "Fallback save without BrowserManager failed: \(String(describing: error))"
                     )
                 }
-
-                await terminationHandlerSnapshot?.performAllWindowsClosedSiteDataCleanup()
-                persistenceHandler.cleanupAllTabs()
-                AppDelegate.log.info("Cleanup completed; WKWebView processes terminated")
+            } else {
+                AppDelegate.log.info(
+                    "Termination: fallback skipped (no persistenceHandler or fallback save)"
+                )
             }
+            await terminationHandler?.performAllWindowsClosedSiteDataCleanup()
+            AppDelegate.log.info("Termination: fallback path complete (no persistenceHandler)")
+            return
         }
+
+        AppDelegate.log.info("Termination: MainActor task began")
+        persistenceHandler.flushPendingWindowSessionPersistence()
+
+        let runtimePersistStart = CFAbsoluteTimeGetCurrent()
+        let flushedRuntimeStates = await persistenceHandler
+            .flushRuntimeStatePersistenceAwaitingResult()
+        let rdt = CFAbsoluteTimeGetCurrent() - runtimePersistStart
+        AppDelegate.log.info(
+            "Runtime-state persistence flushed \(flushedRuntimeStates) tab(s) in \(String(format: "%.3f", rdt))s"
+        )
+
+        let persistStart = CFAbsoluteTimeGetCurrent()
+        let didDirectFullReconcile = await persistenceHandler
+            .persistFullReconcileAwaitingResult(reason: "app termination")
+        let pdt = CFAbsoluteTimeGetCurrent() - persistStart
+        AppDelegate.log.info(
+            "Full reconcile persistence \(didDirectFullReconcile ? "succeeded" : "used recovery fallback") in \(String(format: "%.3f", pdt))s"
+        )
+
+        AppDelegate.log.info("Termination: MainActor finalize (context save + cleanup)")
+        let contextSaveStart = CFAbsoluteTimeGetCurrent()
+        do {
+            try persistenceHandler.modelContext.save()
+            let sdt = CFAbsoluteTimeGetCurrent() - contextSaveStart
+            AppDelegate.log.info("Context save completed in \(String(format: "%.3f", sdt))s")
+        } catch {
+            let sdt = CFAbsoluteTimeGetCurrent() - contextSaveStart
+            AppDelegate.log.error(
+                "Context save failed in \(String(format: "%.3f", sdt))s: \(String(describing: error))"
+            )
+        }
+
+        await terminationHandler?.performAllWindowsClosedSiteDataCleanup()
+        persistenceHandler.cleanupAllTabs()
+        AppDelegate.log.info("Cleanup completed; WKWebView processes terminated")
     }
 
     func applicationWillTerminate(_: Notification) {

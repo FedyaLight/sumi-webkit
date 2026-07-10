@@ -10,123 +10,189 @@
 import Foundation
 import WebKit
 
+public struct WebViewTabTeardownResult: Equatable, Sendable {
+    public let discoveredWebViewCount: Int
+    public let cleanedWebViewCount: Int
+    public let deferredWebViewCount: Int
+    public let unscheduledProtectedWebViewCount: Int
+
+    public init(
+        discoveredWebViewCount: Int,
+        cleanedWebViewCount: Int,
+        deferredWebViewCount: Int,
+        unscheduledProtectedWebViewCount: Int
+    ) {
+        self.discoveredWebViewCount = discoveredWebViewCount
+        self.cleanedWebViewCount = cleanedWebViewCount
+        self.deferredWebViewCount = deferredWebViewCount
+        self.unscheduledProtectedWebViewCount = unscheduledProtectedWebViewCount
+    }
+
+    public static let none = Self(
+        discoveredWebViewCount: 0,
+        cleanedWebViewCount: 0,
+        deferredWebViewCount: 0,
+        unscheduledProtectedWebViewCount: 0
+    )
+
+    public var foundWebViews: Bool { discoveredWebViewCount > 0 }
+    public var isComplete: Bool {
+        deferredWebViewCount == 0 && unscheduledProtectedWebViewCount == 0
+    }
+}
+
 @MainActor
 public final class WebViewTabTeardownOwner {
-    private let webViewRegistry: WindowWebViewRegistry
-    private let tabWebViewSessionStore: TabWebViewSessionStore
+    private let webViewSessions: WebViewSessionRepository
     private let mediaProtectionOwner: WebViewMediaProtectionOwner
     private let isWebViewProtectedFromCompositorMutation: @MainActor (WKWebView) -> Bool
     private let enqueueDeferredProtectedCommand:
         @MainActor (DeferredWebViewCommand, WKWebView, String) -> Bool
     private let cleanupUnprotectedTrackedWebView:
         @MainActor (WKWebView, TrackedWebViewOwner, (any WebRuntimeTabHandle)?) -> Void
+    private let cleanupUnprotectedDetachedWebView:
+        @MainActor (WKWebView, UUID, (any WebRuntimeTabHandle)?) -> Void
     private let refreshPrimaryTrackedWebView: @MainActor (any WebRuntimeTabHandle) -> Void
     private let removeWebViewFromContainers: @MainActor (WKWebView) -> Void
     private let unregisterTrackedWebViewSlot:
         @MainActor (TrackedWebViewOwner, WKWebView) -> WKWebView?
 
     public init(
-        webViewRegistry: WindowWebViewRegistry,
-        tabWebViewSessionStore: TabWebViewSessionStore,
+        webViewSessions: WebViewSessionRepository,
         mediaProtectionOwner: WebViewMediaProtectionOwner,
         isWebViewProtectedFromCompositorMutation: @escaping @MainActor (WKWebView) -> Bool,
         enqueueDeferredProtectedCommand:
             @escaping @MainActor (DeferredWebViewCommand, WKWebView, String) -> Bool,
         cleanupUnprotectedTrackedWebView:
             @escaping @MainActor (WKWebView, TrackedWebViewOwner, (any WebRuntimeTabHandle)?) -> Void,
+        cleanupUnprotectedDetachedWebView:
+            @escaping @MainActor (WKWebView, UUID, (any WebRuntimeTabHandle)?) -> Void,
         refreshPrimaryTrackedWebView: @escaping @MainActor (any WebRuntimeTabHandle) -> Void,
         removeWebViewFromContainers: @escaping @MainActor (WKWebView) -> Void,
         unregisterTrackedWebViewSlot:
             @escaping @MainActor (TrackedWebViewOwner, WKWebView) -> WKWebView?
     ) {
-        self.webViewRegistry = webViewRegistry
-        self.tabWebViewSessionStore = tabWebViewSessionStore
+        self.webViewSessions = webViewSessions
         self.mediaProtectionOwner = mediaProtectionOwner
         self.isWebViewProtectedFromCompositorMutation = isWebViewProtectedFromCompositorMutation
         self.enqueueDeferredProtectedCommand = enqueueDeferredProtectedCommand
         self.cleanupUnprotectedTrackedWebView = cleanupUnprotectedTrackedWebView
+        self.cleanupUnprotectedDetachedWebView = cleanupUnprotectedDetachedWebView
         self.refreshPrimaryTrackedWebView = refreshPrimaryTrackedWebView
         self.removeWebViewFromContainers = removeWebViewFromContainers
         self.unregisterTrackedWebViewSlot = unregisterTrackedWebViewSlot
     }
 
     public func allKnownWebViews(for tab: any WebRuntimeTabHandle) -> [WKWebView] {
-        // Phase 6B: session/registry only (imports Tab-local notes if needed).
-        tabWebViewSessionStore.allKnownWebViews(
-            for: tab.id,
-            localSession: tab.localSession
-        )
+        tab.webViewSession.requireBacking(by: webViewSessions)
+        return webViewSessions.queries.allKnownWebViews(for: tab.id)
     }
 
-    @discardableResult
     public func removeAllWebViews(
         for tab: any WebRuntimeTabHandle,
         closeActiveFullscreenMedia: Bool
-    ) -> Bool {
+    ) -> WebViewTabTeardownResult {
         let tabID = tab.id
-        let currentEntries = webViewRegistry.windowWebViews(for: tabID)
-        let protectedCandidateWebViews = uniqueWebViews(
-            tabWebViewSessionStore.protectedCandidateWebViews(
-                for: tabID,
-                localSession: tab.localSession
-            )
-        )
-        if protectedCandidateWebViews
-            .contains(where: isWebViewProtectedFromCompositorMutation) {
-            let protectedTrackedIDs = Set(
-                currentEntries.values
-                    .filter { isWebViewProtectedFromCompositorMutation($0) }
-                    .map(ObjectIdentifier.init)
-            )
-            var closedMediaWebViewIDs: Set<ObjectIdentifier> = []
+        tab.webViewSession.requireBacking(by: webViewSessions)
+        let snapshot = webViewSessions.queries.snapshot(for: tabID)
+        let allWebViews = uniqueWebViews(snapshot.allKnownWebViews)
+        guard allWebViews.isEmpty == false else { return .none }
 
-            func closeFullscreenMediaOnce(on webView: WKWebView) {
-                guard closeActiveFullscreenMedia else { return }
-                guard closedMediaWebViewIDs.insert(ObjectIdentifier(webView)).inserted else { return }
-                mediaProtectionOwner.closeFullscreenMediaIfNeeded(on: webView)
-            }
-
-            for (windowId, protectedWebView) in currentEntries
-                where isWebViewProtectedFromCompositorMutation(protectedWebView) {
-                closeFullscreenMediaOnce(on: protectedWebView)
-                _ = enqueueDeferredProtectedCommand(
-                    .removeTrackedWebView(
-                        webViewID: ObjectIdentifier(protectedWebView),
-                        tabID: tabID,
-                        windowID: windowId
-                    ),
-                    protectedWebView,
-                    "removeAllWebViews"
-                )
-            }
-            for protectedWebView in protectedCandidateWebViews
-                where isWebViewProtectedFromCompositorMutation(protectedWebView) {
-                let protectedWebViewID = ObjectIdentifier(protectedWebView)
-                closeFullscreenMediaOnce(on: protectedWebView)
-
-                guard !protectedTrackedIDs.contains(protectedWebViewID) else { continue }
-                _ = enqueueDeferredProtectedCommand(
-                    .cleanupTabWebView(
-                        webViewID: protectedWebViewID,
-                        tabID: tabID
-                    ),
-                    protectedWebView,
-                    "removeAllWebViews.untracked"
-                )
-            }
-            return false
-        }
-
-        let trackedEntries = currentEntries.map { windowId, webView in
+        let trackedEntries = snapshot.windowWebViews.map { windowId, webView in
             (TrackedWebViewOwner(tabID: tabID, windowID: windowId), webView)
         }
-        guard trackedEntries.isEmpty == false else { return false }
+        let trackedIDs = Set(trackedEntries.map { ObjectIdentifier($0.1) })
+        let detachedWebViews = allWebViews.filter {
+            trackedIDs.contains(ObjectIdentifier($0)) == false
+        }
+        var cleanedWebViewCount = 0
+        var deferredWebViewCount = 0
+        var unscheduledProtectedWebViewCount = 0
+        var closedMediaWebViewIDs: Set<ObjectIdentifier> = []
+
+        func deferCleanup(
+            of webView: WKWebView,
+            command: DeferredWebViewCommand,
+            reason: String
+        ) -> Bool {
+            guard enqueueDeferredProtectedCommand(command, webView, reason) else {
+                return false
+            }
+            if closeActiveFullscreenMedia,
+               closedMediaWebViewIDs.insert(ObjectIdentifier(webView)).inserted {
+                mediaProtectionOwner.closeFullscreenMediaIfNeeded(on: webView)
+            }
+            deferredWebViewCount += 1
+            return true
+        }
 
         for (owner, webView) in trackedEntries {
-            cleanupUnprotectedTrackedWebView(webView, owner, tab)
+            if isWebViewProtectedFromCompositorMutation(webView) {
+                if deferCleanup(
+                    of: webView,
+                    command: .removeTrackedWebView(
+                        webViewID: ObjectIdentifier(webView),
+                        tabID: tabID,
+                        windowID: owner.windowID
+                    ),
+                    reason: "removeAllWebViews.tracked"
+                ) == false {
+                    if isWebViewProtectedFromCompositorMutation(webView) {
+                        unscheduledProtectedWebViewCount += 1
+                    } else {
+                        cleanupUnprotectedTrackedWebView(webView, owner, tab)
+                        cleanedWebViewCount += 1
+                    }
+                }
+            } else {
+                cleanupUnprotectedTrackedWebView(webView, owner, tab)
+                cleanedWebViewCount += 1
+            }
         }
+
+        for webView in detachedWebViews {
+            if isWebViewProtectedFromCompositorMutation(webView) {
+                if deferCleanup(
+                    of: webView,
+                    command: .cleanupTabWebView(
+                        webViewID: ObjectIdentifier(webView),
+                        tabID: tabID
+                    ),
+                    reason: "removeAllWebViews.detached"
+                ) == false {
+                    if isWebViewProtectedFromCompositorMutation(webView) {
+                        unscheduledProtectedWebViewCount += 1
+                    } else if webViewSessions.placement
+                        .removeDetachedWebView(webView, for: tabID) {
+                        cleanupUnprotectedDetachedWebView(webView, tabID, tab)
+                        cleanedWebViewCount += 1
+                    }
+                }
+            } else if webViewSessions.placement.removeDetachedWebView(
+                webView,
+                for: tabID
+            ) {
+                cleanupUnprotectedDetachedWebView(webView, tabID, tab)
+                cleanedWebViewCount += 1
+            }
+        }
+
+        (tab as? any WebRuntimeTabTeardownLifecycle)?.cancelPendingMainFrameNavigation()
         refreshPrimaryTrackedWebView(tab)
-        return true
+        webViewSessions.assertConsistency("removeAllWebViews")
+        assert(
+            allWebViews.count
+                == cleanedWebViewCount
+                    + deferredWebViewCount
+                    + unscheduledProtectedWebViewCount,
+            "Every discovered WebView must reach a teardown outcome"
+        )
+        return WebViewTabTeardownResult(
+            discoveredWebViewCount: allWebViews.count,
+            cleanedWebViewCount: cleanedWebViewCount,
+            deferredWebViewCount: deferredWebViewCount,
+            unscheduledProtectedWebViewCount: unscheduledProtectedWebViewCount
+        )
     }
 
     @discardableResult
@@ -142,7 +208,7 @@ public final class WebViewTabTeardownOwner {
             return false
         }
 
-        let trackedEntries = webViewRegistry.trackedWebViews(for: tabID)
+        let trackedEntries = webViewSessions.queries.trackedWebViews(for: tabID)
         var cleanedIdentifiers: Set<ObjectIdentifier> = []
         let teardownLifecycle = tab as? any WebRuntimeTabTeardownLifecycle
 
@@ -163,8 +229,7 @@ public final class WebViewTabTeardownOwner {
         }
 
         teardownLifecycle?.cancelPendingMainFrameNavigation()
-        teardownLifecycle?.clearAllWebViewOwnership()
-        tabWebViewSessionStore.clearAll(for: tabID)
+        webViewSessions.placement.clearAll(for: tabID)
 
         SumiWebRuntimeDiagnostics.protectedWebViewTrace(
             "Suspension released \(cleanedIdentifiers.count) WebView(s) for tab=\(tabID.uuidString.prefix(8)) reason=\(reason)."

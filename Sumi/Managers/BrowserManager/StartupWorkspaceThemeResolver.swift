@@ -11,10 +11,10 @@ enum StartupWorkspaceThemeResolver {
         lastWindowSessionKey: String,
         modelContext: ModelContext
     ) -> WorkspaceTheme? {
-        guard let snapshot = WindowSessionBootstrapOverride.resolvedSnapshot(
-            userDefaults: userDefaults,
-            lastWindowSessionKey: lastWindowSessionKey
-        )?.snapshot,
+        guard let snapshot = WindowSessionSnapshotStore(
+            key: lastWindowSessionKey,
+            userDefaults: userDefaults
+        ).loadSnapshot()?.snapshot,
               let currentSpaceId = snapshot.currentSpaceId
         else {
             return nil

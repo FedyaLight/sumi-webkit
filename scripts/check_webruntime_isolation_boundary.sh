@@ -22,11 +22,17 @@ if [[ ! -d "$sumi_webruntime_root" ]]; then
   exit 1
 fi
 
-# Strip // line comments and /* */ block comments so comment prose does not
-# trip the type-edge check.
-strip_swift_comments() {
+# Strip string literals and comments so diagnostics/documentation do not trip
+# the type-edge check. Triple-quoted literals must be removed before ordinary
+# strings, and strings before comments because URLs can contain `//`.
+strip_swift_noncode() {
   local file="$1"
-  perl -0777 -pe 's{/\*.*?\*/}{}gs; s{//[^\n]*}{}g' "$file"
+  perl -0777 -pe '
+    s{""".*?"""}{""}gs;
+    s{"(?:\\.|[^"\\])*"}{""}g;
+    s{/\*.*?\*/}{}gs;
+    s{//[^\n]*}{}g
+  ' "$file"
 }
 
 forbidden_import_pattern='^import SwiftUI\b'
@@ -45,7 +51,7 @@ fi
 type_failures=0
 while IFS= read -r -d '' file; do
   type_hits="$(
-    strip_swift_comments "$file" | rg -n "$runtime_type_pattern" || true
+    strip_swift_noncode "$file" | rg -n "$runtime_type_pattern" || true
   )"
   if [[ -n "$type_hits" ]]; then
     printf 'error: SumiWebRuntime references app type (BrowserManager/BrowserWindowState/Tab): %s\n' "$file" >&2

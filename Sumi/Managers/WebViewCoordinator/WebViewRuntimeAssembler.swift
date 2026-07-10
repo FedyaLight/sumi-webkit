@@ -15,17 +15,17 @@ import SumiWebRuntime
 final class WebViewRuntimeAssembler {
     struct Dependencies {
         let runtimeContextStore: WebViewRuntimeContextStore
-        let webViewRegistry: WindowWebViewRegistry
-        let tabWebViewSessionStore: TabWebViewSessionStore
+        let webViewSessions: WebViewSessionRepository
         let visibleWebViewRuntimeOwner: VisibleWebViewRuntimeOwner
         let hiddenCloneEvictionOwner: WebViewHiddenCloneEvictionOwner
-        let registerTrackedWebView: @MainActor (WKWebView, UUID, UUID) -> Void
-        let unregisterTrackedWebViewSlot:
-            @MainActor (TrackedWebViewOwner, WKWebView?) -> WKWebView?
         let removeWebViewFromContainers: @MainActor (WKWebView) -> Void
         let isWebViewProtectedFromCompositorMutation: @MainActor (WKWebView) -> Bool
         let enqueueDeferredProtectedCommand:
-            @MainActor (DeferredWebViewCommand, WKWebView, String) -> Bool
+            @MainActor (
+                DeferredWebViewCommand,
+                WKWebView,
+                String
+            ) -> DeferredProtectedCommandSchedulingOutcome
         let resolvedTab: @MainActor (UUID, WebViewCoordinatorBrowserRuntimeContext?) -> Tab?
         let trackedLiveWebViews: @MainActor (Tab) -> [WKWebView]
         let cleanupUnprotectedTrackedWebView:
@@ -76,7 +76,7 @@ final class WebViewRuntimeAssembler {
         dependencies.visibleWebViewRuntimeOwner.preferredPrimaryWebViewCandidate(
             for: tabId,
             runtime: requireVisiblePreparationRuntime(),
-            webViewRegistry: dependencies.webViewRegistry
+            webViewSessions: dependencies.webViewSessions
         )
     }
 
@@ -91,7 +91,7 @@ final class WebViewRuntimeAssembler {
         dependencies.hiddenCloneEvictionOwner.evictHiddenWebViews(
             in: windowId,
             visibleTabIDs: visibleTabIDs,
-            entries: dependencies.webViewRegistry.trackedWebViews(in: windowId),
+            entries: dependencies.webViewSessions.trackedWebViews(in: windowId),
             runtime: evictionRuntime(
                 globallyVisibleTabIDs: globallyVisibleTabIDs,
                 runtimeContext: runtimeContext
@@ -115,159 +115,17 @@ final class WebViewRuntimeAssembler {
                 dependencies.isWebViewProtectedFromCompositorMutation(webView)
             },
             enqueueDeferredProtectedCommand: { [dependencies] command, webView, reason in
-                dependencies.enqueueDeferredProtectedCommand(command, webView, reason)
+                return dependencies.enqueueDeferredProtectedCommand(
+                    command,
+                    webView,
+                    reason
+                ).wasScheduled
             },
             cleanupUnprotectedTrackedWebView: { [dependencies] webView, owner, tab in
                 dependencies.cleanupUnprotectedTrackedWebView(webView, owner, tab)
             },
             refreshPrimaryTrackedWebView: { [dependencies] tab in
                 dependencies.refreshPrimaryTrackedWebView(tab)
-            }
-        )
-    }
-
-    // MARK: - Assignment/Rebuild Runtime
-
-    /// Builds assignment/rebuild Runtime with live `Tab` protocol witnesses
-    /// and app-owned initial-document handoff closures (Y3/Y4).
-    func assignmentRebuildRuntime(for tab: Tab) -> WebViewAssignmentRebuildOwner.Runtime {
-        let runtimeContext = dependencies.runtimeContextStore.requireBrowser()
-        return WebViewAssignmentRebuildOwner.Runtime(
-            webViewRegistry: dependencies.webViewRegistry,
-            tabWebViewSessionStore: dependencies.tabWebViewSessionStore,
-            initialDocumentWarmupRuntime: initialDocumentWarmupRuntime(),
-            registerTrackedWebView: { [dependencies] webView, tabId, windowId in
-                dependencies.registerTrackedWebView(webView, tabId, windowId)
-            },
-            unregisterTrackedWebViewSlot: { [dependencies] owner, expectedWebView in
-                dependencies.unregisterTrackedWebViewSlot(owner, expectedWebView)
-            },
-            removeFromContainers: { [dependencies] webView in
-                dependencies.removeWebViewFromContainers(webView)
-            },
-            isWebViewProtectedFromCompositorMutation: { [dependencies] webView in
-                dependencies.isWebViewProtectedFromCompositorMutation(webView)
-            },
-            deferProtectedRebuild: { [dependencies] webView, tabID, preferredPrimaryWindowId in
-                _ = dependencies.enqueueDeferredProtectedCommand(
-                    .rebuildLiveWebViews(
-                        tabID: tabID,
-                        preferredPrimaryWindowID: preferredPrimaryWindowId
-                    ),
-                    webView,
-                    "rebuildLiveWebViews"
-                )
-            },
-            primaryCandidate: { [weak self] tabId in
-                self?.preferredPrimaryWebViewCandidate(for: tabId)
-            },
-            liveWindowSelection: {
-                .liveWindows(Set(runtimeContext.allWindows().map(\.id)))
-            },
-            refreshCompositor: { windowId in
-                guard runtimeContext.window(windowId) != nil else {
-                    return
-                }
-                runtimeContext.refreshCompositor(windowId)
-            },
-            notifyTabActivatedIfCurrent: { handle, windowId in
-                guard let windowHandle = runtimeContext.window(windowId),
-                      runtimeContext.currentTab(windowHandle)?.id == handle.id
-                else {
-                    return
-                }
-                runtimeContext.notifyTabActivatedIfLoaded(handle)
-            },
-            // Y3/Y4: live-wire Tab as protocol witnesses (not nil → concrete fallback only).
-            tabMaterializing: tab,
-            tabOwnership: tab,
-            tabTeardown: tab,
-            tabSiteReloadPolicy: tab,
-            tabMainFrameLoading: tab,
-            tabAudioMute: tab,
-            schedulePrimaryInitialDocumentLoad: { [weak tab] webView, handle, ownership, mainFrameLoading, reason in
-                Self.schedulePrimaryInitialDocumentLoad(
-                    webView: webView,
-                    tab: tab,
-                    handle: handle,
-                    ownership: ownership,
-                    mainFrameLoading: mainFrameLoading,
-                    reason: reason
-                )
-            },
-            scheduleCloneInitialDocumentLoad: { [weak tab] webView, handle, _, targetURL in
-                guard let tab, tab.id == handle.id else { return }
-                NormalTabInitialDocumentRuntimeHandoff.scheduleCloneInitialLoad(
-                    tab: tab,
-                    webView: webView,
-                    targetURL: targetURL,
-                    profileId: handle.resolvedProfileId,
-                    registrationReason: "WebViewCoordinator.loadInitialURLIfNeeded"
-                )
-            }
-        )
-    }
-
-    /// Restores the initial http(s) load that `Tab.ensureUntrackedNormalWebView` used to
-    /// schedule. Validity ignores parked staging so leftover parked session staging cannot
-    /// cancel a windowed primary load after factory create.
-    private static func schedulePrimaryInitialDocumentLoad(
-        webView: WKWebView,
-        tab: Tab?,
-        handle: any WebRuntimeTabHandle,
-        ownership: any WebRuntimeTabOwnershipMutating,
-        mainFrameLoading: any WebRuntimeTabMainFrameLoading,
-        reason: String
-    ) {
-        let targetURL = handle.url
-        guard TabNormalWebViewSetupOwner.isInitialDocumentExtensionWarmupURL(targetURL) else {
-            mainFrameLoading.registerTabWithExtensionRuntimeIfNeeded(reason: reason)
-            return
-        }
-
-        let controller = webView.configuration.userContentController
-            .sumiNormalTabUserContentController
-        let profileId = handle.resolvedProfileId
-
-        Task { @MainActor [weak tab, weak webView] in
-            await NormalTabInitialDocumentRuntimeHandoff.perform {
-                if let controller,
-                   controller.hasInstalledInitialUserContent == false {
-                    await controller.waitForInitialUserContentInstallation()
-                }
-            } warmInitialDocumentContexts: {
-                if let profileId, let tab {
-                    await tab.navigationRuntime.normalWebViewExtensionRuntime
-                        .ensureInitialExtensionContextsIfNeeded(profileId)
-                }
-            } isStillValid: {
-                guard let webView else { return false }
-                return ownership.currentWebViewIsIdentical(to: webView)
-            } register: {
-                mainFrameLoading.registerTabWithExtensionRuntimeIfNeeded(
-                    reason: "\(reason).beforeInitialLoad"
-                )
-            } load: {
-                mainFrameLoading.loadURL(
-                    targetURL,
-                    resolvedWebView: { [weak webView] in webView },
-                    reason: "\(reason).initialLoad"
-                )
-            }
-        }
-    }
-
-    private func initialDocumentWarmupRuntime() -> InitialDocumentWarmupRuntime {
-        let runtimeContext = dependencies.runtimeContextStore.requireInitialDocument()
-        return InitialDocumentWarmupRuntime(
-            needsInitialDocumentExtensionContextLoad: { profileId in
-                runtimeContext.needsInitialDocumentExtensionContextLoad(profileId)
-            },
-            ensureInitialExtensionContextsLoaded: { profileId in
-                await runtimeContext.ensureInitialExtensionContextsLoaded(profileId)
-            },
-            refreshCompositorForWindow: { windowId in
-                runtimeContext.refreshCompositorForWindow(windowId)
             }
         )
     }
@@ -292,51 +150,42 @@ extension WebViewRuntimeAssembler.Dependencies {
     static func live(coordinator: WebViewCoordinator) -> Self {
         Self(
             runtimeContextStore: coordinator.runtimeContextStore,
-            webViewRegistry: coordinator.webViewRegistry,
-            tabWebViewSessionStore: coordinator.tabWebViewSessionStore,
+            webViewSessions: coordinator.webViewSessions,
             visibleWebViewRuntimeOwner: coordinator.visibleWebViewRuntimeOwner,
             hiddenCloneEvictionOwner: coordinator.hiddenCloneEvictionOwner,
-            registerTrackedWebView: { [weak coordinator] webView, tabId, windowId in
-                coordinator?.setWebView(webView, for: tabId, in: windowId)
-            },
-            unregisterTrackedWebViewSlot: { [weak coordinator] owner, expectedWebView in
-                coordinator?.unregisterTrackedWebViewSlot(
-                    owner: owner,
-                    expectedWebView: expectedWebView
-                )
-            },
             removeWebViewFromContainers: { [weak coordinator] webView in
-                coordinator?.removeWebViewFromContainers(webView)
+                coordinator?.compositorRuntime.removeWebViewFromContainers(webView)
             },
             isWebViewProtectedFromCompositorMutation: { [weak coordinator] webView in
-                coordinator?.isWebViewProtectedFromCompositorMutation(webView) ?? false
+                coordinator?.protectionRuntime.isProtected(webView) ?? false
             },
             enqueueDeferredProtectedCommand: { [weak coordinator] command, webView, reason in
-                coordinator?.enqueueDeferredProtectedCommand(
+                coordinator?.protectionRuntime.schedule(
                     command,
                     for: webView,
                     reason: reason
-                ) ?? false
+                ) ?? .notProtected
             },
             resolvedTab: { [weak coordinator] tabID, runtimeContext in
                 guard let coordinator else { return nil }
-                if let runtimeContext {
-                    return coordinator.resolvedTab(with: tabID, runtimeContext: runtimeContext)
-                }
-                return coordinator.resolvedTab(with: tabID)
+                return coordinator.runtimeTabs.resolve(
+                    tabID,
+                    runtime: runtimeContext
+                        ?? coordinator.runtimeContextStore.requireBrowser()
+                )
             },
             trackedLiveWebViews: { [weak coordinator] tab in
-                coordinator?.trackedLiveWebViews(for: tab) ?? []
+                coordinator?.ownershipQuery.trackedLiveWebViews(for: tab) ?? []
             },
             cleanupUnprotectedTrackedWebView: { [weak coordinator] webView, owner, tab in
-                coordinator?.cleanupUnprotectedTrackedWebView(
+                coordinator?.lifecycleService.cleanupUnprotectedTrackedWebView(
                     webView,
                     owner: owner,
                     tab: tab
                 )
             },
             refreshPrimaryTrackedWebView: { [weak coordinator] tab in
-                coordinator?.refreshPrimaryTrackedWebView(for: tab)
+                coordinator?.tabWebViewMaterialization.refreshPrimary(for: tab)
             }
         )
     }

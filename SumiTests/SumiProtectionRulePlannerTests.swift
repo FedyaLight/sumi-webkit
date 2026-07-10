@@ -1,3 +1,4 @@
+import SumiDomain
 import XCTest
 
 @testable import Sumi

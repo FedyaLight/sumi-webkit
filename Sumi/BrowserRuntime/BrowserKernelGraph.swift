@@ -1,16 +1,16 @@
 import Foundation
 import SwiftData
-import SumiBrowserCore
+import SumiWebRuntime
 
 /// Always-on managers assembled by `BrowserCompositionRoot.makeKernel` so
 /// `BrowserManager` init can assign from a single graph instead of inline construction.
 @MainActor
 struct BrowserKernelGraph {
+    let webViewSessions: WebViewSessionRepository
     let modelContext: ModelContext
     let moduleRegistry: SumiModuleRegistry
     let liveFoldersModule: SumiLiveFoldersModule
     let sidebarHostRecoveryCoordinator: SidebarHostRecoveryHandling
-    let tabStructureEventBus: TabStructureEventBus
     let adBlockingModule: SumiAdBlockingModule
     let protectionCoordinator: SumiProtectionCoordinator
     let adblockZapperStore: SumiAdblockZapperStore
@@ -29,7 +29,7 @@ struct BrowserKernelGraph {
     let lastSessionWindowsStore: LastSessionWindowsStore
     let startupSessionRestoreOwner: BrowserStartupSessionRestoreOwner
     let compositorManager: TabCompositorManager
-    let tabSuspensionService: TabSuspensionService
+    let tabSuspensionController: TabSuspensionController
     let splitManager: SplitViewManager
     let workspaceThemeCoordinator: WorkspaceThemeCoordinator
     let findManager: FindManager

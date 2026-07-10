@@ -76,7 +76,7 @@ final class RuntimeDiagnosticsTests: XCTestCase {
             return "should not log"
         }
 
-        manager.extensionRuntimeTrace(makeTraceMessage())
+        manager.runtimeDiagnostics.trace(makeTraceMessage())
 
         XCTAssertFalse(evaluated)
     }

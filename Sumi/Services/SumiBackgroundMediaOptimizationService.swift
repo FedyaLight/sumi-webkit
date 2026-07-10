@@ -96,21 +96,26 @@ struct SumiBackgroundMediaOptimizationRuntime {
         _ arguments: [String: Any]
     ) -> Void
 
-    let webViewCoordinator: () -> WebViewCoordinator?
+    let webViewRuntimeAvailable: () -> Bool
+    let liveWebViewEntries: (Tab) -> [(windowID: UUID?, webView: WKWebView)]
     let energySaverActive: () -> Bool
     let allKnownTabs: () -> [Tab]
     let visibleTabIDsByWindow: () -> [UUID: Set<UUID>]
     let executeJavaScriptCommand: JavaScriptCommandExecutor
 
     init(
-        webViewCoordinator: @escaping @MainActor () -> WebViewCoordinator?,
+        webViewRuntimeAvailable: @escaping @MainActor () -> Bool,
+        liveWebViewEntries: @escaping @MainActor (Tab) -> [
+            (windowID: UUID?, webView: WKWebView)
+        ],
         energySaverActive: @escaping @MainActor () -> Bool,
         allKnownTabs: @escaping @MainActor () -> [Tab],
         visibleTabIDsByWindow: @escaping @MainActor () -> [UUID: Set<UUID>],
         executeJavaScriptCommand: @escaping JavaScriptCommandExecutor =
             SumiBackgroundMediaOptimizationRuntime.defaultJavaScriptCommandExecutor
     ) {
-        self.webViewCoordinator = webViewCoordinator
+        self.webViewRuntimeAvailable = webViewRuntimeAvailable
+        self.liveWebViewEntries = liveWebViewEntries
         self.energySaverActive = energySaverActive
         self.allKnownTabs = allKnownTabs
         self.visibleTabIDsByWindow = visibleTabIDsByWindow
@@ -184,14 +189,12 @@ final class SumiBackgroundMediaOptimizationService {
         }
     }
 
-    func reconcileNow(reason: String) {
-        guard let runtime,
-              let coordinator = runtime.webViewCoordinator()
-        else { return }
+    func invalidateAppliedCommand(for webView: WKWebView) {
+        appliedCommandsByWebView.removeValue(forKey: ObjectIdentifier(webView))
+    }
 
-        if shouldResetAppliedCommands(for: reason) {
-            appliedCommandsByWebView.removeAll()
-        }
+    func reconcileNow(reason: String) {
+        guard let runtime, runtime.webViewRuntimeAvailable() else { return }
 
         let policy = SumiBackgroundMediaOptimizationPolicy.make(
             energySaverActive: runtime.energySaverActive()
@@ -200,7 +203,7 @@ final class SumiBackgroundMediaOptimizationService {
         var liveWebViewIDs = Set<ObjectIdentifier>()
 
         for tab in runtime.allKnownTabs() {
-            let entries = liveWebViewEntries(for: tab, coordinator: coordinator)
+            let entries = runtime.liveWebViewEntries(tab)
             guard !entries.isEmpty else { continue }
 
             for entry in entries {
@@ -268,9 +271,9 @@ final class SumiBackgroundMediaOptimizationService {
 
     private func isEligibleForOptimization(tab: Tab, webView: WKWebView) -> Bool {
         guard isOptimizableContentURL(tab.url) else { return false }
-        guard !tab.suspensionStateOwner.isDisplayingPDFDocument else { return false }
-        guard !tab.suspensionStateOwner.hasPictureInPictureVideo else { return false }
-        guard !tab.suspensionStateOwner.isSuspended else { return false }
+        guard !tab.suspensionProtection.isPDFDocument else { return false }
+        guard !tab.suspensionProtection.hasPictureInPictureVideo else { return false }
+        guard !tab.suspensionState.isSuspended else { return false }
         guard webView.cameraCaptureState == .none else { return false }
         guard webView.microphoneCaptureState == .none else { return false }
         guard !webView.sumiIsInFullscreenElementPresentation else { return false }
@@ -282,37 +285,6 @@ final class SumiBackgroundMediaOptimizationService {
         return scheme == "http" || scheme == "https"
     }
 
-    private func liveWebViewEntries(
-        for tab: Tab,
-        coordinator: WebViewCoordinator
-    ) -> [(windowID: UUID?, webView: WKWebView)] {
-        var seen = Set<ObjectIdentifier>()
-        var entries: [(windowID: UUID?, webView: WKWebView)] = []
-
-        func append(windowID: UUID?, webView: WKWebView?) {
-            guard let webView else { return }
-            guard seen.insert(ObjectIdentifier(webView)).inserted else { return }
-            entries.append((windowID, webView))
-        }
-
-        for windowID in coordinator.windowIDs(for: tab.id) {
-            append(
-                windowID: windowID,
-                webView: coordinator.getWebView(for: tab.id, in: windowID)
-            )
-        }
-
-        for webView in coordinator.trackedLiveWebViews(for: tab) {
-            append(
-                windowID: coordinator.windowID(containing: webView)
-                    ?? coordinator.primaryTrackedWindowId(for: tab.id),
-                webView: webView
-            )
-        }
-
-        return entries
-    }
-
     private func notePendingReason(_ reason: String) {
         guard pendingReasons.count < 6 else {
             didTruncatePendingReasons = true
@@ -321,7 +293,4 @@ final class SumiBackgroundMediaOptimizationService {
         pendingReasons.append(reason)
     }
 
-    private func shouldResetAppliedCommands(for reason: String) -> Bool {
-        reason.contains("navigation-did-finish")
-    }
 }

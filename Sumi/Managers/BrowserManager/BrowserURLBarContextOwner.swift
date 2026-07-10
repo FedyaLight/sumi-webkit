@@ -76,8 +76,8 @@ final class BrowserURLBarContextOwner {
             faviconService: {
                 dataServices.faviconService
             },
-            faviconImageService: {
-                dataServices.faviconImageService
+            faviconImageReader: {
+                dataServices.faviconCapabilities.images
             },
             openURLInCurrentTab: { [weak browserManager] url, windowState in
                 browserManager?.historyBundle.historyNavigationOwner.openHistoryURL(

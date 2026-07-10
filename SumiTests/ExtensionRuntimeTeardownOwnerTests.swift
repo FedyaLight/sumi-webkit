@@ -27,15 +27,15 @@ final class ExtensionRuntimeTeardownOwnerTests: XCTestCase {
             allowWithoutEnabledExtensions: true,
             profileId: profile.id
         )
-        let controller = try XCTUnwrap(manager.extensionControllersByProfile[profile.id])
+        let controller = try XCTUnwrap(manager.profileRuntime.controllersByProfile[profile.id])
         browserConfiguration.webViewConfiguration.webExtensionController = controller
 
         let anchorView = NSView(frame: NSRect(x: 0, y: 0, width: 32, height: 32))
         let nativePortKey = ObjectIdentifier(anchorView)
         manager.extensionsLoaded = true
-        manager.runtimeState = .ready
-        manager.allowsRuntimeWithoutEnabledExtensions = true
-        manager.loadedExtensionManifests["alpha"] = ["manifest_version": 3]
+        manager.runtimeSession.runtimeState = .ready
+        manager.runtimeSession.allowsRuntimeWithoutEnabledExtensions = true
+        manager.runtimeSession.loadedExtensionManifests["alpha"] = ["manifest_version": 3]
         manager.actionStatesByExtensionID["alpha"] = BrowserExtensionActionSurfaceState(
             extensionID: "alpha",
             label: "Alpha",
@@ -45,12 +45,12 @@ final class ExtensionRuntimeTeardownOwnerTests: XCTestCase {
             presentsPopup: true,
             icon: nil
         )
-        manager.lastExtensionLoadErrors["\(profile.id):alpha"] = TestError.failed
-        manager.extensionRuntimeResidencyState.touch(
+        manager.runtimeSession.lastExtensionLoadErrors["\(profile.id):alpha"] = TestError.failed
+        manager.runtimeSession.extensionRuntimeResidencyState.touch(
             extensionId: "alpha",
             profileId: profile.id
         )
-        manager.runtimeMetricsByExtensionID["alpha"] =
+        manager.runtimeSession.runtimeMetricsByExtensionID["alpha"] =
             ExtensionManager.ExtensionRuntimeMetrics()
         manager.errorObservationOwner.seedLoggedErrorFingerprintForTesting(
             "fingerprint",
@@ -60,7 +60,7 @@ final class ExtensionRuntimeTeardownOwnerTests: XCTestCase {
         manager.nativeMessagingPortRegistry.nativeMessagePortExtensionIDs[nativePortKey] = "alpha"
         manager.nativeMessagingPortRegistry.nativeMessagePortProfileIDs[nativePortKey] = profile.id
 
-        let generationBeforeTeardown = manager.extensionLoadGeneration
+        let generationBeforeTeardown = manager.runtimeSession.extensionLoadGeneration
 
         manager.tearDownExtensionRuntime(
             reason: "ExtensionRuntimeTeardownOwnerTests.full",
@@ -68,20 +68,20 @@ final class ExtensionRuntimeTeardownOwnerTests: XCTestCase {
             releaseController: true
         )
 
-        XCTAssertEqual(manager.extensionLoadGeneration, generationBeforeTeardown + 1)
-        XCTAssertTrue(manager.extensionControllersByProfile.isEmpty)
+        XCTAssertEqual(manager.runtimeSession.extensionLoadGeneration, generationBeforeTeardown + 1)
+        XCTAssertTrue(manager.profileRuntime.controllersByProfile.isEmpty)
         XCTAssertNil(browserConfiguration.webViewConfiguration.webExtensionController)
-        XCTAssertFalse(manager.allowsRuntimeWithoutEnabledExtensions)
+        XCTAssertFalse(manager.runtimeSession.allowsRuntimeWithoutEnabledExtensions)
         XCTAssertEqual(
-            manager.runtimeState,
+            manager.runtimeSession.runtimeState,
             manager.isExtensionSupportAvailable ? .idle : .unavailable
         )
         XCTAssertFalse(manager.extensionsLoaded)
-        XCTAssertTrue(manager.loadedExtensionManifests.isEmpty)
+        XCTAssertTrue(manager.runtimeSession.loadedExtensionManifests.isEmpty)
         XCTAssertTrue(manager.actionStatesByExtensionID.isEmpty)
-        XCTAssertTrue(manager.lastExtensionLoadErrors.isEmpty)
-        XCTAssertTrue(manager.extensionRuntimeResidencyState.liveContextKeys.isEmpty)
-        XCTAssertTrue(manager.runtimeMetricsByExtensionID.isEmpty)
+        XCTAssertTrue(manager.runtimeSession.lastExtensionLoadErrors.isEmpty)
+        XCTAssertTrue(manager.runtimeSession.extensionRuntimeResidencyState.liveContextKeys.isEmpty)
+        XCTAssertTrue(manager.runtimeSession.runtimeMetricsByExtensionID.isEmpty)
         XCTAssertFalse(manager.errorObservationOwner.hasLoggedErrorFingerprints)
         XCTAssertFalse(
             manager.controllerProvisioningOwner.hasExtensionPageUserContentControllers
@@ -107,14 +107,14 @@ final class ExtensionRuntimeTeardownOwnerTests: XCTestCase {
             allowWithoutEnabledExtensions: true,
             profileId: profile.id
         )
-        let controller = try XCTUnwrap(manager.extensionControllersByProfile[profile.id])
+        let controller = try XCTUnwrap(manager.profileRuntime.controllersByProfile[profile.id])
         browserConfiguration.webViewConfiguration.webExtensionController = controller
 
         let anchorView = NSView(frame: NSRect(x: 0, y: 0, width: 32, height: 32))
         manager.extensionsLoaded = true
-        manager.runtimeState = .ready
-        manager.allowsRuntimeWithoutEnabledExtensions = true
-        manager.loadedExtensionManifests["alpha"] = ["manifest_version": 3]
+        manager.runtimeSession.runtimeState = .ready
+        manager.runtimeSession.allowsRuntimeWithoutEnabledExtensions = true
+        manager.runtimeSession.loadedExtensionManifests["alpha"] = ["manifest_version": 3]
         manager.actionAnchorStore.setAnchor(for: "alpha", anchorView: anchorView)
 
         manager.tearDownExtensionRuntime(
@@ -123,15 +123,15 @@ final class ExtensionRuntimeTeardownOwnerTests: XCTestCase {
             releaseController: false
         )
 
-        XCTAssertIdentical(manager.extensionControllersByProfile[profile.id], controller)
+        XCTAssertIdentical(manager.profileRuntime.controllersByProfile[profile.id], controller)
         XCTAssertIdentical(
             browserConfiguration.webViewConfiguration.webExtensionController,
             controller
         )
-        XCTAssertTrue(manager.allowsRuntimeWithoutEnabledExtensions)
-        XCTAssertEqual(manager.runtimeState, .ready)
+        XCTAssertTrue(manager.runtimeSession.allowsRuntimeWithoutEnabledExtensions)
+        XCTAssertEqual(manager.runtimeSession.runtimeState, .ready)
         XCTAssertTrue(manager.extensionsLoaded)
-        XCTAssertTrue(manager.loadedExtensionManifests.isEmpty)
+        XCTAssertTrue(manager.runtimeSession.loadedExtensionManifests.isEmpty)
         XCTAssertEqual(manager.actionAnchorStore.anchorCount(for: "alpha"), 1)
     }
 

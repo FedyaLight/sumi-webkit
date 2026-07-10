@@ -618,8 +618,10 @@ extension ExtensionManager {
         guard let extensionId = extensionID(for: extensionContext),
               let profileId = profileId(for: extensionContext)
         else { return }
-        let manifest = loadedExtensionManifests[extensionId]
-            ?? installedExtensions.first { $0.id == extensionId }?.manifest
+        let manifest = runtimeSession.loadedExtensionManifests[extensionId]
+            ?? installedExtensionCollection.records.first {
+                $0.id == extensionId
+            }?.manifest
         applyConfiguredSiteAccessPolicy(
             to: extensionContext,
             extensionId: extensionId,

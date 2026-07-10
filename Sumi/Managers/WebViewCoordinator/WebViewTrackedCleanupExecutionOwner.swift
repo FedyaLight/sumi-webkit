@@ -12,37 +12,37 @@ import SumiWebRuntime
 @MainActor
 final class WebViewTrackedCleanupExecutionOwner {
     typealias DestructiveCleanupSuppressionFinisher = (WKWebView) -> Void
-    typealias ContainerRemoval = (WKWebView) -> Void
     typealias RuntimeObservationUninstaller = (WKWebView) -> Void
     typealias DeferredCommandPruner = (String) -> Void
     typealias FallbackCleanup = (WKWebView, UUID) -> Void
+    typealias RecentVisibilityRemover = (TrackedWebViewOwner) -> Void
 
     struct Runtime {
         let finishDestructiveCleanupSuppression: DestructiveCleanupSuppressionFinisher
-        let removeFromContainers: ContainerRemoval
         let uninstallRuntimeObservationsIfUntracked: RuntimeObservationUninstaller
         let pruneInvalidDeferredCommands: DeferredCommandPruner
         let fallbackCleanup: FallbackCleanup
+        let forgetRecentVisibility: RecentVisibilityRemover
     }
 
     func cleanupUnprotectedTrackedWebView(
         _ webView: WKWebView,
         owner: TrackedWebViewOwner,
         tab: (any WebRuntimeTabTeardownLifecycle)?,
-        webViewRegistry: WindowWebViewRegistry,
+        webViewSessions: WebViewSessionRepository,
         trackingLifecycleOwner: WebViewTrackingLifecycleOwner,
         runtime: Runtime
     ) {
         runtime.finishDestructiveCleanupSuppression(webView)
-        runtime.removeFromContainers(webView)
         _ = trackingLifecycleOwner.unregisterTrackedWebViewSlot(
             owner: owner,
             expectedWebView: webView,
-            in: webViewRegistry,
-            removeFromContainers: runtime.removeFromContainers,
+            in: webViewSessions,
+            removeFromContainers: { _ in },
             uninstallRuntimeObservationsIfUntracked: runtime
                 .uninstallRuntimeObservationsIfUntracked,
-            pruneInvalidDeferredCommands: runtime.pruneInvalidDeferredCommands
+            pruneInvalidDeferredCommands: runtime.pruneInvalidDeferredCommands,
+            forgetRecentVisibility: runtime.forgetRecentVisibility
         )
 
         if let tab {

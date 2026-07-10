@@ -48,6 +48,14 @@ final class SumiPopupPermissionBridge {
             pageId: tabContext.pageId,
             classification: request.classification
         ))
+        guard tabContext.isCurrentPage() else {
+            return block(
+                request,
+                tabContext: tabContext,
+                reason: "popup-stale-document",
+                blockedReason: .blockedByPolicy
+            )
+        }
 
         if request.classification == .internalOrBrowserOwned,
            request.isExtensionOwnedPopup,
@@ -92,6 +100,14 @@ final class SumiPopupPermissionBridge {
             bypassActivationGateForStoreLookup: true
         )
         let coordinatorDecision = await coordinator.queryPermissionState(context)
+        guard tabContext.isCurrentPage() else {
+            return block(
+                request,
+                tabContext: tabContext,
+                reason: "popup-stale-document-after-query",
+                blockedReason: .blockedByPolicy
+            )
+        }
 
         switch coordinatorDecision.outcome {
         case .granted:
@@ -160,6 +176,14 @@ final class SumiPopupPermissionBridge {
             pageId: tabContext.pageId,
             classification: request.classification
         ))
+        guard tabContext.isCurrentPage() else {
+            return block(
+                request,
+                tabContext: tabContext,
+                reason: "popup-stale-document",
+                blockedReason: .blockedByPolicy
+            )
+        }
 
         if request.classification == .internalOrBrowserOwned,
            request.isExtensionOwnedPopup,

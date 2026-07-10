@@ -38,13 +38,26 @@ enum BrowserExtensionManagerRuntimeFactory {
                 browserManager?.webViewRoutingService.primaryTrackedWindowId(for: tabId)
             },
             untrackedOwnedWebView: { [weak browserManager] tab in
-                browserManager?.webViewCoordinator?.untrackedOwnedWebView(for: tab)
+                browserManager?.webViewOwnershipQuery.untrackedOwnedWebView(for: tab)
             },
             trackedWebViews: { [weak browserManager] tabId in
-                browserManager?.webViewCoordinator?.getAllWebViews(for: tabId) ?? []
+                browserManager?.webViewOwnershipQuery.trackedWebViews(for: tabId) ?? []
             },
             rebuildLiveWebViews: { [weak browserManager] tab in
-                browserManager?.webViewCoordinator?.rebuildLiveWebViews(for: tab)
+                browserManager?.webViewCoordinator?.rebuildService
+                    .rebuildLiveWebViews(for: tab)
+            },
+            websiteDataMutationAdmissionIsBlocked: { [weak browserManager] profileID in
+                browserManager?.webViewCoordinator?.websiteDataCleanupService
+                    .admissionIsBlocked(profileID: profileID)
+                    ?? false
+            },
+            waitForWebsiteDataMutationAdmission: { [weak browserManager] profileID in
+                guard let cleanup = browserManager?.webViewCoordinator?
+                    .websiteDataCleanupService else {
+                    return true
+                }
+                return await cleanup.waitForAdmission(profileID: profileID)
             },
             browserRuntimeAvailable: { [weak browserManager] in
                 browserManager != nil

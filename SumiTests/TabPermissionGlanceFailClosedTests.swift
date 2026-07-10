@@ -64,6 +64,19 @@ final class TabPermissionGlanceFailClosedTests: XCTestCase {
             name: "Glance Fail Closed",
             icon: "person"
         )
+        let committedURL = URL(string: "https://example.com/")!
+        let webView = PermissionCommittedURLWebView()
+        webView.reportedCommittedURL = committedURL
+        let documentLease = TabMainFrameDocumentLease(
+            revision: 1,
+            documentGeneration: 0,
+            webViewID: ObjectIdentifier(webView),
+            participantID: UUID(),
+            committedURL: committedURL,
+            presentationURL: committedURL,
+            isPDF: false,
+            isAuthority: true
+        )
         let owner = TabPermissionSurfaceOwner(
             context: TabPermissionSurfaceOwner.Context(
                 tabId: tabId,
@@ -79,7 +92,9 @@ final class TabPermissionGlanceFailClosedTests: XCTestCase {
                         pageId: "\(tabIdString):0"
                     )
                 },
-                committedMainDocumentURL: { URL(string: "https://example.com/") },
+                documentLease: { candidate in
+                    candidate === webView ? documentLease : nil
+                },
                 isCurrentPage: { _, _ in true },
                 invalidatePageForWebViewReplacement: {},
                 handlePermissionLifecycleEvent: { _ in },
@@ -87,7 +102,6 @@ final class TabPermissionGlanceFailClosedTests: XCTestCase {
                 isAuxiliaryMiniWindow: { false }
             )
         )
-        let webView = WKWebView()
 
         XCTAssertEqual(owner.permissionSurface(for: webView), .glance)
 

@@ -54,8 +54,8 @@ final class ActiveTabSuggestionOwner {
                     return (lhsRank ?? Int.max) < (rhsRank ?? Int.max)
                 }
 
-                let lhsSelected = lhs.suspensionStateOwner.lastSelectedAt ?? .distantPast
-                let rhsSelected = rhs.suspensionStateOwner.lastSelectedAt ?? .distantPast
+                let lhsSelected = lhs.lastSelectedAt ?? .distantPast
+                let rhsSelected = rhs.lastSelectedAt ?? .distantPast
                 if lhsSelected != rhsSelected {
                     return lhsSelected > rhsSelected
                 }

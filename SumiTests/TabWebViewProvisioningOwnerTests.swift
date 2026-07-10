@@ -107,13 +107,52 @@ final class TabWebViewProvisioningOwnerTests: XCTestCase {
         XCTAssertEqual(capturedOptions?.applyNavigationPreferences, true)
     }
 
+    func testExplicitProfileOwnsConfigurationAndManagedScriptIdentityBeforeCommit() throws {
+        let owner = TabWebViewProvisioningOwner()
+        let oldProfile = Profile(name: "Old")
+        let targetProfile = Profile(name: "Target")
+        var configuredProfileID: UUID?
+        var managedScriptProfileID: UUID?
+        let context = makeContext(
+            profileId: { oldProfile.id },
+            resolveProfile: { oldProfile },
+            configurationRuntime: makeConfigurationRuntime(
+                normalTabWebViewConfiguration: { _, profile, _, _ in
+                    configuredProfileID = profile.id
+                    return WKWebViewConfiguration()
+                }
+            ),
+            normalTabUserScriptsProvider: { _, profileID in
+                managedScriptProfileID = profileID
+                return SumiNormalTabUserScripts()
+            }
+        )
+
+        _ = try XCTUnwrap(
+            owner.makeNormalTabWebView(
+                context: context,
+                reason: "test.explicit-profile",
+                explicitProfile: targetProfile,
+                prepareExtensionRuntime: false
+            )
+        )
+
+        XCTAssertEqual(configuredProfileID, targetProfile.id)
+        XCTAssertEqual(managedScriptProfileID, targetProfile.id)
+        XCTAssertNotEqual(managedScriptProfileID, oldProfile.id)
+    }
+
     private func makeContext(
         profileId: @escaping () -> UUID? = { nil },
         resolveProfile: @escaping () -> Profile? = { nil },
         replaceUntrackedWebView: @escaping (WKWebView) -> Void = { _ in /* No-op. */ },
         configurationContext: @escaping () -> TabWebViewConfigurationContext = { .empty },
         configurationRuntime: TabNormalWebViewConfigurationRuntime? = nil,
-        preparationRuntime: TabNormalWebViewPreparationRuntime? = nil
+        preparationRuntime: TabNormalWebViewPreparationRuntime? = nil,
+        normalTabUserScriptsProvider: @escaping (
+            URL?,
+            UUID?
+        ) -> SumiNormalTabUserScripts = { _, _ in SumiNormalTabUserScripts() }
     ) -> TabNormalWebViewRuntimeContext {
         TabNormalWebViewRuntimeContext(
             tabId: UUID(),
@@ -123,24 +162,25 @@ final class TabWebViewProvisioningOwnerTests: XCTestCase {
             parkedWebView: { nil },
             profileId: profileId,
             resolveProfile: resolveProfile,
-            deferWebViewUntilProfileAvailable: { /* No-op. */ },
+            deferWebViewUntilProfileAvailable: { false },
             beginSuspendedRestoreIfNeeded: { /* No-op. */ },
             finishSuspendedRestoreIfNeeded: { /* No-op. */ },
             setupWebView: { /* No-op. */ },
+            deferWebsiteDataMutationWebViewMaterialization: { _ in false },
             adoptParkedWebViewAsCurrent: { _ in /* No-op. */ },
             clearParkedExistingWebView: { /* No-op. */ },
+            retireParkedWebView: { _, _ in false },
             replaceUntrackedWebView: replaceUntrackedWebView,
-            assignPrimaryWebView: { _, _ in /* No-op. */ },
             cleanupCloneWebView: { _ in /* No-op. */ },
             configurationContext: configurationContext,
             configurationRuntime: configurationRuntime ?? makeConfigurationRuntime(),
             preparationRuntime: preparationRuntime ?? makePreparationRuntime(),
-            normalTabUserScriptsProvider: { _ in SumiNormalTabUserScripts() },
+            normalTabUserScriptsProvider: normalTabUserScriptsProvider,
             replaceNormalTabUserScripts: { _, _ in /* No-op. */ },
             loadMainFrameRequest: { _, _ in /* No-op. */ },
             applyCachedFaviconOrPlaceholder: { _ in /* No-op. */ },
             registerTabWithExtensionRuntimeIfNeeded: { _ in /* No-op. */ },
-            scheduleInitialDocumentRuntimeHandoff: { _, _, _, _, _ in /* No-op. */ }
+            scheduleInitialDocumentRuntimeHandoff: { _, _, _, _ in /* No-op. */ }
         )
     }
 

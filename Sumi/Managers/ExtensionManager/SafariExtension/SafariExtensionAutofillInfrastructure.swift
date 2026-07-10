@@ -172,7 +172,7 @@ enum SafariExtensionAutofillInfrastructureClassifier {
 
         let profileId = extensionManager.resolvedProfileId(for: tab)
         let expectedController = profileId.flatMap {
-            extensionManager.extensionControllersByProfile[$0]
+            extensionManager.profileRuntime.controllersByProfile[$0]
         }
 
         if let expectedController {

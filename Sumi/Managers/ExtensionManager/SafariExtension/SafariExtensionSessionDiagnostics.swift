@@ -86,7 +86,7 @@ struct SafariExtensionSessionDiagnosticsRuntime {
     static func make(extensionManager: ExtensionManager) -> Self {
         Self(
             currentTab: { [weak extensionManager] in
-                extensionManager?.browserBridgeContext?
+                extensionManager?.extensionWindowQuery?
                     .currentExtensionTabForActiveWindow()
             },
             currentProfile: { [weak extensionManager] in
@@ -96,9 +96,10 @@ struct SafariExtensionSessionDiagnosticsRuntime {
                 extensionManager?.runtime.profile(profileId)
             },
             activeTabStore: { [weak extensionManager] tab in
-                guard let browserContext = extensionManager?.browserBridgeContext,
-                      let activeWindow = browserContext.activeExtensionWindowState,
-                      let webView = browserContext.extensionWindowOwnedWebView(
+                guard let windowQuery = extensionManager?.extensionWindowQuery,
+                      let webViewHosting = extensionManager?.extensionWebViewHosting,
+                      let activeWindow = windowQuery.activeExtensionWindowState,
+                      let webView = webViewHosting.extensionWindowOwnedWebView(
                           for: tab,
                           in: activeWindow.id
                       )
@@ -121,7 +122,7 @@ enum SafariExtensionSessionDiagnosticsBuilder {
         runtime: SafariExtensionSessionDiagnosticsRuntime? = nil
     ) async -> SafariExtensionSessionDiagnostic {
         let runtime = runtime ?? .make(extensionManager: extensionManager)
-        let installed = extensionManager.installedExtensions.first { $0.id == extensionId }
+        let installed = extensionManager.installedExtensionCollection.records.first { $0.id == extensionId }
         let activeTab = runtime.currentTab()
         let activeProfileId =
             activeTab.flatMap { extensionManager.resolvedProfileId(for: $0) }
@@ -150,11 +151,11 @@ enum SafariExtensionSessionDiagnosticsBuilder {
             ?? runtime.currentProfile()?.dataStore
         let controllerDefaultStore =
             activeProfileId
-            .flatMap { extensionManager.extensionControllersByProfile[$0] }?
+            .flatMap { extensionManager.profileRuntime.controllersByProfile[$0] }?
             .configuration.defaultWebsiteDataStore
         let pageConfigurationStore =
             activeProfileId
-            .flatMap { extensionManager.extensionControllersByProfile[$0] }?
+            .flatMap { extensionManager.profileRuntime.controllersByProfile[$0] }?
             .configuration.webViewConfiguration?
             .websiteDataStore
         let activeTabStore: WKWebsiteDataStore? = {

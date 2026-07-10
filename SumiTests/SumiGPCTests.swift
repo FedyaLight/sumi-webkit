@@ -118,21 +118,29 @@ final class SumiGPCNavigationResponderTests: XCTestCase {
             modifierFlags: [],
             shouldDownload: false,
             isUserEnteredURL: false,
-            isCustom: false
+            isCustom: false,
+            isClientRedirect: false
         )
     }
 
     func testCancelsAndReloadsWithHeaderWhenEnabledAndEligible() async {
         let webView = SumiGPCLoadRecordingWebView()
+        let tab = makeTab()
+        _ = tab.installNavigationDelegate(on: webView)
         let responder = SumiGPCNavigationResponder(
-            tab: makeTab(),
+            tab: tab,
             isGPCEnabledProvider: { true }
         )
         var preferences = sumiPreferences()
+        let originalNavigation = NSObject()
 
         let policy = await responder.decidePolicy(
             for: mainFrameAction(url: URL(string: "https://example.com/")!),
             webView: webView,
+            context: SumiNavigationActionContext(
+                navigationID: ObjectIdentifier(originalNavigation),
+                navigationLifetime: originalNavigation
+            ),
             preferences: &preferences
         )
 
@@ -143,15 +151,22 @@ final class SumiGPCNavigationResponderTests: XCTestCase {
 
     func testAllowsNavigationOnSecondPassOnceHeaderIsPresent() async {
         let webView = SumiGPCLoadRecordingWebView()
+        let tab = makeTab()
+        _ = tab.installNavigationDelegate(on: webView)
         let responder = SumiGPCNavigationResponder(
-            tab: makeTab(),
+            tab: tab,
             isGPCEnabledProvider: { true }
         )
         var preferences = sumiPreferences()
+        let originalNavigation = NSObject()
 
         let policy = await responder.decidePolicy(
             for: mainFrameAction(url: URL(string: "https://example.com/already-tagged")!, httpMethod: "GET"),
             webView: webView,
+            context: SumiNavigationActionContext(
+                navigationID: ObjectIdentifier(originalNavigation),
+                navigationLifetime: originalNavigation
+            ),
             preferences: &preferences
         )
         // First pass rewrites and cancels.
@@ -176,7 +191,8 @@ final class SumiGPCNavigationResponderTests: XCTestCase {
             modifierFlags: [],
             shouldDownload: false,
             isUserEnteredURL: false,
-            isCustom: false
+            isCustom: false,
+            isClientRedirect: false
         )
         let secondPolicy = await responder.decidePolicy(
             for: secondAction,
@@ -186,6 +202,67 @@ final class SumiGPCNavigationResponderTests: XCTestCase {
 
         XCTAssertNil(secondPolicy, "Once the header is present the responder must step aside (.next) for the rest of the chain.")
         XCTAssertEqual(webView.loadedRequests.count, 1, "Must not reload a second time.")
+    }
+
+    func testFailsClosedWithoutExactOriginalNavigationIdentity() async {
+        let webView = SumiGPCLoadRecordingWebView()
+        let tab = makeTab()
+        _ = tab.installNavigationDelegate(on: webView)
+        let responder = SumiGPCNavigationResponder(
+            tab: tab,
+            isGPCEnabledProvider: { true }
+        )
+        var preferences = sumiPreferences()
+
+        let policy = await responder.decidePolicy(
+            for: mainFrameAction(url: URL(string: "https://example.com/")!),
+            webView: webView,
+            preferences: &preferences
+        )
+
+        XCTAssertEqual(policy, .cancel)
+        XCTAssertTrue(webView.loadedRequests.isEmpty)
+    }
+
+    func testOriginalCancellationCannotRetireRewrittenNavigation() async {
+        let targetURL = URL(string: "https://example.com/rewrite")!
+        let webView = SumiGPCLoadRecordingWebView()
+        let tab = makeTab()
+        _ = tab.installNavigationDelegate(on: webView)
+        let responder = SumiGPCNavigationResponder(
+            tab: tab,
+            isGPCEnabledProvider: { true }
+        )
+        var preferences = sumiPreferences()
+        let originalNavigation = NSObject()
+        let originalID = ObjectIdentifier(originalNavigation)
+
+        let policy = await responder.decidePolicy(
+            for: mainFrameAction(url: targetURL),
+            webView: webView,
+            context: SumiNavigationActionContext(
+                navigationID: originalID,
+                navigationLifetime: originalNavigation
+            ),
+            preferences: &preferences
+        )
+        XCTAssertEqual(policy, .cancel)
+
+        SumiTabLifecycleNavigationResponder(tab: tab).mainFrameNavigationDidTerminate(
+            SumiMainFrameNavigationTermination(
+                navigationID: originalID,
+                navigationLifetime: originalNavigation,
+                webView: webView,
+                reason: .actionCancelled
+            )
+        )
+
+        XCTAssertFalse(tab.shouldAcceptMainFrameLifecycle(
+            from: webView,
+            navigationID: originalID,
+            isCurrent: true
+        ))
+        XCTAssertNotNil(tab.currentMainFrameNavigationIntent(matching: targetURL))
     }
 
     func testDoesNotRewriteWhenGPCDisabled() async {
@@ -229,7 +306,8 @@ final class SumiGPCNavigationResponderTests: XCTestCase {
             modifierFlags: [],
             shouldDownload: false,
             isUserEnteredURL: false,
-            isCustom: false
+            isCustom: false,
+            isClientRedirect: false
         )
 
         let policy = await responder.decidePolicy(
@@ -299,6 +377,6 @@ final class SumiGPCLoadRecordingWebView: WKWebView {
 
     override func load(_ request: URLRequest) -> WKNavigation? {
         loadedRequests.append(request)
-        return nil
+        return super.load(request)
     }
 }

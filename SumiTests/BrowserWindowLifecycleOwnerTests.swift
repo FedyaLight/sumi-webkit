@@ -1,4 +1,6 @@
 import XCTest
+import WebKit
+import SumiWebRuntime
 
 @testable import Sumi
 
@@ -111,7 +113,7 @@ final class BrowserWindowLifecycleOwnerTests: XCTestCase {
         XCTAssertEqual(events, ["session", "siteData"])
     }
 
-    func testWindowCloseAfterRuntimeDeallocationUsesMinimalCleanupOnly() {
+    func testWindowCloseAfterRuntimeDeallocationUsesTerminalFallbackOnly() {
         let registry = WindowRegistry()
         let window = BrowserWindowState()
         let owner = BrowserWindowLifecycleOwner()
@@ -133,6 +135,77 @@ final class BrowserWindowLifecycleOwnerTests: XCTestCase {
         registry.unregister(window.id)
 
         XCTAssertEqual(events, ["fallback"])
+    }
+
+    func testRuntimeDeallocationFallbackTerminatesEveryCanonicalResidence() throws {
+        let registry = WindowRegistry()
+        let window = BrowserWindowState()
+        let owner = BrowserWindowLifecycleOwner()
+        var browserManager: BrowserManager? = BrowserManager()
+        let repository = try XCTUnwrap(browserManager?.webViewSessions)
+        let coordinator = try XCTUnwrap(browserManager?.bindTestWebViewCoordinator())
+        let trackedTabID = UUID()
+        let parkedTabID = UUID()
+        let untrackedTabID = UUID()
+        let pendingTabID = UUID()
+        let tracked = WKWebView()
+        let parked = WKWebView()
+        let untracked = WKWebView()
+        let pending = WKWebView()
+        let trackedTab = Tab(
+            id: trackedTabID,
+            webViewSessions: repository,
+            loadsCachedFaviconOnInit: false
+        )
+
+        coordinator.ownershipService.registerTrackedWebView(
+            tracked,
+            for: trackedTab,
+            in: window.id
+        )
+        WebViewSessionHandle(
+            tabID: parkedTabID,
+            repository: repository
+        ).park(parked)
+        WebViewSessionHandle(
+            tabID: untrackedTabID,
+            repository: repository
+        ).replaceUntracked(with: untracked)
+        XCTAssertNotNil(repository.beginPendingCleanup(of: pending, for: pendingTabID))
+        coordinator.protectionRuntime.beginHistorySwipe(
+            tabID: trackedTabID,
+            webView: tracked,
+            originURL: nil,
+            originHistoryItem: nil
+        )
+        XCTAssertTrue(
+            coordinator.protectionRuntime.hasActiveHistorySwipe(in: window.id)
+        )
+
+        registry.register(window)
+        weak var releasedBrowserManager = browserManager
+        browserManager = nil
+        XCTAssertNil(releasedBrowserManager)
+        attach(
+            owner,
+            windowRegistry: registry,
+            browserRuntimeIsAvailable: { false },
+            cleanupWindowAfterRuntimeDeallocation: { _ in
+                coordinator.lifecycleService
+                    .cleanupAfterBrowserRuntimeDeallocation()
+            }
+        )
+
+        registry.unregister(window.id)
+
+        XCTAssertTrue(repository.queries.isTrackingEmpty)
+        for webView in [tracked, parked, untracked, pending] {
+            XCTAssertNil(repository.residence(of: webView))
+        }
+        XCTAssertFalse(
+            coordinator.protectionRuntime.hasActiveHistorySwipe(in: window.id)
+        )
+        XCTAssertNil(coordinator.runtimeContextStore.environment)
     }
 
     func testInstalledCallbacksDoNotRetainWindowRegistryThroughDependencyContainer() {

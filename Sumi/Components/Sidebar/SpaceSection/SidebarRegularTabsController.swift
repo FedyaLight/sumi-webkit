@@ -183,7 +183,10 @@ extension SidebarRegularTabsController.Dependencies {
                 tabManager?.folderMutationOwner.moveTabToFolder(tab: tab, folderId: folderId)
             },
             assignTabToProfile: { [weak tabManager] tab, profileId in
-                tabManager?.profileAssignmentOwner.assign(tab: tab, toProfile: profileId) ?? false
+                tabManager?.profileAssignments.tabs.assign(
+                    tab,
+                    toProfile: profileId
+                ) ?? false
             }
         )
     }

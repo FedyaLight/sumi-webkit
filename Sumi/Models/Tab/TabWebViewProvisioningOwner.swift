@@ -62,12 +62,10 @@ final class TabWebViewProvisioningOwner {
         return webView
     }
 
-    func assignWebViewToWindow(
+    func prepareAssignedWebView(
         _ webView: WKWebView,
-        context: TabNormalWebViewRuntimeContext,
-        windowId: UUID
+        context: TabNormalWebViewRuntimeContext
     ) {
-        context.assignPrimaryWebView(webView, windowId)
         context.preparationRuntime.prepareAssignedWebView(webView)
     }
 
@@ -75,6 +73,8 @@ final class TabWebViewProvisioningOwner {
     func makeNormalTabWebView(
         context: TabNormalWebViewRuntimeContext,
         reason: String,
+        explicitProfile: Profile? = nil,
+        prepareExtensionRuntime: Bool = true,
         prepareConfiguration: ((WKWebViewConfiguration) -> Void)? = nil
     ) -> WKWebView? {
         let startupTrace = StartupPerformanceTrace.firstWebViewCreationStarted()
@@ -82,11 +82,15 @@ final class TabWebViewProvisioningOwner {
             StartupPerformanceTrace.firstWebViewCreationFinished(startupTrace)
         }
 
-        guard let profile = context.resolveProfile() else {
+        guard let profile = explicitProfile ?? context.resolveProfile() else {
             RuntimeDiagnostics.emit(
                 "[Tab] Unable to create normal WebView during \(reason); profile is unresolved."
             )
-            context.deferWebViewUntilProfileAvailable()
+            if context.deferWebViewUntilProfileAvailable() == false {
+                RuntimeDiagnostics.emit(
+                    "[Tab] WebView creation cannot resume because no profile update source is attached."
+                )
+            }
             return nil
         }
 
@@ -107,7 +111,12 @@ final class TabWebViewProvisioningOwner {
         prepareConfiguration?(configuration)
 
         let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
-        configureNormalTabWebView(webView, context: context, reason: reason)
+        configureNormalTabWebView(
+            webView,
+            context: context,
+            reason: reason,
+            prepareExtensionRuntime: prepareExtensionRuntime
+        )
         return webView
     }
 
@@ -132,13 +141,16 @@ final class TabWebViewProvisioningOwner {
     private func configureNormalTabWebView(
         _ webView: FocusableWKWebView,
         context: TabNormalWebViewRuntimeContext,
-        reason: String
+        reason: String,
+        prepareExtensionRuntime: Bool
     ) {
         context.preparationRuntime.prepareCreatedFocusableWebView(
             webView,
             context.currentURL(),
             reason,
-            .normal
+            CreatedWebViewPreparationOptions(
+                prepareExtensionRuntime: prepareExtensionRuntime
+            )
         )
     }
 
@@ -151,7 +163,7 @@ final class TabWebViewProvisioningOwner {
         return context.configurationRuntime.normalTabWebViewConfiguration(
             currentURL,
             profile,
-            context.normalTabUserScriptsProvider(currentURL),
+            context.normalTabUserScriptsProvider(currentURL, profile.id),
             context.configurationContext()
         )
     }

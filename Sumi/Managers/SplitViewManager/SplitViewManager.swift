@@ -21,7 +21,8 @@ final class SplitViewManager: ObservableObject {
     weak var windowRegistry: WindowRegistry?
     private var runtime: SplitViewRuntime?
 
-    private var splitDropTargetResolver = SplitDropTargetResolver()
+    private let groupedDropTargetResolver = SplitGroupedDropTargetResolver()
+    private var fullGroupLayoutCatalog = SplitFullGroupLayoutCatalog()
 
     private lazy var previewStateOwner = SplitPreviewStateOwner(
         activeWindowId: { [weak self] in self?.windowRegistry?.activeWindow?.id },
@@ -95,9 +96,13 @@ final class SplitViewManager: ObservableObject {
         guard let tabManager,
               let group = tabManager.splitGroupCollectionStateOwner.group(with: groupId)
         else { return }
-        let updatedTree = group.layoutTree
-            .updatingChildSizes(at: path, sizes: sizes)
-            .canonicalizedForTiles() ?? group.layoutTree
+        let resizedTree = SplitLayoutSizing.updatingChildSizes(
+            in: group.layoutTree,
+            at: path,
+            sizes: sizes
+        )
+        let updatedTree = SplitLayoutReconciler.canonicalizedForTiles(resizedTree)
+            ?? group.layoutTree
         tabManager.splitGroupStructureOwner.upsertSplitGroup(
             SplitGroup(
                 id: group.id,
@@ -121,7 +126,7 @@ final class SplitViewManager: ObservableObject {
     }
 
     func handleTabClosure(_ tabId: UUID) {
-        splitDropTargetResolver.removeAllCachedCandidates(keepingCapacity: true)
+        fullGroupLayoutCatalog.removeAll(keepingCapacity: true)
         tabManager?.splitGroupStructureOwner.removeSplitGroups(containing: tabId)
         guard let windows = windowRegistry?.windows else { return }
         for windowState in windows.values {
@@ -266,7 +271,8 @@ final class SplitViewManager: ObservableObject {
         let targetGroup = tabManager.splitGroupStructureOwner.splitGroup(containing: targetTab.id)
         if let targetGroup, targetGroup.contains(tab.id) {
             let updated: SplitGroup?
-            if let resolved = targetGroup.resolvingDrop(
+            if let resolved = SplitLayoutDropMutation.resolve(
+                in: targetGroup.layoutTree,
                 draggedTabId: tab.id,
                 target: target,
                 bounds: target.targetRect
@@ -313,7 +319,8 @@ final class SplitViewManager: ObservableObject {
                     host: targetGroup.host,
                     members: targetGroup.removingMember(tabId: targetTab.id).members + [resolvedIncoming.member]
                 )
-            } else if let resolved = targetGroup.resolvingDrop(
+            } else if let resolved = SplitLayoutDropMutation.resolve(
+                in: targetGroup.layoutTree,
                 draggedTabId: resolvedIncoming.tab.id,
                 target: target,
                 bounds: target.targetRect
@@ -441,11 +448,12 @@ final class SplitViewManager: ObservableObject {
 
         if let currentTabId = windowState.currentTabId,
            let group = tabManager.splitGroupStructureOwner.splitGroup(containing: currentTabId) {
-            return splitDropTargetResolver.target(
+            return groupedDropTargetResolver.target(
                 in: group,
                 at: location,
                 bounds: bounds,
-                draggedTabId: draggedTabId
+                draggedTabId: draggedTabId,
+                fullGroupLayouts: &fullGroupLayoutCatalog
             )
         }
 
@@ -455,7 +463,7 @@ final class SplitViewManager: ObservableObject {
             return nil
         }
 
-        return splitDropTargetResolver.firstSplitTarget(
+        return SplitFirstDropTargetResolver.target(
             currentTabId: currentTab.id,
             at: location,
             bounds: bounds,

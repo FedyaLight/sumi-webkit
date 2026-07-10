@@ -4,7 +4,7 @@ enum SumiImportPreviewWarningBuilder {
         var warnings: [String] = []
         let overflow = Dictionary(grouping: data.essentials, by: { $0.profileId ?? "" })
             .values
-            .reduce(0) { $0 + max(0, $1.count - SumiImportApplier.maxEssentialsPerProfile) }
+            .reduce(0) { $0 + max(0, $1.count - SumiImportPlanBuilder.maxEssentialsPerProfile) }
         if overflow > 0 {
             warnings.append("\(overflow) \(source) essentials exceed Sumi's 12-item profile limit and will become space-pinned launchers.")
         }

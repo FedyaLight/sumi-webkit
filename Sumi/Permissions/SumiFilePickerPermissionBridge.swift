@@ -53,7 +53,9 @@ final class SumiFilePickerPermissionBridge {
         completionHandler: @escaping ([URL]?) -> Void
     ) {
         let once = SumiFilePickerCompletionHandler(completionHandler)
-        guard webView != nil else {
+        guard webView != nil,
+              tabContext.isCurrentPage(),
+              currentPageId() == tabContext.pageId else {
             once.resolve(nil)
             return
         }
@@ -66,14 +68,14 @@ final class SumiFilePickerPermissionBridge {
             }
 
             let decision = await self.coordinator.queryPermissionState(context)
+            guard webView != nil,
+                  tabContext.isCurrentPage(),
+                  currentPageId() == tabContext.pageId else {
+                once.resolve(nil)
+                return
+            }
             switch SumiFilePickerDecisionMapper.action(for: decision) {
             case .presentPanel:
-                guard webView != nil,
-                      currentPageId() == tabContext.pageId
-                else {
-                    once.resolve(nil)
-                    return
-                }
                 self.presentPanel(
                     for: request,
                     tabContext: tabContext,
@@ -174,6 +176,7 @@ final class SumiFilePickerPermissionBridge {
         panelPresenter.presentFilePicker(presentationRequest, for: webView) { [weak self, weak webView] result in
             guard let self else { return }
             guard webView != nil,
+                  tabContext.isCurrentPage(),
                   currentPageId() == tabContext.pageId
             else {
                 self.resolvePending(requestIds: [request.id], result: .cancelled)

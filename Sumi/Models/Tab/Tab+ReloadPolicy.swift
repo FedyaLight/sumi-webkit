@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 extension Tab {
     func safariBlockerDesiredAttachmentState(
@@ -195,6 +196,16 @@ extension Tab {
         targetURL: URL?,
         reason: String
     ) -> Bool {
+        rebuildNormalWebViewForContentBlockingPolicyOutcome(
+            targetURL: targetURL,
+            reason: reason
+        ).didReplace
+    }
+
+    func rebuildNormalWebViewForContentBlockingPolicyOutcome(
+        targetURL: URL?,
+        reason: String
+    ) -> TabWebViewReplacementOutcome {
         reloadPolicyStateOwner.rebuildNormalWebViewForContentBlockingPolicyIfNeeded(
             targetURL: targetURL,
             reason: reason,
@@ -208,6 +219,16 @@ extension Tab {
         targetURL: URL?,
         reason: String
     ) -> Bool {
+        rebuildNormalWebViewForAutoplayOutcome(
+            targetURL: targetURL,
+            reason: reason
+        ).didReplace
+    }
+
+    func rebuildNormalWebViewForAutoplayOutcome(
+        targetURL: URL?,
+        reason: String
+    ) -> TabWebViewReplacementOutcome {
         reloadPolicyStateOwner.rebuildNormalWebViewForAutoplayIfNeeded(
             targetURL: targetURL,
             reason: reason,
@@ -221,14 +242,27 @@ extension Tab {
         targetURL: URL?,
         reason: String
     ) -> Bool {
-        rebuildNormalWebViewForContentBlockingPolicyIfNeeded(
+        rebuildNormalWebViewForConfigurationPolicyOutcome(
+            targetURL: targetURL,
+            reason: reason
+        ).didReplace
+    }
+
+    func rebuildNormalWebViewForConfigurationPolicyOutcome(
+        targetURL: URL?,
+        reason: String
+    ) -> TabWebViewReplacementOutcome {
+        let contentBlockingOutcome = rebuildNormalWebViewForContentBlockingPolicyOutcome(
             targetURL: targetURL,
             reason: "\(reason).contentBlockingPolicy"
         )
-            || rebuildNormalWebViewForAutoplayIfNeeded(
-                targetURL: targetURL,
-                reason: "\(reason).autoplayPolicy"
-            )
+        guard contentBlockingOutcome == .notNeeded else {
+            return contentBlockingOutcome
+        }
+        return rebuildNormalWebViewForAutoplayOutcome(
+            targetURL: targetURL,
+            reason: "\(reason).autoplayPolicy"
+        )
     }
 
     private func reloadPolicyWebViewRebuildContext() -> TabReloadPolicyWebViewRebuildContext {

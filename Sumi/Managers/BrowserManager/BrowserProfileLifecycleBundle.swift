@@ -16,7 +16,7 @@ final class BrowserProfileLifecycleBundle {
     init(browserManager: BrowserManager) {
         self.profileSwitchTransitionOwner = BrowserProfileSwitchTransitionOwner(
             host: browserManager,
-            auxiliaryWindowManager: browserManager.auxiliaryWindowManager,
+            auxiliaryWindowTeardown: browserManager.auxiliaryWindows.teardown,
             bookmarkManager: browserManager.bookmarkManager,
             extensionsModule: browserManager.extensionsModule,
             faviconService: browserManager.dataServices.faviconService,
@@ -90,10 +90,10 @@ final class BrowserProfileLifecycleBundle {
             },
             applyWindowSessionSnapshot: { [weak browserManager] snapshot, windowState in
                 guard let browserManager else { return }
-                browserManager.windowSessionService.applyWindowSessionSnapshot(
+                browserManager.windowSessionBundle.restoreService
+                    .applyWindowSessionSnapshot(
                     snapshot,
-                    to: windowState,
-                    runtime: WindowSessionRuntimeFactory.make(for: browserManager)
+                    to: windowState
                 )
             },
             reopenWindow: { [weak browserManager] snapshot in

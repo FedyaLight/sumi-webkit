@@ -8,17 +8,19 @@
 
 import Foundation
 
-/// Groups window-session owners and the Phase 4C window-session command façade.
-/// `WindowSessionService` stays on BrowserManager so tests can replace the
-/// session key / service before the bag's lazy owners are first touched.
+/// Composes independent window-session persistence, scheduling, snapshot, and
+/// restore capabilities with the browser's window owners.
 @MainActor
 final class BrowserWindowSessionBundle {
+    let restoreService: WindowSessionRestoreService
     let commands: BrowserWindowSessionCommands
     let spaceStateOwner: BrowserWindowSpaceStateOwner
     let tabContextOwner: BrowserWindowTabContextOwner
     let visualMutationOwner: BrowserWindowVisualMutationOwner
     let scopedNavigationOwner: BrowserWindowScopedNavigationOwner
-    let activationOwner: BrowserWindowSessionActivationOwner
+    let restoration: BrowserWindowSessionRestorationService
+    let activation: BrowserWindowActivationService
+    let persistence: WindowSessionPersistenceCoordinator
     let historySessionOwner: BrowserWindowHistorySessionOwner
     let recentlyClosedRestoreOwner: BrowserRecentlyClosedRestoreOwner
     let windowStateValidationOwner: BrowserWindowStateValidationOwner
@@ -27,6 +29,32 @@ final class BrowserWindowSessionBundle {
         browserManager: BrowserManager,
         startupSessionRestoreOwner: BrowserStartupSessionRestoreOwner
     ) {
+        let snapshotFactory = WindowSessionSnapshotFactory(
+            splitManager: browserManager.splitManager,
+            glanceManager: browserManager.glanceManager
+        )
+        let persistenceScheduler =
+            browserManager.windowSessionPersistenceScheduler
+        let persistenceService = WindowSessionPersistenceService(
+            store: browserManager.windowSessionSnapshotStore,
+            scheduler: persistenceScheduler,
+            snapshotFactory: snapshotFactory
+        )
+        let restoreService = WindowSessionRestoreService(
+            snapshotStore: browserManager.windowSessionSnapshotStore,
+            persistence: persistenceService,
+            tabManager: browserManager.tabManager,
+            glanceManager: browserManager.glanceManager,
+            selectionService: browserManager.shellSelectionService,
+            selection: browserManager,
+            floatingBarSanitizer: browserManager.urlBarBundle
+                .floatingBarRoutingOwner,
+            themeCommitter: browserManager.chromeBundle
+                .workspaceThemeTransitionOwner,
+            splitFocus: browserManager.sidebarCommandService
+                .splitShortcutRouting
+        )
+        self.restoreService = restoreService
         self.commands = BrowserWindowSessionCommands(browserManager: browserManager)
         self.windowStateValidationOwner = BrowserWindowStateValidationOwner(
             browserManager: browserManager
@@ -80,7 +108,7 @@ final class BrowserWindowSessionBundle {
                 browserManager?.adoptProfileIfNeeded(for: windowState, context: .spaceChange)
             },
             persistWindowSession: { [weak browserManager] windowState in
-                browserManager?.windowSessionBundle.activationOwner.persistWindowSession(for: windowState)
+                browserManager?.windowSessionBundle.persistence.persist(windowState)
             },
             completePendingSplitGroupFocusIfReady: { [weak browserManager] windowState, spaceId in
                 browserManager?.sidebarCommandService.splitShortcutRouting.completePendingSplitGroupFocusIfReady(
@@ -121,27 +149,26 @@ final class BrowserWindowSessionBundle {
         )
         self.visualMutationOwner = BrowserWindowVisualMutationOwner(
             hasActiveHistorySwipe: { [weak browserManager] windowId in
-                browserManager?.webViewCoordinator?.hasActiveHistorySwipe(in: windowId) == true
+                browserManager?.webViewCoordinator?.protectionRuntime
+                    .hasActiveHistorySwipe(in: windowId) == true
             },
             currentTab: { [weak browserManager] windowState in
                 browserManager?.windowSessionBundle.tabContextOwner.currentTab(for: windowState)
             },
             performImmediateVisualHandoffIfPossible: { [weak browserManager] windowId in
-                browserManager?.webViewCoordinator?.performImmediateVisualHandoffIfPossible(
-                    in: windowId
-                ) ?? false
+                browserManager?.webViewCoordinator?.compositorRuntime
+                    .performImmediateVisualHandoffIfPossible(in: windowId)
+                    ?? false
             },
             prepareVisibleWebViews: { [weak browserManager] windowState in
                 guard let browserManager else { return false }
-                return browserManager.shellRuntime.requireWebViewCoordinator().prepareVisibleWebViews(
-                    for: windowState
-                )
+                return browserManager.shellRuntime.requireWebViewCoordinator()
+                    .visiblePreparationService.prepare(for: windowState)
             },
             schedulePrepareVisibleWebViews: { [weak browserManager] windowState in
                 guard let browserManager else { return }
-                browserManager.shellRuntime.requireWebViewCoordinator().schedulePrepareVisibleWebViews(
-                    for: windowState
-                )
+                browserManager.shellRuntime.requireWebViewCoordinator()
+                    .visiblePreparationService.schedule(for: windowState)
             }
         )
         self.scopedNavigationOwner = BrowserWindowScopedNavigationOwner(
@@ -151,8 +178,19 @@ final class BrowserWindowSessionBundle {
             windowOwnedWebView: { [weak browserManager] tab, windowId in
                 browserManager?.webViewRoutingService.windowOwnedWebView(for: tab, in: windowId)
             },
-            reloadTab: { [weak browserManager] tabId, windowId in
-                browserManager?.webViewRoutingService.reloadTab(tabId, in: windowId)
+            materializeWebView: { [weak browserManager] tab, windowId in
+                browserManager?.webViewOwnershipService?.webView(
+                    for: tab,
+                    in: windowId
+                )
+            },
+            reloadTab: { [weak browserManager] tabId, windowId, intent, policy in
+                browserManager?.webViewRoutingService.reloadTab(
+                    tabId,
+                    in: windowId,
+                    intent: intent,
+                    policy: policy
+                ) ?? .failed
             },
             resolvedSearchEngineTemplate: { [weak browserManager] in
                 browserManager?.sumiSettings?.resolvedSearchEngineTemplate
@@ -176,7 +214,8 @@ final class BrowserWindowSessionBundle {
                 await browserManager?.historyBundle.historyMenuOwner.reopenWindow(from: snapshot)
             },
             mergeSnapshotForLastSessionRestore: { [weak browserManager] snapshot in
-                browserManager?.tabManager.lastSessionRestoreOwner.mergeSnapshotForLastSessionRestore(snapshot)
+                browserManager?.tabManager.lastSessionMergeMaterializer
+                    .merge(snapshot)
             },
             activeWindow: { [weak browserManager] in
                 browserManager?.windowRegistry?.activeWindow
@@ -197,19 +236,15 @@ final class BrowserWindowSessionBundle {
                 browserManager?.selectTab(tab, in: windowState)
             }
         )
-        self.historySessionOwner = BrowserWindowHistorySessionOwner(
+        let historySession = BrowserWindowHistorySessionOwner(
             windowState: { [weak browserManager] windowId in
                 browserManager?.windowRegistry?.windows[windowId]
             },
             allWindows: { [weak browserManager] in
                 browserManager?.windowRegistry?.allWindows ?? []
             },
-            makeWindowSessionSnapshot: { [weak browserManager] windowState in
-                guard let browserManager else { return nil }
-                return browserManager.windowSessionService.makeWindowSessionSnapshot(
-                    for: windowState,
-                    runtime: WindowSessionRuntimeFactory.make(for: browserManager)
-                )
+            makeWindowSessionSnapshot: { windowState in
+                return snapshotFactory.make(for: windowState)
             },
             windowDisplayTitle: { [weak browserManager] windowState in
                 guard let browserManager else { return "" }
@@ -233,48 +268,33 @@ final class BrowserWindowSessionBundle {
             },
             startupRestore: startupSessionRestoreOwner
         )
-        let windowSessionService = browserManager.windowSessionService
-        let nativeNowPlayingController = browserManager.nativeNowPlayingController
-        let backgroundMediaOptimizationService = browserManager.backgroundMediaOptimizationService
-        let permissionRuntime = browserManager.permissionRuntime
-        self.activationOwner = BrowserWindowSessionActivationOwner(
-            windowSessionService: windowSessionService,
-            runtime: { [weak browserManager] in
-                browserManager.map { WindowSessionRuntimeFactory.make(for: $0) }
-            },
-            refreshSplitPublishedState: { [weak browserManager] windowId in
-                browserManager?.splitManager.refreshPublishedState(for: windowId)
-            },
-            updateFindManagerCurrentTab: { [weak browserManager] in
-                browserManager?.updateFindManagerCurrentTab()
-            },
-            notifyExtensionWindowOpened: { [weak browserManager] windowState in
-                browserManager?.extensionsModule.notifyWindowOpenedIfLoaded(windowState)
-            },
-            notifyExtensionWindowFocused: { [weak browserManager] windowState in
-                browserManager?.extensionsModule.notifyWindowFocusedIfLoaded(windowState)
-            },
-            reconcileStartupSessionIfPossible: { [weak browserManager] in
-                browserManager?.reconcileStartupSessionIfPossible()
-            },
-            adoptProfileForWindowActivation: { [weak browserManager] windowState in
-                browserManager?.adoptProfileIfNeeded(for: windowState, context: .windowActivation)
-            },
-            scheduleNativeNowPlayingRefresh: { delayNanoseconds in
-                nativeNowPlayingController.scheduleRefresh(delayNanoseconds: delayNanoseconds)
-            },
-            scheduleBackgroundMediaReconcile: { reason in
-                backgroundMediaOptimizationService.scheduleReconcile(reason: reason)
-            },
-            pauseGeolocationOnAppBackgroundIfNeeded: {
-                permissionRuntime.pauseGeolocationOnAppBackgroundIfNeeded()
-            },
-            resumeGeolocationOnAppForegroundIfNeeded: {
-                permissionRuntime.resumeGeolocationOnAppForegroundIfNeeded()
-            },
-            refreshLastSessionWindowsStore: { [weak browserManager] in
-                browserManager?.windowSessionBundle.historySessionOwner.refreshLastSessionWindowsStore(excludingWindowID: nil)
-            }
+        self.historySessionOwner = historySession
+
+        let persistence = WindowSessionPersistenceCoordinator(
+            persistence: persistenceService,
+            scheduler: persistenceScheduler,
+            history: historySession
+        )
+        self.persistence = persistence
+        self.restoration = BrowserWindowSessionRestorationService(
+            restoration: restoreService,
+            extensions: browserManager.extensionsModule,
+            profileSupport: browserManager,
+            startupSessions: browserManager
+        )
+        self.activation = BrowserWindowActivationService(
+            splitManager: browserManager.splitManager,
+            sidebarPresentation: browserManager.chromeBundle
+                .sidebarPresentationOwner,
+            persistence: persistence,
+            activePageRouting: browserManager.urlBarBundle
+                .activePageRoutingOwner,
+            findManager: browserManager.findManager,
+            extensions: browserManager.extensionsModule,
+            profileRouter: browserManager.sumiProfileRouter,
+            profileSupport: browserManager,
+            nowPlaying: browserManager.nativeNowPlayingController,
+            backgroundMedia: browserManager.backgroundMediaOptimizationService
         )
     }
 }

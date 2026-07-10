@@ -103,17 +103,15 @@ final class BrowserChromeCommands {
             activeWindowId: { [weak browserManager] in
                 browserManager?.windowRegistry?.activeWindow?.id
             },
-            webViewLookup: { [weak browserManager] tab, windowId in
-                browserManager?.webViewRoutingService.windowOwnedWebView(for: tab, in: windowId)
-            },
-            reloadWindowScopedPage: { [weak browserManager] tab, windowId, reason in
+            reloadWindowScopedPage: { [weak browserManager] tab, windowId, reason, policy in
                 guard let browserManager,
                       let windowState = browserManager.windowRegistry?.windows[windowId]
                 else { return }
                 browserManager.windowSessionBundle.scopedNavigationOwner.refreshWindowScopedPage(
                     tab: tab,
                     in: windowState,
-                    reason: reason
+                    reason: reason,
+                    policy: policy
                 )
             }
         )

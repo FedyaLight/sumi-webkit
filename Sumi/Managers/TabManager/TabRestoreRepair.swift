@@ -12,12 +12,12 @@ enum TabRestoreRepair {
     /// Detaches folders whose parent is missing, in a different space, self-referential, or
     /// part of a cycle, so the restored hierarchy is always a valid forest.
     static func repairedFolderHierarchy(
-        _ folders: [TabSnapshotRepository.SnapshotFolder],
+        _ folders: [TabPersistenceFolder],
         repairReasons: inout Set<String>
-    ) -> [TabSnapshotRepository.SnapshotFolder] {
+    ) -> [TabPersistenceFolder] {
         let foldersById = Dictionary(uniqueKeysWithValues: folders.map { ($0.id, $0) })
 
-        func hasCycle(from folder: TabSnapshotRepository.SnapshotFolder) -> Bool {
+        func hasCycle(from folder: TabPersistenceFolder) -> Bool {
             var seen: Set<UUID> = [folder.id]
             var parentId = folder.parentFolderId
             while let id = parentId {
@@ -33,7 +33,7 @@ enum TabRestoreRepair {
                   parent.spaceId == folder.spaceId,
                   !hasCycle(from: folder) else {
                 repairReasons.insert("moved folder out of invalid parent")
-                return TabSnapshotRepository.SnapshotFolder(
+                return TabPersistenceFolder(
                     id: folder.id,
                     name: folder.name,
                     icon: folder.icon,
@@ -57,7 +57,7 @@ enum TabRestoreRepair {
     ) -> [SplitGroup] {
         guard let data, data.isEmpty == false else { return [] }
         do {
-            let decoded = try JSONDecoder().decode([SplitGroup].self, from: data)
+            let decoded = try TabPersistenceCodec().decodeSplitGroups(from: data)
             let restored = decoded.compactMap { group -> SplitGroup? in
                 let repairedGroup = repairShortcutBackedSplitGroup(
                     group,

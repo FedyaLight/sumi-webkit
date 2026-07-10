@@ -1,3 +1,4 @@
+import SumiWebRuntime
 import WebKit
 import XCTest
 
@@ -5,90 +6,84 @@ import XCTest
 
 @MainActor
 final class TabWebViewReplacementContextOwnerTests: XCTestCase {
-    func testMakeContextReflectsUntrackedTabWebViewOwnership() {
+    func testMakeContextReflectsUntrackedOwnership() {
         let owner = TabWebViewReplacementContextOwner()
         let tab = Tab(url: URL(string: "https://example.com/replacement-context")!)
         let existingWebView = WKWebView()
         let replacementWebView = WKWebView()
-        let windowId = UUID()
-
         tab.replaceUntrackedWebView(existingWebView)
-
-        let context = owner.makeContext(for: tab)
-
-        XCTAssertEqual(context.tabId, tab.id)
-        XCTAssertIdentical(context.existingWebView(), existingWebView)
-        XCTAssertNil(context.trackedWindowIdContainingWebView(existingWebView))
-        XCTAssertFalse(context.hasTrackedWebViews(tab.id))
-        XCTAssertFalse(context.removeTrackedWebViews())
-
-        context.replaceUntrackedWebView(replacementWebView)
-
-        XCTAssertIdentical(tab.resolvedCurrentWebView(), replacementWebView)
-
-        context.assignWebViewToWindow(replacementWebView, windowId)
-
-        XCTAssertIdentical(tab.resolvedAssignedWebView(), replacementWebView)
-        XCTAssertEqual(tab.resolvedPrimaryWindowId(), windowId)
-
-        context.clearCurrentWebViewOwnership()
-
-        XCTAssertNil(tab.resolvedCurrentWebView())
-        XCTAssertNil(tab.resolvedPrimaryWindowId())
-    }
-
-    func testMakeContextUsesInjectedReplacementRuntimeWithoutBrowserManager() {
-        let owner = TabWebViewReplacementContextOwner()
-        let tab = Tab(url: URL(string: "https://example.com/replacement-runtime")!)
-        let webView = WKWebView()
-        let windowId = UUID()
-        var setTrackedCalls: [TrackedWebViewSetCall] = []
-        var removeTrackedTabIds: [UUID] = []
-        var refreshedWindowIds: [UUID] = []
-
         tab.navigationRuntime.webViewReplacementRuntime = TabWebViewReplacementRuntime(
-            trackedWindowIdContainingWebView: { candidate in
-                XCTAssertIdentical(candidate, webView)
-                return windowId
-            },
-            hasTrackedWebViews: { tabId in
-                XCTAssertEqual(tabId, tab.id)
-                return true
-            },
-            setTrackedWebView: { replacement, tabId, resolvedWindowId in
-                setTrackedCalls.append(TrackedWebViewSetCall(
-                    webViewIdentifier: ObjectIdentifier(replacement),
-                    tabId: tabId,
-                    windowId: resolvedWindowId
-                ))
-            },
-            removeTrackedWebViews: { runtimeTab in
-                removeTrackedTabIds.append(runtimeTab.id)
-                return true
-            },
-            refreshWindowAfterWebViewReplacement: { resolvedWindowId in
-                refreshedWindowIds.append(resolvedWindowId)
+            rebuildTrackedWebViews: { _, _, _, _, _ in .failed },
+            commitUntrackedReplacement: { runtimeTab, previous, replacement, _ in
+                XCTAssertIdentical(runtimeTab, tab)
+                XCTAssertIdentical(previous, existingWebView)
+                runtimeTab.replaceUntrackedWebView(replacement)
+                return .committed
             }
         )
 
         let context = owner.makeContext(for: tab)
 
+        XCTAssertIdentical(context.existingWebView(), existingWebView)
+        XCTAssertFalse(context.hasTrackedWebViews())
+
+        XCTAssertEqual(
+            context.commitUntrackedReplacement(
+                existingWebView,
+                replacementWebView,
+                "context-test"
+            ),
+            .committed
+        )
+
+        XCTAssertIdentical(tab.resolvedCurrentWebView(), replacementWebView)
+    }
+
+    func testMakeContextRoutesTrackedTransactionThroughInjectedRuntime() {
+        let owner = TabWebViewReplacementContextOwner()
+        let tab = Tab(url: URL(string: "https://example.com/replacement-runtime")!)
+        let targetURL = URL(string: "https://example.com/target")!
+        var calls: [TrackedRebuildCall] = []
+
+        tab.navigationRuntime.webViewReplacementRuntime = TabWebViewReplacementRuntime(
+            rebuildTrackedWebViews: { runtimeTab, windowID, url, reason, configuration in
+                calls.append(TrackedRebuildCall(
+                    tabID: runtimeTab.id,
+                    windowID: windowID,
+                    url: url,
+                    reason: reason,
+                    configuration: configuration
+                ))
+                return .committed
+            },
+            commitUntrackedReplacement: { _, _, _, _ in .rejected }
+        )
+
+        let context = owner.makeContext(for: tab)
+
         XCTAssertFalse(tab.hasBrowserRuntime)
-        XCTAssertEqual(context.trackedWindowIdContainingWebView(webView), windowId)
-        XCTAssertTrue(context.hasTrackedWebViews(tab.id))
-        context.setTrackedWebView(webView, tab.id, windowId)
-        XCTAssertEqual(setTrackedCalls.map(\.webViewIdentifier), [ObjectIdentifier(webView)])
-        XCTAssertEqual(setTrackedCalls.map(\.tabId), [tab.id])
-        XCTAssertEqual(setTrackedCalls.map(\.windowId), [windowId])
-        XCTAssertTrue(context.removeTrackedWebViews())
-        XCTAssertEqual(removeTrackedTabIds, [tab.id])
-        context.refreshWindowAfterWebViewReplacement(windowId)
-        XCTAssertEqual(refreshedWindowIds, [windowId])
+        XCTAssertFalse(context.hasTrackedWebViews())
+        XCTAssertEqual(
+            context.rebuildTrackedWebViews(
+                targetURL,
+                "context-test",
+                .currentExtensionPage
+            ),
+            .committed
+        )
+        XCTAssertEqual(calls.count, 1)
+        XCTAssertEqual(calls[0].tabID, tab.id)
+        XCTAssertNil(calls[0].windowID)
+        XCTAssertEqual(calls[0].url, targetURL)
+        XCTAssertEqual(calls[0].reason, "context-test")
+        XCTAssertEqual(calls[0].configuration, .currentExtensionPage)
     }
 }
 
-private struct TrackedWebViewSetCall {
-    let webViewIdentifier: ObjectIdentifier
-    let tabId: UUID
-    let windowId: UUID
+private struct TrackedRebuildCall {
+    let tabID: UUID
+    let windowID: UUID?
+    let url: URL
+    let reason: String
+    let configuration: DeferredWebViewRebuildConfiguration
 }

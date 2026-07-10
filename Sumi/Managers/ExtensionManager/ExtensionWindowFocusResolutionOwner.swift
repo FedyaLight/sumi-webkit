@@ -14,7 +14,10 @@ import WebKit
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionWindowFocusResolutionOwner {
-    private let browserBridgeContext: @MainActor () -> (any ExtensionBrowserBridgeContext)?
+    private let windowQuery: @MainActor () -> (any ExtensionWindowQuery)?
+    private let tabQuery: @MainActor () -> (any ExtensionTabQuery)?
+    private let auxiliaryWindows:
+        @MainActor () -> (any ExtensionAuxiliaryWindowControl)?
     private let profileIdForContext: @MainActor (WKWebExtensionContext) -> UUID?
     private let extensionIDForContext: @MainActor (WKWebExtensionContext) -> String?
     private let windowMatchesProfile: @MainActor (BrowserWindowState, UUID) -> Bool
@@ -23,7 +26,10 @@ final class ExtensionWindowFocusResolutionOwner {
     private let resolvedProfileIdForTab: @MainActor (Tab) -> UUID?
 
     init(
-        browserBridgeContext: @escaping @MainActor () -> (any ExtensionBrowserBridgeContext)?,
+        windowQuery: @escaping @MainActor () -> (any ExtensionWindowQuery)?,
+        tabQuery: @escaping @MainActor () -> (any ExtensionTabQuery)?,
+        auxiliaryWindows:
+            @escaping @MainActor () -> (any ExtensionAuxiliaryWindowControl)?,
         profileIdForContext: @escaping @MainActor (WKWebExtensionContext) -> UUID?,
         extensionIDForContext: @escaping @MainActor (WKWebExtensionContext) -> String?,
         windowMatchesProfile: @escaping @MainActor (BrowserWindowState, UUID) -> Bool,
@@ -31,7 +37,9 @@ final class ExtensionWindowFocusResolutionOwner {
         miniWindowAdapters: @escaping @MainActor () -> [ExtensionMiniWindowAdapter],
         resolvedProfileIdForTab: @escaping @MainActor (Tab) -> UUID?
     ) {
-        self.browserBridgeContext = browserBridgeContext
+        self.windowQuery = windowQuery
+        self.tabQuery = tabQuery
+        self.auxiliaryWindows = auxiliaryWindows
         self.profileIdForContext = profileIdForContext
         self.extensionIDForContext = extensionIDForContext
         self.windowMatchesProfile = windowMatchesProfile
@@ -43,7 +51,9 @@ final class ExtensionWindowFocusResolutionOwner {
     func focusedWindow(
         for extensionContext: WKWebExtensionContext
     ) -> (any WKWebExtensionWindow)? {
-        guard let browserContext = browserBridgeContext() else { return nil }
+        guard let windowQuery = windowQuery(),
+              let auxiliaryWindows = auxiliaryWindows()
+        else { return nil }
         let contextProfileId = profileIdForContext(extensionContext)
         let ownerExtensionId = extensionIDForContext(extensionContext)
         let ownerMiniWindowAdapters: [ExtensionMiniWindowAdapter] = {
@@ -55,25 +65,29 @@ final class ExtensionWindowFocusResolutionOwner {
         }()
 
         if let keyWindow = NSApp.keyWindow,
-           let session = browserContext.auxiliaryWindowSession(for: keyWindow),
+           let session = auxiliaryWindows.auxiliaryWindowSession(for: keyWindow),
            let miniWindowAdapter = session.miniWindowAdapter,
            ownerMiniWindowAdapters.contains(where: { $0.sessionId == miniWindowAdapter.sessionId }) {
-            browserContext.recordAuxiliaryWindowSessionFocus(session.id)
+            auxiliaryWindows.recordAuxiliaryWindowSessionFocus(session.id)
             return miniWindowAdapter
         }
 
         if let miniWindowAdapter = ownerMiniWindowAdapters.first {
-            browserContext.recordAuxiliaryWindowSessionFocus(miniWindowAdapter.sessionId)
+            auxiliaryWindows.recordAuxiliaryWindowSessionFocus(
+                miniWindowAdapter.sessionId
+            )
             return miniWindowAdapter
         }
 
         if let keyWindow = NSApp.keyWindow,
-           let mainWindowState = browserContext.extensionWindowState(forAppKitWindow: keyWindow),
+           let mainWindowState = windowQuery.extensionWindowState(
+            forAppKitWindow: keyWindow
+           ),
            contextProfileId.map({ windowMatchesProfile(mainWindowState, $0) }) ?? true {
             return windowAdapter(mainWindowState.id)
         }
 
-        if let activeWindow = browserContext.activeExtensionWindowState,
+        if let activeWindow = windowQuery.activeExtensionWindowState,
            contextProfileId.map({ windowMatchesProfile(activeWindow, $0) }) ?? true {
             return windowAdapter(activeWindow.id)
         }
@@ -83,7 +97,7 @@ final class ExtensionWindowFocusResolutionOwner {
     func openWindows(
         for extensionContext: WKWebExtensionContext
     ) -> [any WKWebExtensionWindow] {
-        guard let browserContext = browserBridgeContext(),
+        guard let windowQuery = windowQuery(),
               let contextProfileId = profileIdForContext(extensionContext)
         else { return [] }
 
@@ -98,7 +112,7 @@ final class ExtensionWindowFocusResolutionOwner {
         }()
 
         var openWindows: [any WKWebExtensionWindow] = ownerMiniWindowAdapters
-        openWindows += browserContext.allExtensionWindowStates.compactMap { windowState -> (any WKWebExtensionWindow)? in
+        openWindows += windowQuery.allExtensionWindowStates.compactMap { windowState -> (any WKWebExtensionWindow)? in
             guard windowMatchesProfile(windowState, contextProfileId) else {
                 return nil
             }
@@ -112,14 +126,18 @@ final class ExtensionWindowFocusResolutionOwner {
         ownerExtensionID: String,
         profileId: UUID?
     ) -> [ExtensionMiniWindowAdapter] {
-        guard let browserContext = browserBridgeContext() else { return [] }
+        guard let tabQuery = tabQuery(),
+              let auxiliaryWindows = auxiliaryWindows()
+        else { return [] }
 
         var adapters = allMiniWindowAdapters().compactMap { adapter -> ExtensionMiniWindowAdapter? in
-            guard let session = browserContext.auxiliaryWindowSession(for: adapter.sessionId),
+            guard let session = auxiliaryWindows.auxiliaryWindowSession(
+                    for: adapter.sessionId
+                  ),
                   session.ownerExtensionID == ownerExtensionID,
                   session.window.isVisible,
                   let sessionAdapter = session.miniWindowAdapter,
-                  let tab = browserContext.extensionTab(for: sessionAdapter.tabId)
+                  let tab = tabQuery.extensionTab(for: sessionAdapter.tabId)
             else {
                 return nil
             }
@@ -133,7 +151,7 @@ final class ExtensionWindowFocusResolutionOwner {
             lhs.sessionId.uuidString < rhs.sessionId.uuidString
         }
 
-        if let focused = browserContext.focusedExtensionMiniWindowAdapter(
+        if let focused = auxiliaryWindows.focusedExtensionMiniWindowAdapter(
             forOwnerExtensionID: ownerExtensionID
         ),
            let focusedIndex = adapters.firstIndex(where: { $0.sessionId == focused.sessionId }) {

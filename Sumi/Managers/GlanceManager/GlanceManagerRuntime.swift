@@ -1,4 +1,5 @@
 import Foundation
+import SumiWebRuntime
 import WebKit
 
 @MainActor
@@ -28,7 +29,7 @@ extension GlanceManager {
             SumiWebViewContainerView,
             UUID,
             UUID,
-            @escaping @MainActor () -> Void
+            @escaping PromotedHostAttachmentCompletion
         ) -> Bool
         let previewWebView: @MainActor (Tab) -> WKWebView?
         let ensurePreviewWebView: @MainActor (Tab, UUID) -> WKWebView?

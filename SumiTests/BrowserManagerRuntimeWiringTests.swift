@@ -22,7 +22,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
                 container: try makeInMemoryStartupContainer()
             )
         )
-        browserManager.webViewCoordinator = WebViewCoordinator()
+        browserManager.bindTestWebViewCoordinator()
 
         XCTAssertTrue(browserManager.boostsModule.isEnabled)
         XCTAssertTrue(browserManager.boostsModule.hasAttachedRuntime)
@@ -37,7 +37,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         XCTAssertTrue(downloadRetryRuntimeCanResolveWindowOwnedWebView(browserManager))
         let boostsRuntimeAttached = await boostsModuleCanUseAttachedRuntime(browserManager)
         XCTAssertTrue(boostsRuntimeAttached)
-        XCTAssertTrue(auxiliaryWindowManagerCanUseAttachedRuntime(browserManager))
+        XCTAssertTrue(auxiliaryWindowServicesCanOpenPopup(browserManager))
         XCTAssertTrue(glanceRuntimeCanPreparePreviewTabs(browserManager))
         XCTAssertFalse(browserManager.extensionsModule.hasLoadedRuntime)
         XCTAssertFalse(browserManager.userscriptsModule.hasLoadedRuntime)
@@ -45,7 +45,6 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
 
     func testTabRuntimeCompositionServiceAttachesResourceRuntimesAndHandlesStructuralChanges() async throws {
         let structuralChanges = PassthroughSubject<Void, Never>()
-        let coordinator = WebViewCoordinator()
         let visibleWindowID = UUID()
         let selectedTabID = UUID()
         let visibleTabID = UUID()
@@ -53,12 +52,14 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
             url: URL(string: "https://example.com/runtime-composition")!,
             loadsCachedFaviconOnInit: false
         )
+        let webView = WKWebView()
         let previousTab = Tab(
             url: URL(string: "https://example.com/previous")!,
             loadsCachedFaviconOnInit: false
         )
 
-        var attachedTabSuspensionRuntime: TabSuspensionRuntime?
+        var installedTabSuspensionRuntime: TabSuspensionRuntimePorts?
+        var tabSuspensionInstallCount = 0
         var attachedBackgroundMediaRuntime: SumiBackgroundMediaOptimizationRuntime?
         var tabStructuralRevisionCount = 0
         var tabSuspensionReconcileReasons: [String] = []
@@ -68,8 +69,28 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         let structuralChangeHandled = expectation(description: "structural change handled")
 
         let dependencies = BrowserTabRuntimeCompositionService.Dependencies(
-            attachTabSuspensionRuntime: { runtime in
-                attachedTabSuspensionRuntime = runtime
+            installTabSuspensionRuntime: {
+                tabSuspensionInstallCount += 1
+                installedTabSuspensionRuntime = TabSuspensionRuntimePorts(
+                    context: TabSuspensionContextRuntime(
+                        selectedTabIDs: { [selectedTabID] },
+                        visibleTabIDsByWindow: {
+                            [visibleWindowID: [visibleTabID]]
+                        }
+                    ),
+                    webView: TabSuspensionWebViewRuntime(
+                        isAvailable: { true },
+                        liveWebViews: { _ in [webView] },
+                        suspendWebViews: { _, _ in true },
+                        isProtectedFromCompositorMutation: { _ in false }
+                    ),
+                    catalog: TabSuspensionCatalogRuntime(
+                        allKnownTabs: { [tab] },
+                        refreshLazyRestoreQueue: { context in
+                            refreshedLazyRestoreContexts.append(context)
+                        }
+                    )
+                )
             },
             attachBackgroundMediaOptimizationRuntime: { runtime in
                 attachedBackgroundMediaRuntime = runtime
@@ -85,17 +106,11 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
             scheduleBackgroundMediaReconcile: { reason in
                 backgroundMediaReconcileReasons.append(reason)
             },
-            webViewCoordinator: {
-                coordinator
+            webViewRuntimeAvailable: {
+                true
             },
-            memoryMode: {
-                .custom
-            },
-            customDeactivationDelay: {
-                42
-            },
-            tabEnergySaverActive: {
-                false
+            trackedWebViewEntries: { _ in
+                [(windowID: visibleWindowID, webView: webView)]
             },
             backgroundMediaEnergySaverActive: {
                 true
@@ -103,17 +118,8 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
             allKnownTabs: {
                 [tab]
             },
-            selectedTabIDs: {
-                [selectedTabID]
-            },
-            tabSuspensionVisibleTabIDsByWindow: {
-                [visibleWindowID: [visibleTabID]]
-            },
             backgroundMediaVisibleTabIDsByWindow: {
                 [visibleWindowID: [visibleTabID]]
-            },
-            refreshLazyRestoreQueue: { context in
-                refreshedLazyRestoreContexts.append(context)
             },
             notifyTabActivatedIfLoaded: { newTab, previousTab in
                 activatedTabs.append((newTab.id, previousTab?.id))
@@ -127,28 +133,38 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
             cancellable.cancel()
         }
 
-        let tabSuspensionRuntime = try XCTUnwrap(attachedTabSuspensionRuntime)
-        XCTAssertIdentical(tabSuspensionRuntime.webViewCoordinator(), coordinator)
-        XCTAssertEqual(tabSuspensionRuntime.memoryMode(), .custom)
-        XCTAssertEqual(tabSuspensionRuntime.customDeactivationDelay(), 42)
-        XCTAssertFalse(tabSuspensionRuntime.energySaverActive())
-        XCTAssertEqual(tabSuspensionRuntime.allKnownTabs().map(\.id), [tab.id])
-        XCTAssertEqual(tabSuspensionRuntime.selectedTabIDs(), [selectedTabID])
+        let suspensionRuntime = try XCTUnwrap(installedTabSuspensionRuntime)
+        XCTAssertEqual(tabSuspensionInstallCount, 1)
+        let contextRuntime = suspensionRuntime.context
+        XCTAssertEqual(contextRuntime.selectedTabIDs(), [selectedTabID])
         XCTAssertEqual(
-            tabSuspensionRuntime.visibleTabIDsByWindow(),
+            contextRuntime.visibleTabIDsByWindow(),
             [visibleWindowID: [visibleTabID]]
         )
+
+        let webViewRuntime = suspensionRuntime.webView
+        XCTAssertTrue(webViewRuntime.isAvailable())
+        XCTAssertEqual(webViewRuntime.liveWebViews(tab).count, 1)
+        XCTAssertIdentical(webViewRuntime.liveWebViews(tab).first, webView)
+
+        let catalogRuntime = suspensionRuntime.catalog
+        XCTAssertEqual(catalogRuntime.allKnownTabs().map(\.id), [tab.id])
 
         let lazyRestoreContext = TabSuspensionEvaluationContext(
             visibleTabIDs: [visibleTabID],
             selectedTabIDs: [selectedTabID],
             policy: TabSuspensionPolicy(memoryMode: .balanced)
         )
-        tabSuspensionRuntime.refreshLazyRestoreQueue(lazyRestoreContext)
+        catalogRuntime.refreshLazyRestoreQueue(lazyRestoreContext)
         XCTAssertEqual(refreshedLazyRestoreContexts, [lazyRestoreContext])
 
         let backgroundMediaRuntime = try XCTUnwrap(attachedBackgroundMediaRuntime)
-        XCTAssertIdentical(backgroundMediaRuntime.webViewCoordinator(), coordinator)
+        XCTAssertTrue(backgroundMediaRuntime.webViewRuntimeAvailable())
+        XCTAssertEqual(backgroundMediaRuntime.liveWebViewEntries(tab).count, 1)
+        XCTAssertIdentical(
+            backgroundMediaRuntime.liveWebViewEntries(tab).first?.webView,
+            webView
+        )
         XCTAssertTrue(backgroundMediaRuntime.energySaverActive())
         XCTAssertEqual(backgroundMediaRuntime.allKnownTabs().map(\.id), [tab.id])
         XCTAssertEqual(
@@ -205,7 +221,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         windowRegistry.register(windowState)
         windowRegistry.setActive(windowState)
 
-        let detachedTab = Tab(
+        let detachedTab = browserManager.tabManager.tabFactory.makeTab(
             url: URL(string: "https://detached.example")!,
             loadsCachedFaviconOnInit: false
         )
@@ -253,12 +269,18 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         windowRegistry.setActive(windowState)
         browserManager.tabManager.selectionStateOwner.replaceCurrentTab(staleGlobalTab)
 
-        let context = browserManager.tabSuspensionService.suspensionEvaluationContext(
-            policy: TabSuspensionPolicy(memoryMode: .balanced)
+        let suspensionRuntime = BrowserTabSuspensionRuntimeFactory.ports(
+            windowRegistry: { windowRegistry },
+            regularTabs: browserManager.tabManager.tabCollectionMembershipOwner,
+            lazyRestore: browserManager.tabManager.lazyRestoreCoordinator,
+            windowTabs: browserManager.windowSessionBundle.tabContextOwner,
+            splitManager: browserManager.splitManager,
+            webView: .inactive
         )
+        let selectedTabIDs = suspensionRuntime.context.selectedTabIDs()
 
-        XCTAssertEqual(context.selectedTabIDs, [selectedTab.id])
-        XCTAssertFalse(context.selectedTabIDs.contains(staleGlobalTab.id))
+        XCTAssertEqual(selectedTabIDs, [selectedTab.id])
+        XCTAssertFalse(selectedTabIDs.contains(staleGlobalTab.id))
     }
 
     private func compositorManagerCanUseAttachedRuntime(_ browserManager: BrowserManager) -> Bool {
@@ -320,9 +342,8 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
 
     private func downloadRetryRuntimeCanResolveWindowOwnedWebView(_ browserManager: BrowserManager) -> Bool {
         let windowRegistry = WindowRegistry()
-        let coordinator = WebViewCoordinator()
+        let coordinator = browserManager.bindTestWebViewCoordinator()
         browserManager.windowRegistry = windowRegistry
-        browserManager.webViewCoordinator = coordinator
 
         let space = browserManager.tabManager.spaceStateOwner.currentSpace
             ?? browserManager.tabManager.spaceLifecycleOwner.createSpace(name: "Download Runtime Wiring")
@@ -339,7 +360,11 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         windowRegistry.setActive(windowState)
 
         let webView = WKWebView()
-        coordinator.setWebView(webView, for: tab.id, in: windowState.id)
+        coordinator.ownershipService.registerTrackedWebView(
+            webView,
+            for: tab,
+            in: windowState.id
+        )
 
         guard let activeWindow = browserManager.downloadManager.retryRuntime.activeWindow(),
               let currentTab = browserManager.downloadManager.retryRuntime.currentTab(activeWindow),
@@ -356,9 +381,8 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
 
     private func boostsModuleCanUseAttachedRuntime(_ browserManager: BrowserManager) async -> Bool {
         let windowRegistry = WindowRegistry()
-        let coordinator = WebViewCoordinator()
+        let coordinator = browserManager.bindTestWebViewCoordinator()
         browserManager.windowRegistry = windowRegistry
-        browserManager.webViewCoordinator = coordinator
 
         let profileId = UUID()
         let space = browserManager.tabManager.spaceStateOwner.currentSpace
@@ -377,7 +401,11 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         windowRegistry.register(windowState)
         windowRegistry.setActive(windowState)
 
-        coordinator.setWebView(WKWebView(), for: tab.id, in: windowState.id)
+        coordinator.ownershipService.registerTrackedWebView(
+            WKWebView(),
+            for: tab,
+            in: windowState.id
+        )
 
         let started = await browserManager.boostsModule.startZapSelection(
             for: SumiBoost(profileId: profileId, host: "example.com"),
@@ -391,7 +419,9 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         return started
     }
 
-    private func auxiliaryWindowManagerCanUseAttachedRuntime(_ browserManager: BrowserManager) -> Bool {
+    private func auxiliaryWindowServicesCanOpenPopup(
+        _ browserManager: BrowserManager
+    ) -> Bool {
         let windowRegistry = WindowRegistry()
         browserManager.windowRegistry = windowRegistry
 
@@ -418,7 +448,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         windowRegistry.register(windowState)
         windowRegistry.setActive(windowState)
 
-        guard let webView = browserManager.auxiliaryWindowManager.presentWebPopup(
+        guard let webView = browserManager.auxiliaryWindows.popups.presentWebPopup(
             configuration: WKWebViewConfiguration(),
             request: URLRequest(url: URL(string: "https://example.com/popup")!),
             windowFeatures: WKWindowFeatures(),
@@ -427,8 +457,8 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         ) else {
             return false
         }
-        let session = browserManager.auxiliaryWindowManager.session(for: webView)
-        browserManager.auxiliaryWindowManager.teardown(for: webView, reason: .managerCloseAll)
+        let session = browserManager.auxiliaryWindows.sessions.session(for: webView)
+        browserManager.auxiliaryWindows.teardown.teardown(for: webView, reason: .bulkCleanup)
         return session?.openerTab === sourceTab
             && session?.tab.isAuxiliaryMiniWindow == true
     }
@@ -556,12 +586,12 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
             browsingDataCleanupService: cleanupService,
             permissionSiteActivityStore: try makeSiteActivityStore()
         )
-        let coordinator = WebViewCoordinator()
+        let coordinator = WebViewCoordinator(webViewSessions: browserManager.webViewSessions)
 
-        browserManager.webViewCoordinator = coordinator
+        browserManager.bindTestWebViewCoordinator(coordinator)
 
         let preparer = try XCTUnwrap(cleanupService.destructiveCleanupPreparer)
-        XCTAssertIdentical(preparer as AnyObject, coordinator)
+        XCTAssertIdentical(preparer as AnyObject, coordinator.websiteDataCleanupService)
     }
 
     func testWebViewCoordinatorWiringPreparesVisibleWebViewsThroughBrowserManager() async throws {
@@ -571,9 +601,9 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
             )
         )
         let windowRegistry = WindowRegistry()
-        let coordinator = WebViewCoordinator()
+        let coordinator = WebViewCoordinator(webViewSessions: browserManager.webViewSessions)
         browserManager.windowRegistry = windowRegistry
-        browserManager.webViewCoordinator = coordinator
+        browserManager.bindTestWebViewCoordinator(coordinator)
         await browserManager.drainProtectionRuntimeTasksForTests()
 
         let space = browserManager.tabManager.spaceStateOwner.currentSpace
@@ -591,10 +621,10 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         windowRegistry.setActive(windowState)
 
         XCTAssertTrue(browserManager.windowSessionBundle.visualMutationOwner.prepareVisibleWebViews(for: windowState))
-        XCTAssertNotNil(coordinator.getWebView(for: tab.id, in: windowState.id))
+        XCTAssertNotNil(coordinator.ownershipQuery.webView(for: tab.id, in: windowState.id))
     }
 
-    func testShellRuntimeCoordinatorBindingTransfersOwnershipAndCleanupPreparer() throws {
+    func testShellRuntimeCoordinatorBindingKeepsOnePermanentCoordinator() throws {
         let cleanupService = makeBrowsingDataCleanupService()
         let browserManager = BrowserManager(
             startupPersistence: BrowserManagerStartupPersistence(
@@ -603,23 +633,23 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
             browsingDataCleanupService: cleanupService,
             permissionSiteActivityStore: try makeSiteActivityStore()
         )
-        let firstCoordinator = WebViewCoordinator()
-        let secondCoordinator = WebViewCoordinator()
+        let coordinator = WebViewCoordinator(webViewSessions: browserManager.webViewSessions)
 
-        browserManager.webViewCoordinator = firstCoordinator
+        browserManager.webViewCoordinator = coordinator
 
-        XCTAssertIdentical(browserManager.webViewCoordinator, firstCoordinator)
-        XCTAssertIdentical(cleanupService.destructiveCleanupPreparer as AnyObject, firstCoordinator)
+        XCTAssertIdentical(browserManager.webViewCoordinator, coordinator)
+        XCTAssertIdentical(
+            cleanupService.destructiveCleanupPreparer as AnyObject,
+            coordinator.websiteDataCleanupService
+        )
 
-        browserManager.webViewCoordinator = secondCoordinator
+        browserManager.webViewCoordinator = coordinator
 
-        XCTAssertIdentical(browserManager.webViewCoordinator, secondCoordinator)
-        XCTAssertIdentical(cleanupService.destructiveCleanupPreparer as AnyObject, secondCoordinator)
-
-        browserManager.webViewCoordinator = nil
-
-        XCTAssertNil(browserManager.webViewCoordinator)
-        XCTAssertNil(cleanupService.destructiveCleanupPreparer)
+        XCTAssertIdentical(browserManager.webViewCoordinator, coordinator)
+        XCTAssertIdentical(
+            cleanupService.destructiveCleanupPreparer as AnyObject,
+            coordinator.websiteDataCleanupService
+        )
     }
 
     func testShellRuntimeWindowRegistryBindingUpdatesDependentRuntimeManagers() throws {
@@ -667,7 +697,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         XCTAssertIdentical(browserManager.browsingDataCleanupService, browsingDataCleanupService)
         XCTAssertEqual(faviconService.partitionProfileIds, [initialProfile.id])
 
-        let tab = Tab(
+        let tab = browserManager.tabManager.tabFactory.makeTab(
             url: URL(string: "https://example.com/path")!,
             loadsCachedFaviconOnInit: false
         )
@@ -780,7 +810,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
             ),
             permissionSiteActivityStore: try makeSiteActivityStore()
         )
-        browserManager.webViewCoordinator = WebViewCoordinator()
+        browserManager.bindTestWebViewCoordinator()
 
         let profile = Profile(name: "Settings Context")
         let space = Space(name: "Settings Context", profileId: profile.id)
@@ -835,7 +865,9 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
             permissionSiteActivityStore: try makeSiteActivityStore()
         )
         let windowState = BrowserWindowState()
-        let tab = Tab(loadsCachedFaviconOnInit: false)
+        let tab = browserManager.tabManager.tabFactory.makeTab(
+            loadsCachedFaviconOnInit: false
+        )
         let runtimeNotifications = BrowserManagerRuntimeWiring.tabSelectionRuntimeNotifications(
             for: browserManager
         )
@@ -879,7 +911,8 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
             nowPlayingController: nowPlayingController,
             permissionSiteActivityStore: try makeSiteActivityStore()
         )
-        let tab = Tab(
+        browserManager.bindTestWebViewCoordinator()
+        let tab = browserManager.tabManager.tabFactory.makeTab(
             url: URL(string: "https://example.com/video")!,
             loadsCachedFaviconOnInit: false
         )
@@ -999,6 +1032,12 @@ private final class FakeBrowsingDataCleanupScheduler: BrowsingDataCleanupSchedul
 
     private(set) var schedules: [Schedule] = []
 
+    func attachDestructiveCleanupPreparer(
+        _ preparer: (any SumiDestructiveBrowsingDataCleanupPreparing)?
+    ) {
+        _ = preparer
+    }
+
     func scheduleIfNeeded(_ request: SumiBrowsingDataCleanupScheduleRequest) {
         _ = request.historyManager
         schedules.append(
@@ -1018,6 +1057,12 @@ private final class FakeBrowsingDataCleanupScheduler: BrowsingDataCleanupSchedul
 private final class FakeBrowserSiteDataPolicyService: BrowserSiteDataPolicyEnforcing {
     private(set) var enforcedURLs: [URL?] = []
     private(set) var enforcedProfileIds: [UUID?] = []
+
+    func attachDestructiveCleanupPreparer(
+        _ preparer: (any SumiDestructiveBrowsingDataCleanupPreparing)?
+    ) {
+        _ = preparer
+    }
     private(set) var closedCleanupProfileIds: [UUID] = []
 
     func setBlockStorage(
@@ -1269,6 +1314,12 @@ private final class FakeBrowsingDataCredentialStore: SumiBasicAuthCredentialClea
 private final class FakeBrowserPrivacyService: BrowserPrivacyServicing {
     private(set) var clearCurrentPageCookiesCallCount = 0
     private(set) var hardReloadCurrentPageCallCount = 0
+
+    func attachDestructiveCleanupPreparer(
+        _ preparer: (any SumiDestructiveBrowsingDataCleanupPreparing)?
+    ) {
+        _ = preparer
+    }
 
     func clearCurrentPageCookies(using context: BrowserPrivacyService.Context) {
         _ = context

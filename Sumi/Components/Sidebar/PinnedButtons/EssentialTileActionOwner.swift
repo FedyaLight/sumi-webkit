@@ -67,8 +67,8 @@ struct EssentialTileActionOwner {
                     profileTarget: .init(
                         choices: profileChoices(for: pin),
                         onSelect: { profileId in
-                            browserContext.tabManager.profileAssignmentOwner.assign(
-                                shortcutPin: pin,
+                            browserContext.tabManager.profileAssignments.shortcuts.assign(
+                                pin,
                                 toExecutionProfile: profileId
                             )
                         }

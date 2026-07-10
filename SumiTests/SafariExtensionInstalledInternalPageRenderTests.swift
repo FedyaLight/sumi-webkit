@@ -120,10 +120,11 @@ final class SafariExtensionInstalledInternalPageRenderTests: XCTestCase {
         browserManager.windowRegistry = windowRegistry
         browserManager.profileManager.profiles = [profile]
         browserManager.currentProfile = profile
-        browserManager.webViewCoordinator = WebViewCoordinator()
+        browserManager.bindTestWebViewCoordinator()
         browserManager.tabManager = TabManager(
             runtimePorts: BrowserTabManagerRuntimePortsFactory.registry(for: browserManager),
             context: container.mainContext,
+            webViewSessions: browserManager.webViewSessions,
             loadPersistedState: false
         )
         let space = browserManager.tabManager.spaceLifecycleOwner.createSpace(
@@ -162,7 +163,7 @@ final class SafariExtensionInstalledInternalPageRenderTests: XCTestCase {
             extensionId: extensionId,
             profileId: profile.id
         )
-        manager.loadedExtensionManifests[extensionId] = webExtension.manifest
+        manager.runtimeSession.loadedExtensionManifests[extensionId] = webExtension.manifest
         manager.extensionsLoaded = true
 
         try controller.load(extensionContext)
@@ -340,7 +341,7 @@ final class SafariExtensionInstalledInternalPageRenderTests: XCTestCase {
         let pageURL = try XCTUnwrap(
             URL(string: pagePath, relativeTo: extensionContext.baseURL)?.absoluteURL
         )
-        let tab = try manager.openExtensionRequestedTab(
+        let tab = try manager.requestedTabOpening.open(
             url: pageURL,
             shouldBeActive: true,
             shouldBePinned: false,

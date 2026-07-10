@@ -10,8 +10,9 @@ matches="$(
   grep -rEn --include='*.swift' \
     -e '@EnvironmentObject.*BrowserManager' \
     -e '@Environment\([^)]*BrowserManager' \
-    -e '\.environmentObject\([^)]*\bbrowserManager\s*\)' \
-    -e '\.environment\([^)]*\bbrowserManager\s*\)' \
+    -e '\.environmentObject[[:space:]]*\([[:space:]]*browserManager[[:space:]]*\)' \
+    -e '\.environment[[:space:]]*\([[:space:]]*browserManager[[:space:]]*\)' \
+    -e '\.environment[[:space:]]*\([^,)]*,[[:space:]]*browserManager[[:space:]]*\)' \
     "${ui_paths[@]}" || [[ $? -eq 1 ]]
 )"
 

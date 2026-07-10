@@ -12,7 +12,9 @@ import WebKit
 
 @available(macOS 15.5, *)
 @MainActor
-final class ExtensionWebViewRuntimePreparationOwner {
+final class ExtensionWebViewRuntimePreparationOwner:
+    ExtensionWebViewRuntimePreparing
+{
     struct Dependencies {
         let runtime: @MainActor () -> ExtensionManagerRuntime
         let resolvedProfileId: @MainActor (UUID?) -> UUID?
@@ -178,30 +180,30 @@ extension ExtensionWebViewRuntimePreparationOwner.Dependencies {
                 manager?.registerTabWithExtensionRuntime(tab, reason: reason)
             },
             traceControllerBinding: { [weak manager] phase, profileId, controller, configuration, webView in
-                manager?.traceNativeMessagingContextBinding(
+                manager?.runtimeDiagnostics.traceNativeMessagingContextBinding(
                     phase: phase,
                     extensionId: nil,
                     profileId: profileId,
                     controller: controller,
                     configuration: configuration,
-                    webView: webView
+                    webView: webView,
+                    manager: manager
                 )
             },
-            controllerDescription: { [weak manager] controller in
-                manager?.extensionRuntimeControllerDescription(controller) ?? "nil"
+            controllerDescription: { controller in
+                ExtensionRuntimeDiagnostics.objectDescription(controller)
             },
-            configurationDescription: { [weak manager] configuration in
-                manager?.extensionRuntimeConfigurationDescription(configuration) ?? "nil"
+            configurationDescription: { configuration in
+                ExtensionRuntimeDiagnostics.objectDescription(configuration)
             },
-            userContentControllerDescription: { [weak manager] userContentController in
-                manager?.extensionRuntimeUserContentControllerDescription(userContentController)
-                    ?? "nil"
+            userContentControllerDescription: { userContentController in
+                ExtensionRuntimeDiagnostics.objectDescription(userContentController)
             },
             webViewDescription: { webView in
-                ExtensionRuntimeDiagnosticsOwner.objectDescription(webView)
+                ExtensionRuntimeDiagnostics.objectDescription(webView)
             },
             trace: { [weak manager] message in
-                manager?.extensionRuntimeTrace(message())
+                manager?.runtimeDiagnostics.trace(message())
             }
         )
     }

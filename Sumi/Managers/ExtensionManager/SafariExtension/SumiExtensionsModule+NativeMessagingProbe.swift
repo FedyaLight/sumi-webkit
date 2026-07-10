@@ -15,12 +15,13 @@ extension SumiExtensionsModule {
         refreshDiscoveredSafariWebExtensionCandidates(discovered)
 
         let manager = managerIfLoadedAndEnabled()
-        let adapterRegistry = manager?.loadedNativeMessagingRelay?.diagnosticsAdapterRegistry
+        let adapterRegistry =
+            manager?.nativeMessagingRelayOwner.loadedRelay?.diagnosticsAdapterRegistry
             ?? SumiNativeMessagingAdapterRegistry.production()
         let report = SafariExtensionNativeMessagingProbeBuilder.build(
             discovered: discovered,
             importStore: SafariExtensionImportStore.process,
-            installedExtensions: manager?.installedExtensions ?? [],
+            installedExtensions: manager?.installedExtensionCollection.records ?? [],
             extensionManager: manager,
             extensionsModuleEnabled: isEnabled,
             adapterRegistry: adapterRegistry

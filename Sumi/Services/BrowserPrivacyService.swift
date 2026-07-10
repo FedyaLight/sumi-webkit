@@ -1,4 +1,5 @@
 import WebKit
+import SumiWebRuntime
 
 @MainActor
 final class BrowserPrivacyService {
@@ -6,12 +7,17 @@ final class BrowserPrivacyService {
         let currentDataStore: @MainActor () -> WKWebsiteDataStore
         let currentTab: @MainActor () -> Tab?
         let activeWindowId: @MainActor () -> UUID?
-        let webViewLookup: @MainActor (Tab, UUID) -> WKWebView?
-        let reloadWindowScopedPage: @MainActor (Tab, UUID, String) -> Void
+        let reloadWindowScopedPage: @MainActor (
+            Tab,
+            UUID,
+            String,
+            WebRuntimeMainFrameReloadPolicy
+        ) -> Void
     }
 
     private let cleanupService: any SumiWebsiteDataCleanupServicing
     private let invalidateFaviconSite: @MainActor (String, Profile?) -> Void
+    var destructiveCleanupPreparer: (any SumiDestructiveBrowsingDataCleanupPreparing)?
 
     init(
         cleanupService: any SumiWebsiteDataCleanupServicing,
@@ -24,17 +30,35 @@ final class BrowserPrivacyService {
     func replacingCleanupService(
         _ cleanupService: any SumiWebsiteDataCleanupServicing
     ) -> BrowserPrivacyService {
-        BrowserPrivacyService(
+        let replacement = BrowserPrivacyService(
             cleanupService: cleanupService,
             faviconInvalidator: invalidateFaviconSite
         )
+        replacement.destructiveCleanupPreparer = destructiveCleanupPreparer
+        return replacement
+    }
+
+    func attachDestructiveCleanupPreparer(
+        _ preparer: (any SumiDestructiveBrowsingDataCleanupPreparing)?
+    ) {
+        destructiveCleanupPreparer = preparer
     }
 
     func clearCurrentPageCookies(using context: Context) {
-        guard let host = context.currentTab()?.url.host else { return }
+        guard let tab = context.currentTab(),
+              let host = tab.url.host,
+              let profileID = tab.resolveProfile()?.id ?? tab.profileId,
+              let destructiveCleanupPreparer else { return }
         let dataStore = context.currentDataStore()
-        Task {
-            await cleanupService.removeCookies(.domains([host]), in: dataStore)
+        Task { @MainActor in
+            _ = await destructiveCleanupPreparer.performDestructiveDataCleanup(
+                profileIDs: [profileID]
+            ) {
+                await self.cleanupService.removeCookies(
+                    .domains([host]),
+                    in: dataStore
+                )
+            }
         }
     }
 
@@ -44,45 +68,14 @@ final class BrowserPrivacyService {
               let activeWindowId = context.activeWindowId()
         else { return }
 
-        if let webView = context.webViewLookup(currentTab, activeWindowId) {
-            reloadFromOrigin(
-                currentTab,
-                webView: webView,
-                windowID: activeWindowId,
-                context: context
-            )
-        }
-
-        Task { @MainActor in
-            let dataStore = context.currentDataStore()
-            await cleanupService.removeWebsiteDataForDomain(
-                host,
-                includingCookies: false,
-                in: dataStore
-            )
-            invalidateFaviconSite(host, currentTab.resolveProfile())
-        }
+        let profile = currentTab.resolveProfile()
+        invalidateFaviconSite(host, profile)
+        context.reloadWindowScopedPage(
+            currentTab,
+            activeWindowId,
+            "BrowserPrivacyService.hardReload",
+            .fromOrigin
+        )
     }
 
-    private func reloadFromOrigin(
-        _ tab: Tab,
-        webView: WKWebView,
-        windowID: UUID,
-        context: Context
-    ) {
-        let targetURL = webView.url ?? tab.url
-        if tab.configurationPolicyRequiresNormalWebViewRebuild(for: targetURL) {
-            context.reloadWindowScopedPage(
-                tab,
-                windowID,
-                "BrowserPrivacyService.hardReload"
-            )
-            return
-        }
-        tab.performMainFrameNavigationAfterHydrationIfNeeded(
-            on: webView
-        ) { resolvedWebView in
-            resolvedWebView.reloadFromOrigin()
-        }
-    }
 }

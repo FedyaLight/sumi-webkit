@@ -182,7 +182,10 @@ final class HistoryTabRecorderTests: XCTestCase {
         let browserManager = BrowserManager()
         let profile = Profile(name: "Primary")
         let historyManager = HistoryManager(context: context, profileId: profile.id)
-        let tab = Tab(url: URL(string: "https://example.com")!, name: "Example")
+        let tab = browserManager.tabManager.tabFactory.makeTab(
+            url: URL(string: "https://example.com")!,
+            name: "Example"
+        )
 
         browserManager.modelContext = context
         browserManager.profileManager.profiles = [profile]

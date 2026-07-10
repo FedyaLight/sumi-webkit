@@ -4,14 +4,14 @@ import ImageIO
 
 // Stateless apart from queue-protected stores/caches; SVG rasterization stays on the main actor.
 final class SumiPreparedFaviconPipeline: @unchecked Sendable {
-    private let blobStore: SumiFaviconBlobStore
+    private let blobReader: SumiFaviconBlobReader
     private let preparedCache: SumiPreparedFaviconCache
 
     init(
-        blobStore: SumiFaviconBlobStore,
+        blobReader: SumiFaviconBlobReader,
         preparedCache: SumiPreparedFaviconCache
     ) {
-        self.blobStore = blobStore
+        self.blobReader = blobReader
         self.preparedCache = preparedCache
     }
 
@@ -31,7 +31,7 @@ final class SumiPreparedFaviconPipeline: @unchecked Sendable {
             return cached
         }
 
-        guard let data = blobStore.payloadData(
+        guard let data = blobReader.payloadData(
             blobID: selection.blobID,
             partition: selection.partition
         ) else {

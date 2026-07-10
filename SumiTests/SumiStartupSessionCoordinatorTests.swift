@@ -1,5 +1,6 @@
 import SwiftData
 import XCTest
+import SumiWebRuntime
 
 @testable import Sumi
 import SumiDomain
@@ -248,12 +249,13 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
         settings.startupMode = startupMode
         settings.startupPageURLString = startupPage
 
-        let browserManager = BrowserManager()
-        let tabManager = try makeInMemoryTabManager()
+        let webViewSessions = WebViewSessionRepository()
+        let browserManager = BrowserManager(webViewSessions: webViewSessions)
+        let tabManager = try makeInMemoryTabManager(webViewSessions: webViewSessions)
         tabManager.sumiSettings = settings
         browserManager.tabManager = tabManager
         browserManager.sumiSettings = settings
-        browserManager.webViewCoordinator = WebViewCoordinator()
+        browserManager.bindTestWebViewCoordinator()
         tabManager.runtimePortsAttachmentOwner.attach(BrowserTabManagerRuntimePortsFactory.registry(for: browserManager))
         browserManager.lastSessionWindowsStore = LastSessionWindowsStore(userDefaults: defaults.defaults)
 
@@ -264,7 +266,7 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
         tabManager.spaceStateOwner.replaceSpaces([space])
         tabManager.spaceStateOwner.replaceCurrentSpace(space)
         tabManager.structuralCollectionMutationOwner.setTabs([], for: space.id)
-        tabManager.markInitialDataLoadFinished()
+        tabManager.startupRestoreLifecycle.markLoadFinished()
 
         let windowState = BrowserWindowState()
         windowState.tabManager = tabManager

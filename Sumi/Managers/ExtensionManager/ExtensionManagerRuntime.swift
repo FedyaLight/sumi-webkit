@@ -17,6 +17,12 @@ struct ExtensionManagerRuntime {
     typealias UntrackedOwnedWebViewProvider = @MainActor (_ tab: Tab) -> WKWebView?
     typealias TrackedWebViewsProvider = @MainActor (_ tabId: UUID) -> [WKWebView]
     typealias RebuildLiveWebViews = @MainActor (_ tab: Tab) -> Void
+    typealias WebsiteDataMutationAdmissionWaiter = @MainActor (
+        _ profileID: UUID
+    ) async -> Bool
+    typealias WebsiteDataMutationAdmissionCheck = @MainActor (
+        _ profileID: UUID
+    ) -> Bool
     typealias BrowserRuntimeAvailabilityProvider = @MainActor () -> Bool
     typealias ModuleEnabledProvider = @MainActor () -> ModuleEnabledState
 
@@ -38,6 +44,8 @@ struct ExtensionManagerRuntime {
     let untrackedOwnedWebView: UntrackedOwnedWebViewProvider
     let trackedWebViews: TrackedWebViewsProvider
     let rebuildLiveWebViews: RebuildLiveWebViews
+    let websiteDataMutationAdmissionIsBlocked: WebsiteDataMutationAdmissionCheck
+    let waitForWebsiteDataMutationAdmission: WebsiteDataMutationAdmissionWaiter
     let browserRuntimeAvailable: BrowserRuntimeAvailabilityProvider
     let extensionsModuleEnabled: ModuleEnabledProvider
 
@@ -55,6 +63,8 @@ struct ExtensionManagerRuntime {
         untrackedOwnedWebView: { _ in nil },
         trackedWebViews: { _ in [] },
         rebuildLiveWebViews: { _ in /* No-op. */ },
+        websiteDataMutationAdmissionIsBlocked: { _ in false },
+        waitForWebsiteDataMutationAdmission: { _ in true },
         browserRuntimeAvailable: { false },
         extensionsModuleEnabled: { .unavailable }
     )

@@ -14,7 +14,7 @@ final class SumiNavigationResponderTests: SumiNavigationResponderTestCase {
         let tab = Tab(url: URL(string: "https://example.com")!)
         let webView = WKWebView(frame: .zero)
 
-        tab.assignWebViewToWindow(webView, windowId: UUID())
+        tab.prepareAssignedWebView(webView)
 
         let adapter = tab.navigationDelegateBundle(for: webView)
         XCTAssertNotNil(adapter)
@@ -869,27 +869,41 @@ final class SumiNavigationResponderTests: SumiNavigationResponderTestCase {
         XCTAssertEqual(interceptedURLs, [installURL, installURL])
     }
 
-    func testTabLifecycleResponsePolicyUpdatesPDFDisplayStateOnlyForMainFrameResponses() async {
+    func testPDFPresentationChangesOnlyWhenExactMainFrameResponseCommits() async {
         let tab = Tab(url: URL(string: "https://example.com/start")!)
         let responder = SumiTabLifecycleNavigationResponder(tab: tab)
         let adapter = SumiNavigationResponderAdapter(target: responder)
+        let webView = SumiNavigationURLReportingWebView(frame: .zero)
+        let pdfURL = URL(string: "https://example.com/report.pdf")!
+        webView.reportedURL = pdfURL
+        let pdfNavigation = mainFrameNavigation(
+            receiving: navigationAction(
+                url: pdfURL,
+                navigationType: .other,
+                webView: webView
+            ),
+            isCurrent: true
+        )
+        adapter.willStart(pdfNavigation)
 
         let pdfPolicy = await adapter.decidePolicy(
             for: NavigationResponse(
                 response: URLResponse(
-                    url: URL(string: "https://example.com/report.pdf")!,
+                    url: pdfURL,
                     mimeType: "application/pdf",
                     expectedContentLength: 1024,
                     textEncodingName: nil
                 ),
                 isForMainFrame: true,
                 canShowMIMEType: true,
-                mainFrameNavigation: nil
+                mainFrameNavigation: pdfNavigation
             )
         )
 
         XCTAssertNil(pdfPolicy)
-        XCTAssertTrue(tab.suspensionStateOwner.isDisplayingPDFDocument)
+        XCTAssertFalse(tab.suspensionProtection.isPDFDocument)
+        adapter.didCommit(pdfNavigation)
+        XCTAssertTrue(tab.suspensionProtection.isPDFDocument)
 
         let subframePolicy = await adapter.decidePolicy(
             for: NavigationResponse(
@@ -906,24 +920,38 @@ final class SumiNavigationResponderTests: SumiNavigationResponderTestCase {
         )
 
         XCTAssertNil(subframePolicy)
-        XCTAssertTrue(tab.suspensionStateOwner.isDisplayingPDFDocument)
+        XCTAssertTrue(tab.suspensionProtection.isPDFDocument)
+
+        adapter.navigationDidFinish(pdfNavigation)
+        let htmlURL = URL(string: "https://example.com/page")!
+        webView.reportedURL = htmlURL
+        let htmlNavigation = mainFrameNavigation(
+            receiving: navigationAction(
+                url: htmlURL,
+                navigationType: .other,
+                webView: webView
+            ),
+            isCurrent: true
+        )
+        adapter.willStart(htmlNavigation)
 
         let htmlPolicy = await adapter.decidePolicy(
             for: NavigationResponse(
                 response: URLResponse(
-                    url: URL(string: "https://example.com/page")!,
+                    url: htmlURL,
                     mimeType: "text/html",
                     expectedContentLength: 256,
                     textEncodingName: nil
                 ),
                 isForMainFrame: true,
                 canShowMIMEType: true,
-                mainFrameNavigation: nil
+                mainFrameNavigation: htmlNavigation
             )
         )
 
         XCTAssertNil(htmlPolicy)
-        XCTAssertFalse(tab.suspensionStateOwner.isDisplayingPDFDocument)
+        adapter.didCommit(htmlNavigation)
+        XCTAssertFalse(tab.suspensionProtection.isPDFDocument)
     }
 
     func testTabLifecycleWillStartUsesInjectedRuntimeWithoutBrowserManager() {
@@ -933,9 +961,12 @@ final class SumiNavigationResponderTests: SumiNavigationResponderTestCase {
         tab.navigationRuntime.lifecycleNavigationRuntime = lifecycle.runtime
         let responder = SumiTabLifecycleNavigationResponder(tab: tab)
         let webView = SumiNavigationURLReportingWebView(frame: .zero)
+        let navigation = NSObject()
 
         responder.navigationWillStart(
             SumiNavigationContext(
+                navigationID: ObjectIdentifier(navigation),
+                navigationLifetime: navigation,
                 action: nil,
                 url: destinationURL,
                 isCurrent: true,
@@ -948,7 +979,7 @@ final class SumiNavigationResponderTests: SumiNavigationResponderTestCase {
         XCTAssertEqual(lifecycle.resetRevisitProtectionTabIds, [tab.id])
         XCTAssertEqual(lifecycle.preparedExtensionWebViewIds, [ObjectIdentifier(webView)])
         XCTAssertEqual(lifecycle.preparedExtensionURLs, [destinationURL])
-        XCTAssertEqual(lifecycle.preparedExtensionReasons, ["SumiTabLifecycleNavigationResponder.willStart"])
+        XCTAssertEqual(lifecycle.preparedExtensionReasons, ["SumiTabLifecycleNavigationResponder.start"])
         XCTAssertEqual(lifecycle.beforeCommitTabIds, [tab.id])
         XCTAssertEqual(lifecycle.beforeCommitURLs, [destinationURL])
     }
@@ -963,16 +994,19 @@ final class SumiNavigationResponderTests: SumiNavigationResponderTestCase {
         let responder = SumiTabLifecycleNavigationResponder(tab: tab)
         let webView = SumiNavigationURLReportingWebView(frame: .zero)
         webView.reportedURL = finalURL
-
-        responder.navigationDidFinish(
-            SumiNavigationContext(
-                action: nil,
-                url: finalURL,
-                isCurrent: true,
-                isMainFrame: true,
-                webView: webView
-            )
+        let navigation = NSObject()
+        let context = SumiNavigationContext(
+            navigationID: ObjectIdentifier(navigation),
+            navigationLifetime: navigation,
+            action: nil,
+            url: finalURL,
+            isCurrent: true,
+            isMainFrame: true,
+            webView: webView
         )
+
+        responder.navigationWillStart(context)
+        responder.navigationDidFinish(context)
 
         XCTAssertFalse(tab.hasBrowserRuntime)
         XCTAssertEqual(tab.url, finalURL)
@@ -980,8 +1014,13 @@ final class SumiNavigationResponderTests: SumiNavigationResponderTestCase {
         XCTAssertEqual(lifecycle.adblockWebViewIds, [ObjectIdentifier(webView)])
         XCTAssertEqual(lifecycle.adblockURLs, [finalURL])
         XCTAssertEqual(lifecycle.siteDataPolicyTabIds, [tab.id])
-        XCTAssertEqual(extensionProperties.tabIds, [tab.id, tab.id])
-        XCTAssertEqual(extensionProperties.properties, [[.loading], [.URL, .title, .loading]])
+        XCTAssertEqual(extensionProperties.tabIds, [tab.id, tab.id, tab.id, tab.id])
+        XCTAssertEqual(extensionProperties.properties, [
+            [.loading],
+            [.URL, .loading],
+            [.loading],
+            [.URL, .title, .loading],
+        ])
     }
 
     func testTabLifecycleAuthChallengeUsesInjectedRuntimeWithoutBrowserManager() async {
@@ -1019,9 +1058,12 @@ final class SumiNavigationResponderTests: SumiNavigationResponderTestCase {
         tab.navigationRuntime.extensionPropertiesRuntime = extensionProperties.runtime
         let responder = SumiTabLifecycleNavigationResponder(tab: tab)
         let webView = SumiNavigationURLReportingWebView(frame: .zero)
+        let navigation = NSObject()
 
         responder.navigationDidFinish(
             SumiNavigationContext(
+                navigationID: ObjectIdentifier(navigation),
+                navigationLifetime: navigation,
                 action: nil,
                 url: SumiSurface.emptyTabURL,
                 isCurrent: true,
@@ -1045,10 +1087,22 @@ final class SumiNavigationResponderTests: SumiNavigationResponderTestCase {
         let responder = SumiTabLifecycleNavigationResponder(tab: tab)
         let webView = SumiNavigationURLReportingWebView(frame: .zero)
         webView.reportedURL = sameDocumentURL
+        let navigation = NSObject()
+        let navigationID = ObjectIdentifier(navigation)
+        XCTAssertEqual(tab.beginMainFrameLifecycle(
+            from: webView,
+            navigationID: navigationID,
+            navigationLifetime: navigation,
+            targetURL: initialURL,
+            allowsUserInitiatedSupersession: false,
+            continuationKind: nil
+        ), .authority)
 
         responder.navigationDidSameDocumentNavigation(
             type: .sessionStatePop,
             context: SumiNavigationContext(
+                navigationID: navigationID,
+                navigationLifetime: navigation,
                 action: nil,
                 url: sameDocumentURL,
                 isCurrent: false,
@@ -1062,6 +1116,8 @@ final class SumiNavigationResponderTests: SumiNavigationResponderTestCase {
         responder.navigationDidSameDocumentNavigation(
             type: .anchorNavigation,
             context: SumiNavigationContext(
+                navigationID: navigationID,
+                navigationLifetime: navigation,
                 action: nil,
                 url: sameDocumentURL,
                 isCurrent: true,
@@ -1746,6 +1802,78 @@ final class SumiNavigationResponderTests: SumiNavigationResponderTestCase {
         XCTAssertEqual(target.responseDownloads.first?.response.httpResponse?.statusCode, 200)
         XCTAssertEqual(target.responseDownloads.first?.download.response?.url, URL(string: "https://example.com/response.zip")!)
         XCTAssertEqual(target.responseDownloads.first?.download.originalRequest?.url, URL(string: "https://example.com/response-original.zip")!)
+    }
+
+    func testSumiNavigationAdapterTerminatesCancelledExpectedMainFrameAction() {
+        let webView = WKWebView(frame: .zero)
+        let target = SumiNavigationTerminalProbeResponder()
+        let adapter = SumiNavigationResponderAdapter(target: target)
+        let navigation = mainFrameNavigation(receiving: navigationAction(
+            url: URL(string: "https://example.com/cancelled")!,
+            navigationType: .other,
+            webView: webView
+        ))
+
+        adapter.didCancelNavigationAction(
+            navigation.navigationAction,
+            withRedirectNavigations: nil
+        )
+
+        XCTAssertEqual(target.terminations.count, 1)
+        XCTAssertEqual(
+            target.terminations.first?.navigationID,
+            ObjectIdentifier(navigation)
+        )
+        XCTAssertIdentical(target.terminations.first?.webView, webView)
+        XCTAssertEqual(target.terminations.first?.reason, .actionCancelled)
+    }
+
+    func testSumiNavigationAdapterTerminatesActionAndResponseDownloadConversion() {
+        let webView = WKWebView(frame: .zero)
+        let target = SumiNavigationTerminalProbeResponder()
+        let adapter = SumiNavigationResponderAdapter(target: target)
+        let navigation = mainFrameNavigation(receiving: navigationAction(
+            url: URL(string: "https://example.com/download")!,
+            navigationType: .other,
+            webView: webView
+        ))
+        let response = NavigationResponse(
+            response: URLResponse(
+                url: URL(string: "https://example.com/download")!,
+                mimeType: "application/octet-stream",
+                expectedContentLength: 1,
+                textEncodingName: nil
+            ),
+            isForMainFrame: true,
+            canShowMIMEType: false,
+            mainFrameNavigation: navigation
+        )
+
+        adapter.navigationAction(
+            navigation.navigationAction,
+            willBecomeDownloadIn: webView
+        )
+        adapter.navigationResponse(response, willBecomeDownloadIn: webView)
+
+        XCTAssertEqual(
+            target.terminations.map(\.reason),
+            [.actionBecameDownload, .responseBecameDownload]
+        )
+        XCTAssertTrue(target.terminations.allSatisfy {
+            $0.navigationID == ObjectIdentifier(navigation) && $0.webView === webView
+        })
+    }
+
+    func testSumiNavigationAdapterRoutesProcessTerminationToInstalledWebView() {
+        let webView = WKWebView(frame: .zero)
+        let target = SumiNavigationTerminalProbeResponder()
+        let adapter = SumiNavigationResponderAdapter(target: target)
+        adapter.bind(to: webView)
+
+        adapter.webContentProcessDidTerminate(with: nil)
+
+        XCTAssertEqual(target.terminatedWebViews.count, 1)
+        XCTAssertIdentical(target.terminatedWebViews.first, webView)
     }
 
     func testScriptAttachmentResponderAdapterAwaitsNormalTabScriptReplacementBeforeNextResponder() async throws {

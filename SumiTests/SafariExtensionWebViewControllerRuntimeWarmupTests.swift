@@ -47,7 +47,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             manager: manager,
             scratchDirectory: scratchDirectory
         )
-        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
+        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
         manager.unloadExtensionContextIfLoaded(
             extensionId: installed.id,
             profileId: profile.id
@@ -55,10 +55,11 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
 
         let tab = makeTab(
             profileId: profile.id,
-            url: URL(string: "http://127.0.0.1:8765/login-basic.html")!
+            url: URL(string: "http://127.0.0.1:8765/login-basic.html")!,
+            browserManager: browserManager
         )
         tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
-        tab.extensionPageRuntimeOwner.eligibleGeneration = manager.tabOpenNotificationGeneration
+        tab.extensionPageRuntimeOwner.eligibleGeneration = manager.runtimeSession.tabOpenNotificationGeneration
 
         XCTAssertFalse(manager.profileHasLoadedContentScriptContexts(profileId: profile.id))
         XCTAssertFalse(manager.notifyTabOpened(tab))
@@ -101,7 +102,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         let entity = try XCTUnwrap(try manager.extensionEntity(for: installed.id))
         entity.isEnabled = true
         try container.mainContext.save()
-        _ = manager.installationFlowOwner.loadInstalledExtensionMetadata()
+        _ = manager.installedExtensionCatalog.load()
 
         await manager.ensureContentScriptContextsLoaded(for: profile.id)
 
@@ -129,10 +130,11 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
 
         let tab = makeTab(
             profileId: profile.id,
-            url: URL(string: "https://example.com/login")!
+            url: URL(string: "https://example.com/login")!,
+            browserManager: browserManager
         )
         tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
-        tab.extensionPageRuntimeOwner.eligibleGeneration = manager.tabOpenNotificationGeneration
+        tab.extensionPageRuntimeOwner.eligibleGeneration = manager.runtimeSession.tabOpenNotificationGeneration
         attachUsableExtensionWebView(
             to: tab,
             manager: manager,
@@ -151,7 +153,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         XCTAssertEqual(backgroundWakeCount, 1, backgroundWakeObservations.joined(separator: "\n"))
         XCTAssertEqual(
             backgroundWakeKey,
-            manager.backgroundScopedKey(
+            ExtensionRuntimeResidencyState.scopedKey(
                 extensionId: installed.id,
                 profileId: profile.id
             )
@@ -184,15 +186,16 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             manager: manager,
             scratchDirectory: scratchDirectory
         )
-        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
+        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
         await manager.ensureContentScriptContextsLoaded(for: profile.id)
 
         let tab = makeTab(
             profileId: profile.id,
-            url: URL(string: "https://example.com/login")!
+            url: URL(string: "https://example.com/login")!,
+            browserManager: browserManager
         )
         tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
-        tab.extensionPageRuntimeOwner.eligibleGeneration = manager.tabOpenNotificationGeneration
+        tab.extensionPageRuntimeOwner.eligibleGeneration = manager.runtimeSession.tabOpenNotificationGeneration
 
         XCTAssertTrue(manager.profileHasLoadedContentScriptContexts(profileId: profile.id))
         XCTAssertFalse(manager.notifyTabOpened(tab))
@@ -226,10 +229,11 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         let browserManager = makeBrowserManager(profile: profile)
         let windowRegistry = WindowRegistry()
         browserManager.windowRegistry = windowRegistry
-        browserManager.webViewCoordinator = WebViewCoordinator()
+        browserManager.bindTestWebViewCoordinator()
         browserManager.tabManager = TabManager(
             runtimePorts: BrowserTabManagerRuntimePortsFactory.registry(for: browserManager),
             context: container.mainContext,
+            webViewSessions: browserManager.webViewSessions,
             loadPersistedState: false
         )
         let space = browserManager.tabManager.spaceLifecycleOwner.createSpace(
@@ -248,7 +252,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             manager: manager,
             scratchDirectory: scratchDirectory
         )
-        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
+        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
         await manager.ensureContentScriptContextsLoaded(for: profile.id)
 
         let pageURL = URL(string: "https://example.com/login")!
@@ -258,13 +262,17 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             activate: false
         )
         tab.profileId = profile.id
-        tab.extensionPageRuntimeOwner.eligibleGeneration = manager.tabOpenNotificationGeneration
+        tab.extensionPageRuntimeOwner.eligibleGeneration = manager.runtimeSession.tabOpenNotificationGeneration
         let webView = attachUsableExtensionWebView(
             to: tab,
             manager: manager,
             profile: profile
         )
-        tab.assignWebViewToWindow(webView, windowId: windowState.id)
+        browserManager.webViewOwnershipService?.assign(
+            webView,
+            to: tab,
+            in: windowState.id
+        )
         tab.extensionPageRuntimeOwner.noteCommittedMainDocumentNavigation(to: pageURL)
 
         XCTAssertTrue(manager.tabNeedsExtensionContentScriptRebind(tab))
@@ -295,10 +303,11 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         let browserManager = makeBrowserManager(profile: profile)
         let windowRegistry = WindowRegistry()
         browserManager.windowRegistry = windowRegistry
-        browserManager.webViewCoordinator = WebViewCoordinator()
+        browserManager.bindTestWebViewCoordinator()
         browserManager.tabManager = TabManager(
             runtimePorts: BrowserTabManagerRuntimePortsFactory.registry(for: browserManager),
             context: container.mainContext,
+            webViewSessions: browserManager.webViewSessions,
             loadPersistedState: false
         )
         let space = browserManager.tabManager.spaceLifecycleOwner.createSpace(
@@ -317,7 +326,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             manager: manager,
             scratchDirectory: scratchDirectory
         )
-        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
+        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
         manager.unloadExtensionContextIfLoaded(
             extensionId: installed.id,
             profileId: profile.id
@@ -326,7 +335,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         let pageURL = URL(string: "https://example.com/login")!
         XCTAssertFalse(manager.profileHasLoadedContentScriptContexts(profileId: profile.id))
 
-        let preparedProfileId = try await manager.prepareExtensionRequestedTabForInitialLoad(
+        let preparedProfileId = try await manager.requestedTabContextPreloader.prepare(
             url: pageURL,
             requestedWindow: nil,
             controller: controller
@@ -343,7 +352,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         }
         defer { manager.clearDebugState() }
 
-        let tab = try manager.openExtensionRequestedTab(
+        let tab = try manager.requestedTabOpening.open(
             url: pageURL,
             shouldBeActive: true,
             shouldBePinned: false,
@@ -386,10 +395,11 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         let browserManager = makeBrowserManager(profile: profile)
         let windowRegistry = WindowRegistry()
         browserManager.windowRegistry = windowRegistry
-        browserManager.webViewCoordinator = WebViewCoordinator()
+        browserManager.bindTestWebViewCoordinator()
         browserManager.tabManager = TabManager(
             runtimePorts: BrowserTabManagerRuntimePortsFactory.registry(for: browserManager),
             context: container.mainContext,
+            webViewSessions: browserManager.webViewSessions,
             loadPersistedState: false
         )
         let space = browserManager.tabManager.spaceLifecycleOwner.createSpace(
@@ -411,7 +421,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         let entity = try XCTUnwrap(try manager.extensionEntity(for: installed.id))
         entity.isEnabled = true
         try container.mainContext.save()
-        _ = manager.installationFlowOwner.loadInstalledExtensionMetadata()
+        _ = manager.installedExtensionCatalog.load()
 
         var backgroundWakeCount = 0
         manager.testHooks.backgroundContentWake = { _, _ in
@@ -424,7 +434,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         let pageURL = URL(string: "https://example.com/login")!
         XCTAssertFalse(manager.profileHasLoadedContentScriptContexts(profileId: profile.id))
 
-        let preparedProfileId = try await manager.prepareExtensionRequestedTabForInitialLoad(
+        let preparedProfileId = try await manager.requestedTabContextPreloader.prepare(
             url: pageURL,
             requestedWindow: nil,
             controller: controller
@@ -439,7 +449,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             .neverLoaded
         )
 
-        _ = try manager.openExtensionRequestedTab(
+        _ = try manager.requestedTabOpening.open(
             url: pageURL,
             shouldBeActive: true,
             shouldBePinned: false,
@@ -488,10 +498,11 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         )
         let windowRegistry = WindowRegistry()
         browserManager.windowRegistry = windowRegistry
-        browserManager.webViewCoordinator = WebViewCoordinator()
+        browserManager.bindTestWebViewCoordinator()
         browserManager.tabManager = TabManager(
             runtimePorts: BrowserTabManagerRuntimePortsFactory.registry(for: browserManager),
             context: container.mainContext,
+            webViewSessions: browserManager.webViewSessions,
             loadPersistedState: false
         )
         let space = browserManager.tabManager.spaceLifecycleOwner.createSpace(
@@ -505,7 +516,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             manager: manager,
             scratchDirectory: scratchDirectory
         )
-        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
+        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
         manager.unloadExtensionContextIfLoaded(
             extensionId: installed.id,
             profileId: profile.id
@@ -586,7 +597,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         let entity = try XCTUnwrap(try manager.extensionEntity(for: installed.id))
         entity.isEnabled = true
         try container.mainContext.save()
-        _ = manager.installationFlowOwner.loadInstalledExtensionMetadata()
+        _ = manager.installedExtensionCatalog.load()
 
         var backgroundWakeCount = 0
         manager.testHooks.backgroundContentWake = { _, _ in
@@ -603,10 +614,10 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         )
 
         manager.extensionsLoaded = true
-        manager.tabOpenNotificationGeneration = 17
+        manager.runtimeSession.tabOpenNotificationGeneration = 17
         let pageURL = URL(string: "http://127.0.0.1:8765/login-basic.html")!
         let tab = makeTab(profileId: profile.id, url: pageURL)
-        tab.extensionPageRuntimeOwner.eligibleGeneration = manager.tabOpenNotificationGeneration
+        tab.extensionPageRuntimeOwner.eligibleGeneration = manager.runtimeSession.tabOpenNotificationGeneration
         tab.extensionPageRuntimeOwner.openNotifiedDocumentSequence = 0
         tab.extensionPageRuntimeOwner.openNotifiedContextBindingGeneration = 0
         tab.extensionPageRuntimeOwner.noteCommittedMainDocumentNavigation(to: pageURL)
@@ -641,7 +652,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         let entity = try XCTUnwrap(try manager.extensionEntity(for: installed.id))
         entity.isEnabled = true
         try container.mainContext.save()
-        _ = manager.installationFlowOwner.loadInstalledExtensionMetadata()
+        _ = manager.installedExtensionCatalog.load()
 
         var backgroundWakeCount = 0
         let backgroundWakeExpectation = expectation(description: "nativeMessaging background wake")
@@ -705,7 +716,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         let entity = try XCTUnwrap(try manager.extensionEntity(for: installed.id))
         entity.isEnabled = true
         try container.mainContext.save()
-        _ = manager.installationFlowOwner.loadInstalledExtensionMetadata()
+        _ = manager.installedExtensionCatalog.load()
 
         var backgroundWakeCount = 0
         manager.testHooks.backgroundContentWake = { _, _ in
@@ -739,7 +750,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         let entity = try XCTUnwrap(try manager.extensionEntity(for: installed.id))
         entity.isEnabled = true
         try container.mainContext.save()
-        _ = manager.installationFlowOwner.loadInstalledExtensionMetadata()
+        _ = manager.installedExtensionCatalog.load()
 
         var backgroundWakeCount = 0
         manager.testHooks.backgroundContentWake = { _, _ in
@@ -765,8 +776,8 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             .loaded
         )
         XCTAssertEqual(
-            manager.runtimeMetricsByExtensionID[
-                manager.backgroundScopedKey(
+            manager.runtimeSession.runtimeMetricsByExtensionID[
+                ExtensionRuntimeResidencyState.scopedKey(
                     extensionId: installed.id,
                     profileId: profile.id
                 )
@@ -802,15 +813,15 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         }
 
         do {
-            _ = try await manager.installationFlowOwner.loadEnabledExtension(from: entity)
+            _ = try await manager.extensionRuntimeLoader.loadEnabled(from: entity)
             XCTFail("A load invalidated by runtime teardown must not reach WebKit")
         } catch {
             XCTAssertTrue(error is CancellationError, String(describing: error))
         }
 
         XCTAssertTrue(controller.extensionContexts.isEmpty)
-        XCTAssertTrue(manager.extensionContextsByProfile.isEmpty)
-        XCTAssertTrue(manager.extensionControllersByProfile.isEmpty)
+        XCTAssertTrue(manager.profileRuntime.contextsByProfile.isEmpty)
+        XCTAssertTrue(manager.profileRuntime.controllersByProfile.isEmpty)
     }
 
     func testRuntimeTeardownUnloadsLoadedContexts() async throws {
@@ -837,8 +848,8 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
 
         XCTAssertFalse(extensionContext.isLoaded)
         XCTAssertTrue(controller.extensionContexts.isEmpty)
-        XCTAssertTrue(manager.extensionContextsByProfile.isEmpty)
-        XCTAssertTrue(manager.extensionControllersByProfile.isEmpty)
+        XCTAssertTrue(manager.profileRuntime.contextsByProfile.isEmpty)
+        XCTAssertTrue(manager.profileRuntime.controllersByProfile.isEmpty)
     }
 
     func testUserExtensionRuntimeTeardownMarksAllLiveNormalTabsAffected()
@@ -856,6 +867,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         browserManager.tabManager = TabManager(
             runtimePorts: BrowserTabManagerRuntimePortsFactory.registry(for: browserManager),
             context: container.mainContext,
+            webViewSessions: browserManager.webViewSessions,
             loadPersistedState: false
         )
         let space = browserManager.tabManager.spaceLifecycleOwner.createSpace(
@@ -867,7 +879,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             manager: manager,
             scratchDirectory: scratchDirectory
         )
-        _ = try await manager.installationFlowOwner.enableExtension(installed.id)
+        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
         _ = try await manager.ensureExtensionLoaded(
             extensionId: installed.id,
             profileId: profile.id
@@ -1031,13 +1043,17 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         )
         _ = manager.ensureExtensionController(for: profile.id)
         manager.extensionsLoaded = true
-        manager.tabOpenNotificationGeneration = 21
+        manager.runtimeSession.tabOpenNotificationGeneration = 21
 
         let browserManager = makeBrowserManager(profile: profile)
         manager.attach(browserManager: browserManager)
 
         let pageURL = URL(string: "http://127.0.0.1:8765/login-basic.html")!
-        let tab = makeTab(profileId: profile.id, url: pageURL)
+        let tab = makeTab(
+            profileId: profile.id,
+            url: pageURL,
+            browserManager: browserManager
+        )
         tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
 
         let configuration = BrowserConfiguration().auxiliaryWebViewConfiguration(
@@ -1055,8 +1071,8 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         tab.extensionPageRuntimeOwner.openNotifiedDocumentSequence = 0
         tab.extensionPageRuntimeOwner.openNotifiedContextBindingGeneration = 0
         tab.extensionPageRuntimeOwner.noteCommittedMainDocumentNavigation(to: pageURL)
-        tab.extensionPageRuntimeOwner.lastOpenNotificationGeneration = manager.tabOpenNotificationGeneration
-        tab.extensionPageRuntimeOwner.eligibleGeneration = manager.tabOpenNotificationGeneration
+        tab.extensionPageRuntimeOwner.lastOpenNotificationGeneration = manager.runtimeSession.tabOpenNotificationGeneration
+        tab.extensionPageRuntimeOwner.eligibleGeneration = manager.runtimeSession.tabOpenNotificationGeneration
 
         XCTAssertFalse(manager.tabNeedsExtensionContentScriptRebind(tab))
 
@@ -1109,12 +1125,16 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         manager.attach(browserManager: browserManager)
 
         let pageURL = URL(string: "http://127.0.0.1:8765/login-basic.html")!
-        let tab = makeTab(profileId: profile.id, url: pageURL)
+        let tab = makeTab(
+            profileId: profile.id,
+            url: pageURL,
+            browserManager: browserManager
+        )
         tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
         tab.extensionPageRuntimeOwner.openNotifiedDocumentSequence = 0
         tab.extensionPageRuntimeOwner.openNotifiedContextBindingGeneration = 0
         tab.extensionPageRuntimeOwner.noteCommittedMainDocumentNavigation(to: pageURL)
-        tab.extensionPageRuntimeOwner.eligibleGeneration = manager.tabOpenNotificationGeneration
+        tab.extensionPageRuntimeOwner.eligibleGeneration = manager.runtimeSession.tabOpenNotificationGeneration
         attachUsableExtensionWebView(
             to: tab,
             manager: manager,
@@ -1208,8 +1228,8 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         XCTAssertIdentical(currentController, controllerB)
         XCTAssertEqual(manager.profileId(for: currentController), profileB.id)
         XCTAssertEqual(manager.resolvedProfileId(for: tab), profileA.id)
-        XCTAssertIdentical(manager.extensionControllersByProfile[profileA.id], controllerA)
-        XCTAssertIdentical(manager.extensionControllersByProfile[profileB.id], controllerB)
+        XCTAssertIdentical(manager.profileRuntime.controllersByProfile[profileA.id], controllerA)
+        XCTAssertIdentical(manager.profileRuntime.controllersByProfile[profileB.id], controllerB)
         XCTAssertIdentical(manager.extensionController(for: tab), controllerA)
 
         XCTAssertTrue(
@@ -1246,13 +1266,8 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
     }
 
     func testConfigureContextIdentityKeepsPublicIdentifierAndScopesBaseURL() async throws {
-        let container = try makeTestContainer()
         let profile = Profile(name: "Profile A")
         let otherProfile = Profile(name: "Profile B")
-        let manager = makeManager(
-            context: container.mainContext,
-            profile: profile
-        ).manager
         let extensionId = "probe-extension-id"
         let scratchDirectory = try makeScratchDirectory()
         let directoryURL = scratchDirectory.appendingPathComponent("BaseURLProbe", isDirectory: true)
@@ -1272,12 +1287,12 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         let webExtension = try await WKWebExtension(resourceBaseURL: directoryURL)
         let extensionContext = WKWebExtensionContext(for: webExtension)
         let otherExtensionContext = WKWebExtensionContext(for: webExtension)
-        manager.configureContextIdentity(
+        ExtensionRuntimeContextLoader.configureContextIdentity(
             extensionContext,
             extensionId: extensionId,
             profileId: profile.id
         )
-        manager.configureContextIdentity(
+        ExtensionRuntimeContextLoader.configureContextIdentity(
             otherExtensionContext,
             extensionId: extensionId,
             profileId: otherProfile.id

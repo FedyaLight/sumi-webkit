@@ -179,12 +179,16 @@ final class TabSpaceLifecycleOwner {
         let projection = dependencies.projection(space.id, contextWindowId)
         let regularTabs = projection.regularTabs
         let persistedPins = dependencies.spacePinnedPins(space.id)
+        let pinOrderByID = Dictionary(
+            persistedPins.map { ($0.id, $0.index) },
+            uniquingKeysWith: { first, _ in first }
+        )
         let spacePinnedTabs = projection.liveTabsByPinId.values.sorted { lhs, rhs in
             let leftOrder = lhs.shortcutPinId.flatMap { pinId in
-                persistedPins.first(where: { $0.id == pinId })?.index
+                pinOrderByID[pinId]
             } ?? lhs.index
             let rightOrder = rhs.shortcutPinId.flatMap { pinId in
-                persistedPins.first(where: { $0.id == pinId })?.index
+                pinOrderByID[pinId]
             } ?? rhs.index
             if leftOrder != rightOrder { return leftOrder < rightOrder }
             return lhs.id.uuidString < rhs.id.uuidString
@@ -245,8 +249,7 @@ final class TabSpaceLifecycleOwner {
         profileId: UUID?
     ) -> Bool {
         guard targetSpace.profileId == nil, let profileId else { return false }
-        targetSpace.profileId = profileId
-        dependencies.markAllSpacesStructurallyDirty()
+        dependencies.assignSpaceProfile(targetSpace.id, profileId)
         return true
     }
 
@@ -300,10 +303,7 @@ final class TabSpaceLifecycleOwner {
 
         if let profileId,
            let unassignedSpace = dependencies.spaceStateOwner.first(where: { $0.profileId == nil }) {
-            dependencies.sendObjectWillChange()
-            dependencies.spaceStateOwner.assignProfile(spaceId: unassignedSpace.id, profileId: profileId)
-            dependencies.markAllSpacesStructurallyDirty()
-            dependencies.scheduleStructuralPersistence()
+            dependencies.assignSpaceProfile(unassignedSpace.id, profileId)
             return unassignedSpace
         }
 
@@ -409,7 +409,10 @@ extension TabSpaceLifecycleOwner.Dependencies {
                 tabManager?.runtimePorts?.validateWindowStates()
             },
             assignSpaceProfile: { [weak tabManager] spaceId, profileId in
-                tabManager?.profileAssignmentOwner.assign(spaceId: spaceId, toProfile: profileId)
+                tabManager?.profileAssignments.spaces.assign(
+                    spaceID: spaceId,
+                    toProfile: profileId
+                )
             },
             markSpacesSnapshotDirty: { [weak tabManager] in
                 tabManager?.structuralPersistence.markSpacesSnapshotDirty()

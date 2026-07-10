@@ -54,7 +54,7 @@ struct SumiNavigationHistoryMenuItem {
 @MainActor
 struct SumiNavigationHistoryContext {
     let faviconService: any BrowserFaviconServicing
-    let faviconImageService: any BrowserFaviconImageServicing
+    let faviconImageReader: any BrowserFaviconImageReading
     let openURLInCurrentTab: (URL, Tab?) -> Void
     let openURLInNewTab: (URL, Bool, Tab?) -> Void
     let openURLsInNewWindow: ([URL]) -> Void
@@ -257,7 +257,7 @@ final class SumiNavigationHistoryMenuDelegate: NSObject, NSMenuDelegate {
                 menuItem.image = SumiFaviconResolver.menuImage(
                     for: item.url,
                     partition: partition,
-                    faviconImageService: historyContext.faviconImageService
+                    imageReader: historyContext.faviconImageReader
                 )
             }
             menu.addItem(menuItem)

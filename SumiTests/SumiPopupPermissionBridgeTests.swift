@@ -311,6 +311,40 @@ final class SumiPopupPermissionBridgeTests: XCTestCase {
         XCTAssertEqual(records.first?.attemptCount, 2)
     }
 
+    func testGrantedPopupDecisionIsRejectedWhenExactDocumentChangesDuringQuery() async {
+        let document = PopupCurrentDocumentState()
+        let coordinator = PopupSuspendedPermissionCoordinator(
+            decision: popupCoordinatorDecision(.granted, reason: "stored-allow")
+        )
+        let bridge = SumiPopupPermissionBridge(
+            coordinator: coordinator,
+            now: { popupFixedDate }
+        )
+
+        let evaluation = Task { @MainActor in
+            await bridge.evaluate(
+                popupRequest(userActivation: .directWebKit),
+                tabContext: tabContext(isCurrentPage: { document.isCurrent })
+            )
+        }
+
+        for _ in 0..<100 where await coordinator.hasStartedQuery() == false {
+            await Task.yield()
+        }
+        let didStartQuery = await coordinator.hasStartedQuery()
+        XCTAssertTrue(didStartQuery)
+
+        document.isCurrent = false
+        await coordinator.resumeQuery()
+
+        let result = await evaluation.value
+        XCTAssertFalse(result.isAllowed)
+        XCTAssertEqual(
+            bridge.blockedPopupStore.records(forPageId: "tab-a:1").first?.reason,
+            .blockedByPolicy
+        )
+    }
+
     private func realCoordinatorBridge(
         store: PopupBridgePermissionStore,
         blockedPopupStore: SumiBlockedPopupStore? = nil,
@@ -359,7 +393,8 @@ final class SumiPopupPermissionBridgeTests: XCTestCase {
         committedURL: URL? = URL(string: "https://top.example"),
         visibleURL: URL? = URL(string: "https://top.example/path"),
         mainFrameURL: URL? = URL(string: "https://top.example"),
-        displayDomain: String? = nil
+        displayDomain: String? = nil,
+        isCurrentPage: @escaping @MainActor @Sendable () -> Bool = { true }
     ) -> SumiPopupPermissionTabContext {
         SumiPopupPermissionTabContext(
             tabId: tabId,
@@ -373,9 +408,15 @@ final class SumiPopupPermissionBridgeTests: XCTestCase {
             isActiveTab: true,
             isVisibleTab: true,
             navigationOrPageGeneration: "1",
-            displayDomain: displayDomain
+            displayDomain: displayDomain,
+            isCurrentPage: isCurrentPage
         )
     }
+}
+
+@MainActor
+private final class PopupCurrentDocumentState {
+    var isCurrent = true
 }
 
 private actor PopupFakePermissionCoordinator: SumiPermissionCoordinating {
@@ -394,6 +435,77 @@ private actor PopupFakePermissionCoordinator: SumiPermissionCoordinating {
     func queryPermissionState(_ context: SumiPermissionSecurityContext) async -> SumiPermissionCoordinatorDecision {
         contexts.append(context)
         return decision
+    }
+
+    func activeQuery(forPageId _: String) -> SumiPermissionAuthorizationQuery? {
+        nil
+    }
+
+    func stateSnapshot() -> SumiPermissionCoordinatorState {
+        SumiPermissionCoordinatorState()
+    }
+
+    func events() -> AsyncStream<SumiPermissionCoordinatorEvent> {
+        AsyncStream { continuation in
+            continuation.finish()
+        }
+    }
+
+    @discardableResult
+    func cancel(requestId _: String, reason: String) -> SumiPermissionCoordinatorDecision {
+        popupCoordinatorDecision(.cancelled, reason: reason)
+    }
+
+    @discardableResult
+    func cancel(pageId _: String, reason: String) -> SumiPermissionCoordinatorDecision {
+        popupCoordinatorDecision(.cancelled, reason: reason)
+    }
+
+    @discardableResult
+    func cancelNavigation(pageId _: String, reason: String) -> SumiPermissionCoordinatorDecision {
+        popupCoordinatorDecision(.cancelled, reason: reason)
+    }
+
+    @discardableResult
+    func cancelTab(tabId _: String, reason: String) -> SumiPermissionCoordinatorDecision {
+        popupCoordinatorDecision(.cancelled, reason: reason)
+    }
+}
+
+private actor PopupSuspendedPermissionCoordinator: SumiPermissionCoordinating {
+    private let decision: SumiPermissionCoordinatorDecision
+    private var queryContinuation: CheckedContinuation<
+        SumiPermissionCoordinatorDecision,
+        Never
+    >?
+    private var queryStarted = false
+
+    init(decision: SumiPermissionCoordinatorDecision) {
+        self.decision = decision
+    }
+
+    func requestPermission(
+        _ context: SumiPermissionSecurityContext
+    ) async -> SumiPermissionCoordinatorDecision {
+        await queryPermissionState(context)
+    }
+
+    func queryPermissionState(
+        _: SumiPermissionSecurityContext
+    ) async -> SumiPermissionCoordinatorDecision {
+        queryStarted = true
+        return await withCheckedContinuation { continuation in
+            queryContinuation = continuation
+        }
+    }
+
+    func hasStartedQuery() -> Bool {
+        queryStarted
+    }
+
+    func resumeQuery() {
+        queryContinuation?.resume(returning: decision)
+        queryContinuation = nil
     }
 
     func activeQuery(forPageId _: String) -> SumiPermissionAuthorizationQuery? {

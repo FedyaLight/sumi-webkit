@@ -59,7 +59,7 @@ final class SumiTabNavigationDelegateAdapter {
         self.gpcAdapter = SumiNavigationResponderAdapter(target: gpc)
         self.autoplayPolicy = SumiAutoplayPolicyNavigationResponder(
             tab: tab,
-            autoplayPolicyStore: SumiStartupPersistenceComposition.autoplayPolicyStore
+            autoplayPolicy: tab.navigationRuntime.navigationDelegateRuntime.autoplayPolicy
         )
         self.autoplayPolicyAdapter = SumiNavigationResponderAdapter(target: autoplayPolicy)
         self.lifecycle = SumiTabLifecycleNavigationResponder(tab: tab)
@@ -87,6 +87,7 @@ final class SumiTabNavigationDelegateAdapter {
     }
 
     func install(on webView: WKWebView) {
+        lifecycleAdapter.bind(to: webView)
         webView.navigationDelegate = navigationResponderChain
     }
 

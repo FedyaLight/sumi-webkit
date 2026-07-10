@@ -110,6 +110,7 @@ final class BrowserURLBarHubContextOwner {
             protectionCoordinator: protectionCoordinator,
             adblockZapperStore: adblockZapperStore,
             cleanupService: dataServices.websiteDataCleanupService,
+            profileWebsiteDataMutationService: dataServices.profileWebsiteDataMutationService,
             siteDataPolicyStore: dataServices.siteDataPolicyStore,
             siteDataPolicyEnforcementService: dataServices.siteDataPolicyEnforcementService,
             faviconService: dataServices.faviconService,

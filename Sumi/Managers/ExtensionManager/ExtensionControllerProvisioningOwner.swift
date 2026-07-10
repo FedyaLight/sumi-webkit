@@ -15,7 +15,7 @@ import WebKit
 final class ExtensionControllerProvisioningOwner {
     struct Dependencies {
         let browserConfiguration: BrowserConfiguration
-        let profileRuntimeOwner: ExtensionProfileRuntimeOwner
+        let profileRuntime: ExtensionProfileRuntime
         let runtime: @MainActor () -> ExtensionManagerRuntime
         let currentProfileId: @MainActor () -> UUID?
         let assignControllerDelegate: @MainActor (WKWebExtensionController) -> Void
@@ -75,7 +75,7 @@ final class ExtensionControllerProvisioningOwner {
 
     @discardableResult
     func ensureExtensionController(for profileId: UUID) -> WKWebExtensionController {
-        if let existing = dependencies.profileRuntimeOwner.controller(for: profileId) {
+        if let existing = dependencies.profileRuntime.controller(for: profileId) {
             return existing
         }
 
@@ -94,7 +94,7 @@ final class ExtensionControllerProvisioningOwner {
             defaultDataStore: defaultDataStore,
             profileId: profileId
         )
-        dependencies.profileRuntimeOwner.setController(controller, for: profileId)
+        dependencies.profileRuntime.setController(controller, for: profileId)
         scheduleControllerDelegateRebind(for: controller)
 
         if dependencies.currentProfileId() == profileId {
@@ -111,7 +111,7 @@ final class ExtensionControllerProvisioningOwner {
     }
 
     func websiteDataStore(for profileId: UUID) -> WKWebsiteDataStore {
-        dependencies.profileRuntimeOwner.websiteDataStore(
+        dependencies.profileRuntime.websiteDataStore(
             for: profileId,
             runtime: dependencies.runtime()
         )
@@ -203,7 +203,7 @@ final class ExtensionControllerProvisioningOwner {
         guard RuntimeDiagnostics.isVerboseEnabled else {
             return
         }
-        guard let dataStore = dependencies.profileRuntimeOwner.controller(for: profileId)?
+        guard let dataStore = dependencies.profileRuntime.controller(for: profileId)?
             .configuration.defaultWebsiteDataStore
         else {
             return
@@ -220,18 +220,18 @@ extension ExtensionControllerProvisioningOwner.Dependencies {
     static func live(manager: ExtensionManager) -> Self {
         Self(
             browserConfiguration: manager.browserConfiguration,
-            profileRuntimeOwner: manager.profileRuntimeOwner,
+            profileRuntime: manager.profileRuntime,
             runtime: { [weak manager] in
                 manager?.runtime ?? .inactive
             },
             currentProfileId: { [weak manager] in
-                manager?.currentProfileId
+                manager?.profileRuntime.currentProfileId
             },
             assignControllerDelegate: { [weak manager] controller in
                 controller.delegate = manager?.controllerDelegateBridge
             },
             isControllerRegistered: { [weak manager] controller in
-                manager?.extensionControllersByProfile.values.contains {
+                manager?.profileRuntime.controllersByProfile.values.contains {
                     $0 === controller
                 } ?? false
             },
@@ -242,19 +242,20 @@ extension ExtensionControllerProvisioningOwner.Dependencies {
                 manager?.updateWebViewsForProfile(profileId)
             },
             traceControllerBinding: { [weak manager] phase, profileId, controller, configuration in
-                manager?.traceNativeMessagingContextBinding(
+                manager?.runtimeDiagnostics.traceNativeMessagingContextBinding(
                     phase: phase,
                     extensionId: nil,
                     profileId: profileId,
                     controller: controller,
-                    configuration: configuration
+                    configuration: configuration,
+                    manager: manager
                 )
             },
-            controllerDescription: { [weak manager] controller in
-                manager?.extensionRuntimeControllerDescription(controller) ?? "nil"
+            controllerDescription: { controller in
+                ExtensionRuntimeDiagnostics.objectDescription(controller)
             },
             trace: { [weak manager] message in
-                manager?.extensionRuntimeTrace(message())
+                manager?.runtimeDiagnostics.trace(message())
             }
         )
     }

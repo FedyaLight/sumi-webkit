@@ -1,21 +1,61 @@
 import Foundation
 import WebKit
 import SumiDomain
+import SumiWebRuntime
+
+enum TabMainFrameReloadCommandOutcome: Equatable {
+    case accepted
+    case scheduled
+    case failed
+
+    func merged(with other: Self) -> Self {
+        if self == .failed || other == .failed { return .failed }
+        if self == .scheduled || other == .scheduled { return .scheduled }
+        return .accepted
+    }
+}
 
 @MainActor
 final class TabNavigationCommandOwner {
     typealias WebViewResolver = @MainActor @Sendable () -> WKWebView?
+    typealias ConfigurationPolicyRebuilder = @MainActor (
+        _ targetURL: URL,
+        _ reason: String
+    ) -> TabWebViewReplacementOutcome
 
     func loadURL(_ newURL: URL, for tab: Tab) {
         guard tab.hasCurrentWebView else {
+            _ = tab.beginMainFrameNavigationIntent(to: newURL)
+            _ = tab.beginWebViewRebuildIntent()
             tab.url = newURL
             tab.beginLoadingPresentationIfNeeded()
-            prepareExtensionPageNavigationIfNeeded(
+            let replacementOutcome = prepareMainFrameConfigurationPolicyIfNeeded(
                 newURL,
                 for: tab,
                 reason: "Tab.loadURL.initial"
             )
-            _ = tab.ensureUntrackedNormalWebView(reason: "Tab.loadURL.initial")
+            if replacementOutcome == .failed {
+                tab.rollbackMainFrameNavigationAfterFailedSubmission(on: nil)
+                return
+            }
+            if replacementOutcome.blocksCallerNavigation
+                || replacementOutcome.navigationWasScheduled {
+                tab.applyCachedFaviconOrPlaceholder(for: newURL)
+                return
+            }
+            switch tab.ensureUntrackedNormalWebViewOutcome(
+                reason: "Tab.loadURL.initial"
+            ) {
+            case .available:
+                break
+            case .deferred:
+                tab.applyCachedFaviconOrPlaceholder(for: newURL)
+                return
+            case .failed:
+                tab.rollbackMainFrameNavigationAfterFailedSubmission(on: nil)
+                return
+            }
+            tab.applyCachedFaviconOrPlaceholder(for: newURL)
             return
         }
 
@@ -32,63 +72,87 @@ final class TabNavigationCommandOwner {
         for tab: Tab,
         resolvedWebView: WebViewResolver,
         reason: String,
-        rebuildConfigurationPolicy: Bool = true
+        configurationPolicyRebuilder: ConfigurationPolicyRebuilder? = nil
     ) {
+        let navigationIntent = tab.beginMainFrameNavigationIntent(to: newURL)
+        _ = tab.beginWebViewRebuildIntent()
         tab.url = newURL
         tab.beginLoadingPresentationIfNeeded()
         tab.resetPlaybackActivity()
-        let rebuiltForExtensionPageNavigation = prepareExtensionPageNavigationIfNeeded(
+        let extensionReplacementOutcome = prepareMainFrameConfigurationPolicyIfNeeded(
             newURL,
             for: tab,
             reason: reason
         )
 
-        guard let initialWebView = resolvedWebView() else {
+        if extensionReplacementOutcome == .failed {
+            tab.rollbackMainFrameNavigationAfterFailedSubmission(
+                on: resolvedWebView()
+            )
+            return
+        }
+
+        if extensionReplacementOutcome.blocksCallerNavigation
+            || extensionReplacementOutcome.navigationWasScheduled {
             tab.applyCachedFaviconOrPlaceholder(for: newURL)
             return
         }
 
-        let rebuiltForConfigurationPolicy = rebuildConfigurationPolicy
-            && rebuiltForExtensionPageNavigation == false
+        guard let initialWebView = resolvedWebView() else {
+            tab.rollbackMainFrameNavigationAfterFailedSubmission(on: nil)
+            return
+        }
+
+        let configurationReplacementOutcome = extensionReplacementOutcome == .notNeeded
             && ExtensionUtils.isExtensionOwnedURL(newURL) == false
-            ? tab.rebuildNormalWebViewForConfigurationPolicyIfNeeded(
-                targetURL: newURL,
-                reason: reason
+            ? (configurationPolicyRebuilder?(newURL, reason)
+                ?? tab.rebuildNormalWebViewForConfigurationPolicyOutcome(
+                    targetURL: newURL,
+                    reason: reason
+                ))
+            : .notNeeded
+
+        if configurationReplacementOutcome == .failed {
+            tab.rollbackMainFrameNavigationAfterFailedSubmission(
+                on: initialWebView
             )
-            : false
-        let webView = rebuiltForExtensionPageNavigation || rebuiltForConfigurationPolicy
+            return
+        }
+
+        if configurationReplacementOutcome.blocksCallerNavigation
+            || configurationReplacementOutcome.navigationWasScheduled {
+            tab.applyCachedFaviconOrPlaceholder(for: newURL)
+            return
+        }
+
+        let webView = extensionReplacementOutcome.didReplace
+                || configurationReplacementOutcome.didReplace
             ? (resolvedWebView() ?? initialWebView)
             : initialWebView
 
-        if newURL.isFileURL {
-            loadFileURL(
-                newURL,
-                on: webView,
-                for: tab,
-                waitForContentBlockingAssets: rebuiltForConfigurationPolicy
-            )
-        } else {
-            loadWebURL(
-                newURL,
-                on: webView,
-                for: tab,
-                waitForContentBlockingAssets: rebuiltForConfigurationPolicy
-            )
+        performMainFrameNavigationAfterContentBlockingAssetsIfNeeded(
+            on: webView,
+            tab: tab,
+            waitForContentBlockingAssets: configurationReplacementOutcome.didReplace
+        ) { resolvedWebView, resolvedTargetURL in
+            WebRuntimeMainFrameLoader.load(resolvedTargetURL, on: resolvedWebView)
         }
 
-        tab.applyCachedFaviconOrPlaceholder(for: newURL)
+        if tab.isCurrentMainFrameNavigationIntent(navigationIntent) {
+            tab.applyCachedFaviconOrPlaceholder(for: newURL)
+        }
     }
 
     @discardableResult
-    private func prepareExtensionPageNavigationIfNeeded(
+    func prepareMainFrameConfigurationPolicyIfNeeded(
         _ newURL: URL,
         for tab: Tab,
         reason: String
-    ) -> Bool {
+    ) -> TabWebViewReplacementOutcome {
         guard ExtensionUtils.isExtensionOwnedURL(newURL)
                 || tab.webExtensionContextOverride != nil
         else {
-            return false
+            return .notNeeded
         }
         return tab.navigationRuntime.navigationCommandRuntime.prepareExtensionPageNavigation(
             tab,
@@ -119,52 +183,277 @@ final class TabNavigationCommandOwner {
         loadURL(validURL, for: tab)
     }
 
-    func refresh(_ tab: Tab) {
-        guard !tab.representsSumiNativeSurface else { return }
-
-        tab.beginLoadingPresentationIfNeeded()
-        let currentWebView = tab.resolvedCurrentWebView()
-        let targetURL = currentWebView?.url ?? tab.url
-        let protectionReloadWasRequired = tab.reloadPolicyStateOwner.isProtectionReloadRequired
-        let rebuiltForConfigurationPolicy = tab.rebuildNormalWebViewForConfigurationPolicyIfNeeded(
-            targetURL: targetURL,
-            reason: "Tab.refresh"
+    @discardableResult
+    func refresh(_ tab: Tab) -> TabMainFrameReloadCommandOutcome {
+        refresh(
+            tab,
+            resolvedWebView: { [weak tab] in tab?.resolvedCurrentWebView() },
+            reason: "Tab.refresh",
+            deliverTrackedReload: { [weak self, weak tab] intent, policy in
+                guard let self, let tab else { return .failed }
+                return self.deliverReload(
+                    for: tab,
+                    intent: intent,
+                    policy: policy
+                )
+            }
         )
+    }
+
+    @discardableResult
+    func recoverWebContentProcess(
+        _ tab: Tab,
+        targetURL: URL,
+        sourceWebView: WKWebView,
+        configurationPolicyRebuilder: ConfigurationPolicyRebuilder? = nil
+    ) -> TabMainFrameReloadCommandOutcome {
+        guard tab.retainWebContentProcessRecovery(on: sourceWebView) else {
+            return .failed
+        }
+        return refresh(
+            tab,
+            resolvedWebView: { [weak sourceWebView] in sourceWebView },
+            reason: "WebContentProcess.global-recovery",
+            targetURLOverride: targetURL,
+            configurationPolicyRebuilder: configurationPolicyRebuilder,
+            deliverTrackedReload: { [weak self, weak tab, weak sourceWebView] intent, policy in
+                guard let self, let tab, let sourceWebView else { return .failed }
+                return self.deliverWebContentProcessRecovery(
+                    for: tab,
+                    sourceWebView: sourceWebView,
+                    intent: intent,
+                    policy: policy
+                )
+            }
+        )
+    }
+
+    /// Restores the exact semantic document after a destructive WebKit data
+    /// transaction temporarily navigated every physical replica to a blank
+    /// document. One new revision is created for the whole Tab, so replicas do
+    /// not race each other or retain the pre-deletion document generation.
+    @discardableResult
+    func restoreAfterDestructiveDataCleanup(
+        _ tab: Tab,
+        targetURL: URL
+    ) -> TabMainFrameReloadCommandOutcome {
+        refresh(
+            tab,
+            resolvedWebView: { [weak tab] in tab?.resolvedCurrentWebView() },
+            reason: "DestructiveDataCleanup.restore",
+            policy: .fromOrigin,
+            targetURLOverride: targetURL,
+            deliverTrackedReload: { [weak self, weak tab] intent, policy in
+                guard let self, let tab else { return .failed }
+                return self.deliverReload(
+                    for: tab,
+                    intent: intent,
+                    policy: policy,
+                    includesParkedWebView: true
+                )
+            }
+        )
+    }
+
+    /// Creates one semantic reload revision before any configuration rebuild
+    /// or WebView delivery. Tracked delivery is injected so global and
+    /// window-scoped commands share the same Tab-owned transaction.
+    @discardableResult
+    func refresh(
+        _ tab: Tab,
+        resolvedWebView: WebViewResolver,
+        reason: String,
+        policy: WebRuntimeMainFrameReloadPolicy = .standard,
+        targetURLOverride: URL? = nil,
+        configurationPolicyRebuilder: ConfigurationPolicyRebuilder? = nil,
+        deliverTrackedReload: @MainActor (
+            TabMainFrameNavigationIntent,
+            WebRuntimeMainFrameReloadPolicy
+        ) -> TabMainFrameReloadCommandOutcome
+    ) -> TabMainFrameReloadCommandOutcome {
+        guard !tab.representsSumiNativeSurface else { return .failed }
+
+        let currentWebView = resolvedWebView()
+        let targetURL = targetURLOverride
+            ?? currentWebView?.committedURL
+            ?? currentWebView?.url
+            ?? tab.url
+        let navigationIntent = tab.beginMainFrameNavigationIntent(to: targetURL)
+        _ = tab.beginWebViewRebuildIntent()
+        tab.beginLoadingPresentationIfNeeded()
+        let protectionReloadWasRequired = tab.reloadPolicyStateOwner.isProtectionReloadRequired
+        let configurationReplacementOutcome = configurationPolicyRebuilder?(
+            targetURL,
+            reason
+        ) ?? tab.rebuildNormalWebViewForConfigurationPolicyOutcome(
+            targetURL: targetURL,
+            reason: reason
+        )
+
+        if configurationReplacementOutcome == .failed {
+            tab.rollbackMainFrameNavigationAfterFailedSubmission(
+                on: currentWebView
+            )
+            return .failed
+        }
 
         if protectionReloadWasRequired {
             tab.noteProtectionManualReloadResult(
-                rebuiltForConfigurationPolicy: rebuiltForConfigurationPolicy,
+                rebuiltForConfigurationPolicy: configurationReplacementOutcome.didReplace,
                 targetURL: targetURL
             )
         }
 
-        if let webView = tab.resolvedCurrentWebView() ?? currentWebView {
-            if rebuiltForConfigurationPolicy {
-                performMainFrameNavigationAfterContentBlockingAssetsIfNeeded(
-                    on: webView,
-                    tab: tab,
-                    waitForContentBlockingAssets: true
-                ) { resolvedWebView in
-                    if targetURL.isFileURL {
-                        resolvedWebView.loadFileURL(
-                            targetURL,
-                            allowingReadAccessTo: targetURL.deletingLastPathComponent()
-                        )
-                    } else {
-                        resolvedWebView.load(URLRequest(url: targetURL))
-                    }
-                }
-            } else {
-                tab.performMainFrameNavigationAfterHydrationIfNeeded(
-                    on: webView
-                ) { resolvedWebView in
-                    resolvedWebView.reload()
-                }
-            }
+        if configurationReplacementOutcome.blocksCallerNavigation
+            || configurationReplacementOutcome.navigationWasScheduled {
+            return .scheduled
         }
 
-        if !rebuiltForConfigurationPolicy {
-            tab.navigationRuntime.webViewRouting.reloadTabAcrossWindows(tab.id)
+        if configurationReplacementOutcome == .replacedNavigationPending,
+           let webView = resolvedWebView() ?? currentWebView {
+            performMainFrameNavigationAfterContentBlockingAssetsIfNeeded(
+                on: webView,
+                tab: tab,
+                waitForContentBlockingAssets: true
+            ) { resolvedWebView, resolvedTargetURL in
+                WebRuntimeMainFrameLoader.load(resolvedTargetURL, on: resolvedWebView)
+            }
+            return .scheduled
+        } else if configurationReplacementOutcome == .replacedNavigationPending {
+            tab.rollbackMainFrameNavigationAfterFailedSubmission(
+                on: currentWebView
+            )
+            return .failed
+        }
+
+        if configurationReplacementOutcome == .notNeeded {
+            guard tab.isCurrentMainFrameNavigationIntent(navigationIntent) else {
+                return .failed
+            }
+            let outcome = deliverTrackedReload(navigationIntent, policy)
+            if outcome == .failed {
+                tab.rollbackMainFrameNavigationAfterFailedSubmission(
+                    on: currentWebView
+                )
+            }
+            return outcome
+        }
+        return .failed
+    }
+
+    private func deliverReload(
+        for tab: Tab,
+        intent: TabMainFrameNavigationIntent,
+        policy: WebRuntimeMainFrameReloadPolicy,
+        includesParkedWebView: Bool = false
+    ) -> TabMainFrameReloadCommandOutcome {
+        guard tab.isCurrentMainFrameNavigationIntent(intent) else {
+            return .failed
+        }
+
+        var didDeliver = false
+        var outcome = TabMainFrameReloadCommandOutcome.accepted
+        if let untrackedWebView = tab.webViewSession.untrackedWebView {
+            didDeliver = true
+            outcome = outcome.merged(with: submitExactReload(
+                on: untrackedWebView,
+                tab: tab,
+                intent: intent,
+                policy: policy
+            ))
+        }
+        if includesParkedWebView,
+           let parkedWebView = tab.webViewSession.parkedWebView,
+           parkedWebView !== tab.webViewSession.untrackedWebView {
+            didDeliver = true
+            outcome = outcome.merged(with: submitExactReload(
+                on: parkedWebView,
+                tab: tab,
+                intent: intent,
+                policy: policy
+            ))
+        }
+        if tab.resolvedPrimaryWindowId() != nil {
+            didDeliver = true
+            tab.navigationRuntime.webViewRouting.reloadTabAcrossWindows(
+                tab.id,
+                intent,
+                policy
+            )
+            outcome = outcome.merged(with: .scheduled)
+        }
+        return didDeliver ? outcome : .failed
+    }
+
+    /// Global recovery creates a fresh semantic revision, broadcasts it to
+    /// healthy window replicas, and delegates repair of the exact crashed
+    /// WebView to the retained process-recovery owner. Detached WebViews never
+    /// bypass compositor protection through the ordinary direct-load path.
+    private func deliverWebContentProcessRecovery(
+        for tab: Tab,
+        sourceWebView: WKWebView,
+        intent: TabMainFrameNavigationIntent,
+        policy: WebRuntimeMainFrameReloadPolicy
+    ) -> TabMainFrameReloadCommandOutcome {
+        guard tab.isCurrentMainFrameNavigationIntent(intent) else {
+            return .failed
+        }
+
+        var broadcastOutcome = TabMainFrameReloadCommandOutcome.failed
+        if tab.resolvedPrimaryWindowId() != nil {
+            tab.navigationRuntime.webViewRouting.reloadTabAcrossWindows(
+                tab.id,
+                intent,
+                policy
+            )
+            broadcastOutcome = .scheduled
+        }
+
+        let sourceOutcome = tab.reconcileWebContentProcessRecovery(
+            on: sourceWebView
+        )
+        if sourceOutcome == .scheduled || broadcastOutcome == .scheduled {
+            return .scheduled
+        }
+        if sourceOutcome == .accepted || broadcastOutcome == .accepted {
+            return .accepted
+        }
+        return .failed
+    }
+
+    func submitExactReload(
+        on webView: WKWebView,
+        tab: Tab,
+        intent: TabMainFrameNavigationIntent,
+        policy: WebRuntimeMainFrameReloadPolicy
+    ) -> TabMainFrameReloadCommandOutcome {
+        guard tab.isCurrentMainFrameNavigationIntent(intent) else {
+            return .failed
+        }
+        guard tab.markDeferredMainFrameLoad(on: webView, intent: intent) else {
+            return tab.hasOutstandingMainFrameLoad(
+                on: webView,
+                targetURL: intent.targetURL
+            ) ? .scheduled : .failed
+        }
+        let claim = tab.performDeferredMainFrameNavigation(
+            on: webView,
+            revision: intent.revision,
+            targetURL: intent.targetURL
+        ) { resolvedWebView in
+            WebRuntimeMainFrameReloader.reloadOrLoad(
+                intent.targetURL,
+                on: resolvedWebView,
+                policy: policy
+            )
+        }
+        switch claim {
+        case .claimed:
+            return .accepted
+        case .alreadyScheduled:
+            return .scheduled
+        case .submissionFailed, .stale:
+            return .failed
         }
     }
 
@@ -172,74 +461,47 @@ final class TabNavigationCommandOwner {
         on webView: WKWebView,
         tab: Tab,
         waitForContentBlockingAssets: Bool,
-        performLoad: @escaping @MainActor @Sendable (WKWebView) -> Void
+        performLoad: @escaping @MainActor @Sendable (WKWebView, URL) -> WKNavigation?
     ) {
         guard waitForContentBlockingAssets,
               let controller = webView.configuration.userContentController.sumiNormalTabUserContentController
         else {
             tab.performMainFrameNavigationAfterHydrationIfNeeded(
-                on: webView,
-                performLoad: performLoad
-            )
+                on: webView
+            ) { resolvedWebView in
+                performLoad(resolvedWebView, tab.url)
+            }
             return
         }
 
+        let navigationIntent = tab.currentMainFrameNavigationIntent(matching: tab.url)
+        let preparationTicket = navigationIntent.flatMap {
+            tab.beginPreparedMainFrameLoad(on: webView, intent: $0)
+        }
         tab.navigationRuntime.navigationTransactionOwner.performAfterPreparation(
             on: webView,
             prepare: {
                 await controller.waitForContentBlockingAssetsInstalled()
             },
-            performLoad: performLoad
+            didCancel: { [weak tab] in
+                guard let tab, let preparationTicket else { return }
+                tab.finishPreparedMainFrameLoad(preparationTicket)
+            },
+            performLoad: { [weak tab] resolvedWebView in
+                guard let tab else { return }
+                if let preparationTicket {
+                    tab.finishPreparedMainFrameLoad(preparationTicket)
+                }
+                guard let currentIntent = navigationIntent.flatMap({
+                    tab.currentMainFrameNavigationIntent(revision: $0.revision)
+                }) else {
+                    return
+                }
+                tab.performMainFrameNavigation(on: resolvedWebView) {
+                    performLoad($0, currentIntent.targetURL)
+                }
+            }
         )
     }
 
-    nonisolated static func navigationCommandURLRequest(for url: URL) -> URLRequest {
-        var request = URLRequest(url: url)
-        request.cachePolicy = navigationCommandCachePolicy(for: url)
-        request.timeoutInterval = 30.0
-        return request
-    }
-
-    nonisolated private static func navigationCommandCachePolicy(for url: URL) -> URLRequest.CachePolicy {
-        let scheme = url.scheme?.lowercased() ?? ""
-        if scheme == "webkit-extension" || scheme == "safari-web-extension" {
-            return .reloadIgnoringLocalCacheData
-        }
-        return .returnCacheDataElseLoad
-    }
-
-    private func loadFileURL(
-        _ url: URL,
-        on webView: WKWebView,
-        for tab: Tab,
-        waitForContentBlockingAssets: Bool
-    ) {
-        let directoryURL = url.deletingLastPathComponent()
-        performMainFrameNavigationAfterContentBlockingAssetsIfNeeded(
-            on: webView,
-            tab: tab,
-            waitForContentBlockingAssets: waitForContentBlockingAssets
-        ) { resolvedWebView in
-            resolvedWebView.loadFileURL(
-                url,
-                allowingReadAccessTo: directoryURL
-            )
-        }
-    }
-
-    private func loadWebURL(
-        _ url: URL,
-        on webView: WKWebView,
-        for tab: Tab,
-        waitForContentBlockingAssets: Bool
-    ) {
-        let request = Self.navigationCommandURLRequest(for: url)
-        performMainFrameNavigationAfterContentBlockingAssetsIfNeeded(
-            on: webView,
-            tab: tab,
-            waitForContentBlockingAssets: waitForContentBlockingAssets
-        ) { resolvedWebView in
-            resolvedWebView.load(request)
-        }
-    }
 }

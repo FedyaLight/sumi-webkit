@@ -13,44 +13,44 @@ protocol TabWindowQueryPort {
 
 @MainActor
 struct LiveTabWindowQueryPort: TabWindowQueryPort {
-    private weak var browserManager: BrowserManager?
+    private let runtime: BrowserManagerRuntimeReference
 
-    init(browserManager: BrowserManager) {
-        self.browserManager = browserManager
+    init(runtime: BrowserManagerRuntimeReference) {
+        self.runtime = runtime
     }
 
     func windowState(for windowId: UUID) -> BrowserWindowState? {
-        browserManager?.windowRegistry?.windows[windowId]
+        runtime.require().windowRegistry?.windows[windowId]
     }
 
     func forEachWindow(_ body: (UUID, BrowserWindowState) -> Void) {
-        let windows = browserManager?.windowRegistry?.windows.map { ($0.key, $0.value) } ?? []
+        let windows = runtime.require().windowRegistry?.windows.map { ($0.key, $0.value) } ?? []
         for (windowId, windowState) in windows {
             body(windowId, windowState)
         }
     }
 
     func forEachWindowState(_ body: (BrowserWindowState) -> Void) {
-        let windowStates = browserManager?.windowRegistry?.allWindows ?? []
+        let windowStates = runtime.require().windowRegistry?.allWindows ?? []
         for windowState in windowStates {
             body(windowState)
         }
     }
 
     func updateTabVisibility() {
-        browserManager?.compositorManager.updateTabVisibility()
+        runtime.require().compositorManager.updateTabVisibility()
     }
 
     func validateWindowStates() {
-        browserManager?.windowSessionBundle.spaceStateOwner.validateWindowStates()
+        runtime.require().windowSessionBundle.spaceStateOwner.validateWindowStates()
     }
 
     func persistWindowSession(for windowState: BrowserWindowState) {
-        browserManager?.windowSessionBundle.activationOwner.persistWindowSession(for: windowState)
+        runtime.require().windowSessionBundle.persistence.persist(windowState)
     }
 
     func syncWorkspaceThemeAcrossWindows(for space: Space, animate: Bool) {
-        browserManager?.chromeBundle.workspaceThemeTransitionOwner.syncWorkspaceThemeAcrossWindows(
+        runtime.require().chromeBundle.workspaceThemeTransitionOwner.syncWorkspaceThemeAcrossWindows(
             for: space,
             animate: animate
         )

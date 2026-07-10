@@ -1,4 +1,5 @@
 import Foundation
+import Navigation
 import SumiDomain
 import WebKit
 
@@ -13,7 +14,7 @@ import WebKit
 /// returns `nil` once the header is already present), so the reissued load is
 /// let through as `.next` on its second pass through the responder chain.
 @MainActor
-final class SumiGPCNavigationResponder: SumiNavigationActionWebViewResponding {
+final class SumiGPCNavigationResponder: SumiNavigationActionContextResponding {
     private weak var tab: Tab?
     private let requestFactory: SumiGPCRequestFactory
     private let isGPCEnabledProvider: () -> Bool
@@ -33,6 +34,7 @@ final class SumiGPCNavigationResponder: SumiNavigationActionWebViewResponding {
     func decidePolicy(
         for navigationAction: SumiNavigationAction,
         webView: WKWebView?,
+        context: SumiNavigationActionContext,
         preferences: inout SumiNavigationPreferences
     ) async -> SumiNavigationActionPolicy? {
         guard navigationAction.isForMainFrame,
@@ -40,10 +42,41 @@ final class SumiGPCNavigationResponder: SumiNavigationActionWebViewResponding {
               let rewrittenRequest = requestFactory.requestAddingGPCHeaderIfNeeded(
                   to: navigationAction.request,
                   isGPCEnabled: isGPCEnabledProvider()
-              )
+        )
         else { return .next }
 
-        webView.load(rewrittenRequest)
+        guard let originalNavigationID = context.navigationID,
+              let originalNavigationLifetime = context.navigationLifetime,
+              let tab,
+              let navigator = webView.navigator(),
+              let targetURL = rewrittenRequest.url else {
+            return .cancel
+        }
+        let originalRole = tab.beginMainFrameLifecycle(
+            from: webView,
+            navigationID: originalNavigationID,
+            navigationLifetime: originalNavigationLifetime,
+            targetURL: targetURL,
+            allowsUserInitiatedSupersession: navigationAction.isUserInitiated,
+            continuationKind: nil
+        )
+        guard originalRole.isParticipant,
+              let replacementNavigation = webView.load(rewrittenRequest) else {
+            return .cancel
+        }
+        let expectedNavigation = navigator.expect(replacementNavigation)
+        let replacementRole = tab.beginMainFrameLifecycle(
+            from: webView,
+            navigationID: expectedNavigation.stableIdentifier,
+            navigationLifetime: expectedNavigation.identityLifetime,
+            targetURL: targetURL,
+            allowsUserInitiatedSupersession: false,
+            continuationKind: .requestRewrite
+        )
+        precondition(
+            replacementRole.isParticipant,
+            "GPC request rewrite lost its exact navigation transaction"
+        )
         return .cancel
     }
 }

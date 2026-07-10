@@ -29,9 +29,9 @@ final class ActiveTabSuggestionOwnerTests: XCTestCase {
 
     func testFallsBackToLastSelectedAtWhenNoSelectionHistoryRank() {
         let older = makeTab(name: "Older", url: "https://a.example")
-        older.suspensionStateOwner.lastSelectedAt = Date(timeIntervalSince1970: 1)
+        older.lastSelectedAt = Date(timeIntervalSince1970: 1)
         let newer = makeTab(name: "Newer", url: "https://b.example")
-        newer.suspensionStateOwner.lastSelectedAt = Date(timeIntervalSince1970: 2)
+        newer.lastSelectedAt = Date(timeIntervalSince1970: 2)
         let windowState = BrowserWindowState()
 
         let owner = makeOwner(allTabs: [older, newer])

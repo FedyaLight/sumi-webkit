@@ -1,627 +1,21 @@
 import Combine
 import Foundation
 import SumiDomain
-import OSLog
 
-enum SumiAdblockSiteOverride: String, Codable, CaseIterable, Sendable {
-    case inherit
-    case allowed
-    case disabled
-}
-
-struct SumiAdblockEffectivePolicy: Equatable, Sendable {
-    let host: String?
-    let isEnabled: Bool
-}
-
-struct SumiAdblockSurfaceEligibility: Equatable, Sendable {
-    let isEligible: Bool
-    let normalizedSiteHost: String?
-    let ineligibleReason: String?
-
-    static func evaluate(
-        url: URL?,
-        normalizer: SumiProtectionSiteNormalizer
-    ) -> SumiAdblockSurfaceEligibility {
-        guard let url else {
-            return SumiAdblockSurfaceEligibility(isEligible: false, normalizedSiteHost: nil, ineligibleReason: "No URL")
-        }
-        let scheme = url.scheme?.lowercased()
-        if SumiSurface.isEmptyNewTabURL(url) || scheme == "about" {
-            return SumiAdblockSurfaceEligibility(isEligible: false, normalizedSiteHost: nil, ineligibleReason: "Sumi empty/new tab surface")
-        }
-        if scheme == "sumi" {
-            return SumiAdblockSurfaceEligibility(isEligible: false, normalizedSiteHost: nil, ineligibleReason: "Internal Sumi surface")
-        }
-        if scheme == "file" {
-            return SumiAdblockSurfaceEligibility(isEligible: false, normalizedSiteHost: nil, ineligibleReason: "Local file URL")
-        }
-        guard scheme == "http" || scheme == "https" else {
-            return SumiAdblockSurfaceEligibility(
-                isEligible: false,
-                normalizedSiteHost: nil,
-                ineligibleReason: "Unsupported URL scheme: \(scheme ?? "nil")"
-            )
-        }
-        guard let host = normalizer.normalizedHost(for: url) else {
-            return SumiAdblockSurfaceEligibility(isEligible: false, normalizedSiteHost: nil, ineligibleReason: "No normalized web host")
-        }
-        return SumiAdblockSurfaceEligibility(isEligible: true, normalizedSiteHost: host, ineligibleReason: nil)
-    }
-}
-
-@MainActor
-final class AdblockSitePolicyStore: ObservableObject {
-    private static let log = Logger.sumi(category: "ContentBlocking")
-
-    private enum DefaultsKey {
-        static let siteOverrides = "settings.adblock.siteOverrides"
-    }
-
-    @Published private(set) var siteOverrides: [String: SumiAdblockSiteOverride]
-    private let userDefaults: UserDefaults
-    private let siteNormalizer: SumiProtectionSiteNormalizer
-    private let changesSubject = PassthroughSubject<Void, Never>()
-
-    var changesPublisher: AnyPublisher<Void, Never> { changesSubject.eraseToAnyPublisher() }
-
-    init(
-        userDefaults: UserDefaults = .standard,
-        registrableDomainResolver: any SumiRegistrableDomainResolving = SumiRegistrableDomainResolver()
-    ) {
-        self.userDefaults = userDefaults
-        self.siteNormalizer = SumiProtectionSiteNormalizer(registrableDomainResolver: registrableDomainResolver)
-        siteOverrides = Self.loadSiteOverrides(from: userDefaults)
-    }
-
-    func effectivePolicy(for url: URL?, globalEnabled: Bool) -> SumiAdblockEffectivePolicy {
-        let host = normalizedHost(for: url)
-        guard let host else { return SumiAdblockEffectivePolicy(host: nil, isEnabled: false) }
-        switch siteOverrides[host] ?? .inherit {
-        case .allowed:
-            return SumiAdblockEffectivePolicy(host: host, isEnabled: true)
-        case .disabled:
-            return SumiAdblockEffectivePolicy(host: host, isEnabled: false)
-        case .inherit:
-            return SumiAdblockEffectivePolicy(host: host, isEnabled: globalEnabled)
-        }
-    }
-
-    func override(for url: URL?) -> SumiAdblockSiteOverride {
-        guard let host = normalizedHost(for: url) else { return .inherit }
-        return siteOverrides[host] ?? .inherit
-    }
-
-    func setSiteOverride(_ override: SumiAdblockSiteOverride, for url: URL?) {
-        guard let host = normalizedHost(for: url) else { return }
-        setSiteOverride(override, forNormalizedHost: host)
-    }
-
-    func normalizedHost(for url: URL?) -> String? {
-        surfaceEligibility(for: url).normalizedSiteHost
-    }
-
-    func surfaceEligibility(for url: URL?) -> SumiAdblockSurfaceEligibility {
-        SumiAdblockSurfaceEligibility.evaluate(url: url, normalizer: siteNormalizer)
-    }
-
-    private func setSiteOverride(_ override: SumiAdblockSiteOverride, forNormalizedHost host: String) {
-        var updated = siteOverrides
-        if override == .inherit {
-            updated.removeValue(forKey: host)
-        } else {
-            updated[host] = override
-        }
-        guard updated != siteOverrides else { return }
-        siteOverrides = updated
-        do {
-            let data = try JSONEncoder().encode(updated.mapValues(\.rawValue))
-            userDefaults.set(data, forKey: DefaultsKey.siteOverrides)
-        } catch {
-            Self.log.error("Failed to persist adblock site overrides: \(error.localizedDescription, privacy: .public)")
-        }
-        changesSubject.send(())
-    }
-
-    private static func loadSiteOverrides(from userDefaults: UserDefaults) -> [String: SumiAdblockSiteOverride] {
-        guard let data = userDefaults.data(forKey: DefaultsKey.siteOverrides) else { return [:] }
-        let decoded: [String: String]
-        do {
-            decoded = try JSONDecoder().decode([String: String].self, from: data)
-        } catch {
-            Self.log.error("Failed to load adblock site overrides: \(error.localizedDescription, privacy: .public)")
-            return [:]
-        }
-        return decoded.reduce(into: [:]) { result, entry in
-            guard let override = SumiAdblockSiteOverride(rawValue: entry.value), override != .inherit else { return }
-            result[entry.key] = override
-        }
-    }
-}
-
-@MainActor
-final class AdblockWebKitRuleListStore {
-    let contentBlockingService: SumiContentBlockingService
-    private let manifestStore: AdblockUpdateManifestStore
-    private let ruleListProvider: AdblockManifestRuleListProvider
-    private let updateCoordinator: AdblockUpdateCoordinator
-    private let isAdblockEnabled: @Sendable () async -> Bool
-    private let embeddedBundleURLProvider: @MainActor () -> URL?
-    #if DEBUG
-        private let startupDiagnostics: any SumiProtectionStartupRestoreDiagnosticsRecording
-    #endif
-    private var startupTask: Task<Void, Never>?
-    private(set) var lastUpdateDiagnostics: AdblockUpdateDiagnostics?
-
-    var activeManifest: AdblockCompiledGenerationManifest? { ruleListProvider.activeManifest }
-
-    init(
-        isAdblockEnabled: @escaping @Sendable () async -> Bool = { true },
-        manifestStore: AdblockUpdateManifestStore? = nil,
-        compiler: SumiContentRuleListCompiling = SumiWKContentRuleListCompiler(),
-        compiledRuleListCatalog: SumiCompiledContentRuleListCataloging = AdblockRetainingCompiledRuleListCatalog(),
-        embeddedBundleURLProvider: @escaping @MainActor () -> URL? = {
-            SumiAdblockNativeRuleBundle.bundledDirectoryURL(for: SumiProtectionBundleProfile.adblock)
-        },
-        startupDiagnostics: (any SumiProtectionStartupRestoreDiagnosticsRecording)? = nil
-    ) {
-        #if DEBUG
-            let startupDiagnostics = startupDiagnostics ?? SumiProtectionStartupRestoreDiagnosticsDefaults.recorder
-            self.startupDiagnostics = startupDiagnostics
-            let resolvedManifestStore = manifestStore ?? AdblockUpdateManifestStore(
-                startupDiagnostics: startupDiagnostics
-            )
-            let compiledDefinitionLoader = AdblockManifestRuleListProvider.diskBackedDefinitionLoader(
-                storageRoot: resolvedManifestStore.storageRoot,
-                startupDiagnostics: startupDiagnostics
-            )
-        #else
-            _ = startupDiagnostics
-            let resolvedManifestStore = manifestStore ?? AdblockUpdateManifestStore()
-            let compiledDefinitionLoader = AdblockManifestRuleListProvider.diskBackedDefinitionLoader(
-                storageRoot: resolvedManifestStore.storageRoot
-            )
-        #endif
-        self.manifestStore = resolvedManifestStore
-        self.isAdblockEnabled = isAdblockEnabled
-        self.embeddedBundleURLProvider = embeddedBundleURLProvider
-        let provider = AdblockManifestRuleListProvider(
-            manifest: nil,
-            compiledDefinitionLoader: compiledDefinitionLoader
-        )
-        ruleListProvider = provider
-        #if DEBUG
-            contentBlockingService = SumiContentBlockingService(
-                policy: .disabled,
-                compiler: compiler,
-                ruleListProvider: provider,
-                compiledRuleListCatalog: compiledRuleListCatalog,
-                startupDiagnostics: startupDiagnostics
-            )
-        #else
-        contentBlockingService = SumiContentBlockingService(
-            policy: .disabled,
-            compiler: compiler,
-            ruleListProvider: provider,
-            compiledRuleListCatalog: compiledRuleListCatalog
-        )
-        #endif
-        let publisher = AdblockRuleListPublisher(ruleListProvider: provider, contentBlockingService: contentBlockingService)
-        #if DEBUG
-            let garbageCollector = AdblockGenerationGarbageCollector(
-                manifestStore: resolvedManifestStore,
-                contentRuleListStore: compiler,
-                startupDiagnostics: startupDiagnostics
-            )
-        #else
-            let garbageCollector = AdblockGenerationGarbageCollector(
-                manifestStore: resolvedManifestStore,
-                contentRuleListStore: compiler
-            )
-        #endif
-        updateCoordinator = AdblockUpdateCoordinator.production(
-            manifestStore: resolvedManifestStore,
-            publisher: publisher,
-            contentRuleListStore: compiler,
-            garbageCollector: garbageCollector,
-            startupDiagnostics: startupDiagnostics
-        )
-        startupTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-            await self.loadActiveManifestIfEnabled()
-            _ = await self.updateCoordinator.rollbackIfActiveGenerationFailsSmokeCheck()
-        }
-    }
-
-    deinit {
-        startupTask?.cancel()
-    }
-
-    #if DEBUG
-        func drainStartupTasksForTests(cancel: Bool = false) async {
-            if cancel {
-                startupTask?.cancel()
-            }
-            if let startupTask {
-                await startupTask.value
-                self.startupTask = nil
-            }
-            await contentBlockingService.drainScheduledTasksForTests(cancel: cancel)
-        }
-    #endif
-
-    func contentRuleListDefinitions(for protectionGroups: Set<SumiProtectionGroupKind>) throws -> [SumiContentRuleListDefinition] {
-        guard let manifest = activeManifest else { return [] }
-        #if DEBUG
-            let loader = AdblockManifestRuleListProvider.diskBackedDefinitionLoader(
-                storageRoot: manifestStore.storageRoot,
-                startupDiagnostics: startupDiagnostics
-            )
-        #else
-            let loader = AdblockManifestRuleListProvider.diskBackedDefinitionLoader(
-                storageRoot: manifestStore.storageRoot
-            )
-        #endif
-        return try manifest.networkShards
-            .filter { shard in shard.protectionGroup.map { protectionGroups.contains($0) } ?? false }
-            .sorted { lhs, rhs in
-                if lhs.protectionGroup == rhs.protectionGroup {
-                    return lhs.id < rhs.id
-                }
-                return (lhs.protectionGroup?.rawValue ?? "") < (rhs.protectionGroup?.rawValue ?? "")
-            }
-            .map(loader)
-    }
-
-    func loadActiveManifestIfEnabled() async {
-        guard await isAdblockEnabled() else { return }
-        let observedManifest = ruleListProvider.activeManifest
-        do {
-            let manifest = try await manifestStore.activeManifest()
-#if DEBUG
-            startupDiagnostics.recordManifest(manifest)
-#endif
-            do {
-                if try await installEmbeddedBundleIfNeeded(previousManifest: manifest) != nil { return }
-            } catch where manifest != nil {
-                try await manifestStore.validateCompiledShardFiles(for: manifest!)
-                updateManifestIfNoNewerPublication(
-                    manifest,
-                    replacing: observedManifest,
-                    compiledDefinitions: Self.metadataOnlyDefinitions(for: manifest!)
-                )
-                return
-            }
-            if let manifest { try await manifestStore.validateCompiledShardFiles(for: manifest) }
-            updateManifestIfNoNewerPublication(
-                manifest,
-                replacing: observedManifest,
-                compiledDefinitions: manifest.map { Self.metadataOnlyDefinitions(for: $0) } ?? []
-            )
-        } catch let diagnostics as AdblockUpdateDiagnostics {
-            lastUpdateDiagnostics = diagnostics
-            updateManifestIfNoNewerPublication(nil, replacing: observedManifest)
-        } catch {
-            lastUpdateDiagnostics = AdblockUpdateDiagnostics(summary: error.localizedDescription)
-            updateManifestIfNoNewerPublication(nil, replacing: observedManifest)
-        }
-    }
-
-    private func updateManifestIfNoNewerPublication(
-        _ manifest: AdblockCompiledGenerationManifest?,
-        replacing observedManifest: AdblockCompiledGenerationManifest?,
-        compiledDefinitions: [SumiContentRuleListDefinition] = []
-    ) {
-        guard ruleListProvider.activeManifest == observedManifest else { return }
-        ruleListProvider.updateManifest(manifest, compiledDefinitions: compiledDefinitions)
-    }
-
-    func restorePreparedManifestIfAvailable(profileId: String) async throws -> AdblockCompiledGenerationManifest? {
-        guard await isAdblockEnabled() else { return nil }
-        guard let manifest = try await manifestStore.activeManifest(),
-              Self.isPreparedManifest(manifest, profileId: profileId)
-        else {
-#if DEBUG
-            startupDiagnostics.recordFallback(
-                reason: "No persisted prepared manifest matched profile \(profileId)"
-            )
-#endif
-            return nil
-        }
-#if DEBUG
-        startupDiagnostics.recordManifest(manifest)
-        startupDiagnostics.recordGenerationStaleCheck(
-            consideredStale: false,
-            reason: "Persisted prepared manifest matches requested profile \(profileId)"
-        )
-#endif
-        try await publishPersistedManifest(manifest)
-        lastUpdateDiagnostics = AdblockUpdateDiagnostics(
-            summary: "success: restored prepared Adblock bundle",
-            generationSource: manifest.generationSource,
-            bundleProfileId: profileId,
-            nativeRuleBundleId: manifest.nativeRuleBundleId
-        )
-        return manifest
-    }
-
-    func requestPreparedBundleInstall(
-        bundleURL: URL,
-        source: SumiAdblockBundleInstallSource,
-        profileId: String,
-        remoteMetadata: SumiAdblockPreparedBundleRemoteMetadata? = nil
-    ) async throws -> AdblockCompiledGenerationManifest? {
-        guard await isAdblockEnabled() else { return nil }
-        return try await installPreparedBundle(
-            at: bundleURL,
-            source: source,
-            requestedProfileId: profileId,
-            previousManifest: try await manifestStore.activeManifest(),
-            skipIfAlreadyInstalled: false,
-            remoteMetadata: remoteMetadata
-        )
-    }
-
-    private func installEmbeddedBundleIfNeeded(
-        previousManifest: AdblockCompiledGenerationManifest?
-    ) async throws -> AdblockCompiledGenerationManifest? {
-        guard let bundleURL = embeddedBundleURLProvider() else { return nil }
-        let bundle: SumiAdblockNativeRuleBundle
-        do {
-            bundle = try SumiAdblockNativeRuleBundle.load(directoryURL: bundleURL)
-        } catch {
-            throw diagnostics(
-                summary: "Adblock bundle install failed before publish: \(error.localizedDescription)",
-                stage: Self.bundleLoadFailureStage(error),
-                source: .appResource,
-                profileId: SumiProtectionBundleProfile.adblock,
-                bundleURL: bundleURL,
-                error: error
-            )
-        }
-        guard shouldInstallEmbeddedBundle(bundle, previousManifest: previousManifest) else {
-            return nil
-        }
-        return try await installPreparedBundle(
-            at: bundleURL,
-            preloadedBundle: bundle,
-            source: .appResource,
-            requestedProfileId: SumiProtectionBundleProfile.adblock,
-            previousManifest: previousManifest,
-            skipIfAlreadyInstalled: false,
-            remoteMetadata: nil
-        )
-    }
-
-    private func installPreparedBundle(
-        at bundleURL: URL,
-        preloadedBundle: SumiAdblockNativeRuleBundle? = nil,
-        source: SumiAdblockBundleInstallSource,
-        requestedProfileId: String?,
-        previousManifest: AdblockCompiledGenerationManifest?,
-        skipIfAlreadyInstalled: Bool,
-        remoteMetadata: SumiAdblockPreparedBundleRemoteMetadata?
-    ) async throws -> AdblockCompiledGenerationManifest? {
-        let bundle: SumiAdblockNativeRuleBundle
-        do {
-            bundle = try preloadedBundle ?? SumiAdblockNativeRuleBundle.load(directoryURL: bundleURL)
-        } catch {
-            throw diagnostics(
-                summary: "Adblock bundle install failed before publish: \(error.localizedDescription)",
-                stage: Self.bundleLoadFailureStage(error),
-                source: source,
-                profileId: requestedProfileId,
-                bundleURL: bundleURL,
-                error: error
-            )
-        }
-        if skipIfAlreadyInstalled,
-           previousManifest?.generationSource == source.generationSource,
-           previousManifest?.nativeRuleBundleId == bundle.manifest.bundleId {
-#if DEBUG
-            startupDiagnostics.recordGenerationStaleCheck(
-                consideredStale: false,
-                reason: "Prepared bundle \(bundle.manifest.bundleId) is already installed for source \(source.generationSource.rawValue)"
-            )
-#endif
-            return nil
-        }
-#if DEBUG
-        let installReason = "Installing prepared bundle \(bundle.manifest.bundleId) from \(source.generationSource.rawValue)"
-        startupDiagnostics.recordGenerationStaleCheck(
-            consideredStale: true,
-            reason: installReason
-        )
-        startupDiagnostics.recordPayloadBackedRestoreUsed(reason: installReason)
-        startupDiagnostics.recordRepairCompileUsed(reason: installReason)
-#endif
-        let manifest = bundle.compiledGenerationManifest(
-            previousManifest: previousManifest,
-            installedDate: Date(),
-            generationSource: source.generationSource,
-            remoteMetadata: remoteMetadata
-        )
-        let definitions = try bundle.contentRuleListDefinitions()
-        let publication = try await updateCoordinator.prepareEmbeddedBundlePublication(
-            manifest: manifest,
-            definitions: definitions
-        )
-        let stagedShardURLs = try bundle.stagedShardURLs()
-        do {
-            try await manifestStore.commit(manifest: manifest, stagedCompiledShardURLs: stagedShardURLs)
-        } catch {
-            throw AdblockUpdateDiagnostics(
-                summary: "Adblock bundle manifest commit failed: \(error.localizedDescription)",
-                stage: .embeddedBundleManifestCommit,
-                generationSource: source.generationSource,
-                bundleProfileId: bundle.manifest.profileId,
-                bundlePath: bundleURL.path,
-                nativeRuleBundleId: bundle.manifest.bundleId
-            )
-        }
-        await updateCoordinator.commitEmbeddedBundlePublication(publication)
-        lastUpdateDiagnostics = AdblockUpdateDiagnostics(
-            summary: "success: Adblock bundle installed",
-            generationSource: source.generationSource,
-            bundleProfileId: bundle.manifest.profileId,
-            bundlePath: bundleURL.path,
-            nativeRuleBundleId: bundle.manifest.bundleId
-        )
-        return manifest
-    }
-
-    private func publishPersistedManifest(_ manifest: AdblockCompiledGenerationManifest) async throws {
-        try await manifestStore.validateCompiledShardFiles(for: manifest)
-        var providerDefinitions = Self.metadataOnlyDefinitions(for: manifest)
-        let preparedUpdate: SumiPreparedContentBlockingUpdate
-        do {
-            preparedUpdate = try await contentBlockingService.prepareExistingRuleListUpdate(
-                ruleLists: providerDefinitions
-            )
-#if DEBUG
-            startupDiagnostics.recordMetadataOnlyRestoreUsed()
-#endif
-        } catch {
-#if DEBUG
-            let fallbackReason = "Persisted manifest lookup-only restore failed: \(error.localizedDescription)"
-            startupDiagnostics.recordFallback(reason: fallbackReason)
-            startupDiagnostics.recordPayloadBackedRestoreUsed(reason: fallbackReason)
-            startupDiagnostics.recordRepairCompileUsed(reason: fallbackReason)
-#endif
-            let definitions = try await manifestStore.compiledShardDefinitions(for: manifest)
-            providerDefinitions = definitions.map { $0.metadataOnly() }
-            preparedUpdate = try await contentBlockingService.prepareRuleListUpdate(
-                ruleLists: definitions,
-                retainEncodedRuleListsInPreparedPolicy: false
-            )
-        }
-        ruleListProvider.updateManifest(manifest, compiledDefinitions: providerDefinitions)
-        contentBlockingService.commitPreparedContentBlockingUpdate(preparedUpdate)
-    }
-
-    private static func metadataOnlyDefinitions(
-        for manifest: AdblockCompiledGenerationManifest
-    ) -> [SumiContentRuleListDefinition] {
-        manifest.networkShards
-            .sorted { lhs, rhs in
-                lhs.kind == rhs.kind
-                    ? lhs.id < rhs.id
-                    : lhs.kind.rawValue < rhs.kind.rawValue
-            }
-            .map { shard in
-                SumiContentRuleListDefinition(
-                    name: shard.webKitIdentifier,
-                    encodedContentRuleList: "",
-                    storeIdentifierOverride: shard.webKitIdentifier,
-                    contentHashOverride: shard.contentHash
-                )
-            }
-    }
-
-    private static func isPreparedManifest(_ manifest: AdblockCompiledGenerationManifest, profileId: String) -> Bool {
-        manifest.bundleProfileId == profileId || manifest.nativeRuleBundleId?.contains(profileId) == true
-    }
-
-    private func shouldInstallEmbeddedBundle(
-        _ bundle: SumiAdblockNativeRuleBundle,
-        previousManifest: AdblockCompiledGenerationManifest?
-    ) -> Bool {
-        guard let previousManifest else {
-#if DEBUG
-            startupDiagnostics.recordGenerationStaleCheck(
-                consideredStale: true,
-                reason: "No active prepared manifest; embedded bundle \(bundle.manifest.bundleId) can seed startup"
-            )
-#endif
-            return true
-        }
-
-        guard previousManifest.generationSource == .embeddedBundle else {
-#if DEBUG
-            startupDiagnostics.recordGenerationStaleCheck(
-                consideredStale: false,
-                reason: "Active \(previousManifest.generationSource.rawValue) generation is preserved; embedded bundle is not a startup repair candidate"
-            )
-#endif
-            return false
-        }
-
-        let shouldInstall = previousManifest.nativeRuleBundleId != bundle.manifest.bundleId
-#if DEBUG
-        startupDiagnostics.recordGenerationStaleCheck(
-            consideredStale: shouldInstall,
-            reason: shouldInstall
-                ? "Embedded bundle changed from \(previousManifest.nativeRuleBundleId ?? "nil") to \(bundle.manifest.bundleId)"
-                : "Embedded bundle \(bundle.manifest.bundleId) already matches active generation"
-        )
-#endif
-        return shouldInstall
-    }
-
-    private func diagnostics(
-        summary: String,
-        stage: AdblockUpdateFailureStage,
-        source: SumiAdblockBundleInstallSource,
-        profileId: String?,
-        bundleURL: URL,
-        error: Error
-    ) -> AdblockUpdateDiagnostics {
-        let diagnostics = AdblockUpdateDiagnostics(
-            summary: "\(summary); bundleSource=\(source.rawValue); bundleProfileId=\(profileId ?? "nil"); bundlePath=\(bundleURL.path); details=\(error.localizedDescription)",
-            stage: stage,
-            generationSource: source.generationSource,
-            bundleProfileId: profileId,
-            bundlePath: bundleURL.path
-        )
-        lastUpdateDiagnostics = diagnostics
-        return diagnostics
-    }
-
-    private static func bundleLoadFailureStage(_ error: Error) -> AdblockUpdateFailureStage {
-        guard let error = error as? SumiAdblockNativeRuleBundleError else { return .embeddedBundleManifestRead }
-        switch error {
-        case .missingManifest, .unsupportedSchemaVersion, .unsupportedNativeCSSSafetyPolicyVersion:
-            return .embeddedBundleManifestRead
-        case .missingShard, .emptyShard, .invalidShardPath:
-            return .embeddedBundleMissingShard
-        case .shardHashMismatch, .shardSizeMismatch:
-            return .embeddedBundleHashVerification
-        case .invalidShardJSON:
-            return .embeddedBundleJSONParse
-        }
-    }
-}
-
-@MainActor
-final class AdblockRetainingCompiledRuleListCatalog: SumiCompiledContentRuleListCataloging {
-    func cachedIdentifiersToForget(
-        replacing previousRules: [SumiContentBlockerRules],
-        with activeRules: [SumiContentBlockerRules]
-    ) -> [String] {
-        let activeIdentifiers = Set(activeRules.map(\.identifier.stringValue))
-        return previousRules.map(\.identifier.stringValue).filter { !activeIdentifiers.contains($0) }
-    }
-
-    func orphanedIdentifiers(
-        replacing previousRules: [SumiContentBlockerRules],
-        with activeRules: [SumiContentBlockerRules]
-    ) -> [String] { [] }
-
-    func forgetIdentifiers(_ identifiers: [String]) {}
-}
-
+/// Optional-module lifetime boundary for Adblock. The applied protection level
+/// is the single source of truth for lazy site-policy and WebKit runtime state.
 @MainActor
 final class SumiAdBlockingModule {
     private let sitePolicyFactory: @MainActor () -> AdblockSitePolicyStore
-    private let ruleListStoreFactory: @MainActor (@escaping @Sendable () async -> Bool) -> AdblockWebKitRuleListStore
+    private let ruleListRuntimeFactory:
+        @MainActor (@escaping @Sendable () async -> Bool) -> AdblockRuleListRuntime
     private let preparedBundleResourceURL: URL?
     private let preparedBundleRemoteRootURL: URL?
     private let preparedBundleGeneratedRootURL: URL?
+    private let preparedBundleResolver: SumiPreparedAdblockBundleResolver
     private var cachedSitePolicyStore: AdblockSitePolicyStore?
-    private var cachedRuleListStore: AdblockWebKitRuleListStore?
-    private var runtimeEnabled = false
-    private var preparedBundleRuntimeEnabled = false
-    /// Zero-cost eligibility when the site-policy store is not loaded (module disabled).
+    private var cachedRuleListRuntime: AdblockRuleListRuntime?
+    private var runtimeLevel = SumiProtectionLevel.off
     private let disabledSurfaceNormalizer = SumiProtectionSiteNormalizer()
     private let disabledSitePolicyChangesSubject = PassthroughSubject<Void, Never>()
 
@@ -629,61 +23,64 @@ final class SumiAdBlockingModule {
         moduleRegistry: SumiModuleRegistry,
         sitePolicyFactory: (@MainActor () -> AdblockSitePolicyStore)? = nil,
         preparedBundleResourceURL: URL? = Bundle.main.resourceURL,
-        preparedBundleRemoteRootURL: URL? = SumiRemoteAdblockBundleCache.defaultRootDirectory(),
+        preparedBundleRemoteRootURL: URL? =
+            SumiRemoteAdblockBundleCache.defaultRootDirectory(),
         preparedBundleGeneratedRootURL: URL? = nil,
-        ruleListStoreFactory: @escaping @MainActor (@escaping @Sendable () async -> Bool) -> AdblockWebKitRuleListStore = {
-            AdblockWebKitRuleListStore(isAdblockEnabled: $0)
+        preparedBundleResolver: SumiPreparedAdblockBundleResolver =
+            SumiPreparedAdblockBundleResolver(),
+        ruleListRuntimeFactory: @escaping @MainActor (
+            @escaping @Sendable () async -> Bool
+        ) -> AdblockRuleListRuntime = {
+            AdblockRuleListRuntime(isRuntimeEnabled: $0)
         }
     ) {
         let userDefaults = moduleRegistry.userDefaults
-        self.sitePolicyFactory = sitePolicyFactory ?? { AdblockSitePolicyStore(userDefaults: userDefaults) }
-        self.ruleListStoreFactory = ruleListStoreFactory
+        self.sitePolicyFactory = sitePolicyFactory
+            ?? { AdblockSitePolicyStore(userDefaults: userDefaults) }
+        self.ruleListRuntimeFactory = ruleListRuntimeFactory
         self.preparedBundleResourceURL = preparedBundleResourceURL
         self.preparedBundleRemoteRootURL = preparedBundleRemoteRootURL
         self.preparedBundleGeneratedRootURL = preparedBundleGeneratedRootURL
+        self.preparedBundleResolver = preparedBundleResolver
     }
 
-    var isEnabled: Bool { runtimeEnabled }
-    var isPreparedBundleRuntimeEnabled: Bool { preparedBundleRuntimeEnabled || isEnabled }
-    var hasLoadedRuntime: Bool { cachedRuleListStore != nil }
+    var isEnabled: Bool { runtimeLevel == .adblock }
+    var isPreparedBundleRuntimeEnabled: Bool { runtimeLevel != .off }
+    var hasLoadedRuntime: Bool { cachedRuleListRuntime != nil }
 
-    func setEnabled(_ isEnabled: Bool) {
-        runtimeEnabled = isEnabled
-        if !isEnabled {
-            // Zero-cost disable: drop site-policy store so disabled paths do not keep it warm.
+    func setRuntimeLevel(_ level: SumiProtectionLevel) {
+        runtimeLevel = level
+        if level != .adblock {
             cachedSitePolicyStore = nil
-            if !isPreparedBundleRuntimeEnabled {
-                cachedRuleListStore?.contentBlockingService.setPolicy(.disabled)
-                cachedRuleListStore = nil
-            }
         }
-    }
-
-    func setPreparedBundleRuntimeEnabled(_ isEnabled: Bool) {
-        preparedBundleRuntimeEnabled = isEnabled
-        if !isEnabled && !self.isEnabled {
-            cachedRuleListStore?.contentBlockingService.setPolicy(.disabled)
-            cachedRuleListStore = nil
+        if level == .off {
+            cachedRuleListRuntime?.stop()
+            cachedRuleListRuntime = nil
         }
     }
 
     #if DEBUG
         func drainRuleListTasksForTests(cancel: Bool = false) async {
-            await cachedRuleListStore?.drainStartupTasksForTests(cancel: cancel)
+            await cachedRuleListRuntime?.drainStartupTasksForTests(cancel: cancel)
         }
     #endif
 
     func activeManifestIfLoaded() -> AdblockCompiledGenerationManifest? {
-        cachedRuleListStore?.activeManifest
+        cachedRuleListRuntime?.activeManifest
     }
 
     func contentRuleListDefinitions(
         for protectionGroups: Set<SumiProtectionGroupKind>
     ) throws -> [SumiContentRuleListDefinition] {
-        try ruleListStoreIfPreparedBundleRuntimeEnabled().contentRuleListDefinitions(for: protectionGroups)
+        guard isPreparedBundleRuntimeEnabled else { return [] }
+        return try ruleListRuntime().contentRuleListDefinitions(
+            for: protectionGroups
+        )
     }
 
-    func installPreparedNativeRuleBundle(profileId: String) async throws -> AdblockCompiledGenerationManifest? {
+    func installPreparedNativeRuleBundle(
+        profileId: String
+    ) async throws -> AdblockCompiledGenerationManifest? {
         guard isPreparedBundleRuntimeEnabled else {
             throw AdblockUpdateDiagnostics(
                 summary: "Enable Sumi protection before installing prepared bundle \(profileId).",
@@ -700,15 +97,17 @@ final class SumiAdBlockingModule {
                 bundleProfileId: profileId
             )
         }
-        return try await ruleListStoreIfPreparedBundleRuntimeEnabled().requestPreparedBundleInstall(
-            bundleURL: resolvedBundle.bundleURL,
+        return try await ruleListRuntime().installPreparedBundle(
+            at: resolvedBundle.bundleURL,
             source: resolvedBundle.source,
             profileId: profileId,
             remoteMetadata: resolvedBundle.remoteMetadata
         )
     }
 
-    func restorePreparedNativeRuleBundleForStartup(profileId: String) async throws -> AdblockCompiledGenerationManifest? {
+    func restorePreparedNativeRuleBundleForStartup(
+        profileId: String
+    ) async throws -> AdblockCompiledGenerationManifest? {
         guard isPreparedBundleRuntimeEnabled else {
             throw AdblockUpdateDiagnostics(
                 summary: "Enable Sumi protection before restoring prepared bundle \(profileId).",
@@ -716,15 +115,19 @@ final class SumiAdBlockingModule {
                 bundleProfileId: profileId
             )
         }
-        let store = ruleListStoreIfPreparedBundleRuntimeEnabled()
-        if let restored = try await store.restorePreparedManifestIfAvailable(profileId: profileId) {
+        let runtime = ruleListRuntime()
+        if let restored = try await runtime.restorePreparedManifestIfAvailable(
+            profileId: profileId
+        ) {
             return restored
         }
         return try await installPreparedNativeRuleBundle(profileId: profileId)
     }
 
-    func preparedNativeRuleBundleDiscovery(profileId: String) -> SumiPreparedAdblockBundleDiscovery {
-        SumiPreparedAdblockBundleResolver.discover(
+    func preparedNativeRuleBundleDiscovery(
+        profileId: String
+    ) -> SumiPreparedAdblockBundleDiscovery {
+        preparedBundleResolver.discover(
             profileId: profileId,
             resourceURL: preparedBundleResourceURL,
             remoteBundlesRootURL: preparedBundleRemoteRootURL,
@@ -733,14 +136,17 @@ final class SumiAdBlockingModule {
     }
 
     func surfaceEligibility(for url: URL?) -> SumiAdblockSurfaceEligibility {
-        if let store = sitePolicyStoreIfEnabled() {
+        if let store = sitePolicyStore() {
             return store.surfaceEligibility(for: url)
         }
-        return SumiAdblockSurfaceEligibility.evaluate(url: url, normalizer: disabledSurfaceNormalizer)
+        return SumiAdblockSurfaceEligibility.evaluate(
+            url: url,
+            normalizer: disabledSurfaceNormalizer
+        )
     }
 
     func effectivePolicy(for url: URL?) -> SumiAdblockEffectivePolicy {
-        guard let store = sitePolicyStoreIfEnabled() else {
+        guard let store = sitePolicyStore() else {
             let host = SumiAdblockSurfaceEligibility.evaluate(
                 url: url,
                 normalizer: disabledSurfaceNormalizer
@@ -751,22 +157,19 @@ final class SumiAdBlockingModule {
     }
 
     func siteOverride(for url: URL?) -> SumiAdblockSiteOverride {
-        sitePolicyStoreIfEnabled()?.override(for: url) ?? .inherit
+        sitePolicyStore()?.override(for: url) ?? .inherit
     }
 
     func setSiteOverride(_ override: SumiAdblockSiteOverride, for url: URL?) {
-        guard let store = sitePolicyStoreIfEnabled() else { return }
-        store.setSiteOverride(override, for: url)
+        sitePolicyStore()?.setSiteOverride(override, for: url)
     }
 
     func sitePolicyChangesPublisher() -> AnyPublisher<Void, Never> {
-        sitePolicyStoreIfEnabled()?.changesPublisher
+        sitePolicyStore()?.changesPublisher
             ?? disabledSitePolicyChangesSubject.eraseToAnyPublisher()
     }
 
-    /// Returns the site-policy store only while adblocking is enabled.
-    /// Disabled path must not eagerly create the store (zero-cost).
-    func sitePolicyStoreIfEnabled() -> AdblockSitePolicyStore? {
+    private func sitePolicyStore() -> AdblockSitePolicyStore? {
         guard isEnabled else { return nil }
         if let cachedSitePolicyStore { return cachedSitePolicyStore }
         let store = sitePolicyFactory()
@@ -774,16 +177,14 @@ final class SumiAdBlockingModule {
         return store
     }
 
-    private func ruleListStoreIfPreparedBundleRuntimeEnabled() -> AdblockWebKitRuleListStore {
-        ruleListStore()
-    }
-
-    private func ruleListStore() -> AdblockWebKitRuleListStore {
-        if let cachedRuleListStore { return cachedRuleListStore }
-        let store = ruleListStoreFactory({ [weak self] in
-            await MainActor.run { self?.isPreparedBundleRuntimeEnabled == true }
-        })
-        cachedRuleListStore = store
-        return store
+    private func ruleListRuntime() -> AdblockRuleListRuntime {
+        if let cachedRuleListRuntime { return cachedRuleListRuntime }
+        let runtime = ruleListRuntimeFactory { [weak self] in
+            await MainActor.run {
+                self?.isPreparedBundleRuntimeEnabled == true
+            }
+        }
+        cachedRuleListRuntime = runtime
+        return runtime
     }
 }

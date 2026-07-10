@@ -2,8 +2,7 @@ import Foundation
 import SumiDomain
 
 enum DefaultKeyboardShortcuts {
-    // Immutable default table; marked unsafe for Swift 6 global-actor checking.
-    nonisolated(unsafe) static let shortcuts: [KeyboardShortcut] = [
+    static let shortcuts: [KeyboardShortcut] = [
         KeyboardShortcut(action: .goBack, keyCombination: KeyCombination(key: "[", modifiers: [.command])),
         KeyboardShortcut(action: .goForward, keyCombination: KeyCombination(key: "]", modifiers: [.command])),
         KeyboardShortcut(action: .refresh, keyCombination: KeyCombination(key: "r", modifiers: [.command])),

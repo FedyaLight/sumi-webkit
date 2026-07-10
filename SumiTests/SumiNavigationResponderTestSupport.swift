@@ -84,7 +84,22 @@ class SumiNavigationResponderTestCase: XCTestCase {
             state: .expected(nil),
             isCurrent: isCurrent
         )
-        navigation.navigationActionReceived(action)
+        // Production NavigationActions already carry the exact owning
+        // Navigation. Rebuild the synthetic action with the same contract so
+        // terminal callbacks exercise identity routing instead of a test-only
+        // nil back-reference.
+        let linkedAction = NavigationAction(
+            request: action.request,
+            navigationType: action.navigationType,
+            currentHistoryItemIdentity: nil,
+            redirectHistory: action.redirectHistory,
+            isUserInitiated: action.isUserInitiated,
+            sourceFrame: action.sourceFrame,
+            targetFrame: action.targetFrame,
+            shouldDownload: action.shouldDownload,
+            mainFrameNavigation: navigation
+        )
+        navigation.navigationActionReceived(linkedAction)
         return navigation
     }
 
@@ -213,6 +228,22 @@ class SumiNavigationResponderTestCase: XCTestCase {
         XCTAssertEqual(policy?.isCancel, true, file: file, line: line)
         XCTAssertEqual(resolver.openedURLs, [URL(string: "mailto:test@example.com")!], file: file, line: line)
         XCTAssertEqual(webView.closeScriptEvaluations, 0, file: file, line: line)
+    }
+}
+
+@MainActor
+final class SumiNavigationTerminalProbeResponder: SumiNavigationTerminalResponding {
+    private(set) var terminations: [SumiMainFrameNavigationTermination] = []
+    private(set) var terminatedWebViews: [WKWebView] = []
+
+    func mainFrameNavigationDidTerminate(
+        _ termination: SumiMainFrameNavigationTermination
+    ) {
+        terminations.append(termination)
+    }
+
+    func webContentProcessDidTerminate(on webView: WKWebView) {
+        terminatedWebViews.append(webView)
     }
 }
 
@@ -366,7 +397,7 @@ final class RecordingTabLifecycleNavigationRuntime {
             markExtensionEligibleAfterCommit: { [weak self] tab, _ in
                 self?.markedEligibleTabIds.append(tab.id)
             },
-            loadZoomForTab: { [weak self] tabId in
+            loadZoomForTab: { [weak self] tabId, _ in
                 self?.zoomTabIds.append(tabId)
             },
             applyAdblockZapperRulesAfterNavigation: { [weak self] webView, url, _ in
@@ -382,13 +413,15 @@ final class RecordingTabLifecycleNavigationRuntime {
                 authTabIds.append(tab.id)
                 return authDisposition
             },
-            isPreparingForDataCleanupNavigation: { [weak self] webView in
+            destructiveDataCleanupNavigationWillStart: { _, _, _, _, _ in },
+            isPreparingForDataCleanupNavigation: { [weak self] webView, _, _ in
                 self?.cleanupCheckWebViewIds.append(ObjectIdentifier(webView))
                 return self?.isPreparingForDestructiveCleanup == true
             },
-            finishDestructiveDataCleanupNavigation: { [weak self] webView in
+            finishDestructiveDataCleanupNavigation: { [weak self] webView, _, _, _ in
                 self?.finishedCleanupWebViewIds.append(ObjectIdentifier(webView))
-            }
+            },
+            handleDestructiveDataCleanupProcessTermination: { _ in false }
         )
     }
 }

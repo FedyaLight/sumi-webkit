@@ -31,7 +31,7 @@ final class SumiAdblockNativeRuleBundleTests: XCTestCase {
             .encode(makeManifest(profileId: profileId))
             .write(to: fallbackCandidate.appendingPathComponent(SumiAdblockNativeRuleBundle.manifestFileName))
 
-        let resolved = SumiAdblockNativeRuleBundle.bundledDirectoryURL(
+        let resolved = SumiAdblockNativeBundleReader().bundledDirectoryURL(
             for: profileId,
             resourceURL: resourceURL
         )

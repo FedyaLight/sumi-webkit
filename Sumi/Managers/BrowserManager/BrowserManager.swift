@@ -9,9 +9,8 @@ import Combine
 import SwiftData
 import SwiftUI
 import WebKit
-import SumiBrowserCore
-import SumiChromeContracts
 import SumiDomain
+import SumiWebRuntime
 
 @MainActor
 class BrowserManager: ObservableObject {
@@ -24,8 +23,7 @@ class BrowserManager: ObservableObject {
     @Published var nativeModalPresentation: BrowserNativeModalPresentation?
     @Published var tabStructuralRevision: UInt = 0
 
-    let tabStructureEventBus: TabStructureEventBus
-    private(set) var runtimePortRegistry = RuntimePortRegistry()
+    let webViewSessions: WebViewSessionRepository
     var modelContext: ModelContext
     let startupWorkspaceTheme: WorkspaceTheme?
     let moduleRegistry: SumiModuleRegistry
@@ -38,31 +36,34 @@ class BrowserManager: ObservableObject {
     let sidebarHostRecoveryCoordinator: SidebarHostRecoveryHandling
     var extensionSurfaceStore: BrowserExtensionSurfaceStore { extensionsModule.surfaceStore }
     var tabManager: TabManager
-    var profileManager: ProfileManager
-    var downloadManager: DownloadManager
-    var authenticationManager: AuthenticationManager
+    let profileManager: ProfileManager
+    let downloadManager: DownloadManager
+    let authenticationManager: AuthenticationManager
     var historyManager: HistoryManager
     var bookmarkManager: SumiBookmarkManager
     var recentlyClosedManager: RecentlyClosedManager
     var lastSessionWindowsStore: LastSessionWindowsStore {
         didSet { startupSessionRestoreOwner.reload(from: lastSessionWindowsStore) }
     }
-    var compositorManager: TabCompositorManager
-    let tabSuspensionService: TabSuspensionService
+    let compositorManager: TabCompositorManager
+    let tabSuspensionController: TabSuspensionController
     let backgroundMediaOptimizationService = SumiBackgroundMediaOptimizationService()
     let nativeNowPlayingController: any SumiNativeNowPlayingRuntimeControlling
-    var splitManager: SplitViewManager
-    var workspaceThemeCoordinator: WorkspaceThemeCoordinator
-    var findManager: FindManager
+    let splitManager: SplitViewManager
+    let workspaceThemeCoordinator: WorkspaceThemeCoordinator
+    let findManager: FindManager
     let browserConfiguration: BrowserConfiguration
     let dataServices: BrowserManagerDataServices
     let browsingDataCleanupService: SumiBrowsingDataCleanupService
     let permissionRuntime: BrowserManagerPermissionRuntime
-    var zoomManager = ZoomManager()
+    let zoomManager = ZoomManager()
     weak var sumiSettings: SumiSettingsService? {
         didSet {
             downloadManager.settings = sumiSettings
-            tabSuspensionService.rebuildProactiveTimers(reason: "settings-attached")
+            let settings = sumiSettings
+            tabSuspensionController.configurePolicy { [weak settings] in
+                TabSuspensionPolicy(settings: settings)
+            }
             backgroundMediaOptimizationService.scheduleReconcile(reason: "settings-attached")
             reconcileStartupSessionIfPossible()
             privacyBundle.automaticDataCleanupOwner.scheduleAutomaticBrowsingDataCleanup(
@@ -82,8 +83,6 @@ class BrowserManager: ObservableObject {
     )
     let permissionSiteSettingsRoutingOwner = BrowserPermissionSiteSettingsRoutingOwner()
     lazy var sidebarCommandService = BrowserSidebarCommandService(browserManager: self)
-    lazy var sidebarChromeCommanding: SidebarChromeCommanding =
-        BrowserSidebarChromeCommandingAdapter(browserManager: self)
     lazy var shellSelectionService = ShellSelectionService { [weak self] windowId in
         guard let self else { return [] }
         return self.splitManager.visibleTabIds(for: windowId)
@@ -99,32 +98,70 @@ class BrowserManager: ObservableObject {
     lazy var historyBundle = BrowserHistoryBundle(browserManager: self)
     lazy var bookmarkBundle = BrowserBookmarkBundle(browserManager: self)
     lazy var profileLifecycleBundle = BrowserProfileLifecycleBundle(browserManager: self)
-    lazy var extensionBridgeBundle = BrowserExtensionBridgeBundle(browserManager: self)
+    lazy var extensionBridgeComposition = BrowserExtensionBridgeComposition(
+        browserManager: self
+    )
     lazy var lifecycleBundle = BrowserLifecycleBundle(browserManager: self)
     lazy var webViewCloseRouter = BrowserWebViewCloseRouter(browserManager: self)
     lazy var notificationPresenter = BrowserNotificationPresenter(browserManager: self)
     lazy var appCommandRouter = BrowserAppCommandRouter(dependencies: .live(browserManager: self))
     lazy var shortcutActionRouter = BrowserShortcutActionRouter(dependencies: .live(browserManager: self))
     let shellRuntime = BrowserShellRuntime()
+    lazy var webViewOwnershipQuery = WebViewOwnershipQuery(
+        webViewSessions: webViewSessions
+    )
     lazy var webViewRoutingService = BrowserWebViewRoutingService(
         tabLookup: { [weak self] tabId in
             self?.tabManager.tabCollectionMembershipOwner.tab(for: tabId)
         },
-        coordinatorProvider: { [weak self] in self?.shellRuntime.webViewCoordinator }
+        webViewSessions: webViewSessions,
+        ownershipQuery: webViewOwnershipQuery,
+        commandsProvider: { [weak self] in
+            self?.shellRuntime.webViewCoordinator.map(
+                BrowserWebViewRoutingService.Commands.live
+            )
+        }
     )
-    var windowSessionService = WindowSessionService(lastWindowSessionKey: BrowserManager.lastWindowSessionKey)
+    var windowSessionSnapshotStore = WindowSessionSnapshotStore(
+        key: BrowserManager.lastWindowSessionKey
+    )
+    let windowSessionPersistenceScheduler =
+        WindowSessionPersistenceScheduler()
     let startupSessionRestoreOwner: BrowserStartupSessionRestoreOwner
-    var auxiliaryWindowManager = AuxiliaryWindowManager()
+    lazy var auxiliaryWindows = BrowserAuxiliaryWindowComposition(
+        windowRegistry: { [weak shellRuntime] in
+            shellRuntime?.windowRegistry
+        },
+        currentProfile: { [weak tabManager] in
+            tabManager?.runtimePorts?.currentProfileId
+        },
+        spaces: tabManager.spaceStateOwner,
+        tabContext: windowSessionBundle.tabContextOwner,
+        transientTabs: tabManager.transientWebKitTabLifecycleOwner,
+        webViewOwnership: { [weak shellRuntime] in
+            shellRuntime?.webViewCoordinator?.ownershipService
+        },
+        extensions: extensionsModule,
+        popupPermissions: permissionRuntime.popupPermissionBridge,
+        filePickerPermissions: permissionRuntime.filePickerPermissionBridge,
+        mutationAdmission: { [weak shellRuntime] in
+            shellRuntime?.webViewCoordinator?.websiteDataCleanupService
+        }
+    )
     let glanceManager = GlanceManager()
     private(set) var startupProtectionRuntime: BrowserStartupProtectionRuntime!
 
     /// Designated init: assign always-on managers from a pre-built kernel graph.
     init(kernel graph: BrowserKernelGraph) {
+        precondition(
+            graph.tabManager.tabFactory.webViewSessions === graph.webViewSessions,
+            "Browser kernel must give TabManager and WebViewCoordinator one canonical WebView session repository"
+        )
+        self.webViewSessions = graph.webViewSessions
         self.modelContext = graph.modelContext
         self.moduleRegistry = graph.moduleRegistry
         self.liveFoldersModule = graph.liveFoldersModule
         self.sidebarHostRecoveryCoordinator = graph.sidebarHostRecoveryCoordinator
-        self.tabStructureEventBus = graph.tabStructureEventBus
         self.adBlockingModule = graph.adBlockingModule
         self.protectionCoordinator = graph.protectionCoordinator
         self.adblockZapperStore = graph.adblockZapperStore
@@ -143,7 +180,7 @@ class BrowserManager: ObservableObject {
         self.lastSessionWindowsStore = graph.lastSessionWindowsStore
         self.startupSessionRestoreOwner = graph.startupSessionRestoreOwner
         self.compositorManager = graph.compositorManager
-        self.tabSuspensionService = graph.tabSuspensionService
+        self.tabSuspensionController = graph.tabSuspensionController
         self.splitManager = graph.splitManager
         self.workspaceThemeCoordinator = graph.workspaceThemeCoordinator
         self.findManager = graph.findManager
@@ -160,14 +197,8 @@ class BrowserManager: ObservableObject {
     isolated deinit {
         permissionRuntime.cancelPermissionEventObservation()
         startupProtectionRuntime.cancelProtectionRestoreTask()
-        windowSessionService.cancelPendingWindowSessionPersistence()
+        windowSessionPersistenceScheduler.cancelAll()
         lifecycleBundle.initializationWiringOwner.cancel()
         NotificationCenter.default.removeObserver(self)
-    }
-}
-
-extension BrowserManager {
-    func attachRuntimePortRegistry(_ registry: RuntimePortRegistry) {
-        runtimePortRegistry = registry
     }
 }
