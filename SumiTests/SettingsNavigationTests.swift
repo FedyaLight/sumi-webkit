@@ -392,7 +392,6 @@ final class SettingsNavigationTests: XCTestCase {
         let space = Space(name: "Primary")
         let windowState = BrowserWindowState()
 
-        browserManager.bindTestWebViewCoordinator()
         browserManager.windowRegistry = windowRegistry
         browserManager.sumiSettings = settings
         browserManager.tabManager.sumiSettings = settings

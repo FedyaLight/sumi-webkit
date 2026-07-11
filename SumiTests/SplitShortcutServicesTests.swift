@@ -345,7 +345,6 @@ final class SplitShortcutServicesTests: XCTestCase {
             )
         )
         let registry = WindowRegistry()
-        browserManager.bindTestWebViewCoordinator()
         browserManager.windowRegistry = registry
         let windowState = BrowserWindowState()
         windowState.tabManager = browserManager.tabManager

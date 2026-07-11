@@ -14,9 +14,21 @@ final class WebViewProtectedCommandDispatchOwner {
         let executionOwner: WebViewDeferredProtectedCommandExecutionOwner
         let tabScopedCleanupValidationOwner: WebViewTabScopedCleanupValidationOwner
         let webViewSessions: WebViewSessionRepository
-        let requireBrowserRuntimeContext: @MainActor () -> WebViewCoordinatorBrowserRuntimeContext
         let resolveWebView: @MainActor (ObjectIdentifier) -> WKWebView?
-        let resolvedTab: @MainActor (UUID, WebViewCoordinatorBrowserRuntimeContext) -> Tab?
+        let resolvedTab: @MainActor (UUID) -> Tab?
+        let containsWindow: @MainActor (UUID) -> Bool
+        let handleWebKitClose: @MainActor (WKWebView) -> Bool
+        let executeProfileAssignment: @MainActor (
+            UUID,
+            UUID?,
+            DeferredWebViewProfileAssignmentIntent
+        ) -> Bool
+        let validateSpaceProfileAssignment: @MainActor (
+            DeferredWebViewSpaceProfileAssignmentIntent
+        ) -> Bool
+        let executeSpaceProfileAssignment: @MainActor (
+            DeferredWebViewSpaceProfileAssignmentIntent
+        ) -> Bool
         let compositorContainerView: @MainActor (UUID) -> NSView?
         let removeWebViewFromContainers: @MainActor (WKWebView) -> Void
         let cleanupTrackedWebView: @MainActor (WKWebView, TrackedWebViewOwner) -> Void
@@ -90,7 +102,6 @@ final class WebViewProtectedCommandDispatchOwner {
     // MARK: - Execution
 
     private func executionRuntime() -> WebViewDeferredProtectedCommandExecutionOwner.Runtime {
-        let runtimeContext = dependencies.requireBrowserRuntimeContext()
         let validationContext = WebViewDeferredProtectedCommandExecutionOwner.ValidationContext(
             resolveWebView: { [dependencies] webViewID in
                 dependencies.resolveWebView(webViewID)
@@ -113,10 +124,10 @@ final class WebViewProtectedCommandDispatchOwner {
                 )
             },
             resolveTab: { [dependencies] tabID in
-                dependencies.resolvedTab(tabID, runtimeContext)
+                dependencies.resolvedTab(tabID)
             },
-            isSpaceProfileAssignmentValid: { intent in
-                runtimeContext.validateDeferredSpaceProfileAssignment(intent)
+            isSpaceProfileAssignmentValid: { [dependencies] intent in
+                dependencies.validateSpaceProfileAssignment(intent)
             },
             hasTabManager: {
                 true
@@ -128,8 +139,8 @@ final class WebViewProtectedCommandDispatchOwner {
             hasTrackedWebViews: { [dependencies] in
                 dependencies.webViewSessions.isTrackingEmpty == false
             },
-            hasWindow: { windowID in
-                runtimeContext.window(windowID) != nil
+            hasWindow: { [dependencies] windowID in
+                dependencies.containsWindow(windowID)
             }
         )
         return WebViewDeferredProtectedCommandExecutionOwner.Runtime(
@@ -163,8 +174,7 @@ final class WebViewProtectedCommandDispatchOwner {
             guard let webView = dependencies.resolveWebView(webViewID) else {
                 return false
             }
-            guard dependencies.requireBrowserRuntimeContext()
-                .handleUnprotectedWebViewDidClose(webView) else {
+            guard dependencies.handleWebKitClose(webView) else {
                 return false
             }
         case .cleanupWindow(let windowID):
@@ -190,15 +200,13 @@ final class WebViewProtectedCommandDispatchOwner {
             let preferredPrimaryWindowID,
             let intent
         ):
-            return dependencies.requireBrowserRuntimeContext()
-                .executeDeferredProfileAssignment(
-                    tabID,
-                    preferredPrimaryWindowID,
-                    intent
-                )
+            return dependencies.executeProfileAssignment(
+                tabID,
+                preferredPrimaryWindowID,
+                intent
+            )
         case .assignSpaceProfile(let intent):
-            return dependencies.requireBrowserRuntimeContext()
-                .executeDeferredSpaceProfileAssignment(intent)
+            return dependencies.executeSpaceProfileAssignment(intent)
         case .synchronizeTrackedNavigation(
             let webViewID,
             let tabID,
@@ -262,9 +270,7 @@ final class WebViewProtectedCommandDispatchOwner {
                 return false
             }
         case .evictHiddenWebViews(let windowID):
-            let runtimeContext = dependencies.requireBrowserRuntimeContext()
-            guard runtimeContext.window(windowID) != nil
-            else {
+            guard dependencies.containsWindow(windowID) else {
                 return false
             }
             dependencies.evictHiddenWebViews(
@@ -302,7 +308,7 @@ final class WebViewProtectedCommandDispatchOwner {
     }
 
     private func resolvedTab(with tabID: UUID) -> Tab? {
-        dependencies.resolvedTab(tabID, dependencies.requireBrowserRuntimeContext())
+        dependencies.resolvedTab(tabID)
     }
 
     private func tabScopedCleanupValidationContext()
@@ -313,81 +319,6 @@ final class WebViewProtectedCommandDispatchOwner {
             },
             residence: { [dependencies] webView in
                 dependencies.webViewSessions.residence(of: webView)
-            }
-        )
-    }
-}
-
-extension WebViewProtectedCommandDispatchOwner.Dependencies {
-    @MainActor
-    static func live(coordinator: WebViewCoordinator) -> Self {
-        Self(
-            mediaProtectionOwner: coordinator.mediaProtectionOwner,
-            executionOwner: coordinator.deferredProtectedCommandExecutionOwner,
-            tabScopedCleanupValidationOwner: coordinator.tabScopedCleanupValidationOwner,
-            webViewSessions: coordinator.webViewSessions,
-            requireBrowserRuntimeContext: { [weak coordinator] in
-                guard let coordinator else {
-                    preconditionFailure("WebViewCoordinator dependency used after deallocation")
-                }
-                return coordinator.runtimeContextStore.requireBrowser()
-            },
-            resolveWebView: { [weak coordinator] webViewID in
-                coordinator?.protectionRuntime.resolveWebView(with: webViewID)
-            },
-            resolvedTab: { [weak coordinator] tabID, runtimeContext in
-                coordinator?.runtimeTabs.resolve(
-                    tabID,
-                    runtime: runtimeContext
-                )
-            },
-            compositorContainerView: { [weak coordinator] windowID in
-                coordinator?.compositorRuntime.containerView(for: windowID)
-            },
-            removeWebViewFromContainers: { [weak coordinator] webView in
-                coordinator?.compositorRuntime.removeWebViewFromContainers(webView)
-            },
-            cleanupTrackedWebView: { [weak coordinator] webView, owner in
-                coordinator?.lifecycleService.cleanupTrackedWebView(
-                    webView,
-                    owner: owner
-                )
-            },
-            cleanupWindow: { [weak coordinator] windowID in
-                coordinator?.lifecycleService.cleanupWindow(windowID)
-            },
-            cleanupAllWebViews: { [weak coordinator] in
-                coordinator?.lifecycleService.cleanupAllWebViews()
-            },
-            rebuildLiveWebViews: {
-                [weak coordinator]
-                tab, preferredPrimaryWindowId, intent in
-                guard let coordinator else { return .failed }
-                return coordinator.rebuildService.rebuildLiveWebViewsResult(
-                    for: tab,
-                    preferredPrimaryWindowID: preferredPrimaryWindowId,
-                    load: intent.targetURL,
-                    configuration: intent.configuration,
-                    reason: "WebViewRebuildService.deferredRebuildLiveWebViews",
-                    intentRevision: intent.revision,
-                    rebuildKind: intent.kind
-                )
-            },
-            evictHiddenWebViews: { [weak coordinator] windowID, visibleTabIDs in
-                coordinator?.visibilityRuntime.evictHiddenWebViewsIfNeeded(
-                    in: windowID,
-                    visibleTabIDs: visibleTabIDs
-                )
-            },
-            visibleTabIDSet: { [weak coordinator] windowID in
-                coordinator?.visibilityRuntime.visibleTabIDs(in: windowID) ?? []
-            },
-            performFallbackWebViewCleanup: { [weak coordinator] webView, tabID in
-                coordinator?.physicalCleanupService.clean(webView, tabID: tabID)
-            },
-            finishCleanupSuppression: { [weak coordinator] webViewIDs in
-                coordinator?.protectionRuntime
-                    .finishCleanupSuppression(for: webViewIDs)
             }
         )
     }

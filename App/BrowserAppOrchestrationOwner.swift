@@ -6,7 +6,7 @@ final class BrowserAppOrchestrationOwner {
         let appDelegate: AppDelegate
         let browserManager: BrowserManager
         let windowRegistry: WindowRegistry
-        let webViewCoordinator: WebViewCoordinator
+        let webViewLifecycle: WebViewLifecycleService
         let settingsManager: SumiSettingsService
         let keyboardShortcutManager: KeyboardShortcutManager
         let nowPlayingController: SumiNativeNowPlayingController
@@ -28,7 +28,6 @@ final class BrowserAppOrchestrationOwner {
         let appDelegate = dependencies.appDelegate
         let browserManager = dependencies.browserManager
         let windowRegistry = dependencies.windowRegistry
-        let webViewCoordinator = dependencies.webViewCoordinator
         let settingsManager = dependencies.settingsManager
         let keyboardShortcutManager = dependencies.keyboardShortcutManager
         let nowPlayingController = dependencies.nowPlayingController
@@ -51,8 +50,6 @@ final class BrowserAppOrchestrationOwner {
         appDelegate.shortcutManager = keyboardShortcutManager
         appDelegate.fallbackPersistenceSave = dependencies.fallbackPersistenceSave
 
-        // Required before any routing or cleanup path calls BrowserManager.requireWebViewCoordinator().
-        browserManager.webViewCoordinator = webViewCoordinator
         browserManager.windowRegistry = windowRegistry
         browserManager.sumiSettings = settingsManager
         browserManager.keyboardShortcutManager = keyboardShortcutManager
@@ -104,7 +101,7 @@ final class BrowserAppOrchestrationOwner {
             recorder: windowSession.history.recorder,
             persistence: windowSession.persistence,
             extensions: browserManager.optionalModules.extensions,
-            webViews: webViewCoordinator.lifecycleService,
+            webViews: dependencies.webViewLifecycle,
             emptySplitPlaceholders: browserManager.splitComposition
                 .emptyPlaceholders,
             splitPreviews: browserManager.splitComposition.previews,

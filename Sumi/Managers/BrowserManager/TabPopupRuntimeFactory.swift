@@ -4,7 +4,8 @@ import WebKit
 @MainActor
 enum TabPopupRuntimeFactory {
     static func make(for browserManager: BrowserManager) -> TabPopupHandlingRuntime {
-        .make(
+        let webViewOwnership = browserManager.webViewRuntime.ownershipService
+        return .make(
             dependencies: TabPopupHandlingRuntime.LiveDependencies(
                 isAvailable: { [weak browserManager] in
                     browserManager != nil
@@ -58,9 +59,8 @@ enum TabPopupRuntimeFactory {
                         activate: activate
                     )
                 },
-                installUntrackedOwnedWebView: { [weak browserManager] webView, tab in
-                    browserManager?.webViewOwnershipService?
-                        .installUntracked(webView, for: tab)
+                installUntrackedOwnedWebView: { [webViewOwnership] webView, tab in
+                    webViewOwnership.installUntracked(webView, for: tab)
                 },
                 windowStateContainingTab: { [weak browserManager] tab in
                     browserManager?.shellRuntime.windowTabs.windowState(containing: tab)

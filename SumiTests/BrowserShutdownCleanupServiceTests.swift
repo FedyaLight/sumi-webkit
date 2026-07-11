@@ -21,7 +21,7 @@ final class BrowserShutdownCleanupServiceTests: XCTestCase {
 
     func testCleanupReleasesTabWebViewsWithoutLoadingOptionalExtensionRuntime() {
         let browserManager = BrowserManager()
-        let coordinator = browserManager.bindTestWebViewCoordinator()
+        let webViewRuntime = browserManager.testWebViewRuntime()
         let space = browserManager.tabManager.spaceServices.catalog.createSpace(
             name: "Shutdown"
         )
@@ -37,15 +37,27 @@ final class BrowserShutdownCleanupServiceTests: XCTestCase {
         XCTAssertTrue(tab.hasCurrentWebView)
         XCTAssertFalse(browserManager.optionalModules.extensions.hasLoadedRuntime)
         XCTAssertFalse(browserManager.auxiliaryWindowTeardownRegistry.hasLoadedRuntime)
+        XCTAssertTrue(webViewRuntime.ownershipQuery.owns(webView, for: tab))
 
+        service.cleanupAllTabs()
+        XCTAssertFalse(tab.hasCurrentWebView)
+        XCTAssertNil(browserManager.webViewSessions.residence(of: webView))
+
+        let lateWebView = WKWebView()
+        tab.replaceUntrackedWebView(lateWebView)
+        XCTAssertTrue(webViewRuntime.ownershipQuery.owns(lateWebView, for: tab))
+
+        service.cleanupAfterBrowserRuntimeDeallocation()
         service.cleanupAllTabs()
         service.cleanupAfterBrowserRuntimeDeallocation()
 
         XCTAssertFalse(tab.hasCurrentWebView)
         XCTAssertTrue(tab.webViewSession.allKnownWebViews.isEmpty)
         XCTAssertNil(browserManager.webViewSessions.residence(of: webView))
+        XCTAssertNil(browserManager.webViewSessions.residence(of: lateWebView))
+        XCTAssertFalse(webViewRuntime.ownershipQuery.owns(lateWebView, for: tab))
         XCTAssertFalse(browserManager.optionalModules.extensions.hasLoadedRuntime)
         XCTAssertFalse(browserManager.auxiliaryWindowTeardownRegistry.hasLoadedRuntime)
-        withExtendedLifetime(coordinator) {}
+        withExtendedLifetime((webViewRuntime, webView, lateWebView)) {}
     }
 }

@@ -55,13 +55,13 @@ private final class BrowserAuxiliaryWindowTabs:
     AuxiliaryWindowTabLifecycle
 {
     private let transientTabs: TabTransientWebKitTabLifecycleOwner
-    private let webViewOwnership: @MainActor () -> WebViewOwnershipService?
+    private let webViewOwnership: WebViewOwnershipService
     private let extensions: SumiExtensionsModule
     private let context: any AuxiliaryWindowContextResolving
 
     init(
         transientTabs: TabTransientWebKitTabLifecycleOwner,
-        webViewOwnership: @escaping @MainActor () -> WebViewOwnershipService?,
+        webViewOwnership: WebViewOwnershipService,
         extensions: SumiExtensionsModule,
         context: any AuxiliaryWindowContextResolving
     ) {
@@ -69,10 +69,6 @@ private final class BrowserAuxiliaryWindowTabs:
         self.webViewOwnership = webViewOwnership
         self.extensions = extensions
         self.context = context
-    }
-
-    var canInstallMiniWindowWebView: Bool {
-        webViewOwnership() != nil
     }
 
     func createMiniWindowTab(
@@ -104,11 +100,6 @@ private final class BrowserAuxiliaryWindowTabs:
     }
 
     func install(_ webView: WKWebView, for tab: Tab) {
-        guard let webViewOwnership = webViewOwnership() else {
-            preconditionFailure(
-                "Auxiliary WebView ownership disappeared after admission"
-            )
-        }
         webViewOwnership.installUntracked(webView, for: tab)
     }
 
@@ -179,22 +170,17 @@ private final class BrowserAuxiliaryWindowPermissions:
 private final class BrowserAuxiliaryWindowMutationAdmission:
     AuxiliaryWindowMutationAdmitting
 {
-    private let cleanup: @MainActor () -> WebsiteDataCleanupService?
+    private let cleanup: WebsiteDataCleanupService
 
-    init(
-        cleanup: @escaping @MainActor () -> WebsiteDataCleanupService?
-    ) {
+    init(cleanup: WebsiteDataCleanupService) {
         self.cleanup = cleanup
     }
 
     func admissionIsBlocked(profileID: UUID) -> Bool {
-        cleanup()?.admissionIsBlocked(profileID: profileID) ?? false
+        cleanup.admissionIsBlocked(profileID: profileID)
     }
 
     func waitForAdmission(profileID: UUID) async -> Bool {
-        guard let cleanup = cleanup() else {
-            return true
-        }
         return await cleanup.waitForAdmission(profileID: profileID)
     }
 }
@@ -249,11 +235,11 @@ final class BrowserAuxiliaryWindowComposition {
         spaces: TabSpaceCollectionStateOwner,
         tabContext: BrowserWindowTabContext,
         transientTabs: TabTransientWebKitTabLifecycleOwner,
-        webViewOwnership: @escaping @MainActor () -> WebViewOwnershipService?,
+        webViewOwnership: WebViewOwnershipService,
         extensions: SumiExtensionsModule,
         popupPermissions: SumiPopupPermissionBridge,
         filePickerPermissions: SumiFilePickerPermissionBridge,
-        mutationAdmission: @escaping @MainActor () -> WebsiteDataCleanupService?
+        mutationAdmission: WebsiteDataCleanupService
     ) {
         let context = BrowserAuxiliaryWindowContext(
             windowRegistry: windowRegistry,

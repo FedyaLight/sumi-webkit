@@ -314,7 +314,6 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
         let tabManager = browserManager.tabManager
         tabManager.sumiSettings = settings
         browserManager.sumiSettings = settings
-        browserManager.bindTestWebViewCoordinator()
         browserManager.lastSessionWindowsStore = LastSessionWindowsStore(userDefaults: defaults.defaults)
 
         let windowRegistry = WindowRegistry()

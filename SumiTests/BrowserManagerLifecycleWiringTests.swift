@@ -28,15 +28,14 @@ final class BrowserManagerLifecycleWiringTests: XCTestCase {
                 container: try makeInMemoryStartupContainer()
             )
         )
-        var backgroundMediaAvailabilityReads = 0
+        var backgroundMediaEnergySaverReads = 0
         browserManager.backgroundMediaOptimizationService.attach(
             runtime: SumiBackgroundMediaOptimizationRuntime(
-                webViewRuntimeAvailable: {
-                    backgroundMediaAvailabilityReads += 1
+                liveWebViewEntries: { _ in [] },
+                energySaverActive: {
+                    backgroundMediaEnergySaverReads += 1
                     return false
                 },
-                liveWebViewEntries: { _ in [] },
-                energySaverActive: { false },
                 allKnownTabs: { [] },
                 visibleTabIDsByWindow: { [:] }
             )
@@ -44,8 +43,8 @@ final class BrowserManagerLifecycleWiringTests: XCTestCase {
         // Runtime wiring schedules an initial window-registry reconcile before
         // this test replaces the runtime. Drain that known request so each
         // settings assignment below has an isolated observable increment.
-        await waitUntil { backgroundMediaAvailabilityReads > 0 }
-        let backgroundMediaBaseline = backgroundMediaAvailabilityReads
+        await waitUntil { backgroundMediaEnergySaverReads > 0 }
+        let backgroundMediaBaseline = backgroundMediaEnergySaverReads
 
         let settings = try makeSettings(suiteName: "primary")
         settings.memoryMode = .maximum
@@ -67,9 +66,9 @@ final class BrowserManagerLifecycleWiringTests: XCTestCase {
 
         // Background-media reconciliation was genuinely scheduled by the attach.
         await waitUntil {
-            backgroundMediaAvailabilityReads == backgroundMediaBaseline + 1
+            backgroundMediaEnergySaverReads == backgroundMediaBaseline + 1
         }
-        XCTAssertEqual(backgroundMediaAvailabilityReads, backgroundMediaBaseline + 1)
+        XCTAssertEqual(backgroundMediaEnergySaverReads, backgroundMediaBaseline + 1)
 
         // Replacing the settings service switches every consumer to the new one.
         let replacement = try makeSettings(suiteName: "replacement")
@@ -88,7 +87,7 @@ final class BrowserManagerLifecycleWiringTests: XCTestCase {
         )
 
         await waitUntil {
-            backgroundMediaAvailabilityReads == backgroundMediaBaseline + 2
+            backgroundMediaEnergySaverReads == backgroundMediaBaseline + 2
         }
 
         // Detaching keeps the nil-attach workflow intact.
@@ -100,9 +99,9 @@ final class BrowserManagerLifecycleWiringTests: XCTestCase {
             TabSuspensionPolicy(settings: nil)
         )
         await waitUntil {
-            backgroundMediaAvailabilityReads == backgroundMediaBaseline + 3
+            backgroundMediaEnergySaverReads == backgroundMediaBaseline + 3
         }
-        XCTAssertEqual(backgroundMediaAvailabilityReads, backgroundMediaBaseline + 3)
+        XCTAssertEqual(backgroundMediaEnergySaverReads, backgroundMediaBaseline + 3)
     }
 
     func testInitialDataLoadedEventAppliesStartupPolicyThroughLiveWiring() throws {

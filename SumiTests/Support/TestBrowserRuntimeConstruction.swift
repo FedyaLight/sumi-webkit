@@ -10,21 +10,12 @@ import SumiWebRuntime
 @MainActor
 extension BrowserManager {
     @discardableResult
-    func bindTestWebViewCoordinator(
-        _ candidate: WebViewCoordinator? = nil
-    ) -> WebViewCoordinator {
-        if let current = webViewCoordinator {
-            precondition(
-                candidate == nil || current === candidate,
-                "A test browser session cannot replace its WebViewCoordinator"
-            )
-            return current
-        }
-
-        let coordinator = candidate
-            ?? WebViewCoordinator(webViewSessions: webViewSessions)
-        webViewCoordinator = coordinator
-        return coordinator
+    func testWebViewRuntime() -> WebViewRuntimeGraph {
+        precondition(
+            webViewRuntime.webViewSessions === webViewSessions,
+            "A test browser session must use its canonical WebView runtime graph"
+        )
+        return webViewRuntime
     }
 
     convenience init(
@@ -116,12 +107,5 @@ extension TabManager {
             faviconCapabilities: faviconCapabilities,
             visitedLinkStore: visitedLinkStore
         )
-    }
-}
-
-@MainActor
-extension WebViewCoordinator {
-    convenience init() {
-        self.init(webViewSessions: WebViewSessionRepository())
     }
 }

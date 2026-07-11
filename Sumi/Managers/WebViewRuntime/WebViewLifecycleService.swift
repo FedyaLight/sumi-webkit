@@ -11,12 +11,13 @@ import WebKit
 @MainActor
 final class WebViewLifecycleService {
     private let webViewSessions: WebViewSessionRepository
-    private let runtimeContextStore: WebViewRuntimeContextStore
     private let ownershipQuery: WebViewOwnershipQuery
+    private let resolveTab: @MainActor (UUID) -> Tab?
     private let processRecovery: WebContentProcessRecoveryService
     private let deferredProtectedCommands: WebViewDeferredProtectedCommandExecutionOwner
     private let mediaProtection: WebViewMediaProtectionOwner
     private let websiteDataCleanup: WebsiteDataCleanupService
+    private let replacementPipeline: WebViewReplacementPipeline
     private let protection: WebViewProtectionRuntime
     private let compositor: WebViewCompositorRuntime
     private let visibility: WebViewVisibilityRuntime
@@ -28,12 +29,13 @@ final class WebViewLifecycleService {
 
     init(
         webViewSessions: WebViewSessionRepository,
-        runtimeContextStore: WebViewRuntimeContextStore,
         ownershipQuery: WebViewOwnershipQuery,
+        resolveTab: @escaping @MainActor (UUID) -> Tab?,
         processRecovery: WebContentProcessRecoveryService,
         deferredProtectedCommands: WebViewDeferredProtectedCommandExecutionOwner,
         mediaProtection: WebViewMediaProtectionOwner,
         websiteDataCleanup: WebsiteDataCleanupService,
+        replacementPipeline: WebViewReplacementPipeline,
         protection: WebViewProtectionRuntime,
         compositor: WebViewCompositorRuntime,
         visibility: WebViewVisibilityRuntime,
@@ -44,12 +46,13 @@ final class WebViewLifecycleService {
         runtimeAssembler: WebViewRuntimeAssembler
     ) {
         self.webViewSessions = webViewSessions
-        self.runtimeContextStore = runtimeContextStore
         self.ownershipQuery = ownershipQuery
+        self.resolveTab = resolveTab
         self.processRecovery = processRecovery
         self.deferredProtectedCommands = deferredProtectedCommands
         self.mediaProtection = mediaProtection
         self.websiteDataCleanup = websiteDataCleanup
+        self.replacementPipeline = replacementPipeline
         self.protection = protection
         self.compositor = compositor
         self.visibility = visibility
@@ -107,8 +110,8 @@ final class WebViewLifecycleService {
         webViewSessions: webViewSessions,
         visibleWebViewRuntimeOwner: visibleRuntime,
         mediaProtectionOwner: mediaProtection,
-        browserRuntimeContext: { [weak self] in
-            self?.runtimeContextStore.browser
+        tabForID: { [resolveTab] tabID in
+            resolveTab(tabID)
         },
         isWebViewProtectedFromCompositorMutation: { [weak self] webView in
             self?.protection.isProtected(webView) ?? false
@@ -168,7 +171,7 @@ final class WebViewLifecycleService {
 
     func prepareWebKitClose(
         _ webView: WKWebView
-    ) -> WebViewCoordinatorWebKitClosePreparation {
+    ) -> WebViewWebKitClosePreparation {
         let webViewID = ObjectIdentifier(webView)
         mediaProtection.note(webView)
         websiteDataCleanup.webViewDidLeaveRuntime(webView)
@@ -207,6 +210,7 @@ final class WebViewLifecycleService {
     func cleanupAfterBrowserRuntimeDeallocation() {
         let entries = webViewSessions.takeAllWebViewsForTerminalShutdown()
 
+        replacementPipeline.resetForTerminalShutdown()
         processRecovery.resetForTerminalShutdown()
         deferredProtectedCommands.resetForTerminalShutdown()
         mediaProtection.resetForTerminalShutdown()
@@ -224,7 +228,6 @@ final class WebViewLifecycleService {
         }
 
         visibleRuntime.resetWindowRegistrations()
-        runtimeContextStore.detach()
 
         RuntimeDiagnostics.debug(category: "WebViewLifecycle") {
             "Completed terminal browser-runtime cleanup for \(entries.count) WebView(s)."

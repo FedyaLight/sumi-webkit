@@ -12,7 +12,7 @@ final class ActivePageBrowserManagerIntegrationTests: XCTestCase {
                 container: try makeInMemoryStartupModelContainer()
             )
         )
-        let coordinator = browserManager.bindTestWebViewCoordinator()
+        let webViewRuntime = browserManager.testWebViewRuntime()
         let registry = WindowRegistry()
         browserManager.windowRegistry = registry
         let window = BrowserWindowState()
@@ -28,7 +28,7 @@ final class ActivePageBrowserManagerIntegrationTests: XCTestCase {
         window.currentTabId = tab.id
         registry.register(window)
         registry.setActive(window)
-        coordinator.ownershipService.assign(webView, to: tab, in: window.id)
+        webViewRuntime.ownershipService.assign(webView, to: tab, in: window.id)
 
         let page = try XCTUnwrap(
             browserManager.shellRuntime.activePageResolver.resolveActiveWindow()

@@ -14,13 +14,11 @@ struct TabSuspensionContextRuntime {
 
 @MainActor
 struct TabSuspensionWebViewRuntime {
-    let isAvailable: @MainActor () -> Bool
     let liveWebViews: @MainActor (Tab) -> [WKWebView]
     let suspendWebViews: @MainActor (Tab, String) -> Bool
     let isProtectedFromCompositorMutation: @MainActor (WKWebView) -> Bool
 
     static let inactive = Self(
-        isAvailable: { false },
         liveWebViews: { _ in [] },
         suspendWebViews: { _, _ in false },
         isProtectedFromCompositorMutation: { _ in false }

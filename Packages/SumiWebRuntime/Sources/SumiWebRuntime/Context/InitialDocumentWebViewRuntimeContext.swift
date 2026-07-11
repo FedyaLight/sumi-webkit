@@ -1,5 +1,7 @@
 import Foundation
 
+/// Runtime operations required to prepare an initial document for a WebView.
+
 @MainActor
 public struct InitialDocumentWebViewRuntimeContext {
     public let needsInitialDocumentExtensionContextLoad: (UUID) -> Bool

@@ -70,10 +70,11 @@ enum TabBrowserNavigationRuntimeFactory {
     static func historySwipeRuntime(
         for browserManager: BrowserManager
     ) -> TabHistorySwipeRuntime {
-        .make(
-            webViewCoordinator: { [weak browserManager] in
-                browserManager?.webViewCoordinator
-            },
+        let ownershipQuery = browserManager.webViewRuntime.ownershipQuery
+        let protection = browserManager.webViewRuntime.protectionRuntime
+        return .make(
+            ownershipQuery: ownershipQuery,
+            protection: protection,
             cancelWindowMutationsAfterHistorySwipe: { [weak browserManager] windowId in
                 browserManager?.shellRuntime.windowVisuals.cancelWindowMutationsAfterHistorySwipe(in: windowId)
             },
@@ -110,6 +111,7 @@ enum TabBrowserNavigationRuntimeFactory {
         for browserManager: BrowserManager
     ) -> TabLifecycleNavigationRuntime {
         let tabSuspensionController = browserManager.tabSuspensionController
+        let websiteDataCleanup = browserManager.webViewRuntime.websiteDataCleanupService
         return .make(
             dependencies: TabLifecycleNavigationRuntime.LiveDependencies(
                 resetTabSuspensionRevisitProtection: {
@@ -141,9 +143,7 @@ enum TabBrowserNavigationRuntimeFactory {
                 authenticationManager: { [weak browserManager] in
                     browserManager?.authenticationManager
                 },
-                webViewCoordinator: { [weak browserManager] in
-                    browserManager?.webViewCoordinator
-                }
+                websiteDataCleanup: websiteDataCleanup
             )
         )
     }
@@ -179,17 +179,18 @@ enum TabBrowserNavigationRuntimeFactory {
 @MainActor
 extension TabHistorySwipeRuntime {
     static func make(
-        webViewCoordinator: @escaping () -> WebViewCoordinator?,
+        ownershipQuery: WebViewOwnershipQuery,
+        protection: WebViewProtectionRuntime,
         cancelWindowMutationsAfterHistorySwipe: @escaping (UUID) -> Void,
         flushWindowMutationsAfterHistorySwipe: @escaping (UUID) -> Void
     ) -> Self {
         Self(
             windowIDContaining: { webView in
-                webViewCoordinator()?.ownershipQuery
+                ownershipQuery
                     .trackedOwner(containing: webView)?.windowID
             },
             beginHistorySwipeProtection: { tabId, webView, originURL, originHistoryItem in
-                webViewCoordinator()?.protectionRuntime.beginHistorySwipe(
+                protection.beginHistorySwipe(
                     tabID: tabId,
                     webView: webView,
                     originURL: originURL,
@@ -197,12 +198,12 @@ extension TabHistorySwipeRuntime {
                 )
             },
             finishHistorySwipeProtection: { tabId, webView, currentURL, currentHistoryItem in
-                webViewCoordinator()?.protectionRuntime.finishHistorySwipe(
+                protection.finishHistorySwipe(
                     tabID: tabId,
                     webView: webView,
                     currentURL: currentURL,
                     currentHistoryItem: currentHistoryItem
-                ) ?? false
+                )
             },
             cancelWindowMutationsAfterHistorySwipe: cancelWindowMutationsAfterHistorySwipe,
             flushWindowMutationsAfterHistorySwipe: flushWindowMutationsAfterHistorySwipe
@@ -220,7 +221,7 @@ extension TabLifecycleNavigationRuntime {
         let adblockZapperStore: () -> SumiAdblockZapperStore?
         let enforceSiteDataPolicyAfterNavigation: (Tab) -> Void
         let authenticationManager: () -> AuthenticationManager?
-        let webViewCoordinator: () -> WebViewCoordinator?
+        let websiteDataCleanup: WebsiteDataCleanupService
     }
 
     static func make(dependencies: LiveDependencies) -> Self {
@@ -305,8 +306,7 @@ extension TabLifecycleNavigationRuntime {
                 navigationLifetime,
                 targetURL,
                 semanticRevision in
-                dependencies.webViewCoordinator()?.websiteDataCleanupService
-                    .navigationWillStart(
+                dependencies.websiteDataCleanup.navigationWillStart(
                         on: webView,
                         navigationID: navigationID,
                         navigationLifetime: navigationLifetime,
@@ -318,8 +318,7 @@ extension TabLifecycleNavigationRuntime {
                 webView,
                 navigationID,
                 navigationLifetime in
-                dependencies.webViewCoordinator()?.websiteDataCleanupService
-                    .isSuppressingNavigation(
+                dependencies.websiteDataCleanup.isSuppressingNavigation(
                         on: webView,
                         navigationID: navigationID,
                         navigationLifetime: navigationLifetime
@@ -330,8 +329,7 @@ extension TabLifecycleNavigationRuntime {
                 navigationID,
                 navigationLifetime,
                 succeeded in
-                dependencies.webViewCoordinator()?.websiteDataCleanupService
-                    .navigationDidTerminate(
+                dependencies.websiteDataCleanup.navigationDidTerminate(
                         on: webView,
                         navigationID: navigationID,
                         navigationLifetime: navigationLifetime,
@@ -339,9 +337,8 @@ extension TabLifecycleNavigationRuntime {
                     )
             },
             handleDestructiveDataCleanupProcessTermination: { webView in
-                dependencies.webViewCoordinator()?.websiteDataCleanupService
+                dependencies.websiteDataCleanup
                     .webContentProcessDidTerminate(on: webView)
-                    == true
             }
         )
     }

@@ -12,6 +12,10 @@ final class WindowViewBrowserContext {
     let splitLayout: SplitLayoutService
     let splitDrops: SplitDropService
     let splitDropTargets: SplitDropTargetService
+    let webViewOwnershipQuery: WebViewOwnershipQuery
+    let webViewOwnershipService: WebViewOwnershipService
+    let webViewCompositorRuntime: WebViewCompositorRuntime
+    let webViewProtectionRuntime: WebViewProtectionRuntime
     let findManager: FindManager
     let floatingBarBrowserContext: FloatingBarBrowserContext
     let sidebarBrowserContext: SidebarBrowserContext
@@ -42,6 +46,10 @@ final class WindowViewBrowserContext {
         splitLayout: SplitLayoutService,
         splitDrops: SplitDropService,
         splitDropTargets: SplitDropTargetService,
+        webViewOwnershipQuery: WebViewOwnershipQuery,
+        webViewOwnershipService: WebViewOwnershipService,
+        webViewCompositorRuntime: WebViewCompositorRuntime,
+        webViewProtectionRuntime: WebViewProtectionRuntime,
         findManager: FindManager,
         floatingBarBrowserContext: FloatingBarBrowserContext,
         sidebarBrowserContext: SidebarBrowserContext,
@@ -70,6 +78,10 @@ final class WindowViewBrowserContext {
         self.splitLayout = splitLayout
         self.splitDrops = splitDrops
         self.splitDropTargets = splitDropTargets
+        self.webViewOwnershipQuery = webViewOwnershipQuery
+        self.webViewOwnershipService = webViewOwnershipService
+        self.webViewCompositorRuntime = webViewCompositorRuntime
+        self.webViewProtectionRuntime = webViewProtectionRuntime
         self.findManager = findManager
         self.floatingBarBrowserContext = floatingBarBrowserContext
         self.sidebarBrowserContext = sidebarBrowserContext

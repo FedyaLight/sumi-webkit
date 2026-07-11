@@ -123,7 +123,7 @@ final class GlanceManagerTests: XCTestCase {
         let (windowRegistry, sourceWindow) = makeRegisteredWindow(in: browserManager, selecting: sourceTab)
         let webView = WKWebView()
 
-        browserManager.webViewOwnershipService?.registerTrackedWebView(
+        browserManager.testWebViewRuntime().ownershipService.registerTrackedWebView(
             webView,
             for: sourceTab,
             in: sourceWindow.id
@@ -132,7 +132,7 @@ final class GlanceManagerTests: XCTestCase {
         XCTAssertTrue(browserManager.webViewCloseRouter.handleWebViewDidClose(webView))
 
         XCTAssertNil(browserManager.tabManager.tabCollectionMembershipOwner.tab(for: sourceTab.id))
-        XCTAssertNil(browserManager.webViewOwnershipQuery.webView(
+        XCTAssertNil(browserManager.testWebViewRuntime().ownershipQuery.webView(
             for: sourceTab.id,
             in: sourceWindow.id
         ))
@@ -146,7 +146,7 @@ final class GlanceManagerTests: XCTestCase {
         let staleOwnerWindowID = UUID()
         let webView = WKWebView()
 
-        browserManager.webViewOwnershipService?.registerTrackedWebView(
+        browserManager.testWebViewRuntime().ownershipService.registerTrackedWebView(
             webView,
             for: sourceTab,
             in: staleOwnerWindowID
@@ -156,7 +156,7 @@ final class GlanceManagerTests: XCTestCase {
 
         XCTAssertNotNil(browserManager.tabManager.tabCollectionMembershipOwner.tab(for: sourceTab.id))
         XCTAssertEqual(visibleWindow.currentTabId, sourceTab.id)
-        XCTAssertNil(browserManager.webViewOwnershipQuery.webView(
+        XCTAssertNil(browserManager.testWebViewRuntime().ownershipQuery.webView(
             for: sourceTab.id,
             in: staleOwnerWindowID
         ))
@@ -250,7 +250,7 @@ final class GlanceManagerTests: XCTestCase {
         )
         let compositorContainer = NSView()
         var outcomes: [PromotedHostAttachmentOutcome] = []
-        browserManager.webViewCoordinator?.compositorRuntime.registerContainer(
+        browserManager.webViewRuntime.compositorRuntime.registerContainer(
             compositorContainer,
             for: windowState.id
         )
@@ -261,10 +261,10 @@ final class GlanceManagerTests: XCTestCase {
             attachmentCompletion: { outcomes.append($0) }
         ))
 
-        browserManager.webViewCoordinator?.compositorRuntime.removeContainer(
+        browserManager.webViewRuntime.compositorRuntime.removeContainer(
             for: windowState.id
         )
-        browserManager.webViewCoordinator?.compositorRuntime.removeContainer(
+        browserManager.webViewRuntime.compositorRuntime.removeContainer(
             for: windowState.id
         )
 
@@ -629,9 +629,7 @@ final class GlanceManagerTests: XCTestCase {
 
     @discardableResult
     private func makeBrowserManager() -> BrowserManager {
-        let browserManager = BrowserManager()
-        browserManager.bindTestWebViewCoordinator()
-        return browserManager
+        BrowserManager()
     }
 
     @discardableResult
@@ -729,7 +727,7 @@ final class GlanceManagerTests: XCTestCase {
                 if let webView = tab.resolvedCurrentWebView() {
                     tab.cleanupCloneWebView(webView)
                 }
-                // Mirror coordinator.releaseUntrackedOwnedWebView for injected runtime tests.
+                // Mirror canonical untracked WebView release for injected runtime tests.
                 tab.clearCurrentWebViewOwnership()
             }
         )

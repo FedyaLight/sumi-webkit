@@ -113,7 +113,7 @@ extension Tab {
     }
 
     /// Installs the Tab-owned runtime observers on WebViews created outside
-    /// the untracked ensure path, for example by `WebViewCoordinator`.
+    /// the untracked ensure path owned by the WebView runtime.
     func installRuntimeObservers(on webView: WKWebView) {
         ownedWebViewPreparationOwner.installRuntimeObservers(on: webView)
     }

@@ -21,14 +21,14 @@ final class BrowserExtensionBridgeComposition {
     let presentation: BrowserExtensionWindowPresentationAdapter
 
     init(browserManager: BrowserManager) {
+        let webViewOwnershipQuery = browserManager.webViewRuntime.ownershipQuery
+        let webViewOwnership = browserManager.webViewRuntime.ownershipService
         let windows = BrowserExtensionWindowQueryAdapter(
             windowRegistry: { [weak browserManager] in
                 browserManager?.windowRegistry
             },
-            primaryTrackedWindowID: { [weak browserManager] tabID in
-                browserManager?.webViewOwnershipQuery.primaryWindowID(
-                    for: tabID
-                )
+            primaryTrackedWindowID: { [webViewOwnershipQuery] tabID in
+                webViewOwnershipQuery.primaryWindowID(for: tabID)
             },
             tabs: { [weak browserManager] windowState in
                 guard let browserManager else { return [] }
@@ -181,14 +181,14 @@ final class BrowserExtensionBridgeComposition {
                 )
             },
             replaceLiveWebView: {
-                [weak browserManager]
+                [webViewOwnership]
                 tab,
                 windowID,
                 reason,
                 prepareConfiguration,
                 prepareCommittedReplacement,
                 validate in
-                browserManager?.webViewOwnershipService?.replaceLiveWebView(
+                webViewOwnership.replaceLiveWebView(
                     for: tab,
                     in: windowID,
                     reason: reason,

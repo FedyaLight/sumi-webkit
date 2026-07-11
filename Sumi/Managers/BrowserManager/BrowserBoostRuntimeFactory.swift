@@ -5,21 +5,29 @@ import WebKit
 enum BrowserBoostRuntimeFactory {
     static func runtime(for browserManager: BrowserManager) -> SumiBoostsModule.Runtime {
         let inspector = WebInspectorService()
+        let routing = browserManager.webViewRoutingService
+        let ownershipQuery = browserManager.webViewRuntime.ownershipQuery
         return SumiBoostsModule.Runtime(
-            windowOwnedWebView: { [weak browserManager] tab, windowId in
-                browserManager?.webViewRoutingService.windowOwnedWebView(for: tab, in: windowId)
+            windowOwnedWebView: { [routing] tab, windowId in
+                routing.windowOwnedWebView(for: tab, in: windowId)
             },
             matchingLivePages: { [weak browserManager] profileId, host in
                 guard let browserManager else { return [] }
                 return matchingLivePages(
                     browserManager: browserManager,
+                    routing: routing,
+                    ownershipQuery: ownershipQuery,
                     profileId: profileId,
                     host: host
                 )
             },
             allLivePages: { [weak browserManager] in
                 guard let browserManager else { return [] }
-                return allLivePages(browserManager: browserManager)
+                return allLivePages(
+                    browserManager: browserManager,
+                    routing: routing,
+                    ownershipQuery: ownershipQuery
+                )
             },
             applyBoostAwareZoom: { [weak browserManager] tab, webView in
                 browserManager?.chromeBundle.zoomCommandOwner.applyBoostAwareZoom(for: tab, webView: webView)
@@ -45,23 +53,37 @@ enum BrowserBoostRuntimeFactory {
 
     private static func matchingLivePages(
         browserManager: BrowserManager,
+        routing: BrowserWebViewRoutingService,
+        ownershipQuery: WebViewOwnershipQuery,
         profileId: UUID,
         host: String
     ) -> [SumiBoostsModule.LivePage] {
-        collectLivePages(browserManager: browserManager) { tab in
+        collectLivePages(
+            browserManager: browserManager,
+            routing: routing,
+            ownershipQuery: ownershipQuery
+        ) { tab in
             (tab.resolveProfile()?.id ?? tab.profileId) == profileId
                 && SumiBoostURLPolicy.normalizedBoostableHost(for: tab.url) == host
         }
     }
 
     private static func allLivePages(
-        browserManager: BrowserManager
+        browserManager: BrowserManager,
+        routing: BrowserWebViewRoutingService,
+        ownershipQuery: WebViewOwnershipQuery
     ) -> [SumiBoostsModule.LivePage] {
-        collectLivePages(browserManager: browserManager) { _ in true }
+        collectLivePages(
+            browserManager: browserManager,
+            routing: routing,
+            ownershipQuery: ownershipQuery
+        ) { _ in true }
     }
 
     private static func collectLivePages(
         browserManager: BrowserManager,
+        routing: BrowserWebViewRoutingService,
+        ownershipQuery: WebViewOwnershipQuery,
         tabMatches: (Tab) -> Bool
     ) -> [SumiBoostsModule.LivePage] {
         var visited = Set<ObjectIdentifier>()
@@ -75,14 +97,17 @@ enum BrowserBoostRuntimeFactory {
 
         for windowState in browserManager.windowRegistry?.allWindows ?? [] {
             for tab in browserManager.shellRuntime.windowTabs.tabsForDisplay(in: windowState) where tabMatches(tab) {
-                if let webView = browserManager.webViewRoutingService.windowOwnedWebView(for: tab, in: windowState.id) {
+                if let webView = routing.windowOwnedWebView(
+                    for: tab,
+                    in: windowState.id
+                ) {
                     visit(tab, webView)
                 }
             }
         }
 
         for tab in browserManager.tabManager.tabCollectionMembershipOwner.allTabs() where tabMatches(tab) {
-            for webView in browserManager.webViewOwnershipQuery.trackedWebViews(for: tab.id) {
+            for webView in ownershipQuery.trackedWebViews(for: tab.id) {
                 visit(tab, webView)
             }
         }

@@ -4,7 +4,7 @@ import WebKit
 @MainActor
 final class TabWebViewProvisioningOwner {
     /// Constructs an auxiliary mini-window WebView. Does not install ownership —
-    /// callers must install via WebViewCoordinator / routing.
+    /// callers must install through the WebView ownership runtime or routing.
     @discardableResult
     func createAuxiliaryMiniWindowWebViewFromWebKitConfiguration(
         _ configuration: WKWebViewConfiguration,
@@ -24,7 +24,7 @@ final class TabWebViewProvisioningOwner {
     }
 
     /// Constructs a popup WebView. Does not install ownership —
-    /// callers must install via WebViewCoordinator / routing.
+    /// callers must install through the WebView ownership runtime or routing.
     @discardableResult
     func createPopupWebViewFromWebKitConfiguration(
         _ configuration: WKWebViewConfiguration,

@@ -90,7 +90,8 @@ final class WebsiteDataCleanupRestoreLoop {
                 let targetURL = tab.currentMainFrameNavigationIntent().targetURL
                 navigationBarrier.beginRestoreAttempt(
                     stillOwnedParticipants,
-                    targetURL: targetURL
+                    targetURL: targetURL,
+                    timeout: restoreAttemptTimeout
                 )
 
                 let receipt = restoreTab(tab, targetURL)
@@ -103,10 +104,8 @@ final class WebsiteDataCleanupRestoreLoop {
 
                 var didRestoreTab = true
                 for participant in stillOwnedParticipants {
-                    let didRestore = await navigationBarrier.awaitRestoreTermination(
-                        for: participant,
-                        timeout: restoreAttemptTimeout
-                    )
+                    let didRestore = await navigationBarrier
+                        .awaitRestoreTermination(for: participant)
                     didRestoreTab = didRestoreTab && didRestore
                 }
                 navigationBarrier.finishRestoreAttempt(

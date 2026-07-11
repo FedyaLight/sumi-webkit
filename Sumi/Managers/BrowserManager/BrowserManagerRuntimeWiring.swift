@@ -4,6 +4,7 @@ import Foundation
 @MainActor
 enum BrowserManagerRuntimeWiring {
     static func attach(to browserManager: BrowserManager) -> AnyCancellable {
+        attachWebViewRuntime(to: browserManager)
         attachShellRuntime(to: browserManager)
         browserManager.compositorManager.attach(runtime: .make(browserManager: browserManager))
         let tabRuntimeCompositionCancellable = BrowserTabRuntimeCompositionService.attach(
@@ -24,38 +25,33 @@ enum BrowserManagerRuntimeWiring {
         return tabRuntimeCompositionCancellable
     }
 
+    private static func attachWebViewRuntime(to browserManager: BrowserManager) {
+        let webViewRuntime = browserManager.webViewRuntime
+        precondition(
+            webViewRuntime.webViewSessions === browserManager.webViewSessions,
+            "Browser session and WebView runtime must share one repository"
+        )
+        webViewRuntime.websiteDataCleanupService.registerExtensionRuntime {
+            [weak browserManager] profileIDs in
+            guard let browserManager else { return false }
+            return browserManager.optionalModules.extensions
+                .quiesceForWebsiteDataMutation(profileIDs: profileIDs)
+        }
+
+        let cleanup = webViewRuntime.websiteDataCleanupService
+        browserManager.browsingDataCleanupService.destructiveCleanupPreparer = cleanup
+        browserManager.dataServices.automaticBrowsingDataCleanupService
+            .attachDestructiveCleanupPreparer(cleanup)
+        browserManager.dataServices.siteDataPolicyEnforcementService
+            .attachDestructiveCleanupPreparer(cleanup)
+        browserManager.dataServices.privacyService
+            .attachDestructiveCleanupPreparer(cleanup)
+        browserManager.dataServices.profileWebsiteDataMutationService
+            .attachDestructiveCleanupPreparer(cleanup)
+    }
+
     private static func attachShellRuntime(to browserManager: BrowserManager) {
         browserManager.shellRuntime.attach(
-            adoptWebViewCoordinator: { [weak browserManager] coordinator in
-                guard let browserManager, let coordinator else { return }
-                precondition(
-                    coordinator.webViewSessions === browserManager.webViewSessions,
-                    "Browser session and coordinator must share one WebView repository"
-                )
-                coordinator.runtimeContextStore.attach(
-                    BrowserWebViewRuntimeFactory.environment(for: browserManager)
-                )
-                coordinator.websiteDataCleanupService.registerExtensionRuntime {
-                    [weak browserManager] profileIDs in
-                    guard let browserManager else { return false }
-                    return browserManager.optionalModules.extensions
-                        .quiesceForWebsiteDataMutation(profileIDs: profileIDs)
-                }
-                startPersistedStateLoadIfShellReady(browserManager)
-            },
-            setDestructiveCleanupPreparer: { [weak browserManager] coordinator in
-                guard let browserManager else { return }
-                let cleanupService = coordinator?.websiteDataCleanupService
-                browserManager.browsingDataCleanupService.destructiveCleanupPreparer = cleanupService
-                browserManager.dataServices.automaticBrowsingDataCleanupService
-                    .attachDestructiveCleanupPreparer(cleanupService)
-                browserManager.dataServices.siteDataPolicyEnforcementService
-                    .attachDestructiveCleanupPreparer(cleanupService)
-                browserManager.dataServices.privacyService
-                    .attachDestructiveCleanupPreparer(cleanupService)
-                browserManager.dataServices.profileWebsiteDataMutationService
-                    .attachDestructiveCleanupPreparer(cleanupService)
-            },
             windowRegistryChanged: { [weak browserManager] registry in
                 guard let browserManager else { return }
                 browserManager.glanceManager.windowRegistry = registry
@@ -76,8 +72,7 @@ enum BrowserManagerRuntimeWiring {
     private static func startPersistedStateLoadIfShellReady(
         _ browserManager: BrowserManager
     ) {
-        guard browserManager.webViewCoordinator != nil,
-              browserManager.windowRegistry != nil else { return }
+        guard browserManager.windowRegistry != nil else { return }
         let tabManager = browserManager.tabManager
         tabManager.startupRestoreLifecycle.startIfNeeded(
             runtimeIsAttached: tabManager.runtimePorts != nil,

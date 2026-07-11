@@ -7,11 +7,16 @@ final class BrowserShellRuntime {
     private weak var splitQuery: WindowSplitQuery?
     weak var glanceManager: GlanceManager?
     let webViewSessions: WebViewSessionRepository
-    private var adoptWebViewCoordinator: (@MainActor (WebViewCoordinator?) -> Void)?
-    private var setDestructiveCleanupPreparer: (@MainActor (WebViewCoordinator?) -> Void)?
+    let webViewOwnership: WebViewOwnershipService
+    let webViewProtection: WebViewProtectionRuntime
+    let webViewCompositor: WebViewCompositorRuntime
+    let visibleWebViewPreparation: WebViewVisiblePreparationService
+    let webViewLifecycle: WebViewLifecycleService
     private var windowRegistryChanged: (@MainActor (WindowRegistry?) -> Void)?
-    private var retainedWebViewCoordinator: WebViewCoordinator?
-    private weak var retainedWindowRegistry: WindowRegistry?
+    /// The shell runtime requires this registry for every window-scoped
+    /// capability after attachment, so it owns the binding until explicit
+    /// detachment or browser teardown.
+    private var retainedWindowRegistry: WindowRegistry?
     var windowShellContentViewFactory: BrowserWindowShellService.ContentViewFactory?
 
     lazy var windowSelection = ShellSelectionService { [weak self] windowId in
@@ -38,25 +43,21 @@ final class BrowserShellRuntime {
 
     lazy var windowVisuals = BrowserWindowVisualCoordinator(
         hasActiveHistorySwipe: { [weak self] windowId in
-            self?.retainedWebViewCoordinator?.protectionRuntime
+            self?.webViewProtection
                 .hasActiveHistorySwipe(in: windowId) == true
         },
         currentTab: { [weak self] windowState in
             self?.windowTabs.currentTab(for: windowState)
         },
         performImmediateVisualHandoffIfPossible: { [weak self] windowId in
-            self?.retainedWebViewCoordinator?.compositorRuntime
+            self?.webViewCompositor
                 .performImmediateVisualHandoffIfPossible(in: windowId) ?? false
         },
         prepareVisibleWebViews: { [weak self] windowState in
-            guard let self else { return false }
-            return requireWebViewCoordinator().visiblePreparationService
-                .prepare(for: windowState)
+            self?.visibleWebViewPreparation.prepare(for: windowState) ?? false
         },
         schedulePrepareVisibleWebViews: { [weak self] windowState in
-            guard let self else { return }
-            requireWebViewCoordinator().visiblePreparationService
-                .schedule(for: windowState)
+            self?.visibleWebViewPreparation.schedule(for: windowState)
         }
     )
 
@@ -64,33 +65,26 @@ final class BrowserShellRuntime {
         tabManager: TabManager,
         splitQuery: WindowSplitQuery,
         glanceManager: GlanceManager,
-        webViewSessions: WebViewSessionRepository
+        webViewSessions: WebViewSessionRepository,
+        webViewOwnership: WebViewOwnershipService,
+        webViewProtection: WebViewProtectionRuntime,
+        webViewCompositor: WebViewCompositorRuntime,
+        visibleWebViewPreparation: WebViewVisiblePreparationService,
+        webViewLifecycle: WebViewLifecycleService
     ) {
         self.tabManager = tabManager
         self.splitQuery = splitQuery
         self.glanceManager = glanceManager
         self.webViewSessions = webViewSessions
-    }
-
-    var webViewCoordinator: WebViewCoordinator? {
-        retainedWebViewCoordinator
+        self.webViewOwnership = webViewOwnership
+        self.webViewProtection = webViewProtection
+        self.webViewCompositor = webViewCompositor
+        self.visibleWebViewPreparation = visibleWebViewPreparation
+        self.webViewLifecycle = webViewLifecycle
     }
 
     var windowRegistry: WindowRegistry? {
         retainedWindowRegistry
-    }
-
-    func requireWebViewCoordinator() -> WebViewCoordinator {
-        guard let retainedWebViewCoordinator else {
-            preconditionFailure(
-                "BrowserShellRuntime.webViewCoordinator is nil. Bind it before WebView operations."
-            )
-        }
-        return retainedWebViewCoordinator
-    }
-
-    func requireWebViewOwnershipService() -> WebViewOwnershipService {
-        requireWebViewCoordinator().ownershipService
     }
 
     func requireWindowRegistry() -> WindowRegistry {
@@ -112,34 +106,10 @@ final class BrowserShellRuntime {
     }
 
     func attach(
-        adoptWebViewCoordinator: @escaping @MainActor (WebViewCoordinator?) -> Void,
-        setDestructiveCleanupPreparer: @escaping @MainActor (WebViewCoordinator?) -> Void,
         windowRegistryChanged: @escaping @MainActor (WindowRegistry?) -> Void
     ) {
-        self.adoptWebViewCoordinator = adoptWebViewCoordinator
-        self.setDestructiveCleanupPreparer = setDestructiveCleanupPreparer
         self.windowRegistryChanged = windowRegistryChanged
-        applyWebViewCoordinatorBinding(retainedWebViewCoordinator)
         windowRegistryChanged(retainedWindowRegistry)
-    }
-
-    func bindWebViewCoordinator(_ coordinator: WebViewCoordinator?) {
-        guard let coordinator else {
-            precondition(
-                retainedWebViewCoordinator == nil,
-                "The browser kernel WebViewCoordinator has process lifetime and cannot be detached"
-            )
-            return
-        }
-        if let retainedWebViewCoordinator {
-            precondition(
-                retainedWebViewCoordinator === coordinator,
-                "The browser kernel WebViewCoordinator cannot be replaced"
-            )
-            return
-        }
-        retainedWebViewCoordinator = coordinator
-        applyWebViewCoordinatorBinding(coordinator)
     }
 
     func bindWindowRegistry(_ registry: WindowRegistry?) {
@@ -147,11 +117,4 @@ final class BrowserShellRuntime {
         windowRegistryChanged?(registry)
     }
 
-    private func applyWebViewCoordinatorBinding(_ coordinator: WebViewCoordinator?) {
-        guard let adoptWebViewCoordinator,
-              let setDestructiveCleanupPreparer
-        else { return }
-        adoptWebViewCoordinator(coordinator)
-        setDestructiveCleanupPreparer(coordinator)
-    }
 }

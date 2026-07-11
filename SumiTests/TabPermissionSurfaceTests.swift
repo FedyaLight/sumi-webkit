@@ -210,9 +210,8 @@ final class TabPermissionSurfaceTests: XCTestCase {
         XCTAssertTrue(tab.permissionRequestSurfaceState(for: webView).isActive)
         XCTAssertFalse(tab.permissionRequestSurfaceState(for: webView).isVisible)
 
-        let coordinator = WebViewCoordinator(webViewSessions: browserManager.webViewSessions)
-        browserManager.bindTestWebViewCoordinator(coordinator)
-        coordinator.ownershipService.registerTrackedWebView(
+        let webViewRuntime = browserManager.testWebViewRuntime()
+        webViewRuntime.ownershipService.registerTrackedWebView(
             webView,
             for: tab,
             in: windowState.id

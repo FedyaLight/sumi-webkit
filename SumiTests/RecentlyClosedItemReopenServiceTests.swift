@@ -211,7 +211,6 @@ final class RecentlyClosedItemReopenServiceTests: XCTestCase {
 
         browserManager.profileManager.profiles = [profile]
         browserManager.currentProfile = profile
-        browserManager.bindTestWebViewCoordinator()
         browserManager.tabManager.spaceStateOwner.replaceSpaces([space])
         browserManager.tabManager.structuralCollectionMutationOwner.setTabs([], for: space.id)
         browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(space)

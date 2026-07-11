@@ -52,8 +52,7 @@ final class AuxiliaryPopupOpeningService {
         }
 
         guard nestingPolicy.allowsPresentation(at: nestedDepth),
-              admissionIsOpen(for: openerTab),
-              tabs.canInstallMiniWindowWebView else {
+              admissionIsOpen(for: openerTab) else {
             return nil
         }
 
@@ -109,8 +108,7 @@ final class AuxiliaryPopupOpeningService {
         ownerExtensionID: String? = nil
     ) -> WKWebView? {
         guard nestingPolicy.allowsPresentation(at: nestedDepth),
-              admissionIsOpen(for: openerTab),
-              tabs.canInstallMiniWindowWebView else {
+              admissionIsOpen(for: openerTab) else {
             return nil
         }
 

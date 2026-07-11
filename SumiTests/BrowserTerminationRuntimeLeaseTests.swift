@@ -10,7 +10,6 @@ import XCTest
 final class BrowserTerminationRuntimeLeaseTests: XCTestCase {
     func testFinalizationWaitsForSiteDataCleanupBeforeReleasingBrowserResources() async throws {
         let browserManager = try makeBrowserManager()
-        browserManager.bindTestWebViewCoordinator()
         let profile = Profile(name: "Termination")
         browserManager.profileManager.profiles = [profile]
         let space = browserManager.tabManager.spaceServices.catalog.createSpace(
@@ -94,7 +93,6 @@ final class BrowserTerminationRuntimeLeaseTests: XCTestCase {
 
         do {
             let browserManager = try XCTUnwrap(browserManager)
-            browserManager.bindTestWebViewCoordinator()
             browserManager.windowRegistry = windowRegistry
             let sourceTab = configureAuxiliaryWindowSource(
                 browserManager: browserManager,
@@ -139,7 +137,6 @@ final class BrowserTerminationRuntimeLeaseTests: XCTestCase {
 
         do {
             let browserManager = try XCTUnwrap(browserManager)
-            browserManager.bindTestWebViewCoordinator()
             browserManager.windowRegistry = windowRegistry
             let sourceTab = configureAuxiliaryWindowSource(
                 browserManager: browserManager,

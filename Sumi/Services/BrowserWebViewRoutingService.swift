@@ -31,34 +31,21 @@ final class BrowserWebViewRoutingService {
         ) -> TabWebViewReplacementOutcome
     }
 
-    typealias CommandsProvider = @MainActor () -> Commands?
-
     private let tabLookup: TabLookup
     private let webViewSessions: WebViewSessionRepository
     private let ownershipQuery: WebViewOwnershipQuery
-    private let commandsProvider: CommandsProvider
+    private let commands: Commands
 
     init(
         tabLookup: @escaping TabLookup,
         webViewSessions: WebViewSessionRepository,
         ownershipQuery: WebViewOwnershipQuery,
-        commandsProvider: @escaping CommandsProvider
+        commands: Commands
     ) {
         self.tabLookup = tabLookup
         self.webViewSessions = webViewSessions
         self.ownershipQuery = ownershipQuery
-        self.commandsProvider = commandsProvider
-    }
-
-    private func requireCommands(
-        operation: String = #function
-    ) -> Commands {
-        guard let commands = commandsProvider() else {
-            preconditionFailure(
-                "WebView routing commands are unavailable during \(operation). Bind the browser runtime first."
-            )
-        }
-        return commands
+        self.commands = commands
     }
 
     func webView(for tabId: UUID, in windowId: UUID) -> WKWebView? {
@@ -74,13 +61,13 @@ final class BrowserWebViewRoutingService {
         webView(for: tab.id, in: windowId)
     }
 
-    /// Live WebViews known to the coordinator registry for this tab.
+    /// Live WebViews known to the canonical ownership repository for this tab.
     func trackedWebViews(for tabId: UUID) -> [WKWebView] {
         ownershipQuery.trackedWebViews(for: tabId)
     }
 
     /// Prefer a window-tracked WebView; fall back to an untracked tab-owned instance
-    /// (popup / pre-window / Glance materialization) via the coordinator.
+    /// (popup / pre-window / Glance materialization) via ownership runtime.
     func anyLiveWebView(for tab: Tab) -> WKWebView? {
         ownershipQuery.anyLiveWebView(for: tab)
     }
@@ -126,7 +113,7 @@ final class BrowserWebViewRoutingService {
     func syncTabAcrossWindows(_ tabId: UUID, originatingWebView: WKWebView? = nil) {
         guard let tab = tabLookup(tabId) else { return }
         guard ExtensionUtils.isExtensionOwnedURL(tab.url) == false else { return }
-        requireCommands().sync(tab, tab.url, originatingWebView)
+        commands.sync(tab, tab.url, originatingWebView)
     }
 
     func reloadTabAcrossWindows(
@@ -138,7 +125,7 @@ final class BrowserWebViewRoutingService {
               tab.isCurrentMainFrameNavigationIntent(intent) else {
             return
         }
-        requireCommands().reloadAll(tab, intent, policy)
+        commands.reloadAll(tab, intent, policy)
     }
 
     @discardableResult
@@ -152,7 +139,7 @@ final class BrowserWebViewRoutingService {
               tab.isCurrentMainFrameNavigationIntent(intent) else {
             return .failed
         }
-        return requireCommands().reloadWindow(tab, windowId, intent, policy)
+        return commands.reloadWindow(tab, windowId, intent, policy)
     }
 
     @discardableResult
@@ -165,7 +152,7 @@ final class BrowserWebViewRoutingService {
               tab.requiresWebContentProcessRecovery(on: webView) else {
             return false
         }
-        return requireCommands().retainRecovery(tab, webView)
+        return commands.retainRecovery(tab, webView)
     }
 
     @discardableResult
@@ -178,15 +165,15 @@ final class BrowserWebViewRoutingService {
               tab.requiresWebContentProcessRecovery(on: webView) else {
             return .failed
         }
-        return requireCommands().recover(tab, webView)
+        return commands.recover(tab, webView)
     }
 
     func cancelWebContentProcessRecovery(on webView: WKWebView) {
-        commandsProvider()?.cancelRecovery(webView)
+        commands.cancelRecovery(webView)
     }
 
     func setMuteState(_ muted: Bool, for tabId: UUID) {
-        requireCommands().setMute(muted, tabId)
+        commands.setMute(muted, tabId)
     }
 
     func bindWebViewSession(_ handle: WebViewSessionHandle) {
@@ -265,7 +252,7 @@ final class BrowserWebViewRoutingService {
         { [weak self, weak tab] in
             guard let self, let tab else { return nil }
             return self.windowOwnedWebView(for: tab, in: windowID)
-                ?? self.commandsProvider()?.materialize(tab, windowID)
+                ?? self.commands.materialize(tab, windowID)
         }
     }
 
@@ -278,12 +265,6 @@ final class BrowserWebViewRoutingService {
         guard tab.configurationPolicyRequiresNormalWebViewRebuild(for: targetURL) else {
             return .notNeeded
         }
-        guard let commands = commandsProvider() else {
-            RuntimeDiagnostics.emit(
-                "Cannot rebuild window WebView for \(reason): routing commands unavailable."
-            )
-            return .failed
-        }
         return commands.rebuildWindowConfiguration(
             tab,
             windowID,
@@ -294,57 +275,59 @@ final class BrowserWebViewRoutingService {
 }
 
 extension BrowserWebViewRoutingService.Commands {
-    static func live(coordinator: WebViewCoordinator) -> Self {
+    static func live(
+        navigationBroadcast: WebViewNavigationBroadcastOwner,
+        processRecovery: WebContentProcessRecoveryService,
+        ownership: WebViewOwnershipService,
+        rebuild: WebViewRebuildService
+    ) -> Self {
         Self(
-            sync: { [weak coordinator] tab, url, originatingWebView in
-                coordinator?.navigationBroadcastOwner.syncTab(
+            sync: { tab, url, originatingWebView in
+                navigationBroadcast.syncTab(
                     tab,
                     to: url,
                     originatingWebView: originatingWebView
                 )
             },
-            reloadAll: { [weak coordinator] tab, intent, policy in
-                coordinator?.navigationBroadcastOwner.reloadTab(
+            reloadAll: { tab, intent, policy in
+                navigationBroadcast.reloadTab(
                     tab,
                     intent: intent,
                     policy: policy
                 )
             },
-            reloadWindow: { [weak coordinator] tab, windowID, intent, policy in
-                coordinator?.navigationBroadcastOwner.reloadTab(
+            reloadWindow: { tab, windowID, intent, policy in
+                navigationBroadcast.reloadTab(
                     tab,
                     in: windowID,
                     intent: intent,
                     policy: policy
-                ) ?? .failed
+                )
             },
-            retainRecovery: { [weak coordinator] tab, webView in
-                coordinator?.processRecoveryService.retain(webView, for: tab)
-                    ?? false
+            retainRecovery: { tab, webView in
+                processRecovery.retain(webView, for: tab)
             },
-            recover: { [weak coordinator] tab, webView in
-                coordinator?.processRecoveryService.recover(webView, for: tab)
-                    ?? .failed
+            recover: { tab, webView in
+                processRecovery.recover(webView, for: tab)
             },
-            cancelRecovery: { [weak coordinator] webView in
-                coordinator?.processRecoveryService.cancel(webView)
+            cancelRecovery: { webView in
+                processRecovery.cancel(webView)
             },
-            setMute: { [weak coordinator] muted, tabID in
-                coordinator?.navigationBroadcastOwner.setMuteState(
+            setMute: { muted, tabID in
+                navigationBroadcast.setMuteState(
                     muted,
                     for: tabID
                 )
             },
-            materialize: { [weak coordinator] tab, windowID in
-                coordinator?.ownershipService.webView(
+            materialize: { tab, windowID in
+                ownership.webView(
                     for: tab,
                     in: windowID
                 )
             },
             rebuildWindowConfiguration: {
-                [weak coordinator] tab, windowID, targetURL, reason in
-                guard let coordinator else { return .failed }
-                let result = coordinator.rebuildService.rebuildLiveWebViewsResult(
+                tab, windowID, targetURL, reason in
+                let result = rebuild.rebuildLiveWebViewsResult(
                     for: tab,
                     preferredPrimaryWindowID: windowID,
                     load: targetURL,

@@ -3,7 +3,7 @@ import SumiDomain
 
 @MainActor
 final class BrowserWindowShellService {
-    typealias ContentViewFactory = @MainActor (WindowRegistry, WebViewCoordinator, BrowserWindowState) -> NSView
+    typealias ContentViewFactory = @MainActor (WindowRegistry, BrowserWindowState) -> NSView
     typealias EmptyStatePresenter = @MainActor (BrowserWindowState, Bool) -> Void
     typealias StateInitializer = @MainActor (BrowserWindowState) -> Void
     typealias RejectedRegistrationCompensation = @MainActor (
@@ -12,7 +12,7 @@ final class BrowserWindowShellService {
 
     struct Context {
         let windowRegistry: WindowRegistry
-        let webViewCoordinator: WebViewCoordinator
+        let webViewLifecycle: WebViewLifecycleService
         let permissionLifecycleController: SumiPermissionGrantLifecycleController
         let profileManager: ProfileManager
         let tabManager: TabManager
@@ -58,7 +58,6 @@ final class BrowserWindowShellService {
             title: "Sumi",
             contentView: context.makeContentView(
                 context.windowRegistry,
-                context.webViewCoordinator,
                 windowState
             )
         )
@@ -104,7 +103,6 @@ final class BrowserWindowShellService {
             title: "Incognito - Sumi",
             contentView: context.makeContentView(
                 context.windowRegistry,
-                context.webViewCoordinator,
                 windowState
             )
         )
@@ -137,7 +135,7 @@ final class BrowserWindowShellService {
         )
 
         for tab in windowState.ephemeralTabs {
-            context.webViewCoordinator.lifecycleService.removeAllWebViews(
+            context.webViewLifecycle.removeAllWebViews(
                 for: tab,
                 closeActiveFullscreenMedia: true
             )

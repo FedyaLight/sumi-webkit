@@ -1616,7 +1616,6 @@ final class SidebarDragCurrentContextTests: XCTestCase {
                 container: container
             )
         )
-        browserManager.bindTestWebViewCoordinator()
         let tabManager = browserManager.tabManager
         let windowRegistry = WindowRegistry()
         let windowState = BrowserWindowState()

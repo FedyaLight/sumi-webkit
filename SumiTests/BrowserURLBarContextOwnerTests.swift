@@ -125,7 +125,7 @@ final class BrowserURLBarContextOwnerTests: XCTestCase {
         harness.windowState.currentTabId = tab.id
         let webView = EmptyReloadRecordingWebView()
         _ = tab.installNavigationDelegate(on: webView)
-        harness.browserManager.webViewOwnershipService?.registerTrackedWebView(
+        harness.browserManager.testWebViewRuntime().ownershipService.registerTrackedWebView(
             webView,
             for: tab,
             in: harness.windowState.id
@@ -154,7 +154,7 @@ final class BrowserURLBarContextOwnerTests: XCTestCase {
         harness.windowState.currentTabId = tab.id
         let webView = EmptyReloadRecordingWebView()
         _ = tab.installNavigationDelegate(on: webView)
-        harness.browserManager.webViewOwnershipService?.registerTrackedWebView(
+        harness.browserManager.testWebViewRuntime().ownershipService.registerTrackedWebView(
             webView,
             for: tab,
             in: harness.windowState.id
@@ -183,7 +183,6 @@ final class BrowserURLBarContextOwnerTests: XCTestCase {
         browserManager.profileManager.profiles = [profile]
         browserManager.currentProfile = profile
         browserManager.windowRegistry = windowRegistry
-        browserManager.bindTestWebViewCoordinator()
         browserManager.tabManager.spaceStateOwner.replaceSpaces([primarySpace])
         browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(primarySpace)
 

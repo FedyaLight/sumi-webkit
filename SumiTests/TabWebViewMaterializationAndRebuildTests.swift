@@ -85,7 +85,7 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
     func testLiveReplacementRunsRuntimePreparationAfterCanonicalCommit() throws {
         let browserManager = makeIsolatedOwnershipBrowserManager()
         let repository = browserManager.webViewSessions
-        let ownership = try XCTUnwrap(browserManager.webViewOwnershipService)
+        let ownership = browserManager.testWebViewRuntime().ownershipService
         let tab = browserManager.tabManager.tabFactory.makeTab(
             url: URL(string: "https://example.com/extension-replacement")!,
             loadsCachedFaviconOnInit: false
@@ -118,7 +118,7 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
     func testTrackedLiveReplacementRunsRuntimePreparationAfterCanonicalCommit() throws {
         let browserManager = makeIsolatedOwnershipBrowserManager()
         let repository = browserManager.webViewSessions
-        let ownership = try XCTUnwrap(browserManager.webViewOwnershipService)
+        let ownership = browserManager.testWebViewRuntime().ownershipService
         let tab = browserManager.tabManager.tabFactory.makeTab(
             url: URL(string: "https://example.com/tracked-extension-replacement")!,
             loadsCachedFaviconOnInit: false
@@ -208,9 +208,8 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
         XCTAssertTrue(webView.loadedRequests.isEmpty)
     }
 
-    func testCoordinatorSettlementInvalidatesPermissionGenerationExactlyOnce() async throws {
+    func testGraphSettlementInvalidatesPermissionGenerationExactlyOnce() async throws {
         let repository = WebViewSessionRepository()
-        let coordinator = WebViewCoordinator(webViewSessions: repository)
         let profile = Profile(name: "Permission Generation")
         let tab = Tab(
             url: URL(string: "https://example.com/permission-generation")!,
@@ -226,8 +225,10 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
             firstProfile: { profile }
         )
         let window = RebuildRuntimeWindowStub()
-        coordinator.runtimeContextStore.attach(
-            makeRuntimeEnvironment(tab: tab, window: window)
+        let graph = makeWindowBoundRuntimeGraph(
+            repository: repository,
+            tab: tab,
+            window: window
         )
         let oldWebView = try XCTUnwrap(
             tab.makeNormalTabWebView(reason: "permission-generation.old")
@@ -240,7 +241,7 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
         _ = tab.beginMainFrameNavigationIntent(to: targetURL)
         tab.url = targetURL
 
-        let result = coordinator.rebuildService.rebuildLiveWebViewsResult(
+        let result = graph.rebuildService.rebuildLiveWebViewsResult(
             for: tab,
             preferredPrimaryWindowID: window.id,
             load: targetURL,
@@ -261,7 +262,6 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
 
     func testTrackedProfileAssignmentStaleCASRestoresAppliedReloadPolicyState() {
         let repository = WebViewSessionRepository()
-        let coordinator = WebViewCoordinator(webViewSessions: repository)
         let oldProfile = Profile(name: "Old")
         let targetProfile = Profile(name: "Target")
         let tab = Tab(
@@ -293,8 +293,10 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
                 return targetState
             }
         )
-        coordinator.runtimeContextStore.attach(
-            makeRuntimeEnvironment(tab: tab, window: window)
+        let graph = makeWindowBoundRuntimeGraph(
+            repository: repository,
+            tab: tab,
+            window: window
         )
         let intent = tab.beginProfileAssignmentIntent(
             desiredProfileID: targetProfile.id,
@@ -303,7 +305,7 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
             requiresStructuralPersistence: true
         )
 
-        let outcome = coordinator.profileAssignmentService
+        let outcome = graph.profileAssignmentService
             .executeProfileAssignment(
             for: tab,
             targetProfile: targetProfile,
@@ -326,7 +328,7 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
 
     func testDetachedProfileAssignmentStaleCASRestoresAppliedReloadPolicyState() {
         let repository = WebViewSessionRepository()
-        let coordinator = WebViewCoordinator(webViewSessions: repository)
+        let graph = makeTestWebViewRuntimeGraph(webViewSessions: repository)
         let oldProfile = Profile(name: "Old")
         let targetProfile = Profile(name: "Target")
         let tab = Tab(
@@ -365,7 +367,7 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
             requiresStructuralPersistence: true
         )
 
-        let outcome = coordinator.profileAssignmentService
+        let outcome = graph.profileAssignmentService
             .executeProfileAssignment(
             for: tab,
             targetProfile: targetProfile,
@@ -434,7 +436,6 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
         )
         registry.disable(.extensions)
         let browserManager = BrowserManager(moduleRegistry: registry)
-        browserManager.bindTestWebViewCoordinator()
         return browserManager
     }
 
@@ -490,47 +491,42 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
         )
     }
 
-    private func makeRuntimeEnvironment(
+    private func makeWindowBoundRuntimeGraph(
+        repository: WebViewSessionRepository,
         tab: Tab,
         window: RebuildRuntimeWindowStub
-    ) -> WebViewRuntimeEnvironment {
+    ) -> WebViewRuntimeGraph {
         let tabID = tab.id
         let windowID = window.id
-        let visible = WebViewCoordinatorVisibleRuntimeContext(
-            windowState: { id in id == windowID ? window : nil },
-            currentTabId: { _ in tabID },
-            splitVisibleTabIds: { _ in [] },
-            resolveTab: { id, _ in id == tabID ? tab : nil },
-            canMaterializeWebViewDuringStartup: { _ in true },
-            markTabAccessed: { _ in },
-            globallyVisibleTabIDs: { [tabID] in [tabID] },
-            scheduleTabSuspensionReconcile: { _ in },
-            scheduleBackgroundMediaReconcile: { _ in },
-            refreshCompositor: { _ in }
-        )
-        let browser = WebViewCoordinatorBrowserRuntimeContext(
-            tab: { id in id == tabID ? tab : nil },
-            regularTabs: { [tab] in [tab] },
-            pinnedTabs: { [] },
-            allWindows: { [window] in [window] },
-            window: { id in id == windowID ? window : nil },
-            windowContaining: { handle in handle.id == tabID ? window : nil },
-            currentTab: { _ in tab },
-            selectTab: { _, _ in },
-            handleUnprotectedWebViewDidClose: { _ in false },
-            refreshCompositor: { _ in },
-            notifyTabActivatedIfLoaded: { _ in },
-            globallyVisibleTabIDs: { [tabID] in [tabID] }
-        )
-        return WebViewRuntimeEnvironment(
-            visible: visible,
-            browser: browser,
-            initialDocument: InitialDocumentWebViewRuntimeContext(
+        return makeTestWebViewRuntimeGraph(
+            webViewSessions: repository,
+            resolveRuntimeTab: { id in id == tabID ? tab : nil },
+            windowServices: WebViewWindowServices(
+                liveWindowIDs: { [windowID] },
+                containsWindow: { $0 == windowID },
+                currentTabID: { $0 == windowID ? tabID : nil },
+                selectTab: { _, _ in },
+                refreshCompositor: { _ in },
+                notifyTabActivatedIfCurrent: { _, _ in }
+            ),
+            visibleContext: WebViewVisibleRuntimeContext(
+                windowState: { id in id == windowID ? window : nil },
+                currentTabId: { _ in tabID },
+                splitVisibleTabIds: { _ in [] },
+                resolveTab: { id, _ in id == tabID ? tab : nil },
+                canMaterializeWebViewDuringStartup: { _ in true },
+                markTabAccessed: { _ in },
+                globallyVisibleTabIDs: { [tabID] in [tabID] },
+                scheduleTabSuspensionReconcile: { _ in },
+                scheduleBackgroundMediaReconcile: { _ in },
+                refreshCompositor: { _ in }
+            ),
+            initialDocumentContext: InitialDocumentWebViewRuntimeContext(
                 needsInitialDocumentExtensionContextLoad: { _ in false },
                 ensureInitialExtensionContextsLoaded: { _ in },
                 refreshCompositorForWindow: { _ in }
             ),
-            shutdown: WebViewCoordinatorShutdownRuntimeContext(
+            shutdownContext: WebViewShutdownRuntimeContext(
                 cleanupUserScripts: { _, _ in }
             )
         )

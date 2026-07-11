@@ -4,7 +4,7 @@ import WebKit
 
 /// Coordinates one process-wide website-data mutation boundary. It owns the
 /// admission gate, non-Tab participant registry, and live-document navigation
-/// barrier; `WebViewCoordinator` only exposes narrow runtime ports.
+/// barrier; the browser composition root only wires the narrow runtime ports.
 @MainActor
 final class WebsiteDataCleanupService: SumiDestructiveBrowsingDataCleanupPreparing {
     typealias RestoreSubmission = @MainActor (
@@ -17,7 +17,6 @@ final class WebsiteDataCleanupService: SumiDestructiveBrowsingDataCleanupPrepari
     private let transaction: WebsiteDataCleanupTransaction
 
     init(
-        browserRuntimeContext: @escaping @MainActor () -> WebViewCoordinatorBrowserRuntimeContext,
         liveWebViews: @escaping @MainActor (Tab) -> [WKWebView],
         waitForMutationPermission: @escaping @MainActor (WKWebView) async -> Bool,
         restoreSubmission: @escaping RestoreSubmission,
@@ -31,7 +30,7 @@ final class WebsiteDataCleanupService: SumiDestructiveBrowsingDataCleanupPrepari
         self.admissionGate = admissionGate
         self.participantRegistry = participantRegistry
         transaction = WebsiteDataCleanupTransaction(
-            browserRuntimeContext: browserRuntimeContext,
+            runtimeTabs: runtimeTabs,
             liveWebViews: liveWebViews,
             waitForMutationPermission: waitForMutationPermission,
             restoreTab: { tab, targetURL in
@@ -55,7 +54,6 @@ final class WebsiteDataCleanupService: SumiDestructiveBrowsingDataCleanupPrepari
             mutationGate: admissionGate,
             waitForRetiringResidenceBarrier: waitForOwnershipTransitions,
             runtimeMutationGeneration: runtimeMutationGeneration,
-            runtimeTabs: runtimeTabs,
             quiesceExternalParticipants: { profileIDs in
                 await participantRegistry.quiesce(profileIDs: profileIDs)
             },

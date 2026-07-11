@@ -7,18 +7,18 @@ import SumiWebRuntime
 @MainActor
 final class WebViewProfileAssignmentService {
     private let runtimeTabs: WebViewRuntimeTabRegistry
-    private let runtimeContextStore: WebViewRuntimeContextStore
+    private let resolveRuntimeTab: @MainActor (UUID) -> Tab?
     private let transitions: ProfileTransitionService
     private let replacementPipeline: WebViewReplacementPipeline
 
     init(
         runtimeTabs: WebViewRuntimeTabRegistry,
-        runtimeContextStore: WebViewRuntimeContextStore,
+        resolveRuntimeTab: @escaping @MainActor (UUID) -> Tab?,
         transitions: ProfileTransitionService,
         replacementPipeline: WebViewReplacementPipeline
     ) {
         self.runtimeTabs = runtimeTabs
-        self.runtimeContextStore = runtimeContextStore
+        self.resolveRuntimeTab = resolveRuntimeTab
         self.transitions = transitions
         self.replacementPipeline = replacementPipeline
     }
@@ -33,9 +33,11 @@ final class WebViewProfileAssignmentService {
         modelRollback: @escaping () -> Void,
         settlement: @escaping ProfileTransitionService.Settlement = { _ in }
     ) -> TabProfileAssignmentExecutionOutcome {
-        let runtime = runtimeContextStore.requireBrowser()
         let tabs = intent.tabIntents.compactMap { tabIntent in
-            runtimeTabs.resolve(tabIntent.tabID, runtime: runtime)
+            runtimeTabs.resolve(
+                tabIntent.tabID,
+                resolveRuntimeTab: resolveRuntimeTab
+            )
         }
         guard tabs.count == intent.tabIntents.count else {
             settlement(.rejected(.stale))

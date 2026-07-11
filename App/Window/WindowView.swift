@@ -406,7 +406,11 @@ struct WindowView: View {
                 splitPreviews: browserContext.splitPreviews,
                 splitLayout: browserContext.splitLayout,
                 splitDrops: browserContext.splitDrops,
-                splitDropTargets: browserContext.splitDropTargets
+                splitDropTargets: browserContext.splitDropTargets,
+                webViewOwnershipQuery: browserContext.webViewOwnershipQuery,
+                webViewOwnershipService: browserContext.webViewOwnershipService,
+                webViewCompositorRuntime: browserContext.webViewCompositorRuntime,
+                webViewProtectionRuntime: browserContext.webViewProtectionRuntime
             )
                 .zIndex(2000)
 

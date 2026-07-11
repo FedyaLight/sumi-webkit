@@ -5,7 +5,12 @@ enum BrowserTabManagerWebViewLifecycleFactory {
     static func service(
         runtime: BrowserManagerRuntimeReference
     ) -> TabManagerWebViewLifecycleService {
-        TabManagerWebViewLifecycleService(
+        let browserManager = runtime.require()
+        let webViewLifecycle = browserManager.webViewRuntime.lifecycleService
+        let ownershipQuery = browserManager.webViewRuntime.ownershipQuery
+        let rebuild = browserManager.webViewRuntime.rebuildService
+        let profileAssignment = browserManager.webViewRuntime.profileAssignmentService
+        return TabManagerWebViewLifecycleService(
             materializeVisibleTabWebViewIfNeeded: { tab, windowState in
                 runtime.require().materializeVisibleTabWebViewIfNeeded(tab, in: windowState)
             },
@@ -16,22 +21,20 @@ enum BrowserTabManagerWebViewLifecycleFactory {
                 runtime.require().compositorManager.unloadTab(tab)
             },
             requireRemoveAllWebViews: { tab, closeActiveFullscreenMedia in
-                runtime.require().shellRuntime.requireWebViewCoordinator()
-                    .lifecycleService.removeAllWebViews(
+                webViewLifecycle.removeAllWebViews(
                         for: tab,
                         closeActiveFullscreenMedia: closeActiveFullscreenMedia
                     )
             },
             windowIDsTrackingWebViews: { tabId in
-                runtime.require().webViewOwnershipQuery.windowIDs(for: tabId)
+                ownershipQuery.windowIDs(for: tabId)
             },
             primaryTrackedWindowId: { tabId in
                 runtime.require().webViewRoutingService.primaryTrackedWindowId(for: tabId)
             },
             rebuildLiveWebViews: { tab, preferredPrimaryWindowId, url in
                 if #available(macOS 15.5, *) {
-                    runtime.require().webViewCoordinator?.rebuildService
-                        .rebuildLiveWebViews(
+                    rebuild.rebuildLiveWebViews(
                             for: tab,
                             preferredPrimaryWindowID: preferredPrimaryWindowId,
                             load: url
@@ -58,14 +61,12 @@ enum BrowserTabManagerWebViewLifecycleFactory {
                 runtime.require().webViewRoutingService.hasUntrackedOwnedWebView(for: tab)
             },
             abortProfileTransitions: { profileIDs in
-                runtime.require().shellRuntime.requireWebViewCoordinator()
-                    .profileAssignmentService.abortProfileTransitions(
+                profileAssignment.abortProfileTransitions(
                         profileIDs: profileIDs
                     )
             },
             executeProfileTransition: { tab, profile, intent, settlement in
-                runtime.require().shellRuntime.requireWebViewCoordinator()
-                    .profileAssignmentService.executeProfileAssignment(
+                profileAssignment.executeProfileAssignment(
                         for: tab,
                         targetProfile: profile,
                         intent: intent,
@@ -81,8 +82,7 @@ enum BrowserTabManagerWebViewLifecycleFactory {
                 modelFinish,
                 modelRollback,
                 settlement in
-                runtime.require().shellRuntime.requireWebViewCoordinator()
-                    .profileAssignmentService.executeSpaceProfileAssignment(
+                profileAssignment.executeSpaceProfileAssignment(
                         space: space,
                         targetProfile: profile,
                         intent: intent,

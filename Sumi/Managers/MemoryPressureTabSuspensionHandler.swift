@@ -41,15 +41,6 @@ final class MemoryPressureTabSuspensionHandler {
             userInfo: ["level": level.rawValue]
         )
 
-        guard executor.isWebViewRuntimeAvailable else {
-            PerformanceTrace.emitEvent("TabSuspension.candidatesRanked")
-            PerformanceTrace.emitEvent("TabSuspension.tabsSuspended")
-            RuntimeDiagnostics.debug(category: "TabSuspension") {
-                "memoryPressure level=\(level.rawValue) candidates=0 suspended=0"
-            }
-            return
-        }
-
         let inactiveCutoff = dateProvider().addingTimeInterval(
             -Self.minimumInactiveInterval
         )

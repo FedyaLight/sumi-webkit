@@ -5,29 +5,35 @@ import Foundation
 /// is released, allowing AppKit's asynchronous quit finalizer to finish.
 @MainActor
 final class BrowserShutdownCleanupService {
-    private var didCleanUp = false
+    private var didCleanTabs = false
+    private var didFinalizeRuntime = false
     private let extensions: SumiExtensionsModule
     private let auxiliaryWindows: AuxiliaryWindowTeardownRegistry
     private let glance: GlanceManager
     private let tabs: TabManager
-    private let shell: BrowserShellRuntime
+    private let webViewLifecycle: WebViewLifecycleService
+    private let windowRegistry: @MainActor () -> WindowRegistry?
 
     init(
         extensions: SumiExtensionsModule,
         auxiliaryWindows: AuxiliaryWindowTeardownRegistry,
         glance: GlanceManager,
         tabs: TabManager,
-        shell: BrowserShellRuntime
+        webViewLifecycle: WebViewLifecycleService,
+        windowRegistry: @escaping @MainActor () -> WindowRegistry?
     ) {
         self.extensions = extensions
         self.auxiliaryWindows = auxiliaryWindows
         self.glance = glance
         self.tabs = tabs
-        self.shell = shell
+        self.webViewLifecycle = webViewLifecycle
+        self.windowRegistry = windowRegistry
     }
 
     func cleanupAllTabs() {
-        guard beginCleanup() else { return }
+        guard didCleanTabs == false,
+              didFinalizeRuntime == false else { return }
+        didCleanTabs = true
         RuntimeDiagnostics.emit("🔄 [BrowserShutdown] Cleaning up all tabs")
         extensions.cancelNativeMessagingSessionsIfLoaded(
             reason: "BrowserShutdown.cleanupAllTabs"
@@ -42,14 +48,16 @@ final class BrowserShutdownCleanupService {
             tab.performComprehensiveWebViewCleanup()
         }
 
-        shell.webViewCoordinator?.lifecycleService.cleanupAllWebViews()
+        webViewLifecycle.cleanupAllWebViews()
     }
 
     /// Terminal fallback for an AppKit quit callback that outlived the browser
     /// root. It must not touch Tab runtime ports, which intentionally fail fast
     /// once BrowserManager is gone.
     func cleanupAfterBrowserRuntimeDeallocation() {
-        guard beginCleanup() else { return }
+        guard didFinalizeRuntime == false else { return }
+        didFinalizeRuntime = true
+        didCleanTabs = true
         RuntimeDiagnostics.emit(
             "🔄 [BrowserShutdown] Cleaning up after browser runtime deallocation"
         )
@@ -58,8 +66,7 @@ final class BrowserShutdownCleanupService {
         )
         extensions.closeAllOptionsWindowsIfLoaded()
         glance.dismissGlance(persistsWindowSession: false)
-        shell.webViewCoordinator?.lifecycleService
-            .cleanupAfterBrowserRuntimeDeallocation()
+        webViewLifecycle.cleanupAfterBrowserRuntimeDeallocation()
         auxiliaryWindows.closeAllAfterBrowserRuntimeDeallocationIfLoaded()
     }
 
@@ -68,15 +75,9 @@ final class BrowserShutdownCleanupService {
             essential: tabs.shortcutPresentationOwner
                 .activeShortcutTabs(role: .essential),
             all: tabs.tabCollectionMembershipOwner.allTabs(),
-            ephemeral: shell.windowRegistry?.allWindows
+            ephemeral: windowRegistry()?.allWindows
                 .flatMap(\.ephemeralTabs) ?? []
         )
-    }
-
-    private func beginCleanup() -> Bool {
-        guard didCleanUp == false else { return false }
-        didCleanUp = true
-        return true
     }
 
     static func uniqueTabsForCleanup(

@@ -1,7 +1,7 @@
 import Foundation
 
 @MainActor
-public struct WebViewCoordinatorVisibleRuntimeContext {
+public struct WebViewVisibleRuntimeContext {
     public let windowState: (UUID) -> (any WebRuntimeWindowHandle)?
     public let currentTabId: (any WebRuntimeWindowHandle) -> UUID?
     public let splitVisibleTabIds: (UUID) -> [UUID]

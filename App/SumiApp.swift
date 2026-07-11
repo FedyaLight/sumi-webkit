@@ -20,7 +20,6 @@ private struct SumiAppRootDependencies {
     let updaterService: SumiUpdaterService
     let defaultBrowserService: SumiDefaultBrowserService
     let windowRegistry: WindowRegistry
-    let webViewCoordinator: WebViewCoordinator
     let sidebarMouseButtonCaptureRegistry: SidebarMouseButtonCaptureRegistry
     let windowLifecycleService: BrowserWindowLifecycleService
 }
@@ -28,7 +27,6 @@ private struct SumiAppRootDependencies {
 @main
 struct SumiApp: App {
     @State private var windowRegistry = WindowRegistry()
-    @State private var webViewCoordinator: WebViewCoordinator
     @State private var settingsManager: SumiSettingsService
     @State private var keyboardShortcutManager = KeyboardShortcutManager()
     @State private var appOrchestrationOwner = BrowserAppOrchestrationOwner()
@@ -69,9 +67,6 @@ struct SumiApp: App {
         _nowPlayingController = StateObject(wrappedValue: nowPlayingController)
         _settingsManager = State(initialValue: SumiSettingsService(nowPlayingController: nowPlayingController))
         _browserManager = StateObject(wrappedValue: browserManager)
-        _webViewCoordinator = State(
-            initialValue: WebViewCoordinator(webViewSessions: webViewSessions)
-        )
     }
 
     var body: some Scene {
@@ -108,7 +103,7 @@ struct SumiApp: App {
                 appDelegate: appDelegate,
                 browserManager: browserManager,
                 windowRegistry: windowRegistry,
-                webViewCoordinator: webViewCoordinator,
+                webViewLifecycle: browserManager.webViewRuntime.lifecycleService,
                 settingsManager: settingsManager,
                 keyboardShortcutManager: keyboardShortcutManager,
                 nowPlayingController: nowPlayingController,
@@ -128,7 +123,7 @@ struct SumiApp: App {
         let sidebarMouseButtonCaptureRegistry = appDelegate.sidebarMouseButtonCaptureRegistry
         let windowLifecycleService = windowLifecycleService
 
-        return { [weak browserManager] windowRegistry, webViewCoordinator, windowState in
+        return { [weak browserManager] windowRegistry, windowState in
             guard let browserManager else {
                 RuntimeDiagnostics.emit(
                     "⚠️ [SumiApp] Ignored late window-content request after browser runtime deallocation"
@@ -144,7 +139,6 @@ struct SumiApp: App {
                     updaterService: updaterService,
                     defaultBrowserService: defaultBrowserService,
                     windowRegistry: windowRegistry,
-                    webViewCoordinator: webViewCoordinator,
                     sidebarMouseButtonCaptureRegistry: sidebarMouseButtonCaptureRegistry,
                     windowLifecycleService: windowLifecycleService
                 ),
@@ -175,7 +169,6 @@ struct SumiApp: App {
                 updaterService: updaterService,
                 defaultBrowserService: defaultBrowserService,
                 windowRegistry: windowRegistry,
-                webViewCoordinator: webViewCoordinator,
                 sidebarMouseButtonCaptureRegistry: appDelegate.sidebarMouseButtonCaptureRegistry,
                 windowLifecycleService: windowLifecycleService
             ),
@@ -219,7 +212,6 @@ struct SumiApp: App {
             .environmentObject(dependencies.browserManager.optionalModules.extensions.surfaceStore)
             .environmentObject(dependencies.nowPlayingController)
             .environment(dependencies.windowRegistry)
-            .environment(dependencies.webViewCoordinator)
             .environment(\.sumiSettings, dependencies.settingsManager)
             .environment(\.sumiModuleRegistry, dependencies.browserManager.moduleRegistry)
             .environment(\.sumiProtectionCoordinator, dependencies.browserManager.protectionCoordinator)

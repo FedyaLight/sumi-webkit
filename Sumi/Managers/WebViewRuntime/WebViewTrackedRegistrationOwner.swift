@@ -11,7 +11,10 @@ final class WebViewTrackedRegistrationOwner {
     private let mediaProtectionOwner: WebViewMediaProtectionOwner
     private let trackingLifecycleOwner: WebViewTrackingLifecycleOwner
     private let trackedCleanupExecutionOwner: WebViewTrackedCleanupExecutionOwner
-    private let requireBrowserRuntimeContext: @MainActor () -> WebViewCoordinatorBrowserRuntimeContext
+    private let containsWindow: @MainActor @Sendable (UUID) -> Bool
+    private let currentTabID: @MainActor @Sendable (UUID) -> UUID?
+    private let selectTab: @MainActor @Sendable (UUID, UUID) -> Void
+    private let refreshCompositor: @MainActor @Sendable (UUID) -> Void
     private let removeWebViewFromContainers: @MainActor (WKWebView) -> Void
     private let pruneInvalidDeferredCommands: @MainActor (String) -> Void
     private let flushDeferredProtectedCommands: @MainActor (ObjectIdentifier) -> Void
@@ -26,7 +29,10 @@ final class WebViewTrackedRegistrationOwner {
         mediaProtectionOwner: WebViewMediaProtectionOwner,
         trackingLifecycleOwner: WebViewTrackingLifecycleOwner,
         trackedCleanupExecutionOwner: WebViewTrackedCleanupExecutionOwner,
-        requireBrowserRuntimeContext: @escaping @MainActor () -> WebViewCoordinatorBrowserRuntimeContext,
+        containsWindow: @escaping @MainActor @Sendable (UUID) -> Bool,
+        currentTabID: @escaping @MainActor @Sendable (UUID) -> UUID?,
+        selectTab: @escaping @MainActor @Sendable (UUID, UUID) -> Void,
+        refreshCompositor: @escaping @MainActor @Sendable (UUID) -> Void,
         removeWebViewFromContainers: @escaping @MainActor (WKWebView) -> Void,
         pruneInvalidDeferredCommands: @escaping @MainActor (String) -> Void,
         flushDeferredProtectedCommands: @escaping @MainActor (ObjectIdentifier) -> Void,
@@ -40,7 +46,10 @@ final class WebViewTrackedRegistrationOwner {
         self.mediaProtectionOwner = mediaProtectionOwner
         self.trackingLifecycleOwner = trackingLifecycleOwner
         self.trackedCleanupExecutionOwner = trackedCleanupExecutionOwner
-        self.requireBrowserRuntimeContext = requireBrowserRuntimeContext
+        self.containsWindow = containsWindow
+        self.currentTabID = currentTabID
+        self.selectTab = selectTab
+        self.refreshCompositor = refreshCompositor
         self.removeWebViewFromContainers = removeWebViewFromContainers
         self.pruneInvalidDeferredCommands = pruneInvalidDeferredCommands
         self.flushDeferredProtectedCommands = flushDeferredProtectedCommands
@@ -184,22 +193,15 @@ final class WebViewTrackedRegistrationOwner {
             flushDeferredProtectedCommands: { [flushDeferredProtectedCommands] webViewID in
                 flushDeferredProtectedCommands(webViewID)
             },
-            refreshCompositor: { [requireBrowserRuntimeContext] windowID in
-                let runtimeContext = requireBrowserRuntimeContext()
-                guard runtimeContext.window(windowID) != nil else {
-                    return
-                }
-                runtimeContext.refreshCompositor(windowID)
+            refreshCompositor: { [containsWindow, refreshCompositor] windowID in
+                guard containsWindow(windowID) else { return }
+                refreshCompositor(windowID)
             },
-            selectTab: { [requireBrowserRuntimeContext] tabID, windowID in
-                requireBrowserRuntimeContext().selectTab(tabID, windowID)
+            selectTab: { [selectTab] tabID, windowID in
+                selectTab(tabID, windowID)
             },
-            isOwnerTabCurrent: { [requireBrowserRuntimeContext] tabID, windowID in
-                let runtimeContext = requireBrowserRuntimeContext()
-                guard let windowHandle = runtimeContext.window(windowID) else {
-                    return false
-                }
-                return runtimeContext.currentTab(windowHandle)?.id == tabID
+            isOwnerTabCurrent: { [containsWindow, currentTabID] tabID, windowID in
+                containsWindow(windowID) && currentTabID(windowID) == tabID
             }
         )
 

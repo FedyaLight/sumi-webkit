@@ -46,7 +46,7 @@ public final class WebViewCleanupScopeOwner {
         entries: [(TrackedWebViewOwner, WKWebView)],
         runtime: Runtime
     ) {
-        SumiWebRuntimeDiagnostics.debug(category: "WebViewCoordinator") {
+        SumiWebRuntimeDiagnostics.debug(category: "WebViewCleanupScopeOwner") {
             "Cleaning up \(entries.count) WebViews for window \(windowId.uuidString)."
         }
 
@@ -65,7 +65,7 @@ public final class WebViewCleanupScopeOwner {
         totalWebViewCount: Int,
         runtime: Runtime
     ) {
-        SumiWebRuntimeDiagnostics.debug(category: "WebViewCoordinator") {
+        SumiWebRuntimeDiagnostics.debug(category: "WebViewCleanupScopeOwner") {
             "Starting full WebView cleanup for \(totalWebViewCount) tracked views."
         }
 
@@ -114,7 +114,7 @@ public final class WebViewCleanupScopeOwner {
                 runtime.refreshPrimaryTrackedWebView(tab)
             }
 
-            SumiWebRuntimeDiagnostics.debug(category: "WebViewCoordinator") {
+            SumiWebRuntimeDiagnostics.debug(category: "WebViewCleanupScopeOwner") {
                 cleanedMessage(owner)
             }
         }

@@ -29,28 +29,25 @@ final class WebsiteDataCleanupParticipantDiscovery {
     }
 
     private let navigationBarrier: WebsiteDataCleanupNavigationBarrier
-    private let browserRuntimeContext: @MainActor () -> WebViewCoordinatorBrowserRuntimeContext
+    private let runtimeTabs: RuntimeTabProvider
     private let liveWebViews: @MainActor (Tab) -> [WKWebView]
     private let waitForRetiringResidenceBarrier: RetiringResidenceBarrier
     private let runtimeMutationGeneration: RuntimeMutationGeneration
-    private let runtimeTabs: RuntimeTabProvider?
     private let residenceBarrierTimeout: Duration
 
     init(
         navigationBarrier: WebsiteDataCleanupNavigationBarrier,
-        browserRuntimeContext: @escaping @MainActor () -> WebViewCoordinatorBrowserRuntimeContext,
+        runtimeTabs: @escaping RuntimeTabProvider,
         liveWebViews: @escaping @MainActor (Tab) -> [WKWebView],
         waitForRetiringResidenceBarrier: @escaping RetiringResidenceBarrier,
         runtimeMutationGeneration: @escaping RuntimeMutationGeneration,
-        runtimeTabs: RuntimeTabProvider?,
         residenceBarrierTimeout: Duration
     ) {
         self.navigationBarrier = navigationBarrier
-        self.browserRuntimeContext = browserRuntimeContext
+        self.runtimeTabs = runtimeTabs
         self.liveWebViews = liveWebViews
         self.waitForRetiringResidenceBarrier = waitForRetiringResidenceBarrier
         self.runtimeMutationGeneration = runtimeMutationGeneration
-        self.runtimeTabs = runtimeTabs
         self.residenceBarrierTimeout = residenceBarrierTimeout
     }
 
@@ -171,15 +168,7 @@ final class WebsiteDataCleanupParticipantDiscovery {
 
     private func eligibleTabs(profileIDs: Set<UUID>) -> [Tab]? {
         var seenTabIDs = Set<UUID>()
-        let tabs: [Tab]
-        if let runtimeTabs {
-            guard let providedTabs = runtimeTabs() else { return nil }
-            tabs = providedTabs
-        } else {
-            let runtimeContext = browserRuntimeContext()
-            tabs = runtimeContext.pinnedTabs().compactMap(\.concreteTab)
-                + runtimeContext.regularTabs().compactMap(\.concreteTab)
-        }
+        guard let tabs = runtimeTabs() else { return nil }
         return tabs.filter { tab in
             seenTabIDs.insert(tab.id).inserted
                 && isTabEligible(tab, profileIDs: profileIDs)

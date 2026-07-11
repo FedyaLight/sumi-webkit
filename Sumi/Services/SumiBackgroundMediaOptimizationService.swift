@@ -96,7 +96,6 @@ struct SumiBackgroundMediaOptimizationRuntime {
         _ arguments: [String: Any]
     ) -> Void
 
-    let webViewRuntimeAvailable: () -> Bool
     let liveWebViewEntries: (Tab) -> [(windowID: UUID?, webView: WKWebView)]
     let energySaverActive: () -> Bool
     let allKnownTabs: () -> [Tab]
@@ -104,7 +103,6 @@ struct SumiBackgroundMediaOptimizationRuntime {
     let executeJavaScriptCommand: JavaScriptCommandExecutor
 
     init(
-        webViewRuntimeAvailable: @escaping @MainActor () -> Bool,
         liveWebViewEntries: @escaping @MainActor (Tab) -> [
             (windowID: UUID?, webView: WKWebView)
         ],
@@ -114,7 +112,6 @@ struct SumiBackgroundMediaOptimizationRuntime {
         executeJavaScriptCommand: @escaping JavaScriptCommandExecutor =
             SumiBackgroundMediaOptimizationRuntime.defaultJavaScriptCommandExecutor
     ) {
-        self.webViewRuntimeAvailable = webViewRuntimeAvailable
         self.liveWebViewEntries = liveWebViewEntries
         self.energySaverActive = energySaverActive
         self.allKnownTabs = allKnownTabs
@@ -194,7 +191,7 @@ final class SumiBackgroundMediaOptimizationService {
     }
 
     func reconcileNow(reason: String) {
-        guard let runtime, runtime.webViewRuntimeAvailable() else { return }
+        guard let runtime else { return }
 
         let policy = SumiBackgroundMediaOptimizationPolicy.make(
             energySaverActive: runtime.energySaverActive()

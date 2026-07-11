@@ -137,7 +137,6 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
             moduleRegistry: registry,
             extensionsModule: extensionsModule
         )
-        browserManager.bindTestWebViewCoordinator()
         browserManager.profileManager.profiles = [profile]
         browserManager.currentProfile = profile
         extensionsModule.attach(runtime: BrowserExtensionsModuleRuntimeFactory.runtime(for: browserManager))
@@ -194,7 +193,6 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
             moduleRegistry: registry,
             extensionsModule: extensionsModule
         )
-        browserManager.bindTestWebViewCoordinator()
         browserManager.profileManager.profiles = [profile]
         browserManager.currentProfile = profile
         extensionsModule.attach(runtime: BrowserExtensionsModuleRuntimeFactory.runtime(for: browserManager))
@@ -426,7 +424,6 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
             moduleRegistry: registry,
             extensionsModule: extensionsModule
         )
-        browserManager.bindTestWebViewCoordinator()
         browserManager.profileManager.profiles = [profile]
         browserManager.currentProfile = profile
         extensionsModule.attach(runtime: BrowserExtensionsModuleRuntimeFactory.runtime(for: browserManager))
@@ -487,7 +484,6 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
             moduleRegistry: registry,
             extensionsModule: extensionsModule
         )
-        browserManager.bindTestWebViewCoordinator()
         browserManager.profileManager.profiles = [profile]
         browserManager.currentProfile = profile
         extensionsModule.attach(runtime: BrowserExtensionsModuleRuntimeFactory.runtime(for: browserManager))
@@ -549,7 +545,6 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
             moduleRegistry: registry,
             extensionsModule: extensionsModule
         )
-        browserManager.bindTestWebViewCoordinator()
         browserManager.profileManager.profiles = [profile]
         browserManager.currentProfile = profile
         extensionsModule.attach(runtime: BrowserExtensionsModuleRuntimeFactory.runtime(for: browserManager))
@@ -1112,7 +1107,6 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
         browserManager.sumiSettings = settings
         browserManager.profileManager.profiles = [profile]
         browserManager.currentProfile = profile
-        browserManager.bindTestWebViewCoordinator()
         browserManager.windowRegistry = windowRegistry
         browserManager.tabManager.spaceStateOwner.replaceSpaces([space])
         browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(space)

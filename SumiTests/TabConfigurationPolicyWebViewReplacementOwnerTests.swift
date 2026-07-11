@@ -132,9 +132,8 @@ final class TabWebViewReplacementOwnerTests: XCTestCase {
     func testProtectedUntrackedReplacementKeepsDisplacedWebViewLeasedUntilRelease() async throws {
         let browserManager = BrowserManager()
         let windowRegistry = WindowRegistry()
-        let coordinator = WebViewCoordinator(webViewSessions: browserManager.webViewSessions)
+        let webViewRuntime = browserManager.testWebViewRuntime()
         browserManager.windowRegistry = windowRegistry
-        browserManager.bindTestWebViewCoordinator(coordinator)
         let tab = browserManager.tabManager.tabFactory.makeTab(
             url: URL(string: "https://example.com/original")!,
             loadsCachedFaviconOnInit: false
@@ -143,17 +142,17 @@ final class TabWebViewReplacementOwnerTests: XCTestCase {
         let displaced = WKWebView()
         let replacement = WKWebView()
         let container = NSView()
-        let registration = coordinator.compositorRuntime.registerContainer(
+        let registration = webViewRuntime.compositorRuntime.registerContainer(
             container,
             for: UUID()
         )
         tab.replaceUntrackedWebView(displaced)
-        let protectionLease = try XCTUnwrap(coordinator.protectionRuntime.beginVisualHandoff(
+        let protectionLease = try XCTUnwrap(webViewRuntime.protectionRuntime.beginVisualHandoff(
             for: displaced,
             containerRegistration: registration
         ))
 
-        XCTAssertEqual(coordinator.ownershipService.replaceDetached(
+        XCTAssertEqual(webViewRuntime.ownershipService.replaceDetached(
             displaced,
             with: replacement,
             for: tab,
@@ -166,7 +165,7 @@ final class TabWebViewReplacementOwnerTests: XCTestCase {
         }
         XCTAssertEqual(lease.tabID, tab.id)
 
-        coordinator.protectionRuntime.finishVisualHandoff(protectionLease)
+        webViewRuntime.protectionRuntime.finishVisualHandoff(protectionLease)
         await drainMainQueue()
 
         XCTAssertNil(browserManager.webViewSessions.residence(of: displaced))
@@ -177,24 +176,23 @@ final class TabWebViewReplacementOwnerTests: XCTestCase {
     func testProtectedUntrackedReleaseKeepsWebViewLeasedUntilProtectionEnds() async throws {
         let browserManager = BrowserManager()
         let windowRegistry = WindowRegistry()
-        let coordinator = WebViewCoordinator(webViewSessions: browserManager.webViewSessions)
+        let webViewRuntime = browserManager.testWebViewRuntime()
         browserManager.windowRegistry = windowRegistry
-        browserManager.bindTestWebViewCoordinator(coordinator)
         let tab = browserManager.tabManager.tabFactory.makeTab(loadsCachedFaviconOnInit: false)
         tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
         let webView = WKWebView()
         let container = NSView()
-        let registration = coordinator.compositorRuntime.registerContainer(
+        let registration = webViewRuntime.compositorRuntime.registerContainer(
             container,
             for: UUID()
         )
         tab.replaceUntrackedWebView(webView)
-        let protectionLease = try XCTUnwrap(coordinator.protectionRuntime.beginVisualHandoff(
+        let protectionLease = try XCTUnwrap(webViewRuntime.protectionRuntime.beginVisualHandoff(
             for: webView,
             containerRegistration: registration
         ))
 
-        coordinator.ownershipService.releaseUntracked(for: tab)
+        webViewRuntime.ownershipService.releaseUntracked(for: tab)
 
         XCTAssertNil(tab.resolvedCurrentWebView())
         guard case .pendingCleanup(let lease) = browserManager.webViewSessions.residence(of: webView) else {
@@ -202,7 +200,7 @@ final class TabWebViewReplacementOwnerTests: XCTestCase {
         }
         XCTAssertEqual(lease.tabID, tab.id)
 
-        coordinator.protectionRuntime.finishVisualHandoff(protectionLease)
+        webViewRuntime.protectionRuntime.finishVisualHandoff(protectionLease)
         await drainMainQueue()
 
         XCTAssertNil(browserManager.webViewSessions.residence(of: webView))

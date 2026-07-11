@@ -39,7 +39,7 @@ final class WebsiteDataCleanupTransaction {
     private var isTerminallyShutDown = false
 
     init(
-        browserRuntimeContext: @escaping @MainActor () -> WebViewCoordinatorBrowserRuntimeContext,
+        runtimeTabs: @escaping RuntimeTabProvider,
         liveWebViews: @escaping @MainActor (Tab) -> [WKWebView],
         waitForMutationPermission: @escaping MutationPermissionWaiter,
         loadBlankNavigation: BlankNavigationLoader? = nil,
@@ -47,7 +47,6 @@ final class WebsiteDataCleanupTransaction {
         mutationGate: WebsiteDataMutationGate = WebsiteDataMutationGate(),
         waitForRetiringResidenceBarrier: @escaping RetiringResidenceBarrier = { true },
         runtimeMutationGeneration: @escaping RuntimeMutationGeneration = { 0 },
-        runtimeTabs: RuntimeTabProvider? = nil,
         quiesceExternalParticipants: @escaping ExternalParticipantQuiescer = { _ in true },
         abortOwnershipTransitions: @escaping OwnershipTransitionAborter = { _ in },
         blankAttemptTimeout: Duration = .seconds(30),
@@ -63,11 +62,10 @@ final class WebsiteDataCleanupTransaction {
         self.navigationBarrier = navigationBarrier
         participantDiscovery = WebsiteDataCleanupParticipantDiscovery(
             navigationBarrier: navigationBarrier,
-            browserRuntimeContext: browserRuntimeContext,
+            runtimeTabs: runtimeTabs,
             liveWebViews: liveWebViews,
             waitForRetiringResidenceBarrier: waitForRetiringResidenceBarrier,
             runtimeMutationGeneration: runtimeMutationGeneration,
-            runtimeTabs: runtimeTabs,
             residenceBarrierTimeout: residenceBarrierTimeout
         )
         restoreLoop = WebsiteDataCleanupRestoreLoop(
@@ -141,7 +139,7 @@ final class WebsiteDataCleanupTransaction {
             in: session
         )
 
-        RuntimeDiagnostics.debug(category: "WebViewCoordinator") {
+        RuntimeDiagnostics.debug(category: "WebsiteDataCleanupTransaction") {
             "Completed destructive data cleanup transaction for \(profileIDs.count) profile(s), quiescing \(self.navigationBarrier.participantCount(in: session)) live WebView(s); restore=\(didRestore)."
         }
         return didRestore

@@ -165,11 +165,11 @@ public final class VisibleWebViewRuntimeOwner: WebRuntimeVisiblePreparationContr
         createWebView: (any WebRuntimeTabHandle, UUID) -> WKWebView?
     ) -> Bool {
         let signpostState = SumiWebRuntimeDiagnostics.beginInterval(
-            "WebViewCoordinator.prepareVisibleWebViews"
+            "VisibleWebViewRuntimeOwner.prepareVisibleWebViews"
         )
         defer {
             SumiWebRuntimeDiagnostics.endInterval(
-                "WebViewCoordinator.prepareVisibleWebViews",
+                "VisibleWebViewRuntimeOwner.prepareVisibleWebViews",
                 signpostState
             )
         }

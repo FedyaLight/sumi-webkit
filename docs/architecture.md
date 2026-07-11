@@ -43,8 +43,8 @@ coordination port.
 ## WebView Session Ownership
 
 `SumiApp` creates exactly one `WebViewSessionRepository` for a browser process.
-The composition root passes it to `BrowserManager`, `TabManager`, and
-`WebViewCoordinator`; production tabs are created by `TabFactory` on that same
+The composition root passes it to `BrowserManager`, `TabManager`, and the
+browser's `WebViewRuntimeGraph`; production tabs are created by `TabFactory` on that same
 repository. Runtime code validates repository identity and never migrates
 ownership between repositories.
 
@@ -159,22 +159,32 @@ outside the aggregate and rejects direct component storage on `Tab`.
 
 ## Runtime Assembly
 
-`WebViewCoordinator` receives one `WebViewRuntimeEnvironment` containing its
-browser, visible-preparation, initial-document, and shutdown capabilities.
-Environment attachment and detachment are atomic, so runtime code cannot
-observe a partially wired coordinator. The production
-`BrowserManager`-to-`WebViewCoordinator` identity is different: it is bound
-exactly once for the browser-session lifetime. Replacement or detachment is a
-composition failure, and cleanup requires that binding instead of silently
-falling back to partial teardown. The process-owned coordinator and repository
-outlive a deallocated manager; a late window-close callback therefore performs
-full repository-owned window cleanup, not compositor-only cleanup.
+`BrowserManager` owns one `WebViewRuntimeGraph` built by
+`BrowserWebViewRuntimeFactory.make` from its canonical
+`WebViewSessionRepository`. Construction supplies immutable, exact inputs: the
+runtime-tab resolver, `WebViewWindowServices`, `DeferredWebViewServices`,
+`WebViewVisibleRuntimeContext`, `InitialDocumentWebViewRuntimeContext`, and
+`WebViewShutdownRuntimeContext`. The graph distributes those capabilities while
+constructing concrete services; it has no service locator, late-binding context
+store, instance behavior, observation, or SwiftUI environment role. Feature
+code receives concrete runtime services instead of the graph, and graph-coupled
+adapter construction stays in the graph file so each service retains only its
+narrow `Dependencies` value.
+
+There is no browser-wide WebView runtime context and no attach/detach lifecycle.
+Window lookup and compositor effects come from the exact window capability;
+protected-command replay uses the exact deferred capability; visible
+preparation, initial-document loading, and shutdown each receive their own
+immutable context. Terminal lifecycle cleanup explicitly resets the replacement
+pipeline, whose reset reaches its settlement service, before the remaining
+WebView runtime state is drained.
 
 `TabManager` side effects use immutable typed ports. The live ports share one
 explicit browser-session lifetime reference: using a port after the owning
 session is released is a composition failure, not a silent no-op. No-op port
 registries exist only in test support. Persisted tab restore starts only after
-runtime ports, the window registry, and the WebView coordinator are attached;
+runtime ports, the window registry, and the immutable WebView runtime graph are
+constructed;
 it compares a structural mutation revision across its asynchronous load and
 rejects stale snapshots instead of overwriting live changes. Initial-data
 readiness is replayed to late subscribers.

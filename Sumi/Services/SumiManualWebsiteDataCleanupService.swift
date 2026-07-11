@@ -8,7 +8,10 @@ final class SumiManualWebsiteDataCleanupService {
     private let domainInventory: SumiBrowsingDataDomainInventory
     private let sharedWebsiteDataStoreProvider: @MainActor () -> WKWebsiteDataStore
     private let referenceDateProvider: @MainActor () -> Date
-    weak var destructiveCleanupPreparer: (any SumiDestructiveBrowsingDataCleanupPreparing)?
+    /// Website-data mutation is unsafe without this boundary. The cleanup
+    /// service therefore owns the installed capability for its full useful
+    /// lifetime instead of letting it disappear through a weak reference.
+    var destructiveCleanupPreparer: (any SumiDestructiveBrowsingDataCleanupPreparing)?
 
     init(
         websiteDataCleanupService: any SumiWebsiteDataCleanupServicing,

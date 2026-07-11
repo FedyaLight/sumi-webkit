@@ -138,7 +138,7 @@ detached_app_hits="$(
 while IFS= read -r match; do
   [[ -z "$match" ]] && continue
   file="${match%%:*}"
-  if [[ "$file" != "Sumi/Managers/WebViewCoordinator/WebViewProtectedCommandDispatchOwner.swift" ]]; then
+  if [[ "$file" != "Sumi/Managers/WebViewRuntime/WebViewProtectedCommandDispatchOwner.swift" ]]; then
     printf 'error: detached repository mutation bypasses WebViewSessionHandle: %s\n' "$match" >&2
     status=1
   fi
@@ -156,10 +156,10 @@ while IFS= read -r match; do
   [[ -z "$match" ]] && continue
   file="${match%%:*}"
   case "$file" in
-    Sumi/Managers/WebViewCoordinator/WebViewOwnershipService.swift|Sumi/Managers/WebViewCoordinator/WebViewPhysicalCleanupService.swift|Sumi/Managers/WebViewCoordinator/WebViewProtectedCommandDispatchOwner.swift)
+    Sumi/Managers/WebViewRuntime/WebViewOwnershipService.swift|Sumi/Managers/WebViewRuntime/WebViewPhysicalCleanupService.swift|Sumi/Managers/WebViewRuntime/WebViewProtectedCommandDispatchOwner.swift)
       ;;
     *)
-      printf 'error: pending-cleanup lease mutation escaped coordinator lifecycle: %s\n' "$match" >&2
+      printf 'error: pending-cleanup lease mutation escaped WebView runtime lifecycle: %s\n' "$match" >&2
       status=1
       ;;
   esac
@@ -203,7 +203,7 @@ tab_facade_read_hits="$(
 )"
 fail_matches "deleted Tab WebView ownership accessor used" "$tab_facade_read_hits"
 
-# Ownership-affecting Tab calls remain inside Tab internals, coordinator, or routing.
+# Ownership-affecting Tab calls remain inside Tab internals, WebView runtime, or routing.
 tab_mutator_hits="$(
   rg -n '\.(replaceUntrackedWebView|clearCurrentWebViewOwnership|clearAllWebViewOwnership|clearCurrentWebViewOwnershipIfIdentical|makeNormalTabWebView|prepareAssignedWebView)\s*\(' \
     "${production_roots[@]}" -g '*.swift' || true
@@ -212,10 +212,10 @@ while IFS= read -r match; do
   [[ -z "$match" ]] && continue
   file="${match%%:*}"
   case "$file" in
-    Sumi/Models/Tab/*|Sumi/Managers/WebViewCoordinator/*|Sumi/Services/BrowserWebViewRoutingService.swift)
+    Sumi/Models/Tab/*|Sumi/Managers/WebViewRuntime/*|Sumi/Services/BrowserWebViewRoutingService.swift)
       ;;
     *)
-      printf 'error: Tab WebView mutation outside Tab/coordinator/routing: %s\n' "$match" >&2
+      printf 'error: Tab WebView mutation outside Tab/WebView runtime/routing: %s\n' "$match" >&2
       status=1
       ;;
   esac

@@ -6,17 +6,14 @@ enum TabBrowserWebViewRuntimeFactory {
     static func cleanupRuntime(
         for browserManager: BrowserManager
     ) -> TabWebViewCleanupRuntime {
-        let runtime = BrowserManagerRuntimeReference(browserManager)
+        let webViewRuntime = browserManager.webViewRuntime
         return .make(
-            userscriptsModule: {
-                runtime.require().optionalModules.userscripts
-            },
-            webViewCoordinator: {
-                runtime.require().shellRuntime.requireWebViewCoordinator()
-            },
-            webViewOwnershipService: {
-                runtime.require().shellRuntime.requireWebViewOwnershipService()
-            }
+            userscriptsModule: browserManager.optionalModules.userscripts,
+            protection: webViewRuntime.protectionRuntime,
+            websiteDataCleanup: webViewRuntime.websiteDataCleanupService,
+            compositor: webViewRuntime.compositorRuntime,
+            lifecycle: webViewRuntime.lifecycleService,
+            ownership: webViewRuntime.ownershipService
         )
     }
 
@@ -41,14 +38,10 @@ enum TabBrowserWebViewRuntimeFactory {
     static func replacementRuntime(
         for browserManager: BrowserManager
     ) -> TabWebViewReplacementRuntime {
-        let runtime = BrowserManagerRuntimeReference(browserManager)
+        let webViewRuntime = browserManager.webViewRuntime
         return .make(
-            webViewCoordinator: {
-                runtime.require().shellRuntime.requireWebViewCoordinator()
-            },
-            webViewOwnershipService: {
-                runtime.require().shellRuntime.requireWebViewOwnershipService()
-            }
+            rebuild: webViewRuntime.rebuildService,
+            ownership: webViewRuntime.ownershipService
         )
     }
 
@@ -76,8 +69,8 @@ enum TabBrowserWebViewRuntimeFactory {
 @MainActor
 extension TabWebViewReplacementRuntime {
     static func make(
-        webViewCoordinator: @escaping () -> WebViewCoordinator,
-        webViewOwnershipService: @escaping () -> WebViewOwnershipService
+        rebuild: WebViewRebuildService,
+        ownership: WebViewOwnershipService
     ) -> Self {
         Self(
             rebuildTrackedWebViews: {
@@ -85,8 +78,7 @@ extension TabWebViewReplacementRuntime {
                 guard #available(macOS 15.5, *) else {
                     return .failed
                 }
-                return webViewCoordinator().rebuildService
-                    .rebuildLiveWebViewsResult(
+                return rebuild.rebuildLiveWebViewsResult(
                     for: tab,
                     preferredPrimaryWindowID: preferredPrimaryWindowId,
                     load: targetURL,
@@ -95,7 +87,7 @@ extension TabWebViewReplacementRuntime {
                 )
             },
             commitUntrackedReplacement: { tab, previous, replacement, reason in
-                webViewOwnershipService().replaceDetached(
+                ownership.replaceDetached(
                     previous,
                     with: replacement,
                     for: tab,
@@ -109,21 +101,23 @@ extension TabWebViewReplacementRuntime {
 @MainActor
 extension TabWebViewCleanupRuntime {
     static func make(
-        userscriptsModule: @escaping () -> SumiUserscriptsModule,
-        webViewCoordinator: @escaping () -> WebViewCoordinator,
-        webViewOwnershipService: @escaping () -> WebViewOwnershipService
+        userscriptsModule: SumiUserscriptsModule,
+        protection: WebViewProtectionRuntime,
+        websiteDataCleanup: WebsiteDataCleanupService,
+        compositor: WebViewCompositorRuntime,
+        lifecycle: WebViewLifecycleService,
+        ownership: WebViewOwnershipService
     ) -> Self {
         Self(
             deferProtectedWebViewCleanup: { webView, tabId, reason in
-                webViewCoordinator().protectionRuntime.deferCleanup(
+                protection.deferCleanup(
                     of: webView,
                     tabID: tabId,
                     reason: reason
                 )
             },
             deferWebsiteDataMutationWebViewMaterialization: { tab, replay in
-                webViewCoordinator().websiteDataCleanupService
-                    .deferWebViewMaterialization(
+                websiteDataCleanup.deferWebViewMaterialization(
                     for: tab,
                     replay: replay
                 )
@@ -133,8 +127,7 @@ extension TabWebViewCleanupRuntime {
                 webView,
                 semanticRevision,
                 replay in
-                webViewCoordinator().websiteDataCleanupService
-                    .deferMainFrameSubmission(
+                websiteDataCleanup.deferMainFrameSubmission(
                     for: tab,
                     on: webView,
                     semanticRevision: semanticRevision,
@@ -142,24 +135,23 @@ extension TabWebViewCleanupRuntime {
                 )
             },
             retireParkedWebView: { tab, webView, reason in
-                webViewOwnershipService().releaseParked(
+                ownership.releaseParked(
                     webView,
                     for: tab,
                     reason: reason
                 )
             },
             cleanupUserScripts: { controller, webViewId in
-                userscriptsModule().cleanupWebViewIfLoaded(
+                userscriptsModule.cleanupWebViewIfLoaded(
                     controller: controller,
                     webViewId: webViewId
                 )
             },
             removeWebViewFromContainers: { webView in
-                webViewCoordinator().compositorRuntime
-                    .removeWebViewFromContainers(webView)
+                compositor.removeWebViewFromContainers(webView)
             },
             removeAllWebViews: { tab, closeActiveFullscreenMedia in
-                webViewCoordinator().lifecycleService.removeAllWebViews(
+                lifecycle.removeAllWebViews(
                     for: tab,
                     closeActiveFullscreenMedia: closeActiveFullscreenMedia
                 )

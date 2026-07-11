@@ -176,6 +176,14 @@ final class WebViewReplacementPipeline {
         settlementService.abortForProfiles(profileIDs, reason: reason)
     }
 
+    /// Repository terminal drain owns both the retired and replacement
+    /// generations. Complete every outstanding receipt and cancel settlement
+    /// timeouts without attempting a second rollback against the drained
+    /// repository.
+    func resetForTerminalShutdown() {
+        settlementService.resetForTerminalShutdown()
+    }
+
     private static func destroy(
         _ snapshots: [UUID: WebViewSessionSnapshot],
         runtime: Runtime

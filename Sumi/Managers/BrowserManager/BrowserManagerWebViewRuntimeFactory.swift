@@ -4,49 +4,56 @@ import SumiWebRuntime
 
 @MainActor
 enum BrowserWebViewRuntimeFactory {
-    static func environment(
+    static func make(
         for browserManager: BrowserManager
-    ) -> WebViewRuntimeEnvironment {
-        WebViewRuntimeEnvironment(
-            visible: visiblePreparationContext(for: browserManager),
-            browser: browserRuntimeContext(for: browserManager),
-            initialDocument: initialDocumentContext(for: browserManager),
-            shutdown: shutdownContext(for: browserManager)
+    ) -> WebViewRuntimeGraph {
+        WebViewRuntimeGraph(
+            webViewSessions: browserManager.webViewSessions,
+            resolveRuntimeTab: runtimeTabResolver(for: browserManager),
+            windowServices: windowServices(for: browserManager),
+            deferredServices: deferredServices(for: browserManager),
+            visibleContext: visiblePreparationContext(for: browserManager),
+            initialDocumentContext: initialDocumentContext(for: browserManager),
+            shutdownContext: shutdownContext(for: browserManager)
         )
     }
 
-    private static func browserRuntimeContext(
+    private static func runtimeTabResolver(
         for browserManager: BrowserManager
-    ) -> WebViewCoordinatorBrowserRuntimeContext {
-        let tabSuspensionController = browserManager.tabSuspensionController
-        return WebViewCoordinatorBrowserRuntimeContext(
-            tab: { [weak browserManager] tabId in
-                requireBrowserManager(browserManager, operation: "resolve tab").tabManager.tabCollectionMembershipOwner.tab(for: tabId)
+    ) -> WebViewRuntimeTabRegistry.RuntimeTabResolver {
+        { [weak browserManager] tabID in
+            let manager = requireBrowserManager(
+                browserManager,
+                operation: "resolve runtime tab"
+            )
+            if let tab = manager.tabManager.tabCollectionMembershipOwner
+                .tab(for: tabID) {
+                return tab
+            }
+            return manager.windowRegistry?.allWindows
+                .lazy
+                .flatMap(\.ephemeralTabs)
+                .first { $0.id == tabID }
+        }
+    }
+
+    private static func windowServices(
+        for browserManager: BrowserManager
+    ) -> WebViewWindowServices {
+        WebViewWindowServices(
+            liveWindowIDs: { [weak browserManager] in
+                guard let windowIDs = browserManager?.windowRegistry?.windows.keys
+                else { return [] }
+                return Set(windowIDs)
             },
-            regularTabs: { [weak browserManager] in
-                requireBrowserManager(browserManager, operation: "list regular tabs").tabManager.tabCollectionMembershipOwner.allTabs()
+            containsWindow: { [weak browserManager] windowID in
+                browserManager?.windowRegistry?.windows[windowID] != nil
             },
-            pinnedTabs: { [weak browserManager] in
-                requireBrowserManager(
-                    browserManager,
-                    operation: "list pinned tabs"
-                ).tabManager.shortcutPresentationOwner.activeShortcutTabs(role: .essential)
-            },
-            allWindows: { [weak browserManager] in
-                requireWindowRegistry(browserManager, operation: "list windows").allWindows
-            },
-            window: { [weak browserManager] windowId in
-                requireWindowRegistry(browserManager, operation: "resolve window").windows[windowId]
-            },
-            windowContaining: { [weak browserManager] tabHandle in
-                guard let tab = tabHandle.concreteTab else { return nil }
-                return requireBrowserManager(browserManager, operation: "resolve tab window")
-                    .shellRuntime.windowTabs.windowState(containing: tab)
-            },
-            currentTab: { [weak browserManager] windowHandle in
-                guard let windowState = windowHandle.concreteWindowState else { return nil }
-                return requireBrowserManager(browserManager, operation: "resolve current tab")
-                    .shellRuntime.windowTabs.currentTab(for: windowState)
+            currentTabID: { [weak browserManager] windowID in
+                guard let manager = browserManager,
+                      let window = manager.windowRegistry?.windows[windowID]
+                else { return nil }
+                return manager.shellRuntime.windowTabs.currentTab(for: window)?.id
             },
             selectTab: { [weak browserManager] tabId, windowId in
                 let manager = requireBrowserManager(
@@ -58,12 +65,6 @@ enum BrowserWebViewRuntimeFactory {
                 else { return }
                 manager.selectTab(tab, in: windowState)
             },
-            handleUnprotectedWebViewDidClose: { [weak browserManager] webView in
-                requireBrowserManager(
-                    browserManager,
-                    operation: "handle unprotected WebKit close"
-                ).webViewCloseRouter.handleNormalWebViewDidClose(webView)
-            },
             refreshCompositor: { [weak browserManager] windowId in
                 let manager = requireBrowserManager(
                     browserManager,
@@ -74,17 +75,35 @@ enum BrowserWebViewRuntimeFactory {
                 }
                 manager.shellRuntime.windowVisuals.refreshCompositor(for: windowState)
             },
-            notifyTabActivatedIfLoaded: { [weak browserManager] tabHandle in
-                guard let tab = tabHandle.concreteTab else { return }
-                requireBrowserManager(
+            notifyTabActivatedIfCurrent: { [weak browserManager] tab, windowID in
+                let manager = requireBrowserManager(
                     browserManager,
                     operation: "notify extension tab activation"
-                ).optionalModules.extensions.notifyTabActivatedIfLoaded(
+                )
+                guard let window = manager.windowRegistry?.windows[windowID],
+                      manager.shellRuntime.windowTabs.currentTab(for: window)?.id
+                        == tab.id else {
+                    return
+                }
+                manager.optionalModules.extensions.notifyTabActivatedIfLoaded(
                     newTab: tab,
                     previous: nil
                 )
+            }
+        )
+    }
+
+    private static func deferredServices(
+        for browserManager: BrowserManager
+    ) -> DeferredWebViewServices {
+        DeferredWebViewServices(
+            handleWebKitClose: { [weak browserManager] webView in
+                requireBrowserManager(
+                    browserManager,
+                    operation: "handle unprotected WebKit close"
+                ).webViewCloseRouter.handleNormalWebViewDidClose(webView)
             },
-            executeDeferredProfileAssignment: {
+            executeProfileAssignment: {
                 [weak browserManager]
                 tabID,
                 _,
@@ -103,7 +122,7 @@ enum BrowserWebViewRuntimeFactory {
                         intent: intent
                     )
             },
-            validateDeferredSpaceProfileAssignment: {
+            validateSpaceProfileAssignment: {
                 [weak browserManager]
                 intent in
                 requireBrowserManager(
@@ -112,7 +131,7 @@ enum BrowserWebViewRuntimeFactory {
                 ).tabManager.profileAssignments.spaces
                     .isCurrentDeferred(intent)
             },
-            executeDeferredSpaceProfileAssignment: {
+            executeSpaceProfileAssignment: {
                 [weak browserManager]
                 intent in
                 requireBrowserManager(
@@ -120,9 +139,6 @@ enum BrowserWebViewRuntimeFactory {
                     operation: "execute deferred space profile assignment"
                 ).tabManager.profileAssignments.spaces
                     .executeDeferred(intent)
-            },
-            globallyVisibleTabIDs: { [weak tabSuspensionController] in
-                tabSuspensionController?.globallyVisibleTabIDs() ?? []
             }
         )
     }
@@ -152,12 +168,12 @@ enum BrowserWebViewRuntimeFactory {
 
     private static func shutdownContext(
         for browserManager: BrowserManager
-    ) -> WebViewCoordinatorShutdownRuntimeContext {
+    ) -> WebViewShutdownRuntimeContext {
         // Shutdown outlives BrowserManager in the app-shell fallback. Retain
         // only the manager-independent module that owns the injected script
         // bookkeeping; its own runtime ports reference BrowserManager weakly.
         let userscriptsModule = browserManager.optionalModules.userscripts
-        return WebViewCoordinatorShutdownRuntimeContext(
+        return WebViewShutdownRuntimeContext(
             cleanupUserScripts: { controller, webViewId in
                 userscriptsModule.cleanupWebViewIfLoaded(
                     controller: controller,
@@ -169,10 +185,10 @@ enum BrowserWebViewRuntimeFactory {
 
     private static func visiblePreparationContext(
         for browserManager: BrowserManager
-    ) -> WebViewCoordinatorVisibleRuntimeContext {
+    ) -> WebViewVisibleRuntimeContext {
         let tabSuspensionController = browserManager.tabSuspensionController
         let splitQuery = browserManager.splitComposition.query
-        return WebViewCoordinatorVisibleRuntimeContext(
+        return WebViewVisibleRuntimeContext(
             windowState: { [weak browserManager] windowId in
                 requireWindowRegistry(browserManager, operation: "resolve visible window").windows[windowId]
             },
@@ -230,7 +246,7 @@ enum BrowserWebViewRuntimeFactory {
     ) -> BrowserManager {
         guard let browserManager else {
             preconditionFailure(
-                "WebViewCoordinator runtime cannot \(operation): BrowserManager was released."
+                "WebView runtime cannot \(operation): BrowserManager was released."
             )
         }
         return browserManager
@@ -243,7 +259,7 @@ enum BrowserWebViewRuntimeFactory {
         let browserManager = requireBrowserManager(browserManager, operation: operation)
         guard let windowRegistry = browserManager.windowRegistry else {
             preconditionFailure(
-                "WebViewCoordinator runtime cannot \(operation): BrowserManager.windowRegistry is nil."
+                "WebView runtime cannot \(operation): BrowserManager.windowRegistry is nil."
             )
         }
         return windowRegistry

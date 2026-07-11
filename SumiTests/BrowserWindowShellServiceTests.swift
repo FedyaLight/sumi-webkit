@@ -65,13 +65,12 @@ final class BrowserWindowShellServiceTests: XCTestCase {
 
         let context = BrowserWindowShellService.Context(
             windowRegistry: harness.windowRegistry,
-            webViewCoordinator: harness.webViewCoordinator,
+            webViewLifecycle: harness.webViewRuntime.lifecycleService,
             permissionLifecycleController: harness.permissionLifecycleController,
             profileManager: harness.profileManager,
             tabManager: harness.tabManager,
-            makeContentView: { windowRegistry, webViewCoordinator, windowState in
+            makeContentView: { windowRegistry, windowState in
                 XCTAssertIdentical(windowRegistry, harness.windowRegistry)
-                XCTAssertIdentical(webViewCoordinator, harness.webViewCoordinator)
                 factoryWindowStates.append(windowState)
                 return NSView()
             },
@@ -121,12 +120,12 @@ final class BrowserWindowShellServiceTests: XCTestCase {
         }
         let context = BrowserWindowShellService.Context(
             windowRegistry: harness.windowRegistry,
-            webViewCoordinator: harness.webViewCoordinator,
+            webViewLifecycle: harness.webViewRuntime.lifecycleService,
             permissionLifecycleController: harness
                 .permissionLifecycleController,
             profileManager: harness.profileManager,
             tabManager: harness.tabManager,
-            makeContentView: { registry, _, windowState in
+            makeContentView: { registry, windowState in
                 events.append("content")
                 XCTAssertEqual(windowState.restoredSessionWindowId, archiveID)
                 XCTAssertEqual(windowState.currentProfileId, profileID)
@@ -289,7 +288,7 @@ final class BrowserWindowShellServiceTests: XCTestCase {
     private struct Harness {
         let startupContainer: ModelContainer
         let windowRegistry: WindowRegistry
-        let webViewCoordinator: WebViewCoordinator
+        let webViewRuntime: WebViewRuntimeGraph
         let permissionCoordinator: RecordingPermissionCoordinator
         let permissionLifecycleController: SumiPermissionGrantLifecycleController
         let profileManager: ProfileManager
@@ -317,7 +316,7 @@ final class BrowserWindowShellServiceTests: XCTestCase {
         return Harness(
             startupContainer: startupContainer,
             windowRegistry: WindowRegistry(),
-            webViewCoordinator: WebViewCoordinator(webViewSessions: webViewSessions),
+            webViewRuntime: makeTestWebViewRuntimeGraph(webViewSessions: webViewSessions),
             permissionCoordinator: permissionCoordinator,
             permissionLifecycleController: permissionLifecycleController,
             profileManager: profileManager,
@@ -338,11 +337,11 @@ final class BrowserWindowShellServiceTests: XCTestCase {
     ) -> BrowserWindowShellService.Context {
         BrowserWindowShellService.Context(
             windowRegistry: harness.windowRegistry,
-            webViewCoordinator: harness.webViewCoordinator,
+            webViewLifecycle: harness.webViewRuntime.lifecycleService,
             permissionLifecycleController: harness.permissionLifecycleController,
             profileManager: harness.profileManager,
             tabManager: harness.tabManager,
-            makeContentView: { _, _, _ in NSView() },
+            makeContentView: { _, _ in NSView() },
             showEmptyState: showEmptyState,
             sidebarHostRecoveryCoordinator: SidebarHostRecoveryCoordinator()
         )

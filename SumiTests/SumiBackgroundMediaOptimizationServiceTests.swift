@@ -114,7 +114,7 @@ final class BackgroundMediaOptimizationTests: XCTestCase {
         XCTAssertEqual(harness.recorder.commands[0].reason, "visibility,audio")
     }
 
-    func testMissingCoordinatorDoesNotReadBroadRuntimeSnapshots() {
+    func testAttachedRuntimeWithEmptyCatalogDoesNotExecuteCommands() {
         let service = SumiBackgroundMediaOptimizationService()
         var energySaverReadCount = 0
         var allKnownTabsReadCount = 0
@@ -122,7 +122,6 @@ final class BackgroundMediaOptimizationTests: XCTestCase {
         var commandCount = 0
         service.attach(
             runtime: SumiBackgroundMediaOptimizationRuntime(
-                webViewRuntimeAvailable: { false },
                 liveWebViewEntries: { _ in [] },
                 energySaverActive: {
                     energySaverReadCount += 1
@@ -142,11 +141,11 @@ final class BackgroundMediaOptimizationTests: XCTestCase {
             )
         )
 
-        service.reconcileNow(reason: "no-coordinator")
+        service.reconcileNow(reason: "empty-catalog")
 
-        XCTAssertEqual(energySaverReadCount, 0)
-        XCTAssertEqual(allKnownTabsReadCount, 0)
-        XCTAssertEqual(visibleTabsReadCount, 0)
+        XCTAssertEqual(energySaverReadCount, 1)
+        XCTAssertEqual(allKnownTabsReadCount, 1)
+        XCTAssertEqual(visibleTabsReadCount, 1)
         XCTAssertEqual(commandCount, 0)
     }
 
@@ -155,7 +154,7 @@ final class BackgroundMediaOptimizationTests: XCTestCase {
 @MainActor
 private final class BackgroundMediaOptimizationHarness {
     let service = SumiBackgroundMediaOptimizationService()
-    let coordinator = WebViewCoordinator()
+    let webViewRuntime = makeTestWebViewRuntimeGraph()
     let recorder = MediaOptimizationCommandRecorder()
     var tabs: [Tab] = []
     var visibleTabIDsByWindow: [UUID: Set<UUID>] = [:]
@@ -171,7 +170,7 @@ private final class BackgroundMediaOptimizationHarness {
         Tab(
             url: url,
             name: "Example",
-            webViewSessions: coordinator.webViewSessions,
+            webViewSessions: webViewRuntime.webViewSessions,
             loadsCachedFaviconOnInit: false
         )
     }
@@ -183,7 +182,7 @@ private final class BackgroundMediaOptimizationHarness {
         webView: WKWebView = WKWebView()
     ) -> WKWebView {
         tabs.append(tab)
-        coordinator.ownershipService.registerTrackedWebView(
+        webViewRuntime.ownershipService.registerTrackedWebView(
             webView,
             for: tab,
             in: windowID
@@ -193,14 +192,11 @@ private final class BackgroundMediaOptimizationHarness {
 
     private func makeRuntime() -> SumiBackgroundMediaOptimizationRuntime {
         SumiBackgroundMediaOptimizationRuntime(
-            webViewRuntimeAvailable: { [weak self] in
-                self != nil
-            },
             liveWebViewEntries: { [weak self] tab in
                 guard let self else { return [] }
-                return coordinator.ownershipQuery.windowIDs(for: tab.id)
+                return webViewRuntime.ownershipQuery.windowIDs(for: tab.id)
                     .compactMap { windowID in
-                        coordinator.ownershipQuery.webView(
+                        webViewRuntime.ownershipQuery.webView(
                             for: tab.id,
                             in: windowID
                         ).map { (windowID: Optional(windowID), webView: $0) }

@@ -631,20 +631,23 @@ final class TabRuntimeRoutingTests: XCTestCase {
         XCTAssertTrue(historySwipe.cancelledWindowIds.isEmpty)
     }
 
-    func testLiveHistorySwipeRuntimeUsesLateBoundCoordinator() {
-        var coordinator: WebViewCoordinator?
+    func testLiveHistorySwipeRuntimeUsesInjectedOwnershipAndProtectionServices() {
         let webView = WKWebView()
         let tabId = UUID()
         let windowId = UUID()
+        let webViewSessions = WebViewSessionRepository()
+        let webViewRuntime = makeTestWebViewRuntimeGraph(
+            webViewSessions: webViewSessions
+        )
         let runtime = TabHistorySwipeRuntime.make(
-            webViewCoordinator: { coordinator },
+            ownershipQuery: webViewRuntime.ownershipQuery,
+            protection: webViewRuntime.protectionRuntime,
             cancelWindowMutationsAfterHistorySwipe: { _ in /* No-op. */ },
             flushWindowMutationsAfterHistorySwipe: { _ in /* No-op. */ }
         )
 
         XCTAssertNil(runtime.windowIDContaining(webView))
 
-        let webViewSessions = WebViewSessionRepository()
         WebViewTrackingLifecycleOwner().registerTrackedWebView(
             webView,
             for: TrackedWebViewOwner(tabID: tabId, windowID: windowId),
@@ -657,8 +660,6 @@ final class TabRuntimeRoutingTests: XCTestCase {
             removeRecentVisibility: { _ in },
             cleanupDisplacedWebView: { _, _ in }
         )
-        let resolvedCoordinator = WebViewCoordinator(webViewSessions: webViewSessions)
-        coordinator = resolvedCoordinator
 
         XCTAssertEqual(runtime.windowIDContaining(webView), windowId)
     }

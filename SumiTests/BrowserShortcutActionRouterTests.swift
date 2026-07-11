@@ -32,7 +32,6 @@ final class BrowserShortcutActionRouterTests: XCTestCase {
 
     func testLiveShortcutDispatchCreatesTabWithoutBrowserManagerFacadeLookup() throws {
         let browserManager = try makeBrowserManager()
-        browserManager.bindTestWebViewCoordinator()
         _ = browserManager.tabManager.spaceStateOwner.currentSpace
             ?? browserManager.tabManager.spaceServices.catalog.createSpace(name: "Shortcut Routing")
         let dispatcher = ShortcutActionDispatcher()

@@ -102,12 +102,12 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
     }
 
     func testImmediateVisualHandoffHandlerIsWindowScopedAndRemovedWithContainer() {
-        let coordinator = WebViewCoordinator()
+        let graph = makeTestWebViewRuntimeGraph()
         let windowID = UUID()
         let container = NSView()
         var handoffCount = 0
 
-        let registration = coordinator.compositorRuntime.registerContainer(
+        let registration = graph.compositorRuntime.registerContainer(
             container,
             for: windowID,
             immediateVisualHandoffHandler: {
@@ -117,16 +117,16 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         )
 
         XCTAssertTrue(
-            coordinator.compositorRuntime.performImmediateVisualHandoffIfPossible(
+            graph.compositorRuntime.performImmediateVisualHandoffIfPossible(
                 in: windowID
             )
         )
         XCTAssertEqual(handoffCount, 1)
 
-        XCTAssertTrue(coordinator.compositorRuntime.removeContainer(registration))
+        XCTAssertTrue(graph.compositorRuntime.removeContainer(registration))
 
         XCTAssertFalse(
-            coordinator.compositorRuntime.performImmediateVisualHandoffIfPossible(
+            graph.compositorRuntime.performImmediateVisualHandoffIfPossible(
                 in: windowID
             )
         )
@@ -135,17 +135,17 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
     }
 
     func testStaleCompositorRegistrationCannotTearDownReplacementController() {
-        let coordinator = WebViewCoordinator()
+        let graph = makeTestWebViewRuntimeGraph()
         let windowID = UUID()
         let staleContainer = NSView()
         let replacementContainer = NSView()
         var replacementHandoffCount = 0
         var fullscreenCloseCount = 0
-        let staleRegistration = coordinator.compositorRuntime.registerContainer(
+        let staleRegistration = graph.compositorRuntime.registerContainer(
             staleContainer,
             for: windowID
         )
-        let replacementRegistration = coordinator.compositorRuntime.registerContainer(
+        let replacementRegistration = graph.compositorRuntime.registerContainer(
             replacementContainer,
             for: windowID,
             immediateVisualHandoffHandler: {
@@ -154,41 +154,41 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             }
         )
 
-        XCTAssertFalse(coordinator.compositorRuntime.tearDownContainer(
+        XCTAssertFalse(graph.compositorRuntime.tearDownContainer(
             staleRegistration,
             teardown: { fullscreenCloseCount += 1 }
         ))
         XCTAssertEqual(fullscreenCloseCount, 0)
         XCTAssertIdentical(
-            coordinator.compositorRuntime.containerView(for: windowID),
+            graph.compositorRuntime.containerView(for: windowID),
             replacementContainer
         )
         XCTAssertTrue(
-            coordinator.compositorRuntime.performImmediateVisualHandoffIfPossible(
+            graph.compositorRuntime.performImmediateVisualHandoffIfPossible(
                 in: windowID
             )
         )
         XCTAssertEqual(replacementHandoffCount, 1)
-        XCTAssertTrue(coordinator.compositorRuntime.tearDownContainer(
+        XCTAssertTrue(graph.compositorRuntime.tearDownContainer(
             replacementRegistration,
             teardown: { fullscreenCloseCount += 1 }
         ))
         XCTAssertEqual(fullscreenCloseCount, 1)
-        XCTAssertNil(coordinator.compositorRuntime.containerView(for: windowID))
+        XCTAssertNil(graph.compositorRuntime.containerView(for: windowID))
         withExtendedLifetime((staleContainer, replacementContainer)) {}
     }
 
     func testCompositorMutationGateRejectsQueuedWorkAfterSupersessionAndInvalidation() {
-        let coordinator = WebViewCoordinator()
+        let graph = makeTestWebViewRuntimeGraph()
         let windowID = UUID()
         let staleContainer = NSView()
         let replacementContainer = NSView()
-        let staleRegistration = coordinator.compositorRuntime.registerContainer(
+        let staleRegistration = graph.compositorRuntime.registerContainer(
             staleContainer,
             for: windowID
         )
         let staleGate = WindowWebContentCompositorMutationGate(
-            isCurrentRegistration: coordinator.compositorRuntime.owns
+            isCurrentRegistration: graph.compositorRuntime.owns
         )
         staleGate.activate(staleRegistration)
         var staleHostMutationCount = 0
@@ -198,7 +198,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             return true
         }
 
-        let replacementRegistration = coordinator.compositorRuntime.registerContainer(
+        let replacementRegistration = graph.compositorRuntime.registerContainer(
             replacementContainer,
             for: windowID
         )
@@ -207,7 +207,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         XCTAssertEqual(staleHostMutationCount, 0)
 
         let replacementGate = WindowWebContentCompositorMutationGate(
-            isCurrentRegistration: coordinator.compositorRuntime.owns
+            isCurrentRegistration: graph.compositorRuntime.owns
         )
         replacementGate.activate(replacementRegistration)
         var invalidatedApplyCount = 0
@@ -221,7 +221,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         XCTAssertFalse(queuedInvalidatedApply())
         XCTAssertEqual(invalidatedApplyCount, 0)
         XCTAssertTrue(
-            coordinator.compositorRuntime.removeContainer(replacementRegistration)
+            graph.compositorRuntime.removeContainer(replacementRegistration)
         )
         withExtendedLifetime((staleContainer, replacementContainer)) {}
     }
@@ -306,24 +306,24 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
     }
 
     func testVisualHandoffProtectionIsReleasedExplicitly() throws {
-        let coordinator = WebViewCoordinator()
+        let graph = makeTestWebViewRuntimeGraph()
         let webView = WKWebView()
         let container = NSView()
-        let registration = coordinator.compositorRuntime.registerContainer(
+        let registration = graph.compositorRuntime.registerContainer(
             container,
             for: UUID()
         )
 
         let protectionLease = try XCTUnwrap(
-            coordinator.protectionRuntime.beginVisualHandoff(
+            graph.protectionRuntime.beginVisualHandoff(
             for: webView,
             containerRegistration: registration
             )
         )
-        XCTAssertTrue(coordinator.protectionRuntime.isProtected(webView))
+        XCTAssertTrue(graph.protectionRuntime.isProtected(webView))
 
-        coordinator.protectionRuntime.finishVisualHandoff(protectionLease)
-        XCTAssertFalse(coordinator.protectionRuntime.isProtected(webView))
+        graph.protectionRuntime.finishVisualHandoff(protectionLease)
+        XCTAssertFalse(graph.protectionRuntime.isProtected(webView))
         withExtendedLifetime(container) {}
     }
 
@@ -384,7 +384,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         let browserContext = CompositorBrowserContextStub()
         let browserManager = BrowserManager()
         let windowState = BrowserWindowState()
-        let webViewCoordinator = WebViewCoordinator()
+        let webViewRuntime = makeTestWebViewRuntimeGraph()
 
         let wrapper = TabCompositorWrapper(
             browserContext: browserContext,
@@ -398,7 +398,10 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             splitDrops: browserManager.splitComposition.drops,
             splitDropTargets: browserManager.splitComposition.dropTargets,
             sidebarDragState: browserContext.sidebarDragState,
-            webViewCoordinator: webViewCoordinator,
+            webViewOwnershipQuery: webViewRuntime.ownershipQuery,
+            webViewOwnershipService: webViewRuntime.ownershipService,
+            webViewCompositorRuntime: webViewRuntime.compositorRuntime,
+            webViewProtectionRuntime: webViewRuntime.protectionRuntime,
             hoveredLink: .constant(nil),
             splitPresentation: nil,
             isSplitDropCaptureActive: false,
@@ -453,7 +456,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             liveShortcutTab.id: liveShortcutTab,
         ]
         let browserManager = BrowserManager()
-        let coordinator = WebViewCoordinator()
+        let graph = makeTestWebViewRuntimeGraph()
         let container = WindowWebContentSplitHostLayoutView(
             splitLayout: browserManager.splitComposition.layout,
             splitDrops: browserManager.splitComposition.drops,
@@ -473,7 +476,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             windowState: windowState,
             containerView: container,
             hostRegistry: WindowWebContentHostRegistry(),
-            protectionRuntime: coordinator.protectionRuntime
+            protectionRuntime: graph.protectionRuntime
         )
         let displayState = WebsiteDisplayState(
             splitPresentation: presentation,
@@ -496,15 +499,15 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
     }
 
     func testWindowWebContentHoverSessionDetachesOldTabAndRejectsStaleRegistration() async throws {
-        let webViewCoordinator = WebViewCoordinator()
+        let webViewRuntime = makeTestWebViewRuntimeGraph()
         let windowID = UUID()
         let firstContainer = NSView()
-        let firstRegistration = webViewCoordinator.compositorRuntime.registerContainer(
+        let firstRegistration = webViewRuntime.compositorRuntime.registerContainer(
             firstContainer,
             for: windowID
         )
         let mutationGate = WindowWebContentCompositorMutationGate(
-            isCurrentRegistration: webViewCoordinator.compositorRuntime.owns
+            isCurrentRegistration: webViewRuntime.compositorRuntime.owns
         )
         mutationGate.activate(firstRegistration)
         let session = WindowWebContentHoverSession(mutationGate: mutationGate)
@@ -535,7 +538,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         XCTAssertNil(firstTab.onLinkHover)
 
         let replacementContainer = NSView()
-        _ = webViewCoordinator.compositorRuntime.registerContainer(
+        _ = webViewRuntime.compositorRuntime.registerContainer(
             replacementContainer,
             for: windowID
         )
@@ -827,9 +830,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         let firstWebView = WKWebView()
         let secondWebView = WKWebView()
         let owner = WebsiteDataCleanupTransaction(
-            browserRuntimeContext: {
-                preconditionFailure("Unused in navigation-suppression unit test")
-            },
+            runtimeTabs: { [] },
             liveWebViews: { _ in [] },
             waitForMutationPermission: { _ in true },
             restoreTab: { _, _ in

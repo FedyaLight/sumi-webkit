@@ -22,10 +22,6 @@ final class TabSuspensionExecutor {
         self.runtime = runtime
     }
 
-    var isWebViewRuntimeAvailable: Bool {
-        runtime.isAvailable()
-    }
-
     func eligibility(
         for tab: Tab,
         context: TabSuspensionEvaluationContext
@@ -36,10 +32,6 @@ final class TabSuspensionExecutor {
         ) {
             return ineligibility
         }
-        guard runtime.isAvailable() else {
-            return .ineligible(reason: .noLiveWebView)
-        }
-
         return eligibilityEvaluator.evaluateWebViews(
             tab: tab,
             liveWebViews: runtime.liveWebViews(tab),
@@ -70,7 +62,6 @@ final class TabSuspensionExecutor {
         reason: String,
         context: TabSuspensionEvaluationContext
     ) -> Bool {
-        guard runtime.isAvailable() else { return false }
         guard eligibility(for: tab, context: context).isEligible else { return false }
         guard runtime.suspendWebViews(tab, reason) else { return false }
 

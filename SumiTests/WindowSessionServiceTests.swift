@@ -235,7 +235,6 @@ final class WindowSessionServiceTests: XCTestCase {
 
     func testBrowserManagerCurrentTabRequiresCommittedWindowSelection() {
         let browserManager = BrowserManager()
-        browserManager.bindTestWebViewCoordinator()
         let space = Space(id: UUID(), name: "Primary")
         browserManager.tabManager.spaceStateOwner.replaceSpaces([space])
         browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(space)

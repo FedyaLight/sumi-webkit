@@ -35,9 +35,14 @@ final class WebViewHiddenCloneEvictionOwner {
         entries: [(TrackedWebViewOwner, WKWebView)],
         runtime: Runtime
     ) {
-        let signpostState = PerformanceTrace.beginInterval("WebViewCoordinator.evictHiddenWebViews")
+        let signpostState = PerformanceTrace.beginInterval(
+            "WebViewHiddenCloneEvictionOwner.evictHiddenWebViews"
+        )
         defer {
-            PerformanceTrace.endInterval("WebViewCoordinator.evictHiddenWebViews", signpostState)
+            PerformanceTrace.endInterval(
+                "WebViewHiddenCloneEvictionOwner.evictHiddenWebViews",
+                signpostState
+            )
         }
 
         let hiddenEntries = entries.filter { owner, _ in
@@ -82,7 +87,7 @@ final class WebViewHiddenCloneEvictionOwner {
             )
             runtime.refreshPrimaryTrackedWebView(tab)
 
-            RuntimeDiagnostics.debug(category: "WebViewCoordinator") {
+            RuntimeDiagnostics.debug(category: "WebViewHiddenCloneEvictionOwner") {
                 "Cleaned hidden clone for visible tab=\(owner.tabID.uuidString.prefix(8)) window=\(windowId.uuidString.prefix(8))."
             }
         }

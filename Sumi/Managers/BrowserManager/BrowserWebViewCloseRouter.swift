@@ -35,6 +35,7 @@ final class BrowserWebViewCloseRouter {
     }
 
     convenience init(browserManager: BrowserManager) {
+        let webViewLifecycle = browserManager.webViewRuntime.lifecycleService
         self.init(
             glanceHandleWebViewDidClose: { [weak browserManager] webView in
                 browserManager?.glanceManager.handleWebViewDidClose(webView) ?? false
@@ -64,14 +65,11 @@ final class BrowserWebViewCloseRouter {
             },
             makeWebKitCloseRoutingRuntime: { [weak browserManager] in
                 BrowserWebKitCloseRoutingOwner.Runtime(
-                    prepareClose: { [weak browserManager] webView in
-                        browserManager?.shellRuntime.requireWebViewCoordinator()
-                            .lifecycleService.prepareWebKitClose(webView)
-                            ?? .ready(trackedOwner: nil)
+                    prepareClose: { [webViewLifecycle] webView in
+                        webViewLifecycle.prepareWebKitClose(webView)
                     },
-                    cleanupTrackedWebView: { [weak browserManager] webView, owner in
-                        browserManager?.shellRuntime.requireWebViewCoordinator()
-                            .lifecycleService.cleanupTrackedWebViewAfterWebKitClose(
+                    cleanupTrackedWebView: { [webViewLifecycle] webView, owner in
+                        webViewLifecycle.cleanupTrackedWebViewAfterWebKitClose(
                                 webView,
                                 owner: owner
                             )

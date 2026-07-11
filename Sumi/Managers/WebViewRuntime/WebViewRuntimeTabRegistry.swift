@@ -5,6 +5,8 @@ import SumiWebRuntime
 /// It validates canonical repository backing at bind time and never owns Tabs.
 @MainActor
 final class WebViewRuntimeTabRegistry {
+    typealias RuntimeTabResolver = @MainActor @Sendable (UUID) -> Tab?
+
     private final class WeakTab {
         weak var value: Tab?
 
@@ -31,12 +33,12 @@ final class WebViewRuntimeTabRegistry {
 
     func resolve(
         _ tabID: UUID,
-        runtime: WebViewCoordinatorBrowserRuntimeContext
+        resolveRuntimeTab: RuntimeTabResolver
     ) -> Tab? {
         if let tab = boundTab(tabID) {
             return tab
         }
-        guard let tab = runtime.resolveWebRuntimeTab(tabID)?.concreteTab else {
+        guard let tab = resolveRuntimeTab(tabID) else {
             return nil
         }
         bind(tab)
@@ -44,12 +46,17 @@ final class WebViewRuntimeTabRegistry {
     }
 
     func canonicalRuntimeOwnedTabs(
-        runtime: WebViewCoordinatorBrowserRuntimeContext
+        resolveRuntimeTab: RuntimeTabResolver
     ) -> [Tab]? {
         var result: [Tab] = []
         let ownedIDs = webViewSessions.runtimeOwnedTabIDs
         for tabID in ownedIDs.sorted(by: uuidOrder) {
-            guard let tab = resolve(tabID, runtime: runtime) else { return nil }
+            guard let tab = resolve(
+                tabID,
+                resolveRuntimeTab: resolveRuntimeTab
+            ) else {
+                return nil
+            }
             result.append(tab)
         }
         tabsByID = tabsByID.filter { tabID, reference in

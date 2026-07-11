@@ -6,19 +6,15 @@ import SumiWebRuntime
 
 @MainActor
 final class BrowserWebViewRoutingServiceTests: XCTestCase {
-    func testMissingTabDoesNotResolveCoordinatorForTabBackedOperations() {
-        let coordinator = RecordingWebViewCoordinator()
-        var coordinatorReadCount = 0
+    func testMissingTabDoesNotInvokeCommandsForTabBackedOperations() {
+        let commandRecorder = RecordingWebViewRoutingCommands()
         let service = BrowserWebViewRoutingService(
             tabLookup: { _ in nil },
-            webViewSessions: coordinator.webViewSessions,
+            webViewSessions: commandRecorder.webViewSessions,
             ownershipQuery: WebViewOwnershipQuery(
-                webViewSessions: coordinator.webViewSessions
+                webViewSessions: commandRecorder.webViewSessions
             ),
-            commandsProvider: {
-                coordinatorReadCount += 1
-                return coordinator.routingCommands
-            }
+            commands: commandRecorder.commands
         )
         let tabId = UUID()
         let intent = TabMainFrameNavigationIntent(
@@ -39,18 +35,17 @@ final class BrowserWebViewRoutingServiceTests: XCTestCase {
             policy: .standard
         )
 
-        XCTAssertEqual(coordinatorReadCount, 0)
-        XCTAssertTrue(coordinator.syncCalls.isEmpty)
-        XCTAssertTrue(coordinator.reloadCalls.isEmpty)
-        XCTAssertTrue(coordinator.windowReloadCalls.isEmpty)
+        XCTAssertTrue(commandRecorder.syncCalls.isEmpty)
+        XCTAssertTrue(commandRecorder.reloadCalls.isEmpty)
+        XCTAssertTrue(commandRecorder.windowReloadCalls.isEmpty)
     }
 
-    func testCoordinatorCallsStillDelegateWhenCoordinatorIsPresent() throws {
+    func testRoutingCallsDelegateToInjectedCommands() throws {
         let tab = Tab(
             url: try XCTUnwrap(URL(string: "https://example.com/page")),
             loadsCachedFaviconOnInit: false
         )
-        let coordinator = RecordingWebViewCoordinator()
+        let commandRecorder = RecordingWebViewRoutingCommands()
         let expectedWebView = WKWebView()
         let originatingWebView = WKWebView()
         let windowId = UUID()
@@ -60,15 +55,15 @@ final class BrowserWebViewRoutingServiceTests: XCTestCase {
             expectedWebView,
             for: tab.id,
             in: windowId,
-            repository: coordinator.webViewSessions
+            repository: commandRecorder.webViewSessions
         )
         let service = BrowserWebViewRoutingService(
             tabLookup: { tabId in tabId == tab.id ? tab : nil },
-            webViewSessions: coordinator.webViewSessions,
+            webViewSessions: commandRecorder.webViewSessions,
             ownershipQuery: WebViewOwnershipQuery(
-                webViewSessions: coordinator.webViewSessions
+                webViewSessions: commandRecorder.webViewSessions
             ),
-            commandsProvider: { coordinator.routingCommands }
+            commands: commandRecorder.commands
         )
 
         let webView = service.webView(for: tab.id, in: windowId)
@@ -88,19 +83,19 @@ final class BrowserWebViewRoutingServiceTests: XCTestCase {
 
         XCTAssertIdentical(webView, expectedWebView)
 
-        let syncCall = try XCTUnwrap(coordinator.syncCalls.first)
+        let syncCall = try XCTUnwrap(commandRecorder.syncCalls.first)
         XCTAssertIdentical(syncCall.tab, tab)
         XCTAssertEqual(syncCall.url, tab.url)
         XCTAssertIdentical(syncCall.originatingWebView, originatingWebView)
 
-        XCTAssertEqual(coordinator.reloadCalls.count, 1)
-        XCTAssertIdentical(coordinator.reloadCalls.first, tab)
-        let windowReload = try XCTUnwrap(coordinator.windowReloadCalls.first)
+        XCTAssertEqual(commandRecorder.reloadCalls.count, 1)
+        XCTAssertIdentical(commandRecorder.reloadCalls.first, tab)
+        let windowReload = try XCTUnwrap(commandRecorder.windowReloadCalls.first)
         XCTAssertIdentical(windowReload.tab, tab)
         XCTAssertEqual(windowReload.windowId, reloadWindowId)
-        XCTAssertEqual(coordinator.muteCalls.count, 1)
-        XCTAssertEqual(coordinator.muteCalls.first?.muted, true)
-        XCTAssertEqual(coordinator.muteCalls.first?.tabId, tab.id)
+        XCTAssertEqual(commandRecorder.muteCalls.count, 1)
+        XCTAssertEqual(commandRecorder.muteCalls.first?.muted, true)
+        XCTAssertEqual(commandRecorder.muteCalls.first?.tabId, tab.id)
     }
 
     func testWindowOwnedWebViewUsesCanonicalTrackedWebView() throws {
@@ -111,21 +106,21 @@ final class BrowserWebViewRoutingServiceTests: XCTestCase {
         let tabWebView = WKWebView()
         let trackedWebView = WKWebView()
         tab.replaceUntrackedWebView(tabWebView)
-        let coordinator = RecordingWebViewCoordinator()
+        let commandRecorder = RecordingWebViewRoutingCommands()
         let windowID = UUID()
         registerTrackedWebView(
             trackedWebView,
             for: tab.id,
             in: windowID,
-            repository: coordinator.webViewSessions
+            repository: commandRecorder.webViewSessions
         )
         let service = BrowserWebViewRoutingService(
             tabLookup: { tabId in tabId == tab.id ? tab : nil },
-            webViewSessions: coordinator.webViewSessions,
+            webViewSessions: commandRecorder.webViewSessions,
             ownershipQuery: WebViewOwnershipQuery(
-                webViewSessions: coordinator.webViewSessions
+                webViewSessions: commandRecorder.webViewSessions
             ),
-            commandsProvider: { coordinator.routingCommands }
+            commands: commandRecorder.commands
         )
 
         XCTAssertIdentical(
@@ -141,14 +136,14 @@ final class BrowserWebViewRoutingServiceTests: XCTestCase {
         )
         let tabWebView = WKWebView()
         tab.replaceUntrackedWebView(tabWebView)
-        let coordinator = RecordingWebViewCoordinator()
+        let commandRecorder = RecordingWebViewRoutingCommands()
         let service = BrowserWebViewRoutingService(
             tabLookup: { tabId in tabId == tab.id ? tab : nil },
-            webViewSessions: coordinator.webViewSessions,
+            webViewSessions: commandRecorder.webViewSessions,
             ownershipQuery: WebViewOwnershipQuery(
-                webViewSessions: coordinator.webViewSessions
+                webViewSessions: commandRecorder.webViewSessions
             ),
-            commandsProvider: { coordinator.routingCommands }
+            commands: commandRecorder.commands
         )
 
         XCTAssertNil(service.windowOwnedWebView(for: tab, in: UUID()))
@@ -160,24 +155,24 @@ final class BrowserWebViewRoutingServiceTests: XCTestCase {
             loadsCachedFaviconOnInit: false
         )
         tab.replaceUntrackedWebView(WKWebView())
-        let coordinator = RecordingWebViewCoordinator()
+        let commandRecorder = RecordingWebViewRoutingCommands()
         let service = BrowserWebViewRoutingService(
             tabLookup: { tabId in tabId == tab.id ? tab : nil },
-            webViewSessions: coordinator.webViewSessions,
+            webViewSessions: commandRecorder.webViewSessions,
             ownershipQuery: WebViewOwnershipQuery(
-                webViewSessions: coordinator.webViewSessions
+                webViewSessions: commandRecorder.webViewSessions
             ),
-            commandsProvider: { coordinator.routingCommands }
+            commands: commandRecorder.commands
         )
 
         XCTAssertNil(service.windowOwnedWebView(for: tab, in: UUID()))
     }
 
     func testWindowRefreshUsesTrackedViewAndRoutesExactIntentAndPolicy() throws {
-        let coordinator = RecordingWebViewCoordinator()
+        let commandRecorder = RecordingWebViewRoutingCommands()
         let tab = Tab(
             url: try XCTUnwrap(URL(string: "https://example.com/tracked")),
-            webViewSessions: coordinator.webViewSessions,
+            webViewSessions: commandRecorder.webViewSessions,
             loadsCachedFaviconOnInit: false
         )
         let windowState = BrowserWindowState()
@@ -185,16 +180,16 @@ final class BrowserWebViewRoutingServiceTests: XCTestCase {
             WKWebView(),
             for: tab.id,
             in: windowState.id,
-            repository: coordinator.webViewSessions
+            repository: commandRecorder.webViewSessions
         )
-        coordinator.materializedWebView = WKWebView()
+        commandRecorder.materializedWebView = WKWebView()
         let service = BrowserWebViewRoutingService(
             tabLookup: { tabID in tabID == tab.id ? tab : nil },
-            webViewSessions: coordinator.webViewSessions,
+            webViewSessions: commandRecorder.webViewSessions,
             ownershipQuery: WebViewOwnershipQuery(
-                webViewSessions: coordinator.webViewSessions
+                webViewSessions: commandRecorder.webViewSessions
             ),
-            commandsProvider: { coordinator.routingCommands }
+            commands: commandRecorder.commands
         )
 
         let outcome = service.refreshPage(
@@ -205,8 +200,8 @@ final class BrowserWebViewRoutingServiceTests: XCTestCase {
         )
 
         XCTAssertEqual(outcome, .accepted)
-        XCTAssertTrue(coordinator.materializeCalls.isEmpty)
-        let reload = try XCTUnwrap(coordinator.windowReloadCalls.first)
+        XCTAssertTrue(commandRecorder.materializeCalls.isEmpty)
+        let reload = try XCTUnwrap(commandRecorder.windowReloadCalls.first)
         XCTAssertIdentical(reload.tab, tab)
         XCTAssertEqual(reload.windowId, windowState.id)
         XCTAssertEqual(reload.intent.targetURL, tab.url)
@@ -214,22 +209,22 @@ final class BrowserWebViewRoutingServiceTests: XCTestCase {
     }
 
     func testWindowRefreshMaterializesOnlyTheRequestedWindowWhenUntracked() throws {
-        let coordinator = RecordingWebViewCoordinator()
+        let commandRecorder = RecordingWebViewRoutingCommands()
         let tab = Tab(
             url: try XCTUnwrap(URL(string: "https://example.com/materialized")),
-            webViewSessions: coordinator.webViewSessions,
+            webViewSessions: commandRecorder.webViewSessions,
             loadsCachedFaviconOnInit: false
         )
         let materializedWebView = WKWebView()
-        coordinator.materializedWebView = materializedWebView
+        commandRecorder.materializedWebView = materializedWebView
         let windowState = BrowserWindowState()
         let service = BrowserWebViewRoutingService(
             tabLookup: { tabID in tabID == tab.id ? tab : nil },
-            webViewSessions: coordinator.webViewSessions,
+            webViewSessions: commandRecorder.webViewSessions,
             ownershipQuery: WebViewOwnershipQuery(
-                webViewSessions: coordinator.webViewSessions
+                webViewSessions: commandRecorder.webViewSessions
             ),
-            commandsProvider: { coordinator.routingCommands }
+            commands: commandRecorder.commands
         )
 
         XCTAssertEqual(
@@ -240,21 +235,21 @@ final class BrowserWebViewRoutingServiceTests: XCTestCase {
             ),
             .accepted
         )
-        XCTAssertFalse(coordinator.materializeCalls.isEmpty)
-        XCTAssertTrue(coordinator.materializeCalls.allSatisfy {
+        XCTAssertFalse(commandRecorder.materializeCalls.isEmpty)
+        XCTAssertTrue(commandRecorder.materializeCalls.allSatisfy {
             $0.tab === tab && $0.windowId == windowState.id
         })
         XCTAssertEqual(
-            coordinator.windowReloadCalls.first?.windowId,
+            commandRecorder.windowReloadCalls.first?.windowId,
             windowState.id
         )
     }
 
-    func testAnyLiveWebViewFallsBackToUntrackedOwnedWebViewViaCoordinator() throws {
-        let coordinator = RecordingWebViewCoordinator()
+    func testAnyLiveWebViewFallsBackToUntrackedOwnedWebViewViaOwnershipQuery() throws {
+        let commandRecorder = RecordingWebViewRoutingCommands()
         let tab = Tab(
             url: try XCTUnwrap(URL(string: "https://example.com/page")),
-            webViewSessions: coordinator.webViewSessions,
+            webViewSessions: commandRecorder.webViewSessions,
             loadsCachedFaviconOnInit: false
         )
         let untracked = FocusableWKWebView(frame: .zero, configuration: WKWebViewConfiguration())
@@ -262,11 +257,11 @@ final class BrowserWebViewRoutingServiceTests: XCTestCase {
         tab.replaceUntrackedWebView(untracked)
         let service = BrowserWebViewRoutingService(
             tabLookup: { tabId in tabId == tab.id ? tab : nil },
-            webViewSessions: coordinator.webViewSessions,
+            webViewSessions: commandRecorder.webViewSessions,
             ownershipQuery: WebViewOwnershipQuery(
-                webViewSessions: coordinator.webViewSessions
+                webViewSessions: commandRecorder.webViewSessions
             ),
-            commandsProvider: { coordinator.routingCommands }
+            commands: commandRecorder.commands
         )
 
         XCTAssertIdentical(service.anyLiveWebView(for: tab), untracked)
@@ -349,10 +344,10 @@ final class BrowserWebViewRoutingServiceTests: XCTestCase {
     }
 
     func testRoutingServiceDelegatesExactOwnedProcessRecovery() throws {
-        let coordinator = RecordingWebViewCoordinator()
+        let commandRecorder = RecordingWebViewRoutingCommands()
         let tab = Tab(
             url: try XCTUnwrap(URL(string: "https://example.com/routed-recovery")),
-            webViewSessions: coordinator.webViewSessions,
+            webViewSessions: commandRecorder.webViewSessions,
             loadsCachedFaviconOnInit: false
         )
         let webView = WKWebView()
@@ -360,20 +355,20 @@ final class BrowserWebViewRoutingServiceTests: XCTestCase {
         _ = tab.beginWebContentProcessRecovery(on: webView)
         let service = BrowserWebViewRoutingService(
             tabLookup: { tabID in tabID == tab.id ? tab : nil },
-            webViewSessions: coordinator.webViewSessions,
+            webViewSessions: commandRecorder.webViewSessions,
             ownershipQuery: WebViewOwnershipQuery(
-                webViewSessions: coordinator.webViewSessions
+                webViewSessions: commandRecorder.webViewSessions
             ),
-            commandsProvider: { coordinator.routingCommands }
+            commands: commandRecorder.commands
         )
 
         XCTAssertEqual(
             service.recoverWebContentProcess(tab.id, on: webView),
             .scheduled
         )
-        XCTAssertEqual(coordinator.processRecoveryCalls.count, 1)
-        XCTAssertIdentical(coordinator.processRecoveryCalls.first?.tab, tab)
-        XCTAssertIdentical(coordinator.processRecoveryCalls.first?.webView, webView)
+        XCTAssertEqual(commandRecorder.processRecoveryCalls.count, 1)
+        XCTAssertIdentical(commandRecorder.processRecoveryCalls.first?.tab, tab)
+        XCTAssertIdentical(commandRecorder.processRecoveryCalls.first?.webView, webView)
         XCTAssertTrue(tab.requiresWebContentProcessRecovery(on: webView))
     }
 
@@ -471,7 +466,8 @@ final class BrowserWebViewRoutingServiceTests: XCTestCase {
     }
 }
 
-private final class RecordingWebViewCoordinator: WebViewCoordinator {
+@MainActor
+private final class RecordingWebViewRoutingCommands {
     struct SyncCall {
         let tab: Tab
         let url: URL
@@ -507,8 +503,9 @@ private final class RecordingWebViewCoordinator: WebViewCoordinator {
     private(set) var muteCalls: [MuteCall] = []
     private(set) var materializeCalls: [MaterializeCall] = []
     var materializedWebView: WKWebView?
+    let webViewSessions = WebViewSessionRepository()
 
-    var routingCommands: BrowserWebViewRoutingService.Commands {
+    var commands: BrowserWebViewRoutingService.Commands {
         BrowserWebViewRoutingService.Commands(
             sync: { [weak self] tab, url, originatingWebView in
                 self?.syncCalls.append(

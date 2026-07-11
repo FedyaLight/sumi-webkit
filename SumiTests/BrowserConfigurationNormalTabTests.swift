@@ -368,19 +368,19 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         )
     }
 
-    func testWebViewCoordinatorReloadRebuildsForSafariContentBlockerPolicyDrift() async throws {
+    func testWebViewRuntimeReloadRebuildsForSafariContentBlockerPolicyDrift() async throws {
         let harness = try await makeSafariContentBlockerBrowserHarness(
             blockedHost: "safari-content-blocked.example"
         )
         defer { harness.defaults.reset() }
         let tab = makeAttachedNormalTab(
             in: harness,
-            url: "https://example.com/coordinator-safari-content-blocker",
+            url: "https://example.com/runtime-safari-content-blocker",
             activate: false
         )
         let originalWebView = try makeUnloadedNormalTabWebView(
             for: tab,
-            reason: "BrowserConfigurationNormalTabTests.safariContentBlockerCoordinatorInitial"
+            reason: "BrowserConfigurationNormalTabTests.safariContentBlockerRuntimeInitial"
         )
         let windowRegistry = WindowRegistry()
         harness.browserManager.windowRegistry = windowRegistry
@@ -391,8 +391,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         windowState.currentTabId = tab.id
         windowRegistry.register(windowState)
         windowRegistry.setActive(windowState)
-        let coordinator = try XCTUnwrap(harness.browserManager.webViewCoordinator)
-        coordinator.ownershipService.assign(
+        harness.browserManager.webViewRuntime.ownershipService.assign(
             originalWebView,
             to: tab,
             in: windowState.id
@@ -1521,7 +1520,6 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             startupPersistence: BrowserManagerStartupPersistence(container: startupContainer),
             extensionsModule: extensionsModule
         )
-        browserManager.bindTestWebViewCoordinator()
         await waitForStartupProtectionRestore(on: browserManager)
         markIsolatedTabManagerReady(browserManager)
         return SafariContentBlockerBrowserHarness(

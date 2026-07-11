@@ -10,7 +10,7 @@ final class BrowserWindowLifecycleWorkflowTests: XCTestCase {
     func testCloseWorkflowCleansEveryCanonicalWebViewResidenceAfterRuntimeRelease() throws {
         var browserManager: BrowserManager? = BrowserManager()
         let repository = try XCTUnwrap(browserManager?.webViewSessions)
-        let coordinator = try XCTUnwrap(browserManager?.bindTestWebViewCoordinator())
+        let webViewRuntime = try XCTUnwrap(browserManager?.testWebViewRuntime())
         let windowState = BrowserWindowState()
         let trackedTabID = UUID()
         let parkedTabID = UUID()
@@ -35,7 +35,7 @@ final class BrowserWindowLifecycleWorkflowTests: XCTestCase {
                 recorder: windowSession.history.recorder,
                 persistence: windowSession.persistence,
                 extensions: browserManager.optionalModules.extensions,
-                webViews: coordinator.lifecycleService,
+                webViews: webViewRuntime.lifecycleService,
                 emptySplitPlaceholders: browserManager.splitComposition.emptyPlaceholders,
                 splitPreviews: browserManager.splitComposition.previews,
                 backgroundMedia: browserManager.backgroundMediaOptimizationService,
@@ -43,7 +43,7 @@ final class BrowserWindowLifecycleWorkflowTests: XCTestCase {
             )
         }
 
-        coordinator.ownershipService.registerTrackedWebView(
+        webViewRuntime.ownershipService.registerTrackedWebView(
             tracked,
             for: trackedTab,
             in: windowState.id
@@ -57,14 +57,14 @@ final class BrowserWindowLifecycleWorkflowTests: XCTestCase {
             repository: repository
         ).replaceUntracked(with: untracked)
         XCTAssertNotNil(repository.beginPendingCleanup(of: pending, for: pendingTabID))
-        coordinator.protectionRuntime.beginHistorySwipe(
+        webViewRuntime.protectionRuntime.beginHistorySwipe(
             tabID: trackedTabID,
             webView: tracked,
             originURL: nil,
             originHistoryItem: nil
         )
         XCTAssertTrue(
-            coordinator.protectionRuntime.hasActiveHistorySwipe(in: windowState.id)
+            webViewRuntime.protectionRuntime.hasActiveHistorySwipe(in: windowState.id)
         )
 
         weak let releasedBrowserManager = browserManager
@@ -78,14 +78,20 @@ final class BrowserWindowLifecycleWorkflowTests: XCTestCase {
             XCTAssertNil(repository.residence(of: webView))
         }
         XCTAssertFalse(
-            coordinator.protectionRuntime.hasActiveHistorySwipe(in: windowState.id)
+            webViewRuntime.protectionRuntime.hasActiveHistorySwipe(in: windowState.id)
         )
-        XCTAssertNil(coordinator.runtimeContextStore.environment)
+
+        webViewRuntime.lifecycleService.cleanupWindow(windowState.id)
+
+        XCTAssertTrue(repository.queries.isTrackingEmpty)
+        XCTAssertFalse(
+            webViewRuntime.protectionRuntime.hasActiveHistorySwipe(in: windowState.id)
+        )
     }
 
     func testWindowCloseRecordsHistoryThenRefreshesArchiveExcludingClosedWindow() throws {
         let browserManager = BrowserManager()
-        let coordinator = browserManager.bindTestWebViewCoordinator()
+        let webViewRuntime = browserManager.testWebViewRuntime()
         let closingWindow = BrowserWindowState()
         let survivingWindow = BrowserWindowState()
         let closingSession = makeSessionRecoveryWindowSession(currentTabId: UUID())
@@ -129,7 +135,7 @@ final class BrowserWindowLifecycleWorkflowTests: XCTestCase {
             recorder: recorder,
             persistence: persistence,
             extensions: browserManager.optionalModules.extensions,
-            webViews: coordinator.lifecycleService,
+            webViews: webViewRuntime.lifecycleService,
             emptySplitPlaceholders: browserManager.splitComposition.emptyPlaceholders,
             splitPreviews: browserManager.splitComposition.previews,
             backgroundMedia: browserManager.backgroundMediaOptimizationService,
@@ -152,10 +158,10 @@ final class BrowserWindowLifecycleWorkflowTests: XCTestCase {
 
     func testIncognitoClosePreservesRegularHistoryArchive() async throws {
         let browserManager = BrowserManager()
-        let coordinator = browserManager.bindTestWebViewCoordinator()
+        let webViewRuntime = browserManager.testWebViewRuntime()
         let registry = WindowRegistry()
         browserManager.windowRegistry = registry
-        browserManager.windowShellContentViewFactory = { _, _, _ in NSView() }
+        browserManager.windowShellContentViewFactory = { _, _ in NSView() }
         let incognitoWindow = BrowserWindowState()
         let profile = browserManager.profileManager.createEphemeralProfile(
             for: incognitoWindow.id
@@ -202,7 +208,7 @@ final class BrowserWindowLifecycleWorkflowTests: XCTestCase {
                 browserManager: browserManager
             ),
             extensions: browserManager.optionalModules.extensions,
-            webViews: coordinator.lifecycleService,
+            webViews: webViewRuntime.lifecycleService,
             emptySplitPlaceholders: browserManager.splitComposition.emptyPlaceholders,
             splitPreviews: browserManager.splitComposition.previews,
             backgroundMedia: browserManager.backgroundMediaOptimizationService,
@@ -271,9 +277,9 @@ final class BrowserWindowLifecycleWorkflowTests: XCTestCase {
 
         do {
             let browserManager = try XCTUnwrap(browserManager)
-            let coordinator = browserManager.bindTestWebViewCoordinator()
+            let webViewRuntime = browserManager.testWebViewRuntime()
             browserManager.windowRegistry = registry
-            browserManager.windowShellContentViewFactory = { _, _, _ in NSView() }
+            browserManager.windowShellContentViewFactory = { _, _ in NSView() }
             let profile = browserManager.profileManager.createEphemeralProfile(
                 for: windowState.id
             )
@@ -293,7 +299,7 @@ final class BrowserWindowLifecycleWorkflowTests: XCTestCase {
                 recorder: windowSession.history.recorder,
                 persistence: windowSession.persistence,
                 extensions: browserManager.optionalModules.extensions,
-                webViews: coordinator.lifecycleService,
+                webViews: webViewRuntime.lifecycleService,
                 emptySplitPlaceholders: browserManager.splitComposition.emptyPlaceholders,
                 splitPreviews: browserManager.splitComposition.previews,
                 backgroundMedia: browserManager.backgroundMediaOptimizationService,
@@ -314,14 +320,14 @@ final class BrowserWindowLifecycleWorkflowTests: XCTestCase {
 
     func testInstalledWindowCallbacksDoNotRetainRegistry() throws {
         let browserManager = BrowserManager()
-        let coordinator = browserManager.bindTestWebViewCoordinator()
+        let webViewRuntime = browserManager.testWebViewRuntime()
         let windowSession = browserManager.windowSessionBundle
         let closeWorkflow = BrowserWindowCloseWorkflow(
             browserRuntime: browserManager,
             recorder: windowSession.history.recorder,
             persistence: windowSession.persistence,
             extensions: browserManager.optionalModules.extensions,
-            webViews: coordinator.lifecycleService,
+            webViews: webViewRuntime.lifecycleService,
             emptySplitPlaceholders: browserManager.splitComposition.emptyPlaceholders,
             splitPreviews: browserManager.splitComposition.previews,
             backgroundMedia: browserManager.backgroundMediaOptimizationService,

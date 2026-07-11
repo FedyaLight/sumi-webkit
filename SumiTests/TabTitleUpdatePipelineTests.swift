@@ -208,7 +208,6 @@ final class TabTitleUpdatePipelineTests: XCTestCase {
         let windowState = BrowserWindowState()
         let space = Space(name: "Primary")
 
-        browserManager.bindTestWebViewCoordinator()
         browserManager.windowRegistry = windowRegistry
         browserManager.tabManager.spaceStateOwner.replaceSpaces([space])
         browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(space)

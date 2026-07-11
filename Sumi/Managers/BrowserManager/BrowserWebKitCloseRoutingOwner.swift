@@ -12,7 +12,7 @@ import SumiWebRuntime
 @MainActor
 struct BrowserWebKitCloseRoutingOwner {
     struct Runtime {
-        let prepareClose: (WKWebView) -> WebViewCoordinatorWebKitClosePreparation
+        let prepareClose: (WKWebView) -> WebViewWebKitClosePreparation
         let cleanupTrackedWebView: (WKWebView, TrackedWebViewOwner) -> Void
         let tab: (UUID) -> Tab?
         let regularTabs: () -> [Tab]

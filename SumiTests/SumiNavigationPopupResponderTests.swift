@@ -570,19 +570,15 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
         )
     }
 
-    private func makePopupBrowserManager(needsWebViewCoordinator: Bool = false) throws -> BrowserManager {
+    private func makePopupBrowserManager() throws -> BrowserManager {
         let moduleRegistry = makePopupModuleRegistry()
         moduleRegistry.setEnabled(false, for: .extensions)
-        let browserManager = BrowserManager(
+        return BrowserManager(
             moduleRegistry: moduleRegistry,
             startupPersistence: BrowserManagerStartupPersistence(
                 container: try Self.makeInMemoryStartupContainer()
             )
         )
-        if needsWebViewCoordinator {
-            browserManager.bindTestWebViewCoordinator()
-        }
-        return browserManager
     }
 
     private func makePopupModuleRegistry() -> SumiModuleRegistry {
@@ -615,7 +611,7 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
 
     private func makePopupFocusHarness() throws -> PopupFocusHarness {
         let settings = SumiSettingsService(userDefaults: TestDefaultsHarness().defaults)
-        let browserManager = try makePopupBrowserManager(needsWebViewCoordinator: true)
+        let browserManager = try makePopupBrowserManager()
         let windowRegistry = WindowRegistry()
         let profile = Profile(name: "Primary")
         let space = Space(name: "Primary", profileId: profile.id)
@@ -642,7 +638,7 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
         browserManager.selectTab(sourceTab, in: windowState)
 
         let sourceWebView = PopupCommittedURLWebView(frame: .zero)
-        browserManager.webViewOwnershipService?.assign(
+        browserManager.testWebViewRuntime().ownershipService.assign(
             sourceWebView,
             to: sourceTab,
             in: windowState.id

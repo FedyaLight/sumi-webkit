@@ -37,8 +37,7 @@ final class ExtensionAuxiliaryWindowOpeningService {
     ) async -> ExtensionMiniWindowAdapter? {
         let isPrivate = configuration.shouldBePrivate
             || context.activeWindow?.isIncognito == true
-        guard isPrivate == false,
-              tabs.canInstallMiniWindowWebView else {
+        guard isPrivate == false else {
             return nil
         }
 

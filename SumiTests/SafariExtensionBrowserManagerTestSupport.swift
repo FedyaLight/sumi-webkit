@@ -143,7 +143,6 @@ extension XCTestCase {
             protectionCoordinator: protectionCoordinator,
             extensionsModule: extensionsModule
         )
-        browserManager.bindTestWebViewCoordinator()
         if let windowRegistry {
             browserManager.windowRegistry = windowRegistry
         }

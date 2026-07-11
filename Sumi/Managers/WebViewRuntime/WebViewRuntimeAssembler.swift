@@ -3,7 +3,7 @@
 //  Sumi
 //
 //  Assembles the per-call Runtime adapter values that WebView owners consume,
-//  bridging attached runtime contexts with coordinator-scoped services.
+//  bridging attached runtime contexts with graph-scoped services.
 //
 
 import AppKit
@@ -14,8 +14,9 @@ import SumiWebRuntime
 @MainActor
 final class WebViewRuntimeAssembler {
     struct Dependencies {
-        let runtimeContextStore: WebViewRuntimeContextStore
         let webViewSessions: WebViewSessionRepository
+        let visibleContext: WebViewVisibleRuntimeContext
+        let shutdownContext: WebViewShutdownRuntimeContext
         let visibleWebViewRuntimeOwner: VisibleWebViewRuntimeOwner
         let hiddenCloneEvictionOwner: WebViewHiddenCloneEvictionOwner
         let removeWebViewFromContainers: @MainActor (WKWebView) -> Void
@@ -26,7 +27,7 @@ final class WebViewRuntimeAssembler {
                 WKWebView,
                 String
             ) -> DeferredProtectedCommandSchedulingOutcome
-        let resolvedTab: @MainActor (UUID, WebViewCoordinatorBrowserRuntimeContext?) -> Tab?
+        let resolvedTab: @MainActor (UUID) -> Tab?
         let trackedLiveWebViews: @MainActor (Tab) -> [WKWebView]
         let cleanupUnprotectedTrackedWebView:
             @MainActor (WKWebView, TrackedWebViewOwner, Tab?) -> Void
@@ -42,11 +43,11 @@ final class WebViewRuntimeAssembler {
     // MARK: - Visible Preparation Runtime
 
     func requireVisiblePreparationRuntime() -> VisibleWebViewPreparationRuntime {
-        visiblePreparationRuntime(context: dependencies.runtimeContextStore.requireVisible())
+        visiblePreparationRuntime(context: dependencies.visibleContext)
     }
 
     func visiblePreparationRuntime(
-        context: WebViewCoordinatorVisibleRuntimeContext
+        context: WebViewVisibleRuntimeContext
     ) -> VisibleWebViewPreparationRuntime {
         VisibleWebViewPreparationRuntime(
             windowState: context.windowState,
@@ -60,8 +61,7 @@ final class WebViewRuntimeAssembler {
                 evictHiddenWebViews(
                     in: windowId,
                     visibleTabIDs: visibleTabIDs,
-                    globallyVisibleTabIDs: context.globallyVisibleTabIDs,
-                    runtimeContext: nil
+                    globallyVisibleTabIDs: context.globallyVisibleTabIDs
                 )
             },
             scheduleTabSuspensionReconcile: context.scheduleTabSuspensionReconcile,
@@ -85,27 +85,24 @@ final class WebViewRuntimeAssembler {
     func evictHiddenWebViews(
         in windowId: UUID,
         visibleTabIDs: Set<UUID>,
-        globallyVisibleTabIDs: @escaping @MainActor () -> Set<UUID>,
-        runtimeContext: WebViewCoordinatorBrowserRuntimeContext?
+        globallyVisibleTabIDs: @escaping @MainActor () -> Set<UUID>
     ) {
         dependencies.hiddenCloneEvictionOwner.evictHiddenWebViews(
             in: windowId,
             visibleTabIDs: visibleTabIDs,
             entries: dependencies.webViewSessions.trackedWebViews(in: windowId),
             runtime: evictionRuntime(
-                globallyVisibleTabIDs: globallyVisibleTabIDs,
-                runtimeContext: runtimeContext
+                globallyVisibleTabIDs: globallyVisibleTabIDs
             )
         )
     }
 
     private func evictionRuntime(
-        globallyVisibleTabIDs: @escaping @MainActor () -> Set<UUID>,
-        runtimeContext: WebViewCoordinatorBrowserRuntimeContext?
+        globallyVisibleTabIDs: @escaping @MainActor () -> Set<UUID>
     ) -> WebViewHiddenCloneEvictionOwner.Runtime {
         WebViewHiddenCloneEvictionOwner.Runtime(
             tabForID: { [dependencies] tabID in
-                dependencies.resolvedTab(tabID, runtimeContext)
+                dependencies.resolvedTab(tabID)
             },
             liveWebViews: { [dependencies] tab in
                 dependencies.trackedLiveWebViews(tab)
@@ -133,59 +130,13 @@ final class WebViewRuntimeAssembler {
     // MARK: - Shutdown Runtime
 
     func shutdownRuntime() -> SumiWebViewShutdown.NormalTabRuntime {
-        let runtimeContext = dependencies.runtimeContextStore.requireShutdown()
+        let runtimeContext = dependencies.shutdownContext
         return SumiWebViewShutdown.NormalTabRuntime(
             cleanupUserScripts: { controller, webViewId in
                 runtimeContext.cleanupUserScripts(controller, webViewId)
             },
             removeWebViewFromContainers: { [dependencies] webView in
                 dependencies.removeWebViewFromContainers(webView)
-            }
-        )
-    }
-}
-
-extension WebViewRuntimeAssembler.Dependencies {
-    @MainActor
-    static func live(coordinator: WebViewCoordinator) -> Self {
-        Self(
-            runtimeContextStore: coordinator.runtimeContextStore,
-            webViewSessions: coordinator.webViewSessions,
-            visibleWebViewRuntimeOwner: coordinator.visibleWebViewRuntimeOwner,
-            hiddenCloneEvictionOwner: coordinator.hiddenCloneEvictionOwner,
-            removeWebViewFromContainers: { [weak coordinator] webView in
-                coordinator?.compositorRuntime.removeWebViewFromContainers(webView)
-            },
-            isWebViewProtectedFromCompositorMutation: { [weak coordinator] webView in
-                coordinator?.protectionRuntime.isProtected(webView) ?? false
-            },
-            enqueueDeferredProtectedCommand: { [weak coordinator] command, webView, reason in
-                coordinator?.protectionRuntime.schedule(
-                    command,
-                    for: webView,
-                    reason: reason
-                ) ?? .notProtected
-            },
-            resolvedTab: { [weak coordinator] tabID, runtimeContext in
-                guard let coordinator else { return nil }
-                return coordinator.runtimeTabs.resolve(
-                    tabID,
-                    runtime: runtimeContext
-                        ?? coordinator.runtimeContextStore.requireBrowser()
-                )
-            },
-            trackedLiveWebViews: { [weak coordinator] tab in
-                coordinator?.ownershipQuery.trackedLiveWebViews(for: tab) ?? []
-            },
-            cleanupUnprotectedTrackedWebView: { [weak coordinator] webView, owner, tab in
-                coordinator?.lifecycleService.cleanupUnprotectedTrackedWebView(
-                    webView,
-                    owner: owner,
-                    tab: tab
-                )
-            },
-            refreshPrimaryTrackedWebView: { [weak coordinator] tab in
-                coordinator?.tabWebViewMaterialization.refreshPrimary(for: tab)
             }
         )
     }

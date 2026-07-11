@@ -133,7 +133,6 @@ struct WebsiteNativeSurfaceRootBuilders {
 }
 
 struct WebsiteView: View {
-    @Environment(WebViewCoordinator.self) private var webViewCoordinator
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(KeyboardShortcutManager.self) private var keyboardShortcutManager
     @Environment(\.sumiSettings) var sumiSettings
@@ -150,6 +149,10 @@ struct WebsiteView: View {
     private let splitLayout: SplitLayoutService
     private let splitDrops: SplitDropService
     private let splitDropTargets: SplitDropTargetService
+    private let webViewOwnershipQuery: WebViewOwnershipQuery
+    private let webViewOwnershipService: WebViewOwnershipService
+    private let webViewCompositorRuntime: WebViewCompositorRuntime
+    private let webViewProtectionRuntime: WebViewProtectionRuntime
     private let dragCoordinateSpace = "splitPreview"
 
     init(
@@ -161,7 +164,11 @@ struct WebsiteView: View {
         splitPreviews: SplitPreviewSession,
         splitLayout: SplitLayoutService,
         splitDrops: SplitDropService,
-        splitDropTargets: SplitDropTargetService
+        splitDropTargets: SplitDropTargetService,
+        webViewOwnershipQuery: WebViewOwnershipQuery,
+        webViewOwnershipService: WebViewOwnershipService,
+        webViewCompositorRuntime: WebViewCompositorRuntime,
+        webViewProtectionRuntime: WebViewProtectionRuntime
     ) {
         self.browserContext = browserContext
         self.nativeSurfaceRootBuilders = nativeSurfaceRootBuilders
@@ -172,6 +179,10 @@ struct WebsiteView: View {
         self.splitLayout = splitLayout
         self.splitDrops = splitDrops
         self.splitDropTargets = splitDropTargets
+        self.webViewOwnershipQuery = webViewOwnershipQuery
+        self.webViewOwnershipService = webViewOwnershipService
+        self.webViewCompositorRuntime = webViewCompositorRuntime
+        self.webViewProtectionRuntime = webViewProtectionRuntime
     }
 
     private var chromeGeometry: BrowserChromeGeometry {
@@ -268,7 +279,10 @@ struct WebsiteView: View {
             splitDrops: splitDrops,
             splitDropTargets: splitDropTargets,
             sidebarDragState: sidebarDragState,
-            webViewCoordinator: webViewCoordinator,
+            webViewOwnershipQuery: webViewOwnershipQuery,
+            webViewOwnershipService: webViewOwnershipService,
+            webViewCompositorRuntime: webViewCompositorRuntime,
+            webViewProtectionRuntime: webViewProtectionRuntime,
             hoveredLink: $hoveredLink,
             splitPresentation: splitPresentation,
             isSplitDropCaptureActive: sidebarDragState.isInternalDragGeometryArmed

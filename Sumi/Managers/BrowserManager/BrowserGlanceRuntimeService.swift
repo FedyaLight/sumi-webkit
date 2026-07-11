@@ -6,6 +6,8 @@ enum BrowserGlanceRuntimeService {
     static func runtime(for browserManager: BrowserManager) -> GlanceManager.Runtime {
         let splitQuery = browserManager.splitComposition.query
         let emptySplitCreation = browserManager.splitComposition.emptyCreation
+        let webViewCompositor = browserManager.webViewRuntime.compositorRuntime
+        let webViewOwnership = browserManager.webViewRuntime.ownershipService
 
         return GlanceManager.Runtime(
             windowStateContainingTab: { [weak browserManager] in
@@ -72,11 +74,8 @@ enum BrowserGlanceRuntimeService {
                     reason: .splitTabPicker
                 )
             },
-            registerPromotedHost: { [weak browserManager] host, tabId, windowId, attachmentCompletion in
-                guard let webViewCoordinator = browserManager?.webViewCoordinator else {
-                    return false
-                }
-                return webViewCoordinator.compositorRuntime.registerPromotedHost(
+            registerPromotedHost: { [webViewCompositor] host, tabId, windowId, attachmentCompletion in
+                webViewCompositor.registerPromotedHost(
                     host,
                     for: tabId,
                     in: windowId,
@@ -84,9 +83,13 @@ enum BrowserGlanceRuntimeService {
                 )
             },
             previewWebView: { [weak browserManager] in browserManager?.webViewRoutingService.anyLiveWebView(for: $0) },
-            ensurePreviewWebView: { [weak browserManager] tab, _ in browserManager?.webViewOwnershipService?.ensureUntracked(for: tab) },
+            ensurePreviewWebView: { [webViewOwnership] tab, _ in
+                webViewOwnership.ensureUntracked(for: tab)
+            },
             ownsPreviewWebView: { [weak browserManager] in browserManager?.webViewRoutingService.ownsLiveWebView($1, for: $0) ?? false },
-            releasePreviewWebView: { [weak browserManager] in browserManager?.webViewOwnershipService?.releaseUntracked(for: $0) }
+            releasePreviewWebView: { [webViewOwnership] in
+                webViewOwnership.releaseUntracked(for: $0)
+            }
         )
     }
 

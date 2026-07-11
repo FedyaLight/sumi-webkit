@@ -2,7 +2,9 @@ import Foundation
 
 extension BrowserTabSelectionOwner {
     static func liveActions(for browserManager: BrowserManager) -> Actions {
-        Actions(
+        let webViewOwnershipQuery = browserManager.webViewRuntime.ownershipQuery
+        let webViewOwnership = browserManager.webViewRuntime.ownershipService
+        return Actions(
             activeWindowId: { [weak browserManager] in
                 browserManager?.windowRegistry?.activeWindow?.id
             },
@@ -60,22 +62,14 @@ extension BrowserTabSelectionOwner {
             markTabAccessed: { [weak browserManager] tabId in
                 browserManager?.compositorManager.markTabAccessed(tabId)
             },
-            ensureVisibleWebView: { [weak browserManager] tab, windowID in
-                guard let browserManager else {
-                    tab.loadWebViewIfNeeded()
-                    return
-                }
-                guard browserManager.webViewOwnershipQuery.webView(
+            ensureVisibleWebView: { [webViewOwnershipQuery, webViewOwnership] tab, windowID in
+                guard webViewOwnershipQuery.webView(
                     for: tab.id,
                     in: windowID
                 ) == nil else {
                     return
                 }
-                guard let ownershipService = browserManager.webViewOwnershipService else {
-                    tab.loadWebViewIfNeeded()
-                    return
-                }
-                _ = ownershipService.webView(for: tab, in: windowID)
+                _ = webViewOwnership.webView(for: tab, in: windowID)
             },
             handleNativeNowPlayingTabActivated: { [weak browserManager] tabId in
                 browserManager?.nativeNowPlayingController.handleTabActivated(tabId)

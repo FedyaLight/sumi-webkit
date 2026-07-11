@@ -101,7 +101,6 @@ final class SumiBookmarksSurfaceTests: XCTestCase {
         let space = Space(name: "Primary", profileId: profile.id)
         let windowState = BrowserWindowState()
 
-        browserManager.bindTestWebViewCoordinator()
         browserManager.modelContext = context
         browserManager.profileManager.profiles = [profile]
         browserManager.currentProfile = profile

@@ -76,7 +76,7 @@ final class BrowserWindowCommands {
         }
         return BrowserWindowShellService.Context(
             windowRegistry: browserRuntime.shellRuntime.requireWindowRegistry(),
-            webViewCoordinator: browserRuntime.shellRuntime.requireWebViewCoordinator(),
+            webViewLifecycle: browserRuntime.shellRuntime.webViewLifecycle,
             permissionLifecycleController: browserRuntime.permissionRuntime.permissionLifecycleController,
             profileManager: browserRuntime.profileManager,
             tabManager: browserRuntime.tabManager,

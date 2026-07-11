@@ -20,7 +20,7 @@ public final class WebViewWindowCleanupOwner {
     private let webViewSessions: WebViewSessionRepository
     private let visibleWebViewRuntimeOwner: any WebRuntimeVisiblePreparationControlling
     private let mediaProtectionOwner: WebViewMediaProtectionOwner
-    private let browserRuntimeContext: @MainActor () -> WebViewCoordinatorBrowserRuntimeContext?
+    private let tabForID: @MainActor (UUID) -> (any WebRuntimeTabHandle)?
     private let isWebViewProtectedFromCompositorMutation: @MainActor (WKWebView) -> Bool
     private let enqueueDeferredProtectedCommand:
         @MainActor (DeferredWebViewCommand, WKWebView, String) -> Bool
@@ -36,7 +36,7 @@ public final class WebViewWindowCleanupOwner {
         webViewSessions: WebViewSessionRepository,
         visibleWebViewRuntimeOwner: any WebRuntimeVisiblePreparationControlling,
         mediaProtectionOwner: WebViewMediaProtectionOwner,
-        browserRuntimeContext: @escaping @MainActor () -> WebViewCoordinatorBrowserRuntimeContext?,
+        tabForID: @escaping @MainActor (UUID) -> (any WebRuntimeTabHandle)?,
         isWebViewProtectedFromCompositorMutation: @escaping @MainActor (WKWebView) -> Bool,
         enqueueDeferredProtectedCommand:
             @escaping @MainActor (DeferredWebViewCommand, WKWebView, String) -> Bool,
@@ -51,7 +51,7 @@ public final class WebViewWindowCleanupOwner {
         self.webViewSessions = webViewSessions
         self.visibleWebViewRuntimeOwner = visibleWebViewRuntimeOwner
         self.mediaProtectionOwner = mediaProtectionOwner
-        self.browserRuntimeContext = browserRuntimeContext
+        self.tabForID = tabForID
         self.isWebViewProtectedFromCompositorMutation = isWebViewProtectedFromCompositorMutation
         self.enqueueDeferredProtectedCommand = enqueueDeferredProtectedCommand
         self.cleanupUnprotectedTrackedWebView = cleanupUnprotectedTrackedWebView
@@ -63,11 +63,11 @@ public final class WebViewWindowCleanupOwner {
 
     public func cleanupWindow(_ windowId: UUID) {
         let signpostState = SumiWebRuntimeDiagnostics.beginInterval(
-            "WebViewCoordinator.cleanupWindow"
+            "WebViewWindowCleanupOwner.cleanupWindow"
         )
         defer {
             SumiWebRuntimeDiagnostics.endInterval(
-                "WebViewCoordinator.cleanupWindow",
+                "WebViewWindowCleanupOwner.cleanupWindow",
                 signpostState
             )
         }
@@ -96,7 +96,7 @@ public final class WebViewWindowCleanupOwner {
         }
 
         SumiWebRuntimeDiagnostics.debug(
-            category: "WebViewCoordinator",
+            category: "WebViewWindowCleanupOwner",
             "Completed full WebView cleanup."
         )
 
@@ -106,10 +106,9 @@ public final class WebViewWindowCleanupOwner {
     }
 
     private func scopeRuntime() -> WebViewCleanupScopeOwner.Runtime {
-        let runtimeContext = browserRuntimeContext()
         return WebViewCleanupScopeOwner.Runtime(
-            tabForID: { tabID in
-                runtimeContext?.resolveWebRuntimeTab(tabID)
+            tabForID: { [tabForID] tabID in
+                tabForID(tabID)
             },
             isWebViewProtectedFromCompositorMutation: { [isWebViewProtectedFromCompositorMutation] webView in
                 isWebViewProtectedFromCompositorMutation(webView)

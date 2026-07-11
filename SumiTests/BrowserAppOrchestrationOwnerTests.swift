@@ -31,7 +31,10 @@ final class BrowserAppOrchestrationOwnerTests: XCTestCase {
         XCTAssertNotIdentical(harness.appDelegate.appLifecycleHandler as AnyObject?, harness.browserManager)
         XCTAssertIdentical(harness.appDelegate.settingsHandler, harness.settingsManager)
         XCTAssertIdentical(harness.appDelegate.shortcutManager, harness.keyboardShortcutManager)
-        XCTAssertIdentical(harness.browserManager.webViewCoordinator, harness.webViewCoordinator)
+        XCTAssertIdentical(
+            harness.dependencies.webViewLifecycle,
+            harness.browserManager.webViewRuntime.lifecycleService
+        )
         XCTAssertIdentical(harness.browserManager.windowRegistry, harness.windowRegistry)
         XCTAssertIdentical(harness.browserManager.sumiSettings, harness.settingsManager)
         XCTAssertIdentical(
@@ -100,10 +103,7 @@ final class BrowserAppOrchestrationOwnerTests: XCTestCase {
             releasedProfileManager = browserManager.profileManager
             releasedRestorationService = browserManager.windowSessionBundle.restoration
             releasedActivationService = browserManager.windowSessionBundle.activation
-            let webViews = WebViewCoordinator(
-                webViewSessions: browserManager.webViewSessions
-            )
-            let contentFactory: BrowserWindowShellService.ContentViewFactory = { [weak browserManager] _, _, _ in
+            let contentFactory: BrowserWindowShellService.ContentViewFactory = { [weak browserManager] _, _ in
                 guard browserManager != nil else { return NSView() }
                 return NSView()
             }
@@ -112,7 +112,7 @@ final class BrowserAppOrchestrationOwnerTests: XCTestCase {
                     appDelegate: appDelegate,
                     browserManager: browserManager,
                     windowRegistry: registry,
-                    webViewCoordinator: webViews,
+                    webViewLifecycle: browserManager.webViewRuntime.lifecycleService,
                     settingsManager: settings,
                     keyboardShortcutManager: shortcuts,
                     nowPlayingController: nowPlayingController,
@@ -226,19 +226,16 @@ final class BrowserAppOrchestrationOwnerTests: XCTestCase {
         settingsManager.sidebarMiniPlayerEnabled = false
         let browserManager = BrowserManager(nowPlayingController: nowPlayingController)
         let windowRegistry = WindowRegistry()
-        let webViewCoordinator = WebViewCoordinator(
-            webViewSessions: browserManager.webViewSessions
-        )
         let keyboardShortcutManager = KeyboardShortcutManager(installEventMonitor: false)
         var startUpdaterCallCount = 0
-        let factory: BrowserWindowShellService.ContentViewFactory = { _, _, _ in
+        let factory: BrowserWindowShellService.ContentViewFactory = { _, _ in
             NSView()
         }
         let dependencies = BrowserAppOrchestrationOwner.Dependencies(
             appDelegate: appDelegate,
             browserManager: browserManager,
             windowRegistry: windowRegistry,
-            webViewCoordinator: webViewCoordinator,
+            webViewLifecycle: browserManager.webViewRuntime.lifecycleService,
             settingsManager: settingsManager,
             keyboardShortcutManager: keyboardShortcutManager,
             nowPlayingController: nowPlayingController,
@@ -254,7 +251,6 @@ final class BrowserAppOrchestrationOwnerTests: XCTestCase {
             appDelegate: appDelegate,
             browserManager: browserManager,
             windowRegistry: windowRegistry,
-            webViewCoordinator: webViewCoordinator,
             settingsManager: settingsManager,
             keyboardShortcutManager: keyboardShortcutManager,
             dependencies: dependencies,
@@ -284,7 +280,6 @@ private struct Harness {
     let appDelegate: AppDelegate
     let browserManager: BrowserManager
     let windowRegistry: WindowRegistry
-    let webViewCoordinator: WebViewCoordinator
     let settingsManager: SumiSettingsService
     let keyboardShortcutManager: KeyboardShortcutManager
     let dependencies: BrowserAppOrchestrationOwner.Dependencies

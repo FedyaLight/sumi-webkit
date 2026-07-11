@@ -774,6 +774,22 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
         XCTAssertEqual(cleanupService.clearedProfileStores, 0)
     }
 
+    func testBrowsingDataCleanupRetainsInstalledMutationBoundary() {
+        let cleanupService = FakeCleanupService()
+        var preparer: FakeDestructiveCleanupPreparer? =
+            FakeDestructiveCleanupPreparer()
+        weak var retainedPreparer = preparer
+        let service = makeBrowsingDataCleanupService(
+            websiteDataCleanupService: cleanupService,
+            destructiveCleanupPreparer: preparer
+        )
+
+        preparer = nil
+
+        XCTAssertNotNil(retainedPreparer)
+        XCTAssertNotNil(service.destructiveCleanupPreparer)
+    }
+
     func testBrowsingDataPartialCleanupDoesNotClearSavedHTTPAuth() async throws {
         let harness = try makeHistoryHarness()
         let cleanupService = FakeCleanupService()

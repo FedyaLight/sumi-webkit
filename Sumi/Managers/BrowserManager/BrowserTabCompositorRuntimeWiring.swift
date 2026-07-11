@@ -3,7 +3,8 @@ import Foundation
 @MainActor
 extension TabCompositorRuntime {
     static func make(browserManager: BrowserManager) -> Self {
-        Self(
+        let webViewCompositor = browserManager.webViewRuntime.compositorRuntime
+        return Self(
             markTabAccessed: { [weak browserManager] tabId in
                 if let tab = browserManager?.tabManager.tabCollectionMembershipOwner.tab(for: tabId) {
                     tab.noteAccess()
@@ -19,11 +20,10 @@ extension TabCompositorRuntime {
             },
             registeredCompositorWindows: { [weak browserManager] in
                 guard let browserManager,
-                      let windowRegistry = browserManager.windowRegistry,
-                      let coordinator = browserManager.webViewCoordinator
+                      let windowRegistry = browserManager.windowRegistry
                 else { return [] }
 
-                return coordinator.compositorRuntime.containers().compactMap { windowId, _ in
+                return webViewCompositor.containers().compactMap { windowId, _ in
                     windowRegistry.windows[windowId]
                 }
             },

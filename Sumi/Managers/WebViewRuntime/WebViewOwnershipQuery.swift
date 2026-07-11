@@ -3,7 +3,7 @@ import SumiWebRuntime
 import WebKit
 
 /// Read-only ownership capability over the canonical session repository.
-/// Consumers that only route/read WebViews no longer depend on the coordinator.
+/// Consumers that only route/read WebViews do not depend on the runtime graph.
 @MainActor
 final class WebViewOwnershipQuery {
     private let webViewSessions: WebViewSessionRepository

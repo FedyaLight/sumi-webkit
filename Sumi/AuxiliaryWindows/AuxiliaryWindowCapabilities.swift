@@ -14,8 +14,6 @@ protocol AuxiliaryWindowContextResolving: AnyObject {
 
 @MainActor
 protocol AuxiliaryWindowTabLifecycle: AnyObject {
-    var canInstallMiniWindowWebView: Bool { get }
-
     func createMiniWindowTab(
         openerTab: Tab?,
         profileID: UUID?,

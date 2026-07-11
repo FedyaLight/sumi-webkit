@@ -89,7 +89,6 @@ final class ClosedTabRestoreServiceTests: XCTestCase {
 
         browserManager.profileManager.profiles = [fallbackProfile, currentProfile]
         browserManager.currentProfile = currentProfile
-        browserManager.bindTestWebViewCoordinator()
         browserManager.tabManager.spaceStateOwner.replaceSpaces([fallbackSpace, currentProfileSpace])
         browserManager.tabManager.structuralCollectionMutationOwner.setTabs([], for: fallbackSpace.id)
         browserManager.tabManager.structuralCollectionMutationOwner.setTabs([], for: currentProfileSpace.id)

@@ -231,7 +231,6 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         let browserManager = makeBrowserManager(profile: profile)
         let windowRegistry = WindowRegistry()
         browserManager.windowRegistry = windowRegistry
-        browserManager.bindTestWebViewCoordinator()
         let space = browserManager.tabManager.spaceServices.catalog.createSpace(
             name: "Work",
             profileId: profile.id
@@ -264,7 +263,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             manager: manager,
             profile: profile
         )
-        browserManager.webViewOwnershipService?.assign(
+        browserManager.testWebViewRuntime().ownershipService.assign(
             webView,
             to: tab,
             in: windowState.id
@@ -301,7 +300,6 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         )
         let windowRegistry = WindowRegistry()
         browserManager.windowRegistry = windowRegistry
-        browserManager.bindTestWebViewCoordinator()
         let space = browserManager.tabManager.spaceServices.catalog.createSpace(
             name: "Work",
             profileId: profile.id
@@ -389,7 +387,6 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         )
         let windowRegistry = WindowRegistry()
         browserManager.windowRegistry = windowRegistry
-        browserManager.bindTestWebViewCoordinator()
         let space = browserManager.tabManager.spaceServices.catalog.createSpace(
             name: "Work",
             profileId: profile.id
@@ -486,7 +483,6 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         )
         let windowRegistry = WindowRegistry()
         browserManager.windowRegistry = windowRegistry
-        browserManager.bindTestWebViewCoordinator()
         let space = browserManager.tabManager.spaceServices.catalog.createSpace(
             name: "Work",
             profileId: profile.id

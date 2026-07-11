@@ -473,7 +473,10 @@ struct TabCompositorWrapper: NSViewControllerRepresentable {
         splitDrops: SplitDropService,
         splitDropTargets: SplitDropTargetService,
         sidebarDragState: SidebarDragState,
-        webViewCoordinator: WebViewCoordinator,
+        webViewOwnershipQuery: WebViewOwnershipQuery,
+        webViewOwnershipService: WebViewOwnershipService,
+        webViewCompositorRuntime: WebViewCompositorRuntime,
+        webViewProtectionRuntime: WebViewProtectionRuntime,
         hoveredLink: Binding<String?>,
         splitPresentation: WindowSplitPresentation?,
         isSplitDropCaptureActive: Bool,
@@ -492,10 +495,10 @@ struct TabCompositorWrapper: NSViewControllerRepresentable {
         self.currentTabForDisplayState = { windowState in
             browserContext.currentTab(for: windowState)
         }
-        self.webViewOwnershipQuery = webViewCoordinator.ownershipQuery
-        self.webViewOwnershipService = webViewCoordinator.ownershipService
-        self.webViewCompositorRuntime = webViewCoordinator.compositorRuntime
-        self.webViewProtectionRuntime = webViewCoordinator.protectionRuntime
+        self.webViewOwnershipQuery = webViewOwnershipQuery
+        self.webViewOwnershipService = webViewOwnershipService
+        self.webViewCompositorRuntime = webViewCompositorRuntime
+        self.webViewProtectionRuntime = webViewProtectionRuntime
         self._hoveredLink = hoveredLink
         self.splitPresentation = splitPresentation
         self.isSplitDropCaptureActive = isSplitDropCaptureActive

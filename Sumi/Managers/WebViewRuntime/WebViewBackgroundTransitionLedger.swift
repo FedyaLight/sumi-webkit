@@ -7,7 +7,7 @@ struct WebViewBackgroundTransitionLease: Equatable {
     let webViewID: ObjectIdentifier
 }
 
-/// Process-wide coordinator for the temporary `drawsBackground = false` gate.
+/// Process-wide ledger for the temporary `drawsBackground = false` gate.
 /// A WKWebView may move between window host owners, so a lease stored on one
 /// window cannot decide whether a later window's transition is still active.
 @MainActor

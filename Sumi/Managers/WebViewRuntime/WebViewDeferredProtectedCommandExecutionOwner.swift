@@ -121,11 +121,11 @@ final class WebViewDeferredProtectedCommandExecutionOwner {
                 return
             }
             let signpostState = PerformanceTrace.beginInterval(
-                "WebViewCoordinator.flushDeferredProtectedCommands"
+                "WebViewDeferredProtectedCommandExecutionOwner.flushDeferredProtectedCommands"
             )
             defer {
                 PerformanceTrace.endInterval(
-                    "WebViewCoordinator.flushDeferredProtectedCommands",
+                    "WebViewDeferredProtectedCommandExecutionOwner.flushDeferredProtectedCommands",
                     signpostState
                 )
             }
@@ -320,7 +320,9 @@ final class WebViewDeferredProtectedCommandExecutionOwner {
         sourceWebViewID: ObjectIdentifier,
         reason: String
     ) {
-        PerformanceTrace.emitEvent("WebViewCoordinator.dropDeferredProtectedCommand")
+        PerformanceTrace.emitEvent(
+            "WebViewDeferredProtectedCommandExecutionOwner.dropDeferredProtectedCommand"
+        )
         RuntimeDiagnostics.protectedWebViewTrace(
             "dropDeferredCommand reason=\(reason) sourceWebView=\(sourceWebViewID) command={\(command.debugSummary)}"
         )

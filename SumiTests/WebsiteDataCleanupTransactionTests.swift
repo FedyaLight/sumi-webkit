@@ -14,7 +14,10 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
         var canonicalRuntimeTabReadCount = 0
 
         let owner = WebsiteDataCleanupTransaction(
-            browserRuntimeContext: { fixture.context },
+            runtimeTabs: {
+                canonicalRuntimeTabReadCount += 1
+                return [fixture.tab]
+            },
             liveWebViews: { _ in [fixture.webView] },
             waitForMutationPermission: { _ in
                 events.append("unprotected")
@@ -49,10 +52,6 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
                     succeeded: true
                 )
                 return .init(outcome: .accepted, semanticRevision: 1)
-            },
-            runtimeTabs: {
-                canonicalRuntimeTabReadCount += 1
-                return [fixture.tab]
             }
         )
         ownerReference.owner = owner
@@ -98,7 +97,7 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
         let ownerReference = CleanupOwnerReference()
 
         let owner = WebsiteDataCleanupTransaction(
-            browserRuntimeContext: { fixture.context },
+            runtimeTabs: { [fixture.tab] },
             liveWebViews: { _ in [fixture.webView] },
             waitForMutationPermission: { _ in
                 await withCheckedContinuation { permissionContinuation = $0 }
@@ -172,7 +171,7 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
         let ownerReference = CleanupOwnerReference()
 
         let owner = WebsiteDataCleanupTransaction(
-            browserRuntimeContext: { fixture.context },
+            runtimeTabs: { [fixture.tab] },
             liveWebViews: { _ in [fixture.webView] },
             waitForMutationPermission: { _ in true },
             loadBlankNavigation: { _ in
@@ -248,7 +247,7 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
         var didDelete = false
 
         let owner = WebsiteDataCleanupTransaction(
-            browserRuntimeContext: { fixture.context },
+            runtimeTabs: { [fixture.tab] },
             liveWebViews: { _ in [fixture.webView, secondWebView] },
             waitForMutationPermission: { _ in true },
             loadBlankNavigation: { webView in
@@ -324,7 +323,7 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
         var didDelete = false
 
         let owner = WebsiteDataCleanupTransaction(
-            browserRuntimeContext: { fixture.context },
+            runtimeTabs: { [fixture.tab] },
             liveWebViews: { _ in webViews },
             waitForMutationPermission: { webView in
                 mutationPermissionWebViewIDs.append(ObjectIdentifier(webView))
@@ -417,7 +416,7 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
         var didDelete = false
 
         let owner = WebsiteDataCleanupTransaction(
-            browserRuntimeContext: { fixture.context },
+            runtimeTabs: { [fixture.tab] },
             liveWebViews: { _ in [fixture.webView] },
             waitForMutationPermission: { _ in true },
             loadBlankNavigation: { _ in
@@ -486,7 +485,7 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
         var didDelete = false
 
         let owner = WebsiteDataCleanupTransaction(
-            browserRuntimeContext: { fixture.context },
+            runtimeTabs: { [fixture.tab] },
             liveWebViews: { _ in [fixture.webView] },
             waitForMutationPermission: { _ in true },
             loadBlankNavigation: { _ in
@@ -551,7 +550,7 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
         var restoreCount = 0
 
         let owner = WebsiteDataCleanupTransaction(
-            browserRuntimeContext: { fixture.context },
+            runtimeTabs: { [fixture.tab] },
             liveWebViews: { _ in webViews },
             waitForMutationPermission: { _ in true },
             loadBlankNavigation: { webView in
@@ -642,7 +641,7 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
         var didDelete = false
 
         let owner = WebsiteDataCleanupTransaction(
-            browserRuntimeContext: { fixture.context },
+            runtimeTabs: { [fixture.tab] },
             liveWebViews: { _ in webViews },
             waitForMutationPermission: { _ in true },
             loadBlankNavigation: { webView in
@@ -729,7 +728,7 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
         var restoreCount = 0
 
         let owner = WebsiteDataCleanupTransaction(
-            browserRuntimeContext: { fixture.context },
+            runtimeTabs: { [fixture.tab] },
             liveWebViews: { _ in webViews },
             waitForMutationPermission: { _ in true },
             loadBlankNavigation: { webView in
@@ -791,6 +790,112 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
         XCTAssertEqual(restoreCount, 1)
     }
 
+    func testCancellationBeforeBlankWaitCannotCompleteRestoreWaitGeneration() async {
+        let fixture = makeFixture()
+        let ownerReference = CleanupOwnerReference()
+        var transaction: Task<Bool, Never>?
+        var didDelete = false
+        var restoreCount = 0
+
+        let owner = WebsiteDataCleanupTransaction(
+            runtimeTabs: { [fixture.tab] },
+            liveWebViews: { _ in [fixture.webView] },
+            waitForMutationPermission: { _ in true },
+            loadBlankNavigation: { _ in
+                let lifetime = NSObject()
+                transaction?.cancel()
+                return .init(
+                    id: ObjectIdentifier(lifetime),
+                    lifetime: lifetime
+                )
+            },
+            restoreTab: { _, targetURL in
+                restoreCount += 1
+                let semanticRevision = UInt64(restoreCount)
+                Task { @MainActor in
+                    let lifetime = NSObject()
+                    ownerReference.owner?.navigationWillStart(
+                        on: fixture.webView,
+                        navigationID: ObjectIdentifier(lifetime),
+                        navigationLifetime: lifetime,
+                        targetURL: targetURL,
+                        semanticRevision: semanticRevision
+                    )
+                    ownerReference.owner?.navigationDidTerminate(
+                        on: fixture.webView,
+                        navigationID: ObjectIdentifier(lifetime),
+                        navigationLifetime: lifetime,
+                        succeeded: true
+                    )
+                }
+                return .init(
+                    outcome: .accepted,
+                    semanticRevision: semanticRevision
+                )
+            },
+            restoreAttemptTimeout: .milliseconds(100)
+        )
+        ownerReference.owner = owner
+
+        let cleanup = Task { @MainActor in
+            await owner.performDestructiveDataCleanup(
+                profileIDs: [fixture.profileID]
+            ) {
+                didDelete = true
+            }
+        }
+        transaction = cleanup
+
+        let didComplete = await cleanup.value
+        XCTAssertFalse(didComplete)
+        XCTAssertFalse(didDelete)
+        XCTAssertEqual(restoreCount, 1)
+    }
+
+    func testCancellationBeforePhysicalMutationDoesNotRestoreUntouchedWebView() async {
+        let fixture = makeFixture()
+        var permissionContinuation: CheckedContinuation<Bool, Never>?
+        var didDelete = false
+        var restoreCount = 0
+        var blankSubmissionCount = 0
+
+        let owner = WebsiteDataCleanupTransaction(
+            runtimeTabs: { [fixture.tab] },
+            liveWebViews: { _ in [fixture.webView] },
+            waitForMutationPermission: { _ in
+                await withCheckedContinuation { continuation in
+                    permissionContinuation = continuation
+                }
+            },
+            loadBlankNavigation: { _ in
+                blankSubmissionCount += 1
+                return nil
+            },
+            restoreTab: { _, _ in
+                restoreCount += 1
+                return .init(outcome: .failed, semanticRevision: nil)
+            }
+        )
+
+        let cleanup = Task { @MainActor in
+            await owner.performDestructiveDataCleanup(
+                profileIDs: [fixture.profileID]
+            ) {
+                didDelete = true
+            }
+        }
+        await waitUntil { permissionContinuation != nil }
+        cleanup.cancel()
+        permissionContinuation?.resume(returning: true)
+        permissionContinuation = nil
+
+        let didComplete = await cleanup.value
+        XCTAssertFalse(didComplete)
+        XCTAssertFalse(didDelete)
+        XCTAssertEqual(blankSubmissionCount, 0)
+        XCTAssertEqual(restoreCount, 0)
+    }
+
     func testRestoreWatchdogRetriesWhenAcceptedSubmissionNeverStarts() async throws {
         let fixture = makeFixture()
         let ownerReference = CleanupOwnerReference()
@@ -798,7 +903,7 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
         var restoreCount = 0
 
         let owner = WebsiteDataCleanupTransaction(
-            browserRuntimeContext: { fixture.context },
+            runtimeTabs: { [fixture.tab] },
             liveWebViews: { _ in [fixture.webView] },
             waitForMutationPermission: { _ in true },
             loadBlankNavigation: { _ in
@@ -863,7 +968,7 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
         var restoreReceiptReturned = false
 
         let owner = WebsiteDataCleanupTransaction(
-            browserRuntimeContext: { fixture.context },
+            runtimeTabs: { [fixture.tab] },
             liveWebViews: { _ in [fixture.webView] },
             waitForMutationPermission: { _ in true },
             loadBlankNavigation: { _ in
@@ -941,7 +1046,7 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
         var didDelete = false
 
         let owner = WebsiteDataCleanupTransaction(
-            browserRuntimeContext: { fixture.context },
+            runtimeTabs: { [fixture.tab] },
             liveWebViews: { _ in
                 discoveryCount += 1
                 return []
@@ -988,7 +1093,7 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
         var restoreCount = 0
 
         let owner = WebsiteDataCleanupTransaction(
-            browserRuntimeContext: { fixture.context },
+            runtimeTabs: { [fixture.tab] },
             liveWebViews: { _ in liveWebViews },
             waitForMutationPermission: { _ in true },
             loadBlankNavigation: { _ in
@@ -1052,7 +1157,7 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
         var quiescedProfileIDs: Set<UUID> = []
         var didDelete = false
         let owner = WebsiteDataCleanupTransaction(
-            browserRuntimeContext: { fixture.context },
+            runtimeTabs: { [fixture.tab] },
             liveWebViews: { _ in [] },
             waitForMutationPermission: { _ in true },
             restoreTab: { _, _ in
@@ -1080,14 +1185,13 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
         let fixture = makeFixture()
         var didDelete = false
         let owner = WebsiteDataCleanupTransaction(
-            browserRuntimeContext: { fixture.context },
+            runtimeTabs: { nil },
             liveWebViews: { _ in [fixture.webView] },
             waitForMutationPermission: { _ in true },
             restoreTab: { _, _ in
                 XCTFail("Unresolved runtime participants must fail before restore")
                 return .init(outcome: .failed, semanticRevision: nil)
-            },
-            runtimeTabs: { nil }
+            }
         )
 
         let didComplete = await owner.performDestructiveDataCleanup(
@@ -1106,7 +1210,7 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
         var barrierStarted = false
         var didDelete = false
         let owner = WebsiteDataCleanupTransaction(
-            browserRuntimeContext: { fixture.context },
+            runtimeTabs: { [fixture.tab] },
             liveWebViews: { _ in [] },
             waitForMutationPermission: { _ in true },
             restoreTab: { _, _ in
@@ -1154,26 +1258,11 @@ final class WebsiteDataCleanupTransactionTests: XCTestCase {
         tab.profileId = profileID
         let webView = WKWebView()
         tab.replaceUntrackedWebView(webView)
-        let context = WebViewCoordinatorBrowserRuntimeContext(
-            tab: { id in id == tab.id ? tab : nil },
-            regularTabs: { [tab] in [tab] },
-            pinnedTabs: { [] },
-            allWindows: { [] },
-            window: { _ in nil },
-            windowContaining: { _ in nil },
-            currentTab: { _ in nil },
-            selectTab: { _, _ in },
-            handleUnprotectedWebViewDidClose: { _ in false },
-            refreshCompositor: { _ in },
-            notifyTabActivatedIfLoaded: { _ in },
-            globallyVisibleTabIDs: { [] }
-        )
         return CleanupFixture(
             profileID: profileID,
             targetURL: targetURL,
             tab: tab,
-            webView: webView,
-            context: context
+            webView: webView
         )
     }
 
@@ -1200,7 +1289,6 @@ private struct CleanupFixture {
     let targetURL: URL
     let tab: Tab
     let webView: WKWebView
-    let context: WebViewCoordinatorBrowserRuntimeContext
 }
 
 @MainActor

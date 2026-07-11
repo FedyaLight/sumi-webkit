@@ -72,11 +72,11 @@ final class BrowserSettingsAttachmentCoordinatorTests: XCTestCase {
 
         coordinator.attach(harness.settings)
         await waitUntil {
-            harness.backgroundMediaAvailabilityReadCount == 1
+            harness.backgroundMediaEnergySaverReadCount == 1
                 && harness.automaticCleanupRetentionReadCount == 1
         }
 
-        XCTAssertEqual(harness.backgroundMediaAvailabilityReadCount, 1)
+        XCTAssertEqual(harness.backgroundMediaEnergySaverReadCount, 1)
         XCTAssertEqual(harness.appliedStartupModes, [.nothing])
         XCTAssertEqual(harness.automaticCleanupRetentionReadCount, 1)
     }
@@ -86,18 +86,18 @@ final class BrowserSettingsAttachmentCoordinatorTests: XCTestCase {
         let coordinator = harness.makeCoordinator()
         coordinator.attach(harness.settings)
         await waitUntil {
-            harness.backgroundMediaAvailabilityReadCount == 1
+            harness.backgroundMediaEnergySaverReadCount == 1
                 && harness.automaticCleanupRetentionReadCount == 1
         }
 
         coordinator.attach(nil)
         await waitUntil {
-            harness.backgroundMediaAvailabilityReadCount == 2
+            harness.backgroundMediaEnergySaverReadCount == 2
                 && harness.automaticCleanupRetentionReadCount == 2
         }
 
         XCTAssertNil(harness.downloadManager.settings)
-        XCTAssertEqual(harness.backgroundMediaAvailabilityReadCount, 2)
+        XCTAssertEqual(harness.backgroundMediaEnergySaverReadCount, 2)
         XCTAssertEqual(harness.automaticCleanupRetentionReadCount, 2)
         // Startup policy intentionally applies at most once per process.
         XCTAssertEqual(harness.appliedStartupModes, [.nothing])
@@ -112,7 +112,7 @@ final class BrowserSettingsAttachmentCoordinatorTests: XCTestCase {
         let settings: SumiSettingsService
         private let startupWindowState = BrowserWindowState()
         private var defaultsSuiteNames: [String] = []
-        private(set) var backgroundMediaAvailabilityReadCount = 0
+        private(set) var backgroundMediaEnergySaverReadCount = 0
         private(set) var appliedStartupModes: [SumiStartupMode] = []
         private(set) var automaticCleanupRetentionReadCount = 0
 
@@ -127,12 +127,11 @@ final class BrowserSettingsAttachmentCoordinatorTests: XCTestCase {
             )
             backgroundMedia.attach(
                 runtime: SumiBackgroundMediaOptimizationRuntime(
-                    webViewRuntimeAvailable: { [weak self] in
-                        self?.backgroundMediaAvailabilityReadCount += 1
+                    liveWebViewEntries: { _ in [] },
+                    energySaverActive: { [weak self] in
+                        self?.backgroundMediaEnergySaverReadCount += 1
                         return false
                     },
-                    liveWebViewEntries: { _ in [] },
-                    energySaverActive: { false },
                     allKnownTabs: { [] },
                     visibleTabIDsByWindow: { [:] }
                 )

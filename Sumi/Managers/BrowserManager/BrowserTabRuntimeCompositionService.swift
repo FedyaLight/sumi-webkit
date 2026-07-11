@@ -14,7 +14,6 @@ enum BrowserTabRuntimeCompositionService {
         let incrementTabStructuralRevision: @MainActor () -> Void
         let scheduleTabSuspensionReconcile: @MainActor (_ reason: String) -> Void
         let scheduleBackgroundMediaReconcile: @MainActor (_ reason: String) -> Void
-        let webViewRuntimeAvailable: @MainActor () -> Bool
         let trackedWebViewEntries: @MainActor (Tab) -> [
             (windowID: UUID, webView: WKWebView)
         ]
@@ -88,9 +87,6 @@ enum BrowserTabRuntimeCompositionService {
         dependencies: Dependencies
     ) -> SumiBackgroundMediaOptimizationRuntime {
         SumiBackgroundMediaOptimizationRuntime(
-            webViewRuntimeAvailable: {
-                dependencies.webViewRuntimeAvailable()
-            },
             liveWebViewEntries: { tab in
                 dependencies.trackedWebViewEntries(tab).map {
                     (windowID: Optional($0.windowID), webView: $0.webView)
@@ -115,7 +111,9 @@ extension BrowserTabRuntimeCompositionService.Dependencies {
     static func live(browserManager: BrowserManager) -> Self {
         let tabSuspensionController = browserManager.tabSuspensionController
         let shellRuntime = browserManager.shellRuntime
-        let suspensionWebViewOwnership = browserManager.webViewOwnershipQuery
+        let suspensionWebViewOwnership = browserManager.webViewRuntime.ownershipQuery
+        let webViewLifecycle = browserManager.webViewRuntime.lifecycleService
+        let webViewProtection = browserManager.webViewRuntime.protectionRuntime
         let regularTabs = browserManager.tabManager.tabCollectionMembershipOwner
         let lazyRestore = browserManager.tabManager.lazyRestoreCoordinator
         let windowTabs = browserManager.shellRuntime.windowTabs
@@ -131,19 +129,17 @@ extension BrowserTabRuntimeCompositionService.Dependencies {
                         windowTabs: windowTabs,
                         splitQuery: splitQuery,
                         webView: TabSuspensionWebViewRuntime(
-                            isAvailable: {
-                                shellRuntime.webViewCoordinator != nil
-                            },
                             liveWebViews: { tab in
                                 suspensionWebViewOwnership.suspensionLiveWebViews(for: tab)
                             },
                             suspendWebViews: { tab, reason in
-                                shellRuntime.webViewCoordinator?.lifecycleService
-                                    .suspendWebViews(for: tab, reason: reason) ?? false
+                                webViewLifecycle.suspendWebViews(
+                                    for: tab,
+                                    reason: reason
+                                )
                             },
                             isProtectedFromCompositorMutation: { webView in
-                                shellRuntime.webViewCoordinator?.protectionRuntime
-                                    .isProtected(webView) ?? false
+                                webViewProtection.isProtected(webView)
                             }
                         )
                     )
@@ -164,14 +160,10 @@ extension BrowserTabRuntimeCompositionService.Dependencies {
                     reason: reason
                 )
             },
-            webViewRuntimeAvailable: { [weak browserManager] in
-                browserManager?.webViewCoordinator != nil
-            },
-            trackedWebViewEntries: { [weak browserManager] tab in
-                guard let browserManager else { return [] }
-                return browserManager.webViewOwnershipQuery.windowIDs(for: tab.id)
+            trackedWebViewEntries: { [suspensionWebViewOwnership] tab in
+                suspensionWebViewOwnership.windowIDs(for: tab.id)
                     .compactMap { windowID in
-                        browserManager.webViewOwnershipQuery.webView(
+                        suspensionWebViewOwnership.webView(
                             for: tab.id,
                             in: windowID
                         ).map { (windowID: windowID, webView: $0) }

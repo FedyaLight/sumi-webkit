@@ -245,13 +245,6 @@ final class SumiWebRuntimeSmokeTests: XCTestCase {
     }
 
     @MainActor
-    func testRuntimeContextStoreStartsEmpty() {
-        let store = WebViewRuntimeContextStore()
-        XCTAssertNil(store.environment)
-        XCTAssertNil(store.browser)
-    }
-
-    @MainActor
     func testCompositorHandoffStateStoresPromotedHostAsProtocol() {
         final class StubHost: WebRuntimePromotedHost {
             let tabID = UUID()
@@ -917,7 +910,7 @@ final class SumiWebRuntimeSmokeTests: XCTestCase {
             webViewSessions: registry,
             visibleWebViewRuntimeOwner: visible,
             mediaProtectionOwner: media,
-            browserRuntimeContext: { nil },
+            tabForID: { _ in nil },
             isWebViewProtectedFromCompositorMutation: { _ in false },
             enqueueDeferredProtectedCommand: { _, _, _ in false },
             cleanupUnprotectedTrackedWebView: { _, _, _ in },

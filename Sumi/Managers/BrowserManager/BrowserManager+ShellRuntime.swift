@@ -1,18 +1,8 @@
 import Foundation
 
 extension BrowserManager {
-    /// Shared with app shell / `ContentView` via `.environment`; retained strongly so routing never sees a dangling coordinator.
-    /// After `SumiApp.setupApplicationLifecycle` runs, this must be set before any WebView routing or coordinator cleanup.
-    var webViewCoordinator: WebViewCoordinator? {
-        get { shellRuntime.webViewCoordinator }
-        set { shellRuntime.bindWebViewCoordinator(newValue) }
-    }
-
-    var webViewOwnershipService: WebViewOwnershipService? {
-        shellRuntime.webViewCoordinator?.ownershipService
-    }
-
-    /// Use for cleanup and cross-window operations; fails fast if the coordinator was not wired (e.g. tests forgot to assign `webViewCoordinator`).
+    /// App-shell registry attachment remains late because windows are created
+    /// after the process-lifetime browser and WebView runtimes.
     var windowRegistry: WindowRegistry? {
         get { shellRuntime.windowRegistry }
         set { shellRuntime.bindWindowRegistry(newValue) }

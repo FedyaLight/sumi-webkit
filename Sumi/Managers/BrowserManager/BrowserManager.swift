@@ -58,6 +58,11 @@ class BrowserManager: ObservableObject {
     }
     weak var keyboardShortcutManager: KeyboardShortcutManager?
     let liveFolderManager = SumiLiveFolderManager()
+    /// Canonical process-lifetime WebView service graph. It shares the same
+    /// session repository as every Tab created by this browser kernel.
+    private(set) lazy var webViewRuntime = BrowserWebViewRuntimeFactory.make(
+        for: self
+    )
     private(set) lazy var splitComposition = BrowserSplitServices.live(
         browserManager: self
     )
@@ -94,53 +99,44 @@ class BrowserManager: ObservableObject {
         tabManager: tabManager,
         splitQuery: splitComposition.query,
         glanceManager: glanceManager,
-        webViewSessions: webViewSessions
-    )
-    lazy var webViewOwnershipQuery = WebViewOwnershipQuery(
-        webViewSessions: webViewSessions
-    )
-    lazy var webViewRoutingService = BrowserWebViewRoutingService(
-        tabLookup: { [weak self] tabId in
-            self?.tabManager.tabCollectionMembershipOwner.tab(for: tabId)
-        },
         webViewSessions: webViewSessions,
-        ownershipQuery: webViewOwnershipQuery,
-        commandsProvider: { [weak self] in
-            self?.shellRuntime.webViewCoordinator.map(
-                BrowserWebViewRoutingService.Commands.live
-            )
-        }
+        webViewOwnership: webViewRuntime.ownershipService,
+        webViewProtection: webViewRuntime.protectionRuntime,
+        webViewCompositor: webViewRuntime.compositorRuntime,
+        visibleWebViewPreparation: webViewRuntime.visiblePreparationService,
+        webViewLifecycle: webViewRuntime.lifecycleService
     )
+    lazy var webViewRoutingService: BrowserWebViewRoutingService = {
+        let webViewRuntime = self.webViewRuntime
+        return BrowserWebViewRoutingService(
+            tabLookup: { [weak self] tabId in
+                self?.tabManager.tabCollectionMembershipOwner.tab(for: tabId)
+            },
+            webViewSessions: webViewSessions,
+            ownershipQuery: webViewRuntime.ownershipQuery,
+            commands: BrowserWebViewRoutingService.Commands.live(
+                navigationBroadcast: webViewRuntime.navigationBroadcastOwner,
+                processRecovery: webViewRuntime.processRecoveryService,
+                ownership: webViewRuntime.ownershipService,
+                rebuild: webViewRuntime.rebuildService
+            )
+        )
+    }()
     let windowSessionPersistence: WindowSessionPersistenceRuntime
     let startupSessionRestoreOwner: BrowserStartupSessionRestoreOwner
     let auxiliaryWindowTeardownRegistry: AuxiliaryWindowTeardownRegistry
-    lazy var auxiliaryWindows: BrowserAuxiliaryWindowComposition = {
-        let composition = BrowserAuxiliaryWindowComposition(
-            windowRegistry: { [weak shellRuntime] in shellRuntime?.windowRegistry },
-            currentProfile: { [weak tabManager] in tabManager?.runtimePorts?.currentProfileId },
-            spaces: tabManager.spaceStateOwner,
-            tabContext: shellRuntime.windowTabs,
-            transientTabs: tabManager.transientWebKitTabLifecycleOwner,
-            webViewOwnership: { [weak shellRuntime] in
-                shellRuntime?.webViewCoordinator?.ownershipService
-            },
-            extensions: optionalModules.extensions,
-            popupPermissions: permissionRuntime.popupPermissionBridge,
-            filePickerPermissions: permissionRuntime.filePickerPermissionBridge,
-            mutationAdmission: { [weak shellRuntime] in
-                shellRuntime?.webViewCoordinator?.websiteDataCleanupService
-            }
-        )
-        auxiliaryWindowTeardownRegistry.register(composition.teardown)
-        return composition
-    }()
+    lazy var auxiliaryWindows = BrowserAuxiliaryWindowCompositionFactory.make(
+        browserManager: self,
+        teardownRegistry: auxiliaryWindowTeardownRegistry
+    )
     let glanceManager: GlanceManager
     lazy var shutdownCleanupService = BrowserShutdownCleanupService(
         extensions: optionalModules.extensions,
         auxiliaryWindows: auxiliaryWindowTeardownRegistry,
         glance: glanceManager,
         tabs: tabManager,
-        shell: shellRuntime
+        webViewLifecycle: webViewRuntime.lifecycleService,
+        windowRegistry: { [weak shellRuntime] in shellRuntime?.windowRegistry }
     )
     private(set) var startupProtectionRuntime: BrowserStartupProtectionRuntime!
 
@@ -148,7 +144,7 @@ class BrowserManager: ObservableObject {
     init(kernel graph: BrowserKernelGraph) {
         precondition(
             graph.tabManager.tabFactory.webViewSessions === graph.webViewSessions,
-            "Browser kernel must give TabManager and WebViewCoordinator one canonical WebView session repository"
+            "Browser kernel must give TabManager and WebView runtime one canonical WebView session repository"
         )
         let auxiliaryWindowTeardownRegistry = AuxiliaryWindowTeardownRegistry()
         let glanceManager = GlanceManager()
@@ -183,6 +179,7 @@ class BrowserManager: ObservableObject {
         self.permissionRuntime = graph.permissionRuntime
         self.auxiliaryWindowTeardownRegistry = auxiliaryWindowTeardownRegistry
         self.glanceManager = glanceManager
+        _ = webViewRuntime
         _ = shellRuntime
         _ = shutdownCleanupService
         self.startupProtectionRuntime = BrowserStartupProtectionRuntime(browserManager: self)

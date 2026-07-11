@@ -42,20 +42,21 @@ final class TabSuspensionArchitectureTests: XCTestCase {
         XCTAssertEqual(harness.policyReadCount, 0)
         XCTAssertEqual(harness.selectedTabIDsReadCount, 0)
         XCTAssertEqual(harness.allKnownTabsReadCount, 0)
-        XCTAssertEqual(harness.webViewRuntimeAvailabilityReadCount, 0)
     }
 
-    func testMemoryPressureWithoutWebViewRuntimeDoesNotReadBroadRuntimeSnapshots() {
+    func testMemoryPressureWithNoLiveWebViewsEvaluatesRuntimeWithoutSuspending() {
         let harness = TabSuspensionHarness()
+        let tab = makeTab(path: "no-live-webviews")
+        harness.tabs = [tab]
         harness.resetReadCounts()
 
         harness.memoryMonitor.emit(.warning)
 
-        XCTAssertEqual(harness.webViewRuntimeAvailabilityReadCount, 1)
-        XCTAssertEqual(harness.policyReadCount, 0)
-        XCTAssertEqual(harness.allKnownTabsReadCount, 0)
-        XCTAssertEqual(harness.selectedTabIDsReadCount, 0)
-        XCTAssertEqual(harness.visibleTabIDsByWindowReadCount, 0)
+        XCTAssertEqual(harness.policyReadCount, 1)
+        XCTAssertEqual(harness.allKnownTabsReadCount, 1)
+        XCTAssertEqual(harness.selectedTabIDsReadCount, 1)
+        XCTAssertEqual(harness.visibleTabIDsByWindowReadCount, 1)
+        XCTAssertFalse(tab.suspensionState.isSuspended)
         XCTAssertEqual(harness.refreshedLazyRestoreContexts.count, 0)
     }
 
@@ -102,7 +103,6 @@ final class TabSuspensionArchitectureTests: XCTestCase {
                     visibleTabIDsByWindow: { [:] }
                 ),
                 webView: TabSuspensionWebViewRuntime(
-                    isAvailable: { true },
                     liveWebViews: { _ in [webView] },
                     suspendWebViews: { _, reason in
                         commitProbe.reasons.append(reason)
@@ -175,7 +175,6 @@ final class TabSuspensionArchitectureTests: XCTestCase {
                     visibleTabIDsByWindow: { [UUID(): visibleTabIDs] }
                 ),
                 webView: TabSuspensionWebViewRuntime(
-                    isAvailable: { true },
                     liveWebViews: { _ in [webView] },
                     suspendWebViews: { _, _ in true },
                     isProtectedFromCompositorMutation: { _ in false }
@@ -229,7 +228,6 @@ private final class TabSuspensionHarness {
     var selectedTabIDs: Set<UUID> = []
     var visibleTabIDsByWindow: [UUID: Set<UUID>] = [:]
     private(set) var refreshedLazyRestoreContexts: [TabSuspensionEvaluationContext] = []
-    private(set) var webViewRuntimeAvailabilityReadCount = 0
     private(set) var policyReadCount = 0
     private(set) var allKnownTabsReadCount = 0
     private(set) var selectedTabIDsReadCount = 0
@@ -271,10 +269,6 @@ private final class TabSuspensionHarness {
                     }
                 ),
                 webView: TabSuspensionWebViewRuntime(
-                    isAvailable: { [weak self] in
-                        self?.webViewRuntimeAvailabilityReadCount += 1
-                        return false
-                    },
                     liveWebViews: { _ in [] },
                     suspendWebViews: { _, _ in false },
                     isProtectedFromCompositorMutation: { _ in false }
@@ -294,7 +288,6 @@ private final class TabSuspensionHarness {
 
     func resetReadCounts() {
         refreshedLazyRestoreContexts.removeAll()
-        webViewRuntimeAvailabilityReadCount = 0
         policyReadCount = 0
         allKnownTabsReadCount = 0
         selectedTabIDsReadCount = 0

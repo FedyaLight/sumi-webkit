@@ -10,18 +10,18 @@ final class WebViewVisibilityRuntime {
     private let visibleRuntime: VisibleWebViewRuntimeOwner
     private let materialization: TabWebViewMaterializationService
     private let runtimeAssembler: WebViewRuntimeAssembler
-    private let runtimeContextStore: WebViewRuntimeContextStore
+    private let globallyVisibleTabIDs: @MainActor () -> Set<UUID>
 
     init(
         visibleRuntime: VisibleWebViewRuntimeOwner,
         materialization: TabWebViewMaterializationService,
         runtimeAssembler: WebViewRuntimeAssembler,
-        runtimeContextStore: WebViewRuntimeContextStore
+        globallyVisibleTabIDs: @escaping @MainActor () -> Set<UUID>
     ) {
         self.visibleRuntime = visibleRuntime
         self.materialization = materialization
         self.runtimeAssembler = runtimeAssembler
-        self.runtimeContextStore = runtimeContextStore
+        self.globallyVisibleTabIDs = globallyVisibleTabIDs
     }
 
     func visiblePreparationRuntime() -> VisibleWebViewPreparationRuntime {
@@ -72,14 +72,10 @@ final class WebViewVisibilityRuntime {
         in windowID: UUID,
         visibleTabIDs: Set<UUID>
     ) {
-        let runtimeContext = runtimeContextStore.requireBrowser()
         runtimeAssembler.evictHiddenWebViews(
             in: windowID,
             visibleTabIDs: visibleTabIDs,
-            globallyVisibleTabIDs: {
-                runtimeContext.globallyVisibleTabIDs()
-            },
-            runtimeContext: runtimeContext
+            globallyVisibleTabIDs: globallyVisibleTabIDs
         )
     }
 }

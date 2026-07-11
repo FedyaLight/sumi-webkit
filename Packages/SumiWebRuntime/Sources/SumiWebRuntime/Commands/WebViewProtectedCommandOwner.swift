@@ -492,12 +492,16 @@ public final class WebViewProtectedCommandOwner {
 
         switch enqueueResult.outcome {
         case .enqueued:
-            SumiWebRuntimeDiagnostics.emitPerformanceEvent("WebViewCoordinator.enqueueDeferredProtectedCommand")
+            SumiWebRuntimeDiagnostics.emitPerformanceEvent(
+                "WebViewProtectedCommandOwner.enqueueDeferredProtectedCommand"
+            )
             SumiWebRuntimeDiagnostics.protectedWebViewTrace(
                 "enqueueDeferredCommand reason=\(reason) sourceWebView=\(sourceWebViewID) command={\(command.debugSummary)} count=\(enqueueResult.queuedCommandCount)"
             )
         case .collapsed:
-            SumiWebRuntimeDiagnostics.emitPerformanceEvent("WebViewCoordinator.collapseDeferredProtectedCommand")
+            SumiWebRuntimeDiagnostics.emitPerformanceEvent(
+                "WebViewProtectedCommandOwner.collapseDeferredProtectedCommand"
+            )
             SumiWebRuntimeDiagnostics.protectedWebViewTrace(
                 "collapseDeferredCommand reason=\(reason) sourceWebView=\(sourceWebViewID) command={\(command.debugSummary)} count=\(enqueueResult.queuedCommandCount)"
             )
