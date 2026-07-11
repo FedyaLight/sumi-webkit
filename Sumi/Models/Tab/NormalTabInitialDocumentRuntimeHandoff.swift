@@ -229,7 +229,24 @@ enum NormalTabInitialDocumentRuntimeHandoff {
     ) -> Bool {
         guard let tab, let webView else { return false }
         return tab.isCurrentMainFrameNavigationRevision(intentRevision)
-            && tab.webViewSession.residence(of: webView) == expectedResidence
+            && isCompatibleResidence(
+                tab.webViewSession.residence(of: webView),
+                withScheduledResidence: expectedResidence
+            )
+    }
+
+    private static func isCompatibleResidence(
+        _ currentResidence: WebViewResidence?,
+        withScheduledResidence scheduledResidence: WebViewResidence
+    ) -> Bool {
+        switch (scheduledResidence, currentResidence) {
+        case let (.untracked(scheduledTabID), .untracked(currentTabID)):
+            return currentTabID == scheduledTabID
+        case let (.untracked(scheduledTabID), .window(currentOwner)):
+            return currentOwner.tabID == scheduledTabID
+        default:
+            return currentResidence == scheduledResidence
+        }
     }
 
     private static func load(_ targetURL: URL, on webView: WKWebView) -> WKNavigation? {
