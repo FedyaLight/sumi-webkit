@@ -132,7 +132,7 @@ final class WebViewOwnershipService:
         if let existing = query.anyLiveWebView(for: tab) {
             return .available(existing)
         }
-        let semanticRevision = tab.currentMainFrameNavigationIntent().revision
+        let semanticRevision = tab.mainFrameLoads.currentIntent.revision
         if websiteDataCleanup.permitsInternalSubmission(
             tabID: tab.id,
             semanticRevision: semanticRevision
@@ -269,7 +269,7 @@ final class WebViewOwnershipService:
         windowID: UUID,
         replay: (@MainActor () -> Void)? = nil
     ) -> Bool {
-        let semanticRevision = tab.currentMainFrameNavigationIntent().revision
+        let semanticRevision = tab.mainFrameLoads.currentIntent.revision
         guard websiteDataCleanup.permitsInternalSubmission(
             tabID: tab.id,
             semanticRevision: semanticRevision

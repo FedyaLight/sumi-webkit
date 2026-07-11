@@ -39,7 +39,7 @@ final class WebsiteDataCleanupService: SumiDestructiveBrowsingDataCleanupPrepari
                 }
                 let semanticRevision = outcome == .failed
                     ? nil
-                    : tab.currentMainFrameNavigationIntent().revision
+                    : tab.mainFrameLoads.currentIntent.revision
                 if let semanticRevision {
                     admissionGate.authorizeRestoreSubmission(
                         tabID: tab.id,
@@ -155,7 +155,7 @@ final class WebsiteDataCleanupService: SumiDestructiveBrowsingDataCleanupPrepari
         for tab: Tab,
         replay: @escaping @MainActor () -> Void
     ) -> Bool {
-        let semanticRevision = tab.currentMainFrameNavigationIntent().revision
+        let semanticRevision = tab.mainFrameLoads.currentIntent.revision
         guard permitsInternalSubmission(
             tabID: tab.id,
             semanticRevision: semanticRevision

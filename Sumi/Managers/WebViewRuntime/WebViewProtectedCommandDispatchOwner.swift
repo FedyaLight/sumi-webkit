@@ -217,7 +217,7 @@ final class WebViewProtectedCommandDispatchOwner {
                   dependencies.webViewSessions.trackedOwner(with: webViewID)
                     == TrackedWebViewOwner(tabID: tabID, windowID: windowID),
                   let tab = resolvedTab(with: tabID),
-                  tab.isCurrentMainFrameNavigationIntent(
+                  tab.mainFrameLoads.isCurrent(
                       revision: intent.revision,
                       targetURL: intent.targetURL
                   ) else {
@@ -246,7 +246,7 @@ final class WebViewProtectedCommandDispatchOwner {
                   dependencies.webViewSessions.trackedOwner(with: webViewID)
                     == TrackedWebViewOwner(tabID: tabID, windowID: windowID),
                   let tab = resolvedTab(with: tabID),
-                  tab.isCurrentMainFrameNavigationIntent(
+                  tab.mainFrameLoads.isCurrent(
                       revision: intent.revision,
                       targetURL: intent.targetURL
                   ) else {

@@ -15,7 +15,7 @@ final class TabMainFrameRuntimeTransactionTests: XCTestCase {
         let authorityNavigationID = ObjectIdentifier(authorityNavigation)
 
         let authorityLease = try XCTUnwrap(
-            tab.claimDirectMainFrameLoadLease(on: authorityWebView)
+            tab.mainFrameLoads.claimDirectSubmission(on: authorityWebView)
         )
         XCTAssertTrue(tab.bindSubmittedMainFrameLoad(
             on: authorityWebView,
@@ -24,7 +24,7 @@ final class TabMainFrameRuntimeTransactionTests: XCTestCase {
             matching: authorityLease
         ))
         let submittedLease = try XCTUnwrap(
-            tab.claimDirectMainFrameLoadLease(on: submittedWebView)
+            tab.mainFrameLoads.claimDirectSubmission(on: submittedWebView)
         )
 
         let abortResult = tab.abortMainFrameNavigation(
@@ -67,7 +67,7 @@ final class TabMainFrameRuntimeTransactionTests: XCTestCase {
         let navigation = NSObject()
         let navigationID = ObjectIdentifier(navigation)
 
-        let lease = try XCTUnwrap(tab.claimDirectMainFrameLoadLease(on: webView))
+        let lease = try XCTUnwrap(tab.mainFrameLoads.claimDirectSubmission(on: webView))
         XCTAssertTrue(tab.bindSubmittedMainFrameLoad(
             on: webView,
             navigationID: navigationID,
@@ -87,9 +87,9 @@ final class TabMainFrameRuntimeTransactionTests: XCTestCase {
         tab.rollbackMainFrameNavigationAfterFailedSubmission(on: nil)
 
         XCTAssertEqual(tab.url, committedURL)
-        XCTAssertNil(tab.currentMainFrameNavigationIntent(matching: failedURL))
+        XCTAssertNil(tab.mainFrameLoads.currentIntent(matching: failedURL))
         let rollbackIntent = try XCTUnwrap(
-            tab.currentMainFrameNavigationIntent(matching: committedURL)
+            tab.mainFrameLoads.currentIntent(matching: committedURL)
         )
         XCTAssertEqual(rollbackIntent.revision, failedIntent.revision + 1)
         XCTAssertNil(tab.committedDocumentRuntime.lease(for: webView))
@@ -103,7 +103,7 @@ final class TabMainFrameRuntimeTransactionTests: XCTestCase {
         let crashedNavigation = NSObject()
         let crashedNavigationID = ObjectIdentifier(crashedNavigation)
 
-        let crashedLease = try XCTUnwrap(tab.claimDirectMainFrameLoadLease(on: webView))
+        let crashedLease = try XCTUnwrap(tab.mainFrameLoads.claimDirectSubmission(on: webView))
         XCTAssertTrue(tab.bindSubmittedMainFrameLoad(
             on: webView,
             navigationID: crashedNavigationID,
@@ -121,7 +121,7 @@ final class TabMainFrameRuntimeTransactionTests: XCTestCase {
         XCTAssertTrue(tab.requiresWebContentProcessRecovery(on: webView))
 
         let successorLease = try XCTUnwrap(
-            tab.claimDirectMainFrameLoadLease(on: webView)
+            tab.mainFrameLoads.claimDirectSubmission(on: webView)
         )
         let successorNavigation = NSObject()
         XCTAssertTrue(tab.bindSubmittedMainFrameLoad(
@@ -143,7 +143,7 @@ final class TabMainFrameRuntimeTransactionTests: XCTestCase {
         transaction.committedDocumentRuntime.attachSuspensionEffects(effects)
         _ = transaction.beginExplicitIntent(to: targetURL)
         let submission = try XCTUnwrap(
-            transaction.claimDirectSubmission(on: webView)
+            transaction.mainFrameLoads.claimDirectSubmission(on: webView)
         )
         let navigation = NSObject()
         let navigationID = ObjectIdentifier(navigation)
@@ -215,7 +215,7 @@ final class TabMainFrameRuntimeTransactionTests: XCTestCase {
         transaction.committedDocumentRuntime.attachSuspensionEffects(effects)
         _ = transaction.beginExplicitIntent(to: targetURL)
         let submission = try XCTUnwrap(
-            transaction.claimDirectSubmission(on: webView)
+            transaction.mainFrameLoads.claimDirectSubmission(on: webView)
         )
         let navigation = NSObject()
         let navigationID = ObjectIdentifier(navigation)

@@ -38,7 +38,7 @@ final class WebViewNavigationBroadcastOwner {
             webViews: webViewSessions.webViews(for: tabId),
             originatingWebView: originatingWebView,
             hasPendingTarget: { webView, targetURL in
-                concreteTab.hasOutstandingMainFrameLoad(
+                concreteTab.mainFrameLoads.hasOutstandingLoad(
                     on: webView,
                     targetURL: targetURL
                 )
@@ -49,9 +49,9 @@ final class WebViewNavigationBroadcastOwner {
             deferProtectedTarget: { [webViewSessions, deferProtectedNavigation] webView in
                 guard case .window(let owner) = webViewSessions.residence(of: webView),
                       owner.tabID == tabId,
-                      let navigationIntent = concreteTab.currentMainFrameNavigationIntent(
+                      let navigationIntent = concreteTab.mainFrameLoads.currentIntent(
                           matching: url
-                      ), concreteTab.markDeferredMainFrameLoad(
+                      ), concreteTab.mainFrameLoads.markDeferredLoad(
                           on: webView,
                           intent: navigationIntent
                       ) else {
@@ -73,13 +73,13 @@ final class WebViewNavigationBroadcastOwner {
                 case .scheduled:
                     return .deferred
                 case .notProtected:
-                    concreteTab.clearDeferredMainFrameLoad(
+                    concreteTab.mainFrameLoads.clearDeferredLoad(
                         on: webView,
                         intent: navigationIntent
                     )
                     return .executeNow
                 case .invalidTarget, .droppedAtCapacity:
-                    concreteTab.clearDeferredMainFrameLoad(
+                    concreteTab.mainFrameLoads.clearDeferredLoad(
                         on: webView,
                         intent: navigationIntent
                     )
@@ -102,7 +102,7 @@ final class WebViewNavigationBroadcastOwner {
         policy: WebRuntimeMainFrameReloadPolicy
     ) {
         guard let concreteTab = tab.concreteTab,
-              concreteTab.isCurrentMainFrameNavigationIntent(intent) else {
+              concreteTab.mainFrameLoads.isCurrent(intent) else {
             return
         }
         let tabId = tab.id
@@ -116,7 +116,7 @@ final class WebViewNavigationBroadcastOwner {
                 guard let concreteTab,
                       case .window(let owner) = webViewSessions.residence(of: webView),
                       owner.tabID == tabId,
-                      concreteTab.markDeferredMainFrameLoad(
+                      concreteTab.mainFrameLoads.markDeferredLoad(
                           on: webView,
                           intent: intent
                       ) else {
@@ -139,13 +139,13 @@ final class WebViewNavigationBroadcastOwner {
                 case .scheduled:
                     return .deferred
                 case .notProtected:
-                    concreteTab.clearDeferredMainFrameLoad(
+                    concreteTab.mainFrameLoads.clearDeferredLoad(
                         on: webView,
                         intent: intent
                     )
                     return .executeNow
                 case .invalidTarget, .droppedAtCapacity:
-                    concreteTab.clearDeferredMainFrameLoad(
+                    concreteTab.mainFrameLoads.clearDeferredLoad(
                         on: webView,
                         intent: intent
                     )
@@ -171,7 +171,7 @@ final class WebViewNavigationBroadcastOwner {
         policy: WebRuntimeMainFrameReloadPolicy
     ) -> TabMainFrameReloadCommandOutcome {
         guard let concreteTab = tab.concreteTab,
-              concreteTab.isCurrentMainFrameNavigationIntent(intent) else {
+              concreteTab.mainFrameLoads.isCurrent(intent) else {
             return .failed
         }
         guard let webView = webViewSessions.webView(for: tab.id, in: windowId) else {
@@ -181,11 +181,11 @@ final class WebViewNavigationBroadcastOwner {
             RuntimeDiagnostics.protectedWebViewTrace(
                 "deferReloadProtected webView=\(ObjectIdentifier(webView)) tab=\(tab.id.uuidString.prefix(8)) window=\(windowId.uuidString.prefix(8))"
             )
-            guard concreteTab.markDeferredMainFrameLoad(
+            guard concreteTab.mainFrameLoads.markDeferredLoad(
                 on: webView,
                 intent: intent
             ) else {
-                return concreteTab.hasOutstandingMainFrameLoad(
+                return concreteTab.mainFrameLoads.hasOutstandingLoad(
                     on: webView,
                     targetURL: intent.targetURL
                 ) ? .scheduled : .failed
@@ -207,12 +207,12 @@ final class WebViewNavigationBroadcastOwner {
             case .scheduled:
                 return .scheduled
             case .notProtected:
-                concreteTab.clearDeferredMainFrameLoad(
+                concreteTab.mainFrameLoads.clearDeferredLoad(
                     on: webView,
                     intent: intent
                 )
             case .invalidTarget, .droppedAtCapacity:
-                concreteTab.clearDeferredMainFrameLoad(
+                concreteTab.mainFrameLoads.clearDeferredLoad(
                     on: webView,
                     intent: intent
                 )

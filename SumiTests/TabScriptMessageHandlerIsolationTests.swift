@@ -511,7 +511,7 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
     private func establishCommittedDocument(on webView: WKWebView, for tab: Tab) {
         let url = webView.url ?? URL(string: "about:blank")!
         _ = tab.beginMainFrameNavigationIntent(to: url)
-        guard let submission = tab.claimDirectMainFrameLoadLease(on: webView) else {
+        guard let submission = tab.mainFrameLoads.claimDirectSubmission(on: webView) else {
             return XCTFail("Expected a physical main-frame submission lease")
         }
         let navigation = NSObject()

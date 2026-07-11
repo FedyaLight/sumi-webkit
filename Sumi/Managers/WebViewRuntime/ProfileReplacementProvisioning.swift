@@ -16,7 +16,7 @@ struct ProfileReplacementProvisioning {
         var prepared: [PreparedWebViewReplacement] = []
         for tab in tabs {
             guard let snapshot = liveSnapshots[tab.id] else { continue }
-            let navigationIntent = tab.currentMainFrameNavigationIntent()
+            let navigationIntent = tab.mainFrameLoads.currentIntent
             guard let replacement = prepare(
                 tab: tab,
                 snapshot: snapshot,

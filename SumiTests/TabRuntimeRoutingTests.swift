@@ -101,13 +101,13 @@ final class TabRuntimeRoutingTests: XCTestCase {
         let intent = tab.beginMainFrameNavigationIntent(to: targetURL)
         let authorityNavigation = NSObject()
         let replicaNavigation = NSObject()
-        XCTAssertTrue(tab.claimDirectMainFrameLoad(on: authorityWebView))
+        XCTAssertNotNil(tab.mainFrameLoads.claimDirectSubmission(on: authorityWebView))
         XCTAssertTrue(tab.bindSubmittedMainFrameLoad(
             on: authorityWebView,
             navigationID: ObjectIdentifier(authorityNavigation),
             navigationLifetime: authorityNavigation
         ))
-        XCTAssertTrue(tab.claimDirectMainFrameLoad(on: crashedReplica))
+        XCTAssertNotNil(tab.mainFrameLoads.claimDirectSubmission(on: crashedReplica))
         XCTAssertTrue(tab.bindSubmittedMainFrameLoad(
             on: crashedReplica,
             navigationID: ObjectIdentifier(replicaNavigation),
@@ -117,7 +117,7 @@ final class TabRuntimeRoutingTests: XCTestCase {
         SumiTabLifecycleNavigationResponder(tab: tab)
             .webContentProcessDidTerminate(on: crashedReplica)
 
-        XCTAssertEqual(tab.currentMainFrameNavigationIntent(), intent)
+        XCTAssertEqual(tab.mainFrameLoads.currentIntent, intent)
         XCTAssertEqual(routing.processRecoveryCalls.count, 1)
         XCTAssertEqual(
             routing.processRecoveryCalls.first?.1,
@@ -140,7 +140,7 @@ final class TabRuntimeRoutingTests: XCTestCase {
         tab.navigationRuntime.webViewRouting = routing.runtime
         let crashedIntent = tab.beginMainFrameNavigationIntent(to: targetURL)
         let navigation = NSObject()
-        XCTAssertTrue(tab.claimDirectMainFrameLoad(on: crashedWebView))
+        XCTAssertNotNil(tab.mainFrameLoads.claimDirectSubmission(on: crashedWebView))
         XCTAssertTrue(tab.bindSubmittedMainFrameLoad(
             on: crashedWebView,
             navigationID: ObjectIdentifier(navigation),
@@ -150,7 +150,7 @@ final class TabRuntimeRoutingTests: XCTestCase {
         SumiTabLifecycleNavigationResponder(tab: tab)
             .webContentProcessDidTerminate(on: crashedWebView)
 
-        let recoveryIntent = tab.currentMainFrameNavigationIntent()
+        let recoveryIntent = tab.mainFrameLoads.currentIntent
         XCTAssertEqual(recoveryIntent.revision, crashedIntent.revision + 1)
         XCTAssertEqual(recoveryIntent.targetURL, targetURL)
         XCTAssertEqual(routing.processRecoveryCalls.count, 1)
@@ -163,7 +163,7 @@ final class TabRuntimeRoutingTests: XCTestCase {
         SumiTabLifecycleNavigationResponder(tab: tab)
             .webContentProcessDidTerminate(on: crashedWebView)
 
-        XCTAssertEqual(tab.currentMainFrameNavigationIntent(), recoveryIntent)
+        XCTAssertEqual(tab.mainFrameLoads.currentIntent, recoveryIntent)
         XCTAssertEqual(routing.processRecoveryCalls.count, 2)
     }
 
@@ -196,7 +196,7 @@ final class TabRuntimeRoutingTests: XCTestCase {
         XCTAssertEqual(reloadCalls.first?.policy, .standard)
         XCTAssertEqual(
             reloadCalls.first?.revision,
-            tab.currentMainFrameNavigationIntent(matching: tab.url)?.revision
+            tab.mainFrameLoads.currentIntent(matching: tab.url)?.revision
         )
     }
 

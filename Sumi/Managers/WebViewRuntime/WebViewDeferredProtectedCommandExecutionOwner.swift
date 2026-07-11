@@ -224,7 +224,7 @@ final class WebViewDeferredProtectedCommandExecutionOwner {
                 && context.hasTrackedWebViews()
         case .rebuildLiveWebViews(let tabID, _, let intent):
             guard let tab = context.resolveTab(tabID) else { return false }
-            return tab.isCurrentWebViewRebuildIntent(intent.revision)
+            return tab.webViewRebuildEpoch.isCurrent(intent.revision)
         case .assignProfile(let tabID, _, let intent):
             guard let tab = context.resolveTab(tabID) else { return false }
             return tab.profileAssignment.isCurrent(intent)
@@ -244,7 +244,7 @@ final class WebViewDeferredProtectedCommandExecutionOwner {
                   let tab = context.resolveTab(tabID) else {
                 return false
             }
-            return tab.isCurrentMainFrameNavigationIntent(
+            return tab.mainFrameLoads.isCurrent(
                 revision: intent.revision,
                 targetURL: intent.targetURL
             )
@@ -262,7 +262,7 @@ final class WebViewDeferredProtectedCommandExecutionOwner {
                   let tab = context.resolveTab(tabID) else {
                 return false
             }
-            return tab.isCurrentMainFrameNavigationIntent(
+            return tab.mainFrameLoads.isCurrent(
                 revision: intent.revision,
                 targetURL: intent.targetURL
             )

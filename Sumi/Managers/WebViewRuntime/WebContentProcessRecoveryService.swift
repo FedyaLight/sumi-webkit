@@ -163,7 +163,7 @@ final class WebContentProcessRecoveryService {
         let outcome = submit(
             tab,
             expectedWebView,
-            tab.currentMainFrameNavigationIntent()
+            tab.mainFrameLoads.currentIntent
         )
 
         guard let currentRequest = requestsByWebViewID[webViewID],

@@ -46,7 +46,7 @@ final class TabWebViewRebuildService {
         intentRevision: UInt64,
         rebuildKind: DeferredWebViewRebuildKind
     ) -> TabWebViewRebuildResult {
-        guard tab.isCurrentWebViewRebuildIntent(intentRevision) else {
+        guard tab.webViewRebuildEpoch.isCurrent(intentRevision) else {
             return .failed
         }
         let snapshot = runtime.webViewSessions.snapshot(for: tab.id)
@@ -97,10 +97,10 @@ final class TabWebViewRebuildService {
             [prepared],
             profileIDs: Set([tab.resolveProfile()?.id ?? tab.profileId].compactMap { $0 }),
             validateModel: {
-                tab.isCurrentWebViewRebuildIntent(intentRevision)
+                tab.webViewRebuildEpoch.isCurrent(intentRevision)
             },
             modelCommit: {
-                guard tab.isCurrentWebViewRebuildIntent(intentRevision) else {
+                guard tab.webViewRebuildEpoch.isCurrent(intentRevision) else {
                     throw ModelError.stale
                 }
                 tab.cancelPendingMainFrameNavigation()
@@ -205,7 +205,7 @@ final class TabWebViewRebuildService {
         } else {
             configurationPolicyChangeSet = nil
         }
-        let navigation = tab.currentMainFrameNavigationIntent()
+        let navigation = tab.mainFrameLoads.currentIntent
         guard let preparedReplacement = PreparedWebViewReplacement(
             tab: tab,
             snapshot: snapshot,

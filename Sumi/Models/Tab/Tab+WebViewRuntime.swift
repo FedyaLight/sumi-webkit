@@ -278,7 +278,7 @@ extension Tab {
         ) -> Void = { _, _ in },
         performLoad: @escaping @MainActor @Sendable (WKWebView) -> WKNavigation?
     ) -> TabMainFrameNavigationSubmissionOutcome {
-        let intent = currentMainFrameNavigationIntent()
+        let intent = mainFrameLoads.currentIntent
         if navigationRuntime.webViewCleanupRuntime
             .deferWebsiteDataMutationMainFrameSubmission(
                 self,
@@ -288,7 +288,7 @@ extension Tab {
                     guard let self,
                           let webView,
                           self.webViewSession.owns(webView),
-                          self.isCurrentMainFrameNavigationIntent(
+                          self.mainFrameLoads.isCurrent(
                               revision: intent.revision,
                               targetURL: intent.targetURL
                           ) else {
@@ -303,7 +303,7 @@ extension Tab {
             ) {
             return .alreadyScheduled
         }
-        guard let submissionLease = claimDirectMainFrameLoadLease(on: webView) else {
+        guard let submissionLease = mainFrameLoads.claimDirectSubmission(on: webView) else {
             return .alreadyScheduled
         }
         guard let navigator = webView.navigator() else {
@@ -351,7 +351,7 @@ extension Tab {
                     guard let self,
                           let webView,
                           self.webViewSession.owns(webView),
-                          self.isCurrentMainFrameNavigationIntent(
+                          self.mainFrameLoads.isCurrent(
                               revision: revision,
                               targetURL: targetURL
                           ) else {
@@ -367,13 +367,13 @@ extension Tab {
             ) {
             return .alreadyScheduled
         }
-        let claim = claimDeferredMainFrameLoad(
+        let claim = mainFrameLoads.claimDeferredSubmission(
             on: webView,
             revision: revision,
             targetURL: targetURL
         )
         guard claim == .claimed else { return claim }
-        guard let submissionLease = submittedMainFrameLoadLease(
+        guard let submissionLease = mainFrameLoads.submittedLease(
             on: webView,
             revision: revision,
             targetURL: targetURL

@@ -542,9 +542,9 @@ final class TabPermissionSurfaceTests: XCTestCase {
         isPDF: Bool = false
     ) -> NSObject {
         (webView as? PermissionCommittedURLWebView)?.reportedCommittedURL = committedURL
-        XCTAssertTrue(tab.markDeferredMainFrameLoad(on: webView, intent: intent))
+        XCTAssertTrue(tab.mainFrameLoads.markDeferredLoad(on: webView, intent: intent))
         XCTAssertEqual(
-            tab.claimDeferredMainFrameLoad(
+            tab.mainFrameLoads.claimDeferredSubmission(
                 on: webView,
                 revision: intent.revision,
                 targetURL: intent.targetURL

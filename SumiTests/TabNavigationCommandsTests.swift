@@ -20,9 +20,9 @@ final class TabNavigationCommandsTests: XCTestCase {
         )
         tab.replaceUntrackedWebView(webView)
         let firstIntent = tab.beginMainFrameNavigationIntent(to: targetURL)
-        XCTAssertTrue(tab.markDeferredMainFrameLoad(on: webView, intent: firstIntent))
+        XCTAssertTrue(tab.mainFrameLoads.markDeferredLoad(on: webView, intent: firstIntent))
         XCTAssertEqual(
-            tab.claimDeferredMainFrameLoad(
+            tab.mainFrameLoads.claimDeferredSubmission(
                 on: webView,
                 revision: firstIntent.revision,
                 targetURL: targetURL
@@ -30,7 +30,7 @@ final class TabNavigationCommandsTests: XCTestCase {
             .claimed
         )
         let lease = try XCTUnwrap(
-            tab.submittedMainFrameLoadLease(
+            tab.mainFrameLoads.submittedLease(
                 on: webView,
                 revision: firstIntent.revision,
                 targetURL: targetURL
@@ -135,7 +135,7 @@ final class TabNavigationCommandsTests: XCTestCase {
         tab.replaceUntrackedWebView(webView)
         _ = tab.installNavigationDelegate(on: webView)
         let intent = tab.beginMainFrameNavigationIntent(to: targetURL)
-        XCTAssertTrue(tab.markDeferredMainFrameLoad(on: webView, intent: intent))
+        XCTAssertTrue(tab.mainFrameLoads.markDeferredLoad(on: webView, intent: intent))
 
         let result = tab.performDeferredMainFrameNavigation(
             on: webView,
@@ -177,14 +177,14 @@ final class TabNavigationCommandsTests: XCTestCase {
                 resolvedWebView: { webView },
                 reason: "TabNavigationCommandsTests.scopedLoad",
                 configurationPolicyRebuilder: { candidateURL, _ in
-                    guard let intent = tab.currentMainFrameNavigationIntent(
+                    guard let intent = tab.mainFrameLoads.currentIntent(
                         matching: candidateURL
                     ) else {
                         XCTFail("Expected navigation intent before policy replacement")
                         return .failed
                     }
                     navigationRevisions.append(intent.revision)
-                    rebuildRevisions.append(tab.currentWebViewRebuildIntentRevision)
+                    rebuildRevisions.append(tab.webViewRebuildEpoch.current)
                     return .replacedAndScheduledNavigation
                 }
             )
@@ -217,10 +217,10 @@ final class TabNavigationCommandsTests: XCTestCase {
             reason: "TabNavigationCommandsTests.hardReload",
             policy: .fromOrigin,
             configurationPolicyRebuilder: { candidateURL, _ in
-                policyRevision = tab.currentMainFrameNavigationIntent(
+                policyRevision = tab.mainFrameLoads.currentIntent(
                     matching: candidateURL
                 )?.revision
-                policyRebuildRevision = tab.currentWebViewRebuildIntentRevision
+                policyRebuildRevision = tab.webViewRebuildEpoch.current
                 return .notNeeded
             },
             deliverTrackedReload: { intent, policy in
@@ -283,7 +283,7 @@ final class TabNavigationCommandsTests: XCTestCase {
 
         XCTAssertEqual(resolverCallCount, 1)
         XCTAssertEqual(tab.url, originalURL)
-        XCTAssertNotNil(tab.currentMainFrameNavigationIntent(matching: originalURL))
+        XCTAssertNotNil(tab.mainFrameLoads.currentIntent(matching: originalURL))
         XCTAssertNil(tab.resolvedCurrentWebView())
     }
 
@@ -333,7 +333,7 @@ final class TabNavigationCommandsTests: XCTestCase {
 
         XCTAssertEqual(webView.loadedRequests.map(\.url), [failedURL])
         XCTAssertEqual(tab.url, committedURL)
-        XCTAssertNotNil(tab.currentMainFrameNavigationIntent(matching: committedURL))
+        XCTAssertNotNil(tab.mainFrameLoads.currentIntent(matching: committedURL))
         let restoredDocument = try XCTUnwrap(
             tab.committedDocumentRuntime.lease(for: webView)
         )
@@ -354,13 +354,13 @@ final class TabNavigationCommandsTests: XCTestCase {
 
         let htmlNavigation = NSObject()
         let pdfNavigation = NSObject()
-        XCTAssertTrue(tab.claimDirectMainFrameLoad(on: htmlWebView))
+        XCTAssertNotNil(tab.mainFrameLoads.claimDirectSubmission(on: htmlWebView))
         XCTAssertTrue(tab.bindSubmittedMainFrameLoad(
             on: htmlWebView,
             navigationID: ObjectIdentifier(htmlNavigation),
             navigationLifetime: htmlNavigation
         ))
-        XCTAssertTrue(tab.claimDirectMainFrameLoad(on: pdfWebView))
+        XCTAssertNotNil(tab.mainFrameLoads.claimDirectSubmission(on: pdfWebView))
         XCTAssertTrue(tab.bindSubmittedMainFrameLoad(
             on: pdfWebView,
             navigationID: ObjectIdentifier(pdfNavigation),
@@ -397,7 +397,7 @@ final class TabNavigationCommandsTests: XCTestCase {
         XCTAssertFalse(restoredLease.isPDF)
         XCTAssertTrue(restoredLease.isAuthority)
         XCTAssertNil(tab.committedDocumentRuntime.lease(for: pdfWebView))
-        XCTAssertNotNil(tab.currentMainFrameNavigationIntent(matching: committedURL))
+        XCTAssertNotNil(tab.mainFrameLoads.currentIntent(matching: committedURL))
     }
 
     func testFailedSubmissionDoesNotReapplyTargetFaviconAfterRollback() throws {
@@ -445,8 +445,8 @@ final class TabNavigationCommandsTests: XCTestCase {
 
         XCTAssertEqual(preparedURLs, [extensionURL])
         XCTAssertEqual(tab.url, initialURL)
-        XCTAssertNil(tab.currentMainFrameNavigationIntent(matching: extensionURL))
-        XCTAssertNotNil(tab.currentMainFrameNavigationIntent(matching: initialURL))
+        XCTAssertNil(tab.mainFrameLoads.currentIntent(matching: extensionURL))
+        XCTAssertNotNil(tab.mainFrameLoads.currentIntent(matching: initialURL))
     }
 
     func testContentBlockingAssetWaitDelaysMainFrameLoad() async throws {

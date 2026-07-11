@@ -227,7 +227,7 @@ final class DeferredProtectedCommandTests: XCTestCase {
         ))
 
         _ = tab.beginMainFrameNavigationIntent(to: newerURL)
-        _ = tab.beginWebViewRebuildIntent()
+        _ = tab.webViewRebuildEpoch.advance()
         tab.url = newerURL
         owner.pruneInvalidCommands(
             reason: "test.navigation-b",
@@ -257,7 +257,7 @@ final class DeferredProtectedCommandTests: XCTestCase {
         oldWebView.reportedURL = oldURL
         let tab = Tab(url: oldURL)
         let navigationIntent = tab.beginMainFrameNavigationIntent(to: targetURL)
-        let rebuildRevision = tab.beginWebViewRebuildIntent()
+        let rebuildRevision = tab.webViewRebuildEpoch.advance()
         tab.url = targetURL
         var executedCommands: [DeferredWebViewCommand] = []
         let runtime = makeRuntime(
@@ -303,7 +303,7 @@ final class DeferredProtectedCommandTests: XCTestCase {
         )
 
         XCTAssertEqual(tab.url, targetURL)
-        XCTAssertEqual(tab.currentMainFrameNavigationIntent(matching: targetURL), navigationIntent)
+        XCTAssertEqual(tab.mainFrameLoads.currentIntent(matching: targetURL), navigationIntent)
         XCTAssertTrue(mediaProtectionOwner.hasDeferredProtectedCommands(
             for: ObjectIdentifier(oldWebView)
         ))
@@ -330,7 +330,7 @@ final class DeferredProtectedCommandTests: XCTestCase {
         let webView = WKWebView()
         let targetURL = URL(string: "https://example.com/same-target")!
         let tab = Tab(url: targetURL)
-        let oldRevision = tab.beginWebViewRebuildIntent()
+        let oldRevision = tab.webViewRebuildEpoch.advance()
         var executedCommands: [DeferredWebViewCommand] = []
         let runtime = makeRuntime(
             webView: webView,
@@ -366,7 +366,7 @@ final class DeferredProtectedCommandTests: XCTestCase {
             mediaProtectionOwner: mediaProtectionOwner,
             runtime: runtime
         )
-        _ = tab.beginWebViewRebuildIntent()
+        _ = tab.webViewRebuildEpoch.advance()
         await drainMainQueue()
 
         XCTAssertTrue(executedCommands.isEmpty)
@@ -378,7 +378,7 @@ final class DeferredProtectedCommandTests: XCTestCase {
         let webView = WKWebView()
         let semanticURL = URL(string: "https://example.com/user-destination")!
         let tab = Tab(url: semanticURL)
-        let revision = tab.beginWebViewRebuildIntent()
+        let revision = tab.webViewRebuildEpoch.advance()
         var executedCommands: [DeferredWebViewCommand] = []
         let runtime = makeRuntime(
             webView: webView,

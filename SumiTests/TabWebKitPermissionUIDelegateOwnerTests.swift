@@ -28,12 +28,30 @@ final class TabWebKitPermissionUIDelegateOwnerTests: XCTestCase {
 
     func testFilePickerPermissionContextUsesExactFocusableDocument() async throws {
         let browserManager = BrowserManager()
-        let tab = browserManager.tabManager.tabFactory.makeTab(
-            url: URL(string: "https://files.example/page")!,
-            loadsCachedFaviconOnInit: false
+        let space = browserManager.tabManager.spaceStateOwner.currentSpace
+            ?? browserManager.tabManager.spaceServices.catalog.createSpace(
+                name: "File Picker Permission Tests"
+            )
+        let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
+            url: "https://files.example/page",
+            in: space,
+            activate: true
         )
-        tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
+        let windowRegistry = browserManager.windowRegistry ?? WindowRegistry()
+        browserManager.windowRegistry = windowRegistry
+        let windowState = BrowserWindowState()
+        windowState.tabManager = browserManager.tabManager
+        windowState.currentSpaceId = space.id
+        windowState.currentProfileId = tab.resolveProfile()?.id
+        windowState.currentTabId = tab.id
+        windowRegistry.register(windowState)
+        windowRegistry.setActive(windowState)
         let webView = FocusableWKWebView()
+        XCTAssertTrue(browserManager.testWebViewRuntime().ownershipService.assign(
+            webView,
+            to: tab,
+            in: windowState.id
+        ))
         await loadDocument(on: webView, at: tab.url)
         let committedURL = try XCTUnwrap(webView.committedURL)
         let navigation = bindCommittedDocument(
@@ -41,6 +59,8 @@ final class TabWebKitPermissionUIDelegateOwnerTests: XCTestCase {
             tab: tab,
             committedURL: committedURL
         )
+        XCTAssertNotNil(browserManager.currentProfile)
+        XCTAssertNotNil(tab.committedDocumentRuntime.lease(for: webView))
 
         let context = try XCTUnwrap(tab.filePickerPermissionTabContext(for: webView))
 
@@ -50,7 +70,9 @@ final class TabWebKitPermissionUIDelegateOwnerTests: XCTestCase {
         XCTAssertEqual(context.visibleURL, webView.url)
         XCTAssertEqual(context.mainFrameURL, committedURL)
         XCTAssertTrue(context.isCurrentPage())
-        withExtendedLifetime(navigation) { /* Keep navigation identity alive. */ }
+        withExtendedLifetime((windowRegistry, navigation)) {
+            /* Keep window and navigation identity alive. */
+        }
     }
 
     func testLegacyMediaUIDelegateRejectsCallbackWebViewWithoutExactDocumentLease() async throws {
@@ -176,9 +198,9 @@ final class TabWebKitPermissionUIDelegateOwnerTests: XCTestCase {
         committedURL: URL
     ) -> NSObject {
         let intent = tab.beginMainFrameNavigationIntent(to: committedURL)
-        XCTAssertTrue(tab.markDeferredMainFrameLoad(on: webView, intent: intent))
+        XCTAssertTrue(tab.mainFrameLoads.markDeferredLoad(on: webView, intent: intent))
         XCTAssertEqual(
-            tab.claimDeferredMainFrameLoad(
+            tab.mainFrameLoads.claimDeferredSubmission(
                 on: webView,
                 revision: intent.revision,
                 targetURL: committedURL

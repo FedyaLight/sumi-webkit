@@ -9,13 +9,17 @@ cd "$repo_root"
 # - WebViewSessionHandle is Tab's narrow detached-placement/read boundary.
 # - tracked window mutations stay package-only behind WebViewTrackingLifecycleOwner.
 # - Tab stores no WKWebView mirror and exposes no ownership façade.
-# - TabMainFrameRuntimeTransaction owns intent/lifecycle/recovery transitions.
+# - TabMainFrameLoadRuntime alone owns the raw pending-load/intent ledger.
+# - TabMainFrameRuntimeTransaction coordinates lifecycle/recovery transitions.
 # - TabCommittedDocumentRuntime alone owns durable committed-document state.
 
 production_roots=(App Sumi SidebarChrome FloatingBar Settings UI)
-all_swift_roots=("${production_roots[@]}" Packages SumiTests)
+all_swift_roots=("${production_roots[@]}" Packages SumiTests SumiUITests)
 repository_source="Packages/SumiWebRuntime/Sources/SumiWebRuntime/Session/WebViewSessionRepository.swift"
 handle_source="Packages/SumiWebRuntime/Sources/SumiWebRuntime/Session/WebViewSessionHandle.swift"
+main_frame_load_runtime="Sumi/Models/Tab/TabMainFrameLoadRuntime.swift"
+web_view_rebuild_epoch="Sumi/Models/Tab/TabWebViewRebuildEpoch.swift"
+main_frame_transaction="Sumi/Models/Tab/TabMainFrameRuntimeTransaction.swift"
 committed_document_runtime="Sumi/Models/Tab/TabCommittedDocumentRuntime.swift"
 status=0
 
@@ -27,9 +31,12 @@ fail_matches() {
   status=1
 }
 
-for required in "$repository_source" "$handle_source" "$committed_document_runtime"; do
+for required in "$repository_source" "$handle_source" "$main_frame_load_runtime" \
+  "$web_view_rebuild_epoch" \
+  "$main_frame_transaction" "$committed_document_runtime"; do
   if [[ ! -f "$required" ]]; then
-    printf 'error: canonical WebView ownership source missing: %s\n' "$required" >&2
+    printf 'error: required WebView/main-frame architecture source missing: %s\n' \
+      "$required" >&2
     status=1
   fi
 done
@@ -177,21 +184,104 @@ tab_mirror_hits="$(
 )"
 fail_matches "Tab WKWebView ownership mirror/façade reintroduced" "$tab_mirror_hits"
 
-# The main-frame transaction constructs the intent/lifecycle/recovery state.
-# Durable document state has its own exact runtime and cannot be constructed or
-# mutated through the wider Tab/main-frame façade.
-main_frame_component_construction_hits="$(
-  rg -n '\b(TabMainFrameIntentLedger|TabMainFrameLifecycleMachine|TabWebContentRecoveryPlanner)\s*\(' \
+# The load runtime alone constructs and stores the raw intent ledger. The
+# transaction constructs the exact load/lifecycle/recovery aggregate.
+intent_ledger_construction_hits="$(
+  rg -n '\bTabMainFrameIntentLedger\s*\(' \
     "${production_roots[@]}" -g '*.swift' || true
 )"
 while IFS= read -r match; do
   [[ -z "$match" ]] && continue
   file="${match%%:*}"
-  if [[ "$file" != "Sumi/Models/Tab/TabMainFrameRuntimeTransaction.swift" ]]; then
-    printf 'error: main-frame state component constructed outside runtime aggregate: %s\n' "$match" >&2
+  if [[ "$file" != "$main_frame_load_runtime" ]]; then
+    printf 'error: raw main-frame intent ledger constructed outside load runtime: %s\n' \
+      "$match" >&2
     status=1
   fi
-done <<< "$main_frame_component_construction_hits"
+done <<< "$intent_ledger_construction_hits"
+
+intent_ledger_storage_hits="$(
+  rg -n '\b(let|var)\s+\w+\s*:\s*TabMainFrameIntentLedger\b' \
+    "${production_roots[@]}" -g '*.swift' || true
+)"
+while IFS= read -r match; do
+  [[ -z "$match" ]] && continue
+  file="${match%%:*}"
+  if [[ "$file" != "$main_frame_load_runtime" ]]; then
+    printf 'error: raw main-frame intent ledger stored outside load runtime: %s\n' \
+      "$match" >&2
+    status=1
+  fi
+done <<< "$intent_ledger_storage_hits"
+
+load_runtime_ledger_storage_count="$(
+  rg --count-matches \
+    '^    private let ledger: TabMainFrameIntentLedger$' \
+    "$main_frame_load_runtime" 2>/dev/null || true
+)"
+load_runtime_ledger_storage_count="${load_runtime_ledger_storage_count:-0}"
+if [[ "$load_runtime_ledger_storage_count" -ne 1 ]]; then
+  printf 'error: TabMainFrameLoadRuntime must privately retain exactly one intent ledger (%s != 1)\n' \
+    "$load_runtime_ledger_storage_count" >&2
+  status=1
+fi
+
+main_frame_aggregate_construction_hits="$(
+  rg -n '\b(TabMainFrameLoadRuntime|TabMainFrameLifecycleMachine|TabWebContentRecoveryPlanner)\s*\(' \
+    "${production_roots[@]}" -g '*.swift' || true
+)"
+while IFS= read -r match; do
+  [[ -z "$match" ]] && continue
+  file="${match%%:*}"
+  if [[ "$file" != "$main_frame_transaction" ]]; then
+    printf 'error: main-frame aggregate component constructed outside transaction: %s\n' \
+      "$match" >&2
+    status=1
+  fi
+done <<< "$main_frame_aggregate_construction_hits"
+
+rebuild_epoch_construction_hits="$(
+  rg -n '\bTabWebViewRebuildEpoch\s*\(' \
+    "${production_roots[@]}" -g '*.swift' || true
+)"
+while IFS= read -r match; do
+  [[ -z "$match" ]] && continue
+  file="${match%%:*}"
+  if [[ "$file" != "Sumi/Models/Tab/Tab.swift" ]]; then
+    printf 'error: WebView rebuild epoch constructed outside Tab composition: %s\n' \
+      "$match" >&2
+    status=1
+  fi
+done <<< "$rebuild_epoch_construction_hits"
+
+tab_rebuild_epoch_storage_count="$(
+  rg --count-matches \
+    '^    let webViewRebuildEpoch = TabWebViewRebuildEpoch\(\)$' \
+    Sumi/Models/Tab/Tab.swift 2>/dev/null || true
+)"
+tab_rebuild_epoch_storage_count="${tab_rebuild_epoch_storage_count:-0}"
+if [[ "$tab_rebuild_epoch_storage_count" -ne 1 ]]; then
+  printf 'error: Tab must retain exactly one physical WebView rebuild epoch (%s != 1)\n' \
+    "$tab_rebuild_epoch_storage_count" >&2
+  status=1
+fi
+
+# These operations change both pending-load authority and lifecycle/durable
+# state. Feature code must enter through the transaction, never call the load
+# capability directly for one half of the transition.
+coordinated_load_mutation_hits="$(
+  rg -n '\bmainFrameLoads\.(beginExplicitIntent|beginLifecycleIntent|beginRollbackIntent|updateTargetWithinRevision|consumeSubmittedLoad|failSubmittedLoad|restoreDeferredLoadAfterFailedSubmission|departure|promoteSubmittedAuthority)\s*\(' \
+    "${production_roots[@]}" -g '*.swift' || true
+)"
+while IFS= read -r match; do
+  [[ -z "$match" ]] && continue
+  file="${match%%:*}"
+  if [[ "$file" != "$main_frame_transaction" ]]; then
+    printf 'error: coordinated main-frame load mutation escaped transaction: %s\n' \
+      "$match" >&2
+    status=1
+  fi
+done <<< "$coordinated_load_mutation_hits"
 
 committed_document_runtime_construction_hits="$(
   rg -n '\bTabCommittedDocumentRuntime\s*\(' \
@@ -200,7 +290,7 @@ committed_document_runtime_construction_hits="$(
 while IFS= read -r match; do
   [[ -z "$match" ]] && continue
   file="${match%%:*}"
-  if [[ "$file" != "Sumi/Models/Tab/TabMainFrameRuntimeTransaction.swift" ]]; then
+  if [[ "$file" != "$main_frame_transaction" ]]; then
     printf 'error: committed-document runtime constructed outside main-frame composition: %s\n' "$match" >&2
     status=1
   fi
@@ -233,7 +323,7 @@ committed_document_mutation_hits="$(
 while IFS= read -r match; do
   [[ -z "$match" ]] && continue
   file="${match%%:*}"
-  if [[ "$file" != "Sumi/Models/Tab/TabMainFrameRuntimeTransaction.swift" ]]; then
+  if [[ "$file" != "$main_frame_transaction" ]]; then
     printf 'error: committed-document transition mutation escaped main-frame transaction: %s\n' "$match" >&2
     status=1
   fi
@@ -245,6 +335,13 @@ retired_document_facade_hits="$(
 )"
 fail_matches "retired Tab committed-document façade reintroduced" \
   "$retired_document_facade_hits"
+
+retired_main_frame_load_facade_hits="$(
+  rg -n '\b(beginWebViewRebuildIntent|currentWebViewRebuildIntentRevision|isCurrentWebViewRebuildIntent|currentMainFrameNavigationIntent|isCurrentMainFrameNavigationIntent|claimDirectMainFrameLoad|claimDirectMainFrameLoadLease|claimDeferredMainFrameLoad|submittedMainFrameLoadLease|beginPreparedMainFrameLoad|finishPreparedMainFrameLoad|markDeferredMainFrameLoad|clearDeferredMainFrameLoad|hasOutstandingMainFrameLoad|mainFrameLoadingWebViews)\b' \
+    "${all_swift_roots[@]}" -g '*.swift' -g '!**/.build/**' || true
+)"
+fail_matches "retired Tab main-frame load façade reintroduced" \
+  "$retired_main_frame_load_facade_hits"
 
 document_script_tab_root_hits="$(
   rg -n '\b(private\s+)?weak\s+var\s+tab\s*:\s*Tab\?' \

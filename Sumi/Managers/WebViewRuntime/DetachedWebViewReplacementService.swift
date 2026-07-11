@@ -67,7 +67,7 @@ final class DetachedWebViewReplacementService {
             trackedReplacements: [],
             bindingReplacements: [],
             targetURL: tab.url,
-            semanticRevision: tab.currentMainFrameNavigationIntent().revision,
+            semanticRevision: tab.mainFrameLoads.currentIntent.revision,
             profileID: tab.resolveProfile()?.id ?? tab.profileId,
             requiresExtensionRuntimePreparation: false,
             configurationPolicyChangeSet: policyChangeSet

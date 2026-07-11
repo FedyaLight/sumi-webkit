@@ -897,9 +897,9 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             manager.adapterResolutionOwner.stableAdapter(for: tab)
         )
         let previousNavigationIntent = try XCTUnwrap(
-            tab.currentMainFrameNavigationIntent(matching: extensionURL)
+            tab.mainFrameLoads.currentIntent(matching: extensionURL)
         )
-        let previousRebuildRevision = tab.currentWebViewRebuildIntentRevision
+        let previousRebuildRevision = tab.webViewRebuildEpoch.current
 
         let reloaded = expectation(description: "extension tab reload accepted")
         var reloadError: NSError?
@@ -911,7 +911,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
 
         XCTAssertNil(reloadError)
         let currentNavigationIntent = try XCTUnwrap(
-            tab.currentMainFrameNavigationIntent(matching: extensionURL)
+            tab.mainFrameLoads.currentIntent(matching: extensionURL)
         )
         XCTAssertGreaterThan(
             currentNavigationIntent.revision,
@@ -919,7 +919,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             "WebExtension reload must enter the same Tab-owned semantic revision pipeline as browser reload"
         )
         XCTAssertGreaterThan(
-            tab.currentWebViewRebuildIntentRevision,
+            tab.webViewRebuildEpoch.current,
             previousRebuildRevision
         )
     }

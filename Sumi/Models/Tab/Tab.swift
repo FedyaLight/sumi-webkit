@@ -60,6 +60,8 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     let extensionPageRuntimeOwner = TabExtensionPageRuntimeOwner()
     public let webViewSession: WebViewSessionHandle
     private let mainFrameRuntimeTransaction: TabMainFrameRuntimeTransaction
+    let mainFrameLoads: any TabMainFrameLoads
+    let webViewRebuildEpoch = TabWebViewRebuildEpoch()
     let committedDocumentRuntime: TabCommittedDocumentRuntime
     let webViewConfigurationOwner = TabWebViewConfigurationOwner()
     let normalWebViewSetupOwner = TabNormalWebViewSetupOwner()
@@ -208,18 +210,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     let configurationPolicyRebuildService =
         TabConfigurationPolicyRebuildService()
 
-    func beginWebViewRebuildIntent() -> UInt64 {
-        mainFrameRuntimeTransaction.beginRebuildIntent()
-    }
-
-    var currentWebViewRebuildIntentRevision: UInt64 {
-        mainFrameRuntimeTransaction.rebuildIntentRevision
-    }
-
-    func isCurrentWebViewRebuildIntent(_ revision: UInt64) -> Bool {
-        mainFrameRuntimeTransaction.rebuildIntentRevision == revision
-    }
-
     @discardableResult
     func beginMainFrameNavigationIntent(to targetURL: URL) -> TabMainFrameNavigationIntent {
         let intent = mainFrameRuntimeTransaction.beginExplicitIntent(to: targetURL)
@@ -234,28 +224,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         return intent
     }
 
-    func currentMainFrameNavigationIntent(
-        matching targetURL: URL
-    ) -> TabMainFrameNavigationIntent? {
-        mainFrameRuntimeTransaction.currentIntent(matching: targetURL)
-    }
-
-    func currentMainFrameNavigationIntent() -> TabMainFrameNavigationIntent {
-        mainFrameRuntimeTransaction.currentIntent
-    }
-
-    func currentMainFrameNavigationIntent(
-        revision: UInt64
-    ) -> TabMainFrameNavigationIntent? {
-        mainFrameRuntimeTransaction.currentIntent(revision: revision)
-    }
-
-    func isCurrentMainFrameNavigationIntent(
-        _ intent: TabMainFrameNavigationIntent
-    ) -> Bool {
-        mainFrameRuntimeTransaction.isCurrentIntent(intent)
-    }
-
     func submittedMainFrameSemanticRevision(
         on webView: WKWebView,
         navigationID: ObjectIdentifier,
@@ -265,51 +233,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
             for: webView,
             navigationID: navigationID,
             navigationLifetime: navigationLifetime
-        )
-    }
-
-    func isCurrentMainFrameNavigationIntent(
-        revision: UInt64,
-        targetURL: URL
-    ) -> Bool {
-        mainFrameRuntimeTransaction.isCurrentIntent(
-            revision: revision,
-            targetURL: targetURL
-        )
-    }
-
-    @discardableResult
-    func claimDirectMainFrameLoad(on webView: WKWebView) -> Bool {
-        mainFrameRuntimeTransaction.claimDirectSubmission(on: webView) != nil
-    }
-
-    func claimDirectMainFrameLoadLease(
-        on webView: WKWebView
-    ) -> TabMainFrameSubmissionLease? {
-        mainFrameRuntimeTransaction.claimDirectSubmission(on: webView)
-    }
-
-    func claimDeferredMainFrameLoad(
-        on webView: WKWebView,
-        revision: UInt64,
-        targetURL: URL
-    ) -> TabDeferredMainFrameLoadClaim {
-        mainFrameRuntimeTransaction.claimDeferredSubmission(
-            on: webView,
-            revision: revision,
-            targetURL: targetURL
-        )
-    }
-
-    func submittedMainFrameLoadLease(
-        on webView: WKWebView,
-        revision: UInt64,
-        targetURL: URL
-    ) -> TabMainFrameSubmissionLease? {
-        mainFrameRuntimeTransaction.submittedLease(
-            on: webView,
-            revision: revision,
-            targetURL: targetURL
         )
     }
 
@@ -407,7 +330,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
             rollsBackWhenUnreplaced: rollsBackWhenUnreplaced
         )
         if case .authoritativeRollback(let rollbackURL) = result {
-            _ = beginWebViewRebuildIntent()
+            _ = webViewRebuildEpoch.advance()
             url = rollbackURL
         }
         return result
@@ -421,54 +344,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
 
     func requiresWebContentProcessRecovery(on webView: WKWebView) -> Bool {
         mainFrameRuntimeTransaction.requiresWebContentProcessRecovery(on: webView)
-    }
-
-    func beginPreparedMainFrameLoad(
-        on webView: WKWebView,
-        intent: TabMainFrameNavigationIntent
-    ) -> TabMainFramePreparedLoadTicket? {
-        mainFrameRuntimeTransaction.beginPreparedLoad(
-            on: webView,
-            intent: intent
-        )
-    }
-
-    func finishPreparedMainFrameLoad(
-        _ ticket: TabMainFramePreparedLoadTicket
-    ) {
-        mainFrameRuntimeTransaction.finishPreparedLoad(ticket)
-    }
-
-    @discardableResult
-    func markDeferredMainFrameLoad(
-        on webView: WKWebView,
-        intent: TabMainFrameNavigationIntent
-    ) -> Bool {
-        mainFrameRuntimeTransaction.markDeferredLoad(
-            on: webView,
-            intent: intent
-        )
-    }
-
-    func clearDeferredMainFrameLoad(
-        on webView: WKWebView,
-        intent: TabMainFrameNavigationIntent
-    ) {
-        mainFrameRuntimeTransaction.clearDeferredLoad(
-            on: webView,
-            intent: intent
-        )
-    }
-
-    func hasOutstandingMainFrameLoad(on webView: WKWebView, targetURL: URL) -> Bool {
-        mainFrameRuntimeTransaction.hasOutstandingLoad(
-            on: webView,
-            targetURL: targetURL
-        )
-    }
-
-    func mainFrameLoadingWebViews() -> [WKWebView] {
-        mainFrameRuntimeTransaction.loadingWebViews()
     }
 
     func beginMainFrameLifecycle(
@@ -488,7 +363,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
             continuationKind: continuationKind
         )
         if acceptance.beganNewIntent {
-            _ = beginWebViewRebuildIntent()
+            _ = webViewRebuildEpoch.advance()
         }
         return acceptance.role
     }
@@ -686,7 +561,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
             survivingWebViews: survivingWebViews
         )
         let rollbackURL = rollback.targetURL
-        _ = beginWebViewRebuildIntent()
+        _ = webViewRebuildEpoch.advance()
         url = rollbackURL
         if loadingState.isLoading {
             loadingState = .idle
@@ -715,7 +590,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     }
 
     func isCurrentMainFrameNavigationRevision(_ revision: UInt64) -> Bool {
-        mainFrameRuntimeTransaction.currentIntent.revision == revision
+        mainFrameLoads.currentIntent.revision == revision
     }
 
     var hasBrowserRuntime: Bool {
@@ -856,6 +731,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
             initialURL: url
         )
         self.mainFrameRuntimeTransaction = mainFrameRuntimeTransaction
+        self.mainFrameLoads = mainFrameRuntimeTransaction.mainFrameLoads
         self.committedDocumentRuntime =
             mainFrameRuntimeTransaction.committedDocumentRuntime
         self.name = name

@@ -27,8 +27,7 @@ final class TabCommittedDocumentRuntime {
         case subframePictureInPicture = "subframe-picture-in-picture-state"
     }
 
-    private let intentLedger: TabMainFrameIntentLedger
-    private let lifecycle: TabMainFrameLifecycleMachine
+    private let evidenceSource: any TabMainFrameDocumentEvidenceSource
     private let ledger: TabCommittedDocumentLedger
     private var isApplyingTransition = false
     private var transitionMutatedDocument = false
@@ -38,11 +37,9 @@ final class TabCommittedDocumentRuntime {
 
     init(
         initialURL: URL,
-        intentLedger: TabMainFrameIntentLedger,
-        lifecycle: TabMainFrameLifecycleMachine
+        evidenceSource: any TabMainFrameDocumentEvidenceSource
     ) {
-        self.intentLedger = intentLedger
-        self.lifecycle = lifecycle
+        self.evidenceSource = evidenceSource
         self.ledger = TabCommittedDocumentLedger(initialURL: initialURL)
     }
 
@@ -149,10 +146,7 @@ final class TabCommittedDocumentRuntime {
     }
 
     func lease(for webView: WKWebView) -> TabMainFrameDocumentLease? {
-        guard let proof = lifecycle.documentEvidence(
-            for: webView,
-            currentIntent: intentLedger.intent
-        ) else {
+        guard let proof = evidenceSource.documentProof(for: webView) else {
             return nil
         }
         return ledger.documentLease(

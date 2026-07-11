@@ -2,9 +2,9 @@ import Foundation
 import SumiWebRuntime
 import WebKit
 
-/// Aggregate boundary for a tab's main-frame runtime. The tab never retains or
-/// mutates the intent, lifecycle, durable-document, or recovery components
-/// independently, so cross-component invariants cannot be bypassed.
+/// Atomic boundary for main-frame transitions that change more than one
+/// authority. `Tab` exposes narrower load and committed-document capabilities;
+/// only this transaction can replace intent or settle lifecycle authority.
 @MainActor
 final class TabMainFrameRuntimeTransaction {
     struct LifecycleAcceptance {
@@ -17,54 +17,24 @@ final class TabMainFrameRuntimeTransaction {
         let navigationStateSource: WKWebView?
     }
 
-    private let intentLedger: TabMainFrameIntentLedger
+    let mainFrameLoads: TabMainFrameLoadRuntime
     private let lifecycle: TabMainFrameLifecycleMachine
     let committedDocumentRuntime: TabCommittedDocumentRuntime
     private let recovery: TabWebContentRecoveryPlanner
 
     init(initialURL: URL) {
-        let intentLedger = TabMainFrameIntentLedger(initialURL: initialURL)
         let lifecycle = TabMainFrameLifecycleMachine()
-        self.intentLedger = intentLedger
+        let mainFrameLoads = TabMainFrameLoadRuntime(
+            initialURL: initialURL,
+            lifecycle: lifecycle
+        )
+        self.mainFrameLoads = mainFrameLoads
         self.lifecycle = lifecycle
         self.committedDocumentRuntime = TabCommittedDocumentRuntime(
             initialURL: initialURL,
-            intentLedger: intentLedger,
-            lifecycle: lifecycle
+            evidenceSource: mainFrameLoads
         )
         self.recovery = TabWebContentRecoveryPlanner()
-    }
-
-    func beginRebuildIntent() -> UInt64 {
-        intentLedger.beginRebuildIntent()
-    }
-
-    var rebuildIntentRevision: UInt64 {
-        intentLedger.rebuildIntentRevision
-    }
-
-    func currentIntent(
-        matching targetURL: URL
-    ) -> TabMainFrameNavigationIntent? {
-        intentLedger.current(matching: targetURL)
-    }
-
-    var currentIntent: TabMainFrameNavigationIntent {
-        intentLedger.intent
-    }
-
-    func currentIntent(
-        revision: UInt64
-    ) -> TabMainFrameNavigationIntent? {
-        intentLedger.current(revision: revision)
-    }
-
-    func isCurrentIntent(_ intent: TabMainFrameNavigationIntent) -> Bool {
-        intentLedger.isCurrent(intent)
-    }
-
-    func isCurrentIntent(revision: UInt64, targetURL: URL) -> Bool {
-        intentLedger.isCurrent(revision: revision, targetURL: targetURL)
     }
 
     func semanticRevision(
@@ -79,96 +49,10 @@ final class TabMainFrameRuntimeTransaction {
         )
     }
 
-    func submittedLease(
-        on webView: WKWebView,
-        revision: UInt64,
-        targetURL: URL
-    ) -> TabMainFrameSubmissionLease? {
-        intentLedger.submittedLease(
-            on: webView,
-            revision: revision,
-            targetURL: targetURL
-        )
-    }
-
-    func finishPreparedLoad(_ ticket: TabMainFramePreparedLoadTicket) {
-        intentLedger.finishPreparedLoad(ticket)
-    }
-
-    func clearDeferredLoad(
-        on webView: WKWebView,
-        intent: TabMainFrameNavigationIntent
-    ) {
-        intentLedger.clearDeferredLoad(on: webView, intent: intent)
-    }
-
-    func hasOutstandingLoad(on webView: WKWebView, targetURL: URL) -> Bool {
-        intentLedger.hasOutstandingLoad(on: webView, targetURL: targetURL)
-            || lifecycle.loadingWebViews(
-                revision: intentLedger.intent.revision
-            ).contains(where: { $0 === webView })
-    }
-
     func beginExplicitIntent(to targetURL: URL) -> TabMainFrameNavigationIntent {
-        let intent = intentLedger.beginExplicitIntent(to: targetURL)
+        let intent = mainFrameLoads.beginExplicitIntent(to: targetURL)
         lifecycle.resetForNewIntent()
         return intent
-    }
-
-    func beginPreparedLoad(
-        on webView: WKWebView,
-        intent: TabMainFrameNavigationIntent
-    ) -> TabMainFramePreparedLoadTicket? {
-        intentLedger.beginPreparedLoad(
-            on: webView,
-            intent: intent,
-            documentGeneration: lifecycle.documentGeneration,
-            hasLifecycleParticipant: lifecycle.hasParticipant(
-                on: webView,
-                revision: intent.revision
-            )
-        )
-    }
-
-    func markDeferredLoad(
-        on webView: WKWebView,
-        intent: TabMainFrameNavigationIntent
-    ) -> Bool {
-        let authority = lifecycle.authorityState(revision: intent.revision)
-        return intentLedger.markDeferredLoad(
-            on: webView,
-            intent: intent,
-            documentGeneration: lifecycle.documentGeneration,
-            isLifecycleAuthority: authority?.webViewID
-                == ObjectIdentifier(webView)
-        )
-    }
-
-    func claimDirectSubmission(
-        on webView: WKWebView
-    ) -> TabMainFrameSubmissionLease? {
-        intentLedger.claimDirectSubmission(
-            on: webView,
-            documentGeneration: lifecycle.documentGeneration,
-            hasLifecycleAuthority: lifecycle.hasLiveAuthority(
-                revision: intentLedger.intent.revision
-            )
-        )
-    }
-
-    func claimDeferredSubmission(
-        on webView: WKWebView,
-        revision: UInt64,
-        targetURL: URL
-    ) -> TabDeferredMainFrameLoadClaim {
-        intentLedger.claimDeferredSubmission(
-            on: webView,
-            revision: revision,
-            targetURL: targetURL,
-            hasLifecycleAuthority: lifecycle.hasLiveAuthority(
-                revision: intentLedger.intent.revision
-            )
-        )
     }
 
     func bindSubmittedLoad(
@@ -178,12 +62,9 @@ final class TabMainFrameRuntimeTransaction {
         matching lease: TabMainFrameSubmissionLease?
     ) -> Bool {
         guard ObjectIdentifier(navigationLifetime) == navigationID,
-              let binding = intentLedger.consumeSubmittedLoad(
+              let binding = mainFrameLoads.consumeSubmittedLoad(
                   on: webView,
-                  matching: lease,
-                  hasLifecycleAuthority: lifecycle.hasLiveAuthority(
-                      revision: intentLedger.intent.revision
-                  )
+                  matching: lease
               ) else {
             return false
         }
@@ -191,7 +72,7 @@ final class TabMainFrameRuntimeTransaction {
             binding,
             navigationID: navigationID,
             navigationLifetime: navigationLifetime,
-            currentIntent: intentLedger.intent
+            currentIntent: mainFrameLoads.currentIntent
         ) else {
             return false
         }
@@ -206,7 +87,7 @@ final class TabMainFrameRuntimeTransaction {
         committedDocumentRuntime.performTransition(
             reason: .submissionFailure
         ) {
-            let failure = intentLedger.failSubmittedLoad(
+            let failure = mainFrameLoads.failSubmittedLoad(
                 on: webView,
                 matching: lease
             )
@@ -230,7 +111,7 @@ final class TabMainFrameRuntimeTransaction {
         committedDocumentRuntime.performTransition(
             reason: .submissionFailure
         ) {
-            let relinquishedAuthority = intentLedger
+            let relinquishedAuthority = mainFrameLoads
                 .restoreDeferredLoadAfterFailedSubmission(
                     on: webView,
                     revision: revision,
@@ -278,10 +159,10 @@ final class TabMainFrameRuntimeTransaction {
                 departingWebViews,
                 preferredSourceWebView: preferredSurvivor
             )
-            let pendingDeparture = intentLedger.departure(of: departingWebViews)
+            let pendingDeparture = mainFrameLoads.departure(of: departingWebViews)
             let lifecycleDeparture = lifecycle.departure(
                 of: departingWebViews,
-                currentIntent: intentLedger.intent
+                currentIntent: mainFrameLoads.currentIntent
             )
 
             let wasAuthoritative = pendingDeparture.wasAuthorityCandidate
@@ -308,7 +189,7 @@ final class TabMainFrameRuntimeTransaction {
         committedDocumentRuntime.performTransition(
             reason: .processRecovery
         ) {
-            let intent = intentLedger.intent
+            let intent = mainFrameLoads.currentIntent
             guard recovery.markRequired(on: webView) else {
                 return TabWebContentProcessRecoveryPlan(
                     scope: .replica(intent),
@@ -317,7 +198,7 @@ final class TabMainFrameRuntimeTransaction {
             }
 
             committedDocumentRuntime.removeWebView(webView)
-            let pendingDeparture = intentLedger.departure(of: webView)
+            let pendingDeparture = mainFrameLoads.departure(of: webView)
             let lifecycleDeparture = lifecycle.departure(
                 of: webView,
                 currentIntent: intent
@@ -332,8 +213,8 @@ final class TabMainFrameRuntimeTransaction {
             }
 
             let scope: TabWebContentProcessRecoveryScope = hasCurrentAuthority()
-                ? .replica(intentLedger.intent)
-                : .global(intentLedger.intent.targetURL)
+                ? .replica(mainFrameLoads.currentIntent)
+                : .global(mainFrameLoads.currentIntent.targetURL)
             return TabWebContentProcessRecoveryPlan(
                 scope: scope,
                 authorityContinuation: continuation
@@ -365,7 +246,7 @@ final class TabMainFrameRuntimeTransaction {
                 from: webView,
                 navigationID: navigationID,
                 navigationLifetime: navigationLifetime,
-                currentIntent: intentLedger.intent
+                currentIntent: mainFrameLoads.currentIntent
             ) {
             case .ignored:
                 return .ignored
@@ -405,13 +286,13 @@ final class TabMainFrameRuntimeTransaction {
             navigationLifetime: navigationLifetime,
             targetURL: targetURL,
             continuationKind: continuationKind,
-            currentIntent: intentLedger.intent
+            currentIntent: mainFrameLoads.currentIntent
         ) {
         case .retired:
             return LifecycleAcceptance(role: .stale, beganNewIntent: false)
         case .accepted(let role, let targetURLToAdopt):
             if let targetURLToAdopt {
-                intentLedger.updateTargetWithinRevision(targetURLToAdopt)
+                mainFrameLoads.updateTargetWithinRevision(targetURLToAdopt)
                 if continuationKind == .sameDocument,
                    committedDocumentRuntime.lease(for: webView) != nil {
                     committedDocumentRuntime.performTransition(reason: .sameDocumentPresentation) {
@@ -428,22 +309,14 @@ final class TabMainFrameRuntimeTransaction {
             break
         }
 
-        let authorityState = lifecycle.authorityState(
-            revision: intentLedger.intent.revision
-        )
-        guard intentLedger.canStartUnboundLifecycle(
+        guard mainFrameLoads.canStartUnboundLifecycle(
             on: webView,
-            allowsUserInitiatedSupersession: allowsUserInitiatedSupersession,
-            lifecycleAuthority: authorityState,
-            hasLifecycleParticipant: lifecycle.hasParticipant(
-                on: webView,
-                revision: intentLedger.intent.revision
-            )
+            allowsUserInitiatedSupersession: allowsUserInitiatedSupersession
         ) else {
             return LifecycleAcceptance(role: .stale, beganNewIntent: false)
         }
 
-        let intent = intentLedger.beginLifecycleIntent(to: targetURL)
+        let intent = mainFrameLoads.beginLifecycleIntent(to: targetURL)
         lifecycle.resetForNewIntent()
         lifecycle.startLifecycleOwnedIntent(
             intent,
@@ -464,7 +337,7 @@ final class TabMainFrameRuntimeTransaction {
             from: webView,
             navigationID: navigationID,
             isCurrent: isCurrent,
-            currentIntent: intentLedger.intent
+            currentIntent: mainFrameLoads.currentIntent
         )
     }
 
@@ -475,7 +348,7 @@ final class TabMainFrameRuntimeTransaction {
         lifecycle.prepareAuthorityForCommit(
             from: webView,
             navigationID: navigationID,
-            currentIntent: intentLedger.intent
+            currentIntent: mainFrameLoads.currentIntent
         )
     }
 
@@ -486,7 +359,7 @@ final class TabMainFrameRuntimeTransaction {
         lifecycle.claimTransactionStartEffects(
             from: webView,
             navigationID: navigationID,
-            currentIntent: intentLedger.intent
+            currentIntent: mainFrameLoads.currentIntent
         )
     }
 
@@ -497,7 +370,7 @@ final class TabMainFrameRuntimeTransaction {
         lifecycle.claimAuthorityTargetPreparation(
             from: webView,
             navigationID: navigationID,
-            currentIntent: intentLedger.intent
+            currentIntent: mainFrameLoads.currentIntent
         )
     }
 
@@ -508,7 +381,7 @@ final class TabMainFrameRuntimeTransaction {
         lifecycle.claimLocalStartEffects(
             from: webView,
             navigationID: navigationID,
-            currentIntent: intentLedger.intent
+            currentIntent: mainFrameLoads.currentIntent
         )
     }
 
@@ -519,7 +392,7 @@ final class TabMainFrameRuntimeTransaction {
         lifecycle.claimSharedFinishEffects(
             from: webView,
             navigationID: navigationID,
-            currentIntent: intentLedger.intent
+            currentIntent: mainFrameLoads.currentIntent
         )
     }
 
@@ -528,7 +401,7 @@ final class TabMainFrameRuntimeTransaction {
     ) -> Bool {
         lifecycle.claimPromotedSharedFinishEffects(
             matching: continuation,
-            currentIntent: intentLedger.intent
+            currentIntent: mainFrameLoads.currentIntent
         )
     }
 
@@ -541,7 +414,7 @@ final class TabMainFrameRuntimeTransaction {
             isPDF: isPDF,
             from: webView,
             navigationID: navigationID,
-            currentIntent: intentLedger.intent
+            currentIntent: mainFrameLoads.currentIntent
         )
     }
 
@@ -552,7 +425,7 @@ final class TabMainFrameRuntimeTransaction {
         lifecycle.responseIsPDF(
             from: webView,
             navigationID: navigationID,
-            currentIntent: intentLedger.intent
+            currentIntent: mainFrameLoads.currentIntent
         )
     }
 
@@ -563,7 +436,7 @@ final class TabMainFrameRuntimeTransaction {
         lifecycle.finishLifecycle(
             from: webView,
             navigationID: navigationID,
-            currentIntent: intentLedger.intent
+            currentIntent: mainFrameLoads.currentIntent
         )
     }
 
@@ -581,7 +454,7 @@ final class TabMainFrameRuntimeTransaction {
                 navigationID: navigationID,
                 committedURL: committedURL,
                 isPDF: isPDF,
-                currentIntent: intentLedger.intent
+                currentIntent: mainFrameLoads.currentIntent
             )
             if let evidence = transition.evidence {
                 committedDocumentRuntime.recordCommit(
@@ -608,7 +481,7 @@ final class TabMainFrameRuntimeTransaction {
                 navigationID: navigationID,
                 terminalURL: terminalURL,
                 completesDocumentNavigation: completesDocumentNavigation,
-                currentIntent: intentLedger.intent
+                currentIntent: mainFrameLoads.currentIntent
             )
             if let evidence = transition.evidence {
                 committedDocumentRuntime.recordReplica(evidence)
@@ -631,7 +504,7 @@ final class TabMainFrameRuntimeTransaction {
         ) {
             guard let evidence = lifecycle.claimPromotedSharedCommitEffects(
                 matching: continuation,
-                currentIntent: intentLedger.intent
+                currentIntent: mainFrameLoads.currentIntent
             ) else {
                 return false
             }
@@ -647,10 +520,10 @@ final class TabMainFrameRuntimeTransaction {
         let accepted = lifecycle.acceptPromotedTarget(
             targetURL,
             matching: continuation,
-            currentIntent: intentLedger.intent
-        ) || intentLedger.isCurrentPendingAuthority(continuation)
+            currentIntent: mainFrameLoads.currentIntent
+        ) || mainFrameLoads.isCurrentPendingAuthority(continuation)
         guard accepted else { return false }
-        intentLedger.updateTargetWithinRevision(targetURL)
+        mainFrameLoads.updateTargetWithinRevision(targetURL)
         return true
     }
 
@@ -663,11 +536,11 @@ final class TabMainFrameRuntimeTransaction {
             targetURL,
             from: webView,
             navigationID: navigationID,
-            currentIntent: intentLedger.intent
+            currentIntent: mainFrameLoads.currentIntent
         ) else {
             return false
         }
-        intentLedger.updateTargetWithinRevision(targetURL)
+        mainFrameLoads.updateTargetWithinRevision(targetURL)
         return true
     }
 
@@ -681,7 +554,7 @@ final class TabMainFrameRuntimeTransaction {
 
     private func applyDurableDocumentRollback() -> URL {
         let snapshot = committedDocumentRuntime.prepareRollbackSnapshot()
-        let intent = intentLedger.beginRollbackIntent(to: snapshot.targetURL)
+        let intent = mainFrameLoads.beginRollbackIntent(to: snapshot.targetURL)
         lifecycle.resetForNewIntent()
         let rehydration = lifecycle.rehydrate(
             snapshot.candidates,
@@ -716,20 +589,9 @@ final class TabMainFrameRuntimeTransaction {
         }
     }
 
-    func loadingWebViews() -> [WKWebView] {
-        let submitted = intentLedger.submittedWebViews()
-        let active = lifecycle.loadingWebViews(
-            revision: intentLedger.intent.revision
-        )
-        var seen = Set<ObjectIdentifier>()
-        return (submitted + active).filter {
-            seen.insert(ObjectIdentifier($0)).inserted
-        }
-    }
-
     private func hasCurrentAuthority() -> Bool {
-        lifecycle.hasLiveAuthority(revision: intentLedger.intent.revision)
-            || intentLedger.hasPendingAuthority()
+        lifecycle.hasLiveAuthority(revision: mainFrameLoads.currentIntent.revision)
+            || mainFrameLoads.hasPendingAuthority
     }
 
     private func promoteAuthority(
@@ -737,11 +599,11 @@ final class TabMainFrameRuntimeTransaction {
     ) -> TabMainFrameAuthorityContinuation? {
         if let promotion = lifecycle.promoteAuthorityCandidate(
             preferredWebViewID: preferredWebViewID,
-            currentIntent: intentLedger.intent
+            currentIntent: mainFrameLoads.currentIntent
         ) {
             return apply(promotion)
         }
-        return intentLedger.promoteSubmittedAuthority(
+        return mainFrameLoads.promoteSubmittedAuthority(
             preferredWebViewID: preferredWebViewID
         )
     }
@@ -752,7 +614,7 @@ final class TabMainFrameRuntimeTransaction {
         guard let promotion else { return nil }
         committedDocumentRuntime.recordReplicas(promotion.migratedEvidence)
         if let targetURL = promotion.targetURLToAdopt {
-            intentLedger.updateTargetWithinRevision(targetURL)
+            mainFrameLoads.updateTargetWithinRevision(targetURL)
         }
         return promotion.continuation
     }

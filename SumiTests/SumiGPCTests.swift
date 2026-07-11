@@ -262,7 +262,7 @@ final class SumiGPCNavigationResponderTests: XCTestCase {
             navigationID: originalID,
             isCurrent: true
         ))
-        XCTAssertNotNil(tab.currentMainFrameNavigationIntent(matching: targetURL))
+        XCTAssertNotNil(tab.mainFrameLoads.currentIntent(matching: targetURL))
     }
 
     func testDoesNotRewriteWhenGPCDisabled() async {

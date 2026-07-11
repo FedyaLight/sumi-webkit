@@ -58,13 +58,13 @@ final class WebViewRebuildService {
         let targetURL = url ?? tab.url
         let intentRevision = existingIntentRevision
             ?? (rebuildKind == .semanticNavigation
-                ? tab.beginWebViewRebuildIntent()
-                : tab.currentWebViewRebuildIntentRevision)
-        guard tab.isCurrentWebViewRebuildIntent(intentRevision) else {
+                ? tab.webViewRebuildEpoch.advance()
+                : tab.webViewRebuildEpoch.current)
+        guard tab.webViewRebuildEpoch.isCurrent(intentRevision) else {
             return .failed
         }
 
-        let semanticRevision = tab.currentMainFrameNavigationIntent().revision
+        let semanticRevision = tab.mainFrameLoads.currentIntent.revision
         if websiteDataCleanup.permitsInternalSubmission(
             tabID: tab.id,
             semanticRevision: semanticRevision

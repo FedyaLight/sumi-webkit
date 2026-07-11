@@ -88,10 +88,10 @@ enum NormalTabInitialDocumentRuntimeHandoff {
         updatesTabPresentation: Bool,
         replacementBinding: ReplacementBinding?
     ) {
-        guard let navigationIntent = tab.currentMainFrameNavigationIntent(
+        guard let navigationIntent = tab.mainFrameLoads.currentIntent(
             matching: targetURL
         ), tab.webViewSession.residence(of: webView) == expectedResidence,
-           let preparationTicket = tab.beginPreparedMainFrameLoad(
+           let preparationTicket = tab.mainFrameLoads.beginPreparedLoad(
                on: webView,
                intent: navigationIntent
            ) else {
@@ -115,7 +115,7 @@ enum NormalTabInitialDocumentRuntimeHandoff {
         Task { @MainActor [weak tab, weak webView] in
             defer {
                 if let tab {
-                    tab.finishPreparedMainFrameLoad(preparationTicket)
+                    tab.mainFrameLoads.finishPreparedLoad(preparationTicket)
                 }
             }
             guard Task.isCancelled == false else {
@@ -170,7 +170,7 @@ enum NormalTabInitialDocumentRuntimeHandoff {
                     guard !resolvedWebView.isLoading,
                           resolvedWebView.url == nil,
                           resolvedWebView === webView,
-                          let currentIntent = tab.currentMainFrameNavigationIntent(
+                          let currentIntent = tab.mainFrameLoads.currentIntent(
                               revision: navigationIntent.revision
                           ),
                           Self.isStillValid(

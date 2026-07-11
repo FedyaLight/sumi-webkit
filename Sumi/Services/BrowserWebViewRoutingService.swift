@@ -122,7 +122,7 @@ final class BrowserWebViewRoutingService {
         policy: WebRuntimeMainFrameReloadPolicy
     ) {
         guard let tab = tabLookup(tabId),
-              tab.isCurrentMainFrameNavigationIntent(intent) else {
+              tab.mainFrameLoads.isCurrent(intent) else {
             return
         }
         commands.reloadAll(tab, intent, policy)
@@ -136,7 +136,7 @@ final class BrowserWebViewRoutingService {
         policy: WebRuntimeMainFrameReloadPolicy
     ) -> TabMainFrameReloadCommandOutcome {
         guard let tab = tabLookup(tabId),
-              tab.isCurrentMainFrameNavigationIntent(intent) else {
+              tab.mainFrameLoads.isCurrent(intent) else {
             return .failed
         }
         return commands.reloadWindow(tab, windowId, intent, policy)
@@ -332,7 +332,7 @@ extension BrowserWebViewRoutingService.Commands {
                     preferredPrimaryWindowID: windowID,
                     load: targetURL,
                     reason: reason,
-                    intentRevision: tab.currentWebViewRebuildIntentRevision,
+                    intentRevision: tab.webViewRebuildEpoch.current,
                     rebuildKind: .semanticNavigation
                 )
                 switch result {

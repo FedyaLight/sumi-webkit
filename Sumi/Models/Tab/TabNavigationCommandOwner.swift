@@ -26,7 +26,7 @@ final class TabNavigationCommandOwner {
     func loadURL(_ newURL: URL, for tab: Tab) {
         guard tab.hasCurrentWebView else {
             _ = tab.beginMainFrameNavigationIntent(to: newURL)
-            _ = tab.beginWebViewRebuildIntent()
+            _ = tab.webViewRebuildEpoch.advance()
             tab.url = newURL
             tab.beginLoadingPresentationIfNeeded()
             let replacementOutcome = prepareMainFrameConfigurationPolicyIfNeeded(
@@ -75,7 +75,7 @@ final class TabNavigationCommandOwner {
         configurationPolicyRebuilder: ConfigurationPolicyRebuilder? = nil
     ) {
         let navigationIntent = tab.beginMainFrameNavigationIntent(to: newURL)
-        _ = tab.beginWebViewRebuildIntent()
+        _ = tab.webViewRebuildEpoch.advance()
         tab.url = newURL
         tab.beginLoadingPresentationIfNeeded()
         tab.resetPlaybackActivity()
@@ -138,7 +138,7 @@ final class TabNavigationCommandOwner {
             WebRuntimeMainFrameLoader.load(resolvedTargetURL, on: resolvedWebView)
         }
 
-        if tab.isCurrentMainFrameNavigationIntent(navigationIntent) {
+        if tab.mainFrameLoads.isCurrent(navigationIntent) {
             tab.applyCachedFaviconOrPlaceholder(for: newURL)
         }
     }
@@ -279,7 +279,7 @@ final class TabNavigationCommandOwner {
             ?? currentWebView?.url
             ?? tab.url
         let navigationIntent = tab.beginMainFrameNavigationIntent(to: targetURL)
-        _ = tab.beginWebViewRebuildIntent()
+        _ = tab.webViewRebuildEpoch.advance()
         tab.beginLoadingPresentationIfNeeded()
         let protectionReloadWasRequired = tab.isProtectionReloadRequired
         let configurationReplacementOutcome = configurationPolicyRebuilder?(
@@ -327,7 +327,7 @@ final class TabNavigationCommandOwner {
         }
 
         if configurationReplacementOutcome == .notNeeded {
-            guard tab.isCurrentMainFrameNavigationIntent(navigationIntent) else {
+            guard tab.mainFrameLoads.isCurrent(navigationIntent) else {
                 return .failed
             }
             let outcome = deliverTrackedReload(navigationIntent, policy)
@@ -347,7 +347,7 @@ final class TabNavigationCommandOwner {
         policy: WebRuntimeMainFrameReloadPolicy,
         includesParkedWebView: Bool = false
     ) -> TabMainFrameReloadCommandOutcome {
-        guard tab.isCurrentMainFrameNavigationIntent(intent) else {
+        guard tab.mainFrameLoads.isCurrent(intent) else {
             return .failed
         }
 
@@ -395,7 +395,7 @@ final class TabNavigationCommandOwner {
         intent: TabMainFrameNavigationIntent,
         policy: WebRuntimeMainFrameReloadPolicy
     ) -> TabMainFrameReloadCommandOutcome {
-        guard tab.isCurrentMainFrameNavigationIntent(intent) else {
+        guard tab.mainFrameLoads.isCurrent(intent) else {
             return .failed
         }
 
@@ -427,11 +427,11 @@ final class TabNavigationCommandOwner {
         intent: TabMainFrameNavigationIntent,
         policy: WebRuntimeMainFrameReloadPolicy
     ) -> TabMainFrameReloadCommandOutcome {
-        guard tab.isCurrentMainFrameNavigationIntent(intent) else {
+        guard tab.mainFrameLoads.isCurrent(intent) else {
             return .failed
         }
-        guard tab.markDeferredMainFrameLoad(on: webView, intent: intent) else {
-            return tab.hasOutstandingMainFrameLoad(
+        guard tab.mainFrameLoads.markDeferredLoad(on: webView, intent: intent) else {
+            return tab.mainFrameLoads.hasOutstandingLoad(
                 on: webView,
                 targetURL: intent.targetURL
             ) ? .scheduled : .failed
@@ -474,9 +474,9 @@ final class TabNavigationCommandOwner {
             return
         }
 
-        let navigationIntent = tab.currentMainFrameNavigationIntent(matching: tab.url)
+        let navigationIntent = tab.mainFrameLoads.currentIntent(matching: tab.url)
         let preparationTicket = navigationIntent.flatMap {
-            tab.beginPreparedMainFrameLoad(on: webView, intent: $0)
+            tab.mainFrameLoads.beginPreparedLoad(on: webView, intent: $0)
         }
         tab.navigationRuntime.navigationTransactionOwner.performAfterPreparation(
             on: webView,
@@ -485,15 +485,15 @@ final class TabNavigationCommandOwner {
             },
             didCancel: { [weak tab] in
                 guard let tab, let preparationTicket else { return }
-                tab.finishPreparedMainFrameLoad(preparationTicket)
+                tab.mainFrameLoads.finishPreparedLoad(preparationTicket)
             },
             performLoad: { [weak tab] resolvedWebView in
                 guard let tab else { return }
                 if let preparationTicket {
-                    tab.finishPreparedMainFrameLoad(preparationTicket)
+                    tab.mainFrameLoads.finishPreparedLoad(preparationTicket)
                 }
                 guard let currentIntent = navigationIntent.flatMap({
-                    tab.currentMainFrameNavigationIntent(revision: $0.revision)
+                    tab.mainFrameLoads.currentIntent(revision: $0.revision)
                 }) else {
                     return
                 }

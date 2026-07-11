@@ -49,7 +49,6 @@ final class TabMainFrameIntentLedger {
         var phase: PendingPhase
     }
 
-    private(set) var rebuildIntentRevision: UInt64 = 0
     private(set) var intent: TabMainFrameNavigationIntent
     private var requiresFreshUserActionForUnboundLifecycle = false
     private var pendingLoadsByWebViewID: [ObjectIdentifier: PendingLoad] = [:]
@@ -57,11 +56,6 @@ final class TabMainFrameIntentLedger {
 
     init(initialURL: URL) {
         intent = TabMainFrameNavigationIntent(revision: 0, targetURL: initialURL)
-    }
-
-    func beginRebuildIntent() -> UInt64 {
-        rebuildIntentRevision &+= 1
-        return rebuildIntentRevision
     }
 
     func beginExplicitIntent(to targetURL: URL) -> TabMainFrameNavigationIntent {
@@ -148,6 +142,7 @@ final class TabMainFrameIntentLedger {
     ) -> TabMainFramePreparedLoadTicket? {
         guard intent == candidate else { return nil }
         let webViewID = ObjectIdentifier(webView)
+        discardStalePendingLoad(for: webView)
         guard pendingLoadsByWebViewID[webViewID] == nil,
               hasLifecycleParticipant == false else {
             return nil
@@ -185,6 +180,7 @@ final class TabMainFrameIntentLedger {
     ) -> Bool {
         guard intent == candidate else { return false }
         let webViewID = ObjectIdentifier(webView)
+        discardStalePendingLoad(for: webView)
         guard isLifecycleAuthority == false,
               authorityCandidateWebViewID != webViewID else {
             return false
@@ -211,6 +207,7 @@ final class TabMainFrameIntentLedger {
     ) {
         let webViewID = ObjectIdentifier(webView)
         guard let load = pendingLoadsByWebViewID[webViewID],
+              load.webViewReference.matches(webView),
               load.revision == candidate.revision,
               load.phase == .deferred,
               Self.matchesNavigationTarget(load.targetURL, candidate.targetURL) else {
@@ -225,6 +222,7 @@ final class TabMainFrameIntentLedger {
         hasLifecycleAuthority: Bool
     ) -> TabMainFrameSubmissionLease? {
         let webViewID = ObjectIdentifier(webView)
+        discardStalePendingLoad(for: webView)
         if let load = pendingLoadsByWebViewID[webViewID],
            load.revision == intent.revision,
            Self.matchesNavigationTarget(load.targetURL, intent.targetURL) {
@@ -442,6 +440,7 @@ final class TabMainFrameIntentLedger {
     ) -> Bool {
         guard authorityCandidateWebViewID == continuation.webViewID,
               let load = pendingLoadsByWebViewID[continuation.webViewID],
+              load.webViewReference.matches(continuation.webView),
               load.phase == .submitted else {
             return false
         }
@@ -485,6 +484,18 @@ final class TabMainFrameIntentLedger {
         )
         pendingLoadsByWebViewID.removeAll()
         authorityCandidateWebViewID = nil
+    }
+
+    private func discardStalePendingLoad(for webView: WKWebView) {
+        let webViewID = ObjectIdentifier(webView)
+        guard let load = pendingLoadsByWebViewID[webViewID],
+              load.webViewReference.matches(webView) == false else {
+            return
+        }
+        pendingLoadsByWebViewID.removeValue(forKey: webViewID)
+        if authorityCandidateWebViewID == webViewID {
+            authorityCandidateWebViewID = nil
+        }
     }
 
     private func assignAuthorityCandidateIfNeeded(

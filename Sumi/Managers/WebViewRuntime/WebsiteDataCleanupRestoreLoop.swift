@@ -87,7 +87,7 @@ final class WebsiteDataCleanupRestoreLoop {
                     continue
                 }
 
-                let targetURL = tab.currentMainFrameNavigationIntent().targetURL
+                let targetURL = tab.mainFrameLoads.currentIntent.targetURL
                 navigationBarrier.beginRestoreAttempt(
                     stillOwnedParticipants,
                     targetURL: targetURL,

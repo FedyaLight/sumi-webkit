@@ -238,7 +238,7 @@ final class TabSuspensionArchitectureTests: XCTestCase {
         for tab: Tab
     ) {
         _ = tab.beginMainFrameNavigationIntent(to: tab.url)
-        guard let submission = tab.claimDirectMainFrameLoadLease(on: webView) else {
+        guard let submission = tab.mainFrameLoads.claimDirectSubmission(on: webView) else {
             return XCTFail("Expected main-frame submission lease")
         }
         let navigation = NSObject()

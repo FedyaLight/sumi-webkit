@@ -1557,7 +1557,7 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
         to tab: Tab
     ) throws -> NSObject {
         let lease = try XCTUnwrap(
-            tab.claimDirectMainFrameLoadLease(on: webView)
+            tab.mainFrameLoads.claimDirectSubmission(on: webView)
         )
         let navigation = NSObject()
         XCTAssertTrue(tab.bindSubmittedMainFrameLoad(

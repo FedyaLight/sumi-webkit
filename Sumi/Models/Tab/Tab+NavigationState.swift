@@ -22,9 +22,9 @@ extension Tab {
     ) -> TabMainFrameSubmissionLease {
         cancelPendingMainFrameNavigation()
         _ = beginMainFrameNavigationIntent(to: targetURL)
-        _ = beginWebViewRebuildIntent()
+        _ = webViewRebuildEpoch.advance()
         beginLoadingPresentationIfNeeded()
-        guard let lease = claimDirectMainFrameLoadLease(on: webView) else {
+        guard let lease = mainFrameLoads.claimDirectSubmission(on: webView) else {
             preconditionFailure(
                 "Browser-owned history navigation could not claim its exact WebView"
             )
@@ -46,7 +46,7 @@ extension Tab {
     }
 
     func stopLoading(on webView: WKWebView? = nil) {
-        var loadingWebViews = mainFrameLoadingWebViews()
+        var loadingWebViews = mainFrameLoads.loadingWebViews()
         if let webView, loadingWebViews.contains(where: { $0 === webView }) == false {
             loadingWebViews.append(webView)
         }
@@ -56,7 +56,7 @@ extension Tab {
         }
         cancelPendingMainFrameNavigation()
         cancelMainFrameNavigationIntent()
-        _ = beginWebViewRebuildIntent()
+        _ = webViewRebuildEpoch.advance()
         for loadingWebView in loadingWebViews {
             loadingWebView.stopLoading()
         }

@@ -162,7 +162,7 @@ final class ProfileTransitionService {
         guard live.isEmpty == false else {
             do {
                 try request.stageModel()
-                request.tabs.forEach { _ = $0.beginWebViewRebuildIntent() }
+                request.tabs.forEach { _ = $0.webViewRebuildEpoch.advance() }
                 request.finishModel()
                 settlement(.committed)
                 return .committed
@@ -206,7 +206,7 @@ final class ProfileTransitionService {
             validateModel: request.validateModel,
             modelCommit: {
                 try request.stageModel()
-                request.tabs.forEach { _ = $0.beginWebViewRebuildIntent() }
+                request.tabs.forEach { _ = $0.webViewRebuildEpoch.advance() }
             },
             modelRollback: {
                 try request.rollbackModel()

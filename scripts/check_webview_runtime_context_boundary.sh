@@ -231,7 +231,7 @@ if [[ -z "$transaction_batch_departure_body" ]] \
       <<< "$transaction_batch_departure_body" \
     || ! rg -q 'committedDocumentRuntime\.removeWebViews\(' \
       <<< "$transaction_batch_departure_body" \
-    || ! rg -q 'intentLedger\.departure\(of: departingWebViews\)' \
+    || ! rg -q 'mainFrameLoads\.departure\(of: departingWebViews\)' \
       <<< "$transaction_batch_departure_body" \
     || ! rg -q 'lifecycle\.departure\(' \
       <<< "$transaction_batch_departure_body"; then
