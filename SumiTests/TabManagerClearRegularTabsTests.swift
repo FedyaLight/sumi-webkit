@@ -163,7 +163,7 @@ final class TabManagerClearRegularTabsTests: XCTestCase {
             activate: false
         )
         tab.profileId = committedProfile.id
-        let deferredIntent = tab.beginProfileAssignmentIntent(
+        let deferredIntent = tab.profileAssignment.begin(
             desiredProfileID: deferredProfile.id,
             resolvedProfileID: deferredProfile.id,
             targetURL: tab.url,
@@ -178,7 +178,7 @@ final class TabManagerClearRegularTabsTests: XCTestCase {
         )
 
         XCTAssertEqual(tab.profileId, committedProfile.id)
-        XCTAssertFalse(tab.isCurrentProfileAssignmentIntent(deferredIntent))
+        XCTAssertFalse(tab.profileAssignment.isCurrent(deferredIntent))
         XCTAssertFalse(
             tabManager.profileAssignments.tabs.executeDeferred(
                 tab: tab,
@@ -207,7 +207,7 @@ final class TabManagerClearRegularTabsTests: XCTestCase {
             activate: false
         )
         tab.profileId = committedProfile.id
-        let deferredIntent = tab.beginProfileAssignmentIntent(
+        let deferredIntent = tab.profileAssignment.begin(
             desiredProfileID: deletedProfile.id,
             resolvedProfileID: deletedProfile.id,
             targetURL: tab.url,
@@ -223,7 +223,7 @@ final class TabManagerClearRegularTabsTests: XCTestCase {
         )
 
         XCTAssertEqual(tab.profileId, committedProfile.id)
-        XCTAssertFalse(tab.isCurrentProfileAssignmentIntent(deferredIntent))
+        XCTAssertFalse(tab.profileAssignment.isCurrent(deferredIntent))
     }
 
     func testCrossProfileSpaceMovePinsOldProfileUntilReplacementCommits() throws {
@@ -239,7 +239,7 @@ final class TabManagerClearRegularTabsTests: XCTestCase {
             executeProfileAssignment: { tab, _, intent in
                 capturedIntent = intent
                 if shouldDefer { return .deferred }
-                return tab.commitProfileAssignmentIntent(intent)
+                return tab.profileAssignment.commit(intent)
                     ? .committed
                     : .stale
             }
@@ -278,7 +278,7 @@ final class TabManagerClearRegularTabsTests: XCTestCase {
         )
         XCTAssertNil(deferredIntent.desiredProfileID)
         XCTAssertEqual(deferredIntent.resolvedProfileID, targetProfile.id)
-        XCTAssertTrue(tab.isCurrentProfileAssignmentIntent(deferredIntent))
+        XCTAssertTrue(tab.profileAssignment.isCurrent(deferredIntent))
 
         shouldDefer = false
         XCTAssertTrue(

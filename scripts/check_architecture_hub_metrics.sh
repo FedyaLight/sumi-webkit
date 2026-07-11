@@ -59,6 +59,28 @@ check_exact() {
 # Peer Owners on roots: lazy var *Owner in the façade files themselves.
 bm_loc="$(count_lines Sumi/Managers/BrowserManager/BrowserManager.swift)"
 tm_loc="$(count_lines Sumi/Managers/TabManager/TabManager.swift)"
+tab_model_loc="$(count_lines Sumi/Models/Tab/Tab.swift)"
+tab_model_methods="$(
+  rg --count-matches \
+    '^\s*(public |private |internal |fileprivate )?func ' \
+    Sumi/Models/Tab/Tab.swift 2>/dev/null || true
+)"
+tab_model_methods="${tab_model_methods:-0}"
+retired_tab_profile_assignment_facade="$(
+  count_matches \
+    'beginProfileAssignmentIntent|isCurrentProfileAssignmentIntent|hasPendingProfileAssignment|hasUnsettledProfileAssignment|cancelPendingProfileAssignment|commitProfileAssignmentIntent|stageProfileAssignmentIntent|isCurrentStagedProfileAssignmentIntent|finishStagedProfileAssignmentIntent|rollbackStagedProfileAssignmentIntent|abortProfileAssignmentIntent' \
+    Sumi SumiTests
+)"
+tab_profile_assignment_mutation_outside_services="$({
+  rg --count-matches \
+    '\.profileAssignment\.(begin|cancelPending|commit|stage|finish|rollback|abort|replaceCurrentProfileID)\b' \
+    Sumi -g '*.swift' \
+    -g '!Sumi/Managers/WebViewRuntime/ProfileTransitionService.swift' \
+    -g '!Sumi/Managers/TabManager/SpaceProfileTransaction.swift' \
+    -g '!Sumi/Managers/TabManager/SpaceProfileTransitionService.swift' \
+    -g '!Sumi/Managers/TabManager/TabProfileTransitionService.swift' \
+    2>/dev/null || true
+} | awk -F: '{ total += $NF } END { print total + 0 }')"
 window_session_bundle_loc="$(count_lines Sumi/Managers/BrowserManager/BrowserWindowSessionBundle.swift)"
 shell_runtime_loc="$(count_lines Sumi/Managers/BrowserManager/BrowserShellRuntime.swift)"
 webview_routing_loc="$(count_lines Sumi/Services/BrowserWebViewRoutingService.swift)"
@@ -747,6 +769,12 @@ printf '%s\n' 'Architecture hub metrics freeze'
 printf '%s\n' '--------------------------------'
 check_max "BrowserManager.swift LOC" "$bm_loc" 200
 check_max "TabManager.swift LOC" "$tm_loc" 220
+check_max "Tab.swift LOC" "$tab_model_loc" 1136
+check_max "Tab.swift methods" "$tab_model_methods" 77
+check_exact "Retired Tab profile-assignment facade" \
+  "$retired_tab_profile_assignment_facade" 0
+check_exact "Tab profile mutation outside transaction services" \
+  "$tab_profile_assignment_mutation_outside_services" 0
 check_max "BrowserWindowSessionBundle.swift LOC" "$window_session_bundle_loc" 120
 check_max "BrowserWindowSessionBundle capabilities" "$window_session_capabilities" 6
 check_max "BrowserShellRuntime.swift LOC" "$shell_runtime_loc" 160

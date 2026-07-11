@@ -36,12 +36,11 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         get { placementStateOwner.index }
         set { placementStateOwner.index = newValue }
     }
-    var profileId: UUID?
-    private var profileAssignmentIntentRevision: UInt64 = 0
-    private var pendingProfileAssignmentIntent:
-        DeferredWebViewProfileAssignmentIntent?
-    private var settlingProfileAssignmentIntent:
-        DeferredWebViewProfileAssignmentIntent?
+    let profileAssignment = TabProfileAssignmentStateMachine()
+    var profileId: UUID? {
+        get { profileAssignment.currentProfileID }
+        set { _ = profileAssignment.replaceCurrentProfileID(newValue) }
+    }
     // If true, this tab is created to host a popup window; do not perform initial load.
     var isPopupHost: Bool {
         get { surfaceStateOwner.isPopupHost }
@@ -1018,119 +1017,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
 
     func replaceUntrackedWebView(_ webView: WKWebView) {
         webViewSession.replaceUntracked(with: webView)
-    }
-
-    func beginProfileAssignmentIntent(
-        desiredProfileID: UUID?,
-        resolvedProfileID: UUID,
-        targetURL: URL,
-        requiresStructuralPersistence: Bool
-    ) -> DeferredWebViewProfileAssignmentIntent {
-        precondition(
-            settlingProfileAssignmentIntent == nil,
-            "A profile transition must settle before another transition begins"
-        )
-        profileAssignmentIntentRevision &+= 1
-        let intent = DeferredWebViewProfileAssignmentIntent(
-            revision: profileAssignmentIntentRevision,
-            expectedProfileID: profileId,
-            desiredProfileID: desiredProfileID,
-            resolvedProfileID: resolvedProfileID,
-            targetURL: targetURL,
-            requiresStructuralPersistence: requiresStructuralPersistence
-        )
-        pendingProfileAssignmentIntent = intent
-        return intent
-    }
-
-    func isCurrentProfileAssignmentIntent(
-        _ intent: DeferredWebViewProfileAssignmentIntent
-    ) -> Bool {
-        pendingProfileAssignmentIntent == intent
-            && profileAssignmentIntentRevision == intent.revision
-            && profileId == intent.expectedProfileID
-    }
-
-    func hasPendingProfileAssignment(to desiredProfileID: UUID?) -> Bool {
-        let intent = pendingProfileAssignmentIntent
-            ?? settlingProfileAssignmentIntent
-        return intent?.desiredProfileID == desiredProfileID
-    }
-
-    var hasUnsettledProfileAssignment: Bool {
-        pendingProfileAssignmentIntent != nil
-            || settlingProfileAssignmentIntent != nil
-    }
-
-    @discardableResult
-    func cancelPendingProfileAssignment() -> Bool {
-        guard pendingProfileAssignmentIntent != nil else { return false }
-        pendingProfileAssignmentIntent = nil
-        return true
-    }
-
-    @discardableResult
-    func commitProfileAssignmentIntent(
-        _ intent: DeferredWebViewProfileAssignmentIntent
-    ) -> Bool {
-        guard isCurrentProfileAssignmentIntent(intent) else { return false }
-        profileId = intent.desiredProfileID
-        pendingProfileAssignmentIntent = nil
-        return true
-    }
-
-    /// Applies the model half of a replacement transaction while retaining
-    /// the exact intent until the repository retirement lease settles.
-    @discardableResult
-    func stageProfileAssignmentIntent(
-        _ intent: DeferredWebViewProfileAssignmentIntent
-    ) -> Bool {
-        guard settlingProfileAssignmentIntent == nil,
-              isCurrentProfileAssignmentIntent(intent) else {
-            return false
-        }
-        profileId = intent.desiredProfileID
-        pendingProfileAssignmentIntent = nil
-        settlingProfileAssignmentIntent = intent
-        return true
-    }
-
-    func isCurrentStagedProfileAssignmentIntent(
-        _ intent: DeferredWebViewProfileAssignmentIntent
-    ) -> Bool {
-        settlingProfileAssignmentIntent == intent
-            && profileAssignmentIntentRevision == intent.revision
-            && profileId == intent.desiredProfileID
-    }
-
-    @discardableResult
-    func finishStagedProfileAssignmentIntent(
-        _ intent: DeferredWebViewProfileAssignmentIntent
-    ) -> Bool {
-        guard isCurrentStagedProfileAssignmentIntent(intent) else {
-            return false
-        }
-        settlingProfileAssignmentIntent = nil
-        return true
-    }
-
-    @discardableResult
-    func rollbackStagedProfileAssignmentIntent(
-        _ intent: DeferredWebViewProfileAssignmentIntent
-    ) -> Bool {
-        guard isCurrentStagedProfileAssignmentIntent(intent) else {
-            return false
-        }
-        profileId = intent.expectedProfileID
-        settlingProfileAssignmentIntent = nil
-        return true
-    }
-
-    func abortProfileAssignmentIntent(
-        _ intent: DeferredWebViewProfileAssignmentIntent
-    ) {
-        guard pendingProfileAssignmentIntent == intent else { return }
-        pendingProfileAssignmentIntent = nil
     }
 
     public func clearCurrentWebViewOwnership() {

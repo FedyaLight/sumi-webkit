@@ -63,13 +63,15 @@ final class SpaceProfileTransitionService {
         ) else { return .failed }
 
         let tabs = tabsInSpace(spaceID).filter { $0.profileId == nil }
-        guard tabs.allSatisfy({ !$0.hasUnsettledProfileAssignment }) else {
+        guard tabs.allSatisfy({
+            !$0.profileAssignment.hasUnsettledAssignment
+        }) else {
             return .failed
         }
         let tabIntents = tabs.map { tab in
             DeferredWebViewSpaceProfileTabIntent(
                 tabID: tab.id,
-                intent: tab.beginProfileAssignmentIntent(
+                intent: tab.profileAssignment.begin(
                     desiredProfileID: nil,
                     resolvedProfileID: profile.id,
                     targetURL: policy.liveDocumentURL(for: tab) ?? tab.url,

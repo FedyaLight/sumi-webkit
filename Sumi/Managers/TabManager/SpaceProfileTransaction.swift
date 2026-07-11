@@ -44,7 +44,7 @@ final class SpaceProfileTransaction {
                 return false
             }
             return runtime.tab(tabIntent.tabID)?
-                .isCurrentProfileAssignmentIntent(tabIntent.intent) == true
+                .profileAssignment.isCurrent(tabIntent.intent) == true
         }
     }
 
@@ -60,7 +60,7 @@ final class SpaceProfileTransaction {
                 preconditionFailure("Space profile transaction lost an affected Tab")
             }
             precondition(
-                tab.stageProfileAssignmentIntent(tabIntent.intent),
+                tab.profileAssignment.stage(tabIntent.intent),
                 "Space profile transaction changed during repository admission"
             )
         }
@@ -76,7 +76,7 @@ final class SpaceProfileTransaction {
                 preconditionFailure("Space profile transaction lost an affected Tab")
             }
             precondition(
-                tab.finishStagedProfileAssignmentIntent(tabIntent.intent),
+                tab.profileAssignment.finish(tabIntent.intent),
                 "Space profile transaction lost a staged Tab intent"
             )
         }
@@ -95,7 +95,7 @@ final class SpaceProfileTransaction {
                 preconditionFailure("Space profile rollback lost an affected Tab")
             }
             precondition(
-                tab.rollbackStagedProfileAssignmentIntent(tabIntent.intent),
+                tab.profileAssignment.rollback(tabIntent.intent),
                 "Space profile rollback lost a staged Tab intent"
             )
         }
@@ -105,7 +105,7 @@ final class SpaceProfileTransaction {
     func abortPending() {
         guard state == .pending else { return }
         for tabIntent in intent.tabIntents {
-            runtime.tab(tabIntent.tabID)?.abortProfileAssignmentIntent(
+            runtime.tab(tabIntent.tabID)?.profileAssignment.abort(
                 tabIntent.intent
             )
         }

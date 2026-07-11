@@ -227,7 +227,7 @@ final class WebViewDeferredProtectedCommandExecutionOwner {
             return tab.isCurrentWebViewRebuildIntent(intent.revision)
         case .assignProfile(let tabID, _, let intent):
             guard let tab = context.resolveTab(tabID) else { return false }
-            return tab.isCurrentProfileAssignmentIntent(intent)
+            return tab.profileAssignment.isCurrent(intent)
         case .assignSpaceProfile(let intent):
             return context.isSpaceProfileAssignmentValid(intent)
         case .synchronizeTrackedNavigation(

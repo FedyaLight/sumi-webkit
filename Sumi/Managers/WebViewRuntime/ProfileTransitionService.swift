@@ -69,21 +69,21 @@ final class ProfileTransitionService {
                 tabs: [tab],
                 validateModel: {
                     intent.resolvedProfileID == targetProfile.id
-                        && tab.isCurrentProfileAssignmentIntent(intent)
+                        && tab.profileAssignment.isCurrent(intent)
                 },
                 stageModel: {
-                    guard tab.stageProfileAssignmentIntent(intent) else {
+                    guard tab.profileAssignment.stage(intent) else {
                         throw ModelError.rejected
                     }
                 },
                 finishModel: {
                     precondition(
-                        tab.finishStagedProfileAssignmentIntent(intent),
+                        tab.profileAssignment.finish(intent),
                         "Profile transition lost its staged Tab intent"
                     )
                 },
                 rollbackModel: {
-                    guard tab.rollbackStagedProfileAssignmentIntent(intent) else {
+                    guard tab.profileAssignment.rollback(intent) else {
                         throw ModelError.rejected
                     }
                 },

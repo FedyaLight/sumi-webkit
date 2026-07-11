@@ -156,7 +156,7 @@ final class TabCreationPlacementServiceTests: XCTestCase {
             )
         )
         let tabIntent = try XCTUnwrap(transition.tabIntent)
-        XCTAssertTrue(follower.isCurrentProfileAssignmentIntent(tabIntent))
+        XCTAssertTrue(follower.profileAssignment.isCurrent(tabIntent))
 
         XCTAssertTrue(try XCTUnwrap(transition.validateModel)())
         XCTAssertTrue(try XCTUnwrap(transition.stageModel)())
@@ -165,13 +165,13 @@ final class TabCreationPlacementServiceTests: XCTestCase {
 
         XCTAssertEqual(space.profileId, pendingProfile.id)
         XCTAssertEqual(follower.profileId, pendingProfile.id)
-        XCTAssertTrue(follower.isCurrentProfileAssignmentIntent(tabIntent))
-        XCTAssertTrue(follower.stageProfileAssignmentIntent(tabIntent))
-        XCTAssertTrue(follower.finishStagedProfileAssignmentIntent(tabIntent))
+        XCTAssertTrue(follower.profileAssignment.isCurrent(tabIntent))
+        XCTAssertTrue(follower.profileAssignment.stage(tabIntent))
+        XCTAssertTrue(follower.profileAssignment.finish(tabIntent))
         try XCTUnwrap(transition.tabSettlement)(.committed)
 
         XCTAssertEqual(follower.profileId, explicitProfile.id)
-        XCTAssertFalse(follower.hasUnsettledProfileAssignment)
+        XCTAssertFalse(follower.profileAssignment.hasUnsettledAssignment)
     }
 
     func testNonInheritingPlacementPreservesExplicitTabProfile() throws {

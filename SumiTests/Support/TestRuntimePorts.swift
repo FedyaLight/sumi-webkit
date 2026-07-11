@@ -23,7 +23,7 @@ enum TestRuntimePorts {
             Profile,
             DeferredWebViewProfileAssignmentIntent
         ) -> TabProfileAssignmentExecutionOutcome = { tab, _, intent in
-            tab.commitProfileAssignmentIntent(intent) ? .committed : .stale
+            tab.profileAssignment.commit(intent) ? .committed : .stale
         }
     ) -> TabManagerWebViewLifecycleService {
         TabManagerWebViewLifecycleService(

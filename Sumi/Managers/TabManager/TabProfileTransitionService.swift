@@ -34,16 +34,18 @@ final class TabProfileTransitionService {
             return false
         }
         if tab.profileId == profileID {
-            let didCancel = tab.cancelPendingProfileAssignment()
+            let didCancel = tab.profileAssignment.cancelPending()
             if didCancel, reconcileStableInheritance(for: tab) {
                 publishStructuralMutation(for: tab)
             }
             return didCancel
         }
-        if tab.hasPendingProfileAssignment(to: profileID) {
+        if tab.profileAssignment.hasPendingAssignment(to: profileID) {
             return false
         }
-        guard tab.hasUnsettledProfileAssignment == false else { return false }
+        guard tab.profileAssignment.hasUnsettledAssignment == false else {
+            return false
+        }
         return start(
             desiredProfileID: profileID,
             tab: tab,
@@ -52,8 +54,10 @@ final class TabProfileTransitionService {
     }
 
     func assignProfile(_ profileID: UUID?, to tab: Tab) {
-        guard tab.hasPendingProfileAssignment(to: profileID) == false,
-              tab.hasUnsettledProfileAssignment == false else { return }
+        guard tab.profileAssignment.hasPendingAssignment(to: profileID) == false,
+              tab.profileAssignment.hasUnsettledAssignment == false else {
+            return
+        }
         if tab.profileId == profileID {
             return
         }
@@ -79,7 +83,7 @@ final class TabProfileTransitionService {
             desiredProfileID: desiredProfileID
         ) else { return nil }
 
-        _ = tab.cancelPendingProfileAssignment()
+        _ = tab.profileAssignment.cancelPending()
         let preparation = TabSpaceProfileTransitionPreparation(
             tabID: tab.id,
             sourceSpaceID: tab.spaceId,
@@ -112,7 +116,7 @@ final class TabProfileTransitionService {
         tab: Tab,
         intent: DeferredWebViewProfileAssignmentIntent
     ) -> Bool {
-        guard tab.isCurrentProfileAssignmentIntent(intent),
+        guard tab.profileAssignment.isCurrent(intent),
               let profile = policy.resolvedAssignmentProfile(
                   for: tab,
                   desiredProfileID: intent.desiredProfileID
@@ -137,7 +141,7 @@ final class TabProfileTransitionService {
         ) else {
             return .failed
         }
-        let intent = tab.beginProfileAssignmentIntent(
+        let intent = tab.profileAssignment.begin(
             desiredProfileID: desiredProfileID,
             resolvedProfileID: profile.id,
             targetURL: policy.liveDocumentURL(for: tab) ?? tab.url,
@@ -163,7 +167,7 @@ final class TabProfileTransitionService {
         tab: Tab,
         intent: DeferredWebViewProfileAssignmentIntent
     ) {
-        tab.abortProfileAssignmentIntent(intent)
+        tab.profileAssignment.abort(intent)
         if reconcileStableInheritance(for: tab) {
             publishStructuralMutation(for: tab)
         }
@@ -202,7 +206,7 @@ final class TabProfileTransitionService {
         case .committed:
             requiresStructuralPublication = intent.requiresStructuralPersistence
         case .rejected:
-            tab.abortProfileAssignmentIntent(intent)
+            tab.profileAssignment.abort(intent)
         case .rolledBack:
             requiresStructuralPublication = intent.requiresStructuralPersistence
         case .conflicted, .leaseLost, .terminalShutdown:

@@ -55,14 +55,14 @@ final class PendingTabProfileInheritanceTests: XCTestCase {
 
         XCTAssertEqual(space.profileId, pendingProfile.id)
         XCTAssertEqual(follower.profileId, pendingProfile.id)
-        XCTAssertTrue(follower.hasUnsettledProfileAssignment)
+        XCTAssertTrue(follower.profileAssignment.hasUnsettledAssignment)
 
         try XCTUnwrap(transition.tabSettlement)(.rejected(.failed))
         await Task.yield()
 
         XCTAssertNil(follower.profileId)
         XCTAssertEqual(space.profileId, pendingProfile.id)
-        XCTAssertFalse(follower.hasUnsettledProfileAssignment)
+        XCTAssertFalse(follower.profileAssignment.hasUnsettledAssignment)
         XCTAssertEqual(structuralEvents.count, 1)
         XCTAssertTrue(
             tabManager.structuralPersistence.dirtySet.dirtyTabIds
@@ -122,7 +122,7 @@ final class PendingTabProfileInheritanceTests: XCTestCase {
 
         XCTAssertNil(follower.profileId)
         XCTAssertEqual(space.profileId, pendingProfile.id)
-        XCTAssertFalse(follower.hasUnsettledProfileAssignment)
+        XCTAssertFalse(follower.profileAssignment.hasUnsettledAssignment)
     }
 
     func testAssigningInheritedProfileCancelsFollowerOverrideAfterSpaceCommit() throws {
@@ -175,7 +175,7 @@ final class PendingTabProfileInheritanceTests: XCTestCase {
 
         XCTAssertNil(follower.profileId)
         XCTAssertEqual(space.profileId, pendingProfile.id)
-        XCTAssertFalse(follower.hasUnsettledProfileAssignment)
+        XCTAssertFalse(follower.profileAssignment.hasUnsettledAssignment)
     }
 
     func testLateRejectedFollowerIntentCannotInvalidateNewOverride() throws {
@@ -223,7 +223,7 @@ final class PendingTabProfileInheritanceTests: XCTestCase {
         try XCTUnwrap(transition.finishModel)()
         try XCTUnwrap(transition.settlement)(.committed)
 
-        follower.abortProfileAssignmentIntent(firstIntent)
+        follower.profileAssignment.abort(firstIntent)
         XCTAssertTrue(
             tabManager.profileAssignments.tabs.assign(
                 follower,
@@ -236,13 +236,13 @@ final class PendingTabProfileInheritanceTests: XCTestCase {
         firstSettlement(.rejected(.stale))
 
         XCTAssertEqual(follower.profileId, pendingProfile.id)
-        XCTAssertTrue(follower.isCurrentProfileAssignmentIntent(secondIntent))
+        XCTAssertTrue(follower.profileAssignment.isCurrent(secondIntent))
 
         secondSettlement(.rejected(.failed))
 
         XCTAssertNil(follower.profileId)
         XCTAssertEqual(space.profileId, pendingProfile.id)
-        XCTAssertFalse(follower.hasUnsettledProfileAssignment)
+        XCTAssertFalse(follower.profileAssignment.hasUnsettledAssignment)
     }
 
     func testRolledBackFollowerOverrideAfterSpaceCommitReturnsToInheritance() throws {
@@ -286,9 +286,9 @@ final class PendingTabProfileInheritanceTests: XCTestCase {
         XCTAssertTrue(try XCTUnwrap(transition.stageModel)())
         try XCTUnwrap(transition.finishModel)()
         try XCTUnwrap(transition.settlement)(.committed)
-        XCTAssertTrue(follower.stageProfileAssignmentIntent(tabIntent))
+        XCTAssertTrue(follower.profileAssignment.stage(tabIntent))
         XCTAssertEqual(follower.profileId, rolledBackProfile.id)
-        XCTAssertTrue(follower.rollbackStagedProfileAssignmentIntent(tabIntent))
+        XCTAssertTrue(follower.profileAssignment.rollback(tabIntent))
         XCTAssertEqual(follower.profileId, pendingProfile.id)
 
         try XCTUnwrap(transition.tabSettlement)(
@@ -297,7 +297,7 @@ final class PendingTabProfileInheritanceTests: XCTestCase {
 
         XCTAssertNil(follower.profileId)
         XCTAssertEqual(space.profileId, pendingProfile.id)
-        XCTAssertFalse(follower.hasUnsettledProfileAssignment)
+        XCTAssertFalse(follower.profileAssignment.hasUnsettledAssignment)
     }
 
     func testPendingProfileInheritanceDoesNotRetainFollower() {

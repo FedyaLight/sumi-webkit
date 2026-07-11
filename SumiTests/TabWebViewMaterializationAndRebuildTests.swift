@@ -716,7 +716,7 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
             tab: tab,
             window: window
         )
-        let intent = tab.beginProfileAssignmentIntent(
+        let intent = tab.profileAssignment.begin(
             desiredProfileID: targetProfile.id,
             resolvedProfileID: targetProfile.id,
             targetURL: tab.url,
@@ -741,7 +741,7 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
             tab.webViewSession.parkedWebView,
             concurrentParked
         )
-        tab.abortProfileAssignmentIntent(intent)
+        tab.profileAssignment.abort(intent)
     }
 
     func testDetachedProfileAssignmentRejectsGenerationChangeDuringProvisioning() {
@@ -789,7 +789,7 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
                 return targetState
             }
         )
-        let intent = tab.beginProfileAssignmentIntent(
+        let intent = tab.profileAssignment.begin(
             desiredProfileID: targetProfile.id,
             resolvedProfileID: targetProfile.id,
             targetURL: tab.url,
@@ -813,7 +813,7 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
             tab.webViewSession.untrackedWebView,
             oldWebView
         )
-        tab.abortProfileAssignmentIntent(intent)
+        tab.profileAssignment.abort(intent)
     }
 
     func testCommittedReplacementRetiresWholeGenerationBeforeDestroyingIt()

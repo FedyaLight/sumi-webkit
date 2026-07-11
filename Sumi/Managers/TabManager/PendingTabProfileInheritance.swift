@@ -65,7 +65,7 @@ final class PendingTabProfileInheritance {
             return false
         case .rejected, .rolledBack:
             guard provenance.spaceCommitted,
-                  tab.hasUnsettledProfileAssignment == false else {
+                  tab.profileAssignment.hasUnsettledAssignment == false else {
                 return false
             }
             provenanceByTabID.removeValue(forKey: tab.id)
@@ -92,7 +92,9 @@ final class PendingTabProfileInheritance {
         guard let provenance = provenanceByTabID[tab.id],
               provenance.tab === tab,
               provenance.spaceCommitted,
-              tab.hasUnsettledProfileAssignment == false else { return false }
+              tab.profileAssignment.hasUnsettledAssignment == false else {
+            return false
+        }
         provenanceByTabID.removeValue(forKey: tab.id)
         return normalizeIfCanonical(
             tab,
@@ -124,7 +126,7 @@ final class PendingTabProfileInheritance {
             }
 
             provenance.spaceCommitted = true
-            if tab.hasUnsettledProfileAssignment {
+            if tab.profileAssignment.hasUnsettledAssignment {
                 provenanceByTabID[tabID] = provenance
             } else {
                 provenanceByTabID.removeValue(forKey: tabID)
