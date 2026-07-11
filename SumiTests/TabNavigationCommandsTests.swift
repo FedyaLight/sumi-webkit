@@ -312,12 +312,13 @@ final class TabNavigationCommandsTests: XCTestCase {
             allowsUserInitiatedSupersession: true,
             continuationKind: nil
         ), .authority)
-        XCTAssertTrue(transaction.recordCommit(
+        guard case .publish = transaction.settleCommit(
             from: webView,
             navigationID: committedNavigationID,
-            committedURL: committedURL,
-            isPDF: false
-        ).shouldPublishSharedEffects)
+            committedURL: committedURL
+        ) else {
+            return XCTFail("Expected the durable document commit to publish")
+        }
         transaction.finish(
             from: webView,
             navigationID: committedNavigationID
@@ -375,18 +376,25 @@ final class TabNavigationCommandsTests: XCTestCase {
             navigationLifetime: pdfNavigation,
             matching: nil
         ))
-        XCTAssertTrue(transaction.recordCommit(
+        guard case .publish = transaction.settleCommit(
             from: htmlWebView,
             navigationID: ObjectIdentifier(htmlNavigation),
-            committedURL: committedURL,
-            isPDF: false
-        ).shouldPublishSharedEffects)
-        XCTAssertEqual(transaction.recordCommit(
+            committedURL: committedURL
+        ) else {
+            return XCTFail("Expected HTML authority commit to publish")
+        }
+        transaction.noteResponse(
+            isPDF: true,
+            from: pdfWebView,
+            navigationID: ObjectIdentifier(pdfNavigation)
+        )
+        guard case .recordedReplica = transaction.settleCommit(
             from: pdfWebView,
             navigationID: ObjectIdentifier(pdfNavigation),
-            committedURL: committedURL,
-            isPDF: true
-        ).role, .participant)
+            committedURL: committedURL
+        ) else {
+            return XCTFail("PDF mismatch must remain a non-canonical replica")
+        }
         transaction.finish(
             from: htmlWebView,
             navigationID: ObjectIdentifier(htmlNavigation)

@@ -359,18 +359,23 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
             navigationLifetime: hiddenNavigation,
             matching: nil
         ))
-        XCTAssertTrue(mainFrameRuntimeTransaction.recordCommit(
+        assertPublishedCommit(
+            mainFrameRuntimeTransaction.settleCommit(
+                from: authorityWebView,
+                navigationID: authorityID,
+                committedURL: settledURL
+            ),
             from: authorityWebView,
             navigationID: authorityID,
-            committedURL: settledURL,
-            isPDF: false
-        ).shouldPublishSharedEffects)
-        XCTAssertEqual(mainFrameRuntimeTransaction.recordCommit(
-            from: hiddenWebView,
-            navigationID: hiddenID,
-            committedURL: settledURL,
-            isPDF: false
-        ).role, .participant)
+            targetURL: settledURL
+        )
+        assertRecordedReplica(
+            mainFrameRuntimeTransaction.settleCommit(
+                from: hiddenWebView,
+                navigationID: hiddenID,
+                committedURL: settledURL
+            )
+        )
         mainFrameRuntimeTransaction.finish(
             from: authorityWebView,
             navigationID: authorityID
@@ -489,18 +494,23 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
             navigationLifetime: siblingNavigation,
             matching: nil
         ))
-        XCTAssertTrue(mainFrameRuntimeTransaction.recordCommit(
+        assertPublishedCommit(
+            mainFrameRuntimeTransaction.settleCommit(
+                from: authorityWebView,
+                navigationID: authorityID,
+                committedURL: committedURL
+            ),
             from: authorityWebView,
             navigationID: authorityID,
-            committedURL: committedURL,
-            isPDF: false
-        ).shouldPublishSharedEffects)
-        XCTAssertEqual(mainFrameRuntimeTransaction.recordCommit(
-            from: siblingWebView,
-            navigationID: siblingID,
-            committedURL: committedURL,
-            isPDF: false
-        ).role, .participant)
+            targetURL: committedURL
+        )
+        assertRecordedReplica(
+            mainFrameRuntimeTransaction.settleCommit(
+                from: siblingWebView,
+                navigationID: siblingID,
+                committedURL: committedURL
+            )
+        )
         mainFrameRuntimeTransaction.finish(
             from: siblingWebView,
             navigationID: siblingID
@@ -545,18 +555,23 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
             navigationLifetime: promotedNavigation,
             matching: nil
         ))
-        XCTAssertTrue(mainFrameRuntimeTransaction.recordCommit(
+        assertPublishedCommit(
+            mainFrameRuntimeTransaction.settleCommit(
+                from: firstWebView,
+                navigationID: firstID,
+                committedURL: firstURL
+            ),
             from: firstWebView,
             navigationID: firstID,
-            committedURL: firstURL,
-            isPDF: false
-        ).shouldPublishSharedEffects)
-        XCTAssertEqual(mainFrameRuntimeTransaction.recordCommit(
-            from: promotedWebView,
-            navigationID: promotedID,
-            committedURL: promotedURL,
-            isPDF: false
-        ).role, .participant)
+            targetURL: firstURL
+        )
+        assertRecordedReplica(
+            mainFrameRuntimeTransaction.settleCommit(
+                from: promotedWebView,
+                navigationID: promotedID,
+                committedURL: promotedURL
+            )
+        )
         mainFrameRuntimeTransaction.finish(from: firstWebView, navigationID: firstID)
         mainFrameRuntimeTransaction.finish(
             from: promotedWebView,
@@ -575,12 +590,13 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
             navigationLifetime: laterNavigation,
             matching: nil
         ))
-        XCTAssertEqual(mainFrameRuntimeTransaction.recordCommit(
-            from: laterWebView,
-            navigationID: laterID,
-            committedURL: laterURL,
-            isPDF: false
-        ).role, .participant)
+        assertRecordedReplica(
+            mainFrameRuntimeTransaction.settleCommit(
+                from: laterWebView,
+                navigationID: laterID,
+                committedURL: laterURL
+            )
+        )
         mainFrameRuntimeTransaction.finish(from: laterWebView, navigationID: laterID)
 
         let secondDeparture = tab.webViewDidLeaveNavigationRuntime(promotedWebView)
@@ -618,19 +634,24 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
             ))
         }
 
-        XCTAssertTrue(mainFrameRuntimeTransaction.recordCommit(
+        assertPublishedCommit(
+            mainFrameRuntimeTransaction.settleCommit(
+                from: originalWebView,
+                navigationID: ObjectIdentifier(originalNavigation),
+                committedURL: originalURL
+            ),
             from: originalWebView,
             navigationID: ObjectIdentifier(originalNavigation),
-            committedURL: originalURL,
-            isPDF: false
-        ).shouldPublishSharedEffects)
+            targetURL: originalURL
+        )
         for (webView, navigation) in participants.dropFirst() {
-            XCTAssertEqual(mainFrameRuntimeTransaction.recordCommit(
-                from: webView,
-                navigationID: ObjectIdentifier(navigation),
-                committedURL: promotedURL,
-                isPDF: false
-            ).role, .participant)
+            assertRecordedReplica(
+                mainFrameRuntimeTransaction.settleCommit(
+                    from: webView,
+                    navigationID: ObjectIdentifier(navigation),
+                    committedURL: promotedURL
+                )
+            )
         }
         for (webView, navigation) in participants {
             mainFrameRuntimeTransaction.finish(
@@ -904,18 +925,23 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
             navigationLifetime: replicaNavigation,
             matching: nil
         ))
-        XCTAssertTrue(mainFrameRuntimeTransaction.recordCommit(
+        assertPublishedCommit(
+            mainFrameRuntimeTransaction.settleCommit(
+                from: authorityWebView,
+                navigationID: authorityID,
+                committedURL: targetURL
+            ),
             from: authorityWebView,
             navigationID: authorityID,
-            committedURL: targetURL,
-            isPDF: false
-        ).shouldPublishSharedEffects)
-        XCTAssertEqual(mainFrameRuntimeTransaction.recordCommit(
-            from: crashedReplica,
-            navigationID: replicaID,
-            committedURL: targetURL,
-            isPDF: false
-        ).role, .participant)
+            targetURL: targetURL
+        )
+        assertRecordedReplica(
+            mainFrameRuntimeTransaction.settleCommit(
+                from: crashedReplica,
+                navigationID: replicaID,
+                committedURL: targetURL
+            )
+        )
         mainFrameRuntimeTransaction.finish(
             from: authorityWebView,
             navigationID: authorityID
@@ -1418,6 +1444,35 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
             ),
             transaction
         )
+    }
+
+    private func assertPublishedCommit(
+        _ decision: TabMainFrameCommitDecision,
+        from webView: WKWebView,
+        navigationID: ObjectIdentifier,
+        targetURL: URL,
+        isPDF: Bool = false,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        guard case .publish(let publication) = decision else {
+            return XCTFail("Expected commit publication, got \(decision)", file: file, line: line)
+        }
+
+        XCTAssertTrue(publication.webView === webView, file: file, line: line)
+        XCTAssertEqual(publication.navigationID, navigationID, file: file, line: line)
+        XCTAssertEqual(publication.targetURL, targetURL, file: file, line: line)
+        XCTAssertEqual(publication.isPDF, isPDF, file: file, line: line)
+    }
+
+    private func assertRecordedReplica(
+        _ decision: TabMainFrameCommitDecision,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        guard case .recordedReplica = decision else {
+            return XCTFail("Expected replica commit, got \(decision)", file: file, line: line)
+        }
     }
 }
 

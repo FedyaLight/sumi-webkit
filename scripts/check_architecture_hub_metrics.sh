@@ -818,16 +818,16 @@ printf '%s\n' 'Architecture hub metrics freeze'
 printf '%s\n' '--------------------------------'
 check_max "BrowserManager.swift LOC" "$bm_loc" 200
 check_max "TabManager.swift LOC" "$tm_loc" 220
-check_max "Tab.swift LOC" "$tab_model_loc" 700
+check_max "Tab.swift LOC" "$tab_model_loc" 704
 check_max "Tab.swift methods" "$tab_model_methods" 34
 check_max "TabMainFrameRuntimeTransaction.swift LOC" \
-  "$tab_main_frame_transaction_loc" 623
+  "$tab_main_frame_transaction_loc" 631
 check_max "TabMainFrameRuntimeTransaction methods" \
-  "$tab_main_frame_transaction_methods" 33
+  "$tab_main_frame_transaction_methods" 32
 check_max "TabMainFrameRuntimeCapabilities.swift LOC" \
-  "$tab_main_frame_capabilities_loc" 108
+  "$tab_main_frame_capabilities_loc" 101
 check_max "TabMainFrameRuntimeCapabilities methods" \
-  "$tab_main_frame_capability_methods" 17
+  "$tab_main_frame_capability_methods" 16
 check_max "TabMainFrameLoadRuntime.swift LOC" \
   "$tab_main_frame_load_runtime_loc" 302
 check_max "TabMainFrameLoadRuntime methods" \

@@ -70,6 +70,20 @@ struct TabMainFrameCommitSnapshotClaim: Equatable {
     let shouldPublishSharedEffects: Bool
 }
 
+struct TabMainFrameCommitPublication {
+    let webView: WKWebView
+    let navigationID: ObjectIdentifier
+    let targetURL: URL
+    let isPDF: Bool
+}
+
+enum TabMainFrameCommitDecision {
+    case stale
+    case recordedReplica
+    case alreadyPublished
+    case publish(TabMainFrameCommitPublication)
+}
+
 struct TabMainFrameDocumentLease: Equatable {
     let revision: UInt64
     let documentGeneration: UInt64

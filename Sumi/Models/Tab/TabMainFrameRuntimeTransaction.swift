@@ -407,24 +407,13 @@ final class TabMainFrameRuntimeTransaction:
         )
     }
 
-    func recordResponse(
+    func noteResponse(
         isPDF: Bool,
         from webView: WKWebView,
         navigationID: ObjectIdentifier
-    ) -> TabMainFrameLifecycleRole {
-        lifecycle.recordResponse(
+    ) {
+        _ = lifecycle.recordResponse(
             isPDF: isPDF,
-            from: webView,
-            navigationID: navigationID,
-            currentIntent: mainFrameLoads.currentIntent
-        )
-    }
-
-    func responseIsPDF(
-        from webView: WKWebView,
-        navigationID: ObjectIdentifier
-    ) -> Bool? {
-        lifecycle.responseIsPDF(
             from: webView,
             navigationID: navigationID,
             currentIntent: mainFrameLoads.currentIntent
@@ -442,13 +431,17 @@ final class TabMainFrameRuntimeTransaction:
         )
     }
 
-    func recordCommit(
+    func settleCommit(
         from webView: WKWebView,
         navigationID: ObjectIdentifier,
-        committedURL: URL,
-        isPDF: Bool
-    ) -> TabMainFrameCommitSnapshotClaim {
-        committedDocumentRuntime.performTransition(
+        committedURL: URL
+    ) -> TabMainFrameCommitDecision {
+        let isPDF = lifecycle.responseIsPDF(
+            from: webView,
+            navigationID: navigationID,
+            currentIntent: mainFrameLoads.currentIntent
+        ) ?? false
+        let claim = committedDocumentRuntime.performTransition(
             reason: .documentCommit
         ) {
             let transition = lifecycle.recordCommit(
@@ -466,6 +459,21 @@ final class TabMainFrameRuntimeTransaction:
                 )
             }
             return transition.claim
+        }
+        switch claim.role {
+        case .stale:
+            return .stale
+        case .participant:
+            return .recordedReplica
+        case .authority where claim.shouldPublishSharedEffects == false:
+            return .alreadyPublished
+        case .authority:
+            return .publish(TabMainFrameCommitPublication(
+                webView: webView,
+                navigationID: navigationID,
+                targetURL: committedURL,
+                isPDF: isPDF
+            ))
         }
     }
 

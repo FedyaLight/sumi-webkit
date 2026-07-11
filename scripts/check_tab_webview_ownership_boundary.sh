@@ -266,6 +266,13 @@ side_effectful_capability_hits="$(
 fail_matches "main-frame settlement capability gained cross-boundary mutation" \
   "$side_effectful_capability_hits"
 
+retired_lifecycle_settlement_hits="$(
+  rg -n '^\s*func\s+(recordCommit|recordResponse|responseIsPDF)\b' \
+    "$main_frame_capabilities" || true
+)"
+fail_matches "raw lifecycle settlement operation returned to callback capability" \
+  "$retired_lifecycle_settlement_hits"
+
 # Tombstones: the split registry/session/owner model must not return.
 legacy_type_hits="$(
   rg -n '\b(TabWebViewSession|WindowWebViewRegistry|TabWebViewOwnershipOwner)\b' \

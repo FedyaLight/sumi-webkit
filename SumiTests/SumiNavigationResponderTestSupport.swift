@@ -384,6 +384,10 @@ final class SumiNavigationURLReportingWebView: WKWebView {
 final class RecordingTabLifecycleNavigationRuntime {
     var authDisposition: SumiAuthChallengeDisposition? = .next
     var isPreparingForDestructiveCleanup = false
+    var prepareExtensionWebViewHook: ((WKWebView, URL) -> Void)?
+    var prepareExtensionRuntimeBeforeCommitHook: ((Tab, URL) -> Void)?
+    var markExtensionEligibleAfterCommitHook: ((Tab) -> Void)?
+    var loadZoomHook: ((UUID, WKWebView) -> Void)?
     private(set) var resetRevisitProtectionTabIds: [UUID] = []
     private(set) var documentSuspensionReconcileTabIds: [UUID] = []
     private(set) var preparedExtensionWebViewIds: [ObjectIdentifier] = []
@@ -413,16 +417,20 @@ final class RecordingTabLifecycleNavigationRuntime {
                 self?.preparedExtensionWebViewIds.append(ObjectIdentifier(webView))
                 self?.preparedExtensionURLs.append(url)
                 self?.preparedExtensionReasons.append(reason)
+                self?.prepareExtensionWebViewHook?(webView, url)
             },
             prepareExtensionRuntimeBeforeCommit: { [weak self] tab, url, _ in
                 self?.beforeCommitTabIds.append(tab.id)
                 self?.beforeCommitURLs.append(url)
+                self?.prepareExtensionRuntimeBeforeCommitHook?(tab, url)
             },
             markExtensionEligibleAfterCommit: { [weak self] tab, _ in
                 self?.markedEligibleTabIds.append(tab.id)
+                self?.markExtensionEligibleAfterCommitHook?(tab)
             },
-            loadZoomForTab: { [weak self] tabId, _ in
+            loadZoomForTab: { [weak self] tabId, webView in
                 self?.zoomTabIds.append(tabId)
+                self?.loadZoomHook?(tabId, webView)
             },
             applyAdblockZapperRulesAfterNavigation: { [weak self] webView, url, _ in
                 self?.adblockWebViewIds.append(ObjectIdentifier(webView))

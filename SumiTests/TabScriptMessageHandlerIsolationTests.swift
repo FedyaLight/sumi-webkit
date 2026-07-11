@@ -583,12 +583,13 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
             navigationLifetime: navigation,
             matching: submission
         ))
-        XCTAssertTrue(transaction.recordCommit(
+        guard case .publish = transaction.settleCommit(
             from: webView,
             navigationID: navigationID,
-            committedURL: url,
-            isPDF: false
-        ).role.isAuthority)
+            committedURL: url
+        ) else {
+            return XCTFail("Expected script-message document authority to publish")
+        }
         withExtendedLifetime(navigation) {}
     }
 

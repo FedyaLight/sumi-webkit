@@ -44,12 +44,11 @@ protocol TabMainFrameLifecycleSettlement: AnyObject {
         navigationID: ObjectIdentifier
     ) -> TabMainFrameLifecycleRole
 
-    func recordCommit(
+    func settleCommit(
         from webView: WKWebView,
         navigationID: ObjectIdentifier,
-        committedURL: URL,
-        isPDF: Bool
-    ) -> TabMainFrameCommitSnapshotClaim
+        committedURL: URL
+    ) -> TabMainFrameCommitDecision
 
     func claimTransactionStartEffects(
         from webView: WKWebView,
@@ -78,17 +77,11 @@ protocol TabMainFrameLifecycleSettlement: AnyObject {
         navigationID: ObjectIdentifier
     ) -> Bool
 
-    @discardableResult
-    func recordResponse(
+    func noteResponse(
         isPDF: Bool,
         from webView: WKWebView,
         navigationID: ObjectIdentifier
-    ) -> TabMainFrameLifecycleRole
-
-    func responseIsPDF(
-        from webView: WKWebView,
-        navigationID: ObjectIdentifier
-    ) -> Bool?
+    )
 
     func finish(
         from webView: WKWebView,

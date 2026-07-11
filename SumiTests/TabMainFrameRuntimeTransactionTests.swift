@@ -5,6 +5,179 @@ import XCTest
 
 @MainActor
 final class TabMainFrameRuntimeTransactionTests: XCTestCase {
+    func testRejectedPromotionPublicationsCannotMutateTabPresentation() throws {
+        let initialURL = try XCTUnwrap(URL(string: "https://example.com/initial"))
+        let rejectedURL = try XCTUnwrap(URL(string: "https://example.com/rejected"))
+        let tab = Tab(url: initialURL, loadsCachedFaviconOnInit: false)
+        let webView = WKWebView()
+        let continuation = TabMainFrameAuthorityContinuation(
+            webView: webView,
+            navigationID: nil,
+            targetURL: rejectedURL,
+            isPDF: false,
+            isCompleted: true,
+            needsSharedCommitEffects: true,
+            needsSharedFinishEffects: true,
+            revision: .max,
+            documentGeneration: .max,
+            participantID: UUID(),
+            webViewID: ObjectIdentifier(webView)
+        )
+
+        TabMainFrameLifecycleReducer.publishCommit(
+            .promotion(continuation),
+            tab: tab
+        )
+        TabMainFrameLifecycleReducer.publishFinish(
+            .promotion(continuation),
+            tab: tab
+        )
+
+        XCTAssertEqual(tab.url, initialURL)
+        XCTAssertEqual(tab.loadingState, .idle)
+    }
+
+    func testStaleCommitAndFinishPublicationsCannotMutateTabPresentation() throws {
+        let initialURL = try XCTUnwrap(URL(string: "https://example.com/initial"))
+        let committedURL = try XCTUnwrap(URL(string: "https://example.com/committed"))
+        let successorURL = try XCTUnwrap(URL(string: "https://example.com/successor"))
+        let transaction = TabMainFrameRuntimeTransaction(initialURL: initialURL)
+        let tab = Tab(
+            url: initialURL,
+            loadsCachedFaviconOnInit: false,
+            mainFrameRuntimeTransaction: transaction
+        )
+        let webView = WKWebView()
+        _ = tab.beginMainFrameNavigationIntent(to: committedURL)
+        let submission = try XCTUnwrap(
+            tab.mainFrameLoads.claimDirectSubmission(on: webView)
+        )
+        let navigation = NSObject()
+        let navigationID = ObjectIdentifier(navigation)
+        XCTAssertTrue(transaction.bindSubmittedLoad(
+            on: webView,
+            navigationID: navigationID,
+            navigationLifetime: navigation,
+            matching: submission
+        ))
+        let decision = transaction.settleCommit(
+            from: webView,
+            navigationID: navigationID,
+            committedURL: committedURL
+        )
+        guard case .publish(let publication) = decision else {
+            return XCTFail("Expected exact commit publication")
+        }
+
+        _ = tab.beginMainFrameNavigationIntent(to: successorURL)
+        TabMainFrameLifecycleReducer.publishCommit(
+            .navigation(
+                webView: publication.webView,
+                navigationID: publication.navigationID,
+                targetURL: publication.targetURL,
+                isPDF: publication.isPDF
+            ),
+            tab: tab
+        )
+        TabMainFrameLifecycleReducer.publishFinish(
+            .navigation(
+                webView: publication.webView,
+                navigationID: publication.navigationID,
+                targetURL: publication.targetURL,
+                isPDF: publication.isPDF
+            ),
+            tab: tab
+        )
+
+        XCTAssertEqual(tab.url, initialURL)
+        XCTAssertEqual(tab.loadingState, .idle)
+    }
+
+    func testCommitDecisionOwnsExactMIMEEvidenceAndClaimsPublicationOnce() throws {
+        let targetURL = try XCTUnwrap(URL(string: "https://example.com/document"))
+        let transaction = TabMainFrameRuntimeTransaction(initialURL: targetURL)
+        let intent = transaction.beginExplicitIntent(to: targetURL)
+        let authorityWebView = WKWebView()
+        let replicaWebView = WKWebView()
+        let authorityNavigation = NSObject()
+        let replicaNavigation = NSObject()
+
+        let authorityLease = try XCTUnwrap(
+            transaction.mainFrameLoads.claimDirectSubmission(
+                on: authorityWebView
+            )
+        )
+        XCTAssertTrue(transaction.bindSubmittedLoad(
+            on: authorityWebView,
+            navigationID: ObjectIdentifier(authorityNavigation),
+            navigationLifetime: authorityNavigation,
+            matching: authorityLease
+        ))
+        XCTAssertTrue(
+            transaction.mainFrameLoads.markDeferredLoad(
+                on: replicaWebView,
+                intent: intent
+            )
+        )
+        XCTAssertEqual(
+            transaction.mainFrameLoads.claimDeferredSubmission(
+                on: replicaWebView,
+                revision: intent.revision,
+                targetURL: targetURL
+            ),
+            .claimed
+        )
+        XCTAssertTrue(transaction.bindSubmittedLoad(
+            on: replicaWebView,
+            navigationID: ObjectIdentifier(replicaNavigation),
+            navigationLifetime: replicaNavigation,
+            matching: nil
+        ))
+        transaction.noteResponse(
+            isPDF: true,
+            from: authorityWebView,
+            navigationID: ObjectIdentifier(authorityNavigation)
+        )
+
+        let firstDecision = transaction.settleCommit(
+            from: authorityWebView,
+            navigationID: ObjectIdentifier(authorityNavigation),
+            committedURL: targetURL
+        )
+        guard case .publish(let publication) = firstDecision else {
+            return XCTFail("Expected the exact authority to publish its commit")
+        }
+        XCTAssertIdentical(publication.webView, authorityWebView)
+        XCTAssertEqual(
+            publication.navigationID,
+            ObjectIdentifier(authorityNavigation)
+        )
+        XCTAssertEqual(publication.targetURL, targetURL)
+        XCTAssertTrue(publication.isPDF)
+
+        guard case .alreadyPublished = transaction.settleCommit(
+            from: authorityWebView,
+            navigationID: ObjectIdentifier(authorityNavigation),
+            committedURL: targetURL
+        ) else {
+            return XCTFail("Duplicate authority commit must not republish")
+        }
+        guard case .recordedReplica = transaction.settleCommit(
+            from: replicaWebView,
+            navigationID: ObjectIdentifier(replicaNavigation),
+            committedURL: targetURL
+        ) else {
+            return XCTFail("Compatible sibling must remain a replica")
+        }
+        guard case .stale = transaction.settleCommit(
+            from: replicaWebView,
+            navigationID: ObjectIdentifier(NSObject()),
+            committedURL: targetURL
+        ) else {
+            return XCTFail("Foreign navigation identity must fail closed")
+        }
+    }
+
     func testAbortingLifecycleAuthorityPromotesSubmittedLedgerParticipant() throws {
         let targetURL = try XCTUnwrap(URL(string: "https://example.com/document"))
         let authorityWebView = WKWebView()
@@ -54,12 +227,13 @@ final class TabMainFrameRuntimeTransactionTests: XCTestCase {
             navigationLifetime: promotedNavigation,
             matching: submittedLease
         ))
-        XCTAssertEqual(transaction.recordCommit(
+        guard case .publish = transaction.settleCommit(
             from: submittedWebView,
             navigationID: promotedNavigationID,
-            committedURL: targetURL,
-            isPDF: false
-        ).role, .authority)
+            committedURL: targetURL
+        ) else {
+            return XCTFail("Promoted submitted participant must publish as authority")
+        }
     }
 
     func testFailedIntentRollsBackToDurableCommittedDocumentWithoutReplica() throws {
@@ -84,12 +258,13 @@ final class TabMainFrameRuntimeTransactionTests: XCTestCase {
             navigationLifetime: navigation,
             matching: lease
         ))
-        XCTAssertTrue(transaction.recordCommit(
+        guard case .publish = transaction.settleCommit(
             from: webView,
             navigationID: navigationID,
-            committedURL: committedURL,
-            isPDF: false
-        ).shouldPublishSharedEffects)
+            committedURL: committedURL
+        ) else {
+            return XCTFail("Expected the durable committed document to publish")
+        }
         tab.url = committedURL
 
         let failedIntent = tab.beginMainFrameNavigationIntent(to: failedURL)
@@ -247,12 +422,13 @@ final class TabMainFrameRuntimeTransactionTests: XCTestCase {
             navigationLifetime: navigation,
             matching: submission
         ))
-        XCTAssertTrue(transaction.recordCommit(
+        guard case .publish = transaction.settleCommit(
             from: webView,
             navigationID: navigationID,
-            committedURL: targetURL,
-            isPDF: false
-        ).shouldPublishSharedEffects)
+            committedURL: targetURL
+        ) else {
+            return XCTFail("Expected recovery authority commit to publish")
+        }
 
         let lease = try XCTUnwrap(
             transaction.committedDocumentRuntime.lease(for: webView)
@@ -333,12 +509,13 @@ final class TabMainFrameRuntimeTransactionTests: XCTestCase {
             navigationLifetime: navigation,
             matching: submission
         ))
-        _ = transaction.recordCommit(
+        guard case .publish = transaction.settleCommit(
             from: webView,
             navigationID: navigationID,
-            committedURL: targetURL,
-            isPDF: false
-        )
+            committedURL: targetURL
+        ) else {
+            return XCTFail("Expected suspension-report authority commit to publish")
+        }
         let lease = try XCTUnwrap(
             transaction.committedDocumentRuntime.lease(for: webView)
         )

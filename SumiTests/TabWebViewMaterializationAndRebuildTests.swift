@@ -864,33 +864,27 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
             replacement,
             to: tab
         )
-        XCTAssertEqual(
-            transaction.recordCommit(
-                from: oldPrimary,
-                navigationID: ObjectIdentifier(primaryNavigation),
-                committedURL: targetURL,
-                isPDF: false
-            ).role,
-            .authority
-        )
-        XCTAssertEqual(
-            transaction.recordCommit(
-                from: oldClone,
-                navigationID: ObjectIdentifier(cloneNavigation),
-                committedURL: targetURL,
-                isPDF: false
-            ).role,
-            .participant
-        )
-        XCTAssertEqual(
-            transaction.recordCommit(
-                from: replacement,
-                navigationID: ObjectIdentifier(replacementNavigation),
-                committedURL: targetURL,
-                isPDF: false
-            ).role,
-            .participant
-        )
+        guard case .publish = transaction.settleCommit(
+            from: oldPrimary,
+            navigationID: ObjectIdentifier(primaryNavigation),
+            committedURL: targetURL
+        ) else {
+            return XCTFail("Expected old primary to publish the shared commit")
+        }
+        guard case .recordedReplica = transaction.settleCommit(
+            from: oldClone,
+            navigationID: ObjectIdentifier(cloneNavigation),
+            committedURL: targetURL
+        ) else {
+            return XCTFail("Expected old clone to remain a recorded replica")
+        }
+        guard case .recordedReplica = transaction.settleCommit(
+            from: replacement,
+            navigationID: ObjectIdentifier(replacementNavigation),
+            committedURL: targetURL
+        ) else {
+            return XCTFail("Expected replacement to remain a recorded replica")
+        }
 
         let snapshot = repository.snapshot(for: tab.id)
         let committedPolicy = TabConfigurationPolicyState(

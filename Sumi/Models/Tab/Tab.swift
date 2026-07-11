@@ -318,28 +318,32 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         return acceptance.role
     }
 
+    @discardableResult
     func applyPromotedAuthorityURL(
         _ targetURL: URL,
         matching continuation: TabMainFrameAuthorityContinuation
-    ) {
+    ) -> Bool {
         guard mainFrameRuntimeTransaction.acceptPromotedAuthorityTarget(
             targetURL,
             matching: continuation
-        ) else { return }
+        ) else { return false }
         url = targetURL
+        return true
     }
 
+    @discardableResult
     func applyAcceptedMainFrameLifecycleURL(
         _ targetURL: URL,
         from webView: WKWebView,
         navigationID: ObjectIdentifier?
-    ) {
+    ) -> Bool {
         guard mainFrameRuntimeTransaction.acceptLifecycleTarget(
             targetURL,
             from: webView,
             navigationID: navigationID
-        ) else { return }
+        ) else { return false }
         url = targetURL
+        return true
     }
 
     func cancelMainFrameNavigationIntent() {

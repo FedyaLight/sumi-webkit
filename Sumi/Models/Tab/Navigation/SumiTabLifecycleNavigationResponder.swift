@@ -172,7 +172,7 @@ final class SumiTabLifecycleNavigationResponder:
         else { return .next }
 
         if let context, let webView = context.webView {
-            lifecycle.recordResponse(
+            lifecycle.noteResponse(
                 isPDF: response.mimeType?.lowercased() == "application/pdf",
                 from: webView,
                 navigationID: context.navigationID
@@ -228,27 +228,22 @@ final class SumiTabLifecycleNavigationResponder:
                 isCurrent: nil
             ).isAuthority else { return }
         }
-        let isPDF = lifecycle.responseIsPDF(
-            from: webView,
-            navigationID: context.navigationID
-        ) ?? false
         guard let committedURL = webView.committedURL ?? webView.url ?? context.url else {
             return
         }
-        let claim = lifecycle.recordCommit(
+        let decision = lifecycle.settleCommit(
             from: webView,
             navigationID: context.navigationID,
-            committedURL: committedURL,
-            isPDF: isPDF
+            committedURL: committedURL
         )
-        guard claim.shouldPublishSharedEffects else { return }
+        guard case .publish(let publication) = decision else { return }
 
         TabMainFrameLifecycleReducer.publishCommit(
             .navigation(
-                webView: webView,
-                navigationID: context.navigationID,
-                targetURL: committedURL,
-                isPDF: isPDF
+                webView: publication.webView,
+                navigationID: publication.navigationID,
+                targetURL: publication.targetURL,
+                isPDF: publication.isPDF
             ),
             tab: tab
         )

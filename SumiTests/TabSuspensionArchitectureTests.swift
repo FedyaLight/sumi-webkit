@@ -270,12 +270,13 @@ final class TabSuspensionArchitectureTests: XCTestCase {
             navigationLifetime: navigation,
             matching: submission
         ))
-        XCTAssertTrue(transaction.recordCommit(
+        guard case .publish = transaction.settleCommit(
             from: webView,
             navigationID: navigationID,
-            committedURL: tab.url,
-            isPDF: false
-        ).shouldPublishSharedEffects)
+            committedURL: tab.url
+        ) else {
+            return XCTFail("Expected suspension authority commit to publish")
+        }
         guard let lease = tab.committedDocumentRuntime.lease(for: webView) else {
             return XCTFail("Expected committed-document lease")
         }

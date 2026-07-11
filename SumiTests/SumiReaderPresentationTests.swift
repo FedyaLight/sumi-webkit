@@ -1051,12 +1051,14 @@ final class SumiReaderPresentationTests: XCTestCase {
             allowsUserInitiatedSupersession: true,
             continuationKind: nil
         ), .authority)
-        XCTAssertTrue(transaction.recordCommit(
+        guard case .publish = transaction.settleCommit(
             from: webView,
             navigationID: navigationID,
-            committedURL: url,
-            isPDF: false
-        ).shouldPublishSharedEffects)
+            committedURL: url
+        ) else {
+            XCTFail("Expected the committed reader document to publish")
+            return navigationLifetime
+        }
         XCTAssertNotNil(tab.committedDocumentRuntime.lease(for: webView))
         return navigationLifetime
     }

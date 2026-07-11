@@ -34,16 +34,16 @@ enum TabMainFrameLifecycleReducer {
         }
 
         @MainActor
-        func applyURL(to tab: Tab) {
+        func applyURL(to tab: Tab) -> Bool {
             switch self {
             case .navigation(let webView, let navigationID, let targetURL, _):
-                tab.applyAcceptedMainFrameLifecycleURL(
+                return tab.applyAcceptedMainFrameLifecycleURL(
                     targetURL,
                     from: webView,
                     navigationID: navigationID
                 )
             case .promotion(let continuation):
-                tab.applyPromotedAuthorityURL(
+                return tab.applyPromotedAuthorityURL(
                     continuation.targetURL,
                     matching: continuation
                 )
@@ -74,7 +74,7 @@ enum TabMainFrameLifecycleReducer {
         _ authority: Authority,
         tab: Tab
     ) {
-        authority.applyURL(to: tab)
+        guard authority.applyURL(to: tab) else { return }
         StartupPerformanceTrace.firstNavigationCommitted()
         tab.loadingState = .didCommit
         tab.navigationRuntime.extensionPropertiesRuntime.notifyTabPropertiesChanged(
@@ -121,7 +121,7 @@ enum TabMainFrameLifecycleReducer {
         _ authority: Authority,
         tab: Tab
     ) {
-        authority.applyURL(to: tab)
+        guard authority.applyURL(to: tab) else { return }
         StartupPerformanceTrace.firstNavigationFinished()
         tab.loadingState = .didFinish
         tab.navigationRuntime.extensionPropertiesRuntime.notifyTabPropertiesChanged(
