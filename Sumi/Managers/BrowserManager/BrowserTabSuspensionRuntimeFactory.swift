@@ -8,7 +8,7 @@ enum BrowserTabSuspensionRuntimeFactory {
         regularTabs: TabCollectionMembershipOwner,
         lazyRestore: TabLazyRestoreCoordinator,
         windowTabs: BrowserWindowTabContext,
-        splitManager: SplitViewManager,
+        splitQuery: WindowSplitQuery,
         webView: TabSuspensionWebViewRuntime
     ) -> TabSuspensionRuntimePorts {
         TabSuspensionRuntimePorts(
@@ -23,7 +23,7 @@ enum BrowserTabSuspensionRuntimeFactory {
                     visibleTabIDsByWindow(
                         windowRegistry: windowRegistry(),
                         windowTabs: windowTabs,
-                        splitManager: splitManager
+                        splitQuery: splitQuery
                     )
                 }
             ),
@@ -65,7 +65,7 @@ enum BrowserTabSuspensionRuntimeFactory {
     private static func visibleTabIDsByWindow(
         windowRegistry: WindowRegistry?,
         windowTabs: BrowserWindowTabContext,
-        splitManager: SplitViewManager
+        splitQuery: WindowSplitQuery
     ) -> [UUID: Set<UUID>] {
         var visible: [UUID: Set<UUID>] = [:]
         for windowState in windowRegistry.map({
@@ -73,7 +73,7 @@ enum BrowserTabSuspensionRuntimeFactory {
         }) ?? [] {
             let tabIDs = VisibleTabPreparationPlan.visibleTabIDs(
                 currentTabId: windowTabs.currentTab(for: windowState)?.id,
-                splitTabIds: splitManager.visibleTabIds(for: windowState.id)
+                splitTabIds: splitQuery.visibleTabIDs(in: windowState.id)
             )
             visible[windowState.id] = Set(tabIDs)
         }

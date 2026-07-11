@@ -9,27 +9,18 @@ final class EmptySplitService {
     private let currentTab: (BrowserWindowState) -> Tab?
     private let memberResolver: SplitRuntimeMemberResolver
     private let dropService: SplitDropService
-    private let focusFloatingBar: (
-        BrowserWindowState,
-        FloatingBarPresentationReason
-    ) -> Void
     private let session: EmptySplitSession
 
     init(
         tabManager: @escaping () -> TabManager?,
         currentTab: @escaping (BrowserWindowState) -> Tab?,
         memberResolver: SplitRuntimeMemberResolver,
-        dropService: SplitDropService,
-        focusFloatingBar: @escaping (
-            BrowserWindowState,
-            FloatingBarPresentationReason
-        ) -> Void
+        dropService: SplitDropService
     ) {
         self.tabManager = tabManager
         self.currentTab = currentTab
         self.memberResolver = memberResolver
         self.dropService = dropService
-        self.focusFloatingBar = focusFloatingBar
         session = EmptySplitSession(
             replacePlaceholder: { tab, placeholderTabID, windowState in
                 dropService.replacePlaceholder(
@@ -44,16 +35,16 @@ final class EmptySplitService {
         )
     }
 
+    @discardableResult
     func create(
         side: SplitDropSide,
-        in windowState: BrowserWindowState,
-        floatingBarReason: FloatingBarPresentationReason
-    ) {
+        in windowState: BrowserWindowState
+    ) -> Bool {
         guard let tabManager = tabManager(),
               let current = currentTab(windowState),
               current.representsSumiNativeSurface == false,
               let targetMemberID = memberResolver.memberID(for: current) else {
-            return
+            return false
         }
         let targetSpace = windowState.currentSpaceId.flatMap {
             tabManager.spaceStateOwner.space(with: $0)
@@ -65,19 +56,20 @@ final class EmptySplitService {
         )
         guard dropService.drop(
             placeholder,
-            on: SplitDropTarget(
-                targetMemberID: targetMemberID,
+            on: SplitInsertionTargetResolver.target(
+                memberID: targetMemberID,
                 side: side,
-                targetRect: .zero,
-                intent: .firstSplit
+                memberIsGrouped: tabManager.splitGroupStore.group(
+                    containing: targetMemberID
+                ) != nil
             ),
             in: windowState
         ) else {
             tabManager.tabRemovalOwner.removeTab(placeholder.id)
-            return
+            return false
         }
         session.register(tabID: placeholder.id, in: windowState.id)
-        focusFloatingBar(windowState, floatingBarReason)
+        return true
     }
 
     func commit(tabID: UUID, in windowID: UUID) {

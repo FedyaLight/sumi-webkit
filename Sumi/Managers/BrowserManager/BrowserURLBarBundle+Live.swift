@@ -5,6 +5,8 @@ extension BrowserURLBarBundle {
         browserManager: BrowserManager,
         activePageResolver: ActivePageResolver
     ) -> FloatingBarServices {
+        let emptySplitPlaceholders = browserManager.splitComposition
+            .emptyPlaceholders
         let presentation = FloatingBarPresentationService(
             windowRegistry: { [weak browserManager] in
                 browserManager?.windowRegistry
@@ -13,8 +15,8 @@ extension BrowserURLBarBundle {
                 browserManager?.shellRuntime.windowTabs
                     .hasValidCurrentSelection(in: windowState) ?? false
             },
-            splitPlaceholders: { [weak splitManager = browserManager.splitManager] in
-                splitManager
+            splitPlaceholders: {
+                [weak emptySplitPlaceholders] in emptySplitPlaceholders
             },
             dismissThemePickerDiscardingIfNeeded: { [weak browserManager] in
                 browserManager?.chromeBundle.workspaceThemeEditorOwner
@@ -42,8 +44,8 @@ extension BrowserURLBarBundle {
             tabOpening: { [weak tabOpening = browserManager.tabLifecycleService.opening] in
                 tabOpening
             },
-            splitPlaceholders: { [weak splitManager = browserManager.splitManager] in
-                splitManager
+            splitPlaceholders: {
+                [weak emptySplitPlaceholders] in emptySplitPlaceholders
             },
             activePageTab: { [activePageResolver] windowState in
                 activePageResolver.resolve(in: windowState)?.tab

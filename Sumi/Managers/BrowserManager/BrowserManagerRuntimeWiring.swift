@@ -9,9 +9,6 @@ enum BrowserManagerRuntimeWiring {
         let tabRuntimeCompositionCancellable = BrowserTabRuntimeCompositionService.attach(
             to: browserManager
         )
-        browserManager.splitManager.attach(
-            runtime: BrowserSplitViewRuntimeFactory.runtime(for: browserManager)
-        )
         let runtimePortRegistry = BrowserTabManagerRuntimePortsFactory.registry(for: browserManager)
         browserManager.tabManager.runtimePortsAttachmentOwner.attach(runtimePortRegistry)
         // Live Folders runtime attaches only when the module is enabled (W4/R9),
@@ -62,7 +59,6 @@ enum BrowserManagerRuntimeWiring {
             windowRegistryChanged: { [weak browserManager] registry in
                 guard let browserManager else { return }
                 browserManager.glanceManager.windowRegistry = registry
-                browserManager.splitManager.windowRegistry = registry
                 Task { @MainActor [weak browserManager] in
                     await browserManager?.privacyBundle.permissionSidebarPinningOwner.reconcile(
                         reason: "window-registry-updated"

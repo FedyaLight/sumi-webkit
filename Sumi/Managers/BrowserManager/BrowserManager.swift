@@ -46,7 +46,6 @@ class BrowserManager: ObservableObject {
     let tabSuspensionController: TabSuspensionController
     let backgroundMediaOptimizationService = SumiBackgroundMediaOptimizationService()
     let nativeNowPlayingController: any SumiNativeNowPlayingRuntimeControlling
-    let splitManager: SplitViewManager
     let workspaceThemeCoordinator: WorkspaceThemeCoordinator
     let findManager: FindManager
     let browserConfiguration: BrowserConfiguration
@@ -59,6 +58,9 @@ class BrowserManager: ObservableObject {
     }
     weak var keyboardShortcutManager: KeyboardShortcutManager?
     let liveFolderManager = SumiLiveFolderManager()
+    private(set) lazy var splitComposition = BrowserSplitServices.live(
+        browserManager: self
+    )
     lazy var sidebarCommandService = BrowserSidebarCommandService(browserManager: self)
     lazy var tabLifecycleService = BrowserTabLifecycleService(browserManager: self)
     lazy var privacyBundle = BrowserPrivacyBundle(browserManager: self)
@@ -88,7 +90,12 @@ class BrowserManager: ObservableObject {
     lazy var windowSpaceTransitions = BrowserWindowSpaceTransitionService(
         browserManager: self
     )
-    let shellRuntime: BrowserShellRuntime
+    lazy var shellRuntime = BrowserShellRuntime(
+        tabManager: tabManager,
+        splitQuery: splitComposition.query,
+        glanceManager: glanceManager,
+        webViewSessions: webViewSessions
+    )
     lazy var webViewOwnershipQuery = WebViewOwnershipQuery(
         webViewSessions: webViewSessions
     )
@@ -128,7 +135,13 @@ class BrowserManager: ObservableObject {
         return composition
     }()
     let glanceManager: GlanceManager
-    let shutdownCleanupService: BrowserShutdownCleanupService
+    lazy var shutdownCleanupService = BrowserShutdownCleanupService(
+        extensions: optionalModules.extensions,
+        auxiliaryWindows: auxiliaryWindowTeardownRegistry,
+        glance: glanceManager,
+        tabs: tabManager,
+        shell: shellRuntime
+    )
     private(set) var startupProtectionRuntime: BrowserStartupProtectionRuntime!
 
     /// Designated init: assign always-on managers from a pre-built kernel graph.
@@ -139,12 +152,6 @@ class BrowserManager: ObservableObject {
         )
         let auxiliaryWindowTeardownRegistry = AuxiliaryWindowTeardownRegistry()
         let glanceManager = GlanceManager()
-        let shellRuntime = BrowserShellRuntime(
-            tabManager: graph.tabManager,
-            splitManager: graph.splitManager,
-            glanceManager: glanceManager,
-            webViewSessions: graph.webViewSessions
-        )
         self.webViewSessions = graph.webViewSessions
         self.modelContext = graph.modelContext
         self.moduleRegistry = graph.moduleRegistry
@@ -167,7 +174,6 @@ class BrowserManager: ObservableObject {
         self.startupSessionRestoreOwner = graph.startupSessionRestoreOwner
         self.compositorManager = graph.compositorManager
         self.tabSuspensionController = graph.tabSuspensionController
-        self.splitManager = graph.splitManager
         self.workspaceThemeCoordinator = graph.workspaceThemeCoordinator
         self.findManager = graph.findManager
         self.browserConfiguration = graph.browserConfiguration
@@ -175,16 +181,10 @@ class BrowserManager: ObservableObject {
         self.browsingDataCleanupService = graph.browsingDataCleanupService
         self.nativeNowPlayingController = graph.nativeNowPlayingController
         self.permissionRuntime = graph.permissionRuntime
-        self.shellRuntime = shellRuntime
         self.auxiliaryWindowTeardownRegistry = auxiliaryWindowTeardownRegistry
         self.glanceManager = glanceManager
-        self.shutdownCleanupService = BrowserShutdownCleanupService(
-            extensions: graph.optionalModules.extensions,
-            auxiliaryWindows: auxiliaryWindowTeardownRegistry,
-            glance: glanceManager,
-            tabs: graph.tabManager,
-            shell: shellRuntime
-        )
+        _ = shellRuntime
+        _ = shutdownCleanupService
         self.startupProtectionRuntime = BrowserStartupProtectionRuntime(browserManager: self)
         runtimeLifecycle.start()
     }

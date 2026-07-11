@@ -11,7 +11,8 @@ final class BrowserWindowCloseWorkflow {
     private let persistence: WindowSessionPersistenceCoordinator
     private weak var extensions: SumiExtensionsModule?
     private let webViews: WebViewLifecycleService
-    private weak var splits: SplitViewManager?
+    private weak var emptySplitPlaceholders: EmptySplitService?
+    private weak var splitPreviews: SplitPreviewSession?
     private weak var backgroundMedia: SumiBackgroundMediaOptimizationService?
     private weak var commands: BrowserWindowCommands?
 
@@ -21,7 +22,8 @@ final class BrowserWindowCloseWorkflow {
         persistence: WindowSessionPersistenceCoordinator,
         extensions: SumiExtensionsModule,
         webViews: WebViewLifecycleService,
-        splits: SplitViewManager,
+        emptySplitPlaceholders: EmptySplitService,
+        splitPreviews: SplitPreviewSession,
         backgroundMedia: SumiBackgroundMediaOptimizationService,
         commands: BrowserWindowCommands
     ) {
@@ -30,7 +32,8 @@ final class BrowserWindowCloseWorkflow {
         self.persistence = persistence
         self.extensions = extensions
         self.webViews = webViews
-        self.splits = splits
+        self.emptySplitPlaceholders = emptySplitPlaceholders
+        self.splitPreviews = splitPreviews
         self.backgroundMedia = backgroundMedia
         self.commands = commands
     }
@@ -45,7 +48,8 @@ final class BrowserWindowCloseWorkflow {
         }
 
         guard let extensions,
-              let splits,
+              let emptySplitPlaceholders,
+              let splitPreviews,
               let backgroundMedia,
               let commands
         else {
@@ -61,7 +65,8 @@ final class BrowserWindowCloseWorkflow {
         persistence.persistBeforeClosing(windowState)
         extensions.notifyWindowClosedIfLoaded(windowState.id)
         webViews.cleanupWindow(windowState.id)
-        splits.cleanupWindow(windowState.id)
+        emptySplitPlaceholders.removeWindow(windowState.id)
+        splitPreviews.removeWindow(windowState.id)
         backgroundMedia.scheduleReconcile(reason: "window-closed")
 
         guard windowState.isIncognito else { return }

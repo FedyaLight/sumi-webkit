@@ -37,6 +37,7 @@ final class WindowWebContentCompositorMutationGate {
 @MainActor
 final class WindowWebContentController: NSViewController {
     private let browserContext: any WindowWebContentBrowserContext
+    private let splitQuery: WindowSplitQuery
     private let webViewOwnershipQuery: WebViewOwnershipQuery
     private let webViewOwnershipService: WebViewOwnershipService
     private let webViewCompositorRuntime: WebViewCompositorRuntime
@@ -44,11 +45,7 @@ final class WindowWebContentController: NSViewController {
     private let windowState: BrowserWindowState
     private var chromeGeometry: BrowserChromeGeometry
     private let hostRegistry = WindowWebContentHostRegistry()
-    private lazy var containerView = WindowWebContentSplitHostLayoutView(
-        browserContext: browserContext,
-        windowId: windowState.id,
-        chromeGeometry: chromeGeometry
-    )
+    private let containerView: WindowWebContentSplitHostLayoutView
 
     private var pendingDisplayState: WebsiteDisplayState?
     private var appliedDisplayState: WebsiteDisplayState?
@@ -86,7 +83,6 @@ final class WindowWebContentController: NSViewController {
         windowID: windowState.id
     )
     private lazy var panePresenter = WindowWebContentPanePresenter(
-        browserContext: browserContext,
         windowState: windowState,
         containerView: containerView,
         compositorRuntime: webViewCompositorRuntime,
@@ -96,6 +92,7 @@ final class WindowWebContentController: NSViewController {
     )
     private lazy var presentationPlanner = WindowWebContentPresentationPlanner(
         browserContext: browserContext,
+        splitQuery: splitQuery,
         windowState: windowState,
         containerView: containerView,
         hostRegistry: hostRegistry,
@@ -139,6 +136,13 @@ final class WindowWebContentController: NSViewController {
 
     fileprivate init(
         browserContext: any WindowWebContentBrowserContext,
+        resolveDragTab: @escaping (SumiDragItem) -> Tab?,
+        splitQuery: WindowSplitQuery,
+        splitPreviews: SplitPreviewSession,
+        splitLayout: SplitLayoutService,
+        splitDrops: SplitDropService,
+        splitDropTargets: SplitDropTargetService,
+        sidebarDragState: SidebarDragState,
         webViewOwnershipQuery: WebViewOwnershipQuery,
         webViewOwnershipService: WebViewOwnershipService,
         webViewCompositorRuntime: WebViewCompositorRuntime,
@@ -147,12 +151,23 @@ final class WindowWebContentController: NSViewController {
         windowState: BrowserWindowState
     ) {
         self.browserContext = browserContext
+        self.splitQuery = splitQuery
         self.webViewOwnershipQuery = webViewOwnershipQuery
         self.webViewOwnershipService = webViewOwnershipService
         self.webViewCompositorRuntime = webViewCompositorRuntime
         self.webViewProtectionRuntime = webViewProtectionRuntime
         self.chromeGeometry = chromeGeometry
         self.windowState = windowState
+        self.containerView = WindowWebContentSplitHostLayoutView(
+            splitLayout: splitLayout,
+            splitDrops: splitDrops,
+            splitDropTargets: splitDropTargets,
+            splitPreviews: splitPreviews,
+            sidebarDragState: sidebarDragState,
+            windowState: windowState,
+            resolveDragTab: resolveDragTab,
+            chromeGeometry: chromeGeometry
+        )
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -181,6 +196,7 @@ final class WindowWebContentController: NSViewController {
     }
 
     func tearDownController() {
+        containerView.setSplitDropCaptureActive(false)
         let registration = compositorMutationGate.invalidate()
         pendingDisplayState = nil
         appliedDisplayState = nil
@@ -430,6 +446,13 @@ final class WindowWebContentController: NSViewController {
 struct TabCompositorWrapper: NSViewControllerRepresentable {
     private let makeBrowserContext: () -> any WindowWebContentBrowserContext
     private let currentTabForDisplayState: (BrowserWindowState) -> Tab?
+    private let resolveDragTab: (SumiDragItem) -> Tab?
+    private let splitQuery: WindowSplitQuery
+    private let splitPreviews: SplitPreviewSession
+    private let splitLayout: SplitLayoutService
+    private let splitDrops: SplitDropService
+    private let splitDropTargets: SplitDropTargetService
+    private let sidebarDragState: SidebarDragState
     let webViewOwnershipQuery: WebViewOwnershipQuery
     let webViewOwnershipService: WebViewOwnershipService
     let webViewCompositorRuntime: WebViewCompositorRuntime
@@ -443,6 +466,13 @@ struct TabCompositorWrapper: NSViewControllerRepresentable {
 
     init(
         browserContext: any WindowWebContentBrowserContext,
+        resolveDragTab: @escaping (SumiDragItem) -> Tab?,
+        splitQuery: WindowSplitQuery,
+        splitPreviews: SplitPreviewSession,
+        splitLayout: SplitLayoutService,
+        splitDrops: SplitDropService,
+        splitDropTargets: SplitDropTargetService,
+        sidebarDragState: SidebarDragState,
         webViewCoordinator: WebViewCoordinator,
         hoveredLink: Binding<String?>,
         splitPresentation: WindowSplitPresentation?,
@@ -452,6 +482,13 @@ struct TabCompositorWrapper: NSViewControllerRepresentable {
         contentBackgroundColor: Color
     ) {
         self.makeBrowserContext = { browserContext }
+        self.resolveDragTab = resolveDragTab
+        self.splitQuery = splitQuery
+        self.splitPreviews = splitPreviews
+        self.splitLayout = splitLayout
+        self.splitDrops = splitDrops
+        self.splitDropTargets = splitDropTargets
+        self.sidebarDragState = sidebarDragState
         self.currentTabForDisplayState = { windowState in
             browserContext.currentTab(for: windowState)
         }
@@ -513,6 +550,13 @@ struct TabCompositorWrapper: NSViewControllerRepresentable {
     func makeNSViewController(context: Context) -> WindowWebContentController {
         WindowWebContentController(
             browserContext: makeBrowserContext(),
+            resolveDragTab: resolveDragTab,
+            splitQuery: splitQuery,
+            splitPreviews: splitPreviews,
+            splitLayout: splitLayout,
+            splitDrops: splitDrops,
+            splitDropTargets: splitDropTargets,
+            sidebarDragState: sidebarDragState,
             webViewOwnershipQuery: webViewOwnershipQuery,
             webViewOwnershipService: webViewOwnershipService,
             webViewCompositorRuntime: webViewCompositorRuntime,

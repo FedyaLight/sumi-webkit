@@ -206,7 +206,6 @@ struct WindowView: View {
             hoverSidebarManager.stop()
         }
         .environmentObject(glanceManager)
-        .environmentObject(browserContext.splitManager)
         .environmentObject(hoverSidebarManager)
         .environment(\.resolvedThemeContext, resolvedThemeContext)
         .coordinateSpace(name: "WindowSpace")
@@ -399,11 +398,15 @@ struct WindowView: View {
     private func webContent() -> some View {
         ZStack(alignment: .top) {
             WebsiteView(
-                browserContext: browserContext.websiteViewBrowserContext(
-                    sidebarDragState: sidebarDragState
-                ),
+                browserContext: browserContext.websiteViewBrowserContext(),
                 nativeSurfaceRootBuilders: browserContext.websiteNativeSurfaceRootBuilders,
-                sidebarDragState: sidebarDragState
+                sidebarDragState: sidebarDragState,
+                splitUpdates: browserContext.splitUpdates,
+                splitQuery: browserContext.splitQuery,
+                splitPreviews: browserContext.splitPreviews,
+                splitLayout: browserContext.splitLayout,
+                splitDrops: browserContext.splitDrops,
+                splitDropTargets: browserContext.splitDropTargets
             )
                 .zIndex(2000)
 

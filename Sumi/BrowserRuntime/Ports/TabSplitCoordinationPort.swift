@@ -19,30 +19,34 @@ extension TabSplitCoordinationPort {
 
 @MainActor
 struct LiveTabSplitCoordinationPort: TabSplitCoordinationPort {
-    private let runtime: BrowserManagerRuntimeReference
+    private let tabClosures: SplitTabClosureService
+    private let query: WindowSplitQuery
 
-    init(runtime: BrowserManagerRuntimeReference) {
-        self.runtime = runtime
+    init(
+        tabClosures: SplitTabClosureService,
+        query: WindowSplitQuery
+    ) {
+        self.tabClosures = tabClosures
+        self.query = query
     }
 
     func handleTabClosure(_ tabId: UUID) {
-        runtime.require().splitManager.handleTabClosure(tabId)
+        tabClosures.handle(tabId)
     }
 
     func handleTabClosures(_ tabIds: Set<UUID>) {
-        runtime.require().splitManager.handleTabClosures(tabIds)
+        tabClosures.handle(tabIds)
     }
 
     func visibleSplitTabIds(for windowId: UUID) -> [UUID] {
-        runtime.require().splitManager.visibleTabIds(for: windowId)
+        query.visibleTabIDs(in: windowId)
     }
 
     func isTabVisibleInSplit(_ tabId: UUID, in windowId: UUID) -> Bool {
-        runtime.require().splitManager.isTabVisibleInSplit(tabId, in: windowId)
+        query.contains(tabID: tabId, in: windowId)
     }
 
     func isTabActiveInSplit(_ tabId: UUID, in windowId: UUID) -> Bool {
-        runtime.require().splitManager.isTabActiveInSplit(tabId, in: windowId)
+        query.isActive(tabID: tabId, in: windowId)
     }
-
 }

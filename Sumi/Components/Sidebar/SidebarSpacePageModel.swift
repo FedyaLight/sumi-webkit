@@ -9,8 +9,10 @@ import Foundation
 
 /// Page-scoped observation hub for sidebar structural managers.
 ///
-/// Forwards `objectWillChange` from tab / profile / live-folder / split managers
-/// so `SpacesSideBarView` can observe one model instead of four.
+/// Forwards structural manager changes so `SpacesSideBarView` can observe one
+/// page-scoped model. The sidebar does not render transient split previews:
+/// durable topology arrives through `TabManager`, while window-local selection
+/// arrives through the `BrowserWindowState` environment.
 @MainActor
 final class SidebarSpacePageModel: ObservableObject {
     @Published var structuralRevision: UInt = 0
@@ -18,8 +20,6 @@ final class SidebarSpacePageModel: ObservableObject {
     let tabManager: TabManager
     let profileManager: ProfileManager
     let liveFolderManager: SumiLiveFolderManager
-    let splitManager: SplitViewManager
-
     private let tabStructuralRevision: () -> UInt
     private var cancellables = Set<AnyCancellable>()
 
@@ -27,14 +27,12 @@ final class SidebarSpacePageModel: ObservableObject {
         tabManager = browserContext.tabManager
         profileManager = browserContext.profileManager
         liveFolderManager = browserContext.liveFolderManager
-        splitManager = browserContext.splitManager
         tabStructuralRevision = browserContext.tabStructuralRevision
         structuralRevision = tabStructuralRevision()
 
         forwardObjectWillChange(from: tabManager)
         forwardObjectWillChange(from: profileManager)
         forwardObjectWillChange(from: liveFolderManager)
-        forwardObjectWillChange(from: splitManager)
     }
 
     func bump() {

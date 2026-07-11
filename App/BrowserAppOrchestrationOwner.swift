@@ -105,7 +105,9 @@ final class BrowserAppOrchestrationOwner {
             persistence: windowSession.persistence,
             extensions: browserManager.optionalModules.extensions,
             webViews: webViewCoordinator.lifecycleService,
-            splits: browserManager.splitManager,
+            emptySplitPlaceholders: browserManager.splitComposition
+                .emptyPlaceholders,
+            splitPreviews: browserManager.splitComposition.previews,
             backgroundMedia: browserManager.backgroundMediaOptimizationService,
             commands: browserManager.windowCommands
         )

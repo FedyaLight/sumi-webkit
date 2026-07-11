@@ -36,7 +36,8 @@ final class BrowserWindowLifecycleWorkflowTests: XCTestCase {
                 persistence: windowSession.persistence,
                 extensions: browserManager.optionalModules.extensions,
                 webViews: coordinator.lifecycleService,
-                splits: browserManager.splitManager,
+                emptySplitPlaceholders: browserManager.splitComposition.emptyPlaceholders,
+                splitPreviews: browserManager.splitComposition.previews,
                 backgroundMedia: browserManager.backgroundMediaOptimizationService,
                 commands: browserManager.windowCommands
             )
@@ -129,7 +130,8 @@ final class BrowserWindowLifecycleWorkflowTests: XCTestCase {
             persistence: persistence,
             extensions: browserManager.optionalModules.extensions,
             webViews: coordinator.lifecycleService,
-            splits: browserManager.splitManager,
+            emptySplitPlaceholders: browserManager.splitComposition.emptyPlaceholders,
+            splitPreviews: browserManager.splitComposition.previews,
             backgroundMedia: browserManager.backgroundMediaOptimizationService,
             commands: browserManager.windowCommands
         )
@@ -201,7 +203,8 @@ final class BrowserWindowLifecycleWorkflowTests: XCTestCase {
             ),
             extensions: browserManager.optionalModules.extensions,
             webViews: coordinator.lifecycleService,
-            splits: browserManager.splitManager,
+            emptySplitPlaceholders: browserManager.splitComposition.emptyPlaceholders,
+            splitPreviews: browserManager.splitComposition.previews,
             backgroundMedia: browserManager.backgroundMediaOptimizationService,
             commands: browserManager.windowCommands
         )
@@ -291,7 +294,8 @@ final class BrowserWindowLifecycleWorkflowTests: XCTestCase {
                 persistence: windowSession.persistence,
                 extensions: browserManager.optionalModules.extensions,
                 webViews: coordinator.lifecycleService,
-                splits: browserManager.splitManager,
+                emptySplitPlaceholders: browserManager.splitComposition.emptyPlaceholders,
+                splitPreviews: browserManager.splitComposition.previews,
                 backgroundMedia: browserManager.backgroundMediaOptimizationService,
                 commands: browserManager.windowCommands
             )
@@ -318,7 +322,8 @@ final class BrowserWindowLifecycleWorkflowTests: XCTestCase {
             persistence: windowSession.persistence,
             extensions: browserManager.optionalModules.extensions,
             webViews: coordinator.lifecycleService,
-            splits: browserManager.splitManager,
+            emptySplitPlaceholders: browserManager.splitComposition.emptyPlaceholders,
+            splitPreviews: browserManager.splitComposition.previews,
             backgroundMedia: browserManager.backgroundMediaOptimizationService,
             commands: browserManager.windowCommands
         )

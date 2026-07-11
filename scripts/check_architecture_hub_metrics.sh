@@ -492,12 +492,12 @@ split_shortcut_runtime_providers="$(
 )"
 split_shortcut_stored_runtime_managers="$(
   count_matches \
-    '^    private let [A-Za-z_]+: (TabManager|SplitViewManager)\b' \
+    '^    private let [A-Za-z_]+: TabManager\b' \
     "$split_shortcut_focus" "$split_shortcut_restore" "$split_shortcut_unload"
 )"
 split_shortcut_separate_runtime_providers="$(
   count_matches \
-    '^    private let [A-Za-z_]+: \(\) -> (TabManager|SplitViewManager)\?' \
+    '^    private let [A-Za-z_]+: \(\) -> TabManager\?' \
     "$split_shortcut_focus" "$split_shortcut_restore" "$split_shortcut_unload"
 )"
 split_shortcut_runtime_lease_acquisitions="$(

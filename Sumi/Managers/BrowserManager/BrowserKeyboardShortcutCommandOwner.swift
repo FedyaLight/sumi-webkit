@@ -45,6 +45,11 @@ final class BrowserKeyboardShortcutCommandOwner {
     }
 
     convenience init(browserManager: BrowserManager) {
+        let splitQuery = browserManager.splitComposition.query
+        let splitLayout = browserManager.splitComposition.layout
+        let splitInsertion = browserManager.splitComposition.insertion
+        let emptySplitCreation = browserManager.splitComposition.emptyCreation
+
         self.init(
             tabSelection: TabSelectionCapabilities(
                 activeWindow: { [weak browserManager] in
@@ -68,20 +73,35 @@ final class BrowserKeyboardShortcutCommandOwner {
                 }
             ),
             spaceSplit: SpaceSplitCapabilities(
-                isSplit: { [weak browserManager] windowId in
-                    browserManager?.splitManager.isSplit(for: windowId) ?? false
+                isSplit: { [splitQuery] windowId in
+                    splitQuery.group(in: windowId) != nil
                 },
-                setSplitLayoutKind: { [weak browserManager] layoutKind, windowId in
-                    browserManager?.splitManager.setLayoutKind(layoutKind, for: windowId)
+                setSplitLayoutKind: { [splitLayout] layoutKind, windowId in
+                    splitLayout.setLayoutKind(
+                        layoutKind,
+                        in: windowId
+                    )
                 },
-                enterSplitWithTab: { [weak browserManager] tab, windowState in
-                    browserManager?.splitManager.enterSplit(with: tab, placeOn: .right, in: windowState)
+                enterSplitWithTab: { [splitInsertion] tab, windowState in
+                    splitInsertion.enterSplit(
+                        with: tab,
+                        side: .right,
+                        in: windowState
+                    )
                 },
-                unsplitActiveGroup: { [weak browserManager] windowId in
-                    browserManager?.splitManager.unsplitActiveGroup(for: windowId)
+                unsplitActiveGroup: { [weak browserManager, splitLayout] windowId in
+                    guard let browserManager,
+                          let windowState = browserManager.windowRegistry?
+                            .windows[windowId] else {
+                        return
+                    }
+                    splitLayout.unsplit(in: windowState)
                 },
-                createEmptySplit: { [weak browserManager] windowState in
-                    browserManager?.splitManager.createEmptySplit(side: .right, in: windowState)
+                createEmptySplit: { [emptySplitCreation] windowState in
+                    emptySplitCreation.create(
+                        side: .right,
+                        in: windowState
+                    )
                 },
                 spaces: { [weak browserManager] in
                     browserManager?.tabManager.spaceStateOwner.spaces ?? []

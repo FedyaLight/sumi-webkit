@@ -83,7 +83,10 @@ final class ActivePageBrowserManagerIntegrationTests: XCTestCase {
             browserManager.shellRuntime.activePageResolver.resolveActiveWindow()
         )
 
-        XCTAssertEqual(browserManager.splitManager.visibleTabIds(for: window.id), [first.id, active.id])
+        XCTAssertEqual(
+            browserManager.splitComposition.query.visibleTabIDs(in: window.id),
+            [first.id, active.id]
+        )
         XCTAssertIdentical(page.tab, active)
     }
 }

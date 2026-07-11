@@ -225,6 +225,8 @@ extension SpaceView {
                             spaceId: space.id,
                             currentTabId: windowState.currentTabId,
                             isAppKitInteractionEnabled: isInteractive,
+                            splitLayout: browserContext.splitLayout,
+                            emptySplitCreation: browserContext.emptySplitCreation,
                             segmentAction: { item in
                                 splitSegmentAction(for: item, in: group)
                             },
@@ -260,7 +262,6 @@ extension SpaceView {
                                 )
                             }
                         )
-                        .environmentObject(splitManager)
                         .zIndex(regularSplitGroupRowZIndex(group))
                     } else if groupedTabIds.contains(tabId) {
                         EmptyView()

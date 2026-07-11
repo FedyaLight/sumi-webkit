@@ -15,6 +15,7 @@ fail_matches() {
 }
 
 retired_files=(
+  Sumi/Managers/SplitViewManager
   Sumi/Models/Tab/SplitGroup.swift
   Sumi/Models/Tab/SplitLayoutFactory.swift
   Sumi/Models/Tab/SplitLayoutReconciler.swift
@@ -29,7 +30,9 @@ retired_files=(
   Sumi/Managers/BrowserManager/SidebarSplitShortcutCommands.swift
   Sumi/Managers/SplitViewManager/SplitEmptyPlaceholderOwner.swift
   Sumi/Managers/SplitViewManager/SplitPreviewStateOwner.swift
+  Sumi/Managers/SplitViewManager/SplitViewManager.swift
   Sumi/Managers/SplitViewManager/WindowSplitSelectionReconciler.swift
+  Sumi/Managers/BrowserManager/BrowserSplitViewRuntimeFactory.swift
   SumiTests/SplitGroupCollectionStateOwnerTests.swift
   SumiTests/SplitMembershipResolutionOwnerTests.swift
   SumiTests/SplitEmptyPlaceholderOwnerTests.swift
@@ -66,21 +69,28 @@ required_runtime_components=(
   Sumi/Managers/TabManager/SplitGroupStore.swift
   Sumi/Managers/TabManager/SplitGroupMutationService.swift
   Sumi/Managers/TabManager/SplitGroupMembershipQuery.swift
-  Sumi/Managers/SplitViewManager/WindowSplitProjection.swift
+  Sumi/Managers/SplitRuntime/WindowSplitProjection.swift
   Sumi/Models/Window/WindowSplitPresentation.swift
   Sumi/Managers/BrowserManager/WindowSplitMaterializationService.swift
   Sumi/Managers/BrowserManager/ShortcutSplitLauncherMoveTransaction.swift
   Sumi/Managers/BrowserManager/ShortcutSplitLauncherCatalogAdapter.swift
-  Sumi/Managers/SplitViewManager/WindowSplitQuery.swift
-  Sumi/Managers/SplitViewManager/WindowSplitPresentationSynchronizer.swift
-  Sumi/Managers/SplitViewManager/SplitLayoutService.swift
-  Sumi/Managers/SplitViewManager/SplitDropGroupAlgebra.swift
-  Sumi/Managers/SplitViewManager/SplitDropCommitEffect.swift
-  Sumi/Managers/SplitViewManager/SplitDropService.swift
-  Sumi/Managers/SplitViewManager/RegularTabShortcutSidebarDropTransaction.swift
-  Sumi/Managers/SplitViewManager/SplitDropTargetService.swift
-  Sumi/Managers/SplitViewManager/SplitPreviewSession.swift
-  Sumi/Managers/SplitViewManager/EmptySplitSession.swift
+  Sumi/Managers/SplitRuntime/WindowSplitQuery.swift
+  Sumi/Managers/SplitRuntime/WindowSplitPresentationSynchronizer.swift
+  Sumi/Managers/SplitRuntime/SplitLayoutService.swift
+  Sumi/Managers/SplitRuntime/SplitDropGroupAlgebra.swift
+  Sumi/Managers/SplitRuntime/SplitDropCommitEffect.swift
+  Sumi/Managers/SplitRuntime/SplitDropEdgeHitPolicy.swift
+  Sumi/Managers/SplitRuntime/SplitDropService.swift
+  Sumi/Managers/SplitRuntime/RegularTabShortcutSidebarDropTransaction.swift
+  Sumi/Managers/SplitRuntime/SplitDropTargetService.swift
+  Sumi/Managers/SplitRuntime/SplitPreviewSession.swift
+  Sumi/Managers/SplitRuntime/SplitWindowUpdateStream.swift
+  Sumi/Managers/SplitRuntime/EmptySplitSession.swift
+  Sumi/Managers/SplitRuntime/EmptySplitService.swift
+  Sumi/Managers/SplitRuntime/EmptySplitCreationWorkflow.swift
+  Sumi/Managers/SplitRuntime/SplitInsertionTargetResolver.swift
+  Sumi/Managers/SplitRuntime/SplitInsertionService.swift
+  Sumi/Managers/SplitRuntime/SplitTabClosureService.swift
 )
 
 for file in "${required_runtime_components[@]}"; do
@@ -89,14 +99,6 @@ for file in "${required_runtime_components[@]}"; do
     status=1
   fi
 done
-
-split_manager_lines="$(wc -l < Sumi/Managers/SplitViewManager/SplitViewManager.swift)"
-if (( split_manager_lines > 400 )); then
-  printf \
-    'error: SplitViewManager UI adapter regrew to %s LOC (maximum 400)\n' \
-    "$split_manager_lines" >&2
-  status=1
-fi
 
 duplicate_domain_declarations="$(
   rg -n '\b(struct|class|enum) (SplitGroup|SplitLayoutTree|SplitMemberID|SplitMember)\b' \
@@ -125,6 +127,74 @@ new_split_owner_hits="$(
 fail_matches \
   "split responsibility was hidden behind a new Owner surface" \
   "$new_split_owner_hits"
+
+retired_split_hub_hits="$(
+  rg -n '\b(SplitViewManager|SplitViewRuntime)\b' \
+    Sumi SumiTests SumiUITests SidebarChrome UI App Settings FloatingBar \
+    -g '*.swift' || true
+)"
+fail_matches \
+  "retired split composition hub or runtime callback bag is still referenced in production" \
+  "$retired_split_hub_hits"
+
+split_runtime_component_capture_hits="$(
+  rg -n '\b(SplitDropCaptureView|SplitDropCaptureViewPolicy|SplitDropCaptureHitPolicy)\b' \
+    Sumi/Managers/SplitRuntime \
+    -g '*.swift' || true
+)"
+fail_matches \
+  "split runtime depends on component-only drop capture behavior" \
+  "$split_runtime_component_capture_hits"
+
+split_runtime_ui_framework_hits="$(
+  rg -n '^import (AppKit|SwiftUI|WebKit)$' \
+    Sumi/Managers/SplitRuntime \
+    -g '*.swift' || true
+)"
+fail_matches \
+  "split runtime imported a UI or browser framework" \
+  "$split_runtime_ui_framework_hits"
+
+split_composition_escape_hits="$(
+  rg -n '\bBrowserSplitServices\b' \
+    Sumi SumiTests SumiUITests SidebarChrome UI App Settings FloatingBar \
+    -g '*.swift' \
+    -g '!BrowserSplitServices.swift' \
+    -g '!BrowserManager.swift' || true
+)"
+fail_matches \
+  "composition-only split storage escaped into feature code" \
+  "$split_composition_escape_hits"
+
+# Access to the graph itself is limited to explicit construction edges. Each
+# allowed file must immediately inject one concrete field into feature code.
+split_composition_access_hits="$(
+  rg -n '\bsplitComposition\b' \
+    Sumi SidebarChrome UI App Settings FloatingBar \
+    -g '*.swift' \
+    -g '!BrowserManager.swift' \
+    -g '!BrowserWindowViewRuntimeWiring.swift' \
+    -g '!BrowserTabManagerRuntimePortsFactory.swift' \
+    -g '!BrowserTabRuntimeCompositionService.swift' \
+    -g '!BrowserManagerWebViewCoordinatorRuntimeFactory.swift' \
+    -g '!BrowserKeyboardShortcutCommandOwner.swift' \
+    -g '!BrowserGlanceRuntimeService.swift' \
+    -g '!BrowserURLBarBundle+Live.swift' \
+    -g '!SplitShortcutServices+Live.swift' \
+    -g '!SidebarBrowserContext.swift' \
+    -g '!BrowserAppOrchestrationOwner.swift' || true
+)"
+fail_matches \
+  "split composition graph was accessed outside an approved construction edge" \
+  "$split_composition_access_hits"
+
+split_composition_behavior_hits="$(
+  rg -n '^    ((private|fileprivate|internal|public)[[:space:]]+)?(mutating[[:space:]]+)?(func|var|subscript)\b' \
+    Sumi/Managers/BrowserManager/BrowserSplitServices.swift || true
+)"
+fail_matches \
+  "composition-only split storage gained forwarding behavior or mutable state" \
+  "$split_composition_behavior_hits"
 
 retired_api_hits="$(
   rg -n -U \
@@ -171,7 +241,7 @@ fail_matches \
 presentation_mechanism_hits="$(
   rg -n '\b(Tab|WKWebView|BrowserManager|TabManager)\b' \
     Sumi/Models/Window/WindowSplitPresentation.swift \
-    Sumi/Managers/SplitViewManager/WindowSplitProjection.swift \
+    Sumi/Managers/SplitRuntime/WindowSplitProjection.swift \
     -g '*.swift' || true
 )"
 fail_matches \

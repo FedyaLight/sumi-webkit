@@ -2,12 +2,12 @@ import Foundation
 
 @MainActor
 protocol FloatingBarSplitPlaceholderHandling: AnyObject {
-    func cancelEmptySplitPlaceholder(in windowState: BrowserWindowState) -> Bool
-    func commitEmptySplitPlaceholder(tabId: UUID, in windowState: BrowserWindowState)
-    func replaceEmptySplitPlaceholder(with tab: Tab, in windowState: BrowserWindowState) -> Bool
+    func cancel(in windowState: BrowserWindowState) -> Bool
+    func commit(tabID: UUID, in windowID: UUID)
+    func replace(with tab: Tab, in windowState: BrowserWindowState) -> Bool
 }
 
-extension SplitViewManager: FloatingBarSplitPlaceholderHandling {}
+extension EmptySplitService: FloatingBarSplitPlaceholderHandling {}
 
 @MainActor
 protocol FloatingBarStatePersisting: AnyObject {
@@ -98,7 +98,7 @@ final class FloatingBarPresentationService {
         cancelEmptySplitPlaceholder: Bool = true
     ) {
         if cancelEmptySplitPlaceholder {
-            _ = splitPlaceholders()?.cancelEmptySplitPlaceholder(in: windowState)
+            _ = splitPlaceholders()?.cancel(in: windowState)
         }
         windowState.floatingBarPresentationReason = .none
         windowState.isFloatingBarVisible = false

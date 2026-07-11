@@ -172,7 +172,6 @@ final class WindowSessionRegistrationTests: XCTestCase {
         )
         let extensions = RecordingWindowExtensionLifecycle()
         let activation = BrowserWindowActivationService(
-            splitManager: browserManager.splitManager,
             sidebarPresentation: browserManager.chromeBundle
                 .sidebarPresentationOwner,
             persistence: browserManager.windowSessionBundle.persistence,

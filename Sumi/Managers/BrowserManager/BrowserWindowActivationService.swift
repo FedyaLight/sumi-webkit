@@ -8,7 +8,6 @@ final class BrowserWindowActivationService {
         let windowIdentity: ObjectIdentifier
     }
 
-    private let splitManager: SplitViewManager
     private let sidebarPresentation: BrowserSidebarPresentationOwner
     private let persistence: WindowSessionPersistenceCoordinator
     private let activePageResolver: ActivePageResolver
@@ -20,7 +19,6 @@ final class BrowserWindowActivationService {
     private var deferredActivationsByWindowID: [UUID: DeferredActivation] = [:]
 
     init(
-        splitManager: SplitViewManager,
         sidebarPresentation: BrowserSidebarPresentationOwner,
         persistence: WindowSessionPersistenceCoordinator,
         activePageResolver: ActivePageResolver,
@@ -30,7 +28,6 @@ final class BrowserWindowActivationService {
         nowPlaying: any SumiNativeNowPlayingRuntimeControlling,
         backgroundMedia: SumiBackgroundMediaOptimizationService
     ) {
-        self.splitManager = splitManager
         self.sidebarPresentation = sidebarPresentation
         self.persistence = persistence
         self.activePageResolver = activePageResolver
@@ -85,7 +82,6 @@ final class BrowserWindowActivationService {
 
     private func applyActivation(_ windowState: BrowserWindowState) {
         synchronizeFocusedContext(windowState)
-        splitManager.refreshPublishedState(for: windowState.id)
         sidebarPresentation.syncFromWindow(windowState)
         persistence.persist(windowState)
 

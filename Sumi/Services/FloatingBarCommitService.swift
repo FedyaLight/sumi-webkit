@@ -87,9 +87,9 @@ final class FloatingBarCommitService {
 
         switch target {
         case .currentPage(let tab):
-            splitPlaceholders()?.commitEmptySplitPlaceholder(
-                tabId: tab.id,
-                in: windowState
+            splitPlaceholders()?.commit(
+                tabID: tab.id,
+                in: windowState.id
             )
             pageNavigation.loadLiteralURL(
                 urlString,
@@ -123,7 +123,7 @@ final class FloatingBarCommitService {
     ) {
         switch suggestion.type {
         case .tab(let existingTab):
-            if splitPlaceholders()?.replaceEmptySplitPlaceholder(
+            if splitPlaceholders()?.replace(
                 with: existingTab,
                 in: windowState
             ) != true {
@@ -164,9 +164,9 @@ final class FloatingBarCommitService {
     ) {
         switch target {
         case .currentPage(let tab):
-            splitPlaceholders()?.commitEmptySplitPlaceholder(
-                tabId: tab.id,
-                in: windowState
+            splitPlaceholders()?.commit(
+                tabID: tab.id,
+                in: windowState.id
             )
             pageNavigation.loadLiteralURL(
                 urlString,
@@ -197,9 +197,9 @@ final class FloatingBarCommitService {
     ) {
         switch target {
         case .currentPage(let tab):
-            splitPlaceholders()?.commitEmptySplitPlaceholder(
-                tabId: tab.id,
-                in: windowState
+            splitPlaceholders()?.commit(
+                tabID: tab.id,
+                in: windowState.id
             )
             pageNavigation.navigate(to: input, in: tab, windowState: windowState)
             pageNavigation.applySettingsSurfaceNavigation(from: input)

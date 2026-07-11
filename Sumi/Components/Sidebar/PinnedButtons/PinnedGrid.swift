@@ -273,7 +273,7 @@ struct PinnedGrid: View {
         browserContext.tabManager.shortcutPresentationOwner.essentialRuntimeState(
             for: pin,
             in: windowState,
-            splitManager: browserContext.splitManager
+            splitQuery: browserContext.splitQuery
         )
     }
 

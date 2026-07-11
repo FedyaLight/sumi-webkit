@@ -1,43 +1,7 @@
 import AppKit
 import SumiDomain
 
-enum SplitDropCaptureHitPolicy {
-    enum Mode {
-        case create
-        case rearrange
-    }
-
-    static let edgeZoneFraction: CGFloat = 0.25
-
-    static func sides(at location: CGPoint, in bounds: CGRect, mode: Mode) -> [SplitDropSide] {
-        guard bounds.width > 0, bounds.height > 0 else { return [] }
-        guard bounds.contains(location) else { return [] }
-        let distanceLeft = location.x - bounds.minX
-        let distanceRight = bounds.maxX - location.x
-        let distanceBottom = location.y - bounds.minY
-        let distanceTop = bounds.maxY - location.y
-        let horizontalThreshold = bounds.width * edgeZoneFraction
-        let verticalThreshold = bounds.height * edgeZoneFraction
-
-        var matchingEdges: [(side: SplitDropSide, distance: CGFloat)] = []
-        if distanceLeft <= horizontalThreshold { matchingEdges.append((.left, distanceLeft)) }
-        if distanceRight <= horizontalThreshold { matchingEdges.append((.right, distanceRight)) }
-        if distanceTop <= verticalThreshold { matchingEdges.append((.top, distanceTop)) }
-        if distanceBottom <= verticalThreshold { matchingEdges.append((.bottom, distanceBottom)) }
-
-        if matchingEdges.isEmpty, mode == .rearrange {
-            return [.center]
-        }
-
-        return matchingEdges
-            .sorted { $0.distance < $1.distance }
-            .map(\.side)
-    }
-
-    static func side(at location: CGPoint, in bounds: CGRect, mode: Mode) -> SplitDropSide? {
-        sides(at: location, in: bounds, mode: mode).first
-    }
-
+private enum SplitDropCaptureViewPolicy {
     static func shouldCaptureHit(
         at point: CGPoint,
         in bounds: CGRect
@@ -50,16 +14,13 @@ enum SplitDropCaptureHitPolicy {
     }
 }
 
-struct SplitDropCaptureRuntime {
-    let splitManager: SplitViewManager
-    let sidebarDragState: SidebarDragState
-    let windowState: (UUID) -> BrowserWindowState?
-    let resolveDragTab: (SumiDragItem) -> Tab?
-}
-
 final class SplitDropCaptureView: NSView {
-    private var runtime: SplitDropCaptureRuntime?
-    private var windowId: UUID?
+    private let splitDrops: SplitDropService
+    private let splitDropTargets: SplitDropTargetService
+    private let splitPreviews: SplitPreviewSession
+    private let sidebarDragState: SidebarDragState
+    private weak var windowState: BrowserWindowState?
+    private let resolveDragTab: (SumiDragItem) -> Tab?
     private var currentTarget: SplitDropTarget?
     private var isDragActive = false
 
@@ -67,14 +28,28 @@ final class SplitDropCaptureView: NSView {
         NotificationCenter.default.removeObserver(self)
     }
 
-    override init(frame frameRect: NSRect) {
+    init(
+        frame frameRect: NSRect,
+        splitDrops: SplitDropService,
+        splitDropTargets: SplitDropTargetService,
+        splitPreviews: SplitPreviewSession,
+        sidebarDragState: SidebarDragState,
+        windowState: BrowserWindowState,
+        resolveDragTab: @escaping (SumiDragItem) -> Tab?
+    ) {
+        self.splitDrops = splitDrops
+        self.splitDropTargets = splitDropTargets
+        self.splitPreviews = splitPreviews
+        self.sidebarDragState = sidebarDragState
+        self.windowState = windowState
+        self.resolveDragTab = resolveDragTab
         super.init(frame: frameRect)
         commonInit()
     }
 
+    @available(*, unavailable)
     required init?(coder: NSCoder) {
-        super.init(coder: coder)
-        commonInit()
+        fatalError("init(coder:) has not been implemented")
     }
 
     private func commonInit() {
@@ -102,18 +77,13 @@ final class SplitDropCaptureView: NSView {
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
-        SplitDropCaptureHitPolicy.shouldCaptureHit(
+        SplitDropCaptureViewPolicy.shouldCaptureHit(
             at: point,
             in: bounds
         ) ? self : nil
     }
 
     override var acceptsFirstResponder: Bool { false }
-
-    func configure(runtime: SplitDropCaptureRuntime, windowId: UUID) {
-        self.runtime = runtime
-        self.windowId = windowId
-    }
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
         updateDragState(sender)
@@ -132,18 +102,16 @@ final class SplitDropCaptureView: NSView {
     }
 
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
-        guard let runtime,
-              let windowId,
-              let windowState = runtime.windowState(windowId),
+        guard let windowState,
               let item = SidebarDropCoordinator.draggedItem(from: sender.draggingPasteboard),
-              let tab = runtime.resolveDragTab(item),
+              let tab = resolveDragTab(item),
               let target = currentTarget ?? resolvedDropTarget(sender, item: item)
         else {
             finishDrag(resetSidebarDragState: true)
             return false
         }
 
-        let didDrop = runtime.splitManager.dropTab(tab, on: target, in: windowState)
+        let didDrop = splitDrops.drop(tab, on: target, in: windowState)
         finishDrag(resetSidebarDragState: true)
         return didDrop
     }
@@ -155,7 +123,7 @@ final class SplitDropCaptureView: NSView {
             return []
         }
 
-        let operation = SplitDropCaptureHitPolicy.validatedMoveOperation(
+        let operation = SplitDropCaptureViewPolicy.validatedMoveOperation(
             sourceMask: sender.draggingSourceOperationMask
         )
         guard operation != [] else {
@@ -163,7 +131,8 @@ final class SplitDropCaptureView: NSView {
             return []
         }
 
-        guard let runtime, let windowId else { return [] }
+        guard let windowState else { return [] }
+        let windowID = windowState.id
 
         updateSidebarDragPreviewLocation(sender)
 
@@ -173,17 +142,17 @@ final class SplitDropCaptureView: NSView {
         }
 
         currentTarget = target
-        if runtime.splitManager.isPreviewActive(for: windowId) {
-            runtime.splitManager.updatePreview(
+        if splitPreviews.isActive(in: windowID) {
+            splitPreviews.update(
                 targetRect: target.targetRect,
                 style: target.previewStyle,
-                for: windowId
+                in: windowID
             )
         } else {
-            runtime.splitManager.beginPreview(
+            splitPreviews.begin(
                 targetRect: target.targetRect,
                 style: target.previewStyle,
-                for: windowId
+                in: windowID
             )
         }
         return operation
@@ -196,27 +165,26 @@ final class SplitDropCaptureView: NSView {
         let location = convert(sender.draggingLocation, from: nil)
         let item = explicitItem
             ?? SidebarDropCoordinator.draggedItem(from: sender.draggingPasteboard)
-        guard let runtime, let windowId else { return nil }
-        return runtime.splitManager.dropTarget(
+        guard let windowState else { return nil }
+        return splitDropTargets.target(
             at: location,
             in: bounds,
-            for: windowId,
+            windowID: windowState.id,
             draggedMemberID: item?.splitMemberID,
-            draggedTabId: item?.splitMemberID == nil ? item?.tabId : nil
+            draggedLookupID: item?.splitMemberID == nil ? item?.tabId : nil
         )
     }
 
     private func updateSidebarDragPreviewLocation(_ sender: NSDraggingInfo) {
-        guard let state = runtime?.sidebarDragState,
-              state.isInternalDragSession,
+        guard sidebarDragState.isInternalDragSession,
               let dragLocation = SidebarDragLocationMapper.swiftUIGlobalPoint(
                 fromWindowPoint: sender.draggingLocation,
                 in: self
               )
         else { return }
 
-        state.clearHoverState()
-        state.updateDragLocation(
+        sidebarDragState.clearHoverState()
+        sidebarDragState.updateDragLocation(
             dragLocation,
             previewLocation: SidebarDragLocationMapper.swiftUIPreviewPoint(
                 fromWindowPoint: sender.draggingLocation,
@@ -230,10 +198,10 @@ final class SplitDropCaptureView: NSView {
         let hadLocalDragState = isDragActive || currentTarget != nil
         isDragActive = false
         currentTarget = nil
-        guard let runtime, let windowId else { return hadLocalDragState }
-        let hadPreview = runtime.splitManager.isPreviewActive(for: windowId)
+        guard let windowID = windowState?.id else { return hadLocalDragState }
+        let hadPreview = splitPreviews.isActive(in: windowID)
         if hadPreview {
-            runtime.splitManager.endPreview(for: windowId)
+            splitPreviews.end(in: windowID)
         }
         return hadLocalDragState || hadPreview
     }
@@ -243,7 +211,7 @@ final class SplitDropCaptureView: NSView {
             NotificationCenter.default.post(name: .tabDragDidEnd, object: nil)
         }
         if resetSidebarDragState {
-            runtime?.sidebarDragState.resetInteractionState()
+            sidebarDragState.resetInteractionState()
         }
     }
 

@@ -621,8 +621,15 @@ final class SidebarDragCurrentContextTests: XCTestCase {
                 )
             )
         )
-        XCTAssertTrue(harness.browserManager.splitManager.isSplit(for: harness.windowState.id))
-        XCTAssertEqual(harness.browserManager.splitManager.visibleTabIds(for: harness.windowState.id), [currentTab.id, draggedTab.id])
+        XCTAssertNotNil(
+            harness.browserManager.splitComposition.query.group(in: harness.windowState.id)
+        )
+        XCTAssertEqual(
+            harness.browserManager.splitComposition.query.visibleTabIDs(
+                in: harness.windowState.id
+            ),
+            [currentTab.id, draggedTab.id]
+        )
     }
 
     func testSplitVisibleRegularTabDropIntoEssentialsPreservesLiveInstanceAndSplit() throws {
@@ -708,19 +715,14 @@ final class SidebarDragCurrentContextTests: XCTestCase {
                 )
             )
         )
-        XCTAssertTrue(harness.browserManager.splitManager.isSplit(for: harness.windowState.id))
-        XCTAssertEqual(harness.browserManager.splitManager.visibleTabIds(for: harness.windowState.id), [currentTab.id, draggedTab.id])
-    }
-
-    func testSplitVisibleRegularTabDropRejectsMultiwindowSplitWithoutMutation() throws {
-        try assertMultiwindowSplitConversionRejected(
-            secondarySelectsDraggedTab: false
+        XCTAssertNotNil(
+            harness.browserManager.splitComposition.query.group(in: harness.windowState.id)
         )
-    }
-
-    func testSelectedSplitVisibleRegularTabDropRejectsMultiwindowSplitWithoutMutation() throws {
-        try assertMultiwindowSplitConversionRejected(
-            secondarySelectsDraggedTab: true
+        XCTAssertEqual(
+            harness.browserManager.splitComposition.query.visibleTabIDs(
+                in: harness.windowState.id
+            ),
+            [currentTab.id, draggedTab.id]
         )
     }
 
@@ -1605,135 +1607,6 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         XCTAssertEqual(tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[sourceSpace.id]?.map(\.id), [sourceTab.id])
         XCTAssertEqual(tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[otherSpace.id]?.map(\.id), [otherTab.id])
         XCTAssertTrue(tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: sourceSpace.id).isEmpty)
-    }
-
-    private func assertMultiwindowSplitConversionRejected(
-        secondarySelectsDraggedTab: Bool
-    ) throws {
-        let primaryWindow = BrowserWindowState()
-        let secondaryWindow = BrowserWindowState()
-        let states = [
-            primaryWindow.id: primaryWindow,
-            secondaryWindow.id: secondaryWindow,
-        ]
-        var visibleSplitIds: [UUID] = []
-        var primaryTrackedTabId: UUID?
-        var persistedWindowIds: [UUID] = []
-        let tabManager = try makeInMemoryTabManager(
-            windowState: { states[$0] },
-            windows: { states.map { ($0.key, $0.value) } },
-            visibleSplitTabIds: { _ in visibleSplitIds },
-            primaryTrackedWindowId: { tabId in
-                tabId == primaryTrackedTabId ? primaryWindow.id : nil
-            },
-            persistWindowSession: { persistedWindowIds.append($0.id) }
-        )
-        primaryWindow.tabManager = tabManager
-        secondaryWindow.tabManager = tabManager
-        let profileId = UUID()
-        let space = tabManager.spaceServices.catalog.createSpace(
-            name: "Work",
-            profileId: profileId
-        )
-        let companion = tabManager.regularTabLifecycleOwner.createNewTab(
-            url: "https://example.com/current",
-            in: space
-        )
-        let draggedTab = tabManager.regularTabLifecycleOwner.createNewTab(
-            url: "https://example.com/multiwindow-split",
-            in: space,
-            activate: false
-        )
-        primaryTrackedTabId = draggedTab.id
-        for window in states.values {
-            window.currentSpaceId = space.id
-            window.currentProfileId = profileId
-            window.activeTabForSpace[space.id] = draggedTab.id
-            window.selectionHistory.recordRegularTabSelection(
-                draggedTab.id,
-                in: space.id
-            )
-        }
-        primaryWindow.currentTabId = draggedTab.id
-        secondaryWindow.currentTabId = secondarySelectsDraggedTab
-            ? draggedTab.id
-            : companion.id
-        let group = try XCTUnwrap(
-            SplitGroup.make(
-                members: [
-                    .regularTab(companion.id),
-                    .regularTab(draggedTab.id),
-                ],
-                layoutKind: .vertical,
-                container: .regularTabs(spaceId: space.id)
-            )
-        )
-        visibleSplitIds = [companion.id, draggedTab.id]
-        XCTAssertTrue(
-            tabManager.splitGroupMutations.insert(group, persist: false)
-        )
-        primaryWindow.splitSelection = WindowSplitSelection(
-            groupID: group.id,
-            activeMemberID: .regularTab(draggedTab.id)
-        )
-        let primarySession = ShortcutConversionWindowSessionState(primaryWindow)
-        let secondarySession = ShortcutConversionWindowSessionState(secondaryWindow)
-        let primaryRegularHistory = primaryWindow.selectionHistory
-            .recentRegularTabIdsBySpace
-        let secondaryRegularHistory = secondaryWindow.selectionHistory
-            .recentRegularTabIdsBySpace
-        var structuralEvents = 0
-        let cancellable = tabManager.tabStructureEventBus
-            .structureChangedPublisher.sink { structuralEvents += 1 }
-        structuralEvents = 0
-
-        let didMove = tabManager.sidebarDragRouter
-            .performSidebarDragOperation(
-                DragOperation(
-                    payload: .tab(draggedTab),
-                    scope: try makeScope(
-                        spaceId: space.id,
-                        profileId: profileId,
-                        sourceZone: .spaceRegular(space.id),
-                        item: dragItem(draggedTab),
-                        windowState: primaryWindow
-                    ),
-                    fromContainer: .spaceRegular(space.id),
-                    toContainer: .spacePinned(space.id),
-                    toIndex: 0
-                )
-            )
-
-        XCTAssertFalse(didMove)
-        XCTAssertEqual(structuralEvents, 0)
-        XCTAssertTrue(persistedWindowIds.isEmpty)
-        XCTAssertTrue(tabManager.regularTabCollectionOwner.contains(draggedTab))
-        XCTAssertFalse(draggedTab.isShortcutLiveInstance)
-        XCTAssertTrue(
-            tabManager.shortcutPinCollectionStateOwner
-                .spacePinnedPins(for: space.id).isEmpty
-        )
-        XCTAssertEqual(
-            tabManager.splitGroupStore.group(id: group.id),
-            group
-        )
-        XCTAssertEqual(
-            ShortcutConversionWindowSessionState(primaryWindow),
-            primarySession
-        )
-        XCTAssertEqual(
-            ShortcutConversionWindowSessionState(secondaryWindow),
-            secondarySession
-        )
-        XCTAssertEqual(
-            primaryWindow.selectionHistory.recentRegularTabIdsBySpace,
-            primaryRegularHistory
-        )
-        XCTAssertEqual(
-            secondaryWindow.selectionHistory.recentRegularTabIdsBySpace,
-            secondaryRegularHistory
-        )
-        _ = cancellable
     }
 
     private func makeLiveWindowHarness() throws -> LiveWindowHarness {

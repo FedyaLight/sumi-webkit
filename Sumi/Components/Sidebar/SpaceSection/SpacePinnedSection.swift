@@ -155,6 +155,8 @@ extension SpaceView {
                 items: items,
                 spaceId: space.id,
                 tabManager: browserContext.tabManager,
+                splitLayout: browserContext.splitLayout,
+                emptySplitCreation: browserContext.emptySplitCreation,
                 isAppKitInteractionEnabled: isInteractive,
                 accessibilityID: "shortcut-host-split-row-\(group.id.uuidString)",
                 onActivateMember: { memberID in
@@ -192,7 +194,6 @@ extension SpaceView {
                     )
                 }
             )
-            .environmentObject(splitManager)
             .sidebarTopLevelPinnedItemGeometry(
                 itemId: group.id,
                 spaceId: space.id,

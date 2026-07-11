@@ -1,4 +1,5 @@
 import CoreGraphics
+import Combine
 import Foundation
 import XCTest
 
@@ -6,11 +7,26 @@ import XCTest
 
 @MainActor
 final class SplitPreviewSessionTests: XCTestCase {
+    func testWindowUpdateStreamDeliversOnlyMatchingWindow() {
+        let channel = SplitWindowUpdateStream.makeChannel()
+        let trackedWindowID = UUID()
+        var deliveryCount = 0
+        let subscription = channel.stream.updates(for: trackedWindowID).sink {
+            deliveryCount += 1
+        }
+
+        channel.emitter.publish(windowID: UUID())
+        channel.emitter.publish(windowID: trackedWindowID)
+        channel.emitter.publish(windowID: UUID())
+
+        XCTAssertEqual(deliveryCount, 1)
+        withExtendedLifetime(subscription) {}
+    }
+
     func testBeginUpdateAndEndAreWindowScoped() {
         let recorder = Recorder()
         let session = makeSession(recorder)
         let windowID = UUID()
-        recorder.activeWindowID = windowID
 
         session.begin(
             targetRect: CGRect(x: 0, y: 0, width: 10, height: 10),
@@ -38,6 +54,10 @@ final class SplitPreviewSessionTests: XCTestCase {
 
         session.end(in: windowID)
         XCTAssertEqual(session.state(for: windowID), .init())
+        XCTAssertEqual(
+            recorder.publishedWindowIDs,
+            [windowID, windowID, windowID]
+        )
         XCTAssertEqual(recorder.refreshedWindowIDs, [windowID, windowID])
     }
 
@@ -54,43 +74,39 @@ final class SplitPreviewSessionTests: XCTestCase {
         XCTAssertEqual(recorder.publishCount, 0)
     }
 
-    func testOnlyActiveWindowPublishesChangedState() {
+    func testEachChangedWindowPublishesItsOwnIdentity() {
         let recorder = Recorder()
         let session = makeSession(recorder)
-        let activeWindowID = UUID()
-        let backgroundWindowID = UUID()
-        recorder.activeWindowID = activeWindowID
+        let firstWindowID = UUID()
+        let secondWindowID = UUID()
 
-        session.begin(targetRect: nil, style: .edge, in: backgroundWindowID)
-        XCTAssertEqual(recorder.publishCount, 0)
+        session.begin(targetRect: nil, style: .edge, in: firstWindowID)
+        session.begin(targetRect: nil, style: .edge, in: secondWindowID)
+        session.update(targetRect: .zero, style: .center, in: firstWindowID)
 
-        session.begin(targetRect: nil, style: .edge, in: activeWindowID)
-        XCTAssertEqual(recorder.publishCount, 1)
-
-        session.syncPublishedState(for: activeWindowID)
-        XCTAssertEqual(recorder.publishCount, 1)
-
-        session.syncPublishedState(for: activeWindowID, force: true)
-        XCTAssertEqual(recorder.publishCount, 2)
+        XCTAssertEqual(
+            recorder.publishedWindowIDs,
+            [firstWindowID, secondWindowID, firstWindowID]
+        )
     }
 
     func testRemovingWindowDropsTransientState() {
         let recorder = Recorder()
         let session = makeSession(recorder)
         let windowID = UUID()
-        recorder.activeWindowID = windowID
         session.begin(targetRect: .zero, style: .center, in: windowID)
 
         session.removeWindow(windowID)
 
         XCTAssertEqual(session.state(for: windowID), .init())
-        XCTAssertEqual(recorder.publishCount, 2)
+        XCTAssertEqual(recorder.publishedWindowIDs, [windowID, windowID])
     }
 
     private func makeSession(_ recorder: Recorder) -> SplitPreviewSession {
         SplitPreviewSession(
-            activeWindowID: { recorder.activeWindowID },
-            publishActiveWindowChange: { recorder.publishCount += 1 },
+            publishWindowChange: {
+                recorder.publishedWindowIDs.append($0)
+            },
             refreshWindow: { recorder.refreshedWindowIDs.append($0) }
         )
     }
@@ -98,7 +114,7 @@ final class SplitPreviewSessionTests: XCTestCase {
 
 @MainActor
 private final class Recorder {
-    var activeWindowID: UUID?
-    var publishCount = 0
+    var publishedWindowIDs: [UUID] = []
+    var publishCount: Int { publishedWindowIDs.count }
     var refreshedWindowIDs: [UUID] = []
 }

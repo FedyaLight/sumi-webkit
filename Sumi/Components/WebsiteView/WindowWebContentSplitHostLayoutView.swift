@@ -26,24 +26,41 @@ final class WindowWebContentSplitHostLayoutView: NSView, WindowWebContentVisualH
     let singlePaneView = PaneContainerView()
     private let splitRootView = SplitRootView()
     private let visualHandoffOverlayView = VisualHandoffOverlayView()
-    private let splitDropCaptureView = SplitDropCaptureView(frame: .zero)
+    private var splitDropCaptureView: SplitDropCaptureView?
     private var paneLayout: PaneLayout = .single
     private var chromeGeometry: BrowserChromeGeometry
-    private weak var browserContext: (any WindowWebContentBrowserContext)?
-    private let windowId: UUID
+    private let splitLayout: SplitLayoutService
+    private let splitDrops: SplitDropService
+    private let splitDropTargets: SplitDropTargetService
+    private let splitPreviews: SplitPreviewSession
+    private let sidebarDragState: SidebarDragState
+    private weak var windowState: BrowserWindowState?
+    private let resolveDragTab: (SumiDragItem) -> Tab?
+    private let windowID: UUID
 
     var hasHostedSplitWebViews: Bool {
         splitRootView.hasHostedWebViews
     }
 
     init(
-        browserContext: any WindowWebContentBrowserContext,
-        windowId: UUID,
+        splitLayout: SplitLayoutService,
+        splitDrops: SplitDropService,
+        splitDropTargets: SplitDropTargetService,
+        splitPreviews: SplitPreviewSession,
+        sidebarDragState: SidebarDragState,
+        windowState: BrowserWindowState,
+        resolveDragTab: @escaping (SumiDragItem) -> Tab?,
         chromeGeometry: BrowserChromeGeometry
     ) {
         self.chromeGeometry = chromeGeometry
-        self.browserContext = browserContext
-        self.windowId = windowId
+        self.splitLayout = splitLayout
+        self.splitDrops = splitDrops
+        self.splitDropTargets = splitDropTargets
+        self.splitPreviews = splitPreviews
+        self.sidebarDragState = sidebarDragState
+        self.windowState = windowState
+        self.resolveDragTab = resolveDragTab
+        self.windowID = windowState.id
         super.init(frame: .zero)
 
         singlePaneView.identifier = CompositorPaneDestination.single.viewIdentifier
@@ -54,8 +71,6 @@ final class WindowWebContentSplitHostLayoutView: NSView, WindowWebContentVisualH
         addSubview(splitRootView)
         visualHandoffOverlayView.isHidden = true
         addSubview(visualHandoffOverlayView)
-
-        setSplitDropCaptureActive(false)
     }
 
     @available(*, unavailable)
@@ -67,7 +82,8 @@ final class WindowWebContentSplitHostLayoutView: NSView, WindowWebContentVisualH
         super.layout()
         applyPaneLayout()
         visualHandoffOverlayView.frame = bounds
-        if splitDropCaptureView.superview === self {
+        if let splitDropCaptureView,
+           splitDropCaptureView.superview === self {
             splitDropCaptureView.frame = bounds
         }
     }
@@ -89,17 +105,33 @@ final class WindowWebContentSplitHostLayoutView: NSView, WindowWebContentVisualH
     func setSplitDropCaptureActive(
         _ isActive: Bool
     ) {
-        browserContext?.configureSplitDropCapture(splitDropCaptureView, windowId: windowId)
-
         if isActive {
+            guard let splitDropCaptureView = activeSplitDropCaptureView()
+            else { return }
             if splitDropCaptureView.superview !== self {
                 addSubview(splitDropCaptureView, positioned: .above, relativeTo: nil)
             }
             splitDropCaptureView.frame = bounds
-        } else if splitDropCaptureView.superview === self {
+        } else if let splitDropCaptureView {
             splitDropCaptureView.cancelActiveDragPreview()
-            splitDropCaptureView.removeFromSuperview()
+            if splitDropCaptureView.superview === self {
+                splitDropCaptureView.removeFromSuperview()
+            }
+            self.splitDropCaptureView = nil
         }
+    }
+
+    func configureSplitControls(
+        in paneView: PaneContainerView,
+        tab: Tab,
+        windowState: BrowserWindowState
+    ) {
+        paneView.configureSplitControls(
+            tab: tab,
+            splitLayout: splitLayout,
+            windowState: windowState,
+            sidebarDragState: sidebarDragState
+        )
     }
 
     func paneView(for tabId: UUID) -> PaneContainerView? {
@@ -151,15 +183,33 @@ final class WindowWebContentSplitHostLayoutView: NSView, WindowWebContentVisualH
                 chromeGeometry: chromeGeometry,
                 onResize: { [weak self] path, sizes in
                     guard let self else { return }
-                    self.browserContext?.updateSplitLayoutWeights(
+                    self.splitLayout.updateWeights(
                         expectedGroup: presentation.group,
                         path: path,
                         weights: sizes,
-                        for: self.windowId
+                        in: self.windowID
                     )
                 }
             )
         }
+    }
+
+    private func activeSplitDropCaptureView() -> SplitDropCaptureView? {
+        if let splitDropCaptureView {
+            return splitDropCaptureView
+        }
+        guard let windowState else { return nil }
+        let view = SplitDropCaptureView(
+            frame: .zero,
+            splitDrops: splitDrops,
+            splitDropTargets: splitDropTargets,
+            splitPreviews: splitPreviews,
+            sidebarDragState: sidebarDragState,
+            windowState: windowState,
+            resolveDragTab: resolveDragTab
+        )
+        splitDropCaptureView = view
+        return view
     }
 }
 
@@ -343,12 +393,18 @@ final class PaneContainerView: NSView {
 
     func configureSplitControls(
         tab: Tab,
-        browserContext: any WindowWebContentBrowserContext,
-        windowState: BrowserWindowState
+        splitLayout: SplitLayoutService,
+        windowState: BrowserWindowState,
+        sidebarDragState: SidebarDragState
     ) {
         let controls = splitControlsView ?? SplitPaneControlsView()
         splitControlsView = controls
-        browserContext.configureSplitControls(controls, tab: tab, windowState: windowState)
+        controls.configure(
+            tab: tab,
+            splitLayout: splitLayout,
+            windowState: windowState,
+            sidebarDragState: sidebarDragState
+        )
         controls.setSplitDropShieldHandler { [weak self] isActive in
             self?.enclosingSplitHostLayoutView?.setSplitDropCaptureActive(isActive)
         }

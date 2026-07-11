@@ -68,7 +68,7 @@ struct SplitGroupedDropTargetResolver {
     ) -> SplitDropTarget? {
         guard !context.draggedMemberIsInGroup,
               let hit = context.leafHit,
-              SplitDropCaptureHitPolicy.side(
+              SplitDropEdgeHitPolicy.side(
                   at: context.location,
                   in: hit.rect,
                   mode: .rearrange

@@ -677,11 +677,13 @@ enum SpaceSidebarTransitionSnapshotBuilder {
             for: pin,
             currentSpaceId: pin.spaceId ?? windowState.currentSpaceId
         )
-        let isInVisibleSplit = liveTab.map { browserContext.splitManager.isTabVisibleInSplit($0.id, in: windowState.id) } == true
+        let isInVisibleSplit = liveTab.map {
+            browserContext.splitQuery.contains(tabID: $0.id, in: windowState.id)
+        } == true
         let essentialRuntimeState = browserContext.tabManager.shortcutPresentationOwner.essentialRuntimeState(
             for: pin,
             in: windowState,
-            splitManager: browserContext.splitManager
+            splitQuery: browserContext.splitQuery
         )
         let isSplitPlaceholder = browserContext.tabManager.splitGroupStore.group(
             containing: .shortcutPin(pin.id)

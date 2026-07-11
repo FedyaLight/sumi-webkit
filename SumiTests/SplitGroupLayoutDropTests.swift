@@ -1,4 +1,3 @@
-import AppKit
 import CoreGraphics
 import SumiDomain
 import XCTest
@@ -286,30 +285,37 @@ final class SplitGroupLayoutDropTests: XCTestCase {
         assertCanonical(resolvedTree)
     }
 
-    func testDropHitPolicyMatchesNativeCaptureContract() {
+    func testDropEdgeHitPolicyRanksEdgesAndUsesCenterOnlyForRearrangement() {
         XCTAssertEqual(
-            SplitDropCaptureHitPolicy.validatedMoveOperation(
-                sourceMask: .move
+            SplitDropEdgeHitPolicy.sides(
+                at: CGPoint(x: 10, y: 20),
+                in: bounds,
+                mode: .create
             ),
-            .move
+            [.left, .bottom]
+        )
+        XCTAssertNil(
+            SplitDropEdgeHitPolicy.side(
+                at: CGPoint(x: 500, y: 400),
+                in: bounds,
+                mode: .create
+            )
         )
         XCTAssertEqual(
-            SplitDropCaptureHitPolicy.validatedMoveOperation(
-                sourceMask: .copy
+            SplitDropEdgeHitPolicy.side(
+                at: CGPoint(x: 500, y: 400),
+                in: bounds,
+                mode: .rearrange
+            ),
+            .center
+        )
+        XCTAssertEqual(
+            SplitDropEdgeHitPolicy.sides(
+                at: CGPoint(x: -1, y: 400),
+                in: bounds,
+                mode: .rearrange
             ),
             []
-        )
-        XCTAssertTrue(
-            SplitDropCaptureHitPolicy.shouldCaptureHit(
-                at: CGPoint(x: 500, y: 400),
-                in: bounds
-            )
-        )
-        XCTAssertFalse(
-            SplitDropCaptureHitPolicy.shouldCaptureHit(
-                at: CGPoint(x: -1, y: 400),
-                in: bounds
-            )
         )
     }
 

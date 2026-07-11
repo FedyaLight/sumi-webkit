@@ -242,6 +242,7 @@ private extension SplitDropServiceShortcutConversionTests {
                 )
             },
             refreshCompositor: { _ in },
+            scheduleWindowSession: { _ in },
             persistWindowSession: { _ in }
         )
         let service = SplitDropService(

@@ -114,7 +114,6 @@ enum BrowserCompositionRoot {
         let startupSessionRestoreOwner: BrowserStartupSessionRestoreOwner
         let compositorManager: TabCompositorManager
         let tabSuspensionController: TabSuspensionController
-        let splitManager: SplitViewManager
         let workspaceThemeCoordinator: WorkspaceThemeCoordinator
         let findManager: FindManager
     }
@@ -169,7 +168,6 @@ enum BrowserCompositionRoot {
             tabSuspensionController: TabSuspensionController(
                 memoryMonitor: SumiMemoryPressureMonitor()
             ),
-            splitManager: SplitViewManager(),
             workspaceThemeCoordinator: WorkspaceThemeCoordinator(),
             findManager: FindManager()
         )
@@ -339,7 +337,6 @@ enum BrowserCompositionRoot {
             startupSessionRestoreOwner: session.startupSessionRestoreOwner,
             compositorManager: session.compositorManager,
             tabSuspensionController: session.tabSuspensionController,
-            splitManager: session.splitManager,
             workspaceThemeCoordinator: session.workspaceThemeCoordinator,
             findManager: session.findManager,
             browserConfiguration: browserConfiguration,

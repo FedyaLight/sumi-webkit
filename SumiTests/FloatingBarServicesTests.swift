@@ -8,14 +8,15 @@ final class FloatingBarServicesTests: XCTestCase {
         var browserManager: BrowserManager? = BrowserManager()
         weak var releasedBrowserManager = browserManager
         weak var releasedTabManager = browserManager?.tabManager
-        weak var releasedSplitManager = browserManager?.splitManager
+        weak var releasedEmptySplitPlaceholders =
+            browserManager?.splitComposition.emptyPlaceholders
         let retainedServices = browserManager?.urlBarBundle.floatingBar
 
         browserManager = nil
 
         XCTAssertNil(releasedBrowserManager)
         XCTAssertNil(releasedTabManager)
-        XCTAssertNil(releasedSplitManager)
+        XCTAssertNil(releasedEmptySplitPlaceholders)
         withExtendedLifetime(retainedServices) { /* prove retained capabilities are harmless */ }
     }
 
@@ -256,22 +257,16 @@ private final class FloatingBarSplitPlaceholderSpy:
     var cancelledWindowIDs: [UUID] = []
     var committed: [Commit] = []
 
-    func cancelEmptySplitPlaceholder(in windowState: BrowserWindowState) -> Bool {
+    func cancel(in windowState: BrowserWindowState) -> Bool {
         cancelledWindowIDs.append(windowState.id)
         return true
     }
 
-    func commitEmptySplitPlaceholder(
-        tabId: UUID,
-        in windowState: BrowserWindowState
-    ) {
-        committed.append(.init(tabID: tabId, windowID: windowState.id))
+    func commit(tabID: UUID, in windowID: UUID) {
+        committed.append(.init(tabID: tabID, windowID: windowID))
     }
 
-    func replaceEmptySplitPlaceholder(
-        with _: Tab,
-        in _: BrowserWindowState
-    ) -> Bool {
+    func replace(with _: Tab, in _: BrowserWindowState) -> Bool {
         false
     }
 }

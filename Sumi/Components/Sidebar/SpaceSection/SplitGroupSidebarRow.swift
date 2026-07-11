@@ -12,6 +12,8 @@ struct SplitGroupSidebarRow: View {
     let spaceId: UUID
     let currentTabId: UUID?
     let isAppKitInteractionEnabled: Bool
+    let splitLayout: SplitLayoutService
+    let emptySplitCreation: EmptySplitCreationWorkflow
     let segmentAction: (SplitGroupSidebarItem) -> SplitGroupSidebarSegmentAction?
     var dragSource: (SplitGroupSidebarItem) -> SidebarDragSourceConfiguration? = { _ in nil }
     let contextMenuEntries: (Tab) -> [SidebarContextMenuEntry]
@@ -20,7 +22,6 @@ struct SplitGroupSidebarRow: View {
     let onSegmentAction: (SplitMemberID) -> Void
     let onSegmentMiddleClick: (SplitMemberID) -> Void
 
-    @EnvironmentObject var splitManager: SplitViewManager
     @Environment(BrowserWindowState.self) var windowState
     @Environment(\.accessibilityReduceMotion) var reduceMotion
     @Environment(\.sumiSettings) var sumiSettings
@@ -155,13 +156,13 @@ struct SplitGroupSidebarRow: View {
                 systemImage: "rectangle.split.2x2",
                 children: [
                     .action(.init(title: "Grid", systemImage: "square.grid.2x2", onAction: {
-                        splitManager.setLayoutKind(.grid, for: windowState.id)
+                        splitLayout.setLayoutKind(.grid, in: windowState.id)
                     })),
                     .action(.init(title: "Vertical", systemImage: "rectangle.split.2x1", onAction: {
-                        splitManager.setLayoutKind(.vertical, for: windowState.id)
+                        splitLayout.setLayoutKind(.vertical, in: windowState.id)
                     })),
                     .action(.init(title: "Horizontal", systemImage: "rectangle.split.1x2", onAction: {
-                        splitManager.setLayoutKind(.horizontal, for: windowState.id)
+                        splitLayout.setLayoutKind(.horizontal, in: windowState.id)
                     })),
                 ]
             ),
@@ -170,22 +171,22 @@ struct SplitGroupSidebarRow: View {
                 systemImage: "plus.rectangle.on.rectangle",
                 children: [
                     .action(.init(title: "Right", systemImage: "rectangle.righthalf.filled", onAction: {
-                        splitManager.createEmptySplit(side: .right, in: windowState)
+                        emptySplitCreation.create(side: .right, in: windowState)
                     })),
                     .action(.init(title: "Left", systemImage: "rectangle.lefthalf.filled", onAction: {
-                        splitManager.createEmptySplit(side: .left, in: windowState)
+                        emptySplitCreation.create(side: .left, in: windowState)
                     })),
                     .action(.init(title: "Top", systemImage: "rectangle.tophalf.filled", onAction: {
-                        splitManager.createEmptySplit(side: .top, in: windowState)
+                        emptySplitCreation.create(side: .top, in: windowState)
                     })),
                     .action(.init(title: "Bottom", systemImage: "rectangle.bottomhalf.filled", onAction: {
-                        splitManager.createEmptySplit(side: .bottom, in: windowState)
+                        emptySplitCreation.create(side: .bottom, in: windowState)
                     })),
                 ]
             ),
             .action(.init(title: "Unsplit", systemImage: "rectangle", onAction: {
                 performSplitSidebarMutation {
-                    splitManager.unsplitActiveGroup(for: windowState.id)
+                    splitLayout.unsplit(in: windowState)
                 }
             })),
         ]

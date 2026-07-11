@@ -101,7 +101,8 @@ final class SplitShortcutMemberRestoreService {
                 : [:],
             unavailableMembers: preserveLiveInstance
                 ? [:]
-                : [windowState.id: [memberID]]
+                : [windowState.id: [memberID]],
+            sessionWriteUrgency: .immediate
         )
         performImmediateVisualHandoff(windowState)
         if let retirement = retirementSlot.prepared {

@@ -33,7 +33,6 @@ struct TabFolderView: View {
 
     @State var displayedCollapsedProjectionIDs: [UUID] = []
 
-    @EnvironmentObject var splitManager: SplitViewManager
     @Environment(BrowserWindowState.self) var windowState
     @Environment(WindowRegistry.self) var windowRegistry
     @Environment(\.sumiSettings) var sumiSettings

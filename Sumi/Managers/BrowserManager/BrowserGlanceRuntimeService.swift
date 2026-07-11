@@ -4,7 +4,10 @@ import WebKit
 @MainActor
 enum BrowserGlanceRuntimeService {
     static func runtime(for browserManager: BrowserManager) -> GlanceManager.Runtime {
-        GlanceManager.Runtime(
+        let splitQuery = browserManager.splitComposition.query
+        let emptySplitCreation = browserManager.splitComposition.emptyCreation
+
+        return GlanceManager.Runtime(
             windowStateContainingTab: { [weak browserManager] in
                 browserManager?.shellRuntime.windowTabs.windowState(containing: $0)
             },
@@ -27,7 +30,9 @@ enum BrowserGlanceRuntimeService {
                     loadPolicy: .deferred
                 )
             },
-            visibleSplitTabCount: { [weak browserManager] in browserManager?.splitManager.visibleTabIds(for: $0).count ?? 0 },
+            visibleSplitTabCount: { [splitQuery] in
+                splitQuery.visibleTabIDs(in: $0).count
+            },
             dismissFloatingBarIfVisible: { [weak browserManager] in
                 browserManager?.urlBarBundle.floatingBar.presentation
                     .dismissIfVisible(in: $0, preserveDraft: true) ?? false
@@ -60,11 +65,11 @@ enum BrowserGlanceRuntimeService {
             },
             selectPromotedTab: { [weak browserManager] in browserManager?.selectTab($0, in: $1) },
             selectPromotedTabInActiveWindow: { [weak browserManager] in browserManager?.selectTab($0) },
-            createSplitPlaceholder: { [weak browserManager] windowState in
-                browserManager?.splitManager.createEmptySplit(
+            createSplitPlaceholder: { [emptySplitCreation] windowState in
+                emptySplitCreation.create(
                     side: .right,
                     in: windowState,
-                    floatingBarPresentationReason: .splitTabPicker
+                    reason: .splitTabPicker
                 )
             },
             registerPromotedHost: { [weak browserManager] host, tabId, windowId, attachmentCompletion in

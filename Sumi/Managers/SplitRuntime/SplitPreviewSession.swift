@@ -1,8 +1,8 @@
 import CoreGraphics
 import Foundation
 
-/// Window-scoped transient split-drop previews. The session publishes only
-/// when the active window's visible preview actually changes.
+/// Window-scoped transient split-drop previews. Every real state change emits
+/// that exact window identity; consumers subscribe only to their own window.
 @MainActor
 final class SplitPreviewSession {
     struct WindowState: Equatable {
@@ -17,19 +17,15 @@ final class SplitPreviewSession {
         var style: SplitDropPreviewStyle = .edge
     }
 
-    private let activeWindowID: @MainActor () -> UUID?
-    private let publishActiveWindowChange: @MainActor () -> Void
+    private let publishWindowChange: @MainActor (UUID) -> Void
     private let refreshWindow: @MainActor (UUID) -> Void
-    private var publishedActiveWindowState = WindowState()
     private var states: [UUID: TransientState] = [:]
 
     init(
-        activeWindowID: @escaping @MainActor () -> UUID?,
-        publishActiveWindowChange: @escaping @MainActor () -> Void,
+        publishWindowChange: @escaping @MainActor (UUID) -> Void,
         refreshWindow: @escaping @MainActor (UUID) -> Void
     ) {
-        self.activeWindowID = activeWindowID
-        self.publishActiveWindowChange = publishActiveWindowChange
+        self.publishWindowChange = publishWindowChange
         self.refreshWindow = refreshWindow
     }
 
@@ -83,19 +79,8 @@ final class SplitPreviewSession {
     }
 
     func removeWindow(_ windowID: UUID) {
-        states.removeValue(forKey: windowID)
-        syncPublishedState(for: windowID)
-    }
-
-    func syncPublishedState(
-        for windowID: UUID,
-        force: Bool = false
-    ) {
-        guard activeWindowID() == windowID else { return }
-        let next = state(for: windowID)
-        guard force || publishedActiveWindowState != next else { return }
-        publishActiveWindowChange()
-        publishedActiveWindowState = next
+        guard states.removeValue(forKey: windowID) != nil else { return }
+        publishWindowChange(windowID)
     }
 
     private func transientState(for windowID: UUID) -> TransientState {
@@ -109,6 +94,6 @@ final class SplitPreviewSession {
         } else {
             states[windowID] = state
         }
-        syncPublishedState(for: windowID)
+        publishWindowChange(windowID)
     }
 }

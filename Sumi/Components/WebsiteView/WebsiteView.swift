@@ -121,7 +121,7 @@ struct LinkStatusBar: View {
 struct WebsiteViewBrowserContext {
     let currentTab: (BrowserWindowState) -> Tab?
     let workspaceTheme: (UUID?) -> WorkspaceTheme?
-    let splitResolution: (BrowserWindowState) -> WindowSplitResolution
+    let resolveDragTab: (SumiDragItem) -> Tab?
     let makeWebContentContext: () -> any WindowWebContentBrowserContext
 }
 
@@ -136,24 +136,42 @@ struct WebsiteView: View {
     @Environment(WebViewCoordinator.self) private var webViewCoordinator
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(KeyboardShortcutManager.self) private var keyboardShortcutManager
-    @EnvironmentObject var splitManager: SplitViewManager
     @Environment(\.sumiSettings) var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
     @ObservedObject private var sidebarDragState: SidebarDragState
     @State private var hoveredLink: String?
+    @State private var splitUpdateRevision: UInt = 0
 
     private let browserContext: WebsiteViewBrowserContext
     private let nativeSurfaceRootBuilders: WebsiteNativeSurfaceRootBuilders
+    private let splitUpdates: SplitWindowUpdateStream
+    private let splitQuery: WindowSplitQuery
+    private let splitPreviews: SplitPreviewSession
+    private let splitLayout: SplitLayoutService
+    private let splitDrops: SplitDropService
+    private let splitDropTargets: SplitDropTargetService
     private let dragCoordinateSpace = "splitPreview"
 
     init(
         browserContext: WebsiteViewBrowserContext,
         nativeSurfaceRootBuilders: WebsiteNativeSurfaceRootBuilders,
-        sidebarDragState: SidebarDragState
+        sidebarDragState: SidebarDragState,
+        splitUpdates: SplitWindowUpdateStream,
+        splitQuery: WindowSplitQuery,
+        splitPreviews: SplitPreviewSession,
+        splitLayout: SplitLayoutService,
+        splitDrops: SplitDropService,
+        splitDropTargets: SplitDropTargetService
     ) {
         self.browserContext = browserContext
         self.nativeSurfaceRootBuilders = nativeSurfaceRootBuilders
         self._sidebarDragState = ObservedObject(wrappedValue: sidebarDragState)
+        self.splitUpdates = splitUpdates
+        self.splitQuery = splitQuery
+        self.splitPreviews = splitPreviews
+        self.splitLayout = splitLayout
+        self.splitDrops = splitDrops
+        self.splitDropTargets = splitDropTargets
     }
 
     private var chromeGeometry: BrowserChromeGeometry {
@@ -183,10 +201,12 @@ struct WebsiteView: View {
     }
 
     var body: some View {
-        let splitResolution = browserContext.splitResolution(windowState)
+        let _ = splitUpdateRevision
+        let splitResolution = splitQuery.resolution(in: windowState.id)
         let nativeSurfaceKind = activeNativeSurfaceKind(
             hasSelectedSplit: splitResolution.hasReadyPresentation
         )
+        let previewState = splitPreviews.state(for: windowState.id)
 
         ZStack {
             tabCompositor(splitPresentation: splitResolution.presentation)
@@ -208,11 +228,12 @@ struct WebsiteView: View {
             .allowsHitTesting(false)
 
             // Native edge preview for sidebar-to-content split drops.
-            SplitPreviewOverlay()
-                .environmentObject(splitManager)
-                .environment(windowState)
+            SplitPreviewOverlay(previewState: previewState)
                 .coordinateSpace(name: dragCoordinateSpace)
                 .allowsHitTesting(false)
+        }
+        .onReceive(splitUpdates.updates(for: windowState.id)) { _ in
+            splitUpdateRevision &+= 1
         }
     }
 
@@ -240,6 +261,13 @@ struct WebsiteView: View {
     ) -> some View {
         TabCompositorWrapper(
             browserContext: browserContext.makeWebContentContext(),
+            resolveDragTab: browserContext.resolveDragTab,
+            splitQuery: splitQuery,
+            splitPreviews: splitPreviews,
+            splitLayout: splitLayout,
+            splitDrops: splitDrops,
+            splitDropTargets: splitDropTargets,
+            sidebarDragState: sidebarDragState,
             webViewCoordinator: webViewCoordinator,
             hoveredLink: $hoveredLink,
             splitPresentation: splitPresentation,
@@ -297,8 +325,7 @@ struct WebsiteView: View {
 
 // MARK: - Split Preview Overlay
 private struct SplitPreviewOverlay: View {
-    @EnvironmentObject var splitManager: SplitViewManager
-    @Environment(BrowserWindowState.self) private var windowState
+    let previewState: SplitPreviewSession.WindowState
     @Environment(\.resolvedThemeContext) private var themeContext
     @Environment(\.sumiSettings) private var sumiSettings
     @State private var renderedZone: SplitPreviewZone?
@@ -308,7 +335,6 @@ private struct SplitPreviewOverlay: View {
 
     var body: some View {
         GeometryReader { geometry in
-            let previewState = splitManager.previewState(for: windowState.id)
             let requestedZone = SplitPreviewZone.make(
                 previewState: previewState,
                 containerHeight: geometry.size.height
@@ -415,7 +441,7 @@ private struct SplitPreviewZone: Equatable {
     let style: SplitDropPreviewStyle
 
     static func make(
-        previewState: SplitViewManager.WindowSplitPreviewState,
+        previewState: SplitPreviewSession.WindowState,
         containerHeight: CGFloat
     ) -> SplitPreviewZone? {
         guard previewState.isActive,

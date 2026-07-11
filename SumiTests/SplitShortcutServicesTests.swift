@@ -117,6 +117,8 @@ final class SplitShortcutServicesTests: XCTestCase {
         XCTAssertNil(fixture.windowState.splitSelection)
         XCTAssertNil(secondWindow.splitSelection)
         XCTAssertEqual(fixture.probe.sessionWrites, 2)
+        XCTAssertEqual(fixture.probe.immediateSessionWrites, 2)
+        XCTAssertEqual(fixture.probe.scheduledSessionWrites, 0)
         _ = cancellable
     }
 
@@ -465,7 +467,7 @@ final class SplitShortcutServicesTests: XCTestCase {
         var browserManager: BrowserManager? = BrowserManager()
         weak let releasedBrowserManager = browserManager
         weak let releasedTabManager = browserManager?.tabManager
-        weak let releasedSplitManager = browserManager?.splitManager
+        weak let releasedSplitQuery = browserManager?.splitComposition.query
         let actions = try XCTUnwrap(browserManager)
             .sidebarCommandService.makeCommandActions()
         let retainedServices = try XCTUnwrap(browserManager)
@@ -475,7 +477,7 @@ final class SplitShortcutServicesTests: XCTestCase {
 
         XCTAssertNil(releasedBrowserManager)
         XCTAssertNil(releasedTabManager)
-        XCTAssertNil(releasedSplitManager)
+        XCTAssertNil(releasedSplitQuery)
         actions.focusSplitGroup(group.id, nil, windowState.id)
         actions.restoreShortcutSplitMember(
             group.id,
@@ -706,7 +708,14 @@ private extension SplitShortcutServicesTests {
             windows: { fixture.windowStates },
             selectTabWithoutPersistence: applySelection,
             refreshCompositor: { _ in /* No-op. */ },
-            persistWindowSession: { _ in fixture.probe.sessionWrites += 1 }
+            scheduleWindowSession: { _ in
+                fixture.probe.sessionWrites += 1
+                fixture.probe.scheduledSessionWrites += 1
+            },
+            persistWindowSession: { _ in
+                fixture.probe.sessionWrites += 1
+                fixture.probe.immediateSessionWrites += 1
+            }
         )
     }
 
@@ -814,5 +823,7 @@ private final class SplitServiceProbe {
     var structuralEvents = 0
     var eventsSeenAtUnload: [Int] = []
     var sessionWrites = 0
+    var scheduledSessionWrites = 0
+    var immediateSessionWrites = 0
     var visualTeardownOrder: [String] = []
 }

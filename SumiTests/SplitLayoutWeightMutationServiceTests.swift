@@ -151,6 +151,9 @@ final class SplitLayoutWeightMutationServiceTests: XCTestCase {
             refreshCompositor: {
                 probe.refreshedWindowIDs.append($0.id)
             },
+            scheduleWindowSession: { _ in
+                probe.windowSessionWrites += 1
+            },
             persistWindowSession: { _ in
                 probe.windowSessionWrites += 1
             }

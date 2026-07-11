@@ -14,7 +14,7 @@ enum SplitFirstDropTargetResolver {
         guard bounds.width > 0,
               bounds.height > 0,
               bounds.contains(location),
-              let side = SplitDropCaptureHitPolicy.side(
+              let side = SplitDropEdgeHitPolicy.side(
                   at: location,
                   in: bounds,
                   mode: .create

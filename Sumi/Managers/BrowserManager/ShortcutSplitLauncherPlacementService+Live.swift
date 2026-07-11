@@ -2,12 +2,6 @@ import Foundation
 
 @MainActor
 extension ShortcutSplitLauncherPlacementService {
-    convenience init(liveBrowserManager browserManager: BrowserManager) {
-        self.init(tabManager: { [weak browserManager] in
-            browserManager?.tabManager
-        })
-    }
-
     convenience init(
         tabManager: @escaping @MainActor () -> TabManager?
     ) {

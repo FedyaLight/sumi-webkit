@@ -4,7 +4,7 @@ import SumiWebRuntime
 @MainActor
 final class BrowserShellRuntime {
     private weak var tabManager: TabManager?
-    private weak var splitManager: SplitViewManager?
+    private weak var splitQuery: WindowSplitQuery?
     weak var glanceManager: GlanceManager?
     let webViewSessions: WebViewSessionRepository
     private var adoptWebViewCoordinator: (@MainActor (WebViewCoordinator?) -> Void)?
@@ -15,7 +15,7 @@ final class BrowserShellRuntime {
     var windowShellContentViewFactory: BrowserWindowShellService.ContentViewFactory?
 
     lazy var windowSelection = ShellSelectionService { [weak self] windowId in
-        self?.splitManager?.visibleTabIds(for: windowId) ?? []
+        self?.splitQuery?.visibleTabIDs(in: windowId) ?? []
     }
     lazy var activePageResolver = makeActivePageResolver()
 
@@ -32,7 +32,7 @@ final class BrowserShellRuntime {
                 .liveShortcutTabs(in: windowId) ?? []
         },
         visibleSplitTabIds: { [weak self] windowId in
-            Set(self?.splitManager?.visibleTabIds(for: windowId) ?? [])
+            Set(self?.splitQuery?.visibleTabIDs(in: windowId) ?? [])
         }
     )
 
@@ -62,12 +62,12 @@ final class BrowserShellRuntime {
 
     init(
         tabManager: TabManager,
-        splitManager: SplitViewManager,
+        splitQuery: WindowSplitQuery,
         glanceManager: GlanceManager,
         webViewSessions: WebViewSessionRepository
     ) {
         self.tabManager = tabManager
-        self.splitManager = splitManager
+        self.splitQuery = splitQuery
         self.glanceManager = glanceManager
         self.webViewSessions = webViewSessions
     }

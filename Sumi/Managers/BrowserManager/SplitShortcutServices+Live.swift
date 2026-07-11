@@ -13,12 +13,9 @@ extension SplitShortcutServices {
             runtimeLease: runtimeLease,
             browserManager: browserManager
         )
-        let launcherPlacement = ShortcutSplitLauncherPlacementService(
-            liveBrowserManager: browserManager
-        )
-        let presentations = WindowSplitPresentationSynchronizer(
-            liveBrowserManager: browserManager
-        )
+        let launcherPlacement = browserManager.splitComposition
+            .launcherPlacement
+        let presentations = browserManager.splitComposition.presentations
         return Self(
             focus: focus,
             memberRestoration: SplitShortcutMemberRestoreService(

@@ -63,8 +63,6 @@ struct SpaceView: View {
     let onMoveTabDown: (Tab) -> Void
     let onMuteTab: (Tab) -> Void
     let onScrollViewportChange: (UUID, SpaceSidebarSnapshotViewport) -> Void
-    @EnvironmentObject var splitManager: SplitViewManager
-
     var outerWidth: CGFloat {
         let visibleWidth = windowState.sidebarWidth
         if visibleWidth > 0 {

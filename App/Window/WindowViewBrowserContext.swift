@@ -6,7 +6,12 @@ import Foundation
 /// sees `BrowserManager` directly.
 @MainActor
 final class WindowViewBrowserContext {
-    let splitManager: SplitViewManager
+    let splitUpdates: SplitWindowUpdateStream
+    let splitQuery: WindowSplitQuery
+    let splitPreviews: SplitPreviewSession
+    let splitLayout: SplitLayoutService
+    let splitDrops: SplitDropService
+    let splitDropTargets: SplitDropTargetService
     let findManager: FindManager
     let floatingBarBrowserContext: FloatingBarBrowserContext
     let sidebarBrowserContext: SidebarBrowserContext
@@ -20,7 +25,7 @@ final class WindowViewBrowserContext {
     private let _currentProfileID: () -> UUID?
     private let _essentialPins: (UUID?) -> [ShortcutPin]
     private let _attachHoverSidebarManager: (HoverSidebarManager, BrowserWindowState) -> Void
-    private let _websiteViewBrowserContext: (SidebarDragState) -> WebsiteViewBrowserContext
+    private let _websiteViewBrowserContext: () -> WebsiteViewBrowserContext
     private let _websiteNativeSurfaceRootBuilders: () -> WebsiteNativeSurfaceRootBuilders
     private let _currentTab: (BrowserWindowState) -> Tab?
     private let _workspaceTheme: (UUID?) -> WorkspaceTheme?
@@ -31,7 +36,12 @@ final class WindowViewBrowserContext {
     let sidebarHostRecoveryCoordinator: SidebarHostRecoveryHandling
 
     init(
-        splitManager: SplitViewManager,
+        splitUpdates: SplitWindowUpdateStream,
+        splitQuery: WindowSplitQuery,
+        splitPreviews: SplitPreviewSession,
+        splitLayout: SplitLayoutService,
+        splitDrops: SplitDropService,
+        splitDropTargets: SplitDropTargetService,
         findManager: FindManager,
         floatingBarBrowserContext: FloatingBarBrowserContext,
         sidebarBrowserContext: SidebarBrowserContext,
@@ -45,7 +55,7 @@ final class WindowViewBrowserContext {
         currentProfileID: @escaping () -> UUID?,
         essentialPins: @escaping (UUID?) -> [ShortcutPin],
         attachHoverSidebarManager: @escaping (HoverSidebarManager, BrowserWindowState) -> Void,
-        websiteViewBrowserContext: @escaping (SidebarDragState) -> WebsiteViewBrowserContext,
+        websiteViewBrowserContext: @escaping () -> WebsiteViewBrowserContext,
         websiteNativeSurfaceRootBuilders: @escaping () -> WebsiteNativeSurfaceRootBuilders,
         currentTab: @escaping (BrowserWindowState) -> Tab?,
         workspaceTheme: @escaping (UUID?) -> WorkspaceTheme?,
@@ -54,7 +64,12 @@ final class WindowViewBrowserContext {
         dismissNativeModalPresentation: @escaping () -> Void,
         findCurrentTabId: @escaping () -> UUID?
     ) {
-        self.splitManager = splitManager
+        self.splitUpdates = splitUpdates
+        self.splitQuery = splitQuery
+        self.splitPreviews = splitPreviews
+        self.splitLayout = splitLayout
+        self.splitDrops = splitDrops
+        self.splitDropTargets = splitDropTargets
         self.findManager = findManager
         self.floatingBarBrowserContext = floatingBarBrowserContext
         self.sidebarBrowserContext = sidebarBrowserContext
@@ -109,8 +124,8 @@ final class WindowViewBrowserContext {
         _attachHoverSidebarManager(hoverSidebarManager, windowState)
     }
 
-    func websiteViewBrowserContext(sidebarDragState: SidebarDragState) -> WebsiteViewBrowserContext {
-        _websiteViewBrowserContext(sidebarDragState)
+    func websiteViewBrowserContext() -> WebsiteViewBrowserContext {
+        _websiteViewBrowserContext()
     }
 
     var websiteNativeSurfaceRootBuilders: WebsiteNativeSurfaceRootBuilders {

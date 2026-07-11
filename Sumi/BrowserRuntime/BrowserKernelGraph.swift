@@ -28,7 +28,6 @@ struct BrowserKernelGraph {
     let startupSessionRestoreOwner: BrowserStartupSessionRestoreOwner
     let compositorManager: TabCompositorManager
     let tabSuspensionController: TabSuspensionController
-    let splitManager: SplitViewManager
     let workspaceThemeCoordinator: WorkspaceThemeCoordinator
     let findManager: FindManager
     let browserConfiguration: BrowserConfiguration

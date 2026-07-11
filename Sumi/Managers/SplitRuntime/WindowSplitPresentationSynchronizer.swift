@@ -1,6 +1,11 @@
 import Foundation
 import SumiDomain
 
+enum WindowSplitSessionWriteUrgency {
+    case scheduled
+    case immediate
+}
+
 /// Reconciles window-local selection and materialization after a shared split
 /// group changes. Durable structure is already committed when this service is
 /// called; it never chooses or mutates shared split topology.
@@ -25,6 +30,7 @@ final class WindowSplitPresentationSynchronizer {
     ) -> Void
     private let publishWindowChange: @MainActor (UUID) -> Void
     private let refreshCompositor: @MainActor (BrowserWindowState) -> Void
+    private let scheduleWindowSession: @MainActor (BrowserWindowState) -> Void
     private let persistWindowSession: @MainActor (BrowserWindowState) -> Void
 
     init(
@@ -36,6 +42,7 @@ final class WindowSplitPresentationSynchronizer {
         ) -> Void,
         publishWindowChange: @escaping @MainActor (UUID) -> Void = { _ in },
         refreshCompositor: @escaping @MainActor (BrowserWindowState) -> Void,
+        scheduleWindowSession: @escaping @MainActor (BrowserWindowState) -> Void,
         persistWindowSession: @escaping @MainActor (BrowserWindowState) -> Void
     ) {
         self.tabManager = tabManager
@@ -43,6 +50,7 @@ final class WindowSplitPresentationSynchronizer {
         self.selectTabWithoutPersistence = selectTabWithoutPersistence
         self.publishWindowChange = publishWindowChange
         self.refreshCompositor = refreshCompositor
+        self.scheduleWindowSession = scheduleWindowSession
         self.persistWindowSession = persistWindowSession
     }
 
@@ -55,7 +63,8 @@ final class WindowSplitPresentationSynchronizer {
         preferredSelections: [UUID: WindowSplitSelection] = [:],
         preferredActiveMembers: [UUID: SplitMemberID] = [:],
         standaloneMembers: [UUID: SplitMemberID] = [:],
-        unavailableMembers: [UUID: Set<SplitMemberID>] = [:]
+        unavailableMembers: [UUID: Set<SplitMemberID>] = [:],
+        sessionWriteUrgency: WindowSplitSessionWriteUrgency = .scheduled
     ) {
         guard !affectedGroupIDs.isEmpty,
               let tabManager = tabManager() else {
@@ -100,7 +109,12 @@ final class WindowSplitPresentationSynchronizer {
             publishWindowChange(windowState.id)
             refreshCompositor(windowState)
             if before != PersistedSelectionState(windowState) {
-                persistWindowSession(windowState)
+                switch sessionWriteUrgency {
+                case .scheduled:
+                    scheduleWindowSession(windowState)
+                case .immediate:
+                    persistWindowSession(windowState)
+                }
             }
         }
     }

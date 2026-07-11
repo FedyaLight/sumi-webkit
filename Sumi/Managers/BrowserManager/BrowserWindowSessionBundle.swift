@@ -74,7 +74,6 @@ final class BrowserWindowSessionBundle {
             startupSessions: browserManager
         )
         self.activation = BrowserWindowActivationService(
-            splitManager: browserManager.splitManager,
             sidebarPresentation: browserManager.chromeBundle
                 .sidebarPresentationOwner,
             persistence: persistence,

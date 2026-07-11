@@ -33,7 +33,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         XCTAssertTrue(compositorManagerCanUseAttachedRuntime(browserManager))
         XCTAssertNotNil(browserManager.tabManager.runtimePorts)
         XCTAssertTrue(tabManagerRuntimeCanPrepareCreatedTabs(browserManager))
-        XCTAssertTrue(splitManagerCanUseAttachedRuntime(browserManager))
+        XCTAssertTrue(splitServicesCanUseLiveRuntime(browserManager))
         XCTAssertTrue(downloadRetryRuntimeCanResolveWindowOwnedWebView(browserManager))
         let boostsRuntimeAttached = await boostsModuleCanUseAttachedRuntime(browserManager)
         XCTAssertTrue(boostsRuntimeAttached)
@@ -274,7 +274,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
             regularTabs: browserManager.tabManager.tabCollectionMembershipOwner,
             lazyRestore: browserManager.tabManager.lazyRestoreCoordinator,
             windowTabs: browserManager.shellRuntime.windowTabs,
-            splitManager: browserManager.splitManager,
+            splitQuery: browserManager.splitComposition.query,
             webView: .inactive
         )
         let selectedTabIDs = suspensionRuntime.context.selectedTabIDs()
@@ -307,7 +307,9 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         return tab.resolvedCurrentWebView() != nil
     }
 
-    private func splitManagerCanUseAttachedRuntime(_ browserManager: BrowserManager) -> Bool {
+    private func splitServicesCanUseLiveRuntime(
+        _ browserManager: BrowserManager
+    ) -> Bool {
         let windowRegistry = WindowRegistry()
         browserManager.windowRegistry = windowRegistry
 
@@ -325,8 +327,8 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         windowRegistry.register(windowState)
         windowRegistry.setActive(windowState)
 
-        browserManager.splitManager.createEmptySplit(in: windowState)
-        return browserManager.splitManager.splitGroup(for: windowState.id) != nil
+        browserManager.splitComposition.emptyCreation.create(in: windowState)
+        return browserManager.splitComposition.query.group(in: windowState.id) != nil
     }
 
     private func tabManagerRuntimeCanPrepareCreatedTabs(_ browserManager: BrowserManager) -> Bool {
@@ -664,7 +666,19 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
 
         XCTAssertIdentical(browserManager.windowRegistry, windowRegistry)
         XCTAssertIdentical(browserManager.glanceManager.windowRegistry, windowRegistry)
-        XCTAssertIdentical(browserManager.splitManager.windowRegistry, windowRegistry)
+        let selectedTabID = UUID()
+        let windowState = BrowserWindowState()
+        windowState.currentTabId = selectedTabID
+        windowRegistry.register(windowState)
+        browserManager.splitComposition.previews.begin(
+            targetRect: nil,
+            style: .edge,
+            in: windowState.id
+        )
+        XCTAssertEqual(
+            browserManager.splitComposition.query.visibleTabIDs(in: windowState.id),
+            [selectedTabID]
+        )
     }
 
     func testBrowserManagerRuntimeDataServicesUseInjectedBundle() async throws {

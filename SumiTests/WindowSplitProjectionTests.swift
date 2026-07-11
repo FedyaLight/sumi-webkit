@@ -216,8 +216,7 @@ final class WindowSplitProjectionTests: XCTestCase {
         var browserManager: BrowserManager? = BrowserManager()
         weak let releasedBrowserManager = browserManager
         let context = WebsiteViewContextFactory.websiteViewBrowserContext(
-            for: try XCTUnwrap(browserManager),
-            sidebarDragState: SidebarDragState()
+            for: try XCTUnwrap(browserManager)
         )
 
         browserManager = nil

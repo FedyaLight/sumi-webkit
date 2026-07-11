@@ -9,7 +9,12 @@ extension WindowViewBrowserContext {
         defaultBrowserService: SumiDefaultBrowserService
     ) -> WindowViewBrowserContext {
         WindowViewBrowserContext(
-            splitManager: browserManager.splitManager,
+            splitUpdates: browserManager.splitComposition.updates,
+            splitQuery: browserManager.splitComposition.query,
+            splitPreviews: browserManager.splitComposition.previews,
+            splitLayout: browserManager.splitComposition.layout,
+            splitDrops: browserManager.splitComposition.drops,
+            splitDropTargets: browserManager.splitComposition.dropTargets,
             findManager: browserManager.findManager,
             floatingBarBrowserContext: browserManager.urlBarBundle
                 .floatingBar.browserContext.context,
@@ -40,8 +45,10 @@ extension WindowViewBrowserContext {
                     windowState: windowState
                 )
             },
-            websiteViewBrowserContext: { [browserManager] sidebarDragState in
-                WebsiteViewContextFactory.websiteViewBrowserContext(for: browserManager, sidebarDragState: sidebarDragState)
+            websiteViewBrowserContext: { [browserManager] in
+                WebsiteViewContextFactory.websiteViewBrowserContext(
+                    for: browserManager
+                )
             },
             websiteNativeSurfaceRootBuilders: { [browserManager] in
                 WebsiteViewContextFactory.nativeSurfaceRootBuilders(

@@ -758,8 +758,8 @@ private final class TestSidebarBrowserContextHarness {
     let profileManager: ProfileManager
     let context: SidebarBrowserContext
 
-    private let liveFolderManager = SumiLiveFolderManager()
-    private let splitManager = SplitViewManager()
+    private let browserManager: BrowserManager
+    private let liveFolderManager: SumiLiveFolderManager
     private let downloadManager = DownloadManager()
     private let downloadsPopoverPresenter = DownloadsPopoverPresenter()
     private let glanceManager = GlanceManager()
@@ -776,17 +776,23 @@ private final class TestSidebarBrowserContextHarness {
             for: SumiStartupPersistence.schema,
             configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
         )
-        tabManager = TabManager(context: container.mainContext, loadPersistedState: false)
+        let browserManager = BrowserManager(
+            startupPersistence: BrowserManagerStartupPersistence(
+                container: container
+            )
+        )
+        self.browserManager = browserManager
+        tabManager = browserManager.tabManager
         tabManager.spaceStateOwner.replaceSpaces(spaces)
         tabManager.spaceStateOwner.replaceCurrentSpace(spaces.first)
         tabManager.startupRestoreLifecycle.markLoadFinished()
-        profileManager = ProfileManager(context: container.mainContext)
+        profileManager = browserManager.profileManager
         profileManager.ensureDefaultProfile()
+        liveFolderManager = browserManager.liveFolderManager
 
         let tabManager = tabManager
         let profileManager = profileManager
         let liveFolderManager = liveFolderManager
-        let splitManager = splitManager
         let downloadManager = downloadManager
         let downloadsPopoverPresenter = downloadsPopoverPresenter
         let glanceManager = glanceManager
@@ -798,7 +804,9 @@ private final class TestSidebarBrowserContextHarness {
             tabManager: tabManager,
             profileManager: profileManager,
             liveFolderManager: liveFolderManager,
-            splitManager: splitManager,
+            splitQuery: browserManager.splitComposition.query,
+            splitLayout: browserManager.splitComposition.layout,
+            emptySplitCreation: browserManager.splitComposition.emptyCreation,
             downloadManager: downloadManager,
             downloadsPopoverPresenter: downloadsPopoverPresenter,
             glanceManager: glanceManager,

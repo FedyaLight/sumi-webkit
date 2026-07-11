@@ -56,7 +56,9 @@ struct SidebarBrowserContext {
     let tabManager: TabManager
     let profileManager: ProfileManager
     let liveFolderManager: SumiLiveFolderManager
-    let splitManager: SplitViewManager
+    let splitQuery: WindowSplitQuery
+    let splitLayout: SplitLayoutService
+    let emptySplitCreation: EmptySplitCreationWorkflow
     let downloadManager: DownloadManager
     let downloadsPopoverPresenter: DownloadsPopoverPresenter
     let glanceManager: GlanceManager
@@ -109,7 +111,9 @@ struct SidebarBrowserContext {
             tabManager: browserManager.tabManager,
             profileManager: browserManager.profileManager,
             liveFolderManager: browserManager.liveFolderManager,
-            splitManager: browserManager.splitManager,
+            splitQuery: browserManager.splitComposition.query,
+            splitLayout: browserManager.splitComposition.layout,
+            emptySplitCreation: browserManager.splitComposition.emptyCreation,
             downloadManager: browserManager.downloadManager,
             downloadsPopoverPresenter: browserManager.chromeBundle.commands.downloadsPopoverPresenter,
             glanceManager: browserManager.glanceManager,

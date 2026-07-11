@@ -171,6 +171,7 @@ enum BrowserWebViewRuntimeFactory {
         for browserManager: BrowserManager
     ) -> WebViewCoordinatorVisibleRuntimeContext {
         let tabSuspensionController = browserManager.tabSuspensionController
+        let splitQuery = browserManager.splitComposition.query
         return WebViewCoordinatorVisibleRuntimeContext(
             windowState: { [weak browserManager] windowId in
                 requireWindowRegistry(browserManager, operation: "resolve visible window").windows[windowId]
@@ -180,9 +181,8 @@ enum BrowserWebViewRuntimeFactory {
                 return requireBrowserManager(browserManager, operation: "resolve visible current tab")
                     .shellRuntime.windowTabs.currentTab(for: windowState)?.id
             },
-            splitVisibleTabIds: { [weak browserManager] windowId in
-                requireBrowserManager(browserManager, operation: "resolve split visible tabs")
-                    .splitManager.visibleTabIds(for: windowId)
+            splitVisibleTabIds: { [weak splitQuery] windowId in
+                splitQuery?.visibleTabIDs(in: windowId) ?? []
             },
             resolveTab: { [weak browserManager] tabId, windowHandle in
                 guard let windowState = windowHandle.concreteWindowState else { return nil }

@@ -22,7 +22,7 @@ enum SplitDropPairingResolver {
             return nil
         }
 
-        for side in SplitDropCaptureHitPolicy.sides(
+        for side in SplitDropEdgeHitPolicy.sides(
             at: context.location,
             in: hit.rect,
             mode: .create
@@ -74,7 +74,7 @@ enum SplitDropPairingResolver {
             return nil
         }
 
-        for side in SplitDropCaptureHitPolicy.sides(
+        for side in SplitDropEdgeHitPolicy.sides(
             at: context.location,
             in: hit.rect,
             mode: .create

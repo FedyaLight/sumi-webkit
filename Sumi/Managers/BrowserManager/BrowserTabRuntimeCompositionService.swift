@@ -119,7 +119,7 @@ extension BrowserTabRuntimeCompositionService.Dependencies {
         let regularTabs = browserManager.tabManager.tabCollectionMembershipOwner
         let lazyRestore = browserManager.tabManager.lazyRestoreCoordinator
         let windowTabs = browserManager.shellRuntime.windowTabs
-        let splitManager = browserManager.splitManager
+        let splitQuery = browserManager.splitComposition.query
 
         return Self(
             installTabSuspensionRuntime: {
@@ -129,7 +129,7 @@ extension BrowserTabRuntimeCompositionService.Dependencies {
                         regularTabs: regularTabs,
                         lazyRestore: lazyRestore,
                         windowTabs: windowTabs,
-                        splitManager: splitManager,
+                        splitQuery: splitQuery,
                         webView: TabSuspensionWebViewRuntime(
                             isAvailable: {
                                 shellRuntime.webViewCoordinator != nil
@@ -184,9 +184,13 @@ extension BrowserTabRuntimeCompositionService.Dependencies {
                 guard let browserManager else { return [] }
                 return allRuntimeTabs(for: browserManager)
             },
-            backgroundMediaVisibleTabIDsByWindow: { [weak browserManager] in
+            backgroundMediaVisibleTabIDsByWindow: {
+                [weak browserManager, splitQuery] in
                 guard let browserManager else { return [:] }
-                return backgroundMediaVisibleTabIDsByWindow(for: browserManager)
+                return backgroundMediaVisibleTabIDsByWindow(
+                    for: browserManager,
+                    splitQuery: splitQuery
+                )
             },
             notifyTabActivatedIfLoaded: { [weak browserManager] newTab, previousTab in
                 browserManager?.optionalModules.extensions.notifyTabActivatedIfLoaded(
@@ -198,7 +202,8 @@ extension BrowserTabRuntimeCompositionService.Dependencies {
     }
 
     private static func backgroundMediaVisibleTabIDsByWindow(
-        for browserManager: BrowserManager
+        for browserManager: BrowserManager,
+        splitQuery: WindowSplitQuery
     ) -> [UUID: Set<UUID>] {
         guard let windowRegistry = browserManager.windowRegistry else { return [:] }
 
@@ -206,7 +211,7 @@ extension BrowserTabRuntimeCompositionService.Dependencies {
         for windowState in windowRegistry.windows.values where windowState.windowVisibilityState.isEffectivelyVisible {
             let tabIDs = VisibleTabPreparationPlan.visibleTabIDs(
                 currentTabId: browserManager.shellRuntime.windowTabs.currentTab(for: windowState)?.id,
-                splitTabIds: browserManager.splitManager.visibleTabIds(for: windowState.id)
+                splitTabIds: splitQuery.visibleTabIDs(in: windowState.id)
             )
             visibleTabIDsByWindow[windowState.id] = Set(tabIDs)
         }

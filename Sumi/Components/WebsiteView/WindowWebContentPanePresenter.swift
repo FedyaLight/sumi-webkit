@@ -3,7 +3,6 @@ import SumiWebRuntime
 
 @MainActor
 final class WindowWebContentPanePresenter {
-    private let browserContext: any WindowWebContentBrowserContext
     private let windowState: BrowserWindowState
     private let containerView: WindowWebContentSplitHostLayoutView
     private let compositorRuntime: WebViewCompositorRuntime
@@ -12,7 +11,6 @@ final class WindowWebContentPanePresenter {
     private let hostAttachments: WindowWebContentHostAttachmentService
 
     init(
-        browserContext: any WindowWebContentBrowserContext,
         windowState: BrowserWindowState,
         containerView: WindowWebContentSplitHostLayoutView,
         compositorRuntime: WebViewCompositorRuntime,
@@ -20,7 +18,6 @@ final class WindowWebContentPanePresenter {
         hostResolver: WindowWebContentHostResolver,
         hostAttachments: WindowWebContentHostAttachmentService
     ) {
-        self.browserContext = browserContext
         self.windowState = windowState
         self.containerView = containerView
         self.compositorRuntime = compositorRuntime
@@ -94,9 +91,9 @@ final class WindowWebContentPanePresenter {
                 containerRegistration: containerRegistration
             ) {
                 guard compositorRuntime.owns(containerRegistration) else { return false }
-                paneView.configureSplitControls(
+                containerView.configureSplitControls(
+                    in: paneView,
                     tab: tab,
-                    browserContext: browserContext,
                     windowState: windowState
                 )
                 hostAttachments.attach(

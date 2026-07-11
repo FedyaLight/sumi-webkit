@@ -8,7 +8,7 @@ compositor="Sumi/Components/WebsiteView/WebsiteCompositorView.swift"
 display_state="Sumi/Components/WebsiteView/WebsiteDisplayState.swift"
 browser_context="Sumi/Components/WebsiteView/WindowWebContentBrowserContext.swift"
 presentation="Sumi/Models/Window/WindowSplitPresentation.swift"
-projection="Sumi/Managers/SplitViewManager/WindowSplitProjection.swift"
+projection="Sumi/Managers/SplitRuntime/WindowSplitProjection.swift"
 obsolete_split_repair="Sumi/Components/WebsiteView/WindowWebContentSplitRepairScheduler.swift"
 status=0
 

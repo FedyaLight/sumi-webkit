@@ -382,11 +382,22 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
 
     func testWindowWebContentUsesBrowserContextBoundary() {
         let browserContext = CompositorBrowserContextStub()
+        let browserManager = BrowserManager()
         let windowState = BrowserWindowState()
         let webViewCoordinator = WebViewCoordinator()
 
         let wrapper = TabCompositorWrapper(
             browserContext: browserContext,
+            resolveDragTab: {
+                browserManager.tabManager.sidebarDragRouter
+                    .resolveDragTab(for: $0)
+            },
+            splitQuery: browserManager.splitComposition.query,
+            splitPreviews: browserManager.splitComposition.previews,
+            splitLayout: browserManager.splitComposition.layout,
+            splitDrops: browserManager.splitComposition.drops,
+            splitDropTargets: browserManager.splitComposition.dropTargets,
+            sidebarDragState: browserContext.sidebarDragState,
             webViewCoordinator: webViewCoordinator,
             hoveredLink: .constant(nil),
             splitPresentation: nil,
@@ -441,14 +452,24 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             regularTab.id: regularTab,
             liveShortcutTab.id: liveShortcutTab,
         ]
+        let browserManager = BrowserManager()
         let coordinator = WebViewCoordinator()
         let container = WindowWebContentSplitHostLayoutView(
-            browserContext: browserContext,
-            windowId: windowState.id,
+            splitLayout: browserManager.splitComposition.layout,
+            splitDrops: browserManager.splitComposition.drops,
+            splitDropTargets: browserManager.splitComposition.dropTargets,
+            splitPreviews: browserManager.splitComposition.previews,
+            sidebarDragState: browserContext.sidebarDragState,
+            windowState: windowState,
+            resolveDragTab: {
+                browserManager.tabManager.sidebarDragRouter
+                    .resolveDragTab(for: $0)
+            },
             chromeGeometry: BrowserChromeGeometry()
         )
         let planner = WindowWebContentPresentationPlanner(
             browserContext: browserContext,
+            splitQuery: browserManager.splitComposition.query,
             windowState: windowState,
             containerView: container,
             hostRegistry: WindowWebContentHostRegistry(),
@@ -876,12 +897,6 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             tabsByID[tabID]
         }
 
-        func splitResolution(
-            for _: BrowserWindowState
-        ) -> WindowSplitResolution {
-            .inactive
-        }
-
         func schedulePrepareVisibleWebViews(for _: BrowserWindowState) { /* no-op */ }
 
         func enqueueWindowMutationDuringHistorySwipe(
@@ -889,20 +904,6 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             for _: BrowserWindowState
         ) { /* no-op */ }
 
-        func updateSplitLayoutWeights(
-            expectedGroup _: SumiDomain.SplitGroup,
-            path _: [Int],
-            weights _: [Double],
-            for _: UUID
-        ) { /* no-op */ }
-
-        func configureSplitDropCapture(_: SplitDropCaptureView, windowId _: UUID) { /* no-op */ }
-
-        func configureSplitControls(
-            _: SplitPaneControlsView,
-            tab _: Tab,
-            windowState _: BrowserWindowState
-        ) { /* no-op */ }
     }
 
     private func XCTAssertEnqueueOutcome(

@@ -41,7 +41,6 @@ struct TabFolderBodyListView: View {
     ) -> Void
     let onActivateShortcutPin: (ShortcutPin) -> Void
 
-    @EnvironmentObject var splitManager: SplitViewManager
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
@@ -152,7 +151,6 @@ struct TabFolderBodyListView: View {
             onPrepareShortcutRestoreGap: onPrepareShortcutRestoreGap,
             onPerformShortcutRestoreWithPreparedGap: onPerformShortcutRestoreWithPreparedGap
         )
-        .environmentObject(splitManager)
         .environment(windowState)
     }
 
@@ -240,7 +238,9 @@ struct TabFolderBodyListView: View {
                 group: group,
                 items: items,
                 spaceId: space.id,
-                browserContext: browserContext,
+                tabManager: browserContext.tabManager,
+                splitLayout: browserContext.splitLayout,
+                emptySplitCreation: browserContext.emptySplitCreation,
                 isAppKitInteractionEnabled: isInteractive,
                 accessibilityID: "folder-shortcut-host-split-row-\(group.id.uuidString)",
                 onActivateMember: { memberID in
@@ -275,7 +275,6 @@ struct TabFolderBodyListView: View {
                     )
                 }
             )
-            .environmentObject(splitManager)
         }
     }
 

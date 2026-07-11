@@ -25,6 +25,7 @@ enum WindowWebContentPresentationDecision {
 @MainActor
 final class WindowWebContentPresentationPlanner {
     private let browserContext: any WindowWebContentBrowserContext
+    private let splitQuery: WindowSplitQuery
     private let windowState: BrowserWindowState
     private let containerView: WindowWebContentSplitHostLayoutView
     private let hostRegistry: WindowWebContentHostRegistry
@@ -32,12 +33,14 @@ final class WindowWebContentPresentationPlanner {
 
     init(
         browserContext: any WindowWebContentBrowserContext,
+        splitQuery: WindowSplitQuery,
         windowState: BrowserWindowState,
         containerView: WindowWebContentSplitHostLayoutView,
         hostRegistry: WindowWebContentHostRegistry,
         protectionRuntime: WebViewProtectionRuntime
     ) {
         self.browserContext = browserContext
+        self.splitQuery = splitQuery
         self.windowState = windowState
         self.containerView = containerView
         self.hostRegistry = hostRegistry
@@ -78,8 +81,9 @@ final class WindowWebContentPresentationPlanner {
             return nil
         }
 
-        if case .ready(let presentation) = browserContext
-            .splitResolution(for: windowState),
+        if case .ready(let presentation) = splitQuery.resolution(
+            in: windowState.id
+        ),
            presentation.activeTabID == currentTab.id {
             let tabs = presentation.visibleTabIDs.compactMap(browserContext.tab(for:))
             guard tabs.count == presentation.visibleTabIDs.count else { return nil }

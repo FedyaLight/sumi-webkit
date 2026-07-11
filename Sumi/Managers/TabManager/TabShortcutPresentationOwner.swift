@@ -83,16 +83,22 @@ final class TabShortcutPresentationOwner {
     func essentialRuntimeState(
         for pin: ShortcutPin,
         in windowState: BrowserWindowState,
-        splitManager: SplitViewManager?
+        splitQuery: WindowSplitQuery
     ) -> SumiEssentialRuntimeState? {
         guard pin.role == .essential else { return nil }
         guard let liveTab = shortcutLiveTab(for: pin.id, in: windowState.id) else {
             return .launcherOnly
         }
 
-        let isInSplit = splitManager?.isTabVisibleInSplit(liveTab.id, in: windowState.id) == true
+        let isInSplit = splitQuery.contains(
+            tabID: liveTab.id,
+            in: windowState.id
+        )
         if isInSplit {
-            let isSelected = splitManager?.isTabActiveInSplit(liveTab.id, in: windowState.id) == true
+            let isSelected = splitQuery.isActive(
+                tabID: liveTab.id,
+                in: windowState.id
+            )
                 || ShortcutSelectionIdentity.isSelected(
                     tabId: liveTab.id,
                     pinId: pin.id,

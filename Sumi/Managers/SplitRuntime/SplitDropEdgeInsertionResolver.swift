@@ -20,7 +20,7 @@ enum SplitDropEdgeInsertionResolver {
             return nil
         }
 
-        for side in SplitDropCaptureHitPolicy.sides(
+        for side in SplitDropEdgeHitPolicy.sides(
             at: context.location,
             in: hit.rect,
             mode: .create
@@ -52,7 +52,7 @@ enum SplitDropEdgeInsertionResolver {
         in context: SplitDropResolutionContext
     ) -> SplitDropTarget? {
         if !context.draggedMemberIsInGroup,
-           let rootSide = SplitDropCaptureHitPolicy.side(
+           let rootSide = SplitDropEdgeHitPolicy.side(
                at: context.location,
                in: context.bounds,
                mode: .create
@@ -85,7 +85,7 @@ enum SplitDropEdgeInsertionResolver {
             location: context.location,
             bounds: context.bounds
         ) {
-            for side in SplitDropCaptureHitPolicy.sides(
+            for side in SplitDropEdgeHitPolicy.sides(
                 at: context.location,
                 in: plane.rect,
                 mode: .create
@@ -128,7 +128,7 @@ enum SplitDropEdgeInsertionResolver {
             return nil
         }
 
-        for side in SplitDropCaptureHitPolicy.sides(
+        for side in SplitDropEdgeHitPolicy.sides(
             at: context.location,
             in: hit.rect,
             mode: .create

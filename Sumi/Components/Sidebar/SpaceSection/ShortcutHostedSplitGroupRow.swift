@@ -6,6 +6,8 @@ struct ShortcutHostedSplitGroupRow: View {
     let items: [SplitGroupSidebarItem]
     let spaceId: UUID
     let tabManager: TabManager
+    let splitLayout: SplitLayoutService
+    let emptySplitCreation: EmptySplitCreationWorkflow
     let isAppKitInteractionEnabled: Bool
     let accessibilityID: String
     let onActivateMember: (SplitMemberID) -> Void
@@ -17,44 +19,15 @@ struct ShortcutHostedSplitGroupRow: View {
         @escaping () -> Void
     ) -> Void
 
-    @EnvironmentObject private var splitManager: SplitViewManager
     @Environment(BrowserWindowState.self) private var windowState
 
     init(
         group: SplitGroup,
         items: [SplitGroupSidebarItem],
         spaceId: UUID,
-        browserContext: SidebarBrowserContext,
-        isAppKitInteractionEnabled: Bool,
-        accessibilityID: String,
-        onActivateMember: @escaping (SplitMemberID) -> Void,
-        onRestoreShortcutMember: @escaping (SplitMemberID) -> Void,
-        onCloseMember: @escaping (SplitMemberID) -> Void,
-        onPrepareShortcutRestoreGap: @escaping (SplitMemberID) -> Void,
-        onPerformShortcutRestoreWithPreparedGap: @escaping (
-            SplitMemberID,
-            @escaping () -> Void
-        ) -> Void
-    ) {
-        self.group = group
-        self.items = items
-        self.spaceId = spaceId
-        self.tabManager = browserContext.tabManager
-        self.isAppKitInteractionEnabled = isAppKitInteractionEnabled
-        self.accessibilityID = accessibilityID
-        self.onActivateMember = onActivateMember
-        self.onRestoreShortcutMember = onRestoreShortcutMember
-        self.onCloseMember = onCloseMember
-        self.onPrepareShortcutRestoreGap = onPrepareShortcutRestoreGap
-        self.onPerformShortcutRestoreWithPreparedGap =
-            onPerformShortcutRestoreWithPreparedGap
-    }
-
-    init(
-        group: SplitGroup,
-        items: [SplitGroupSidebarItem],
-        spaceId: UUID,
         tabManager: TabManager,
+        splitLayout: SplitLayoutService,
+        emptySplitCreation: EmptySplitCreationWorkflow,
         isAppKitInteractionEnabled: Bool,
         accessibilityID: String,
         onActivateMember: @escaping (SplitMemberID) -> Void,
@@ -70,6 +43,8 @@ struct ShortcutHostedSplitGroupRow: View {
         self.items = items
         self.spaceId = spaceId
         self.tabManager = tabManager
+        self.splitLayout = splitLayout
+        self.emptySplitCreation = emptySplitCreation
         self.isAppKitInteractionEnabled = isAppKitInteractionEnabled
         self.accessibilityID = accessibilityID
         self.onActivateMember = onActivateMember
@@ -87,6 +62,8 @@ struct ShortcutHostedSplitGroupRow: View {
             spaceId: spaceId,
             currentTabId: windowState.currentTabId,
             isAppKitInteractionEnabled: isAppKitInteractionEnabled,
+            splitLayout: splitLayout,
+            emptySplitCreation: emptySplitCreation,
             segmentAction: { item in
                 SplitGroupSidebarModel.segmentAction(for: item, in: group)
             },
@@ -101,7 +78,6 @@ struct ShortcutHostedSplitGroupRow: View {
             onSegmentAction: performShortcutHostedSegmentAction,
             onSegmentMiddleClick: onCloseMember
         )
-        .environmentObject(splitManager)
         .accessibilityIdentifier(accessibilityID)
     }
 

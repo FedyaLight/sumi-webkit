@@ -7,30 +7,10 @@ import SwiftUI
 @MainActor
 enum WebsiteViewContextFactory {
     static func websiteViewBrowserContext(
-        for browserManager: BrowserManager,
-        sidebarDragState: SidebarDragState
+        for browserManager: BrowserManager
     ) -> WebsiteViewBrowserContext {
-        let splitProjection = WindowSplitProjection(
-            group: { [weak browserManager] groupID in
-                browserManager?.tabManager.splitGroupStore.group(id: groupID)
-            },
-            regularTabExists: { [weak browserManager] tabID in
-                browserManager?.tabManager.regularTabCollectionOwner
-                    .tab(for: tabID) != nil
-            },
-            shortcutPinExists: { [weak browserManager] pinID in
-                browserManager?.tabManager.shortcutPinCollectionStateOwner
-                    .shortcutPin(by: pinID) != nil
-            },
-            shortcutLiveTabID: { [weak browserManager] pinID, windowID in
-                browserManager?.tabManager.liveShortcutTabs
-                    .tab(for: pinID, in: windowID)?.id
-            }
-        )
         let webContentContext = BrowserManagerWindowWebContentContext(
-            browserManager: browserManager,
-            splitProjection: splitProjection,
-            sidebarDragState: sidebarDragState
+            browserManager: browserManager
         )
         return WebsiteViewBrowserContext(
             currentTab: { [weak browserManager] windowState in
@@ -42,11 +22,9 @@ enum WebsiteViewContextFactory {
                         .workspaceTheme
                 }
             },
-            splitResolution: { windowState in
-                splitProjection.resolve(
-                    selection: windowState.splitSelection,
-                    in: windowState.id
-                )
+            resolveDragTab: { [weak browserManager] item in
+                browserManager?.tabManager.sidebarDragRouter
+                    .resolveDragTab(for: item)
             },
             makeWebContentContext: { webContentContext }
         )

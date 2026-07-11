@@ -101,7 +101,6 @@ extension SpacesSideBarView {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .environmentObject(browserContext.glanceManager)
         .environment(windowState)
-        .environmentObject(pageModel.splitManager)
         .id(space.id)
     }
 
