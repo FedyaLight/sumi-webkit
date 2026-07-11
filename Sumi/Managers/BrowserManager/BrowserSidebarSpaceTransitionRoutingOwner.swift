@@ -38,16 +38,19 @@ final class BrowserSpaceTransitionRoutingOwner {
     convenience init(browserManager: BrowserManager) {
         self.init(
             completePendingSplitGroupFocusIfReady: { [weak browserManager] windowState, spaceId in
-                browserManager?.sidebarCommandService.splitShortcutRouting.completePendingSplitGroupFocusIfReady(
+                browserManager?.sidebarCommandService.splitShortcuts.focus.completePendingSplitGroupFocusIfReady(
                     in: windowState,
                     spaceId: spaceId
                 )
             },
             setActiveSpace: { [weak browserManager] space, windowState in
-                browserManager?.windowSessionBundle.spaceStateOwner.setActiveSpace(space, in: windowState)
+                browserManager?.windowSpaceTransitions.setActiveSpace(
+                    space,
+                    in: windowState
+                )
             },
             setActiveSpaceFromTransition: { [weak browserManager] space, windowState, identity in
-                browserManager?.windowSessionBundle.spaceStateOwner.setActiveSpace(
+                browserManager?.windowSpaceTransitions.setActiveSpace(
                     space,
                     in: windowState,
                     completingTransition: identity

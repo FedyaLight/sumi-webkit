@@ -6,7 +6,7 @@ protocol TabWindowQueryPort {
     func forEachWindow(_ body: (UUID, BrowserWindowState) -> Void)
     func forEachWindowState(_ body: (BrowserWindowState) -> Void)
     func updateTabVisibility()
-    func validateWindowStates()
+    func validateWindowStates() -> Set<UUID>
     func persistWindowSession(for windowState: BrowserWindowState)
     func syncWorkspaceThemeAcrossWindows(for space: Space, animate: Bool)
 }
@@ -41,8 +41,8 @@ struct LiveTabWindowQueryPort: TabWindowQueryPort {
         runtime.require().compositorManager.updateTabVisibility()
     }
 
-    func validateWindowStates() {
-        runtime.require().windowSessionBundle.spaceStateOwner.validateWindowStates()
+    func validateWindowStates() -> Set<UUID> {
+        runtime.require().windowStateReconciler.validateWindowStates()
     }
 
     func persistWindowSession(for windowState: BrowserWindowState) {

@@ -15,13 +15,10 @@ final class BrowserAppOrchestrationOwner {
         let startUpdater: @MainActor () -> Void
     }
 
-    private let windowLifecycleOwner: BrowserWindowLifecycleOwner
     private var applicationLifecycleController: BrowserApplicationLifecycleController?
+    private var mouseCommandRouter: BrowserMouseCommandRouter?
+    private var externalURLTabOpening: ExternalURLTabOpeningService?
     private var didSetup = false
-
-    init(windowLifecycleOwner: BrowserWindowLifecycleOwner = BrowserWindowLifecycleOwner()) {
-        self.windowLifecycleOwner = windowLifecycleOwner
-    }
 
     @discardableResult
     func setupIfNeeded(dependencies: Dependencies) -> Bool {
@@ -37,12 +34,6 @@ final class BrowserAppOrchestrationOwner {
         let nowPlayingController = dependencies.nowPlayingController
 
         appDelegate.windowRegistry = windowRegistry
-        appDelegate.mouseButtonRouter = browserManager.appCommandRouter
-        appDelegate.tabCommandRouter = browserManager.appCommandRouter
-        appDelegate.windowRouter = browserManager.appCommandRouter
-        appDelegate.externalURLHandler = browserManager.appCommandRouter
-        appDelegate.persistenceHandler = browserManager.appCommandRouter
-        appDelegate.terminationHandler = browserManager.appCommandRouter
         let applicationLifecycleController = BrowserApplicationLifecycleController(
             scheduleBackgroundMediaReconcile: { [weak browserManager] reason in
                 browserManager?.backgroundMediaOptimizationService.scheduleReconcile(reason: reason)
@@ -67,6 +58,31 @@ final class BrowserAppOrchestrationOwner {
         browserManager.keyboardShortcutManager = keyboardShortcutManager
         browserManager.windowShellContentViewFactory = dependencies.windowShellContentViewFactory
 
+        let mouseCommandRouter = BrowserMouseCommandRouter(
+            floatingBar: { [weak browserManager] in
+                browserManager?.urlBarBundle.floatingBar.presentation
+            },
+            history: { [weak browserManager] in
+                browserManager?.historyBundle.historyNavigationOwner
+            }
+        )
+        let windowSession = browserManager.windowSessionBundle
+        let externalURLTabOpening = ExternalURLTabOpeningService(
+            windowRegistry: windowRegistry,
+            tabOpening: browserManager.tabLifecycleService.opening
+        )
+        let terminationCoordinator = BrowserTerminationCoordinator(
+            browserRuntime: browserManager
+        )
+        self.mouseCommandRouter = mouseCommandRouter
+        self.externalURLTabOpening = externalURLTabOpening
+
+        appDelegate.mouseButtonRouter = mouseCommandRouter
+        appDelegate.tabCommandRouter = browserManager.tabLifecycleService.closeOrchestration
+        appDelegate.windowRouter = browserManager.windowCommands
+        appDelegate.externalURLHandler = externalURLTabOpening
+        appDelegate.terminationCoordinator = terminationCoordinator
+
         nowPlayingController.setFeatureEnabled(settingsManager.sidebarMiniPlayerEnabled)
         nowPlayingController.configure(
             context: BrowserManagerRuntimeWiring.nativeNowPlayingRuntimeContext(for: browserManager)
@@ -79,68 +95,32 @@ final class BrowserAppOrchestrationOwner {
             chromeRouter: browserManager.shortcutActionRouter,
             windowRegistry: windowRegistry,
             extensionCommandHandler: { [weak browserManager] event in
-                browserManager?.extensionsModule.performExtensionKeyboardCommandIfLoaded(for: event) ?? false
+                browserManager?.optionalModules.extensions.performExtensionKeyboardCommandIfLoaded(for: event) ?? false
             }
         )
 
-        windowLifecycleOwner.attachIfNeeded(
-            windowRegistry: windowRegistry,
-            browserRuntimeIsAvailable: { [weak browserManager] in
-                browserManager != nil
-            },
-            setupWindowState: { [weak browserManager] windowState in
-                browserManager?.windowSessionBundle.restoration.restore(windowState)
-            },
-            handleWindowWillClose: { [weak browserManager] windowId in
-                browserManager?.windowSessionBundle.historySessionOwner.handleWindowWillClose(windowId)
-            },
-            notifyWindowClosedIfLoaded: { [weak browserManager] windowId in
-                browserManager?.extensionsModule.notifyWindowClosedIfLoaded(windowId)
-            },
-            cleanupWebViews: { windowId in
-                webViewCoordinator.lifecycleService.cleanupWindow(windowId)
-            },
-            cleanupSplitWindow: { [weak browserManager] windowId in
-                browserManager?.splitManager.cleanupWindow(windowId)
-            },
-            scheduleWindowClosedMediaReconcile: { [weak browserManager] in
-                browserManager?.backgroundMediaOptimizationService.scheduleReconcile(
-                    reason: "window-closed"
-                )
-            },
-            windowState: { [weak browserManager] windowId in
-                browserManager?.windowRegistry?.windows[windowId]
-            },
-            closeIncognitoWindow: { [weak browserManager] windowState in
-                await browserManager?.windowSessionBundle.commands.closeIncognitoWindow(windowState)
-            },
-            setActiveWindowState: { [weak browserManager] windowState in
-                browserManager?.windowSessionBundle.activation.activate(windowState)
-            },
-            handleWindowVisibilityChanged: { [weak browserManager] windowState in
-                browserManager?.windowSessionBundle.activation.handleVisibilityChanged(windowState)
-            },
-            prepareForAllWindowsClosed: { [weak browserManager] in
-                browserManager?.windowSessionBundle.restoreService
-                    .prepareForAllWindowsClosed()
-            },
-            performAllWindowsClosedSiteDataCleanup: { [weak browserManager] in
-                guard let browserManager else { return }
-                await browserManager.dataServices.siteDataPolicyEnforcementService
-                    .performAllWindowsClosedCleanup(
-                        profiles: browserManager.profileManager.profiles
-                    )
-            },
-            cleanupWindowAfterRuntimeDeallocation: { windowId in
-                // BrowserManager is the model/runtime root. If it has already
-                // gone away, every remaining normal-tab WebView belongs to a
-                // dead session, including detached and deferred-cleanup views.
-                webViewCoordinator.lifecycleService
-                    .cleanupAfterBrowserRuntimeDeallocation()
-                RuntimeDiagnostics.emit(
-                    "⚠️ [SumiApp] Window \(windowId) closed after BrowserManager deallocation - performed terminal browser-session cleanup"
-                )
-            }
+        let windowCloseWorkflow = BrowserWindowCloseWorkflow(
+            browserRuntime: browserManager,
+            recorder: windowSession.history.recorder,
+            persistence: windowSession.persistence,
+            extensions: browserManager.optionalModules.extensions,
+            webViews: webViewCoordinator.lifecycleService,
+            splits: browserManager.splitManager,
+            backgroundMedia: browserManager.backgroundMediaOptimizationService,
+            commands: browserManager.windowCommands
+        )
+        let allWindowsClosedWorkflow = BrowserAllWindowsClosedWorkflow(
+            browserRuntime: browserManager,
+            sessionRestore: windowSession.restoreService,
+            siteDataPolicy: browserManager.dataServices.siteDataPolicyEnforcementService,
+            profiles: browserManager.profileManager
+        )
+        BrowserWindowRegistryBinding.install(
+            registration: windowSession.restoration,
+            closing: windowCloseWorkflow,
+            activity: windowSession.activation,
+            allWindowsClosed: allWindowsClosedWorkflow,
+            on: windowRegistry
         )
 
         Task { @MainActor [browserManager] in

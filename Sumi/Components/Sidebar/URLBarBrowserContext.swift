@@ -83,14 +83,13 @@ struct URLBarBrowserContext {
     let hub: URLBarHubBrowserContext
     let hubPopoverPresenter: URLBarHubPopoverPresenter
     let bookmarkEditorPresentationRequest: SumiBookmarkEditorPresentationRequest?
-    let currentTab: (BrowserWindowState) -> Tab?
-    let tabForID: (UUID) -> Tab?
+    let activePage: (BrowserWindowState) -> ActivePageResolution?
     let webView: (Tab, BrowserWindowState) -> WKWebView?
     let profiles: () -> [Profile]
     let currentProfile: () -> Profile?
     let siteControlsSnapshot: (URL?, Profile?, Bool, Bool) -> SiteControlsSnapshot
     let focusFloatingBar: (BrowserWindowState, String, Bool) -> Void
-    let reloadPage: (Tab, BrowserWindowState, String) -> Void
+    let reloadPage: (ActivePageResolution, String) -> Bool
     let closeURLBarHubPopover: (BrowserWindowState) -> Void
     let presentURLBarHubPopover: (BrowserWindowState) -> Void
     let toggleURLBarHubPopover: (BrowserWindowState) -> Void

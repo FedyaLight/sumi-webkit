@@ -8,7 +8,7 @@ enum BrowserDownloadRetryRuntimeFactory {
                 browserManager?.windowRegistry?.activeWindow
             },
             currentTab: { [weak browserManager] windowState in
-                browserManager?.windowSessionBundle.tabContextOwner.currentTab(for: windowState)
+                browserManager?.shellRuntime.windowTabs.currentTab(for: windowState)
             },
             windowOwnedWebView: { [weak browserManager] tab, windowId in
                 browserManager?.webViewRoutingService.windowOwnedWebView(for: tab, in: windowId)

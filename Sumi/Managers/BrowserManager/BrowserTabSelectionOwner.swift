@@ -15,7 +15,7 @@ final class BrowserTabSelectionOwner {
         let currentTab: (BrowserWindowState) -> Tab?
         let liveShortcutTabs: (UUID) -> [Tab]
         let updateActiveSplitSide: (UUID, UUID) -> Void
-        let syncWindowSpaceContext: (BrowserWindowState, Bool) -> Void
+        let syncWindowSpaceContext: (BrowserWindowState) -> Void
         let space: (UUID?) -> Space?
         let updateWorkspaceTheme: (BrowserWindowState, WorkspaceTheme, Bool) -> Void
         let applySettingsSurfaceNavigation: (URL) -> Void
@@ -34,7 +34,6 @@ final class BrowserTabSelectionOwner {
         let updateActiveTabState: (Tab) -> Void
         let persistWindowSession: (BrowserWindowState) -> Void
         let selectionTargetForSpaceActivation: (Space, BrowserWindowState) -> Tab?
-        let updateProfileRuntimeStates: (BrowserWindowState) -> Void
     }
 
     private let userActivationBatcher = WindowTabActivationBatcher()
@@ -120,7 +119,7 @@ final class BrowserTabSelectionOwner {
         actions.dismissFloatingBarAfterSelection(windowState)
         actions.updateActiveSplitSide(tab.id, windowState.id)
 
-        actions.syncWindowSpaceContext(windowState, updateTheme)
+        actions.syncWindowSpaceContext(windowState)
 
         if updateTheme && shouldUpdateWorkspaceTheme(for: windowState) {
             if let currentSpace = actions.space(windowState.currentSpaceId) {
@@ -210,6 +209,7 @@ final class BrowserTabSelectionOwner {
 
     func showEmptyState(
         in windowState: BrowserWindowState,
+        persistSelection: Bool = true,
         actions: Actions
     ) {
         if let currentSpace = actions.space(windowState.currentSpaceId),
@@ -220,7 +220,7 @@ final class BrowserTabSelectionOwner {
                 updateSpaceFromTab: false,
                 updateTheme: false,
                 rememberSelection: false,
-                persistSelection: true,
+                persistSelection: persistSelection,
                 loadPolicy: .immediate,
                 actions: actions
             )
@@ -231,10 +231,12 @@ final class BrowserTabSelectionOwner {
         windowState.currentShortcutPinId = nil
         windowState.currentShortcutPinRole = nil
         windowState.isShowingEmptyState = true
-        actions.updateProfileRuntimeStates(windowState)
+        actions.syncWindowSpaceContext(windowState)
         actions.clearFindManagerCurrentTab()
         actions.refreshCompositor(windowState)
-        actions.persistWindowSession(windowState)
+        if persistSelection {
+            actions.persistWindowSession(windowState)
+        }
     }
 
     private static func scheduleTabLoadIfNeeded(

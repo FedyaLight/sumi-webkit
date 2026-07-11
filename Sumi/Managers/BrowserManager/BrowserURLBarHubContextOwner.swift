@@ -56,17 +56,18 @@ final class BrowserURLBarHubContextOwner {
         browserManager: BrowserManager,
         permissionContextOwner: BrowserURLBarPermissionContextOwner,
         extensionActionContext: @escaping @MainActor () -> URLBarExtensionActionContext,
-        siteControlsSnapshot: @escaping @MainActor (URL?, Profile?, Bool, Bool) -> SiteControlsSnapshot
+        siteControlsSnapshot: @escaping @MainActor (URL?, Profile?, Bool, Bool) -> SiteControlsSnapshot,
+        settingsNavigation: BrowserSettingsNavigationService
     ) {
         self.init(
             bookmarkManager: browserManager.bookmarkManager,
-            extensionSurfaceStore: browserManager.extensionsModule.surfaceStore,
+            extensionSurfaceStore: browserManager.optionalModules.extensions.surfaceStore,
             permissionContextOwner: permissionContextOwner,
             protectionCoordinator: browserManager.protectionCoordinator,
             adblockZapperStore: browserManager.adblockZapperStore,
             dataServices: browserManager.dataServices,
-            boostsModule: browserManager.boostsModule,
-            extensionsModule: browserManager.extensionsModule,
+            boostsModule: browserManager.optionalModules.boosts,
+            extensionsModule: browserManager.optionalModules.extensions,
             webViewRoutingService: browserManager.webViewRoutingService,
             capabilities: Capabilities(
                 extensionActionContext: extensionActionContext,
@@ -80,11 +81,11 @@ final class BrowserURLBarHubContextOwner {
                 bookmarkEditorPresentationRequest: { [weak browserManager] in
                     browserManager?.bookmarkEditorPresentationRequest
                 },
-                openExtensionSettings: { [weak browserManager] windowState in
-                    browserManager?.urlBarBundle.commands.openSettingsTab(selecting: .extensions, in: windowState)
+                openExtensionSettings: { [settingsNavigation] windowState in
+                    settingsNavigation.openSettings(selecting: .extensions, in: windowState)
                 },
-                openSiteSettings: { [weak browserManager] tab, windowState in
-                    browserManager?.urlBarBundle.commands.openSiteSettingsTab(focusing: tab, in: windowState)
+                openSiteSettings: { [settingsNavigation] tab, windowState in
+                    settingsNavigation.openSiteSettings(focusing: tab, in: windowState)
                 },
                 presentSharingServicePicker: { [weak browserManager] items, source in
                     browserManager?.chromeBundle.nativeDialogPresentationOwner.presentSharingServicePicker(

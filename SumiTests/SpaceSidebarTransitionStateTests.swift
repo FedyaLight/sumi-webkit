@@ -883,7 +883,7 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         browserManager.tabManager.structuralCollectionMutationOwner.setPinnedTabs([essential], for: profileId)
         windowState.currentProfileId = profileId
         windowState.currentSpaceId = source.id
-        _ = browserManager.tabManager.shortcutLiveTabOwner.activateShortcutPin(
+        _ = browserManager.tabManager.shortcutTabMaterializer.materialize(
             essential,
             in: windowState.id,
             currentSpaceId: source.id
@@ -1194,7 +1194,7 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         windowState.currentProfileId = profileId
         windowState.currentSpaceId = source.id
 
-        _ = browserManager.tabManager.shortcutLiveTabOwner.activateShortcutPin(
+        _ = browserManager.tabManager.shortcutTabMaterializer.materialize(
             secondPin,
             in: windowState.id,
             currentSpaceId: source.id

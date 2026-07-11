@@ -29,7 +29,7 @@ enum BrowserExtensionManagerRuntimeFactory {
                 browserManager?.windowRegistry?.allWindows ?? []
             },
             windowStateContainingTab: { [weak browserManager] tab in
-                browserManager?.windowSessionBundle.tabContextOwner.windowState(containing: tab)
+                browserManager?.shellRuntime.windowTabs.windowState(containing: tab)
             },
             windowOwnedWebView: { [weak browserManager] tab, windowId in
                 browserManager?.webViewRoutingService.windowOwnedWebView(for: tab, in: windowId)
@@ -64,7 +64,7 @@ enum BrowserExtensionManagerRuntimeFactory {
             },
             extensionsModuleEnabled: { [weak browserManager] in
                 guard let browserManager else { return .unavailable }
-                return .enabled(browserManager.extensionsModule.isEnabled)
+                return .enabled(browserManager.optionalModules.extensions.isEnabled)
             }
         )
     }

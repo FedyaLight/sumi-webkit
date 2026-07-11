@@ -220,17 +220,15 @@ class SplitGroupTestCase: XCTestCase {
             for: SumiStartupPersistence.schema,
             configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
         )
-        let browserManager = BrowserManager()
-        let tabManager = TabManager(
-            runtimePorts: BrowserTabManagerRuntimePortsFactory.registry(for: browserManager),
-            context: container.mainContext,
-            webViewSessions: browserManager.webViewSessions,
-            loadPersistedState: false
+        let browserManager = BrowserManager(
+            startupPersistence: BrowserManagerStartupPersistence(
+                container: container
+            )
         )
+        let tabManager = browserManager.tabManager
         let windowRegistry = WindowRegistry()
         let windowState = BrowserWindowState()
         windowState.tabManager = tabManager
-        browserManager.tabManager = tabManager
         browserManager.bindTestWebViewCoordinator()
         browserManager.windowRegistry = windowRegistry
         windowRegistry.register(windowState)

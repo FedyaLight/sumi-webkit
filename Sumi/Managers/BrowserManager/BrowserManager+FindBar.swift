@@ -4,12 +4,12 @@ extension BrowserManager {
     // MARK: - Find Bar Routing
 
     func showFindBar() {
-        let session = urlBarBundle.activePageRoutingOwner.activeFindSession()
-        findManager.showFindBar(for: session.tab, in: session.windowId)
+        let page = shellRuntime.activePageResolver.resolveActiveWindow()
+        findManager.showFindBar(for: page?.tab, in: page?.windowState.id)
     }
 
     func updateFindManagerCurrentTab() {
-        let session = urlBarBundle.activePageRoutingOwner.activeFindSession()
-        findManager.updateCurrentTab(session.tab, in: session.windowId)
+        let page = shellRuntime.activePageResolver.resolveActiveWindow()
+        findManager.updateCurrentTab(page?.tab, in: page?.windowState.id)
     }
 }

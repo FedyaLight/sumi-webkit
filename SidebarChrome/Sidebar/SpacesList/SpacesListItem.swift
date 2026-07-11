@@ -110,7 +110,7 @@ struct SpacesListItem: View {
             guard !newValue.isEmpty else { return }
             space.icon = SumiPersistentGlyph.normalizedSpaceIconValue(newValue)
             browserContext.tabManager.structuralPersistence.markAllSpacesStructurallyDirty()
-            browserContext.tabManager.scheduleStructuralPersistence()
+            browserContext.tabManager.structuralPersistence.scheduleStructuralPersistence()
         }
     }
 

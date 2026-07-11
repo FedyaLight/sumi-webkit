@@ -30,12 +30,9 @@ class BrowserManager: ObservableObject {
     let adBlockingModule: SumiAdBlockingModule
     let protectionCoordinator: SumiProtectionCoordinator
     let adblockZapperStore: SumiAdblockZapperStore
-    let extensionsModule: SumiExtensionsModule
-    let userscriptsModule: SumiUserscriptsModule
-    let boostsModule: SumiBoostsModule
+    let optionalModules: OptionalModuleHost
     let sidebarHostRecoveryCoordinator: SidebarHostRecoveryHandling
-    var extensionSurfaceStore: BrowserExtensionSurfaceStore { extensionsModule.surfaceStore }
-    var tabManager: TabManager
+    let tabManager: TabManager
     let profileManager: ProfileManager
     let downloadManager: DownloadManager
     let authenticationManager: AuthenticationManager
@@ -58,35 +55,11 @@ class BrowserManager: ObservableObject {
     let permissionRuntime: BrowserManagerPermissionRuntime
     let zoomManager = ZoomManager()
     weak var sumiSettings: SumiSettingsService? {
-        didSet {
-            downloadManager.settings = sumiSettings
-            let settings = sumiSettings
-            tabSuspensionController.configurePolicy { [weak settings] in
-                TabSuspensionPolicy(settings: settings)
-            }
-            backgroundMediaOptimizationService.scheduleReconcile(reason: "settings-attached")
-            reconcileStartupSessionIfPossible()
-            privacyBundle.automaticDataCleanupOwner.scheduleAutomaticBrowsingDataCleanup(
-                reason: "settings-attached"
-            )
-        }
+        didSet { settingsAttachment.attach(sumiSettings) }
     }
     weak var keyboardShortcutManager: KeyboardShortcutManager?
-    let sumiProfileRouter = SumiProfileRouter()
     let liveFolderManager = SumiLiveFolderManager()
-    let liveFoldersModule: SumiLiveFoldersModule
-    lazy var optionalModuleHost = OptionalModuleHost(
-        extensionsModule: extensionsModule,
-        userscriptsModule: userscriptsModule,
-        boostsModule: boostsModule,
-        liveFoldersModule: liveFoldersModule
-    )
-    let permissionSiteSettingsRoutingOwner = BrowserPermissionSiteSettingsRoutingOwner()
     lazy var sidebarCommandService = BrowserSidebarCommandService(browserManager: self)
-    lazy var shellSelectionService = ShellSelectionService { [weak self] windowId in
-        guard let self else { return [] }
-        return self.splitManager.visibleTabIds(for: windowId)
-    }
     lazy var tabLifecycleService = BrowserTabLifecycleService(browserManager: self)
     lazy var privacyBundle = BrowserPrivacyBundle(browserManager: self)
     lazy var urlBarBundle = BrowserURLBarBundle(browserManager: self)
@@ -101,12 +74,21 @@ class BrowserManager: ObservableObject {
     lazy var extensionBridgeComposition = BrowserExtensionBridgeComposition(
         browserManager: self
     )
-    lazy var lifecycleBundle = BrowserLifecycleBundle(browserManager: self)
+    /// Process-lifetime runtime lifecycle: started once in init, shut down once in deinit.
+    private lazy var runtimeLifecycle = BrowserRuntimeLifecycle.live(browserManager: self)
+    /// Reached only from `sumiSettings.didSet`; private so feature code cannot use it as a service locator.
+    private lazy var settingsAttachment = BrowserSettingsAttachmentCoordinator.live(browserManager: self)
     lazy var webViewCloseRouter = BrowserWebViewCloseRouter(browserManager: self)
     lazy var notificationPresenter = BrowserNotificationPresenter(browserManager: self)
-    lazy var appCommandRouter = BrowserAppCommandRouter(dependencies: .live(browserManager: self))
     lazy var shortcutActionRouter = BrowserShortcutActionRouter(dependencies: .live(browserManager: self))
-    let shellRuntime = BrowserShellRuntime()
+    lazy var windowCommands = BrowserWindowCommands(browserRuntime: self)
+    lazy var windowStateReconciler = BrowserWindowStateReconciler(
+        browserManager: self
+    )
+    lazy var windowSpaceTransitions = BrowserWindowSpaceTransitionService(
+        browserManager: self
+    )
+    let shellRuntime: BrowserShellRuntime
     lazy var webViewOwnershipQuery = WebViewOwnershipQuery(
         webViewSessions: webViewSessions
     )
@@ -122,33 +104,31 @@ class BrowserManager: ObservableObject {
             )
         }
     )
-    var windowSessionSnapshotStore = WindowSessionSnapshotStore(
-        key: BrowserManager.lastWindowSessionKey
-    )
-    let windowSessionPersistenceScheduler =
-        WindowSessionPersistenceScheduler()
+    let windowSessionPersistence: WindowSessionPersistenceRuntime
     let startupSessionRestoreOwner: BrowserStartupSessionRestoreOwner
-    lazy var auxiliaryWindows = BrowserAuxiliaryWindowComposition(
-        windowRegistry: { [weak shellRuntime] in
-            shellRuntime?.windowRegistry
-        },
-        currentProfile: { [weak tabManager] in
-            tabManager?.runtimePorts?.currentProfileId
-        },
-        spaces: tabManager.spaceStateOwner,
-        tabContext: windowSessionBundle.tabContextOwner,
-        transientTabs: tabManager.transientWebKitTabLifecycleOwner,
-        webViewOwnership: { [weak shellRuntime] in
-            shellRuntime?.webViewCoordinator?.ownershipService
-        },
-        extensions: extensionsModule,
-        popupPermissions: permissionRuntime.popupPermissionBridge,
-        filePickerPermissions: permissionRuntime.filePickerPermissionBridge,
-        mutationAdmission: { [weak shellRuntime] in
-            shellRuntime?.webViewCoordinator?.websiteDataCleanupService
-        }
-    )
-    let glanceManager = GlanceManager()
+    let auxiliaryWindowTeardownRegistry: AuxiliaryWindowTeardownRegistry
+    lazy var auxiliaryWindows: BrowserAuxiliaryWindowComposition = {
+        let composition = BrowserAuxiliaryWindowComposition(
+            windowRegistry: { [weak shellRuntime] in shellRuntime?.windowRegistry },
+            currentProfile: { [weak tabManager] in tabManager?.runtimePorts?.currentProfileId },
+            spaces: tabManager.spaceStateOwner,
+            tabContext: shellRuntime.windowTabs,
+            transientTabs: tabManager.transientWebKitTabLifecycleOwner,
+            webViewOwnership: { [weak shellRuntime] in
+                shellRuntime?.webViewCoordinator?.ownershipService
+            },
+            extensions: optionalModules.extensions,
+            popupPermissions: permissionRuntime.popupPermissionBridge,
+            filePickerPermissions: permissionRuntime.filePickerPermissionBridge,
+            mutationAdmission: { [weak shellRuntime] in
+                shellRuntime?.webViewCoordinator?.websiteDataCleanupService
+            }
+        )
+        auxiliaryWindowTeardownRegistry.register(composition.teardown)
+        return composition
+    }()
+    let glanceManager: GlanceManager
+    let shutdownCleanupService: BrowserShutdownCleanupService
     private(set) var startupProtectionRuntime: BrowserStartupProtectionRuntime!
 
     /// Designated init: assign always-on managers from a pre-built kernel graph.
@@ -157,20 +137,26 @@ class BrowserManager: ObservableObject {
             graph.tabManager.tabFactory.webViewSessions === graph.webViewSessions,
             "Browser kernel must give TabManager and WebViewCoordinator one canonical WebView session repository"
         )
+        let auxiliaryWindowTeardownRegistry = AuxiliaryWindowTeardownRegistry()
+        let glanceManager = GlanceManager()
+        let shellRuntime = BrowserShellRuntime(
+            tabManager: graph.tabManager,
+            splitManager: graph.splitManager,
+            glanceManager: glanceManager,
+            webViewSessions: graph.webViewSessions
+        )
         self.webViewSessions = graph.webViewSessions
         self.modelContext = graph.modelContext
         self.moduleRegistry = graph.moduleRegistry
-        self.liveFoldersModule = graph.liveFoldersModule
         self.sidebarHostRecoveryCoordinator = graph.sidebarHostRecoveryCoordinator
         self.adBlockingModule = graph.adBlockingModule
         self.protectionCoordinator = graph.protectionCoordinator
         self.adblockZapperStore = graph.adblockZapperStore
-        self.userscriptsModule = graph.userscriptsModule
-        self.boostsModule = graph.boostsModule
         self.startupWorkspaceTheme = graph.startupWorkspaceTheme
+        self.windowSessionPersistence = graph.windowSessionPersistence
         self.profileManager = graph.profileManager
         self.currentProfile = graph.currentProfile
-        self.extensionsModule = graph.extensionsModule
+        self.optionalModules = graph.optionalModules
         self.tabManager = graph.tabManager
         self.downloadManager = graph.downloadManager
         self.authenticationManager = graph.authenticationManager
@@ -189,16 +175,25 @@ class BrowserManager: ObservableObject {
         self.browsingDataCleanupService = graph.browsingDataCleanupService
         self.nativeNowPlayingController = graph.nativeNowPlayingController
         self.permissionRuntime = graph.permissionRuntime
-        startPermissionEventObservation()
+        self.shellRuntime = shellRuntime
+        self.auxiliaryWindowTeardownRegistry = auxiliaryWindowTeardownRegistry
+        self.glanceManager = glanceManager
+        self.shutdownCleanupService = BrowserShutdownCleanupService(
+            extensions: graph.optionalModules.extensions,
+            auxiliaryWindows: auxiliaryWindowTeardownRegistry,
+            glance: glanceManager,
+            tabs: graph.tabManager,
+            shell: shellRuntime
+        )
         self.startupProtectionRuntime = BrowserStartupProtectionRuntime(browserManager: self)
-        lifecycleBundle.initializationWiringOwner.finishInitializationWiring()
+        runtimeLifecycle.start()
     }
 
     isolated deinit {
-        permissionRuntime.cancelPermissionEventObservation()
-        startupProtectionRuntime.cancelProtectionRestoreTask()
-        windowSessionPersistenceScheduler.cancelAll()
-        lifecycleBundle.initializationWiringOwner.cancel()
+        windowSessionPersistence.flushForBrowserRuntimeTeardown()
+        tabManager.detachBrowserRuntime()
+        runtimeLifecycle.shutdown()
+        shutdownCleanupService.cleanupAfterBrowserRuntimeDeallocation()
         NotificationCenter.default.removeObserver(self)
     }
 }

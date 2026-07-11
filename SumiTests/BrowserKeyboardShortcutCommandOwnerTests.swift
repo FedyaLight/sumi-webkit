@@ -135,7 +135,7 @@ final class BrowserKeyboardShortcutCommandOwnerTests: XCTestCase {
         XCTAssertEqual(persistedWindowIds, [windowState.id])
     }
 
-    func testReaderModeUsesActivePageWebViewOrWindowFallback() async {
+    func testReaderModeUsesCanonicalWebViewFromOneActivePageResolution() async {
         let windowState = BrowserWindowState()
         let tab = makeTab("https://reader.example")
         let fallbackWebView = WKWebView()
@@ -143,10 +143,14 @@ final class BrowserKeyboardShortcutCommandOwnerTests: XCTestCase {
         var toggledWebView: WKWebView?
         let owner = makeOwner(
             activeWindow: { windowState },
-            activePageTab: { tab },
-            activePageWebView: { nil },
-            webView: { requestedTabId, requestedWindowId in
-                requestedTabId == tab.id && requestedWindowId == windowState.id ? fallbackWebView : nil
+            activePage: {
+                ActivePageResolution(
+                    source: .selectedTab,
+                    windowState: windowState,
+                    tab: tab,
+                    url: tab.url,
+                    canonicalWebView: fallbackWebView
+                )
             },
             toggleReaderMode: { webView, tab in
                 toggledWebView = webView
@@ -177,9 +181,7 @@ final class BrowserKeyboardShortcutCommandOwnerTests: XCTestCase {
         setActiveSpace: @escaping @MainActor (Space, BrowserWindowState) -> Void = { _, _ in /* No-op. */ },
         setAllFoldersOpen: @escaping @MainActor (Bool, UUID) -> Void = { _, _ in /* No-op. */ },
         persistWindowSession: @escaping @MainActor (BrowserWindowState) -> Void = { _ in /* No-op. */ },
-        activePageTab: @escaping @MainActor () -> Tab? = { nil },
-        activePageWebView: @escaping @MainActor () -> WKWebView? = { nil },
-        webView: @escaping @MainActor (UUID, UUID) -> WKWebView? = { _, _ in nil },
+        activePage: @escaping @MainActor () -> ActivePageResolution? = { nil },
         toggleReaderMode: @escaping @MainActor (WKWebView, Tab) async -> Void = { _, _ in /* No-op. */ }
     ) -> BrowserKeyboardShortcutCommandOwner {
         BrowserKeyboardShortcutCommandOwner(
@@ -203,9 +205,7 @@ final class BrowserKeyboardShortcutCommandOwnerTests: XCTestCase {
                 persistWindowSession: persistWindowSession
             ),
             reader: BrowserKeyboardShortcutCommandOwner.ReaderCapabilities(
-                activePageTab: activePageTab,
-                activePageWebView: activePageWebView,
-                webView: webView,
+                activePage: activePage,
                 toggleReaderMode: toggleReaderMode
             )
         )

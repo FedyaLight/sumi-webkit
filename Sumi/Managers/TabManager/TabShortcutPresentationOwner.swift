@@ -93,7 +93,11 @@ final class TabShortcutPresentationOwner {
         let isInSplit = splitManager?.isTabVisibleInSplit(liveTab.id, in: windowState.id) == true
         if isInSplit {
             let isSelected = splitManager?.isTabActiveInSplit(liveTab.id, in: windowState.id) == true
-                || windowState.currentShortcutPinId == pin.id
+                || ShortcutSelectionIdentity.isSelected(
+                    tabId: liveTab.id,
+                    pinId: pin.id,
+                    in: windowState
+                )
             return isSelected ? .splitProxySelected : .splitProxyBackgrounded
         }
 
@@ -104,7 +108,11 @@ final class TabShortcutPresentationOwner {
         guard let liveTab = shortcutLiveTab(for: pinId, in: windowState.id) else {
             return nil
         }
-        let isSelected = windowState.currentTabId == liveTab.id || windowState.currentShortcutPinId == pinId
+        let isSelected = ShortcutSelectionIdentity.isSelected(
+            tabId: liveTab.id,
+            pinId: pinId,
+            in: windowState
+        )
         return isSelected ? liveTab : nil
     }
 
@@ -164,7 +172,11 @@ final class TabShortcutPresentationOwner {
             return .launcherOnly
         }
 
-        if windowState.currentShortcutPinId == pin.id || windowState.currentTabId == liveTab.id {
+        if ShortcutSelectionIdentity.isSelected(
+            tabId: liveTab.id,
+            pinId: pin.id,
+            in: windowState
+        ) {
             return .visuallySelected
         }
 

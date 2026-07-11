@@ -70,11 +70,27 @@ final class ShellSelectionService {
             return nil
         }
 
+        if windowState.isIncognito {
+            if let currentTabId = windowState.currentTabId,
+               let currentTab = windowState.ephemeralTabs.first(where: { $0.id == currentTabId }) {
+                return currentTab
+            }
+            return windowState.ephemeralTabs.first
+        }
+
         if let shortcutPinId = windowState.currentShortcutPinId,
-           let pin = tabStore.shortcutPin(by: shortcutPinId) {
+           let pin = tabStore.shortcutPin(by: shortcutPinId),
+           let candidate = tabStore.activeShortcutTab(for: windowState.id)
+                ?? tabStore.shortcutLiveTab(for: pin.id, in: windowState.id),
+           candidate.shortcutPinId == pin.id,
+           ShortcutSelectionIdentity.isSelected(
+                tabId: candidate.id,
+                pinId: pin.id,
+                in: windowState
+           ),
+           tabBelongsToDisplayedContext(candidate, in: windowState) {
             // Selection reads are used from SwiftUI body; activation must stay in explicit actions/restoration.
-            return tabStore.activeShortcutTab(for: windowState.id)
-                ?? tabStore.shortcutLiveTab(for: pin.id, in: windowState.id)
+            return candidate
         }
 
         if let currentSpaceId = windowState.currentSpaceId,
@@ -132,7 +148,12 @@ final class ShellSelectionService {
         tabStore: ShellSelectionTabStore
     ) -> Tab? {
         if let shortcutPinId = windowState.selectedShortcutPinForSpace[space.id],
-           let liveShortcut = tabStore.shortcutLiveTab(for: shortcutPinId, in: windowState.id) {
+           let pin = tabStore.shortcutPin(by: shortcutPinId),
+           pin.role == .spacePinned,
+           pin.spaceId == space.id,
+           let liveShortcut = tabStore.shortcutLiveTab(for: shortcutPinId, in: windowState.id),
+           liveShortcut.shortcutPinRole == .spacePinned,
+           liveShortcut.spaceId == space.id {
             return liveShortcut
         }
 
@@ -231,6 +252,11 @@ final class ShellSelectionService {
         in windowState: BrowserWindowState,
         tabStore: ShellSelectionTabStore
     ) -> Bool {
+        if windowState.isIncognito {
+            guard let currentTabId = windowState.currentTabId else { return false }
+            return windowState.ephemeralTabs.contains { $0.id == currentTabId }
+        }
+
         guard let currentTabId = windowState.currentTabId,
               let tab = tabStore.tab(for: currentTabId)
         else {

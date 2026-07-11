@@ -18,7 +18,7 @@ PR_SMOKE_TESTS=(
   "-only-testing:SumiTests/TabStructureEventBusTests"
   "-only-testing:SumiTests/RuntimeStateCoalescerTests"
   "-only-testing:SumiTests/BrowserManagerRuntimeWiringTests"
-  "-only-testing:SumiTests/BrowserManagerInitializationWiringOwnerTests"
+  "-only-testing:SumiTests/BrowserManagerLifecycleWiringTests"
   "-only-testing:SumiTests/SumiPerformanceModularRegressionTests/testBrowserManagerStartupAndSettingsSurfacesDoNotConstructDisabledRuntimes"
   "-only-testing:SumiTests/SumiPerformanceModularRegressionTests/testEnablingOptionalModuleAfterStartupAttachesRuntime"
   "-only-testing:SumiTests/SumiPerformanceModularRegressionTests/testDefaultNormalTabAttachesOnlyCoreRuntimeAndNoOptionalModuleAssets"

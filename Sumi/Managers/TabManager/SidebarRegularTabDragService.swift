@@ -337,13 +337,13 @@ extension SidebarRegularTabDragService.Dependencies {
             },
             withStructuralUpdateTransaction: { [weak tabManager] operation in
                 guard let tabManager else { return operation() }
-                return tabManager.withStructuralUpdateTransaction(operation)
+                return tabManager.structuralLookupCoordinator.withTransaction(operation)
             },
             reorderRegularTab: { [weak tabManager] tab, spaceId, index in
                 tabManager?.regularTabCollectionOwner.reorder(tab, in: spaceId, to: index) ?? false
             },
             scheduleStructuralPersistence: { [weak tabManager] in
-                tabManager?.scheduleStructuralPersistence()
+                tabManager?.structuralPersistence.scheduleStructuralPersistence()
             },
             reorderEssential: { [weak tabManager] pin, index in
                 tabManager?.shortcutPinCommandOwner.reorderEssential(pin, to: index) ?? false

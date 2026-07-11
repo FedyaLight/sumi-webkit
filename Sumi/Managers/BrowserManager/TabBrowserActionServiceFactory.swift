@@ -49,7 +49,7 @@ enum TabBrowserActionServiceFactory {
                 browserManager?.tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: shortcutPinId)?.launchURL
             },
             reconcileExtensionRuntimeOnUserGesture: { [weak browserManager] tab, reason in
-                browserManager?.extensionsModule.reconcileExtensionRuntimeOnUserGestureIfNeeded(
+                browserManager?.optionalModules.extensions.reconcileExtensionRuntimeOnUserGestureIfNeeded(
                     tab,
                     reason: reason
                 )
@@ -69,7 +69,7 @@ enum TabBrowserActionServiceFactory {
         fallback: NSAppearance?,
         browserManager: BrowserManager
     ) -> NSAppearance? {
-        guard let windowState = browserManager.windowSessionBundle.tabContextOwner.windowState(containing: tab),
+        guard let windowState = browserManager.shellRuntime.windowTabs.windowState(containing: tab),
               let settings = browserManager.sumiSettings
         else {
             return fallback
@@ -107,7 +107,7 @@ enum TabBrowserActionServiceFactory {
         from tab: Tab,
         browserManager: BrowserManager
     ) {
-        guard let windowState = browserManager.windowSessionBundle.tabContextOwner.windowState(containing: tab) else { return }
+        guard let windowState = browserManager.shellRuntime.windowTabs.windowState(containing: tab) else { return }
 
         _ = browserManager.tabLifecycleService.opening.openNewTab(
             url: url.absoluteString,
@@ -119,7 +119,7 @@ enum TabBrowserActionServiceFactory {
     }
 
     private static func isCurrentTab(_ tab: Tab, browserManager: BrowserManager) -> Bool {
-        guard let windowState = browserManager.windowSessionBundle.tabContextOwner.windowState(containing: tab) else { return false }
-        return browserManager.windowSessionBundle.tabContextOwner.currentTab(for: windowState)?.id == tab.id
+        guard let windowState = browserManager.shellRuntime.windowTabs.windowState(containing: tab) else { return false }
+        return browserManager.shellRuntime.windowTabs.currentTab(for: windowState)?.id == tab.id
     }
 }

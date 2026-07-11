@@ -6,7 +6,7 @@ enum TabBrowserExtensionRuntimeFactory {
         for browserManager: BrowserManager
     ) -> TabExtensionPropertiesRuntime {
         .make(extensionsModule: { [weak browserManager] in
-            browserManager?.extensionsModule
+            browserManager?.optionalModules.extensions
         })
     }
 
@@ -15,13 +15,13 @@ enum TabBrowserExtensionRuntimeFactory {
     ) -> TabNormalWebViewExtensionRuntime {
         .make(
             extensionsModule: { [weak browserManager] in
-                browserManager?.extensionsModule
+                browserManager?.optionalModules.extensions
             },
             windowState: { [weak browserManager] windowId in
                 browserManager?.windowRegistry?.windows[windowId]
             },
             currentTab: { [weak browserManager] windowState in
-                browserManager?.windowSessionBundle.tabContextOwner.currentTab(for: windowState)
+                browserManager?.shellRuntime.windowTabs.currentTab(for: windowState)
             },
             primaryTrackedWindowId: { [weak browserManager] tabId in
                 browserManager?.webViewRoutingService.primaryTrackedWindowId(for: tabId)
@@ -34,10 +34,10 @@ enum TabBrowserExtensionRuntimeFactory {
     ) -> TabFaviconExtensionRuntime {
         .make(
             extensionsModule: { [weak browserManager] in
-                browserManager?.extensionsModule
+                browserManager?.optionalModules.extensions
             },
             extensionSurfaceStore: { [weak browserManager] in
-                browserManager?.extensionsModule.surfaceStore
+                browserManager?.optionalModules.extensions.surfaceStore
             }
         )
     }

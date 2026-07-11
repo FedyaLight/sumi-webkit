@@ -307,8 +307,8 @@ final class SumiUserscriptsModuleTests: XCTestCase {
         let module = makeModule(registry: registry, probe: probe)
         let browserManager = BrowserManager()
         browserManager.bindTestWebViewCoordinator()
-        let sourceSpace = browserManager.tabManager.spaceLifecycleOwner.createSpace(name: "Userscripts Source")
-        let globalSpace = browserManager.tabManager.spaceLifecycleOwner.createSpace(name: "Userscripts Global")
+        let sourceSpace = browserManager.tabManager.spaceServices.catalog.createSpace(name: "Userscripts Source")
+        let globalSpace = browserManager.tabManager.spaceServices.catalog.createSpace(name: "Userscripts Global")
         browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(globalSpace)
         let sourceWindow = BrowserWindowState()
         sourceWindow.currentSpaceId = sourceSpace.id

@@ -373,7 +373,3 @@ class KeyboardShortcutManager {
         return NSApp.mainMenu?.performKeyEquivalent(with: event) ?? false
     }
 }
-
-extension Notification.Name {
-    static let shortcutExecuted = Notification.Name("shortcutExecuted")
-}

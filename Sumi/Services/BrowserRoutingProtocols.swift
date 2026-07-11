@@ -36,17 +36,16 @@ protocol ExternalURLHandling: AnyObject {
 }
 
 @MainActor
-protocol BrowserPersistenceHandling: AnyObject {
-    var modelContext: ModelContext { get }
-    func cleanupAllTabs()
-    func flushPendingWindowSessionPersistence()
-    func flushRuntimeStatePersistenceAwaitingResult() async -> Int
-    func persistFullReconcileAwaitingResult(reason: String) async -> Bool
+protocol BrowserTerminationCoordinating: AnyObject {
+    /// Closes transient browser UI before an optional quit confirmation is shown.
+    func prepareForTermination()
+
+    /// Synchronously promotes the weak runtime boundary into the one strong
+    /// lease captured by AppKit's asynchronous finalizer.
+    func acquireFinalizationLease() -> (any BrowserTerminationFinalizing)?
 }
 
 @MainActor
-protocol BrowserAppTerminationHandling: AnyObject {
-    func dismissFloatingBarForActiveWindow(preserveDraft: Bool)
-    func dismissThemePickerCommittingIfNeeded()
-    func performAllWindowsClosedSiteDataCleanup() async
+protocol BrowserTerminationFinalizing: AnyObject {
+    func finalizeTermination() async
 }

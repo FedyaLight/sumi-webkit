@@ -1,6 +1,6 @@
 import Foundation
-import SwiftData
 import SumiWebRuntime
+import SwiftData
 
 @testable import Sumi
 
@@ -24,8 +24,10 @@ func makeInMemoryTabManager(
     windows: @escaping () -> [(UUID, BrowserWindowState)] = { [] },
     visibleSplitTabIds: @escaping (UUID) -> [UUID] = { _ in [] },
     primaryTrackedWindowId: @escaping (UUID) -> UUID? = { _ in nil },
-    materializeVisibleTabWebViewIfNeeded: @escaping (Tab, BrowserWindowState) -> Void = { _, _ in },
-    requireRemoveAllWebViews: @escaping (Tab, Bool) -> Void = { _, _ in },
+    materializeVisibleTabWebViewIfNeeded: @escaping (Tab, BrowserWindowState) -> Void = { _, _ in /* No-op. */ },
+    unloadTab: @escaping (Tab) -> Void = { _ in /* No-op. */ },
+    requireRemoveAllWebViews: @escaping (Tab, Bool) -> Void = { _, _ in /* No-op. */ },
+    persistWindowSession: @escaping (BrowserWindowState) -> Void = { _ in /* No-op. */ },
     executeProfileAssignment: @escaping (
         Tab,
         Profile,
@@ -47,11 +49,13 @@ func makeInMemoryTabManager(
             windows: windows,
             webViewLifecycle: TestRuntimePorts.webViewLifecycle(
                 materializeVisibleTabWebViewIfNeeded: materializeVisibleTabWebViewIfNeeded,
+                unloadTab: unloadTab,
                 requireRemoveAllWebViews: requireRemoveAllWebViews,
                 primaryTrackedWindowId: primaryTrackedWindowId,
                 executeProfileAssignment: executeProfileAssignment
             ),
-            visibleSplitTabIds: visibleSplitTabIds
+            visibleSplitTabIds: visibleSplitTabIds,
+            persistWindowSession: persistWindowSession
         ),
         context: container.mainContext,
         webViewSessions: webViewSessions,

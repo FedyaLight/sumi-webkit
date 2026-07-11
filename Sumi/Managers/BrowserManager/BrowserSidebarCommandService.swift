@@ -7,13 +7,38 @@ final class BrowserSidebarCommandService {
     let shortcutPromotion: BrowserSidebarShortcutPromotionOwner
     let folderCommand: BrowserSidebarFolderCommandOwner
     let tabCommand: BrowserSidebarTabCommandOwner
-    let splitShortcutRouting: BrowserSidebarSplitShortcutRoutingOwner
+    let splitShortcuts: SplitShortcutServices
     let spaceTransitionRouting: BrowserSpaceTransitionRoutingOwner
     let shortcutPinUnload: BrowserShortcutPinUnloadOwner
     let commandRouting: BrowserSidebarCommandRoutingOwner
 
     init(browserManager: BrowserManager) {
-        editorPresentation = BrowserSidebarEditorPresentationOwner(
+        editorPresentation = Self.makeEditorPresentation(browserManager)
+        chromeCommand = Self.makeChromeCommands(browserManager)
+        shortcutPromotion = Self.makeShortcutPromotion(browserManager)
+        folderCommand = Self.makeFolderCommands(browserManager)
+        tabCommand = BrowserSidebarTabCommandOwner(browserManager: browserManager)
+        splitShortcuts = .live(browserManager: browserManager)
+        spaceTransitionRouting = BrowserSpaceTransitionRoutingOwner(
+            browserManager: browserManager
+        )
+        shortcutPinUnload = Self.makeShortcutPinUnload(browserManager: browserManager)
+        commandRouting = BrowserSidebarCommandRoutingOwner(
+            folderCommand: folderCommand,
+            chromeCommand: chromeCommand,
+            tabCommand: tabCommand,
+            splitCommands: SidebarSplitShortcutCommands(
+                services: splitShortcuts
+            ),
+            shortcutPromotion: shortcutPromotion,
+            shortcutPinUnload: shortcutPinUnload
+        )
+    }
+
+    private static func makeEditorPresentation(
+        _ browserManager: BrowserManager
+    ) -> BrowserSidebarEditorPresentationOwner {
+        BrowserSidebarEditorPresentationOwner(
             sidebarPosition: { [weak browserManager] in
                 browserManager?.sumiSettings?.sidebarPosition ?? .left
             },
@@ -30,10 +55,10 @@ final class BrowserSidebarCommandService {
                 browserManager?.sidebarHostRecoveryCoordinator ?? SidebarHostRecoveryCoordinator()
             },
             renameSpace: { [weak browserManager] spaceID, name in
-                try browserManager?.tabManager.spaceLifecycleOwner.renameSpace(spaceId: spaceID, newName: name)
+                try browserManager?.tabManager.spaceServices.catalog.renameSpace(spaceId: spaceID, newName: name)
             },
             updateSpaceIcon: { [weak browserManager] spaceID, icon in
-                try browserManager?.tabManager.spaceLifecycleOwner.updateSpaceIcon(spaceId: spaceID, icon: icon)
+                try browserManager?.tabManager.spaceServices.catalog.updateSpaceIcon(spaceId: spaceID, icon: icon)
             },
             assignSpaceProfile: { [weak browserManager] spaceID, profileID in
                 browserManager?.tabManager.profileAssignments.spaces.assign(
@@ -56,7 +81,12 @@ final class BrowserSidebarCommandService {
                 )
             }
         )
-        chromeCommand = BrowserSidebarChromeCommandOwner(
+    }
+
+    private static func makeChromeCommands(
+        _ browserManager: BrowserManager
+    ) -> BrowserSidebarChromeCommandOwner {
+        BrowserSidebarChromeCommandOwner(
             showGradientEditor: { [weak browserManager] source in
                 browserManager?.chromeBundle.workspaceThemeEditorOwner.showGradientEditor(source: source)
             },
@@ -64,7 +94,10 @@ final class BrowserSidebarCommandService {
                 browserManager?.chromeBundle.sidebarPresentationOwner.toggleSidebar(for: windowState)
             },
             openAppearanceSettings: { [weak browserManager] windowState in
-                browserManager?.urlBarBundle.commands.openSettingsTab(selecting: .appearance, in: windowState)
+                browserManager?.urlBarBundle.settingsNavigation.openSettings(
+                    selecting: .appearance,
+                    in: windowState
+                )
             },
             closeDownloadsPopover: { [weak browserManager] windowState in
                 browserManager?.chromeBundle.commands.closeDownloadsPopover(in: windowState)
@@ -73,7 +106,12 @@ final class BrowserSidebarCommandService {
                 browserManager?.chromeBundle.commands.toggleDownloadsPopover(in: windowState)
             }
         )
-        shortcutPromotion = BrowserSidebarShortcutPromotionOwner(
+    }
+
+    private static func makeShortcutPromotion(
+        _ browserManager: BrowserManager
+    ) -> BrowserSidebarShortcutPromotionOwner {
+        BrowserSidebarShortcutPromotionOwner(
             copyShortcutPinToEssentials: { [weak browserManager] pin, title, context in
                 _ = browserManager?.tabManager.shortcutPinCommandOwner.copyShortcutPinToEssentials(
                     pin,
@@ -82,7 +120,12 @@ final class BrowserSidebarCommandService {
                 )
             }
         )
-        folderCommand = BrowserSidebarFolderCommandOwner(
+    }
+
+    private static func makeFolderCommands(
+        _ browserManager: BrowserManager
+    ) -> BrowserSidebarFolderCommandOwner {
+        BrowserSidebarFolderCommandOwner(
             spaceForSidebarActions: { [weak browserManager] windowState in
                 browserManager?.chromeBundle.sidebarActionOwner.spaceForSidebarActions(in: windowState)
             },
@@ -99,56 +142,21 @@ final class BrowserSidebarCommandService {
                 browserManager?.chromeBundle.sidebarActionOwner.createGitHubIssuesFolderInCurrentSpace(in: windowState)
             }
         )
-        tabCommand = BrowserSidebarTabCommandOwner(browserManager: browserManager)
-        let tabManager = browserManager.tabManager
-        let splitManager = browserManager.splitManager
-        splitShortcutRouting = BrowserSidebarSplitShortcutRoutingOwner(
-            tabManager: { [weak browserManager] in
-                browserManager?.tabManager ?? tabManager
-            },
-            splitManager: { [weak browserManager] in
-                browserManager?.splitManager ?? splitManager
-            },
-            space: { [weak browserManager] spaceId in
-                browserManager?.windowSessionBundle.spaceStateOwner.space(for: spaceId)
-            },
-            setActiveSpace: { [weak browserManager] space, windowState in
-                browserManager?.windowSessionBundle.spaceStateOwner.setActiveSpace(space, in: windowState)
-            },
-            selectTab: { [weak browserManager] tab, windowState in
-                browserManager?.selectTab(tab, in: windowState)
-            },
-            refreshCompositor: { [weak browserManager] windowState in
-                browserManager?.windowSessionBundle.visualMutationOwner.refreshCompositor(for: windowState)
-            },
-            performImmediateVisualHandoffIfPossible: { [weak browserManager] windowState in
-                _ = browserManager?.windowSessionBundle.visualMutationOwner.performImmediateVisualHandoffIfPossible(
-                    in: windowState
-                )
-            },
-            persistWindowSession: { [weak browserManager] windowState in
-                browserManager?.windowSessionBundle.persistence.persist(windowState)
-            },
-            showEmptyState: { [weak browserManager] windowState in
-                browserManager?.showEmptyState(in: windowState)
-            }
-        )
-        spaceTransitionRouting = BrowserSpaceTransitionRoutingOwner(
-            browserManager: browserManager
-        )
-        shortcutPinUnload = BrowserShortcutPinUnloadOwner(
-            selectedShortcutLiveTab: { [weak browserManager] pinId, windowState in
-                browserManager?.tabManager.shortcutPresentationOwner.selectedShortcutLiveTab(
+    }
+
+    private static func makeShortcutPinUnload(
+        browserManager: BrowserManager
+    ) -> BrowserShortcutPinUnloadOwner {
+        BrowserShortcutPinUnloadOwner(
+            shortcutLiveTab: { [weak browserManager] pinId, windowState in
+                browserManager?.tabManager.shortcutPresentationOwner.shortcutLiveTab(
                     for: pinId,
-                    in: windowState
+                    in: windowState.id
                 )
             },
-            closeTab: { [weak browserManager] tab, windowState in
-                browserManager?.tabLifecycleService.closeOrchestration.closeTab(tab, in: windowState)
-            },
-            userInitiatedUnload: { [weak browserManager] pinId, windowState, presentNotification in
-                browserManager?.tabManager.shortcutLiveTabOwner.userInitiatedUnload(
-                    pinId: pinId,
+            closeTab: { [weak browserManager] tab, windowState, presentNotification in
+                browserManager?.tabLifecycleService.shortcutLiveTabClose.close(
+                    tab,
                     in: windowState,
                     presentNotification: presentNotification
                 ) ?? false
@@ -156,14 +164,6 @@ final class BrowserSidebarCommandService {
             notifications: { [weak browserManager] in
                 browserManager?.notificationPresenter
             }
-        )
-        commandRouting = BrowserSidebarCommandRoutingOwner(
-            folderCommand: folderCommand,
-            chromeCommand: chromeCommand,
-            tabCommand: tabCommand,
-            splitShortcutRouting: splitShortcutRouting,
-            shortcutPromotion: shortcutPromotion,
-            shortcutPinUnload: shortcutPinUnload
         )
     }
 

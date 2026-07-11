@@ -12,10 +12,10 @@ import Foundation
 /// Holds optional-module shells and centralizes enablement checks + runtime attach.
 @MainActor
 final class OptionalModuleHost {
-    let extensionsModule: SumiExtensionsModule
-    let userscriptsModule: SumiUserscriptsModule
-    let boostsModule: SumiBoostsModule
-    let liveFoldersModule: SumiLiveFoldersModule
+    let extensions: SumiExtensionsModule
+    let userscripts: SumiUserscriptsModule
+    let boosts: SumiBoostsModule
+    let liveFolders: SumiLiveFoldersModule
 
     init(
         extensionsModule: SumiExtensionsModule,
@@ -23,29 +23,29 @@ final class OptionalModuleHost {
         boostsModule: SumiBoostsModule,
         liveFoldersModule: SumiLiveFoldersModule
     ) {
-        self.extensionsModule = extensionsModule
-        self.userscriptsModule = userscriptsModule
-        self.boostsModule = boostsModule
-        self.liveFoldersModule = liveFoldersModule
+        self.extensions = extensionsModule
+        self.userscripts = userscriptsModule
+        self.boosts = boostsModule
+        self.liveFolders = liveFoldersModule
     }
 
     func isEnabled(_ moduleID: SumiModuleID) -> Bool {
         switch moduleID {
         case .extensions:
-            return extensionsModule.isEnabled
+            return extensions.isEnabled
         case .userScripts:
-            return userscriptsModule.isEnabled
+            return userscripts.isEnabled
         case .boosts:
-            return boostsModule.isEnabled
+            return boosts.isEnabled
         case .liveFolders:
-            return liveFoldersModule.isEnabled
+            return liveFolders.isEnabled
         }
     }
 
-    var isExtensionsEnabled: Bool { extensionsModule.isEnabled }
-    var isUserscriptsEnabled: Bool { userscriptsModule.isEnabled }
-    var isBoostsEnabled: Bool { boostsModule.isEnabled }
-    var isLiveFoldersEnabled: Bool { liveFoldersModule.isEnabled }
+    var isExtensionsEnabled: Bool { extensions.isEnabled }
+    var isUserscriptsEnabled: Bool { userscripts.isEnabled }
+    var isBoostsEnabled: Bool { boosts.isEnabled }
+    var isLiveFoldersEnabled: Bool { liveFolders.isEnabled }
 
     /// Wires optional-module runtimes from BrowserManager factories.
     ///
@@ -55,23 +55,23 @@ final class OptionalModuleHost {
     func attachEnabled(into browserManager: BrowserManager) {
         bindRuntimeProviders(into: browserManager)
 
-        if extensionsModule.isEnabled {
-            extensionsModule.attach(
+        if extensions.isEnabled {
+            extensions.attach(
                 runtime: BrowserExtensionsModuleRuntimeFactory.runtime(for: browserManager)
             )
         }
-        if userscriptsModule.isEnabled {
-            userscriptsModule.attach(
+        if userscripts.isEnabled {
+            userscripts.attach(
                 runtime: BrowserUserscriptRuntimeFactory.runtime(for: browserManager)
             )
         }
-        if boostsModule.isEnabled {
-            boostsModule.attach(
+        if boosts.isEnabled {
+            boosts.attach(
                 runtime: BrowserBoostRuntimeFactory.runtime(for: browserManager)
             )
         }
-        if liveFoldersModule.isEnabled {
-            liveFoldersModule.attach(
+        if liveFolders.isEnabled {
+            liveFolders.attach(
                 runtime: BrowserLiveFolderRuntimeService.runtime(for: browserManager)
             )
         }
@@ -80,19 +80,19 @@ final class OptionalModuleHost {
     /// Binds lazy runtime providers so enable-after-startup can attach without
     /// re-running BrowserManagerRuntimeWiring.
     private func bindRuntimeProviders(into browserManager: BrowserManager) {
-        extensionsModule.bindRuntimeProvider { [weak browserManager] in
+        extensions.bindRuntimeProvider { [weak browserManager] in
             guard let browserManager else { return .inactive }
             return BrowserExtensionsModuleRuntimeFactory.runtime(for: browserManager)
         }
-        userscriptsModule.bindRuntimeProvider { [weak browserManager] in
+        userscripts.bindRuntimeProvider { [weak browserManager] in
             guard let browserManager else { return .inactive }
             return BrowserUserscriptRuntimeFactory.runtime(for: browserManager)
         }
-        boostsModule.bindRuntimeProvider { [weak browserManager] in
+        boosts.bindRuntimeProvider { [weak browserManager] in
             guard let browserManager else { return .empty }
             return BrowserBoostRuntimeFactory.runtime(for: browserManager)
         }
-        liveFoldersModule.bind(
+        liveFolders.bind(
             manager: browserManager.liveFolderManager,
             runtimeProvider: { [weak browserManager] in
                 guard let browserManager else { return .inactive }

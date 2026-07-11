@@ -9,6 +9,7 @@ final class SpaceProfileTransaction {
         let profileID: (UUID) -> UUID?
         let assignProfile: (UUID, UUID?) -> Bool
         let tab: (UUID) -> Tab?
+        let isTabInSpace: (UUID, UUID) -> Bool
         let sendObjectWillChange: () -> Void
     }
 
@@ -39,9 +40,11 @@ final class SpaceProfileTransaction {
             return false
         }
         return intent.tabIntents.allSatisfy { tabIntent in
-            runtime.tab(tabIntent.tabID)?.isCurrentProfileAssignmentIntent(
-                tabIntent.intent
-            ) == true
+            guard runtime.isTabInSpace(tabIntent.tabID, intent.spaceID) else {
+                return false
+            }
+            return runtime.tab(tabIntent.tabID)?
+                .isCurrentProfileAssignmentIntent(tabIntent.intent) == true
         }
     }
 

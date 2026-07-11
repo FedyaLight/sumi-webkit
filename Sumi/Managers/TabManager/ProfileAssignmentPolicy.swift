@@ -9,6 +9,8 @@ enum DeletedProfileTabAssignment: Equatable {
 /// never mutates Tabs, Spaces, WebViews, or persistence.
 @MainActor
 final class ProfileAssignmentPolicy {
+    typealias PlacementProfileIDs = (current: UUID?, default: UUID?)
+
     private unowned let tabManager: TabManager
 
     init(tabManager: TabManager) {
@@ -49,6 +51,13 @@ final class ProfileAssignmentPolicy {
 
     func resolvedPlacementProfile(profileID: UUID) -> Profile? {
         tabManager.runtimePorts?.profile(with: profileID)
+    }
+
+    func placementProfileIDs() -> PlacementProfileIDs {
+        (
+            current: tabManager.runtimePorts?.currentProfileId,
+            default: tabManager.runtimePorts?.defaultProfileId
+        )
     }
 
     func liveDocumentURL(for tab: Tab) -> URL? {

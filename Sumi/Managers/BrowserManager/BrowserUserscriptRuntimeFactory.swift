@@ -113,7 +113,7 @@ enum BrowserUserscriptRuntimeFactory {
             closeUserscriptTab(sourceContext.tab, sourceContext.windowState, browserManager)
         } else if sourceWebView == nil,
                   let activeWindow = browserManager.windowRegistry?.activeWindow,
-                  let activeTab = browserManager.windowSessionBundle.tabContextOwner.currentTab(for: activeWindow) {
+                  let activeTab = browserManager.shellRuntime.windowTabs.currentTab(for: activeWindow) {
             browserManager.tabLifecycleService.closeOrchestration.closeTab(activeTab, in: activeWindow)
         }
     }
@@ -163,7 +163,7 @@ enum BrowserUserscriptRuntimeFactory {
             for: sourceWebView,
             browserManager: browserManager
         )?.windowState
-        let windowState = browserManager.windowSessionBundle.tabContextOwner.windowState(containing: tab) ?? sourceWindow
+        let windowState = browserManager.shellRuntime.windowTabs.windowState(containing: tab) ?? sourceWindow
         closeUserscriptTab(tab, windowState, browserManager)
     }
 

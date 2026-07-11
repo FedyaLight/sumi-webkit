@@ -14,8 +14,8 @@ final class TabFolderMutationOwner {
         let structuralCollectionMutationOwner: TabStructuralCollectionMutationOwner
         let shortcutPinCollectionStateOwner: ShortcutPinCollectionStateOwner
         let tabCollectionMembershipOwner: TabCollectionMembershipOwner
-        let transientTabRegistryOwner: TabTransientTabRegistryOwner
-        let shortcutLiveTabOwner: ShortcutLiveTabOwner
+        let shortcutTabBindings: ShortcutTabBindingSynchronizer
+        let shortcutLiveTabRetirement: ShortcutLiveTabRetirementService
         let tabRemovalOwner: TabRemovalOwner
         let shortcutPinCommandOwner: ShortcutPinCommandOwner
         let runtimePorts: @MainActor () -> RuntimePortRegistry?
@@ -142,6 +142,10 @@ final class TabFolderMutationOwner {
                     return tab.shortcutPinId.map { deletedPinIds.contains($0) == false } ?? true
                 }
                 .map(\.id)
+            guard let retirement = dependencies.shortcutLiveTabRetirement
+                .prepareDeletedPinRetirements(deletedPinIds) else {
+                return
+            }
 
             var parentItems = childItems(in: parentFolderId, spaceId: spaceId)
             parentItems.removeAll { item in
@@ -166,30 +170,16 @@ final class TabFolderMutationOwner {
                 for: spaceId
             )
 
-            var cleanupResult = ShortcutPinSelectionCleanupResult()
             for pin in deletedPins {
                 dependencies.runtimePorts()?.captureDeletedShortcutLauncher(pin)
-                let liveWindowIds = dependencies.transientTabRegistryOwner.transientShortcutTabsByWindow.compactMap { windowId, tabsByPin in
-                    tabsByPin[pin.id] == nil ? nil : windowId
-                }
-                for windowId in liveWindowIds {
-                    let windowState = dependencies.runtimePorts()?.windowState(for: windowId)
-                    if dependencies.shortcutLiveTabOwner.deactivateShortcutLiveTab(pinId: pin.id, in: windowId),
-                       let windowState {
-                        cleanupResult.recordCurrentSelectionCleared(in: windowState)
-                    }
-                }
-                cleanupResult.merge(dependencies.shortcutLiveTabOwner.clearDeletedShortcutPinSelectionReferences(pin.id))
             }
 
             for tabId in liveTabsToRemove {
                 dependencies.tabRemovalOwner.removeTab(tabId)
             }
 
-            if cleanupResult.didClearCurrentSelection {
-                dependencies.runtimePorts()?.validateWindowStates()
-            }
-            dependencies.shortcutLiveTabOwner.persistWindowSessionsForShortcutSelectionCleanup(cleanupResult)
+            dependencies.shortcutLiveTabRetirement
+                .finishAfterCurrentBatch(retirement)
             dependencies.runtimePorts()?.deleteLiveFolderState(forFolderIds: deletedFolderIds)
             dependencies.scheduleStructuralPersistence()
         }
@@ -455,7 +445,7 @@ final class TabFolderMutationOwner {
         dependencies.structuralCollectionMutationOwner.setSpacePinnedShortcuts(normalizedPins, for: spaceId)
         for pinId in touchedPinIds {
             if let updatedPin = normalizedPins.first(where: { $0.id == pinId }) {
-                dependencies.shortcutLiveTabOwner.updateTransientShortcutBindings(for: updatedPin)
+                dependencies.shortcutTabBindings.refreshInstances(for: updatedPin)
             }
         }
     }
@@ -497,22 +487,22 @@ extension TabFolderMutationOwner.Dependencies {
         Self(
             withStructuralUpdateTransactionFolder: { [weak tabManager] operation in
                 guard let tabManager else { return operation() }
-                return tabManager.withStructuralUpdateTransaction(operation)
+                return tabManager.structuralLookupCoordinator.withTransaction(operation)
             },
             withStructuralUpdateTransactionOptionalFolder: { [weak tabManager] operation in
                 guard let tabManager else { return operation() }
-                return tabManager.withStructuralUpdateTransaction(operation)
+                return tabManager.structuralLookupCoordinator.withTransaction(operation)
             },
             withStructuralUpdateTransactionBool: { [weak tabManager] operation in
                 guard let tabManager else { return operation() }
-                return tabManager.withStructuralUpdateTransaction(operation)
+                return tabManager.structuralLookupCoordinator.withTransaction(operation)
             },
             withStructuralUpdateTransactionVoid: { [weak tabManager] operation in
                 guard let tabManager else {
                     operation()
                     return
                 }
-                tabManager.withStructuralUpdateTransaction(operation)
+                tabManager.structuralLookupCoordinator.withTransaction(operation)
             },
             spaceStateOwner: tabManager.spaceStateOwner,
             spacePinnedStructureOwner: tabManager.spacePinnedStructureOwner,
@@ -520,8 +510,8 @@ extension TabFolderMutationOwner.Dependencies {
             structuralCollectionMutationOwner: tabManager.structuralCollectionMutationOwner,
             shortcutPinCollectionStateOwner: tabManager.shortcutPinCollectionStateOwner,
             tabCollectionMembershipOwner: tabManager.tabCollectionMembershipOwner,
-            transientTabRegistryOwner: tabManager.transientTabRegistryOwner,
-            shortcutLiveTabOwner: tabManager.shortcutLiveTabOwner,
+            shortcutTabBindings: tabManager.shortcutTabBindings,
+            shortcutLiveTabRetirement: tabManager.shortcutLiveTabRetirement,
             tabRemovalOwner: tabManager.tabRemovalOwner,
             shortcutPinCommandOwner: tabManager.shortcutPinCommandOwner,
             runtimePorts: { [weak tabManager] in
@@ -534,10 +524,10 @@ extension TabFolderMutationOwner.Dependencies {
                 tabManager?.structuralPersistence.markRegularTabsStructurallyDirty(for: spaceId)
             },
             requestStructuralPublish: { [weak tabManager] in
-                tabManager?.requestStructuralPublish()
+                tabManager?.structuralLookupCoordinator.requestPublish()
             },
             scheduleStructuralPersistence: { [weak tabManager] in
-                tabManager?.scheduleStructuralPersistence()
+                tabManager?.structuralPersistence.scheduleStructuralPersistence()
             }
         )
     }

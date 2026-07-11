@@ -56,10 +56,11 @@ struct ContentView: View {
             .onAppear {
                 StartupPerformanceTrace.firstWindowVisible()
                 windowState.tabManager = windowLifecycleHandler.tabManager
-                // Register this window state with the registry
+                guard providedWindowState == nil else { return }
                 windowRegistry.register(windowState)
             }
             .onDisappear {
+                guard providedWindowState == nil else { return }
                 guard windowRegistry.windows[windowState.id] != nil else {
                     return
                 }

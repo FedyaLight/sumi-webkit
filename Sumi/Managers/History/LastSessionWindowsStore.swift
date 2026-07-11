@@ -38,7 +38,7 @@ final class LastSessionWindowsStore: ObservableObject {
         _ snapshots: [LastSessionWindowSnapshot],
         tabSnapshot: TabPersistenceSnapshot? = nil
     ) {
-        let normalized = snapshots.uniqued(by: \.session)
+        let normalized = snapshots.uniqued(by: \.id)
         self.snapshots = normalized
         self.tabSnapshot = tabSnapshot
         save()
@@ -65,7 +65,8 @@ final class LastSessionWindowsStore: ObservableObject {
             return Archive(snapshots: [], tabSnapshot: nil)
         }
         do {
-            let archive = try JSONDecoder().decode(Archive.self, from: data)
+            var archive = try JSONDecoder().decode(Archive.self, from: data)
+            archive.snapshots = archive.snapshots.uniqued(by: \.id)
             return archive
         } catch {
             log.error(
@@ -74,7 +75,9 @@ final class LastSessionWindowsStore: ObservableObject {
         }
 
         do {
-            let snapshots = try JSONDecoder().decode([LastSessionWindowSnapshot].self, from: data)
+            let snapshots = try JSONDecoder()
+                .decode([LastSessionWindowSnapshot].self, from: data)
+                .uniqued(by: \.id)
             return Archive(snapshots: snapshots, tabSnapshot: nil)
         } catch {
             log.error(

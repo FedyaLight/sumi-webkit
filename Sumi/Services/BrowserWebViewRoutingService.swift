@@ -22,6 +22,13 @@ final class BrowserWebViewRoutingService {
         let recover: @MainActor (Tab, WKWebView) -> TabMainFrameReloadCommandOutcome
         let cancelRecovery: @MainActor (WKWebView) -> Void
         let setMute: @MainActor (Bool, UUID) -> Void
+        let materialize: @MainActor (Tab, UUID) -> WKWebView?
+        let rebuildWindowConfiguration: @MainActor (
+            Tab,
+            UUID,
+            URL,
+            String
+        ) -> TabWebViewReplacementOutcome
     }
 
     typealias CommandsProvider = @MainActor () -> Commands?
@@ -185,6 +192,105 @@ final class BrowserWebViewRoutingService {
     func bindWebViewSession(_ handle: WebViewSessionHandle) {
         handle.requireBacking(by: webViewSessions)
     }
+
+    func loadPage(
+        _ url: URL,
+        for tab: Tab,
+        in windowState: BrowserWindowState,
+        reason: String
+    ) {
+        tab.navigationCommandOwner.loadURL(
+            url,
+            for: tab,
+            resolvedWebView: windowWebViewResolver(
+                for: tab,
+                in: windowState.id
+            ),
+            reason: reason,
+            configurationPolicyRebuilder: {
+                [weak self, weak tab, weak windowState] targetURL, reason in
+                guard let self, let tab, let windowState else { return .failed }
+                return self.rebuildWindowConfigurationIfNeeded(
+                    for: tab,
+                    targetURL: targetURL,
+                    in: windowState.id,
+                    reason: reason
+                )
+            }
+        )
+    }
+
+    @discardableResult
+    func refreshPage(
+        for tab: Tab,
+        in windowState: BrowserWindowState,
+        reason: String,
+        policy: WebRuntimeMainFrameReloadPolicy = .standard
+    ) -> TabMainFrameReloadCommandOutcome {
+        tab.navigationCommandOwner.refresh(
+            tab,
+            resolvedWebView: windowWebViewResolver(
+                for: tab,
+                in: windowState.id
+            ),
+            reason: reason,
+            policy: policy,
+            configurationPolicyRebuilder: {
+                [weak self, weak tab, weak windowState] targetURL, reason in
+                guard let self, let tab, let windowState else { return .failed }
+                return self.rebuildWindowConfigurationIfNeeded(
+                    for: tab,
+                    targetURL: targetURL,
+                    in: windowState.id,
+                    reason: reason
+                )
+            },
+            deliverTrackedReload: {
+                [weak self, weak tab, weak windowState] intent, policy in
+                guard let self, let tab, let windowState else { return .failed }
+                return self.reloadTab(
+                    tab.id,
+                    in: windowState.id,
+                    intent: intent,
+                    policy: policy
+                )
+            }
+        )
+    }
+
+    private func windowWebViewResolver(
+        for tab: Tab,
+        in windowID: UUID
+    ) -> TabNavigationCommandOwner.WebViewResolver {
+        { [weak self, weak tab] in
+            guard let self, let tab else { return nil }
+            return self.windowOwnedWebView(for: tab, in: windowID)
+                ?? self.commandsProvider()?.materialize(tab, windowID)
+        }
+    }
+
+    private func rebuildWindowConfigurationIfNeeded(
+        for tab: Tab,
+        targetURL: URL,
+        in windowID: UUID,
+        reason: String
+    ) -> TabWebViewReplacementOutcome {
+        guard tab.configurationPolicyRequiresNormalWebViewRebuild(for: targetURL) else {
+            return .notNeeded
+        }
+        guard let commands = commandsProvider() else {
+            RuntimeDiagnostics.emit(
+                "Cannot rebuild window WebView for \(reason): routing commands unavailable."
+            )
+            return .failed
+        }
+        return commands.rebuildWindowConfiguration(
+            tab,
+            windowID,
+            targetURL,
+            reason
+        )
+    }
 }
 
 extension BrowserWebViewRoutingService.Commands {
@@ -228,6 +334,32 @@ extension BrowserWebViewRoutingService.Commands {
                     muted,
                     for: tabID
                 )
+            },
+            materialize: { [weak coordinator] tab, windowID in
+                coordinator?.ownershipService.webView(
+                    for: tab,
+                    in: windowID
+                )
+            },
+            rebuildWindowConfiguration: {
+                [weak coordinator] tab, windowID, targetURL, reason in
+                guard let coordinator else { return .failed }
+                let result = coordinator.rebuildService.rebuildLiveWebViewsResult(
+                    for: tab,
+                    preferredPrimaryWindowID: windowID,
+                    load: targetURL,
+                    reason: reason,
+                    intentRevision: tab.currentWebViewRebuildIntentRevision,
+                    rebuildKind: .semanticNavigation
+                )
+                switch result {
+                case .committed:
+                    return .replacedAndScheduledNavigation
+                case .deferred:
+                    return .deferred
+                case .noLiveWindows, .failed:
+                    return .failed
+                }
             }
         )
     }

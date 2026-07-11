@@ -63,6 +63,10 @@ final class TabStructuralLookupCoordinator {
         publishOwner.requestPublish()
     }
 
+    func runAfterCurrentBatch(_ action: @escaping @MainActor () -> Void) {
+        publishOwner.runAfterCurrentBatch(action)
+    }
+
     func notifyTransientShortcutStateChanged() {
         queueTransientRefresh()
         requestPublish()

@@ -13,6 +13,12 @@ import SwiftUI
 @MainActor
 @Observable
 class WindowRegistry {
+    enum RegistrationResult: Equatable {
+        case registered
+        case alreadyRegistered
+        case rejectedIdentityConflict
+    }
+
     private struct WindowAwaiter {
         let existingWindowIDs: Set<UUID>
         let continuation: CheckedContinuation<BrowserWindowState?, Never>
@@ -30,8 +36,7 @@ class WindowRegistry {
     private var shells: [UUID: BrowserWindowShell] = [:]
 
     var windows: [UUID: BrowserWindowState] {
-        get { _windows }
-        set { _windows = newValue }
+        _windows
     }
 
     /// ID of the currently focused window (the only thing we actually observe)
@@ -45,7 +50,7 @@ class WindowRegistry {
 
     /// Callback for window cleanup (set by whoever needs to clean up resources)
     @ObservationIgnored
-    var onWindowClose: ((UUID) -> Void)?
+    var onWindowClose: ((BrowserWindowState) -> Void)?
 
     /// Callback for post-registration setup (e.g., setting TabManager reference)
     @ObservationIgnored
@@ -72,34 +77,42 @@ class WindowRegistry {
     private static let defaultRegistrationTimeoutNanoseconds: UInt64 = 2_000_000_000
 
     /// Register a new window
-    func register(_ window: BrowserWindowState) {
-        let wasRegistered = windows[window.id] != nil
-        windows[window.id] = window
-
-        if wasRegistered == false {
-            let matchingAwaiterIDs = windowAwaiters.compactMap { entry in
-                entry.value.existingWindowIDs.contains(window.id) ? nil : entry.key
-            }
-            for awaiterID in matchingAwaiterIDs {
-                guard let awaiter = windowAwaiters.removeValue(forKey: awaiterID) else {
-                    continue
-                }
-                awaiter.continuation.resume(returning: window)
-            }
-
-            onWindowRegister?(window)
-            if activeWindowId == window.id {
-                onActiveWindowChange?(window)
+    @discardableResult
+    func register(_ window: BrowserWindowState) -> RegistrationResult {
+        if let registeredWindow = _windows[window.id] {
+            guard registeredWindow !== window else {
+                return .alreadyRegistered
             }
             RuntimeDiagnostics.emit {
-                "🪟 [WindowRegistry] Registered window: \(window.id)"
+                "🪟 [WindowRegistry] Rejected different window object with registered id: \(window.id)"
             }
+            return .rejectedIdentityConflict
         }
+
+        _windows[window.id] = window
+        let matchingAwaiterIDs = windowAwaiters.compactMap { entry in
+            entry.value.existingWindowIDs.contains(window.id) ? nil : entry.key
+        }
+        for awaiterID in matchingAwaiterIDs {
+            guard let awaiter = windowAwaiters.removeValue(forKey: awaiterID) else {
+                continue
+            }
+            awaiter.continuation.resume(returning: window)
+        }
+
+        onWindowRegister?(window)
+        if activeWindowId == window.id {
+            onActiveWindowChange?(window)
+        }
+        RuntimeDiagnostics.emit {
+            "🪟 [WindowRegistry] Registered window: \(window.id)"
+        }
+        return .registered
     }
 
     /// Unregister a window when it closes
     func unregister(_ id: UUID) {
-        guard windows[id] != nil else {
+        guard let closingWindow = windows[id] else {
             RuntimeDiagnostics.emit {
                 "🪟 [WindowRegistry] Ignored duplicate unregister for window: \(id)"
             }
@@ -107,9 +120,9 @@ class WindowRegistry {
         }
 
         // Call cleanup callback if set
-        onWindowClose?(id)
+        onWindowClose?(closingWindow)
 
-        windows.removeValue(forKey: id)
+        _windows.removeValue(forKey: id)
         unbindAppKitWindow(for: id)
 
         if windows.isEmpty {
@@ -133,6 +146,17 @@ class WindowRegistry {
         }
     }
 
+    /// Rolls back a failed synchronous shell publication without emitting a
+    /// user-visible close or all-windows-closed lifecycle event.
+    func rollbackRegistration(_ window: BrowserWindowState) {
+        guard _windows[window.id] === window else { return }
+        _windows.removeValue(forKey: window.id)
+        unbindAppKitWindow(for: window.id)
+        if activeWindowId == window.id {
+            activeWindowId = nil
+        }
+    }
+
     /// Set the active (focused) window
     func setActive(_ window: BrowserWindowState) {
         guard let registeredWindow = windows[window.id] else {
@@ -149,6 +173,8 @@ class WindowRegistry {
             }
             return
         }
+
+        guard activeWindowId != registeredWindow.id else { return }
 
         activeWindowId = registeredWindow.id
         onActiveWindowChange?(registeredWindow)

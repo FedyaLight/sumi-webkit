@@ -47,7 +47,7 @@ final class SplitEmptyPlaceholderOwnerTests: XCTestCase {
     private func makePlaceholderSplit(
         in harness: Harness
     ) throws -> (current: Tab, placeholder: Tab, group: SplitGroup) {
-        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Split")
+        let space = harness.tabManager.spaceServices.catalog.createSpace(name: "Split")
         let current = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://current.example", in: space)
         let placeholder = harness.tabManager.regularTabLifecycleOwner.createNewTab(
             url: SumiSurface.emptyTabURL.absoluteString,

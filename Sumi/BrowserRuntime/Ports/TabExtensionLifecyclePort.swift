@@ -15,11 +15,11 @@ struct LiveTabExtensionLifecyclePort: TabExtensionLifecyclePort {
     }
 
     func notifyTabClosedIfLoaded(_ tab: Tab) {
-        runtime.require().extensionsModule.notifyTabClosedIfLoaded(tab)
+        runtime.require().optionalModules.extensions.notifyTabClosedIfLoaded(tab)
     }
 
     func notifyTabActivatedIfLoaded(newTab: Tab, previous: Tab?) {
-        runtime.require().extensionsModule.notifyTabActivatedIfLoaded(
+        runtime.require().optionalModules.extensions.notifyTabActivatedIfLoaded(
             newTab: newTab,
             previous: previous
         )

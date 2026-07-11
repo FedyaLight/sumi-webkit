@@ -30,6 +30,9 @@ extension BrowserManager {
     convenience init(
         moduleRegistry: SumiModuleRegistry = .shared,
         startupPersistence: BrowserManagerStartupPersistence = .production,
+        windowSessionSnapshotStore: WindowSessionSnapshotStore = WindowSessionSnapshotStore(
+            key: BrowserManager.lastWindowSessionKey
+        ),
         browserConfiguration: BrowserConfiguration? = nil,
         adBlockingModule: SumiAdBlockingModule? = nil,
         protectionCoordinator: SumiProtectionCoordinator? = nil,
@@ -60,6 +63,7 @@ extension BrowserManager {
             webViewSessions: WebViewSessionRepository(),
             moduleRegistry: moduleRegistry,
             startupPersistence: startupPersistence,
+            windowSessionSnapshotStore: windowSessionSnapshotStore,
             browserConfiguration: browserConfiguration,
             adBlockingModule: adBlockingModule,
             protectionCoordinator: protectionCoordinator,

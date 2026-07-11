@@ -13,7 +13,7 @@ import WebKit
 public final class VisibleWebViewRuntimeOwner: WebRuntimeVisiblePreparationControlling {
     private let compositorHandoffState = WebViewCompositorHandoffState()
     private let visibilityIndex = WebViewVisibilityIndex()
-    private var scheduledPrepareWindowIds: Set<UUID> = []
+    private var scheduledPreparationTokens: [UUID: UUID] = [:]
 
     public init() {}
 
@@ -52,7 +52,7 @@ public final class VisibleWebViewRuntimeOwner: WebRuntimeVisiblePreparationContr
         pruneInvalidDeferredCommands: (String) -> Void
     ) {
         compositorHandoffState.removeContainerView(for: windowId)
-        scheduledPrepareWindowIds.remove(windowId)
+        scheduledPreparationTokens.removeValue(forKey: windowId)
         visibilityIndex.removeWindow(windowId)
         pruneInvalidDeferredCommands("removeCompositorContainerView")
     }
@@ -65,7 +65,7 @@ public final class VisibleWebViewRuntimeOwner: WebRuntimeVisiblePreparationContr
         guard compositorHandoffState.removeContainerView(registration) else {
             return false
         }
-        scheduledPrepareWindowIds.remove(registration.windowID)
+        scheduledPreparationTokens.removeValue(forKey: registration.windowID)
         visibilityIndex.removeWindow(registration.windowID)
         pruneInvalidDeferredCommands("removeCompositorContainerView")
         return true
@@ -99,12 +99,12 @@ public final class VisibleWebViewRuntimeOwner: WebRuntimeVisiblePreparationContr
 
     public func resetWindowRegistrations() {
         compositorHandoffState.removeAllWindowRegistrations()
-        scheduledPrepareWindowIds.removeAll()
+        scheduledPreparationTokens.removeAll()
         visibilityIndex.removeAll()
     }
 
     public func cancelScheduledPreparation(for windowId: UUID) {
-        scheduledPrepareWindowIds.remove(windowId)
+        scheduledPreparationTokens.removeValue(forKey: windowId)
     }
 
     public func removeRecentVisibility(for owner: TrackedWebViewOwner) {
@@ -212,11 +212,15 @@ public final class VisibleWebViewRuntimeOwner: WebRuntimeVisiblePreparationContr
         prepareVisibleWebViews: @escaping @MainActor (any WebRuntimeWindowHandle) -> Bool
     ) {
         let windowId = windowHandle.id
-        guard scheduledPrepareWindowIds.insert(windowId).inserted else { return }
+        guard scheduledPreparationTokens[windowId] == nil else { return }
+        let token = UUID()
+        scheduledPreparationTokens[windowId] = token
 
         DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.scheduledPrepareWindowIds.remove(windowId)
+            guard let self,
+                  self.scheduledPreparationTokens[windowId] == token
+            else { return }
+            self.scheduledPreparationTokens.removeValue(forKey: windowId)
 
             guard let windowHandle = runtime.windowState(windowId) else { return }
             let didCreateWebView = prepareVisibleWebViews(windowHandle)

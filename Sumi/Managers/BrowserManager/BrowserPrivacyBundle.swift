@@ -33,11 +33,11 @@ final class BrowserPrivacyBundle {
             },
             windowForPermissionPageId: { [weak browserManager] pageId in
                 guard let browserManager else { return nil }
-                return browserManager.permissionSiteSettingsRoutingOwner.windowState(
+                return BrowserPermissionSettingsRoutes.windowState(
                     displayingPermissionPageId: pageId,
                     in: browserManager.windowRegistry,
                     tabsForDisplay: { windowState in
-                        browserManager.windowSessionBundle.tabContextOwner.tabsForDisplay(in: windowState)
+                        browserManager.shellRuntime.windowTabs.tabsForDisplay(in: windowState)
                     }
                 )
             },

@@ -78,16 +78,16 @@ final class TabSpaceCollectionStateOwnerTests: XCTestCase {
 }
 
 @MainActor
-final class TabSpaceLifecycleOwnerTests: XCTestCase {
-    func testResolvedTargetSpaceUsesCurrentProfileSpaceBeforeSelectedSpace() throws {
+final class TabSpaceServiceIntegrationTests: XCTestCase {
+    func testTabCreationUsesCurrentProfileSpaceBeforeSelectedSpace() throws {
         let tabManager = try makeInMemoryTabManager()
         let defaultProfileId = UUID()
         let currentProfileId = UUID()
-        let defaultProfileSpace = tabManager.spaceLifecycleOwner.createSpace(
+        let defaultProfileSpace = tabManager.spaceServices.catalog.createSpace(
             name: "Default",
             profileId: defaultProfileId
         )
-        let currentProfileSpace = tabManager.spaceLifecycleOwner.createSpace(
+        let currentProfileSpace = tabManager.spaceServices.catalog.createSpace(
             name: "Current",
             profileId: currentProfileId
         )
@@ -99,28 +99,45 @@ final class TabSpaceLifecycleOwnerTests: XCTestCase {
             )
         )
 
-        let resolved = tabManager.spaceLifecycleOwner.resolvedTargetSpace(preferred: nil)
+        let tab = tabManager.regularTabLifecycleOwner.createNewTab(
+            in: nil,
+            activate: false
+        )
 
-        XCTAssertIdentical(resolved, currentProfileSpace)
+        XCTAssertEqual(tab.spaceId, currentProfileSpace.id)
+        XCTAssertNil(tab.profileId)
     }
 
-    func testResolvedTargetSpaceBackfillsUnassignedSpaceForCurrentProfile() throws {
+    func testTabCreationBackfillsUnassignedSpace() throws {
         let tabManager = try makeInMemoryTabManager()
         let currentProfileId = UUID()
+        let currentProfile = Profile(
+            id: currentProfileId,
+            name: "Current"
+        )
         let unassigned = Space(name: "Unassigned")
         tabManager.spaceStateOwner.replaceSpaces([unassigned])
         tabManager.runtimePortsAttachmentOwner.attach(
-            TestRuntimePorts.make(currentProfileId: { currentProfileId })
+            TestRuntimePorts.make(
+                currentProfileId: { currentProfileId },
+                profile: { profileId in
+                    profileId == currentProfileId ? currentProfile : nil
+                }
+            )
         )
 
-        let resolved = tabManager.spaceLifecycleOwner.resolvedTargetSpace(preferred: nil)
+        let tab = tabManager.regularTabLifecycleOwner.createNewTab(
+            in: nil,
+            activate: false
+        )
 
-        XCTAssertIdentical(resolved, unassigned)
+        XCTAssertEqual(tab.spaceId, unassigned.id)
+        XCTAssertNil(tab.profileId)
         XCTAssertEqual(unassigned.profileId, currentProfileId)
         XCTAssertEqual(tabManager.spaceStateOwner.spaces.count, 1)
     }
 
-    func testResolvedTargetSpaceCreatesPersonalSpaceWhenNoSpaceExists() throws {
+    func testTabCreationCreatesPersonalSpaceWhenNoSpaceExists() throws {
         let tabManager = try makeInMemoryTabManager()
         let currentProfileId = UUID()
         tabManager.spaceStateOwner.removeAll()
@@ -128,7 +145,11 @@ final class TabSpaceLifecycleOwnerTests: XCTestCase {
             TestRuntimePorts.make(currentProfileId: { currentProfileId })
         )
 
-        let resolved = tabManager.spaceLifecycleOwner.resolvedTargetSpace(preferred: nil)
+        let tab = tabManager.regularTabLifecycleOwner.createNewTab(
+            in: nil,
+            activate: false
+        )
+        let resolved = try XCTUnwrap(tabManager.spaceStateOwner.firstSpace)
 
         XCTAssertEqual(resolved.name, "Personal")
         XCTAssertEqual(resolved.profileId, currentProfileId)
@@ -137,14 +158,14 @@ final class TabSpaceLifecycleOwnerTests: XCTestCase {
         XCTAssertIdentical(tabManager.spaceStateOwner.currentSpace, resolved)
         XCTAssertEqual(tabManager.spaceStateOwner.spaces.map(\.id), [resolved.id])
         XCTAssertEqual(
-            tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[resolved.id] ?? [],
-            []
+            tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[resolved.id]?.map(\.id),
+            [tab.id]
         )
     }
 
     func testRenameSpacePresentsNotificationOnlyWhenNameChanges() throws {
         let tabManager = try makeInMemoryTabManager()
-        let space = tabManager.spaceLifecycleOwner.createSpace(name: "Work")
+        let space = tabManager.spaceServices.catalog.createSpace(name: "Work")
         let spy = NotificationPresentingSpy()
         tabManager.runtimePortsAttachmentOwner.attach(
             TestRuntimePorts.make(
@@ -152,10 +173,10 @@ final class TabSpaceLifecycleOwnerTests: XCTestCase {
             )
         )
 
-        try tabManager.spaceLifecycleOwner.renameSpace(spaceId: space.id, newName: "Work")
+        try tabManager.spaceServices.catalog.renameSpace(spaceId: space.id, newName: "Work")
         XCTAssertTrue(spy.presentSpaceRenamedNotificationCalls.isEmpty)
 
-        try tabManager.spaceLifecycleOwner.renameSpace(spaceId: space.id, newName: "Focus")
+        try tabManager.spaceServices.catalog.renameSpace(spaceId: space.id, newName: "Focus")
         XCTAssertEqual(spy.presentSpaceRenamedNotificationCalls.map(\.name), ["Focus"])
         XCTAssertEqual(space.name, "Focus")
     }

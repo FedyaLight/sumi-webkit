@@ -10,7 +10,7 @@ enum TabPopupRuntimeFactory {
                     browserManager != nil
                 },
                 extensionsModule: { [weak browserManager] in
-                    browserManager?.extensionsModule
+                    browserManager?.optionalModules.extensions
                 },
                 popupPermissionBridge: { [weak browserManager] in
                     browserManager?.permissionRuntime.popupPermissionBridge
@@ -20,7 +20,7 @@ enum TabPopupRuntimeFactory {
                     return TabPopupHandlingRuntime.targetSpace(
                         for: openerTab,
                         tabManager: browserManager.tabManager,
-                        windowState: browserManager.windowSessionBundle.tabContextOwner.windowState(containing: openerTab)
+                        windowState: browserManager.shellRuntime.windowTabs.windowState(containing: openerTab)
                     )
                 },
                 createNewTab: { [weak browserManager] url, space, activate in
@@ -63,7 +63,7 @@ enum TabPopupRuntimeFactory {
                         .installUntracked(webView, for: tab)
                 },
                 windowStateContainingTab: { [weak browserManager] tab in
-                    browserManager?.windowSessionBundle.tabContextOwner.windowState(containing: tab)
+                    browserManager?.shellRuntime.windowTabs.windowState(containing: tab)
                 },
                 selectTab: { [weak browserManager] tab, windowState in
                     browserManager?.selectTab(tab, in: windowState)

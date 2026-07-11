@@ -8,14 +8,14 @@ import SumiWebRuntime
 @MainActor
 enum TestRuntimePorts {
     static func webViewLifecycle(
-        materializeVisibleTabWebViewIfNeeded: @escaping (Tab, BrowserWindowState) -> Void = { _, _ in },
-        loadTab: @escaping (Tab) -> Void = { _ in },
-        unloadTab: @escaping (Tab) -> Void = { _ in },
-        requireRemoveAllWebViews: @escaping (Tab, Bool) -> Void = { _, _ in },
+        materializeVisibleTabWebViewIfNeeded: @escaping (Tab, BrowserWindowState) -> Void = { _, _ in /* No-op. */ },
+        loadTab: @escaping (Tab) -> Void = { _ in /* No-op. */ },
+        unloadTab: @escaping (Tab) -> Void = { _ in /* No-op. */ },
+        requireRemoveAllWebViews: @escaping (Tab, Bool) -> Void = { _, _ in /* No-op. */ },
         windowIDsTrackingWebViews: @escaping (UUID) -> [UUID] = { _ in [] },
         primaryTrackedWindowId: @escaping (UUID) -> UUID? = { _ in nil },
-        rebuildLiveWebViews: @escaping (Tab, UUID?, URL?) -> Void = { _, _, _ in },
-        prepareTab: @escaping (Tab) -> Void = { _ in },
+        rebuildLiveWebViews: @escaping (Tab, UUID?, URL?) -> Void = { _, _, _ in /* No-op. */ },
+        prepareTab: @escaping (Tab) -> Void = { _ in /* No-op. */ },
         anyLiveWebView: @escaping (Tab) -> WKWebView? = { _ in nil },
         hasUntrackedOwnedWebView: @escaping (Tab) -> Bool = { _ in false },
         executeProfileAssignment: @escaping (
@@ -53,6 +53,7 @@ enum TestRuntimePorts {
         updateTabVisibility: @escaping () -> Void = { /* No-op. */ },
         webViewLifecycle: TabManagerWebViewLifecycleService? = nil,
         handleTabClosure: @escaping (UUID) -> Void = { _ in /* No-op. */ },
+        handleTabClosures: ((Set<UUID>) -> Void)? = nil,
         visibleSplitTabIds: @escaping (UUID) -> [UUID] = { _ in [] },
         isTabVisibleInSplit: @escaping (UUID, UUID) -> Bool = { _, _ in false },
         isTabActiveInSplit: @escaping (UUID, UUID) -> Bool = { _, _ in false },
@@ -62,7 +63,7 @@ enum TestRuntimePorts {
         captureClosedTab: @escaping (Tab, UUID?) -> Void = { _, _ in /* No-op. */ },
         captureDeletedShortcutLauncher: @escaping (ShortcutPin) -> Void = { _ in /* No-op. */ },
         notifications: @escaping @MainActor () -> (any BrowserNotificationPresenting)? = { nil },
-        validateWindowStates: @escaping () -> Void = { /* No-op. */ },
+        validateWindowStates: @escaping () -> Set<UUID> = { [] },
         persistWindowSession: @escaping (BrowserWindowState) -> Void = { _ in /* No-op. */ },
         syncWorkspaceThemeAcrossWindows: @escaping (Space, Bool) -> Void = { _, _ in /* No-op. */ },
         closeAuxiliaryMiniWindow: @escaping (Tab, AuxiliaryWindowCloseReason) -> Void = { _, _ in /* No-op. */ },
@@ -88,6 +89,7 @@ enum TestRuntimePorts {
             ),
             splitCoordination: ClosureTabSplitCoordinationPort(
                 handleTabClosure: handleTabClosure,
+                handleTabClosures: handleTabClosures,
                 visibleSplitTabIds: visibleSplitTabIds,
                 isTabVisibleInSplit: isTabVisibleInSplit,
                 isTabActiveInSplit: isTabActiveInSplit,
@@ -153,7 +155,7 @@ private final class ClosureTabWindowQueryPort: TabWindowQueryPort {
     private let windowsProvider: () -> [(UUID, BrowserWindowState)]
     private let windowStatesProvider: () -> [BrowserWindowState]
     private let updateTabVisibilityHandler: () -> Void
-    private let validateWindowStatesHandler: () -> Void
+    private let validateWindowStatesHandler: () -> Set<UUID>
     private let persistWindowSessionHandler: (BrowserWindowState) -> Void
     private let syncWorkspaceThemeAcrossWindowsHandler: (Space, Bool) -> Void
 
@@ -162,7 +164,7 @@ private final class ClosureTabWindowQueryPort: TabWindowQueryPort {
         windows: @escaping () -> [(UUID, BrowserWindowState)],
         windowStates: @escaping () -> [BrowserWindowState],
         updateTabVisibility: @escaping () -> Void,
-        validateWindowStates: @escaping () -> Void,
+        validateWindowStates: @escaping () -> Set<UUID>,
         persistWindowSession: @escaping (BrowserWindowState) -> Void,
         syncWorkspaceThemeAcrossWindows: @escaping (Space, Bool) -> Void
     ) {
@@ -195,7 +197,7 @@ private final class ClosureTabWindowQueryPort: TabWindowQueryPort {
         updateTabVisibilityHandler()
     }
 
-    func validateWindowStates() {
+    func validateWindowStates() -> Set<UUID> {
         validateWindowStatesHandler()
     }
 
@@ -211,6 +213,7 @@ private final class ClosureTabWindowQueryPort: TabWindowQueryPort {
 @MainActor
 private final class ClosureTabSplitCoordinationPort: TabSplitCoordinationPort {
     private let handleTabClosureHandler: (UUID) -> Void
+    private let handleTabClosuresHandler: ((Set<UUID>) -> Void)?
     private let visibleSplitTabIdsProvider: (UUID) -> [UUID]
     private let isTabVisibleInSplitProvider: (UUID, UUID) -> Bool
     private let isTabActiveInSplitProvider: (UUID, UUID) -> Bool
@@ -218,12 +221,14 @@ private final class ClosureTabSplitCoordinationPort: TabSplitCoordinationPort {
 
     init(
         handleTabClosure: @escaping (UUID) -> Void,
+        handleTabClosures: ((Set<UUID>) -> Void)?,
         visibleSplitTabIds: @escaping (UUID) -> [UUID],
         isTabVisibleInSplit: @escaping (UUID, UUID) -> Bool,
         isTabActiveInSplit: @escaping (UUID, UUID) -> Bool,
         updateActiveSplitSide: @escaping (UUID, UUID) -> Void
     ) {
         self.handleTabClosureHandler = handleTabClosure
+        self.handleTabClosuresHandler = handleTabClosures
         self.visibleSplitTabIdsProvider = visibleSplitTabIds
         self.isTabVisibleInSplitProvider = isTabVisibleInSplit
         self.isTabActiveInSplitProvider = isTabActiveInSplit
@@ -232,6 +237,14 @@ private final class ClosureTabSplitCoordinationPort: TabSplitCoordinationPort {
 
     func handleTabClosure(_ tabId: UUID) {
         handleTabClosureHandler(tabId)
+    }
+
+    func handleTabClosures(_ tabIds: Set<UUID>) {
+        if let handleTabClosuresHandler {
+            handleTabClosuresHandler(tabIds)
+        } else {
+            tabIds.forEach(handleTabClosureHandler)
+        }
     }
 
     func visibleSplitTabIds(for windowId: UUID) -> [UUID] {

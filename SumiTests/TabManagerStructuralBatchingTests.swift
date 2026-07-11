@@ -39,20 +39,20 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
     func testNestedRegularMutationsPublishOnceAndPreserveFinalOrder() throws {
         let tabManager = try makeInMemoryTabManager()
         let recorder = StructuralEventRecorder(tabManager: tabManager)
-        let space = tabManager.spaceLifecycleOwner.createSpace(name: "Workspace")
+        let space = tabManager.spaceServices.catalog.createSpace(name: "Workspace")
         let first = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/one", in: space)
         let second = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/two", in: space, activate: false)
         let third = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/three", in: space, activate: false)
-        let batchFlushesBefore = tabManager.structuralLookupBatchFlushCount
+        let batchFlushesBefore = tabManager.structuralLookupCoordinator.batchFlushCount
         recorder.reset()
 
-        tabManager.withStructuralUpdateTransaction {
+        tabManager.structuralLookupCoordinator.withTransaction {
             tabManager.regularTabCollectionOwner.reorderRegularTabs(first, in: space.id, to: 3)
             tabManager.regularTabCollectionOwner.reorderRegularTabs(second, in: space.id, to: 3)
         }
 
         XCTAssertEqual(recorder.count, 1)
-        XCTAssertEqual(tabManager.structuralLookupBatchFlushCount, batchFlushesBefore + 1)
+        XCTAssertEqual(tabManager.structuralLookupCoordinator.batchFlushCount, batchFlushesBefore + 1)
         XCTAssertEqual(tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[space.id]?.map(\.id), [third.id, first.id, second.id])
         XCTAssertEqual(tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[space.id]?.map(\.index), [0, 1, 2])
     }
@@ -60,21 +60,21 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
     func testLookupBatchFlushesOncePerTransactionAndLookupIsCorrectAfterward() throws {
         let tabManager = try makeInMemoryTabManager()
         let recorder = StructuralEventRecorder(tabManager: tabManager)
-        let space = tabManager.spaceLifecycleOwner.createSpace(name: "Workspace")
+        let space = tabManager.spaceServices.catalog.createSpace(name: "Workspace")
         let first = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/one", in: space)
         let second = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/two", in: space, activate: false)
-        let batchFlushesBefore = tabManager.structuralLookupBatchFlushCount
-        let immediateFlushesBefore = tabManager.structuralLookupImmediateFlushCount
+        let batchFlushesBefore = tabManager.structuralLookupCoordinator.batchFlushCount
+        let immediateFlushesBefore = tabManager.structuralLookupCoordinator.immediateFlushCount
         recorder.reset()
 
-        tabManager.withStructuralUpdateTransaction {
+        tabManager.structuralLookupCoordinator.withTransaction {
             tabManager.regularTabCollectionOwner.reorderRegularTabs(first, in: space.id, to: 2)
             tabManager.regularTabCollectionOwner.reorderRegularTabs(first, in: space.id, to: 0)
         }
 
         XCTAssertEqual(recorder.count, 1)
-        XCTAssertEqual(tabManager.structuralLookupBatchFlushCount, batchFlushesBefore + 1)
-        XCTAssertEqual(tabManager.structuralLookupImmediateFlushCount, immediateFlushesBefore)
+        XCTAssertEqual(tabManager.structuralLookupCoordinator.batchFlushCount, batchFlushesBefore + 1)
+        XCTAssertEqual(tabManager.structuralLookupCoordinator.immediateFlushCount, immediateFlushesBefore)
         XCTAssertEqual(tabManager.tabCollectionMembershipOwner.tab(for: first.id)?.id, first.id)
         XCTAssertEqual(tabManager.tabCollectionMembershipOwner.tab(for: second.id)?.id, second.id)
     }
@@ -82,61 +82,64 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
     func testLookupReadInsideTransactionFlushesPendingRegularMutationsImmediately() throws {
         let tabManager = try makeInMemoryTabManager()
         let recorder = StructuralEventRecorder(tabManager: tabManager)
-        let space = tabManager.spaceLifecycleOwner.createSpace(name: "Workspace")
+        let space = tabManager.spaceServices.catalog.createSpace(name: "Workspace")
         let first = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/one", in: space)
         let second = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/two", in: space, activate: false)
-        let batchFlushesBefore = tabManager.structuralLookupBatchFlushCount
-        let immediateFlushesBefore = tabManager.structuralLookupImmediateFlushCount
+        let batchFlushesBefore = tabManager.structuralLookupCoordinator.batchFlushCount
+        let immediateFlushesBefore = tabManager.structuralLookupCoordinator.immediateFlushCount
         recorder.reset()
 
-        tabManager.withStructuralUpdateTransaction {
+        tabManager.structuralLookupCoordinator.withTransaction {
             tabManager.regularTabCollectionOwner.reorderRegularTabs(first, in: space.id, to: 2)
 
             XCTAssertEqual(recorder.count, 0)
-            XCTAssertEqual(tabManager.structuralLookupBatchFlushCount, batchFlushesBefore)
+            XCTAssertEqual(tabManager.structuralLookupCoordinator.batchFlushCount, batchFlushesBefore)
             XCTAssertEqual(tabManager.tabCollectionMembershipOwner.tab(for: first.id)?.id, first.id)
             XCTAssertEqual(tabManager.tabCollectionMembershipOwner.tab(for: second.id)?.id, second.id)
-            XCTAssertEqual(tabManager.structuralLookupImmediateFlushCount, immediateFlushesBefore + 1)
+            XCTAssertEqual(tabManager.structuralLookupCoordinator.immediateFlushCount, immediateFlushesBefore + 1)
         }
 
         XCTAssertEqual(recorder.count, 1)
-        XCTAssertEqual(tabManager.structuralLookupBatchFlushCount, batchFlushesBefore)
+        XCTAssertEqual(tabManager.structuralLookupCoordinator.batchFlushCount, batchFlushesBefore)
         XCTAssertEqual(tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[space.id]?.map(\.id), [second.id, first.id])
     }
 
     func testTransientShortcutLookupRefreshFlushesImmediatelyInsideTransaction() throws {
         let tabManager = try makeInMemoryTabManager()
         let recorder = StructuralEventRecorder(tabManager: tabManager)
-        let space = tabManager.spaceLifecycleOwner.createSpace(name: "Workspace")
+        let space = tabManager.spaceServices.catalog.createSpace(name: "Workspace")
         let folder = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Folder")
         let regular = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/folder", in: space)
         tabManager.folderMutationOwner.moveTabToFolder(tab: regular, folderId: folder.id)
         let pin = try XCTUnwrap(tabManager.shortcutPinCollectionStateOwner.folderPinnedPins(for: folder.id, in: space.id).first)
         let windowId = UUID()
-        let batchFlushesBefore = tabManager.structuralLookupBatchFlushCount
-        let immediateFlushesBefore = tabManager.structuralLookupImmediateFlushCount
+        let batchFlushesBefore = tabManager.structuralLookupCoordinator.batchFlushCount
+        let immediateFlushesBefore = tabManager.structuralLookupCoordinator.immediateFlushCount
         recorder.reset()
 
-        tabManager.withStructuralUpdateTransaction {
-            let liveTab = tabManager.shortcutLiveTabOwner.activateShortcutPin(pin, in: windowId, currentSpaceId: space.id)
+        tabManager.structuralLookupCoordinator.withTransaction {
+            let liveTab = tabManager.shortcutTabMaterializer.materialize(pin, in: windowId, currentSpaceId: space.id)
 
             XCTAssertEqual(recorder.count, 0)
             XCTAssertEqual(tabManager.tabCollectionMembershipOwner.tab(for: liveTab.id)?.id, liveTab.id)
-            XCTAssertEqual(tabManager.structuralLookupImmediateFlushCount, immediateFlushesBefore + 1)
+            XCTAssertEqual(tabManager.structuralLookupCoordinator.immediateFlushCount, immediateFlushesBefore + 1)
 
-            tabManager.shortcutLiveTabOwner.deactivateShortcutLiveTab(pinId: pin.id, in: windowId)
+            _ = tabManager.shortcutLiveTabRetirement.retire(
+                pinId: pin.id,
+                in: windowId
+            )
 
             XCTAssertNil(tabManager.tabCollectionMembershipOwner.tab(for: liveTab.id))
-            XCTAssertEqual(tabManager.structuralLookupImmediateFlushCount, immediateFlushesBefore + 2)
+            XCTAssertEqual(tabManager.structuralLookupCoordinator.immediateFlushCount, immediateFlushesBefore + 2)
         }
 
         XCTAssertEqual(recorder.count, 1)
-        XCTAssertEqual(tabManager.structuralLookupBatchFlushCount, batchFlushesBefore)
+        XCTAssertEqual(tabManager.structuralLookupCoordinator.batchFlushCount, batchFlushesBefore)
     }
 
     func testRemoveSelectedShortcutPinClearsWindowShortcutSelection() throws {
         let tabManager = try makeInMemoryTabManager()
-        let space = tabManager.spaceLifecycleOwner.createSpace(name: "Workspace")
+        let space = tabManager.spaceServices.catalog.createSpace(name: "Workspace")
         let pin = makeSpacePinnedShortcut(spaceId: space.id)
         tabManager.structuralCollectionMutationOwner.setSpacePinnedShortcuts([pin], for: space.id)
         let windowState = BrowserWindowState()
@@ -144,7 +147,7 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
         windowState.currentSpaceId = space.id
         let validationRecorder = RuntimeValidationRecorder()
         attachRuntimeContext(tabManager, windowStates: [windowState], validationRecorder: validationRecorder)
-        let liveTab = tabManager.shortcutLiveTabOwner.activateShortcutPin(
+        let liveTab = tabManager.shortcutTabMaterializer.materialize(
             pin,
             in: windowState.id,
             currentSpaceId: space.id
@@ -173,7 +176,7 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
 
     func testDeactivateSelectedShortcutLiveTabClearsCurrentSelectionWithoutValidation() throws {
         let tabManager = try makeInMemoryTabManager()
-        let space = tabManager.spaceLifecycleOwner.createSpace(name: "Workspace")
+        let space = tabManager.spaceServices.catalog.createSpace(name: "Workspace")
         let pin = makeSpacePinnedShortcut(spaceId: space.id)
         tabManager.structuralCollectionMutationOwner.setSpacePinnedShortcuts([pin], for: space.id)
         let windowState = BrowserWindowState()
@@ -181,7 +184,7 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
         windowState.currentSpaceId = space.id
         let validationRecorder = RuntimeValidationRecorder()
         attachRuntimeContext(tabManager, windowStates: [windowState], validationRecorder: validationRecorder)
-        let liveTab = tabManager.shortcutLiveTabOwner.activateShortcutPin(
+        let liveTab = tabManager.shortcutTabMaterializer.materialize(
             pin,
             in: windowState.id,
             currentSpaceId: space.id
@@ -190,9 +193,13 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
         windowState.currentShortcutPinId = pin.id
         windowState.currentShortcutPinRole = pin.role
 
-        let didClearSelection = tabManager.shortcutLiveTabOwner.deactivateShortcutLiveTab(pinId: pin.id, in: windowState.id)
+        let retirement = tabManager.shortcutLiveTabRetirement.retire(
+            pinId: pin.id,
+            in: windowState.id
+        )
 
-        XCTAssertTrue(didClearSelection)
+        XCTAssertTrue(retirement.didRetire)
+        XCTAssertTrue(retirement.didClearCurrentSelection)
         XCTAssertNil(tabManager.tabCollectionMembershipOwner.tab(for: liveTab.id))
         XCTAssertNil(windowState.currentTabId)
         XCTAssertNil(windowState.currentShortcutPinId)
@@ -202,7 +209,7 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
 
     func testRemoveShortcutPinClearsProxySelectionWithoutLiveTab() throws {
         let tabManager = try makeInMemoryTabManager()
-        let space = tabManager.spaceLifecycleOwner.createSpace(name: "Workspace")
+        let space = tabManager.spaceServices.catalog.createSpace(name: "Workspace")
         let pin = makeSpacePinnedShortcut(spaceId: space.id)
         tabManager.structuralCollectionMutationOwner.setSpacePinnedShortcuts([pin], for: space.id)
         let windowState = BrowserWindowState()
@@ -229,7 +236,7 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
 
     func testRemoveBackgroundShortcutPinPreservesRegularSelection() throws {
         let tabManager = try makeInMemoryTabManager()
-        let space = tabManager.spaceLifecycleOwner.createSpace(name: "Workspace")
+        let space = tabManager.spaceServices.catalog.createSpace(name: "Workspace")
         let pin = makeSpacePinnedShortcut(spaceId: space.id)
         tabManager.structuralCollectionMutationOwner.setSpacePinnedShortcuts([pin], for: space.id)
         let regularTab = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/regular", in: space)
@@ -250,7 +257,7 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
             validationRecorder: validationRecorder,
             persistenceRecorder: persistenceRecorder
         )
-        let liveTab = tabManager.shortcutLiveTabOwner.activateShortcutPin(
+        let liveTab = tabManager.shortcutTabMaterializer.materialize(
             pin,
             in: windowState.id,
             currentSpaceId: space.id
@@ -271,7 +278,7 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
 
     func testDeleteFolderClearsDeletedShortcutPinSelectionReferences() throws {
         let tabManager = try makeInMemoryTabManager()
-        let space = tabManager.spaceLifecycleOwner.createSpace(name: "Workspace")
+        let space = tabManager.spaceServices.catalog.createSpace(name: "Workspace")
         let folder = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Pinned")
         let pin = makeSpacePinnedShortcut(spaceId: space.id, folderId: folder.id)
         tabManager.structuralCollectionMutationOwner.setSpacePinnedShortcuts([pin], for: space.id)
@@ -280,7 +287,7 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
         windowState.currentSpaceId = space.id
         let validationRecorder = RuntimeValidationRecorder()
         attachRuntimeContext(tabManager, windowStates: [windowState], validationRecorder: validationRecorder)
-        let liveTab = tabManager.shortcutLiveTabOwner.activateShortcutPin(
+        let liveTab = tabManager.shortcutTabMaterializer.materialize(
             pin,
             in: windowState.id,
             currentSpaceId: space.id
@@ -306,7 +313,7 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
 
     func testLookupIncludesTransientExtensionAndAuxiliaryTabs() throws {
         let tabManager = try makeInMemoryTabManager()
-        let space = tabManager.spaceLifecycleOwner.createSpace(name: "Workspace")
+        let space = tabManager.spaceServices.catalog.createSpace(name: "Workspace")
         let opener = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/opener", in: space)
 
         let transientExtension = tabManager.transientWebKitTabLifecycleOwner.createTransientExtensionTab(
@@ -333,8 +340,8 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
 
     func testAddTabWithoutSpaceDoesNotFallbackToCurrentSpaceOrAttachOrphan() throws {
         let tabManager = try makeInMemoryTabManager()
-        let primarySpace = tabManager.spaceLifecycleOwner.createSpace(name: "Primary")
-        let currentSpace = tabManager.spaceLifecycleOwner.createSpace(name: "Current")
+        let primarySpace = tabManager.spaceServices.catalog.createSpace(name: "Primary")
+        let currentSpace = tabManager.spaceServices.catalog.createSpace(name: "Current")
         tabManager.spaceStateOwner.replaceCurrentSpace(currentSpace)
         let tab = Tab(
             url: URL(string: "https://example.com/orphan")!,
@@ -352,8 +359,8 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
 
     func testPromotingTransientExtensionWithoutTargetSpaceDoesNotFallbackToCurrentSpace() throws {
         let tabManager = try makeInMemoryTabManager()
-        let sourceSpace = tabManager.spaceLifecycleOwner.createSpace(name: "Source")
-        let currentSpace = tabManager.spaceLifecycleOwner.createSpace(name: "Current")
+        let sourceSpace = tabManager.spaceServices.catalog.createSpace(name: "Source")
+        let currentSpace = tabManager.spaceServices.catalog.createSpace(name: "Current")
         tabManager.spaceStateOwner.replaceCurrentSpace(currentSpace)
         let transientExtension = tabManager.transientWebKitTabLifecycleOwner.createTransientExtensionTab(
             url: "https://example.com/transient",
@@ -376,8 +383,8 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
 
     func testTabCreationWithoutTargetSpaceUsesDefaultSpaceInsteadOfCurrentSpace() throws {
         let tabManager = try makeInMemoryTabManager()
-        let defaultSpace = tabManager.spaceLifecycleOwner.createSpace(name: "Default")
-        let currentSpace = tabManager.spaceLifecycleOwner.createSpace(name: "Current")
+        let defaultSpace = tabManager.spaceServices.catalog.createSpace(name: "Default")
+        let currentSpace = tabManager.spaceServices.catalog.createSpace(name: "Current")
 
         tabManager.spaceStateOwner.replaceCurrentSpace(currentSpace)
         let regular = tabManager.regularTabLifecycleOwner.createNewTab(
@@ -394,9 +401,10 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
         )
 
         tabManager.spaceStateOwner.replaceCurrentSpace(currentSpace)
-        let webViewBacked = tabManager.regularTabLifecycleOwner.createNewTabWithWebView(
-            url: "https://example.com/webview",
-            in: nil
+        let secondRegular = tabManager.regularTabLifecycleOwner.createNewTab(
+            url: "https://example.com/second",
+            in: nil,
+            activate: false
         )
 
         tabManager.spaceStateOwner.replaceCurrentSpace(currentSpace)
@@ -404,7 +412,7 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
 
         XCTAssertEqual(regular.spaceId, defaultSpace.id)
         XCTAssertEqual(transientExtension.spaceId, defaultSpace.id)
-        XCTAssertEqual(webViewBacked.spaceId, defaultSpace.id)
+        XCTAssertEqual(secondRegular.spaceId, defaultSpace.id)
         XCTAssertEqual(popup.spaceId, defaultSpace.id)
         XCTAssertTrue(tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[currentSpace.id]?.isEmpty ?? true)
     }
@@ -413,8 +421,8 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
         let tabManager = try makeInMemoryTabManager()
         let firstProfileId = UUID()
         let currentProfileId = UUID()
-        let firstProfileSpace = tabManager.spaceLifecycleOwner.createSpace(name: "First", profileId: firstProfileId)
-        let currentProfileSpace = tabManager.spaceLifecycleOwner.createSpace(name: "Current Profile", profileId: currentProfileId)
+        let firstProfileSpace = tabManager.spaceServices.catalog.createSpace(name: "First", profileId: firstProfileId)
+        let currentProfileSpace = tabManager.spaceServices.catalog.createSpace(name: "Current Profile", profileId: currentProfileId)
         tabManager.spaceStateOwner.replaceCurrentSpace(firstProfileSpace)
         tabManager.runtimePortsAttachmentOwner.attach(
             TestRuntimePorts.make(
@@ -430,7 +438,7 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
         )
 
         XCTAssertEqual(tab.spaceId, currentProfileSpace.id)
-        XCTAssertEqual(tab.profileId, currentProfileId)
+        XCTAssertNil(tab.profileId)
         XCTAssertTrue(tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[firstProfileSpace.id]?.isEmpty ?? true)
     }
 
@@ -438,8 +446,8 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
         let tabManager = try makeInMemoryTabManager()
         let defaultProfileId = UUID()
         let currentProfileId = UUID()
-        let defaultProfileSpace = tabManager.spaceLifecycleOwner.createSpace(name: "Default Profile", profileId: defaultProfileId)
-        let currentProfileSpace = tabManager.spaceLifecycleOwner.createSpace(name: "Current Profile", profileId: currentProfileId)
+        let defaultProfileSpace = tabManager.spaceServices.catalog.createSpace(name: "Default Profile", profileId: defaultProfileId)
+        let currentProfileSpace = tabManager.spaceServices.catalog.createSpace(name: "Current Profile", profileId: currentProfileId)
         tabManager.spaceStateOwner.replaceCurrentSpace(defaultProfileSpace)
         tabManager.runtimePortsAttachmentOwner.attach(
             TestRuntimePorts.make(
@@ -454,7 +462,7 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
             webExtensionContextOverride: nil
         )
 
-        XCTAssertEqual(transientExtension.profileId, currentProfileId)
+        XCTAssertNil(transientExtension.profileId)
         XCTAssertEqual(transientExtension.spaceId, currentProfileSpace.id)
         XCTAssertTrue(tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[defaultProfileSpace.id]?.isEmpty ?? true)
     }
@@ -463,8 +471,8 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
         let tabManager = try makeInMemoryTabManager()
         let windowProfileId = UUID()
         let globalProfileId = UUID()
-        let windowSpace = tabManager.spaceLifecycleOwner.createSpace(name: "Window", profileId: windowProfileId)
-        let globalSpace = tabManager.spaceLifecycleOwner.createSpace(name: "Global", profileId: globalProfileId)
+        let windowSpace = tabManager.spaceServices.catalog.createSpace(name: "Window", profileId: windowProfileId)
+        let globalSpace = tabManager.spaceServices.catalog.createSpace(name: "Global", profileId: globalProfileId)
         let windowRegular = tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://window.example/regular",
             in: windowSpace,
@@ -525,17 +533,17 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
             )
         )
 
-        let windowEssential = tabManager.shortcutLiveTabOwner.activateShortcutPin(
+        let windowEssential = tabManager.shortcutTabMaterializer.materialize(
             windowEssentialPin,
             in: windowState.id,
             currentSpaceId: windowSpace.id
         )
-        let globalEssential = tabManager.shortcutLiveTabOwner.activateShortcutPin(
+        let globalEssential = tabManager.shortcutTabMaterializer.materialize(
             globalEssentialPin,
             in: UUID(),
             currentSpaceId: globalSpace.id
         )
-        let windowLauncher = tabManager.shortcutLiveTabOwner.activateShortcutPin(
+        let windowLauncher = tabManager.shortcutTabMaterializer.materialize(
             windowSpacePin,
             in: windowState.id,
             currentSpaceId: windowSpace.id
@@ -554,7 +562,7 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
 
     func testSplitGroupLookupsFollowStructuralMutations() throws {
         let tabManager = try makeInMemoryTabManager()
-        let space = tabManager.spaceLifecycleOwner.createSpace(name: "Workspace")
+        let space = tabManager.spaceServices.catalog.createSpace(name: "Workspace")
         let first = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/one", in: space)
         let second = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/two", in: space, activate: false)
         let third = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/three", in: space, activate: false)
@@ -604,7 +612,7 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
 
     func testSplitGroupReplacementRefreshesLookups() throws {
         let tabManager = try makeInMemoryTabManager()
-        let space = tabManager.spaceLifecycleOwner.createSpace(name: "Workspace")
+        let space = tabManager.spaceServices.catalog.createSpace(name: "Workspace")
         let first = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/one", in: space)
         let second = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/two", in: space, activate: false)
         let group = try XCTUnwrap(
@@ -625,7 +633,7 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
     func testSplitGroupMutationsPublishOnceAndLookupUpdatesDuringTransaction() throws {
         let tabManager = try makeInMemoryTabManager()
         let recorder = StructuralEventRecorder(tabManager: tabManager)
-        let space = tabManager.spaceLifecycleOwner.createSpace(name: "Workspace")
+        let space = tabManager.spaceServices.catalog.createSpace(name: "Workspace")
         let first = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/one", in: space)
         let second = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/two", in: space, activate: false)
         let third = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/three", in: space, activate: false)
@@ -637,7 +645,7 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
         )
         recorder.reset()
 
-        tabManager.withStructuralUpdateTransaction {
+        tabManager.structuralLookupCoordinator.withTransaction {
             tabManager.splitGroupStructureOwner.upsertSplitGroup(initial)
             XCTAssertEqual(recorder.count, 0)
             XCTAssertEqual(tabManager.splitGroupStructureOwner.splitGroup(containing: first.id)?.id, initial.id)
@@ -655,7 +663,7 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
 
     func testAdoptingGlanceTabInsertsAfterSourceAndPreservesWebView() throws {
         let tabManager = try makeInMemoryTabManager()
-        let space = tabManager.spaceLifecycleOwner.createSpace(name: "Workspace")
+        let space = tabManager.spaceServices.catalog.createSpace(name: "Workspace")
         let source = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/source", in: space)
         let trailing = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/trailing", in: space, activate: false)
         let preview = Tab(
@@ -679,10 +687,10 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
         XCTAssertEqual(tabManager.tabCollectionMembershipOwner.tab(for: preview.id)?.id, preview.id)
     }
 
-    func testTabCreationPathsKeepDistinctProfileAndPersistenceBehavior() throws {
+    func testTabCreationPathsInheritTargetProfileAndPreserveCollectionRoles() throws {
         let tabManager = try makeInMemoryTabManager()
         let profileId = UUID()
-        let space = tabManager.spaceLifecycleOwner.createSpace(name: "Workspace", profileId: profileId)
+        let space = tabManager.spaceServices.catalog.createSpace(name: "Workspace", profileId: profileId)
 
         let regular = tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://example.com/regular",
@@ -694,42 +702,48 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
             in: space,
             webExtensionContextOverride: nil
         )
-        let webViewBacked = tabManager.regularTabLifecycleOwner.createNewTabWithWebView(
-            url: "https://example.com/webview",
-            in: space
+        let secondRegular = tabManager.regularTabLifecycleOwner.createNewTab(
+            url: "https://example.com/second",
+            in: space,
+            activate: false
         )
         let popup = tabManager.regularTabLifecycleOwner.createPopupTab(in: space, activate: false)
 
         XCTAssertEqual(regular.spaceId, space.id)
-        XCTAssertEqual(regular.profileId, profileId)
+        XCTAssertNil(regular.profileId)
         XCTAssertEqual(transientExtension.spaceId, space.id)
-        XCTAssertEqual(transientExtension.profileId, profileId)
+        XCTAssertNil(transientExtension.profileId)
         XCTAssertTrue(tabManager.transientWebKitTabLifecycleOwner.isTransientExtensionTab(transientExtension))
 
-        XCTAssertEqual(webViewBacked.spaceId, space.id)
-        XCTAssertNil(webViewBacked.profileId)
+        XCTAssertEqual(secondRegular.spaceId, space.id)
+        XCTAssertNil(secondRegular.profileId)
         XCTAssertEqual(popup.spaceId, space.id)
         XCTAssertNil(popup.profileId)
         XCTAssertTrue(popup.isPopupHost)
 
         XCTAssertEqual(tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[space.id]?.map(\.id), [
             regular.id,
-            webViewBacked.id,
+            secondRegular.id,
             popup.id,
         ])
         XCTAssertFalse((tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[space.id] ?? []).contains { $0.id == transientExtension.id })
     }
 
     func testGlanceAdoptionTargetsSourceSpaceAndBackfillsFromPreviewProfile() throws {
-        let tabManager = try makeInMemoryTabManager()
-        let sourceSpace = tabManager.spaceLifecycleOwner.createSpace(name: "Source")
-        let currentSpace = tabManager.spaceLifecycleOwner.createSpace(name: "Current")
+        let previewProfileId = UUID()
+        let previewProfile = Profile(id: previewProfileId, name: "Preview")
+        let tabManager = try makeInMemoryTabManager(
+            profile: { profileId in
+                profileId == previewProfileId ? previewProfile : nil
+            }
+        )
+        let sourceSpace = tabManager.spaceServices.catalog.createSpace(name: "Source")
+        let currentSpace = tabManager.spaceServices.catalog.createSpace(name: "Current")
         let source = tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://example.com/source",
             in: sourceSpace,
             activate: false
         )
-        let previewProfileId = UUID()
         let preview = Tab(
             url: URL(string: "https://example.com/preview")!,
             name: "Preview",
@@ -750,25 +764,49 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
         ])
     }
 
-    func testDuplicatingRegularTabPublishesOnlyFinalInsertionOrder() throws {
-        let tabManager = try makeInMemoryTabManager()
-        let space = tabManager.spaceLifecycleOwner.createSpace(name: "Workspace")
-        let source = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/source", in: space)
-        let trailing = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/trailing", in: space, activate: false)
-        let recorder = TabsBySpaceRecorder(tabManager: tabManager, spaceId: space.id)
-        recorder.reset()
+    func testGlanceAdoptionPreservesExplicitProfileOverrideInAssignedSpace() throws {
+        let spaceProfile = Profile(name: "Space")
+        let previewProfile = Profile(name: "Preview")
+        let profiles = [
+            spaceProfile.id: spaceProfile,
+            previewProfile.id: previewProfile,
+        ]
+        let tabManager = try makeInMemoryTabManager(
+            profile: { profiles[$0] }
+        )
+        let space = tabManager.spaceServices.catalog.createSpace(
+            name: "Workspace",
+            profileId: spaceProfile.id
+        )
+        let source = tabManager.regularTabLifecycleOwner.createNewTab(
+            url: "https://source.example",
+            in: space,
+            activate: false
+        )
+        let preview = Tab(
+            url: URL(string: "https://preview.example")!,
+            name: "Preview",
+            spaceId: nil
+        )
+        preview.profileId = previewProfile.id
+        let webView = WKWebView()
+        preview.replaceUntrackedWebView(webView)
 
-        let duplicate = tabManager.regularTabLifecycleOwner.duplicateAsRegularForSplit(from: source, anchor: source)
+        _ = tabManager.regularTabLifecycleOwner.adoptGlanceTab(
+            preview,
+            sourceTab: source,
+            in: space
+        )
 
-        let expectedOrder = [source.id, duplicate.id, trailing.id]
-        XCTAssertEqual(tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[space.id]?.map(\.id), expectedOrder)
-        XCTAssertEqual(recorder.snapshots, [expectedOrder])
+        XCTAssertEqual(space.profileId, spaceProfile.id)
+        XCTAssertEqual(preview.profileId, previewProfile.id)
+        XCTAssertIdentical(preview.resolvedCurrentWebView(), webView)
     }
 
     func testRemovingSelectedTabPublishesOnceAndSelectsReplacement() throws {
         let tabManager = try makeInMemoryTabManager()
         let recorder = StructuralEventRecorder(tabManager: tabManager)
-        let space = tabManager.spaceLifecycleOwner.createSpace(name: "Workspace")
+        let space = tabManager.spaceServices.catalog.createSpace(name: "Workspace")
         let first = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/one", in: space)
         let second = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/two", in: space, activate: false)
         tabManager.activeSelectionOwner.setActiveTab(first)
@@ -784,14 +822,14 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
     func testConvertingLiveFolderLauncherBackToRegularPublishesOnceAndClearsLiveBinding() throws {
         let tabManager = try makeInMemoryTabManager()
         let recorder = StructuralEventRecorder(tabManager: tabManager)
-        let space = tabManager.spaceLifecycleOwner.createSpace(name: "Workspace")
+        let space = tabManager.spaceServices.catalog.createSpace(name: "Workspace")
         let folder = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Folder")
         let tab = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/folder", in: space)
 
         tabManager.folderMutationOwner.moveTabToFolder(tab: tab, folderId: folder.id)
         let pin = try XCTUnwrap(tabManager.shortcutPinCollectionStateOwner.folderPinnedPins(for: folder.id, in: space.id).first)
         let windowId = UUID()
-        let liveTab = tabManager.shortcutLiveTabOwner.activateShortcutPin(pin, in: windowId, currentSpaceId: space.id)
+        let liveTab = tabManager.shortcutTabMaterializer.materialize(pin, in: windowId, currentSpaceId: space.id)
         XCTAssertEqual(liveTab.shortcutPinId, pin.id)
         recorder.reset()
 
@@ -810,7 +848,7 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
     func testTogglingFolderOpenStatePublishesOnce() throws {
         let tabManager = try makeInMemoryTabManager()
         let recorder = StructuralEventRecorder(tabManager: tabManager)
-        let space = tabManager.spaceLifecycleOwner.createSpace(name: "Workspace")
+        let space = tabManager.spaceServices.catalog.createSpace(name: "Workspace")
         let folder = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Folder")
         recorder.reset()
 
@@ -852,6 +890,7 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
                 windowStates: { windowStates },
                 validateWindowStates: {
                     validationRecorder.count += 1
+                    return []
                 },
                 persistWindowSession: { windowState in
                     persistenceRecorder?.windowIds.append(windowState.id)
@@ -859,7 +898,6 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
             )
         )
     }
-
 }
 
 @MainActor

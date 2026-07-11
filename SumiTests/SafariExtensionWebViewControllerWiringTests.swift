@@ -49,20 +49,16 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             context: container.mainContext,
             profile: profile
         ).manager
-        let browserManager = makeBrowserManager(profile: profile)
+        let browserManager = makeBrowserManager(
+            profile: profile
+        )
         let windowRegistry = WindowRegistry()
         let coordinator = WebViewCoordinator(
             webViewSessions: browserManager.webViewSessions
         )
         browserManager.windowRegistry = windowRegistry
         browserManager.bindTestWebViewCoordinator(coordinator)
-        browserManager.tabManager = TabManager(
-            runtimePorts: BrowserTabManagerRuntimePortsFactory.registry(for: browserManager),
-            context: container.mainContext,
-            webViewSessions: browserManager.webViewSessions,
-            loadPersistedState: false
-        )
-        let space = browserManager.tabManager.spaceLifecycleOwner.createSpace(
+        let space = browserManager.tabManager.spaceServices.catalog.createSpace(
             name: "Work",
             profileId: profile.id
         )
@@ -188,6 +184,8 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             allowWithoutEnabledExtensions: true
         )
         let expectedController = manager.ensureExtensionController(for: profile.id)
+        let browserManager = makeBrowserManager(profile: profile)
+        manager.attach(browserManager: browserManager)
 
         let configuration = browserConfiguration.auxiliaryWebViewConfiguration(
             surface: .extensionOptions
@@ -198,7 +196,12 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             reason: "SafariExtensionWebViewControllerWiringTests"
         )
 
-        let tab = makeTab(profileId: profile.id, url: URL(string: "about:blank")!)
+        let tab = makeTab(
+            profileId: profile.id,
+            url: URL(string: "about:blank")!,
+            browserManager: browserManager
+        )
+        tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
         let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
         webView.owningTab = tab
         tab.replaceUntrackedWebView(webView)
@@ -419,13 +422,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             profile: profile
         )
         extensionsModule.attach(runtime: BrowserExtensionsModuleRuntimeFactory.runtime(for: browserManager))
-        browserManager.tabManager = TabManager(
-            runtimePorts: BrowserTabManagerRuntimePortsFactory.registry(for: browserManager),
-            context: container.mainContext,
-            webViewSessions: browserManager.webViewSessions,
-            loadPersistedState: false
-        )
-        let space = browserManager.tabManager.spaceLifecycleOwner.createSpace(
+        let space = browserManager.tabManager.spaceServices.catalog.createSpace(
             name: "Work",
             profileId: profile.id
         )
@@ -512,13 +509,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         let windowRegistry = WindowRegistry()
         browserManager.windowRegistry = windowRegistry
         browserManager.bindTestWebViewCoordinator()
-        browserManager.tabManager = TabManager(
-            runtimePorts: BrowserTabManagerRuntimePortsFactory.registry(for: browserManager),
-            context: container.mainContext,
-            webViewSessions: browserManager.webViewSessions,
-            loadPersistedState: false
-        )
-        let space = browserManager.tabManager.spaceLifecycleOwner.createSpace(
+        let space = browserManager.tabManager.spaceServices.catalog.createSpace(
             name: "Work",
             profileId: profile.id
         )
@@ -625,13 +616,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             extensionsModule: extensionsModule,
             profile: profile
         )
-        browserManager.tabManager = TabManager(
-            runtimePorts: BrowserTabManagerRuntimePortsFactory.registry(for: browserManager),
-            context: container.mainContext,
-            webViewSessions: browserManager.webViewSessions,
-            loadPersistedState: false
-        )
-        let space = browserManager.tabManager.spaceLifecycleOwner.createSpace(
+        let space = browserManager.tabManager.spaceServices.catalog.createSpace(
             name: "Work",
             profileId: profile.id
         )
@@ -707,13 +692,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             extensionsModule: extensionsModule,
             profile: profile
         )
-        browserManager.tabManager = TabManager(
-            runtimePorts: BrowserTabManagerRuntimePortsFactory.registry(for: browserManager),
-            context: container.mainContext,
-            webViewSessions: browserManager.webViewSessions,
-            loadPersistedState: false
-        )
-        let space = browserManager.tabManager.spaceLifecycleOwner.createSpace(
+        let space = browserManager.tabManager.spaceServices.catalog.createSpace(
             name: "Work",
             profileId: profile.id
         )
@@ -802,19 +781,15 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         manager.extensionsLoaded = true
         manager.runtimeSession.tabOpenNotificationGeneration = 11
 
-        let browserManager = makeBrowserManager(profile: profile)
-        browserManager.bindTestWebViewCoordinator()
-        browserManager.tabManager = TabManager(
-            runtimePorts: BrowserTabManagerRuntimePortsFactory.registry(for: browserManager),
-            context: container.mainContext,
-            webViewSessions: browserManager.webViewSessions,
-            loadPersistedState: false
+        let browserManager = makeBrowserManager(
+            profile: profile
         )
-        let visibleSpace = browserManager.tabManager.spaceLifecycleOwner.createSpace(
+        browserManager.bindTestWebViewCoordinator()
+        let visibleSpace = browserManager.tabManager.spaceServices.catalog.createSpace(
             name: "Visible",
             profileId: profile.id
         )
-        let hiddenSpace = browserManager.tabManager.spaceLifecycleOwner.createSpace(
+        let hiddenSpace = browserManager.tabManager.spaceServices.catalog.createSpace(
             name: "Hidden",
             profileId: profile.id
         )
@@ -890,13 +865,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             extensionsModule: extensionsModule,
             profile: profile
         )
-        browserManager.tabManager = TabManager(
-            runtimePorts: BrowserTabManagerRuntimePortsFactory.registry(for: browserManager),
-            context: container.mainContext,
-            webViewSessions: browserManager.webViewSessions,
-            loadPersistedState: false
-        )
-        _ = browserManager.tabManager.spaceLifecycleOwner.createSpace(
+        _ = browserManager.tabManager.spaceServices.catalog.createSpace(
             name: "Work",
             profileId: profile.id
         )
@@ -985,13 +954,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             extensionsModule: extensionsModule,
             profile: profile
         )
-        browserManager.tabManager = TabManager(
-            runtimePorts: BrowserTabManagerRuntimePortsFactory.registry(for: browserManager),
-            context: container.mainContext,
-            webViewSessions: browserManager.webViewSessions,
-            loadPersistedState: false
-        )
-        _ = browserManager.tabManager.spaceLifecycleOwner.createSpace(
+        _ = browserManager.tabManager.spaceServices.catalog.createSpace(
             name: "Work",
             profileId: profile.id
         )
@@ -1067,13 +1030,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         let windowRegistry = WindowRegistry()
         browserManager.windowRegistry = windowRegistry
         browserManager.bindTestWebViewCoordinator()
-        browserManager.tabManager = TabManager(
-            runtimePorts: BrowserTabManagerRuntimePortsFactory.registry(for: browserManager),
-            context: container.mainContext,
-            webViewSessions: browserManager.webViewSessions,
-            loadPersistedState: false
-        )
-        let space = browserManager.tabManager.spaceLifecycleOwner.createSpace(
+        let space = browserManager.tabManager.spaceServices.catalog.createSpace(
             name: "Work",
             profileId: profile.id
         )
@@ -1173,13 +1130,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             extensionsModule: extensionsModule,
             profile: profile
         )
-        browserManager.tabManager = TabManager(
-            runtimePorts: BrowserTabManagerRuntimePortsFactory.registry(for: browserManager),
-            context: container.mainContext,
-            webViewSessions: browserManager.webViewSessions,
-            loadPersistedState: false
-        )
-        _ = browserManager.tabManager.spaceLifecycleOwner.createSpace(
+        _ = browserManager.tabManager.spaceServices.catalog.createSpace(
             name: "Work",
             profileId: profile.id
         )
@@ -1334,13 +1285,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             extensionsModule: extensionsModule,
             profile: profile
         )
-        browserManager.tabManager = TabManager(
-            runtimePorts: BrowserTabManagerRuntimePortsFactory.registry(for: browserManager),
-            context: container.mainContext,
-            webViewSessions: browserManager.webViewSessions,
-            loadPersistedState: false
-        )
-        _ = browserManager.tabManager.spaceLifecycleOwner.createSpace(
+        _ = browserManager.tabManager.spaceServices.catalog.createSpace(
             name: "Work",
             profileId: profile.id
         )
@@ -1606,5 +1551,4 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             onFinish()
         }
     }
-
 }

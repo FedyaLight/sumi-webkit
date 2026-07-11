@@ -24,7 +24,6 @@ final class TabLifecycleOwnerBag {
 
     private var tm: TabManager { tabManager }
 
-    lazy var profileRuntimeStateOwner = TabProfileRuntimeStateOwner(tabManager: tm)
     lazy var runtimePreparationOwner = TabRuntimePreparationOwner(
         runtimePorts: { [weak self] in self?.tm.runtimePorts },
         settings: { [weak self] in self?.tm.sumiSettings }
@@ -39,7 +38,6 @@ final class TabLifecycleOwnerBag {
     lazy var activeSelectionOwner = TabActiveSelectionOwner(
         dependencies: .live(tabManager: tm)
     )
-    lazy var spaceLifecycleOwner = TabSpaceLifecycleOwner(dependencies: .live(tabManager: tm))
     lazy var profileAssignments = ProfileAssignmentServices(tabManager: tm)
     lazy var transientWebKitTabLifecycleOwner = TabTransientWebKitTabLifecycleOwner(
         dependencies: .live(tabManager: tm)

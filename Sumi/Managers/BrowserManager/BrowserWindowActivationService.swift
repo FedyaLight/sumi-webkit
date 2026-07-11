@@ -4,57 +4,94 @@ import Foundation
 /// browser window. Restore and persistence scheduling live elsewhere.
 @MainActor
 final class BrowserWindowActivationService {
+    private struct DeferredActivation {
+        let windowIdentity: ObjectIdentifier
+    }
+
     private let splitManager: SplitViewManager
     private let sidebarPresentation: BrowserSidebarPresentationOwner
     private let persistence: WindowSessionPersistenceCoordinator
-    private let activePageRouting: BrowserActivePageRoutingOwner
+    private let activePageResolver: ActivePageResolver
     private let findManager: FindManager
-    private let extensions: SumiExtensionsModule
-    private let profileRouter: SumiProfileRouter
-    private weak var profileSupport: (any SumiProfileRoutingSupport)?
+    private let extensions: any BrowserWindowExtensionLifecycleNotifying
+    private let synchronizeFocusedContext: (BrowserWindowState) -> Void
     private let nowPlaying: any SumiNativeNowPlayingRuntimeControlling
     private let backgroundMedia: SumiBackgroundMediaOptimizationService
+    private var deferredActivationsByWindowID: [UUID: DeferredActivation] = [:]
 
     init(
         splitManager: SplitViewManager,
         sidebarPresentation: BrowserSidebarPresentationOwner,
         persistence: WindowSessionPersistenceCoordinator,
-        activePageRouting: BrowserActivePageRoutingOwner,
+        activePageResolver: ActivePageResolver,
         findManager: FindManager,
-        extensions: SumiExtensionsModule,
-        profileRouter: SumiProfileRouter,
-        profileSupport: any SumiProfileRoutingSupport,
+        extensions: any BrowserWindowExtensionLifecycleNotifying,
+        synchronizeFocusedContext: @escaping (BrowserWindowState) -> Void,
         nowPlaying: any SumiNativeNowPlayingRuntimeControlling,
         backgroundMedia: SumiBackgroundMediaOptimizationService
     ) {
         self.splitManager = splitManager
         self.sidebarPresentation = sidebarPresentation
         self.persistence = persistence
-        self.activePageRouting = activePageRouting
+        self.activePageResolver = activePageResolver
         self.findManager = findManager
         self.extensions = extensions
-        self.profileRouter = profileRouter
-        self.profileSupport = profileSupport
+        self.synchronizeFocusedContext = synchronizeFocusedContext
         self.nowPlaying = nowPlaying
         self.backgroundMedia = backgroundMedia
     }
 
     func activate(_ windowState: BrowserWindowState) {
+        guard windowState.isAwaitingInitialSessionResolution == false else {
+            deferredActivationsByWindowID[windowState.id] = DeferredActivation(
+                windowIdentity: ObjectIdentifier(windowState)
+            )
+            return
+        }
+
+        deferredActivationsByWindowID.removeValue(forKey: windowState.id)
+        applyActivation(windowState)
+    }
+
+    /// Completes a deferred focus transition only for the exact object that is
+    /// still active after initial session resolution. Repeated completion is
+    /// intentionally a no-op.
+    func completeDeferredActivation(
+        for activeWindow: BrowserWindowState?
+    ) {
+        guard let activeWindow,
+              let deferred = deferredActivationsByWindowID[activeWindow.id],
+              deferred.windowIdentity == ObjectIdentifier(activeWindow)
+        else {
+            deferredActivationsByWindowID.removeAll()
+            return
+        }
+        guard activeWindow.isAwaitingInitialSessionResolution == false else {
+            return
+        }
+
+        deferredActivationsByWindowID.removeAll()
+        applyActivation(activeWindow)
+    }
+
+    func discardDeferredActivation(_ windowState: BrowserWindowState) {
+        guard deferredActivationsByWindowID[windowState.id]?.windowIdentity
+                == ObjectIdentifier(windowState)
+        else {
+            return
+        }
+        deferredActivationsByWindowID.removeValue(forKey: windowState.id)
+    }
+
+    private func applyActivation(_ windowState: BrowserWindowState) {
+        synchronizeFocusedContext(windowState)
         splitManager.refreshPublishedState(for: windowState.id)
         sidebarPresentation.syncFromWindow(windowState)
         persistence.persist(windowState)
 
-        let findSession = activePageRouting.activeFindSession()
-        findManager.updateCurrentTab(findSession.tab, in: findSession.windowId)
+        let page = activePageResolver.resolve(in: windowState)
+        findManager.updateCurrentTab(page?.tab, in: windowState.id)
         extensions.notifyWindowFocusedIfLoaded(windowState)
-
-        if let profileSupport {
-            profileRouter.adoptProfileIfNeeded(
-                for: windowState,
-                context: .windowActivation,
-                support: profileSupport
-            )
-        }
 
         nowPlaying.scheduleRefresh(delayNanoseconds: 0)
         backgroundMedia.scheduleReconcile(reason: "window-activated")

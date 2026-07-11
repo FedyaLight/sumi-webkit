@@ -9,7 +9,7 @@ final class BrowserZoomCommandOwner {
     private let tab: @MainActor (UUID) -> Tab?
     private let windowStateContainingTab: @MainActor (Tab) -> BrowserWindowState?
     private let webView: @MainActor (UUID, UUID) -> WKWebView?
-    private let zoomManager: @MainActor () -> ZoomManager
+    private let zoomManager: @MainActor () -> ZoomManager?
     private let sizeOverride: @MainActor (URL, UUID?) -> Double
     private let incrementZoomStateRevision: @MainActor () -> Void
     private let notifications: @MainActor () -> (any BrowserNotificationPresenting)?
@@ -21,7 +21,7 @@ final class BrowserZoomCommandOwner {
         tab: @escaping @MainActor (UUID) -> Tab?,
         windowStateContainingTab: @escaping @MainActor (Tab) -> BrowserWindowState?,
         webView: @escaping @MainActor (UUID, UUID) -> WKWebView?,
-        zoomManager: @escaping @MainActor () -> ZoomManager,
+        zoomManager: @escaping @MainActor () -> ZoomManager?,
         sizeOverride: @escaping @MainActor (URL, UUID?) -> Double,
         incrementZoomStateRevision: @escaping @MainActor () -> Void,
         notifications: @escaping @MainActor () -> (any BrowserNotificationPresenting)?
@@ -64,13 +64,23 @@ final class BrowserZoomCommandOwner {
     func resetZoomCurrentTab(in windowState: BrowserWindowState) {
         guard let context = activeZoomContext(in: windowState) else { return }
 
-        zoomManager().saveZoomLevel(
+        guard let zoomManager = zoomManager() else { return }
+        zoomManager.saveZoomLevel(
             1.0,
             for: context.domain,
             profileId: context.profileId
         )
-        applyBoostAwareZoom(for: context.tab, webView: context.webView)
-        didUpdateZoom(for: context.tab, in: windowState, showNotification: true)
+        applyBoostAwareZoom(
+            for: context.tab,
+            webView: context.webView,
+            zoomManager: zoomManager
+        )
+        didUpdateZoom(
+            for: context.tab,
+            in: windowState,
+            zoomManager: zoomManager,
+            showNotification: true
+        )
     }
 
     func loadZoomForTab(_ tabId: UUID) {
@@ -81,36 +91,53 @@ final class BrowserZoomCommandOwner {
               let webView = webView(tabId, windowState.id)
         else { return }
 
-        applyBoostAwareZoom(for: tab, webView: webView)
-        didUpdateZoom(for: tab, in: windowState, showNotification: false)
+        guard let zoomManager = zoomManager() else { return }
+        applyBoostAwareZoom(for: tab, webView: webView, zoomManager: zoomManager)
+        didUpdateZoom(
+            for: tab,
+            in: windowState,
+            zoomManager: zoomManager,
+            showNotification: false
+        )
     }
 
     func loadZoomForTab(_ tabId: UUID, on webView: WKWebView) {
         guard let tab = tab(tabId) else { return }
+        guard let zoomManager = zoomManager() else { return }
         let previousZoom = webView.pageZoom
-        applyBoostAwareZoom(for: tab, webView: webView)
+        applyBoostAwareZoom(for: tab, webView: webView, zoomManager: zoomManager)
         if webView.pageZoom != previousZoom {
             incrementZoomStateRevision()
         }
     }
 
     func cleanupZoomForTab(_ tabId: UUID) {
-        zoomManager().removeTabZoomLevel(for: tabId)
+        guard let zoomManager = zoomManager() else { return }
+        zoomManager.removeTabZoomLevel(for: tabId)
         incrementZoomStateRevision()
     }
 
     func applyBoostAwareZoom(for tab: Tab, webView: WKWebView) {
+        guard let zoomManager = zoomManager() else { return }
+        applyBoostAwareZoom(for: tab, webView: webView, zoomManager: zoomManager)
+    }
+
+    private func applyBoostAwareZoom(
+        for tab: Tab,
+        webView: WKWebView,
+        zoomManager: ZoomManager
+    ) {
         let context = zoomContext(for: tab)
-        let savedZoom = zoomManager().getZoomLevel(
+        let savedZoom = zoomManager.getZoomLevel(
             for: context.domain,
             profileId: context.profileId
         )
         let boostMultiplier = sizeOverride(tab.url, context.profileId)
-        let effectiveZoom = zoomManager().effectiveZoom(
+        let effectiveZoom = zoomManager.effectiveZoom(
             baseZoom: savedZoom,
             multiplier: boostMultiplier
         )
-        zoomManager().applyTransientZoom(
+        zoomManager.applyTransientZoom(
             effectiveZoom,
             to: webView,
             domain: context.domain,
@@ -122,23 +149,33 @@ final class BrowserZoomCommandOwner {
         _ direction: ZoomStepDirection,
         in windowState: BrowserWindowState
     ) {
-        guard let context = activeZoomContext(in: windowState) else { return }
+        guard let context = activeZoomContext(in: windowState),
+              let zoomManager = zoomManager() else { return }
 
-        let savedZoom = zoomManager().getZoomLevel(
+        let savedZoom = zoomManager.getZoomLevel(
             for: context.domain,
             profileId: context.profileId
         )
-        let nextBaseZoom = zoomManager().nextZoomLevel(
+        let nextBaseZoom = zoomManager.nextZoomLevel(
             from: savedZoom,
             direction: direction
         )
-        zoomManager().saveZoomLevel(
+        zoomManager.saveZoomLevel(
             nextBaseZoom,
             for: context.domain,
             profileId: context.profileId
         )
-        applyBoostAwareZoom(for: context.tab, webView: context.webView)
-        didUpdateZoom(for: context.tab, in: windowState, showNotification: true)
+        applyBoostAwareZoom(
+            for: context.tab,
+            webView: context.webView,
+            zoomManager: zoomManager
+        )
+        didUpdateZoom(
+            for: context.tab,
+            in: windowState,
+            zoomManager: zoomManager,
+            showNotification: true
+        )
     }
 
     private func activeZoomContext(in windowState: BrowserWindowState) -> ActiveZoomContext? {
@@ -158,12 +195,12 @@ final class BrowserZoomCommandOwner {
     private func didUpdateZoom(
         for tab: Tab,
         in windowState: BrowserWindowState,
+        zoomManager: ZoomManager,
         showNotification: Bool
     ) {
         incrementZoomStateRevision()
         guard showNotification else { return }
 
-        let zoomManager = zoomManager()
         let tabId = tab.id
         notifications()?.presentNotification(
             .zoom(

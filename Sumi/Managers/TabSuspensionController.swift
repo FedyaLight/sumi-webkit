@@ -20,6 +20,10 @@ final class TabSuspensionController {
     var scheduledTimerDeadlineForTesting: TimeInterval? {
         proactiveLifecycle.scheduledTimerDeadlineForTesting
     }
+
+    var currentPolicyForTesting: TabSuspensionPolicy {
+        contextSource.context().policy
+    }
 #endif
 
     init(

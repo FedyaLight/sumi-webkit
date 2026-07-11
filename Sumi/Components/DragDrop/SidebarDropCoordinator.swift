@@ -62,6 +62,7 @@ enum SidebarDropCoordinator {
         pasteboard: NSPasteboard,
         resolution: SidebarDropResolution,
         browserManager: BrowserManager,
+        urlDropService: SidebarURLDropService,
         windowState: BrowserWindowState?
     ) -> Bool {
         guard resolution.slot != .empty else { return false }
@@ -99,7 +100,7 @@ enum SidebarDropCoordinator {
             return false
         }
 
-        return browserManager.urlBarBundle.activePageRoutingOwner.openDroppedURL(
+        return urlDropService.open(
             droppedURL,
             in: windowState,
             at: resolution.slot

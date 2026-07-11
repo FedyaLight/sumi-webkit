@@ -228,7 +228,7 @@ struct SpacesList: View {
                 windowState.sidebarInteractionState.syncSidebarItemDrag(false)
             },
             onCommit: { move in
-                browserContext.tabManager.spaceLifecycleOwner.reorderSpace(
+                browserContext.tabManager.spaceServices.catalog.reorderSpace(
                     spaceId: move.id,
                     to: move.targetIndex
                 )

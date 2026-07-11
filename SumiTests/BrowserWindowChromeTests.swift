@@ -284,7 +284,7 @@ final class BrowserWindowChromeTests: XCTestCase {
             windowRegistry: windowRegistry
         )
 
-        windowRegistry.onWindowClose = { closedWindowIds.append($0) }
+        windowRegistry.onWindowClose = { closedWindowIds.append($0.id) }
         windowRegistry.register(windowState)
         windowRegistry.setActive(windowState)
         coordinator.attach(to: window)
@@ -376,8 +376,10 @@ final class BrowserWindowChromeTests: XCTestCase {
             initialWorkspaceTheme: .default
         )
 
-        XCTAssertTrue(type(of: contentView) == ContentView.self)
-        XCTAssertTrue(handler.persistedWindowIds.isEmpty)
+        withExtendedLifetime(browserManager) {
+            XCTAssertTrue(type(of: contentView) == ContentView.self)
+            XCTAssertTrue(handler.persistedWindowIds.isEmpty)
+        }
     }
 
     func testSplitPaneControlsOnlyHitTestWhenVisible() {
@@ -432,6 +434,7 @@ private final class WindowShouldCloseDelegate: NSObject, NSWindowDelegate {
 
 @MainActor
 private final class FakeWindowLifecycleHandler: BrowserWindowLifecycleHandling {
+    private let container: ModelContainer
     let tabManager: TabManager
     private(set) var persistedWindowIds: [UUID] = []
 
@@ -440,6 +443,7 @@ private final class FakeWindowLifecycleHandler: BrowserWindowLifecycleHandling {
             for: SumiStartupPersistence.schema,
             configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
         )
+        self.container = container
         tabManager = TabManager(context: container.mainContext, loadPersistedState: false)
     }
 

@@ -26,7 +26,7 @@ final class SplitMembershipResolutionOwnerTests: XCTestCase {
 
     func testRegularTabResolvesToItselfWithRegularOrigin() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
+        let space = harness.tabManager.spaceServices.catalog.createSpace(name: "Work")
         let tab = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://a.example", in: space)
         harness.windowState.currentSpaceId = space.id
 
@@ -45,7 +45,7 @@ final class SplitMembershipResolutionOwnerTests: XCTestCase {
 
     func testInitialHostForRegularTabsUsesTargetSpace() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
+        let space = harness.tabManager.spaceServices.catalog.createSpace(name: "Work")
         let incoming = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://a.example", in: space)
         let target = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://b.example", in: space)
 
@@ -56,7 +56,7 @@ final class SplitMembershipResolutionOwnerTests: XCTestCase {
 
     func testSourceSplitGroupAndRemovalIdForDirectMember() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
+        let space = harness.tabManager.spaceServices.catalog.createSpace(name: "Work")
         let first = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://a.example", in: space)
         let second = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://b.example", in: space, activate: false)
         let group = try XCTUnwrap(SplitGroup.make(
@@ -79,7 +79,7 @@ final class SplitMembershipResolutionOwnerTests: XCTestCase {
 
     func testPreferredFocusTabAfterUnsplitPrefersCurrentThenActiveThenFirstResolvable() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
+        let space = harness.tabManager.spaceServices.catalog.createSpace(name: "Work")
         let first = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://a.example", in: space)
         let second = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://b.example", in: space, activate: false)
         let group = try XCTUnwrap(SplitGroup.make(

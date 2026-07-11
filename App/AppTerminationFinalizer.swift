@@ -61,7 +61,7 @@ final class AppTerminationFinalizer {
 
         finalizationTask = Task { @MainActor [weak self] in
             await finalize()
-            self?.finish(reason: .completed)
+            self?.finalizationCompleted()
         }
         timeoutTask = Task { @MainActor [weak self] in
             guard let self else { return }
@@ -70,6 +70,11 @@ final class AppTerminationFinalizer {
             finish(reason: .timedOut)
         }
         return true
+    }
+
+    private func finalizationCompleted() {
+        finalizationTask = nil
+        finish(reason: .completed)
     }
 
     private func finish(reason: ReplyReason) {

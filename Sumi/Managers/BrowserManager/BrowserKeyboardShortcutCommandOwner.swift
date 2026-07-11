@@ -25,9 +25,7 @@ final class BrowserKeyboardShortcutCommandOwner {
     }
 
     struct ReaderCapabilities {
-        let activePageTab: @MainActor () -> Tab?
-        let activePageWebView: @MainActor () -> WKWebView?
-        let webView: @MainActor (UUID, UUID) -> WKWebView?
+        let activePage: @MainActor () -> ActivePageResolution?
         let toggleReaderMode: @MainActor (WKWebView, Tab) async -> Void
     }
 
@@ -55,13 +53,14 @@ final class BrowserKeyboardShortcutCommandOwner {
                     browserManager?.tabLifecycleService.opening.createNewTab()
                 },
                 openNewTabOrFloatingBar: { [weak browserManager] windowState in
-                    browserManager?.urlBarBundle.floatingBarRoutingOwner.openNewTabOrFloatingBar(in: windowState)
+                    browserManager?.urlBarBundle.floatingBar.commit
+                        .openNewTabSurface(in: windowState)
                 },
                 tabsForDisplay: { [weak browserManager] windowState in
-                    browserManager?.windowSessionBundle.tabContextOwner.tabsForDisplay(in: windowState) ?? []
+                    browserManager?.shellRuntime.windowTabs.tabsForDisplay(in: windowState) ?? []
                 },
                 currentTab: { [weak browserManager] windowState in
-                    browserManager?.windowSessionBundle.tabContextOwner.currentTab(for: windowState)
+                    browserManager?.shellRuntime.windowTabs.currentTab(for: windowState)
                 },
                 selectTab: { [weak browserManager] tab, windowState in
                     browserManager?.selectTab(tab, in: windowState)
@@ -87,7 +86,10 @@ final class BrowserKeyboardShortcutCommandOwner {
                     browserManager?.tabManager.spaceStateOwner.spaces ?? []
                 },
                 setActiveSpace: { [weak browserManager] space, windowState in
-                    browserManager?.windowSessionBundle.spaceStateOwner.setActiveSpace(space, in: windowState)
+                    browserManager?.windowSpaceTransitions.setActiveSpace(
+                        space,
+                        in: windowState
+                    )
                 },
                 setAllFoldersOpen: { [weak browserManager] isOpen, spaceId in
                     browserManager?.tabManager.folderMutationOwner.setAllFolders(open: isOpen, in: spaceId)
@@ -97,14 +99,8 @@ final class BrowserKeyboardShortcutCommandOwner {
                 }
             ),
             reader: ReaderCapabilities(
-                activePageTab: { [weak browserManager] in
-                    browserManager?.urlBarBundle.activePageRoutingOwner.activePageTabForActiveWindow()
-                },
-                activePageWebView: { [weak browserManager] in
-                    browserManager?.urlBarBundle.activePageRoutingOwner.activePageWebViewForActiveWindow()
-                },
-                webView: { [weak browserManager] tabId, windowId in
-                    browserManager?.webViewRoutingService.webView(for: tabId, in: windowId)
+                activePage: { [weak browserManager] in
+                    browserManager?.shellRuntime.activePageResolver.resolveActiveWindow()
                 },
                 toggleReaderMode: { webView, tab in
                     do {
@@ -192,17 +188,15 @@ final class BrowserKeyboardShortcutCommandOwner {
     }
 
     func toggleReaderModeInActiveWindow() {
-        guard let tab = reader.activePageTab(),
-              tab.representsSumiNativeSurface == false,
-              let windowState = tabSelection.activeWindow(),
-              let webView = reader.activePageWebView()
-                ?? reader.webView(tab.id, windowState.id)
+        guard let page = reader.activePage(),
+              page.tab.representsSumiNativeSurface == false,
+              let webView = page.canonicalWebView
         else {
             return
         }
 
         Task { @MainActor [reader] in
-            await reader.toggleReaderMode(webView, tab)
+            await reader.toggleReaderMode(webView, page.tab)
         }
     }
 

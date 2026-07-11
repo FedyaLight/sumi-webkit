@@ -10,7 +10,6 @@ import Foundation
 
 extension TabManager {
     var folderMutationOwner: TabFolderMutationOwner { structureOwners.folderMutationOwner }
-    var profileRuntimeStateOwner: TabProfileRuntimeStateOwner { lifecycleOwners.profileRuntimeStateOwner }
     var runtimePreparationOwner: TabRuntimePreparationOwner { lifecycleOwners.runtimePreparationOwner }
     var runtimePortsAttachmentOwner: TabRuntimePortsAttachmentOwner {
         lifecycleOwners.runtimePortsAttachmentOwner
@@ -22,7 +21,6 @@ extension TabManager {
     var regularTabDragService: SidebarRegularTabDragService { structureOwners.regularTabDragService }
     var lazyRestoreCoordinator: TabLazyRestoreCoordinator { structureOwners.lazyRestoreCoordinator }
     var spacePinnedStructureOwner: SpacePinnedStructureOwner { structureOwners.spacePinnedStructureOwner }
-    var spaceLifecycleOwner: TabSpaceLifecycleOwner { lifecycleOwners.spaceLifecycleOwner }
     var profileAssignments: ProfileAssignmentServices {
         lifecycleOwners.profileAssignments
     }
@@ -35,13 +33,11 @@ extension TabManager {
     var shortcutPinRuntimeResolutionOwner: ShortcutPinRuntimeResolutionOwner {
         shortcutOwners.shortcutPinRuntimeResolutionOwner
     }
-    var shortcutPinConversionOwner: ShortcutPinConversionOwner { shortcutOwners.shortcutPinConversionOwner }
     var shortcutDragOperationOwner: ShortcutDragOperationOwner { shortcutOwners.shortcutDragOperationOwner }
     var shortcutPresentationOwner: TabShortcutPresentationOwner { shortcutOwners.shortcutPresentationOwner }
     var shortcutContainerRemovalOwner: ShortcutContainerRemovalOwner {
         shortcutOwners.shortcutContainerRemovalOwner
     }
-    var shortcutLiveTabOwner: ShortcutLiveTabOwner { shortcutOwners.shortcutLiveTabOwner }
     var spaceLauncherProjectionOwner: SpaceLauncherProjectionOwner {
         structureOwners.spaceLauncherProjectionOwner
     }

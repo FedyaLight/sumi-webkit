@@ -6,7 +6,7 @@ import WebKit
 struct ExtensionRequestedTabOpeningService {
     let recentRequests: ExtensionRecentTabRequestHistory
     let loadResolver: ExtensionRequestedTabLoadResolver
-    let targetResolver: ExtensionRequestedTabTargetResolver
+    let placement: ExtensionRequestedTabTargetResolver
     let materializer: ExtensionRequestedTabWebViewMaterializer
     let registrar: ExtensionCreatedTabRuntimeRegistrar
     private let browserContext: @MainActor () -> (any ExtensionTabCreation)?
@@ -17,7 +17,7 @@ struct ExtensionRequestedTabOpeningService {
     init(
         recentRequests: ExtensionRecentTabRequestHistory,
         loadResolver: ExtensionRequestedTabLoadResolver,
-        targetResolver: ExtensionRequestedTabTargetResolver,
+        placement: ExtensionRequestedTabTargetResolver,
         materializer: ExtensionRequestedTabWebViewMaterializer,
         registrar: ExtensionCreatedTabRuntimeRegistrar,
         browserContext: @escaping @MainActor () -> (any ExtensionTabCreation)?,
@@ -27,7 +27,7 @@ struct ExtensionRequestedTabOpeningService {
     ) {
         self.recentRequests = recentRequests
         self.loadResolver = loadResolver
-        self.targetResolver = targetResolver
+        self.placement = placement
         self.materializer = materializer
         self.registrar = registrar
         self.browserContext = browserContext
@@ -51,7 +51,7 @@ struct ExtensionRequestedTabOpeningService {
                 .requestedTabBrowserManagerUnavailable.nsError()
         }
 
-        let target = try targetResolver.resolve(
+        let target = try placement.resolve(
             requestedWindow: requestedWindow,
             extensionContext: extensionContext
         )

@@ -84,8 +84,14 @@ struct WindowSessionSnapshot: Codable, Equatable, Hashable {
     var activeShortcutPinRole: ShortcutPinRole?
     var isShowingEmptyState: Bool
     var floatingBarReason: FloatingBarPresentationReason?
-    var activeTabsBySpace: [SpaceTabSelectionSnapshot]
-    var activeShortcutsBySpace: [SpaceShortcutSelectionSnapshot]
+    /// Map-shaped selection state stored as a stable array for Codable.
+    /// Canonical ordering is part of the session identity contract: restore
+    /// deduplication hashes complete snapshots, so dictionary iteration order
+    /// must never make the same window look like a different session. Invalid
+    /// duplicate Space keys collapse to the lexicographically smallest value
+    /// before any dictionary materialization can trap.
+    private(set) var activeTabsBySpace: [SpaceTabSelectionSnapshot]
+    private(set) var activeShortcutsBySpace: [SpaceShortcutSelectionSnapshot]
     var sidebarWidth: Double
     var savedSidebarWidth: Double
     var sidebarContentWidth: Double
@@ -140,8 +146,8 @@ struct WindowSessionSnapshot: Codable, Equatable, Hashable {
         self.activeShortcutPinRole = activeShortcutPinRole
         self.isShowingEmptyState = isShowingEmptyState
         self.floatingBarReason = floatingBarReason
-        self.activeTabsBySpace = activeTabsBySpace
-        self.activeShortcutsBySpace = activeShortcutsBySpace
+        self.activeTabsBySpace = Self.canonicalized(activeTabsBySpace)
+        self.activeShortcutsBySpace = Self.canonicalized(activeShortcutsBySpace)
         self.sidebarWidth = sidebarWidth
         self.savedSidebarWidth = savedSidebarWidth
         self.sidebarContentWidth = sidebarContentWidth
@@ -161,11 +167,18 @@ struct WindowSessionSnapshot: Codable, Equatable, Hashable {
         activeShortcutPinRole = try container.decodeIfPresent(ShortcutPinRole.self, forKey: .activeShortcutPinRole)
         isShowingEmptyState = try container.decode(Bool.self, forKey: .isShowingEmptyState)
         floatingBarReason = try container.decodeIfPresent(FloatingBarPresentationReason.self, forKey: .floatingBarReason)
-        activeTabsBySpace = try container.decode([SpaceTabSelectionSnapshot].self, forKey: .activeTabsBySpace)
-        activeShortcutsBySpace = try container.decodeIfPresent(
-            [SpaceShortcutSelectionSnapshot].self,
-            forKey: .activeShortcutsBySpace
-        ) ?? []
+        activeTabsBySpace = Self.canonicalized(
+            try container.decode(
+                [SpaceTabSelectionSnapshot].self,
+                forKey: .activeTabsBySpace
+            )
+        )
+        activeShortcutsBySpace = Self.canonicalized(
+            try container.decodeIfPresent(
+                [SpaceShortcutSelectionSnapshot].self,
+                forKey: .activeShortcutsBySpace
+            ) ?? []
+        )
         sidebarWidth = try container.decode(Double.self, forKey: .sidebarWidth)
         savedSidebarWidth = try container.decode(Double.self, forKey: .savedSidebarWidth)
         sidebarContentWidth = try container.decode(Double.self, forKey: .sidebarContentWidth)
@@ -197,5 +210,40 @@ struct WindowSessionSnapshot: Codable, Equatable, Hashable {
         try container.encode(floatingBarDraft, forKey: .floatingBarDraft)
         try container.encodeIfPresent(activeSplitGroupId, forKey: .activeSplitGroupId)
         try container.encodeIfPresent(glanceSession, forKey: .glanceSession)
+    }
+
+    private static func canonicalized(
+        _ selections: [SpaceTabSelectionSnapshot]
+    ) -> [SpaceTabSelectionSnapshot] {
+        let bySpace = selections.reduce(
+            into: [UUID: SpaceTabSelectionSnapshot]()
+        ) { result, selection in
+            if let current = result[selection.spaceId],
+               current.tabId.uuidString <= selection.tabId.uuidString {
+                return
+            }
+            result[selection.spaceId] = selection
+        }
+        return bySpace.values.sorted {
+            $0.spaceId.uuidString < $1.spaceId.uuidString
+        }
+    }
+
+    private static func canonicalized(
+        _ selections: [SpaceShortcutSelectionSnapshot]
+    ) -> [SpaceShortcutSelectionSnapshot] {
+        let bySpace = selections.reduce(
+            into: [UUID: SpaceShortcutSelectionSnapshot]()
+        ) { result, selection in
+            if let current = result[selection.spaceId],
+               current.shortcutPinId.uuidString
+                <= selection.shortcutPinId.uuidString {
+                return
+            }
+            result[selection.spaceId] = selection
+        }
+        return bySpace.values.sorted {
+            $0.spaceId.uuidString < $1.spaceId.uuidString
+        }
     }
 }

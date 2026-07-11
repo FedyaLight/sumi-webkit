@@ -112,22 +112,14 @@ final class SafariExtensionInstalledInternalPageRenderTests: XCTestCase {
             initialProfileProvider: { profile },
             managerFactory: { _, _, _, _ in manager }
         )
-        let browserManager = BrowserManager(
-            moduleRegistry: registry,
-            extensionsModule: extensionsModule
-        )
         let windowRegistry = WindowRegistry()
-        browserManager.windowRegistry = windowRegistry
-        browserManager.profileManager.profiles = [profile]
-        browserManager.currentProfile = profile
-        browserManager.bindTestWebViewCoordinator()
-        browserManager.tabManager = TabManager(
-            runtimePorts: BrowserTabManagerRuntimePortsFactory.registry(for: browserManager),
-            context: container.mainContext,
-            webViewSessions: browserManager.webViewSessions,
-            loadPersistedState: false
+        let browserManager = makeSafariExtensionTestBrowserManager(
+            moduleRegistry: registry,
+            extensionsModule: extensionsModule,
+            profile: profile,
+            windowRegistry: windowRegistry
         )
-        let space = browserManager.tabManager.spaceLifecycleOwner.createSpace(
+        let space = browserManager.tabManager.spaceServices.catalog.createSpace(
             name: "Installed 1Password",
             profileId: profile.id
         )

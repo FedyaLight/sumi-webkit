@@ -11,9 +11,8 @@ final class TabTransientWebKitTabLifecycleOwner {
         let regularTabCollectionOwner: () -> RegularTabCollectionOwner
         let attach: (Tab) -> Void
         let detach: (Tab) -> Void
-        let targetSpace: (Space?) -> Space
+        let creationPlacement: TabCreationPlacementService
         let spaceForID: (UUID) -> Space?
-        let backfillTargetSpaceBootstrapProfileIfNeeded: (Space) -> Bool
         let insertRegularTab: (Tab, UUID, Int?) -> Void
         let scheduleStructuralPersistence: () -> Void
         let setActiveTab: (Tab) -> Void
@@ -40,25 +39,23 @@ final class TabTransientWebKitTabLifecycleOwner {
         let normalizedUrl = normalizeURL(url, queryTemplate: resolvedSearchEngineTemplate)
         let validURL = URL(string: normalizedUrl) ?? SumiSurface.emptyTabURL
 
-        let targetSpace = dependencies.targetSpace(space)
-        if dependencies.backfillTargetSpaceBootstrapProfileIfNeeded(targetSpace) {
-            dependencies.scheduleStructuralPersistence()
+        return dependencies.creationPlacement.withCreationPlacement(
+            preferred: space
+        ) { placement in
+            let tab = dependencies.tabFactory.makeTab(
+                url: validURL,
+                name: "New Tab",
+                favicon: "globe",
+                spaceId: placement.space.id,
+                index: dependencies.regularTabCollectionOwner()
+                    .appendIndex(in: placement.space.id)
+            )
+            tab.profileId = placement.temporaryProfileOverrideId
+            tab.webExtensionContextOverride = webExtensionContextOverride
+            dependencies.attach(tab)
+            dependencies.membershipOwner().registerTransientExtensionTab(tab)
+            return tab
         }
-
-        let sid = targetSpace.id
-        let nextIndex = dependencies.regularTabCollectionOwner().appendIndex(in: sid)
-        let tab = dependencies.tabFactory.makeTab(
-            url: validURL,
-            name: "New Tab",
-            favicon: "globe",
-            spaceId: sid,
-            index: nextIndex
-        )
-        tab.profileId = targetSpace.profileId
-        tab.webExtensionContextOverride = webExtensionContextOverride
-        dependencies.attach(tab)
-        dependencies.membershipOwner().registerTransientExtensionTab(tab)
-        return tab
     }
 
     @discardableResult
@@ -183,20 +180,14 @@ extension TabTransientWebKitTabLifecycleOwner.Dependencies {
             },
             attach: { [weak tabManager] tab in tabManager?.tabCollectionMembershipOwner.attach(tab) },
             detach: { [weak tabManager] tab in tabManager?.tabCollectionMembershipOwner.detach(tab) },
-            targetSpace: { [weak tabManager] space in
-                guard let tabManager else { preconditionFailure("TabManager dependency used after deallocation") }
-                return tabManager.spaceLifecycleOwner.resolvedTargetSpace(preferred: space)
-            },
+            creationPlacement: tabManager.spaceServices.placement,
             spaceForID: { [weak tabManager] spaceId in
                 tabManager?.spaceStateOwner.space(with: spaceId)
-            },
-            backfillTargetSpaceBootstrapProfileIfNeeded: { [weak tabManager] space in
-                tabManager?.spaceLifecycleOwner.backfillTargetSpaceBootstrapProfileIfNeeded(space) ?? false
             },
             insertRegularTab: { [weak tabManager] tab, spaceId, insertionIndex in
                 tabManager?.regularTabLifecycleOwner.insertRegularTab(tab, in: spaceId, at: insertionIndex)
             },
-            scheduleStructuralPersistence: { [weak tabManager] in tabManager?.scheduleStructuralPersistence() },
+            scheduleStructuralPersistence: { [weak tabManager] in tabManager?.structuralPersistence.scheduleStructuralPersistence() },
             setActiveTab: { [weak tabManager] tab in tabManager?.activeSelectionOwner.setActiveTab(tab) },
             tabForID: { [weak tabManager] id in tabManager?.tabCollectionMembershipOwner.tab(for: id) },
             tabFactory: tabManager.tabFactory

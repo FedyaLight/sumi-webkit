@@ -2,35 +2,26 @@
 //  BrowserHistoryBundle.swift
 //  Sumi
 //
-//  Phase T3/T7 capability bag: history navigation (back/forward + open) + history menu.
+//  Phase T3/T7 capability bag: history navigation and clear-history command.
 //
 
 import Foundation
 
-/// Groups history-adjacent BrowserManager owners so BM no longer holds separate
-/// peer `lazy var` Owners for navigation and menu restore.
+/// Groups history navigation with the user-facing clear-history command.
 ///
 /// Navigation is a thin façade over back/forward and open-URL collaborators
 /// constructed inside `BrowserHistoryNavigationOwner` (not BM lazy Owners).
 @MainActor
 final class BrowserHistoryBundle {
     let historyNavigationOwner: BrowserHistoryNavigationOwner
-    let historyMenuOwner: BrowserHistoryMenuOwner
+    let clearHistory: BrowserHistoryClearCommand
 
     init(browserManager: BrowserManager) {
         self.historyNavigationOwner = BrowserHistoryNavigationOwner(
             activeWindow: { [weak browserManager] in browserManager?.windowRegistry?.activeWindow },
-            activePageTab: { [weak browserManager] windowState in
-                browserManager?.urlBarBundle.activePageRoutingOwner.activePageTab(for: windowState)
-            },
-            activePageWebView: { [weak browserManager] windowState in
-                browserManager?.urlBarBundle.activePageRoutingOwner.activePageWebView(for: windowState)
-            },
-            webView: { [weak browserManager] tabId, windowId in
-                browserManager?.webViewOwnershipQuery.webView(
-                    for: tabId,
-                    in: windowId
-                )
+            activePage: { [weak browserManager] windowState in
+                browserManager?.shellRuntime.activePageResolver
+                    .resolve(in: windowState)
             },
             openNativeBrowserSurface: { [weak browserManager] kind, url, windowState, preferredSpaceId in
                 browserManager?.chromeBundle.nativeSurfaceRoutingOwner.openNativeBrowserSurface(
@@ -44,9 +35,9 @@ final class BrowserHistoryBundle {
                 browserManager?.tabLifecycleService.opening.openNewTab(url: url, context: context)
             },
             loadCurrentPageURL: { [weak browserManager] tab, windowState, url in
-                browserManager?.windowSessionBundle.scopedNavigationOwner.loadWindowScopedPage(
+                browserManager?.webViewRoutingService.loadPage(
                     url,
-                    tab: tab,
+                    for: tab,
                     in: windowState,
                     reason: "BrowserHistoryNavigation.currentPage"
                 )
@@ -55,7 +46,7 @@ final class BrowserHistoryBundle {
                 browserManager?.windowRegistry.map { Array($0.windows.keys) } ?? []
             },
             createNewWindow: { [weak browserManager] in
-                browserManager?.windowSessionBundle.commands.createNewWindow()
+                browserManager?.windowCommands.createNewWindow()
             },
             awaitNextRegisteredWindow: { [weak browserManager] existingWindowIDs in
                 await browserManager?.windowRegistry?.awaitNextRegisteredWindow(
@@ -66,10 +57,10 @@ final class BrowserHistoryBundle {
                 browserManager?.tabManager.structuralPersistence.scheduleRuntimeStatePersistence(for: tab)
             },
             schedulePrepareVisibleWebViews: { [weak browserManager] windowState in
-                browserManager?.windowSessionBundle.visualMutationOwner.schedulePrepareVisibleWebViews(for: windowState)
+                browserManager?.shellRuntime.windowVisuals.schedulePrepareVisibleWebViews(for: windowState)
             },
             refreshCompositor: { [weak browserManager] windowState in
-                browserManager?.windowSessionBundle.visualMutationOwner.refreshCompositor(for: windowState)
+                browserManager?.shellRuntime.windowVisuals.refreshCompositor(for: windowState)
             },
             navigateBack: { webView in
                 SumiWebViewNavigator.goBack(on: webView)
@@ -78,7 +69,7 @@ final class BrowserHistoryBundle {
                 SumiWebViewNavigator.goForward(on: webView)
             }
         )
-        self.historyMenuOwner = BrowserHistoryMenuOwner(
+        self.clearHistory = BrowserHistoryClearCommand(
             browserManager: browserManager
         )
     }

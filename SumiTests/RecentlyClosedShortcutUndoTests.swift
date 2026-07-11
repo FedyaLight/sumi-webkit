@@ -15,7 +15,7 @@ final class RecentlyClosedShortcutUndoTests: XCTestCase {
         harness.browserManager.tabLifecycleService.closeOrchestration.closeTab(tab, in: harness.windowState)
         XCTAssertTrue(harness.browserManager.tabManager.regularTabCollectionOwner.tabs(in: harness.space).isEmpty)
 
-        harness.browserManager.windowSessionBundle.recentlyClosedRestoreOwner.reopenMostRecentClosedItem()
+        harness.browserManager.windowSessionBundle.sessionRecovery.reopenMostRecentClosedItem()
 
         let restored = harness.browserManager.tabManager.regularTabCollectionOwner.tabs(in: harness.space).first
         XCTAssertEqual(restored?.url, URL(string: "https://regular.example")!)
@@ -25,7 +25,7 @@ final class RecentlyClosedShortcutUndoTests: XCTestCase {
     func testUndoCloseTabRestoresSpacePinnedLiveInstanceWhenLauncherStillExists() throws {
         let harness = makeHarness()
         let pin = try insertSpacePinnedLauncher(in: harness)
-        let liveTab = harness.browserManager.tabManager.shortcutLiveTabOwner.activateShortcutPin(
+        let liveTab = harness.browserManager.tabManager.shortcutTabMaterializer.materialize(
             pin,
             in: harness.windowState.id,
             currentSpaceId: harness.space.id
@@ -42,7 +42,7 @@ final class RecentlyClosedShortcutUndoTests: XCTestCase {
         harness.browserManager.tabLifecycleService.closeOrchestration.closeTab(liveTab, in: harness.windowState)
         XCTAssertNil(harness.browserManager.tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pin.id, in: harness.windowState.id))
 
-        harness.browserManager.windowSessionBundle.recentlyClosedRestoreOwner.reopenMostRecentClosedItem()
+        harness.browserManager.windowSessionBundle.sessionRecovery.reopenMostRecentClosedItem()
 
         let restored = try XCTUnwrap(
             harness.browserManager.tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pin.id, in: harness.windowState.id)
@@ -58,7 +58,7 @@ final class RecentlyClosedShortcutUndoTests: XCTestCase {
     func testUndoCloseTabRestoresLauncherWhenSpacePinnedLauncherWasDeletedAfterLiveClose() throws {
         let harness = makeHarness()
         let pin = try insertSpacePinnedLauncher(in: harness)
-        let liveTab = harness.browserManager.tabManager.shortcutLiveTabOwner.activateShortcutPin(
+        let liveTab = harness.browserManager.tabManager.shortcutTabMaterializer.materialize(
             pin,
             in: harness.windowState.id,
             currentSpaceId: harness.space.id
@@ -71,7 +71,7 @@ final class RecentlyClosedShortcutUndoTests: XCTestCase {
         harness.browserManager.tabManager.shortcutPinCommandOwner.removeShortcutPin(pin)
         XCTAssertNil(harness.browserManager.tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: pin.id))
 
-        harness.browserManager.windowSessionBundle.recentlyClosedRestoreOwner.reopenMostRecentClosedItem()
+        harness.browserManager.windowSessionBundle.sessionRecovery.reopenMostRecentClosedItem()
 
         let restoredPin = try XCTUnwrap(harness.browserManager.tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: pin.id))
         XCTAssertEqual(restoredPin.role, .spacePinned)
@@ -95,7 +95,7 @@ final class RecentlyClosedShortcutUndoTests: XCTestCase {
         harness.browserManager.tabManager.shortcutPinCommandOwner.removeShortcutPin(inserted)
         XCTAssertTrue(harness.browserManager.tabManager.shortcutPinCollectionStateOwner.essentialPins(for: harness.profile.id).isEmpty)
 
-        harness.browserManager.windowSessionBundle.recentlyClosedRestoreOwner.reopenMostRecentClosedItem()
+        harness.browserManager.windowSessionBundle.sessionRecovery.reopenMostRecentClosedItem()
 
         let restoredPin = try XCTUnwrap(harness.browserManager.tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: inserted.id))
         XCTAssertEqual(restoredPin.role, .essential)
@@ -106,7 +106,7 @@ final class RecentlyClosedShortcutUndoTests: XCTestCase {
     func testClosingLastRegularTabReturnsToPreviouslySelectedEssentialLiveInstance() throws {
         let harness = makeHarness()
         let pin = try insertEssentialLauncher(in: harness)
-        let essentialLiveTab = harness.browserManager.tabManager.shortcutLiveTabOwner.activateShortcutPin(
+        let essentialLiveTab = harness.browserManager.tabManager.shortcutTabMaterializer.materialize(
             pin,
             in: harness.windowState.id,
             currentSpaceId: harness.space.id
@@ -145,7 +145,7 @@ final class RecentlyClosedShortcutUndoTests: XCTestCase {
         harness.browserManager.selectTab(olderRegularTab, in: harness.windowState)
 
         let pin = try insertEssentialLauncher(in: harness)
-        let essentialLiveTab = harness.browserManager.tabManager.shortcutLiveTabOwner.activateShortcutPin(
+        let essentialLiveTab = harness.browserManager.tabManager.shortcutTabMaterializer.materialize(
             pin,
             in: harness.windowState.id,
             currentSpaceId: harness.space.id
@@ -233,7 +233,7 @@ final class RecentlyClosedShortcutUndoTests: XCTestCase {
     func testUnloadingSpacePinnedLiveTabReturnsToPreviouslySelectedEssentialLiveInstance() throws {
         let harness = makeHarness()
         let essentialPin = try insertEssentialLauncher(in: harness)
-        let essentialLiveTab = harness.browserManager.tabManager.shortcutLiveTabOwner.activateShortcutPin(
+        let essentialLiveTab = harness.browserManager.tabManager.shortcutTabMaterializer.materialize(
             essentialPin,
             in: harness.windowState.id,
             currentSpaceId: harness.space.id
@@ -241,7 +241,7 @@ final class RecentlyClosedShortcutUndoTests: XCTestCase {
         harness.browserManager.selectTab(essentialLiveTab, in: harness.windowState)
 
         let spacePinnedPin = try insertSpacePinnedLauncher(in: harness)
-        let spacePinnedLiveTab = harness.browserManager.tabManager.shortcutLiveTabOwner.activateShortcutPin(
+        let spacePinnedLiveTab = harness.browserManager.tabManager.shortcutTabMaterializer.materialize(
             spacePinnedPin,
             in: harness.windowState.id,
             currentSpaceId: harness.space.id

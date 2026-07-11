@@ -230,7 +230,7 @@ final class BrowserTabSelectionOwnerTests: XCTestCase {
         XCTAssertEqual(
             probe.events,
             [
-                "updateProfileRuntimeStates",
+                "syncSpaceContext",
                 "clearFind",
                 "refreshCompositor",
                 "persistWindowSession",
@@ -323,7 +323,7 @@ final class BrowserTabSelectionOwnerTests: XCTestCase {
             currentTab: { _ in currentTab },
             liveShortcutTabs: { _ in liveShortcutTabs },
             updateActiveSplitSide: { _, _ in probe.events.append("splitSide") },
-            syncWindowSpaceContext: { _, _ in probe.events.append("syncSpaceContext") },
+            syncWindowSpaceContext: { _ in probe.events.append("syncSpaceContext") },
             space: { spaceId in
                 guard let space, space.id == spaceId else { return nil }
                 return space
@@ -354,8 +354,7 @@ final class BrowserTabSelectionOwnerTests: XCTestCase {
             ),
             updateActiveTabState: { _ in probe.events.append("updateActiveTabState") },
             persistWindowSession: { _ in probe.events.append("persistWindowSession") },
-            selectionTargetForSpaceActivation: { _, _ in selectionTarget },
-            updateProfileRuntimeStates: { _ in probe.events.append("updateProfileRuntimeStates") }
+            selectionTargetForSpaceActivation: { _, _ in selectionTarget }
         )
     }
 

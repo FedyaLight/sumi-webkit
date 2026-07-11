@@ -41,34 +41,28 @@ enum StartupWindowRestorationPlanner {
 
     static func plan(
         archivedSnapshots: [LastSessionWindowSnapshot],
-        existingSessions: Set<WindowSessionSnapshot>,
-        hasStartupWindow: Bool
+        existingWindowIDs: Set<UUID>,
+        hasStartupWindow: Bool,
+        startupWindowArchiveID: UUID? = nil
     ) -> Plan {
-        let hasArchivedSessionInExistingWindow = archivedSnapshots.contains {
-            existingSessions.contains($0.session)
+        let missingSnapshots = archivedSnapshots.filter {
+            existingWindowIDs.contains($0.id) == false
         }
-
-        if hasArchivedSessionInExistingWindow {
+        let startupWindowAlreadyRestored = startupWindowArchiveID.map { archiveID in
+            archivedSnapshots.contains { $0.id == archiveID }
+        } ?? false
+        guard hasStartupWindow,
+              startupWindowAlreadyRestored == false,
+              let primarySnapshot = missingSnapshots.first else {
             return Plan(
                 primarySnapshotForStartupWindow: nil,
-                additionalSnapshots: archivedSnapshots.filter {
-                    !existingSessions.contains($0.session)
-                }
-            )
-        }
-
-        guard hasStartupWindow, let primarySnapshot = archivedSnapshots.first else {
-            return Plan(
-                primarySnapshotForStartupWindow: nil,
-                additionalSnapshots: archivedSnapshots.filter {
-                    !existingSessions.contains($0.session)
-                }
+                additionalSnapshots: missingSnapshots
             )
         }
 
         return Plan(
             primarySnapshotForStartupWindow: primarySnapshot,
-            additionalSnapshots: Array(archivedSnapshots.dropFirst())
+            additionalSnapshots: Array(missingSnapshots.dropFirst())
         )
     }
 }

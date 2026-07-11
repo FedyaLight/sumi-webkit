@@ -76,7 +76,34 @@ struct SidebarBrowserContext {
     let windowRegistry: () -> WindowRegistry?
 
     static func live(browserManager: BrowserManager) -> SidebarBrowserContext {
-        SidebarBrowserContext(
+        let tabManager = browserManager.tabManager
+        let shortcutInsertion = ShortcutURLInsertionService(
+            store: tabManager.shortcutPinStoreOwner,
+            materializer: tabManager.shortcutTabMaterializer,
+            structuralLookup: tabManager.structuralLookupCoordinator,
+            prepareActivation: { [weak browserManager] windowState in
+                guard let browserManager,
+                      browserManager.windowRegistry?.windows[windowState.id] === windowState
+                else { return nil }
+                return { [browserManager, windowState] tab in
+                    browserManager.selectTab(tab, in: windowState)
+                }
+            },
+            schedulePersistence: { [weak tabManager] in
+                tabManager?.structuralPersistence.scheduleStructuralPersistence()
+            }
+        )
+        let urlDropService = SidebarURLDropService(
+            tabOpening: browserManager.tabLifecycleService.opening,
+            nativeSurfaces: browserManager.chromeBundle.nativeSurfaceRoutingOwner,
+            destinations: SidebarURLDropDestinationCatalog(
+                spaces: tabManager.spaceStateOwner,
+                folders: tabManager.folderCollectionStateOwner,
+                essentials: tabManager.essentialsShortcutPlacementOwner
+            ),
+            shortcutInsertion: shortcutInsertion
+        )
+        return SidebarBrowserContext(
             tabManager: browserManager.tabManager,
             profileManager: browserManager.profileManager,
             liveFolderManager: browserManager.liveFolderManager,
@@ -84,7 +111,7 @@ struct SidebarBrowserContext {
             downloadManager: browserManager.downloadManager,
             downloadsPopoverPresenter: browserManager.chromeBundle.commands.downloadsPopoverPresenter,
             glanceManager: browserManager.glanceManager,
-            extensionSurfaceStore: browserManager.extensionsModule.surfaceStore,
+            extensionSurfaceStore: browserManager.optionalModules.extensions.surfaceStore,
             regularTabs: SidebarRegularTabsController.live(
                 tabManager: browserManager.tabManager,
                 liveFolderManager: browserManager.liveFolderManager
@@ -157,13 +184,13 @@ struct SidebarBrowserContext {
                 browserManager?.currentProfile
             },
             currentTab: { [weak browserManager] windowState in
-                browserManager?.windowSessionBundle.tabContextOwner.currentTab(for: windowState)
+                browserManager?.shellRuntime.windowTabs.currentTab(for: windowState)
             },
             extensionToolbarSlots: { [weak browserManager] enabledExtensions, profileId in
                 guard let browserManager else { return [] }
-                return browserManager.extensionsModule.orderedPinnedToolbarSlots(
+                return browserManager.optionalModules.extensions.orderedPinnedToolbarSlots(
                     enabledExtensions: enabledExtensions,
-                    sumiScriptsManagerEnabled: browserManager.userscriptsModule.isEnabled,
+                    sumiScriptsManagerEnabled: browserManager.optionalModules.userscripts.isEnabled,
                     profileId: profileId
                 )
             },
@@ -176,12 +203,13 @@ struct SidebarBrowserContext {
             savedSidebarWidth: { [weak browserManager] windowState in
                 browserManager?.chromeBundle.sidebarPresentationOwner.savedSidebarWidth(for: windowState) ?? BrowserWindowState.sidebarDefaultWidth
             },
-            performDrop: { [weak browserManager] pasteboard, resolution, windowState in
+            performDrop: { [weak browserManager, urlDropService] pasteboard, resolution, windowState in
                 guard let browserManager else { return false }
                 return SidebarDropCoordinator.performDrop(
                     pasteboard: pasteboard,
                     resolution: resolution,
                     browserManager: browserManager,
+                    urlDropService: urlDropService,
                     windowState: windowState
                 )
             },

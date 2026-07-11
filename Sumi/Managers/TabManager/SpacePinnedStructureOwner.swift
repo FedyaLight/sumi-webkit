@@ -214,7 +214,7 @@ extension SpacePinnedStructureOwner.Dependencies {
                     operation()
                     return
                 }
-                tabManager.withStructuralUpdateTransaction(operation)
+                tabManager.structuralLookupCoordinator.withTransaction(operation)
             },
             setFolders: { [weak tabManager] folders, spaceId in
                 tabManager?.structuralCollectionMutationOwner.setFolders(folders, for: spaceId)
@@ -226,7 +226,7 @@ extension SpacePinnedStructureOwner.Dependencies {
                 tabManager?.shortcutPinCollectionStateOwner.spacePinnedPins(for: spaceId) ?? []
             },
             scheduleStructuralPersistence: { [weak tabManager] in
-                tabManager?.scheduleStructuralPersistence()
+                tabManager?.structuralPersistence.scheduleStructuralPersistence()
             }
         )
     }

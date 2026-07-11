@@ -4,7 +4,8 @@ import WebKit
 @MainActor
 enum BrowserBoostRuntimeFactory {
     static func runtime(for browserManager: BrowserManager) -> SumiBoostsModule.Runtime {
-        SumiBoostsModule.Runtime(
+        let inspector = WebInspectorService()
+        return SumiBoostsModule.Runtime(
             windowOwnedWebView: { [weak browserManager] tab, windowId in
                 browserManager?.webViewRoutingService.windowOwnedWebView(for: tab, in: windowId)
             },
@@ -23,8 +24,12 @@ enum BrowserBoostRuntimeFactory {
             applyBoostAwareZoom: { [weak browserManager] tab, webView in
                 browserManager?.chromeBundle.zoomCommandOwner.applyBoostAwareZoom(for: tab, webView: webView)
             },
-            openWebInspector: { [weak browserManager] tab, windowState in
-                browserManager?.urlBarBundle.activePageRoutingOwner.openWebInspector(for: tab, in: windowState)
+            openWebInspector: { [weak browserManager, inspector] tab, windowState in
+                guard !tab.representsSumiNativeSurface,
+                      let webView = browserManager?.webViewRoutingService
+                        .windowOwnedWebView(for: tab, in: windowState.id)
+                else { return }
+                _ = inspector.inspect(webView.sumiActivePresentationWebView)
             },
             sidebarPosition: { [weak browserManager] in
                 browserManager?.sumiSettings?.sidebarPosition ?? .left
@@ -69,7 +74,7 @@ enum BrowserBoostRuntimeFactory {
         }
 
         for windowState in browserManager.windowRegistry?.allWindows ?? [] {
-            for tab in browserManager.windowSessionBundle.tabContextOwner.tabsForDisplay(in: windowState) where tabMatches(tab) {
+            for tab in browserManager.shellRuntime.windowTabs.tabsForDisplay(in: windowState) where tabMatches(tab) {
                 if let webView = browserManager.webViewRoutingService.windowOwnedWebView(for: tab, in: windowState.id) {
                     visit(tab, webView)
                 }

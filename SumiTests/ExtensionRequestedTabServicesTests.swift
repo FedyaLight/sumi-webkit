@@ -89,7 +89,7 @@ final class ExtensionRequestedTabServicesTests: XCTestCase {
         XCTAssertEqual(targetSpace?.id, harness.spaceB.id)
     }
 
-    func testRegularExtensionTabCopiesTargetSpaceProfileIdentity() throws {
+    func testRegularExtensionTabInheritsTargetSpaceProfileIdentity() throws {
         let harness = try makeProfileRoutingHarness()
 
         let tab = harness.browserManager.extensionBridgeComposition.tabMutation
@@ -101,7 +101,8 @@ final class ExtensionRequestedTabServicesTests: XCTestCase {
             )
 
         XCTAssertEqual(tab.spaceId, harness.spaceB.id)
-        XCTAssertEqual(tab.profileId, harness.profileB.id)
+        XCTAssertNil(tab.profileId)
+        XCTAssertIdentical(tab.resolveProfile(), harness.profileB)
     }
 
     func testExtensionTargetSpaceWithoutWindowDoesNotFallbackToGlobalCurrentSpace() throws {

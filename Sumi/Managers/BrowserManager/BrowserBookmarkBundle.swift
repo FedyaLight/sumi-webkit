@@ -17,7 +17,7 @@ final class BrowserBookmarkBundle {
         self.bookmarkCommandOwner = BrowserBookmarkCommandOwner(
             activeWindow: { [weak browserManager] in browserManager?.windowRegistry?.activeWindow },
             activePageTab: { [weak browserManager] windowState in
-                browserManager?.urlBarBundle.activePageRoutingOwner.activePageTab(for: windowState)
+                browserManager?.shellRuntime.activePageResolver.resolve(in: windowState)?.tab
             },
             bookmarkManager: { [weak browserManager] in browserManager?.bookmarkManager },
             bookmarkEditorPresentationRequest: { [weak browserManager] in
@@ -48,7 +48,7 @@ final class BrowserBookmarkBundle {
                 browserManager?.windowRegistry.map { Array($0.windows.keys) } ?? []
             },
             createNewWindow: { [weak browserManager] in
-                browserManager?.windowSessionBundle.commands.createNewWindow()
+                browserManager?.windowCommands.createNewWindow()
             },
             awaitNextRegisteredWindow: { [weak browserManager] existingWindowIDs in
                 await browserManager?.windowRegistry?.awaitNextRegisteredWindow(
@@ -56,7 +56,9 @@ final class BrowserBookmarkBundle {
                 )
             },
             space: { [weak browserManager] spaceId in
-                browserManager?.windowSessionBundle.spaceStateOwner.space(for: spaceId)
+                spaceId.flatMap {
+                    browserManager?.tabManager.spaceStateOwner.space(with: $0)
+                }
             },
             tabsInSpace: { [weak browserManager] space in
                 browserManager?.tabManager.regularTabCollectionOwner.tabs(in: space) ?? []

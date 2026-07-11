@@ -31,9 +31,9 @@ final class ShortcutLiveTabUnloadNotificationTests: XCTestCase {
         XCTAssertEqual(spy.presentTabUnloadedNotificationCalls.map(\.windowState?.id), [windowState.id])
     }
 
-    func testShortcutLiveTabCloseOwnerPresentsTabUnloadedNotificationOnMainPath() throws {
+    func testShortcutLiveTabCloseServicePresentsTabUnloadedNotificationOnMainPath() throws {
         let tabManager = try makeInMemoryTabManager()
-        let space = tabManager.spaceLifecycleOwner.createSpace(name: "Workspace")
+        let space = tabManager.spaceServices.catalog.createSpace(name: "Workspace")
         let pin = ShortcutPin(
             id: UUID(),
             role: .spacePinned,
@@ -56,7 +56,7 @@ final class ShortcutLiveTabUnloadNotificationTests: XCTestCase {
             )
         )
 
-        let liveTab = tabManager.shortcutLiveTabOwner.activateShortcutPin(
+        let liveTab = tabManager.shortcutTabMaterializer.materialize(
             pin,
             in: windowState.id,
             currentSpaceId: space.id
@@ -66,7 +66,7 @@ final class ShortcutLiveTabUnloadNotificationTests: XCTestCase {
         windowState.currentShortcutPinRole = pin.role
 
         let spy = NotificationPresentingSpy()
-        let owner = BrowserShortcutLiveTabCloseOwner(
+        let service = ShortcutLiveTabCloseService(
             tabManager: { tabManager },
             recentlyClosedManager: { RecentlyClosedManager() },
             fallbackPlanner: {
@@ -74,20 +74,15 @@ final class ShortcutLiveTabUnloadNotificationTests: XCTestCase {
                     selectionService: ShellSelectionService { _ in [] }
                 )
             },
-            selectTab: { _, _ in },
-            performImmediateVisualHandoffIfPossible: { _ in },
-            persistWindowSession: { _ in },
-            showEmptyState: { _ in },
-            restoreShortcutSplitMember: { _, _, _, _ in
-                XCTFail("restoreShortcutSplitMember should not be used")
-            },
-            unloadShortcutHostedSplitGroup: { _, _ in
-                XCTFail("unloadShortcutHostedSplitGroup should not be used")
-            },
+            selectTabWithoutPersistence: { _, _ in /* No-op. */ },
+            performImmediateVisualHandoffIfPossible: { _ in /* No-op. */ },
+            persistWindowSession: { _ in /* No-op. */ },
+            showEmptyStateWithoutPersistence: { _ in /* No-op. */ },
+            splitShortcuts: { nil },
             notifications: { spy }
         )
 
-        owner.close(liveTab, in: windowState)
+        service.close(liveTab, in: windowState)
 
         XCTAssertEqual(spy.presentTabUnloadedNotificationCalls.map(\.count), [1])
         XCTAssertEqual(spy.presentTabUnloadedNotificationCalls.map(\.windowState?.id), [windowState.id])

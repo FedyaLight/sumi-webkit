@@ -17,7 +17,7 @@ enum BrowserManagerRuntimeWiring {
         // Live Folders runtime attaches only when the module is enabled (W4/R9),
         // via OptionalModuleHost.attachEnabled.
         browserManager.downloadManager.retryRuntime = BrowserDownloadRetryRuntimeFactory.runtime(for: browserManager)
-        browserManager.optionalModuleHost.attachEnabled(into: browserManager)
+        browserManager.optionalModules.attachEnabled(into: browserManager)
         browserManager.glanceManager.attach(
             runtime: BrowserGlanceRuntimeService.runtime(for: browserManager)
         )
@@ -41,7 +41,7 @@ enum BrowserManagerRuntimeWiring {
                 coordinator.websiteDataCleanupService.registerExtensionRuntime {
                     [weak browserManager] profileIDs in
                     guard let browserManager else { return false }
-                    return browserManager.extensionsModule
+                    return browserManager.optionalModules.extensions
                         .quiesceForWebsiteDataMutation(profileIDs: profileIDs)
                 }
                 startPersistedStateLoadIfShellReady(browserManager)

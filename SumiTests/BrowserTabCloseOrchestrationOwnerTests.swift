@@ -19,8 +19,8 @@ final class BrowserTabCloseOrchestrationOwnerTests: XCTestCase {
             glanceManager: glanceManager,
             tabManager: { fatalError("tabManager should not be used") },
             fallbackPlanner: { fatalError("fallbackPlanner should not be used") },
-            shortcutLiveTabCloseOwner: {
-                fatalError("shortcutLiveTabCloseOwner should not be used")
+            shortcutLiveTabCloseService: {
+                fatalError("shortcutLiveTabCloseService should not be used")
             },
             selectTab: { _, _ in fatalError("selectTab should not be used") },
             performImmediateVisualHandoffIfPossible: { _ in

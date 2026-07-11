@@ -1,13 +1,76 @@
 import Foundation
+import SumiWebRuntime
 
 @MainActor
 final class BrowserShellRuntime {
+    private weak var tabManager: TabManager?
+    private weak var splitManager: SplitViewManager?
+    weak var glanceManager: GlanceManager?
+    let webViewSessions: WebViewSessionRepository
     private var adoptWebViewCoordinator: (@MainActor (WebViewCoordinator?) -> Void)?
     private var setDestructiveCleanupPreparer: (@MainActor (WebViewCoordinator?) -> Void)?
     private var windowRegistryChanged: (@MainActor (WindowRegistry?) -> Void)?
     private var retainedWebViewCoordinator: WebViewCoordinator?
     private weak var retainedWindowRegistry: WindowRegistry?
     var windowShellContentViewFactory: BrowserWindowShellService.ContentViewFactory?
+
+    lazy var windowSelection = ShellSelectionService { [weak self] windowId in
+        self?.splitManager?.visibleTabIds(for: windowId) ?? []
+    }
+    lazy var activePageResolver = makeActivePageResolver()
+
+    lazy var windowTabs = BrowserWindowTabContext(
+        selectionService: { [weak self] in self?.windowSelection },
+        tabStore: { [weak self] in self?.tabManager?.runtimeStore },
+        windows: { [weak self] in
+            self?.retainedWindowRegistry.map {
+                Array($0.windows.values)
+            } ?? []
+        },
+        liveShortcutTabs: { [weak self] windowId in
+            self?.tabManager?.shortcutPresentationOwner
+                .liveShortcutTabs(in: windowId) ?? []
+        },
+        visibleSplitTabIds: { [weak self] windowId in
+            Set(self?.splitManager?.visibleTabIds(for: windowId) ?? [])
+        }
+    )
+
+    lazy var windowVisuals = BrowserWindowVisualCoordinator(
+        hasActiveHistorySwipe: { [weak self] windowId in
+            self?.retainedWebViewCoordinator?.protectionRuntime
+                .hasActiveHistorySwipe(in: windowId) == true
+        },
+        currentTab: { [weak self] windowState in
+            self?.windowTabs.currentTab(for: windowState)
+        },
+        performImmediateVisualHandoffIfPossible: { [weak self] windowId in
+            self?.retainedWebViewCoordinator?.compositorRuntime
+                .performImmediateVisualHandoffIfPossible(in: windowId) ?? false
+        },
+        prepareVisibleWebViews: { [weak self] windowState in
+            guard let self else { return false }
+            return requireWebViewCoordinator().visiblePreparationService
+                .prepare(for: windowState)
+        },
+        schedulePrepareVisibleWebViews: { [weak self] windowState in
+            guard let self else { return }
+            requireWebViewCoordinator().visiblePreparationService
+                .schedule(for: windowState)
+        }
+    )
+
+    init(
+        tabManager: TabManager,
+        splitManager: SplitViewManager,
+        glanceManager: GlanceManager,
+        webViewSessions: WebViewSessionRepository
+    ) {
+        self.tabManager = tabManager
+        self.splitManager = splitManager
+        self.glanceManager = glanceManager
+        self.webViewSessions = webViewSessions
+    }
 
     var webViewCoordinator: WebViewCoordinator? {
         retainedWebViewCoordinator

@@ -9,13 +9,13 @@ private final class BrowserAuxiliaryWindowContext:
     private let windowRegistry: @MainActor () -> WindowRegistry?
     private let currentProfile: @MainActor () -> UUID?
     private let spaces: TabSpaceCollectionStateOwner
-    private let tabs: BrowserWindowTabContextOwner
+    private let tabs: BrowserWindowTabContext
 
     init(
         windowRegistry: @escaping @MainActor () -> WindowRegistry?,
         currentProfile: @escaping @MainActor () -> UUID?,
         spaces: TabSpaceCollectionStateOwner,
-        tabs: BrowserWindowTabContextOwner
+        tabs: BrowserWindowTabContext
     ) {
         self.windowRegistry = windowRegistry
         self.currentProfile = currentProfile
@@ -247,7 +247,7 @@ final class BrowserAuxiliaryWindowComposition {
         windowRegistry: @escaping @MainActor () -> WindowRegistry?,
         currentProfile: @escaping @MainActor () -> UUID?,
         spaces: TabSpaceCollectionStateOwner,
-        tabContext: BrowserWindowTabContextOwner,
+        tabContext: BrowserWindowTabContext,
         transientTabs: TabTransientWebKitTabLifecycleOwner,
         webViewOwnership: @escaping @MainActor () -> WebViewOwnershipService?,
         extensions: SumiExtensionsModule,

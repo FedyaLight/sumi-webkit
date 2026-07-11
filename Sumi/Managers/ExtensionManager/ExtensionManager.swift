@@ -149,7 +149,7 @@ final class ExtensionManager: NSObject, ObservableObject {
     lazy var requestedTabContextPreloader =
         ExtensionRequestedTabContextPreloader(
             loadResolver: requestedTabLoadResolver,
-            targetResolver: requestedTabTargetResolver,
+            placement: requestedTabTargetResolver,
             profileRuntime: profileRuntime,
             runtime: { [weak self] in self?.runtime ?? .inactive },
             contextLoading: initialDocumentRuntimePreparationOwner
@@ -157,7 +157,7 @@ final class ExtensionManager: NSObject, ObservableObject {
     lazy var requestedTabOpening = ExtensionRequestedTabOpeningService(
         recentRequests: recentExtensionTabRequests,
         loadResolver: requestedTabLoadResolver,
-        targetResolver: requestedTabTargetResolver,
+        placement: requestedTabTargetResolver,
         materializer: requestedTabWebViewMaterializer,
         registrar: extensionCreatedTabRegistrar,
         browserContext: { [weak self] in self?.extensionTabMutation },

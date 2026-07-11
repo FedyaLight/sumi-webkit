@@ -13,7 +13,6 @@ final class TabStructuralPersistenceService {
     private let selectionStore: TabSelectionStore
     private let runtimeStateCoalescer: RuntimeStateCoalescer
     private let state: TabStateStore
-    private let reconcileProfileRuntimeStates: (UUID?) -> Void
     private let debounceNanoseconds: UInt64
 
     private(set) var dirtySet = TabStructuralDirtySet()
@@ -27,33 +26,13 @@ final class TabStructuralPersistenceService {
         selectionStore: TabSelectionStore,
         runtimeStateCoalescer: RuntimeStateCoalescer,
         debounceNanoseconds: UInt64 = 250_000_000,
-        state: TabStateStore,
-        reconcileProfileRuntimeStates: @escaping (UUID?) -> Void
+        state: TabStateStore
     ) {
         self.structuralStore = structuralStore
         self.selectionStore = selectionStore
         self.runtimeStateCoalescer = runtimeStateCoalescer
         self.debounceNanoseconds = debounceNanoseconds
         self.state = state
-        self.reconcileProfileRuntimeStates = reconcileProfileRuntimeStates
-    }
-
-    convenience init(
-        structuralStore: TabStructuralSnapshotStore,
-        selectionStore: TabSelectionStore,
-        runtimeStateCoalescer: RuntimeStateCoalescer,
-        state: TabStateStore,
-        profileRuntimeState: TabProfileRuntimeStateOwner
-    ) {
-        self.init(
-            structuralStore: structuralStore,
-            selectionStore: selectionStore,
-            runtimeStateCoalescer: runtimeStateCoalescer,
-            state: state,
-            reconcileProfileRuntimeStates: {
-                profileRuntimeState.reconcile(activeSpaceId: $0)
-            }
-        )
     }
 
     deinit {
@@ -104,6 +83,10 @@ final class TabStructuralPersistenceService {
         persistRequestID &+= 1
         scheduledPersistTask?.cancel()
         scheduledPersistTask = nil
+    }
+
+    func cancelPendingPersistence() {
+        cancelScheduledStructuralPersistence()
     }
 
     private func executeScheduledStructuralPersistence(requestID: UInt64) async {
@@ -256,8 +239,7 @@ final class TabStructuralPersistenceService {
 
     func buildSnapshot() -> TabPersistenceSnapshot {
         PerformanceTrace.withInterval("TabManager._buildSnapshot") {
-            reconcileProfileRuntimeStates(state.spaces.currentSpaceId)
-            return snapshotCache.makeSnapshot(from: makeSnapshotSource())
+            snapshotCache.makeSnapshot(from: makeSnapshotSource())
         }
     }
 

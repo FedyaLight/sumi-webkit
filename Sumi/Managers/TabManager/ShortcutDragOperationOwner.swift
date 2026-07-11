@@ -7,29 +7,20 @@ final class ShortcutDragOperationOwner {
     private let moveShortcutPin: @MainActor (ShortcutPin, ShortcutPinRole, UUID?, UUID?, UUID?, Int, Bool) -> ShortcutPin?
     private let folderSpaceId: @MainActor (UUID) -> UUID?
     private let resolvedEssentialsProfileId: @MainActor (DragOperation) -> UUID?
-    private let convertShortcutPinToRegularTab: @MainActor (ShortcutPin, UUID, Int?) -> Bool
-    private let removeShortcutPinFromContainers: @MainActor (ShortcutPin) -> Void
-    private let insertRegularTabFromShortcut: @MainActor (ShortcutPin, UUID, Int?) -> Tab
-    private let scheduleStructuralPersistence: @MainActor () -> Void
+    private let convertShortcutPinToRegularTab: @MainActor (ShortcutPin, UUID, Int?, UUID?) -> Bool
 
     init(
         reorderEssential: @escaping @MainActor (ShortcutPin, Int) -> Bool,
         moveShortcutPin: @escaping @MainActor (ShortcutPin, ShortcutPinRole, UUID?, UUID?, UUID?, Int, Bool) -> ShortcutPin?,
         folderSpaceId: @escaping @MainActor (UUID) -> UUID?,
         resolvedEssentialsProfileId: @escaping @MainActor (DragOperation) -> UUID?,
-        convertShortcutPinToRegularTab: @escaping @MainActor (ShortcutPin, UUID, Int?) -> Bool,
-        removeShortcutPinFromContainers: @escaping @MainActor (ShortcutPin) -> Void,
-        insertRegularTabFromShortcut: @escaping @MainActor (ShortcutPin, UUID, Int?) -> Tab,
-        scheduleStructuralPersistence: @escaping @MainActor () -> Void
+        convertShortcutPinToRegularTab: @escaping @MainActor (ShortcutPin, UUID, Int?, UUID?) -> Bool
     ) {
         self.reorderEssential = reorderEssential
         self.moveShortcutPin = moveShortcutPin
         self.folderSpaceId = folderSpaceId
         self.resolvedEssentialsProfileId = resolvedEssentialsProfileId
         self.convertShortcutPinToRegularTab = convertShortcutPinToRegularTab
-        self.removeShortcutPinFromContainers = removeShortcutPinFromContainers
-        self.insertRegularTabFromShortcut = insertRegularTabFromShortcut
-        self.scheduleStructuralPersistence = scheduleStructuralPersistence
     }
 
     convenience init(tabManager: TabManager) {
@@ -54,18 +45,13 @@ final class ShortcutDragOperationOwner {
             resolvedEssentialsProfileId: { [weak tabManager] operation in
                 tabManager?.essentialsShortcutPlacementOwner.resolvedProfileId(for: operation)
             },
-            convertShortcutPinToRegularTab: { [weak tabManager] pin, spaceId, targetIndex in
-                tabManager?.shortcutPinCommandOwner.convertShortcutPinToRegularTab(pin, in: spaceId, at: targetIndex) ?? false
-            },
-            removeShortcutPinFromContainers: { [weak tabManager] pin in
-                tabManager?.shortcutPinStoreOwner.removeFromContainers(pin)
-            },
-            insertRegularTabFromShortcut: { [weak tabManager] pin, spaceId, targetIndex in
-                guard let tabManager else { preconditionFailure("TabManager dependency used after deallocation") }
-                return tabManager.shortcutLiveTabOwner.insertRegularTabFromShortcut(pin, into: spaceId, at: targetIndex)
-            },
-            scheduleStructuralPersistence: { [weak tabManager] in
-                tabManager?.scheduleStructuralPersistence()
+            convertShortcutPinToRegularTab: { [weak tabManager] pin, spaceId, targetIndex, preferredWindowId in
+                tabManager?.shortcutPinCommandOwner.convertShortcutPinToRegularTab(
+                    pin,
+                    in: spaceId,
+                    at: targetIndex,
+                    preferredWindowId: preferredWindowId
+                ) ?? false
             }
         )
     }
@@ -100,7 +86,12 @@ final class ShortcutDragOperationOwner {
             ) != nil
 
         case (.essentials, .spaceRegular(let targetSpaceId)):
-            return convertShortcutPinToRegularTab(pin, targetSpaceId, operation.toIndex)
+            return convertShortcutPinToRegularTab(
+                pin,
+                targetSpaceId,
+                operation.toIndex,
+                operation.scope.windowId
+            )
 
         case (.spacePinned, .essentials),
              (.folder, .essentials):
@@ -152,10 +143,12 @@ final class ShortcutDragOperationOwner {
 
         case (.spacePinned, .spaceRegular(let targetSpaceId)),
              (.folder, .spaceRegular(let targetSpaceId)):
-            removeShortcutPinFromContainers(pin)
-            _ = insertRegularTabFromShortcut(pin, targetSpaceId, operation.toIndex)
-            scheduleStructuralPersistence()
-            return true
+            return convertShortcutPinToRegularTab(
+                pin,
+                targetSpaceId,
+                operation.toIndex,
+                operation.scope.windowId
+            )
 
         case (.spaceRegular, _),
              (.none, _),

@@ -169,6 +169,12 @@ final class BrowserManagerPermissionRuntime {
         )
     }
 
+    /// Whether a permission-event observation is currently live; the runtime
+    /// lifecycle starts observation exactly once and cancels it on shutdown.
+    var isObservingPermissionEvents: Bool {
+        permissionEventOwner != nil
+    }
+
     func startPermissionEventObservation(
         onPermissionEvent: @escaping SumiPermissionEventOwner.EventHandler
     ) {
@@ -205,3 +211,5 @@ final class BrowserManagerPermissionRuntime {
         permissionEventOwner?.cancel()
     }
 }
+
+extension BrowserManagerPermissionRuntime: BrowserPermissionObservationManaging {}

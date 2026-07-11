@@ -5,8 +5,13 @@ import Foundation
 /// are implemented by separate collaborators.
 @MainActor
 final class WindowSessionRestoreService {
+    private struct PreparedRegistration {
+        let windowIdentity: ObjectIdentifier
+        let glanceSession: GlanceSessionSnapshot?
+    }
+
     private let snapshotStore: WindowSessionSnapshotStore
-    private let persistence: WindowSessionPersistenceService
+    private let persistence: WindowSessionPersistenceCoordinator
     private let tabManager: TabManager
     private let glanceManager: GlanceManager
     private let cycle: WindowSessionRestoreCycle
@@ -18,10 +23,11 @@ final class WindowSessionRestoreService {
     private let selectionService: ShellSelectionService
     private let floatingBarSanitizer: any WindowSessionFloatingBarSanitizing
     private weak var selection: (any WindowSessionSelectionApplying)?
+    private var preparedRegistrationsByWindowID: [UUID: PreparedRegistration] = [:]
 
     init(
         snapshotStore: WindowSessionSnapshotStore,
-        persistence: WindowSessionPersistenceService,
+        persistence: WindowSessionPersistenceCoordinator,
         tabManager: TabManager,
         glanceManager: GlanceManager,
         selectionService: ShellSelectionService,
@@ -51,8 +57,7 @@ final class WindowSessionRestoreService {
             themeCommitter: themeCommitter
         )
         self.snapshotApplier = WindowSessionSnapshotApplier(
-            glanceManager: glanceManager,
-            floatingBarSanitizer: floatingBarSanitizer
+            glanceManager: glanceManager
         )
         self.selectionService = selectionService
         self.floatingBarSanitizer = floatingBarSanitizer
@@ -76,9 +81,11 @@ final class WindowSessionRestoreService {
             category: "WindowSessionRestore"
         )
 
+        let durableWindows = windows.filter { $0.isIncognito == false }
+        guard durableWindows.isEmpty == false else { return }
         let selection = requiredSelection()
         let selectionReconciler = makeSelectionReconciler(selection: selection)
-        for windowState in windows {
+        for windowState in durableWindows {
             if spaceResolver.space(for: windowState.currentSpaceId) == nil {
                 windowState.currentSpaceId = spaceResolver.resolve(
                     for: windowState
@@ -110,8 +117,8 @@ final class WindowSessionRestoreService {
 
             completeInitialResolution(for: windowState)
             windowState.compositorInvalidation.refresh()
-            persistence.persist(windowState)
         }
+        persistence.persist(durableWindows)
 
         RuntimeDiagnostics.debug(
             "Window state reconciliation completed after TabManager load.",
@@ -121,7 +128,8 @@ final class WindowSessionRestoreService {
 
     func setupWindowState(
         _ windowState: BrowserWindowState,
-        currentProfile: Profile?
+        currentProfile: Profile?,
+        persistsWindowSession: Bool = true
     ) {
         windowState.tabManager = tabManager
 
@@ -143,6 +151,8 @@ final class WindowSessionRestoreService {
         }
 
         if restored && tabManager.startupRestoreLifecycle.hasLoadedInitialData == false {
+            windowState.isAwaitingInitialSessionResolution = true
+            floatingBarSanitizer.sanitize(in: windowState)
             themeRestorer.restore(
                 for: windowState,
                 source: "setupWindowState.preInitialTabManagerLoad"
@@ -152,7 +162,80 @@ final class WindowSessionRestoreService {
 
         finalizeWindowStateRestore(
             windowState,
-            source: "setupWindowState"
+            source: "setupWindowState",
+            persistsWindowSession: persistsWindowSession
+        )
+    }
+
+    /// Stamps an archived identity and its persisted fields before the shell
+    /// can register, activate, notify extensions, or become visible.
+    func prepareArchivedWindow(
+        _ snapshot: LastSessionWindowSnapshot,
+        forRegistration windowState: BrowserWindowState
+    ) {
+        precondition(
+            preparedRegistrationsByWindowID[windowState.id] == nil,
+            "A browser window cannot prepare two archived sessions"
+        )
+        windowState.tabManager = tabManager
+        windowState.restoredSessionWindowId = snapshot.id
+        windowState.isAwaitingInitialSessionResolution = true
+        preparedRegistrationsByWindowID[windowState.id] = PreparedRegistration(
+            windowIdentity: ObjectIdentifier(windowState),
+            glanceSession: snapshot.session.glanceSession
+        )
+        snapshotApplier.prepareForRegistration(
+            snapshot.session,
+            to: windowState
+        )
+    }
+
+    /// Discards an unconsumed preparation when shell publication is rejected.
+    /// UUID equality is insufficient: only the exact prepared runtime object
+    /// may cancel its registration transaction.
+    @discardableResult
+    func cancelPreparedWindowRegistration(
+        _ windowState: BrowserWindowState
+    ) -> Bool {
+        guard let prepared = preparedRegistrationsByWindowID[windowState.id],
+              prepared.windowIdentity == ObjectIdentifier(windowState) else {
+            return false
+        }
+        preparedRegistrationsByWindowID.removeValue(forKey: windowState.id)
+        return true
+    }
+
+    /// Completes either a prepared archived restore or the ordinary global
+    /// startup/default restore after WindowRegistry has published the state.
+    func restoreRegisteredWindow(
+        _ windowState: BrowserWindowState,
+        currentProfile: Profile?
+    ) {
+        guard let prepared = preparedRegistrationsByWindowID
+            .removeValue(forKey: windowState.id) else {
+            setupWindowState(
+                windowState,
+                currentProfile: currentProfile,
+                persistsWindowSession: false
+            )
+            return
+        }
+        precondition(
+            prepared.windowIdentity == ObjectIdentifier(windowState),
+            "A different window object attempted to consume a prepared session"
+        )
+        precondition(
+            windowState.restoredSessionWindowId != nil,
+            "Prepared archived window lost its stable session identity"
+        )
+        glanceManager.restoreSession(
+            prepared.glanceSession,
+            in: windowState
+        )
+        finalizeWindowStateRestore(
+            windowState,
+            source: "preparedArchivedWindow",
+            persistsWindowSession: false
         )
     }
 
@@ -170,7 +253,8 @@ final class WindowSessionRestoreService {
 
     private func finalizeWindowStateRestore(
         _ windowState: BrowserWindowState,
-        source: String
+        source: String,
+        persistsWindowSession: Bool = true
     ) {
         let selection = requiredSelection()
         shortcutRestorer.materializeSelectionIfNeeded(in: windowState)
@@ -179,7 +263,7 @@ final class WindowSessionRestoreService {
         makeSelectionReconciler(selection: selection)
             .reconcileFinalSelection(windowState)
 
-        floatingBarSanitizer.sanitizeFloatingBarState(in: windowState)
+        floatingBarSanitizer.sanitize(in: windowState)
         selection.syncShortcutSelectionState(for: windowState)
         splitRestorer.restorePendingSelectionIfNeeded(in: windowState)
         themeRestorer.restore(for: windowState, source: source)
@@ -189,7 +273,9 @@ final class WindowSessionRestoreService {
             "Setup window state \(windowState.id.uuidString) currentTab=\(windowState.currentTabId?.uuidString ?? "none") currentSpace=\(windowState.currentSpaceId?.uuidString ?? "none")",
             category: "WindowSessionRestore"
         )
-        persistence.persist(windowState)
+        if persistsWindowSession {
+            persistence.persist(windowState)
+        }
     }
 
     private func makeSelectionReconciler(

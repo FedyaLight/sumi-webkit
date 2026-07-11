@@ -7,16 +7,17 @@ import SumiDomain
 @MainActor
 final class ShortcutPinCommandOwner {
     struct Dependencies {
-        let withStructuralUpdateTransactionShortcutPin: @MainActor (@MainActor () -> ShortcutPin?) -> ShortcutPin?
+        let transactPin: @MainActor (@MainActor () -> ShortcutPin?) -> ShortcutPin?
         let withStructuralUpdateTransactionBool: @MainActor (@MainActor () -> Bool) -> Bool
         let withStructuralUpdateTransactionVoid: @MainActor (@MainActor () -> Void) -> Void
         let shortcutPinStoreOwner: ShortcutPinStoreOwner
-        let shortcutLiveTabOwner: ShortcutLiveTabOwner
-        let shortcutPinConversionOwner: ShortcutPinConversionOwner
+        let shortcutTabBindings: ShortcutTabBindingSynchronizer
+        let shortcutLiveTabRetirement: ShortcutLiveTabRetirementService
+        let regularTabShortcutConversion: RegularTabShortcutConversionService
+        let shortcutPinToRegularTab: ShortcutPinToRegularTabService
         let essentialsShortcutPlacementOwner: EssentialsShortcutPlacementOwner
         let shortcutPinCollectionStateOwner: ShortcutPinCollectionStateOwner
         let shortcutPinRuntimeResolutionOwner: ShortcutPinRuntimeResolutionOwner
-        let tabRemovalOwner: TabRemovalOwner
         let structuralCollectionMutationOwner: TabStructuralCollectionMutationOwner
         let spacePinnedStructureOwner: SpacePinnedStructureOwner
         let shortcutPresentationOwner: TabShortcutPresentationOwner
@@ -44,7 +45,11 @@ final class ShortcutPinCommandOwner {
         index: Int,
         openTargetFolder: Bool = true
     ) -> ShortcutPin? {
-        dependencies.withStructuralUpdateTransactionShortcutPin {
+        dependencies.transactPin {
+            if let folderId,
+               dependencies.runtimePorts()?.isLiveFolder(folderId) == true {
+                return nil
+            }
             let inserted = dependencies.shortcutPinStoreOwner.move(
                 pin,
                 to: role,
@@ -55,9 +60,9 @@ final class ShortcutPinCommandOwner {
                 openTargetFolder: openTargetFolder
             )
             if let inserted {
-                dependencies.shortcutLiveTabOwner.updateTransientShortcutBindings(for: inserted)
+                dependencies.shortcutTabBindings.refreshInstances(for: inserted)
+                dependencies.scheduleStructuralPersistence()
             }
-            dependencies.scheduleStructuralPersistence()
             return inserted
         }
     }
@@ -66,15 +71,15 @@ final class ShortcutPinCommandOwner {
     func convertShortcutPinToRegularTab(
         _ pin: ShortcutPin,
         in targetSpaceId: UUID,
-        at targetIndex: Int? = nil
+        at targetIndex: Int? = nil,
+        preferredWindowId: UUID? = nil
     ) -> Bool {
-        dependencies.withStructuralUpdateTransactionBool {
-            dependencies.shortcutPinConversionOwner.convertShortcutPinToRegularTab(
-                pin,
-                in: targetSpaceId,
-                at: targetIndex
-            )
-        }
+        dependencies.shortcutPinToRegularTab.convert(
+            pin,
+            into: targetSpaceId,
+            at: targetIndex,
+            preferredWindowId: preferredWindowId
+        )
     }
 
     @discardableResult
@@ -88,15 +93,21 @@ final class ShortcutPinCommandOwner {
         openTargetFolder: Bool = true,
         preferredWindowId: UUID? = nil
     ) -> ShortcutPin? {
-        dependencies.withStructuralUpdateTransactionShortcutPin {
-            dependencies.shortcutPinConversionOwner.convertTabToShortcutPin(
+        dependencies.transactPin {
+            if let folderId,
+               dependencies.runtimePorts()?.isLiveFolder(folderId) == true {
+                return nil
+            }
+            return dependencies.regularTabShortcutConversion.convert(
                 tab,
-                role: role,
-                profileId: profileId,
-                spaceId: spaceId,
-                folderId: folderId,
-                at: targetIndex,
-                openTargetFolder: openTargetFolder,
+                destination: TabShortcutPinDestination(
+                    role: role,
+                    profileId: profileId,
+                    spaceId: spaceId,
+                    folderId: folderId,
+                    index: targetIndex,
+                    opensFolder: openTargetFolder
+                ),
                 preferredWindowId: preferredWindowId
             )
         }
@@ -110,26 +121,22 @@ final class ShortcutPinCommandOwner {
             if dependencies.shortcutPinCollectionStateOwner.essentialPins(for: insertion.profileId)
                 .contains(where: { $0.launchURL == tab.url }) { return }
 
-            let pin = dependencies.shortcutPinRuntimeResolutionOwner.makeShortcutPin(
-                from: tab,
-                role: .essential,
-                profileId: insertion.profileId,
-                index: insertion.index
-            )
-            guard let insertedPin = dependencies.shortcutPinStoreOwner.insert(pin, at: insertion.index) else { return }
+            guard dependencies.regularTabShortcutConversion.convert(
+                tab,
+                destination: TabShortcutPinDestination(
+                    role: .essential,
+                    profileId: insertion.profileId,
+                    spaceId: nil,
+                    folderId: nil,
+                    index: insertion.index,
+                    opensFolder: true
+                ),
+                preferredWindowId: context?.windowState?.id
+            ) != nil else { return }
             dependencies.essentialsShortcutPlacementOwner.logTargetMismatchIfNeeded(
                 resolution: insertion.resolution,
                 context: context
             )
-
-            if !dependencies.shortcutLiveTabOwner.convertDisplayedTabToShortcutLiveInstances(
-                tab,
-                pin: insertedPin,
-                preferredWindowId: context?.windowState?.id
-            ) {
-                dependencies.tabRemovalOwner.removeTab(tab.id)
-            }
-            dependencies.scheduleStructuralPersistence()
         }
     }
 
@@ -139,7 +146,7 @@ final class ShortcutPinCommandOwner {
         title: String,
         context: EssentialsShortcutPlacementOwner.TargetContext?
     ) -> ShortcutPin? {
-        dependencies.withStructuralUpdateTransactionShortcutPin {
+        dependencies.transactPin {
             guard let insertion = dependencies.essentialsShortcutPlacementOwner.resolveInsertion(
                 using: EssentialsShortcutPlacementOwner.InsertionContext(target: context)
             ) else { return nil }
@@ -192,17 +199,17 @@ final class ShortcutPinCommandOwner {
 
     func removeShortcutPin(_ pin: ShortcutPin) {
         dependencies.withStructuralUpdateTransactionVoid {
+            guard let retirement = dependencies.shortcutLiveTabRetirement
+                .prepareDeletedPinRetirement(pin.id) else {
+                return
+            }
             if dependencies.shortcutPinCollectionStateOwner.shortcutPin(by: pin.id) != nil {
                 dependencies.runtimePorts()?.captureDeletedShortcutLauncher(pin)
             }
 
             dependencies.shortcutPinStoreOwner.removeFromContainers(pin)
-
-            let cleanupResult = dependencies.shortcutLiveTabOwner.removeLiveShortcutTabs(forDeletedPinId: pin.id)
-            if cleanupResult.didClearCurrentSelection {
-                dependencies.runtimePorts()?.validateWindowStates()
-            }
-            dependencies.shortcutLiveTabOwner.persistWindowSessionsForShortcutSelectionCleanup(cleanupResult)
+            dependencies.shortcutLiveTabRetirement
+                .finishAfterCurrentBatch(retirement)
             dependencies.scheduleStructuralPersistence()
         }
     }
@@ -215,7 +222,7 @@ final class ShortcutPinCommandOwner {
         iconAsset: String?? = nil,
         executionProfileId: UUID?? = nil
     ) -> ShortcutPin? {
-        dependencies.withStructuralUpdateTransactionShortcutPin {
+        dependencies.transactPin {
             let updatedPin = pin.updated(
                 title: title,
                 launchURL: launchURL,
@@ -239,7 +246,7 @@ final class ShortcutPinCommandOwner {
                     for: profileId
                 )
                 if let inserted = dependencies.shortcutPinCollectionStateOwner.shortcutPin(by: pin.id) {
-                    dependencies.shortcutLiveTabOwner.updateTransientShortcutBindings(for: inserted)
+                    dependencies.shortcutTabBindings.refreshInstances(for: inserted)
                     dependencies.scheduleStructuralPersistence()
                     return inserted
                 }
@@ -263,7 +270,7 @@ final class ShortcutPinCommandOwner {
                 }
 
                 if let inserted = dependencies.shortcutPinCollectionStateOwner.shortcutPin(by: pin.id) {
-                    dependencies.shortcutLiveTabOwner.updateTransientShortcutBindings(for: inserted)
+                    dependencies.shortcutTabBindings.refreshInstances(for: inserted)
                     dependencies.scheduleStructuralPersistence()
                     return inserted
                 }
@@ -298,7 +305,7 @@ final class ShortcutPinCommandOwner {
         in windowState: BrowserWindowState,
         preserveCurrentPage: Bool
     ) -> ShortcutPin? {
-        dependencies.withStructuralUpdateTransactionShortcutPin {
+        dependencies.transactPin {
             guard let liveTab = dependencies.shortcutPresentationOwner.shortcutLiveTab(for: pin.id, in: windowState.id) else {
                 return nil
             }
@@ -411,11 +418,23 @@ final class ShortcutPinCommandOwner {
                     index: targetIndex
                 )
 
+                guard dependencies.shortcutTabBindings.canRebind(
+                    tab,
+                    from: sourcePin
+                ) else { return }
                 guard let insertedPin = dependencies.shortcutPinStoreOwner.insert(detachedPin, at: targetIndex) else {
                     return
                 }
 
-                dependencies.shortcutLiveTabOwner.rebindLiveShortcutTab(tab, from: sourcePin, to: insertedPin)
+                guard dependencies.shortcutTabBindings.rebind(
+                    tab,
+                    from: sourcePin,
+                    to: insertedPin
+                ) else {
+                    dependencies.shortcutPinStoreOwner
+                        .removeFromContainers(insertedPin)
+                    return
+                }
 
                 dependencies.scheduleStructuralPersistence()
                 return
@@ -437,28 +456,29 @@ extension ShortcutPinCommandOwner.Dependencies {
     @MainActor
     static func live(tabManager: TabManager) -> Self {
         Self(
-            withStructuralUpdateTransactionShortcutPin: { [weak tabManager] operation in
+            transactPin: { [weak tabManager] operation in
                 guard let tabManager else { return operation() }
-                return tabManager.withStructuralUpdateTransaction(operation)
+                return tabManager.structuralLookupCoordinator.withTransaction(operation)
             },
             withStructuralUpdateTransactionBool: { [weak tabManager] operation in
                 guard let tabManager else { return operation() }
-                return tabManager.withStructuralUpdateTransaction(operation)
+                return tabManager.structuralLookupCoordinator.withTransaction(operation)
             },
             withStructuralUpdateTransactionVoid: { [weak tabManager] operation in
                 guard let tabManager else {
                     operation()
                     return
                 }
-                tabManager.withStructuralUpdateTransaction(operation)
+                tabManager.structuralLookupCoordinator.withTransaction(operation)
             },
             shortcutPinStoreOwner: tabManager.shortcutPinStoreOwner,
-            shortcutLiveTabOwner: tabManager.shortcutLiveTabOwner,
-            shortcutPinConversionOwner: tabManager.shortcutPinConversionOwner,
+            shortcutTabBindings: tabManager.shortcutTabBindings,
+            shortcutLiveTabRetirement: tabManager.shortcutLiveTabRetirement,
+            regularTabShortcutConversion: tabManager.regularTabShortcutConversion,
+            shortcutPinToRegularTab: tabManager.shortcutPinToRegularTab,
             essentialsShortcutPlacementOwner: tabManager.essentialsShortcutPlacementOwner,
             shortcutPinCollectionStateOwner: tabManager.shortcutPinCollectionStateOwner,
             shortcutPinRuntimeResolutionOwner: tabManager.shortcutPinRuntimeResolutionOwner,
-            tabRemovalOwner: tabManager.tabRemovalOwner,
             structuralCollectionMutationOwner: tabManager.structuralCollectionMutationOwner,
             spacePinnedStructureOwner: tabManager.spacePinnedStructureOwner,
             shortcutPresentationOwner: tabManager.shortcutPresentationOwner,
@@ -470,7 +490,7 @@ extension ShortcutPinCommandOwner.Dependencies {
                 tabManager?.runtimePorts
             },
             scheduleStructuralPersistence: { [weak tabManager] in
-                tabManager?.scheduleStructuralPersistence()
+                tabManager?.structuralPersistence.scheduleStructuralPersistence()
             }
         )
     }

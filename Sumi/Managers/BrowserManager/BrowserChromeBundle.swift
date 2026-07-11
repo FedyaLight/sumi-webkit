@@ -14,6 +14,7 @@ import Foundation
 @MainActor
 final class BrowserChromeBundle {
     let commands: BrowserChromeCommands
+    let activePageCommands: ActivePageCommandService
     let sidebarActionOwner: BrowserSidebarActionOwner
     let sidebarPresentationOwner: BrowserSidebarPresentationOwner
     let workspaceThemeTransitionOwner: BrowserWorkspaceThemeTransitionOwner
@@ -25,24 +26,57 @@ final class BrowserChromeBundle {
 
     init(browserManager: BrowserManager) {
         self.commands = BrowserChromeCommands(browserManager: browserManager)
-        self.sidebarActionOwner = BrowserSidebarActionOwner(
-            tabManager: { [weak browserManager, tabManager = browserManager.tabManager] in
-                browserManager?.tabManager ?? tabManager
+        self.activePageCommands = ActivePageCommandService(
+            resolver: browserManager.shellRuntime.activePageResolver,
+            reloadSelectedPage: { [weak browserManager] tab, windowState, reason in
+                browserManager?.webViewRoutingService.refreshPage(
+                    for: tab,
+                    in: windowState,
+                    reason: reason
+                ) ?? .failed
             },
-            liveFolderManager: { [liveFolderManager = browserManager.liveFolderManager] in
-                liveFolderManager
+            reloadPreviewPage: { tab in
+                tab.navigationCommandOwner.refresh(tab)
             },
-            sumiSettings: { [weak browserManager] in
-                browserManager?.sumiSettings
-            }
+            clipboard: BrowserURLClipboardService(
+                notifications: { [weak browserManager] in
+                    browserManager?.notificationPresenter
+                }
+            ),
+            inspector: WebInspectorService()
         )
+        self.sidebarActionOwner = Self.makeSidebarActions(browserManager)
         self.sidebarPresentationOwner = BrowserSidebarPresentationOwner(
             browserManager: browserManager
         )
         self.workspaceThemeTransitionOwner = BrowserWorkspaceThemeTransitionOwner(
             browserManager: browserManager
         )
-        self.workspaceThemeEditorOwner = BrowserWorkspaceThemeEditorOwner(
+        self.workspaceThemeEditorOwner = Self.makeWorkspaceThemeEditor(browserManager)
+        self.nativeSurfaceRoutingOwner = BrowserNativeSurfaceRoutingOwner(
+            browserManager: browserManager
+        )
+        self.zoomCommandOwner = Self.makeZoomCommands(browserManager)
+        self.sharingPickerPresentationOwner = BrowserSharingPickerPresentationOwner(
+            browserManager: browserManager
+        )
+        self.nativeDialogPresentationOwner = Self.makeNativeDialogs(browserManager)
+    }
+
+    private static func makeSidebarActions(
+        _ browserManager: BrowserManager
+    ) -> BrowserSidebarActionOwner {
+        BrowserSidebarActionOwner(
+            tabManager: { [weak browserManager] in browserManager?.tabManager },
+            liveFolderManager: { [weak browserManager] in browserManager?.liveFolderManager },
+            sumiSettings: { [weak browserManager] in browserManager?.sumiSettings }
+        )
+    }
+
+    private static func makeWorkspaceThemeEditor(
+        _ browserManager: BrowserManager
+    ) -> BrowserWorkspaceThemeEditorOwner {
+        BrowserWorkspaceThemeEditorOwner(
             pickerSession: { [weak browserManager] in
                 browserManager?.workspaceThemePickerSession
             },
@@ -75,7 +109,7 @@ final class BrowserChromeBundle {
             },
             scheduleStructuralPersistence: { [weak browserManager] in
                 browserManager?.tabManager.structuralPersistence.markAllSpacesStructurallyDirty()
-                browserManager?.tabManager.scheduleStructuralPersistence()
+                browserManager?.tabManager.structuralPersistence.scheduleStructuralPersistence()
             },
             presentNotice: { [weak browserManager] notice, source in
                 browserManager?.chromeBundle.nativeDialogPresentationOwner.presentNoticeSheet(notice, source: source)
@@ -84,36 +118,34 @@ final class BrowserChromeBundle {
                 browserManager?.sumiSettings
             }
         )
-        self.nativeSurfaceRoutingOwner = BrowserNativeSurfaceRoutingOwner(
-            browserManager: browserManager
-        )
-        let fallbackZoomManager = browserManager.zoomManager
-        self.zoomCommandOwner = BrowserZoomCommandOwner(
+    }
+
+    private static func makeZoomCommands(
+        _ browserManager: BrowserManager
+    ) -> BrowserZoomCommandOwner {
+        BrowserZoomCommandOwner(
             activeWindow: { [weak browserManager] in
                 browserManager?.windowRegistry?.activeWindow
             },
             activePageTab: { [weak browserManager] windowState in
-                browserManager?.urlBarBundle.activePageRoutingOwner.activePageTab(for: windowState)
+                browserManager?.shellRuntime.activePageResolver.resolve(in: windowState)?.tab
             },
             activePresentationWebView: { [weak browserManager] windowState in
-                browserManager?.urlBarBundle.activePageRoutingOwner.activePresentationWebView(
-                    for: windowState
-                )
+                browserManager?.shellRuntime.activePageResolver
+                    .resolve(in: windowState)?.presentationWebView
             },
             tab: { [weak browserManager] tabId in
                 browserManager?.tabManager.tabCollectionMembershipOwner.tab(for: tabId)
             },
             windowStateContainingTab: { [weak browserManager] tab in
-                browserManager?.windowSessionBundle.tabContextOwner.windowState(containing: tab)
+                browserManager?.shellRuntime.windowTabs.windowState(containing: tab)
             },
             webView: { [weak browserManager] tabId, windowId in
                 browserManager?.webViewRoutingService.webView(for: tabId, in: windowId)
             },
-            zoomManager: { [weak browserManager] in
-                browserManager?.zoomManager ?? fallbackZoomManager
-            },
+            zoomManager: { [weak browserManager] in browserManager?.zoomManager },
             sizeOverride: { [weak browserManager] url, profileId in
-                browserManager?.boostsModule.sizeOverride(for: url, profileId: profileId) ?? 1.0
+                browserManager?.optionalModules.boosts.sizeOverride(for: url, profileId: profileId) ?? 1.0
             },
             incrementZoomStateRevision: { [weak browserManager] in
                 guard let browserManager else { return }
@@ -123,10 +155,12 @@ final class BrowserChromeBundle {
                 browserManager?.notificationPresenter
             }
         )
-        self.sharingPickerPresentationOwner = BrowserSharingPickerPresentationOwner(
-            browserManager: browserManager
-        )
-        self.nativeDialogPresentationOwner = BrowserNativeDialogPresentationOwner(
+    }
+
+    private static func makeNativeDialogs(
+        _ browserManager: BrowserManager
+    ) -> BrowserNativeDialogPresentationOwner {
+        BrowserNativeDialogPresentationOwner(
             windowRegistry: { [weak browserManager] in browserManager?.windowRegistry },
             nativeModalPresentation: { [weak browserManager] in browserManager?.nativeModalPresentation },
             setNativeModalPresentation: { [weak browserManager] presentation in
@@ -140,7 +174,7 @@ final class BrowserChromeBundle {
                 )
             },
             dismissFloatingBarForActiveWindow: { [weak browserManager] preserveDraft in
-                browserManager?.urlBarBundle.floatingBarRoutingOwner.dismissFloatingBarForActiveWindow(
+                browserManager?.urlBarBundle.floatingBar.presentation.dismissActiveWindow(
                     preserveDraft: preserveDraft
                 )
             },

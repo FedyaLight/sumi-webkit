@@ -141,7 +141,7 @@ final class BrowserURLBarContextOwnerTests: XCTestCase {
         webView.stopLoading()
     }
 
-    func testURLBarReloadPageUsesWindowScopedRefreshPath() {
+    func testURLBarReloadPageUsesWindowScopedRefreshPath() throws {
         removePersistedWindowSession()
         defer { removePersistedWindowSession() }
 
@@ -160,11 +160,12 @@ final class BrowserURLBarContextOwnerTests: XCTestCase {
             in: harness.windowState.id
         )
 
-        harness.browserManager.urlBarBundle.contextOwner.urlBarContext.reloadPage(
-            tab,
-            harness.windowState,
+        let context = harness.browserManager.urlBarBundle.contextOwner.urlBarContext
+        let page = try XCTUnwrap(context.activePage(harness.windowState))
+        XCTAssertTrue(context.reloadPage(
+            page,
             "BrowserURLBarContextOwnerTests.reload"
-        )
+        ))
 
         XCTAssertEqual(webView.reloadCount, 1)
         XCTAssertEqual(webView.loadedRequests.map(\.url), [tab.url])

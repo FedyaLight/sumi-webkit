@@ -49,13 +49,14 @@ final class BrowserURLBarHubContextOwnerTests: XCTestCase {
             browserManager: browserManager,
             permissionContextOwner: permissionContextOwner,
             extensionActionContext: { extensionActions },
-            siteControlsSnapshot: { _, _, _, _ in resolvedSnapshot }
+            siteControlsSnapshot: { _, _, _, _ in resolvedSnapshot },
+            settingsNavigation: browserManager.urlBarBundle.settingsNavigation
         )
 
         let context = owner.context
 
         XCTAssertIdentical(context.bookmarkManager, browserManager.bookmarkManager)
-        XCTAssertIdentical(context.extensionSurfaceStore, browserManager.extensionsModule.surfaceStore)
+        XCTAssertIdentical(context.extensionSurfaceStore, browserManager.optionalModules.extensions.surfaceStore)
         XCTAssertIdentical(context.adblockZapperStore, browserManager.adblockZapperStore)
         XCTAssertIdentical(context.permission.popupStore, browserManager.permissionRuntime.blockedPopupStore)
         XCTAssertIdentical(
@@ -105,7 +106,8 @@ final class BrowserURLBarHubContextOwnerTests: XCTestCase {
             extensionActionContext: { extensionActions },
             siteControlsSnapshot: { url, profile, _, _ in
                 SiteControlsSnapshot.resolve(url: url, profile: profile)
-            }
+            },
+            settingsNavigation: browserManager.urlBarBundle.settingsNavigation
         )
         let context = owner.context
         let url = try XCTUnwrap(URL(string: "https://example.test/path"))

@@ -32,22 +32,24 @@ final class BrowserExtensionBridgeComposition {
             },
             tabs: { [weak browserManager] windowState in
                 guard let browserManager else { return [] }
-                return browserManager.shellSelectionService
+                return browserManager.shellRuntime.windowSelection
                     .tabsForWebExtensionWindow(
                         in: windowState,
                         tabStore: browserManager.tabManager.runtimeStore
                     )
             },
             currentTab: { [weak browserManager] windowState in
-                browserManager?.windowSessionBundle.tabContextOwner
+                browserManager?.shellRuntime.windowTabs
                     .currentTab(for: windowState)
             },
             currentTabForActiveWindow: { [weak browserManager] in
-                browserManager?.urlBarBundle.activePageRoutingOwner
-                    .currentTabForActiveWindow()
+                guard let browserManager,
+                      let activeWindow = browserManager.windowRegistry?.activeWindow
+                else { return nil }
+                return browserManager.shellRuntime.windowTabs.currentTab(for: activeWindow)
             },
             windowContainingTab: { [weak browserManager] tab in
-                browserManager?.windowSessionBundle.tabContextOwner
+                browserManager?.shellRuntime.windowTabs
                     .windowState(containing: tab)
             }
         )
@@ -203,13 +205,12 @@ final class BrowserExtensionBridgeComposition {
                     else {
                         return .failed
                     }
-                    return browserManager.windowSessionBundle
-                        .scopedNavigationOwner.refreshWindowScopedPage(
-                            tab: tab,
-                            in: window,
-                            reason: "ExtensionTabAdapter.reload",
-                            policy: policy
-                        )
+                    return browserManager.webViewRoutingService.refreshPage(
+                        for: tab,
+                        in: window,
+                        reason: "ExtensionTabAdapter.reload",
+                        policy: policy
+                    )
                 }
 
                 guard tab.webViewSession.untrackedWebView === webView else {
@@ -254,7 +255,7 @@ final class BrowserExtensionBridgeComposition {
             popups: browserManager.auxiliaryWindows.popups,
             extensionWindows: browserManager.auxiliaryWindows.extensionWindows,
             createWindow: { [weak browserManager] in
-                browserManager?.windowSessionBundle.commands.createNewWindow()
+                browserManager?.windowCommands.createNewWindow()
             },
             urlHubAnchorView: { [weak browserManager] windowID in
                 browserManager?.chromeBundle.commands

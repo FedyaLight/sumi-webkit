@@ -7,7 +7,6 @@ import XCTest
 @testable import Sumi
 import SumiDomain
 
-
 @MainActor
 final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
     func testGlanceTriggerRequiresCleanOptionModifier() {
@@ -311,8 +310,13 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
         )
         let responder = SumiPopupHandlingNavigationResponder(tab: tab)
         let adapter = SumiNavigationResponderAdapter(target: responder)
-        let webView = WKWebView(frame: .zero)
+        let webView = PopupCommittedURLWebView(frame: .zero)
         let targetURL = URL(string: "https://destination.example/page")!
+        let sourceNavigation = bindCommittedPopupDocument(
+            on: webView,
+            tab: tab,
+            committedURL: tab.url
+        )
         var preferences = NavigationPreferences.default
 
         let policy = await adapter.decidePolicy(
@@ -331,6 +335,7 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
         XCTAssertEqual(evaluatedRequests.map(\.targetURL), [targetURL])
         XCTAssertEqual(evaluatedContexts.map(\.tabId), [tab.id.uuidString.lowercased()])
         XCTAssertEqual(evaluatedContexts.map(\.profilePartitionId), [profile.id.uuidString.lowercased()])
+        withExtendedLifetime(sourceNavigation) { /* Keep the exact document participant alive. */ }
     }
 
     func testPopupCreateWebViewFocusesCleanClickNewTab() throws {
@@ -378,6 +383,11 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
         )!
         let targetURL = URL(string: "https://account.example.test/login")!
         harness.sourceTab.url = extensionPopupURL
+        let sourceNavigation = bindCommittedPopupDocument(
+            on: harness.sourceWebView,
+            tab: harness.sourceTab,
+            committedURL: extensionPopupURL
+        )
         let initialRegularTabCount = harness.browserManager.tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[
             harness.browserManager.tabManager.spaceStateOwner.currentSpace!.id
         ]?.count ?? 0
@@ -411,6 +421,7 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
         XCTAssertNil(openedTab.webViewConfigurationOverride)
         XCTAssertEqual(harness.windowState.currentTabId, openedTab.id)
         XCTAssertNotNil(openedTab.resolvedAssignedWebView() ?? openedTab.resolvedCurrentWebView())
+        withExtendedLifetime(sourceNavigation) { /* Keep the exact document participant alive. */ }
     }
 
     func testExtensionPopupExternalCreateWebViewUsesOpenerWindowSpaceWhenSourceSpaceIsMissing()
@@ -429,6 +440,11 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
         )!
         let targetURL = URL(string: "https://account.example.test/login")!
         harness.sourceTab.url = extensionPopupURL
+        let sourceNavigation = bindCommittedPopupDocument(
+            on: harness.sourceWebView,
+            tab: harness.sourceTab,
+            committedURL: extensionPopupURL
+        )
         let initialWindowSpaceTabCount = harness.browserManager.tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[
             harness.sourceSpace.id
         ]?.count ?? 0
@@ -463,6 +479,7 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
         XCTAssertEqual(openedTab.url, targetURL)
         XCTAssertEqual(openedTab.spaceId, harness.sourceSpace.id)
         XCTAssertEqual(harness.windowState.currentTabId, openedTab.id)
+        withExtendedLifetime(sourceNavigation) { /* Keep the exact document participant alive. */ }
     }
 
     func testExtensionPopupExternalCreateWebViewUsesTabURLWhenSourceFrameMissing()
@@ -473,6 +490,11 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
         )!
         let targetURL = URL(string: "https://account.example.test/login")!
         harness.sourceTab.url = extensionPopupURL
+        let sourceNavigation = bindCommittedPopupDocument(
+            on: harness.sourceWebView,
+            tab: harness.sourceTab,
+            committedURL: extensionPopupURL
+        )
 
         let responder = SumiPopupHandlingNavigationResponder(tab: harness.sourceTab)
         let action = popupNavigationAction(
@@ -497,6 +519,7 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
         XCTAssertNil(openedTab.webViewConfigurationOverride)
         XCTAssertEqual(harness.windowState.currentTabId, openedTab.id)
         XCTAssertNotNil(openedTab.resolvedAssignedWebView() ?? openedTab.resolvedCurrentWebView())
+        withExtendedLifetime(sourceNavigation) { /* Keep the exact document participant alive. */ }
     }
 
     func testPopupCreateWebViewLeavesCommandClickNewTabInBackground() throws {
@@ -586,7 +609,8 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
         let windowState: BrowserWindowState
         let sourceSpace: Space
         let sourceTab: Tab
-        let sourceWebView: WKWebView
+        let sourceWebView: PopupCommittedURLWebView
+        let sourceNavigation: NSObject
     }
 
     private func makePopupFocusHarness() throws -> PopupFocusHarness {
@@ -617,13 +641,17 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
         )
         browserManager.selectTab(sourceTab, in: windowState)
 
-        let sourceWebView = WKWebView(frame: .zero)
+        let sourceWebView = PopupCommittedURLWebView(frame: .zero)
         browserManager.webViewOwnershipService?.assign(
             sourceWebView,
             to: sourceTab,
             in: windowState.id
         )
-        sourceTab.extensionPageRuntimeOwner.noteCommittedMainDocumentNavigation(to: sourceTab.url)
+        let sourceNavigation = bindCommittedPopupDocument(
+            on: sourceWebView,
+            tab: sourceTab,
+            committedURL: sourceTab.url
+        )
 
         return PopupFocusHarness(
             browserManager: browserManager,
@@ -631,8 +659,49 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
             windowState: windowState,
             sourceSpace: space,
             sourceTab: sourceTab,
-            sourceWebView: sourceWebView
+            sourceWebView: sourceWebView,
+            sourceNavigation: sourceNavigation
         )
+    }
+
+    @discardableResult
+    private func bindCommittedPopupDocument(
+        on webView: PopupCommittedURLWebView,
+        tab: Tab,
+        committedURL: URL
+    ) -> NSObject {
+        webView.reportedCommittedURL = committedURL
+        let intent = tab.beginMainFrameNavigationIntent(to: committedURL)
+        XCTAssertTrue(tab.markDeferredMainFrameLoad(on: webView, intent: intent))
+        XCTAssertEqual(
+            tab.claimDeferredMainFrameLoad(
+                on: webView,
+                revision: intent.revision,
+                targetURL: committedURL
+            ),
+            .claimed
+        )
+        let navigation = NSObject()
+        XCTAssertTrue(
+            tab.bindSubmittedMainFrameLoad(
+                on: webView,
+                navigationID: ObjectIdentifier(navigation),
+                navigationLifetime: navigation
+            )
+        )
+        XCTAssertNotEqual(
+            tab.recordMainFrameCommitSnapshot(
+                from: webView,
+                navigationID: ObjectIdentifier(navigation),
+                committedURL: committedURL,
+                isPDF: false
+            ).role,
+            .stale
+        )
+        tab.extensionPageRuntimeOwner.noteCommittedMainDocumentNavigation(
+            to: committedURL
+        )
+        return navigation
     }
 
     private func popupNavigationAction(
@@ -692,5 +761,26 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
         let policy = await responder.decidePolicy(for: action, preferences: &preferences)
 
         XCTAssertNil(policy)
+    }
+}
+
+@MainActor
+private final class PopupCommittedURLWebView: WKWebView {
+    var reportedCommittedURL: URL?
+
+    override func responds(to aSelector: ObjectiveC.Selector?) -> Bool {
+        guard let aSelector else { return false }
+        let selectorName = NSStringFromSelector(aSelector)
+        if selectorName == "committedURL" || selectorName == "_committedURL" {
+            return true
+        }
+        return super.responds(to: aSelector)
+    }
+
+    override func value(forKey key: String) -> Any? {
+        if key == "committedURL" {
+            return MainActor.assumeIsolated { reportedCommittedURL }
+        }
+        return super.value(forKey: key)
     }
 }

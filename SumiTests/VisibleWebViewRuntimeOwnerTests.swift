@@ -1,6 +1,6 @@
+import SumiWebRuntime
 import WebKit
 import XCTest
-import SumiWebRuntime
 
 @testable import Sumi
 
@@ -96,6 +96,68 @@ final class VisibleWebViewRuntimeOwnerTests: XCTestCase {
         XCTAssertEqual(refreshedWindowIds, [windowState.id])
     }
 
+    func testResetCancelsAlreadyEnqueuedPreparationBeforeRuntimeLookup() async {
+        let owner = VisibleWebViewRuntimeOwner()
+        let windowState = BrowserWindowState()
+        var lookupCount = 0
+        var prepareCount = 0
+        let runtime = makeRuntime(
+            windowStateLookup: { _ in
+                lookupCount += 1
+                return windowState
+            }
+        )
+
+        owner.schedulePrepareVisibleWebViews(
+            for: windowState,
+            runtime: runtime,
+            prepareVisibleWebViews: { _ in
+                prepareCount += 1
+                return true
+            }
+        )
+        owner.resetWindowRegistrations()
+        await drainMainQueue()
+
+        XCTAssertEqual(lookupCount, 0)
+        XCTAssertEqual(prepareCount, 0)
+    }
+
+    func testCancelledCallbackCannotConsumeReplacementSchedule() async {
+        let owner = VisibleWebViewRuntimeOwner()
+        let windowState = BrowserWindowState()
+        var lookupCount = 0
+        var replacementPrepareCount = 0
+        let runtime = makeRuntime(
+            windowStateLookup: { _ in
+                lookupCount += 1
+                return windowState
+            }
+        )
+
+        owner.schedulePrepareVisibleWebViews(
+            for: windowState,
+            runtime: runtime,
+            prepareVisibleWebViews: { _ in
+                XCTFail("Cancelled preparation must not execute")
+                return false
+            }
+        )
+        owner.cancelScheduledPreparation(for: windowState.id)
+        owner.schedulePrepareVisibleWebViews(
+            for: windowState,
+            runtime: runtime,
+            prepareVisibleWebViews: { _ in
+                replacementPrepareCount += 1
+                return false
+            }
+        )
+        await drainMainQueue()
+
+        XCTAssertEqual(lookupCount, 1)
+        XCTAssertEqual(replacementPrepareCount, 1)
+    }
+
     func testPreferredPrimaryWebViewCandidatePrioritizesVisibleRuntimeWindow() {
         let owner = VisibleWebViewRuntimeOwner()
         let webViewSessions = WebViewSessionRepository()
@@ -130,6 +192,7 @@ final class VisibleWebViewRuntimeOwnerTests: XCTestCase {
 
     private func makeRuntime(
         windowStatesById: [UUID: BrowserWindowState] = [:],
+        windowStateLookup: (@MainActor (UUID) -> (any WebRuntimeWindowHandle)?)? = nil,
         currentTabId: @escaping @MainActor (any WebRuntimeWindowHandle) -> UUID? = { _ in nil },
         splitVisibleTabIds: @escaping @MainActor (UUID) -> [UUID] = { _ in [] },
         resolveTab: @escaping @MainActor (UUID, any WebRuntimeWindowHandle) -> (any WebRuntimeTabHandle)? = { _, _ in nil },
@@ -143,7 +206,7 @@ final class VisibleWebViewRuntimeOwnerTests: XCTestCase {
         refreshCompositor: @escaping @MainActor (UUID) -> Void = { _ in /* No-op. */ }
     ) -> VisibleWebViewPreparationRuntime {
         VisibleWebViewPreparationRuntime(
-            windowState: { windowStatesById[$0] },
+            windowState: windowStateLookup ?? { windowStatesById[$0] },
             currentTabId: currentTabId,
             splitVisibleTabIds: splitVisibleTabIds,
             resolveTab: resolveTab,
@@ -158,8 +221,11 @@ final class VisibleWebViewRuntimeOwnerTests: XCTestCase {
     }
 
     private func makeWebTab(urlString: String = "https://example.com") -> Tab {
-        Tab(
-            url: URL(string: urlString)!,
+        guard let url = URL(string: urlString) else {
+            preconditionFailure("Invalid test URL: \(urlString)")
+        }
+        return Tab(
+            url: url,
             loadsCachedFaviconOnInit: false
         )
     }
@@ -173,13 +239,13 @@ final class VisibleWebViewRuntimeOwnerTests: XCTestCase {
             webView,
             for: owner,
             in: repository,
-            removeFromContainers: { _ in },
-            installRuntimeObservations: { _ in },
-            uninstallRuntimeObservationsIfUntracked: { _ in },
-            pruneInvalidDeferredCommands: { _ in },
+            removeFromContainers: { _ in /* No-op. */ },
+            installRuntimeObservations: { _ in /* No-op. */ },
+            uninstallRuntimeObservationsIfUntracked: { _ in /* No-op. */ },
+            pruneInvalidDeferredCommands: { _ in /* No-op. */ },
             canDisplaceWebView: { _ in true },
-            removeRecentVisibility: { _ in },
-            cleanupDisplacedWebView: { _, _ in }
+            removeRecentVisibility: { _ in /* No-op. */ },
+            cleanupDisplacedWebView: { _, _ in /* No-op. */ }
         )
     }
 }

@@ -1,12 +1,7 @@
 import Foundation
 
-/// Removes a tab from whichever container currently holds it — an essentials/space-pinned
-/// shortcut array, or a space's regular-tab list. This "detach from current container"
-/// concern was previously a method on `ShortcutLiveTabOwner`, but its callers are broader
-/// than live-shortcut management: the sidebar drag owners reached into `ShortcutLiveTabOwner`
-/// solely for it. Splitting it out gives those call sites a focused collaborator and drops
-/// four low-level dependencies (pinned-array read/write, regular-tab removal, current space)
-/// from `ShortcutLiveTabOwner`'s surface.
+/// Removes a tab from whichever structural container currently holds it: an
+/// essentials/space-pinned shortcut array or a space's regular-tab list.
 @MainActor
 final class ShortcutContainerRemovalOwner {
     private let pinnedByProfile: @MainActor () -> [UUID: [ShortcutPin]]

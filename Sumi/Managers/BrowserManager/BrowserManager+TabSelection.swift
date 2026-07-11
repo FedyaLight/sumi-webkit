@@ -107,11 +107,22 @@ extension BrowserManager {
     ) {
         tabLifecycleService.selection.showEmptyState(
             in: windowState,
+            persistSelection: true,
             actions: tabSelectionActions
         )
 
         if presentNewTabFloatingBar && windowState.isShowingEmptyState {
-            urlBarBundle.floatingBarRoutingOwner.showNewTabFloatingBar(in: windowState)
+            urlBarBundle.floatingBar.presentation.showNewTab(in: windowState)
         }
+    }
+
+    func showEmptyStateWithoutPersistence(
+        in windowState: BrowserWindowState
+    ) {
+        tabLifecycleService.selection.showEmptyState(
+            in: windowState,
+            persistSelection: false,
+            actions: tabSelectionActions
+        )
     }
 }

@@ -183,7 +183,7 @@ extension SidebarDragOperationRoutingOwner.Dependencies {
         Self(
             withStructuralUpdateTransaction: { [weak tabManager] operation in
                 guard let tabManager else { return operation() }
-                return tabManager.withStructuralUpdateTransaction(operation)
+                return tabManager.structuralLookupCoordinator.withTransaction(operation)
             },
             shortcutPin: { [weak tabManager] id in
                 tabManager?.shortcutPinCollectionStateOwner.shortcutPin(by: id)
@@ -193,7 +193,7 @@ extension SidebarDragOperationRoutingOwner.Dependencies {
             },
             handleShortcutDragOperation: { [weak tabManager] pin, operation in
                 guard let tabManager else { return false }
-                return tabManager.withStructuralUpdateTransaction {
+                return tabManager.structuralLookupCoordinator.withTransaction {
                     tabManager.shortcutDragOperationOwner.handleShortcutDragOperation(pin, operation: operation)
                 }
             },
@@ -246,7 +246,7 @@ extension SidebarDragOperationRoutingOwner.Dependencies {
                 tabManager?.regularTabCollectionOwner.insert(tab, in: spaceId, at: index)
             },
             scheduleStructuralPersistence: { [weak tabManager] in
-                tabManager?.scheduleStructuralPersistence()
+                tabManager?.structuralPersistence.scheduleStructuralPersistence()
             }
         )
     }

@@ -10,9 +10,7 @@ final class BrowserHistoryNavigationOwner {
 
     init(
         activeWindow: @escaping @MainActor @Sendable () -> BrowserWindowState?,
-        activePageTab: @escaping @MainActor @Sendable (BrowserWindowState) -> Tab?,
-        activePageWebView: @escaping @MainActor @Sendable (BrowserWindowState) -> WKWebView?,
-        webView: @escaping @MainActor @Sendable (UUID, UUID) -> WKWebView?,
+        activePage: @escaping @MainActor @Sendable (BrowserWindowState) -> ActivePageResolution?,
         openNativeBrowserSurface: @escaping @MainActor @Sendable (
             SumiNativeBrowserSurfaceKind,
             URL,
@@ -32,15 +30,13 @@ final class BrowserHistoryNavigationOwner {
     ) {
         self.backForwardOwner = BrowserHistoryBackForwardOwner(
             activeWindow: activeWindow,
-            activePageTab: activePageTab,
-            activePageWebView: activePageWebView,
-            webView: webView,
+            activePage: activePage,
             navigateBack: navigateBack,
             navigateForward: navigateForward
         )
         self.openOwner = BrowserHistoryOpenOwner(
             activeWindow: activeWindow,
-            activePageTab: activePageTab,
+            activePage: activePage,
             openNativeBrowserSurface: openNativeBrowserSurface,
             openNewTab: openNewTab,
             loadCurrentPageURL: loadCurrentPageURL,

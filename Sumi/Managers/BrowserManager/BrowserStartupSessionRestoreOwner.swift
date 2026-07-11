@@ -52,8 +52,12 @@ final class BrowserStartupSessionRestoreOwner: BrowserStartupSessionRestoreProvi
         currentWindowSnapshots: @MainActor () -> [LastSessionWindowSnapshot],
         currentTabSnapshot: @MainActor () -> TabPersistenceSnapshot
     ) {
+        // Clean startup reuses the same runtime windows for new content. Give
+        // the historical branch detached identities so it remains restorable.
         let archivedWindowSnapshots = windowSnapshots.isEmpty
-            ? currentWindowSnapshots()
+            ? currentWindowSnapshots().map {
+                LastSessionWindowSnapshot(id: UUID(), session: $0.session)
+            }
             : windowSnapshots
         let resolvedTabSnapshot = currentTabSnapshot()
         guard !archivedWindowSnapshots.isEmpty || !resolvedTabSnapshot.tabs.isEmpty else {

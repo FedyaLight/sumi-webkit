@@ -135,8 +135,6 @@ final class ShortcutActionDispatcher {
         case .customizeSpaceGradient:
             actionRouter.showGradientEditor()
         }
-
-        postShortcutExecuted(action)
     }
 
     private func selectIndexedTab(
@@ -157,14 +155,6 @@ final class ShortcutActionDispatcher {
         actionRouter.focusFloatingBarForActiveWindow(
             prefill: currentURL,
             navigateCurrentTab: true
-        )
-    }
-
-    private func postShortcutExecuted(_ action: ShortcutAction) {
-        NotificationCenter.default.post(
-            name: .shortcutExecuted,
-            object: nil,
-            userInfo: ["action": action]
         )
     }
 }

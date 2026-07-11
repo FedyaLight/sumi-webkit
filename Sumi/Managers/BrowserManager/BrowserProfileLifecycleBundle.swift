@@ -2,23 +2,32 @@
 //  BrowserProfileLifecycleBundle.swift
 //  Sumi
 //
-//  Phase 5A capability bag: profile switch + startup policy.
+//  Profile switch + startup policy composition.
 //
 
 import Foundation
 
-/// Groups profile-switch transition and startup policy owners.
+/// Groups the two profile-lifecycle workflows without forwarding behavior.
 @MainActor
 final class BrowserProfileLifecycleBundle {
-    let profileSwitchTransitionOwner: BrowserProfileSwitchTransitionOwner
-    let startupPolicyOwner: BrowserStartupPolicyOwner
+    let profileSwitchTransition: BrowserProfileSwitchTransitionOwner
+    let startupPolicy: BrowserStartupPolicy
 
     init(browserManager: BrowserManager) {
-        self.profileSwitchTransitionOwner = BrowserProfileSwitchTransitionOwner(
+        self.profileSwitchTransition = Self.makeProfileSwitchTransition(
+            browserManager: browserManager
+        )
+        self.startupPolicy = Self.makeStartupPolicy(browserManager: browserManager)
+    }
+
+    private static func makeProfileSwitchTransition(
+        browserManager: BrowserManager
+    ) -> BrowserProfileSwitchTransitionOwner {
+        BrowserProfileSwitchTransitionOwner(
             host: browserManager,
             auxiliaryWindowTeardown: browserManager.auxiliaryWindows.teardown,
             bookmarkManager: browserManager.bookmarkManager,
-            extensionsModule: browserManager.extensionsModule,
+            extensionsModule: browserManager.optionalModules.extensions,
             faviconService: browserManager.dataServices.faviconService,
             historyManager: browserManager.historyManager,
             tabManager: browserManager.tabManager,
@@ -35,72 +44,62 @@ final class BrowserProfileLifecycleBundle {
                 )
             }
         )
-        self.startupPolicyOwner = BrowserStartupPolicyOwner(
-            regularWindows: { [weak browserManager] in
-                browserManager?.windowRegistry?.allWindows
-                    .filter { !$0.isIncognito } ?? []
-            },
-            startupRestoreOwner: { [weak browserManager] in
-                guard let browserManager else {
-                    preconditionFailure("BrowserStartupPolicyOwner used after BrowserManager deallocation")
-                }
-                return browserManager.startupSessionRestoreOwner
-            },
-            tabManager: { [weak browserManager] in
-                guard let browserManager else {
-                    preconditionFailure("BrowserStartupPolicyOwner used after BrowserManager deallocation")
-                }
-                return browserManager.tabManager
-            },
-            startupPageURL: { [weak browserManager] in
-                browserManager?.sumiSettings?.resolvedStartupPageURL
-            },
-            space: { [weak browserManager] spaceId in
-                browserManager?.windowSessionBundle.spaceStateOwner.space(for: spaceId)
-            },
-            splitManager: { [weak browserManager] in
-                guard let browserManager else {
-                    preconditionFailure("BrowserStartupPolicyOwner used after BrowserManager deallocation")
-                }
-                return browserManager.splitManager
-            },
-            glanceManager: { [weak browserManager] in
-                guard let browserManager else {
-                    preconditionFailure("BrowserStartupPolicyOwner used after BrowserManager deallocation")
-                }
-                return browserManager.glanceManager
-            },
+    }
+
+    private static func makeStartupPolicy(
+        browserManager: BrowserManager
+    ) -> BrowserStartupPolicy {
+        let windowSessions = browserManager.windowSessionBundle
+        let openWindows = windowSessions.history.catalog
+        let sessionRestore = windowSessions.restoreService
+        let sessionRecovery = windowSessions.sessionRecovery
+        let regularWindows: @MainActor () -> [BrowserWindowState] = { [weak browserManager] in
+            browserManager?.windowRegistry?.allWindows
+                .filter { !$0.isIncognito } ?? []
+        }
+        let cleanStartup = CleanStartupWorkflow(
+            regularWindows: regularWindows,
+            startupRestore: browserManager.startupSessionRestoreOwner,
+            tabManager: browserManager.tabManager,
+            glanceManager: browserManager.glanceManager,
+            openWindows: openWindows,
             selectTab: { [weak browserManager] tab, windowState, loadPolicy in
-                browserManager?.selectTab(tab, in: windowState, loadPolicy: loadPolicy)
-            },
-            showEmptyState: { [weak browserManager] windowState, presentNewTabFloatingBar in
-                browserManager?.showEmptyState(
+                browserManager?.selectTab(
+                    tab,
                     in: windowState,
-                    presentNewTabFloatingBar: presentNewTabFloatingBar
+                    loadPolicy: loadPolicy
                 )
             },
-            currentRegularWindowSnapshots: { [weak browserManager] excludingWindowId in
-                browserManager?.windowSessionBundle.historySessionOwner.currentRegularWindowSnapshots(excludingWindowID: excludingWindowId) ?? []
+            showEmptyState: { [weak browserManager] windowState, presentBar in
+                browserManager?.showEmptyState(
+                    in: windowState,
+                    presentNewTabFloatingBar: presentBar
+                )
+            }
+        )
+        let windowRestore = StartupWindowRestoreService(
+            startupRestore: browserManager.startupSessionRestoreOwner,
+            archive: windowSessions.history.archive,
+            openWindows: openWindows,
+            startupWindow: {
+                regularWindows()
+                    .min { $0.id.uuidString < $1.id.uuidString }
             },
-            currentTabSnapshot: { [weak browserManager] in
-                guard let browserManager else {
-                    preconditionFailure("BrowserStartupPolicyOwner used after BrowserManager deallocation")
-                }
-                return browserManager.tabManager.structuralPersistence.buildSnapshot()
-            },
-            applyWindowSessionSnapshot: { [weak browserManager] snapshot, windowState in
-                guard let browserManager else { return }
-                browserManager.windowSessionBundle.restoreService
-                    .applyWindowSessionSnapshot(
-                    snapshot,
+            applySnapshot: { snapshot, windowState in
+                sessionRestore.applyWindowSessionSnapshot(
+                    snapshot.session,
                     to: windowState
                 )
             },
-            reopenWindow: { [weak browserManager] snapshot in
-                await browserManager?.historyBundle.historyMenuOwner.reopenWindow(from: snapshot)
-            },
-            refreshLastSessionWindowsStore: { [weak browserManager] excludingWindowId in
-                browserManager?.windowSessionBundle.historySessionOwner.refreshLastSessionWindowsStore(excludingWindowID: excludingWindowId)
+            reopenWindow: { snapshot in
+                await sessionRecovery.reopenWindow(from: snapshot)
+            }
+        )
+        return BrowserStartupPolicy(
+            cleanStartup: cleanStartup,
+            windowRestore: windowRestore,
+            startupPageURL: { [weak browserManager] in
+                browserManager?.sumiSettings?.resolvedStartupPageURL
             }
         )
     }

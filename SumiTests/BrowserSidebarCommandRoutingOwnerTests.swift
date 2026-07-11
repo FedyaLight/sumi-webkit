@@ -165,12 +165,32 @@ final class BrowserSidebarCommandRoutingOwnerTests: XCTestCase {
                     spy.events.append(.duplicateTab(tab.id, windowState.id))
                 }
             ),
-            splitShortcutRouting: SplitRoutingSpy(spy: spy),
+            splitCommands: SidebarSplitShortcutCommands(
+                focusGroup: { group, windowState in
+                    spy.events.append(
+                        .focusSplitGroup(group.id, windowState.id)
+                    )
+                },
+                restoreMember: { itemId, group, windowState in
+                    spy.events.append(
+                        .restoreShortcutSplitMember(
+                            itemId,
+                            group.id,
+                            windowState.id
+                        )
+                    )
+                }
+            ),
             shortcutPromotion: pinPromotion.owner,
             shortcutPinUnload: BrowserShortcutPinUnloadOwner(
-                selectedShortcutLiveTab: { _, _ in nil },
-                closeTab: { _, _ in },
-                userInitiatedUnload: { pinId, windowState, presentNotification in
+                shortcutLiveTab: { pinId, _ in
+                    spy.pendingUnloadPinId = pinId
+                    return self.makeTab()
+                },
+                closeTab: { _, windowState, presentNotification in
+                    guard let pinId = spy.pendingUnloadPinId else {
+                        return false
+                    }
                     if presentNotification {
                         spy.events.append(.unloadShortcutPin(pinId, windowState.id))
                     } else {
@@ -217,28 +237,6 @@ private final class PinPromotionSpy {
 }
 
 @MainActor
-private final class SplitRoutingSpy: BrowserSidebarSplitShortcutRouting {
-    private let spy: Spy
-
-    init(spy: Spy) {
-        self.spy = spy
-    }
-
-    func focusSplitGroup(_ group: SplitGroup, in windowState: BrowserWindowState) {
-        spy.events.append(.focusSplitGroup(group.id, windowState.id))
-    }
-
-    func restoreShortcutSplitMember(
-        _ itemId: UUID,
-        from group: SplitGroup,
-        in windowState: BrowserWindowState,
-        preserveLiveInstance: Bool
-    ) {
-        spy.events.append(.restoreShortcutSplitMember(itemId, group.id, windowState.id))
-    }
-}
-
-@MainActor
 private final class BulkUnloadNotificationSpy: BrowserNotificationPresenting {
     private let spy: Spy
 
@@ -264,6 +262,7 @@ private final class BulkUnloadNotificationSpy: BrowserNotificationPresenting {
 private final class Spy {
     var events: [BrowserSidebarCommandRoutingOwnerTests.Event] = []
     var bulkUnloadPinIds: [UUID] = []
+    var pendingUnloadPinId: UUID?
     var lastPinnedLiveTabId: UUID?
 }
 

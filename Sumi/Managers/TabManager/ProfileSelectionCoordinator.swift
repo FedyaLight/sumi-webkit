@@ -5,9 +5,14 @@ import Foundation
 @MainActor
 final class ProfileSelectionCoordinator {
     private unowned let tabManager: TabManager
+    private let spaceActivation: SpaceActivationService
 
-    init(tabManager: TabManager) {
+    init(
+        tabManager: TabManager,
+        spaceActivation: SpaceActivationService
+    ) {
         self.tabManager = tabManager
+        self.spaceActivation = spaceActivation
     }
 
     func handleProfileSwitch(contextWindowID: UUID? = nil) {
@@ -16,7 +21,7 @@ final class ProfileSelectionCoordinator {
             if let target = tabManager.spaceStateOwner.space(
                 with: pendingSpaceID
             ) {
-                tabManager.spaceLifecycleOwner.setActiveSpace(
+                spaceActivation.setActiveSpace(
                     target,
                     contextWindowId: contextWindowID
                 )
@@ -65,7 +70,7 @@ final class ProfileSelectionCoordinator {
         }
         guard didAssign else { return }
         tabManager.structuralPersistence.markAllSpacesStructurallyDirty()
-        tabManager.scheduleStructuralPersistence()
+        tabManager.structuralPersistence.scheduleStructuralPersistence()
     }
 
     private func shouldPreserveContextlessShortcutLiveTab(

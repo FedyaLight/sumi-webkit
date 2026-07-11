@@ -16,7 +16,7 @@ extension BrowserTabSelectionOwner {
                 windowState.ephemeralTabs.first(where: { $0.id == tabId })
             },
             currentTab: { [weak browserManager] windowState in
-                browserManager?.windowSessionBundle.tabContextOwner.currentTab(for: windowState)
+                browserManager?.shellRuntime.windowTabs.currentTab(for: windowState)
             },
             liveShortcutTabs: { [weak browserManager] windowId in
                 browserManager?.tabManager.shortcutPresentationOwner.liveShortcutTabs(in: windowId) ?? []
@@ -24,14 +24,15 @@ extension BrowserTabSelectionOwner {
             updateActiveSplitSide: { [weak browserManager] tabId, windowId in
                 browserManager?.splitManager.updateActiveSide(for: tabId, in: windowId)
             },
-            syncWindowSpaceContext: { [weak browserManager] windowState, animateTheme in
-                browserManager?.windowSessionBundle.spaceStateOwner.syncWindowSpaceContext(
-                    in: windowState,
-                    animateTheme: animateTheme
+            syncWindowSpaceContext: { [weak browserManager] windowState in
+                browserManager?.windowStateReconciler.synchronizeSpaceContext(
+                    in: windowState
                 )
             },
             space: { [weak browserManager] spaceId in
-                browserManager?.windowSessionBundle.spaceStateOwner.space(for: spaceId)
+                spaceId.flatMap {
+                    browserManager?.tabManager.spaceStateOwner.space(with: $0)
+                }
             },
             updateWorkspaceTheme: { [weak browserManager] windowState, theme, animate in
                 browserManager?.chromeBundle.workspaceThemeTransitionOwner.updateWorkspaceTheme(for: windowState, to: theme, animate: animate)
@@ -75,7 +76,8 @@ extension BrowserTabSelectionOwner {
                 }
             },
             dismissFloatingBarAfterSelection: { [weak browserManager] windowState in
-                browserManager?.urlBarBundle.floatingBarRoutingOwner.dismissFloatingBarAfterSelection(in: windowState)
+                browserManager?.urlBarBundle.floatingBar.presentation
+                    .dismissAfterSelection(in: windowState)
             },
             updateFindManagerCurrentTab: { [weak browserManager] in
                 browserManager?.updateFindManagerCurrentTab()
@@ -84,10 +86,10 @@ extension BrowserTabSelectionOwner {
                 browserManager?.findManager.updateCurrentTab(nil, in: nil)
             },
             schedulePrepareVisibleWebViews: { [weak browserManager] windowState in
-                browserManager?.windowSessionBundle.visualMutationOwner.schedulePrepareVisibleWebViews(for: windowState)
+                browserManager?.shellRuntime.windowVisuals.schedulePrepareVisibleWebViews(for: windowState)
             },
             refreshCompositor: { [weak browserManager] windowState in
-                browserManager?.windowSessionBundle.visualMutationOwner.refreshCompositor(for: windowState)
+                browserManager?.shellRuntime.windowVisuals.refreshCompositor(for: windowState)
             },
             runtimeNotifications: BrowserManagerRuntimeWiring.tabSelectionRuntimeNotifications(
                 for: browserManager
@@ -99,13 +101,10 @@ extension BrowserTabSelectionOwner {
                 browserManager?.windowSessionBundle.persistence.persist(windowState)
             },
             selectionTargetForSpaceActivation: { [weak browserManager] space, windowState in
-                browserManager?.windowSessionBundle.spaceStateOwner.selectionTargetForSpaceActivation(
-                    in: space,
-                    windowState: windowState
+                browserManager?.shellRuntime.windowTabs.selectionTarget(
+                    for: space,
+                    in: windowState
                 )
-            },
-            updateProfileRuntimeStates: { [weak browserManager] windowState in
-                browserManager?.windowSessionBundle.spaceStateOwner.updateProfileRuntimeStates(activeWindowState: windowState)
             }
         )
     }

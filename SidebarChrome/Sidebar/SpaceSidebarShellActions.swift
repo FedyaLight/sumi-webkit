@@ -87,7 +87,7 @@ extension SpacesSideBarView {
             profileId = session.profileID
         }
 
-        let newSpace = pageModel.tabManager.spaceLifecycleOwner.createSpace(
+        let newSpace = pageModel.tabManager.spaceServices.catalog.createSpace(
             name: session.trimmedName,
             icon: session.resolvedIcon,
             profileId: profileId

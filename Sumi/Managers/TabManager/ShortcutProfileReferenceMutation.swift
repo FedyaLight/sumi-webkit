@@ -107,8 +107,8 @@ final class ShortcutProfileReferenceMutationApplicator {
             )
         }
 
-        tabManager.scheduleStructuralPersistence()
-        tabManager.requestStructuralPublish()
+        tabManager.structuralPersistence.scheduleStructuralPersistence()
+        tabManager.structuralLookupCoordinator.requestPublish()
     }
 
     private func uuidOrder(_ lhs: UUID, _ rhs: UUID) -> Bool {

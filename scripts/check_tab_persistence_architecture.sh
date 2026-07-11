@@ -97,17 +97,17 @@ startup_restore_forwarder_hits="$(
 )"
 fail_matches "startup restore lifecycle leaked back onto TabManager" "$startup_restore_forwarder_hits"
 
-direct_components=(
-  runtimeStore
-  structuralPersistence
-  storeRestore
-  startupStateReset
-  lastSessionMergeMaterializer
+direct_component_patterns=(
+  'lazy var runtimeStore([:]|[[:space:]])'
+  'let structuralPersistence:'
+  'lazy var storeRestore([:]|[[:space:]])'
+  'lazy var startupStateReset([:]|[[:space:]])'
+  'lazy var lastSessionMergeMaterializer([:]|[[:space:]])'
 )
 
-for component in "${direct_components[@]}"; do
-  if ! rg -q "lazy var ${component}([:]|[[:space:]])" Sumi/Managers/TabManager/TabManager.swift; then
-    printf 'error: direct TabManager persistence component missing: %s\n' "$component" >&2
+for pattern in "${direct_component_patterns[@]}"; do
+  if ! rg -q "$pattern" Sumi/Managers/TabManager/TabManager.swift; then
+    printf 'error: direct TabManager persistence component missing: %s\n' "$pattern" >&2
     status=1
   fi
 done

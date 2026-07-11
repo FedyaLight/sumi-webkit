@@ -1,15 +1,6 @@
 import Foundation
 
 extension BrowserManager {
-    /// Process-lifecycle owners live on `lifecycleBundle`; keep façade accessors for call sites.
-    var shutdownCleanupOwner: BrowserShutdownCleanupOwner {
-        lifecycleBundle.shutdownCleanupOwner
-    }
-
-    var keyboardShortcutCommandOwner: BrowserKeyboardShortcutCommandOwner {
-        lifecycleBundle.keyboardShortcutCommandOwner
-    }
-
     /// Shared with app shell / `ContentView` via `.environment`; retained strongly so routing never sees a dangling coordinator.
     /// After `SumiApp.setupApplicationLifecycle` runs, this must be set before any WebView routing or coordinator cleanup.
     var webViewCoordinator: WebViewCoordinator? {

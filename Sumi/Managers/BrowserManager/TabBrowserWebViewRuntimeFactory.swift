@@ -8,7 +8,9 @@ enum TabBrowserWebViewRuntimeFactory {
     ) -> TabWebViewCleanupRuntime {
         let runtime = BrowserManagerRuntimeReference(browserManager)
         return .make(
-            userscriptsModule: { runtime.require().userscriptsModule },
+            userscriptsModule: {
+                runtime.require().optionalModules.userscripts
+            },
             webViewCoordinator: {
                 runtime.require().shellRuntime.requireWebViewCoordinator()
             },
@@ -56,13 +58,13 @@ enum TabBrowserWebViewRuntimeFactory {
         .make(
             browserConfiguration: browserManager.browserConfiguration,
             extensionsModule: { [weak browserManager] in
-                browserManager?.extensionsModule
+                browserManager?.optionalModules.extensions
             },
             userscriptsModule: { [weak browserManager] in
-                browserManager?.userscriptsModule
+                browserManager?.optionalModules.userscripts
             },
             boostsModule: { [weak browserManager] in
-                browserManager?.boostsModule
+                browserManager?.optionalModules.boosts
             },
             protectionCoordinator: { [weak browserManager] in
                 browserManager?.protectionCoordinator

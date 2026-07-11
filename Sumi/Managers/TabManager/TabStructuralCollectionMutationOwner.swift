@@ -150,10 +150,10 @@ extension TabStructuralCollectionMutationOwner.Dependencies {
                 tabManager?.structuralPersistence.recordShortcutPinsStructuralChange(previous: previous, current: current)
             },
             queueTabLookupEntries: { [weak tabManager] previous, current in
-                tabManager?.queueTabLookupEntries(removing: previous, with: current)
+                tabManager?.structuralLookupCoordinator.queueEntries(removing: previous, with: current)
             },
             requestStructuralPublish: { [weak tabManager] in
-                tabManager?.requestStructuralPublish()
+                tabManager?.structuralLookupCoordinator.requestPublish()
             }
         )
     }

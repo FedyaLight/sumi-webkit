@@ -8,17 +8,6 @@ import SumiWebRuntime
 class TabManager: ObservableObject {
     private static let faviconPresentationRefreshDebounceNanoseconds: UInt64 = 250_000_000
 
-    enum TabManagerError: LocalizedError {
-        case spaceNotFound(UUID)
-
-        var errorDescription: String? {
-            switch self {
-            case .spaceNotFound(let id):
-                return "Space with id \(id.uuidString) was not found."
-            }
-        }
-    }
-
     private(set) var runtimePorts: RuntimePortRegistry?
     weak var sumiSettings: SumiSettingsService?
     let context: ModelContext
@@ -26,12 +15,14 @@ class TabManager: ObservableObject {
     let selectionStore: TabSelectionStore
     let runtimeStateStore: TabRuntimeStateStore
     let runtimeStateCoalescer: RuntimeStateCoalescer
+    let structuralPersistence: TabStructuralPersistenceService
+    let profileRuntimeState: SpaceProfileRuntimeStateService
     let faviconService: any BrowserFaviconServicing
     let faviconCapabilities: BrowserFaviconCapabilities
     let visitedLinkStore: any BrowserVisitedLinkStoreManaging
     let tabFactory: TabFactory
 
-    let stateStore = TabStateStore()
+    let stateStore: TabStateStore
     var spaceStateOwner: TabSpaceCollectionStateOwner { stateStore.spaces }
     var regularTabCollectionStateOwner: RegularTabCollectionStateOwner { stateStore.regularTabs }
     var selectionStateOwner: TabSelectionStateOwner { stateStore.selection }
@@ -48,18 +39,33 @@ class TabManager: ObservableObject {
         tabManager: self,
         faviconPresentationRefreshDebounceNanoseconds: Self.faviconPresentationRefreshDebounceNanoseconds
     )
+    lazy var spaceServices = TabSpaceServices.live(tabManager: self)
+    lazy var liveShortcutTabs = LiveShortcutTabRegistry(tabManager: self)
+    lazy var shortcutTabWindowQuery = ShortcutTabWindowQuery(tabManager: self)
+    lazy var shortcutTabBindings = ShortcutTabBindingSynchronizer(tabManager: self)
+    lazy var shortcutTabMaterializer = ShortcutTabMaterializer(tabManager: self)
+    lazy var regularTabShortcutConversion = RegularTabShortcutConversionService(
+        tabManager: self
+    )
+    lazy var shortcutPinToRegularTab = ShortcutPinToRegularTabService(
+        tabManager: self
+    )
+    lazy var shortcutLiveTabRetirement = ShortcutLiveTabRetirementService(
+        registry: liveShortcutTabs,
+        structuralLookup: structuralLookupCoordinator,
+        runtimePorts: { [weak self] in self?.runtimePorts },
+        runtimeTeardown: runtimeTeardown
+    )
+    lazy var shortcutTabPromotion = ShortcutTabPromotionService(tabManager: self)
+    lazy var runtimeTeardown = TabRuntimeTeardownService(
+        persistence: structuralPersistence,
+        membership: tabCollectionMembershipOwner
+    )
     lazy var runtimeStore = DefaultTabRuntimeStore(
         state: stateStore,
         membership: tabCollectionMembershipOwner,
         regularTabs: regularTabCollectionOwner,
         presentation: shortcutPresentationOwner
-    )
-    lazy var structuralPersistence = TabStructuralPersistenceService(
-        structuralStore: structuralSnapshotStore,
-        selectionStore: selectionStore,
-        runtimeStateCoalescer: runtimeStateCoalescer,
-        state: stateStore,
-        profileRuntimeState: profileRuntimeStateOwner
     )
     lazy var storeRestore = TabStoreRestoreService(
         modelContainer: context.container,
@@ -75,13 +81,15 @@ class TabManager: ObservableObject {
         persistence: structuralPersistence
     )
     lazy var startupStateReset = TabStartupStateReset(
-        runtimePortsProvider: { [weak self] in self?.runtimePorts },
         state: stateStore,
         lazyRestore: lazyRestoreCoordinator,
         persistence: structuralPersistence,
-        membership: tabCollectionMembershipOwner,
         structuralMutations: structuralCollectionMutationOwner,
-        structuralLookup: structuralLookupCoordinator
+        structuralLookup: structuralLookupCoordinator,
+        splitGroups: splitGroupStructureOwner,
+        liveShortcutTabs: liveShortcutTabs,
+        runtimePorts: { [weak self] in self?.runtimePorts },
+        runtimeTeardown: runtimeTeardown
     )
     lazy var lastSessionMergeMaterializer = TabLastSessionMergeMaterializer(
         state: stateStore,
@@ -98,9 +106,6 @@ class TabManager: ObservableObject {
         announceStateChange: { [objectWillChange] in objectWillChange.send() }
     )
 
-    var structuralLookupBatchFlushCount: Int { structuralLookupCoordinator.batchFlushCount }
-    var structuralLookupImmediateFlushCount: Int { structuralLookupCoordinator.immediateFlushCount }
-    var structuralMutationRevision: UInt64 { structuralLookupCoordinator.mutationRevision }
     var pendingSpaceActivation: UUID?
 
     init(
@@ -116,6 +121,8 @@ class TabManager: ObservableObject {
     ) {
         self.runtimePorts = runtimePorts
         self.context = context
+        let stateStore = TabStateStore()
+        self.stateStore = stateStore
         let eventBus = tabStructureEventBus ?? TabStructureEventBus()
         self.tabStructureEventBus = eventBus
         self.startupRestoreLifecycle = TabStartupRestoreLifecycle(
@@ -139,11 +146,26 @@ class TabManager: ObservableObject {
         self.structuralSnapshotStore = structuralSnapshotStore
         self.selectionStore = selectionStore
         self.runtimeStateStore = runtimeStateStore
-        self.runtimeStateCoalescer = RuntimeStateCoalescer(
+        let runtimeStateCoalescer = RuntimeStateCoalescer(
             debounceNanoseconds: Self.defaultRuntimeStatePersistDebounceNanoseconds,
             persistBatch: { runtimeStates in
                 await runtimeStateStore.persist(runtimeStates)
             }
+        )
+        self.runtimeStateCoalescer = runtimeStateCoalescer
+        let profileRuntimeState = SpaceProfileRuntimeStateService(
+            spaces: stateStore.spaces,
+            regularTabs: stateStore.regularTabs,
+            liveShortcutTabs: { [weak stateStore] in
+                stateStore?.transientTabs.transientShortcutTabs ?? []
+            }
+        )
+        self.profileRuntimeState = profileRuntimeState
+        self.structuralPersistence = TabStructuralPersistenceService(
+            structuralStore: structuralSnapshotStore,
+            selectionStore: selectionStore,
+            runtimeStateCoalescer: runtimeStateCoalescer,
+            state: stateStore
         )
         lifecycleOwners.faviconPresentationRefreshOwner.startObserving()
         if let runtimePorts {
@@ -155,57 +177,35 @@ class TabManager: ObservableObject {
         MainActor.assumeIsolated {
             lifecycleOwners.faviconPresentationRefreshOwner.stop()
             stateStore.removeAll()
-            structuralLookupCoordinator.removeAll()
+            // Do not materialize the lazy structural owner bag while `self`
+            // is already deallocating. If the lookup was used, its bag releases
+            // the index immediately after this deinit; stateStore removal above
+            // already drops the canonical tab graph.
             runtimePorts = nil
         }
         RuntimeDiagnostics.debug("Cleaned up all tab resources.", category: "TabManager")
     }
 
-    func notifyTransientShortcutStateChanged() {
-        structuralLookupCoordinator.notifyTransientShortcutStateChanged()
-    }
-
-    func rebuildTabLookup() { structuralLookupCoordinator.rebuild() }
-
-    @discardableResult
-    func withStructuralUpdateTransaction<T>(_ operation: () throws -> T) rethrows -> T {
-        try structuralLookupCoordinator.withTransaction(operation)
-    }
-
-    func requestStructuralPublish() { structuralLookupCoordinator.requestPublish() }
-
-    func queueTabLookupEntries(removing previousTabs: [Tab], with currentTabs: [Tab]) {
-        structuralLookupCoordinator.queueEntries(removing: previousTabs, with: currentTabs)
-    }
-
     static let defaultRuntimeStatePersistDebounceNanoseconds: UInt64 = 250_000_000
 
-    var structuralDirtySet: TabStructuralDirtySet { structuralPersistence.dirtySet }
-    var scheduledStructuralPersistTask: Task<Void, Never>? { structuralPersistence.scheduledPersistTask }
-
-    public nonisolated func scheduleStructuralPersistence() {
-        Task { @MainActor [weak self] in
-            self?.structuralPersistence.scheduleStructuralPersistenceFromMain()
-        }
-    }
-
-    public nonisolated func persistFullReconcileAwaitingResult(
-        reason: String = "explicit full reconcile"
-    ) async -> Bool {
-        let owner = await MainActor.run { [weak self] in self?.structuralPersistence }
-        guard let owner else { return false }
-        return await owner.persistFullReconcileAwaitingResult(reason: reason)
-    }
-
-    @discardableResult
-    public nonisolated func flushRuntimeStatePersistenceAwaitingResult() async -> Int {
-        await runtimeStateCoalescer.flushImmediately()
-    }
 }
 
 extension TabManager {
     func installRuntimePorts(_ ports: RuntimePortRegistry) {
         runtimePorts = ports
+    }
+
+    /// Stops work that may resume through BrowserManager-backed ports after
+    /// the browser root has begun deallocation. Lazy persistence services are
+    /// touched only if startup restore already reached them.
+    func detachBrowserRuntime() {
+        let canceledBeforeStoreRestore = startupRestoreLifecycle.cancelPendingStart()
+        if startupRestoreLifecycle.didStartPersistedStateLoad,
+           canceledBeforeStoreRestore == false {
+            storeRestore.cancelPendingRestore()
+            structuralPersistence.cancelPendingPersistence()
+        }
+        runtimePorts = nil
     }
 
     func requireRuntimePorts() -> RuntimePortRegistry {

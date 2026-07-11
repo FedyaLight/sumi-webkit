@@ -198,14 +198,17 @@ private final class HistoryNavigationOwnerHarness {
     func makeOwner() -> BrowserHistoryNavigationOwner {
         BrowserHistoryNavigationOwner(
             activeWindow: { [weak self] in self?.activeWindow },
-            activePageTab: { [weak self] windowState in
-                self?.activePageTabsByWindowId[windowState.id] ?? self?.activePageTab
-            },
-            activePageWebView: { [weak self] windowState in
-                self?.webViewsByWindowId[windowState.id]
-            },
-            webView: { [weak self] _, windowId in
-                self?.webViewsByWindowId[windowId]
+            activePage: { [weak self] windowState in
+                guard let self,
+                      let tab = activePageTabsByWindowId[windowState.id] ?? activePageTab
+                else { return nil }
+                return ActivePageResolution(
+                    source: .selectedTab,
+                    windowState: windowState,
+                    tab: tab,
+                    url: tab.url,
+                    canonicalWebView: webViewsByWindowId[windowState.id]
+                )
             },
             openNativeBrowserSurface: { _, _, _, _ in /* No-op. */ },
             openNewTab: { _, _ in nil },

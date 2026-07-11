@@ -85,6 +85,11 @@ final class TabStoreRestoreService {
         }
     }
 
+    func cancelPendingRestore() {
+        startupRestoreTask?.cancel()
+        startupRestoreTask = nil
+    }
+
     func loadFromStore(expectedStructuralRevision: UInt64? = nil) {
         let expectedStructuralRevision = expectedStructuralRevision
             ?? structuralRevision()

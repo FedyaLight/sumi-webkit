@@ -193,9 +193,14 @@ final class SplitMembershipResolutionOwner {
         guard !spacePinnedPins.isEmpty else { return 0 }
 
         if let focusedPin = spacePinnedPins.first(where: { pin in
-            windowState.currentShortcutPinId == pin.id
-                || windowState.currentTabId == incomingTab.id && incomingPin?.id == pin.id
-                || windowState.currentTabId == targetTab.id && targetPin?.id == pin.id
+            let tabId = incomingPin?.id == pin.id
+                ? incomingTab.id
+                : targetTab.id
+            return ShortcutSelectionIdentity.isSelected(
+                tabId: tabId,
+                pinId: pin.id,
+                in: windowState
+            )
         }) {
             return focusedPin.index
         }
@@ -252,7 +257,7 @@ final class SplitMembershipResolutionOwner {
         if let liveTab = tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pin.id, in: windowState.id) {
             return liveTab
         }
-        return tabManager.shortcutLiveTabOwner.activateShortcutPin(
+        return tabManager.shortcutTabMaterializer.materialize(
             pin,
             in: windowState.id,
             currentSpaceId: pin.spaceId ?? windowState.currentSpaceId

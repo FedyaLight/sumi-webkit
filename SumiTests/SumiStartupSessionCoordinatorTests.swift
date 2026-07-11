@@ -1,9 +1,9 @@
+import SumiDomain
+import SumiWebRuntime
 import SwiftData
 import XCTest
-import SumiWebRuntime
 
 @testable import Sumi
-import SumiDomain
 
 @MainActor
 final class SumiStartupSessionCoordinatorTests: XCTestCase {
@@ -18,7 +18,7 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
         )
         let pin = makeSpacePin(spaceId: harness.space.id)
         harness.browserManager.tabManager.structuralCollectionMutationOwner.setSpacePinnedShortcuts([pin], for: harness.space.id)
-        let liveTab = harness.browserManager.tabManager.shortcutLiveTabOwner.activateShortcutPin(
+        let liveTab = harness.browserManager.tabManager.shortcutTabMaterializer.materialize(
             pin,
             in: harness.windowState.id,
             currentSpaceId: harness.space.id
@@ -27,13 +27,15 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
         harness.windowState.currentShortcutPinId = pin.id
         harness.windowState.currentShortcutPinRole = .spacePinned
         harness.windowState.selectedShortcutPinForSpace[harness.space.id] = pin.id
+        harness.windowState.restoredSessionWindowId = UUID()
 
-        harness.browserManager.profileLifecycleBundle.startupPolicyOwner.applyStartupPolicy(.nothing)
+        harness.browserManager.profileLifecycleBundle.startupPolicy.apply(.nothing)
 
         XCTAssertTrue(harness.browserManager.tabManager.regularTabCollectionOwner.tabs(in: harness.space).isEmpty)
         XCTAssertNil(harness.browserManager.tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pin.id, in: harness.windowState.id))
         XCTAssertNil(harness.windowState.currentTabId)
         XCTAssertNil(harness.windowState.currentShortcutPinId)
+        XCTAssertNil(harness.windowState.restoredSessionWindowId)
         XCTAssertTrue(harness.windowState.isShowingEmptyState)
         XCTAssertTrue(harness.windowState.isFloatingBarVisible)
         XCTAssertEqual(harness.windowState.floatingBarPresentationReason, .emptySpace)
@@ -45,7 +47,11 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
             harness.browserManager.lastSessionWindowsStore.tabSnapshot?.tabs.map(\.id).contains(regularTab.id),
             true
         )
-        XCTAssertTrue(harness.browserManager.windowSessionBundle.recentlyClosedRestoreOwner.canOfferStartupSessionRestoreShortcut)
+        XCTAssertNotEqual(
+            harness.browserManager.lastSessionWindowsStore.snapshots.first?.id,
+            harness.windowState.id
+        )
+        XCTAssertTrue(harness.browserManager.windowSessionBundle.sessionRecovery.canOfferStartupSessionRestoreShortcut)
     }
 
     func testSpecificPageStartupOpensExactlyOneConfiguredRegularTabAndArchivesManualRestoreSnapshot() throws {
@@ -59,7 +65,7 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
         )
         harness.windowState.currentTabId = previousTab.id
 
-        harness.browserManager.profileLifecycleBundle.startupPolicyOwner.applyStartupPolicy(.specificPage)
+        harness.browserManager.profileLifecycleBundle.startupPolicy.apply(.specificPage)
 
         let tabs = harness.browserManager.tabManager.regularTabCollectionOwner.tabs(in: harness.space)
         XCTAssertEqual(tabs.count, 1)
@@ -72,7 +78,7 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
             harness.browserManager.lastSessionWindowsStore.tabSnapshot?.tabs.map(\.id).contains(previousTab.id),
             true
         )
-        XCTAssertTrue(harness.browserManager.windowSessionBundle.recentlyClosedRestoreOwner.canOfferStartupSessionRestoreShortcut)
+        XCTAssertTrue(harness.browserManager.windowSessionBundle.sessionRecovery.canOfferStartupSessionRestoreShortcut)
     }
 
     func testSpecificPageStartupWithStaleWindowSpaceDoesNotUseGlobalCurrentSpaceOrFirstSpace() throws {
@@ -85,7 +91,7 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
         harness.windowState.currentSpaceId = UUID()
         harness.windowState.currentProfileId = nil
 
-        harness.browserManager.profileLifecycleBundle.startupPolicyOwner.applyStartupPolicy(.specificPage)
+        harness.browserManager.profileLifecycleBundle.startupPolicy.apply(.specificPage)
 
         let primaryTabs = harness.browserManager.tabManager.regularTabCollectionOwner.tabs(in: harness.space)
         XCTAssertTrue(primaryTabs.isEmpty)
@@ -113,7 +119,7 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
         harness.windowState.currentSpaceId = UUID()
         harness.windowState.currentProfileId = windowProfile.id
 
-        harness.browserManager.profileLifecycleBundle.startupPolicyOwner.applyStartupPolicy(.specificPage)
+        harness.browserManager.profileLifecycleBundle.startupPolicy.apply(.specificPage)
 
         let windowProfileTabs = harness.browserManager.tabManager.regularTabCollectionOwner.tabs(in: windowProfileSpace)
         XCTAssertEqual(windowProfileTabs.count, 1)
@@ -139,7 +145,7 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
         harness.windowState.currentSpaceId = UUID()
         harness.windowState.currentProfileId = UUID()
 
-        harness.browserManager.profileLifecycleBundle.startupPolicyOwner.applyStartupPolicy(.specificPage)
+        harness.browserManager.profileLifecycleBundle.startupPolicy.apply(.specificPage)
 
         let currentProfileTabs = harness.browserManager.tabManager.regularTabCollectionOwner.tabs(in: currentProfileSpace)
         XCTAssertTrue(currentProfileTabs.isEmpty)
@@ -173,7 +179,7 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
             )
         )
 
-        harness.browserManager.profileLifecycleBundle.startupPolicyOwner.applyStartupPolicy(.nothing)
+        harness.browserManager.profileLifecycleBundle.startupPolicy.apply(.nothing)
 
         XCTAssertNil(harness.browserManager.glanceManager.currentSession)
         XCTAssertEqual(harness.browserManager.glanceManager.phase, .idle)
@@ -193,7 +199,7 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
         )
         let pin = makeSpacePin(spaceId: harness.space.id)
         harness.browserManager.tabManager.structuralCollectionMutationOwner.setSpacePinnedShortcuts([pin], for: harness.space.id)
-        let liveTab = harness.browserManager.tabManager.shortcutLiveTabOwner.activateShortcutPin(
+        let liveTab = harness.browserManager.tabManager.shortcutTabMaterializer.materialize(
             pin,
             in: harness.windowState.id,
             currentSpaceId: harness.space.id
@@ -202,7 +208,7 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
         harness.windowState.currentShortcutPinId = pin.id
         harness.windowState.currentShortcutPinRole = .spacePinned
 
-        harness.browserManager.profileLifecycleBundle.startupPolicyOwner.applyStartupPolicy(.restorePreviousSession)
+        harness.browserManager.profileLifecycleBundle.startupPolicy.apply(.restorePreviousSession)
 
         XCTAssertEqual(harness.browserManager.tabManager.regularTabCollectionOwner.tabs(in: harness.space).map(\.id), [regularTab.id])
         XCTAssertEqual(
@@ -219,7 +225,7 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
         let second = makeLastSessionWindowSnapshot(sidebarWidth: 420)
         let plan = StartupWindowRestorationPlanner.plan(
             archivedSnapshots: [first, second],
-            existingSessions: [],
+            existingWindowIDs: [],
             hasStartupWindow: true
         )
 
@@ -227,17 +233,66 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
         XCTAssertEqual(plan.additionalSnapshots, [second])
     }
 
+    func testRestorePreviousSessionAssignsArchiveIdentityToLaunchWindow() async throws {
+        let harness = try makeHarness(startupMode: .restorePreviousSession)
+        defer { harness.defaults.reset() }
+        let archived = makeLastSessionWindowSnapshot(sidebarWidth: 320)
+        harness.browserManager.lastSessionWindowsStore.updateSnapshots([archived])
+        harness.browserManager.startupSessionRestoreOwner.reload(
+            from: harness.browserManager.lastSessionWindowsStore
+        )
+
+        harness.browserManager.profileLifecycleBundle.startupPolicy
+            .apply(.restorePreviousSession)
+
+        await waitUntil {
+            harness.windowState.restoredSessionWindowId == archived.id
+        }
+        XCTAssertEqual(harness.windowState.restoredSessionWindowId, archived.id)
+    }
+
     func testStartupRestorationDoesNotReapplySnapshotAlreadyInExistingWindow() {
         let first = makeLastSessionWindowSnapshot(sidebarWidth: 320)
         let second = makeLastSessionWindowSnapshot(sidebarWidth: 420)
         let plan = StartupWindowRestorationPlanner.plan(
             archivedSnapshots: [first, second],
-            existingSessions: [first.session],
-            hasStartupWindow: true
+            existingWindowIDs: [first.id],
+            hasStartupWindow: true,
+            startupWindowArchiveID: first.id
         )
 
         XCTAssertNil(plan.primarySnapshotForStartupWindow)
         XCTAssertEqual(plan.additionalSnapshots, [second])
+    }
+
+    func testStartupRestorationKeepsDifferentWindowIDsWithIdenticalSessions() {
+        let first = makeLastSessionWindowSnapshot(sidebarWidth: 320)
+        let second = LastSessionWindowSnapshot(id: UUID(), session: first.session)
+        let plan = StartupWindowRestorationPlanner.plan(
+            archivedSnapshots: [first, second],
+            existingWindowIDs: [first.id],
+            hasStartupWindow: true,
+            startupWindowArchiveID: first.id
+        )
+
+        XCTAssertNil(plan.primarySnapshotForStartupWindow)
+        XCTAssertEqual(plan.additionalSnapshots, [second])
+    }
+
+    func testBlankLaunchWindowReceivesFirstMissingSnapshotDuringPartialRestore() {
+        let first = makeLastSessionWindowSnapshot(sidebarWidth: 320)
+        let alreadyOpen = makeLastSessionWindowSnapshot(sidebarWidth: 420)
+        let third = makeLastSessionWindowSnapshot(sidebarWidth: 520)
+
+        let plan = StartupWindowRestorationPlanner.plan(
+            archivedSnapshots: [first, alreadyOpen, third],
+            existingWindowIDs: [alreadyOpen.id],
+            hasStartupWindow: true,
+            startupWindowArchiveID: nil
+        )
+
+        XCTAssertEqual(plan.primarySnapshotForStartupWindow, first)
+        XCTAssertEqual(plan.additionalSnapshots, [third])
     }
 
     private func makeHarness(
@@ -250,13 +305,16 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
         settings.startupPageURLString = startupPage
 
         let webViewSessions = WebViewSessionRepository()
-        let browserManager = BrowserManager(webViewSessions: webViewSessions)
-        let tabManager = try makeInMemoryTabManager(webViewSessions: webViewSessions)
+        let browserManager = BrowserManager(
+            webViewSessions: webViewSessions,
+            startupPersistence: BrowserManagerStartupPersistence(
+                container: try makeInMemoryStartupModelContainer()
+            )
+        )
+        let tabManager = browserManager.tabManager
         tabManager.sumiSettings = settings
-        browserManager.tabManager = tabManager
         browserManager.sumiSettings = settings
         browserManager.bindTestWebViewCoordinator()
-        tabManager.runtimePortsAttachmentOwner.attach(BrowserTabManagerRuntimePortsFactory.registry(for: browserManager))
         browserManager.lastSessionWindowsStore = LastSessionWindowsStore(userDefaults: defaults.defaults)
 
         let windowRegistry = WindowRegistry()
@@ -318,6 +376,17 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
                 floatingBarDraft: FloatingBarDraftState(text: "", navigateCurrentTab: false)
             )
         )
+    }
+
+    private func waitUntil(
+        _ predicate: @MainActor () -> Bool
+    ) async {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(2))
+        while predicate() == false, clock.now < deadline {
+            await Task.yield()
+        }
+        XCTAssertTrue(predicate())
     }
 }
 

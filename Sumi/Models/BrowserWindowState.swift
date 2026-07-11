@@ -35,6 +35,12 @@ class BrowserWindowState {
     /// Unique identifier for this window instance
     let id: UUID
 
+    /// Stable identity of the archived window materialized into this runtime
+    /// instance. Unlike the mutable session snapshot, it survives navigation
+    /// and chrome-state changes and is used to prevent duplicate restoration.
+    @ObservationIgnored
+    var restoredSessionWindowId: UUID?
+
     /// Currently active tab in this window
     var currentTabId: UUID?
 
@@ -209,5 +215,4 @@ class BrowserWindowState {
             ownerView: ownerView
         )
     }
-
 }

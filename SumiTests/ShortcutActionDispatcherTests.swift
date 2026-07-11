@@ -6,37 +6,23 @@ import SumiDomain
 
 @MainActor
 final class ShortcutActionDispatcherTests: XCTestCase {
-    func testFindInPageRoutesSynchronouslyAndPostsNotification() {
+    func testFindInPageRoutesSynchronously() {
         let router = RecordingShortcutActionRouter()
         let dispatcher = ShortcutActionDispatcher()
         dispatcher.actionRouter = router
-        let notification = expectation(
-            forNotification: .shortcutExecuted,
-            object: nil
-        ) { note in
-            note.userInfo?["action"] as? ShortcutAction == .findInPage
-        }
 
         dispatcher.execute(.findInPage)
 
-        wait(for: [notification], timeout: 1)
         XCTAssertEqual(router.events, [.findInPage])
     }
 
-    func testGoBackRoutesThroughNarrowShortcutRouter() async {
+    func testGoBackRoutesThroughNarrowShortcutRouter() {
         let router = RecordingShortcutActionRouter()
         let dispatcher = ShortcutActionDispatcher()
         dispatcher.actionRouter = router
-        let notification = expectation(
-            forNotification: .shortcutExecuted,
-            object: nil
-        ) { note in
-            note.userInfo?["action"] as? ShortcutAction == .goBack
-        }
 
         dispatcher.execute(.goBack)
 
-        await fulfillment(of: [notification], timeout: 1)
         XCTAssertEqual(router.events, [.goBack])
     }
 
@@ -50,21 +36,14 @@ final class ShortcutActionDispatcherTests: XCTestCase {
         XCTAssertEqual(router.events, [.closeTab])
     }
 
-    func testFocusAddressBarUsesActiveURLPrefill() async {
+    func testFocusAddressBarUsesActiveURLPrefill() {
         let router = RecordingShortcutActionRouter()
         router.activePageURL = URL(string: "https://example.com/path")!
         let dispatcher = ShortcutActionDispatcher()
         dispatcher.actionRouter = router
-        let notification = expectation(
-            forNotification: .shortcutExecuted,
-            object: nil
-        ) { note in
-            note.userInfo?["action"] as? ShortcutAction == .focusAddressBar
-        }
 
         dispatcher.execute(.focusAddressBar)
 
-        await fulfillment(of: [notification], timeout: 1)
         XCTAssertEqual(
             router.focusRequests,
             [RecordingShortcutActionRouter.FocusRequest(

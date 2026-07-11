@@ -3,9 +3,25 @@ import Foundation
 @MainActor
 struct WindowSessionSnapshotApplier {
     let glanceManager: GlanceManager
-    let floatingBarSanitizer: any WindowSessionFloatingBarSanitizing
 
     func apply(
+        _ snapshot: WindowSessionSnapshot,
+        to windowState: BrowserWindowState
+    ) {
+        applyPersistedFields(snapshot, to: windowState)
+        glanceManager.restoreSession(snapshot.glanceSession, in: windowState)
+    }
+
+    /// Applies the archived model before a shell is published. Runtime-backed
+    /// Glance restoration waits until the state has entered WindowRegistry.
+    func prepareForRegistration(
+        _ snapshot: WindowSessionSnapshot,
+        to windowState: BrowserWindowState
+    ) {
+        applyPersistedFields(snapshot, to: windowState)
+    }
+
+    private func applyPersistedFields(
         _ snapshot: WindowSessionSnapshot,
         to windowState: BrowserWindowState
     ) {
@@ -53,8 +69,5 @@ struct WindowSessionSnapshotApplier {
             windowState.pendingSessionLegacySplitGroup = nil
             windowState.pendingSessionSplitGroupId = snapshot.activeSplitGroupId
         }
-
-        glanceManager.restoreSession(snapshot.glanceSession, in: windowState)
-        floatingBarSanitizer.sanitizeFloatingBarState(in: windowState)
     }
 }

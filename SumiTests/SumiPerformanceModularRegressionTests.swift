@@ -99,12 +99,12 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         XCTAssertEqual(extensionsProbe.managerCount, 0)
         XCTAssertFalse(userscriptsModule.hasLoadedRuntime)
         XCTAssertFalse(extensionsModule.hasLoadedRuntime)
-        XCTAssertFalse(browserManager.boostsModule.hasLoadedRuntime)
+        XCTAssertFalse(browserManager.optionalModules.boosts.hasLoadedRuntime)
         // W4/R9: disabled modules must not receive attach(runtime:) at wiring time.
         XCTAssertFalse(extensionsModule.hasAttachedRuntime)
         XCTAssertFalse(userscriptsModule.hasAttachedRuntime)
-        XCTAssertFalse(browserManager.boostsModule.hasAttachedRuntime)
-        XCTAssertFalse(browserManager.liveFoldersModule.hasAttachedRuntime)
+        XCTAssertFalse(browserManager.optionalModules.boosts.hasAttachedRuntime)
+        XCTAssertFalse(browserManager.optionalModules.liveFolders.hasAttachedRuntime)
         XCTAssertFalse(browserManager.liveFolderManager.hasAttachedRuntime)
     }
 
@@ -128,12 +128,12 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
             userscriptsModule: userscriptsModule
         )
 
-        XCTAssertFalse(browserManager.boostsModule.hasAttachedRuntime)
+        XCTAssertFalse(browserManager.optionalModules.boosts.hasAttachedRuntime)
         XCTAssertFalse(userscriptsModule.hasAttachedRuntime)
         XCTAssertFalse(extensionsModule.hasAttachedRuntime)
 
-        browserManager.boostsModule.setEnabled(true)
-        XCTAssertTrue(browserManager.boostsModule.hasAttachedRuntime)
+        browserManager.optionalModules.boosts.setEnabled(true)
+        XCTAssertTrue(browserManager.optionalModules.boosts.hasAttachedRuntime)
 
         userscriptsModule.setEnabled(true)
         XCTAssertTrue(userscriptsModule.hasAttachedRuntime)
@@ -142,8 +142,8 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         XCTAssertTrue(extensionsModule.hasAttachedRuntime)
         XCTAssertFalse(extensionsModule.hasLoadedRuntime)
 
-        browserManager.boostsModule.setEnabled(false)
-        XCTAssertFalse(browserManager.boostsModule.hasAttachedRuntime)
+        browserManager.optionalModules.boosts.setEnabled(false)
+        XCTAssertFalse(browserManager.optionalModules.boosts.hasAttachedRuntime)
 
         userscriptsModule.setEnabled(false)
         XCTAssertFalse(userscriptsModule.hasAttachedRuntime)
@@ -231,7 +231,7 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         assertNoOptionalModuleScriptsOrHandlers(in: webView.configuration.userContentController)
         XCTAssertNil(webView.configuration.webExtensionController)
         XCTAssertFalse(browserManager.adBlockingModule.hasLoadedRuntime)
-        XCTAssertFalse(browserManager.boostsModule.hasLoadedRuntime)
+        XCTAssertFalse(browserManager.optionalModules.boosts.hasLoadedRuntime)
         XCTAssertFalse(browserManager.adBlockingModule.isEnabled)
         XCTAssertFalse(browserManager.adBlockingModule.isPreparedBundleRuntimeEnabled)
 

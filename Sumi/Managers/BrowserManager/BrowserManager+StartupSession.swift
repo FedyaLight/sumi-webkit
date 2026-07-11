@@ -1,25 +1,6 @@
 import Foundation
 
 extension BrowserManager {
-    func startPermissionEventObservation() {
-        permissionRuntime.startPermissionEventObservation { [weak self] _ in
-            await self?.privacyBundle.permissionSidebarPinningOwner.reconcile(reason: "permission-event")
-        }
-    }
-
-    /// Called when TabManager finishes loading initial data from persistence
-    func handleTabManagerDataLoaded() {
-        windowSessionBundle.restoreService.handleTabManagerDataLoaded(
-            windows: windowRegistry?.allWindows ?? []
-        )
-        liveFolderManager.startAfterTabRestore(isEnabled: liveFoldersModule.isEnabled)
-        reconcileStartupSessionIfPossible()
-    }
-
-    func beginProtectionRestoreForStartupIfNeeded() {
-        startupProtectionRuntime.beginProtectionRestoreForStartupIfNeeded()
-    }
-
     func reconcileStartupSessionIfPossible() {
         startupSessionRestoreOwner.reconcileIfReady(
             hasLoadedInitialTabData: { [weak self] in
@@ -29,11 +10,29 @@ extension BrowserManager {
                 self?.sumiSettings?.startupMode
             },
             startupWindow: { [weak self] in
-                self?.profileLifecycleBundle.startupPolicyOwner.firstRegularWindowForStartupPolicy
+                self?.profileLifecycleBundle.startupPolicy.startupWindow
             },
             applyStartupPolicy: { [weak self] mode in
-                self?.profileLifecycleBundle.startupPolicyOwner.applyStartupPolicy(mode)
+                self?.profileLifecycleBundle.startupPolicy.apply(mode)
             }
         )
+    }
+
+    /// Called when TabManager finishes loading initial data from persistence
+    func handleTabManagerDataLoaded() {
+        let registeredWindows = windowRegistry?.allWindows ?? []
+        windowSessionBundle.restoreService.handleTabManagerDataLoaded(
+            windows: registeredWindows
+        )
+        windowSessionBundle.restoration.completePendingRegistrations(
+            registeredWindows: registeredWindows
+        )
+        windowSessionBundle.activation.completeDeferredActivation(
+            for: windowRegistry?.activeWindow
+        )
+        liveFolderManager.startAfterTabRestore(
+            isEnabled: optionalModules.liveFolders.isEnabled
+        )
+        reconcileStartupSessionIfPossible()
     }
 }

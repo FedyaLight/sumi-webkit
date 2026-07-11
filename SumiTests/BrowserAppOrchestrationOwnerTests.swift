@@ -14,22 +14,19 @@ final class BrowserAppOrchestrationOwnerTests: XCTestCase {
         XCTAssertTrue(firstSetup)
         XCTAssertFalse(secondSetup)
         XCTAssertIdentical(harness.appDelegate.windowRegistry, harness.windowRegistry)
-        XCTAssertIdentical(
-            harness.appDelegate.mouseButtonRouter,
-            harness.browserManager.appCommandRouter
-        )
+        XCTAssertNotNil(harness.appDelegate.mouseButtonRouter)
         XCTAssertIdentical(
             harness.appDelegate.tabCommandRouter,
-            harness.browserManager.appCommandRouter
+            harness.browserManager.tabLifecycleService.closeOrchestration
         )
         XCTAssertIdentical(
             harness.appDelegate.windowRouter,
-            harness.browserManager.appCommandRouter
+            harness.browserManager.windowCommands
         )
-        XCTAssertIdentical(
-            harness.appDelegate.terminationHandler as AnyObject?,
-            harness.browserManager.appCommandRouter
+        XCTAssertTrue(
+            harness.appDelegate.externalURLHandler is ExternalURLTabOpeningService
         )
+        XCTAssertNotNil(harness.appDelegate.terminationCoordinator)
         XCTAssertNotNil(harness.appDelegate.appLifecycleHandler)
         XCTAssertNotIdentical(harness.appDelegate.appLifecycleHandler as AnyObject?, harness.browserManager)
         XCTAssertIdentical(harness.appDelegate.settingsHandler, harness.settingsManager)
@@ -58,6 +55,19 @@ final class BrowserAppOrchestrationOwnerTests: XCTestCase {
         XCTAssertNotNil(harness.windowRegistry.onAllWindowsClosed)
     }
 
+    func testSetupRestoresExistingAndFutureWindowRegistrations() {
+        let harness = makeHarness()
+        let existingWindow = BrowserWindowState()
+        let futureWindow = BrowserWindowState()
+        harness.windowRegistry.register(existingWindow)
+
+        harness.owner.setupIfNeeded(dependencies: harness.dependencies)
+        harness.windowRegistry.register(futureWindow)
+
+        XCTAssertIdentical(existingWindow.tabManager, harness.browserManager.tabManager)
+        XCTAssertIdentical(futureWindow.tabManager, harness.browserManager.tabManager)
+    }
+
     func testSetupReplacesShortcutManagerExtensionHandlerWithBrowserRuntimeHandler() throws {
         let harness = makeHarness()
         harness.keyboardShortcutManager.extensionCommandHandler = { _ in true }
@@ -66,6 +76,145 @@ final class BrowserAppOrchestrationOwnerTests: XCTestCase {
 
         let event = try XCTUnwrap(Self.makeKeyDownEvent())
         XCTAssertFalse(harness.keyboardShortcutManager.extensionCommandHandler(event))
+    }
+
+    func testFullSetupGraphReleasesBrowserManagerAndDisablesLateMouseCommands() async throws {
+        let owner = BrowserAppOrchestrationOwner()
+        let appDelegate = AppDelegate()
+        let nowPlayingController = SumiNativeNowPlayingController()
+        let settings = SumiSettingsService(nowPlayingController: nowPlayingController)
+        let registry = WindowRegistry()
+        let shortcuts = KeyboardShortcutManager(installEventMonitor: false)
+        var browserManager: BrowserManager? = BrowserManager(
+            nowPlayingController: nowPlayingController
+        )
+        weak let releasedBrowserManager = browserManager
+        weak var releasedRestorationService: BrowserWindowSessionRestorationService?
+        weak var releasedActivationService: BrowserWindowActivationService?
+        weak var releasedTabManager: TabManager?
+        weak var releasedProfileManager: ProfileManager?
+
+        do {
+            let browserManager = try XCTUnwrap(browserManager)
+            releasedTabManager = browserManager.tabManager
+            releasedProfileManager = browserManager.profileManager
+            releasedRestorationService = browserManager.windowSessionBundle.restoration
+            releasedActivationService = browserManager.windowSessionBundle.activation
+            let webViews = WebViewCoordinator(
+                webViewSessions: browserManager.webViewSessions
+            )
+            let contentFactory: BrowserWindowShellService.ContentViewFactory = { [weak browserManager] _, _, _ in
+                guard browserManager != nil else { return NSView() }
+                return NSView()
+            }
+            owner.setupIfNeeded(
+                dependencies: BrowserAppOrchestrationOwner.Dependencies(
+                    appDelegate: appDelegate,
+                    browserManager: browserManager,
+                    windowRegistry: registry,
+                    webViewCoordinator: webViews,
+                    settingsManager: settings,
+                    keyboardShortcutManager: shortcuts,
+                    nowPlayingController: nowPlayingController,
+                    windowShellContentViewFactory: contentFactory,
+                    fallbackPersistenceSave: { /* No-op. */ },
+                    startUpdater: { /* No-op. */ }
+                )
+            )
+        }
+
+        browserManager = nil
+
+        await waitUntil {
+            releasedBrowserManager == nil
+                && releasedRestorationService == nil
+                && releasedActivationService == nil
+                && releasedTabManager == nil
+                && releasedProfileManager == nil
+        }
+        XCTAssertNil(releasedBrowserManager)
+        XCTAssertNil(releasedRestorationService)
+        XCTAssertNil(releasedActivationService)
+        XCTAssertNil(releasedTabManager)
+        XCTAssertNil(releasedProfileManager)
+        XCTAssertNotNil(appDelegate.terminationCoordinator)
+        XCTAssertNil(appDelegate.terminationCoordinator?.acquireFinalizationLease())
+        let lateWindowState = BrowserWindowState()
+        registry.register(lateWindowState)
+        registry.setActive(lateWindowState)
+        registry.notifyWindowVisibilityChanged(lateWindowState)
+        appDelegate.mouseButtonRouter?.focusFloatingBar(
+            in: lateWindowState,
+            prefill: "late",
+            navigateCurrentTab: true
+        )
+        XCTAssertFalse(lateWindowState.isFloatingBarVisible)
+        registry.unregister(lateWindowState.id)
+    }
+
+    func testRetainedCommandSurfacesReleaseLiveKernelAndIgnoreLateCalls() async throws {
+        var browserManager: BrowserManager? = BrowserManager()
+        let commands = DetachedBrowserCommandSurfaces(
+            browserManager: try XCTUnwrap(browserManager)
+        )
+
+        browserManager = nil
+        await waitUntil { commands.hasReleasedLiveKernel }
+
+        let lateWindow = BrowserWindowState()
+        XCTAssertNil(commands.sidebarActions.spaceForSidebarActions(in: lateWindow))
+        commands.nativeSurfaces.openNativeBrowserSurface(
+            .settings,
+            url: SettingsTabs.general.settingsSurfaceURL,
+            in: lateWindow
+        )
+        XCTAssertNil(lateWindow.currentTabId)
+        commands.zoom.cleanupZoomForTab(UUID())
+        XCTAssertNil(commands.tabOpening.resolvedTabOpenSpace(for: .background()))
+
+        let lateTab = Tab(
+            url: URL(string: "https://late.example")!,
+            name: "Late",
+            loadsCachedFaviconOnInit: false
+        )
+        commands.tabClosing.closeTab(lateTab, in: lateWindow)
+        XCTAssertNil(lateWindow.currentTabId)
+
+        let targetSpaceId = UUID()
+        lateWindow.pendingSplitGroupFocusRequest = SplitGroupFocusRequest(
+            groupId: UUID(),
+            targetSpaceId: targetSpaceId
+        )
+        commands.splitFocus.completePendingSplitGroupFocusIfReady(
+            in: lateWindow,
+            spaceId: targetSpaceId
+        )
+        XCTAssertNotNil(lateWindow.pendingSplitGroupFocusRequest)
+
+        commands.glance.presentExternalURL(
+            URL(string: "https://late-glance.example")!,
+            from: nil
+        )
+        XCTAssertNil(commands.glance.currentSession)
+        let historyCount = commands.recentlyClosed.items.count
+        commands.sessionRecovery.reopenMostRecentClosedItem()
+        XCTAssertEqual(commands.recentlyClosed.items.count, historyCount)
+    }
+
+    private func waitUntil(
+        _ predicate: @MainActor () -> Bool
+    ) async {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(2))
+        while predicate() == false, clock.now < deadline {
+            do {
+                try await Task.sleep(for: .milliseconds(5))
+            } catch {
+                XCTFail("Wait was cancelled: \(error)")
+                return
+            }
+        }
+        XCTAssertTrue(predicate())
     }
 
     private func makeHarness() -> Harness {
@@ -139,4 +288,64 @@ private struct Harness {
     let keyboardShortcutManager: KeyboardShortcutManager
     let dependencies: BrowserAppOrchestrationOwner.Dependencies
     let startUpdaterCallCount: () -> Int
+}
+
+@MainActor
+private final class DetachedBrowserCommandSurfaces {
+    weak var browserManager: BrowserManager?
+    weak var tabManager: TabManager?
+    weak var profileManager: ProfileManager?
+    weak var zoomManager: ZoomManager?
+    weak var liveFolderManager: SumiLiveFolderManager?
+    weak var sessionRestore: WindowSessionRestoreService?
+
+    let glance: GlanceManager
+    let sidebarActions: BrowserSidebarActionOwner
+    let nativeSurfaces: BrowserNativeSurfaceRoutingOwner
+    let zoom: BrowserZoomCommandOwner
+    let tabOpening: BrowserTabOpeningOwner
+    let tabClosing: BrowserTabCloseOrchestrationOwner
+    let splitFocus: SplitShortcutFocusService
+    let sessionRecovery: BrowserSessionRecoveryCommands
+    let recentlyClosed: RecentlyClosedManager
+
+    var hasReleasedLiveKernel: Bool {
+        browserManager == nil
+            && tabManager == nil
+            && profileManager == nil
+            && zoomManager == nil
+            && liveFolderManager == nil
+            && sessionRestore == nil
+    }
+
+    init(browserManager: BrowserManager) {
+        self.browserManager = browserManager
+        self.tabManager = browserManager.tabManager
+        self.profileManager = browserManager.profileManager
+        self.zoomManager = browserManager.zoomManager
+        self.liveFolderManager = browserManager.liveFolderManager
+        self.sessionRestore = browserManager.windowSessionBundle.restoreService
+        self.glance = browserManager.glanceManager
+        self.sidebarActions = browserManager.chromeBundle.sidebarActionOwner
+        self.nativeSurfaces = browserManager.chromeBundle.nativeSurfaceRoutingOwner
+        self.zoom = browserManager.chromeBundle.zoomCommandOwner
+        self.tabOpening = browserManager.tabLifecycleService.opening
+        self.tabClosing = browserManager.tabLifecycleService.closeOrchestration
+        self.splitFocus = browserManager.sidebarCommandService.splitShortcuts.focus
+        self.sessionRecovery = browserManager.windowSessionBundle.sessionRecovery
+        self.recentlyClosed = browserManager.recentlyClosedManager
+
+        let closedTab = Tab(
+            url: URL(string: "https://closed-before-release.example")!,
+            name: "Closed before release",
+            loadsCachedFaviconOnInit: false
+        )
+        recentlyClosed.captureClosedTab(
+            closedTab,
+            sourceSpaceId: nil,
+            currentURL: closedTab.url,
+            canGoBack: false,
+            canGoForward: false
+        )
+    }
 }

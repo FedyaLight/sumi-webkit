@@ -14,6 +14,9 @@ extension BrowserManager {
         webViewSessions: WebViewSessionRepository,
         moduleRegistry: SumiModuleRegistry = .shared,
         startupPersistence: BrowserManagerStartupPersistence = .production,
+        windowSessionSnapshotStore: WindowSessionSnapshotStore = WindowSessionSnapshotStore(
+            key: BrowserManager.lastWindowSessionKey
+        ),
         browserConfiguration: BrowserConfiguration? = nil,
         adBlockingModule: SumiAdBlockingModule? = nil,
         protectionCoordinator: SumiProtectionCoordinator? = nil,
@@ -51,6 +54,7 @@ extension BrowserManager {
                 webViewSessions: webViewSessions,
                 moduleRegistry: moduleRegistry,
                 startupPersistence: startupPersistence,
+                windowSessionSnapshotStore: windowSessionSnapshotStore,
                 browserConfiguration: resolvedBrowserConfiguration,
                 adBlockingModule: adBlockingModule,
                 protectionCoordinator: protectionCoordinator,

@@ -12,6 +12,7 @@ final class TabStartupRestoreLifecycle {
 
     private(set) var hasLoadedInitialData = false
     private(set) var didStartPersistedStateLoad = false
+    private var pendingStartTask: Task<Void, Never>?
 
     init(
         shouldLoadPersistedState: Bool,
@@ -51,9 +52,20 @@ final class TabStartupRestoreLifecycle {
             "Persisted tab restore requires runtime ports to be attached first"
         )
         didStartPersistedStateLoad = true
-        Task { @MainActor in
+        pendingStartTask = Task { @MainActor [weak self] in
+            guard Task.isCancelled == false else { return }
+            self?.pendingStartTask = nil
             restore(requestedStructuralRevision)
         }
+    }
+
+    /// Returns true when restore had not yet reached TabStoreRestoreService.
+    @discardableResult
+    func cancelPendingStart() -> Bool {
+        guard let pendingStartTask else { return false }
+        pendingStartTask.cancel()
+        self.pendingStartTask = nil
+        return true
     }
 
     func startAfterRuntimeAttachmentIfConfigured(

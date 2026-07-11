@@ -115,7 +115,7 @@ final class TabLastSessionMergeTests: XCTestCase {
     func testMaterializerCommitsOneStructuralTransactionWithCanonicalTabOrder() throws {
         let tabManager = try makeInMemoryTabManager()
         let profileId = UUID()
-        let existingSpace = tabManager.spaceLifecycleOwner.createSpace(
+        let existingSpace = tabManager.spaceServices.catalog.createSpace(
             name: "Existing",
             profileId: profileId
         )
@@ -131,7 +131,7 @@ final class TabLastSessionMergeTests: XCTestCase {
         let cancellable = tabManager.tabStructureEventBus.structureChangedPublisher.sink { _ in
             structuralEventCount += 1
         }
-        let batchFlushesBefore = tabManager.structuralLookupBatchFlushCount
+        let batchFlushesBefore = tabManager.structuralLookupCoordinator.batchFlushCount
         structuralEventCount = 0
 
         let snapshot = TabPersistenceSnapshot(
@@ -173,7 +173,7 @@ final class TabLastSessionMergeTests: XCTestCase {
         tabManager.lastSessionMergeMaterializer.merge(snapshot)
 
         XCTAssertEqual(structuralEventCount, 1)
-        XCTAssertEqual(tabManager.structuralLookupBatchFlushCount, batchFlushesBefore + 1)
+        XCTAssertEqual(tabManager.structuralLookupCoordinator.batchFlushCount, batchFlushesBefore + 1)
         XCTAssertEqual(tabManager.spaceStateOwner.spaces.map(\.id), [restoredSpaceId, existingSpace.id])
         XCTAssertTrue(tabManager.spaceStateOwner.spaces.last === existingSpace)
         XCTAssertEqual(existingSpace.name, "Existing Updated")
@@ -209,7 +209,7 @@ final class TabLastSessionMergeTests: XCTestCase {
                 retiredTabIds.insert(tab.id)
             }
         )
-        let space = tabManager.spaceLifecycleOwner.createSpace(name: "Space", profileId: UUID())
+        let space = tabManager.spaceServices.catalog.createSpace(name: "Space", profileId: UUID())
         let first = tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://example.com/one",
             in: space

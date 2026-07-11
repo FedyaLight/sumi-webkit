@@ -9,17 +9,15 @@ struct BrowserKernelGraph {
     let webViewSessions: WebViewSessionRepository
     let modelContext: ModelContext
     let moduleRegistry: SumiModuleRegistry
-    let liveFoldersModule: SumiLiveFoldersModule
     let sidebarHostRecoveryCoordinator: SidebarHostRecoveryHandling
     let adBlockingModule: SumiAdBlockingModule
     let protectionCoordinator: SumiProtectionCoordinator
     let adblockZapperStore: SumiAdblockZapperStore
-    let userscriptsModule: SumiUserscriptsModule
-    let boostsModule: SumiBoostsModule
     let startupWorkspaceTheme: WorkspaceTheme?
+    let windowSessionPersistence: WindowSessionPersistenceRuntime
     let profileManager: ProfileManager
     let currentProfile: Profile?
-    let extensionsModule: SumiExtensionsModule
+    let optionalModules: OptionalModuleHost
     let tabManager: TabManager
     let downloadManager: DownloadManager
     let authenticationManager: AuthenticationManager

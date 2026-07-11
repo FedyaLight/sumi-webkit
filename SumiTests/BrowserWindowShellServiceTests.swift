@@ -94,6 +94,114 @@ final class BrowserWindowShellServiceTests: XCTestCase {
         XCTAssertTrue(try XCTUnwrap(registeredWindowHadNSWindow))
     }
 
+    func testPrepublicationInitializationCompletesBeforeRegistrationAndActivation() throws {
+        let harness = try makeHarness()
+        let service = BrowserWindowShellService()
+        let archiveID = UUID()
+        let profileID = UUID()
+        var events: [String] = []
+        var registeredState: BrowserWindowState?
+        var activeState: BrowserWindowState?
+        harness.windowRegistry.onWindowRegister = { windowState in
+            events.append("register")
+            registeredState = windowState
+            XCTAssertEqual(windowState.restoredSessionWindowId, archiveID)
+            XCTAssertEqual(windowState.currentProfileId, profileID)
+            XCTAssertTrue(windowState.isAwaitingInitialSessionResolution)
+            XCTAssertNotNil(
+                harness.windowRegistry.appKitWindow(for: windowState),
+                "The AppKit shell must be bound before registry publication"
+            )
+            windowState.isAwaitingInitialSessionResolution = false
+        }
+        harness.windowRegistry.onActiveWindowChange = { windowState in
+            events.append("active")
+            activeState = windowState
+            XCTAssertFalse(windowState.isAwaitingInitialSessionResolution)
+        }
+        let context = BrowserWindowShellService.Context(
+            windowRegistry: harness.windowRegistry,
+            webViewCoordinator: harness.webViewCoordinator,
+            permissionLifecycleController: harness
+                .permissionLifecycleController,
+            profileManager: harness.profileManager,
+            tabManager: harness.tabManager,
+            makeContentView: { registry, _, windowState in
+                events.append("content")
+                XCTAssertEqual(windowState.restoredSessionWindowId, archiveID)
+                XCTAssertEqual(windowState.currentProfileId, profileID)
+                XCTAssertNil(registry.windows[windowState.id])
+                return NSView()
+            },
+            showEmptyState: { _, _ in /* No-op. */ },
+            sidebarHostRecoveryCoordinator: SidebarHostRecoveryCoordinator()
+        )
+
+        let windowState = try XCTUnwrap(service.createNewWindow(
+            using: context,
+            initializeBeforePublication: { windowState in
+                events.append("prepare")
+                windowState.restoredSessionWindowId = archiveID
+                windowState.currentProfileId = profileID
+                windowState.isAwaitingInitialSessionResolution = true
+            },
+            validateAfterRegistration: {
+                $0.isAwaitingInitialSessionResolution == false
+            },
+            compensateRejectedRegistration: { _ in
+                XCTFail("Accepted registration must not be compensated")
+            }
+        ))
+        defer {
+            harness.windowRegistry.appKitWindow(for: windowState)?.close()
+            harness.windowRegistry.unregister(windowState.id)
+        }
+
+        XCTAssertEqual(events, ["prepare", "content", "register", "active"])
+        XCTAssertIdentical(registeredState, windowState)
+        XCTAssertIdentical(activeState, windowState)
+    }
+
+    func testRejectedRegistrationRunsCompensationBeforeRegistryRollback() throws {
+        let harness = try makeHarness()
+        let service = BrowserWindowShellService()
+        var events: [String] = []
+        var preparedWindow: BrowserWindowState?
+        harness.windowRegistry.onWindowRegister = { _ in
+            events.append("register")
+        }
+        harness.windowRegistry.onWindowClose = { _ in
+            XCTFail("Rejected publication is not a user-visible window close")
+        }
+        let context = makeContext(harness: harness) { _, _ in /* No-op. */ }
+
+        let result = service.createNewWindow(
+            using: context,
+            initializeBeforePublication: { windowState in
+                events.append("prepare")
+                preparedWindow = windowState
+                windowState.isAwaitingInitialSessionResolution = true
+            },
+            validateAfterRegistration: { _ in false },
+            compensateRejectedRegistration: { windowState in
+                events.append("compensate")
+                XCTAssertIdentical(
+                    harness.windowRegistry.windows[windowState.id],
+                    windowState
+                )
+            }
+        )
+
+        XCTAssertNil(result)
+        XCTAssertEqual(events, ["prepare", "register", "compensate"])
+        XCTAssertTrue(harness.windowRegistry.windows.isEmpty)
+        XCTAssertNil(
+            preparedWindow.flatMap {
+                harness.windowRegistry.appKitWindow(for: $0)
+            }
+        )
+    }
+
     func testEphemeralTabsUseMonotonicIndexesAndIncognitoCleanupIsIdempotent() async throws {
         let harness = try makeHarness()
         let service = BrowserWindowShellService()

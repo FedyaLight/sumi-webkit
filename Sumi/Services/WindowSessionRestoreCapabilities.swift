@@ -23,7 +23,7 @@ protocol WindowSessionSelectionApplying: AnyObject {
 
 @MainActor
 protocol WindowSessionFloatingBarSanitizing: AnyObject {
-    func sanitizeFloatingBarState(in windowState: BrowserWindowState)
+    func sanitize(in windowState: BrowserWindowState)
 }
 
 @MainActor
@@ -40,6 +40,6 @@ protocol WindowSessionSplitFocusing: AnyObject {
 }
 
 extension BrowserManager: WindowSessionSelectionApplying {}
-extension BrowserFloatingBarRoutingOwner: WindowSessionFloatingBarSanitizing {}
+extension FloatingBarPresentationService: WindowSessionFloatingBarSanitizing {}
 extension BrowserWorkspaceThemeTransitionOwner: WindowSessionThemeCommitting {}
-extension BrowserSidebarSplitShortcutRoutingOwner: WindowSessionSplitFocusing {}
+extension SplitShortcutFocusService: WindowSessionSplitFocusing {}

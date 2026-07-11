@@ -9,15 +9,16 @@ final class BrowserShortcutActionRouter {
     struct Dependencies {
         let keyboardShortcuts: @MainActor () -> BrowserKeyboardShortcutCommandOwner?
         let historyNavigation: @MainActor () -> BrowserHistoryNavigationOwner?
-        let activePageRouting: @MainActor () -> BrowserActivePageRoutingOwner?
+        let activePageResolver: @MainActor () -> ActivePageResolver?
+        let activePageCommands: @MainActor () -> ActivePageCommandService?
         let zoomCommands: @MainActor () -> BrowserZoomCommandOwner?
-        let windowShellCommands: @MainActor () -> BrowserWindowSessionCommands?
+        let windowShellCommands: @MainActor () -> BrowserWindowCommands?
         let pagePrivacyCommands: @MainActor () -> BrowserChromeCommands?
         let chromePopovers: @MainActor () -> BrowserChromeCommands?
         let dialogs: @MainActor () -> BrowserNativeDialogPresentationOwner?
-        let recentlyClosedRestore: @MainActor () -> BrowserRecentlyClosedRestoreOwner?
+        let sessionRecovery: @MainActor () -> BrowserSessionRecoveryCommands?
         let themeEditor: @MainActor () -> BrowserWorkspaceThemeEditorOwner?
-        let floatingBarRouting: @MainActor () -> BrowserFloatingBarRoutingOwner?
+        let floatingBarPresentation: @MainActor () -> FloatingBarPresentationService?
         let findManager: @MainActor () -> FindManager?
         let showFindBar: @MainActor () -> Void
         let closeCurrentTab: @MainActor () -> Void
@@ -46,7 +47,7 @@ extension BrowserShortcutActionRouter: ShortcutActionRouting {
     }
 
     func refreshCurrentTabInActiveWindow() {
-        dependencies.activePageRouting()?.refreshCurrentTabInActiveWindow()
+        dependencies.activePageCommands()?.reloadActivePage()
     }
 
     func clearCurrentPageCookies() {
@@ -62,7 +63,7 @@ extension BrowserShortcutActionRouter: ShortcutActionRouting {
     }
 
     func undoCloseTab() {
-        dependencies.recentlyClosedRestore()?.reopenMostRecentClosedItem()
+        dependencies.sessionRecovery()?.reopenMostRecentClosedItem()
     }
 
     func selectNextTabInActiveWindow() {
@@ -122,7 +123,7 @@ extension BrowserShortcutActionRouter: ShortcutActionRouting {
     }
 
     func openWebInspector() {
-        dependencies.activePageRouting()?.openWebInspector()
+        dependencies.activePageCommands()?.inspectActivePage()
     }
 
     func showDownloads() {
@@ -138,14 +139,14 @@ extension BrowserShortcutActionRouter: ShortcutActionRouting {
     }
 
     func activePageURLForActiveWindow() -> URL? {
-        dependencies.activePageRouting()?.activePageURLForActiveWindow()
+        dependencies.activePageResolver()?.resolveActiveWindow()?.url
     }
 
     func focusFloatingBarForActiveWindow(prefill: String, navigateCurrentTab: Bool) {
-        dependencies.floatingBarRouting()?.focusFloatingBarForActiveWindow(
+        dependencies.floatingBarPresentation()?.focusActiveWindow(
             prefill: prefill,
             navigateCurrentTab: navigateCurrentTab,
-            presentationReason: .keyboard
+            reason: .keyboard
         )
     }
 
@@ -166,7 +167,7 @@ extension BrowserShortcutActionRouter: ShortcutActionRouting {
     }
 
     func copyCurrentURL() {
-        dependencies.activePageRouting()?.copyCurrentURL()
+        dependencies.activePageCommands()?.copyActivePageURL()
     }
 
     func hardReloadCurrentPage() {
@@ -178,7 +179,7 @@ extension BrowserShortcutActionRouter: ShortcutActionRouting {
     }
 
     func toggleMuteCurrentTabInActiveWindow() {
-        dependencies.activePageRouting()?.toggleMuteCurrentTabInActiveWindow()
+        dependencies.activePageCommands()?.toggleMuteForActivePage()
     }
 
     func showGradientEditor() {
@@ -200,7 +201,7 @@ extension BrowserShortcutActionRouter: KeyboardShortcutChromeRouting {
     }
 
     func dismissFloatingBarForShortcutRouting(in windowState: BrowserWindowState, preserveDraft: Bool) {
-        dependencies.floatingBarRouting()?.dismissFloatingBar(
+        dependencies.floatingBarPresentation()?.dismiss(
             in: windowState,
             preserveDraft: preserveDraft,
             cancelEmptySplitPlaceholder: true
@@ -211,21 +212,28 @@ extension BrowserShortcutActionRouter: KeyboardShortcutChromeRouting {
 extension BrowserShortcutActionRouter.Dependencies {
     @MainActor
     static func live(browserManager: BrowserManager) -> Self {
-        Self(
-            keyboardShortcuts: { [weak browserManager] in
-                browserManager?.keyboardShortcutCommandOwner
-            },
+        // Keyboard-shortcut command handling has exactly one consumer — this
+        // router — so the router owns the handler instead of resolving it
+        // back through a BrowserManager façade property.
+        let keyboardShortcuts = BrowserKeyboardShortcutCommandOwner(
+            browserManager: browserManager
+        )
+        return Self(
+            keyboardShortcuts: { keyboardShortcuts },
             historyNavigation: { [weak browserManager] in
                 browserManager?.historyBundle.historyNavigationOwner
             },
-            activePageRouting: { [weak browserManager] in
-                browserManager?.urlBarBundle.activePageRoutingOwner
+            activePageResolver: { [weak browserManager] in
+                browserManager?.shellRuntime.activePageResolver
+            },
+            activePageCommands: { [weak browserManager] in
+                browserManager?.chromeBundle.activePageCommands
             },
             zoomCommands: { [weak browserManager] in
                 browserManager?.chromeBundle.zoomCommandOwner
             },
             windowShellCommands: { [weak browserManager] in
-                browserManager?.windowSessionBundle.commands
+                browserManager?.windowCommands
             },
             pagePrivacyCommands: { [weak browserManager] in
                 browserManager?.chromeBundle.commands
@@ -236,14 +244,14 @@ extension BrowserShortcutActionRouter.Dependencies {
             dialogs: { [weak browserManager] in
                 browserManager?.chromeBundle.nativeDialogPresentationOwner
             },
-            recentlyClosedRestore: { [weak browserManager] in
-                browserManager?.windowSessionBundle.recentlyClosedRestoreOwner
+            sessionRecovery: { [weak browserManager] in
+                browserManager?.windowSessionBundle.sessionRecovery
             },
             themeEditor: { [weak browserManager] in
                 browserManager?.chromeBundle.workspaceThemeEditorOwner
             },
-            floatingBarRouting: { [weak browserManager] in
-                browserManager?.urlBarBundle.floatingBarRoutingOwner
+            floatingBarPresentation: { [weak browserManager] in
+                browserManager?.urlBarBundle.floatingBar.presentation
             },
             findManager: { [weak browserManager] in
                 browserManager?.findManager

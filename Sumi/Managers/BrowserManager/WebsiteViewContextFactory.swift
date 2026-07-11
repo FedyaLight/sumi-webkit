@@ -1,6 +1,6 @@
 import Combine
-import SwiftUI
 import SumiDomain
+import SwiftUI
 
 /// Builds the browser contexts consumed by website/native-surface root views
 /// (web content, history page, bookmarks page) from browser subsystems.
@@ -12,10 +12,13 @@ enum WebsiteViewContextFactory {
     ) -> WebsiteViewBrowserContext {
         WebsiteViewBrowserContext(
             currentTab: { [weak browserManager] windowState in
-                browserManager?.windowSessionBundle.tabContextOwner.currentTab(for: windowState)
+                browserManager?.shellRuntime.windowTabs.currentTab(for: windowState)
             },
             workspaceTheme: { [weak browserManager] spaceId in
-                browserManager?.windowSessionBundle.spaceStateOwner.space(for: spaceId)?.workspaceTheme
+                spaceId.flatMap {
+                    browserManager?.tabManager.spaceStateOwner.space(with: $0)?
+                        .workspaceTheme
+                }
             },
             makeWebContentContext: {
                 BrowserManagerWindowWebContentContext(
@@ -72,18 +75,22 @@ enum WebsiteViewContextFactory {
         SettingsBrowserContext(
             profileManager: browserManager.profileManager,
             tabManager: browserManager.tabManager,
-            extensionsModule: browserManager.extensionsModule,
-            userscriptsModule: browserManager.userscriptsModule,
-            extensionSurfaceStore: browserManager.extensionsModule.surfaceStore,
+            extensionsModule: browserManager.optionalModules.extensions,
+            userscriptsModule: browserManager.optionalModules.userscripts,
+            extensionSurfaceStore: browserManager.optionalModules.extensions.surfaceStore,
             currentProfile: { [weak browserManager] in
                 browserManager?.currentProfile
             },
             currentProfileUpdates: browserManager.$currentProfile.eraseToAnyPublisher(),
             currentTab: { [weak browserManager] windowState in
-                browserManager?.windowSessionBundle.tabContextOwner.currentTab(for: windowState)
+                browserManager?.shellRuntime.windowTabs.currentTab(for: windowState)
             },
             deleteProfile: { [weak browserManager] profile in
-                browserManager?.windowSessionBundle.commands.deleteProfile(profile)
+                guard let browserManager else { return }
+                BrowserProfileDeletionWorkflow.delete(
+                    profile,
+                    from: browserManager
+                )
             },
             scheduleRuntimeStatePersistence: { [weak browserManager] tab in
                 browserManager?.tabManager.structuralPersistence.scheduleRuntimeStatePersistence(for: tab)
@@ -166,7 +173,7 @@ enum WebsiteViewContextFactory {
                     .isNativeModalPresented(in: windowId) ?? false
             },
             currentTab: { [weak browserManager] windowState in
-                browserManager?.windowSessionBundle.tabContextOwner.currentTab(for: windowState)
+                browserManager?.shellRuntime.windowTabs.currentTab(for: windowState)
             },
             openHistoryURL: { [weak browserManager] url, windowState, preferredOpenMode in
                 browserManager?.historyBundle.historyNavigationOwner.openHistoryURL(
@@ -206,7 +213,7 @@ enum WebsiteViewContextFactory {
             },
             currentProfileUpdates: browserManager.$currentProfile.eraseToAnyPublisher(),
             currentTab: { [weak browserManager] windowState in
-                browserManager?.windowSessionBundle.tabContextOwner.currentTab(for: windowState)
+                browserManager?.shellRuntime.windowTabs.currentTab(for: windowState)
             },
             openHistoryURLsInNewTabs: { [weak browserManager] urls, windowState in
                 browserManager?.historyBundle.historyNavigationOwner.openHistoryURLsInNewTabs(

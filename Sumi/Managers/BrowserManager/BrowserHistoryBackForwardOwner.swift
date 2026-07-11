@@ -6,24 +6,18 @@ import WebKit
 @MainActor
 final class BrowserHistoryBackForwardOwner {
     private let activeWindow: @MainActor @Sendable () -> BrowserWindowState?
-    private let activePageTab: @MainActor @Sendable (BrowserWindowState) -> Tab?
-    private let activePageWebView: @MainActor @Sendable (BrowserWindowState) -> WKWebView?
-    private let webView: @MainActor @Sendable (UUID, UUID) -> WKWebView?
+    private let activePage: @MainActor @Sendable (BrowserWindowState) -> ActivePageResolution?
     private let navigateBack: @MainActor @Sendable (WKWebView) -> Void
     private let navigateForward: @MainActor @Sendable (WKWebView) -> Void
 
     init(
         activeWindow: @escaping @MainActor @Sendable () -> BrowserWindowState?,
-        activePageTab: @escaping @MainActor @Sendable (BrowserWindowState) -> Tab?,
-        activePageWebView: @escaping @MainActor @Sendable (BrowserWindowState) -> WKWebView?,
-        webView: @escaping @MainActor @Sendable (UUID, UUID) -> WKWebView?,
+        activePage: @escaping @MainActor @Sendable (BrowserWindowState) -> ActivePageResolution?,
         navigateBack: @escaping @MainActor @Sendable (WKWebView) -> Void,
         navigateForward: @escaping @MainActor @Sendable (WKWebView) -> Void
     ) {
         self.activeWindow = activeWindow
-        self.activePageTab = activePageTab
-        self.activePageWebView = activePageWebView
-        self.webView = webView
+        self.activePage = activePage
         self.navigateBack = navigateBack
         self.navigateForward = navigateForward
     }
@@ -71,11 +65,6 @@ final class BrowserHistoryBackForwardOwner {
     }
 
     private func resolvedActivePageWebView(in windowState: BrowserWindowState) -> WKWebView? {
-        guard let currentTab = activePageTab(windowState)
-        else {
-            return nil
-        }
-        return activePageWebView(windowState)
-            ?? webView(currentTab.id, windowState.id)
+        activePage(windowState)?.canonicalWebView
     }
 }

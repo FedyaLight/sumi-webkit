@@ -118,7 +118,7 @@ extension BrowserTabRuntimeCompositionService.Dependencies {
         let suspensionWebViewOwnership = browserManager.webViewOwnershipQuery
         let regularTabs = browserManager.tabManager.tabCollectionMembershipOwner
         let lazyRestore = browserManager.tabManager.lazyRestoreCoordinator
-        let windowTabs = browserManager.windowSessionBundle.tabContextOwner
+        let windowTabs = browserManager.shellRuntime.windowTabs
         let splitManager = browserManager.splitManager
 
         return Self(
@@ -189,7 +189,7 @@ extension BrowserTabRuntimeCompositionService.Dependencies {
                 return backgroundMediaVisibleTabIDsByWindow(for: browserManager)
             },
             notifyTabActivatedIfLoaded: { [weak browserManager] newTab, previousTab in
-                browserManager?.extensionsModule.notifyTabActivatedIfLoaded(
+                browserManager?.optionalModules.extensions.notifyTabActivatedIfLoaded(
                     newTab: newTab,
                     previous: previousTab
                 )
@@ -205,7 +205,7 @@ extension BrowserTabRuntimeCompositionService.Dependencies {
         var visibleTabIDsByWindow: [UUID: Set<UUID>] = [:]
         for windowState in windowRegistry.windows.values where windowState.windowVisibilityState.isEffectivelyVisible {
             let tabIDs = VisibleTabPreparationPlan.visibleTabIDs(
-                currentTabId: browserManager.windowSessionBundle.tabContextOwner.currentTab(for: windowState)?.id,
+                currentTabId: browserManager.shellRuntime.windowTabs.currentTab(for: windowState)?.id,
                 splitTabIds: browserManager.splitManager.visibleTabIds(for: windowState.id)
             )
             visibleTabIDsByWindow[windowState.id] = Set(tabIDs)

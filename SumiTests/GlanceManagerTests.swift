@@ -43,8 +43,8 @@ final class GlanceManagerTests: XCTestCase {
 
     func testPresentationWithoutSourceUsesActiveWindowSpaceInsteadOfGlobalCurrentSpace() throws {
         let browserManager = makeBrowserManager()
-        let windowSpace = browserManager.tabManager.spaceLifecycleOwner.createSpace(name: "Window Space")
-        let globalSpace = browserManager.tabManager.spaceLifecycleOwner.createSpace(name: "Global Space")
+        let windowSpace = browserManager.tabManager.spaceServices.catalog.createSpace(name: "Window Space")
+        let globalSpace = browserManager.tabManager.spaceServices.catalog.createSpace(name: "Global Space")
         browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(globalSpace)
         let windowRegistry = WindowRegistry()
         let windowState = BrowserWindowState()
@@ -363,7 +363,7 @@ final class GlanceManagerTests: XCTestCase {
         XCTAssertFalse(suggestedTabs.contains { $0.id == previewTab.id })
         XCTAssertFalse(suggestedTabs.contains { $0.id == placeholderId })
 
-        browserManager.urlBarBundle.floatingBarRoutingOwner.commitFloatingBarSuggestion(
+        browserManager.urlBarBundle.floatingBar.commit.commitSuggestion(
             SearchManager.SearchSuggestion(text: sourceTab.name, type: .tab(sourceTab)),
             in: sourceWindow
         )
@@ -625,7 +625,7 @@ final class GlanceManagerTests: XCTestCase {
 
     private func makeSourceTab(in browserManager: BrowserManager) -> Tab {
         let space = browserManager.tabManager.spaceStateOwner.currentSpace
-            ?? browserManager.tabManager.spaceLifecycleOwner.createSpace(name: "Glance Tests")
+            ?? browserManager.tabManager.spaceServices.catalog.createSpace(name: "Glance Tests")
         return browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://source.example/page",
             in: space,

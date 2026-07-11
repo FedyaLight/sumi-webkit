@@ -59,7 +59,7 @@ struct RuntimePortRegistry {
         windowQuery.updateTabVisibility()
     }
 
-    func validateWindowStates() {
+    func validateWindowStates() -> Set<UUID> {
         windowQuery.validateWindowStates()
     }
 
@@ -75,6 +75,10 @@ struct RuntimePortRegistry {
 
     func handleTabClosure(_ tabId: UUID) {
         splitCoordination.handleTabClosure(tabId)
+    }
+
+    func handleTabClosures(_ tabIds: Set<UUID>) {
+        splitCoordination.handleTabClosures(tabIds)
     }
 
     func visibleSplitTabIds(for windowId: UUID) -> [UUID] {

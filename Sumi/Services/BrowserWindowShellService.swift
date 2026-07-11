@@ -5,6 +5,10 @@ import SumiDomain
 final class BrowserWindowShellService {
     typealias ContentViewFactory = @MainActor (WindowRegistry, WebViewCoordinator, BrowserWindowState) -> NSView
     typealias EmptyStatePresenter = @MainActor (BrowserWindowState, Bool) -> Void
+    typealias StateInitializer = @MainActor (BrowserWindowState) -> Void
+    typealias RejectedRegistrationCompensation = @MainActor (
+        BrowserWindowState
+    ) -> Void
 
     struct Context {
         let windowRegistry: WindowRegistry
@@ -17,11 +21,38 @@ final class BrowserWindowShellService {
         let sidebarHostRecoveryCoordinator: SidebarHostRecoveryHandling
     }
 
-    func createNewWindow(using context: Context) {
+    @discardableResult
+    func createNewWindow(using context: Context) -> BrowserWindowState {
+        guard let windowState = createNewWindow(
+            using: context,
+            initializeBeforePublication: { _ in /* No-op. */ },
+            validateAfterRegistration: { _ in true },
+            compensateRejectedRegistration: { _ in /* No-op. */ }
+        ) else {
+            preconditionFailure("Ordinary window registration cannot be rejected")
+        }
+        return windowState
+    }
+
+    /// Initializes model state before content construction, then validates the
+    /// synchronous registration workflow before activation or presentation.
+    @discardableResult
+    func createNewWindow(
+        using context: Context,
+        initializeBeforePublication: StateInitializer,
+        validateAfterRegistration: @MainActor (BrowserWindowState) -> Bool,
+        compensateRejectedRegistration: RejectedRegistrationCompensation
+    ) -> BrowserWindowState? {
         let windowState = BrowserWindowState(
             sidebarRecoveryCoordinator: context.sidebarHostRecoveryCoordinator
         )
         windowState.tabManager = context.tabManager
+        precondition(context.windowRegistry.windows[windowState.id] == nil)
+        initializeBeforePublication(windowState)
+        precondition(
+            context.windowRegistry.windows[windowState.id] == nil,
+            "Window initialization must not publish into WindowRegistry"
+        )
 
         let newWindow = makeWindow(
             title: "Sumi",
@@ -32,9 +63,20 @@ final class BrowserWindowShellService {
             )
         )
         context.windowRegistry.bindAppKitWindow(newWindow, to: windowState)
-        context.windowRegistry.register(windowState)
+        let registration = context.windowRegistry.register(windowState)
+        precondition(
+            registration == .registered,
+            "A newly created shell must publish one new window state"
+        )
+        guard validateAfterRegistration(windowState) else {
+            compensateRejectedRegistration(windowState)
+            context.windowRegistry.rollbackRegistration(windowState)
+            newWindow.close()
+            return nil
+        }
         context.windowRegistry.setActive(windowState)
         newWindow.makeKeyAndOrderFront(nil)
+        return windowState
     }
 
     func createIncognitoWindow(using context: Context) {

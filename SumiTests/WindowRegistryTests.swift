@@ -3,6 +3,38 @@ import XCTest
 
 @MainActor
 final class WindowRegistryTests: XCTestCase {
+    func testRegisteringSameObjectTwiceIsIdempotent() {
+        let registry = WindowRegistry()
+        let window = BrowserWindowState()
+        var registrationCount = 0
+        registry.onWindowRegister = { _ in registrationCount += 1 }
+
+        let firstResult = registry.register(window)
+        let secondResult = registry.register(window)
+
+        XCTAssertEqual(firstResult, .registered)
+        XCTAssertEqual(secondResult, .alreadyRegistered)
+        XCTAssertIdentical(registry.windows[window.id], window)
+        XCTAssertEqual(registrationCount, 1)
+    }
+
+    func testRegisteringDifferentObjectWithSameIDIsRejectedWithoutReplacement() {
+        let registry = WindowRegistry()
+        let sharedID = UUID()
+        let registeredWindow = BrowserWindowState(id: sharedID)
+        let conflictingWindow = BrowserWindowState(id: sharedID)
+        var registrationCount = 0
+        registry.onWindowRegister = { _ in registrationCount += 1 }
+
+        XCTAssertEqual(registry.register(registeredWindow), .registered)
+        let result = registry.register(conflictingWindow)
+
+        XCTAssertEqual(result, .rejectedIdentityConflict)
+        XCTAssertIdentical(registry.windows[sharedID], registeredWindow)
+        XCTAssertNotIdentical(registry.windows[sharedID], conflictingWindow)
+        XCTAssertEqual(registrationCount, 1)
+    }
+
     func testAwaitNextRegisteredWindowReturnsNewWindow() async {
         let registry = WindowRegistry()
         let existingWindow = BrowserWindowState()
@@ -64,7 +96,7 @@ final class WindowRegistryTests: XCTestCase {
         var closedWindowIds: [UUID] = []
         var allWindowsClosedCount = 0
 
-        registry.onWindowClose = { closedWindowIds.append($0) }
+        registry.onWindowClose = { closedWindowIds.append($0.id) }
         registry.onAllWindowsClosed = { allWindowsClosedCount += 1 }
         registry.register(window)
         registry.setActive(window)
@@ -164,6 +196,35 @@ final class WindowRegistryTests: XCTestCase {
         XCTAssertEqual(registry.activeWindowId, window.id)
         XCTAssertIdentical(registry.activeWindow, window)
         XCTAssertEqual(activatedWindowIds, [window.id])
+    }
+
+    func testSettingAlreadyActiveWindowDoesNotRepublishActivation() {
+        let registry = WindowRegistry()
+        let window = BrowserWindowState()
+        var activatedWindowIds: [UUID] = []
+        registry.onActiveWindowChange = { activatedWindowIds.append($0.id) }
+        registry.register(window)
+
+        registry.setActive(window)
+        registry.setActive(window)
+
+        XCTAssertEqual(activatedWindowIds, [window.id])
+    }
+
+    func testRollbackRegistrationSkipsCloseLifecycle() {
+        let registry = WindowRegistry()
+        let window = BrowserWindowState()
+        var closeCount = 0
+        var allWindowsClosedCount = 0
+        registry.onWindowClose = { _ in closeCount += 1 }
+        registry.onAllWindowsClosed = { allWindowsClosedCount += 1 }
+        registry.register(window)
+
+        registry.rollbackRegistration(window)
+
+        XCTAssertTrue(registry.windows.isEmpty)
+        XCTAssertEqual(closeCount, 0)
+        XCTAssertEqual(allWindowsClosedCount, 0)
     }
 
     func testWindowStateContainingReturnsParentForChildWindow() {

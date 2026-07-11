@@ -5,34 +5,17 @@ import WebKit
 enum BrowserGlanceRuntimeService {
     static func runtime(for browserManager: BrowserManager) -> GlanceManager.Runtime {
         GlanceManager.Runtime(
-            windowStateContainingTab: { [weak browserManager] tab in
-                browserManager?.windowSessionBundle.tabContextOwner.windowState(containing: tab)
+            windowStateContainingTab: { [weak browserManager] in
+                browserManager?.shellRuntime.windowTabs.windowState(containing: $0)
             },
-            hasLoadedInitialTabData: { [weak browserManager] in
-                browserManager?.tabManager.startupRestoreLifecycle.hasLoadedInitialData ?? false
+            hasLoadedInitialTabData: { [weak browserManager] in browserManager?.tabManager.startupRestoreLifecycle.hasLoadedInitialData ?? false },
+            tab: { [weak browserManager] in browserManager?.tabManager.tabCollectionMembershipOwner.tab(for: $0) },
+            shortcutPin: { [weak browserManager] in browserManager?.tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: $0) },
+            shortcutLiveTab: { [weak browserManager] in browserManager?.tabManager.shortcutPresentationOwner.shortcutLiveTab(for: $0, in: $1) },
+            activateShortcutPin: { [weak browserManager] in
+                browserManager?.tabManager.shortcutTabMaterializer.materialize($0, in: $1, currentSpaceId: $2)
             },
-            tab: { [weak browserManager] tabId in
-                browserManager?.tabManager.tabCollectionMembershipOwner.tab(for: tabId)
-            },
-            shortcutPin: { [weak browserManager] pinId in
-                browserManager?.tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: pinId)
-            },
-            shortcutLiveTab: { [weak browserManager] pinId, windowId in
-                browserManager?.tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pinId, in: windowId)
-            },
-            activateShortcutPin: { [weak browserManager, tabFactory = browserManager.tabManager.tabFactory] pin, windowId, currentSpaceId in
-                guard let browserManager else {
-                    return tabFactory.makeTab(url: pin.launchURL, name: pin.title)
-                }
-                return browserManager.tabManager.shortcutLiveTabOwner.activateShortcutPin(
-                    pin,
-                    in: windowId,
-                    currentSpaceId: currentSpaceId
-                )
-            },
-            currentTab: { [weak browserManager] windowState in
-                browserManager?.windowSessionBundle.tabContextOwner.currentTab(for: windowState)
-            },
+            currentTab: { [weak browserManager] in browserManager?.shellRuntime.windowTabs.currentTab(for: $0) },
             restoreSourceSelection: { [weak browserManager] tab, windowState in
                 browserManager?.applyTabSelection(
                     tab,
@@ -44,39 +27,18 @@ enum BrowserGlanceRuntimeService {
                     loadPolicy: .deferred
                 )
             },
-            visibleSplitTabCount: { [weak browserManager] windowId in
-                browserManager?.splitManager.visibleTabIds(for: windowId).count ?? 0
+            visibleSplitTabCount: { [weak browserManager] in browserManager?.splitManager.visibleTabIds(for: $0).count ?? 0 },
+            dismissFloatingBarIfVisible: { [weak browserManager] in
+                browserManager?.urlBarBundle.floatingBar.presentation
+                    .dismissIfVisible(in: $0, preserveDraft: true) ?? false
             },
-            dismissFloatingBarIfVisible: { [weak browserManager] windowId in
-                browserManager?.urlBarBundle.floatingBarRoutingOwner.dismissFloatingBarIfVisible(
-                    in: windowId,
-                    preserveDraft: true
-                ) ?? false
-            },
-            isFindBarVisible: { [weak browserManager] in
-                browserManager?.findManager.isFindBarVisible ?? false
-            },
-            findCurrentTabId: { [weak browserManager] in
-                browserManager?.findManager.currentTab?.id
-            },
-            hideFindBar: { [weak browserManager] in
-                browserManager?.findManager.hideFindBar()
-            },
-            updateFindManagerCurrentTab: { [weak browserManager] in
-                browserManager?.updateFindManagerCurrentTab()
-            },
-            persistWindowSession: { [weak browserManager] windowState in
-                browserManager?.windowSessionBundle.persistence.persist(windowState)
-            },
-            makePreviewTab: { [weak browserManager, tabFactory = browserManager.tabManager.tabFactory] url, sourceTab, windowState in
-                guard let browserManager else {
-                    return tabFactory.makeTab(
-                        url: url,
-                        name: url.host ?? "Glance",
-                        favicon: "globe",
-                        index: 0
-                    )
-                }
+            isFindBarVisible: { [weak browserManager] in browserManager?.findManager.isFindBarVisible ?? false },
+            findCurrentTabId: { [weak browserManager] in browserManager?.findManager.currentTab?.id },
+            hideFindBar: { [weak browserManager] in browserManager?.findManager.hideFindBar() },
+            updateFindManagerCurrentTab: { [weak browserManager] in browserManager?.updateFindManagerCurrentTab() },
+            persistWindowSession: { [weak browserManager] in browserManager?.windowSessionBundle.persistence.persist($0) },
+            makePreviewTab: { [weak browserManager] url, sourceTab, windowState in
+                guard let browserManager else { return nil }
                 return makePreviewTab(
                     for: url,
                     sourceTab: sourceTab,
@@ -96,12 +58,8 @@ enum BrowserGlanceRuntimeService {
                     )
                 )
             },
-            selectPromotedTab: { [weak browserManager] tab, windowState in
-                browserManager?.selectTab(tab, in: windowState)
-            },
-            selectPromotedTabInActiveWindow: { [weak browserManager] tab in
-                browserManager?.selectTab(tab)
-            },
+            selectPromotedTab: { [weak browserManager] in browserManager?.selectTab($0, in: $1) },
+            selectPromotedTabInActiveWindow: { [weak browserManager] in browserManager?.selectTab($0) },
             createSplitPlaceholder: { [weak browserManager] windowState in
                 browserManager?.splitManager.createEmptySplit(
                     side: .right,
@@ -120,18 +78,10 @@ enum BrowserGlanceRuntimeService {
                     attachmentCompletion: attachmentCompletion
                 )
             },
-            previewWebView: { [weak browserManager] tab in
-                browserManager?.webViewRoutingService.anyLiveWebView(for: tab)
-            },
-            ensurePreviewWebView: { [weak browserManager] tab, _ in
-                browserManager?.webViewOwnershipService?.ensureUntracked(for: tab)
-            },
-            ownsPreviewWebView: { [weak browserManager] tab, webView in
-                browserManager?.webViewRoutingService.ownsLiveWebView(webView, for: tab) ?? false
-            },
-            releasePreviewWebView: { [weak browserManager] tab in
-                browserManager?.webViewOwnershipService?.releaseUntracked(for: tab)
-            }
+            previewWebView: { [weak browserManager] in browserManager?.webViewRoutingService.anyLiveWebView(for: $0) },
+            ensurePreviewWebView: { [weak browserManager] tab, _ in browserManager?.webViewOwnershipService?.ensureUntracked(for: tab) },
+            ownsPreviewWebView: { [weak browserManager] in browserManager?.webViewRoutingService.ownsLiveWebView($1, for: $0) ?? false },
+            releasePreviewWebView: { [weak browserManager] in browserManager?.webViewOwnershipService?.releaseUntracked(for: $0) }
         )
     }
 

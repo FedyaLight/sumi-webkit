@@ -5,20 +5,20 @@ import WebKit
 @MainActor
 struct ExtensionRequestedTabContextPreloader {
     let loadResolver: ExtensionRequestedTabLoadResolver
-    let targetResolver: ExtensionRequestedTabTargetResolver
+    let placement: ExtensionRequestedTabTargetResolver
     private let profileRuntime: ExtensionProfileRuntime
     private let runtime: @MainActor () -> ExtensionManagerRuntime
     private let contextLoading: any ExtensionContentScriptContextLoading
 
     init(
         loadResolver: ExtensionRequestedTabLoadResolver,
-        targetResolver: ExtensionRequestedTabTargetResolver,
+        placement: ExtensionRequestedTabTargetResolver,
         profileRuntime: ExtensionProfileRuntime,
         runtime: @escaping @MainActor () -> ExtensionManagerRuntime,
         contextLoading: any ExtensionContentScriptContextLoading
     ) {
         self.loadResolver = loadResolver
-        self.targetResolver = targetResolver
+        self.placement = placement
         self.profileRuntime = profileRuntime
         self.runtime = runtime
         self.contextLoading = contextLoading
@@ -33,7 +33,7 @@ struct ExtensionRequestedTabContextPreloader {
     ) async throws -> UUID? {
         let load = loadResolver.resolve(url, controller: controller)
         guard load.requiresContentScriptPreload else { return nil }
-        let target = try targetResolver.resolve(
+        let target = try placement.resolve(
             requestedWindow: requestedWindow,
             extensionContext: extensionContext
         )

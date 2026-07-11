@@ -6,6 +6,7 @@ final class TabStructuralPublishOwner {
     private let eventBus: TabStructureEventBus
     private var structuralUpdateDepth = 0
     private var pendingStructuralPublish = false
+    private var actionsAfterStructuralBatch: [@MainActor () -> Void] = []
     private var structuralTransactionSignpostState: OSSignpostIntervalState?
     private(set) var mutationRevision: UInt64 = 0
 
@@ -40,6 +41,14 @@ final class TabStructuralPublishOwner {
         emitStructureChanged()
     }
 
+    func runAfterCurrentBatch(_ action: @escaping @MainActor () -> Void) {
+        guard structuralUpdateDepth > 0 else {
+            action()
+            return
+        }
+        actionsAfterStructuralBatch.append(action)
+    }
+
     private func emitStructureChanged() {
         eventBus.publishStructureChanged()
     }
@@ -68,5 +77,8 @@ final class TabStructuralPublishOwner {
             PerformanceTrace.emitEvent("TabManager.structuralPublish.coalesced")
             emitStructureChanged()
         }
+        let actions = actionsAfterStructuralBatch
+        actionsAfterStructuralBatch.removeAll(keepingCapacity: true)
+        actions.forEach { $0() }
     }
 }

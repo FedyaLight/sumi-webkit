@@ -83,7 +83,7 @@ extension TabRuntimePortsAttachmentOwner.Dependencies {
                 tabManager?.objectWillChange.send()
             },
             scheduleStructuralPersistence: { [weak tabManager] in
-                tabManager?.scheduleStructuralPersistence()
+                tabManager?.structuralPersistence.scheduleStructuralPersistence()
             },
             currentTab: { [weak tabManager] in
                 tabManager?.selectionStateOwner.currentTab

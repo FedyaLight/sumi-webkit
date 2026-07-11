@@ -11,7 +11,7 @@ enum TabBrowserNavigationRuntimeFactory {
                 browserManager?.sumiSettings
             },
             extensionsModule: { [weak browserManager] in
-                browserManager?.extensionsModule
+                browserManager?.optionalModules.extensions
             }
         )
     }
@@ -53,7 +53,7 @@ enum TabBrowserNavigationRuntimeFactory {
     ) -> TabReloadPolicyRuntime {
         .make(
             extensionsModule: { [weak browserManager] in
-                browserManager?.extensionsModule
+                browserManager?.optionalModules.extensions
             },
             protectionCoordinator: { [weak browserManager] in
                 browserManager?.protectionCoordinator
@@ -75,10 +75,10 @@ enum TabBrowserNavigationRuntimeFactory {
                 browserManager?.webViewCoordinator
             },
             cancelWindowMutationsAfterHistorySwipe: { [weak browserManager] windowId in
-                browserManager?.windowSessionBundle.visualMutationOwner.cancelWindowMutationsAfterHistorySwipe(in: windowId)
+                browserManager?.shellRuntime.windowVisuals.cancelWindowMutationsAfterHistorySwipe(in: windowId)
             },
             flushWindowMutationsAfterHistorySwipe: { [weak browserManager] windowId in
-                browserManager?.windowSessionBundle.visualMutationOwner.flushWindowMutationsAfterHistorySwipe(in: windowId)
+                browserManager?.shellRuntime.windowVisuals.flushWindowMutationsAfterHistorySwipe(in: windowId)
             }
         )
     }
@@ -117,7 +117,7 @@ enum TabBrowserNavigationRuntimeFactory {
                     tabSuspensionController?.navigationDidStart(for: tab)
                 },
                 extensionsModule: { [weak browserManager] in
-                    browserManager?.extensionsModule
+                    browserManager?.optionalModules.extensions
                 },
                 loadZoomForTab: { [weak browserManager] tabId, webView in
                     browserManager?.chromeBundle.zoomCommandOwner.loadZoomForTab(
@@ -171,7 +171,7 @@ enum TabBrowserNavigationRuntimeFactory {
         for browserManager: BrowserManager
     ) -> TabInstallNavigationRuntime {
         .make(userscriptsModule: { [weak browserManager] in
-            browserManager?.userscriptsModule
+            browserManager?.optionalModules.userscripts
         })
     }
 }

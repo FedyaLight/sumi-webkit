@@ -11,7 +11,8 @@ extension WindowViewBrowserContext {
         WindowViewBrowserContext(
             splitManager: browserManager.splitManager,
             findManager: browserManager.findManager,
-            floatingBarBrowserContext: browserManager.urlBarBundle.floatingBarBrowserContextOwner.context,
+            floatingBarBrowserContext: browserManager.urlBarBundle
+                .floatingBar.browserContext.context,
             sidebarBrowserContext: SidebarBrowserContext.live(browserManager: browserManager),
             sidebarHostActions: sidebarHostActions(browserManager: browserManager),
             sidebarStructuralInvalidation: sidebarStructuralInvalidation(browserManager: browserManager),
@@ -50,11 +51,12 @@ extension WindowViewBrowserContext {
                 )
             },
             currentTab: { [weak browserManager] windowState in
-                browserManager?.windowSessionBundle.tabContextOwner.currentTab(for: windowState)
+                browserManager?.shellRuntime.windowTabs.currentTab(for: windowState)
             },
             workspaceTheme: { [weak browserManager] spaceId in
                 guard let spaceId else { return nil }
-                return browserManager?.windowSessionBundle.spaceStateOwner.space(for: spaceId)?.workspaceTheme
+                return browserManager?.tabManager.spaceStateOwner.space(with: spaceId)?
+                    .workspaceTheme
             },
             isNativeModalPresented: { [weak browserManager] windowId in
                 browserManager?.chromeBundle.nativeDialogPresentationOwner.isNativeModalPresented(in: windowId) ?? false

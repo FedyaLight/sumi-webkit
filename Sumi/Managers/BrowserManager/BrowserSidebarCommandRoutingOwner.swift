@@ -5,7 +5,7 @@ final class BrowserSidebarCommandRoutingOwner {
     private let folderCommand: BrowserSidebarFolderCommandOwner
     private let chromeCommand: BrowserSidebarChromeCommandOwner
     private let tabCommand: BrowserSidebarTabCommandOwner
-    private let splitShortcutRouting: any BrowserSidebarSplitShortcutRouting
+    private let splitCommands: SidebarSplitShortcutCommands
     private let shortcutPromotion: BrowserSidebarShortcutPromotionOwner
     private let shortcutPinUnload: BrowserShortcutPinUnloadOwner
 
@@ -13,14 +13,14 @@ final class BrowserSidebarCommandRoutingOwner {
         folderCommand: BrowserSidebarFolderCommandOwner,
         chromeCommand: BrowserSidebarChromeCommandOwner,
         tabCommand: BrowserSidebarTabCommandOwner,
-        splitShortcutRouting: any BrowserSidebarSplitShortcutRouting,
+        splitCommands: SidebarSplitShortcutCommands,
         shortcutPromotion: BrowserSidebarShortcutPromotionOwner,
         shortcutPinUnload: BrowserShortcutPinUnloadOwner
     ) {
         self.folderCommand = folderCommand
         self.chromeCommand = chromeCommand
         self.tabCommand = tabCommand
-        self.splitShortcutRouting = splitShortcutRouting
+        self.splitCommands = splitCommands
         self.shortcutPromotion = shortcutPromotion
         self.shortcutPinUnload = shortcutPinUnload
     }
@@ -54,15 +54,11 @@ final class BrowserSidebarCommandRoutingOwner {
             moveTabDown: { [tabCommand] tabId in
                 tabCommand.moveTabDown(tabId)
             },
-            focusSplitGroup: { [splitShortcutRouting] group, windowState in
-                splitShortcutRouting.focusSplitGroup(group, in: windowState)
+            focusSplitGroup: { [splitCommands] group, windowState in
+                splitCommands.focusGroup(group, windowState)
             },
-            restoreShortcutSplitMember: { [splitShortcutRouting] memberId, group, windowState in
-                splitShortcutRouting.restoreShortcutSplitMember(
-                    memberId,
-                    from: group,
-                    in: windowState
-                )
+            restoreShortcutSplitMember: { [splitCommands] memberId, group, windowState in
+                splitCommands.restoreMember(memberId, group, windowState)
             },
             openForegroundTab: { [tabCommand] url, windowState, preferredSpaceId in
                 tabCommand.openForegroundTab(

@@ -26,14 +26,14 @@ struct ExtensionActionBrowserContext {
         windowState: BrowserWindowState
     ) -> ExtensionActionBrowserContext {
         ExtensionActionBrowserContext(
-            extensionsModule: browserManager.extensionsModule,
-            userscriptsModule: browserManager.userscriptsModule,
+            extensionsModule: browserManager.optionalModules.extensions,
+            userscriptsModule: browserManager.optionalModules.userscripts,
             windowState: windowState,
             currentTab: { [weak browserManager, weak windowState] in
                 guard let browserManager, let windowState else { return nil }
-                return browserManager.windowSessionBundle.tabContextOwner.currentTab(for: windowState)
+                return browserManager.shellRuntime.windowTabs.currentTab(for: windowState)
                     ?? windowState.currentTabId.flatMap { browserManager.tabManager.tabCollectionMembershipOwner.tab(for: $0) }
-                    ?? browserManager.shellSelectionService.currentTab(
+                    ?? browserManager.shellRuntime.windowSelection.currentTab(
                         for: windowState,
                         tabStore: browserManager.tabManager.runtimeStore
                     )
@@ -57,7 +57,10 @@ struct ExtensionActionBrowserContext {
             },
             openSettingsTab: { [weak browserManager, weak windowState] tab in
                 guard let browserManager, let windowState else { return }
-                browserManager.urlBarBundle.commands.openSettingsTab(selecting: tab, in: windowState)
+                browserManager.urlBarBundle.settingsNavigation.openSettings(
+                    selecting: tab,
+                    in: windowState
+                )
             },
             showExtensionUnavailableAlert: { extensionName, message in
                 BrowserExtensionUnavailableAlert.present(

@@ -5,9 +5,9 @@ final class BrowserTabCloseOrchestrationOwner {
     private let activeWindow: () -> BrowserWindowState?
     private let currentTab: (BrowserWindowState) -> Tab?
     private let glanceManager: GlanceManager
-    private let tabManager: () -> TabManager
+    private let tabManager: () -> TabManager?
     private let fallbackPlanner: () -> BrowserTabCloseFallbackPlanner
-    private let shortcutLiveTabCloseOwner: () -> BrowserShortcutLiveTabCloseOwner
+    private let shortcutLiveTabCloseService: () -> ShortcutLiveTabCloseService
     private let selectTab: (Tab, BrowserWindowState) -> Void
     private let performImmediateVisualHandoffIfPossible: (BrowserWindowState) -> Void
     private let showEmptyState: (BrowserWindowState) -> Void
@@ -17,9 +17,9 @@ final class BrowserTabCloseOrchestrationOwner {
         activeWindow: @escaping () -> BrowserWindowState?,
         currentTab: @escaping (BrowserWindowState) -> Tab?,
         glanceManager: GlanceManager,
-        tabManager: @escaping () -> TabManager,
+        tabManager: @escaping () -> TabManager?,
         fallbackPlanner: @escaping () -> BrowserTabCloseFallbackPlanner,
-        shortcutLiveTabCloseOwner: @escaping () -> BrowserShortcutLiveTabCloseOwner,
+        shortcutLiveTabCloseService: @escaping () -> ShortcutLiveTabCloseService,
         selectTab: @escaping (Tab, BrowserWindowState) -> Void,
         performImmediateVisualHandoffIfPossible: @escaping (BrowserWindowState) -> Void,
         showEmptyState: @escaping (BrowserWindowState) -> Void,
@@ -30,7 +30,7 @@ final class BrowserTabCloseOrchestrationOwner {
         self.glanceManager = glanceManager
         self.tabManager = tabManager
         self.fallbackPlanner = fallbackPlanner
-        self.shortcutLiveTabCloseOwner = shortcutLiveTabCloseOwner
+        self.shortcutLiveTabCloseService = shortcutLiveTabCloseService
         self.selectTab = selectTab
         self.performImmediateVisualHandoffIfPossible = performImmediateVisualHandoffIfPossible
         self.showEmptyState = showEmptyState
@@ -74,7 +74,7 @@ final class BrowserTabCloseOrchestrationOwner {
         }
 
         if tab.isShortcutLiveInstance {
-            shortcutLiveTabCloseOwner().close(tab, in: windowState)
+            shortcutLiveTabCloseService().close(tab, in: windowState)
             return
         }
 
@@ -82,7 +82,7 @@ final class BrowserTabCloseOrchestrationOwner {
     }
 
     private func closeRegularTab(_ tab: Tab, in windowState: BrowserWindowState) {
-        let tabManager = tabManager()
+        guard let tabManager = tabManager() else { return }
         let wasCurrent = windowState.currentTabId == tab.id
         let fallback = wasCurrent
             ? fallbackPlanner().fallbackAfterClosingRegularTab(

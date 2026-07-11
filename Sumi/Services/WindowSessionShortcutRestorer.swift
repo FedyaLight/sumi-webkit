@@ -10,9 +10,16 @@ struct WindowSessionShortcutRestorer {
     ) -> Bool {
         if let shortcutPinId = windowState.currentShortcutPinId,
            let pin = tabManager.shortcutPinCollectionStateOwner
-            .shortcutPin(by: shortcutPinId) {
+            .shortcutPin(by: shortcutPinId),
+           pin.role == .essential || pin.spaceId == windowState.currentSpaceId {
             materialize(pin, in: windowState)
             return true
+        }
+
+        if windowState.currentShortcutPinId != nil
+            || windowState.currentShortcutPinRole != nil {
+            windowState.currentShortcutPinId = nil
+            windowState.currentShortcutPinRole = nil
         }
 
         return materializeRememberedSpaceSelection(in: windowState)
@@ -26,7 +33,12 @@ struct WindowSessionShortcutRestorer {
               let shortcutPinId = windowState
                 .selectedShortcutPinForSpace[currentSpaceId],
               let pin = tabManager.shortcutPinCollectionStateOwner
-                .shortcutPin(by: shortcutPinId) else {
+                .shortcutPin(by: shortcutPinId),
+              pin.role == .spacePinned,
+              pin.spaceId == currentSpaceId else {
+            if let currentSpaceId = windowState.currentSpaceId {
+                windowState.selectedShortcutPinForSpace[currentSpaceId] = nil
+            }
             return false
         }
 
@@ -41,7 +53,7 @@ struct WindowSessionShortcutRestorer {
         let liveTab = tabManager.shortcutPresentationOwner.shortcutLiveTab(
             for: pin.id,
             in: windowState.id
-        ) ?? tabManager.shortcutLiveTabOwner.activateShortcutPin(
+        ) ?? tabManager.shortcutTabMaterializer.materialize(
             pin,
             in: windowState.id,
             currentSpaceId: windowState.currentSpaceId

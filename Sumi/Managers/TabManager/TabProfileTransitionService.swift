@@ -12,11 +12,17 @@ final class TabProfileTransitionService {
 
     private unowned let tabManager: TabManager
     private let policy: ProfileAssignmentPolicy
+    private let pendingInheritance: PendingTabProfileInheritance
     private var observersByTabID: [UUID: SettlementObserver] = [:]
 
-    init(tabManager: TabManager, policy: ProfileAssignmentPolicy) {
+    init(
+        tabManager: TabManager,
+        policy: ProfileAssignmentPolicy,
+        pendingInheritance: PendingTabProfileInheritance
+    ) {
         self.tabManager = tabManager
         self.policy = policy
+        self.pendingInheritance = pendingInheritance
     }
 
     @discardableResult
@@ -28,7 +34,11 @@ final class TabProfileTransitionService {
             return false
         }
         if tab.profileId == profileID {
-            return tab.cancelPendingProfileAssignment()
+            let didCancel = tab.cancelPendingProfileAssignment()
+            if didCancel, reconcileStableInheritance(for: tab) {
+                publishStructuralMutation(for: tab)
+            }
+            return didCancel
         }
         if tab.hasPendingProfileAssignment(to: profileID) {
             return false
@@ -45,7 +55,6 @@ final class TabProfileTransitionService {
         guard tab.hasPendingProfileAssignment(to: profileID) == false,
               tab.hasUnsettledProfileAssignment == false else { return }
         if tab.profileId == profileID {
-            _ = tab.cancelPendingProfileAssignment()
             return
         }
         _ = start(
@@ -60,6 +69,10 @@ final class TabProfileTransitionService {
         targetSpaceID: UUID?,
         desiredProfileID: UUID? = nil
     ) -> TabSpaceProfileTransitionPreparation? {
+        guard tab.spaceId != targetSpaceID else { return nil }
+        // Both callers have already committed to changing `spaceId`; a nil
+        // preparation only means that no WebView profile replacement is needed.
+        pendingInheritance.tabLeftSourceSpace(tab)
         guard let profileIDs = policy.profileIDsForSpaceTransition(
             tab: tab,
             targetSpaceID: targetSpaceID,
@@ -115,7 +128,7 @@ final class TabProfileTransitionService {
         desiredProfileID: UUID?,
         tab: Tab,
         requiresStructuralPersistence: Bool,
-        intentPrepared: (DeferredWebViewProfileAssignmentIntent) -> Void = { _ in },
+        intentPrepared: (DeferredWebViewProfileAssignmentIntent) -> Void = { _ in /* No-op. */ },
         settlementObserver: ProfileTransitionService.Settlement? = nil
     ) -> TabProfileAssignmentExecutionOutcome {
         guard let profile = policy.resolvedAssignmentProfile(
@@ -151,6 +164,9 @@ final class TabProfileTransitionService {
         intent: DeferredWebViewProfileAssignmentIntent
     ) {
         tab.abortProfileAssignmentIntent(intent)
+        if reconcileStableInheritance(for: tab) {
+            publishStructuralMutation(for: tab)
+        }
         if observersByTabID[tab.id]?.revision == intent.revision {
             observersByTabID.removeValue(forKey: tab.id)
         }
@@ -181,17 +197,29 @@ final class TabProfileTransitionService {
         tab: Tab,
         intent: DeferredWebViewProfileAssignmentIntent
     ) {
+        var requiresStructuralPublication = false
         switch settlement {
         case .committed:
-            publishStructuralMutationIfNeeded(tab: tab, intent: intent)
+            requiresStructuralPublication = intent.requiresStructuralPersistence
         case .rejected:
             tab.abortProfileAssignmentIntent(intent)
         case .rolledBack:
-            if intent.requiresStructuralPersistence {
-                publishStructuralMutationIfNeeded(tab: tab, intent: intent)
-            }
+            requiresStructuralPublication = intent.requiresStructuralPersistence
         case .conflicted, .leaseLost, .terminalShutdown:
             break
+        }
+        let didNormalizeInheritance = pendingInheritance.tabTransitionSettled(
+            settlement,
+            tab: tab,
+            intent: intent,
+            canonicalProfileID: tab.spaceId.flatMap {
+                tabManager.spaceStateOwner.profileId(for: $0)
+            },
+            isTabStillInSpace: tabManager.tabCollectionMembershipOwner
+                .allTabs().contains { $0 === tab && $0.spaceId == tab.spaceId }
+        )
+        if requiresStructuralPublication || didNormalizeInheritance {
+            publishStructuralMutation(for: tab)
         }
 
         guard let observer = observersByTabID[tab.id],
@@ -200,17 +228,24 @@ final class TabProfileTransitionService {
         observer.callback(settlement)
     }
 
-    private func publishStructuralMutationIfNeeded(
-        tab: Tab,
-        intent: DeferredWebViewProfileAssignmentIntent
-    ) {
-        guard intent.requiresStructuralPersistence else { return }
+    private func publishStructuralMutation(for tab: Tab) {
         if let spaceID = tab.spaceId {
             tabManager.structuralPersistence
                 .markRegularTabsStructurallyDirty(for: spaceID)
         }
-        tabManager.scheduleStructuralPersistence()
-        tabManager.requestStructuralPublish()
+        tabManager.structuralPersistence.scheduleStructuralPersistence()
+        tabManager.structuralLookupCoordinator.requestPublish()
+    }
+
+    private func reconcileStableInheritance(for tab: Tab) -> Bool {
+        pendingInheritance.tabBecameStable(
+            tab,
+            canonicalProfileID: tab.spaceId.flatMap {
+                tabManager.spaceStateOwner.profileId(for: $0)
+            },
+            isTabStillInSpace: tabManager.tabCollectionMembershipOwner
+                .allTabs().contains { $0 === tab && $0.spaceId == tab.spaceId }
+        )
     }
 
     private func immediateSettlement(

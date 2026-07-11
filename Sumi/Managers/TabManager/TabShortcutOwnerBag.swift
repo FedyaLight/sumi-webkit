@@ -38,7 +38,6 @@ final class TabShortcutOwnerBag {
             return self.tm.faviconService
         }
     )
-    lazy var shortcutPinConversionOwner = ShortcutPinConversionOwner(tabManager: tm)
     lazy var shortcutDragOperationOwner = ShortcutDragOperationOwner(tabManager: tm)
     lazy var shortcutPresentationOwner = TabShortcutPresentationOwner(tabManager: tm)
     lazy var shortcutContainerRemovalOwner = ShortcutContainerRemovalOwner(
@@ -58,8 +57,5 @@ final class TabShortcutOwnerBag {
         currentSpaceId: { [weak self] in
             self?.tm.spaceStateOwner.currentSpace?.id
         }
-    )
-    lazy var shortcutLiveTabOwner = ShortcutLiveTabOwner(
-        dependencies: .live(tabManager: tm)
     )
 }

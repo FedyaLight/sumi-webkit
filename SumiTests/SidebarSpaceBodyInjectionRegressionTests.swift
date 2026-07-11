@@ -74,7 +74,10 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
         XCTAssertIdentical(root.environmentContext.sidebarDragState.locationTracker, dragState.locationTracker)
         XCTAssertIdentical(root.environmentContext.nowPlayingController, nowPlayingController)
         XCTAssertIdentical(root.environmentContext.updaterService, updaterService)
-        XCTAssertIdentical(root.environmentContext.browserContext.extensionSurfaceStore, browserManager.extensionSurfaceStore)
+        XCTAssertIdentical(
+            root.environmentContext.browserContext.extensionSurfaceStore,
+            browserManager.optionalModules.extensions.surfaceStore
+        )
         XCTAssertEqual(root.presentationContext, .docked(sidebarWidth: 280))
     }
 }

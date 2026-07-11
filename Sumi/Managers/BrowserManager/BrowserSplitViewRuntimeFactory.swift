@@ -3,29 +3,28 @@ import Foundation
 @MainActor
 enum BrowserSplitViewRuntimeFactory {
     static func runtime(for browserManager: BrowserManager) -> SplitViewRuntime {
-        let fallbackTabManager = browserManager.tabManager
-        return SplitViewRuntime(
+        SplitViewRuntime(
             tabManager: { [weak browserManager] in
-                browserManager?.tabManager ?? fallbackTabManager
+                browserManager?.tabManager
             },
             currentTab: { [weak browserManager] windowState in
-                browserManager?.windowSessionBundle.tabContextOwner.currentTab(for: windowState)
+                browserManager?.shellRuntime.windowTabs.currentTab(for: windowState)
             },
             selectTab: { [weak browserManager] tab, windowState in
                 browserManager?.selectTab(tab, in: windowState)
             },
             refreshCompositor: { [weak browserManager] windowState in
-                browserManager?.windowSessionBundle.visualMutationOwner.refreshCompositor(for: windowState)
+                browserManager?.shellRuntime.windowVisuals.refreshCompositor(for: windowState)
             },
             schedulePersistWindowSession: { [weak browserManager] windowState in
                 browserManager?.windowSessionBundle.persistence.schedule(windowState)
             },
             focusFloatingBar: { [weak browserManager] windowState, reason in
-                browserManager?.urlBarBundle.floatingBarRoutingOwner.focusFloatingBar(
+                browserManager?.urlBarBundle.floatingBar.presentation.focus(
                     in: windowState,
                     prefill: "",
                     navigateCurrentTab: true,
-                    presentationReason: reason
+                    reason: reason
                 )
             },
             notifications: { [weak browserManager] in

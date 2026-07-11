@@ -19,7 +19,7 @@ struct SpaceTitleActionOwner {
             canDeleteSpace: browserContext.tabManager.spaceStateOwner.spaces.count > 1,
             renameSpace: { newName in
                 do {
-                    try browserContext.tabManager.spaceLifecycleOwner.renameSpace(
+                    try browserContext.tabManager.spaceServices.catalog.renameSpace(
                         spaceId: space.id,
                         newName: newName
                     )
@@ -29,14 +29,14 @@ struct SpaceTitleActionOwner {
             },
             updateSpaceIcon: { icon in
                 do {
-                    try browserContext.tabManager.spaceLifecycleOwner.updateSpaceIcon(spaceId: space.id, icon: icon)
+                    try browserContext.tabManager.spaceServices.catalog.updateSpaceIcon(spaceId: space.id, icon: icon)
                 } catch {
                     RuntimeDiagnostics.emit("⚠️ Failed to update space icon \(space.id.uuidString):", error)
                 }
             },
             persistCommittedEmoji: { _ in
                 browserContext.tabManager.structuralPersistence.markAllSpacesStructurallyDirty()
-                browserContext.tabManager.scheduleStructuralPersistence()
+                browserContext.tabManager.structuralPersistence.scheduleStructuralPersistence()
             },
             editSpace: {
                 browserContext.presentationActions.showSpaceEditor(

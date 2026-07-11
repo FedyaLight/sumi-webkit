@@ -48,16 +48,16 @@ struct BrowserTabOpenContext {
 
 @MainActor
 final class BrowserTabOpeningOwner {
-    private let tabManagerAction: () -> TabManager
+    private let tabManagerAction: () -> TabManager?
     private let settingsAction: () -> SumiSettingsService?
     private let activeWindowAction: () -> BrowserWindowState?
     private let windowStateContainingTabAction: (Tab) -> BrowserWindowState?
     private let canMaterializeBackgroundTabAction: (Tab) -> Bool
-    private let deferBackgroundTabUntilStartupReadyAction: (Tab) -> Void
+    private let deferBackgroundTabAction: (Tab) -> Void
     private let selectTabAction: (Tab, BrowserWindowState, TabSelectionLoadPolicy) -> Void
 
     init(
-        tabManager: @escaping () -> TabManager,
+        tabManager: @escaping () -> TabManager?,
         settings: @escaping () -> SumiSettingsService?,
         activeWindow: @escaping () -> BrowserWindowState?,
         windowStateContainingTab: @escaping (Tab) -> BrowserWindowState?,
@@ -70,19 +70,19 @@ final class BrowserTabOpeningOwner {
         self.activeWindowAction = activeWindow
         self.windowStateContainingTabAction = windowStateContainingTab
         self.canMaterializeBackgroundTabAction = canMaterializeBackgroundTab
-        self.deferBackgroundTabUntilStartupReadyAction = deferBackgroundTabUntilStartupReady
+        self.deferBackgroundTabAction = deferBackgroundTabUntilStartupReady
         self.selectTabAction = selectTab
     }
 
     convenience init(browserManager: BrowserManager) {
         self.init(
-            tabManager: { [weak browserManager, tabManager = browserManager.tabManager] in
-                browserManager?.tabManager ?? tabManager
+            tabManager: { [weak browserManager] in
+                browserManager?.tabManager
             },
             settings: { [weak browserManager] in browserManager?.sumiSettings },
             activeWindow: { [weak browserManager] in browserManager?.windowRegistry?.activeWindow },
             windowStateContainingTab: { [weak browserManager] tab in
-                browserManager?.windowSessionBundle.tabContextOwner.windowState(containing: tab)
+                browserManager?.shellRuntime.windowTabs.windowState(containing: tab)
             },
             canMaterializeBackgroundTab: { [weak browserManager] tab in
                 browserManager?.startupProtectionRuntime.canMaterializeWebViewDuringStartup(tab) ?? true
@@ -102,7 +102,7 @@ final class BrowserTabOpeningOwner {
             return openNewTab(context: .foreground(windowState: activeWindow))
         }
 
-        let tabManager = tabManagerAction()
+        let tabManager = requiredTabManager()
         return tabManager.regularTabLifecycleOwner.createNewTab(in: tabManager.spaceStateOwner.spaces.first)
     }
 
@@ -129,9 +129,10 @@ final class BrowserTabOpeningOwner {
             )
         }
 
-        let tabManager = tabManagerAction()
+        let tabManager = requiredTabManager()
         let targetSpace = resolvedTabOpenSpace(
-            for: .foreground(windowState: windowState)
+            for: .foreground(windowState: windowState),
+            tabManager: tabManager
         )
         let newTab = tabManager.regularTabLifecycleOwner.createNewTab(
             url: url,
@@ -142,7 +143,7 @@ final class BrowserTabOpeningOwner {
         DispatchQueue.main.asyncAfter(deadline: .now() + SidebarDropMotion.contentLayoutDuration) { [weak self, weak newTab] in
             guard let self,
                   let newTab,
-                  self.tabManagerAction().tabCollectionMembershipOwner.tab(for: newTab.id) != nil else { return }
+                  self.tabManagerAction()?.tabCollectionMembershipOwner.tab(for: newTab.id) != nil else { return }
             self.selectTabAction(newTab, windowState, .deferred)
         }
 
@@ -154,7 +155,7 @@ final class BrowserTabOpeningOwner {
         url: String = SumiSurface.emptyTabURL.absoluteString,
         context: BrowserTabOpenContext
     ) -> Tab {
-        let tabManager = tabManagerAction()
+        let tabManager = requiredTabManager()
         let resolvedWindowState = resolvedWindowState(for: context)
 
         if let resolvedWindowState,
@@ -191,7 +192,10 @@ final class BrowserTabOpeningOwner {
             return newTab
         }
 
-        let targetSpace = resolvedTabOpenSpace(for: context)
+        let targetSpace = resolvedTabOpenSpace(
+            for: context,
+            tabManager: tabManager
+        )
         let regularInsertionIndex = context.regularInsertionIndex
             ?? tabManager.regularTabCollectionOwner.childInsertionIndex(
                 openedFrom: context.sourceTab,
@@ -218,12 +222,13 @@ final class BrowserTabOpeningOwner {
     }
 
     func duplicateTab(_ tab: Tab, in windowState: BrowserWindowState) {
-        let tabManager = tabManagerAction()
+        guard let tabManager = tabManagerAction() else { return }
         let targetSpace = resolvedTabOpenSpace(
             for: .background(
                 windowState: windowState,
                 sourceTab: tab
-            )
+            ),
+            tabManager: tabManager
         )
         let insertIndex = tabManager.regularTabCollectionOwner.childInsertionIndex(
             openedFrom: tab,
@@ -251,7 +256,7 @@ final class BrowserTabOpeningOwner {
         webViewConfigurationOverride: WKWebViewConfiguration? = nil,
         activate: Bool = true
     ) -> Tab? {
-        let tabManager = tabManagerAction()
+        guard let tabManager = tabManagerAction() else { return nil }
         let sourceWindowState = windowStateContainingTabAction(sourceTab)
         if sourceTab.isEphemeral || sourceWindowState?.isIncognito == true {
             guard let sourceWindowState,
@@ -282,7 +287,10 @@ final class BrowserTabOpeningOwner {
             sourceTab: sourceTab,
             preferredSpaceId: sourceTab.spaceId
         )
-        let targetSpace = resolvedTabOpenSpace(for: context)
+        let targetSpace = resolvedTabOpenSpace(
+            for: context,
+            tabManager: tabManager
+        )
         let insertionIndex = tabManager.regularTabCollectionOwner.childInsertionIndex(
             openedFrom: sourceTab,
             in: targetSpace
@@ -296,7 +304,14 @@ final class BrowserTabOpeningOwner {
     }
 
     func resolvedTabOpenSpace(for context: BrowserTabOpenContext) -> Space? {
-        let tabManager = tabManagerAction()
+        guard let tabManager = tabManagerAction() else { return nil }
+        return resolvedTabOpenSpace(for: context, tabManager: tabManager)
+    }
+
+    private func resolvedTabOpenSpace(
+        for context: BrowserTabOpenContext,
+        tabManager: TabManager
+    ) -> Space? {
         let resolvedWindowState = resolvedWindowState(for: context)
 
         if let preferredSpaceId = context.preferredSpaceId,
@@ -327,13 +342,22 @@ final class BrowserTabOpeningOwner {
         return tabManager.spaceStateOwner.spaces.first
     }
 
+    private func requiredTabManager() -> TabManager {
+        guard let tabManager = tabManagerAction() else {
+            preconditionFailure(
+                "A tab-creation command requires a live browser kernel"
+            )
+        }
+        return tabManager
+    }
+
     func prepareBackgroundTabIfNeeded(
         _ tab: Tab,
         in windowState: BrowserWindowState?
     ) {
         guard tab.requiresPrimaryWebView else { return }
         guard canMaterializeBackgroundTabAction(tab) else {
-            deferBackgroundTabUntilStartupReadyAction(tab)
+            deferBackgroundTabAction(tab)
             return
         }
         _ = windowState

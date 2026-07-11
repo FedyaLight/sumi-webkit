@@ -7,14 +7,10 @@ enum StartupWorkspaceThemeResolver {
     private static let logger = Logger.sumi(category: "WorkspaceTheme")
 
     static func resolve(
-        userDefaults: UserDefaults = .standard,
-        lastWindowSessionKey: String,
+        windowSessionSnapshotStore: WindowSessionSnapshotStore,
         modelContext: ModelContext
     ) -> WorkspaceTheme? {
-        guard let snapshot = WindowSessionSnapshotStore(
-            key: lastWindowSessionKey,
-            userDefaults: userDefaults
-        ).loadSnapshot()?.snapshot,
+        guard let snapshot = windowSessionSnapshotStore.loadSnapshot()?.snapshot,
               let currentSpaceId = snapshot.currentSpaceId
         else {
             return nil

@@ -59,7 +59,7 @@ final class SumiImportRuntimeStore: SumiImportRuntimeMutating {
             currentSpace: state.currentSpace,
             currentTab: state.currentTab
         )
-        guard await tabManager.persistFullReconcileAwaitingResult(reason: persistenceReason) else {
+        guard await tabManager.structuralPersistence.persistFullReconcileAwaitingResult(reason: persistenceReason) else {
             throw SumiImportTransactionError.runtimePersistenceFailed
         }
     }

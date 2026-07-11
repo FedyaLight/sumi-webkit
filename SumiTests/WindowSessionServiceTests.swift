@@ -13,9 +13,10 @@ final class WindowSessionServiceTests: XCTestCase {
             UserDefaults.standard.removeObject(forKey: sessionKey)
         }
 
-        let browserManager = BrowserManager()
-        browserManager.windowSessionSnapshotStore = WindowSessionSnapshotStore(
-            key: sessionKey
+        let browserManager = BrowserManager(
+            windowSessionSnapshotStore: WindowSessionSnapshotStore(
+                key: sessionKey
+            )
         )
         let windowState = BrowserWindowState()
         let spaceId = UUID()
@@ -247,13 +248,13 @@ final class WindowSessionServiceTests: XCTestCase {
         let windowState = BrowserWindowState(awaitsInitialSessionResolution: true)
         windowState.currentSpaceId = space.id
 
-        XCTAssertNil(browserManager.windowSessionBundle.tabContextOwner.currentTab(for: windowState))
+        XCTAssertNil(browserManager.shellRuntime.windowTabs.currentTab(for: windowState))
 
         windowState.isAwaitingInitialSessionResolution = false
 
-        XCTAssertNil(browserManager.windowSessionBundle.tabContextOwner.currentTab(for: windowState))
+        XCTAssertNil(browserManager.shellRuntime.windowTabs.currentTab(for: windowState))
         XCTAssertEqual(
-            browserManager.shellSelectionService.preferredTabForSpace(
+            browserManager.shellRuntime.windowSelection.preferredTabForSpace(
                 space,
                 in: windowState,
                 tabStore: browserManager.tabManager.runtimeStore
@@ -313,7 +314,7 @@ final class WindowSessionServiceTests: XCTestCase {
     func testApplyWindowSessionSnapshotRestoresPersistedWindowFields() throws {
         let tabManager = try makeInMemoryTabManager(loadPersistedState: false)
         let profileId = UUID()
-        let space = tabManager.spaceLifecycleOwner.createSpace(name: "Snapshot", profileId: profileId)
+        let space = tabManager.spaceServices.catalog.createSpace(name: "Snapshot", profileId: profileId)
         let tab = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://snapshot.example", in: space, activate: true)
         let shortcutPinId = UUID()
         let sessionKey = "SumiTests.windowSession.\(UUID().uuidString)"
@@ -349,12 +350,12 @@ final class WindowSessionServiceTests: XCTestCase {
         XCTAssertEqual(windowState.currentTabId, tab.id)
         XCTAssertEqual(windowState.currentSpaceId, space.id)
         XCTAssertEqual(windowState.currentProfileId, profileId)
-        XCTAssertEqual(windowState.currentShortcutPinId, shortcutPinId)
-        XCTAssertEqual(windowState.currentShortcutPinRole, .spacePinned)
+        XCTAssertNil(windowState.currentShortcutPinId)
+        XCTAssertNil(windowState.currentShortcutPinRole)
         XCTAssertFalse(windowState.isShowingEmptyState)
         XCTAssertEqual(windowState.floatingBarPresentationReason, .none)
         XCTAssertEqual(windowState.activeTabForSpace[space.id], tab.id)
-        XCTAssertEqual(windowState.selectedShortcutPinForSpace[space.id], shortcutPinId)
+        XCTAssertNil(windowState.selectedShortcutPinForSpace[space.id])
         XCTAssertEqual(windowState.sidebarWidth, 312)
         XCTAssertEqual(windowState.savedSidebarWidth, 340)
         XCTAssertEqual(windowState.sidebarContentWidth, BrowserWindowState.sidebarContentWidth(for: 312))
@@ -362,6 +363,65 @@ final class WindowSessionServiceTests: XCTestCase {
         XCTAssertFalse(windowState.isDownloadsPopoverPresented)
         XCTAssertEqual(windowState.floatingBarDraftText, "persisted draft")
         XCTAssertTrue(windowState.floatingBarDraftNavigatesCurrentTab)
+    }
+
+    func testPreparedArchivedWindowBypassesConflictingGlobalSnapshot() throws {
+        let tabManager = try makeInMemoryTabManager(loadPersistedState: false)
+        let globalProfileID = UUID()
+        let archivedProfileID = UUID()
+        let globalSpace = Space(name: "Global", profileId: globalProfileID)
+        let archivedSpace = Space(
+            name: "Archived",
+            profileId: archivedProfileID
+        )
+        tabManager.spaceStateOwner.replaceSpaces([globalSpace, archivedSpace])
+        let sessionKey = try seedWindowSession(
+            currentSpaceId: globalSpace.id,
+            isShowingEmptyState: true
+        )
+        defer { UserDefaults.standard.removeObject(forKey: sessionKey) }
+        let delegate = TestWindowSessionDelegate(tabManager: tabManager)
+        let service = delegate.makeRestoreService(
+            lastWindowSessionKey: sessionKey
+        )
+        var archivedSession = makeSessionRecoveryWindowSession(
+            isShowingEmptyState: true
+        )
+        archivedSession.currentSpaceId = archivedSpace.id
+        archivedSession.currentProfileId = archivedProfileID
+        let archivedSnapshot = LastSessionWindowSnapshot(
+            id: UUID(),
+            session: archivedSession
+        )
+        let restoredWindow = BrowserWindowState()
+
+        service.prepareArchivedWindow(
+            archivedSnapshot,
+            forRegistration: restoredWindow
+        )
+
+        XCTAssertEqual(
+            restoredWindow.restoredSessionWindowId,
+            archivedSnapshot.id
+        )
+        XCTAssertEqual(restoredWindow.currentSpaceId, archivedSpace.id)
+        XCTAssertEqual(restoredWindow.currentProfileId, archivedProfileID)
+        XCTAssertTrue(restoredWindow.isAwaitingInitialSessionResolution)
+
+        service.restoreRegisteredWindow(
+            restoredWindow,
+            currentProfile: Profile(name: "Conflicting")
+        )
+
+        XCTAssertEqual(restoredWindow.currentSpaceId, archivedSpace.id)
+        XCTAssertEqual(restoredWindow.currentProfileId, archivedProfileID)
+        XCTAssertFalse(restoredWindow.isAwaitingInitialSessionResolution)
+
+        let ordinaryWindow = BrowserWindowState(
+            awaitsInitialSessionResolution: true
+        )
+        service.setupWindowState(ordinaryWindow, currentProfile: nil)
+        XCTAssertEqual(ordinaryWindow.currentSpaceId, globalSpace.id)
     }
 
     func testActiveEssentialShortcutSurvivesPreloadSetupAndMaterializesAfterTabLoad() throws {
@@ -471,7 +531,7 @@ final class WindowSessionServiceTests: XCTestCase {
 
     func testActiveSplitGroupSnapshotRestoresGroupFocus() throws {
         let tabManager = try makeInMemoryTabManager(loadPersistedState: false)
-        let space = tabManager.spaceLifecycleOwner.createSpace(name: "Split", profileId: UUID())
+        let space = tabManager.spaceServices.catalog.createSpace(name: "Split", profileId: UUID())
         let first = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://one.example", in: space, activate: true)
         let second = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://two.example", in: space, activate: false)
         let group = try XCTUnwrap(
@@ -516,7 +576,7 @@ final class WindowSessionServiceTests: XCTestCase {
 
     func testLegacySplitSessionSnapshotMigratesAfterTabLoad() throws {
         let tabManager = try makeInMemoryTabManager(loadPersistedState: false)
-        let space = tabManager.spaceLifecycleOwner.createSpace(name: "Legacy Split", profileId: UUID())
+        let space = tabManager.spaceServices.catalog.createSpace(name: "Legacy Split", profileId: UUID())
         let left = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://left.example", in: space, activate: true)
         let right = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://right.example", in: space, activate: false)
         let sessionKey = try seedLegacySplitWindowSession(
@@ -603,7 +663,7 @@ final class WindowSessionServiceTests: XCTestCase {
         browserManager.windowRegistry = windowRegistry
         windowRegistry.register(windowState)
 
-        browserManager.windowSessionBundle.spaceStateOwner.validateWindowStates()
+        browserManager.windowStateReconciler.validateWindowStates()
 
         XCTAssertEqual(windowState.currentSpaceId, windowSpace.id)
         XCTAssertEqual(windowState.currentProfileId, windowProfile.id)
@@ -635,7 +695,7 @@ final class WindowSessionServiceTests: XCTestCase {
         browserManager.windowRegistry = windowRegistry
         windowRegistry.register(windowState)
 
-        browserManager.windowSessionBundle.spaceStateOwner.validateWindowStates()
+        browserManager.windowStateReconciler.validateWindowStates()
 
         XCTAssertEqual(windowState.currentSpaceId, windowSpace.id)
         XCTAssertEqual(windowState.currentProfileId, windowProfile.id)
@@ -663,11 +723,66 @@ final class WindowSessionServiceTests: XCTestCase {
         browserManager.windowRegistry = windowRegistry
         windowRegistry.register(windowState)
 
-        browserManager.windowSessionBundle.spaceStateOwner.validateWindowStates()
+        browserManager.windowStateReconciler.validateWindowStates()
 
         XCTAssertNil(windowState.currentSpaceId)
         XCTAssertNil(windowState.currentProfileId)
         XCTAssertTrue(windowState.isShowingEmptyState)
+    }
+
+    func testValidateWindowStatesDoesNotMutateUnresolvedInitialSession() {
+        let browserManager = BrowserManager()
+        let windowRegistry = WindowRegistry()
+        let pendingSpaceId = UUID()
+        let pendingProfileId = UUID()
+        let pendingTabId = UUID()
+        let windowState = BrowserWindowState(
+            awaitsInitialSessionResolution: true
+        )
+        windowState.currentSpaceId = pendingSpaceId
+        windowState.currentProfileId = pendingProfileId
+        windowState.currentTabId = pendingTabId
+        windowState.tabManager = browserManager.tabManager
+
+        browserManager.windowRegistry = windowRegistry
+        windowRegistry.register(windowState)
+
+        browserManager.windowStateReconciler.validateWindowStates()
+
+        XCTAssertEqual(windowState.currentSpaceId, pendingSpaceId)
+        XCTAssertEqual(windowState.currentProfileId, pendingProfileId)
+        XCTAssertEqual(windowState.currentTabId, pendingTabId)
+        XCTAssertFalse(windowState.isShowingEmptyState)
+    }
+
+    func testValidateWindowStatesPreservesIncognitoContextAndSelection() {
+        let browserManager = BrowserManager()
+        let windowRegistry = WindowRegistry()
+        let ephemeralProfileId = UUID()
+        let ephemeralSpaceId = UUID()
+        let ephemeralTab = Tab(
+            url: URL(string: "https://private.example")!,
+            name: "Private",
+            spaceId: ephemeralSpaceId,
+            loadsCachedFaviconOnInit: false
+        )
+        let windowState = BrowserWindowState()
+        windowState.isIncognito = true
+        windowState.currentProfileId = ephemeralProfileId
+        windowState.currentSpaceId = ephemeralSpaceId
+        windowState.ephemeralTabs = [ephemeralTab]
+        windowState.currentTabId = ephemeralTab.id
+        windowState.tabManager = browserManager.tabManager
+
+        browserManager.windowRegistry = windowRegistry
+        windowRegistry.register(windowState)
+
+        browserManager.windowStateReconciler.validateWindowStates()
+
+        XCTAssertEqual(windowState.currentProfileId, ephemeralProfileId)
+        XCTAssertEqual(windowState.currentSpaceId, ephemeralSpaceId)
+        XCTAssertEqual(windowState.currentTabId, ephemeralTab.id)
+        XCTAssertFalse(windowState.isShowingEmptyState)
     }
 
     func testSyncWindowSpaceContextDoesNotAdoptCurrentProfileWithoutWindowSpace() {
@@ -680,7 +795,9 @@ final class WindowSessionServiceTests: XCTestCase {
         browserManager.currentProfile = processProfile
         browserManager.tabManager.spaceStateOwner.replaceSpaces([])
 
-        browserManager.windowSessionBundle.spaceStateOwner.syncWindowSpaceContext(in: windowState, animateTheme: false)
+        browserManager.windowStateReconciler.synchronizeSpaceContext(
+            in: windowState
+        )
 
         XCTAssertNil(windowState.currentProfileId)
     }
@@ -792,18 +909,21 @@ final class WindowSessionServiceTests: XCTestCase {
 }
 
 @MainActor
-private final class TestWindowSessionDelegate:
+final class TestWindowSessionDelegate:
     WindowSessionSelectionApplying,
     WindowSessionFloatingBarSanitizing,
     WindowSessionThemeCommitting,
-    WindowSessionSplitFocusing
-{
+    WindowSessionSplitFocusing {
     let tabManager: TabManager
     let splitManager = SplitViewManager()
     let glanceManager = GlanceManager()
     let shellSelectionService = ShellSelectionService(splitTabsForWindow: { _ in [] })
     var currentProfile: Profile?
     var windowRegistry: WindowRegistry?
+    private(set) var persistenceComposition: WindowSessionPersistenceTestComposition?
+    var lastSessionWindowsStore: LastSessionWindowsStore? {
+        persistenceComposition?.lastSessionWindowsStore
+    }
     private let themeCoordinator = WorkspaceThemeCoordinator()
     private(set) var committedThemes: [WorkspaceTheme] = []
     private(set) var focusedSplitGroupIds: [UUID] = []
@@ -821,13 +941,18 @@ private final class TestWindowSessionDelegate:
             splitManager: splitManager,
             glanceManager: glanceManager
         )
+        let persistenceComposition = WindowSessionPersistenceTestComposition(
+            snapshotStore: store,
+            scheduler: scheduler,
+            snapshotFactory: snapshotFactory,
+            openWindows: { [weak self] in
+                self?.windowRegistry?.allWindows ?? []
+            }
+        )
+        self.persistenceComposition = persistenceComposition
         return WindowSessionRestoreService(
             snapshotStore: store,
-            persistence: WindowSessionPersistenceService(
-                store: store,
-                scheduler: scheduler,
-                snapshotFactory: snapshotFactory
-            ),
+            persistence: persistenceComposition.coordinator,
             tabManager: tabManager,
             glanceManager: glanceManager,
             selectionService: shellSelectionService,
@@ -863,7 +988,7 @@ private final class TestWindowSessionDelegate:
         windowState.isShowingEmptyState = true
     }
 
-    func sanitizeFloatingBarState(in _: BrowserWindowState) { /* no-op */ }
+    func sanitize(in _: BrowserWindowState) { /* no-op */ }
 
     func syncShortcutSelectionState(for _: BrowserWindowState) { /* no-op */ }
 

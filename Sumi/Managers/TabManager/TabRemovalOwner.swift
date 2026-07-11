@@ -14,8 +14,7 @@ final class TabRemovalOwner {
         let removeRegularTab: (UUID, [Space], UUID?) -> RegularTabCollectionOwner.Removal?
         let spaces: () -> [Space]
         let currentSpace: () -> Space?
-        let removeTransientShortcutTab: (UUID) -> (windowId: UUID, pinId: UUID, tab: Tab)?
-        let notifyTransientShortcutStateChanged: () -> Void
+        let retireShortcutTabIfPresent: (UUID) -> Bool
         let detach: (Tab) -> Void
         let scheduleStructuralPersistence: () -> Void
         let activeEssentialTabs: (UUID?) -> [Tab]
@@ -36,6 +35,9 @@ final class TabRemovalOwner {
 
     func removeTab(_ id: UUID) {
         dependencies.withStructuralUpdateTransaction {
+            if dependencies.retireShortcutTabIfPresent(id) {
+                return
+            }
             dependencies.runtimePorts()?.handleTabClosure(id)
             dependencies.cancelRuntimeStatePersistence(id)
 
@@ -61,14 +63,6 @@ final class TabRemovalOwner {
                 removedSpaceId = removal.spaceId
                 removedIndexInCurrentSpace = removal.indexInCurrentSpace
             }
-            if removed == nil,
-               let removal = dependencies.removeTransientShortcutTab(id) {
-                _ = removal.windowId
-                _ = removal.pinId
-                dependencies.notifyTransientShortcutStateChanged()
-                removed = removal.tab
-            }
-
             guard let tab = removed else { return }
             let runtimePorts = dependencies.requireRuntimePorts()
 
@@ -100,7 +94,7 @@ final class TabRemovalOwner {
             }
 
             dependencies.scheduleStructuralPersistence()
-            runtimePorts.validateWindowStates()
+            _ = runtimePorts.validateWindowStates()
         }
     }
 
@@ -233,14 +227,6 @@ final class TabRemovalOwner {
             removedIndexInCurrentSpace = removal.indexInCurrentSpace
         }
 
-        if removed == nil,
-           let removal = dependencies.removeTransientShortcutTab(id) {
-            _ = removal.windowId
-            _ = removal.pinId
-            dependencies.notifyTransientShortcutStateChanged()
-            removed = removal.tab
-        }
-
         guard let tab = removed else { return }
 
         let runtimePorts = dependencies.requireRuntimePorts()
@@ -283,7 +269,7 @@ extension TabRemovalOwner.Dependencies {
                     operation()
                     return
                 }
-                tabManager.withStructuralUpdateTransaction(operation)
+                tabManager.structuralLookupCoordinator.withTransaction(operation)
             },
             runtimePorts: { [weak tabManager] in
                 tabManager?.runtimePorts
@@ -318,17 +304,14 @@ extension TabRemovalOwner.Dependencies {
             currentSpace: { [weak tabManager] in
                 tabManager?.spaceStateOwner.currentSpace
             },
-            removeTransientShortcutTab: { [weak tabManager] tabId in
-                tabManager?.transientTabRegistryOwner.removeTransientShortcutTab(tabId: tabId)
-            },
-            notifyTransientShortcutStateChanged: { [weak tabManager] in
-                tabManager?.notifyTransientShortcutStateChanged()
+            retireShortcutTabIfPresent: { [weak tabManager] tabId in
+                tabManager?.shortcutLiveTabRetirement.retire(tabId: tabId) != nil
             },
             detach: { [weak tabManager] tab in
                 tabManager?.tabCollectionMembershipOwner.detach(tab)
             },
             scheduleStructuralPersistence: { [weak tabManager] in
-                tabManager?.scheduleStructuralPersistence()
+                tabManager?.structuralPersistence.scheduleStructuralPersistence()
             },
             activeEssentialTabs: { [weak tabManager] profileId in
                 tabManager?.shortcutPresentationOwner.activeEssentialTabs(for: profileId) ?? []

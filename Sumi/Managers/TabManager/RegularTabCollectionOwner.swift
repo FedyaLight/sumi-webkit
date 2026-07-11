@@ -77,10 +77,10 @@ final class RegularTabCollectionOwner {
             },
             withStructuralUpdateTransaction: { [weak tabManager] operation in
                 guard let tabManager else { return operation() }
-                return tabManager.withStructuralUpdateTransaction(operation)
+                return tabManager.structuralLookupCoordinator.withTransaction(operation)
             },
             scheduleStructuralPersistence: { [weak tabManager] in
-                tabManager?.scheduleStructuralPersistence()
+                tabManager?.structuralPersistence.scheduleStructuralPersistence()
             },
             prepareForSpaceTransition: { [weak tabManager] tab, targetSpaceID in
                 tabManager?.profileAssignments.tabs.prepareForSpaceTransition(

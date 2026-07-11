@@ -15,7 +15,7 @@ extension TabCompositorRuntime {
                     .noteAccess()
             },
             isTabDisplayedInAnyWindow: { [weak browserManager] tabId in
-                browserManager?.windowSessionBundle.tabContextOwner.isTabDisplayedInAnyWindow(tabId) ?? false
+                browserManager?.shellRuntime.windowTabs.isTabDisplayedInAnyWindow(tabId) ?? false
             },
             registeredCompositorWindows: { [weak browserManager] in
                 guard let browserManager,
@@ -28,7 +28,7 @@ extension TabCompositorRuntime {
                 }
             },
             refreshCompositor: { [weak browserManager] windowState in
-                browserManager?.windowSessionBundle.visualMutationOwner.refreshCompositor(for: windowState)
+                browserManager?.shellRuntime.windowVisuals.refreshCompositor(for: windowState)
             }
         )
     }

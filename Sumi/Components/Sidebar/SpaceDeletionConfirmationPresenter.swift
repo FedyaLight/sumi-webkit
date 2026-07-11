@@ -26,11 +26,11 @@ enum SpaceDeletionConfirmationPresenter {
             alert.beginSheetModal(for: window) { response in
                 guard response == .alertFirstButtonReturn else { return }
                 Task { @MainActor in
-                    browserManager.tabManager.spaceLifecycleOwner.removeSpace(spaceID)
+                    browserManager.tabManager.spaceServices.removal.removeSpace(spaceID)
                 }
             }
         } else if alert.runModal() == .alertFirstButtonReturn {
-            browserManager.tabManager.spaceLifecycleOwner.removeSpace(spaceID)
+            browserManager.tabManager.spaceServices.removal.removeSpace(spaceID)
         }
     }
 

@@ -158,13 +158,13 @@ extension URLBarView {
             },
             reloadPage: { [weak tab] in
                 guard let tab,
-                      browserContext.webView(tab, windowState) != nil
+                      let page = browserContext.activePage(windowState),
+                      page.tab.id == tab.id,
+                      page.canonicalWebView != nil
                 else { return false }
-                browserContext.reloadPage(
-                    tab,
-                    windowState,
-                    "URLBarPermission.reloadPage"
-                )
+                guard browserContext.reloadPage(page, "URLBarPermission.reloadPage") else {
+                    return false
+                }
                 tab.updateAutoplayReloadRequirementForCurrentSite()
                 return true
             },

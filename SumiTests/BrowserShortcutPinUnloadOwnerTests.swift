@@ -4,78 +4,73 @@ import XCTest
 
 @MainActor
 final class BrowserShortcutPinUnloadOwnerTests: XCTestCase {
-    func testUnloadShortcutPinRoutesSelectedPinThroughCloseTab() {
+    func testUnloadShortcutPinRoutesLiveInstanceThroughCloseTab() {
         let windowState = BrowserWindowState()
         let pin = makePin()
-        let selectedTab = Tab(url: URL(string: "https://selected.example")!, name: "Selected", loadsCachedFaviconOnInit: false)
-        var closeTabCalls: [(Tab, BrowserWindowState)] = []
-        var userInitiatedUnloadCalls: [(UUID, BrowserWindowState, Bool)] = []
+        let liveTab = Tab(url: URL(string: "https://selected.example")!, name: "Selected", loadsCachedFaviconOnInit: false)
+        var closeTabCalls: [(Tab, BrowserWindowState, Bool)] = []
 
         let owner = makeOwner(
-            selectedShortcutLiveTab: { pinId, _ in pinId == pin.id ? selectedTab : nil },
-            closeTab: { tab, windowState in closeTabCalls.append((tab, windowState)) },
-            userInitiatedUnload: { pinId, windowState, presentNotification in
-                userInitiatedUnloadCalls.append((pinId, windowState, presentNotification))
+            shortcutLiveTab: { pinId, _ in pinId == pin.id ? liveTab : nil },
+            closeTab: { tab, windowState, presentNotification in
+                closeTabCalls.append((tab, windowState, presentNotification))
                 return true
             }
         )
 
         owner.unloadShortcutPin(pin, in: windowState)
 
-        XCTAssertEqual(closeTabCalls.map(\.0.id), [selectedTab.id])
+        XCTAssertEqual(closeTabCalls.map(\.0.id), [liveTab.id])
         XCTAssertEqual(closeTabCalls.map(\.1.id), [windowState.id])
-        XCTAssertTrue(userInitiatedUnloadCalls.isEmpty)
+        XCTAssertEqual(closeTabCalls.map(\.2), [true])
     }
 
-    func testUnloadShortcutPinUnloadsNonSelectedPinWithNotification() {
+    func testUnloadShortcutPinReturnsFalseWhenNoLiveInstanceExists() {
         let windowState = BrowserWindowState()
         let pin = makePin()
-        var closeTabCalls: [(Tab, BrowserWindowState)] = []
-        var userInitiatedUnloadCalls: [(UUID, BrowserWindowState, Bool)] = []
+        var closeTabCount = 0
 
         let owner = makeOwner(
-            selectedShortcutLiveTab: { _, _ in nil },
-            closeTab: { tab, windowState in closeTabCalls.append((tab, windowState)) },
-            userInitiatedUnload: { pinId, windowState, presentNotification in
-                userInitiatedUnloadCalls.append((pinId, windowState, presentNotification))
+            shortcutLiveTab: { _, _ in nil },
+            closeTab: { _, _, _ in
+                closeTabCount += 1
                 return true
             }
         )
 
-        owner.unloadShortcutPin(pin, in: windowState)
+        let didUnload = owner.unloadShortcutPin(
+            pin,
+            in: windowState,
+            suppressNotification: false
+        )
 
-        XCTAssertTrue(closeTabCalls.isEmpty)
-        XCTAssertEqual(userInitiatedUnloadCalls.map(\.0), [pin.id])
-        XCTAssertEqual(userInitiatedUnloadCalls.map(\.1.id), [windowState.id])
-        XCTAssertEqual(userInitiatedUnloadCalls.map(\.2), [true])
+        XCTAssertFalse(didUnload)
+        XCTAssertEqual(closeTabCount, 0)
     }
 
-    func testUnloadShortcutPinsAggregatesNonSelectedUnloadsAndPresentsSingleNotification() {
+    func testUnloadShortcutPinsSuppressesPerTabNotificationsAndPresentsOneAggregate() {
         let windowState = BrowserWindowState()
-        let selectedPin = makePin()
-        let unloadedPinA = makePin()
-        let unloadedPinB = makePin()
-        let selectedTab = Tab(url: URL(string: "https://selected.example")!, name: "Selected", loadsCachedFaviconOnInit: false)
+        let pins = [makePin(), makePin(), makePin()]
+        let liveTabsByPinId = Dictionary(uniqueKeysWithValues: pins.map {
+            ($0.id, Tab(url: $0.launchURL, name: $0.title, loadsCachedFaviconOnInit: false))
+        })
         let spy = NotificationPresentingSpy()
-        var closeTabCount = 0
-        var userInitiatedUnloadCalls: [(UUID, BrowserWindowState, Bool)] = []
+        var closeCalls: [(UUID, Bool)] = []
 
         let owner = makeOwner(
-            selectedShortcutLiveTab: { pinId, _ in pinId == selectedPin.id ? selectedTab : nil },
-            closeTab: { _, _ in closeTabCount += 1 },
-            userInitiatedUnload: { pinId, windowState, presentNotification in
-                userInitiatedUnloadCalls.append((pinId, windowState, presentNotification))
-                return pinId == unloadedPinA.id || pinId == unloadedPinB.id
+            shortcutLiveTab: { pinId, _ in liveTabsByPinId[pinId] },
+            closeTab: { tab, _, presentNotification in
+                closeCalls.append((tab.id, presentNotification))
+                return true
             },
             notifications: { spy }
         )
 
-        owner.unloadShortcutPins([selectedPin, unloadedPinA, unloadedPinB], in: windowState)
+        owner.unloadShortcutPins(pins, in: windowState)
 
-        XCTAssertEqual(closeTabCount, 1)
-        XCTAssertEqual(userInitiatedUnloadCalls.map(\.0), [unloadedPinA.id, unloadedPinB.id])
-        XCTAssertEqual(userInitiatedUnloadCalls.map(\.2), [false, false])
-        XCTAssertEqual(spy.presentTabUnloadedNotificationCalls.map(\.count), [2])
+        XCTAssertEqual(closeCalls.map(\.0), pins.compactMap { liveTabsByPinId[$0.id]?.id })
+        XCTAssertEqual(closeCalls.map(\.1), [false, false, false])
+        XCTAssertEqual(spy.presentTabUnloadedNotificationCalls.map(\.count), [3])
         XCTAssertEqual(spy.presentTabUnloadedNotificationCalls.map(\.windowState?.id), [windowState.id])
     }
 
@@ -91,15 +86,13 @@ final class BrowserShortcutPinUnloadOwnerTests: XCTestCase {
     }
 
     private func makeOwner(
-        selectedShortcutLiveTab: @escaping @MainActor (UUID, BrowserWindowState) -> Tab?,
-        closeTab: @escaping @MainActor (Tab, BrowserWindowState) -> Void,
-        userInitiatedUnload: @escaping @MainActor (UUID, BrowserWindowState, Bool) -> Bool,
+        shortcutLiveTab: @escaping @MainActor (UUID, BrowserWindowState) -> Tab?,
+        closeTab: @escaping @MainActor (Tab, BrowserWindowState, Bool) -> Bool,
         notifications: @escaping @MainActor () -> (any BrowserNotificationPresenting)? = { nil }
     ) -> BrowserShortcutPinUnloadOwner {
         BrowserShortcutPinUnloadOwner(
-            selectedShortcutLiveTab: selectedShortcutLiveTab,
+            shortcutLiveTab: shortcutLiveTab,
             closeTab: closeTab,
-            userInitiatedUnload: userInitiatedUnload,
             notifications: notifications
         )
     }

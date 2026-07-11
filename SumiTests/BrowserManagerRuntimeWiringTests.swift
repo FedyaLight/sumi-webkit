@@ -24,11 +24,11 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         )
         browserManager.bindTestWebViewCoordinator()
 
-        XCTAssertTrue(browserManager.boostsModule.isEnabled)
-        XCTAssertTrue(browserManager.boostsModule.hasAttachedRuntime)
-        XCTAssertFalse(browserManager.extensionsModule.hasAttachedRuntime)
-        XCTAssertFalse(browserManager.userscriptsModule.hasAttachedRuntime)
-        XCTAssertFalse(browserManager.liveFoldersModule.hasAttachedRuntime)
+        XCTAssertTrue(browserManager.optionalModules.boosts.isEnabled)
+        XCTAssertTrue(browserManager.optionalModules.boosts.hasAttachedRuntime)
+        XCTAssertFalse(browserManager.optionalModules.extensions.hasAttachedRuntime)
+        XCTAssertFalse(browserManager.optionalModules.userscripts.hasAttachedRuntime)
+        XCTAssertFalse(browserManager.optionalModules.liveFolders.hasAttachedRuntime)
         XCTAssertFalse(browserManager.liveFolderManager.hasAttachedRuntime)
         XCTAssertTrue(compositorManagerCanUseAttachedRuntime(browserManager))
         XCTAssertNotNil(browserManager.tabManager.runtimePorts)
@@ -39,8 +39,8 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         XCTAssertTrue(boostsRuntimeAttached)
         XCTAssertTrue(auxiliaryWindowServicesCanOpenPopup(browserManager))
         XCTAssertTrue(glanceRuntimeCanPreparePreviewTabs(browserManager))
-        XCTAssertFalse(browserManager.extensionsModule.hasLoadedRuntime)
-        XCTAssertFalse(browserManager.userscriptsModule.hasLoadedRuntime)
+        XCTAssertFalse(browserManager.optionalModules.extensions.hasLoadedRuntime)
+        XCTAssertFalse(browserManager.optionalModules.userscripts.hasLoadedRuntime)
     }
 
     func testTabRuntimeCompositionServiceAttachesResourceRuntimesAndHandlesStructuralChanges() async throws {
@@ -208,7 +208,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         browserManager.windowRegistry = windowRegistry
 
         let space = browserManager.tabManager.spaceStateOwner.currentSpace
-            ?? browserManager.tabManager.spaceLifecycleOwner.createSpace(name: "Detached Runtime Source")
+            ?? browserManager.tabManager.spaceServices.catalog.createSpace(name: "Detached Runtime Source")
         let activeTab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://active.example",
             in: space,
@@ -248,13 +248,13 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         browserManager.windowRegistry = windowRegistry
 
         let selectedSpace = browserManager.tabManager.spaceStateOwner.currentSpace
-            ?? browserManager.tabManager.spaceLifecycleOwner.createSpace(name: "Selected")
+            ?? browserManager.tabManager.spaceServices.catalog.createSpace(name: "Selected")
         let selectedTab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://selected.example",
             in: selectedSpace,
             activate: true
         )
-        let staleSpace = browserManager.tabManager.spaceLifecycleOwner.createSpace(name: "Stale")
+        let staleSpace = browserManager.tabManager.spaceServices.catalog.createSpace(name: "Stale")
         let staleGlobalTab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://stale.example",
             in: staleSpace,
@@ -273,7 +273,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
             windowRegistry: { windowRegistry },
             regularTabs: browserManager.tabManager.tabCollectionMembershipOwner,
             lazyRestore: browserManager.tabManager.lazyRestoreCoordinator,
-            windowTabs: browserManager.windowSessionBundle.tabContextOwner,
+            windowTabs: browserManager.shellRuntime.windowTabs,
             splitManager: browserManager.splitManager,
             webView: .inactive
         )
@@ -288,7 +288,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         browserManager.windowRegistry = windowRegistry
 
         let space = browserManager.tabManager.spaceStateOwner.currentSpace
-            ?? browserManager.tabManager.spaceLifecycleOwner.createSpace(name: "Compositor Runtime Wiring")
+            ?? browserManager.tabManager.spaceServices.catalog.createSpace(name: "Compositor Runtime Wiring")
         let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://example.com/compositor",
             in: space,
@@ -312,7 +312,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         browserManager.windowRegistry = windowRegistry
 
         let space = browserManager.tabManager.spaceStateOwner.currentSpace
-            ?? browserManager.tabManager.spaceLifecycleOwner.createSpace(name: "Runtime Wiring")
+            ?? browserManager.tabManager.spaceServices.catalog.createSpace(name: "Runtime Wiring")
         let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://example.com",
             in: space,
@@ -331,7 +331,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
 
     private func tabManagerRuntimeCanPrepareCreatedTabs(_ browserManager: BrowserManager) -> Bool {
         let space = browserManager.tabManager.spaceStateOwner.currentSpace
-            ?? browserManager.tabManager.spaceLifecycleOwner.createSpace(name: "TabManager Runtime Wiring")
+            ?? browserManager.tabManager.spaceServices.catalog.createSpace(name: "TabManager Runtime Wiring")
         let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://example.com/tab-manager-runtime",
             in: space,
@@ -346,7 +346,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         browserManager.windowRegistry = windowRegistry
 
         let space = browserManager.tabManager.spaceStateOwner.currentSpace
-            ?? browserManager.tabManager.spaceLifecycleOwner.createSpace(name: "Download Runtime Wiring")
+            ?? browserManager.tabManager.spaceServices.catalog.createSpace(name: "Download Runtime Wiring")
         let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://example.com/download",
             in: space,
@@ -386,7 +386,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
 
         let profileId = UUID()
         let space = browserManager.tabManager.spaceStateOwner.currentSpace
-            ?? browserManager.tabManager.spaceLifecycleOwner.createSpace(name: "Boost Runtime Wiring", profileId: profileId)
+            ?? browserManager.tabManager.spaceServices.catalog.createSpace(name: "Boost Runtime Wiring", profileId: profileId)
         let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://example.com/boost",
             in: space,
@@ -407,7 +407,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
             in: windowState.id
         )
 
-        let started = await browserManager.boostsModule.startZapSelection(
+        let started = await browserManager.optionalModules.boosts.startZapSelection(
             for: SumiBoost(profileId: profileId, host: "example.com"),
             tab: tab,
             windowState: windowState,
@@ -415,7 +415,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
             onSelector: { _ in /* No-op. */ },
             onFinish: { /* No-op. */ }
         )
-        browserManager.boostsModule.stopZapSelection()
+        browserManager.optionalModules.boosts.stopZapSelection()
         return started
     }
 
@@ -426,7 +426,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         browserManager.windowRegistry = windowRegistry
 
         let space = browserManager.tabManager.spaceStateOwner.currentSpace
-            ?? browserManager.tabManager.spaceLifecycleOwner.createSpace(name: "Auxiliary Runtime Wiring")
+            ?? browserManager.tabManager.spaceServices.catalog.createSpace(name: "Auxiliary Runtime Wiring")
         let sourceTab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://example.com/source",
             in: space,
@@ -465,7 +465,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
 
     private func glanceRuntimeCanPreparePreviewTabs(_ browserManager: BrowserManager) -> Bool {
         let space = browserManager.tabManager.spaceStateOwner.currentSpace
-            ?? browserManager.tabManager.spaceLifecycleOwner.createSpace(name: "Glance Runtime Wiring")
+            ?? browserManager.tabManager.spaceServices.catalog.createSpace(name: "Glance Runtime Wiring")
         let sourceTab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://example.com/glance-source",
             in: space,
@@ -607,7 +607,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         await browserManager.drainProtectionRuntimeTasksForTests()
 
         let space = browserManager.tabManager.spaceStateOwner.currentSpace
-            ?? browserManager.tabManager.spaceLifecycleOwner.createSpace(name: "Visible WebView Runtime")
+            ?? browserManager.tabManager.spaceServices.catalog.createSpace(name: "Visible WebView Runtime")
         let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://example.com/visible-webview",
             in: space,
@@ -620,7 +620,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         windowRegistry.register(windowState)
         windowRegistry.setActive(windowState)
 
-        XCTAssertTrue(browserManager.windowSessionBundle.visualMutationOwner.prepareVisibleWebViews(for: windowState))
+        XCTAssertTrue(browserManager.shellRuntime.windowVisuals.prepareVisibleWebViews(for: windowState))
         XCTAssertNotNil(coordinator.ownershipQuery.webView(for: tab.id, in: windowState.id))
     }
 
@@ -748,9 +748,85 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         XCTAssertEqual(automaticCleanupService.schedules[1].reason, "unit-test")
         XCTAssertEqual(automaticCleanupService.schedules[1].delayNanoseconds, 0)
 
+        // Re-assigning settings preserves the didSet attachment workflow.
+        browserManager.sumiSettings = settings
+
+        XCTAssertEqual(automaticCleanupService.schedules.count, 3)
+        XCTAssertEqual(automaticCleanupService.schedules[2].reason, "settings-attached")
+
+        // Retention-change notifications route through the live runtime
+        // lifecycle into the automatic cleanup owner.
+        NotificationCenter.default.post(
+            name: .sumiBrowsingDataRetentionChanged,
+            object: nil
+        )
+        for _ in 0..<25 where automaticCleanupService.schedules.count < 4 {
+            await Task.yield()
+        }
+
+        XCTAssertEqual(automaticCleanupService.schedules.count, 4)
+        XCTAssertEqual(automaticCleanupService.schedules[3].reason, "retention-setting-changed")
+        XCTAssertTrue(automaticCleanupService.schedules[3].force)
+        XCTAssertEqual(automaticCleanupService.schedules[3].delayNanoseconds, 0)
+
         await browserManager.historyManager.clearAll()
 
         XCTAssertEqual(faviconService.historyClearBurnCount, 1)
+    }
+
+    func testBrowserManagerDeinitShutsDownRuntimeLifecycleAgainstLiveSubsystems() async throws {
+        let automaticCleanupService = FakeBrowsingDataCleanupScheduler()
+        let faviconService = FakeBrowserFaviconService()
+        let visitedLinkStore = FakeBrowserVisitedLinkStore()
+        var browserManager: BrowserManager? = BrowserManager(
+            startupPersistence: BrowserManagerStartupPersistence(
+                container: try makeInMemoryStartupContainer()
+            ),
+            dataServices: BrowserManagerDataServices(
+                websiteDataCleanupService: FakeWebsiteDataCleanupService(),
+                browsingDataCleanupService: makeBrowsingDataCleanupService(),
+                automaticBrowsingDataCleanupService: automaticCleanupService,
+                siteDataPolicyStore: try makeSiteDataPolicyStore(),
+                siteDataPolicyEnforcementService: FakeBrowserSiteDataPolicyService(),
+                faviconService: faviconService,
+                visitedLinkStore: visitedLinkStore,
+                historyFaviconCleaner: faviconService,
+                historyVisitedLinkStore: visitedLinkStore,
+                privacyService: FakeBrowserPrivacyService()
+            ),
+            permissionSiteActivityStore: try makeSiteActivityStore()
+        )
+
+        let suiteName = "BrowserManagerDeinitShutdownTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set(
+            SumiBrowsingDataRetentionPeriod.sevenDays.rawValue,
+            forKey: "settings.browsingData.retentionDays"
+        )
+        let settings = SumiSettingsService(userDefaults: defaults)
+        browserManager?.sumiSettings = settings
+        XCTAssertEqual(automaticCleanupService.schedules.count, 1)
+
+        let permissionRuntime = try XCTUnwrap(browserManager?.permissionRuntime)
+        XCTAssertTrue(permissionRuntime.isObservingPermissionEvents)
+
+        weak var releasedBrowserManager = browserManager
+        browserManager = nil
+
+        XCTAssertNil(releasedBrowserManager)
+        XCTAssertFalse(permissionRuntime.isObservingPermissionEvents)
+
+        // A retention change after teardown must not schedule new cleanup work.
+        NotificationCenter.default.post(
+            name: .sumiBrowsingDataRetentionChanged,
+            object: nil
+        )
+        for _ in 0..<10 {
+            await Task.yield()
+        }
+
+        XCTAssertEqual(automaticCleanupService.schedules.count, 1)
     }
 
     func testNativeSurfaceViewModelsUseInjectedFaviconService() throws {
@@ -839,10 +915,10 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
 
         XCTAssertTrue(browserContext.profileManager === browserManager.profileManager)
         XCTAssertTrue(browserContext.tabManager === browserManager.tabManager)
-        XCTAssertTrue(browserContext.extensionsModule === browserManager.extensionsModule)
-        XCTAssertTrue(browserContext.userscriptsModule === browserManager.userscriptsModule)
+        XCTAssertTrue(browserContext.extensionsModule === browserManager.optionalModules.extensions)
+        XCTAssertTrue(browserContext.userscriptsModule === browserManager.optionalModules.userscripts)
         XCTAssertTrue(
-            browserContext.extensionSurfaceStore === browserManager.extensionsModule.surfaceStore
+            browserContext.extensionSurfaceStore === browserManager.optionalModules.extensions.surfaceStore
         )
         XCTAssertEqual(browserContext.currentProfile()?.id, profile.id)
         XCTAssertEqual(browserContext.currentTab(windowState)?.id, settingsTab.id)
@@ -875,13 +951,13 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
             browserManager: browserManager
         )
 
-        browserManager.extensionsModule.notifyWindowOpenedIfLoaded(windowState)
-        browserManager.extensionsModule.notifyWindowFocusedIfLoaded(windowState)
+        browserManager.optionalModules.extensions.notifyWindowOpenedIfLoaded(windowState)
+        browserManager.optionalModules.extensions.notifyWindowFocusedIfLoaded(windowState)
         runtimeNotifications.tabActivated(tab, nil)
         runtimeNotifications.tabSelectionChanged("test-tab-selection")
         closeRouter.notifyExtensionTabClosed(tab)
 
-        XCTAssertFalse(browserManager.extensionsModule.hasLoadedRuntime)
+        XCTAssertFalse(browserManager.optionalModules.extensions.hasLoadedRuntime)
     }
 
     func testSettingsMiniPlayerFeatureUpdatesUseInjectedNowPlayingController() throws {

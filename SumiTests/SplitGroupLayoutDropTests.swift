@@ -264,7 +264,7 @@ final class SplitGroupLayoutDropTests: SplitGroupTestCase {
 
     func testDropTargetInsertionAlongExistingAxisUsesEqualRootThirds() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
+        let space = harness.tabManager.spaceServices.catalog.createSpace(name: "Work")
         let top = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://top.example", in: space)
         let bottom = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://bottom.example", in: space, activate: false)
         harness.windowState.currentSpaceId = space.id
@@ -289,7 +289,7 @@ final class SplitGroupLayoutDropTests: SplitGroupTestCase {
 
     func testFirstSplitPreviewRectMatchesIncomingHalf() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
+        let space = harness.tabManager.spaceServices.catalog.createSpace(name: "Work")
         let current = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://current.example", in: space)
         let incoming = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://incoming.example", in: space, activate: false)
         harness.windowState.currentSpaceId = space.id
@@ -310,7 +310,7 @@ final class SplitGroupLayoutDropTests: SplitGroupTestCase {
 
     func testThirdVerticalSplitPreviewUsesOneThirdOfWindow() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
+        let space = harness.tabManager.spaceServices.catalog.createSpace(name: "Work")
         let left = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://left.example", in: space)
         let right = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://right.example", in: space, activate: false)
         let incoming = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://incoming.example", in: space, activate: false)
@@ -336,7 +336,7 @@ final class SplitGroupLayoutDropTests: SplitGroupTestCase {
 
     func testThirdSplitCanSplitOneVerticalPaneHorizontally() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
+        let space = harness.tabManager.spaceServices.catalog.createSpace(name: "Work")
         let left = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://left.example", in: space)
         let right = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://right.example", in: space, activate: false)
         let incoming = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://incoming.example", in: space, activate: false)
@@ -378,7 +378,7 @@ final class SplitGroupLayoutDropTests: SplitGroupTestCase {
 
     func testFourthGridRootPreviewCanonicalizesMixedRootToEqualQuarter() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
+        let space = harness.tabManager.spaceServices.catalog.createSpace(name: "Work")
         let tabs = (0..<3).map { index in
             harness.tabManager.regularTabLifecycleOwner.createNewTab(
                 url: "https://tab\(index).example",
@@ -409,7 +409,7 @@ final class SplitGroupLayoutDropTests: SplitGroupTestCase {
 
     func testFourthVerticalRootPreviewUsesOneQuarterOfWindow() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
+        let space = harness.tabManager.spaceServices.catalog.createSpace(name: "Work")
         let tabs = (0..<3).map { index in
             harness.tabManager.regularTabLifecycleOwner.createNewTab(
                 url: "https://vertical\(index).example",
@@ -440,7 +440,7 @@ final class SplitGroupLayoutDropTests: SplitGroupTestCase {
 
     func testFourthTabCanSplitOneOfThreeVerticalPanesIntoTwoByTwo() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
+        let space = harness.tabManager.spaceServices.catalog.createSpace(name: "Work")
         let tabs = (0..<3).map { index in
             harness.tabManager.regularTabLifecycleOwner.createNewTab(
                 url: "https://three-pair\(index).example",
@@ -489,7 +489,7 @@ final class SplitGroupLayoutDropTests: SplitGroupTestCase {
 
     func testMovingOneOfThreeVerticalPanesPairsWithSpecificTargetPane() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
+        let space = harness.tabManager.spaceServices.catalog.createSpace(name: "Work")
         let tabs = (0..<3).map { index in
             harness.tabManager.regularTabLifecycleOwner.createNewTab(
                 url: "https://three-internal-vertical\(index).example",
@@ -536,7 +536,7 @@ final class SplitGroupLayoutDropTests: SplitGroupTestCase {
 
     func testMovingOneOfThreeHorizontalPanesPairsWithSpecificTargetPane() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
+        let space = harness.tabManager.spaceServices.catalog.createSpace(name: "Work")
         let tabs = (0..<3).map { index in
             harness.tabManager.regularTabLifecycleOwner.createNewTab(
                 url: "https://three-internal-horizontal\(index).example",
@@ -583,7 +583,7 @@ final class SplitGroupLayoutDropTests: SplitGroupTestCase {
 
     func testFourthRootPreviewCanonicalizesMixedColumnToEqualQuarter() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
+        let space = harness.tabManager.spaceServices.catalog.createSpace(name: "Work")
         let left = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://left.example", in: space)
         let right = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://right.example", in: space, activate: false)
         let top = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://top.example", in: space, activate: false)
@@ -611,7 +611,7 @@ final class SplitGroupLayoutDropTests: SplitGroupTestCase {
 
     func testMovingOneOfFourVerticalTabsToBottomFromOwnPaneCreatesThreePlusOne() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
+        let space = harness.tabManager.spaceServices.catalog.createSpace(name: "Work")
         let tabs = (0..<4).map { index in
             harness.tabManager.regularTabLifecycleOwner.createNewTab(
                 url: "https://vertical\(index).example",
@@ -662,7 +662,7 @@ final class SplitGroupLayoutDropTests: SplitGroupTestCase {
 
     func testMovingOneOfFourHorizontalTabsToRightFromOwnPaneCreatesThreePlusOne() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
+        let space = harness.tabManager.spaceServices.catalog.createSpace(name: "Work")
         let tabs = (0..<4).map { index in
             harness.tabManager.regularTabLifecycleOwner.createNewTab(
                 url: "https://horizontal\(index).example",
@@ -713,7 +713,7 @@ final class SplitGroupLayoutDropTests: SplitGroupTestCase {
 
     func testFlatFourVerticalLeafLocalOrthogonalDropSplitsTargetPaneInPlace() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
+        let space = harness.tabManager.spaceServices.catalog.createSpace(name: "Work")
         let tabs = (0..<4).map { index in
             harness.tabManager.regularTabLifecycleOwner.createNewTab(
                 url: "https://vertical-pair\(index).example",
@@ -765,7 +765,7 @@ final class SplitGroupLayoutDropTests: SplitGroupTestCase {
 
     func testFlatFourHorizontalLeafLocalOrthogonalDropSplitsTargetPaneInPlace() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
+        let space = harness.tabManager.spaceServices.catalog.createSpace(name: "Work")
         let tabs = (0..<4).map { index in
             harness.tabManager.regularTabLifecycleOwner.createNewTab(
                 url: "https://horizontal-pair\(index).example",
@@ -817,7 +817,7 @@ final class SplitGroupLayoutDropTests: SplitGroupTestCase {
 
     func testFullFlatFourSameAxisDropReordersIntoQuarterPreview() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
+        let space = harness.tabManager.spaceServices.catalog.createSpace(name: "Work")
         let tabs = (0..<4).map { index in
             harness.tabManager.regularTabLifecycleOwner.createNewTab(
                 url: "https://flat-reorder\(index).example",
@@ -852,7 +852,7 @@ final class SplitGroupLayoutDropTests: SplitGroupTestCase {
 
     func testFullFlatFourOtherPaneMiddleShowsRootThreePlusOneZone() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
+        let space = harness.tabManager.spaceServices.catalog.createSpace(name: "Work")
         let tabs = (0..<4).map { index in
             harness.tabManager.regularTabLifecycleOwner.createNewTab(
                 url: "https://flat-middle\(index).example",
@@ -882,7 +882,7 @@ final class SplitGroupLayoutDropTests: SplitGroupTestCase {
 
     func testFullFlatFourOtherPaneOuterThirdShowsLocalHalfPairingZone() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
+        let space = harness.tabManager.spaceServices.catalog.createSpace(name: "Work")
         let tabs = (0..<4).map { index in
             harness.tabManager.regularTabLifecycleOwner.createNewTab(
                 url: "https://flat-third\(index).example",
@@ -912,7 +912,7 @@ final class SplitGroupLayoutDropTests: SplitGroupTestCase {
 
     func testMovingSecondTabIntoExistingBottomPlaneScopesPreviewToBottomQuarter() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
+        let space = harness.tabManager.spaceServices.catalog.createSpace(name: "Work")
         let tabs = (0..<4).map { index in
             harness.tabManager.regularTabLifecycleOwner.createNewTab(
                 url: "https://tile\(index).example",
@@ -975,7 +975,7 @@ final class SplitGroupLayoutDropTests: SplitGroupTestCase {
 
     func testMovingSinglePaneFromThreePlusOneBackIntoThreePlaneCreatesTwoByTwo() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
+        let space = harness.tabManager.spaceServices.catalog.createSpace(name: "Work")
         let tabs = (0..<4).map { index in
             harness.tabManager.regularTabLifecycleOwner.createNewTab(
                 url: "https://reverse-tile\(index).example",
@@ -1038,7 +1038,7 @@ final class SplitGroupLayoutDropTests: SplitGroupTestCase {
 
     func testMixedLeafSplitLeafCanBecomeTwoByTwoWithoutLosingExistingPair() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
+        let space = harness.tabManager.spaceServices.catalog.createSpace(name: "Work")
         let tabs = (0..<4).map { index in
             harness.tabManager.regularTabLifecycleOwner.createNewTab(
                 url: "https://mixed-two-by-two\(index).example",
@@ -1105,7 +1105,7 @@ final class SplitGroupLayoutDropTests: SplitGroupTestCase {
 
     func testStructuralDropFromOneTwoOneIntoFlatVerticalEqualizesQuarters() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
+        let space = harness.tabManager.spaceServices.catalog.createSpace(name: "Work")
         let tabs = (0..<4).map { index in
             harness.tabManager.regularTabLifecycleOwner.createNewTab(
                 url: "https://one-two-one-vertical\(index).example",
@@ -1162,7 +1162,7 @@ final class SplitGroupLayoutDropTests: SplitGroupTestCase {
 
     func testStructuralDropFromOneTwoOneIntoFlatHorizontalEqualizesQuarters() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
+        let space = harness.tabManager.spaceServices.catalog.createSpace(name: "Work")
         let tabs = (0..<4).map { index in
             harness.tabManager.regularTabLifecycleOwner.createNewTab(
                 url: "https://one-two-one-horizontal\(index).example",
@@ -1219,7 +1219,7 @@ final class SplitGroupLayoutDropTests: SplitGroupTestCase {
 
     func testTwoByTwoCanBecomeThreePlusOneFromEitherPlane() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
+        let space = harness.tabManager.spaceServices.catalog.createSpace(name: "Work")
         let tabs = (0..<4).map { index in
             harness.tabManager.regularTabLifecycleOwner.createNewTab(
                 url: "https://two-by-two-to-three\(index).example",
@@ -1288,7 +1288,7 @@ final class SplitGroupLayoutDropTests: SplitGroupTestCase {
 
     func testEveryCanonicalFourPaneTopologyOffersInternalEdgeTargets() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
+        let space = harness.tabManager.spaceServices.catalog.createSpace(name: "Work")
         let tabs = (0..<4).map { index in
             harness.tabManager.regularTabLifecycleOwner.createNewTab(
                 url: "https://topology\(index).example",
@@ -1412,7 +1412,7 @@ final class SplitGroupLayoutDropTests: SplitGroupTestCase {
 
     func testFourthTabPreviewWhenSplittingOneOfThreePanesStaysInsideOriginalPane() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
+        let space = harness.tabManager.spaceServices.catalog.createSpace(name: "Work")
         let tabs = (0..<3).map { index in
             harness.tabManager.regularTabLifecycleOwner.createNewTab(
                 url: "https://three-bottom-pair\(index).example",
@@ -1479,7 +1479,7 @@ final class SplitGroupLayoutDropTests: SplitGroupTestCase {
 
     func testExistingSplitTabUsesGroupEdgeTarget() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
+        let space = harness.tabManager.spaceServices.catalog.createSpace(name: "Work")
         let left = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://left.example", in: space)
         let right = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://right.example", in: space, activate: false)
         harness.windowState.currentSpaceId = space.id
@@ -1506,7 +1506,7 @@ final class SplitGroupLayoutDropTests: SplitGroupTestCase {
 
     func testExistingSplitTabHoveringOwnPaneAndOwnRootEdgeDoesNotShowDuplicateTarget() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
+        let space = harness.tabManager.spaceServices.catalog.createSpace(name: "Work")
         let left = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://left.example", in: space)
         let right = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://right.example", in: space, activate: false)
         harness.windowState.currentSpaceId = space.id
@@ -1535,7 +1535,7 @@ final class SplitGroupLayoutDropTests: SplitGroupTestCase {
 
     func testExistingSplitTabCenterHoverDoesNotShowGapPreview() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
+        let space = harness.tabManager.spaceServices.catalog.createSpace(name: "Work")
         let left = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://left.example", in: space)
         let right = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://right.example", in: space, activate: false)
         harness.windowState.currentSpaceId = space.id
@@ -1556,7 +1556,7 @@ final class SplitGroupLayoutDropTests: SplitGroupTestCase {
 
     func testExistingSplitTabSkipsNoOpEdgeAndUsesNextValidEdgeAtCorner() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
+        let space = harness.tabManager.spaceServices.catalog.createSpace(name: "Work")
         let left = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://left.example", in: space)
         let right = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://right.example", in: space, activate: false)
         harness.windowState.currentSpaceId = space.id
@@ -1582,7 +1582,7 @@ final class SplitGroupLayoutDropTests: SplitGroupTestCase {
 
     func testGroupEdgeDropMovesExistingSplitTabAtRoot() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
+        let space = harness.tabManager.spaceServices.catalog.createSpace(name: "Work")
         let left = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://left.example", in: space)
         let right = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://right.example", in: space, activate: false)
         harness.windowState.currentSpaceId = space.id
@@ -1607,7 +1607,7 @@ final class SplitGroupLayoutDropTests: SplitGroupTestCase {
 
     func testExternalTabGroupEdgeDropInsertsAtRoot() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
+        let space = harness.tabManager.spaceServices.catalog.createSpace(name: "Work")
         let left = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://left.example", in: space)
         let right = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://right.example", in: space, activate: false)
         let incoming = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://incoming.example", in: space, activate: false)
@@ -1645,7 +1645,7 @@ final class SplitGroupLayoutDropTests: SplitGroupTestCase {
 
     func testFullSplitRejectsExternalEdgeInsertPreviewButAllowsCenterReplace() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
+        let space = harness.tabManager.spaceServices.catalog.createSpace(name: "Work")
         let tabs = (0..<4).map { index in
             harness.tabManager.regularTabLifecycleOwner.createNewTab(
                 url: "https://tab\(index).example",

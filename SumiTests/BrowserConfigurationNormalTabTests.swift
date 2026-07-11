@@ -782,7 +782,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         XCTAssertFalse(registry.isEnabled(.extensions))
         XCTAssertEqual(probe.managerCount, 0)
         XCTAssertFalse(module.hasLoadedRuntime)
-        XCTAssertTrue(browserManager.extensionsModule.surfaceStore.installedExtensions.isEmpty)
+        XCTAssertTrue(browserManager.optionalModules.extensions.surfaceStore.installedExtensions.isEmpty)
     }
 
     func testBrowserManagerStartupWithBoostsDisabledDoesNotInitializeBoostsRuntime() {

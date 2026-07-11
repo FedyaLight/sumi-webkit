@@ -272,14 +272,48 @@ final class TabSplitGroupStructureOwner {
     }
 
     func removeSplitGroups(containing tabId: UUID, schedulePersistence shouldPersist: Bool = true) {
+        removeSplitGroups(
+            hostedBy: nil,
+            containingAny: [tabId],
+            schedulePersistence: shouldPersist
+        )
+    }
+
+    @discardableResult
+    func removeSplitGroups(
+        hostedBy spaceId: UUID? = nil,
+        containingAny memberIds: Set<UUID>,
+        schedulePersistence shouldPersist: Bool = true
+    ) -> Set<UUID> {
         let current = dependencies.splitGroups()
-        let updated = current.compactMap { group in
-            group.contains(tabId) ? group.removing(tabId: tabId) : group
+        var removedGroupIds = Set<UUID>()
+        let updated = current.compactMap { group -> SplitGroup? in
+            if let spaceId, group.hostSpaceId == spaceId {
+                removedGroupIds.insert(group.id)
+                return nil
+            }
+
+            let matchedTabIds = memberIds.reduce(into: Set<UUID>()) { result, memberId in
+                if let member = group.member(for: memberId) {
+                    result.insert(member.tabId)
+                } else if group.tabIds.contains(memberId) {
+                    result.insert(memberId)
+                }
+            }
+            let tabIds = group.tabIds.filter(matchedTabIds.contains)
+            let revised = tabIds.reduce(Optional(group)) { partial, tabId in
+                partial?.removing(tabId: tabId)
+            }
+            if revised == nil, !tabIds.isEmpty {
+                removedGroupIds.insert(group.id)
+            }
+            return revised
         }
-        guard updated != current else { return }
+        guard updated != current else { return [] }
         dependencies.replaceSplitGroups(updated)
         markSplitGroupsStructurallyDirty(schedulePersistence: shouldPersist)
         dependencies.requestStructuralPublish()
+        return removedGroupIds
     }
 
     func replaceSplitGroups(_ groups: [SplitGroup], schedulePersistence shouldPersist: Bool = true) {
@@ -351,7 +385,7 @@ extension TabSplitGroupStructureOwner.Dependencies {
                     operation()
                     return
                 }
-                tabManager.withStructuralUpdateTransaction(operation)
+                tabManager.structuralLookupCoordinator.withTransaction(operation)
             },
             setFolders: { [weak tabManager] folders, spaceId in
                 tabManager?.structuralCollectionMutationOwner.setFolders(folders, for: spaceId)
@@ -366,13 +400,13 @@ extension TabSplitGroupStructureOwner.Dependencies {
                 tabManager?.splitGroupRepairOwner.repairingShortcutBackedMembers(in: group) ?? group
             },
             requestStructuralPublish: { [weak tabManager] in
-                tabManager?.requestStructuralPublish()
+                tabManager?.structuralLookupCoordinator.requestPublish()
             },
             markSplitGroupsStructurallyDirty: { [weak tabManager] in
                 tabManager?.structuralPersistence.markSplitGroupsStructurallyDirty()
             },
             scheduleStructuralPersistence: { [weak tabManager] in
-                tabManager?.scheduleStructuralPersistence()
+                tabManager?.structuralPersistence.scheduleStructuralPersistence()
             },
             tab: { [weak tabManager] tabId in
                 tabManager?.tabCollectionMembershipOwner.tab(for: tabId)

@@ -72,7 +72,7 @@ final class SplitGroupTests: SplitGroupTestCase {
 
     func testShortcutHostedSplitGroupAppearsInsidePinnedVisualItemsAtHostIndex() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
+        let space = harness.tabManager.spaceServices.catalog.createSpace(name: "Work")
         let visiblePin = makeSpacePin(spaceId: space.id, index: 0, title: "Visible")
         let groupedPin = makeSpacePin(spaceId: space.id, index: 1, title: "Grouped")
         harness.tabManager.structuralCollectionMutationOwner.setSpacePinnedShortcuts([visiblePin, groupedPin], for: space.id)
@@ -106,7 +106,7 @@ final class SplitGroupTests: SplitGroupTestCase {
 
     func testShortcutHostedSplitGroupForFolderPinStaysInsideFolderVisualItems() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
+        let space = harness.tabManager.spaceServices.catalog.createSpace(name: "Work")
         let folder = harness.tabManager.folderMutationOwner.createFolder(for: space.id, name: "Docs")
         let visiblePin = makeSpacePin(spaceId: space.id, index: 0, title: "Visible")
         let groupedPin = ShortcutPin(
@@ -153,7 +153,7 @@ final class SplitGroupTests: SplitGroupTestCase {
 
     func testShortcutHostedSplitGroupWithFolderAndTopLevelPinsHidesTopLevelMemberUntilRestore() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
+        let space = harness.tabManager.spaceServices.catalog.createSpace(name: "Work")
         harness.windowState.currentSpaceId = space.id
         let folder = harness.tabManager.folderMutationOwner.createFolder(for: space.id, name: "Docs")
         let folderPin = ShortcutPin(
@@ -200,7 +200,7 @@ final class SplitGroupTests: SplitGroupTestCase {
             [.splitGroup(group.id)]
         )
 
-        harness.browserManager.sidebarCommandService.splitShortcutRouting.restoreShortcutSplitMember(
+        harness.browserManager.sidebarCommandService.splitShortcuts.memberRestoration.restoreShortcutSplitMember(
             groupedTopLevelPin.id,
             from: group,
             in: harness.windowState
@@ -218,7 +218,7 @@ final class SplitGroupTests: SplitGroupTestCase {
 
     func testShortcutHostedSplitGroupWithTopLevelHostAndFolderPinStaysTopLevel() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
+        let space = harness.tabManager.spaceServices.catalog.createSpace(name: "Work")
         harness.windowState.currentSpaceId = space.id
         let folder = harness.tabManager.folderMutationOwner.createFolder(for: space.id, name: "Docs")
         let folderPin = ShortcutPin(
@@ -346,7 +346,7 @@ final class SplitGroupTests: SplitGroupTestCase {
 
     func testEssentialOnlyShortcutHostedSplitStartsBeforePinnedRows() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
+        let space = harness.tabManager.spaceServices.catalog.createSpace(name: "Work")
         let folder = harness.tabManager.folderMutationOwner.createFolder(for: space.id, name: "Docs")
         let visiblePin = makeSpacePin(spaceId: space.id, index: 0, title: "Visible")
         harness.tabManager.structuralCollectionMutationOwner.setSpacePinnedShortcuts([visiblePin], for: space.id)
@@ -381,7 +381,7 @@ final class SplitGroupTests: SplitGroupTestCase {
 
     func testMovingShortcutHostedSplitGroupUpdatesPinnedVisualIndex() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
+        let space = harness.tabManager.spaceServices.catalog.createSpace(name: "Work")
         let firstPin = makeSpacePin(spaceId: space.id, index: 0, title: "First")
         let groupedPin = makeSpacePin(spaceId: space.id, index: 1, title: "Grouped")
         let lastPin = makeSpacePin(spaceId: space.id, index: 2, title: "Last")
@@ -427,13 +427,13 @@ final class SplitGroupTests: SplitGroupTestCase {
     func testMovingEssentialFromRegularHostedSplitIntoShortcutHostedSplitPreservesLauncherOrigin() throws {
         let harness = try makeHarness()
         let profileId = UUID()
-        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work", profileId: profileId)
+        let space = harness.tabManager.spaceServices.catalog.createSpace(name: "Work", profileId: profileId)
         harness.windowState.currentSpaceId = space.id
         harness.windowState.currentProfileId = profileId
 
         let essentialPin = makeEssentialPin(profileId: profileId, index: 0, title: "Essential")
         harness.tabManager.structuralCollectionMutationOwner.setPinnedTabs([essentialPin], for: profileId)
-        let liveEssential = harness.tabManager.shortcutLiveTabOwner.activateShortcutPin(
+        let liveEssential = harness.tabManager.shortcutTabMaterializer.materialize(
             essentialPin,
             in: harness.windowState.id,
             currentSpaceId: space.id
@@ -462,12 +462,12 @@ final class SplitGroupTests: SplitGroupTestCase {
         let firstPinned = makeSpacePin(spaceId: space.id, index: 0, title: "PinnedA")
         let secondPinned = makeSpacePin(spaceId: space.id, index: 1, title: "PinnedB")
         harness.tabManager.structuralCollectionMutationOwner.setSpacePinnedShortcuts([firstPinned, secondPinned], for: space.id)
-        let liveFirstPinned = harness.tabManager.shortcutLiveTabOwner.activateShortcutPin(
+        let liveFirstPinned = harness.tabManager.shortcutTabMaterializer.materialize(
             firstPinned,
             in: harness.windowState.id,
             currentSpaceId: space.id
         )
-        let liveSecondPinned = harness.tabManager.shortcutLiveTabOwner.activateShortcutPin(
+        let liveSecondPinned = harness.tabManager.shortcutTabMaterializer.materialize(
             secondPinned,
             in: harness.windowState.id,
             currentSpaceId: space.id
@@ -510,13 +510,13 @@ final class SplitGroupTests: SplitGroupTestCase {
     func testMovingPinnedProxyBetweenSplitGroupsKeepsRemainingRegularSplitAndPinnedPlaceholder() throws {
         let harness = try makeHarness()
         let profileId = UUID()
-        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work", profileId: profileId)
+        let space = harness.tabManager.spaceServices.catalog.createSpace(name: "Work", profileId: profileId)
         harness.windowState.currentSpaceId = space.id
         harness.windowState.currentProfileId = profileId
 
         let movedPin = makeSpacePin(spaceId: space.id, index: 0, title: "Moved")
         harness.tabManager.structuralCollectionMutationOwner.setSpacePinnedShortcuts([movedPin], for: space.id)
-        let liveMovedPin = harness.tabManager.shortcutLiveTabOwner.activateShortcutPin(
+        let liveMovedPin = harness.tabManager.shortcutTabMaterializer.materialize(
             movedPin,
             in: harness.windowState.id,
             currentSpaceId: space.id
@@ -551,12 +551,12 @@ final class SplitGroupTests: SplitGroupTestCase {
         let firstEssential = makeEssentialPin(profileId: profileId, index: 0, title: "EssentialA")
         let secondEssential = makeEssentialPin(profileId: profileId, index: 1, title: "EssentialB")
         harness.tabManager.structuralCollectionMutationOwner.setPinnedTabs([firstEssential, secondEssential], for: profileId)
-        let liveFirstEssential = harness.tabManager.shortcutLiveTabOwner.activateShortcutPin(
+        let liveFirstEssential = harness.tabManager.shortcutTabMaterializer.materialize(
             firstEssential,
             in: harness.windowState.id,
             currentSpaceId: space.id
         )
-        let liveSecondEssential = harness.tabManager.shortcutLiveTabOwner.activateShortcutPin(
+        let liveSecondEssential = harness.tabManager.shortcutTabMaterializer.materialize(
             secondEssential,
             in: harness.windowState.id,
             currentSpaceId: space.id
@@ -604,13 +604,13 @@ final class SplitGroupTests: SplitGroupTestCase {
     func testUpsertRepairsShortcutBackedMemberForLiveEssentialSegment() throws {
         let harness = try makeHarness()
         let profileId = UUID()
-        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work", profileId: profileId)
+        let space = harness.tabManager.spaceServices.catalog.createSpace(name: "Work", profileId: profileId)
         harness.windowState.currentSpaceId = space.id
         harness.windowState.currentProfileId = profileId
 
         let essentialPin = makeEssentialPin(profileId: profileId, index: 0, title: "Essential")
         harness.tabManager.structuralCollectionMutationOwner.setPinnedTabs([essentialPin], for: profileId)
-        let liveEssential = harness.tabManager.shortcutLiveTabOwner.activateShortcutPin(
+        let liveEssential = harness.tabManager.shortcutTabMaterializer.materialize(
             essentialPin,
             in: harness.windowState.id,
             currentSpaceId: space.id
@@ -647,7 +647,7 @@ final class SplitGroupTests: SplitGroupTestCase {
     func testUpsertRepairsShortcutMembersAcrossPinnedEssentialMixedGroup() throws {
         let harness = try makeHarness()
         let profileId = UUID()
-        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work", profileId: profileId)
+        let space = harness.tabManager.spaceServices.catalog.createSpace(name: "Work", profileId: profileId)
         harness.windowState.currentSpaceId = space.id
         harness.windowState.currentProfileId = profileId
 
@@ -655,12 +655,12 @@ final class SplitGroupTests: SplitGroupTestCase {
         harness.tabManager.structuralCollectionMutationOwner.setPinnedTabs([essentialPin], for: profileId)
         let spacePin = makeSpacePin(spaceId: space.id, index: 1, title: "Pinned")
         harness.tabManager.structuralCollectionMutationOwner.setSpacePinnedShortcuts([spacePin], for: space.id)
-        let liveEssential = harness.tabManager.shortcutLiveTabOwner.activateShortcutPin(
+        let liveEssential = harness.tabManager.shortcutTabMaterializer.materialize(
             essentialPin,
             in: harness.windowState.id,
             currentSpaceId: space.id
         )
-        let livePinned = harness.tabManager.shortcutLiveTabOwner.activateShortcutPin(
+        let livePinned = harness.tabManager.shortcutTabMaterializer.materialize(
             spacePin,
             in: harness.windowState.id,
             currentSpaceId: space.id
@@ -697,8 +697,8 @@ final class SplitGroupTests: SplitGroupTestCase {
 
     func testUpsertDoesNotRepairSpacePinnedSplitMemberFromGlobalCurrentSpace() throws {
         let harness = try makeHarness()
-        let storageSpace = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Storage")
-        let globalCurrentSpace = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Global Current")
+        let storageSpace = harness.tabManager.spaceServices.catalog.createSpace(name: "Storage")
+        let globalCurrentSpace = harness.tabManager.spaceServices.catalog.createSpace(name: "Global Current")
         harness.tabManager.spaceStateOwner.replaceCurrentSpace(globalCurrentSpace)
         let malformedPin = ShortcutPin(
             id: UUID(),
@@ -739,8 +739,8 @@ final class SplitGroupTests: SplitGroupTestCase {
 
     func testUpsertRepairsSpacePinnedSplitMemberFromHostSpaceWhenPinSpaceIsMissing() throws {
         let harness = try makeHarness()
-        let hostSpace = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Host")
-        let globalCurrentSpace = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Global Current")
+        let hostSpace = harness.tabManager.spaceServices.catalog.createSpace(name: "Host")
+        let globalCurrentSpace = harness.tabManager.spaceServices.catalog.createSpace(name: "Global Current")
         harness.tabManager.spaceStateOwner.replaceCurrentSpace(globalCurrentSpace)
         let malformedPin = ShortcutPin(
             id: UUID(),
@@ -770,13 +770,13 @@ final class SplitGroupTests: SplitGroupTestCase {
     func testRestoreShortcutSplitMemberKeepsLiveInstanceLoaded() throws {
         let harness = try makeHarness()
         let profileId = UUID()
-        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work", profileId: profileId)
+        let space = harness.tabManager.spaceServices.catalog.createSpace(name: "Work", profileId: profileId)
         harness.windowState.currentSpaceId = space.id
         harness.windowState.currentProfileId = profileId
 
         let essentialPin = makeEssentialPin(profileId: profileId, index: 0, title: "Essential")
         harness.tabManager.structuralCollectionMutationOwner.setPinnedTabs([essentialPin], for: profileId)
-        let liveEssential = harness.tabManager.shortcutLiveTabOwner.activateShortcutPin(
+        let liveEssential = harness.tabManager.shortcutTabMaterializer.materialize(
             essentialPin,
             in: harness.windowState.id,
             currentSpaceId: space.id
@@ -804,7 +804,7 @@ final class SplitGroupTests: SplitGroupTestCase {
         ))
         harness.tabManager.splitGroupStructureOwner.upsertSplitGroup(group)
 
-        harness.browserManager.sidebarCommandService.splitShortcutRouting.restoreShortcutSplitMember(
+        harness.browserManager.sidebarCommandService.splitShortcuts.memberRestoration.restoreShortcutSplitMember(
             liveEssential.id,
             from: group,
             in: harness.windowState
@@ -824,13 +824,13 @@ final class SplitGroupTests: SplitGroupTestCase {
     func testRestoringInactiveShortcutSplitMemberDissolvesToRestoredTab() throws {
         let harness = try makeHarness()
         let profileId = UUID()
-        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work", profileId: profileId)
+        let space = harness.tabManager.spaceServices.catalog.createSpace(name: "Work", profileId: profileId)
         harness.windowState.currentSpaceId = space.id
         harness.windowState.currentProfileId = profileId
 
         let essentialPin = makeEssentialPin(profileId: profileId, index: 0, title: "Essential")
         harness.tabManager.structuralCollectionMutationOwner.setPinnedTabs([essentialPin], for: profileId)
-        let liveEssential = harness.tabManager.shortcutLiveTabOwner.activateShortcutPin(
+        let liveEssential = harness.tabManager.shortcutTabMaterializer.materialize(
             essentialPin,
             in: harness.windowState.id,
             currentSpaceId: space.id
@@ -858,7 +858,7 @@ final class SplitGroupTests: SplitGroupTestCase {
         ))
         harness.tabManager.splitGroupStructureOwner.upsertSplitGroup(group)
 
-        harness.browserManager.sidebarCommandService.splitShortcutRouting.restoreShortcutSplitMember(
+        harness.browserManager.sidebarCommandService.splitShortcuts.memberRestoration.restoreShortcutSplitMember(
             liveEssential.id,
             from: group,
             in: harness.windowState
@@ -871,7 +871,7 @@ final class SplitGroupTests: SplitGroupTestCase {
 
     func testUnsplitActiveGroupKeepsFocusedTabSelected() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
+        let space = harness.tabManager.spaceServices.catalog.createSpace(name: "Work")
         harness.windowState.currentSpaceId = space.id
 
         let first = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://one.example", in: space, activate: false)
@@ -895,13 +895,13 @@ final class SplitGroupTests: SplitGroupTestCase {
     func testClosingShortcutSplitMemberStillUnloadsLiveInstance() throws {
         let harness = try makeHarness()
         let profileId = UUID()
-        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work", profileId: profileId)
+        let space = harness.tabManager.spaceServices.catalog.createSpace(name: "Work", profileId: profileId)
         harness.windowState.currentSpaceId = space.id
         harness.windowState.currentProfileId = profileId
 
         let essentialPin = makeEssentialPin(profileId: profileId, index: 0, title: "Essential")
         harness.tabManager.structuralCollectionMutationOwner.setPinnedTabs([essentialPin], for: profileId)
-        let liveEssential = harness.tabManager.shortcutLiveTabOwner.activateShortcutPin(
+        let liveEssential = harness.tabManager.shortcutTabMaterializer.materialize(
             essentialPin,
             in: harness.windowState.id,
             currentSpaceId: space.id
@@ -929,7 +929,7 @@ final class SplitGroupTests: SplitGroupTestCase {
         ))
         harness.tabManager.splitGroupStructureOwner.upsertSplitGroup(group)
 
-        harness.browserManager.sidebarCommandService.splitShortcutRouting.restoreShortcutSplitMember(
+        harness.browserManager.sidebarCommandService.splitShortcuts.memberRestoration.restoreShortcutSplitMember(
             liveEssential.id,
             from: group,
             in: harness.windowState,
@@ -995,7 +995,7 @@ final class SplitGroupTests: SplitGroupTestCase {
 
     func testSelectingNativeSurfaceAwayFromSplitDoesNotDeleteGroup() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
+        let space = harness.tabManager.spaceServices.catalog.createSpace(name: "Work")
         let left = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://left.example", in: space)
         let right = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://right.example", in: space, activate: false)
         let native = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: SumiSurface.emptyTabURL.absoluteString, in: space, activate: false)
@@ -1039,25 +1039,9 @@ final class SplitGroupTests: SplitGroupTestCase {
         XCTAssertTrue(decoded.splitGroups.isEmpty)
     }
 
-    func testLegacyDuplicateAsRegularHelperCreatesRegularCopy() throws {
-        let harness = try makeHarness()
-        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
-        let regular = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://anchor.example", in: space)
-        let pinned = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://pinned.example", in: space, activate: false)
-        pinned.isPinned = true
-
-        let duplicate = harness.tabManager.regularTabLifecycleOwner.duplicateAsRegularForSplit(from: pinned, anchor: regular)
-
-        XCTAssertNotEqual(duplicate.id, pinned.id)
-        XCTAssertEqual(duplicate.url, pinned.url)
-        XCTAssertFalse(duplicate.isPinned)
-        XCTAssertFalse(duplicate.isSpacePinned)
-        XCTAssertTrue(pinned.isPinned)
-    }
-
     func testEmptySplitCancelRemovesPlaceholderPane() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
+        let space = harness.tabManager.spaceServices.catalog.createSpace(name: "Work")
         let current = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://current.example", in: space)
         harness.windowState.currentSpaceId = space.id
         harness.windowState.currentTabId = current.id
@@ -1066,7 +1050,7 @@ final class SplitGroupTests: SplitGroupTestCase {
         let group = try XCTUnwrap(harness.tabManager.splitGroupStructureOwner.splitGroup(containing: current.id))
         let placeholderId = try XCTUnwrap(group.tabIds.first { $0 != current.id })
 
-        harness.browserManager.urlBarBundle.floatingBarRoutingOwner.dismissFloatingBar(
+        harness.browserManager.urlBarBundle.floatingBar.presentation.dismiss(
             in: harness.windowState,
             preserveDraft: true,
             cancelEmptySplitPlaceholder: true
@@ -1091,7 +1075,7 @@ final class SplitGroupTests: SplitGroupTestCase {
         windowRegistry.register(windowState)
         windowRegistry.setActive(windowState)
 
-        let space = tabManager.spaceLifecycleOwner.createSpace(name: "Runtime")
+        let space = tabManager.spaceServices.catalog.createSpace(name: "Runtime")
         let current = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://current.example", in: space)
         windowState.currentSpaceId = space.id
         windowState.currentTabId = current.id
@@ -1131,7 +1115,7 @@ final class SplitGroupTests: SplitGroupTestCase {
 
     func testEmptySplitExistingTabCommitReplacesPlaceholderPane() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
+        let space = harness.tabManager.spaceServices.catalog.createSpace(name: "Work")
         let current = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://current.example", in: space)
         let existing = harness.tabManager.regularTabLifecycleOwner.createNewTab(url: "https://existing.example", in: space, activate: false)
         harness.windowState.currentSpaceId = space.id
@@ -1141,7 +1125,7 @@ final class SplitGroupTests: SplitGroupTestCase {
         let placeholderGroup = try XCTUnwrap(harness.tabManager.splitGroupStructureOwner.splitGroup(containing: current.id))
         let placeholderId = try XCTUnwrap(placeholderGroup.tabIds.first { $0 != current.id })
 
-        harness.browserManager.urlBarBundle.floatingBarRoutingOwner.openFloatingBarSuggestion(
+        harness.browserManager.urlBarBundle.floatingBar.commit.openSuggestion(
             SearchManager.SearchSuggestion(text: existing.name, type: .tab(existing)),
             in: harness.windowState
         )

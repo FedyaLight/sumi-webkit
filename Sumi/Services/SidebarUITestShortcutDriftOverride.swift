@@ -21,7 +21,7 @@ enum SidebarUITestShortcutDriftOverride {
         let liveTab = tabManager.shortcutPresentationOwner.shortcutLiveTab(
             for: pin.id,
             in: windowState.id
-        ) ?? tabManager.shortcutLiveTabOwner.activateShortcutPin(
+        ) ?? tabManager.shortcutTabMaterializer.materialize(
             pin,
             in: windowState.id,
             currentSpaceId: pin.spaceId ?? windowState.currentSpaceId

@@ -3,13 +3,13 @@ import Foundation
 
 @MainActor
 final class BrowserSidebarActionOwner {
-    private let tabManager: @MainActor @Sendable () -> TabManager
-    private let liveFolderManager: @MainActor @Sendable () -> SumiLiveFolderManager
+    private let tabManager: @MainActor @Sendable () -> TabManager?
+    private let liveFolderManager: @MainActor @Sendable () -> SumiLiveFolderManager?
     private let sumiSettings: @MainActor () -> SumiSettingsService?
 
     init(
-        tabManager: @escaping @MainActor @Sendable () -> TabManager,
-        liveFolderManager: @escaping @MainActor @Sendable () -> SumiLiveFolderManager,
+        tabManager: @escaping @MainActor @Sendable () -> TabManager?,
+        liveFolderManager: @escaping @MainActor @Sendable () -> SumiLiveFolderManager?,
         sumiSettings: @escaping @MainActor () -> SumiSettingsService?
     ) {
         self.tabManager = tabManager
@@ -18,7 +18,7 @@ final class BrowserSidebarActionOwner {
     }
 
     func spaceForSidebarActions(in windowState: BrowserWindowState) -> Space? {
-        let tabManager = tabManager()
+        guard let tabManager = tabManager() else { return nil }
         if let windowSpaceId = windowState.currentSpaceId,
            let windowSpace = tabManager.spaceStateOwner.spaces.first(where: { $0.id == windowSpaceId }) {
             return windowSpace
@@ -29,7 +29,7 @@ final class BrowserSidebarActionOwner {
 
     func createFolderInCurrentSpace(in windowState: BrowserWindowState) {
         guard let space = spaceForSidebarActions(in: windowState) else { return }
-        _ = tabManager().folderMutationOwner.createFolder(for: space.id)
+        _ = tabManager()?.folderMutationOwner.createFolder(for: space.id)
     }
 
     func createRSSLiveFolderInCurrentSpace(in windowState: BrowserWindowState) {
@@ -38,17 +38,17 @@ final class BrowserSidebarActionOwner {
         else {
             return
         }
-        liveFolderManager().createRSSFolder(in: space.id, feedURLString: feedURLString)
+        liveFolderManager()?.createRSSFolder(in: space.id, feedURLString: feedURLString)
     }
 
     func createGitHubPRFolderInCurrentSpace(in windowState: BrowserWindowState) {
         guard let space = spaceForSidebarActions(in: windowState) else { return }
-        liveFolderManager().createGitHubFolder(in: space.id, kind: .githubPullRequests)
+        liveFolderManager()?.createGitHubFolder(in: space.id, kind: .githubPullRequests)
     }
 
     func createGitHubIssuesFolderInCurrentSpace(in windowState: BrowserWindowState) {
         guard let space = spaceForSidebarActions(in: windowState) else { return }
-        liveFolderManager().createGitHubFolder(in: space.id, kind: .githubIssues)
+        liveFolderManager()?.createGitHubFolder(in: space.id, kind: .githubIssues)
     }
 
     private func promptForLiveFolderFeedURL(in windowState: BrowserWindowState) -> String? {

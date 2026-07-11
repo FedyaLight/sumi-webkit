@@ -7,7 +7,7 @@ enum BrowserTabSuspensionRuntimeFactory {
         windowRegistry: @escaping @MainActor () -> WindowRegistry?,
         regularTabs: TabCollectionMembershipOwner,
         lazyRestore: TabLazyRestoreCoordinator,
-        windowTabs: BrowserWindowTabContextOwner,
+        windowTabs: BrowserWindowTabContext,
         splitManager: SplitViewManager,
         webView: TabSuspensionWebViewRuntime
     ) -> TabSuspensionRuntimePorts {
@@ -49,7 +49,7 @@ enum BrowserTabSuspensionRuntimeFactory {
 
     private static func selectedTabIDs(
         windowRegistry: WindowRegistry?,
-        windowTabs: BrowserWindowTabContextOwner
+        windowTabs: BrowserWindowTabContext
     ) -> Set<UUID> {
         var selectedIDs = Set<UUID>()
         for windowState in windowRegistry.map({
@@ -64,7 +64,7 @@ enum BrowserTabSuspensionRuntimeFactory {
 
     private static func visibleTabIDsByWindow(
         windowRegistry: WindowRegistry?,
-        windowTabs: BrowserWindowTabContextOwner,
+        windowTabs: BrowserWindowTabContext,
         splitManager: SplitViewManager
     ) -> [UUID: Set<UUID>] {
         var visible: [UUID: Set<UUID>] = [:]
@@ -83,7 +83,7 @@ enum BrowserTabSuspensionRuntimeFactory {
     private static func refreshLazyRestoreQueue(
         _ context: TabSuspensionEvaluationContext,
         windowRegistry: WindowRegistry?,
-        windowTabs: BrowserWindowTabContextOwner,
+        windowTabs: BrowserWindowTabContext,
         lazyRestore: TabLazyRestoreCoordinator
     ) {
         guard let windowRegistry else { return }

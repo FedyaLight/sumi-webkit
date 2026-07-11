@@ -69,6 +69,20 @@ final class TabTransientTabRegistryOwner {
         return (windowId: match.0, pinId: match.1, tab: match.2)
     }
 
+    func removeTransientShortcutTab(
+        pinId: UUID,
+        in windowId: UUID
+    ) -> Tab? {
+        guard let tab = transientShortcutTabsByWindow[windowId]?
+            .removeValue(forKey: pinId) else {
+            return nil
+        }
+        if transientShortcutTabsByWindow[windowId]?.isEmpty == true {
+            transientShortcutTabsByWindow.removeValue(forKey: windowId)
+        }
+        return tab
+    }
+
     func isTransientExtensionTab(_ tab: Tab) -> Bool {
         transientExtensionTabsByID[tab.id] != nil
     }

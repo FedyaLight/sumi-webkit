@@ -12,24 +12,34 @@ final class SpaceProfileTransitionService {
 
     private unowned let tabManager: TabManager
     private let policy: ProfileAssignmentPolicy
+    private let pendingInheritance: PendingTabProfileInheritance
     private var revisionBySpaceID: [UUID: UInt64] = [:]
     private var transactionsBySpaceID: [UUID: SpaceProfileTransaction] = [:]
     private var observersBySpaceID: [UUID: SettlementObserver] = [:]
 
-    init(tabManager: TabManager, policy: ProfileAssignmentPolicy) {
+    init(
+        tabManager: TabManager,
+        policy: ProfileAssignmentPolicy,
+        pendingInheritance: PendingTabProfileInheritance
+    ) {
         self.tabManager = tabManager
         self.policy = policy
+        self.pendingInheritance = pendingInheritance
     }
 
-    func assign(spaceID: UUID, toProfile profileID: UUID) {
-        _ = start(spaceID: spaceID, profileID: profileID)
+    @discardableResult
+    func assign(
+        spaceID: UUID,
+        toProfile profileID: UUID
+    ) -> TabProfileAssignmentExecutionOutcome {
+        start(spaceID: spaceID, profileID: profileID)
     }
 
     @discardableResult
     func start(
         spaceID: UUID,
         profileID: UUID,
-        intentPrepared: (DeferredWebViewSpaceProfileAssignmentIntent) -> Void = { _ in },
+        intentPrepared: (DeferredWebViewSpaceProfileAssignmentIntent) -> Void = { _ in /* No-op. */ },
         settlementObserver: ProfileTransitionService.Settlement? = nil
     ) -> TabProfileAssignmentExecutionOutcome {
         guard let space = tabManager.spaceStateOwner.space(with: spaceID) else {
@@ -117,10 +127,40 @@ final class SpaceProfileTransitionService {
         isCurrent(intent)
     }
 
+    func inFlightProfileID(for spaceID: UUID) -> UUID? {
+        guard let transaction = transactionsBySpaceID[spaceID],
+              transaction.state != .terminal
+        else { return nil }
+        return transaction.desiredProfileID
+    }
+
+    @discardableResult
+    func registerCreationFollower(
+        _ tab: Tab,
+        in spaceID: UUID,
+        profileID: UUID
+    ) -> Bool {
+        guard let transaction = transactionsBySpaceID[spaceID],
+              transaction.state != .terminal,
+              transaction.desiredProfileID == profileID,
+              tab.profileId == profileID,
+              tabIsMember(tab.id, of: spaceID)
+        else { return false }
+
+        pendingInheritance.record(
+            tab: tab,
+            spaceID: spaceID,
+            spaceRevision: transaction.intent.revision,
+            inheritedProfileID: profileID
+        )
+        return true
+    }
+
     func cancelPendingDeletionIntent(
         _ intent: DeferredWebViewSpaceProfileAssignmentIntent
     ) {
         abortPending(intent)
+        pendingInheritance.discard(spaceIntent: intent)
         if observersBySpaceID[intent.spaceID]?.revision == intent.revision {
             observersBySpaceID.removeValue(forKey: intent.spaceID)
         }
@@ -183,7 +223,7 @@ final class SpaceProfileTransitionService {
         }
         transaction.rollback()
         transactionsBySpaceID.removeValue(forKey: intent.spaceID)
-        publishStructuralMutation()
+        publishStructuralMutation(spaceID: intent.spaceID)
     }
 
     private func receive(
@@ -192,11 +232,23 @@ final class SpaceProfileTransitionService {
     ) {
         switch settlement {
         case .committed:
-            publishStructuralMutation()
+            pendingInheritance.spaceTransitionCommitted(
+                intent: intent,
+                canonicalProfileID: tabManager.spaceStateOwner.profileId(
+                    for: intent.spaceID
+                ),
+                isTabStillInSpace: { [weak tabManager] tab, spaceID in
+                    tabManager?.tabCollectionMembershipOwner.allTabs().contains {
+                        $0 === tab && $0.spaceId == spaceID
+                    } == true
+                }
+            )
+            publishStructuralMutation(spaceID: intent.spaceID)
         case .rejected:
             abortPending(intent)
+            pendingInheritance.discard(spaceIntent: intent)
         case .rolledBack:
-            break
+            pendingInheritance.discard(spaceIntent: intent)
         case .conflicted, .leaseLost, .terminalShutdown:
             break
         }
@@ -220,6 +272,7 @@ final class SpaceProfileTransitionService {
         guard let transaction = transactionsBySpaceID[spaceID],
               transaction.state == .pending else { return }
         abortPending(transaction.intent)
+        pendingInheritance.discard(spaceIntent: transaction.intent)
     }
 
     private func transaction(
@@ -248,6 +301,12 @@ final class SpaceProfileTransitionService {
                 tab: { [weak tabManager] tabID in
                     tabManager?.tabCollectionMembershipOwner.tab(for: tabID)
                 },
+                isTabInSpace: { [weak tabManager] tabID, spaceID in
+                    tabManager?.tabCollectionMembershipOwner.allTabs()
+                        .contains { tab in
+                            tab.id == tabID && tab.spaceId == spaceID
+                        } == true
+                },
                 sendObjectWillChange: { [weak tabManager] in
                     tabManager?.objectWillChange.send()
                 }
@@ -262,10 +321,19 @@ final class SpaceProfileTransitionService {
             .sorted { $0.id.uuidString < $1.id.uuidString }
     }
 
-    private func publishStructuralMutation() {
+    private func tabIsMember(_ tabID: UUID, of spaceID: UUID) -> Bool {
+        tabManager.tabCollectionMembershipOwner.allTabs().contains { tab in
+            tab.id == tabID && tab.spaceId == spaceID
+        }
+    }
+
+    private func publishStructuralMutation(spaceID: UUID) {
         tabManager.structuralPersistence.markAllSpacesStructurallyDirty()
-        tabManager.scheduleStructuralPersistence()
-        tabManager.requestStructuralPublish()
+        tabManager.structuralPersistence.markRegularTabsStructurallyDirty(
+            for: spaceID
+        )
+        tabManager.structuralPersistence.scheduleStructuralPersistence()
+        tabManager.structuralLookupCoordinator.requestPublish()
     }
 
     private func immediateSettlement(

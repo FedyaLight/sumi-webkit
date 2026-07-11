@@ -38,7 +38,9 @@ enum URLBarPresentationMode {
 }
 
 struct URLBarView: View {
-    @EnvironmentObject var glanceManager: GlanceManager
+    // Keeps the URL-bar view invalidated as Glance session state changes;
+    // page identity itself still comes exclusively from ActivePageResolver.
+    @EnvironmentObject private var glanceManager: GlanceManager
     @EnvironmentObject var extensionSurfaceStore: BrowserExtensionSurfaceStore
     @Environment(BrowserWindowState.self) var windowState
     @Environment(WindowRegistry.self) private var windowRegistry
@@ -148,22 +150,15 @@ struct URLBarView: View {
     }
 
     var currentTab: Tab? {
-        if let glanceTab = glanceManager.activePreviewTab(for: windowState) {
-            return glanceTab
-        }
+        activePage?.tab
+    }
 
-        let currentTabId = windowState.currentTabId
-        if windowState.isIncognito {
-            return windowState.ephemeralTabs.first { $0.id == currentTabId }
-        }
-        guard let currentTabId else { return nil }
-        return browserContext.tabForID(currentTabId)
-            ?? browserContext.currentTab(windowState)
+    var activePage: ActivePageResolution? {
+        browserContext.activePage(windowState)
     }
 
     var activePageURL: URL? {
-        glanceManager.activeSession(for: windowState)?.currentURL
-            ?? currentTab?.url
+        activePage?.url
     }
 
     func focusFloatingBarFromURLBar() {

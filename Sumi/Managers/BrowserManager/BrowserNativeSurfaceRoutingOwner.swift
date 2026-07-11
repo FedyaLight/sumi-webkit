@@ -3,16 +3,16 @@ import Foundation
 
 @MainActor
 final class BrowserNativeSurfaceRoutingOwner {
-    private let tabManagerAction: @MainActor @Sendable () -> TabManager
+    private let tabManagerAction: @MainActor @Sendable () -> TabManager?
     private let settingsAction: @MainActor @Sendable () -> SumiSettingsService?
-    private let openNewTabAction: @MainActor @Sendable (String, BrowserTabOpenContext) -> Tab
+    private let openNewTabAction: @MainActor @Sendable (String, BrowserTabOpenContext) -> Tab?
     private let selectTabAction: @MainActor @Sendable (Tab, BrowserWindowState) -> Void
     private let focusWindowAction: @MainActor @Sendable (BrowserWindowState) -> Void
 
     init(
-        tabManager: @escaping @MainActor @Sendable () -> TabManager,
+        tabManager: @escaping @MainActor @Sendable () -> TabManager?,
         settings: @escaping @MainActor @Sendable () -> SumiSettingsService?,
-        openNewTab: @escaping @MainActor @Sendable (String, BrowserTabOpenContext) -> Tab,
+        openNewTab: @escaping @MainActor @Sendable (String, BrowserTabOpenContext) -> Tab?,
         selectTab: @escaping @MainActor @Sendable (Tab, BrowserWindowState) -> Void,
         focusWindow: @escaping @MainActor @Sendable (BrowserWindowState) -> Void
     ) {
@@ -24,14 +24,16 @@ final class BrowserNativeSurfaceRoutingOwner {
     }
 
     convenience init(browserManager: BrowserManager) {
-        let tabLifecycleService = browserManager.tabLifecycleService
         self.init(
-            tabManager: { [weak browserManager, tabManager = browserManager.tabManager] in
-                browserManager?.tabManager ?? tabManager
+            tabManager: { [weak browserManager] in
+                browserManager?.tabManager
             },
             settings: { [weak browserManager] in browserManager?.sumiSettings },
-            openNewTab: { url, context in
-                tabLifecycleService.opening.openNewTab(url: url, context: context)
+            openNewTab: { [weak browserManager] url, context in
+                browserManager?.tabLifecycleService.opening.openNewTab(
+                    url: url,
+                    context: context
+                )
             },
             selectTab: { [weak browserManager] tab, windowState in
                 browserManager?.selectTab(tab, in: windowState)
@@ -50,7 +52,7 @@ final class BrowserNativeSurfaceRoutingOwner {
         in windowState: BrowserWindowState,
         preferredSpaceId: UUID? = nil
     ) {
-        let tabManager = tabManagerAction()
+        guard let tabManager = tabManagerAction() else { return }
 
         if windowState.isIncognito, let profile = windowState.ephemeralProfile {
             if let existing = windowState.ephemeralTabs.first(where: { kind.matches($0) }) {
@@ -81,14 +83,14 @@ final class BrowserNativeSurfaceRoutingOwner {
             return
         }
 
-        let newTab = openNewTabAction(
+        guard let newTab = openNewTabAction(
             url.absoluteString,
             .foreground(
                 windowState: windowState,
                 preferredSpaceId: targetSpace?.id,
                 loadPolicy: .deferred
             )
-        )
+        ) else { return }
         configureSurface(newTab, kind: kind, url: url)
         tabManager.structuralPersistence.scheduleRuntimeStatePersistence(for: newTab)
         focusWindowAction(windowState)

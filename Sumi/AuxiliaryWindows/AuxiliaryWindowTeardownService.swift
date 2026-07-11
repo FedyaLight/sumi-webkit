@@ -107,6 +107,24 @@ final class AuxiliaryWindowTeardownService {
         webViews.forEach { teardown(for: $0, reason: reason) }
     }
 
+    /// Live-session tab ports are no longer callable on this terminal path.
+    /// Canonical WebViews are released by WebViewLifecycleService first; this
+    /// method only drops auxiliary session/UI ownership and native windows.
+    func closeAllAfterBrowserRuntimeDeallocation() {
+        let sessionsSnapshot = sessions.sessionsSnapshot()
+        for session in sessionsSnapshot {
+            guard sessions.remove(webView: session.webView) != nil else { continue }
+            session.window.delegate = nil
+            session.webView.stopLoading()
+            session.webView.uiDelegate = nil
+            session.webView.navigationDelegate = nil
+            session.webView.removeFromSuperview()
+            if session.window.isVisible {
+                session.window.close()
+            }
+        }
+    }
+
     func closeAll(
         forExtensionID extensionID: String,
         reason: AuxiliaryWindowCloseReason = .extensionDisable

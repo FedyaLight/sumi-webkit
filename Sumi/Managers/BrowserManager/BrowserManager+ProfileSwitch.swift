@@ -11,7 +11,7 @@ extension BrowserManager {
     func adoptProfileIfNeeded(
         for windowState: BrowserWindowState, context: ProfileSwitchContext
     ) {
-        sumiProfileRouter.adoptProfileIfNeeded(
+        SumiProfileRouting.adoptProfileIfNeeded(
             for: windowState,
             context: context,
             support: self
@@ -22,7 +22,7 @@ extension BrowserManager {
         _ profile: Profile, context: ProfileSwitchContext = .userInitiated,
         in windowState: BrowserWindowState? = nil
     ) async {
-        await profileLifecycleBundle.profileSwitchTransitionOwner.switchToProfile(
+        await profileLifecycleBundle.profileSwitchTransition.switchToProfile(
             profile,
             context: context,
             in: windowState
@@ -31,7 +31,7 @@ extension BrowserManager {
 
     func duplicateCurrentTab() {
         guard let activeWindow = windowRegistry?.activeWindow,
-              let currentTab = urlBarBundle.activePageRoutingOwner.currentTabForActiveWindow() else {
+              let currentTab = shellRuntime.windowTabs.currentTab(for: activeWindow) else {
             return
         }
         tabLifecycleService.opening.duplicateTab(currentTab, in: activeWindow)

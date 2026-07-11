@@ -241,6 +241,7 @@ enum BrowserCompositionRoot {
         webViewSessions: WebViewSessionRepository,
         moduleRegistry: SumiModuleRegistry,
         startupPersistence: BrowserManagerStartupPersistence,
+        windowSessionSnapshotStore: WindowSessionSnapshotStore,
         browserConfiguration: BrowserConfiguration,
         adBlockingModule: SumiAdBlockingModule?,
         protectionCoordinator: SumiProtectionCoordinator?,
@@ -271,6 +272,12 @@ enum BrowserCompositionRoot {
             dataServices.replacing(browsingDataCleanupService: $0)
         } ?? dataServices
         let startupModelContext = startupPersistence.mainContext
+        let windowSessionPersistence = WindowSessionPersistenceRuntime(
+            snapshotStore: windowSessionSnapshotStore
+        )
+        let liveFoldersModule = SumiLiveFoldersModule(
+            moduleRegistry: moduleRegistry
+        )
         let tabStructureEventBus = TabStructureEventBus()
         let modules = assembleModules(
             moduleRegistry: moduleRegistry,
@@ -294,29 +301,33 @@ enum BrowserCompositionRoot {
             dataServices: resolvedDataServices,
             initialProfile: initialProfile
         )
+        let resolvedExtensionsModule = makeExtensionsModule(
+            moduleRegistry: moduleRegistry,
+            modelContext: startupModelContext,
+            browserConfiguration: browserConfiguration,
+            initialProfileProvider: { initialProfile },
+            extensionsModule: extensionsModule
+        )
         return BrowserKernelGraph(
             webViewSessions: webViewSessions,
             modelContext: startupModelContext,
             moduleRegistry: moduleRegistry,
-            liveFoldersModule: SumiLiveFoldersModule(moduleRegistry: moduleRegistry),
             sidebarHostRecoveryCoordinator: sidebarHostRecoveryCoordinator,
             adBlockingModule: modules.adBlockingModule,
             protectionCoordinator: modules.protectionCoordinator,
             adblockZapperStore: modules.adblockZapperStore,
-            userscriptsModule: modules.userscriptsModule,
-            boostsModule: modules.boostsModule,
             startupWorkspaceTheme: StartupWorkspaceThemeResolver.resolve(
-                lastWindowSessionKey: BrowserManager.lastWindowSessionKey,
+                windowSessionSnapshotStore: windowSessionSnapshotStore,
                 modelContext: startupModelContext
             ),
+            windowSessionPersistence: windowSessionPersistence,
             profileManager: profileManager,
             currentProfile: initialProfile,
-            extensionsModule: makeExtensionsModule(
-                moduleRegistry: moduleRegistry,
-                modelContext: startupModelContext,
-                browserConfiguration: browserConfiguration,
-                initialProfileProvider: { initialProfile },
-                extensionsModule: extensionsModule
+            optionalModules: OptionalModuleHost(
+                extensionsModule: resolvedExtensionsModule,
+                userscriptsModule: modules.userscriptsModule,
+                boostsModule: modules.boostsModule,
+                liveFoldersModule: liveFoldersModule
             ),
             tabManager: session.tabManager,
             downloadManager: session.downloadManager,

@@ -13,14 +13,13 @@ final class BrowserURLBarContextOwner {
     }
 
     struct PageChromeCapabilities {
-        let currentTab: @MainActor (BrowserWindowState) -> Tab?
-        let tabForID: @MainActor (UUID) -> Tab?
+        let activePage: @MainActor (BrowserWindowState) -> ActivePageResolution?
         let webView: @MainActor (Tab, BrowserWindowState) -> WKWebView?
         let profiles: @MainActor () -> [Profile]
         let currentProfile: @MainActor () -> Profile?
         let siteControlsSnapshot: @MainActor (URL?, Profile?, Bool, Bool) -> SiteControlsSnapshot
         let focusFloatingBar: @MainActor (BrowserWindowState, String, Bool) -> Void
-        let reloadPage: @MainActor (Tab, BrowserWindowState, String) -> Void
+        let reloadPage: @MainActor (ActivePageResolution, String) -> Bool
         let copyURLToClipboard: @MainActor (String, BrowserWindowState) -> Void
         let toggleSidebar: @MainActor (BrowserWindowState) -> Void
         let bookmarkEditorPresentationRequest: @MainActor () -> SumiBookmarkEditorPresentationRequest?
@@ -55,10 +54,14 @@ final class BrowserURLBarContextOwner {
         self.pageChrome = pageChrome
     }
 
-    convenience init(browserManager: BrowserManager) {
+    convenience init(
+        browserManager: BrowserManager,
+        clipboard: BrowserURLClipboardService,
+        settingsNavigation: BrowserSettingsNavigationService
+    ) {
         let dataServices = browserManager.dataServices
-        let extensionsModule = browserManager.extensionsModule
-        let userscriptsModule = browserManager.userscriptsModule
+        let extensionsModule = browserManager.optionalModules.extensions
+        let userscriptsModule = browserManager.optionalModules.userscripts
         let protectionCoordinator = browserManager.protectionCoordinator
         let urlBarHubPopoverPresenter = browserManager.chromeBundle.commands.urlBarHubPopoverPresenter
         let webViewRoutingService = browserManager.webViewRoutingService
@@ -68,7 +71,7 @@ final class BrowserURLBarContextOwner {
         )
         let navigationToolbarContextOwner = BrowserNavigationToolbarContextOwner(
             currentTab: { [weak browserManager] windowState in
-                browserManager?.windowSessionBundle.tabContextOwner.currentTab(for: windowState)
+                browserManager?.shellRuntime.windowTabs.currentTab(for: windowState)
             },
             webView: { tab, windowState in
                 webViewRoutingService.windowOwnedWebView(for: tab, in: windowState.id)
@@ -99,8 +102,8 @@ final class BrowserURLBarContextOwner {
                 browserManager?.historyBundle.historyNavigationOwner.goForward(in: windowState)
             },
             reload: { [weak browserManager] tab, windowState in
-                browserManager?.windowSessionBundle.scopedNavigationOwner.refreshWindowScopedPage(
-                    tab: tab,
+                browserManager?.webViewRoutingService.refreshPage(
+                    for: tab,
                     in: windowState,
                     reason: "NavigationToolbar.reload"
                 )
@@ -132,7 +135,8 @@ final class BrowserURLBarContextOwner {
             browserManager: browserManager,
             permissionContextOwner: permissionContextOwner,
             extensionActionContext: extensionActionContext,
-            siteControlsSnapshot: siteControlsSnapshot
+            siteControlsSnapshot: siteControlsSnapshot,
+            settingsNavigation: settingsNavigation
         )
         self.init(
             browserManager: browserManager,
@@ -163,11 +167,8 @@ final class BrowserURLBarContextOwner {
                 }
             ),
             pageChrome: PageChromeCapabilities(
-                currentTab: { [weak browserManager] windowState in
-                    browserManager?.windowSessionBundle.tabContextOwner.currentTab(for: windowState)
-                },
-                tabForID: { [weak browserManager] tabId in
-                    browserManager?.tabManager.tabCollectionMembershipOwner.tab(for: tabId)
+                activePage: { [weak browserManager] windowState in
+                    browserManager?.shellRuntime.activePageResolver.resolve(in: windowState)
                 },
                 webView: { [weak browserManager] tab, windowState in
                     browserManager?.webViewRoutingService.windowOwnedWebView(for: tab, in: windowState.id)
@@ -180,22 +181,21 @@ final class BrowserURLBarContextOwner {
                 },
                 siteControlsSnapshot: siteControlsSnapshot,
                 focusFloatingBar: { [weak browserManager] windowState, prefill, navigateCurrentTab in
-                    browserManager?.urlBarBundle.floatingBarRoutingOwner.focusFloatingBar(
+                    browserManager?.urlBarBundle.floatingBar.presentation.focus(
                         in: windowState,
                         prefill: prefill,
                         navigateCurrentTab: navigateCurrentTab,
-                        presentationReason: .keyboard
+                        reason: .keyboard
                     )
                 },
-                reloadPage: { [weak browserManager] tab, windowState, reason in
-                    browserManager?.windowSessionBundle.scopedNavigationOwner.refreshWindowScopedPage(
-                        tab: tab,
-                        in: windowState,
-                        reason: reason
-                    )
+                reloadPage: { [weak browserManager] page, reason in
+                    guard let commands = browserManager?.chromeBundle.activePageCommands else {
+                        return false
+                    }
+                    return commands.reload(page, reason: reason) != .failed
                 },
-                copyURLToClipboard: { [weak browserManager] urlString, windowState in
-                    _ = browserManager?.urlBarBundle.commands.copyURLToPasteboard(urlString, in: windowState)
+                copyURLToClipboard: { [clipboard] urlString, windowState in
+                    _ = clipboard.copy(urlString, in: windowState)
                 },
                 toggleSidebar: { [weak browserManager] windowState in
                     browserManager?.chromeBundle.sidebarPresentationOwner.toggleSidebar(for: windowState)
@@ -225,8 +225,7 @@ final class BrowserURLBarContextOwner {
             hub: urlBarHubContext,
             hubPopoverPresenter: hubPresentation.hubPopoverPresenter,
             bookmarkEditorPresentationRequest: pageChrome.bookmarkEditorPresentationRequest(),
-            currentTab: pageChrome.currentTab,
-            tabForID: pageChrome.tabForID,
+            activePage: pageChrome.activePage,
             webView: pageChrome.webView,
             profiles: pageChrome.profiles,
             currentProfile: pageChrome.currentProfile,

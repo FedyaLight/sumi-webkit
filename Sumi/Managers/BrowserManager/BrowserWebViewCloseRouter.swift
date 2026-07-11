@@ -60,7 +60,7 @@ final class BrowserWebViewCloseRouter {
                 browserManager?.tabManager.transientWebKitTabLifecycleOwner.removeAuxiliaryMiniWindowTab(tab)
             },
             notifyExtensionTabClosed: { [weak browserManager] tab in
-                browserManager?.extensionsModule.notifyTabClosedIfLoaded(tab)
+                browserManager?.optionalModules.extensions.notifyTabClosedIfLoaded(tab)
             },
             makeWebKitCloseRoutingRuntime: { [weak browserManager] in
                 BrowserWebKitCloseRoutingOwner.Runtime(
@@ -89,7 +89,7 @@ final class BrowserWebViewCloseRouter {
                         browserManager?.windowRegistry?.windows[windowID]
                     },
                     windowContaining: { [weak browserManager] tab in
-                        browserManager?.windowSessionBundle.tabContextOwner.windowState(containing: tab)
+                        browserManager?.shellRuntime.windowTabs.windowState(containing: tab)
                     },
                     ownsLiveWebView: { [weak browserManager] webView, tab in
                         browserManager?.webViewRoutingService.ownsLiveWebView(webView, for: tab) ?? false

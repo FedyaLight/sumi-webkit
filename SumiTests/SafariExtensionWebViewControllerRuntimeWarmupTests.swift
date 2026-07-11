@@ -39,7 +39,9 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         _ = manager.ensureExtensionController(for: profile.id)
         manager.extensionsLoaded = true
 
-        let browserManager = makeBrowserManager(profile: profile)
+        let browserManager = makeBrowserManager(
+            profile: profile
+        )
         manager.attach(browserManager: browserManager)
 
         let scratchDirectory = try makeScratchDirectory()
@@ -230,13 +232,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         let windowRegistry = WindowRegistry()
         browserManager.windowRegistry = windowRegistry
         browserManager.bindTestWebViewCoordinator()
-        browserManager.tabManager = TabManager(
-            runtimePorts: BrowserTabManagerRuntimePortsFactory.registry(for: browserManager),
-            context: container.mainContext,
-            webViewSessions: browserManager.webViewSessions,
-            loadPersistedState: false
-        )
-        let space = browserManager.tabManager.spaceLifecycleOwner.createSpace(
+        let space = browserManager.tabManager.spaceServices.catalog.createSpace(
             name: "Work",
             profileId: profile.id
         )
@@ -300,17 +296,13 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         let controller = manager.ensureExtensionController(for: profile.id)
         manager.extensionsLoaded = true
 
-        let browserManager = makeBrowserManager(profile: profile)
+        let browserManager = makeBrowserManager(
+            profile: profile
+        )
         let windowRegistry = WindowRegistry()
         browserManager.windowRegistry = windowRegistry
         browserManager.bindTestWebViewCoordinator()
-        browserManager.tabManager = TabManager(
-            runtimePorts: BrowserTabManagerRuntimePortsFactory.registry(for: browserManager),
-            context: container.mainContext,
-            webViewSessions: browserManager.webViewSessions,
-            loadPersistedState: false
-        )
-        let space = browserManager.tabManager.spaceLifecycleOwner.createSpace(
+        let space = browserManager.tabManager.spaceServices.catalog.createSpace(
             name: "Work",
             profileId: profile.id
         )
@@ -392,17 +384,13 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         let controller = manager.ensureExtensionController(for: profile.id)
         manager.extensionsLoaded = true
 
-        let browserManager = makeBrowserManager(profile: profile)
+        let browserManager = makeBrowserManager(
+            profile: profile
+        )
         let windowRegistry = WindowRegistry()
         browserManager.windowRegistry = windowRegistry
         browserManager.bindTestWebViewCoordinator()
-        browserManager.tabManager = TabManager(
-            runtimePorts: BrowserTabManagerRuntimePortsFactory.registry(for: browserManager),
-            context: container.mainContext,
-            webViewSessions: browserManager.webViewSessions,
-            loadPersistedState: false
-        )
-        let space = browserManager.tabManager.spaceLifecycleOwner.createSpace(
+        let space = browserManager.tabManager.spaceServices.catalog.createSpace(
             name: "Work",
             profileId: profile.id
         )
@@ -499,13 +487,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         let windowRegistry = WindowRegistry()
         browserManager.windowRegistry = windowRegistry
         browserManager.bindTestWebViewCoordinator()
-        browserManager.tabManager = TabManager(
-            runtimePorts: BrowserTabManagerRuntimePortsFactory.registry(for: browserManager),
-            context: container.mainContext,
-            webViewSessions: browserManager.webViewSessions,
-            loadPersistedState: false
-        )
-        let space = browserManager.tabManager.spaceLifecycleOwner.createSpace(
+        let space = browserManager.tabManager.spaceServices.catalog.createSpace(
             name: "Work",
             profileId: profile.id
         )
@@ -862,15 +844,11 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             profile: profile,
             browserConfiguration: browserConfiguration
         ).manager
-        let browserManager = makeBrowserManager(profile: profile)
-        manager.attach(browserManager: browserManager)
-        browserManager.tabManager = TabManager(
-            runtimePorts: BrowserTabManagerRuntimePortsFactory.registry(for: browserManager),
-            context: container.mainContext,
-            webViewSessions: browserManager.webViewSessions,
-            loadPersistedState: false
+        let browserManager = makeBrowserManager(
+            profile: profile
         )
-        let space = browserManager.tabManager.spaceLifecycleOwner.createSpace(
+        manager.attach(browserManager: browserManager)
+        let space = browserManager.tabManager.spaceServices.catalog.createSpace(
             name: "Work",
             profileId: profile.id
         )

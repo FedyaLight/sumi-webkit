@@ -52,7 +52,8 @@ final class BrowserSidebarTabCommandOwner {
                 )
             },
             openNewTabOrFloatingBar: { [weak browserManager] windowState in
-                browserManager?.urlBarBundle.floatingBarRoutingOwner.openNewTabOrFloatingBar(in: windowState)
+                browserManager?.urlBarBundle.floatingBar.commit
+                    .openNewTabSurface(in: windowState)
             },
             duplicateTab: { [weak browserManager] tab, windowState in
                 browserManager?.tabLifecycleService.opening.duplicateTab(tab, in: windowState)

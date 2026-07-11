@@ -284,8 +284,10 @@ final class WorkspaceThemePersistenceTests: XCTestCase {
 
         let resolvedTheme = try XCTUnwrap(
             StartupWorkspaceThemeResolver.resolve(
-                userDefaults: harness.defaults,
-                lastWindowSessionKey: sessionKey,
+                windowSessionSnapshotStore: WindowSessionSnapshotStore(
+                    key: sessionKey,
+                    userDefaults: harness.defaults
+                ),
                 modelContext: context
             )
         )

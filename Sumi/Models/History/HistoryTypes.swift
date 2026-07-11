@@ -300,6 +300,7 @@ struct RecentlyClosedShortcutLauncherState: Identifiable, Equatable {
 
 struct RecentlyClosedWindowState: Identifiable, Equatable {
     let id: UUID
+    let sessionWindowId: UUID
     let title: String
     let session: WindowSessionSnapshot
 }

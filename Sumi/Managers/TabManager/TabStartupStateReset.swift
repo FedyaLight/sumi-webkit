@@ -4,90 +4,56 @@ import Foundation
 /// preserving spaces, folders, and persisted launcher definitions.
 @MainActor
 final class TabStartupStateReset {
-    private let runtimePorts: () -> RuntimePortRegistry
     private let state: TabStateStore
     private let lazyRestore: TabLazyRestoreCoordinator
     private let persistence: TabStructuralPersistenceService
-    private let membership: TabCollectionMembershipOwner
     private let structuralMutations: TabStructuralCollectionMutationOwner
     private let structuralLookup: TabStructuralLookupCoordinator
+    private let splitGroups: TabSplitGroupStructureOwner
+    private let liveShortcutTabs: LiveShortcutTabRegistry
+    private let runtimePorts: () -> RuntimePortRegistry?
+    private let runtimeTeardown: TabRuntimeTeardownService
 
     init(
-        runtimePorts: @escaping () -> RuntimePortRegistry,
         state: TabStateStore,
         lazyRestore: TabLazyRestoreCoordinator,
         persistence: TabStructuralPersistenceService,
-        membership: TabCollectionMembershipOwner,
         structuralMutations: TabStructuralCollectionMutationOwner,
-        structuralLookup: TabStructuralLookupCoordinator
+        structuralLookup: TabStructuralLookupCoordinator,
+        splitGroups: TabSplitGroupStructureOwner,
+        liveShortcutTabs: LiveShortcutTabRegistry,
+        runtimePorts: @escaping () -> RuntimePortRegistry?,
+        runtimeTeardown: TabRuntimeTeardownService
     ) {
-        self.runtimePorts = runtimePorts
         self.state = state
         self.lazyRestore = lazyRestore
         self.persistence = persistence
-        self.membership = membership
         self.structuralMutations = structuralMutations
         self.structuralLookup = structuralLookup
-    }
-
-    convenience init(
-        runtimePortsProvider: @escaping () -> RuntimePortRegistry?,
-        state: TabStateStore,
-        lazyRestore: TabLazyRestoreCoordinator,
-        persistence: TabStructuralPersistenceService,
-        membership: TabCollectionMembershipOwner,
-        structuralMutations: TabStructuralCollectionMutationOwner,
-        structuralLookup: TabStructuralLookupCoordinator
-    ) {
-        self.init(
-            runtimePorts: {
-                guard let runtimePorts = runtimePortsProvider() else {
-                    preconditionFailure(
-                        "Startup tab reset requires attached runtime ports"
-                    )
-                }
-                return runtimePorts
-            },
-            state: state,
-            lazyRestore: lazyRestore,
-            persistence: persistence,
-            membership: membership,
-            structuralMutations: structuralMutations,
-            structuralLookup: structuralLookup
-        )
+        self.splitGroups = splitGroups
+        self.liveShortcutTabs = liveShortcutTabs
+        self.runtimePorts = runtimePorts
+        self.runtimeTeardown = runtimeTeardown
     }
 
     func resetRegularTabsAndShortcutLiveInstances() {
-        let webViews = runtimePorts().webViewLifecycle
+        let shortcutTabs = liveShortcutTabs.snapshot.values.flatMap(\.values)
+        let regularTabs = state.spaces.spaces.flatMap {
+            state.regularTabs.tabs(in: $0.id)
+        }
+        let closingTabs = shortcutTabs + regularTabs
+        let runtime = runtimePorts()
+        guard closingTabs.isEmpty || runtime != nil else { return }
+
         structuralLookup.withTransaction {
             lazyRestore.clear()
-
-            let liveShortcutTabs = state.transientTabs.transientShortcutTabs
-            for tab in liveShortcutTabs {
-                persistence.cancelRuntimeStatePersistence(for: tab.id)
-                tab.performComprehensiveWebViewCleanup()
-                webViews.unloadTab(tab)
-                webViews.requireRemoveAllWebViews(
-                    for: tab,
-                    closeActiveFullscreenMedia: true
-                )
-                membership.detach(tab)
-            }
-            if !liveShortcutTabs.isEmpty {
-                state.transientTabs.replaceTransientShortcutTabsByWindow([:])
-                structuralLookup.notifyTransientShortcutStateChanged()
-            }
+            splitGroups.removeSplitGroups(
+                containingAny: Set(closingTabs.map(\.id)),
+                schedulePersistence: false
+            )
+            liveShortcutTabs.removeAll()
 
             for space in state.spaces.spaces {
-                for tab in state.regularTabs.tabs(in: space.id) {
-                    persistence.cancelRuntimeStatePersistence(for: tab.id)
-                    webViews.unloadTab(tab)
-                    webViews.requireRemoveAllWebViews(
-                        for: tab,
-                        closeActiveFullscreenMedia: true
-                    )
-                    membership.detach(tab)
-                }
                 structuralMutations.setTabs([], for: space.id)
                 if space.activeTabId != nil {
                     space.activeTabId = nil
@@ -97,6 +63,11 @@ final class TabStartupStateReset {
 
             state.selection.replaceCurrentTab(nil)
             persistence.scheduleStructuralPersistenceFromMain()
+            if let runtime {
+                structuralLookup.runAfterCurrentBatch { [runtimeTeardown] in
+                    runtimeTeardown.teardown(closingTabs, using: runtime)
+                }
+            }
         }
     }
 }

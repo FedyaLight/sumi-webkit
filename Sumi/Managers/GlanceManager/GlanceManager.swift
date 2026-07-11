@@ -341,7 +341,9 @@ final class GlanceManager: ObservableObject {
             finishCurrentSession(preservesPreviewWebView: false, persistsWindowSession: false)
         }
 
-        let previewTab = runtime.makePreviewTab(url, tab, windowState)
+        guard let previewTab = runtime.makePreviewTab(url, tab, windowState) else {
+            return
+        }
         let windowId = windowState?.id ?? fallbackWindowId
         let session = GlanceSession(
             targetURL: url,

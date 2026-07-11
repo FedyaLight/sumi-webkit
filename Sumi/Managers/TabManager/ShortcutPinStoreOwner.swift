@@ -4,7 +4,7 @@ import SumiDomain
 @MainActor
 final class ShortcutPinStoreOwner {
     struct Dependencies {
-        let runtimePorts: @MainActor () -> RuntimePortRegistry?
+        let destinationValidator: ShortcutPinDestinationValidator
         let pinnedByProfile: @MainActor () -> [UUID: [ShortcutPin]]
         let setPinnedTabs: @MainActor ([ShortcutPin], UUID) -> Void
         let topLevelSpacePinnedItems: @MainActor (UUID) -> [SpacePinnedShortcutOrderOwner.TopLevelItem]
@@ -51,11 +51,11 @@ final class ShortcutPinStoreOwner {
         at targetIndex: Int,
         openTargetFolder: Bool = true
     ) -> ShortcutPin? {
-        if let folderId = pin.folderId,
-           dependencies.runtimePorts()?.isLiveFolder(folderId) == true {
-            return nil
-        }
-
+        guard dependencies.destinationValidator.accepts(
+            role: pin.role,
+            spaceId: pin.spaceId,
+            folderId: pin.folderId
+        ) else { return nil }
         switch pin.role {
         case .essential:
             guard let profileId = pin.profileId else { return nil }
@@ -102,28 +102,40 @@ final class ShortcutPinStoreOwner {
         index: Int,
         openTargetFolder: Bool = true
     ) -> ShortcutPin? {
+        guard let sourcePin = canonicalSource(matching: pin) else { return nil }
+        guard canMove(
+            sourcePin,
+            to: role,
+            profileId: profileId,
+            spaceId: spaceId,
+            folderId: folderId
+        ) else { return nil }
         let adjustedIndex = adjustedMoveIndex(
-            pin,
+            sourcePin,
             to: role,
             profileId: profileId,
             spaceId: spaceId,
             folderId: folderId,
             proposedIndex: index
         )
-        removeFromContainers(pin)
+        removeFromContainers(sourcePin)
         let movedPin = clone(
-            pin,
+            sourcePin,
             role: role,
             profileId: profileId,
             spaceId: spaceId,
             folderId: folderId,
             index: adjustedIndex
         )
-        return insert(
+        guard let inserted = insert(
             movedPin,
             at: adjustedIndex,
             openTargetFolder: openTargetFolder
-        )
+        ) else {
+            restoreToSource(sourcePin)
+            return nil
+        }
+        return inserted
     }
 
     func removeFromContainers(_ pin: ShortcutPin) {
@@ -148,6 +160,79 @@ final class ShortcutPinStoreOwner {
 }
 
 private extension ShortcutPinStoreOwner {
+    func canonicalSource(matching pin: ShortcutPin) -> ShortcutPin? {
+        switch pin.role {
+        case .essential:
+            guard let profileId = pin.profileId else { return nil }
+            return dependencies.pinnedByProfile()[profileId]?
+                .first { $0.id == pin.id }
+        case .spacePinned:
+            guard let spaceId = pin.spaceId,
+                  let stored = dependencies.spacePinnedPins(spaceId)
+                    .first(where: { $0.id == pin.id }),
+                  stored.folderId == pin.folderId else {
+                return nil
+            }
+            return stored
+        }
+    }
+
+    func canMove(
+        _ pin: ShortcutPin,
+        to role: ShortcutPinRole,
+        profileId: UUID?,
+        spaceId: UUID?,
+        folderId: UUID?
+    ) -> Bool {
+        guard dependencies.destinationValidator.accepts(
+            role: role,
+            spaceId: spaceId,
+            folderId: folderId
+        ) else { return false }
+        switch role {
+        case .essential:
+            guard let profileId else { return false }
+            let destinationCount = (dependencies.pinnedByProfile()[profileId] ?? [])
+                .filter { $0.id != pin.id }
+                .count
+            return destinationCount
+                < EssentialsShortcutPlacementOwner.CapacityPolicy.maxItems
+        case .spacePinned:
+            return spaceId != nil
+        }
+    }
+
+    func restoreToSource(_ pin: ShortcutPin) {
+        switch pin.role {
+        case .essential:
+            guard let profileId = pin.profileId else { return }
+            var pins = dependencies.pinnedByProfile()[profileId] ?? []
+            pins.removeAll { $0.id == pin.id }
+            pins.insert(pin, at: max(0, min(pin.index, pins.count)))
+            dependencies.setPinnedTabs(reindexed(pins), profileId)
+        case .spacePinned:
+            guard let spaceId = pin.spaceId else { return }
+            if pin.folderId == nil {
+                _ = dependencies.insertTopLevelSpacePinnedShortcut(
+                    pin,
+                    spaceId,
+                    pin.index
+                )
+            } else {
+                dependencies.withSpacePinnedShortcutGroup(
+                    spaceId,
+                    pin.folderId
+                ) { pins in
+                    pins.removeAll { $0.id == pin.id }
+                    pins.insert(
+                        pin,
+                        at: max(0, min(pin.index, pins.count))
+                    )
+                }
+            }
+        }
+    }
+
     func adjustedMoveIndex(
         _ pin: ShortcutPin,
         to role: ShortcutPinRole,
@@ -219,9 +304,17 @@ extension ShortcutPinStoreOwner.Dependencies {
     @MainActor
     static func live(tabManager: TabManager) -> Self {
         Self(
-            runtimePorts: { [weak tabManager] in
-                tabManager?.runtimePorts
-            },
+            destinationValidator: ShortcutPinDestinationValidator(
+                spaceExists: { [weak tabManager] spaceId in
+                    tabManager?.spaceStateOwner.contains(spaceId: spaceId)
+                        ?? false
+                },
+                folderSpaceId: { [weak tabManager] folderId in
+                    tabManager?.folderCollectionStateOwner.spaceId(
+                        for: folderId
+                    )
+                }
+            ),
             pinnedByProfile: { [weak tabManager] in
                 tabManager?.shortcutPinCollectionStateOwner.pinnedByProfileSnapshot() ?? [:]
             },

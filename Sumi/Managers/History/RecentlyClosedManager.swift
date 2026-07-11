@@ -80,12 +80,14 @@ final class RecentlyClosedManager: ObservableObject {
     }
 
     func captureClosedWindow(
+        sessionWindowId: UUID,
         title: String,
         session: WindowSessionSnapshot
     ) {
         let item = RecentlyClosedItem.window(
             RecentlyClosedWindowState(
                 id: UUID(),
+                sessionWindowId: sessionWindowId,
                 title: title,
                 session: session
             )
@@ -111,7 +113,7 @@ final class RecentlyClosedManager: ObservableObject {
             case (.shortcutLauncher(let lhs), .shortcutLauncher(let rhs)):
                 return lhs.pin.id == rhs.pin.id
             case (.window(let lhs), .window(let rhs)):
-                return lhs.session == rhs.session
+                return lhs.sessionWindowId == rhs.sessionWindowId
             default:
                 return false
             }

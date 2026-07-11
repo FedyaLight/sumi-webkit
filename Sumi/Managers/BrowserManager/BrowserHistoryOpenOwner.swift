@@ -15,7 +15,7 @@ final class BrowserHistoryOpenOwner {
     private typealias NewWindowRegistrationAwaiter = @MainActor () async -> BrowserWindowState?
 
     private let activeWindow: @MainActor @Sendable () -> BrowserWindowState?
-    private let activePageTab: @MainActor @Sendable (BrowserWindowState) -> Tab?
+    private let activePage: @MainActor @Sendable (BrowserWindowState) -> ActivePageResolution?
     private let openNativeBrowserSurface: @MainActor @Sendable (
         SumiNativeBrowserSurfaceKind,
         URL,
@@ -33,7 +33,7 @@ final class BrowserHistoryOpenOwner {
 
     init(
         activeWindow: @escaping @MainActor @Sendable () -> BrowserWindowState?,
-        activePageTab: @escaping @MainActor @Sendable (BrowserWindowState) -> Tab?,
+        activePage: @escaping @MainActor @Sendable (BrowserWindowState) -> ActivePageResolution?,
         openNativeBrowserSurface: @escaping @MainActor @Sendable (
             SumiNativeBrowserSurfaceKind,
             URL,
@@ -50,7 +50,7 @@ final class BrowserHistoryOpenOwner {
         refreshCompositor: @escaping @MainActor @Sendable (BrowserWindowState) -> Void
     ) {
         self.activeWindow = activeWindow
-        self.activePageTab = activePageTab
+        self.activePage = activePage
         self.openNativeBrowserSurface = openNativeBrowserSurface
         self.openNewTab = openNewTab
         self.loadCurrentPageURL = loadCurrentPageURL
@@ -97,7 +97,7 @@ final class BrowserHistoryOpenOwner {
     ) {
         switch preferredOpenMode {
         case .currentTab:
-            if let currentTab = activePageTab(windowState),
+            if let currentTab = activePage(windowState)?.tab,
                !currentTab.representsSumiEmptySurface {
                 if currentTab.representsSumiHistorySurface {
                     replaceNativeHistoryTab(currentTab, with: url, in: windowState)

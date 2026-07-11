@@ -97,7 +97,7 @@ extension TabStructuralInstallOwner.Dependencies {
                     operation()
                     return
                 }
-                tabManager.withStructuralUpdateTransaction(operation)
+                tabManager.structuralLookupCoordinator.withTransaction(operation)
             },
             objectWillChange: { [weak tabManager] in
                 tabManager?.objectWillChange.send()
@@ -131,7 +131,7 @@ extension TabStructuralInstallOwner.Dependencies {
                 tabManager?.faviconService.syncShortcutPins(shortcutPins)
             },
             rebuildTabLookup: { [weak tabManager] in
-                tabManager?.rebuildTabLookup()
+                tabManager?.structuralLookupCoordinator.rebuild()
             },
             markSnapshotCacheDirty: { [weak tabManager] in
                 tabManager?.structuralPersistence.markSnapshotCacheDirty()
@@ -140,7 +140,7 @@ extension TabStructuralInstallOwner.Dependencies {
                 tabManager?.structuralPersistence.resetDirtySet()
             },
             requestStructuralPublish: { [weak tabManager] in
-                tabManager?.requestStructuralPublish()
+                tabManager?.structuralLookupCoordinator.requestPublish()
             }
         )
     }

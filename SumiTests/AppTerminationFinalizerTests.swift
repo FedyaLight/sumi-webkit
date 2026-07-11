@@ -28,9 +28,10 @@ final class AppTerminationFinalizerTests: XCTestCase {
         let finalizer = AppTerminationFinalizer(timeout: .seconds(5))
         let appDelegate = AppDelegate(terminationFinalizer: finalizer)
         let cleanupGate = TerminationTestGate()
-        let terminationHandler = RecordingTerminationHandler(cleanupGate: cleanupGate)
+        let lease = RecordingTerminationLease(finalizationGate: cleanupGate)
+        let coordinator = RecordingTerminationCoordinator(lease: lease)
         var replies: [Bool] = []
-        appDelegate.terminationHandler = terminationHandler
+        appDelegate.terminationCoordinator = coordinator
         appDelegate.fallbackPersistenceSave = {}
         appDelegate.terminationReply = { _, shouldTerminate in
             replies.append(shouldTerminate)
@@ -39,22 +40,24 @@ final class AppTerminationFinalizerTests: XCTestCase {
         // This is the exact post-confirmation path used by both the sheet and
         // modal fallback once the user chooses Quit.
         appDelegate.beginTerminationFinalization(for: .shared)
-        await waitUntil { terminationHandler.cleanupStarted }
+        XCTAssertEqual(coordinator.acquireCallCount, 1)
+        await waitUntil { lease.finalizationStarted }
 
         XCTAssertTrue(replies.isEmpty)
         cleanupGate.open()
         await waitUntil { replies == [true] }
-        XCTAssertEqual(terminationHandler.cleanupCallCount, 1)
+        XCTAssertEqual(lease.finalizationCallCount, 1)
     }
 
     func testDuplicateQuitJoinsOneInFlightFinalizeAndRepliesOnce() async {
         let finalizer = AppTerminationFinalizer(timeout: .seconds(5))
         let appDelegate = AppDelegate(terminationFinalizer: finalizer)
         let cleanupGate = TerminationTestGate()
-        let terminationHandler = RecordingTerminationHandler(cleanupGate: cleanupGate)
+        let lease = RecordingTerminationLease(finalizationGate: cleanupGate)
+        let coordinator = RecordingTerminationCoordinator(lease: lease)
         var fallbackSaveCount = 0
         var replies: [Bool] = []
-        appDelegate.terminationHandler = terminationHandler
+        appDelegate.terminationCoordinator = coordinator
         appDelegate.fallbackPersistenceSave = { fallbackSaveCount += 1 }
         appDelegate.terminationReply = { _, shouldTerminate in
             replies.append(shouldTerminate)
@@ -62,18 +65,20 @@ final class AppTerminationFinalizerTests: XCTestCase {
 
         let first = appDelegate.applicationShouldTerminate(.shared)
         let duplicate = appDelegate.applicationShouldTerminate(.shared)
-        await waitUntil { terminationHandler.cleanupStarted }
+        await waitUntil { lease.finalizationStarted }
 
         XCTAssertEqual(first, .terminateLater)
         XCTAssertEqual(duplicate, .terminateLater)
-        XCTAssertEqual(fallbackSaveCount, 1)
+        XCTAssertEqual(fallbackSaveCount, 0)
         XCTAssertTrue(replies.isEmpty)
 
         cleanupGate.open()
         await waitUntil { replies == [true] }
         await Task.yield()
         XCTAssertEqual(replies, [true])
-        XCTAssertEqual(terminationHandler.cleanupCallCount, 1)
+        XCTAssertEqual(coordinator.prepareCallCount, 1)
+        XCTAssertEqual(coordinator.acquireCallCount, 1)
+        XCTAssertEqual(lease.finalizationCallCount, 1)
     }
 
     func testTimeoutRepliesExactlyOnceAndLateFinalizeCannotReplyAgain() async {
@@ -149,22 +154,38 @@ private final class TerminationTestGate {
 }
 
 @MainActor
-private final class RecordingTerminationHandler: BrowserAppTerminationHandling {
-    private let cleanupGate: TerminationTestGate
-    private(set) var cleanupCallCount = 0
-    private(set) var cleanupStarted = false
+private final class RecordingTerminationCoordinator: BrowserTerminationCoordinating {
+    private let lease: RecordingTerminationLease
+    private(set) var prepareCallCount = 0
+    private(set) var acquireCallCount = 0
 
-    init(cleanupGate: TerminationTestGate) {
-        self.cleanupGate = cleanupGate
+    init(lease: RecordingTerminationLease) {
+        self.lease = lease
     }
 
-    func dismissFloatingBarForActiveWindow(preserveDraft _: Bool) {}
+    func prepareForTermination() {
+        prepareCallCount += 1
+    }
 
-    func dismissThemePickerCommittingIfNeeded() {}
+    func acquireFinalizationLease() -> (any BrowserTerminationFinalizing)? {
+        acquireCallCount += 1
+        return lease
+    }
+}
 
-    func performAllWindowsClosedSiteDataCleanup() async {
-        cleanupCallCount += 1
-        cleanupStarted = true
-        await cleanupGate.wait()
+@MainActor
+private final class RecordingTerminationLease: BrowserTerminationFinalizing {
+    private let finalizationGate: TerminationTestGate
+    private(set) var finalizationCallCount = 0
+    private(set) var finalizationStarted = false
+
+    init(finalizationGate: TerminationTestGate) {
+        self.finalizationGate = finalizationGate
+    }
+
+    func finalizeTermination() async {
+        finalizationCallCount += 1
+        finalizationStarted = true
+        await finalizationGate.wait()
     }
 }

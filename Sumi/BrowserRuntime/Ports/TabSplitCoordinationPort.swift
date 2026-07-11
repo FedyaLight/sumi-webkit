@@ -3,10 +3,19 @@ import Foundation
 @MainActor
 protocol TabSplitCoordinationPort {
     func handleTabClosure(_ tabId: UUID)
+    func handleTabClosures(_ tabIds: Set<UUID>)
     func visibleSplitTabIds(for windowId: UUID) -> [UUID]
     func isTabVisibleInSplit(_ tabId: UUID, in windowId: UUID) -> Bool
     func isTabActiveInSplit(_ tabId: UUID, in windowId: UUID) -> Bool
     func updateActiveSplitSide(for tabId: UUID, in windowId: UUID)
+}
+
+extension TabSplitCoordinationPort {
+    func handleTabClosures(_ tabIds: Set<UUID>) {
+        for tabId in tabIds {
+            handleTabClosure(tabId)
+        }
+    }
 }
 
 @MainActor
@@ -19,6 +28,10 @@ struct LiveTabSplitCoordinationPort: TabSplitCoordinationPort {
 
     func handleTabClosure(_ tabId: UUID) {
         runtime.require().splitManager.handleTabClosure(tabId)
+    }
+
+    func handleTabClosures(_ tabIds: Set<UUID>) {
+        runtime.require().splitManager.handleTabClosures(tabIds)
     }
 
     func visibleSplitTabIds(for windowId: UUID) -> [UUID] {

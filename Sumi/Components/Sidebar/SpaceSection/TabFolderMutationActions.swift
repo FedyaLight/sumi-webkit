@@ -53,7 +53,7 @@ struct TabFolderMutationActions {
     }
 
     func activateShortcutPin(_ pin: ShortcutPin) {
-        let tab = browserContext.tabManager.shortcutLiveTabOwner.activateShortcutPin(
+        let tab = browserContext.tabManager.shortcutTabMaterializer.materialize(
             pin,
             in: windowState.id,
             currentSpaceId: space.id

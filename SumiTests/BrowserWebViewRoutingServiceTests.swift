@@ -173,6 +173,83 @@ final class BrowserWebViewRoutingServiceTests: XCTestCase {
         XCTAssertNil(service.windowOwnedWebView(for: tab, in: UUID()))
     }
 
+    func testWindowRefreshUsesTrackedViewAndRoutesExactIntentAndPolicy() throws {
+        let coordinator = RecordingWebViewCoordinator()
+        let tab = Tab(
+            url: try XCTUnwrap(URL(string: "https://example.com/tracked")),
+            webViewSessions: coordinator.webViewSessions,
+            loadsCachedFaviconOnInit: false
+        )
+        let windowState = BrowserWindowState()
+        registerTrackedWebView(
+            WKWebView(),
+            for: tab.id,
+            in: windowState.id,
+            repository: coordinator.webViewSessions
+        )
+        coordinator.materializedWebView = WKWebView()
+        let service = BrowserWebViewRoutingService(
+            tabLookup: { tabID in tabID == tab.id ? tab : nil },
+            webViewSessions: coordinator.webViewSessions,
+            ownershipQuery: WebViewOwnershipQuery(
+                webViewSessions: coordinator.webViewSessions
+            ),
+            commandsProvider: { coordinator.routingCommands }
+        )
+
+        let outcome = service.refreshPage(
+            for: tab,
+            in: windowState,
+            reason: "test",
+            policy: .fromOrigin
+        )
+
+        XCTAssertEqual(outcome, .accepted)
+        XCTAssertTrue(coordinator.materializeCalls.isEmpty)
+        let reload = try XCTUnwrap(coordinator.windowReloadCalls.first)
+        XCTAssertIdentical(reload.tab, tab)
+        XCTAssertEqual(reload.windowId, windowState.id)
+        XCTAssertEqual(reload.intent.targetURL, tab.url)
+        XCTAssertEqual(reload.policy, .fromOrigin)
+    }
+
+    func testWindowRefreshMaterializesOnlyTheRequestedWindowWhenUntracked() throws {
+        let coordinator = RecordingWebViewCoordinator()
+        let tab = Tab(
+            url: try XCTUnwrap(URL(string: "https://example.com/materialized")),
+            webViewSessions: coordinator.webViewSessions,
+            loadsCachedFaviconOnInit: false
+        )
+        let materializedWebView = WKWebView()
+        coordinator.materializedWebView = materializedWebView
+        let windowState = BrowserWindowState()
+        let service = BrowserWebViewRoutingService(
+            tabLookup: { tabID in tabID == tab.id ? tab : nil },
+            webViewSessions: coordinator.webViewSessions,
+            ownershipQuery: WebViewOwnershipQuery(
+                webViewSessions: coordinator.webViewSessions
+            ),
+            commandsProvider: { coordinator.routingCommands }
+        )
+
+        XCTAssertEqual(
+            service.refreshPage(
+                for: tab,
+                in: windowState,
+                reason: "test"
+            ),
+            .accepted
+        )
+        XCTAssertFalse(coordinator.materializeCalls.isEmpty)
+        XCTAssertTrue(coordinator.materializeCalls.allSatisfy {
+            $0.tab === tab && $0.windowId == windowState.id
+        })
+        XCTAssertEqual(
+            coordinator.windowReloadCalls.first?.windowId,
+            windowState.id
+        )
+    }
+
     func testAnyLiveWebViewFallsBackToUntrackedOwnedWebViewViaCoordinator() throws {
         let coordinator = RecordingWebViewCoordinator()
         let tab = Tab(
@@ -409,6 +486,13 @@ private final class RecordingWebViewCoordinator: WebViewCoordinator {
     struct WindowReloadCall {
         let tab: Tab
         let windowId: UUID
+        let intent: TabMainFrameNavigationIntent
+        let policy: WebRuntimeMainFrameReloadPolicy
+    }
+
+    struct MaterializeCall {
+        let tab: Tab
+        let windowId: UUID
     }
 
     struct ProcessRecoveryCall {
@@ -421,6 +505,8 @@ private final class RecordingWebViewCoordinator: WebViewCoordinator {
     private(set) var windowReloadCalls: [WindowReloadCall] = []
     private(set) var processRecoveryCalls: [ProcessRecoveryCall] = []
     private(set) var muteCalls: [MuteCall] = []
+    private(set) var materializeCalls: [MaterializeCall] = []
+    var materializedWebView: WKWebView?
 
     var routingCommands: BrowserWebViewRoutingService.Commands {
         BrowserWebViewRoutingService.Commands(
@@ -436,9 +522,14 @@ private final class RecordingWebViewCoordinator: WebViewCoordinator {
             reloadAll: { [weak self] tab, _, _ in
                 self?.reloadCalls.append(tab)
             },
-            reloadWindow: { [weak self] tab, windowID, _, _ in
+            reloadWindow: { [weak self] tab, windowID, intent, policy in
                 self?.windowReloadCalls.append(
-                    WindowReloadCall(tab: tab, windowId: windowID)
+                    WindowReloadCall(
+                        tab: tab,
+                        windowId: windowID,
+                        intent: intent,
+                        policy: policy
+                    )
                 )
                 return .accepted
             },
@@ -452,7 +543,14 @@ private final class RecordingWebViewCoordinator: WebViewCoordinator {
             cancelRecovery: { _ in },
             setMute: { [weak self] muted, tabID in
                 self?.muteCalls.append(MuteCall(muted: muted, tabId: tabID))
-            }
+            },
+            materialize: { [weak self] tab, windowID in
+                self?.materializeCalls.append(
+                    MaterializeCall(tab: tab, windowId: windowID)
+                )
+                return self?.materializedWebView
+            },
+            rebuildWindowConfiguration: { _, _, _, _ in .notNeeded }
         )
     }
 }

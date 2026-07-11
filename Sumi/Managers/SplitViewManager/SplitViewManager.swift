@@ -126,8 +126,15 @@ final class SplitViewManager: ObservableObject {
     }
 
     func handleTabClosure(_ tabId: UUID) {
+        handleTabClosures([tabId])
+    }
+
+    func handleTabClosures(_ tabIds: Set<UUID>) {
+        guard !tabIds.isEmpty else { return }
         fullGroupLayoutCatalog.removeAll(keepingCapacity: true)
-        tabManager?.splitGroupStructureOwner.removeSplitGroups(containing: tabId)
+        tabManager?.splitGroupStructureOwner.removeSplitGroups(
+            containingAny: tabIds
+        )
         guard let windows = windowRegistry?.windows else { return }
         for windowState in windows.values {
             runtime?.refreshCompositor(windowState)

@@ -73,7 +73,8 @@ final class BrowserChromeCommands {
 
     func clearCurrentPageCookies() {
         guard let browserManager,
-              let tab = browserManager.urlBarBundle.activePageRoutingOwner.activePageTabForActiveWindow(),
+              let tab = browserManager.shellRuntime.activePageResolver
+                .resolveActiveWindow()?.tab,
               !tab.representsSumiNativeSurface,
               let context = makePrivacyContext()
         else { return }
@@ -82,7 +83,8 @@ final class BrowserChromeCommands {
 
     func hardReloadCurrentPage() {
         guard let browserManager,
-              let tab = browserManager.urlBarBundle.activePageRoutingOwner.activePageTabForActiveWindow(),
+              let tab = browserManager.shellRuntime.activePageResolver
+                .resolveActiveWindow()?.tab,
               !tab.representsSumiNativeSurface,
               let context = makePrivacyContext()
         else { return }
@@ -93,12 +95,14 @@ final class BrowserChromeCommands {
         guard browserManager != nil else { return nil }
         return BrowserPrivacyService.Context(
             currentDataStore: { [weak browserManager] in
-                browserManager?.urlBarBundle.activePageRoutingOwner.activePageTabForActiveWindow()?.resolveProfile()?.dataStore
+                browserManager?.shellRuntime.activePageResolver
+                    .resolveActiveWindow()?.tab.resolveProfile()?.dataStore
                     ?? browserManager?.currentProfile?.dataStore
                     ?? WKWebsiteDataStore.default()
             },
             currentTab: { [weak browserManager] in
-                browserManager?.urlBarBundle.activePageRoutingOwner.activePageTabForActiveWindow()
+                browserManager?.shellRuntime.activePageResolver
+                    .resolveActiveWindow()?.tab
             },
             activeWindowId: { [weak browserManager] in
                 browserManager?.windowRegistry?.activeWindow?.id
@@ -107,8 +111,15 @@ final class BrowserChromeCommands {
                 guard let browserManager,
                       let windowState = browserManager.windowRegistry?.windows[windowId]
                 else { return }
-                browserManager.windowSessionBundle.scopedNavigationOwner.refreshWindowScopedPage(
-                    tab: tab,
+                if let page = browserManager.shellRuntime.activePageResolver
+                    .resolve(in: windowState),
+                   page.source == .glancePreview,
+                   page.tab.id == tab.id {
+                    _ = page.tab.navigationCommandOwner.refresh(page.tab)
+                    return
+                }
+                browserManager.webViewRoutingService.refreshPage(
+                    for: tab,
                     in: windowState,
                     reason: reason,
                     policy: policy
