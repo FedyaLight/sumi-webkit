@@ -55,19 +55,16 @@ private final class BrowserAuxiliaryWindowTabs:
     AuxiliaryWindowTabLifecycle
 {
     private let transientTabs: TabTransientWebKitTabLifecycleOwner
-    private let webViewOwnership: WebViewOwnershipService
-    private let extensions: SumiExtensionsModule
+    private let webViewInstaller: any UntrackedWebViewInstalling
     private let context: any AuxiliaryWindowContextResolving
 
     init(
         transientTabs: TabTransientWebKitTabLifecycleOwner,
-        webViewOwnership: WebViewOwnershipService,
-        extensions: SumiExtensionsModule,
+        untrackedWebViewInstallation: any UntrackedWebViewInstalling,
         context: any AuxiliaryWindowContextResolving
     ) {
         self.transientTabs = transientTabs
-        self.webViewOwnership = webViewOwnership
-        self.extensions = extensions
+        self.webViewInstaller = untrackedWebViewInstallation
         self.context = context
     }
 
@@ -99,19 +96,19 @@ private final class BrowserAuxiliaryWindowTabs:
         return tab
     }
 
-    func install(_ webView: WKWebView, for tab: Tab) {
-        webViewOwnership.installUntracked(webView, for: tab)
+    func install(
+        _ webView: WKWebView,
+        for tab: Tab
+    ) -> UntrackedWebViewInstallationOutcome {
+        webViewInstaller.installUntracked(webView, for: tab)
     }
 
-    func registerExtensionCreatedTab(_ tab: Tab, reason: String) {
-        extensions.registerExtensionCreatedTabWithExtensionRuntimeIfLoaded(
-            tab,
-            reason: reason
-        )
-    }
-
-    func notifyTabClosed(_ tab: Tab) {
-        extensions.notifyTabClosedIfLoaded(tab)
+    func discardCreatedMiniWindowTab(
+        _ tab: Tab,
+        unplacedWebView: WKWebView?
+    ) {
+        unplacedWebView.map(tab.cleanupCloneWebView)
+        transientTabs.removeAuxiliaryMiniWindowTab(tab)
     }
 
     func removeMiniWindowTab(_ tab: Tab) {
@@ -235,7 +232,7 @@ final class BrowserAuxiliaryWindowComposition {
         spaces: TabSpaceCollectionStateOwner,
         tabContext: BrowserWindowTabContext,
         transientTabs: TabTransientWebKitTabLifecycleOwner,
-        webViewOwnership: WebViewOwnershipService,
+        untrackedWebViewInstallation: any UntrackedWebViewInstalling,
         extensions: SumiExtensionsModule,
         popupPermissions: SumiPopupPermissionBridge,
         filePickerPermissions: SumiFilePickerPermissionBridge,
@@ -249,8 +246,7 @@ final class BrowserAuxiliaryWindowComposition {
         )
         let tabs = BrowserAuxiliaryWindowTabs(
             transientTabs: transientTabs,
-            webViewOwnership: webViewOwnership,
-            extensions: extensions,
+            untrackedWebViewInstallation: untrackedWebViewInstallation,
             context: context
         )
         let permissions = BrowserAuxiliaryWindowPermissions(
@@ -282,7 +278,8 @@ final class BrowserAuxiliaryWindowComposition {
             admission: admission,
             extensionRuntime: extensions,
             nestingPolicy: nestingPolicy,
-            presentation: presentation
+            presentation: presentation,
+            teardown: teardown
         )
 
         self.nestingPolicy = nestingPolicy

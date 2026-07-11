@@ -325,7 +325,9 @@ final class ExtensionWindowRequestRouter {
         }
 
         if let extensionContext {
-            guard profileRuntime.profileId(for: extensionContext) == profileID
+            guard profileRuntime.exactContextIdentity(
+                for: extensionContext
+            )?.profileId == profileID
             else {
                 return false
             }
@@ -333,7 +335,9 @@ final class ExtensionWindowRequestRouter {
 
         if let loadContext = load.extensionContext {
             guard let loadURL = load.url,
-                  profileRuntime.profileId(for: loadContext) == profileID,
+                  profileRuntime.exactContextIdentity(
+                    for: loadContext
+                  )?.profileId == profileID,
                   extensionContext.map({ $0 === loadContext }) ?? true,
                   controller.extensionContext(for: loadURL) === loadContext
             else {

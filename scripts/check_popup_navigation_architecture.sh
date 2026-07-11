@@ -7,6 +7,9 @@ cd "$repo_root"
 capabilities="Sumi/Models/Tab/Navigation/PopupNavigationCapabilities.swift"
 runtime_state="Sumi/Models/Tab/TabRuntimeState.swift"
 responder="Sumi/Models/Tab/Navigation/SumiPopupHandlingNavigationResponder.swift"
+child_webview_transaction="Sumi/Models/Tab/Navigation/WebKitChildWebViewTransaction.swift"
+child_surface_router="Sumi/Models/Tab/Navigation/WebKitChildSurfaceRouter.swift"
+glance_routing="Sumi/Models/Tab/Navigation/LinkGlanceRouting.swift"
 delegate_bundle="Sumi/Models/Tab/Navigation/SumiTabNavigationDelegateBundle.swift"
 runtime_factory="Sumi/Managers/BrowserManager/TabBrowserRuntimeFactory.swift"
 lifecycle_factory="Sumi/Managers/BrowserManager/BrowserTabManagerWebViewLifecycleFactory.swift"
@@ -15,6 +18,8 @@ extension_opening="Sumi/Managers/BrowserManager/ExtensionExternalTabOpeningServi
 physical_popup="Sumi/Managers/BrowserManager/PhysicalWebPopupOpeningService.swift"
 child_tab_opening="Sumi/Managers/BrowserManager/WebKitChildTabOpeningService.swift"
 child_window_opening="Sumi/Managers/BrowserManager/WebKitChildWindowOpeningService.swift"
+auxiliary_factory="Sumi/AuxiliaryWindows/AuxiliaryWebViewFactory.swift"
+browser_configuration="Sumi/Models/BrowserConfig/BrowserConfig.swift"
 production_roots=(App Sumi Settings SidebarChrome FloatingBar UI)
 status=0
 
@@ -81,6 +86,9 @@ for required in \
   "$capabilities" \
   "$runtime_state" \
   "$responder" \
+  "$child_webview_transaction" \
+  "$child_surface_router" \
+  "$glance_routing" \
   "$delegate_bundle" \
   "$runtime_factory" \
   "$lifecycle_factory" \
@@ -88,7 +96,9 @@ for required in \
   "$extension_opening" \
   "$physical_popup" \
   "$child_tab_opening" \
-  "$child_window_opening"; do
+  "$child_window_opening" \
+  "$auxiliary_factory" \
+  "$browser_configuration"; do
   require_file "$required"
 done
 
@@ -111,7 +121,8 @@ fail_matches "retired popup closure-bag surface reintroduced" \
 
 replacement_bag_hits="$(
   rg -n '\b(class|struct|enum)[[:space:]]+(PopupNavigationServices|PopupNavigationRuntime|PopupNavigationCapabilities)\b|\bstruct[[:space:]]+Dependencies\b' \
-    "$runtime_state" "$responder" "$extension_opening" \
+    "$runtime_state" "$responder" "$child_webview_transaction" \
+    "$child_surface_router" "$glance_routing" "$extension_opening" \
     "$physical_popup" "$child_tab_opening" || true
 )"
 fail_matches "popup closure bag hidden behind a replacement container" \
@@ -199,6 +210,59 @@ done
 enforce_service_boundary "$extension_opening" 80 3
 enforce_service_boundary "$physical_popup" 80 2
 enforce_service_boundary "$child_tab_opening" 160 6
+enforce_service_boundary "$responder" 300 3
+enforce_service_boundary "$child_webview_transaction" 250 4
+enforce_service_boundary "$child_surface_router" 125 4
+enforce_service_boundary "$glance_routing" 65 0
+
+require_pattern \
+  "$responder" \
+  'childWebViewTransaction[[:space:]]*=[[:space:]]*WebKitChildWebViewTransaction\(' \
+  "popup responder must compose the exact WebKit child transaction"
+require_pattern \
+  "$responder" \
+  'childSurfaceRouter:[[:space:]]*WebKitChildSurfaceRouter\(' \
+  "popup responder must compose disposition separately from admission"
+
+responder_child_dispatch_hits="$(
+  rg -n '\b(extensionTabs|webPopups|childTabs|childWindows)\?\.open\(' \
+    "$responder" || true
+)"
+fail_matches "popup responder regained direct child-surface dispatch" \
+  "$responder_child_dispatch_hits"
+
+require_pattern \
+  "$child_webview_transaction" \
+  'let[[:space:]]+sourceDocumentLease[[:space:]]*=[[:space:]]*tab\.mainFrameDocumentLease' \
+  "WebKit child admission must capture the exact source document"
+require_pattern \
+  "$child_webview_transaction" \
+  '==[[:space:]]*pending\.sourceDocumentLease' \
+  "WebKit child commit must revalidate its exact source document"
+require_pattern \
+  "$child_webview_transaction" \
+  'configuration\.websiteDataStore[[:space:]]*===' \
+  "WebKit child admission must reject a cross-partition configuration"
+require_pattern \
+  "$child_webview_transaction" \
+  'sourceWebView\.configuration\.websiteDataStore' \
+  "WebKit child admission must bind partition validation to its source WebView"
+require_pattern \
+  "$browser_configuration" \
+  'if[[:space:]]+let[[:space:]]+explicitClassification[[:space:]]*=[[:space:]]*objc_getAssociatedObject' \
+  "WebView surface classification must let explicit auxiliary state override an inherited normal controller"
+require_pattern \
+  "$auxiliary_factory" \
+  'webView\.configuration\.sumiIsNormalTabWebViewConfiguration[[:space:]]*=[[:space:]]*false' \
+  "the auxiliary WebView factory must classify every materialized child explicitly"
+
+popup_transaction_root_hits="$(
+  rg -n '\bBrowserManager\b|\bbrowserManager\b|\bTabBrowserRuntime\b|\bTabNavigationRuntime\b' \
+    "$child_webview_transaction" "$child_surface_router" \
+    "$glance_routing" || true
+)"
+fail_matches "popup transaction performs browser-root or runtime lookup" \
+  "$popup_transaction_root_hits"
 
 require_pattern \
   "$extension_opening" \
@@ -278,7 +342,11 @@ for required_test in \
   testExtensionWebKitChildWindowRejectsSuppressedProjectionAndRollsBack \
   testOrdinaryWebKitChildWindowAllowsSuppressedExtensionProjection \
   testWebKitChildWindowRejectsMismatchedDataStoreWithoutMutation \
-  testWindowLocalShortcutLeaseRejectsWrongWindowClone; do
+  testWindowLocalShortcutLeaseRejectsWrongWindowClone \
+  testPopupCreateWebViewRejectsDocumentChangedDuringSynchronousPermission \
+  testPopupCreateWebViewRejectsDocumentChangedDuringAsyncPermission \
+  testPopupCreateWebViewRejectsMismatchedDataStoreBeforePermission \
+  testPopupChildKeepsCopiedNormalConfigurationButIsAuxiliarySurface; do
   require_test "$required_test"
 done
 

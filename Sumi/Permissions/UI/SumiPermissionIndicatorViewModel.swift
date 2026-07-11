@@ -125,7 +125,7 @@ final class SumiPermissionIndicatorViewModel: ObservableObject {
             tabId: tabId,
             pageId: Self.normalizedId(pageId),
             displayDomain: Self.displayDomain(for: tab.url),
-            autoplayReloadRequired: tab.reloadPolicyStateOwner.isAutoplayReloadRequired
+            autoplayReloadRequired: tab.isAutoplayReloadRequired
         )
 
         let normalizedPageId = Self.normalizedId(pageId)

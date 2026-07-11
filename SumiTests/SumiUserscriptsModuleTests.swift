@@ -331,7 +331,7 @@ final class SumiUserscriptsModuleTests: XCTestCase {
         )
         globalWindow.currentTabId = globalTab.id
         let sourceWebView = WKWebView()
-        browserManager.testWebViewRuntime().ownershipService.registerTrackedWebView(
+        browserManager.testWebViewRuntime().ownershipService.registerAuxiliaryTrackedWebView(
             sourceWebView,
             for: sourceTab,
             in: sourceWindow.id

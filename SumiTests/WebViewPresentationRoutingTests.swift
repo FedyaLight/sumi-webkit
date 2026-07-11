@@ -47,7 +47,7 @@ final class WebViewPresentationRoutingTests: XCTestCase {
         )
         secondWebView.owningTab = harness.sourceTab
         harness.browserManager.testWebViewRuntime().ownershipService
-            .registerTrackedWebView(
+            .registerAuxiliaryTrackedWebView(
                 secondWebView,
                 for: harness.sourceTab,
                 in: secondWindow.id
@@ -102,7 +102,7 @@ final class WebViewPresentationRoutingTests: XCTestCase {
         )
         mismatched.owningTab = mismatchedTab
         harness.browserManager.testWebViewRuntime().ownershipService
-            .registerTrackedWebView(
+            .registerAuxiliaryTrackedWebView(
                 mismatched,
                 for: harness.sourceTab,
                 in: secondWindow.id
@@ -243,7 +243,7 @@ final class WebViewPresentationRoutingTests: XCTestCase {
         let childOpening = WebKitChildTabOpeningService(
             sources: sources,
             tabs: harness.browserManager.tabManager,
-            ownership: harness.browserManager.testWebViewRuntime()
+            placement: harness.browserManager.testWebViewRuntime()
                 .ownershipService,
             selection: BrowserTabSelectionCommand {
                 [weak browserManager = harness.browserManager]
@@ -276,6 +276,125 @@ final class WebViewPresentationRoutingTests: XCTestCase {
             )
         )
         XCTAssertEqual(regularTabIDs(in: harness), initialTabIDs)
+    }
+
+    func testWebKitChildTabPlacementRejectionRollsBackCreatedModelAndWebView()
+        throws {
+        let harness = try makeRegularHarness()
+        defer { closePublishedShells(in: harness.windowRegistry) }
+        let placement = RejectingAuxiliaryTrackedPlacement()
+        let opening = WebKitChildTabOpeningService(
+            sources: physicalSourceResolver(for: harness),
+            tabs: harness.browserManager.tabManager,
+            placement: placement,
+            selection: BrowserTabSelectionCommand {
+                [weak browserManager = harness.browserManager]
+                tab,
+                window,
+                loadPolicy in
+                browserManager?.selectTab(
+                    tab,
+                    in: window,
+                    loadPolicy: loadPolicy
+                )
+            },
+            notifications: harness.browserManager.notificationPresenter,
+            extensionTabs: ExtensionTabRegistrarSpy()
+        )
+        let initialTabIDs = regularTabIDs(in: harness)
+        let initialSelection = harness.sourceWindow.currentTabId
+        let initialChildIdentity = WebKitChildWindowIdentity(
+            initialTabID: UUID()
+        )
+        harness.sourceWindow.webKitChildWindowIdentity = initialChildIdentity
+
+        XCTAssertNil(
+            opening.open(
+                configuration: webViewConfiguration(
+                    dataStore: harness.sourceProfile.dataStore
+                ),
+                requestURL: URL(
+                    string: "https://target.example/rejected-child-tab"
+                ),
+                from: harness.sourceWebView,
+                selected: true,
+                isExtensionOriginated: false
+            )
+        )
+
+        let rejectedTab = try XCTUnwrap(placement.tab)
+        let rejectedWebView = try XCTUnwrap(placement.webView)
+        XCTAssertEqual(regularTabIDs(in: harness), initialTabIDs)
+        XCTAssertNil(
+            harness.browserManager.tabManager.tabCollectionMembershipOwner
+                .tab(for: rejectedTab.id)
+        )
+        XCTAssertEqual(harness.sourceWindow.currentTabId, initialSelection)
+        XCTAssertEqual(
+            harness.sourceWindow.webKitChildWindowIdentity,
+            initialChildIdentity
+        )
+        XCTAssertNil(rejectedWebView.owningTab)
+        XCTAssertNil(rejectedWebView.navigationDelegate)
+        XCTAssertNil(rejectedWebView.uiDelegate)
+    }
+
+    func testWebKitChildWindowPlacementRejectionRollsBackPreparedShellTabAndWebView()
+        throws {
+        let harness = try makeRegularHarness()
+        defer { closePublishedShells(in: harness.windowRegistry) }
+        let placement = RejectingAuxiliaryTrackedPlacement()
+        let webViews = harness.browserManager.testWebViewRuntime()
+        let opening = WebKitChildWindowOpeningService(
+            windowTransaction: WebKitChildWindowShellTransaction(
+                commands: harness.browserManager.windowCommands,
+                restoration: harness.browserManager.windowSessionBundle
+                    .restoreService,
+                profiles: harness.browserManager.profileManager,
+                tabs: harness.browserManager.tabManager
+            ),
+            tabs: harness.browserManager.tabManager,
+            placement: placement,
+            ownershipQuery: webViews.ownershipQuery,
+            sourceResolver: physicalSourceResolver(for: harness),
+            lifecycle: webViews.lifecycleService,
+            extensionPublication: harness.browserManager
+                .windowExtensionPublication,
+            persistWindowSession: { _ in
+                XCTFail("A rejected child window must not persist")
+            }
+        )
+        let initialTabIDs = regularTabIDs(in: harness)
+        let initialWindowIDs = Set(harness.windowRegistry.windows.keys)
+
+        XCTAssertNil(
+            opening.open(
+                configuration: webViewConfiguration(
+                    dataStore: harness.sourceProfile.dataStore
+                ),
+                requestURL: URL(
+                    string: "https://target.example/rejected-child-window"
+                ),
+                from: harness.sourceWebView,
+                activate: true,
+                isExtensionOriginated: false
+            )
+        )
+
+        let rejectedTab = try XCTUnwrap(placement.tab)
+        let rejectedWebView = try XCTUnwrap(placement.webView)
+        XCTAssertEqual(regularTabIDs(in: harness), initialTabIDs)
+        XCTAssertEqual(
+            Set(harness.windowRegistry.windows.keys),
+            initialWindowIDs
+        )
+        XCTAssertNil(
+            harness.browserManager.tabManager.tabCollectionMembershipOwner
+                .tab(for: rejectedTab.id)
+        )
+        XCTAssertNil(rejectedWebView.owningTab)
+        XCTAssertNil(rejectedWebView.navigationDelegate)
+        XCTAssertNil(rejectedWebView.uiDelegate)
     }
 
     func testNewWindowLinkCopiesSourceProfileAndSpaceBeforeOpeningTab() throws {
@@ -410,7 +529,7 @@ final class WebViewPresentationRoutingTests: XCTestCase {
             configuration: sourceConfiguration
         )
         sourceWebView.owningTab = sourceTab
-        browserManager.testWebViewRuntime().ownershipService.registerTrackedWebView(
+        browserManager.testWebViewRuntime().ownershipService.registerAuxiliaryTrackedWebView(
             sourceWebView,
             for: sourceTab,
             in: sourceWindow.id
@@ -801,7 +920,7 @@ final class WebViewPresentationRoutingTests: XCTestCase {
         )
         sourceWebView.owningTab = sourceTab
         browserManager.testWebViewRuntime().ownershipService
-            .registerTrackedWebView(
+            .registerAuxiliaryTrackedWebView(
                 sourceWebView,
                 for: sourceTab,
                 in: sourceWindow.id
@@ -903,7 +1022,7 @@ final class WebViewPresentationRoutingTests: XCTestCase {
             configuration: sourceConfiguration
         )
         sourceWebView.owningTab = sourceTab
-        browserManager.testWebViewRuntime().ownershipService.registerTrackedWebView(
+        browserManager.testWebViewRuntime().ownershipService.registerAuxiliaryTrackedWebView(
             sourceWebView,
             for: sourceTab,
             in: sourceWindow.id
@@ -962,7 +1081,7 @@ final class WebViewPresentationRoutingTests: XCTestCase {
                 tabs: harness.browserManager.tabManager
             ),
             tabs: harness.browserManager.tabManager,
-            ownership: webViews.ownershipService,
+            placement: webViews.ownershipService,
             ownershipQuery: webViews.ownershipQuery,
             sourceResolver: physicalSourceResolver(for: harness),
             lifecycle: webViews.lifecycleService,
@@ -1060,6 +1179,24 @@ private final class ExtensionTabRegistrarSpy: ExtensionCreatedTabRegistering {
         _: Tab,
         reason _: String
     ) {}
+}
+
+@MainActor
+private final class RejectingAuxiliaryTrackedPlacement:
+    AuxiliaryTrackedWebViewPlacing
+{
+    private(set) var tab: Tab?
+    private(set) var webView: FocusableWKWebView?
+
+    func registerAuxiliaryTrackedWebView(
+        _ webView: WKWebView,
+        for tab: Tab,
+        in _: UUID
+    ) -> CanonicalWebViewPlacementOutcome {
+        self.tab = tab
+        self.webView = webView as? FocusableWKWebView
+        return .rejected(.trackedRegistration(.protectedCandidate))
+    }
 }
 
 @MainActor

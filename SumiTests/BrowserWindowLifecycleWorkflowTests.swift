@@ -43,7 +43,7 @@ final class BrowserWindowLifecycleWorkflowTests: XCTestCase {
             )
         }
 
-        webViewRuntime.ownershipService.registerTrackedWebView(
+        webViewRuntime.ownershipService.registerAuxiliaryTrackedWebView(
             tracked,
             for: trackedTab,
             in: windowState.id

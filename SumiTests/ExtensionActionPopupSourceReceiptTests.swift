@@ -494,6 +494,135 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
         XCTAssertTrue(activatedTabIDs.isEmpty)
     }
 
+    func testNormalTabCloseClaimsGenerationBeforeReentrantCallbackAndPreservesReplacementAdapter()
+        async throws {
+        let harness = try await makeHarness(extensionID: "close-reentry")
+        let replacementTab = try makeInactivePublishedTab(
+            harness: harness,
+            url: URL(string: "https://replacement.example.test/")!
+        )
+        let replacementAdapter = try XCTUnwrap(
+            harness.extensionManager.adapterStore.tabAdapters[
+                replacementTab.id
+            ]
+        )
+        let closingAdapter = try XCTUnwrap(
+            harness.extensionManager.adapterStore.tabAdapters[
+                harness.sourceTab.id
+            ]
+        )
+        var closeCount = 0
+        harness.extensionManager.testHooks.didCloseTab = { tabID in
+            guard tabID == harness.sourceTab.id else { return }
+            closeCount += 1
+            harness.extensionManager.notifyTabClosed(harness.sourceTab)
+            harness.extensionManager.adapterStore.tabAdapters[
+                harness.sourceTab.id
+            ] = replacementAdapter
+        }
+        defer {
+            harness.extensionManager.testHooks.didCloseTab = nil
+            if harness.extensionManager.adapterStore.tabAdapters[
+                harness.sourceTab.id
+            ] === replacementAdapter {
+                harness.extensionManager.adapterStore.tabAdapters
+                    .removeValue(forKey: harness.sourceTab.id)
+            }
+        }
+
+        harness.extensionManager.notifyTabClosed(harness.sourceTab)
+
+        XCTAssertEqual(closeCount, 1)
+        XCTAssertFalse(
+            harness.sourceTab.extensionPageRuntimeOwner
+                .hasAnyDidOpenTabNotification()
+        )
+        XCTAssertIdentical(
+            harness.extensionManager.adapterStore.tabAdapters[
+                harness.sourceTab.id
+            ],
+            replacementAdapter
+        )
+        XCTAssertNotIdentical(replacementAdapter, closingAdapter)
+    }
+
+    func testNormalTabActivationStopsBeforeSelectionWhenDidActivateReenters()
+        async throws {
+        let harness = try await makeHarness(extensionID: "activate-reentry")
+        var activated: [UUID] = []
+        var selected: [UUID] = []
+        var deselected: [UUID] = []
+        harness.extensionManager.testHooks.didActivateTab = { tabID in
+            activated.append(tabID)
+            harness.extensionManager.runtimeSession
+                .tabOpenNotificationGeneration &+= 1
+        }
+        harness.extensionManager.testHooks.didSelectTab = {
+            selected.append($0)
+        }
+        harness.extensionManager.testHooks.didDeselectTab = {
+            deselected.append($0)
+        }
+        defer {
+            harness.extensionManager.testHooks.didActivateTab = nil
+            harness.extensionManager.testHooks.didSelectTab = nil
+            harness.extensionManager.testHooks.didDeselectTab = nil
+        }
+
+        harness.extensionManager.notifyTabActivated(
+            newTab: harness.sourceTab,
+            previous: nil
+        )
+
+        XCTAssertEqual(activated, [harness.sourceTab.id])
+        XCTAssertTrue(selected.isEmpty)
+        XCTAssertTrue(deselected.isEmpty)
+    }
+
+    func testNormalTabActivationStopsBeforeDeselectionWhenDidSelectReenters()
+        async throws {
+        let harness = try await makeHarness(extensionID: "select-reentry")
+        let activatedTab = try makeInactivePublishedTab(
+            harness: harness,
+            url: URL(string: "https://activated.example.test/")!
+        )
+        let spaceID = try XCTUnwrap(harness.windowState.currentSpaceId)
+        harness.windowState.currentTabId = activatedTab.id
+        harness.windowState.activeTabForSpace[spaceID] = activatedTab.id
+        harness.browserManager.tabManager.spaceStateOwner.space(
+            with: spaceID
+        )?.activeTabId = activatedTab.id
+
+        var activated: [UUID] = []
+        var selected: [UUID] = []
+        var deselected: [UUID] = []
+        harness.extensionManager.testHooks.didActivateTab = {
+            activated.append($0)
+        }
+        harness.extensionManager.testHooks.didSelectTab = { tabID in
+            selected.append(tabID)
+            harness.extensionManager.runtimeSession
+                .tabOpenNotificationGeneration &+= 1
+        }
+        harness.extensionManager.testHooks.didDeselectTab = {
+            deselected.append($0)
+        }
+        defer {
+            harness.extensionManager.testHooks.didActivateTab = nil
+            harness.extensionManager.testHooks.didSelectTab = nil
+            harness.extensionManager.testHooks.didDeselectTab = nil
+        }
+
+        harness.extensionManager.notifyTabActivated(
+            newTab: activatedTab,
+            previous: harness.sourceTab
+        )
+
+        XCTAssertEqual(activated, [activatedTab.id])
+        XCTAssertEqual(selected, [activatedTab.id])
+        XCTAssertTrue(deselected.isEmpty)
+    }
+
     private func makeHarness(extensionID: String) async throws -> Harness {
         let container = try ModelContainer(
             for: SumiStartupPersistence.schema,
@@ -646,6 +775,40 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
         )
         let webExtension = try await WKWebExtension(resourceBaseURL: directory)
         return WKWebExtensionContext(for: webExtension)
+    }
+
+    private func makeInactivePublishedTab(
+        harness: Harness,
+        url: URL
+    ) throws -> Tab {
+        let controller = try XCTUnwrap(
+            harness.extensionManager.profileRuntime.controller(
+                for: harness.profile.id
+            )
+        )
+        let windowAdapter = try XCTUnwrap(
+            harness.extensionManager.adapterResolutionOwner
+                .publishedNormalWindowAdapter(
+                    for: harness.windowState,
+                    extensionContext: harness.extensionContext
+                )
+        )
+        let tab = try harness.extensionManager.requestedTabOpening.open(
+            url: url,
+            shouldBeActive: false,
+            shouldBePinned: false,
+            requestedWindow: windowAdapter,
+            controller: controller,
+            extensionContext: harness.extensionContext,
+            reason: #function
+        )
+        XCTAssertTrue(
+            tab.extensionPageRuntimeOwner.hasDidOpenTabNotification(
+                for: harness.extensionManager.runtimeSession
+                    .tabOpenNotificationGeneration
+            )
+        )
+        return tab
     }
 
     private func makePopupSource(

@@ -2,72 +2,53 @@ import Foundation
 import SumiWebRuntime
 import WebKit
 
-enum WebViewDetachedReplacementCommitOutcome: Equatable {
-    /// The replacement generation is canonical and the retired generation was
-    /// handed to the shared replacement pipeline for physical cleanup.
-    case committed
-    /// Admission never began; the caller still owns the replacement WebView.
-    case rejected
-    /// Admission began but settlement failed. The pipeline owns cleanup of the
-    /// replacement generation, so the caller must not destroy it again.
-    case consumedByFailedTransaction
-}
-
-enum UntrackedWebViewMaterializationOutcome {
-    case available(WKWebView)
-    case deferred
-    case failed
-}
-
-/// The only app-level writer for canonical WebView ownership.
-///
-/// Reads stay in `WebViewOwnershipQuery`; whole-session replacement settlement
-/// stays in `WebViewReplacementPipeline`. This service owns the mutation rules
-/// that join a concrete Tab to those two boundaries.
+/// High-level materialization, replacement, deferral, and release facade.
+/// Canonical placement is owned by `CanonicalWebViewPlacementService`; whole-
+/// session replacement is owned by `DetachedWebViewReplacementService` and the
+/// shared pipeline.
 @MainActor
-final class WebViewOwnershipService {
-    private let webViewSessions: WebViewSessionRepository
+final class WebViewOwnershipService:
+    AuxiliaryTrackedWebViewPlacing
+{
     private let runtimeTabs: WebViewRuntimeTabRegistry
     private let query: WebViewOwnershipQuery
-    private let trackedRegistration: WebViewTrackedRegistrationOwner
+    private let placement: CanonicalWebViewPlacementService
     private let materialization: TabWebViewMaterializationService
+    private let detachedReplacement: DetachedWebViewReplacementService
     private let websiteDataCleanup: WebsiteDataCleanupService
-    private let processRecovery: WebContentProcessRecoveryService
-    private let mediaProtection: WebViewMediaProtectionOwner
-    private let protectedCommands: WebViewProtectedCommandDispatchOwner
-    private let replacementPipeline: WebViewReplacementPipeline
+    private let detachedCleanup: DetachedWebViewCleanupService
 
     init(
-        webViewSessions: WebViewSessionRepository,
         runtimeTabs: WebViewRuntimeTabRegistry,
         query: WebViewOwnershipQuery,
-        trackedRegistration: WebViewTrackedRegistrationOwner,
+        placement: CanonicalWebViewPlacementService,
         materialization: TabWebViewMaterializationService,
+        detachedReplacement: DetachedWebViewReplacementService,
         websiteDataCleanup: WebsiteDataCleanupService,
-        processRecovery: WebContentProcessRecoveryService,
-        mediaProtection: WebViewMediaProtectionOwner,
-        protectedCommands: WebViewProtectedCommandDispatchOwner,
-        replacementPipeline: WebViewReplacementPipeline
+        detachedCleanup: DetachedWebViewCleanupService
     ) {
-        self.webViewSessions = webViewSessions
         self.runtimeTabs = runtimeTabs
         self.query = query
-        self.trackedRegistration = trackedRegistration
+        self.placement = placement
         self.materialization = materialization
+        self.detachedReplacement = detachedReplacement
         self.websiteDataCleanup = websiteDataCleanup
-        self.processRecovery = processRecovery
-        self.mediaProtection = mediaProtection
-        self.protectedCommands = protectedCommands
-        self.replacementPipeline = replacementPipeline
+        self.detachedCleanup = detachedCleanup
     }
 
-    func registerTrackedWebView(
+    @discardableResult
+    func registerAuxiliaryTrackedWebView(
         _ webView: WKWebView,
         for tab: Tab,
         in windowID: UUID
-    ) {
+    ) -> CanonicalWebViewPlacementOutcome {
         runtimeTabs.bind(tab)
-        trackedRegistration.register(webView, for: tab.id, in: windowID)
+        return placement.placeAuxiliaryTracked(
+            webView,
+            for: tab,
+            in: windowID,
+            promoteToPrimary: false
+        )
     }
 
     func webView(for tab: Tab, in windowID: UUID) -> WKWebView? {
@@ -79,7 +60,8 @@ final class WebViewOwnershipService {
         return materialization.webView(for: tab, in: windowID)
     }
 
-    func assign(_ webView: WKWebView, to tab: Tab, in windowID: UUID) {
+    @discardableResult
+    func assign(_ webView: WKWebView, to tab: Tab, in windowID: UUID) -> Bool {
         runtimeTabs.bind(tab)
         if query.webView(for: tab.id, in: windowID) !== webView,
            deferTrackedAdmissionIfNeeded(
@@ -87,44 +69,36 @@ final class WebViewOwnershipService {
                 windowID: windowID,
                 replay: { [weak self, weak tab, webView] in
                     guard let self, let tab else { return }
-                    self.assign(webView, to: tab, in: windowID)
+                    _ = self.assign(webView, to: tab, in: windowID)
                 }
            ) {
-            return
+            return false
         }
 
-        registerTrackedWebView(webView, for: tab, in: windowID)
-        precondition(
-            trackedRegistration.promotePrimary(
+        let outcome: CanonicalWebViewPlacementOutcome
+        if webView.configuration.sumiIsNormalTabWebViewConfiguration {
+            outcome = placement.placeNormalTracked(
                 webView,
-                owner: .init(tabID: tab.id, windowID: windowID)
-            ),
-            "Assigned WebView was not registered"
-        )
-        tab.prepareAssignedWebView(webView)
-    }
-
-    func installUntracked(_ webView: WKWebView, for tab: Tab) {
-        runtimeTabs.bind(tab)
-        precondition(
-            query.windowIDs(for: tab.id).isEmpty,
-            "An untracked WebView cannot be installed for a window-tracked tab"
-        )
-        guard let displaced = tab.webViewSession.untrackedWebView,
-              displaced !== webView else {
-            tab.replaceUntrackedWebView(webView)
-            return
-        }
-
-        precondition(
-            replaceDetached(
-                displaced,
-                with: webView,
                 for: tab,
-                reason: "WebViewOwnershipService.installUntracked"
-            ) == .committed,
-            "Untracked WebView replacement failed its canonical transaction"
-        )
+                in: windowID,
+                promoteToPrimary: true
+            )
+        } else {
+            outcome = placement.placeAuxiliaryTracked(
+                webView,
+                for: tab,
+                in: windowID,
+                promoteToPrimary: true
+            )
+        }
+        guard outcome.isAccepted else {
+            RuntimeDiagnostics.emit(
+                "[WebViewOwnership] Rejected canonical tracked placement for tab \(tab.id): \(outcome)."
+            )
+            return false
+        }
+        tab.prepareAssignedWebView(webView)
+        return true
     }
 
     /// Replaces the complete detached generation through the same transaction
@@ -133,72 +107,14 @@ final class WebViewOwnershipService {
     func replaceDetached(
         _ previous: WKWebView,
         with replacement: WKWebView,
-        for tab: Tab,
-        reason: String
+        for tab: Tab
     ) -> WebViewDetachedReplacementCommitOutcome {
         runtimeTabs.bind(tab)
-        let snapshot = webViewSessions.snapshot(for: tab.id)
-        guard snapshot.windowWebViews.isEmpty else { return .rejected }
-
-        let residence: WebViewDetachedReplacementResidence
-        if snapshot.untrackedWebView === previous {
-            residence = .untracked
-        } else if snapshot.parkedWebView === previous,
-                  snapshot.untrackedWebView == nil {
-            residence = .parked
-        } else {
-            return .rejected
-        }
-
-        let prepared = PreparedWebViewReplacement(
-            tab: tab,
-            snapshot: snapshot,
-            placement: .detached(webView: replacement, residence: residence),
-            replacements: [replacement],
-            trackedReplacements: [],
-            bindingReplacements: [],
-            targetURL: tab.url,
-            semanticRevision: tab.currentMainFrameNavigationIntent().revision,
-            profileID: tab.resolveProfile()?.id ?? tab.profileId,
-            requiresExtensionRuntimePreparation: false,
-            previousProtectionState:
-                tab.reloadPolicyStateOwner.protectionAppliedAttachmentState,
-            previousSafariContentBlockerState:
-                tab.reloadPolicyStateOwner
-                    .safariContentBlockerAppliedAttachmentState
+        return detachedReplacement.replace(
+            previous,
+            with: replacement,
+            for: tab
         )
-
-        let start = replacementPipeline.begin(
-            [prepared],
-            profileIDs: Set([prepared.profileID].compactMap { $0 }),
-            validateModel: {
-                let current = self.webViewSessions.snapshot(for: tab.id)
-                return current.generation == snapshot.generation
-                    && current.windowWebViews.isEmpty
-                    && (
-                        residence == .untracked
-                            ? current.untrackedWebView === previous
-                            : current.parkedWebView === previous
-                                && current.untrackedWebView == nil
-                    )
-            },
-            modelCommit: { /* Detached replacement has no model mutation. */ },
-            modelRollback: { /* Detached replacement has no model mutation. */ },
-            completion: { _ in }
-        )
-
-        switch start {
-        case .committed:
-            return .committed
-        case .stale, .conflict, .invalid, .modelCommitFailed:
-            return .rejected
-        case .settlementConflict, .leaseLost:
-            return .consumedByFailedTransaction
-        case .started:
-            preconditionFailure(
-                "A detached replacement without navigation bindings must settle synchronously"
-            )
-        }
     }
 
     @discardableResult
@@ -246,22 +162,7 @@ final class WebViewOwnershipService {
 
     func releaseUntracked(for tab: Tab) {
         runtimeTabs.bind(tab)
-        guard let webView = tab.webViewSession.untrackedWebView else { return }
-        guard let lease = webViewSessions.releaseUntrackedAndBeginPendingCleanup(
-            webView,
-            for: tab.id
-        ) else {
-            preconditionFailure(
-                "Untracked WebView release lost its expected repository residence"
-            )
-        }
-        websiteDataCleanup.webViewDidLeaveRuntime(webView)
-        finishPendingCleanup(
-            of: webView,
-            lease: lease,
-            tab: tab,
-            reason: "WebViewOwnershipService.releaseUntracked"
-        )
+        detachedCleanup.releaseUntracked(for: tab)
     }
 
     @discardableResult
@@ -271,20 +172,11 @@ final class WebViewOwnershipService {
         reason: String
     ) -> Bool {
         runtimeTabs.bind(tab)
-        guard let lease = webViewSessions.releaseParkedAndBeginPendingCleanup(
+        return detachedCleanup.releaseParked(
             webView,
-            for: tab.id
-        ) else {
-            return false
-        }
-        websiteDataCleanup.webViewDidLeaveRuntime(webView)
-        finishPendingCleanup(
-            of: webView,
-            lease: lease,
-            tab: tab,
+            for: tab,
             reason: reason
         )
-        return true
     }
 
     /// Creates an extension-ready candidate without runtime side effects,
@@ -294,7 +186,7 @@ final class WebViewOwnershipService {
         for tab: Tab,
         in windowID: UUID?,
         reason: String,
-        prepareConfiguration: ((WKWebViewConfiguration) -> Void)? = nil,
+        prepareCandidateConfiguration: ((WKWebViewConfiguration, UUID) -> Void)? = nil,
         prepareCommittedReplacement: ((WKWebView) -> Void)? = nil,
         validate: ((WKWebView) -> Bool)? = nil
     ) -> WKWebView? {
@@ -314,7 +206,7 @@ final class WebViewOwnershipService {
                             for: tab,
                             in: windowID,
                             reason: reason,
-                            prepareConfiguration: prepareConfiguration,
+                            prepareCandidateConfiguration: prepareCandidateConfiguration,
                             prepareCommittedReplacement: prepareCommittedReplacement,
                             validate: validate
                         )
@@ -326,7 +218,7 @@ final class WebViewOwnershipService {
         guard let replacement = tab.makeNormalTabWebView(
             reason: reason,
             prepareExtensionRuntime: false,
-            prepareConfiguration: prepareConfiguration
+            prepareCandidateConfiguration: prepareCandidateConfiguration
         ) else {
             return nil
         }
@@ -336,19 +228,18 @@ final class WebViewOwnershipService {
         }
 
         if let windowID {
-            assign(replacement, to: tab, in: windowID)
-            precondition(
-                query.webView(for: tab.id, in: windowID) === replacement,
-                "Tracked replacement callback requires canonical admission"
-            )
+            guard assign(replacement, to: tab, in: windowID) else {
+                tab.cleanupCloneWebView(replacement)
+                return nil
+            }
         } else {
-            if let displaced = tab.webViewSession.untrackedWebView,
+            if let displaced = tab.webViewSession.untrackedWebView
+                ?? tab.webViewSession.parkedWebView,
                displaced !== replacement {
-                switch replaceDetached(
+                switch detachedReplacement.replace(
                     displaced,
                     with: replacement,
-                    for: tab,
-                    reason: reason
+                    for: tab
                 ) {
                 case .committed:
                     break
@@ -359,7 +250,14 @@ final class WebViewOwnershipService {
                     return nil
                 }
             } else {
-                installUntracked(replacement, for: tab)
+                let outcome = placement.placeNormalUntracked(
+                    replacement,
+                    for: tab
+                )
+                guard outcome.isAccepted else {
+                    tab.cleanupCloneWebView(replacement)
+                    return nil
+                }
             }
         }
         prepareCommittedReplacement?(replacement)
@@ -388,37 +286,4 @@ final class WebViewOwnershipService {
         )
     }
 
-    private func finishPendingCleanup(
-        of webView: WKWebView,
-        lease: WebViewPendingCleanupLease,
-        tab: Tab,
-        reason: String
-    ) {
-        processRecovery.cancel(webView)
-        if mediaProtection.isProtected(webView) {
-            switch protectedCommands.schedule(
-                .performFallbackWebViewCleanup(
-                    webViewID: ObjectIdentifier(webView),
-                    lease: lease
-                ),
-                for: webView,
-                reason: reason
-            ) {
-            case .scheduled:
-                return
-            case .notProtected:
-                break
-            case .invalidTarget, .droppedAtCapacity:
-                preconditionFailure(
-                    "Guaranteed leased WebView cleanup could not be scheduled"
-                )
-            }
-        }
-
-        precondition(
-            webViewSessions.consumePendingCleanup(of: webView, lease: lease),
-            "Leased WebView cleanup lost its exact repository claim"
-        )
-        tab.cleanupCloneWebView(webView)
-    }
 }

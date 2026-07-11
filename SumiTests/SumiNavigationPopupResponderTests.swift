@@ -478,6 +478,188 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
         XCTAssertNil(childTab?.webViewConfigurationOverride)
     }
 
+    func testPopupChildKeepsCopiedNormalConfigurationButIsAuxiliarySurface()
+        async throws {
+        let harness = try await makePopupFocusHarness()
+        let normalConfiguration = harness.browserManager
+            .browserConfiguration.normalTabWebViewConfiguration(
+                for: harness.sourceProfile,
+                url: harness.sourceTab.url
+            )
+        let childConfiguration = try XCTUnwrap(
+            normalConfiguration.copy() as? WKWebViewConfiguration
+        )
+        XCTAssertTrue(childConfiguration.sumiIsNormalTabWebViewConfiguration)
+        XCTAssertIdentical(
+            childConfiguration.userContentController,
+            normalConfiguration.userContentController
+        )
+        let responder = popupResponder(for: harness.sourceTab)
+        let action = popupNavigationAction(
+            sourceURL: harness.sourceTab.url,
+            targetURL: URL(string: "https://destination.example/copied-config")!,
+            webView: harness.sourceWebView
+        )
+
+        let childWebView = try XCTUnwrap(
+            responder.createWebView(
+                from: harness.sourceWebView,
+                with: childConfiguration,
+                for: action,
+                windowFeatures: WKWindowFeatures()
+            )
+        )
+
+        XCTAssertTrue(
+            childConfiguration.sumiIsNormalTabWebViewConfiguration,
+            "The WebKit-supplied configuration remains an exact normal-source copy"
+        )
+        XCTAssertFalse(
+            childWebView.configuration.sumiIsNormalTabWebViewConfiguration,
+            "The materialized child is an auxiliary surface despite its inherited controller"
+        )
+        XCTAssertIdentical(
+            childWebView.configuration.userContentController,
+            childConfiguration.userContentController
+        )
+        XCTAssertEqual(
+            harness.browserManager.testWebViewRuntime().ownershipQuery
+                .trackedOwner(containing: childWebView)?.tabID,
+            harness.browserManager.tabManager.regularTabCollectionStateOwner
+                .allTabsSnapshot().last?.id
+        )
+    }
+
+    func testPopupCreateWebViewRejectsDocumentChangedDuringSynchronousPermission()
+        async throws {
+        let harness = try await makePopupFocusHarness()
+        let permissions = PopupPermissionEvaluatorSpy()
+        let childTabs = WebKitChildTabOpeningSpy()
+        permissions.onSynchronousEvaluation = {
+            _ = harness.sourceTab.beginMainFrameNavigationIntent(
+                to: URL(string: "https://source.example/replaced")!
+            )
+        }
+        let responder = popupResponder(
+            for: harness.sourceTab,
+            permissions: permissions,
+            childTabs: childTabs
+        )
+
+        let childWebView = responder.createWebView(
+            from: harness.sourceWebView,
+            with: popupConfiguration(for: harness),
+            for: popupNavigationAction(
+                sourceURL: harness.sourceTab.url,
+                targetURL: URL(string: "https://destination.example/page")!,
+                webView: harness.sourceWebView
+            ),
+            windowFeatures: WKWindowFeatures()
+        )
+
+        XCTAssertNil(childWebView)
+        XCTAssertEqual(permissions.requests.count, 1)
+        XCTAssertEqual(childTabs.openCount, 0)
+    }
+
+    func testPopupCreateWebViewRejectsDocumentChangedDuringAsyncPermission()
+        async throws {
+        let harness = try await makePopupFocusHarness()
+        let permissions = PopupPermissionEvaluatorSpy()
+        let childTabs = WebKitChildTabOpeningSpy()
+        permissions.onAsyncEvaluation = {
+            _ = harness.sourceTab.beginMainFrameNavigationIntent(
+                to: URL(string: "https://source.example/replaced")!
+            )
+        }
+        let responder = popupResponder(
+            for: harness.sourceTab,
+            permissions: permissions,
+            childTabs: childTabs
+        )
+
+        let childWebView = await responder.createWebViewAsync(
+            from: harness.sourceWebView,
+            with: popupConfiguration(for: harness),
+            for: popupNavigationAction(
+                sourceURL: harness.sourceTab.url,
+                targetURL: URL(string: "https://destination.example/page")!,
+                webView: harness.sourceWebView
+            ),
+            windowFeatures: WKWindowFeatures()
+        )
+
+        XCTAssertNil(childWebView)
+        XCTAssertEqual(permissions.requests.count, 1)
+        XCTAssertEqual(childTabs.openCount, 0)
+    }
+
+    func testPopupCreateWebViewRejectsMismatchedDataStoreBeforePermission()
+        async throws {
+        let harness = try await makePopupFocusHarness()
+        let permissions = PopupPermissionEvaluatorSpy()
+        let childTabs = WebKitChildTabOpeningSpy()
+        let responder = popupResponder(
+            for: harness.sourceTab,
+            permissions: permissions,
+            childTabs: childTabs
+        )
+        let mismatchedConfiguration = WKWebViewConfiguration()
+        mismatchedConfiguration.websiteDataStore = Profile(
+            name: "Other Popup Partition"
+        ).dataStore
+
+        let childWebView = await responder.createWebViewAsync(
+            from: harness.sourceWebView,
+            with: mismatchedConfiguration,
+            for: popupNavigationAction(
+                sourceURL: harness.sourceTab.url,
+                targetURL: URL(string: "https://destination.example/page")!,
+                webView: harness.sourceWebView
+            ),
+            windowFeatures: WKWindowFeatures()
+        )
+
+        XCTAssertNil(childWebView)
+        XCTAssertTrue(permissions.requests.isEmpty)
+        XCTAssertEqual(childTabs.openCount, 0)
+    }
+
+    func testChildSurfaceRouterReturnsExactWindowChildAndWebKitConfiguration() {
+        let sourceWebView = FocusableWKWebView()
+        let configuration = WKWebViewConfiguration()
+        let expectedChild = WKWebView()
+        let childWindows = WebKitChildWindowOpeningSpy(
+            returning: expectedChild
+        )
+        let targetURL = URL(string: "https://destination.example/window")!
+        let router = WebKitChildSurfaceRouter(
+            extensionTabs: nil,
+            webPopups: nil,
+            childTabs: nil,
+            childWindows: childWindows
+        )
+
+        let returnedChild = router.open(
+            WebKitChildSurfaceRouter.Request(
+                configuration: configuration,
+                navigationRequest: URLRequest(url: targetURL),
+                windowFeatures: WKWindowFeatures(),
+                sourceWebView: sourceWebView,
+                sourceURL: URL(string: "https://source.example/page"),
+                policy: .window(active: false),
+                isExtensionOriginated: false,
+                gestureReceipt: nil
+            )
+        )
+
+        XCTAssertIdentical(returnedChild, expectedChild)
+        XCTAssertIdentical(childWindows.receivedConfiguration, configuration)
+        XCTAssertIdentical(childWindows.receivedSourceWebView, sourceWebView)
+        XCTAssertEqual(childWindows.receivedRequestURL, targetURL)
+        XCTAssertEqual(childWindows.receivedActivate, false)
+    }
+
     func testExtensionPopupExternalCreateWebViewOpensNormalBrowserTab() async throws {
         let harness = try await makePopupFocusHarness()
         let extensionPopupURL = URL(
@@ -688,6 +870,22 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
             webPopups: tab.navigationRuntime.physicalWebPopupOpening,
             childTabs: tab.navigationRuntime.webKitChildTabOpening,
             childWindows: tab.navigationRuntime.webKitChildWindowOpening
+        )
+    }
+
+    private func popupResponder(
+        for tab: Tab,
+        permissions: any PopupPermissionEvaluating,
+        childTabs: any WebKitChildTabOpening
+    ) -> SumiPopupHandlingNavigationResponder {
+        SumiPopupHandlingNavigationResponder(
+            tab: tab,
+            permissions: permissions,
+            extensionRequests: nil,
+            extensionTabs: nil,
+            webPopups: nil,
+            childTabs: childTabs,
+            childWindows: nil
         )
     }
 
@@ -942,6 +1140,8 @@ private final class PopupDocumentNavigationDelegate: NSObject, WKNavigationDeleg
 private final class PopupPermissionEvaluatorSpy: PopupPermissionEvaluating {
     private(set) var requests: [SumiPopupPermissionRequest] = []
     private(set) var contexts: [SumiPopupPermissionTabContext] = []
+    var onAsyncEvaluation: (@MainActor () -> Void)?
+    var onSynchronousEvaluation: (@MainActor () -> Void)?
 
     func evaluate(
         _ request: SumiPopupPermissionRequest,
@@ -949,6 +1149,7 @@ private final class PopupPermissionEvaluatorSpy: PopupPermissionEvaluating {
     ) async -> SumiPopupPermissionResult {
         requests.append(request)
         contexts.append(tabContext)
+        onAsyncEvaluation?()
         return SumiPopupPermissionResult(action: .allow)
     }
 
@@ -958,6 +1159,50 @@ private final class PopupPermissionEvaluatorSpy: PopupPermissionEvaluating {
     ) -> SumiPopupPermissionResult {
         requests.append(request)
         contexts.append(tabContext)
+        onSynchronousEvaluation?()
         return SumiPopupPermissionResult(action: .allow)
+    }
+}
+
+@MainActor
+private final class WebKitChildTabOpeningSpy: WebKitChildTabOpening {
+    private(set) var openCount = 0
+
+    func open(
+        configuration _: WKWebViewConfiguration,
+        requestURL _: URL?,
+        from _: FocusableWKWebView,
+        selected _: Bool,
+        isExtensionOriginated _: Bool
+    ) -> WKWebView? {
+        openCount += 1
+        return WKWebView()
+    }
+}
+
+@MainActor
+private final class WebKitChildWindowOpeningSpy: WebKitChildWindowOpening {
+    private let childWebView: WKWebView
+    private(set) var receivedConfiguration: WKWebViewConfiguration?
+    private(set) var receivedRequestURL: URL?
+    private(set) weak var receivedSourceWebView: FocusableWKWebView?
+    private(set) var receivedActivate: Bool?
+
+    init(returning childWebView: WKWebView) {
+        self.childWebView = childWebView
+    }
+
+    func open(
+        configuration: WKWebViewConfiguration,
+        requestURL: URL?,
+        from sourceWebView: FocusableWKWebView,
+        activate: Bool,
+        isExtensionOriginated _: Bool
+    ) -> WKWebView? {
+        receivedConfiguration = configuration
+        receivedRequestURL = requestURL
+        receivedSourceWebView = sourceWebView
+        receivedActivate = activate
+        return childWebView
     }
 }

@@ -112,6 +112,12 @@ final class ExtensionProfileRuntime {
         state.contextIdentity(for: extensionContext)
     }
 
+    func exactContextIdentity(
+        for extensionContext: WKWebExtensionContext
+    ) -> (extensionId: String, profileId: UUID)? {
+        state.exactContextIdentity(for: extensionContext)
+    }
+
     func profileId(for controller: WKWebExtensionController) -> UUID? {
         state.profileId(for: controller)
     }

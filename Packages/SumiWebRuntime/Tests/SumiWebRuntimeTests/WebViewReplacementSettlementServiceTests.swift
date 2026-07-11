@@ -173,6 +173,54 @@ final class WebViewReplacementSettlementServiceTests: XCTestCase {
         XCTAssertEqual(recorder.restorations.count, 1)
     }
 
+    func testFailedCommitValidationRollsBackBeforeRepositoryCommit() async {
+        let fixture = makeOneWindowFixture()
+        let recorder = RetirementRuntimeRecorder(repository: fixture.repository)
+        let owner = recorder.makeOwner()
+        var modelRollbackCount = 0
+        let receipt = start(
+            owner,
+            lease: fixture.lease,
+            tabIDs: [fixture.tabID],
+            retired: [fixture.tabID: fixture.retired],
+            requirements: [
+                .init(webView: fixture.replacement, semanticRevision: 17),
+            ],
+            modelRollback: { modelRollbackCount += 1 }
+        )
+        let token = try! XCTUnwrap(
+            receipt.bindingToken(for: fixture.replacement)
+        )
+        recorder.commitIsValid = false
+
+        XCTAssertEqual(
+            owner.markBound(
+                token,
+                binding: binding(for: fixture.replacement, revision: 17)
+            ),
+            .rolledBack(.commitValidationFailed)
+        )
+
+        XCTAssertEqual(recorder.commitCallCount, 0)
+        XCTAssertEqual(recorder.rollbackCallCount, 1)
+        XCTAssertEqual(modelRollbackCount, 1)
+        XCTAssertTrue(recorder.retiredCommits.isEmpty)
+        XCTAssertEqual(
+            recorder.restorations.map(\.reason),
+            [.commitValidationFailed]
+        )
+        XCTAssertIdentical(
+            fixture.repository.webView(
+                for: fixture.tabID,
+                in: fixture.windowID
+            ),
+            fixture.oldWebView
+        )
+        XCTAssertNil(fixture.repository.residence(of: fixture.replacement))
+        let outcome = await receipt.waitForSettlement()
+        XCTAssertEqual(outcome, .rolledBack(.commitValidationFailed))
+    }
+
     func testProfileAbortRollsBackOnlyIntersectingTransaction() async {
         let first = makeOneWindowFixture()
         let second = makeOneWindowFixture(repository: first.repository)
@@ -534,6 +582,7 @@ private final class RetirementRuntimeRecorder {
     var settlements: [WebViewReplacementSettlementEvent] = []
     var commitOverride: WebViewReplacementBatchCommitResult?
     var rollbackOverride: WebViewReplacementBatchRollbackResult?
+    var commitIsValid = true
 
     init(repository: WebViewSessionRepository) {
         self.repository = repository
@@ -546,6 +595,9 @@ private final class RetirementRuntimeRecorder {
             timeout: .seconds(5),
             waitForTimeout: waitForTimeout,
             runtime: .init(
+                validateCommitLease: { [weak self] _ in
+                    self?.commitIsValid == true
+                },
                 commitLease: { [weak self] lease in
                     guard let self else { return .noLongerActive }
                     commitCallCount += 1

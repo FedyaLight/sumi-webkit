@@ -69,14 +69,10 @@ final class SumiWebRuntimeSmokeTests: XCTestCase {
         final class StubMaterializingTab: WebRuntimeTabMaterializing {
             private(set) var makeCallCount = 0
 
-            func makeNormalTabWebView(
-                reason: String,
-                prepareConfiguration: ((WKWebViewConfiguration) -> Void)?
-            ) -> WKWebView? {
+            func makeNormalTabWebView(reason: String) -> WKWebView? {
                 makeCallCount += 1
                 XCTAssertEqual(reason, "smoke")
                 let configuration = WKWebViewConfiguration()
-                prepareConfiguration?(configuration)
                 let webView = WKWebView(frame: .zero, configuration: configuration)
                 return webView
             }

@@ -81,6 +81,9 @@ public enum WebViewReplacementAbortReason: Equatable, Sendable {
 public enum WebViewReplacementRollbackReason: Equatable, Sendable {
     case bindingFailure(WebViewReplacementBindingFailureReason)
     case abort(WebViewReplacementAbortReason)
+    /// App-owned evidence required to publish the replacement changed while
+    /// the repository lease was awaiting its final navigation bindings.
+    case commitValidationFailed
 }
 
 public enum WebViewReplacementTransactionOutcome: Equatable {
@@ -154,6 +157,10 @@ public final class WebViewReplacementSettlementReceipt {
 public enum WebViewReplacementSettlementStartResult {
     case started(WebViewReplacementSettlementReceipt)
     case committed(WebViewReplacementTransactionID)
+    case rolledBack(
+        WebViewReplacementTransactionID,
+        WebViewReplacementRollbackReason
+    )
     case conflicted(WebViewReplacementTransactionID)
     case leaseLost(WebViewReplacementTransactionID)
 }
@@ -162,6 +169,7 @@ public enum WebViewReplacementBindingAcceptance: Equatable {
     case ignored
     case accepted
     case committed
+    case rolledBack(WebViewReplacementRollbackReason)
     case conflicted
     case leaseLost
 }
@@ -189,6 +197,9 @@ public typealias WebViewReplacementModelRollback = @MainActor () throws -> Void
 /// Narrow port between settlement policy and app-owned repository/physical
 /// effects. The service neither provisions WebViews nor submits navigation.
 public struct WebViewReplacementSettlementRuntime {
+    public let validateCommitLease: @MainActor (
+        WebViewReplacementBatchLease
+    ) -> Bool
     public let commitLease: @MainActor (
         WebViewReplacementBatchLease
     ) -> WebViewReplacementBatchCommitResult
@@ -212,6 +223,9 @@ public struct WebViewReplacementSettlementRuntime {
     ) -> Void
 
     public init(
+        validateCommitLease: @escaping @MainActor (
+            WebViewReplacementBatchLease
+        ) -> Bool,
         commitLease: @escaping @MainActor (
             WebViewReplacementBatchLease
         ) -> WebViewReplacementBatchCommitResult,
@@ -234,6 +248,7 @@ public struct WebViewReplacementSettlementRuntime {
             WebViewReplacementSettlementEvent
         ) -> Void = { _ in }
     ) {
+        self.validateCommitLease = validateCommitLease
         self.commitLease = commitLease
         self.rollbackLease = rollbackLease
         self.quiesceRetired = quiesceRetired

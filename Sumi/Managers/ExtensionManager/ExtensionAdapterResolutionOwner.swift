@@ -34,7 +34,6 @@ final class ExtensionAdapterResolutionOwner {
         guard let manager else { return nil }
         return manager.adapterStore.miniWindowAdapter(for: sessionId) { [weak manager] in
             guard let manager,
-                  let tabQuery = manager.extensionTabQuery,
                   let auxiliaryWindows = manager.extensionAuxiliaryWindows
             else {
                 return nil
@@ -42,11 +41,11 @@ final class ExtensionAdapterResolutionOwner {
 
             return ExtensionMiniWindowAdapter(
                 sessionId: sessionId,
-                tabId: tab.id,
+                tab: tab,
                 window: window,
-                tabQuery: tabQuery,
                 auxiliaryWindows: auxiliaryWindows,
-                extensionManager: manager,
+                windowPublications: manager.browserRuntimeBridgeOwner
+                    .windowPublications,
                 isPrivate: isPrivate,
                 shouldActivateApp: shouldActivateApp
             )
@@ -70,6 +69,7 @@ final class ExtensionAdapterResolutionOwner {
                 windowState: windowState,
                 windowQuery: windowQuery,
                 windowActivation: windowActivation,
+                contextPublications: manager.contextPublications,
                 extensionManager: manager
             )
         }
@@ -86,7 +86,9 @@ final class ExtensionAdapterResolutionOwner {
               let windowQuery = manager.extensionWindowQuery,
               windowQuery.extensionWindowState(for: windowState.id)
                 === windowState,
-              let profileID = manager.profileId(for: extensionContext),
+              let profileID = manager.contextPublications.currentIdentity(
+                for: extensionContext
+              )?.profileID,
               manager.windowMatchesProfile(windowState, profileId: profileID),
               let adapter = manager.browserRuntimeBridgeOwner
                 .publishedWindowAdapter(
@@ -102,7 +104,7 @@ final class ExtensionAdapterResolutionOwner {
 
     func stableAdapter(for tab: Tab) -> ExtensionTabAdapter? {
         guard let manager else { return nil }
-        return manager.adapterStore.tabAdapter(for: tab.id) { [weak manager] in
+        return manager.adapterStore.tabAdapter(for: tab) { [weak manager] in
             guard let manager,
                   let windowQuery = manager.extensionWindowQuery,
                   let tabQuery = manager.extensionTabQuery,
@@ -114,12 +116,15 @@ final class ExtensionAdapterResolutionOwner {
             }
 
             return ExtensionTabAdapter(
-                tabId: tab.id,
+                tab: tab,
                 windowQuery: windowQuery,
                 tabQuery: tabQuery,
                 tabMutation: tabMutation,
                 webViewHosting: webViewHosting,
                 auxiliaryWindows: auxiliaryWindows,
+                windowPublications: manager.browserRuntimeBridgeOwner
+                    .windowPublications,
+                contextPublications: manager.contextPublications,
                 extensionManager: manager
             )
         }

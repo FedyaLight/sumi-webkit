@@ -121,26 +121,25 @@ extension Tab {
     /// Creates a fully configured normal-tab WebView. This is the single
     /// construction path for primary and clone normal-tab runtimes.
     public func makeNormalTabWebView(
-        reason: String,
-        prepareConfiguration: ((WKWebViewConfiguration) -> Void)? = nil
+        reason: String
     ) -> WKWebView? {
         makeNormalTabWebView(
             reason: reason,
-            prepareExtensionRuntime: true,
-            prepareConfiguration: prepareConfiguration
+            prepareExtensionRuntime: true
         )
     }
 
     func makeNormalTabWebView(
         reason: String,
         prepareExtensionRuntime: Bool,
-        prepareConfiguration: ((WKWebViewConfiguration) -> Void)? = nil
+        prepareCandidateConfiguration: ((WKWebViewConfiguration, UUID) -> Void)? = nil
     ) -> WKWebView? {
         webViewProvisioningOwner.makeNormalTabWebView(
             context: normalWebViewRuntimeContext(),
+            policyTransaction: configurationPolicyTransaction,
             reason: reason,
             prepareExtensionRuntime: prepareExtensionRuntime,
-            prepareConfiguration: prepareConfiguration
+            prepareCandidateConfiguration: prepareCandidateConfiguration
         )
     }
 
@@ -150,15 +149,14 @@ extension Tab {
     func makeNormalTabWebView(
         reason: String,
         explicitProfile: Profile,
-        prepareExtensionRuntime: Bool,
-        prepareConfiguration: ((WKWebViewConfiguration) -> Void)? = nil
+        prepareExtensionRuntime: Bool
     ) -> WKWebView? {
         webViewProvisioningOwner.makeNormalTabWebView(
             context: normalWebViewRuntimeContext(),
+            policyTransaction: configurationPolicyTransaction,
             reason: reason,
             explicitProfile: explicitProfile,
-            prepareExtensionRuntime: prepareExtensionRuntime,
-            prepareConfiguration: prepareConfiguration
+            prepareExtensionRuntime: prepareExtensionRuntime
         )
     }
 
@@ -462,6 +460,7 @@ extension Tab {
     ) -> TabUntrackedWebViewEnsureOutcome {
         normalWebViewSetupOwner.ensureUntrackedNormalWebView(
             context: normalWebViewRuntimeContext(),
+            policyTransaction: configurationPolicyTransaction,
             provisioningOwner: webViewProvisioningOwner,
             reason: reason
         )

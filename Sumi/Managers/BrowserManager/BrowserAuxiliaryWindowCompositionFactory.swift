@@ -8,7 +8,8 @@ enum BrowserAuxiliaryWindowCompositionFactory {
     ) -> BrowserAuxiliaryWindowComposition {
         let shellRuntime = browserManager.shellRuntime
         let tabManager = browserManager.tabManager
-        let webViewOwnership = browserManager.webViewRuntime.ownershipService
+        let untrackedWebViewInstallation = browserManager.webViewRuntime
+            .untrackedWebViewInstallationService
         let websiteDataCleanup = browserManager.webViewRuntime
             .websiteDataCleanupService
         let composition = BrowserAuxiliaryWindowComposition(
@@ -21,7 +22,7 @@ enum BrowserAuxiliaryWindowCompositionFactory {
             spaces: tabManager.spaceStateOwner,
             tabContext: shellRuntime.windowTabs,
             transientTabs: tabManager.transientWebKitTabLifecycleOwner,
-            webViewOwnership: webViewOwnership,
+            untrackedWebViewInstallation: untrackedWebViewInstallation,
             extensions: browserManager.optionalModules.extensions,
             popupPermissions: browserManager.permissionRuntime
                 .popupPermissionBridge,

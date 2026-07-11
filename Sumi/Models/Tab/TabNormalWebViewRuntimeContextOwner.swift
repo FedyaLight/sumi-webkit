@@ -13,7 +13,7 @@ final class TabNormalWebViewRuntimeContextOwner {
         let tab = tab
         let tabId = tab.id
         let webViewConfigurationOwner = tab.webViewConfigurationOwner
-        let reloadPolicyStateOwner = tab.reloadPolicyStateOwner
+        let configurationPolicyLedger = tab.configurationPolicyLedger
         let ownedWebViewPreparationOwner = tab.ownedWebViewPreparationOwner
         return TabNormalWebViewRuntimeContext(
             tabId: tabId,
@@ -82,8 +82,7 @@ final class TabNormalWebViewRuntimeContextOwner {
                         for: url,
                         profile: profile,
                         userScriptsProvider: userScriptsProvider,
-                        context: context,
-                        reloadPolicyStateOwner: reloadPolicyStateOwner
+                        context: context
                     )
                 },
                 auxiliaryOverrideConfiguration: { profile, context in
@@ -106,7 +105,7 @@ final class TabNormalWebViewRuntimeContextOwner {
                         tabId: tabId,
                         profile: profile,
                         context: context,
-                        reloadPolicyStateOwner: reloadPolicyStateOwner
+                        policyLedger: configurationPolicyLedger
                     )
                 }
             ),

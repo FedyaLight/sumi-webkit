@@ -8,6 +8,22 @@
 import Foundation
 import WebKit
 
+public enum WebViewTrackedRegistrationRejection: Equatable {
+    case crossTabCandidate
+    case inconsistentIdentity
+    case pendingCleanupCandidate
+    case protectedCandidate
+    case protectedTrackedOccupant
+    case protectedUntrackedOccupant
+    case changedDuringPreflight
+}
+
+public enum WebViewTrackedRegistrationResult: Equatable {
+    case unchanged
+    case committed
+    case rejected(WebViewTrackedRegistrationRejection)
+}
+
 @MainActor
 public final class WebViewTrackingLifecycleOwner {
     public init() {}
@@ -19,7 +35,9 @@ public final class WebViewTrackingLifecycleOwner {
     public typealias DisplacedWebViewCleanup = (WKWebView, UUID) -> Void
     public typealias DisplacementValidator = (WKWebView) -> Bool
     public typealias RecentVisibilityRemover = (TrackedWebViewOwner) -> Void
+    public typealias PlacementCommit = @MainActor () -> Void
 
+    @discardableResult
     public func registerTrackedWebView(
         _ webView: WKWebView,
         for owner: TrackedWebViewOwner,
@@ -30,8 +48,9 @@ public final class WebViewTrackingLifecycleOwner {
         pruneInvalidDeferredCommands: DeferredCommandPruner,
         canDisplaceWebView: DisplacementValidator,
         removeRecentVisibility: RecentVisibilityRemover,
+        didCommitPlacement: PlacementCommit = {},
         cleanupDisplacedWebView: DisplacedWebViewCleanup
-    ) {
+    ) -> WebViewTrackedRegistrationResult {
         let result = webViewSessions.placement.registerWindowWebView(
             webView,
             for: owner,
@@ -41,10 +60,13 @@ public final class WebViewTrackingLifecycleOwner {
         switch result {
         case .unchanged:
             installRuntimeObservations(webView)
-            return
+            return .unchanged
         case .rejected(let rejection):
-            preconditionFailure(registrationFailureMessage(for: rejection))
+            return .rejected(Self.registrationRejection(from: rejection))
         case .committed(let commit):
+            // The repository CAS is now canonical. Settle app-level evidence
+            // before observation and cleanup callbacks can run.
+            didCommitPlacement()
             if let vacatedOwner = commit.vacatedOwner {
                 removeFromContainers(webView)
                 removeRecentVisibility(vacatedOwner)
@@ -63,6 +85,7 @@ public final class WebViewTrackingLifecycleOwner {
         installRuntimeObservations(webView)
         pruneInvalidDeferredCommands("registerTrackedWebView")
         webViewSessions.assertConsistency("registerTrackedWebView")
+        return .committed
     }
 
     @discardableResult
@@ -148,24 +171,24 @@ public final class WebViewTrackingLifecycleOwner {
         )
     }
 
-    private func registrationFailureMessage(
-        for rejection: WebViewWindowSlotRegistrationRejection
-    ) -> String {
+    private static func registrationRejection(
+        from rejection: WebViewWindowSlotRegistrationRejection
+    ) -> WebViewTrackedRegistrationRejection {
         switch rejection {
         case .crossTabCandidate:
-            return "A tracked WebView cannot move between tab sessions"
+            return .crossTabCandidate
         case .inconsistentIdentity:
-            return "Tracked WebView registration encountered inconsistent repository identity"
+            return .inconsistentIdentity
         case .pendingCleanupCandidate:
-            return "A WebView leased for cleanup cannot enter a tracked slot"
+            return .pendingCleanupCandidate
         case .protectedCandidate:
-            return "A protected WebView cannot move to another tracked slot"
+            return .protectedCandidate
         case .protectedTrackedOccupant:
-            return "A protected tracked WebView cannot be displaced by registration"
+            return .protectedTrackedOccupant
         case .protectedUntrackedOccupant:
-            return "A protected untracked WebView cannot be displaced by registration"
+            return .protectedUntrackedOccupant
         case .changedDuringPreflight:
-            return "Tracked WebView registration state changed during displacement preflight"
+            return .changedDuringPreflight
         }
     }
 }

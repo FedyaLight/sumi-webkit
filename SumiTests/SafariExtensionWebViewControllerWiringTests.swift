@@ -78,7 +78,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         let staleWebView = WKWebView()
         let trackedWebView = WKWebView()
         tab.replaceUntrackedWebView(staleWebView)
-        webViewOwnership.registerTrackedWebView(
+        webViewOwnership.registerAuxiliaryTrackedWebView(
             trackedWebView,
             for: tab,
             in: windowState.id

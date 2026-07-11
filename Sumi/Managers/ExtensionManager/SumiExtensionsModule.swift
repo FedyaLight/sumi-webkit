@@ -401,6 +401,7 @@ final class SumiExtensionsModule {
         guard let manager = managerIfNeededForNormalTabRuntime() else { return }
         manager.extensionCreatedTabRegistrar.register(
             tab,
+            runtime: manager.runtime,
             reason: reason
         )
     }
@@ -439,11 +440,13 @@ final class SumiExtensionsModule {
         ) == false else {
             return .suppressed
         }
-        guard let receipt = ExtensionInitialTabPublicationReceipt.prepare(
-            manager: manager,
+        guard let windowRegistry = manager.extensionWindowQuery,
+              let receipt = manager.initialTabPublicationPreparer.prepare(
             window: window,
             tab: tab,
             webView: webView,
+            runtime: manager.runtime,
+            windowRegistry: windowRegistry,
             reason: reason
         ) else {
             return .rejected

@@ -95,6 +95,19 @@ struct ExtensionProfileRuntimeState {
         contextIdentity(for: extensionContext)?.profileId
     }
 
+    func exactContextIdentity(
+        for extensionContext: WKWebExtensionContext
+    ) -> (extensionId: String, profileId: UUID)? {
+        for (profileId, contexts) in contextsByProfile {
+            if let extensionId = contexts.first(where: {
+                $0.value === extensionContext
+            })?.key {
+                return (extensionId, profileId)
+            }
+        }
+        return nil
+    }
+
     func extensionId(for extensionContext: WKWebExtensionContext) -> String? {
         if let identity = contextIdentity(for: extensionContext) {
             return identity.extensionId
@@ -113,10 +126,8 @@ struct ExtensionProfileRuntimeState {
     func contextIdentity(
         for extensionContext: WKWebExtensionContext
     ) -> (extensionId: String, profileId: UUID)? {
-        for (profileId, contexts) in contextsByProfile {
-            if let extensionId = contexts.first(where: { $0.value === extensionContext })?.key {
-                return (extensionId, profileId)
-            }
+        if let identity = exactContextIdentity(for: extensionContext) {
+            return identity
         }
 
         var baseURLMatches: [(extensionId: String, profileId: UUID)] = []

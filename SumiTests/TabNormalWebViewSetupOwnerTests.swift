@@ -1,4 +1,5 @@
 import Foundation
+import SumiWebRuntime
 import WebKit
 import XCTest
 
@@ -13,6 +14,11 @@ final class TabNormalWebViewSetupOwnerTests: XCTestCase {
         var adopted: WKWebView?
         var didMakeNormal = false
         let profile = Profile(name: "Ensure Parked Profile")
+        let policyLedger = TabConfigurationPolicyLedger()
+        let policyTransaction = TabConfigurationPolicyTransaction(
+            policyLedger: policyLedger,
+            webViewSession: WebViewSessionHandle(tabID: UUID())
+        )
 
         let context = TabNormalWebViewRuntimeContext(
             tabId: UUID(),
@@ -41,7 +47,7 @@ final class TabNormalWebViewSetupOwnerTests: XCTestCase {
             configurationRuntime: TabNormalWebViewConfigurationRuntime(
                 normalTabWebViewConfiguration: { _, _, _, _ in
                     didMakeNormal = true
-                    return WKWebViewConfiguration()
+                    return Self.preparedConfiguration(for: profile)
                 },
                 auxiliaryOverrideConfiguration: { _, _ in nil },
                 applyWebViewConfigurationOverride: { _, _, _ in /* No-op. */ },
@@ -65,6 +71,7 @@ final class TabNormalWebViewSetupOwnerTests: XCTestCase {
 
         let ensured = owner.ensureUntrackedNormalWebView(
             context: context,
+            policyTransaction: policyTransaction,
             provisioningOwner: TabWebViewProvisioningOwner(),
             reason: "TabNormalWebViewSetupOwnerTests.parkedReuse"
         )
@@ -83,11 +90,17 @@ final class TabNormalWebViewSetupOwnerTests: XCTestCase {
         var retainedReplay: (@MainActor @Sendable () -> Void)?
         let setupReplay = TabNormalWebViewSetupReplayBox()
         var creationCount = 0
+        let policyLedger = TabConfigurationPolicyLedger()
+        let webViewSession = WebViewSessionHandle(tabID: UUID())
+        let policyTransaction = TabConfigurationPolicyTransaction(
+            policyLedger: policyLedger,
+            webViewSession: webViewSession
+        )
         let context = TabNormalWebViewRuntimeContext(
             tabId: UUID(),
             currentURL: { URL(string: "https://example.com/deferred-materialization")! },
             isPopupHost: { false },
-            currentWebView: { currentWebView },
+            currentWebView: { webViewSession.currentWebView },
             parkedWebView: { nil },
             profileId: { profile.id },
             resolveProfile: { profile },
@@ -103,13 +116,16 @@ final class TabNormalWebViewSetupOwnerTests: XCTestCase {
             adoptParkedWebViewAsCurrent: { _ in },
             clearParkedExistingWebView: {},
             retireParkedWebView: { _, _ in false },
-            replaceUntrackedWebView: { currentWebView = $0 },
+            replaceUntrackedWebView: { webView in
+                currentWebView = webView
+                webViewSession.replaceUntracked(with: webView)
+            },
             cleanupCloneWebView: { _ in },
             configurationContext: { .empty },
             configurationRuntime: TabNormalWebViewConfigurationRuntime(
                 normalTabWebViewConfiguration: { _, _, _, _ in
                     creationCount += 1
-                    return WKWebViewConfiguration()
+                    return Self.preparedConfiguration(for: profile)
                 },
                 auxiliaryOverrideConfiguration: { _, _ in nil },
                 applyWebViewConfigurationOverride: { _, _, _ in },
@@ -131,6 +147,7 @@ final class TabNormalWebViewSetupOwnerTests: XCTestCase {
         setupReplay.action = {
             _ = owner.ensureUntrackedNormalWebView(
                 context: context,
+                policyTransaction: policyTransaction,
                 provisioningOwner: TabWebViewProvisioningOwner(),
                 reason: "TabNormalWebViewSetupOwnerTests.replayedMaterialization"
             )
@@ -138,6 +155,7 @@ final class TabNormalWebViewSetupOwnerTests: XCTestCase {
 
         let outcome = owner.ensureUntrackedNormalWebView(
             context: context,
+            policyTransaction: policyTransaction,
             provisioningOwner: TabWebViewProvisioningOwner(),
             reason: "TabNormalWebViewSetupOwnerTests.deferredMaterialization"
         )
@@ -222,6 +240,25 @@ final class TabNormalWebViewSetupOwnerTests: XCTestCase {
                 hasExistingWebView: false,
                 didCreateAuxiliaryOverrideWebView: false,
                 url: try XCTUnwrap(URL(string: "webkit-extension://extension-id/options.html"))
+            )
+        )
+    }
+
+    private static func preparedConfiguration(
+        for profile: Profile
+    ) -> PreparedNormalTabWebViewConfiguration {
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = profile.dataStore
+        return PreparedNormalTabWebViewConfiguration(
+            configuration: configuration,
+            policyState: TabConfigurationPolicyState(
+                profileID: profile.id,
+                websiteDataStoreIdentity: ObjectIdentifier(
+                    configuration.websiteDataStore
+                ),
+                protectionAttachment: nil,
+                safariContentBlockerAttachment: nil,
+                autoplayState: .allowAll
             )
         )
     }

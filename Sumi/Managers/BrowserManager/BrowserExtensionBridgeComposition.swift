@@ -93,76 +93,8 @@ final class BrowserExtensionBridgeComposition {
             auxiliarySessions: browserManager.auxiliaryWindows.sessions
         )
 
-        let tabMutation = BrowserExtensionTabMutationAdapter(
-            createTab: { [weak browserManager] url, space, activate, context in
-                guard let tabManager = browserManager?.tabManager else {
-                    preconditionFailure(
-                        "Browser runtime released before extension tab creation."
-                    )
-                }
-                if let url {
-                    return tabManager.regularTabLifecycleOwner.createNewTab(
-                        url: url.absoluteString,
-                        in: space,
-                        activate: activate,
-                        webExtensionContextOverride: context
-                    )
-                }
-                return tabManager.regularTabLifecycleOwner.createNewTab(
-                    in: space,
-                    activate: activate,
-                    webExtensionContextOverride: context
-                )
-            },
-            createTransientTab: {
-                [weak browserManager] url, space, context in
-                guard let tabManager = browserManager?.tabManager else {
-                    preconditionFailure(
-                        "Browser runtime released before transient tab creation."
-                    )
-                }
-                return tabManager.transientWebKitTabLifecycleOwner
-                    .createTransientExtensionTab(
-                        url: url.absoluteString,
-                        in: space,
-                        webExtensionContextOverride: context
-                    )
-            },
-            pinTab: { [weak browserManager] tab, window, space in
-                let targetSpaceID = space?.id ?? tab.spaceId
-                browserManager?.tabManager.shortcutPinCommandOwner.pinTab(
-                    tab,
-                    context: .init(
-                        windowState: window,
-                        spaceId: targetSpaceID
-                    )
-                )
-            },
-            selectTab: { [weak browserManager] tab, windowState in
-                browserManager?.selectTab(tab, in: windowState)
-            },
-            placeTab: { tab, windowState in
-                windowState.markWebKitChildWindowAdopted(by: tab.id)
-            },
-            promoteTransientTab: { [weak browserManager] tab in
-                guard let tabManager = browserManager?.tabManager,
-                      tabManager.transientWebKitTabLifecycleOwner
-                        .isTransientExtensionTab(tab),
-                      let targetSpace = tab.spaceId.flatMap({ spaceID in
-                        tabManager.spaceStateOwner.spaces.first {
-                            $0.id == spaceID
-                        }
-                      })
-                else {
-                    return false
-                }
-                return tabManager.transientWebKitTabLifecycleOwner
-                    .promoteTransientExtensionTab(
-                        tab,
-                        in: targetSpace,
-                        activate: false
-                    )
-            }
+        let tabMutation = BrowserExtensionTabMutationComposition.make(
+            browserManager: browserManager
         )
 
         let windowActivation = BrowserExtensionWindowActivationAdapter(
@@ -189,14 +121,14 @@ final class BrowserExtensionBridgeComposition {
                 tab,
                 windowID,
                 reason,
-                prepareConfiguration,
+                prepareCandidateConfiguration,
                 prepareCommittedReplacement,
                 validate in
                 webViewOwnership.replaceLiveWebView(
                     for: tab,
                     in: windowID,
                     reason: reason,
-                    prepareConfiguration: prepareConfiguration,
+                    prepareCandidateConfiguration: prepareCandidateConfiguration,
                     prepareCommittedReplacement: prepareCommittedReplacement,
                     validate: validate
                 )

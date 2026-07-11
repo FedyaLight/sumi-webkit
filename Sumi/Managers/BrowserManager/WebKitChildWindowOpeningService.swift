@@ -20,7 +20,7 @@ final class WebKitChildWindowOpeningService: WebKitChildWindowOpening {
 
     private let windowTransaction: WebKitChildWindowShellTransaction
     private weak var tabs: TabManager?
-    private weak var ownership: WebViewOwnershipService?
+    private weak var placement: (any AuxiliaryTrackedWebViewPlacing)?
     private weak var ownershipQuery: WebViewOwnershipQuery?
     private let sourceResolver: PhysicalWebViewSourceResolver
     private weak var lifecycle: WebViewLifecycleService?
@@ -31,7 +31,7 @@ final class WebKitChildWindowOpeningService: WebKitChildWindowOpening {
     init(
         windowTransaction: WebKitChildWindowShellTransaction,
         tabs: TabManager,
-        ownership: WebViewOwnershipService,
+        placement: any AuxiliaryTrackedWebViewPlacing,
         ownershipQuery: WebViewOwnershipQuery,
         sourceResolver: PhysicalWebViewSourceResolver,
         lifecycle: WebViewLifecycleService,
@@ -42,7 +42,7 @@ final class WebKitChildWindowOpeningService: WebKitChildWindowOpening {
     ) {
         self.windowTransaction = windowTransaction
         self.tabs = tabs
-        self.ownership = ownership
+        self.placement = placement
         self.ownershipQuery = ownershipQuery
         self.sourceResolver = sourceResolver
         self.lifecycle = lifecycle
@@ -178,7 +178,7 @@ final class WebKitChildWindowOpeningService: WebKitChildWindowOpening {
         targetWindow: BrowserWindowState,
         isExtensionOriginated: Bool
     ) -> Child? {
-        guard let tabs, let ownership else { return nil }
+        guard let tabs, let placement else { return nil }
         let childTab: Tab
         let residence: ChildResidence
         if source.residence == .privateEphemeral {
@@ -235,11 +235,20 @@ final class WebKitChildWindowOpeningService: WebKitChildWindowOpening {
             isExtensionOriginated: isExtensionOriginated,
             reason: "WebKitChildWindowOpeningService.makeChild"
         )
-        ownership.registerTrackedWebView(
+        let child = Child(
+            tab: childTab,
+            webView: childWebView,
+            residence: residence
+        )
+        let placementOutcome = placement.registerAuxiliaryTrackedWebView(
             childWebView,
             for: childTab,
             in: targetWindow.id
         )
+        guard placementOutcome.isAccepted else {
+            discardUnplaced(child, from: targetWindow, tabs: tabs)
+            return nil
+        }
         _ = WindowTabSelectionStateApplicator.apply(
             childTab,
             to: targetWindow,
@@ -249,11 +258,7 @@ final class WebKitChildWindowOpeningService: WebKitChildWindowOpening {
         targetWindow.webKitChildWindowIdentity = WebKitChildWindowIdentity(
             initialTabID: childTab.id
         )
-        return Child(
-            tab: childTab,
-            webView: childWebView,
-            residence: residence
-        )
+        return child
     }
 
     private func validate(
@@ -305,12 +310,28 @@ final class WebKitChildWindowOpeningService: WebKitChildWindowOpening {
                 windowID: targetWindow.id
             )
         )
-        tabs.structuralPersistence.cancelRuntimeStatePersistence(
-            for: child.tab.id
-        )
-        targetWindow.currentTabId = nil
-        if targetWindow.webKitChildWindowIdentity?.initialTabID
-            == child.tab.id {
+        discardModel(child, from: targetWindow, tabs: tabs)
+    }
+
+    private func discardUnplaced(
+        _ child: Child,
+        from targetWindow: BrowserWindowState,
+        tabs: TabManager
+    ) {
+        child.tab.cleanupCloneWebView(child.webView)
+        discardModel(child, from: targetWindow, tabs: tabs)
+    }
+
+    private func discardModel(
+        _ child: Child,
+        from targetWindow: BrowserWindowState,
+        tabs: TabManager
+    ) {
+        tabs.structuralPersistence.cancelRuntimeStatePersistence(for: child.tab.id)
+        if targetWindow.currentTabId == child.tab.id {
+            targetWindow.currentTabId = nil
+        }
+        if targetWindow.webKitChildWindowIdentity?.initialTabID == child.tab.id {
             targetWindow.webKitChildWindowIdentity = nil
         }
 

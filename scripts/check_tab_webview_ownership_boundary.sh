@@ -144,9 +144,9 @@ while IFS= read -r match; do
   fi
 done <<< "$detached_app_hits"
 
-# Pending-cleanup ownership is a two-step transaction. The ownership service
-# or physical-cleanup boundary acquires the lease before deferral; the exact
-# lease is consumed only by that cleanup boundary or the protected-command
+# Pending-cleanup ownership is a two-step transaction. A focused cleanup
+# service acquires the lease before deferral; the exact lease is consumed only
+# by that cleanup boundary, physical cleanup, or the protected-command
 # dispatcher immediately before shutdown.
 pending_cleanup_hits="$(
   rg -n '\bwebViewSessions\.(beginPendingCleanup|consumePendingCleanup)\s*\(' \
@@ -156,7 +156,7 @@ while IFS= read -r match; do
   [[ -z "$match" ]] && continue
   file="${match%%:*}"
   case "$file" in
-    Sumi/Managers/WebViewRuntime/WebViewOwnershipService.swift|Sumi/Managers/WebViewRuntime/WebViewPhysicalCleanupService.swift|Sumi/Managers/WebViewRuntime/WebViewProtectedCommandDispatchOwner.swift)
+    Sumi/Managers/WebViewRuntime/DetachedWebViewCleanupService.swift|Sumi/Managers/WebViewRuntime/WebViewPhysicalCleanupService.swift|Sumi/Managers/WebViewRuntime/WebViewProtectedCommandDispatchOwner.swift)
       ;;
     *)
       printf 'error: pending-cleanup lease mutation escaped WebView runtime lifecycle: %s\n' "$match" >&2
@@ -229,7 +229,7 @@ fail_matches "dead Tab WebView construction API reintroduced" "$dead_ensure_hits
 
 if [[ "$status" -ne 0 ]]; then
   echo "Tab WebView ownership boundary audit failed" >&2
-  echo "Use WebViewSessionRepository as canonical placement, WebViewSessionHandle for detached Tab state, and WebViewOwnershipService for ownership lifecycle changes." >&2
+  echo "Use WebViewSessionRepository as canonical placement, WebViewSessionHandle for detached Tab state, and focused placement/replacement/cleanup services for lifecycle changes." >&2
   exit "$status"
 fi
 

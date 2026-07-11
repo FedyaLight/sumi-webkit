@@ -1,5 +1,4 @@
 import Foundation
-import SumiDomain
 import WebKit
 import SumiWebRuntime
 
@@ -109,7 +108,6 @@ final class TabWebViewRebuildService {
             },
             modelRollback: {
                 tab.url = previousURL
-                self.restoreReloadPolicy(prepared)
             },
             completion: { [weak self] outcome in
                 guard let self, outcome == .committed else { return }
@@ -151,7 +149,7 @@ final class TabWebViewRebuildService {
         case .invalid:
             discard(prepared)
             return .failed
-        case .settlementConflict, .leaseLost:
+        case .rolledBack, .settlementConflict, .leaseLost:
             return .failed
         }
     }
@@ -165,10 +163,6 @@ final class TabWebViewRebuildService {
         configuration: DeferredWebViewRebuildConfiguration,
         reason: String
     ) -> PreparedWebViewReplacement? {
-        let protection =
-            tab.reloadPolicyStateOwner.protectionAppliedAttachmentState
-        let safari = tab.reloadPolicyStateOwner
-            .safariContentBlockerAppliedAttachmentState
         var byWindowID: [UUID: WKWebView] = [:]
         for windowID in targetWindowIDs.sorted(by: uuidOrder) {
             let creationReason = windowID == primaryWindowID
@@ -182,7 +176,6 @@ final class TabWebViewRebuildService {
                 guard let webConfiguration =
                     tab.webExtensionContextOverride?.webViewConfiguration else {
                     byWindowID.values.forEach(tab.cleanupCloneWebView)
-                    restoreReloadPolicy(tab, protection, safari)
                     return nil
                 }
                 webView = tab.makeAuxiliaryOverrideTabWebView(
@@ -192,15 +185,28 @@ final class TabWebViewRebuildService {
             }
             guard let webView else {
                 byWindowID.values.forEach(tab.cleanupCloneWebView)
-                restoreReloadPolicy(tab, protection, safari)
                 return nil
             }
             byWindowID[windowID] = webView
         }
 
         let replacements = Array(byWindowID.values)
+        let configurationPolicyChangeSet:
+            PreparedConfigurationPolicyChangeSet?
+        if case .normal = configuration {
+            guard let policyChangeSet =
+                tab.preparedConfigurationPolicyChangeSet(
+                    for: replacements
+                ) else {
+                replacements.forEach(tab.cleanupCloneWebView)
+                return nil
+            }
+            configurationPolicyChangeSet = policyChangeSet
+        } else {
+            configurationPolicyChangeSet = nil
+        }
         let navigation = tab.currentMainFrameNavigationIntent()
-        return PreparedWebViewReplacement(
+        guard let preparedReplacement = PreparedWebViewReplacement(
             tab: tab,
             snapshot: snapshot,
             placement: .windowSet(
@@ -214,9 +220,13 @@ final class TabWebViewRebuildService {
             semanticRevision: navigation.revision,
             profileID: tab.resolveProfile()?.id ?? tab.profileId,
             requiresExtensionRuntimePreparation: false,
-            previousProtectionState: protection,
-            previousSafariContentBlockerState: safari
-        )
+            configurationPolicyChangeSet: configurationPolicyChangeSet
+        ) else {
+            configurationPolicyChangeSet?.cancel()
+            replacements.forEach(tab.cleanupCloneWebView)
+            return nil
+        }
+        return preparedReplacement
     }
 
     private func resolvePrimaryWindowID(
@@ -265,26 +275,6 @@ final class TabWebViewRebuildService {
 
     private func discard(_ replacement: PreparedWebViewReplacement) {
         replacement.replacements.forEach(replacement.tab.cleanupCloneWebView)
-        restoreReloadPolicy(replacement)
-    }
-
-    private func restoreReloadPolicy(_ replacement: PreparedWebViewReplacement) {
-        restoreReloadPolicy(
-            replacement.tab,
-            replacement.previousProtectionState,
-            replacement.previousSafariContentBlockerState
-        )
-    }
-
-    private func restoreReloadPolicy(
-        _ tab: Tab,
-        _ protection: SumiProtectionAttachmentState?,
-        _ safari: SumiSafariContentBlockerAttachmentState?
-    ) {
-        tab.reloadPolicyStateOwner.noteContentBlockingWebViewRebuildFailed(
-            restoringProtectionState: protection,
-            restoringSafariContentBlockerState: safari
-        )
     }
 
     private func identityOrder(_ lhs: WKWebView, _ rhs: WKWebView) -> Bool {

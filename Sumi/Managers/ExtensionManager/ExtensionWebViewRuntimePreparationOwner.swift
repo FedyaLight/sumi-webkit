@@ -58,7 +58,7 @@ final class ExtensionWebViewRuntimePreparationOwner:
             existingController == nil || existingController !== requestedController
 
         dependencies.trace {
-            "prepareConfiguration reason=\(reason) profileId=\(resolvedProfileId.uuidString) configuration=\(self.dependencies.configurationDescription(configuration)) userContentController=\(self.dependencies.userContentControllerDescription(configuration.userContentController)) existingController=\(self.dependencies.controllerDescription(existingController)) targetController=\(self.dependencies.controllerDescription(requestedController)) willAssign=\(shouldAssignController)"
+            "prepareExtensionConfiguration reason=\(reason) profileId=\(resolvedProfileId.uuidString) configuration=\(self.dependencies.configurationDescription(configuration)) userContentController=\(self.dependencies.userContentControllerDescription(configuration.userContentController)) existingController=\(self.dependencies.controllerDescription(existingController)) targetController=\(self.dependencies.controllerDescription(requestedController)) willAssign=\(shouldAssignController)"
         }
 
         if shouldAssignController {

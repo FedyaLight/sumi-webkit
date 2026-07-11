@@ -118,10 +118,25 @@ final class TabTransientWebKitTabLifecycleOwner {
 
     @discardableResult
     func removeTransientExtensionTab(id: UUID) -> Bool {
-        guard let tab = dependencies.membershipOwner().removeTransientExtensionTab(id: id) else {
+        guard let tab = dependencies.membershipOwner()
+            .removeTransientExtensionTab(id: id) else {
             return false
         }
         unloadAndDetach(tab, notifyExtensionClose: true)
+        return true
+    }
+
+    /// Discards a creation transaction whose open callback either never
+    /// crossed WebKit or was already balanced by its publication receipt.
+    @discardableResult
+    func discardTransientExtensionTabWithoutPublishedOpen(
+        id: UUID
+    ) -> Bool {
+        guard let tab = dependencies.membershipOwner()
+            .removeTransientExtensionTab(id: id) else {
+            return false
+        }
+        unloadAndDetach(tab, notifyExtensionClose: false)
         return true
     }
 

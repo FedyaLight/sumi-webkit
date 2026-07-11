@@ -115,6 +115,62 @@ final class SumiAutoplayBrowserConfigTests: XCTestCase {
         XCTAssertEqual(configuration.mediaTypesRequiringUserActionForPlayback, [])
     }
 
+    func testParkedNormalWebViewCannotBeReusedAfterAutoplayPolicyChanges()
+        async throws {
+        let harness = try makeHarness()
+        let profile = makeProfile("77777777-7777-7777-7777-777777777777")
+        let url = URL(string: "https://example.com/parked-autoplay")!
+        let tabID = UUID()
+        let scripts = SumiNormalTabUserScripts(
+            managedUserScripts: [SumiTabSuspensionUserScript(tabID: tabID)]
+        )
+        let physicalConfiguration = harness.browserConfiguration
+            .normalTabWebViewConfiguration(
+                for: profile,
+                url: url,
+                autoplayPolicy: .allowAll,
+                userScriptsProvider: scripts
+            )
+        let parkedWebView = WKWebView(
+            frame: .zero,
+            configuration: physicalConfiguration
+        )
+        let policyLedger = TabConfigurationPolicyLedger()
+        let context = configurationContext(
+            browserConfiguration: harness.browserConfiguration
+        )
+        let configuration = TabWebViewConfigurationOwner()
+
+        XCTAssertTrue(
+            configuration.canReuseAsNormalTabWebView(
+                parkedWebView,
+                fallbackURL: url,
+                tabId: tabID,
+                profile: profile,
+                context: context,
+                policyLedger: policyLedger
+            )
+        )
+
+        try await harness.adapter.setPolicy(
+            .blockAll,
+            for: url,
+            profile: profile
+        )
+
+        XCTAssertFalse(
+            configuration.canReuseAsNormalTabWebView(
+                parkedWebView,
+                fallbackURL: url,
+                tabId: tabID,
+                profile: profile,
+                context: context,
+                policyLedger: policyLedger
+            ),
+            "A parked WebView carries immutable configuration-time autoplay policy"
+        )
+    }
+
     func testActivePagePolicyChangeReportsRebuildRequired() {
         let controller = SumiRuntimePermissionController()
         let configuration = WKWebViewConfiguration()
@@ -148,5 +204,26 @@ final class SumiAutoplayBrowserConfigTests: XCTestCase {
 
     private func makeProfile(_ id: String) -> Profile {
         Profile(id: UUID(uuidString: id)!, name: "Profile", icon: "person")
+    }
+
+    private func configurationContext(
+        browserConfiguration: BrowserConfiguration
+    ) -> TabWebViewConfigurationContext {
+        TabWebViewConfigurationContext(
+            browserConfiguration: browserConfiguration,
+            extensionNormalTabUserScripts: { [] },
+            userscriptsNormalTabUserScripts: { _, _, _, _ in [] },
+            boostsNormalTabUserScripts: { _, _, _ in [] },
+            protectionDecision: { _, _ in nil },
+            protectionDesiredAttachmentState: {
+                .disabled(siteHost: $0?.host)
+            },
+            safariContentBlockerAttachmentState: { _ in nil },
+            safariBlockerDesiredAttachmentState: {
+                .disabled(siteHost: $0?.host)
+            },
+            enabledSafariContentBlockingServices: { _, _ in [] },
+            prepareWebViewConfigForExtensionRuntime: { _, _, _ in }
+        )
     }
 }

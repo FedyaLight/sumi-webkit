@@ -16,6 +16,7 @@ enum ExtensionManagerCallbackError: LocalizedError, Equatable, Sendable {
     case actionPopupAnchorUnavailable(anchorSource: String?)
     case extensionManagerUnavailable
     case requestedTabBrowserManagerUnavailable
+    case requestedTabUnavailable
     case browserManagerUnavailable
     case newWindowUnavailable
     case extensionExternalTabUnavailable
@@ -40,6 +41,7 @@ enum ExtensionManagerCallbackError: LocalizedError, Equatable, Sendable {
         case .newWindowUnavailable:
             return 5
         case .extensionExternalTabUnavailable,
+             .requestedTabUnavailable,
              .extensionPopupWindowUnavailable,
              .optionsPageNotFound:
             return 6
@@ -63,6 +65,8 @@ enum ExtensionManagerCallbackError: LocalizedError, Equatable, Sendable {
             return "Extension manager is unavailable"
         case .requestedTabBrowserManagerUnavailable:
             return "Browser manager is unavailable"
+        case .requestedTabUnavailable:
+            return "Sumi could not commit the requested tab"
         case .browserManagerUnavailable:
             return "Browser manager is unavailable"
         case .newWindowUnavailable:
@@ -107,6 +111,7 @@ enum ExtensionBridgeAdapterCallbackError: LocalizedError, Equatable, Sendable {
         case close = 1
         case setWindowState = 2
         case setFrame = 3
+        case focus = 4
     }
 
     case windowUnavailable(operation: WindowOperation)

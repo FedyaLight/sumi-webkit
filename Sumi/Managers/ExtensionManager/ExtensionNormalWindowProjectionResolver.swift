@@ -14,6 +14,16 @@ struct ExtensionNormalWindowProjection {
     let controller: WKWebExtensionController
     let windowAdapter: ExtensionWindowAdapter
     let selectedTabAdapter: ExtensionTabAdapter
+
+    func belongsToSameWindowPublication(
+        as other: ExtensionNormalWindowProjection
+    ) -> Bool {
+        windowIdentity == other.windowIdentity
+            && profileID == other.profileID
+            && tabGeneration == other.tabGeneration
+            && controller === other.controller
+            && windowAdapter === other.windowAdapter
+    }
 }
 
 /// Resolves model/profile/adapter facts for normal windows. Lifecycle state
@@ -131,7 +141,7 @@ final class ExtensionNormalWindowProjectionResolver {
     func canPublishWithoutNormalWindow(_ tab: Tab) -> Bool {
         guard let tabQuery = manager?.extensionTabQuery else { return false }
         return tabQuery.isTransientExtensionTab(tab)
-            || tabQuery.isAuxiliaryMiniWindowTab(tab)
+            && tabQuery.isAuxiliaryMiniWindowTab(tab) == false
     }
 
     func switchToWindowProfile(_ window: BrowserWindowState) {

@@ -123,12 +123,7 @@ final class ExtensionManager: NSObject, ObservableObject {
         browserContext: { [weak self] in self?.requestedTabTargetQuery },
         profileRuntime: profileRuntime,
         runtime: { [weak self] in self?.runtime ?? .inactive },
-        miniWindows: { [weak self] ownerExtensionID, profileID in
-            self?.runtimeBundle.windowFocusResolutionOwner.miniWindowAdapters(
-                ownerExtensionID: ownerExtensionID,
-                profileId: profileID
-            ) ?? []
-        }
+        publications: browserRuntimeBridgeOwner.windowPublications
     )
     lazy var requestedTabWebViewMaterializer =
         ExtensionRequestedTabWebViewMaterializer(
@@ -141,11 +136,33 @@ final class ExtensionManager: NSObject, ObservableObject {
     lazy var extensionCreatedTabRegistrar = ExtensionCreatedTabRuntimeRegistrar(
         runtimeSession: runtimeSession,
         profileRuntime: profileRuntime,
-        runtime: { [weak self] in self?.runtime ?? .inactive },
-        tabOpenNotifier: normalTabRuntimeBindingOwner,
+        adapterStore: adapterStore,
+        controllerBinding: controllerAttachmentOwner,
+        adapterResolution: adapterResolutionOwner,
         contextLoading: initialDocumentRuntimePreparationOwner,
+        publications: browserRuntimeBridgeOwner.windowPublications,
+        publicationAdmission: browserRuntimeBridgeOwner
+            .tabPublicationAdmission,
+        events: normalTabRuntimeBindingOwner,
+        extensionsLoaded: { [weak self] in self?.extensionsLoaded == true },
         diagnostics: runtimeDiagnostics
     )
+    lazy var initialTabPublicationPreparer =
+        ExtensionInitialTabPublicationPreparer(
+            runtimeSession: runtimeSession,
+            profileRuntime: profileRuntime,
+            adapterStore: adapterStore,
+            controllerQuery: controllerAttachmentOwner,
+            controllerAttachment: controllerAttachmentOwner,
+            adapterResolution: adapterResolutionOwner,
+            contextLoading: initialDocumentRuntimePreparationOwner,
+            windowPublications: browserRuntimeBridgeOwner.windowPublications,
+            events: normalTabRuntimeBindingOwner,
+            extensionsLoaded: {
+                [weak self] in self?.extensionsLoaded == true
+            },
+            diagnostics: runtimeDiagnostics
+        )
     lazy var requestedTabContextPreloader =
         ExtensionRequestedTabContextPreloader(
             loadResolver: requestedTabLoadResolver,
@@ -287,6 +304,9 @@ final class ExtensionManager: NSObject, ObservableObject {
         manager: self
     )
     let profileRuntime: ExtensionProfileRuntime
+    lazy var contextPublications = ExtensionContextPublicationQuery(
+        profileRuntime: profileRuntime
+    )
     var profileRuntimeStateOwner: ExtensionProfileRuntimeStateOwner {
         ExtensionProfileRuntimeStateOwner(manager: self)
     }
@@ -500,8 +520,13 @@ final class ExtensionManager: NSObject, ObservableObject {
             var didOpenTab: ((UUID) -> Void)?
             var didDeferOpenTab: ((UUID, String) -> Void)?
             var didCloseTab: ((UUID) -> Void)?
+            var didOpenAuxiliaryWindow: ((UUID) -> Void)?
+            var didFocusAuxiliaryWindow: ((UUID) -> Void)?
+            var didCloseAuxiliaryWindow: ((UUID) -> Void)?
             var didFocusWindow: ((UUID) -> Void)?
             var didActivateTab: ((UUID) -> Void)?
+            var didSelectTab: ((UUID) -> Void)?
+            var didDeselectTab: ((UUID) -> Void)?
             var didChangeTabProperties:
                 ((UUID, WKWebExtension.TabChangedProperties) -> Void)?
         }
@@ -520,6 +545,36 @@ final class ExtensionManager: NSObject, ObservableObject {
 
         func clearDebugState() {
             ExtensionManagerDebugRegistry.clearHooks(for: ObjectIdentifier(self))
+        }
+
+        func dispatchAuxiliaryPublicationDebugEvent(
+            _ event: ExtensionAuxiliaryPublicationDebugEvent
+        ) {
+            switch event {
+            case .didOpenWindow(let sessionID):
+                testHooks.didOpenAuxiliaryWindow?(sessionID)
+            case .didOpenTab(_, let tabID):
+                testHooks.didOpenTab?(tabID)
+            case .didFocusWindow(let sessionID):
+                testHooks.didFocusAuxiliaryWindow?(sessionID)
+            case .didCloseTab(_, let tabID):
+                testHooks.didCloseTab?(tabID)
+            case .didCloseWindow(let sessionID):
+                testHooks.didCloseAuxiliaryWindow?(sessionID)
+            }
+        }
+
+        func dispatchNormalTabLifecycleDebugEvent(
+            _ event: ExtensionNormalTabLifecycleDebugEvent
+        ) {
+            switch event {
+            case .didActivateTab(let tabID):
+                testHooks.didActivateTab?(tabID)
+            case .didSelectTab(let tabID):
+                testHooks.didSelectTab?(tabID)
+            case .didDeselectTab(let tabID):
+                testHooks.didDeselectTab?(tabID)
+            }
         }
 
         func drainExtensionRuntimeTasksForTests() async {

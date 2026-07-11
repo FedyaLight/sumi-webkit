@@ -42,7 +42,7 @@ struct TabNormalWebViewConfigurationRuntime {
         Profile,
         SumiNormalTabUserScripts,
         TabWebViewConfigurationContext
-    ) -> WKWebViewConfiguration
+    ) -> PreparedNormalTabWebViewConfiguration
     let auxiliaryOverrideConfiguration: (Profile, TabWebViewConfigurationContext) -> WKWebViewConfiguration?
     let applyWebViewConfigurationOverride: (
         WKWebViewConfiguration,

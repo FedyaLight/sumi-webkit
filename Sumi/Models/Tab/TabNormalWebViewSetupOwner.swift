@@ -21,6 +21,7 @@ final class TabNormalWebViewSetupOwner {
     @discardableResult
     func ensureUntrackedNormalWebView(
         context: TabNormalWebViewRuntimeContext,
+        policyTransaction: TabConfigurationPolicyTransaction,
         provisioningOwner: TabWebViewProvisioningOwner,
         reason: String
     ) -> TabUntrackedWebViewEnsureOutcome {
@@ -92,9 +93,26 @@ final class TabNormalWebViewSetupOwner {
                 didCreateAuxiliaryOverrideWebView = true
             } else if let normalWebView = provisioningOwner.makeNormalTabWebView(
                 context: context,
+                policyTransaction: policyTransaction,
                 reason: reason
             ) {
+                guard let policyAdmission = policyTransaction
+                    .preparePlacementAdmission(
+                    [normalWebView],
+                    as: .canonicalGeneration
+                ) else {
+                    context.cleanupCloneWebView(normalWebView)
+                    return .failed
+                }
                 context.replaceUntrackedWebView(normalWebView)
+                precondition(
+                    context.currentWebView() === normalWebView,
+                    "A normal WebView must be canonical before policy commit"
+                )
+                precondition(
+                    policyTransaction.commit(policyAdmission),
+                    "Canonical normal WebView policy receipt must commit once"
+                )
                 didCreateNormalWebView = true
             }
         }

@@ -23,9 +23,6 @@ final class ExtensionRuntimeBundle {
             windowQuery: { [weak manager] in
                 manager?.extensionWindowQuery
             },
-            tabQuery: { [weak manager] in
-                manager?.extensionTabQuery
-            },
             auxiliaryWindows: { [weak manager] in
                 manager?.extensionAuxiliaryWindows
             },
@@ -41,11 +38,12 @@ final class ExtensionRuntimeBundle {
                     profileID: profileId
                 )
             },
-            miniWindowAdapters: { [weak manager] in
-                manager.map { Array($0.adapterStore.miniWindowAdapters.values) } ?? []
-            },
-            resolvedProfileIdForTab: { [weak manager] tab in
-                manager?.resolvedProfileId(for: tab)
+            miniWindowAdapters: { [weak manager] ownerExtensionID, profileID in
+                manager?.browserRuntimeBridgeOwner
+                    .windowPublications.publishedAuxiliaryWindowAdapters(
+                        ownerExtensionID: ownerExtensionID,
+                        profileID: profileID
+                    ) ?? []
             }
         )
         self.siteAccessPolicyCoordinator = ExtensionSiteAccessPolicyCoordinator(

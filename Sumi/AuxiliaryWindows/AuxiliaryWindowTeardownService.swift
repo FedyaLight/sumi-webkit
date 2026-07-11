@@ -72,7 +72,6 @@ final class AuxiliaryWindowTeardownService {
         webView.removeFromSuperview()
 
         session.extensionEvents?.notifyAuxiliaryWindowClosed(session)
-        tabs.notifyTabClosed(session.tab)
         session.tab.performComprehensiveWebViewCleanup()
         tabs.removeMiniWindowTab(session.tab)
 

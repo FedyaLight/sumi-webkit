@@ -284,12 +284,12 @@ final class TabPermissionSurfaceTests: XCTestCase {
             committedURL: tab.url
         )
         let runtime = browserManager.testWebViewRuntime()
-        runtime.ownershipService.registerTrackedWebView(
+        runtime.ownershipService.registerAuxiliaryTrackedWebView(
             firstWebView,
             for: tab,
             in: firstWindow.id
         )
-        runtime.ownershipService.registerTrackedWebView(
+        runtime.ownershipService.registerAuxiliaryTrackedWebView(
             secondWebView,
             for: tab,
             in: secondWindow.id

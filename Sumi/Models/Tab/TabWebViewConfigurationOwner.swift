@@ -91,14 +91,9 @@ final class TabWebViewConfigurationOwner {
         for url: URL,
         profile: Profile,
         userScriptsProvider: SumiNormalTabUserScripts,
-        context: TabWebViewConfigurationContext,
-        reloadPolicyStateOwner: TabReloadPolicyStateOwner
-    ) -> WKWebViewConfiguration {
+        context: TabWebViewConfigurationContext
+    ) -> PreparedNormalTabWebViewConfiguration {
         let protectionDecision = context.protectionDecision(url, profile.id)
-        if let protectionDecision {
-            reloadPolicyStateOwner.noteProtectionAttachmentApplied(protectionDecision.attachmentState)
-        }
-
         let safariContentBlockerAttachmentState = context.safariContentBlockerAttachmentState(url)
         let additionalContentBlockingServices: [SumiContentBlockingService]
         if safariContentBlockerAttachmentState?.isEnabled == true {
@@ -109,24 +104,33 @@ final class TabWebViewConfigurationOwner {
         } else {
             additionalContentBlockingServices = []
         }
-        if let safariContentBlockerAttachmentState {
-            reloadPolicyStateOwner.noteSafariContentBlockerAttachmentApplied(
-                safariContentBlockerAttachmentState
-            )
-        }
 
         let autoplayPolicy = context.browserConfiguration.resolvedAutoplayPolicy(
             for: url,
             profile: profile
         )
 
-        return context.browserConfiguration.normalTabWebViewConfiguration(
+        let configuration = context.browserConfiguration.normalTabWebViewConfiguration(
             for: profile,
             url: url,
             autoplayPolicy: autoplayPolicy,
             userScriptsProvider: userScriptsProvider,
             contentBlockingService: protectionDecision?.contentBlockingService,
             additionalContentBlockingServices: additionalContentBlockingServices
+        )
+        let policyState = TabConfigurationPolicyState(
+            profileID: profile.id,
+            websiteDataStoreIdentity: ObjectIdentifier(
+                configuration.websiteDataStore
+            ),
+            protectionAttachment: protectionDecision?.attachmentState,
+            safariContentBlockerAttachment:
+                safariContentBlockerAttachmentState,
+            autoplayState: autoplayPolicy.runtimeState
+        )
+        return PreparedNormalTabWebViewConfiguration(
+            configuration: configuration,
+            policyState: policyState
         )
     }
 
@@ -175,15 +179,17 @@ final class TabWebViewConfigurationOwner {
         tabId: UUID,
         profile: Profile?,
         context: TabWebViewConfigurationContext,
-        reloadPolicyStateOwner: TabReloadPolicyStateOwner
+        policyLedger: TabConfigurationPolicyLedger
     ) -> Bool {
         guard webView.configuration.sumiIsNormalTabWebViewConfiguration else {
             return false
         }
 
         let desiredProtectionState = context.protectionDesiredAttachmentState(webView.url ?? fallbackURL)
-        if let appliedProtectionState = reloadPolicyStateOwner.protectionAppliedAttachmentState {
-            guard appliedProtectionState == desiredProtectionState else {
+        if let appliedProtectionState = policyLedger.protectionAttachment {
+            guard appliedProtectionState.hasSameEffectiveWebViewAttachment(
+                as: desiredProtectionState
+            ) else {
                 return false
             }
         } else if desiredProtectionState.isEnabled {
@@ -193,16 +199,11 @@ final class TabWebViewConfigurationOwner {
         let desiredSafariContentBlockerState = context
             .safariBlockerDesiredAttachmentState(webView.url ?? fallbackURL)
         if let appliedSafariContentBlockerState =
-            reloadPolicyStateOwner.safariContentBlockerAppliedAttachmentState {
+            policyLedger.safariContentBlockerAttachment {
             guard appliedSafariContentBlockerState
                 .hasSameEffectiveWebViewAttachment(as: desiredSafariContentBlockerState)
             else {
                 return false
-            }
-            if appliedSafariContentBlockerState != desiredSafariContentBlockerState {
-                reloadPolicyStateOwner.noteSafariContentBlockerAttachmentApplied(
-                    desiredSafariContentBlockerState
-                )
             }
         } else if desiredSafariContentBlockerState.isEnabled {
             return false
@@ -211,6 +212,20 @@ final class TabWebViewConfigurationOwner {
         guard let profile,
               webView.configuration.websiteDataStore === profile.dataStore
         else {
+            return false
+        }
+        let physicalAutoplayState = SumiRuntimePermissionController
+            .autoplayState(
+                from: webView.configuration
+                    .mediaTypesRequiringUserActionForPlayback
+            )
+        let desiredAutoplayState = context.browserConfiguration
+            .resolvedAutoplayPolicy(
+                for: webView.url ?? fallbackURL,
+                profile: profile
+            )
+            .runtimeState
+        guard physicalAutoplayState == desiredAutoplayState else {
             return false
         }
         guard let provider = webView.configuration.userContentController.sumiNormalTabUserScriptsProvider else {

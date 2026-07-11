@@ -21,6 +21,7 @@ checks=(
   "scripts/check_settings_browser_manager_boundary.sh"
   "scripts/check_sidebar_browser_manager_boundary.sh"
   "scripts/check_tab_webview_ownership_boundary.sh"
+  "scripts/check_tab_configuration_policy_architecture.sh"
   "scripts/check_webview_interaction_state_boundary.sh"
   "scripts/check_popup_navigation_architecture.sh"
   "scripts/check_tab_suspension_architecture.sh"

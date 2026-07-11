@@ -39,7 +39,7 @@ enum TabBrowserRuntimeFactory {
         let childTabs = WebKitChildTabOpeningService(
             sources: physicalSources,
             tabs: browserManager.tabManager,
-            ownership: webViewRuntime.ownershipService,
+            placement: webViewRuntime.ownershipService,
             selection: BrowserTabSelectionCommand {
                 [weak browserManager] tab, window, loadPolicy in
                 browserManager?.selectTab(
@@ -59,7 +59,7 @@ enum TabBrowserRuntimeFactory {
                 tabs: browserManager.tabManager
             ),
             tabs: browserManager.tabManager,
-            ownership: webViewRuntime.ownershipService,
+            placement: webViewRuntime.ownershipService,
             ownershipQuery: webViewRuntime.ownershipQuery,
             sourceResolver: physicalSources,
             lifecycle: webViewRuntime.lifecycleService,
@@ -83,7 +83,9 @@ enum TabBrowserRuntimeFactory {
             mediaRuntimeCallbacks: TabBrowserHostServicesRuntimeFactory.mediaCallbacks(for: browserManager),
             navigationCommandRuntime: TabBrowserNavigationRuntimeFactory.navigationCommandRuntime(for: browserManager),
             profileResolutionRuntime: TabBrowserNavigationRuntimeFactory.profileResolutionRuntime(for: browserManager),
-            reloadPolicyRuntime: TabBrowserNavigationRuntimeFactory.reloadPolicyRuntime(for: browserManager),
+            reloadPolicies: TabBrowserNavigationRuntimeFactory.reloadPolicies(
+                for: browserManager
+            ),
             historySwipeRuntime: TabBrowserNavigationRuntimeFactory.historySwipeRuntime(for: browserManager),
             historyRecordingRuntime: TabBrowserNavigationRuntimeFactory.historyRecordingRuntime(for: browserManager),
             findInPageRuntime: TabBrowserNavigationRuntimeFactory.findInPageRuntime(for: browserManager),

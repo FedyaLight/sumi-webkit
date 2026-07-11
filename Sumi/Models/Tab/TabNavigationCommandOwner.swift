@@ -281,7 +281,7 @@ final class TabNavigationCommandOwner {
         let navigationIntent = tab.beginMainFrameNavigationIntent(to: targetURL)
         _ = tab.beginWebViewRebuildIntent()
         tab.beginLoadingPresentationIfNeeded()
-        let protectionReloadWasRequired = tab.reloadPolicyStateOwner.isProtectionReloadRequired
+        let protectionReloadWasRequired = tab.isProtectionReloadRequired
         let configurationReplacementOutcome = configurationPolicyRebuilder?(
             targetURL,
             reason

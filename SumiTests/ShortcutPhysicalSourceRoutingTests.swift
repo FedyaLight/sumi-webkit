@@ -36,7 +36,7 @@ final class ShortcutPhysicalSourceRoutingTests: XCTestCase {
         )
         wrongWindowClone.owningTab = harness.sourceTab
         harness.browser.testWebViewRuntime().ownershipService
-            .registerTrackedWebView(
+            .registerAuxiliaryTrackedWebView(
                 wrongWindowClone,
                 for: harness.sourceTab,
                 in: secondWindow.id
@@ -243,7 +243,7 @@ final class ShortcutPhysicalSourceRoutingTests: XCTestCase {
             configuration: configuration
         )
         sourceWebView.owningTab = sourceTab
-        browser.testWebViewRuntime().ownershipService.registerTrackedWebView(
+        browser.testWebViewRuntime().ownershipService.registerAuxiliaryTrackedWebView(
             sourceWebView,
             for: sourceTab,
             in: sourceWindow.id

@@ -2,6 +2,12 @@ import Foundation
 import WebKit
 import SumiWebRuntime
 
+enum UntrackedWebViewMaterializationOutcome {
+    case available(WKWebView)
+    case deferred
+    case failed
+}
+
 /// Materializes or adopts one normal-tab WebView for one window. Whole-session
 /// replacement is deliberately delegated to `WebViewReplacementPipeline`.
 @MainActor
@@ -9,8 +15,7 @@ final class TabWebViewMaterializationService {
     struct Runtime {
         let webViewSessions: WebViewSessionRepository
         let initialDocumentWarmup: @MainActor () -> InitialDocumentWarmupRuntime
-        let register: @MainActor (WKWebView, UUID, UUID) -> Void
-        let promotePrimary: @MainActor (TrackedWebViewOwner, WKWebView) -> Bool
+        let placement: CanonicalWebViewPlacementService
         let primaryCandidate: @MainActor (UUID) -> (
             owner: TrackedWebViewOwner,
             webView: WKWebView
@@ -71,7 +76,21 @@ final class TabWebViewMaterializationService {
                     != replacement.owner.windowID else {
             return
         }
-        _ = runtime.promotePrimary(replacement.owner, replacement.webView)
+        let outcome = replacement.webView.configuration
+            .sumiIsNormalTabWebViewConfiguration
+            ? runtime.placement.placeNormalTracked(
+                replacement.webView,
+                for: tab,
+                in: replacement.owner.windowID,
+                promoteToPrimary: true
+            )
+            : runtime.placement.placeAuxiliaryTracked(
+                replacement.webView,
+                for: tab,
+                in: replacement.owner.windowID,
+                promoteToPrimary: true
+            )
+        precondition(outcome.isAccepted)
     }
 
     private func createPrimary(
@@ -84,13 +103,16 @@ final class TabWebViewMaterializationService {
             assertionFailure("Unable to create a normal-tab WebView")
             return nil
         }
-        runtime.register(webView, tab.id, windowID)
-        precondition(
-            runtime.promotePrimary(
-                .init(tabID: tab.id, windowID: windowID),
-                webView
-            )
-        )
+        guard runtime.placement.placeNormalTracked(
+            webView,
+            for: tab,
+            in: windowID,
+            promoteToPrimary: true
+        ).isAccepted else {
+            tab.cleanupCloneWebView(webView)
+            assertionFailure("Primary WebView carried stale policy evidence")
+            return nil
+        }
         schedulePrimary(webView, tab: tab, windowID: windowID)
         return webView
     }
@@ -113,7 +135,19 @@ final class TabWebViewMaterializationService {
             assertionFailure("Unable to create a normal-tab clone")
             return nil
         }
-        runtime.register(webView, tab.id, windowID)
+        guard runtime.placement.placeNormalTracked(
+            webView,
+            for: tab,
+            in: windowID,
+            promoteToPrimary: false
+        ).isAccepted else {
+            tab.cleanupCloneWebView(webView)
+            _ = tab.rebuildNormalWebViewForConfigurationPolicyOutcome(
+                targetURL: tab.url,
+                reason: "TabWebViewMaterializationService.clonePolicyMismatch"
+            )
+            return nil
+        }
         schedule(
             webView,
             tab: tab,
@@ -130,13 +164,21 @@ final class TabWebViewMaterializationService {
         for tab: Tab,
         in windowID: UUID
     ) {
-        runtime.register(webView, tab.id, windowID)
-        precondition(
-            runtime.promotePrimary(
-                .init(tabID: tab.id, windowID: windowID),
-                webView
+        let outcome = webView.configuration
+            .sumiIsNormalTabWebViewConfiguration
+            ? runtime.placement.placeNormalTracked(
+                webView,
+                for: tab,
+                in: windowID,
+                promoteToPrimary: true
             )
-        )
+            : runtime.placement.placeAuxiliaryTracked(
+                webView,
+                for: tab,
+                in: windowID,
+                promoteToPrimary: true
+            )
+        precondition(outcome.isAccepted)
         schedulePrimary(webView, tab: tab, windowID: windowID)
     }
 

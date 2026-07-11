@@ -4,7 +4,7 @@ import WebKit
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionPageNavigationPreparationOwner {
-    private let webViewReplacementOwner = TabWebViewReplacementOwner()
+    private let webViewReplacement = TabWebViewReplacementService()
 
     @discardableResult
     func prepareNavigation(
@@ -55,11 +55,11 @@ final class ExtensionPageNavigationPreparationOwner {
             return .notNeeded
         }
 
-        let outcome = webViewReplacementOwner.replaceCurrentWebView(
+        let outcome = webViewReplacement.replaceCurrentWebView(
+            in: tab,
             targetURL: targetURL,
             reason: "\(reason).extensionPageConfiguration",
             configuration: .currentExtensionPage,
-            context: tab.webViewReplacementContextOwner.makeContext(for: tab),
             makeReplacementWebView: { replacementReason in
                 tab.makeAuxiliaryOverrideTabWebView(
                     configuration: configuration,
@@ -91,10 +91,10 @@ final class ExtensionPageNavigationPreparationOwner {
             return .notNeeded
         }
 
-        let outcome = webViewReplacementOwner.replaceNormalWebView(
+        let outcome = webViewReplacement.replaceNormalWebView(
+            in: tab,
             targetURL: targetURL,
-            reason: "\(reason).normalPageConfiguration",
-            context: tab.webViewReplacementContextOwner.makeContext(for: tab)
+            reason: "\(reason).normalPageConfiguration"
         )
         if outcome == .failed {
             tab.webExtensionContextOverride = previousExtensionContext

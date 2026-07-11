@@ -1,11 +1,10 @@
 import Foundation
-import SumiDomain
 import WebKit
 import SumiWebRuntime
 
 /// Constructs target-profile WebViews without mutating repository placement
 /// or the Tab's committed profile. Failed construction destroys only the
-/// provisional generation and restores configuration-policy snapshots.
+/// provisional generation and cancels its uncommitted policy receipts.
 @MainActor
 struct ProfileReplacementProvisioning {
     func prepare(
@@ -18,19 +17,12 @@ struct ProfileReplacementProvisioning {
         for tab in tabs {
             guard let snapshot = liveSnapshots[tab.id] else { continue }
             let navigationIntent = tab.currentMainFrameNavigationIntent()
-            let protection =
-                tab.reloadPolicyStateOwner.protectionAppliedAttachmentState
-            let safari = tab.reloadPolicyStateOwner
-                .safariContentBlockerAppliedAttachmentState
-
             guard let replacement = prepare(
                 tab: tab,
                 snapshot: snapshot,
                 targetProfile: targetProfile,
                 targetURL: navigationIntent.targetURL,
                 semanticRevision: navigationIntent.revision,
-                protection: protection,
-                safari: safari,
                 reason: reason
             ) else {
                 discard(prepared)
@@ -46,14 +38,7 @@ struct ProfileReplacementProvisioning {
             replacement.replacements.forEach(
                 replacement.tab.cleanupCloneWebView
             )
-            restoreReloadPolicy(replacement)
         }
-    }
-
-    func restoreReloadPolicy(
-        _ prepared: [PreparedWebViewReplacement]
-    ) {
-        prepared.forEach(restoreReloadPolicy)
     }
 
     private func prepare(
@@ -62,8 +47,6 @@ struct ProfileReplacementProvisioning {
         targetProfile: Profile,
         targetURL: URL,
         semanticRevision: UInt64,
-        protection: SumiProtectionAttachmentState?,
-        safari: SumiSafariContentBlockerAttachmentState?,
         reason: String
     ) -> PreparedWebViewReplacement? {
         let placement: WebViewReplacementPlacement
@@ -80,7 +63,6 @@ struct ProfileReplacementProvisioning {
                     prepareExtensionRuntime: false
                 ) else {
                     byWindowID.values.forEach(tab.cleanupCloneWebView)
-                    restoreReloadPolicy(tab, protection, safari)
                     return nil
                 }
                 byWindowID[windowID] = webView
@@ -88,7 +70,6 @@ struct ProfileReplacementProvisioning {
             guard let primaryWindowID = snapshot.primaryWindowID,
                   byWindowID[primaryWindowID] != nil else {
                 byWindowID.values.forEach(tab.cleanupCloneWebView)
-                restoreReloadPolicy(tab, protection, safari)
                 return nil
             }
             replacements = Array(byWindowID.values)
@@ -104,7 +85,6 @@ struct ProfileReplacementProvisioning {
                 explicitProfile: targetProfile,
                 prepareExtensionRuntime: false
             ) else {
-                restoreReloadPolicy(tab, protection, safari)
                 return nil
             }
             let residence: WebViewDetachedReplacementResidence =
@@ -115,7 +95,15 @@ struct ProfileReplacementProvisioning {
             placement = .detached(webView: webView, residence: residence)
         }
 
-        return PreparedWebViewReplacement(
+        guard let configurationPolicyChangeSet =
+            tab.preparedConfigurationPolicyChangeSet(
+                for: replacements
+            ) else {
+            replacements.forEach(tab.cleanupCloneWebView)
+            return nil
+        }
+
+        guard let preparedReplacement = PreparedWebViewReplacement(
             tab: tab,
             snapshot: snapshot,
             placement: placement,
@@ -126,28 +114,13 @@ struct ProfileReplacementProvisioning {
             semanticRevision: semanticRevision,
             profileID: targetProfile.id,
             requiresExtensionRuntimePreparation: true,
-            previousProtectionState: protection,
-            previousSafariContentBlockerState: safari
-        )
-    }
-
-    private func restoreReloadPolicy(_ replacement: PreparedWebViewReplacement) {
-        restoreReloadPolicy(
-            replacement.tab,
-            replacement.previousProtectionState,
-            replacement.previousSafariContentBlockerState
-        )
-    }
-
-    private func restoreReloadPolicy(
-        _ tab: Tab,
-        _ protection: SumiProtectionAttachmentState?,
-        _ safari: SumiSafariContentBlockerAttachmentState?
-    ) {
-        tab.reloadPolicyStateOwner.noteContentBlockingWebViewRebuildFailed(
-            restoringProtectionState: protection,
-            restoringSafariContentBlockerState: safari
-        )
+            configurationPolicyChangeSet: configurationPolicyChangeSet
+        ) else {
+            configurationPolicyChangeSet.cancel()
+            replacements.forEach(tab.cleanupCloneWebView)
+            return nil
+        }
+        return preparedReplacement
     }
 
     private func uuidOrder(_ lhs: UUID, _ rhs: UUID) -> Bool {

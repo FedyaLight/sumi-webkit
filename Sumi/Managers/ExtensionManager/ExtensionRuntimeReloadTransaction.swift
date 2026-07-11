@@ -42,6 +42,7 @@ final class ExtensionRuntimeReloadTransaction {
     private let adapterResolution: ExtensionAdapterResolutionOwner
     private let controllerBinding: ExtensionControllerAttachmentOwner
     private let tabPublication: ExtensionNormalTabRuntimeBindingOwner
+    private let isAuxiliarySessionTab: @MainActor (Tab) -> Bool
     private let diagnostics: ExtensionRuntimeDiagnostics
 
     init(
@@ -51,6 +52,7 @@ final class ExtensionRuntimeReloadTransaction {
         adapterResolution: ExtensionAdapterResolutionOwner,
         controllerBinding: ExtensionControllerAttachmentOwner,
         tabPublication: ExtensionNormalTabRuntimeBindingOwner,
+        isAuxiliarySessionTab: @escaping @MainActor (Tab) -> Bool,
         diagnostics: ExtensionRuntimeDiagnostics
     ) {
         self.runtimeSession = runtimeSession
@@ -59,6 +61,7 @@ final class ExtensionRuntimeReloadTransaction {
         self.adapterResolution = adapterResolution
         self.controllerBinding = controllerBinding
         self.tabPublication = tabPublication
+        self.isAuxiliarySessionTab = isAuxiliarySessionTab
         self.diagnostics = diagnostics
     }
 
@@ -339,8 +342,9 @@ final class ExtensionRuntimeReloadTransaction {
     }
 
     private func allKnownTabs(in runtime: ExtensionManagerRuntime) -> [Tab] {
-        runtime.allTabs()
-            + runtime.allWindowStates().flatMap(\.ephemeralTabs)
+        (runtime.allTabs()
+            + runtime.allWindowStates().flatMap(\.ephemeralTabs))
+            .filter { isAuxiliarySessionTab($0) == false }
     }
 
     private func liveWebViews(

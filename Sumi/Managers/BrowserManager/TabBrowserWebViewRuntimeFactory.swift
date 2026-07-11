@@ -86,12 +86,11 @@ extension TabWebViewReplacementRuntime {
                     reason: reason
                 )
             },
-            commitUntrackedReplacement: { tab, previous, replacement, reason in
+            commitUntrackedReplacement: { tab, previous, replacement in
                 ownership.replaceDetached(
                     previous,
                     with: replacement,
-                    for: tab,
-                    reason: reason
+                    for: tab
                 )
             }
         )

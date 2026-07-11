@@ -255,6 +255,34 @@ final class WebViewRuntimeGraph {
         )
     )
 
+    private(set) lazy var canonicalWebViewPlacement =
+        CanonicalWebViewPlacementService(
+            webViewSessions: webViewSessions,
+            trackedRegistration: trackedRegistrationOwner
+        )
+
+    private lazy var detachedWebViewReplacement =
+        DetachedWebViewReplacementService(
+            webViewSessions: webViewSessions,
+            pipeline: replacementPipeline
+        )
+
+    private(set) lazy var untrackedWebViewInstallationService =
+        UntrackedWebViewInstallationService(
+            runtimeTabs: runtimeTabs,
+            query: ownershipQuery,
+            placement: canonicalWebViewPlacement,
+            detachedReplacement: detachedWebViewReplacement
+        )
+
+    private lazy var detachedWebViewCleanup = DetachedWebViewCleanupService(
+        webViewSessions: webViewSessions,
+        websiteDataCleanup: websiteDataCleanupService,
+        processRecovery: processRecoveryService,
+        mediaProtection: mediaProtectionOwner,
+        protectedCommands: protectedCommandDispatchOwner
+    )
+
     lazy var tabWebViewMaterialization: TabWebViewMaterializationService =
         WebViewRuntimeGraphAssembly.makeTabWebViewMaterialization(
             graph: self,
@@ -262,16 +290,13 @@ final class WebViewRuntimeGraph {
         )
 
     private(set) lazy var ownershipService: WebViewOwnershipService = WebViewOwnershipService(
-        webViewSessions: webViewSessions,
         runtimeTabs: runtimeTabs,
         query: ownershipQuery,
-        trackedRegistration: trackedRegistrationOwner,
+        placement: canonicalWebViewPlacement,
         materialization: tabWebViewMaterialization,
+        detachedReplacement: detachedWebViewReplacement,
         websiteDataCleanup: websiteDataCleanupService,
-        processRecovery: processRecoveryService,
-        mediaProtection: mediaProtectionOwner,
-        protectedCommands: protectedCommandDispatchOwner,
-        replacementPipeline: replacementPipeline
+        detachedCleanup: detachedWebViewCleanup
     )
 
     private(set) lazy var protectionRuntime: WebViewProtectionRuntime = WebViewProtectionRuntime(
@@ -599,22 +624,7 @@ private enum WebViewRuntimeGraphAssembly {
                         }
                     )
                 },
-                register: { [weak graph] webView, tabID, windowID in
-                    graph?.trackedRegistrationOwner.register(
-                        webView,
-                        for: tabID,
-                        in: windowID
-                    )
-                },
-                promotePrimary: { [weak graph] owner, webView in
-                    guard let graph else { return false }
-                    return graph.webViewTrackingLifecycleOwner
-                        .promoteTrackedWebViewToPrimary(
-                            owner: owner,
-                            expectedWebView: webView,
-                            in: graph.webViewSessions
-                        )
-                },
+                placement: graph.canonicalWebViewPlacement,
                 primaryCandidate: { [weak graph] tabID in
                     guard let graph else { return nil }
                     return graph.visibleWebViewRuntimeOwner

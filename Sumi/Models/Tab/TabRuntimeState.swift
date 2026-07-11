@@ -15,7 +15,7 @@ struct TabBrowserRuntime {
     var mediaRuntimeCallbacks: TabMediaRuntimeCallbacks
     var navigationCommandRuntime: TabNavigationCommandRuntime
     var profileResolutionRuntime: TabProfileResolutionRuntime
-    var reloadPolicyRuntime: TabReloadPolicyRuntime
+    var reloadPolicies: TabReloadPolicies
     var historySwipeRuntime: TabHistorySwipeRuntime
     var historyRecordingRuntime: TabHistoryRecordingRuntime
     var findInPageRuntime: TabFindInPageRuntime
@@ -50,7 +50,7 @@ struct TabBrowserRuntime {
         mediaRuntimeCallbacks: .inactive,
         navigationCommandRuntime: .inactive,
         profileResolutionRuntime: .inactive,
-        reloadPolicyRuntime: .empty,
+        reloadPolicies: .inactive,
         historySwipeRuntime: .inactive,
         historyRecordingRuntime: .inactive,
         findInPageRuntime: .inactive,
@@ -430,13 +430,12 @@ struct TabWebViewReplacementRuntime {
     var commitUntrackedReplacement: (
         Tab,
         WKWebView,
-        WKWebView,
-        String
+        WKWebView
     ) -> WebViewDetachedReplacementCommitOutcome
 
     static let inactive = Self(
         rebuildTrackedWebViews: { _, _, _, _, _ in .failed },
-        commitUntrackedReplacement: { _, _, _, _ in .rejected }
+        commitUntrackedReplacement: { _, _, _ in .rejected }
     )
 }
 
@@ -564,7 +563,7 @@ final class TabNavigationRuntime {
         TabWebViewReplacementRuntime.inactive
     var navigationCommandRuntime = TabNavigationCommandRuntime.inactive
     var profileResolutionRuntime = TabProfileResolutionRuntime.inactive
-    var reloadPolicyRuntime = TabReloadPolicyRuntime.empty
+    var reloadPolicies = TabReloadPolicies.inactive
     let navigationTransactionOwner = TabNavigationTransactionOwner()
     let navigationStateController = TabNavigationStateController()
     let historyRecorder = HistoryTabRecorder()

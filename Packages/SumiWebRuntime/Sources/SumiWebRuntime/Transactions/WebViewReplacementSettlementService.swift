@@ -205,6 +205,8 @@ public final class WebViewReplacementSettlementService {
         switch commit(transaction) {
         case .committed:
             return .committed
+        case .rolledBack(_, let reason):
+            return .rolledBack(reason)
         case .conflicted:
             return .conflicted
         case .leaseLost:
@@ -302,6 +304,18 @@ public final class WebViewReplacementSettlementService {
         guard transactionsByID[transaction.id] === transaction,
               case .awaitingBindings = transaction.state else {
             return .leaseLost(transaction.id)
+        }
+        guard runtime.validateCommitLease(transaction.lease) else {
+            let reason = WebViewReplacementRollbackReason
+                .commitValidationFailed
+            switch rollback(transaction, reason: reason) {
+            case .rolledBack:
+                return .rolledBack(transaction.id, reason)
+            case .conflicted:
+                return .conflicted(transaction.id)
+            case .leaseLost, .ignored:
+                return .leaseLost(transaction.id)
+            }
         }
         switch runtime.commitLease(transaction.lease) {
         case .committed(let retired):

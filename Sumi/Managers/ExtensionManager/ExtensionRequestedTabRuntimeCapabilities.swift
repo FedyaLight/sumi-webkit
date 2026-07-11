@@ -19,13 +19,26 @@ protocol ExtensionWebViewRuntimePreparing: AnyObject {
 
 @available(macOS 15.5, *)
 @MainActor
-protocol ExtensionControllerBinding: AnyObject {
+protocol ExtensionControllerBindingQuery: AnyObject {
     func extensionController(for tab: Tab) -> WKWebExtensionController?
-    func ownedUntrackedCurrentWebView(for tab: Tab) -> WKWebView?
+    func resolvedLiveWebView(for tab: Tab) -> WKWebView?
+}
+
+@available(macOS 15.5, *)
+@MainActor
+protocol ExtensionControllerAttaching: AnyObject {
     func attachExtensionControllerIfNeeded(
         to webView: WKWebView,
         for tab: Tab
     ) -> Bool
+}
+
+@available(macOS 15.5, *)
+@MainActor
+protocol ExtensionControllerBinding:
+    ExtensionControllerBindingQuery,
+    ExtensionControllerAttaching {
+    func ownedUntrackedCurrentWebView(for tab: Tab) -> WKWebView?
 }
 
 @available(macOS 15.5, *)
@@ -37,6 +50,30 @@ protocol ExtensionContentScriptContextLoading: AnyObject {
 
 @available(macOS 15.5, *)
 @MainActor
-protocol ExtensionTabOpenNotifying: AnyObject {
-    func notifyTabOpened(_ tab: Tab) -> Bool
+protocol ExtensionTabLifecycleEventSink: AnyObject {
+    func emitDidOpenTab(
+        _ tab: Tab,
+        controller: WKWebExtensionController,
+        adapter: ExtensionTabAdapter
+    )
+    func emitDidCloseTab(
+        _ tab: Tab,
+        controller: WKWebExtensionController,
+        adapter: ExtensionTabAdapter
+    )
+}
+
+@available(macOS 15.5, *)
+@MainActor
+protocol ExtensionInitialTabLifecycleEventSink: AnyObject {
+    func emitDidOpenInitialTab(
+        _ tab: Tab,
+        controller: WKWebExtensionController,
+        adapter: ExtensionTabAdapter
+    )
+    func emitDidCloseInitialTab(
+        _ tab: Tab,
+        controller: WKWebExtensionController,
+        adapter: ExtensionTabAdapter
+    )
 }

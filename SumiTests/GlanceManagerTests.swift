@@ -262,7 +262,7 @@ final class GlanceManagerTests: XCTestCase {
         let (windowRegistry, sourceWindow) = makeRegisteredWindow(in: browserManager, selecting: sourceTab)
         let webView = WKWebView()
 
-        browserManager.testWebViewRuntime().ownershipService.registerTrackedWebView(
+        browserManager.testWebViewRuntime().ownershipService.registerAuxiliaryTrackedWebView(
             webView,
             for: sourceTab,
             in: sourceWindow.id
@@ -285,7 +285,7 @@ final class GlanceManagerTests: XCTestCase {
         let staleOwnerWindowID = UUID()
         let webView = WKWebView()
 
-        browserManager.testWebViewRuntime().ownershipService.registerTrackedWebView(
+        browserManager.testWebViewRuntime().ownershipService.registerAuxiliaryTrackedWebView(
             webView,
             for: sourceTab,
             in: staleOwnerWindowID

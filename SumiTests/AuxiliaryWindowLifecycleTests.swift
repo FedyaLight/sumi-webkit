@@ -30,7 +30,7 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
         let windowState: BrowserWindowState
     }
 
-    private struct ExtensionHarness {
+    struct ExtensionHarness {
         let container: ModelContainer
         let browserManager: BrowserManager
         let windowRegistry: WindowRegistry
@@ -111,134 +111,75 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
         XCTAssertEqual(harness.windowState.currentTabId, harness.sourceTab.id)
     }
 
-    func testCloseAllForExtensionIdRemovesRegisteredMiniWindowAdapter() throws {
-        let container = try makeTestContainer()
-        let profile = Profile(name: "Auxiliary Owner")
-        let registry = SumiModuleRegistry(
-            settingsStore: SumiModuleSettingsStore(
-                userDefaults: UserDefaults(suiteName: UUID().uuidString)!
-            )
+    func testCloseAllForExtensionIdRemovesRegisteredMiniWindowAdapter()
+        async throws {
+        let harness = try await makeExtensionHarness(
+            ownerExtensionID: "adapter-owner"
         )
-        registry.enable(.extensions)
-        let extensionManager = makeSafariExtensionTestExtensionManager(
-            context: container.mainContext,
-            initialProfile: profile,
-            browserConfiguration: BrowserConfiguration(),
-            moduleRegistry: registry
-        )
-        let extensionsModule = SumiExtensionsModule(
-            moduleRegistry: registry,
-            context: container.mainContext,
-            browserConfiguration: BrowserConfiguration(),
-            initialProfileProvider: { profile },
-            managerFactory: { _, _, _, _ in extensionManager }
-        )
-        let browserManager = BrowserManager(
-            moduleRegistry: registry,
-            extensionsModule: extensionsModule
-        )
-        browserManager.profileManager.profiles = [profile]
-        browserManager.currentProfile = profile
-        extensionsModule.attach(runtime: BrowserExtensionsModuleRuntimeFactory.runtime(for: browserManager))
-        extensionManager.attach(browserManager: browserManager)
-        XCTAssertIdentical(extensionsModule.managerIfEnabled(), extensionManager)
-        extensionManager.runtimeSession.allowsRuntimeWithoutEnabledExtensions = true
-        extensionManager.extensionsLoaded = true
-
-        let sourceTab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
-            url: "safari-web-extension://adapter-owner/popup.html",
-            in: browserManager.tabManager.spaceStateOwner.currentSpace,
-            activate: true
-        )
-        sourceTab.profileId = profile.id
 
         let extensionURL = URL(string: "safari-web-extension://adapter-owner/popup.html")!
-        let popupWebView = browserManager.auxiliaryWindows.popups.presentExtensionExternalWebPopup(
-            configuration: WKWebViewConfiguration(),
-            request: URLRequest(url: URL(string: "https://auth.example/login")!),
-            windowFeatures: WKWindowFeatures(),
-            openerTab: sourceTab,
-            extensionOwnedSourceURL: extensionURL
+        let popupWebView = try XCTUnwrap(
+            harness.browserManager.auxiliaryWindows.popups
+                .presentExtensionExternalWebPopup(
+                    configuration: extensionPopupConfiguration(for: harness),
+                    request: URLRequest(
+                        url: URL(string: "https://auth.example/login")!
+                    ),
+                    windowFeatures: WKWindowFeatures(),
+                    openerTab: harness.sourceTab,
+                    extensionOwnedSourceURL: extensionURL
+                )
         )
-        XCTAssertNotNil(popupWebView)
-        XCTAssertFalse(extensionManager.adapterStore.miniWindowAdapters.isEmpty)
+        XCTAssertFalse(
+            harness.extensionManager.adapterStore
+                .miniWindowAdaptersSnapshot().isEmpty
+        )
 
-        browserManager.auxiliaryWindows.teardown.closeAll(forExtensionID: "adapter-owner")
-        XCTAssertTrue(extensionManager.adapterStore.miniWindowAdapters.isEmpty)
-        XCTAssertFalse(browserManager.auxiliaryWindows.sessions.contains(popupWebView!))
+        harness.browserManager.auxiliaryWindows.teardown.closeAll(
+            forExtensionID: "adapter-owner"
+        )
+        XCTAssertTrue(
+            harness.extensionManager.adapterStore
+                .miniWindowAdaptersSnapshot().isEmpty
+        )
+        XCTAssertFalse(
+            harness.browserManager.auxiliaryWindows.sessions.contains(
+                popupWebView
+            )
+        )
     }
 
-    func testParentWindowFrameUnchangedAfterPresentExtensionExternalWebPopupWithExtensionHarness() throws {
-        let container = try makeTestContainer()
-        let profile = Profile(name: "Auxiliary Owner")
-        let registry = SumiModuleRegistry(
-            settingsStore: SumiModuleSettingsStore(
-                userDefaults: UserDefaults(suiteName: UUID().uuidString)!
-            )
+    func testParentWindowFrameUnchangedAfterPresentExtensionExternalWebPopupWithExtensionHarness()
+        async throws {
+        let harness = try await makeExtensionHarness(
+            ownerExtensionID: "adapter-owner"
         )
-        registry.enable(.extensions)
-        let extensionManager = ExtensionManager(
-            context: container.mainContext,
-            initialProfile: profile,
-            browserConfiguration: BrowserConfiguration()
+        let mainWindow = try XCTUnwrap(
+            harness.windowRegistry.appKitWindow(for: harness.windowState)
         )
-        let extensionsModule = SumiExtensionsModule(
-            moduleRegistry: registry,
-            context: container.mainContext,
-            browserConfiguration: BrowserConfiguration(),
-            initialProfileProvider: { profile },
-            managerFactory: { _, _, _, _ in extensionManager }
-        )
-        let browserManager = BrowserManager(
-            moduleRegistry: registry,
-            extensionsModule: extensionsModule
-        )
-        browserManager.profileManager.profiles = [profile]
-        browserManager.currentProfile = profile
-        extensionsModule.attach(runtime: BrowserExtensionsModuleRuntimeFactory.runtime(for: browserManager))
-        extensionManager.attach(browserManager: browserManager)
-        XCTAssertIdentical(extensionsModule.managerIfEnabled(), extensionManager)
-        extensionManager.extensionsLoaded = true
-
-        let sourceTab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
-            url: "safari-web-extension://adapter-owner/popup.html",
-            in: browserManager.tabManager.spaceStateOwner.currentSpace,
-            activate: true
-        )
-        sourceTab.profileId = profile.id
-
-        let windowRegistry = WindowRegistry()
-        let windowState = BrowserWindowState()
-        windowState.tabManager = browserManager.tabManager
-        windowState.currentSpaceId = browserManager.tabManager.spaceStateOwner.currentSpace?.id
-        windowState.currentProfileId = browserManager.currentProfile?.id
-        windowRegistry.bindAppKitWindow(
-            NSWindow(
-            contentRect: NSRect(x: 120, y: 120, width: 1200, height: 800),
-            styleMask: [.titled, .closable, .resizable],
-            backing: .buffered,
-            defer: false
-            ),
-            to: windowState
-        )
-        windowRegistry.register(windowState)
-        windowRegistry.setActive(windowState)
-        browserManager.windowRegistry = windowRegistry
-
-        let originalMainFrame = windowRegistry.appKitWindow(for: windowState)!.frame
+        let originalMainFrame = mainWindow.frame
         let extensionURL = URL(string: "safari-web-extension://adapter-owner/popup.html")!
-        sourceTab.url = extensionURL
 
-        let popupWebView = browserManager.auxiliaryWindows.popups.presentExtensionExternalWebPopup(
-            configuration: WKWebViewConfiguration(),
-            request: URLRequest(url: URL(string: "https://auth.example/login")!),
-            windowFeatures: WKWindowFeatures(),
-            openerTab: sourceTab,
-            extensionOwnedSourceURL: extensionURL
+        let popupWebView = try XCTUnwrap(
+            harness.browserManager.auxiliaryWindows.popups
+                .presentExtensionExternalWebPopup(
+                    configuration: extensionPopupConfiguration(for: harness),
+                    request: URLRequest(
+                        url: URL(string: "https://auth.example/login")!
+                    ),
+                    windowFeatures: WKWindowFeatures(),
+                    openerTab: harness.sourceTab,
+                    extensionOwnedSourceURL: extensionURL
+                )
         )
+        defer {
+            harness.browserManager.auxiliaryWindows.teardown.teardown(
+                for: popupWebView,
+                reason: .bulkCleanup
+            )
+        }
 
-        XCTAssertNotNil(popupWebView)
-        XCTAssertEqual(windowRegistry.appKitWindow(for: windowState)!.frame, originalMainFrame)
+        XCTAssertEqual(mainWindow.frame, originalMainFrame)
     }
 
     func testPrivateExtensionPopupWindowIsBlockedBeforeProfileRuntimeMaterializes() async throws {
@@ -264,7 +205,10 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
 
         XCTAssertNil(adapter)
         XCTAssertTrue(harness.browserManager.tabManager.transientTabRegistryOwner.auxiliaryMiniWindowTabsByID.isEmpty)
-        XCTAssertTrue(harness.extensionManager.adapterStore.miniWindowAdapters.isEmpty)
+        XCTAssertTrue(
+            harness.extensionManager.adapterStore.miniWindowAdaptersSnapshot()
+                .isEmpty
+        )
         XCTAssertNil(
             harness.extensionManager.extensionController,
             "Private extension popups must not create the normal profile-backed extension controller"
@@ -355,181 +299,129 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
         )
     }
 
-    func testExtensionRequestedTeardownClosesAuxiliaryMiniWindowSession() throws {
-        let container = try makeTestContainer()
-        let profile = Profile(name: "Auxiliary Owner")
-        let registry = SumiModuleRegistry(
-            settingsStore: SumiModuleSettingsStore(
-                userDefaults: UserDefaults(suiteName: UUID().uuidString)!
-            )
+    func testExtensionRequestedTeardownClosesAuxiliaryMiniWindowSession()
+        async throws {
+        let harness = try await makeExtensionHarness(
+            ownerExtensionID: "adapter-owner"
         )
-        registry.enable(.extensions)
-        let extensionManager = ExtensionManager(
-            context: container.mainContext,
-            initialProfile: profile,
-            browserConfiguration: BrowserConfiguration()
-        )
-        let extensionsModule = SumiExtensionsModule(
-            moduleRegistry: registry,
-            context: container.mainContext,
-            browserConfiguration: BrowserConfiguration(),
-            initialProfileProvider: { profile },
-            managerFactory: { _, _, _, _ in extensionManager }
-        )
-        let browserManager = BrowserManager(
-            moduleRegistry: registry,
-            extensionsModule: extensionsModule
-        )
-        browserManager.profileManager.profiles = [profile]
-        browserManager.currentProfile = profile
-        extensionsModule.attach(runtime: BrowserExtensionsModuleRuntimeFactory.runtime(for: browserManager))
-        extensionManager.attach(browserManager: browserManager)
-        XCTAssertIdentical(extensionsModule.managerIfEnabled(), extensionManager)
-        extensionManager.extensionsLoaded = true
-
-        let sourceTab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
-            url: "safari-web-extension://adapter-owner/popup.html",
-            in: browserManager.tabManager.spaceStateOwner.currentSpace,
-            activate: true
-        )
-        sourceTab.profileId = profile.id
 
         let extensionURL = URL(string: "safari-web-extension://adapter-owner/popup.html")!
         let popupWebView = try XCTUnwrap(
-            browserManager.auxiliaryWindows.popups.presentExtensionExternalWebPopup(
-                configuration: WKWebViewConfiguration(),
-                request: URLRequest(url: URL(string: "https://auth.example/login")!),
-                windowFeatures: WKWindowFeatures(),
-                openerTab: sourceTab,
-                extensionOwnedSourceURL: extensionURL
-            )
+            harness.browserManager.auxiliaryWindows.popups
+                .presentExtensionExternalWebPopup(
+                    configuration: extensionPopupConfiguration(for: harness),
+                    request: URLRequest(
+                        url: URL(string: "https://auth.example/login")!
+                    ),
+                    windowFeatures: WKWindowFeatures(),
+                    openerTab: harness.sourceTab,
+                    extensionOwnedSourceURL: extensionURL
+                )
         )
-        XCTAssertFalse(extensionManager.adapterStore.miniWindowAdapters.isEmpty)
+        XCTAssertFalse(
+            harness.extensionManager.adapterStore
+                .miniWindowAdaptersSnapshot().isEmpty
+        )
 
-        browserManager.auxiliaryWindows.teardown.teardown(
+        harness.browserManager.auxiliaryWindows.teardown.teardown(
             for: popupWebView,
             reason: .extensionRequestedClose
         )
 
-        XCTAssertFalse(browserManager.auxiliaryWindows.sessions.contains(popupWebView))
-        XCTAssertTrue(extensionManager.adapterStore.miniWindowAdapters.isEmpty)
-    }
-
-    func testRemoveTabAuxiliaryRoutesThroughFullTeardown() throws {
-        let container = try makeTestContainer()
-        let profile = Profile(name: "Auxiliary Owner")
-        let registry = SumiModuleRegistry(
-            settingsStore: SumiModuleSettingsStore(
-                userDefaults: UserDefaults(suiteName: UUID().uuidString)!
+        XCTAssertFalse(
+            harness.browserManager.auxiliaryWindows.sessions.contains(
+                popupWebView
             )
         )
-        registry.enable(.extensions)
-        let extensionManager = ExtensionManager(
-            context: container.mainContext,
-            initialProfile: profile,
-            browserConfiguration: BrowserConfiguration()
+        XCTAssertTrue(
+            harness.extensionManager.adapterStore
+                .miniWindowAdaptersSnapshot().isEmpty
         )
-        let extensionsModule = SumiExtensionsModule(
-            moduleRegistry: registry,
-            context: container.mainContext,
-            browserConfiguration: BrowserConfiguration(),
-            initialProfileProvider: { profile },
-            managerFactory: { _, _, _, _ in extensionManager }
-        )
-        let browserManager = BrowserManager(
-            moduleRegistry: registry,
-            extensionsModule: extensionsModule
-        )
-        browserManager.profileManager.profiles = [profile]
-        browserManager.currentProfile = profile
-        extensionsModule.attach(runtime: BrowserExtensionsModuleRuntimeFactory.runtime(for: browserManager))
-        extensionManager.attach(browserManager: browserManager)
-        XCTAssertIdentical(extensionsModule.managerIfEnabled(), extensionManager)
-        extensionManager.extensionsLoaded = true
+    }
 
-        let sourceTab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
-            url: "safari-web-extension://adapter-owner/popup.html",
-            in: browserManager.tabManager.spaceStateOwner.currentSpace,
-            activate: true
+    func testRemoveTabAuxiliaryRoutesThroughFullTeardown() async throws {
+        let harness = try await makeExtensionHarness(
+            ownerExtensionID: "adapter-owner"
         )
-        sourceTab.profileId = profile.id
 
         let extensionURL = URL(string: "safari-web-extension://adapter-owner/popup.html")!
         let popupWebView = try XCTUnwrap(
-            browserManager.auxiliaryWindows.popups.presentExtensionExternalWebPopup(
-                configuration: WKWebViewConfiguration(),
-                request: URLRequest(url: URL(string: "https://auth.example/login")!),
-                windowFeatures: WKWindowFeatures(),
-                openerTab: sourceTab,
-                extensionOwnedSourceURL: extensionURL
+            harness.browserManager.auxiliaryWindows.popups
+                .presentExtensionExternalWebPopup(
+                    configuration: extensionPopupConfiguration(for: harness),
+                    request: URLRequest(
+                        url: URL(string: "https://auth.example/login")!
+                    ),
+                    windowFeatures: WKWindowFeatures(),
+                    openerTab: harness.sourceTab,
+                    extensionOwnedSourceURL: extensionURL
+                )
+        )
+        XCTAssertFalse(
+            harness.extensionManager.adapterStore
+                .miniWindowAdaptersSnapshot().isEmpty
+        )
+        let auxiliaryTab = try XCTUnwrap(
+            harness.browserManager.tabManager.transientTabRegistryOwner
+                .auxiliaryMiniWindowTabsByID.values.first
+        )
+
+        harness.browserManager.tabManager.tabRemovalOwner.removeTab(
+            auxiliaryTab.id
+        )
+
+        XCTAssertFalse(
+            harness.browserManager.auxiliaryWindows.sessions.contains(
+                popupWebView
             )
         )
-        XCTAssertFalse(extensionManager.adapterStore.miniWindowAdapters.isEmpty)
-        let auxiliaryTab = try XCTUnwrap(
-            browserManager.tabManager.transientTabRegistryOwner.auxiliaryMiniWindowTabsByID.values.first
+        XCTAssertTrue(
+            harness.extensionManager.adapterStore
+                .miniWindowAdaptersSnapshot().isEmpty
         )
-
-        browserManager.tabManager.tabRemovalOwner.removeTab(auxiliaryTab.id)
-
-        XCTAssertFalse(browserManager.auxiliaryWindows.sessions.contains(popupWebView))
-        XCTAssertTrue(extensionManager.adapterStore.miniWindowAdapters.isEmpty)
-        XCTAssertNil(browserManager.tabManager.transientTabRegistryOwner.auxiliaryMiniWindowTabsByID[auxiliaryTab.id])
+        XCTAssertNil(
+            harness.browserManager.tabManager.transientTabRegistryOwner
+                .auxiliaryMiniWindowTabsByID[auxiliaryTab.id]
+        )
     }
 
-    func testFocusedMiniWindowAdapterDoesNotCrossContaminateBetweenExtensions() throws {
-        let container = try makeTestContainer()
-        let profile = Profile(name: "Auxiliary Owner")
-        let registry = SumiModuleRegistry(
-            settingsStore: SumiModuleSettingsStore(
-                userDefaults: UserDefaults(suiteName: UUID().uuidString)!
-            )
+    func testFocusedMiniWindowAdapterDoesNotCrossContaminateBetweenExtensions()
+        async throws {
+        let harness = try await makeExtensionHarness(
+            ownerExtensionID: "owner-a"
         )
-        registry.enable(.extensions)
-        let extensionManager = ExtensionManager(
-            context: container.mainContext,
-            initialProfile: profile,
-            browserConfiguration: BrowserConfiguration()
+        harness.extensionManager.setExtensionContext(
+            try await makeExtensionContext(ownerExtensionID: "owner-b"),
+            extensionId: "owner-b",
+            profileId: harness.profile.id
         )
-        let extensionsModule = SumiExtensionsModule(
-            moduleRegistry: registry,
-            context: container.mainContext,
-            browserConfiguration: BrowserConfiguration(),
-            initialProfileProvider: { profile },
-            managerFactory: { _, _, _, _ in extensionManager }
-        )
-        let browserManager = BrowserManager(
-            moduleRegistry: registry,
-            extensionsModule: extensionsModule
-        )
-        browserManager.profileManager.profiles = [profile]
-        browserManager.currentProfile = profile
-        extensionsModule.attach(runtime: BrowserExtensionsModuleRuntimeFactory.runtime(for: browserManager))
-        extensionManager.attach(browserManager: browserManager)
-        XCTAssertIdentical(extensionsModule.managerIfEnabled(), extensionManager)
-        extensionManager.extensionsLoaded = true
 
-        let sourceTab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
-            url: "safari-web-extension://adapter-owner/popup.html",
-            in: browserManager.tabManager.spaceStateOwner.currentSpace,
-            activate: true
-        )
-        sourceTab.profileId = profile.id
-
-        let auxiliaryWindows = browserManager.auxiliaryWindows
+        let auxiliaryWindows = harness.browserManager.auxiliaryWindows
+        defer {
+            auxiliaryWindows.teardown.closeAll(reason: .bulkCleanup)
+        }
 
         _ = auxiliaryWindows.popups.presentExtensionExternalWebPopup(
-            configuration: WKWebViewConfiguration(),
-            request: URLRequest(url: URL(string: "https://auth-a.example/login")!),
+            configuration: extensionPopupConfiguration(for: harness),
+            request: URLRequest(
+                url: URL(string: "https://auth-a.example/login")!
+            ),
             windowFeatures: WKWindowFeatures(),
-            openerTab: sourceTab,
-            extensionOwnedSourceURL: URL(string: "safari-web-extension://owner-a/popup.html")!
+            openerTab: harness.sourceTab,
+            extensionOwnedSourceURL: URL(
+                string: "safari-web-extension://owner-a/popup.html"
+            )!
         )
         _ = auxiliaryWindows.popups.presentExtensionExternalWebPopup(
-            configuration: WKWebViewConfiguration(),
-            request: URLRequest(url: URL(string: "https://auth-b.example/login")!),
+            configuration: extensionPopupConfiguration(for: harness),
+            request: URLRequest(
+                url: URL(string: "https://auth-b.example/login")!
+            ),
             windowFeatures: WKWindowFeatures(),
-            openerTab: sourceTab,
-            extensionOwnedSourceURL: URL(string: "safari-web-extension://owner-b/popup.html")!
+            openerTab: harness.sourceTab,
+            extensionOwnedSourceURL: URL(
+                string: "safari-web-extension://owner-b/popup.html"
+            )!
         )
 
         let adapterA = auxiliaryWindows.focus.focusedMiniWindowAdapter(
@@ -544,6 +436,60 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
         XCTAssertNotEqual(adapterA?.sessionId, adapterB?.sessionId)
     }
 
+    func testPublishedAuxiliaryAdaptersPlaceExactFocusedSessionFirst()
+        async throws {
+        let ownerExtensionID = "adapter-owner"
+        let harness = try await makeExtensionHarness(
+            ownerExtensionID: ownerExtensionID
+        )
+        let firstWebView = try XCTUnwrap(
+            presentOwnerPopup(
+                in: harness,
+                ownerExtensionID: ownerExtensionID
+            )
+        )
+        let firstSession = try XCTUnwrap(
+            harness.browserManager.auxiliaryWindows.sessions
+                .session(for: firstWebView)
+        )
+        let secondWebView = try XCTUnwrap(
+            presentOwnerPopup(
+                in: harness,
+                ownerExtensionID: ownerExtensionID
+            )
+        )
+        let secondSession = try XCTUnwrap(
+            harness.browserManager.auxiliaryWindows.sessions
+                .session(for: secondWebView)
+        )
+        defer {
+            harness.browserManager.auxiliaryWindows.teardown.closeAll(
+                reason: .bulkCleanup
+            )
+        }
+        let publications = harness.extensionManager
+            .browserRuntimeBridgeOwner.windowPublications
+
+        XCTAssertIdentical(
+            publications.publishedAuxiliaryWindowAdapters(
+                ownerExtensionID: ownerExtensionID,
+                profileID: harness.profile.id
+            ).first,
+            secondSession.miniWindowAdapter
+        )
+
+        harness.browserManager.auxiliaryWindows.focus.focus(
+            sessionID: firstSession.id
+        )
+        XCTAssertIdentical(
+            publications.publishedAuxiliaryWindowAdapters(
+                ownerExtensionID: ownerExtensionID,
+                profileID: harness.profile.id
+            ).first,
+            firstSession.miniWindowAdapter
+        )
+    }
+
     func testClosingFocusedPopupRestoresPreviousPopupForSameExtension()
         async throws
     {
@@ -556,7 +502,7 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
         let firstWebView = try XCTUnwrap(
             harness.browserManager.auxiliaryWindows.popups
                 .presentExtensionExternalWebPopup(
-                    configuration: WKWebViewConfiguration(),
+                    configuration: extensionPopupConfiguration(for: harness),
                     request: URLRequest(
                         url: URL(string: "https://first.example/login")!
                     ),
@@ -572,7 +518,7 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
         let secondWebView = try XCTUnwrap(
             harness.browserManager.auxiliaryWindows.popups
                 .presentExtensionExternalWebPopup(
-                    configuration: WKWebViewConfiguration(),
+                    configuration: extensionPopupConfiguration(for: harness),
                     request: URLRequest(
                         url: URL(string: "https://second.example/login")!
                     ),
@@ -623,7 +569,7 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
 
         let popupWebView = try XCTUnwrap(
             harness.browserManager.auxiliaryWindows.popups.presentExtensionExternalWebPopup(
-                configuration: WKWebViewConfiguration(),
+                configuration: extensionPopupConfiguration(for: harness),
                 request: URLRequest(url: URL(string: "https://auth.example/login")!),
                 windowFeatures: WKWindowFeatures(),
                 openerTab: harness.sourceTab,
@@ -657,9 +603,22 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
 
     func testOpenWindowsForExtensionContextOrdersOwnerMiniWindowBeforeMainWindow() async throws {
         let harness = try await makeExtensionHarness(ownerExtensionID: "adapter-owner")
+        let controller = harness.extensionManager.ensureExtensionController(
+            for: harness.profile.id
+        )
+        XCTAssertTrue(
+            harness.extensionManager.notifyWindowOpened(harness.windowState)
+        )
+        XCTAssertTrue(
+            harness.extensionManager.extensionCreatedTabRegistrar.register(
+                harness.sourceTab,
+                runtime: harness.extensionManager.runtime,
+                reason: "AuxiliaryWindowLifecycleTests.publishMainWindow"
+            )
+        )
         let popupWebView = try XCTUnwrap(
             harness.browserManager.auxiliaryWindows.popups.presentExtensionExternalWebPopup(
-                configuration: WKWebViewConfiguration(),
+                configuration: extensionPopupConfiguration(for: harness),
                 request: URLRequest(url: URL(string: "https://auth.example/login")!),
                 windowFeatures: WKWindowFeatures(),
                 openerTab: harness.sourceTab,
@@ -677,12 +636,13 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
             "adapter-owner"
         )
         XCTAssertFalse(
-            harness.extensionManager.adapterStore.miniWindowAdapters.isEmpty,
+            harness.extensionManager.adapterStore.miniWindowAdaptersSnapshot()
+                .isEmpty,
             "Expected extension-owned mini-window presentation to register a mini-window adapter"
         )
 
         let openWindows = harness.extensionManager.controllerDelegateBridge.webExtensionController(
-            harness.controller,
+            controller,
             openWindowsFor: harness.extensionContext
         )
         let ownerMiniWindowAdapter = try XCTUnwrap(
@@ -692,7 +652,11 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
             ).first
         )
         let mainWindowAdapter = try XCTUnwrap(
-            harness.extensionManager.adapterResolutionOwner.windowAdapter(for: harness.windowState.id)
+            harness.extensionManager.browserRuntimeBridgeOwner
+                .publishedWindowAdapter(
+                    for: harness.windowState,
+                    profileID: harness.profile.id
+                )
         )
 
         let firstOpenWindow = try XCTUnwrap(openWindows.first)
@@ -711,7 +675,7 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
 
         let popupWebView = try XCTUnwrap(
             harness.browserManager.auxiliaryWindows.popups.presentExtensionExternalWebPopup(
-                configuration: WKWebViewConfiguration(),
+                configuration: extensionPopupConfiguration(for: harness),
                 request: URLRequest(url: URL(string: "https://auth.example/login")!),
                 windowFeatures: WKWindowFeatures(),
                 openerTab: harness.sourceTab,
@@ -751,7 +715,7 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
 
         let popupWebView = try XCTUnwrap(
             harness.browserManager.auxiliaryWindows.popups.presentExtensionExternalWebPopup(
-                configuration: WKWebViewConfiguration(),
+                configuration: extensionPopupConfiguration(for: harness),
                 request: URLRequest(url: URL(string: "https://auth.example/login")!),
                 windowFeatures: WKWindowFeatures(),
                 openerTab: harness.sourceTab,
@@ -786,7 +750,7 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
 
         let sourcePopupWebView = try XCTUnwrap(
             harness.browserManager.auxiliaryWindows.popups.presentExtensionExternalWebPopup(
-                configuration: WKWebViewConfiguration(),
+                configuration: extensionPopupConfiguration(for: harness),
                 request: URLRequest(url: URL(string: "https://popup.example/start")!),
                 windowFeatures: WKWindowFeatures(),
                 openerTab: harness.sourceTab,
@@ -851,6 +815,7 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
         )
         harness.extensionManager.extensionCreatedTabRegistrar.register(
             authTab,
+            runtime: harness.extensionManager.runtime,
             reason: "AuxiliaryWindowLifecycleTests.materializedExternalNormalTab"
         )
         XCTAssertIdentical(
@@ -867,6 +832,26 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
 
     func testExtensionExternalWindowCreateUsesNormalBrowserTab() async throws {
         let harness = try await makeExtensionHarness(ownerExtensionID: "adapter-owner")
+        let controller = harness.extensionManager.ensureExtensionController(
+            for: harness.profile.id
+        )
+        XCTAssertTrue(
+            harness.extensionManager.notifyWindowOpened(harness.windowState)
+        )
+        XCTAssertTrue(
+            harness.extensionManager.extensionCreatedTabRegistrar.register(
+                harness.sourceTab,
+                runtime: harness.extensionManager.runtime,
+                reason: "AuxiliaryWindowLifecycleTests.publishMainWindow"
+            )
+        )
+        let publishedMainWindow = try XCTUnwrap(
+            harness.extensionManager.browserRuntimeBridgeOwner
+                .publishedWindowAdapter(
+                    for: harness.windowState,
+                    profileID: harness.profile.id
+                )
+        )
         let mainWindow = try XCTUnwrap(harness.windowRegistry.appKitWindow(for: harness.windowState))
         let originalMainFrame = mainWindow.frame
         let initialRegularTabCount = harness.browserManager.tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[
@@ -879,7 +864,7 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
 
         harness.extensionManager.openExtensionWindowUsingTabURLs(
             [authURL],
-            controller: harness.controller,
+            controller: controller,
             extensionContext: harness.extensionContext,
             completionHandler: { window, error in
                 completionWindow = window
@@ -892,6 +877,15 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
 
         XCTAssertNil(completionError)
         let window = try XCTUnwrap(completionWindow as? ExtensionWindowAdapter)
+        XCTAssertIdentical(window, publishedMainWindow)
+        XCTAssertIdentical(
+            harness.extensionManager.browserRuntimeBridgeOwner
+                .publishedWindowAdapter(
+                    for: harness.windowState,
+                    profileID: harness.profile.id
+                ),
+            publishedMainWindow
+        )
         XCTAssertEqual(window.windowId, harness.windowState.id)
         XCTAssertEqual(mainWindow.frame, originalMainFrame)
         let authTab = try await waitForRegularTab(
@@ -910,43 +904,6 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
         XCTAssertFalse(authTab.isPopupHost)
         XCTAssertNil(authTab.webExtensionContextOverride)
         XCTAssertNil(harness.browserManager.auxiliaryWindows.sessions.session(for: authTab))
-    }
-
-    func testExtensionAuxiliaryMiniWindowNotifiesOwnerContextWindowLifecycle() async throws {
-        let harness = try await makeExtensionHarness(ownerExtensionID: "adapter-owner")
-        let extensionURL = URL(string: "safari-web-extension://adapter-owner/popup.html")!
-
-        XCTAssertTrue(harness.extensionContext.openWindows.isEmpty)
-        XCTAssertNil(harness.extensionContext.focusedWindow)
-
-        let popupWebView = try XCTUnwrap(
-            harness.browserManager.auxiliaryWindows.popups.presentExtensionExternalWebPopup(
-                configuration: WKWebViewConfiguration(),
-                request: URLRequest(url: URL(string: "https://auth.example/login")!),
-                windowFeatures: WKWindowFeatures(),
-                openerTab: harness.sourceTab,
-                extensionOwnedSourceURL: extensionURL
-            )
-        )
-        let session = try XCTUnwrap(
-            harness.browserManager.auxiliaryWindows.sessions.session(for: popupWebView)
-        )
-
-        let openedMiniWindow = try XCTUnwrap(
-            harness.extensionContext.openWindows.first as? ExtensionMiniWindowAdapter
-        )
-        XCTAssertEqual(openedMiniWindow.sessionId, session.id)
-        XCTAssertEqual(
-            (harness.extensionContext.focusedWindow as? ExtensionMiniWindowAdapter)?.sessionId,
-            session.id
-        )
-
-        harness.browserManager.auxiliaryWindows.teardown.closeAll(forExtensionID: "adapter-owner")
-        XCTAssertFalse(
-            harness.extensionContext.openWindows.contains { window in
-                (window as? ExtensionMiniWindowAdapter)?.sessionId == session.id
-            }
-        )
     }
 
     func testMaxNestedDepthBlocksSizedPopupWithoutInPlaceLoad() {
@@ -1089,7 +1046,7 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
         )
     }
 
-    private func makeExtensionHarness(
+    func makeExtensionHarness(
         ownerExtensionID: String,
         allowNormalTabRuntimeWithoutInstalledExtensions: Bool = true
     ) async throws -> ExtensionHarness {
@@ -1181,7 +1138,37 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
         )
     }
 
-    private func makeExtensionContext(
+    func extensionPopupConfiguration(
+        for harness: ExtensionHarness
+    ) -> WKWebViewConfiguration {
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = harness.profile.dataStore
+        configuration.webExtensionController = harness.extensionManager
+            .ensureExtensionController(for: harness.profile.id)
+        return configuration
+    }
+
+    func presentOwnerPopup(
+        in harness: ExtensionHarness,
+        ownerExtensionID: String = "adapter-owner",
+        configuration: WKWebViewConfiguration? = nil
+    ) -> WKWebView? {
+        harness.browserManager.auxiliaryWindows.popups
+            .presentExtensionExternalWebPopup(
+                configuration: configuration
+                    ?? extensionPopupConfiguration(for: harness),
+                request: URLRequest(
+                    url: URL(string: "https://auth.example/login")!
+                ),
+                windowFeatures: WKWindowFeatures(),
+                openerTab: harness.sourceTab,
+                extensionOwnedSourceURL: URL(
+                    string: "safari-web-extension://\(ownerExtensionID)/popup.html"
+                )!
+            )
+    }
+
+    func makeExtensionContext(
         ownerExtensionID: String
     ) async throws -> WKWebExtensionContext {
         let directory = FileManager.default.temporaryDirectory
@@ -1310,7 +1297,7 @@ private final class AuxiliaryWindowPermissionStub:
 
 @available(macOS 15.5, *)
 @MainActor
-private final class AuxiliaryWindowConfigurationMock: NSObject {
+final class AuxiliaryWindowConfigurationMock: NSObject {
     @objc var windowType: WKWebExtension.WindowType
     @objc var windowState: WKWebExtension.WindowState
     @objc var frame: CGRect

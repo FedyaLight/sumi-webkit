@@ -18,7 +18,7 @@ final class ExtensionControllerAttachmentOwner: ExtensionControllerBinding {
         let runtime: @MainActor () -> ExtensionManagerRuntime
         let resolvedProfileId: @MainActor (Tab) -> UUID?
         let profileIdForController: @MainActor (WKWebExtensionController) -> UUID?
-        let profileIdForContext: @MainActor (WKWebExtensionContext) -> UUID?
+        let contextPublications: ExtensionContextPublicationQuery
         let hasEnabledInstalledExtensions: @MainActor () -> Bool
         let allowsRuntimeWithoutEnabledExtensions: @MainActor () -> Bool
         let extensionsLoaded: @MainActor () -> Bool
@@ -61,7 +61,8 @@ final class ExtensionControllerAttachmentOwner: ExtensionControllerBinding {
         extensionContext: WKWebExtensionContext
     ) -> Bool {
         guard tab.isEphemeral == false else { return false }
-        guard let contextProfileId = dependencies.profileIdForContext(extensionContext),
+        guard let contextProfileId = dependencies.contextPublications
+                .currentIdentity(for: extensionContext)?.profileID,
               let tabProfileId = dependencies.resolvedProfileId(tab)
         else {
             return false
@@ -306,9 +307,7 @@ extension ExtensionControllerAttachmentOwner.Dependencies {
             profileIdForController: { [weak manager] controller in
                 manager?.profileId(for: controller)
             },
-            profileIdForContext: { [weak manager] context in
-                manager?.profileId(for: context)
-            },
+            contextPublications: manager.contextPublications,
             hasEnabledInstalledExtensions: { [weak manager] in
                 manager?.hasEnabledInstalledExtensions ?? false
             },

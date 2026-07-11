@@ -64,10 +64,17 @@ check_absent \
 
 requested_tab_sources=(
   Sumi/Managers/ExtensionManager/ExtensionCreatedTabRuntimeRegistrar.swift
+  Sumi/Managers/ExtensionManager/ExtensionCreatedTabPublicationEvidence.swift
+  Sumi/Managers/ExtensionManager/ExtensionCreatedTabPublicationReceipt.swift
+  Sumi/Managers/ExtensionManager/ExtensionCreatedTabPublicationRetirement.swift
+  Sumi/Managers/ExtensionManager/ExtensionCreatedTabPublicationValidator.swift
   Sumi/Managers/ExtensionManager/ExtensionRequestedTabContextPreloader.swift
   Sumi/Managers/ExtensionManager/ExtensionRequestedTabOpeningService.swift
   Sumi/Managers/ExtensionManager/ExtensionRequestedTabRuntimeCapabilities.swift
   Sumi/Managers/ExtensionManager/ExtensionRequestedTabTargetResolver.swift
+  Sumi/Managers/ExtensionManager/ExtensionRequestedTabInitialTargetResolver.swift
+  Sumi/Managers/ExtensionManager/ExtensionRequestedTabResidenceValidator.swift
+  Sumi/Managers/ExtensionManager/ExtensionRequestedWindowEvidence.swift
   Sumi/Managers/ExtensionManager/ExtensionRequestedTabWebViewMaterializer.swift
 )
 
@@ -88,10 +95,15 @@ check_absent \
 
 requested_tab_size_limits=(
   'Sumi/Managers/ExtensionManager/ExtensionCreatedTabRuntimeRegistrar.swift:120'
+  'Sumi/Managers/ExtensionManager/ExtensionCreatedTabPublicationReceipt.swift:150'
+  'Sumi/Managers/ExtensionManager/ExtensionCreatedTabPublicationValidator.swift:220'
   'Sumi/Managers/ExtensionManager/ExtensionRequestedTabContextPreloader.swift:120'
-  'Sumi/Managers/ExtensionManager/ExtensionRequestedTabOpeningService.swift:200'
+  'Sumi/Managers/ExtensionManager/ExtensionRequestedTabOpeningService.swift:240'
   'Sumi/Managers/ExtensionManager/ExtensionRequestedTabRuntimeCapabilities.swift:80'
-  'Sumi/Managers/ExtensionManager/ExtensionRequestedTabTargetResolver.swift:180'
+  'Sumi/Managers/ExtensionManager/ExtensionRequestedTabTargetResolver.swift:120'
+  'Sumi/Managers/ExtensionManager/ExtensionRequestedTabInitialTargetResolver.swift:190'
+  'Sumi/Managers/ExtensionManager/ExtensionRequestedTabResidenceValidator.swift:120'
+  'Sumi/Managers/ExtensionManager/ExtensionRequestedWindowEvidence.swift:150'
   'Sumi/Managers/ExtensionManager/ExtensionRequestedTabWebViewMaterializer.swift:180'
 )
 for entry in "${requested_tab_size_limits[@]}"; do

@@ -26,11 +26,9 @@ struct ExtensionRequestedTabWebViewMaterializer {
 
     func materializeNormalTabIfNeeded(
         _ tab: Tab,
-        isActive: Bool,
         targetWindow: BrowserWindowState?
     ) {
-        guard isActive,
-              tab.webExtensionContextOverride == nil,
+        guard tab.webExtensionContextOverride == nil,
               tab.requiresPrimaryWebView
         else {
             return
@@ -92,15 +90,10 @@ struct ExtensionRequestedTabWebViewMaterializer {
             for: tab,
             in: targetWindow,
             reason: reason,
-            prepareConfiguration: { [weak tab] configuration in
-                guard let tab,
-                      let profileId = resolvedProfileId(for: tab)
-                else {
-                    return
-                }
+            prepareCandidateConfiguration: { configuration, profileID in
                 runtimePreparation.prepareWebViewConfigForExtensionRuntime(
                     configuration,
-                    profileId: profileId,
+                    profileId: profileID,
                     reason: "\(reason).configuration"
                 )
             },

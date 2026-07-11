@@ -210,7 +210,6 @@ final class ProfileTransitionService {
             },
             modelRollback: {
                 try request.rollbackModel()
-                self.runtime.provisioning.restoreReloadPolicy(prepared)
             },
             completion: { outcome in
                 self.complete(
@@ -246,6 +245,10 @@ final class ProfileTransitionService {
         case .invalid:
             runtime.provisioning.discard(prepared)
             settlement(.rejected(.failed))
+            return .failed
+        case .rolledBack:
+            // Synchronous settlement already restored the model/repository and
+            // delivered its typed rollback through `completion`.
             return .failed
         case .settlementConflict:
             settlement(.conflicted)

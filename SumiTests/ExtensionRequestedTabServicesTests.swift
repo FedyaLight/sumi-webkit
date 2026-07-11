@@ -1,4 +1,4 @@
-import SwiftData
+import AppKit
 import WebKit
 import XCTest
 
@@ -6,7 +6,8 @@ import XCTest
 
 @available(macOS 15.5, *)
 @MainActor
-final class ExtensionRequestedTabServicesTests: XCTestCase {
+final class ExtensionRequestedTabServicesTests:
+    SafariExtensionWebViewControllerWiringTestCase {
     func testRecentOpenRequestTrackerConsumesOnlyRecordedWebURLsOnce() {
         let history = ExtensionRecentTabRequestHistory()
         let url = URL(string: "https://example.com/login")!
@@ -53,7 +54,6 @@ final class ExtensionRequestedTabServicesTests: XCTestCase {
 
         materializer.materializeNormalTabIfNeeded(
             tab,
-            isActive: true,
             targetWindow: nil
         )
 
@@ -70,7 +70,6 @@ final class ExtensionRequestedTabServicesTests: XCTestCase {
 
         materializer.materializeNormalTabIfNeeded(
             tab,
-            isActive: true,
             targetWindow: nil
         )
 
@@ -184,10 +183,499 @@ final class ExtensionRequestedTabServicesTests: XCTestCase {
         XCTAssertEqual(targetSpace?.id, harness.spaceB.id)
     }
 
-    private func makeTestContainer() throws -> ModelContainer {
-        try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
+    func testTargetlessActivePinnedRequestCommitsOpenBeforeSelection() async throws {
+        let harness = try await makeRequestedPublicationHarness()
+        var events: [String] = []
+        var openedTab: Tab?
+        var wasInactiveAtOpen = false
+        var hadExactWindowWebViewAtOpen = false
+
+        harness.manager.testHooks.didOpenTab = { tabID in
+            guard tabID != harness.sourceTab.id,
+                  let tab = harness.browserManager.tabManager
+                    .tabCollectionMembershipOwner.tab(for: tabID)
+            else {
+                return
+            }
+            openedTab = tab
+            events.append("didOpen")
+            wasInactiveAtOpen = harness.window.currentTabId
+                == harness.sourceTab.id
+            hadExactWindowWebViewAtOpen = harness.browserManager
+                .webViewRuntime.ownershipQuery.webView(
+                    for: tab.id,
+                    in: harness.window.id
+                ) === harness.manager.resolvedLiveWebView(for: tab)
+        }
+        harness.manager.testHooks.didActivateTab = { tabID in
+            guard tabID != harness.sourceTab.id else { return }
+            events.append("didActivate")
+        }
+        defer {
+            harness.manager.testHooks.didOpenTab = nil
+            harness.manager.testHooks.didActivateTab = nil
+        }
+
+        let tab = try harness.manager.requestedTabOpening.open(
+            url: URL(string: "https://requested.example/active")!,
+            shouldBeActive: true,
+            shouldBePinned: true,
+            requestedWindow: nil,
+            controller: harness.controller,
+            extensionContext: harness.extensionContext,
+            reason: #function
+        )
+
+        XCTAssertIdentical(openedTab, tab)
+        XCTAssertTrue(wasInactiveAtOpen)
+        XCTAssertTrue(hadExactWindowWebViewAtOpen)
+        XCTAssertEqual(events, ["didOpen", "didActivate"])
+        XCTAssertEqual(harness.window.currentTabId, tab.id)
+        XCTAssertNotNil(tab.shortcutPinId)
+        XCTAssertTrue(
+            tab.extensionPageRuntimeOwner.hasDidOpenTabNotification(
+                for: harness.manager.runtimeSession
+                    .tabOpenNotificationGeneration
+            )
+        )
+    }
+
+    func testDidOpenReentrancyFailureDiscardsTabAdapterAndEligibilityWithoutSelection() async throws {
+        let harness = try await makeRequestedPublicationHarness()
+        let originalGeneration = harness.manager.runtimeSession
+            .tabOpenNotificationGeneration
+        var rejectedTab: Tab?
+        var rejectedAdapter: ExtensionTabAdapter?
+        var lifecycleEvents: [String] = []
+        var activatedTabIDs: [UUID] = []
+
+        harness.manager.testHooks.didOpenTab = { tabID in
+            guard tabID != harness.sourceTab.id,
+                  let tab = harness.browserManager.tabManager
+                    .tabCollectionMembershipOwner.tab(for: tabID)
+            else {
+                return
+            }
+            rejectedTab = tab
+            rejectedAdapter = harness.manager.adapterStore.tabAdapters[tabID]
+            lifecycleEvents.append("didOpen")
+            harness.browserManager.selectTab(tab, in: harness.window)
+            XCTAssertEqual(harness.window.currentTabId, tab.id)
+            harness.manager.runtimeSession.tabOpenNotificationGeneration &+= 1
+        }
+        harness.manager.testHooks.didCloseTab = { tabID in
+            guard tabID != harness.sourceTab.id else { return }
+            lifecycleEvents.append("didClose")
+        }
+        harness.manager.testHooks.didActivateTab = {
+            activatedTabIDs.append($0)
+        }
+        defer {
+            harness.manager.testHooks.didOpenTab = nil
+            harness.manager.testHooks.didCloseTab = nil
+            harness.manager.testHooks.didActivateTab = nil
+        }
+
+        XCTAssertThrowsError(
+            try harness.manager.requestedTabOpening.open(
+                url: URL(string: "https://requested.example/rejected")!,
+                shouldBeActive: true,
+                shouldBePinned: true,
+                requestedWindow: nil,
+                controller: harness.controller,
+                extensionContext: harness.extensionContext,
+                reason: #function
+            )
+        )
+
+        let tab = try XCTUnwrap(rejectedTab)
+        let adapter = try XCTUnwrap(rejectedAdapter)
+        XCTAssertEqual(lifecycleEvents, ["didOpen", "didClose"])
+        XCTAssertTrue(activatedTabIDs.isEmpty)
+        XCTAssertEqual(harness.window.currentTabId, harness.sourceTab.id)
+        XCTAssertNil(
+            harness.browserManager.tabManager.tabCollectionMembershipOwner
+                .tab(for: tab.id)
+        )
+        XCTAssertNil(harness.manager.adapterStore.tabAdapters[tab.id])
+        XCTAssertEqual(tab.extensionPageRuntimeOwner.currentEligibleGeneration(), 0)
+        XCTAssertFalse(tab.extensionPageRuntimeOwner.hasAnyDidOpenTabNotification())
+        XCTAssertFalse(tab.isPinned)
+        XCTAssertFalse(
+            harness.extensionContext.openTabs.contains { openTab in
+                (openTab as AnyObject) === adapter
+            }
+        )
+        XCTAssertEqual(
+            harness.manager.runtimeSession.tabOpenNotificationGeneration,
+            originalGeneration + 1
+        )
+    }
+
+    func testTransientDidOpenFailureBalancesCloseExactlyOnce() async throws {
+        let harness = try await makeRequestedPublicationHarness()
+        var rejectedTabID: UUID?
+        var lifecycleEvents: [String] = []
+
+        harness.manager.testHooks.didOpenTab = { tabID in
+            guard tabID != harness.sourceTab.id else { return }
+            rejectedTabID = tabID
+            lifecycleEvents.append("didOpen")
+            harness.manager.runtimeSession.tabOpenNotificationGeneration &+= 1
+        }
+        harness.manager.testHooks.didCloseTab = { tabID in
+            guard tabID != harness.sourceTab.id else { return }
+            lifecycleEvents.append("didClose")
+        }
+        defer {
+            harness.manager.testHooks.didOpenTab = nil
+            harness.manager.testHooks.didCloseTab = nil
+        }
+
+        XCTAssertThrowsError(
+            try harness.manager.requestedTabOpening.open(
+                url: harness.extensionContext.baseURL
+                    .appendingPathComponent("transient.html"),
+                shouldBeActive: false,
+                shouldBePinned: false,
+                requestedWindow: nil,
+                controller: harness.controller,
+                extensionContext: harness.extensionContext,
+                reason: #function
+            )
+        )
+
+        let tabID = try XCTUnwrap(rejectedTabID)
+        XCTAssertEqual(lifecycleEvents, ["didOpen", "didClose"])
+        XCTAssertNil(
+            harness.browserManager.tabManager.tabCollectionMembershipOwner
+                .tab(for: tabID)
+        )
+        XCTAssertNil(harness.manager.adapterStore.tabAdapters[tabID])
+    }
+
+    func testExplicitStaleNormalWindowAdapterWithSameUUIDIsRejectedWithoutFallback() async throws {
+        let harness = try await makeRequestedPublicationHarness()
+        let windowQuery = try XCTUnwrap(harness.manager.extensionWindowQuery)
+        let activation = try XCTUnwrap(
+            harness.manager.extensionWindowActivation
+        )
+        let staleAdapter = ExtensionWindowAdapter(
+            windowState: harness.window,
+            windowQuery: windowQuery,
+            windowActivation: activation,
+            contextPublications: harness.manager.contextPublications,
+            extensionManager: harness.manager
+        )
+
+        XCTAssertEqual(staleAdapter.windowId, harness.publishedWindow.windowId)
+        XCTAssertFalse(staleAdapter === harness.publishedWindow)
+        XCTAssertThrowsError(
+            try harness.manager.requestedTabTargetResolver.resolve(
+                requestedWindow: staleAdapter,
+                extensionContext: harness.extensionContext
+            )
+        )
+        XCTAssertIdentical(
+            harness.manager.browserRuntimeBridgeOwner.windowPublications
+                .publishedWindowAdapter(
+                    for: harness.window,
+                    profileID: harness.profile.id
+                ),
+            harness.publishedWindow
+        )
+    }
+
+    func testCurrentWindowRejectsReplacedExtensionContextWithoutFallback() async throws {
+        let harness = try await makeRequestedPublicationHarness()
+        let staleContext = harness.extensionContext
+        let identity = try XCTUnwrap(
+            harness.manager.profileRuntime.exactContextIdentity(
+                for: staleContext
+            )
+        )
+        let replacementContext = WKWebExtensionContext(
+            for: harness.extensionContext.webExtension
+        )
+        harness.manager.profileRuntime.setContext(
+            replacementContext,
+            extensionId: identity.extensionId,
+            profileId: identity.profileId
+        )
+
+        XCTAssertThrowsError(
+            try harness.manager.requestedTabTargetResolver.resolve(
+                requestedWindow: harness.publishedWindow,
+                extensionContext: staleContext
+            )
+        )
+        XCTAssertThrowsError(
+            try harness.manager.requestedTabTargetResolver.resolve(
+                requestedWindow: nil,
+                extensionContext: staleContext
+            )
+        )
+        XCTAssertIdentical(
+            harness.manager.browserRuntimeBridgeOwner.windowPublications
+                .publishedWindowAdapter(
+                    for: harness.window,
+                    profileID: harness.profile.id
+                ),
+            harness.publishedWindow
+        )
+    }
+
+    func testReplacedNormalContextLosesEveryTabAndWindowCapability()
+        async throws {
+        let harness = try await makeRequestedPublicationHarness()
+        let staleContext = harness.extensionContext
+        let identity = try XCTUnwrap(
+            harness.manager.profileRuntime.exactContextIdentity(
+                for: staleContext
+            )
+        )
+        let replacementContext = WKWebExtensionContext(
+            for: staleContext.webExtension
+        )
+        harness.manager.profileRuntime.setContext(
+            replacementContext,
+            extensionId: identity.extensionId,
+            profileId: identity.profileId
+        )
+
+        let tabAdapter = try XCTUnwrap(
+            harness.manager.adapterStore.tabAdapters[harness.sourceTab.id]
+        )
+        let appKitWindow = try XCTUnwrap(
+            harness.manager.extensionWindowQuery?.appKitWindow(
+                for: harness.window
+            )
+        )
+        let sourceWebView = try XCTUnwrap(
+            harness.manager.resolvedLiveWebView(for: harness.sourceTab)
+        )
+        let originalURL = harness.sourceTab.url
+        let originalFrame = appKitWindow.frame
+        let wasMiniaturized = appKitWindow.isMiniaturized
+
+        XCTAssertNil(tabAdapter.url(for: staleContext))
+        XCTAssertNil(tabAdapter.title(for: staleContext))
+        XCTAssertNil(tabAdapter.webView(for: staleContext))
+        XCTAssertNil(tabAdapter.window(for: staleContext))
+        XCTAssertFalse(
+            tabAdapter.shouldGrantPermissionsOnUserGesture(
+                for: staleContext
+            )
+        )
+        XCTAssertNil(harness.publishedWindow.activeTab(for: staleContext))
+        XCTAssertTrue(harness.publishedWindow.tabs(for: staleContext).isEmpty)
+        XCTAssertEqual(harness.publishedWindow.frame(for: staleContext), .zero)
+        XCTAssertEqual(
+            harness.publishedWindow.screenFrame(for: staleContext),
+            .zero
+        )
+
+        let rejectedURL = URL(string: "https://stale.example/rejected")!
+        var staleLoadError: Error?
+        tabAdapter.loadURL(rejectedURL, for: staleContext) {
+            staleLoadError = $0
+        }
+        XCTAssertNotNil(staleLoadError)
+        XCTAssertEqual(harness.sourceTab.url, originalURL)
+
+        var staleTabCloseError: Error?
+        tabAdapter.close(for: staleContext) {
+            staleTabCloseError = $0
+        }
+        XCTAssertNotNil(staleTabCloseError)
+        XCTAssertIdentical(
+            harness.browserManager.tabManager.tabCollectionMembershipOwner
+                .tab(for: harness.sourceTab.id),
+            harness.sourceTab
+        )
+
+        let rejectedFrame = originalFrame.offsetBy(dx: 55, dy: 34)
+        var staleFocusError: Error?
+        harness.publishedWindow.focus(for: staleContext) {
+            staleFocusError = $0
+        }
+        XCTAssertNotNil(staleFocusError)
+
+        var staleFrameError: Error?
+        harness.publishedWindow.setFrame(
+            rejectedFrame,
+            for: staleContext
+        ) {
+            staleFrameError = $0
+        }
+        XCTAssertNotNil(staleFrameError)
+        XCTAssertEqual(appKitWindow.frame, originalFrame)
+
+        var staleStateError: Error?
+        harness.publishedWindow.setWindowState(
+            .minimized,
+            for: staleContext
+        ) {
+            staleStateError = $0
+        }
+        XCTAssertNotNil(staleStateError)
+        XCTAssertEqual(appKitWindow.isMiniaturized, wasMiniaturized)
+
+        var staleWindowCloseError: Error?
+        harness.publishedWindow.close(for: staleContext) {
+            staleWindowCloseError = $0
+        }
+        XCTAssertNotNil(staleWindowCloseError)
+        XCTAssertIdentical(
+            harness.manager.extensionWindowQuery?.extensionWindowState(
+                for: harness.window.id
+            ),
+            harness.window
+        )
+
+        XCTAssertEqual(tabAdapter.url(for: replacementContext), originalURL)
+        XCTAssertEqual(
+            tabAdapter.title(for: replacementContext),
+            harness.sourceTab.name
+        )
+        XCTAssertIdentical(
+            tabAdapter.webView(for: replacementContext),
+            sourceWebView
+        )
+        XCTAssertTrue(
+            (tabAdapter.window(for: replacementContext) as AnyObject?)
+                === harness.publishedWindow
+        )
+        XCTAssertTrue(
+            tabAdapter.shouldGrantPermissionsOnUserGesture(
+                for: replacementContext
+            )
+        )
+        XCTAssertTrue(
+            (harness.publishedWindow.activeTab(for: replacementContext)
+                as AnyObject?) === tabAdapter
+        )
+        XCTAssertTrue(
+            harness.publishedWindow.tabs(for: replacementContext).contains {
+                ($0 as AnyObject) === tabAdapter
+            }
+        )
+        XCTAssertEqual(
+            harness.publishedWindow.frame(for: replacementContext),
+            originalFrame
+        )
+
+        let acceptedFrame = originalFrame.offsetBy(dx: 17, dy: 11)
+        var replacementFrameError: Error?
+        harness.publishedWindow.setFrame(
+            acceptedFrame,
+            for: replacementContext
+        ) {
+            replacementFrameError = $0
+        }
+        XCTAssertNil(replacementFrameError)
+        XCTAssertEqual(appKitWindow.frame, acceptedFrame)
+
+        var replacementFocusError: Error?
+        harness.publishedWindow.focus(for: replacementContext) {
+            replacementFocusError = $0
+        }
+        XCTAssertNil(replacementFocusError)
+
+        let acceptedURL = URL(string: "https://replacement.example/accepted")!
+        var replacementLoadError: Error?
+        tabAdapter.loadURL(acceptedURL, for: replacementContext) {
+            replacementLoadError = $0
+        }
+        XCTAssertNil(replacementLoadError)
+        XCTAssertEqual(harness.sourceTab.url, acceptedURL)
+    }
+
+    func testNormalTabAdapterNeverRebindsToReplacementTabWithSameID()
+        async throws {
+        let harness = try await makeRequestedPublicationHarness()
+        let staleTab = harness.sourceTab
+        let staleAdapter = try XCTUnwrap(
+            harness.manager.adapterStore.tabAdapters[staleTab.id]
+        )
+        let spaceID = try XCTUnwrap(staleTab.spaceId)
+        let replacementTab = Tab(
+            id: staleTab.id,
+            url: URL(string: "https://replacement.example/same-id")!,
+            name: "Replacement",
+            spaceId: spaceID,
+            index: staleTab.index
+        )
+        replacementTab.profileId = harness.profile.id
+        replacementTab.attachBrowserRuntime(
+            TabBrowserRuntimeFactory.make(for: harness.browserManager)
+        )
+
+        harness.browserManager.tabManager.tabCollectionMembershipOwner
+            .detach(staleTab)
+        var tabsBySpace = harness.browserManager.tabManager
+            .regularTabCollectionStateOwner.tabsBySpaceSnapshot()
+        tabsBySpace[spaceID] = (tabsBySpace[spaceID] ?? []).map {
+            $0 === staleTab ? replacementTab : $0
+        }
+        harness.browserManager.tabManager.regularTabCollectionStateOwner
+            .replaceTabsBySpace(tabsBySpace)
+        harness.browserManager.tabManager.tabCollectionMembershipOwner
+            .attach(replacementTab)
+
+        let replacementAdapter = try XCTUnwrap(
+            harness.manager.adapterResolutionOwner.stableAdapter(
+                for: replacementTab
+            )
+        )
+
+        XCTAssertEqual(staleAdapter.tabId, replacementAdapter.tabId)
+        XCTAssertFalse(staleAdapter === replacementAdapter)
+        XCTAssertNil(staleAdapter.tab)
+        XCTAssertIdentical(replacementAdapter.tab, replacementTab)
+        XCTAssertIdentical(
+            harness.manager.adapterStore.tabAdapters[replacementTab.id],
+            replacementAdapter
+        )
+        XCTAssertNil(staleAdapter.url(for: harness.extensionContext))
+        XCTAssertNil(staleAdapter.window(for: harness.extensionContext))
+        XCTAssertFalse(
+            staleAdapter.shouldGrantPermissionsOnUserGesture(
+                for: harness.extensionContext
+            )
+        )
+    }
+
+    func testContextPublicationQueryFailsClosedAfterRuntimeRelease()
+        async throws {
+        let harness = try await makeRequestedPublicationHarness()
+        let profileID = harness.profile.id
+        var runtime: ExtensionProfileRuntime? = ExtensionProfileRuntime(
+            initialProfileId: profileID
+        )
+        let context = harness.extensionContext
+        runtime?.setContext(
+            context,
+            extensionId: "released-runtime-extension",
+            profileId: profileID
+        )
+        let query = ExtensionContextPublicationQuery(
+            profileRuntime: try XCTUnwrap(runtime)
+        )
+
+        XCTAssertEqual(query.currentIdentity(for: context)?.profileID, profileID)
+
+        weak var releasedRuntime = runtime
+        runtime = nil
+
+        XCTAssertNil(releasedRuntime)
+        XCTAssertNil(query.currentIdentity(for: context))
+        XCTAssertFalse(
+            query.isCurrent(
+                context,
+                extensionID: "released-runtime-extension",
+                profileID: profileID
+            )
         )
     }
 
@@ -198,6 +686,148 @@ final class ExtensionRequestedTabServicesTests: XCTestCase {
         let profileB: Profile
         let spaceA: Space
         let spaceB: Space
+    }
+
+    private struct RequestedPublicationHarness {
+        let manager: ExtensionManager
+        let browserManager: BrowserManager
+        let profile: Profile
+        let window: BrowserWindowState
+        let sourceTab: Tab
+        let extensionContext: WKWebExtensionContext
+        let controller: WKWebExtensionController
+        let publishedWindow: ExtensionWindowAdapter
+    }
+
+    private func makeRequestedPublicationHarness() async throws
+        -> RequestedPublicationHarness {
+        SafariExtensionLiveWebKitTestLease.holdForProcess()
+        let container = try makeTestContainer()
+        let profile = Profile(name: "Requested Tab Transaction")
+        let browserConfiguration = BrowserConfiguration()
+        let moduleRegistry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(
+                userDefaults: UserDefaults(suiteName: UUID().uuidString)!
+            )
+        )
+        moduleRegistry.enable(.extensions)
+        let manager = makeSafariExtensionTestExtensionManager(
+            context: container.mainContext,
+            initialProfile: profile,
+            browserConfiguration: browserConfiguration,
+            moduleRegistry: moduleRegistry
+        )
+        let extensionsModule = SumiExtensionsModule(
+            moduleRegistry: moduleRegistry,
+            context: container.mainContext,
+            browserConfiguration: browserConfiguration,
+            initialProfileProvider: { profile },
+            managerFactory: { _, _, _, _ in manager }
+        )
+        let windowRegistry = WindowRegistry()
+        let browserManager = makeSafariExtensionTestBrowserManager(
+            moduleRegistry: moduleRegistry,
+            extensionsModule: extensionsModule,
+            profile: profile,
+            windowRegistry: windowRegistry
+        )
+        extensionsModule.attach(
+            runtime: BrowserExtensionsModuleRuntimeFactory.runtime(
+                for: browserManager
+            )
+        )
+        manager.attach(browserManager: browserManager)
+
+        let space = Space(name: "Primary", profileId: profile.id)
+        browserManager.tabManager.spaceStateOwner.replaceSpaces([space])
+        browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(space)
+
+        let window = BrowserWindowState()
+        window.tabManager = browserManager.tabManager
+        window.currentProfileId = profile.id
+        window.currentSpaceId = space.id
+        let appKitWindow = NSWindow(
+            contentRect: NSRect(x: 120, y: 120, width: 960, height: 700),
+            styleMask: [.titled, .closable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        windowRegistry.bindAppKitWindow(appKitWindow, to: window)
+        windowRegistry.register(window)
+        windowRegistry.setActive(window)
+        addTeardownBlock {
+            windowRegistry.unregister(window.id)
+            appKitWindow.close()
+        }
+
+        let sourceTab = browserManager.tabManager.regularTabLifecycleOwner
+            .createNewTab(
+                url: "https://source.example/page",
+                in: space,
+                activate: false
+            )
+        browserManager.selectTab(sourceTab, in: window)
+
+        let scratchDirectory = try makeScratchDirectory()
+        let installed = try await installUnpackedExtension(
+            manager: manager,
+            scratchDirectory: scratchDirectory,
+            name: "RequestedTabTransactionExtension"
+        )
+        _ = try await manager.installedExtensionLifecycle.enable(installed.id)
+        let loadedContext = try await manager.ensureExtensionLoaded(
+            extensionId: installed.id,
+            profileId: profile.id
+        )
+        let extensionContext = try XCTUnwrap(loadedContext)
+        let controller = try XCTUnwrap(
+            manager.profileRuntime.controller(for: profile.id)
+        )
+
+        browserManager.materializeVisibleTabWebViewIfNeeded(
+            sourceTab,
+            in: window
+        )
+        let sourceWebView = try XCTUnwrap(
+            browserManager.webViewRuntime.ownershipQuery.webView(
+                for: sourceTab.id,
+                in: window.id
+            ) as? FocusableWKWebView
+        )
+        let sourcePublication = try XCTUnwrap(
+            manager.initialTabPublicationPreparer.prepare(
+                window: window,
+                tab: sourceTab,
+                webView: sourceWebView,
+                runtime: manager.runtime,
+                windowRegistry: browserManager.extensionBridgeComposition.windows,
+                reason: "ExtensionRequestedTabServicesTests.source"
+            )
+        )
+        XCTAssertTrue(manager.notifyWindowOpened(window))
+        XCTAssertTrue(
+            sourcePublication.publishInitialTab(
+                afterWindowOpened: window
+            )
+        )
+        let publishedWindow = try XCTUnwrap(
+            manager.browserRuntimeBridgeOwner.windowPublications
+                .publishedWindowAdapter(
+                    for: window,
+                    profileID: profile.id
+                )
+        )
+
+        return RequestedPublicationHarness(
+            manager: manager,
+            browserManager: browserManager,
+            profile: profile,
+            window: window,
+            sourceTab: sourceTab,
+            extensionContext: extensionContext,
+            controller: controller,
+            publishedWindow: publishedWindow
+        )
     }
 
     private func makeProfileRoutingHarness() throws -> ProfileRoutingHarness {

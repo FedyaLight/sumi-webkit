@@ -267,6 +267,39 @@ Pinned and essential items can preserve their visible identity while the live
 WebView/runtime instance is unloaded to free memory. This is a design and
 implementation behavior, not a benchmark claim.
 
+## Normal WebView Configuration Transactions
+
+A normal WebView is provisional until its complete configuration has passed the
+built-in extension preparation and still uses the exact data store of its
+target profile. There is no arbitrary caller mutation hook after preparation.
+Construction attaches a policy receipt bound to one Tab ledger, profile, and
+WebView-session generation. `CanonicalWebViewPlacementService` carries a
+one-shot admission through the exact tracked or untracked repository CAS,
+commits it before registration side effects, then revalidates the published
+physical identity. Failed admission, mixed clone preparation, stale
+replacement, and settlement rollback cancel the receipt without publishing
+policy state. Raw normal WebViews without a receipt are rejected. Auxiliary
+WebViews use separate tracked and untracked placement capabilities and cannot
+join a normal clone generation.
+
+The ledger records the configuration-time plan, not a fictional snapshot of
+asynchronous WebKit rule-list lookup. Clone compatibility compares only the
+effective configuration fingerprint (profile, data-store identity, rule-list
+identities, and autoplay policy), while site metadata remains diagnostic.
+Actual post-lookup and hot-swap rule lists are read from the normal-tab user
+content controller diagnostics. Whole detached generations are replaced by
+`DetachedWebViewReplacementService` through the same shared settlement
+pipeline as tracked rebuilds. Replacement settlement commits the new plan
+after the repository CAS and before retirement of the previous physical
+generation; rollback cancels pending receipts instead of restoring mutable
+policy snapshots. Detached release transfers residence to an exact cleanup
+lease before immediate or protection-deferred physical destruction.
+
+Reload requirements are held by independent Safari blocker, protection, and
+autoplay states. They read narrow typed policy capabilities and may request the
+shared exact-Tab replacement service; there is no browser-root reload runtime,
+aggregate mutable state owner, or closure-based replacement context.
+
 ## Performance Principles
 
 Sumi is performance-first in the sense that browser features should have clear
@@ -309,7 +342,28 @@ is real-world password-manager extension compatibility.
 
 Normal browsing views are the default extension participation surface. Helper
 surfaces such as favicon downloads, previews, and mini windows should not
-participate unless a future design explicitly opts them in.
+participate implicitly. An extension-created auxiliary window opts in through
+its own two-phase Tab+Window transaction. A silent Tab prepublication receipt
+first proves the exact auxiliary Tab, physical WebView, owner extension
+context, profile controller, and profile data store. The window ledger then
+publishes `didOpenWindow` to that owner context, revalidates, commits the exact
+owner-context `didOpenTab`, revalidates again, and only then permits focus. No
+controller-wide Tab callback is used, so an unrelated extension in the same
+profile cannot observe or operate the auxiliary Tab adapter.
+
+Close tombstones the ledger before entering WebKit, balances the captured Tab
+with `windowIsClosing: true`, and then balances its captured Window. A receipt
+that never reached Tab commit is cancelled without a Tab-close callback.
+Runtime reload suspends this exact pair before generic normal-Tab retirement
+and republishes the still-live native session into the new generation; terminal
+runtime teardown closes it once before later native-session cleanup. Stable
+adapters survive reload, while rejected and terminal transactions remove only
+their exact adapter identities. Focus may return to a normal window only
+through that window's already-published profile projection. Read-only window
+queries use the same ledgers, put the exact focused committed auxiliary session
+first, and otherwise use stable UUID order. If any exact proof changes during a
+synchronous callback, presentation is rejected and the native session is torn
+down rather than exposing a partial graph.
 
 An extension action popup keeps the exact click-time window, tab, profile, and
 WebKit data-store receipt for its lifetime. Nested `window.open` requests must

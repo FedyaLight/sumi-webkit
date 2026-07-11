@@ -68,18 +68,7 @@ public protocol WebRuntimePromotedHost: AnyObject {
 @MainActor
 public protocol WebRuntimeTabMaterializing: AnyObject {
     /// Creates a fully configured normal-tab WebView (primary or clone).
-    /// Matches app `Tab.makeNormalTabWebView(reason:prepareConfiguration:)`.
-    func makeNormalTabWebView(
-        reason: String,
-        prepareConfiguration: ((WKWebViewConfiguration) -> Void)?
-    ) -> WKWebView?
-}
-
-extension WebRuntimeTabMaterializing {
-    /// Convenience matching the app Tab default (`prepareConfiguration: nil`).
-    public func makeNormalTabWebView(reason: String) -> WKWebView? {
-        makeNormalTabWebView(reason: reason, prepareConfiguration: nil)
-    }
+    func makeNormalTabWebView(reason: String) -> WKWebView?
 }
 
 /// Tab-owned WebView teardown surface used by tab/window cleanup owners.

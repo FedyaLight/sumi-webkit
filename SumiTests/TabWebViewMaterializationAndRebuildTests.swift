@@ -85,7 +85,10 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
     func testLiveReplacementRunsRuntimePreparationAfterCanonicalCommit() throws {
         let browserManager = makeIsolatedOwnershipBrowserManager()
         let repository = browserManager.webViewSessions
-        let ownership = browserManager.testWebViewRuntime().ownershipService
+        let webViewRuntime = browserManager.testWebViewRuntime()
+        let ownership = webViewRuntime.ownershipService
+        let untrackedInstallation =
+            webViewRuntime.untrackedWebViewInstallationService
         let tab = browserManager.tabManager.tabFactory.makeTab(
             url: URL(string: "https://example.com/extension-replacement")!,
             loadsCachedFaviconOnInit: false
@@ -93,7 +96,10 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
         tab.profileId = browserManager.currentProfile?.id
         tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
         let previous = WKWebView()
-        ownership.installUntracked(previous, for: tab)
+        XCTAssertEqual(
+            untrackedInstallation.installUntracked(previous, for: tab),
+            .committed
+        )
         var preparationSawCanonicalResidence = false
 
         let replacement = try XCTUnwrap(
@@ -126,8 +132,10 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
         tab.profileId = browserManager.currentProfile?.id
         tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
         let windowID = UUID()
-        let previous = WKWebView()
-        ownership.assign(previous, to: tab, in: windowID)
+        let previous = try XCTUnwrap(
+            tab.makeNormalTabWebView(reason: "test.tracked-live-previous")
+        )
+        XCTAssertTrue(ownership.assign(previous, to: tab, in: windowID))
         var preparationSawCanonicalResidence = false
 
         let replacement = try XCTUnwrap(
@@ -147,6 +155,405 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
         XCTAssertFalse(replacement === previous)
         XCTAssertIdentical(repository.webView(for: tab.id, in: windowID), replacement)
         XCTAssertNil(repository.residence(of: previous))
+    }
+
+    func testCanonicalPlacementRejectsRawNormalWebViewBeforeRepositoryMutation() {
+        let browserManager = makeIsolatedOwnershipBrowserManager()
+        let repository = browserManager.webViewSessions
+        let ownership = browserManager.testWebViewRuntime().ownershipService
+        let tab = browserManager.tabManager.tabFactory.makeTab(
+            loadsCachedFaviconOnInit: false
+        )
+        let configuration = WKWebViewConfiguration()
+        configuration.sumiIsNormalTabWebViewConfiguration = true
+        configuration.userContentController =
+            SumiNormalTabUserContentControllerFactory.makeController()
+        let rawNormalWebView = WKWebView(
+            frame: .zero,
+            configuration: configuration
+        )
+
+        XCTAssertFalse(
+            ownership.assign(rawNormalWebView, to: tab, in: UUID())
+        )
+        XCTAssertNil(repository.residence(of: rawNormalWebView))
+        XCTAssertTrue(tab.webViewSession.allKnownWebViews.isEmpty)
+        XCTAssertEqual(tab.configurationPolicyLedger.revision, 0)
+    }
+
+    func testCanonicalPlacementRejectsPolicyReceiptFromAnotherTab() throws {
+        let browserManager = makeIsolatedOwnershipBrowserManager()
+        let repository = browserManager.webViewSessions
+        let ownership = browserManager.testWebViewRuntime().ownershipService
+        let preparingTab = browserManager.tabManager.tabFactory.makeTab(
+            loadsCachedFaviconOnInit: false
+        )
+        let receivingTab = browserManager.tabManager.tabFactory.makeTab(
+            loadsCachedFaviconOnInit: false
+        )
+        let profileID = try XCTUnwrap(browserManager.currentProfile?.id)
+        for tab in [preparingTab, receivingTab] {
+            tab.profileId = profileID
+            tab.attachBrowserRuntime(
+                TabBrowserRuntimeFactory.make(for: browserManager)
+            )
+        }
+        let foreignCandidate = try XCTUnwrap(
+            preparingTab.makeNormalTabWebView(
+                reason: "test.foreign-policy-candidate"
+            )
+        )
+        let receipt = try XCTUnwrap(
+            foreignCandidate.sumiPreparedConfigurationPolicyChange
+        )
+
+        XCTAssertFalse(
+            ownership.assign(foreignCandidate, to: receivingTab, in: UUID())
+        )
+        XCTAssertNil(repository.residence(of: foreignCandidate))
+        XCTAssertEqual(receipt.phase, .prepared)
+        XCTAssertEqual(preparingTab.configurationPolicyLedger.revision, 0)
+        XCTAssertEqual(receivingTab.configurationPolicyLedger.revision, 0)
+        preparingTab.cancelConfigurationPolicy(for: [foreignCandidate])
+        preparingTab.cleanupCloneWebView(foreignCandidate)
+    }
+
+    func testCanonicalPlacementReturnsProtectedCandidateWithoutMutation() {
+        let browserManager = makeIsolatedOwnershipBrowserManager()
+        let runtime = browserManager.testWebViewRuntime()
+        let repository = browserManager.webViewSessions
+        let tab = browserManager.tabManager.tabFactory.makeTab(
+            loadsCachedFaviconOnInit: false
+        )
+        let sourceWindowID = UUID()
+        let targetWindowID = UUID()
+        let candidate = WKWebView()
+        XCTAssertTrue(
+            runtime.ownershipService.assign(
+                candidate,
+                to: tab,
+                in: sourceWindowID
+            )
+        )
+        let generation = tab.webViewSession.generation
+        let protection = runtime.mediaProtectionOwner
+            .beginVisualHandoffProtection(for: candidate)
+        defer {
+            _ = runtime.mediaProtectionOwner.finishVisualHandoffProtection(
+                protection
+            )
+        }
+
+        XCTAssertEqual(
+            runtime.canonicalWebViewPlacement.placeAuxiliaryTracked(
+                candidate,
+                for: tab,
+                in: targetWindowID,
+                promoteToPrimary: true
+            ),
+            .rejected(.trackedRegistration(.protectedCandidate))
+        )
+        XCTAssertIdentical(
+            repository.webView(for: tab.id, in: sourceWindowID),
+            candidate
+        )
+        XCTAssertNil(repository.webView(for: tab.id, in: targetWindowID))
+        XCTAssertEqual(tab.webViewSession.generation, generation)
+    }
+
+    func testProtectedOccupantRejectsAndCancelsExactPolicyAdmission() throws {
+        let browserManager = makeIsolatedOwnershipBrowserManager()
+        let runtime = browserManager.testWebViewRuntime()
+        let repository = browserManager.webViewSessions
+        let tab = browserManager.tabManager.tabFactory.makeTab(
+            url: URL(string: "https://example.com/protected-placement")!,
+            loadsCachedFaviconOnInit: false
+        )
+        tab.profileId = try XCTUnwrap(browserManager.currentProfile?.id)
+        tab.attachBrowserRuntime(
+            TabBrowserRuntimeFactory.make(for: browserManager)
+        )
+        let windowID = UUID()
+        let occupant = try XCTUnwrap(
+            tab.makeNormalTabWebView(reason: "test.protected-occupant")
+        )
+        XCTAssertTrue(runtime.ownershipService.assign(occupant, to: tab, in: windowID))
+        let generation = tab.webViewSession.generation
+        let policyRevision = tab.configurationPolicyLedger.revision
+        let committedPolicy = tab.configurationPolicyLedger.committedState
+        let candidate = try XCTUnwrap(
+            tab.makeNormalTabWebView(reason: "test.protected-replacement")
+        )
+        let candidateReceipt = try XCTUnwrap(
+            candidate.sumiPreparedConfigurationPolicyChange
+        )
+        let protection = runtime.mediaProtectionOwner
+            .beginVisualHandoffProtection(for: occupant)
+        defer {
+            _ = runtime.mediaProtectionOwner.finishVisualHandoffProtection(
+                protection
+            )
+            tab.cleanupCloneWebView(candidate)
+        }
+
+        XCTAssertEqual(
+            runtime.canonicalWebViewPlacement.placeNormalTracked(
+                candidate,
+                for: tab,
+                in: windowID,
+                promoteToPrimary: true
+            ),
+            .rejected(.trackedRegistration(.protectedTrackedOccupant))
+        )
+        XCTAssertIdentical(repository.webView(for: tab.id, in: windowID), occupant)
+        XCTAssertNil(repository.residence(of: candidate))
+        XCTAssertEqual(tab.webViewSession.generation, generation)
+        XCTAssertEqual(tab.configurationPolicyLedger.revision, policyRevision)
+        XCTAssertEqual(tab.configurationPolicyLedger.committedState, committedPolicy)
+        XCTAssertEqual(candidateReceipt.phase, .cancelled)
+        XCTAssertNil(candidate.sumiPreparedConfigurationPolicyChange)
+    }
+
+    func testCanonicalAuxiliaryPlacementCancelsSameTabPolicyEvidence() {
+        let browserManager = makeIsolatedOwnershipBrowserManager()
+        let runtime = browserManager.testWebViewRuntime()
+        let repository = browserManager.webViewSessions
+        let tab = browserManager.tabManager.tabFactory.makeTab(
+            loadsCachedFaviconOnInit: false
+        )
+        let sourceWindowID = UUID()
+        let targetWindowID = UUID()
+        let candidate = WKWebView()
+        XCTAssertTrue(
+            runtime.ownershipService.assign(
+                candidate,
+                to: tab,
+                in: sourceWindowID
+            )
+        )
+        let generation = tab.webViewSession.generation
+        let receipt = tab.configurationPolicyLedger.prepare(
+            .unknown,
+            expectedSessionGeneration: generation
+        )
+        candidate.sumiPreparedConfigurationPolicyChange = receipt
+
+        XCTAssertEqual(
+            runtime.canonicalWebViewPlacement.placeAuxiliaryTracked(
+                candidate,
+                for: tab,
+                in: targetWindowID,
+                promoteToPrimary: true
+            ),
+            .rejected(.unexpectedPolicyEvidence)
+        )
+        XCTAssertEqual(receipt.phase, .cancelled)
+        XCTAssertNil(candidate.sumiPreparedConfigurationPolicyChange)
+        XCTAssertIdentical(
+            repository.webView(for: tab.id, in: sourceWindowID),
+            candidate
+        )
+        XCTAssertNil(repository.webView(for: tab.id, in: targetWindowID))
+        XCTAssertEqual(tab.webViewSession.generation, generation)
+        XCTAssertEqual(tab.configurationPolicyLedger.revision, 0)
+    }
+
+    func testMaterializationCommitsAdditionalCloneThroughExactPlacement() throws {
+        let browserManager = makeIsolatedOwnershipBrowserManager()
+        let repository = browserManager.webViewSessions
+        let ownership = browserManager.testWebViewRuntime().ownershipService
+        let tab = browserManager.tabManager.tabFactory.makeTab(
+            url: URL(string: "https://example.com/clone-placement")!,
+            loadsCachedFaviconOnInit: false
+        )
+        tab.profileId = try XCTUnwrap(browserManager.currentProfile?.id)
+        tab.attachBrowserRuntime(
+            TabBrowserRuntimeFactory.make(for: browserManager)
+        )
+        let primaryWindowID = UUID()
+        let cloneWindowID = UUID()
+
+        let primary = try XCTUnwrap(
+            ownership.webView(for: tab, in: primaryWindowID)
+        )
+        let committedRevision = tab.configurationPolicyLedger.revision
+        let clone = try XCTUnwrap(
+            ownership.webView(for: tab, in: cloneWindowID)
+        )
+
+        XCTAssertFalse(primary === clone)
+        XCTAssertIdentical(
+            repository.webView(for: tab.id, in: primaryWindowID),
+            primary
+        )
+        XCTAssertIdentical(
+            repository.webView(for: tab.id, in: cloneWindowID),
+            clone
+        )
+        XCTAssertEqual(tab.webViewSession.allKnownWebViews.count, 2)
+        XCTAssertEqual(tab.configurationPolicyLedger.revision, committedRevision)
+        XCTAssertNil(clone.sumiPreparedConfigurationPolicyChange)
+    }
+
+    func testDetachedReplacementRejectsCancelledPolicyWithoutPlacement() throws {
+        let browserManager = makeIsolatedOwnershipBrowserManager()
+        let repository = browserManager.webViewSessions
+        let webViewRuntime = browserManager.testWebViewRuntime()
+        let ownership = webViewRuntime.ownershipService
+        let untrackedInstallation =
+            webViewRuntime.untrackedWebViewInstallationService
+        let tab = browserManager.tabManager.tabFactory.makeTab(
+            url: URL(string: "https://example.com/detached-rollback")!,
+            loadsCachedFaviconOnInit: false
+        )
+        tab.profileId = try XCTUnwrap(browserManager.currentProfile?.id)
+        tab.attachBrowserRuntime(
+            TabBrowserRuntimeFactory.make(for: browserManager)
+        )
+        let previous = WKWebView()
+        XCTAssertEqual(
+            untrackedInstallation.installUntracked(previous, for: tab),
+            .committed
+        )
+        let replacement = try XCTUnwrap(
+            tab.makeNormalTabWebView(reason: "test.cancelled-detached")
+        )
+        tab.cancelConfigurationPolicy(for: [replacement])
+
+        XCTAssertEqual(
+            ownership.replaceDetached(
+                previous,
+                with: replacement,
+                for: tab
+            ),
+            .rejected
+        )
+        XCTAssertIdentical(tab.webViewSession.untrackedWebView, previous)
+        XCTAssertNil(repository.residence(of: replacement))
+        XCTAssertEqual(tab.configurationPolicyLedger.revision, 0)
+        tab.cleanupCloneWebView(replacement)
+    }
+
+    func testDetachedReplacementReportsConsumedAfterSynchronousPolicyRollback()
+        throws {
+        let repository = WebViewSessionRepository()
+        let targetURL = try XCTUnwrap(
+            URL(string: "https://example.com/detached-settlement-rollback")
+        )
+        let tab = Tab(
+            url: targetURL,
+            webViewSessions: repository,
+            loadsCachedFaviconOnInit: false
+        )
+        let previous = WKWebView()
+        repository.noteUntrackedWebView(previous, for: tab.id)
+        let configuration = WKWebViewConfiguration()
+        configuration.sumiIsNormalTabWebViewConfiguration = true
+        configuration.userContentController =
+            SumiNormalTabUserContentControllerFactory.makeController()
+        let replacement = WKWebView(frame: .zero, configuration: configuration)
+        let receipt = tab.configurationPolicyLedger.prepare(
+            TabConfigurationPolicyState(
+                profileID: nil,
+                websiteDataStoreIdentity: ObjectIdentifier(
+                    replacement.configuration.websiteDataStore
+                ),
+                protectionAttachment: nil,
+                safariContentBlockerAttachment: nil,
+                autoplayState: .allowAll
+            ),
+            expectedSessionGeneration: tab.webViewSession.generation
+        )
+        replacement.sumiPreparedConfigurationPolicyChange = receipt
+        let changeSet = try XCTUnwrap(
+            tab.preparedConfigurationPolicyChangeSet(for: [replacement])
+        )
+        var destroyed: [ObjectIdentifier] = []
+        let pipeline = WebViewReplacementPipeline(runtime: .init(
+            webViewSessions: repository,
+            quiesce: { webView in
+                XCTAssertIdentical(webView, previous)
+                changeSet.cancel()
+            },
+            retireNavigationGeneration: { tabID, webViews, _ in
+                XCTAssertEqual(tabID, tab.id)
+                XCTAssertEqual(
+                    webViews.map(ObjectIdentifier.init),
+                    [ObjectIdentifier(replacement)]
+                )
+            },
+            destroy: { tabID, webView in
+                XCTAssertEqual(tabID, tab.id)
+                destroyed.append(ObjectIdentifier(webView))
+            },
+            restore: { _, _ in },
+            uninstallObservationsIfUntracked: { _ in }
+        ))
+        let service = DetachedWebViewReplacementService(
+            webViewSessions: repository,
+            pipeline: pipeline
+        )
+
+        XCTAssertEqual(
+            service.replace(previous, with: replacement, for: tab),
+            .consumedByFailedTransaction
+        )
+        XCTAssertIdentical(tab.webViewSession.untrackedWebView, previous)
+        XCTAssertNil(repository.residence(of: replacement))
+        XCTAssertEqual(destroyed, [ObjectIdentifier(replacement)])
+        XCTAssertEqual(receipt.phase, .cancelled)
+        XCTAssertEqual(tab.configurationPolicyLedger.committedState, .unknown)
+        XCTAssertEqual(tab.configurationPolicyLedger.revision, 0)
+    }
+
+    func testDetachedAuxiliaryReplacementRejectsForeignPolicyEvidence() {
+        let browserManager = makeIsolatedOwnershipBrowserManager()
+        let repository = browserManager.webViewSessions
+        let webViewRuntime = browserManager.testWebViewRuntime()
+        let ownership = webViewRuntime.ownershipService
+        let untrackedInstallation =
+            webViewRuntime.untrackedWebViewInstallationService
+        let receivingTab = browserManager.tabManager.tabFactory.makeTab(
+            loadsCachedFaviconOnInit: false
+        )
+        let foreignTab = browserManager.tabManager.tabFactory.makeTab(
+            loadsCachedFaviconOnInit: false
+        )
+        let previous = WKWebView()
+        XCTAssertEqual(
+            untrackedInstallation.installUntracked(
+                previous,
+                for: receivingTab
+            ),
+            .committed
+        )
+        let replacement = WKWebView()
+        let foreignReceipt = foreignTab.configurationPolicyLedger.prepare(
+            .unknown,
+            expectedSessionGeneration: foreignTab.webViewSession.generation
+        )
+        replacement.sumiPreparedConfigurationPolicyChange = foreignReceipt
+
+        XCTAssertEqual(
+            ownership.replaceDetached(
+                previous,
+                with: replacement,
+                for: receivingTab
+            ),
+            .rejected
+        )
+        XCTAssertIdentical(receivingTab.webViewSession.untrackedWebView, previous)
+        XCTAssertNil(repository.residence(of: replacement))
+        XCTAssertEqual(foreignReceipt.phase, .prepared)
+        XCTAssertIdentical(
+            replacement.sumiPreparedConfigurationPolicyChange,
+            foreignReceipt
+        )
+        XCTAssertEqual(receivingTab.configurationPolicyLedger.revision, 0)
+        XCTAssertEqual(foreignTab.configurationPolicyLedger.revision, 0)
+
+        foreignTab.cancelConfigurationPolicy(for: [replacement])
+        receivingTab.cleanupCloneWebView(replacement)
     }
 
     func testTrackedInitialDocumentHandoffRejectsChangedWindowResidence() async {
@@ -260,7 +667,7 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
         )
     }
 
-    func testTrackedProfileAssignmentStaleCASRestoresAppliedReloadPolicyState() {
+    func testTrackedProfileAssignmentRejectsGenerationChangeDuringProvisioning() {
         let repository = WebViewSessionRepository()
         let oldProfile = Profile(name: "Old")
         let targetProfile = Profile(name: "Target")
@@ -276,8 +683,19 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
         let targetState = SumiSafariContentBlockerAttachmentState.disabled(
             siteHost: "target.example"
         )
-        tab.reloadPolicyStateOwner.noteSafariContentBlockerAttachmentApplied(oldState)
-        let oldWebView = WKWebView()
+        let oldConfiguration = WKWebViewConfiguration()
+        oldConfiguration.userContentController =
+            SumiNormalTabUserContentControllerFactory.makeController()
+        let oldWebView = WKWebView(
+            frame: .zero,
+            configuration: oldConfiguration
+        )
+        commitConfigurationPolicy(
+            on: tab,
+            webView: oldWebView,
+            profileID: oldProfile.id,
+            safariAttachment: oldState
+        )
         let window = RebuildRuntimeWindowStub()
         register(oldWebView, tabID: tab.id, windowID: window.id, in: repository)
         let concurrentParked = WKWebView()
@@ -312,10 +730,10 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
             intent: intent
         )
 
-        XCTAssertEqual(outcome, .stale)
+        XCTAssertEqual(outcome, .failed)
         XCTAssertEqual(tab.profileId, oldProfile.id)
         XCTAssertEqual(
-            tab.reloadPolicyStateOwner.safariContentBlockerAppliedAttachmentState,
+            tab.safariContentBlockerAppliedAttachmentState,
             oldState
         )
         XCTAssertIdentical(repository.webView(for: tab.id, in: window.id), oldWebView)
@@ -326,7 +744,7 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
         tab.abortProfileAssignmentIntent(intent)
     }
 
-    func testDetachedProfileAssignmentStaleCASRestoresAppliedReloadPolicyState() {
+    func testDetachedProfileAssignmentRejectsGenerationChangeDuringProvisioning() {
         let repository = WebViewSessionRepository()
         let graph = makeTestWebViewRuntimeGraph(webViewSessions: repository)
         let oldProfile = Profile(name: "Old")
@@ -343,8 +761,19 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
         let targetState = SumiSafariContentBlockerAttachmentState.disabled(
             siteHost: "target.example"
         )
-        tab.reloadPolicyStateOwner.noteSafariContentBlockerAttachmentApplied(oldState)
-        let oldWebView = WKWebView()
+        let oldConfiguration = WKWebViewConfiguration()
+        oldConfiguration.userContentController =
+            SumiNormalTabUserContentControllerFactory.makeController()
+        let oldWebView = WKWebView(
+            frame: .zero,
+            configuration: oldConfiguration
+        )
+        commitConfigurationPolicy(
+            on: tab,
+            webView: oldWebView,
+            profileID: oldProfile.id,
+            safariAttachment: oldState
+        )
         tab.webViewSession.park(oldWebView)
         var didInvalidateGeneration = false
         attachProfileRuntime(
@@ -374,10 +803,10 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
             intent: intent
         )
 
-        XCTAssertEqual(outcome, .stale)
+        XCTAssertEqual(outcome, .failed)
         XCTAssertEqual(tab.profileId, oldProfile.id)
         XCTAssertEqual(
-            tab.reloadPolicyStateOwner.safariContentBlockerAppliedAttachmentState,
+            tab.safariContentBlockerAppliedAttachmentState,
             oldState
         )
         XCTAssertIdentical(
@@ -402,7 +831,14 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
         let cloneWindowID = UUID()
         let oldPrimary = WKWebView()
         let oldClone = WKWebView()
-        let replacement = WKWebView()
+        let replacementConfiguration = WKWebViewConfiguration()
+        replacementConfiguration.sumiIsNormalTabWebViewConfiguration = true
+        replacementConfiguration.userContentController =
+            SumiNormalTabUserContentControllerFactory.makeController()
+        let replacement = WKWebView(
+            frame: .zero,
+            configuration: replacementConfiguration
+        )
         register(
             oldPrimary,
             tabID: tab.id,
@@ -454,6 +890,25 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
             .participant
         )
 
+        let snapshot = repository.snapshot(for: tab.id)
+        let committedPolicy = TabConfigurationPolicyState(
+            profileID: nil,
+            websiteDataStoreIdentity: ObjectIdentifier(
+                replacement.configuration.websiteDataStore
+            ),
+            protectionAttachment: nil,
+            safariContentBlockerAttachment: nil,
+            autoplayState: .blockAll
+        )
+        replacement.sumiPreparedConfigurationPolicyChange =
+            tab.configurationPolicyLedger.prepare(
+                committedPolicy,
+                expectedSessionGeneration: snapshot.generation
+            )
+        let policyChangeSet = try XCTUnwrap(
+            tab.preparedConfigurationPolicyChangeSet(for: [replacement])
+        )
+
         var departureBatches: [[ObjectIdentifier]] = []
         var events: [String] = []
         var destroyed: [ObjectIdentifier] = []
@@ -461,6 +916,11 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
             repository: repository,
             tab: tab,
             departureBatches: { webViews in
+                XCTAssertEqual(
+                    tab.configurationPolicyLedger.committedState,
+                    committedPolicy,
+                    "Policy must commit before physical retirement begins"
+                )
                 events.append("departure")
                 departureBatches.append(
                     webViews.map(ObjectIdentifier.init)
@@ -471,8 +931,7 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
                 destroyed.append(ObjectIdentifier(webView))
             }
         )
-        let snapshot = repository.snapshot(for: tab.id)
-        let prepared = PreparedWebViewReplacement(
+        let prepared = try XCTUnwrap(PreparedWebViewReplacement(
             tab: tab,
             snapshot: snapshot,
             placement: .windowSet(
@@ -486,9 +945,8 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
             semanticRevision: intent.revision,
             profileID: nil,
             requiresExtensionRuntimePreparation: false,
-            previousProtectionState: nil,
-            previousSafariContentBlockerState: nil
-        )
+            configurationPolicyChangeSet: policyChangeSet
+        ))
 
         guard case .committed = pipeline.begin(
             [prepared],
@@ -540,6 +998,353 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
         )
     }
 
+    func testReplacementRejectsPolicyEvidenceFromDifferentWebView()
+        throws {
+        let repository = WebViewSessionRepository()
+        let targetURL = try XCTUnwrap(
+            URL(string: "https://example.com/evidence-identity")
+        )
+        let tab = Tab(
+            url: targetURL,
+            webViewSessions: repository,
+            loadsCachedFaviconOnInit: false
+        )
+        let evidenceConfiguration = WKWebViewConfiguration()
+        evidenceConfiguration.sumiIsNormalTabWebViewConfiguration = true
+        let evidenceWebView = WKWebView(
+            frame: .zero,
+            configuration: evidenceConfiguration
+        )
+        let placedConfiguration = WKWebViewConfiguration()
+        placedConfiguration.sumiIsNormalTabWebViewConfiguration = true
+        let placedWebView = WKWebView(
+            frame: .zero,
+            configuration: placedConfiguration
+        )
+        let snapshot = repository.snapshot(for: tab.id)
+        let receipt = tab.configurationPolicyLedger.prepare(
+            TabConfigurationPolicyState(
+                profileID: nil,
+                websiteDataStoreIdentity: ObjectIdentifier(
+                    evidenceWebView.configuration.websiteDataStore
+                ),
+                protectionAttachment: nil,
+                safariContentBlockerAttachment: nil,
+                autoplayState: .allowAll
+            ),
+            expectedSessionGeneration: snapshot.generation
+        )
+        evidenceWebView.sumiPreparedConfigurationPolicyChange = receipt
+        let changeSet = try XCTUnwrap(
+            tab.preparedConfigurationPolicyChangeSet(
+                for: [evidenceWebView]
+            )
+        )
+        let windowID = UUID()
+
+        XCTAssertNil(
+            PreparedWebViewReplacement(
+                tab: tab,
+                snapshot: snapshot,
+                placement: .windowSet(
+                    webViewsByWindowID: [windowID: placedWebView],
+                    primaryWindowID: windowID
+                ),
+                replacements: [placedWebView],
+                trackedReplacements: [placedWebView],
+                bindingReplacements: [],
+                targetURL: targetURL,
+                semanticRevision: 0,
+                profileID: nil,
+                requiresExtensionRuntimePreparation: false,
+                configurationPolicyChangeSet: changeSet
+            )
+        )
+        XCTAssertEqual(receipt.phase, .prepared)
+        XCTAssertIdentical(
+            evidenceWebView.sumiPreparedConfigurationPolicyChange,
+            receipt
+        )
+        XCTAssertEqual(tab.configurationPolicyLedger.revision, 0)
+        changeSet.cancel()
+    }
+
+    func testCancelledPolicyEvidenceIsRejectedBeforeReplacementAdmission()
+        throws {
+        let repository = WebViewSessionRepository()
+        let targetURL = try XCTUnwrap(
+            URL(string: "https://example.com/cancelled-evidence")
+        )
+        let tab = Tab(
+            url: targetURL,
+            webViewSessions: repository,
+            loadsCachedFaviconOnInit: false
+        )
+        let windowID = UUID()
+        let previous = WKWebView()
+        register(
+            previous,
+            tabID: tab.id,
+            windowID: windowID,
+            in: repository
+        )
+        let snapshot = repository.snapshot(for: tab.id)
+        let configuration = WKWebViewConfiguration()
+        configuration.sumiIsNormalTabWebViewConfiguration = true
+        configuration.userContentController =
+            SumiNormalTabUserContentControllerFactory.makeController()
+        let replacement = WKWebView(
+            frame: .zero,
+            configuration: configuration
+        )
+        replacement.sumiPreparedConfigurationPolicyChange =
+            tab.configurationPolicyLedger.prepare(
+                TabConfigurationPolicyState(
+                    profileID: nil,
+                    websiteDataStoreIdentity: ObjectIdentifier(
+                        replacement.configuration.websiteDataStore
+                    ),
+                    protectionAttachment: nil,
+                    safariContentBlockerAttachment: nil,
+                    autoplayState: .allowAll
+                ),
+                expectedSessionGeneration: snapshot.generation
+            )
+        let changeSet = try XCTUnwrap(
+            tab.preparedConfigurationPolicyChangeSet(
+                for: [replacement]
+            )
+        )
+        let prepared = try XCTUnwrap(
+            PreparedWebViewReplacement(
+                tab: tab,
+                snapshot: snapshot,
+                placement: .windowSet(
+                    webViewsByWindowID: [windowID: replacement],
+                    primaryWindowID: windowID
+                ),
+                replacements: [replacement],
+                trackedReplacements: [replacement],
+                bindingReplacements: [],
+                targetURL: targetURL,
+                semanticRevision: 0,
+                profileID: nil,
+                requiresExtensionRuntimePreparation: false,
+                configurationPolicyChangeSet: changeSet
+            )
+        )
+        changeSet.cancel()
+        let pipeline = replacementPipeline(
+            repository: repository,
+            tab: tab,
+            departureBatches: { _ in
+                XCTFail("Invalid evidence cannot retire a generation")
+            },
+            destroy: { _ in
+                XCTFail("Invalid evidence cannot destroy a WebView")
+            }
+        )
+
+        guard case .invalid = pipeline.begin(
+            [prepared],
+            profileIDs: [],
+            validateModel: { true },
+            modelCommit: {},
+            modelRollback: {},
+            completion: { _ in
+                XCTFail("Invalid evidence cannot start settlement")
+            }
+        ) else {
+            return XCTFail("Expected pre-admission policy rejection")
+        }
+
+        let current = repository.snapshot(for: tab.id)
+        XCTAssertEqual(current.generation, snapshot.generation)
+        XCTAssertIdentical(current.windowWebViews[windowID], previous)
+        XCTAssertNil(repository.residence(of: replacement))
+        XCTAssertEqual(tab.configurationPolicyLedger.revision, 0)
+        XCTAssertEqual(
+            tab.configurationPolicyLedger.committedState,
+            .unknown
+        )
+    }
+
+    func testPolicyReceiptSubstitutionDuringModelValidationCannotMutatePlacement()
+        throws {
+        let fixture = try makePreparedPolicyReplacementFixture(
+            path: "validation-receipt-substitution"
+        )
+        let newerReceipt = fixture.tab.configurationPolicyLedger.prepare(
+            fixture.policyState,
+            expectedSessionGeneration: fixture.snapshot.generation
+        )
+        defer {
+            newerReceipt.cancel()
+            if fixture.replacement.sumiPreparedConfigurationPolicyChange
+                === newerReceipt {
+                fixture.replacement.sumiPreparedConfigurationPolicyChange = nil
+            }
+        }
+        var modelCommitWasCalled = false
+        let pipeline = replacementPipeline(
+            repository: fixture.repository,
+            tab: fixture.tab,
+            departureBatches: { _ in
+                XCTFail("Invalid evidence cannot retire a generation")
+            },
+            destroy: { _ in
+                XCTFail("Invalid evidence cannot destroy a WebView")
+            }
+        )
+
+        guard case .invalid = pipeline.begin(
+            [fixture.prepared],
+            profileIDs: [],
+            validateModel: {
+                fixture.replacement.sumiPreparedConfigurationPolicyChange =
+                    newerReceipt
+                return true
+            },
+            modelCommit: {
+                modelCommitWasCalled = true
+            },
+            modelRollback: {},
+            completion: { _ in
+                XCTFail("Invalid evidence cannot start settlement")
+            }
+        ) else {
+            return XCTFail("Expected in-admission policy rejection")
+        }
+
+        XCTAssertFalse(modelCommitWasCalled)
+        XCTAssertEqual(fixture.originalReceipt.phase, .cancelled)
+        XCTAssertEqual(newerReceipt.phase, .prepared)
+        XCTAssertIdentical(
+            fixture.replacement.sumiPreparedConfigurationPolicyChange,
+            newerReceipt
+        )
+        assertPlacementWasNotReplaced(fixture)
+    }
+
+    func testPolicyCancellationDuringModelCommitRollsBackRepositoryAdmission()
+        throws {
+        let fixture = try makePreparedPolicyReplacementFixture(
+            path: "commit-receipt-cancellation"
+        )
+        var modelValue = "before"
+        var modelRollbackCount = 0
+        let pipeline = replacementPipeline(
+            repository: fixture.repository,
+            tab: fixture.tab,
+            departureBatches: { _ in
+                XCTFail("Invalid evidence cannot retire a generation")
+            },
+            destroy: { _ in
+                XCTFail("Invalid evidence cannot destroy a WebView")
+            }
+        )
+
+        guard case .invalid = pipeline.begin(
+            [fixture.prepared],
+            profileIDs: [],
+            validateModel: { true },
+            modelCommit: {
+                modelValue = "committed"
+                fixture.changeSet.cancel()
+            },
+            modelRollback: {
+                XCTAssertEqual(modelValue, "committed")
+                modelValue = "before"
+                modelRollbackCount += 1
+            },
+            completion: { _ in
+                XCTFail("Invalid evidence cannot start settlement")
+            }
+        ) else {
+            return XCTFail("Expected post-model-commit policy rejection")
+        }
+
+        XCTAssertEqual(modelRollbackCount, 1)
+        XCTAssertEqual(modelValue, "before")
+        XCTAssertEqual(fixture.originalReceipt.phase, .cancelled)
+        XCTAssertNil(
+            fixture.replacement.sumiPreparedConfigurationPolicyChange
+        )
+        assertPlacementWasNotReplaced(
+            fixture,
+            expectsUnchangedGeneration: false
+        )
+    }
+
+    func testPolicyCancellationWhileAwaitingBindingRollsBackBeforeCommit()
+        throws {
+        let fixture = try makePreparedPolicyReplacementFixture(
+            path: "binding-receipt-cancellation",
+            requiresBinding: true
+        )
+        var modelValue = "before"
+        var modelRollbackCount = 0
+        var settlementOutcome: WebViewReplacementTransactionOutcome?
+        var destroyed: [ObjectIdentifier] = []
+        let pipeline = replacementPipeline(
+            repository: fixture.repository,
+            tab: fixture.tab,
+            departureBatches: { webViews in
+                XCTAssertEqual(
+                    webViews.map(ObjectIdentifier.init),
+                    [ObjectIdentifier(fixture.replacement)]
+                )
+            },
+            destroy: { destroyed.append(ObjectIdentifier($0)) }
+        )
+
+        guard case .started(let settlement) = pipeline.begin(
+            [fixture.prepared],
+            profileIDs: [],
+            validateModel: { true },
+            modelCommit: { modelValue = "committed" },
+            modelRollback: {
+                XCTAssertEqual(modelValue, "committed")
+                modelValue = "before"
+                modelRollbackCount += 1
+            },
+            completion: { settlementOutcome = $0 }
+        ), let token = settlement.bindingToken(for: fixture.replacement) else {
+            return XCTFail("Expected asynchronous replacement settlement")
+        }
+        fixture.changeSet.cancel()
+        let navigationLifetime = NSObject()
+
+        XCTAssertEqual(
+            pipeline.markBound(
+                token,
+                binding: WebViewReplacementNavigationBinding(
+                    webView: fixture.replacement,
+                    semanticRevision: token.semanticRevision,
+                    navigationID: ObjectIdentifier(navigationLifetime),
+                    navigationLifetime: navigationLifetime
+                )
+            ),
+            .rolledBack(.commitValidationFailed)
+        )
+
+        XCTAssertEqual(
+            settlementOutcome,
+            .rolledBack(.commitValidationFailed)
+        )
+        XCTAssertEqual(modelRollbackCount, 1)
+        XCTAssertEqual(modelValue, "before")
+        XCTAssertEqual(fixture.originalReceipt.phase, .cancelled)
+        XCTAssertEqual(
+            destroyed,
+            [ObjectIdentifier(fixture.replacement)]
+        )
+        assertPlacementWasNotReplaced(
+            fixture,
+            expectsUnchangedGeneration: false
+        )
+    }
+
     func testRolledBackReplacementDiscardsOnlyReplacementGeneration()
         throws {
         let repository = WebViewSessionRepository()
@@ -555,7 +1360,14 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
         let cloneWindowID = UUID()
         let oldPrimary = WKWebView()
         let oldClone = WKWebView()
-        let discardedReplacement = WKWebView()
+        let replacementConfiguration = WKWebViewConfiguration()
+        replacementConfiguration.sumiIsNormalTabWebViewConfiguration = true
+        replacementConfiguration.userContentController =
+            SumiNormalTabUserContentControllerFactory.makeController()
+        let discardedReplacement = WKWebView(
+            frame: .zero,
+            configuration: replacementConfiguration
+        )
         register(
             oldPrimary,
             tabID: tab.id,
@@ -587,6 +1399,28 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
             .authority
         )
 
+        let snapshot = repository.snapshot(for: tab.id)
+        let pendingPolicy = TabConfigurationPolicyState(
+            profileID: nil,
+            websiteDataStoreIdentity: ObjectIdentifier(
+                discardedReplacement.configuration.websiteDataStore
+            ),
+            protectionAttachment: nil,
+            safariContentBlockerAttachment: nil,
+            autoplayState: .blockAudible
+        )
+        let pendingReceipt = tab.configurationPolicyLedger.prepare(
+            pendingPolicy,
+            expectedSessionGeneration: snapshot.generation
+        )
+        discardedReplacement.sumiPreparedConfigurationPolicyChange =
+            pendingReceipt
+        let policyChangeSet = try XCTUnwrap(
+            tab.preparedConfigurationPolicyChangeSet(
+                for: [discardedReplacement]
+            )
+        )
+
         var departureBatches: [[ObjectIdentifier]] = []
         var events: [String] = []
         var destroyed: [ObjectIdentifier] = []
@@ -604,8 +1438,7 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
                 destroyed.append(ObjectIdentifier(webView))
             }
         )
-        let snapshot = repository.snapshot(for: tab.id)
-        let prepared = PreparedWebViewReplacement(
+        let prepared = try XCTUnwrap(PreparedWebViewReplacement(
             tab: tab,
             snapshot: snapshot,
             placement: .windowSet(
@@ -621,9 +1454,8 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
             semanticRevision: intent.revision,
             profileID: nil,
             requiresExtensionRuntimePreparation: false,
-            previousProtectionState: nil,
-            previousSafariContentBlockerState: nil
-        )
+            configurationPolicyChangeSet: policyChangeSet
+        ))
         var settlementOutcome: WebViewReplacementTransactionOutcome?
         guard case .started(let receipt) = pipeline.begin(
             [prepared],
@@ -642,6 +1474,15 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
             settlementOutcome,
             .rolledBack(.bindingFailure(.submissionFailed))
         )
+        XCTAssertEqual(pendingReceipt.phase, .cancelled)
+        XCTAssertNil(
+            discardedReplacement.sumiPreparedConfigurationPolicyChange
+        )
+        XCTAssertEqual(
+            tab.configurationPolicyLedger.committedState,
+            .unknown
+        )
+        XCTAssertEqual(tab.configurationPolicyLedger.revision, 0)
         XCTAssertEqual(departureBatches.count, 1)
         XCTAssertEqual(
             departureBatches[0],
@@ -690,7 +1531,10 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
             webView: WKWebView
         )? = { _ in nil }
     ) -> TabWebViewMaterializationService {
-        TabWebViewMaterializationService(
+        let placement = makeTestWebViewRuntimeGraph(
+            webViewSessions: repository
+        ).canonicalWebViewPlacement
+        return TabWebViewMaterializationService(
             runtime: .init(
                 webViewSessions: repository,
                 initialDocumentWarmup: {
@@ -700,22 +1544,7 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
                         refreshCompositorForWindow: { _ in }
                     )
                 },
-                register: { [weak self] webView, tabID, windowID in
-                    self?.register(
-                        webView,
-                        tabID: tabID,
-                        windowID: windowID,
-                        in: repository
-                    )
-                },
-                promotePrimary: { owner, webView in
-                    WebViewTrackingLifecycleOwner()
-                        .promoteTrackedWebViewToPrimary(
-                            owner: owner,
-                            expectedWebView: webView,
-                            in: repository
-                        )
-                },
+                placement: placement,
                 primaryCandidate: primaryCandidate,
                 notifyActivatedIfCurrent: { _, _ in }
             ),
@@ -738,6 +1567,34 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
             matching: lease
         ))
         return navigation
+    }
+
+    private func commitConfigurationPolicy(
+        on tab: Tab,
+        webView: WKWebView,
+        profileID: UUID,
+        safariAttachment: SumiSafariContentBlockerAttachmentState
+    ) {
+        webView.sumiPreparedConfigurationPolicyChange =
+            tab.configurationPolicyLedger.prepare(
+                TabConfigurationPolicyState(
+                    profileID: profileID,
+                    websiteDataStoreIdentity: ObjectIdentifier(
+                        webView.configuration.websiteDataStore
+                    ),
+                    protectionAttachment: nil,
+                    safariContentBlockerAttachment: safariAttachment,
+                    autoplayState: nil
+                ),
+                expectedSessionGeneration: tab.webViewSession.generation
+            )
+        guard let changeSet = tab.preparedConfigurationPolicyChangeSet(
+            for: [webView]
+        ) else {
+            XCTFail("Expected exact configuration policy evidence")
+            return
+        }
+        XCTAssertTrue(changeSet.commit(as: .canonicalGeneration))
     }
 
     private func replacementPipeline(
@@ -764,6 +1621,145 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
             restore: { _, _ in },
             uninstallObservationsIfUntracked: { _ in }
         ))
+    }
+
+    private struct PreparedPolicyReplacementFixture {
+        let repository: WebViewSessionRepository
+        let tab: Tab
+        let windowID: UUID
+        let previous: WKWebView
+        let replacement: WKWebView
+        let snapshot: WebViewSessionSnapshot
+        let policyState: TabConfigurationPolicyState
+        let originalReceipt: PreparedConfigurationPolicyChange
+        let changeSet: PreparedConfigurationPolicyChangeSet
+        let prepared: PreparedWebViewReplacement
+    }
+
+    private func makePreparedPolicyReplacementFixture(
+        path: String,
+        requiresBinding: Bool = false
+    ) throws -> PreparedPolicyReplacementFixture {
+        let repository = WebViewSessionRepository()
+        let targetURL = try XCTUnwrap(
+            URL(string: "https://example.com/\(path)")
+        )
+        let tab = Tab(
+            url: targetURL,
+            webViewSessions: repository,
+            loadsCachedFaviconOnInit: false
+        )
+        let windowID = UUID()
+        let previous = WKWebView()
+        register(
+            previous,
+            tabID: tab.id,
+            windowID: windowID,
+            in: repository
+        )
+        let snapshot = repository.snapshot(for: tab.id)
+        let configuration = WKWebViewConfiguration()
+        configuration.sumiIsNormalTabWebViewConfiguration = true
+        configuration.userContentController =
+            SumiNormalTabUserContentControllerFactory.makeController()
+        let replacement = WKWebView(
+            frame: .zero,
+            configuration: configuration
+        )
+        let policyState = TabConfigurationPolicyState(
+            profileID: nil,
+            websiteDataStoreIdentity: ObjectIdentifier(
+                replacement.configuration.websiteDataStore
+            ),
+            protectionAttachment: nil,
+            safariContentBlockerAttachment: nil,
+            autoplayState: .allowAll
+        )
+        let receipt = tab.configurationPolicyLedger.prepare(
+            policyState,
+            expectedSessionGeneration: snapshot.generation
+        )
+        replacement.sumiPreparedConfigurationPolicyChange = receipt
+        let changeSet = try XCTUnwrap(
+            tab.preparedConfigurationPolicyChangeSet(for: [replacement])
+        )
+        let prepared = try XCTUnwrap(
+            PreparedWebViewReplacement(
+                tab: tab,
+                snapshot: snapshot,
+                placement: .windowSet(
+                    webViewsByWindowID: [windowID: replacement],
+                    primaryWindowID: windowID
+                ),
+                replacements: [replacement],
+                trackedReplacements: [replacement],
+                bindingReplacements: requiresBinding ? [replacement] : [],
+                targetURL: targetURL,
+                semanticRevision: 0,
+                profileID: nil,
+                requiresExtensionRuntimePreparation: false,
+                configurationPolicyChangeSet: changeSet
+            )
+        )
+        return PreparedPolicyReplacementFixture(
+            repository: repository,
+            tab: tab,
+            windowID: windowID,
+            previous: previous,
+            replacement: replacement,
+            snapshot: snapshot,
+            policyState: policyState,
+            originalReceipt: receipt,
+            changeSet: changeSet,
+            prepared: prepared
+        )
+    }
+
+    private func assertPlacementWasNotReplaced(
+        _ fixture: PreparedPolicyReplacementFixture,
+        expectsUnchangedGeneration: Bool = true,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let current = fixture.repository.snapshot(for: fixture.tab.id)
+        if expectsUnchangedGeneration {
+            XCTAssertEqual(
+                current.generation,
+                fixture.snapshot.generation,
+                file: file,
+                line: line
+            )
+        } else {
+            XCTAssertGreaterThan(
+                current.generation,
+                fixture.snapshot.generation,
+                file: file,
+                line: line
+            )
+        }
+        XCTAssertIdentical(
+            current.windowWebViews[fixture.windowID],
+            fixture.previous,
+            file: file,
+            line: line
+        )
+        XCTAssertNil(
+            fixture.repository.residence(of: fixture.replacement),
+            file: file,
+            line: line
+        )
+        XCTAssertEqual(
+            fixture.tab.configurationPolicyLedger.revision,
+            0,
+            file: file,
+            line: line
+        )
+        XCTAssertEqual(
+            fixture.tab.configurationPolicyLedger.committedState,
+            .unknown,
+            file: file,
+            line: line
+        )
     }
 
     private func makeIsolatedOwnershipBrowserManager() -> BrowserManager {

@@ -21,9 +21,14 @@ protocol AuxiliaryWindowTabLifecycle: AnyObject {
         extensionContext: WKWebExtensionContext?
     ) -> Tab?
 
-    func install(_ webView: WKWebView, for tab: Tab)
-    func registerExtensionCreatedTab(_ tab: Tab, reason: String)
-    func notifyTabClosed(_ tab: Tab)
+    func install(
+        _ webView: WKWebView,
+        for tab: Tab
+    ) -> UntrackedWebViewInstallationOutcome
+    func discardCreatedMiniWindowTab(
+        _ tab: Tab,
+        unplacedWebView: WKWebView?
+    )
     func removeMiniWindowTab(_ tab: Tab)
 }
 
@@ -57,7 +62,10 @@ protocol AuxiliaryWindowExtensionRuntimeResolving: AnyObject {
 
 @MainActor
 protocol AuxiliaryWindowExtensionEventHandling: AnyObject {
-    func notifyAuxiliaryWindowOpened(_ session: AuxiliaryWindowSession)
+    @discardableResult
+    func notifyAuxiliaryWindowOpened(
+        _ session: AuxiliaryWindowSession
+    ) -> Bool
     func notifyAuxiliaryWindowFocused(_ session: AuxiliaryWindowSession)
     func notifyAuxiliaryWindowClosed(_ session: AuxiliaryWindowSession)
 }

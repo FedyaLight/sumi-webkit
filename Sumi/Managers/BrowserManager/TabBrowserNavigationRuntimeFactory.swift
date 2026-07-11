@@ -52,22 +52,21 @@ enum TabBrowserNavigationRuntimeFactory {
         )
     }
 
-    static func reloadPolicyRuntime(
+    static func reloadPolicies(
         for browserManager: BrowserManager
-    ) -> TabReloadPolicyRuntime {
-        .make(
-            extensionsModule: { [weak browserManager] in
-                browserManager?.optionalModules.extensions
-            },
-            protectionCoordinator: { [weak browserManager] in
-                browserManager?.protectionCoordinator
-            },
-            browserConfiguration: { [weak browserManager] in
-                browserManager?.browserConfiguration
-            },
-            runtimePermissionController: { [weak browserManager] in
-                browserManager?.permissionRuntime.runtimePermissionController
-            }
+    ) -> TabReloadPolicies {
+        TabReloadPolicies(
+            safariContentBlockers: BrowserSafariContentBlockerPolicy(
+                extensions: browserManager.optionalModules.extensions
+            ),
+            protection: BrowserProtectionPolicy(
+                protection: browserManager.protectionCoordinator
+            ),
+            autoplay: BrowserAutoplayPolicy(
+                configuration: browserManager.browserConfiguration,
+                permissionController: browserManager.permissionRuntime
+                    .runtimePermissionController
+            )
         )
     }
 
@@ -378,68 +377,6 @@ extension TabInstallNavigationRuntime {
         Self(
             interceptInstallNavigation: { url in
                 userscriptsModule()?.interceptInstallNavigationIfNeeded(url) == true
-            }
-        )
-    }
-}
-
-@MainActor
-extension TabReloadPolicyRuntime {
-    static func make(
-        extensionsModule: @escaping () -> SumiExtensionsModule?,
-        protectionCoordinator: @escaping () -> SumiProtectionCoordinator?,
-        browserConfiguration: @escaping () -> BrowserConfiguration?,
-        runtimePermissionController: @escaping () -> (any SumiRuntimePermissionControlling)?
-    ) -> Self {
-        Self(
-            safariContentBlockerAttachmentState: { url in
-                extensionsModule()?.safariContentBlockerAttachmentState(for: url)
-                    ?? .disabled(siteHost: nil)
-            },
-            protectionAttachmentState: { url in
-                protectionCoordinator()?.desiredAttachmentState(for: url)
-                    ?? .disabled(siteHost: nil)
-            },
-            protectionSurfaceHost: { url in
-                protectionCoordinator()?.surfaceEligibility(for: url).normalizedSiteHost
-            },
-            protectionCurrentTabDiagnostics: { context in
-                let actualAttachedOverrideIdentifiers: [String]
-                let hasActualAttachedOverride: Bool
-                switch context.actualAttachedRuleLists {
-                case .deriveFromDiagnostics:
-                    actualAttachedOverrideIdentifiers = []
-                    hasActualAttachedOverride = false
-                case .identifiers(let identifiers):
-                    actualAttachedOverrideIdentifiers = identifiers
-                    hasActualAttachedOverride = true
-                }
-                return protectionCoordinator()?.currentTabDiagnostics(
-                    for: context.currentURL,
-                    appliedState: context.appliedState,
-                    reloadRequired: context.reloadRequired,
-                    reloadRequiredReason: context.reloadRequiredReason,
-                    didManualReloadRebuildWebView: context.didManualReloadRebuildWebView,
-                    appliedAfterManualReload: context.appliedAfterManualReload,
-                    actualAttachedRuleListIdentifiers: hasActualAttachedOverride
-                        ? actualAttachedOverrideIdentifiers
-                        : nil,
-                    contentBlockingAssetSummary: context.contentBlockingAssetSummary,
-                    webViewRebuildDuration: context.webViewRebuildDuration,
-                    urlHubSummaryDuration: context.urlHubSummaryDuration
-                )
-            },
-            autoplayPolicy: { url, profile in
-                guard let profile,
-                      let browserConfiguration = browserConfiguration()
-                else { return .default }
-                return browserConfiguration.resolvedAutoplayPolicy(for: url, profile: profile)
-            },
-            evaluateAutoplayPolicyChange: { requestedState, webView in
-                runtimePermissionController()?.evaluateAutoplayPolicyChange(
-                    requestedState,
-                    for: webView
-                ) ?? .noOp
             }
         )
     }

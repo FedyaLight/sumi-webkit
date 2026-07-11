@@ -34,6 +34,7 @@ final class TabWebViewProvisioningOwner {
         reason: String
     ) -> FocusableWKWebView {
         let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
+        webView.configuration.sumiIsNormalTabWebViewConfiguration = false
         context.preparationRuntime.prepareCreatedFocusableWebView(
             webView,
             currentURL,
@@ -72,10 +73,11 @@ final class TabWebViewProvisioningOwner {
     @discardableResult
     func makeNormalTabWebView(
         context: TabNormalWebViewRuntimeContext,
+        policyTransaction: TabConfigurationPolicyTransaction,
         reason: String,
         explicitProfile: Profile? = nil,
         prepareExtensionRuntime: Bool = true,
-        prepareConfiguration: ((WKWebViewConfiguration) -> Void)? = nil
+        prepareCandidateConfiguration: ((WKWebViewConfiguration, UUID) -> Void)? = nil
     ) -> WKWebView? {
         let startupTrace = StartupPerformanceTrace.firstWebViewCreationStarted()
         defer {
@@ -94,7 +96,7 @@ final class TabWebViewProvisioningOwner {
             return nil
         }
 
-        guard let configuration = normalTabWebViewConfiguration(
+        guard let preparedConfiguration = normalTabWebViewConfiguration(
             context: context,
             profile: profile,
             reason: reason
@@ -102,15 +104,34 @@ final class TabWebViewProvisioningOwner {
             return nil
         }
 
+        let configuration = preparedConfiguration.configuration
         let configurationContext = context.configurationContext()
         configurationContext.prepareWebViewConfigForExtensionRuntime(
             configuration,
             profile.id,
             "\(reason).configuration"
         )
-        prepareConfiguration?(configuration)
+        prepareCandidateConfiguration?(configuration, profile.id)
+        guard configuration.websiteDataStore === profile.dataStore else {
+            RuntimeDiagnostics.emit(
+                "[Tab] Rejected normal WebView during \(reason); its data store does not belong to profile \(profile.id)."
+            )
+            return nil
+        }
 
+        var policyState = preparedConfiguration.policyState
+        policyState.websiteDataStoreIdentity = ObjectIdentifier(
+            configuration.websiteDataStore
+        )
+        policyState.autoplayState = SumiRuntimePermissionController
+            .autoplayState(
+                from: configuration
+                    .mediaTypesRequiringUserActionForPlayback
+            )
+        let policyChange = policyTransaction.prepare(policyState)
         let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
+        webView.sumiPreparedConfigurationPolicyChange =
+            policyChange
         configureNormalTabWebView(
             webView,
             context: context,
@@ -158,7 +179,7 @@ final class TabWebViewProvisioningOwner {
         context: TabNormalWebViewRuntimeContext,
         profile: Profile,
         reason _: String
-    ) -> WKWebViewConfiguration? {
+    ) -> PreparedNormalTabWebViewConfiguration? {
         let currentURL = context.currentURL()
         return context.configurationRuntime.normalTabWebViewConfiguration(
             currentURL,

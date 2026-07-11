@@ -5,7 +5,17 @@ import Foundation
 final class ExtensionBrowserAdapterStore {
     var tabAdapters: [UUID: ExtensionTabAdapter] = [:]
     private var windowAdapters: [UUID: ExtensionWindowAdapter] = [:]
-    var miniWindowAdapters: [UUID: ExtensionMiniWindowAdapter] = [:]
+    private var miniWindowAdapters: [UUID: ExtensionMiniWindowAdapter] = [:]
+
+    func existingMiniWindowAdapter(
+        for sessionID: UUID
+    ) -> ExtensionMiniWindowAdapter? {
+        miniWindowAdapters[sessionID]
+    }
+
+    func miniWindowAdaptersSnapshot() -> [ExtensionMiniWindowAdapter] {
+        Array(miniWindowAdapters.values)
+    }
 
     func miniWindowAdapter(
         for sessionId: UUID,
@@ -44,16 +54,19 @@ final class ExtensionBrowserAdapterStore {
     }
 
     func tabAdapter(
-        for tabId: UUID,
+        for tab: Tab,
         create: () -> ExtensionTabAdapter?
     ) -> ExtensionTabAdapter? {
-        if let existing = tabAdapters[tabId] {
-            return existing
+        if let existing = tabAdapters[tab.id] {
+            if existing.represents(tab) {
+                return existing
+            }
+            guard existing.canBeReplaced(by: tab) else { return nil }
         }
         guard let created = create() else {
             return nil
         }
-        tabAdapters[tabId] = created
+        tabAdapters[tab.id] = created
         return created
     }
 
@@ -73,8 +86,16 @@ final class ExtensionBrowserAdapterStore {
         return true
     }
 
-    func removeMiniWindowAdapter(for sessionId: UUID) {
+    @discardableResult
+    func removeMiniWindowAdapter(
+        for sessionId: UUID,
+        ifIdenticalTo expectedAdapter: ExtensionMiniWindowAdapter
+    ) -> Bool {
+        guard miniWindowAdapters[sessionId] === expectedAdapter else {
+            return false
+        }
         miniWindowAdapters.removeValue(forKey: sessionId)
+        return true
     }
 
     func removeTabAdapter(for tabId: UUID) {
@@ -93,8 +114,15 @@ final class ExtensionBrowserAdapterStore {
         return true
     }
 
-    func prune(liveTabIDs: Set<UUID>, liveWindowIDs: Set<UUID>) {
-        tabAdapters = tabAdapters.filter { liveTabIDs.contains($0.key) }
+    func prune(liveTabs: [Tab], liveWindowIDs: Set<UUID>) {
+        let liveTabsByID = Dictionary(
+            liveTabs.map { ($0.id, $0) },
+            uniquingKeysWith: { _, current in current }
+        )
+        tabAdapters = tabAdapters.filter { tabID, adapter in
+            guard let liveTab = liveTabsByID[tabID] else { return false }
+            return adapter.represents(liveTab)
+        }
         windowAdapters = windowAdapters.filter { liveWindowIDs.contains($0.key) }
     }
 

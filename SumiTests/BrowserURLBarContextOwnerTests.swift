@@ -125,7 +125,7 @@ final class BrowserURLBarContextOwnerTests: XCTestCase {
         harness.windowState.currentTabId = tab.id
         let webView = EmptyReloadRecordingWebView()
         _ = tab.installNavigationDelegate(on: webView)
-        harness.browserManager.testWebViewRuntime().ownershipService.registerTrackedWebView(
+        harness.browserManager.testWebViewRuntime().ownershipService.registerAuxiliaryTrackedWebView(
             webView,
             for: tab,
             in: harness.windowState.id
@@ -154,7 +154,7 @@ final class BrowserURLBarContextOwnerTests: XCTestCase {
         harness.windowState.currentTabId = tab.id
         let webView = EmptyReloadRecordingWebView()
         _ = tab.installNavigationDelegate(on: webView)
-        harness.browserManager.testWebViewRuntime().ownershipService.registerTrackedWebView(
+        harness.browserManager.testWebViewRuntime().ownershipService.registerAuxiliaryTrackedWebView(
             webView,
             for: tab,
             in: harness.windowState.id

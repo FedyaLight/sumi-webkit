@@ -35,6 +35,18 @@ public struct SumiProtectionAttachmentState: Equatable, Sendable {
         effectiveLevel != .off && !activeGroups.isEmpty
     }
 
+    public var effectiveWebViewRuleListIdentifiers: [String] {
+        guard isEnabled else { return [] }
+        return attachedRuleListIdentifiers
+    }
+
+    public func hasSameEffectiveWebViewAttachment(
+        as other: SumiProtectionAttachmentState
+    ) -> Bool {
+        effectiveWebViewRuleListIdentifiers
+            == other.effectiveWebViewRuleListIdentifiers
+    }
+
     public init(
         siteHost: String?,
         requestedLevel: SumiProtectionLevel,
@@ -46,8 +58,12 @@ public struct SumiProtectionAttachmentState: Equatable, Sendable {
         self.siteHost = siteHost
         self.requestedLevel = requestedLevel
         self.effectiveLevel = effectiveLevel
-        self.activeGroups = activeGroups.sorted { $0.rawValue < $1.rawValue }
-        self.attachedRuleListIdentifiers = attachedRuleListIdentifiers.sorted()
+        self.activeGroups = Array(Set(activeGroups)).sorted {
+            $0.rawValue < $1.rawValue
+        }
+        self.attachedRuleListIdentifiers = Array(
+            Set(attachedRuleListIdentifiers)
+        ).sorted()
         self.activeGenerationId = activeGenerationId
     }
 

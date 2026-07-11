@@ -32,6 +32,12 @@ final class BrowserRequestedTabTargetAdapter: ExtensionTabTargetQuery {
         windows.extensionWindowState(containing: tab)
     }
 
+    func preferredExtensionWindowState(
+        containing tab: Tab
+    ) -> BrowserWindowState? {
+        windows.preferredExtensionWindowState(containing: tab)
+    }
+
     func extensionTargetSpace(
         for windowState: BrowserWindowState?
     ) -> Space? {

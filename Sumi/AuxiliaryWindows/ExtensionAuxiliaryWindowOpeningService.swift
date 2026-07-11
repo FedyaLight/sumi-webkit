@@ -112,7 +112,16 @@ final class ExtensionAuxiliaryWindowOpeningService {
             isExtensionOriginated: true,
             reason: "ExtensionAuxiliaryWindowOpeningService.present"
         )
-        tabs.install(webView, for: tab)
+        let installation = tabs.install(webView, for: tab)
+        guard installation.isAccepted else {
+            tabs.discardCreatedMiniWindowTab(
+                tab,
+                unplacedWebView: installation.callerRetainsWebView
+                    ? webView
+                    : nil
+            )
+            return nil
+        }
 
         let extensionIntegration = extensionManager
             .auxiliaryWindowIntegration()
@@ -148,11 +157,14 @@ final class ExtensionAuxiliaryWindowOpeningService {
             return nil
         }
 
-        extensionManager.extensionCreatedTabRegistrar.register(
-            tab,
-            reason: "ExtensionAuxiliaryWindowOpeningService.present"
-        )
-        session.extensionEvents?.notifyAuxiliaryWindowOpened(session)
+        guard session.extensionEvents?
+            .notifyAuxiliaryWindowOpened(session) == true else {
+            teardown.teardown(
+                for: session.webView,
+                reason: .presentationFailure
+            )
+            return nil
+        }
         if let loadURL {
             tab.loadURL(loadURL)
         }

@@ -149,6 +149,53 @@ final class ExtensionNormalWindowLifecycle {
         prepareTabOpen(tab)
     }
 
+    /// Read-only proof used after a Tab open callback. Unlike admission this
+    /// never reconciles or closes a window, so validation cannot publish new
+    /// state while checking whether the callback transaction stayed current.
+    func tabPublicationIsCurrent(_ tab: Tab, profileID: UUID) -> Bool {
+        if resolver.canPublishWithoutNormalWindow(tab) {
+            return resolver.profileID(for: tab) == profileID
+        }
+        guard phaseAllowsPublishedReads,
+              let window = resolver.preferredWindow(for: tab),
+              let published = publishedByWindowID[window.id],
+              published.projection.windowIdentity
+                == ObjectIdentifier(window),
+              published.projection.profileID == profileID,
+              resolver.profileID(for: tab) == profileID
+        else {
+            return false
+        }
+        return resolver.validate(
+            published.projection,
+            for: window,
+            allowWhenExtensionsNotLoaded: activeAllowsUnloadedRuntime
+        )
+    }
+
+    func windowPublicationIsCurrent(
+        _ window: BrowserWindowState,
+        selectedTab: Tab,
+        profileID: UUID
+    ) -> Bool {
+        guard phaseAllowsPublishedReads,
+              let published = publishedByWindowID[window.id],
+              published.projection.windowIdentity
+                == ObjectIdentifier(window),
+              published.projection.selectedTabIdentity
+                == ObjectIdentifier(selectedTab),
+              published.projection.selectedTabID == selectedTab.id,
+              published.projection.profileID == profileID
+        else {
+            return false
+        }
+        return resolver.validate(
+            published.projection,
+            for: window,
+            allowWhenExtensionsNotLoaded: activeAllowsUnloadedRuntime
+        )
+    }
+
     func publishedAdapter(
         for window: BrowserWindowState,
         profileID: UUID
@@ -166,7 +213,6 @@ final class ExtensionNormalWindowLifecycle {
             for: window,
             allowWhenExtensionsNotLoaded: activeAllowsUnloadedRuntime
         ) else {
-            close(published, windowID: window.id)
             return nil
         }
         return published.projection.windowAdapter
@@ -321,6 +367,27 @@ final class ExtensionNormalWindowLifecycle {
             ) {
                 return existing
             }
+
+            // Selecting another already-published Tab in the same physical
+            // window does not close and reopen that window in WebKit. Refresh
+            // the exact selected-Tab proof while preserving the publication
+            // lease and adapter identity. Profile, controller, runtime
+            // generation, or physical-window changes still take the full
+            // close/open path below.
+            if let refreshedProjection = resolver.resolve(
+                window,
+                allowWhenExtensionsNotLoaded: activeAllowsUnloadedRuntime
+            ), refreshedProjection.belongsToSameWindowPublication(
+                as: existing.projection
+            ) {
+                let refreshed = PublishedWindow(
+                    lifecycleEpoch: existing.lifecycleEpoch,
+                    projection: refreshedProjection
+                )
+                publishedByWindowID[windowID] = refreshed
+                return refreshed
+            }
+
             close(existing, windowID: windowID)
             guard case .active = phase else { return nil }
             if let reentrant = publishedByWindowID[windowID] {

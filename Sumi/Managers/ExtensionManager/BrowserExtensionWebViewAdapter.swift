@@ -14,7 +14,7 @@ final class BrowserExtensionWebViewAdapter: ExtensionTabWebViewHosting {
         Tab,
         UUID?,
         String,
-        ((WKWebViewConfiguration) -> Void)?,
+        ((WKWebViewConfiguration, UUID) -> Void)?,
         ((WKWebView) -> Void)?,
         ((WKWebView) -> Bool)?
     ) -> WKWebView?
@@ -35,7 +35,7 @@ final class BrowserExtensionWebViewAdapter: ExtensionTabWebViewHosting {
             Tab,
             UUID?,
             String,
-            ((WKWebViewConfiguration) -> Void)?,
+            ((WKWebViewConfiguration, UUID) -> Void)?,
             ((WKWebView) -> Void)?,
             ((WKWebView) -> Bool)?
         ) -> WKWebView?,
@@ -70,7 +70,7 @@ final class BrowserExtensionWebViewAdapter: ExtensionTabWebViewHosting {
         for tab: Tab,
         in windowState: BrowserWindowState?,
         reason: String,
-        prepareConfiguration: ((WKWebViewConfiguration) -> Void)?,
+        prepareCandidateConfiguration: ((WKWebViewConfiguration, UUID) -> Void)?,
         prepareCommittedReplacement: ((WKWebView) -> Void)?,
         validate: ((WKWebView) -> Bool)?
     ) -> WKWebView? {
@@ -78,7 +78,7 @@ final class BrowserExtensionWebViewAdapter: ExtensionTabWebViewHosting {
             tab,
             windowState?.id,
             reason,
-            prepareConfiguration,
+            prepareCandidateConfiguration,
             prepareCommittedReplacement,
             validate
         )

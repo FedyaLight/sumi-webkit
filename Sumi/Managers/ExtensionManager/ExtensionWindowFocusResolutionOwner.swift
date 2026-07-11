@@ -15,7 +15,6 @@ import WebKit
 @MainActor
 final class ExtensionWindowFocusResolutionOwner {
     private let windowQuery: @MainActor () -> (any ExtensionWindowQuery)?
-    private let tabQuery: @MainActor () -> (any ExtensionTabQuery)?
     private let auxiliaryWindows:
         @MainActor () -> (any ExtensionAuxiliaryWindowControl)?
     private let profileIdForContext: @MainActor (WKWebExtensionContext) -> UUID?
@@ -24,12 +23,13 @@ final class ExtensionWindowFocusResolutionOwner {
         BrowserWindowState,
         UUID
     ) -> ExtensionWindowAdapter?
-    private let allMiniWindowAdapters: @MainActor () -> [ExtensionMiniWindowAdapter]
-    private let resolvedProfileIdForTab: @MainActor (Tab) -> UUID?
+    private let publishedMiniWindowAdapters: @MainActor (
+        String,
+        UUID
+    ) -> [ExtensionMiniWindowAdapter]
 
     init(
         windowQuery: @escaping @MainActor () -> (any ExtensionWindowQuery)?,
-        tabQuery: @escaping @MainActor () -> (any ExtensionTabQuery)?,
         auxiliaryWindows:
             @escaping @MainActor () -> (any ExtensionAuxiliaryWindowControl)?,
         profileIdForContext: @escaping @MainActor (WKWebExtensionContext) -> UUID?,
@@ -38,17 +38,17 @@ final class ExtensionWindowFocusResolutionOwner {
             BrowserWindowState,
             UUID
         ) -> ExtensionWindowAdapter?,
-        miniWindowAdapters: @escaping @MainActor () -> [ExtensionMiniWindowAdapter],
-        resolvedProfileIdForTab: @escaping @MainActor (Tab) -> UUID?
+        miniWindowAdapters: @escaping @MainActor (
+            String,
+            UUID
+        ) -> [ExtensionMiniWindowAdapter]
     ) {
         self.windowQuery = windowQuery
-        self.tabQuery = tabQuery
         self.auxiliaryWindows = auxiliaryWindows
         self.profileIdForContext = profileIdForContext
         self.extensionIDForContext = extensionIDForContext
         self.publishedWindowAdapter = publishedWindowAdapter
-        self.allMiniWindowAdapters = miniWindowAdapters
-        self.resolvedProfileIdForTab = resolvedProfileIdForTab
+        self.publishedMiniWindowAdapters = miniWindowAdapters
     }
 
     func focusedWindow(
@@ -70,9 +70,11 @@ final class ExtensionWindowFocusResolutionOwner {
         if let keyWindow = NSApp.keyWindow,
            let session = auxiliaryWindows.auxiliaryWindowSession(for: keyWindow),
            let miniWindowAdapter = session.miniWindowAdapter,
-           ownerMiniWindowAdapters.contains(where: { $0.sessionId == miniWindowAdapter.sessionId }) {
+           let publishedAdapter = ownerMiniWindowAdapters.first(
+               where: { $0 === miniWindowAdapter }
+           ) {
             auxiliaryWindows.recordAuxiliaryWindowSessionFocus(session.id)
-            return miniWindowAdapter
+            return publishedAdapter
         }
 
         if let miniWindowAdapter = ownerMiniWindowAdapters.first {
@@ -134,25 +136,25 @@ final class ExtensionWindowFocusResolutionOwner {
         ownerExtensionID: String,
         profileId: UUID?
     ) -> [ExtensionMiniWindowAdapter] {
-        guard let tabQuery = tabQuery(),
-              let auxiliaryWindows = auxiliaryWindows()
+        guard let auxiliaryWindows = auxiliaryWindows(),
+              let profileId
         else { return [] }
 
-        var adapters = allMiniWindowAdapters().compactMap { adapter -> ExtensionMiniWindowAdapter? in
+        var adapters = publishedMiniWindowAdapters(
+            ownerExtensionID,
+            profileId
+        ).compactMap { adapter -> ExtensionMiniWindowAdapter? in
             guard let session = auxiliaryWindows.auxiliaryWindowSession(
                     for: adapter.sessionId
                   ),
                   session.ownerExtensionID == ownerExtensionID,
                   session.window.isVisible,
                   let sessionAdapter = session.miniWindowAdapter,
-                  let tab = tabQuery.extensionTab(for: sessionAdapter.tabId)
+                  sessionAdapter === adapter
             else {
                 return nil
             }
-            if let profileId, resolvedProfileIdForTab(tab) != profileId {
-                return nil
-            }
-            return sessionAdapter
+            return adapter
         }
 
         adapters.sort { lhs, rhs in

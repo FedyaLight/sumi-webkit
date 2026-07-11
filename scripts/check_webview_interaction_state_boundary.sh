@@ -18,6 +18,8 @@ child_shell_transaction="Sumi/Managers/BrowserManager/WebKitChildWindowShellTran
 retired_tab_state="Sumi/Models/Tab/TabWebViewInteractionStateOwner.swift"
 retired_script_owner="Sumi/Models/Tab/TabScriptMessageRuntimeOwner.swift"
 popup_responder="Sumi/Models/Tab/Navigation/SumiPopupHandlingNavigationResponder.swift"
+link_glance_routing="Sumi/Models/Tab/Navigation/LinkGlanceRouting.swift"
+child_surface_router="Sumi/Models/Tab/Navigation/WebKitChildSurfaceRouter.swift"
 navigation_protocols="Sumi/Models/Tab/Navigation/SumiNavigationResponding.swift"
 status=0
 
@@ -66,7 +68,9 @@ for required in \
   "$link_presentation_factory" \
   "$physical_source_receipt" \
   "$child_window_transaction" \
-  "$child_shell_transaction"; do
+  "$child_shell_transaction" \
+  "$link_glance_routing" \
+  "$child_surface_router"; do
   require_file "$required"
 done
 
@@ -213,13 +217,21 @@ require_pattern \
   'let[[:space:]]+executionProfile:[[:space:]]*Profile' \
   "physical source receipts must keep execution partition distinct from presentation"
 require_pattern \
-  "$popup_responder" \
+  "$link_glance_routing" \
   'linkPresentationCommands\.presentInGlance\(' \
   "Glance routing must use the exact WebKit navigation-action source"
 require_pattern \
-  "$popup_responder" \
+  "$link_glance_routing" \
+  'from:[[:space:]]*sourceWebView' \
+  "Glance routing must pass its exact physical source to presentation"
+require_pattern \
+  "$child_surface_router" \
   'childWindows\?\.open\(' \
   "WebKit child windows must return the exact WebKit-configured child"
+require_pattern \
+  "$child_surface_router" \
+  'configuration:[[:space:]]*request\.configuration' \
+  "WebKit child windows must preserve WebKit's exact child configuration"
 require_pattern \
   "$child_shell_transaction" \
   'validateBeforeShell:' \
@@ -301,6 +313,7 @@ for required_test in \
   testDownloadResponderReadsModifiersFromCrossWebViewSource \
   testNewWindowLinkCopiesSourceProfileAndSpaceBeforeOpeningTab \
   testIncognitoNewWindowLinkCreatesOnlyEphemeralTargetState \
+  testChildSurfaceRouterReturnsExactWindowChildAndWebKitConfiguration \
   testWebKitChildWindowPublishesExactTrackedChildBeforeRegistration \
   testWebKitChildWindowRejectsMismatchedDataStoreWithoutMutation \
   testPrivateWebKitChildWindowSharesPartitionUntilLastWindowCloses; do

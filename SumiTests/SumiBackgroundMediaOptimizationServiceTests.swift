@@ -182,7 +182,7 @@ private final class BackgroundMediaOptimizationHarness {
         webView: WKWebView = WKWebView()
     ) -> WKWebView {
         tabs.append(tab)
-        webViewRuntime.ownershipService.registerTrackedWebView(
+        webViewRuntime.ownershipService.registerAuxiliaryTrackedWebView(
             webView,
             for: tab,
             in: windowID

@@ -1,3 +1,4 @@
+import SumiWebRuntime
 import WebKit
 import XCTest
 
@@ -113,13 +114,16 @@ final class TabWebViewProvisioningOwnerTests: XCTestCase {
         let targetProfile = Profile(name: "Target")
         var configuredProfileID: UUID?
         var managedScriptProfileID: UUID?
+        let policyTransaction = makePolicyTransaction()
         let context = makeContext(
             profileId: { oldProfile.id },
             resolveProfile: { oldProfile },
             configurationRuntime: makeConfigurationRuntime(
                 normalTabWebViewConfiguration: { _, profile, _, _ in
                     configuredProfileID = profile.id
-                    return WKWebViewConfiguration()
+                    let configuration = WKWebViewConfiguration()
+                    configuration.websiteDataStore = profile.dataStore
+                    return configuration
                 }
             ),
             normalTabUserScriptsProvider: { _, profileID in
@@ -131,6 +135,7 @@ final class TabWebViewProvisioningOwnerTests: XCTestCase {
         _ = try XCTUnwrap(
             owner.makeNormalTabWebView(
                 context: context,
+                policyTransaction: policyTransaction,
                 reason: "test.explicit-profile",
                 explicitProfile: targetProfile,
                 prepareExtensionRuntime: false
@@ -140,6 +145,33 @@ final class TabWebViewProvisioningOwnerTests: XCTestCase {
         XCTAssertEqual(configuredProfileID, targetProfile.id)
         XCTAssertEqual(managedScriptProfileID, targetProfile.id)
         XCTAssertNotEqual(managedScriptProfileID, oldProfile.id)
+    }
+
+    func testNormalWebViewKeepsExactResolvedProfileDataStore() throws {
+        let owner = TabWebViewProvisioningOwner()
+        let profile = Profile(name: "Expected")
+        let policyLedger = TabConfigurationPolicyLedger()
+        let policyTransaction = makePolicyTransaction(
+            policyLedger: policyLedger
+        )
+        let context = makeContext(
+            resolveProfile: { profile }
+        )
+
+        let result = try XCTUnwrap(owner.makeNormalTabWebView(
+            context: context,
+            policyTransaction: policyTransaction,
+            reason: "test.wrong-data-store",
+            prepareExtensionRuntime: false
+        ))
+
+        XCTAssertIdentical(
+            result.configuration.websiteDataStore,
+            profile.dataStore
+        )
+        XCTAssertNotNil(result.sumiPreparedConfigurationPolicyChange)
+        XCTAssertEqual(policyLedger.committedState, .unknown)
+        XCTAssertEqual(policyLedger.revision, 0)
     }
 
     private func makeContext(
@@ -154,7 +186,7 @@ final class TabWebViewProvisioningOwnerTests: XCTestCase {
             UUID?
         ) -> SumiNormalTabUserScripts = { _, _ in SumiNormalTabUserScripts() }
     ) -> TabNormalWebViewRuntimeContext {
-        TabNormalWebViewRuntimeContext(
+        return TabNormalWebViewRuntimeContext(
             tabId: UUID(),
             currentURL: { URL(string: "https://example.com")! },
             isPopupHost: { false },
@@ -184,13 +216,27 @@ final class TabWebViewProvisioningOwnerTests: XCTestCase {
         )
     }
 
+    private func makePolicyTransaction(
+        policyLedger: TabConfigurationPolicyLedger =
+            TabConfigurationPolicyLedger()
+    ) -> TabConfigurationPolicyTransaction {
+        TabConfigurationPolicyTransaction(
+            policyLedger: policyLedger,
+            webViewSession: WebViewSessionHandle(tabID: UUID())
+        )
+    }
+
     private func makeConfigurationRuntime(
         normalTabWebViewConfiguration: @escaping (
             URL,
             Profile,
             SumiNormalTabUserScripts,
             TabWebViewConfigurationContext
-        ) -> WKWebViewConfiguration = { _, _, _, _ in WKWebViewConfiguration() },
+        ) -> WKWebViewConfiguration = { _, profile, _, _ in
+            let configuration = WKWebViewConfiguration()
+            configuration.websiteDataStore = profile.dataStore
+            return configuration
+        },
         auxiliaryOverrideConfiguration: @escaping (
             Profile,
             TabWebViewConfigurationContext
@@ -208,7 +254,26 @@ final class TabWebViewProvisioningOwnerTests: XCTestCase {
         ) -> Bool = { _, _, _, _ in false }
     ) -> TabNormalWebViewConfigurationRuntime {
         TabNormalWebViewConfigurationRuntime(
-            normalTabWebViewConfiguration: normalTabWebViewConfiguration,
+            normalTabWebViewConfiguration: { url, profile, scripts, context in
+                let configuration = normalTabWebViewConfiguration(
+                    url,
+                    profile,
+                    scripts,
+                    context
+                )
+                return PreparedNormalTabWebViewConfiguration(
+                    configuration: configuration,
+                    policyState: TabConfigurationPolicyState(
+                        profileID: profile.id,
+                        websiteDataStoreIdentity: ObjectIdentifier(
+                            configuration.websiteDataStore
+                        ),
+                        protectionAttachment: nil,
+                        safariContentBlockerAttachment: nil,
+                        autoplayState: .allowAll
+                    )
+                )
+            },
             auxiliaryOverrideConfiguration: auxiliaryOverrideConfiguration,
             applyWebViewConfigurationOverride: applyWebViewConfigurationOverride,
             canReuseAsNormalTabWebView: canReuseAsNormalTabWebView

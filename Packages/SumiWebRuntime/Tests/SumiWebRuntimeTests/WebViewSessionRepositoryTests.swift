@@ -413,6 +413,10 @@ final class WebViewSessionRepositoryTests: XCTestCase {
                 assertCommittedState()
                 events.append("forget-source-visibility")
             },
+            didCommitPlacement: {
+                assertCommittedState()
+                events.append("did-commit-placement")
+            },
             cleanupDisplacedWebView: { webView, cleanupTabID in
                 XCTAssertIdentical(webView, displaced)
                 XCTAssertEqual(cleanupTabID, tabID)
@@ -423,6 +427,7 @@ final class WebViewSessionRepositoryTests: XCTestCase {
 
         assertCommittedState()
         XCTAssertEqual(events, [
+            "did-commit-placement",
             "remove-candidate-container",
             "forget-source-visibility",
             "uninstall-displaced-observations",
@@ -430,6 +435,102 @@ final class WebViewSessionRepositoryTests: XCTestCase {
             "install-candidate-observations",
             "prune",
         ])
+    }
+
+    func testLifecycleRegistrationReturnsProtectedCandidateWithoutSideEffects() {
+        let repository = WebViewSessionRepository()
+        let tabID = UUID()
+        let sourceOwner = TrackedWebViewOwner(tabID: tabID, windowID: UUID())
+        let targetOwner = TrackedWebViewOwner(tabID: tabID, windowID: UUID())
+        let candidate = WKWebView()
+        register(candidate, owner: sourceOwner, in: repository)
+        let generation = repository.queries.generation(for: tabID)
+        var sideEffectCount = 0
+
+        let result = lifecycleRegistration(
+            candidate,
+            owner: targetOwner,
+            repository: repository,
+            canDisplace: { $0 !== candidate },
+            sideEffect: { sideEffectCount += 1 }
+        )
+
+        XCTAssertEqual(result, .rejected(.protectedCandidate))
+        XCTAssertEqual(sideEffectCount, 0)
+        XCTAssertIdentical(repository.queries.webView(for: sourceOwner), candidate)
+        XCTAssertNil(repository.queries.webView(for: targetOwner))
+        XCTAssertEqual(repository.queries.generation(for: tabID), generation)
+    }
+
+    func testLifecycleRegistrationReturnsProtectedOccupantWithoutSideEffects() {
+        let repository = WebViewSessionRepository()
+        let owner = TrackedWebViewOwner(tabID: UUID(), windowID: UUID())
+        let occupant = WKWebView()
+        let candidate = WKWebView()
+        register(occupant, owner: owner, in: repository)
+        let generation = repository.queries.generation(for: owner.tabID)
+        var sideEffectCount = 0
+
+        let result = lifecycleRegistration(
+            candidate,
+            owner: owner,
+            repository: repository,
+            canDisplace: { $0 !== occupant },
+            sideEffect: { sideEffectCount += 1 }
+        )
+
+        XCTAssertEqual(result, .rejected(.protectedTrackedOccupant))
+        XCTAssertEqual(sideEffectCount, 0)
+        XCTAssertIdentical(repository.queries.webView(for: owner), occupant)
+        XCTAssertNil(repository.residence(of: candidate))
+        XCTAssertEqual(repository.queries.generation(for: owner.tabID), generation)
+    }
+
+    func testLifecycleRegistrationReturnsChangedPreflightWithoutSideEffects() {
+        let repository = WebViewSessionRepository()
+        let owner = TrackedWebViewOwner(tabID: UUID(), windowID: UUID())
+        let alternateOwner = TrackedWebViewOwner(
+            tabID: owner.tabID,
+            windowID: UUID()
+        )
+        let occupant = WKWebView()
+        let alternate = WKWebView()
+        let candidate = WKWebView()
+        register(occupant, owner: owner, in: repository)
+        register(alternate, owner: alternateOwner, in: repository)
+        let generation = repository.queries.generation(for: owner.tabID)
+        var didMutatePreflight = false
+        var sideEffectCount = 0
+
+        let result = lifecycleRegistration(
+            candidate,
+            owner: owner,
+            repository: repository,
+            canDisplace: { _ in
+                if didMutatePreflight == false {
+                    didMutatePreflight = true
+                    XCTAssertTrue(
+                        repository.placement.promoteTrackedWebViewToPrimary(
+                            owner: alternateOwner,
+                            expectedWebView: alternate
+                        )
+                    )
+                }
+                return true
+            },
+            sideEffect: { sideEffectCount += 1 }
+        )
+
+        XCTAssertEqual(result, .rejected(.changedDuringPreflight))
+        XCTAssertEqual(sideEffectCount, 0)
+        XCTAssertIdentical(repository.queries.webView(for: owner), occupant)
+        XCTAssertIdentical(
+            repository.queries.webView(for: alternateOwner),
+            alternate
+        )
+        XCTAssertNil(repository.residence(of: candidate))
+        XCTAssertEqual(repository.queries.primaryWindowID(for: owner.tabID), alternateOwner.windowID)
+        XCTAssertEqual(repository.queries.generation(for: owner.tabID), generation + 1)
     }
 
     func testSlotRegistrationRejectsCrossTabCandidateWithoutMutation() {
@@ -1330,6 +1431,28 @@ final class WebViewSessionRepositoryTests: XCTestCase {
         XCTAssertEqual(
             repository.runtimeOwnedTabIDs,
             [replacingTabID, pendingOnlyTabID]
+        )
+    }
+
+    private func lifecycleRegistration(
+        _ webView: WKWebView,
+        owner: TrackedWebViewOwner,
+        repository: WebViewSessionRepository,
+        canDisplace: @escaping (WKWebView) -> Bool,
+        sideEffect: @escaping () -> Void
+    ) -> WebViewTrackedRegistrationResult {
+        WebViewTrackingLifecycleOwner().registerTrackedWebView(
+            webView,
+            for: owner,
+            in: repository,
+            removeFromContainers: { _ in sideEffect() },
+            installRuntimeObservations: { _ in sideEffect() },
+            uninstallRuntimeObservationsIfUntracked: { _ in sideEffect() },
+            pruneInvalidDeferredCommands: { _ in sideEffect() },
+            canDisplaceWebView: canDisplace,
+            removeRecentVisibility: { _ in sideEffect() },
+            didCommitPlacement: sideEffect,
+            cleanupDisplacedWebView: { _, _ in sideEffect() }
         )
     }
 

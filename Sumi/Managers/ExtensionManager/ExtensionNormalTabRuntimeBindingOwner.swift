@@ -3,11 +3,58 @@ import WebKit
 
 @available(macOS 15.5, *)
 @MainActor
-final class ExtensionNormalTabRuntimeBindingOwner: ExtensionTabOpenNotifying {
+final class ExtensionNormalTabRuntimeBindingOwner:
+    ExtensionTabLifecycleEventSink,
+    ExtensionInitialTabLifecycleEventSink {
     private weak var manager: ExtensionManager?
 
     init(manager: ExtensionManager) {
         self.manager = manager
+    }
+
+    func emitDidOpenTab(
+        _ tab: Tab,
+        controller: WKWebExtensionController,
+        adapter: ExtensionTabAdapter
+    ) {
+        controller.didOpenTab(adapter)
+        #if DEBUG
+            manager?.testHooks.didOpenTab?(tab.id)
+        #endif
+    }
+
+    func emitDidCloseTab(
+        _ tab: Tab,
+        controller: WKWebExtensionController,
+        adapter: ExtensionTabAdapter
+    ) {
+        controller.didCloseTab(adapter, windowIsClosing: false)
+        #if DEBUG
+            manager?.testHooks.didCloseTab?(tab.id)
+        #endif
+    }
+
+    func emitDidOpenInitialTab(
+        _ tab: Tab,
+        controller: WKWebExtensionController,
+        adapter: ExtensionTabAdapter
+    ) {
+        emitDidOpenTab(
+            tab,
+            controller: controller,
+            adapter: adapter
+        )
+    }
+
+    func emitDidCloseInitialTab(
+        _ tab: Tab,
+        controller: WKWebExtensionController,
+        adapter: ExtensionTabAdapter
+    ) {
+        controller.didCloseTab(adapter, windowIsClosing: true)
+        #if DEBUG
+            manager?.testHooks.didCloseTab?(tab.id)
+        #endif
     }
 
     @discardableResult
@@ -95,9 +142,11 @@ final class ExtensionNormalTabRuntimeBindingOwner: ExtensionTabOpenNotifying {
         )
         // Reserve the generation before the external callback. WebKit may
         // synchronously re-enter registration from didOpenTab.
-        tab.extensionPageRuntimeOwner.markDidOpenTab(
+        guard tab.extensionPageRuntimeOwner.markDidOpenTab(
             generation: manager.runtimeSession.tabOpenNotificationGeneration
-        )
+        ) else {
+            return deferOpen("openPublicationClaimAlreadyCurrent")
+        }
         controller.didOpenTab(adapter)
         #if DEBUG
             manager.testHooks.didOpenTab?(tab.id)

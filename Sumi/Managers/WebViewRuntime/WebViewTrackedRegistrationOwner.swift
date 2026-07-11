@@ -60,14 +60,15 @@ final class WebViewTrackedRegistrationOwner {
         self.removeRecentVisibility = removeRecentVisibility
     }
 
+    @discardableResult
     func register(
         _ webView: WKWebView,
         for tabId: UUID,
-        in windowId: UUID
-    ) {
+        in windowId: UUID,
+        didCommitPlacement: @escaping @MainActor () -> Void = {}
+    ) -> WebViewTrackedRegistrationResult {
         let owner = TrackedWebViewOwner(tabID: tabId, windowID: windowId)
-        mediaProtectionOwner.note(webView)
-        trackingLifecycleOwner.registerTrackedWebView(
+        let result = trackingLifecycleOwner.registerTrackedWebView(
             webView,
             for: owner,
             in: webViewSessions,
@@ -89,6 +90,7 @@ final class WebViewTrackedRegistrationOwner {
             removeRecentVisibility: { [removeRecentVisibility] owner in
                 removeRecentVisibility(owner)
             },
+            didCommitPlacement: didCommitPlacement,
             cleanupDisplacedWebView: { [weak self] webView, tabID in
                 guard let self else { return }
                 if let tab = resolvedTab(tabID) {
@@ -98,10 +100,15 @@ final class WebViewTrackedRegistrationOwner {
                 }
             }
         )
-        if let tab = resolvedTab(tabId),
-           tab.requiresWebContentProcessRecovery(on: webView) {
-            _ = tab.reconcileWebContentProcessRecovery(on: webView)
+        guard case .rejected = result else {
+            mediaProtectionOwner.note(webView)
+            if let tab = resolvedTab(tabId),
+               tab.requiresWebContentProcessRecovery(on: webView) {
+                _ = tab.reconcileWebContentProcessRecovery(on: webView)
+            }
+            return result
         }
+        return result
     }
 
     @discardableResult

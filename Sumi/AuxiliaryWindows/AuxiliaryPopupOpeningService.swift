@@ -10,6 +10,7 @@ final class AuxiliaryPopupOpeningService {
     private let extensionRuntime: any AuxiliaryWindowExtensionRuntimeResolving
     private let nestingPolicy: AuxiliaryWindowNestingPolicy
     private let presentation: AuxiliaryWindowPresentationService
+    private let teardown: AuxiliaryWindowTeardownService
 
     init(
         context: any AuxiliaryWindowContextResolving,
@@ -17,7 +18,8 @@ final class AuxiliaryPopupOpeningService {
         admission: any AuxiliaryWindowMutationAdmitting,
         extensionRuntime: any AuxiliaryWindowExtensionRuntimeResolving,
         nestingPolicy: AuxiliaryWindowNestingPolicy,
-        presentation: AuxiliaryWindowPresentationService
+        presentation: AuxiliaryWindowPresentationService,
+        teardown: AuxiliaryWindowTeardownService
     ) {
         self.context = context
         self.tabs = tabs
@@ -25,6 +27,7 @@ final class AuxiliaryPopupOpeningService {
         self.extensionRuntime = extensionRuntime
         self.nestingPolicy = nestingPolicy
         self.presentation = presentation
+        self.teardown = teardown
     }
 
     @discardableResult
@@ -93,7 +96,16 @@ final class AuxiliaryPopupOpeningService {
             isExtensionOriginated: false,
             reason: "AuxiliaryPopupOpeningService.presentWebPopup"
         )
-        tabs.install(webView, for: tab)
+        let installation = tabs.install(webView, for: tab)
+        guard installation.isAccepted else {
+            tabs.discardCreatedMiniWindowTab(
+                tab,
+                unplacedWebView: installation.callerRetainsWebView
+                    ? webView
+                    : nil
+            )
+            return nil
+        }
         _ = presentation.present(
             AuxiliaryWindowPresentationRequest(
                 tab: tab,
@@ -179,7 +191,16 @@ final class AuxiliaryPopupOpeningService {
             isExtensionOriginated: true,
             reason: "AuxiliaryPopupOpeningService.presentExtensionExternalWebPopup"
         )
-        tabs.install(webView, for: tab)
+        let installation = tabs.install(webView, for: tab)
+        guard installation.isAccepted else {
+            tabs.discardCreatedMiniWindowTab(
+                tab,
+                unplacedWebView: installation.callerRetainsWebView
+                    ? webView
+                    : nil
+            )
+            return nil
+        }
 
         let session = presentation.present(
             AuxiliaryWindowPresentationRequest(
@@ -197,11 +218,16 @@ final class AuxiliaryPopupOpeningService {
             ),
             nestedPopups: self
         )
-        tabs.registerExtensionCreatedTab(
-            tab,
-            reason: "AuxiliaryPopupOpeningService.presentExtensionExternalWebPopup"
-        )
-        session.extensionEvents?.notifyAuxiliaryWindowOpened(session)
+        if session.miniWindowAdapter != nil || session.extensionEvents != nil {
+            guard session.extensionEvents?
+                .notifyAuxiliaryWindowOpened(session) == true else {
+                teardown.teardown(
+                    for: session.webView,
+                    reason: .presentationFailure
+                )
+                return nil
+            }
+        }
         return webView
     }
 

@@ -566,13 +566,14 @@ final class TabRuntimeRoutingTests: XCTestCase {
             attachedRuleListIdentifiers: ["tracking-rule"],
             activeGenerationId: "generation-1"
         )
-        tab.navigationRuntime.reloadPolicyRuntime = TabReloadPolicyRuntime(
-            safariContentBlockerAttachmentState: { _ in safariState },
-            protectionAttachmentState: { _ in protectionState },
-            protectionSurfaceHost: { _ in "example.com" },
-            protectionCurrentTabDiagnostics: { _ in nil },
-            autoplayPolicy: { _, _ in .default },
-            evaluateAutoplayPolicyChange: { _, _ in .noOp }
+        tab.navigationRuntime.reloadPolicies = TabReloadPolicies(
+            safariContentBlockers: RuntimeRoutingSafariPolicy(
+                state: safariState
+            ),
+            protection: RuntimeRoutingProtectionPolicy(
+                state: protectionState
+            ),
+            autoplay: InactiveAutoplayPolicy()
         )
 
         XCTAssertFalse(tab.hasBrowserRuntime)
@@ -745,6 +746,37 @@ private final class RecordingTabWebViewRouting {
             },
             bindWebViewSession: { _ in /* No-op. */ }
         )
+    }
+}
+
+@MainActor
+private struct RuntimeRoutingSafariPolicy:
+    SafariContentBlockerPolicyReading {
+    let state: SumiSafariContentBlockerAttachmentState
+
+    func attachmentState(
+        for url: URL?
+    ) -> SumiSafariContentBlockerAttachmentState {
+        state
+    }
+}
+
+@MainActor
+private struct RuntimeRoutingProtectionPolicy: ProtectionPolicyReading {
+    let state: SumiProtectionAttachmentState
+
+    func attachmentState(
+        for url: URL?
+    ) -> SumiProtectionAttachmentState {
+        state
+    }
+
+    func surfaceHost(for url: URL?) -> String? { "example.com" }
+
+    func diagnostics(
+        _ context: ReloadProtectionDiagnosticsContext
+    ) -> SumiProtectionCurrentTabDiagnostics? {
+        nil
     }
 }
 

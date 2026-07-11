@@ -363,7 +363,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         windowRegistry.setActive(windowState)
 
         let webView = WKWebView()
-        webViewOwnership.registerTrackedWebView(
+        webViewOwnership.registerAuxiliaryTrackedWebView(
             webView,
             for: tab,
             in: windowState.id
@@ -404,7 +404,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         windowRegistry.register(windowState)
         windowRegistry.setActive(windowState)
 
-        webViewOwnership.registerTrackedWebView(
+        webViewOwnership.registerAuxiliaryTrackedWebView(
             WKWebView(),
             for: tab,
             in: windowState.id
@@ -657,7 +657,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         )
         let windowID = UUID()
         let webView = WKWebView()
-        webViewRuntime.ownershipService.registerTrackedWebView(
+        webViewRuntime.ownershipService.registerAuxiliaryTrackedWebView(
             webView,
             for: tab,
             in: windowID

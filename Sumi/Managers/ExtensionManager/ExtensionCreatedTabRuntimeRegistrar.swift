@@ -2,76 +2,105 @@ import Foundation
 
 @available(macOS 15.5, *)
 @MainActor
-struct ExtensionCreatedTabRuntimeRegistrar {
-    private let runtimeSession: ExtensionRuntimeSession
-    private let profileRuntime: ExtensionProfileRuntime
-    private let runtime: @MainActor () -> ExtensionManagerRuntime
-    private let tabOpenNotifier: any ExtensionTabOpenNotifying
-    private let contextLoading: any ExtensionContentScriptContextLoading
+final class ExtensionCreatedTabRuntimeRegistrar {
+    private let validator: ExtensionCreatedTabPublicationValidator
+    private let publicationAdmission: ExtensionTabPublicationAdmission
+    private let adapters: ExtensionCreatedTabAdapterPublication
+    private let retirement: ExtensionCreatedTabPublicationRetirement
     private let diagnostics: ExtensionRuntimeDiagnostics
 
     init(
         runtimeSession: ExtensionRuntimeSession,
         profileRuntime: ExtensionProfileRuntime,
-        runtime: @escaping @MainActor () -> ExtensionManagerRuntime,
-        tabOpenNotifier: any ExtensionTabOpenNotifying,
+        adapterStore: ExtensionBrowserAdapterStore,
+        controllerBinding: ExtensionControllerAttachmentOwner,
+        adapterResolution: ExtensionAdapterResolutionOwner,
         contextLoading: any ExtensionContentScriptContextLoading,
+        publications: ExtensionWindowPublicationQuery,
+        publicationAdmission: ExtensionTabPublicationAdmission,
+        events: any ExtensionTabLifecycleEventSink,
+        extensionsLoaded: @escaping @MainActor () -> Bool,
         diagnostics: ExtensionRuntimeDiagnostics
     ) {
-        self.runtimeSession = runtimeSession
-        self.profileRuntime = profileRuntime
-        self.runtime = runtime
-        self.tabOpenNotifier = tabOpenNotifier
-        self.contextLoading = contextLoading
+        let adapters = ExtensionCreatedTabAdapterPublication(
+            store: adapterStore,
+            resolution: adapterResolution
+        )
+        self.adapters = adapters
+        validator = ExtensionCreatedTabPublicationValidator(
+            runtimeSession: runtimeSession,
+            profileRuntime: profileRuntime,
+            controllerBinding: controllerBinding,
+            contextLoading: contextLoading,
+            publications: publications,
+            adapters: adapters,
+            extensionsLoaded: extensionsLoaded
+        )
+        self.publicationAdmission = publicationAdmission
+        retirement = ExtensionCreatedTabPublicationRetirement(
+            events: events,
+            adapters: adapters
+        )
         self.diagnostics = diagnostics
     }
 
+    @discardableResult
     func register(
         _ tab: Tab,
+        runtime: ExtensionManagerRuntime,
         reason: String
-    ) {
-        let generation = runtimeSession.tabOpenNotificationGeneration
-        tab.extensionPageRuntimeOwner.prepareGeneration(generation)
-        tab.extensionPageRuntimeOwner.markEligible(for: generation)
+    ) -> Bool {
+        guard let base = validator.prepareBase(for: tab, runtime: runtime) else {
+            diagnostics.trace(
+                "registerExtensionCreatedTab rejected reason=\(reason) because=runtimePreparationFailed \(tabDescription(tab))"
+            )
+            return false
+        }
 
+        let preparation = tab.extensionPageRuntimeOwner
+            .prepareForWindowPrepublication(generation: base.generation)
         guard tab.extensionPageRuntimeOwner
-            .hasDidOpenTabNotification(for: generation) == false
+                .hasDidOpenTabNotification(for: base.generation) == false,
+              publicationAdmission.prepareTabOpen(tab),
+              let preparedAdapter = adapters.prepare(for: tab)
         else {
+            let restored = tab.extensionPageRuntimeOwner
+                .rollbackWindowPrepublication(preparation)
             diagnostics.trace(
-                "registerExtensionCreatedTab skip reason=\(reason) because=alreadyNotified generation=\(generation) \(tabDescription(tab))"
+                "registerExtensionCreatedTab rejected reason=\(reason) because=receiptPreparationFailed generation=\(base.generation) rollback=\(restored) \(tabDescription(tab))"
             )
-            return
+            return false
         }
 
-        guard tabOpenNotifier.notifyTabOpened(tab) else {
-            diagnostics.trace(
-                "registerExtensionCreatedTab skip reason=\(reason) because=notifyFailed generation=\(generation) \(tabDescription(tab))"
-            )
-            return
-        }
-
-        if let profileId = profileRuntime.resolvedProfileId(
-            for: tab,
-            runtime: runtime()
-        ) {
-            let readiness: TabExtensionContextReadiness = contextLoading
-                .profileHasLoadedContentScriptContexts(profileId: profileId)
-                ? .loaded
-                : .missing
-            tab.extensionPageRuntimeOwner.noteOpenNotification(
-                extensionContextBindingGeneration: profileRuntime
-                    .contextBindingGeneration(for: profileId),
-                contextReadiness: readiness
-            )
-        } else {
-            tab.extensionPageRuntimeOwner.noteOpenNotification(
-                extensionContextBindingGeneration: nil,
-                contextReadiness: .unknown
-            )
-        }
-        diagnostics.trace(
-            "registerExtensionCreatedTab marked reason=\(reason) generation=\(generation) \(tabDescription(tab))"
+        let evidence = ExtensionCreatedTabPublicationEvidence(
+            base: base,
+            adapter: preparedAdapter.adapter,
+            createdAdapter: preparedAdapter.created,
+            stateToken: preparation,
+            reason: reason
         )
+        guard validator.preparedEvidenceIsCurrent(
+            evidence,
+            runtime: runtime
+        ) else {
+            let restored = tab.extensionPageRuntimeOwner
+                .rollbackWindowPrepublication(preparation)
+            if restored {
+                adapters.removeCreatedAdapter(preparedAdapter, for: tab)
+            }
+            diagnostics.trace(
+                "registerExtensionCreatedTab rejected reason=\(reason) because=receiptEvidenceStale generation=\(base.generation) rollback=\(restored) \(tabDescription(tab))"
+            )
+            return false
+        }
+
+        let receipt = ExtensionCreatedTabPublicationReceipt(
+            validator: validator,
+            retirement: retirement,
+            diagnostics: diagnostics,
+            evidence: evidence
+        )
+        return receipt.commitOpen(runtime: runtime)
     }
 
     private func tabDescription(_ tab: Tab) -> String {

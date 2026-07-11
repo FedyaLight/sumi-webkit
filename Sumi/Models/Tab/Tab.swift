@@ -66,8 +66,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     let webViewProvisioningOwner = TabWebViewProvisioningOwner()
     lazy var normalWebViewRuntimeContextOwner = TabNormalWebViewRuntimeContextOwner(tab: self)
     private let closeLifecycleOwner = TabCloseLifecycleOwner()
-    let webViewReplacementContextOwner =
-        TabWebViewReplacementContextOwner()
     let navigationCommandOwner = TabNavigationCommandOwner()
     lazy var profileWebViewCreationGate = TabProfileWebViewCreationGate(
         tab: self,
@@ -193,7 +191,22 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         get { webViewConfigurationOwner.webExtensionContextOverride }
         set { webViewConfigurationOwner.webExtensionContextOverride = newValue }
     }
-    let reloadPolicyStateOwner = TabReloadPolicyStateOwner()
+    let configurationPolicyLedger = TabConfigurationPolicyLedger()
+    lazy var configurationPolicyTransaction =
+        TabConfigurationPolicyTransaction(
+            policyLedger: configurationPolicyLedger,
+            webViewSession: webViewSession
+        )
+    lazy var safariContentBlockerReloadState =
+        SafariContentBlockerReloadState(
+            policyLedger: configurationPolicyLedger
+        )
+    lazy var protectionReloadState = ProtectionReloadState(
+        policyLedger: configurationPolicyLedger
+    )
+    let autoplayReloadState = AutoplayReloadState()
+    let configurationPolicyRebuildService =
+        TabConfigurationPolicyRebuildService()
 
     func beginWebViewRebuildIntent() -> UInt64 {
         mainFrameRuntimeTransaction.beginRebuildIntent()
@@ -841,7 +854,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         mediaRuntime.callbacks = runtime.mediaRuntimeCallbacks
         navigationRuntime.navigationCommandRuntime = runtime.navigationCommandRuntime
         navigationRuntime.profileResolutionRuntime = runtime.profileResolutionRuntime
-        navigationRuntime.reloadPolicyRuntime = runtime.reloadPolicyRuntime
+        navigationRuntime.reloadPolicies = runtime.reloadPolicies
         navigationRuntime.historySwipeRuntime = runtime.historySwipeRuntime
         navigationRuntime.historyRecordingRuntime = runtime.historyRecordingRuntime
         navigationRuntime.findInPageRuntime = runtime.findInPageRuntime

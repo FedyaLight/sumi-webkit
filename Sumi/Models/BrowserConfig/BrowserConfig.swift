@@ -278,11 +278,11 @@ private enum BrowserConfigurationAssociatedKeys {
 extension WKWebViewConfiguration {
     var sumiIsNormalTabWebViewConfiguration: Bool {
         get {
-            if (objc_getAssociatedObject(
+            if let explicitClassification = objc_getAssociatedObject(
                 self,
                 BrowserConfigurationAssociatedKeys.isNormalTabWebViewConfiguration
-            ) as? Bool) == true {
-                return true
+            ) as? Bool {
+                return explicitClassification
             }
             // WKWebView copies configuration at init; the marker must also be
             // detectable on the live userContentController for materialized views.

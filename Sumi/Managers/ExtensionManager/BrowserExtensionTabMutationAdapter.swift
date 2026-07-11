@@ -11,9 +11,14 @@ final class BrowserExtensionTabMutationAdapter:
     private let createTransientTab: @MainActor (
         URL, Space?, WKWebExtensionContext?
     ) -> Tab
-    private let pinTab: @MainActor (Tab, BrowserWindowState?, Space?) -> Void
+    private let pinTab: @MainActor (
+        Tab,
+        BrowserWindowState?,
+        Space?
+    ) -> Bool
     private let selectTab: @MainActor (Tab, BrowserWindowState) -> Void
     private let placeTab: @MainActor (Tab, BrowserWindowState) -> Void
+    private let requestedTabDiscard: ExtensionRequestedTabDiscardService
     private let promoteTransientTab: @MainActor (Tab) -> Bool
 
     init(
@@ -25,9 +30,10 @@ final class BrowserExtensionTabMutationAdapter:
         ) -> Tab,
         pinTab: @escaping @MainActor (
             Tab, BrowserWindowState?, Space?
-        ) -> Void,
+        ) -> Bool,
         selectTab: @escaping @MainActor (Tab, BrowserWindowState) -> Void,
         placeTab: @escaping @MainActor (Tab, BrowserWindowState) -> Void,
+        requestedTabDiscard: ExtensionRequestedTabDiscardService,
         promoteTransientTab: @escaping @MainActor (Tab) -> Bool
     ) {
         self.createTab = createTab
@@ -35,6 +41,7 @@ final class BrowserExtensionTabMutationAdapter:
         self.pinTab = pinTab
         self.selectTab = selectTab
         self.placeTab = placeTab
+        self.requestedTabDiscard = requestedTabDiscard
         self.promoteTransientTab = promoteTransientTab
     }
 
@@ -55,11 +62,12 @@ final class BrowserExtensionTabMutationAdapter:
         createTransientTab(url, space, webExtensionContextOverride)
     }
 
+    @discardableResult
     func pinExtensionTab(
         _ tab: Tab,
         targetWindow: BrowserWindowState?,
         targetSpace: Space?
-    ) {
+    ) -> Bool {
         pinTab(tab, targetWindow, targetSpace)
     }
 
@@ -75,6 +83,17 @@ final class BrowserExtensionTabMutationAdapter:
         in windowState: BrowserWindowState
     ) {
         placeTab(tab, windowState)
+    }
+
+    @discardableResult
+    func discardExtensionRequestedTab(
+        _ tab: Tab,
+        restoringSelectionTo tabID: UUID?
+    ) -> Bool {
+        requestedTabDiscard.discard(
+            tab,
+            restoringSelectionTo: tabID
+        )
     }
 
     func promoteTransientExtensionTab(_ tab: Tab) -> Bool {
