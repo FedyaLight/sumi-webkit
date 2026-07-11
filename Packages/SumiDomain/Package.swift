@@ -8,7 +8,13 @@ let package = Package(
         .macOS("15.5")
     ],
     products: [
-        .library(name: "SumiDomain", targets: ["SumiDomain"]),
+        // Dynamic so the app and its hosted test bundle share one runtime
+        // image instead of embedding duplicate Objective-C class metadata.
+        .library(
+            name: "SumiDomain",
+            type: .dynamic,
+            targets: ["SumiDomain"]
+        ),
     ],
     targets: [
         .target(

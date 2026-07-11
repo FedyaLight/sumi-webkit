@@ -45,6 +45,10 @@ final class ExtensionProfileRuntime {
         state.controller(for: profileId)
     }
 
+    func controllerBindingRevision(for profileId: UUID) -> UInt64 {
+        state.controllerBindingRevision(for: profileId)
+    }
+
     func controllerForCurrentProfile() -> WKWebExtensionController? {
         guard let currentProfileId else { return nil }
         return state.controller(for: currentProfileId)
@@ -87,6 +91,16 @@ final class ExtensionProfileRuntime {
 
     func contextBindingGeneration(for profileId: UUID) -> UInt64 {
         state.contextBindingGeneration(for: profileId)
+    }
+
+    func contextBindingRevision(
+        extensionId: String,
+        profileId: UUID
+    ) -> UInt64 {
+        state.contextBindingRevision(
+            extensionId: extensionId,
+            profileId: profileId
+        )
     }
 
     @discardableResult

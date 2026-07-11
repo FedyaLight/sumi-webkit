@@ -23,4 +23,14 @@ if [[ "$actual_manifests" != "$expected_manifests" ]]; then
   exit 1
 fi
 
+# SumiTests imports both package modules directly while being hosted by Sumi.app.
+# They must be dynamic so dyld shares one image across host and test bundle.
+for manifest in Packages/SumiDomain/Package.swift Packages/SumiWebRuntime/Package.swift; do
+  if ! grep -q 'type: \.dynamic' "$manifest"; then
+    printf 'error: hosted-test package product must stay dynamic: %s\n' \
+      "$manifest" >&2
+    exit 1
+  fi
+done
+
 echo "package topology passed"

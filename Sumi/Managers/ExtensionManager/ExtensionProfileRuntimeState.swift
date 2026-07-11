@@ -5,8 +5,11 @@ import WebKit
 @MainActor
 struct ExtensionProfileRuntimeState {
     private(set) var controllersByProfile: [UUID: WKWebExtensionController] = [:]
+    private var controllerBindingRevisionByProfile: [UUID: UInt64] = [:]
     private(set) var contextsByProfile: [UUID: [String: WKWebExtensionContext]] = [:]
     private(set) var contextBindingGenerationByProfile: [UUID: UInt64] = [:]
+    private var contextBindingRevisionByProfile:
+        [UUID: [String: UInt64]] = [:]
 
     func controller(for profileId: UUID) -> WKWebExtensionController? {
         controllersByProfile[profileId]
@@ -17,12 +20,27 @@ struct ExtensionProfileRuntimeState {
         for profileId: UUID
     ) {
         controllersByProfile[profileId] = controller
+        bumpControllerBindingRevision(for: profileId)
     }
 
     mutating func replaceControllers(
         _ controllers: [UUID: WKWebExtensionController]
     ) {
+        let profileIDs = Set(controllersByProfile.keys).union(controllers.keys)
+        for profileID in profileIDs
+        where controllersByProfile[profileID] !== controllers[profileID] {
+            bumpControllerBindingRevision(for: profileID)
+        }
         controllersByProfile = controllers
+    }
+
+    func controllerBindingRevision(for profileId: UUID) -> UInt64 {
+        controllerBindingRevisionByProfile[profileId] ?? 0
+    }
+
+    private mutating func bumpControllerBindingRevision(for profileId: UUID) {
+        controllerBindingRevisionByProfile[profileId] =
+            (controllerBindingRevisionByProfile[profileId] ?? 0) &+ 1
     }
 
     func contexts(for profileId: UUID) -> [String: WKWebExtensionContext] {
@@ -41,6 +59,10 @@ struct ExtensionProfileRuntimeState {
         var contexts = contextsByProfile[profileId] ?? [:]
         contexts[extensionId] = context
         contextsByProfile[profileId] = contexts
+        _ = bumpContextBindingRevision(
+            extensionId: extensionId,
+            profileId: profileId
+        )
         return bumpContextBindingGeneration(for: profileId)
     }
 
@@ -60,6 +82,10 @@ struct ExtensionProfileRuntimeState {
             contextsByProfile[profileId] = contexts
         }
 
+        _ = bumpContextBindingRevision(
+            extensionId: extensionId,
+            profileId: profileId
+        )
         let generation = bumpContextBindingGeneration(for: profileId)
         return (removed, generation)
     }
@@ -67,6 +93,24 @@ struct ExtensionProfileRuntimeState {
     mutating func replaceContexts(
         _ contexts: [UUID: [String: WKWebExtensionContext]]
     ) {
+        let profileIDs = Set(contextsByProfile.keys).union(contexts.keys)
+        for profileID in profileIDs {
+            let previous = contextsByProfile[profileID] ?? [:]
+            let replacement = contexts[profileID] ?? [:]
+            let extensionIDs = Set(previous.keys).union(replacement.keys)
+            var profileChanged = false
+            for extensionID in extensionIDs
+            where previous[extensionID] !== replacement[extensionID] {
+                profileChanged = true
+                _ = bumpContextBindingRevision(
+                    extensionId: extensionID,
+                    profileId: profileID
+                )
+            }
+            if profileChanged {
+                _ = bumpContextBindingGeneration(for: profileID)
+            }
+        }
         contextsByProfile = contexts
     }
 
@@ -87,6 +131,27 @@ struct ExtensionProfileRuntimeState {
         contextBindingGenerationByProfile = generations
     }
 
+    func contextBindingRevision(
+        extensionId: String,
+        profileId: UUID
+    ) -> UInt64 {
+        contextBindingRevisionByProfile[profileId]?[extensionId] ?? 0
+    }
+
+    @discardableResult
+    private mutating func bumpContextBindingRevision(
+        extensionId: String,
+        profileId: UUID
+    ) -> UInt64 {
+        var revisions = contextBindingRevisionByProfile[profileId] ?? [:]
+        let next = (revisions[extensionId] ?? 0) &+ 1
+        revisions[extensionId] = next
+        // Keep removed bindings as tombstones so remove/re-add cannot recreate
+        // an earlier callback capability.
+        contextBindingRevisionByProfile[profileId] = revisions
+        return next
+    }
+
     func allLoadedExtensionIDs() -> Set<String> {
         Set(contextsByProfile.values.flatMap(\.keys))
     }
@@ -98,14 +163,15 @@ struct ExtensionProfileRuntimeState {
     func exactContextIdentity(
         for extensionContext: WKWebExtensionContext
     ) -> (extensionId: String, profileId: UUID)? {
+        var match: (extensionId: String, profileId: UUID)?
         for (profileId, contexts) in contextsByProfile {
-            if let extensionId = contexts.first(where: {
-                $0.value === extensionContext
-            })?.key {
-                return (extensionId, profileId)
+            for (extensionId, context) in contexts
+            where context === extensionContext {
+                guard match == nil else { return nil }
+                match = (extensionId, profileId)
             }
         }
-        return nil
+        return match
     }
 
     func extensionId(for extensionContext: WKWebExtensionContext) -> String? {
