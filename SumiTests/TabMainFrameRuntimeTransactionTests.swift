@@ -5,10 +5,132 @@ import XCTest
 
 @MainActor
 final class TabMainFrameRuntimeTransactionTests: XCTestCase {
+    func testCommitPublicationPermitIsConsumedOnce() throws {
+        let initialURL = try XCTUnwrap(URL(string: "https://example.com/initial"))
+        let targetURL = try XCTUnwrap(URL(string: "https://example.com/target"))
+        let transaction = TabMainFrameRuntimeTransaction(initialURL: initialURL)
+        let tab = Tab(
+            url: initialURL,
+            loadsCachedFaviconOnInit: false,
+            mainFrameRuntimeTransaction: transaction
+        )
+        let runtime = RecordingTabLifecycleNavigationRuntime()
+        tab.navigationRuntime.lifecycleNavigationRuntime = runtime.runtime
+        let webView = WKWebView()
+        _ = tab.beginMainFrameNavigationIntent(to: targetURL)
+        let submission = try XCTUnwrap(tab.mainFrameLoads.claimDirectSubmission(on: webView))
+        let navigation = NSObject()
+        let navigationID = ObjectIdentifier(navigation)
+        XCTAssertTrue(transaction.bindSubmittedLoad(
+            on: webView,
+            navigationID: navigationID,
+            navigationLifetime: navigation,
+            matching: submission
+        ))
+        guard case .publish(let publication) = transaction.settleCommit(
+            from: webView,
+            navigationID: navigationID,
+            committedURL: targetURL
+        ) else {
+            return XCTFail("Expected exact commit publication")
+        }
+
+        TabMainFrameLifecycleReducer.publishCommit(
+            publication,
+            tab: tab,
+            lifecycle: transaction
+        )
+        TabMainFrameLifecycleReducer.publishCommit(
+            publication,
+            tab: tab,
+            lifecycle: transaction
+        )
+
+        XCTAssertEqual(runtime.markedEligibleTabIds, [tab.id])
+    }
+
+    func testPromotedReplicaRecoversUnconsumedCommitPermit() throws {
+        let targetURL = try XCTUnwrap(URL(string: "https://example.com/document"))
+        let transaction = TabMainFrameRuntimeTransaction(initialURL: targetURL)
+        let tab = Tab(
+            url: targetURL,
+            loadsCachedFaviconOnInit: false,
+            mainFrameRuntimeTransaction: transaction
+        )
+        let runtime = RecordingTabLifecycleNavigationRuntime()
+        tab.navigationRuntime.lifecycleNavigationRuntime = runtime.runtime
+        let authorityWebView = WKWebView()
+        let replicaWebView = WKWebView()
+        let intent = tab.beginMainFrameNavigationIntent(to: targetURL)
+        let authoritySubmission = try XCTUnwrap(
+            tab.mainFrameLoads.claimDirectSubmission(on: authorityWebView)
+        )
+        XCTAssertTrue(tab.mainFrameLoads.markDeferredLoad(
+            on: replicaWebView,
+            intent: intent
+        ))
+        XCTAssertEqual(
+            tab.mainFrameLoads.claimDeferredSubmission(
+                on: replicaWebView,
+                revision: intent.revision,
+                targetURL: targetURL
+            ),
+            .claimed
+        )
+        let authorityNavigation = NSObject()
+        let replicaNavigation = NSObject()
+        XCTAssertTrue(transaction.bindSubmittedLoad(
+            on: authorityWebView,
+            navigationID: ObjectIdentifier(authorityNavigation),
+            navigationLifetime: authorityNavigation,
+            matching: authoritySubmission
+        ))
+        XCTAssertTrue(transaction.bindSubmittedLoad(
+            on: replicaWebView,
+            navigationID: ObjectIdentifier(replicaNavigation),
+            navigationLifetime: replicaNavigation,
+            matching: nil
+        ))
+        guard case .publish(let abandonedPublication) = transaction.settleCommit(
+            from: authorityWebView,
+            navigationID: ObjectIdentifier(authorityNavigation),
+            committedURL: targetURL
+        ) else {
+            return XCTFail("Expected authority commit reservation")
+        }
+        guard case .recordedReplica = transaction.settleCommit(
+            from: replicaWebView,
+            navigationID: ObjectIdentifier(replicaNavigation),
+            committedURL: targetURL
+        ) else {
+            return XCTFail("Expected committed replica")
+        }
+
+        let departure = transaction.webViewsDidLeaveRuntime(
+            [authorityWebView],
+            preferredAuthorityWebView: replicaWebView
+        )
+        let continuation = try XCTUnwrap(departure.continuation)
+        XCTAssertTrue(continuation.needsSharedCommitEffects)
+        TabMainFrameLifecycleReducer.replayIfNeeded(
+            continuation,
+            tab: tab,
+            promotion: transaction
+        )
+
+        XCTAssertEqual(runtime.markedEligibleTabIds, [tab.id])
+        XCTAssertFalse(transaction.consumeCommitPublication(abandonedPublication))
+    }
+
     func testRejectedPromotionPublicationsCannotMutateTabPresentation() throws {
         let initialURL = try XCTUnwrap(URL(string: "https://example.com/initial"))
         let rejectedURL = try XCTUnwrap(URL(string: "https://example.com/rejected"))
-        let tab = Tab(url: initialURL, loadsCachedFaviconOnInit: false)
+        let transaction = TabMainFrameRuntimeTransaction(initialURL: initialURL)
+        let tab = Tab(
+            url: initialURL,
+            loadsCachedFaviconOnInit: false,
+            mainFrameRuntimeTransaction: transaction
+        )
         let webView = WKWebView()
         let continuation = TabMainFrameAuthorityContinuation(
             webView: webView,
@@ -21,16 +143,14 @@ final class TabMainFrameRuntimeTransactionTests: XCTestCase {
             revision: .max,
             documentGeneration: .max,
             participantID: UUID(),
-            webViewID: ObjectIdentifier(webView)
+            webViewID: ObjectIdentifier(webView),
+            source: .lifecycle(authorityEpoch: .max)
         )
 
-        TabMainFrameLifecycleReducer.publishCommit(
-            .promotion(continuation),
-            tab: tab
-        )
-        TabMainFrameLifecycleReducer.publishFinish(
-            .promotion(continuation),
-            tab: tab
+        TabMainFrameLifecycleReducer.replayIfNeeded(
+            continuation,
+            tab: tab,
+            promotion: transaction
         )
 
         XCTAssertEqual(tab.url, initialURL)
@@ -71,18 +191,14 @@ final class TabMainFrameRuntimeTransactionTests: XCTestCase {
 
         _ = tab.beginMainFrameNavigationIntent(to: successorURL)
         TabMainFrameLifecycleReducer.publishCommit(
-            .navigation(
-                webView: publication.webView,
-                navigationID: publication.navigationID,
-                targetURL: publication.targetURL,
-                isPDF: publication.isPDF
-            ),
-            tab: tab
+            publication,
+            tab: tab,
+            lifecycle: transaction
         )
         TabMainFrameLifecycleReducer.publishFinish(
             .navigation(
                 webView: publication.webView,
-                navigationID: publication.navigationID,
+                navigationID: publication.authority.navigationID,
                 targetURL: publication.targetURL,
                 isPDF: publication.isPDF
             ),
@@ -149,19 +265,20 @@ final class TabMainFrameRuntimeTransactionTests: XCTestCase {
         }
         XCTAssertIdentical(publication.webView, authorityWebView)
         XCTAssertEqual(
-            publication.navigationID,
+            publication.authority.navigationID,
             ObjectIdentifier(authorityNavigation)
         )
         XCTAssertEqual(publication.targetURL, targetURL)
         XCTAssertTrue(publication.isPDF)
 
-        guard case .alreadyPublished = transaction.settleCommit(
+        guard case .publish(let retryPublication) = transaction.settleCommit(
             from: authorityWebView,
             navigationID: ObjectIdentifier(authorityNavigation),
             committedURL: targetURL
         ) else {
-            return XCTFail("Duplicate authority commit must not republish")
+            return XCTFail("Unconsumed exact commit must reissue its permit")
         }
+        XCTAssertEqual(retryPublication.permit, publication.permit)
         guard case .recordedReplica = transaction.settleCommit(
             from: replicaWebView,
             navigationID: ObjectIdentifier(replicaNavigation),

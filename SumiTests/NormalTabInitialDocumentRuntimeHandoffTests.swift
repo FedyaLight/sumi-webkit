@@ -1460,7 +1460,12 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
         }
 
         XCTAssertTrue(publication.webView === webView, file: file, line: line)
-        XCTAssertEqual(publication.navigationID, navigationID, file: file, line: line)
+        XCTAssertEqual(
+            publication.authority.navigationID,
+            navigationID,
+            file: file,
+            line: line
+        )
         XCTAssertEqual(publication.targetURL, targetURL, file: file, line: line)
         XCTAssertEqual(publication.isPDF, isPDF, file: file, line: line)
     }

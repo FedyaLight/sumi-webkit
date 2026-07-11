@@ -5,6 +5,30 @@ import XCTest
 
 @MainActor
 final class TabMainFrameLoadRuntimeTests: XCTestCase {
+    func testPendingAuthorityContinuationExpiresAfterTargetUpdate() throws {
+        let initialURL = try XCTUnwrap(URL(string: "https://example.com/initial"))
+        let redirectedURL = try XCTUnwrap(URL(string: "https://example.com/redirected"))
+        let ledger = TabMainFrameIntentLedger(initialURL: initialURL)
+        let webView = WKWebView()
+        _ = ledger.beginExplicitIntent(to: initialURL)
+        XCTAssertNotNil(ledger.claimDirectSubmission(
+            on: webView,
+            documentGeneration: 0,
+            hasLifecycleAuthority: false
+        ))
+        let staleContinuation = try XCTUnwrap(
+            ledger.promoteSubmittedAuthority()
+        )
+
+        ledger.updateTargetWithinRevision(redirectedURL)
+
+        XCTAssertFalse(ledger.isCurrentPendingAuthority(staleContinuation))
+        XCTAssertEqual(
+            ledger.promoteSubmittedAuthority()?.targetURL,
+            redirectedURL
+        )
+    }
+
     func testStaleSubmissionLeaseCannotConsumeSameWebViewReplacement() throws {
         let targetURL = try XCTUnwrap(URL(string: "https://example.com/load"))
         let lifecycle = TabMainFrameLifecycleMachine()

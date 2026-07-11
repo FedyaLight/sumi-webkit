@@ -2,22 +2,14 @@ import Foundation
 import SumiWebRuntime
 import WebKit
 
-/// Sole owner of logical main-frame authority and document-generation state.
-/// It reduces exact participant facts into authority transitions without
-/// owning participant storage or effect publication claims.
+/// Reduces exact participant facts into logical authority and document-
+/// generation transitions. Exact authority phase/epoch storage lives in
+/// `TabMainFrameAuthorityState`; participant and effect ledgers remain separate.
 @MainActor
 final class TabMainFrameAuthorityReducer {
     private typealias SharedCommitIdentity =
         TabMainFrameEffectLedger.SharedCommitIdentity
-
-    struct AuthorityState: Equatable {
-        let revision: UInt64
-        let webViewID: ObjectIdentifier
-        var documentGeneration: UInt64
-        var navigationID: ObjectIdentifier?
-        var hasCommittedDocument: Bool
-        var isCompleted: Bool
-    }
+    typealias AuthorityState = TabMainFrameAuthorityState.Value
 
     struct ContinuationReduction {
         var participant: TabMainFrameParticipantRegistry.Entry
@@ -36,12 +28,18 @@ final class TabMainFrameAuthorityReducer {
     }
 
     private(set) var documentGeneration: UInt64 = 0
-    private(set) var authority: AuthorityState?
+    private let authorityState: TabMainFrameAuthorityState
     private var redirectGenerationByKey: [RedirectGenerationKey: UInt64] = [:]
+
+    init(authorityState: TabMainFrameAuthorityState) {
+        self.authorityState = authorityState
+    }
+
+    var authority: AuthorityState? { authorityState.current }
 
     func resetForNewIntent() {
         documentGeneration = 0
-        authority = nil
+        authorityState.replace(with: nil)
         redirectGenerationByKey.removeAll()
     }
 
@@ -53,18 +51,18 @@ final class TabMainFrameAuthorityReducer {
         hasCommittedDocument: Bool = false,
         isCompleted: Bool = false
     ) {
-        authority = AuthorityState(
+        authorityState.replace(with: AuthorityState(
             revision: revision,
             webViewID: webViewID,
             documentGeneration: documentGeneration,
             navigationID: navigationID,
             hasCommittedDocument: hasCommittedDocument,
             isCompleted: isCompleted
-        )
+        ))
     }
 
     func clearAuthority() {
-        authority = nil
+        authorityState.replace(with: nil)
     }
 
     func removeAuthorityIfMatching(
@@ -75,7 +73,7 @@ final class TabMainFrameAuthorityReducer {
               authority.map({ webViewIDs.contains($0.webViewID) }) == true else {
             return false
         }
-        authority = nil
+        authorityState.replace(with: nil)
         return true
     }
 
@@ -124,12 +122,11 @@ final class TabMainFrameAuthorityReducer {
     }
 
     func markCommitted() {
-        authority?.hasCommittedDocument = true
+        authorityState.markCommitted()
     }
 
     func markCompleted() {
-        authority?.navigationID = nil
-        authority?.isCompleted = true
+        authorityState.markCompleted()
     }
 
     func lifecycleRole(
@@ -183,10 +180,10 @@ final class TabMainFrameAuthorityReducer {
         committedURL: URL,
         isPDF: Bool,
         currentIntent: TabMainFrameNavigationIntent,
-        participants: TabMainFrameParticipantRegistry,
-        effectClaims: TabMainFrameEffectLedger
-    ) -> TabMainFrameCommitTransition {
+        participants: TabMainFrameParticipantRegistry
+    ) -> (role: TabMainFrameLifecycleRole, evidence: TabCommittedDocumentEvidence?)? {
         let webViewID = ObjectIdentifier(webView)
+        let previousParticipant = participants.exactEntry(for: webView)
         guard let participant = participants.recordCommit(
             webView: webView,
             navigationID: navigationID,
@@ -194,13 +191,7 @@ final class TabMainFrameAuthorityReducer {
             committedURL: committedURL,
             isPDF: isPDF
         ) else {
-            return TabMainFrameCommitTransition(
-                claim: TabMainFrameCommitSnapshotClaim(
-                    role: .stale,
-                    shouldPublishSharedEffects: false
-                ),
-                evidence: nil
-            )
+            return nil
         }
         let evidence = participant.committedEvidence(webView: webView)
         let role = claimDocumentAuthority(
@@ -208,20 +199,19 @@ final class TabMainFrameAuthorityReducer {
             webViewID: webViewID,
             navigationID: navigationID
         )
-        let didClaimSharedCommit = role.isAuthority
-            && effectClaims.claimSharedCommit(
-                identity: SharedCommitIdentity(
-                    target: WebRuntimeNavigationIdentity(committedURL),
-                    isPDF: isPDF
-                )
+        let changedCommittedDocument =
+            previousParticipant?.committedDocumentURL != participant.committedDocumentURL
+            || previousParticipant?.targetURL != participant.targetURL
+            || previousParticipant?.isPDFResponse != participant.isPDFResponse
+        if role.isAuthority,
+           previousParticipant?.hasCommittedDocument == true,
+           changedCommittedDocument {
+            authorityState.noteTargetMutation(
+                webViewID: webViewID,
+                revision: currentIntent.revision
             )
-        return TabMainFrameCommitTransition(
-            claim: TabMainFrameCommitSnapshotClaim(
-                role: role,
-                shouldPublishSharedEffects: didClaimSharedCommit
-            ),
-            evidence: evidence
-        )
+        }
+        return (role, evidence)
     }
 
     func claimAuthorityForTerminalSuccess(
@@ -524,7 +514,8 @@ final class TabMainFrameAuthorityReducer {
             revision: promotedParticipant.revision,
             documentGeneration: promotedParticipant.documentGeneration,
             participantID: promotedParticipant.id,
-            webViewID: candidate.webViewID
+            webViewID: candidate.webViewID,
+            source: .lifecycle(authorityEpoch: authorityState.currentEpoch)
         )
         return TabMainFrameAuthorityPromotion(
             continuation: continuation,
@@ -605,11 +596,21 @@ final class TabMainFrameAuthorityReducer {
         revision: UInt64,
         participants: TabMainFrameParticipantRegistry
     ) -> Bool {
-        guard continuation.revision == revision,
+        guard case .lifecycle(let continuationEpoch) = continuation.source,
+              authorityState.matches(epoch: continuationEpoch),
+              continuation.revision == revision,
               continuation.documentGeneration == documentGeneration,
               let participant = participants.entry(for: continuation.webViewID),
               participant.id == continuation.participantID,
+              participant.revision == continuation.revision,
               participant.documentGeneration == continuation.documentGeneration,
+              participant.targetURL == continuation.targetURL,
+              (participant.isPDFResponse ?? false) == continuation.isPDF,
+              participant.webViewReference.matches(continuation.webView),
+              continuationPhaseMatches(
+                  continuation,
+                  participant: participant
+              ),
               let authority else {
             return false
         }
@@ -618,6 +619,18 @@ final class TabMainFrameAuthorityReducer {
             && authority.webViewID == continuation.webViewID
             && authority.navigationID == continuation.navigationID
             && authority.isCompleted == continuation.isCompleted
+    }
+
+    private func continuationPhaseMatches(
+        _ continuation: TabMainFrameAuthorityContinuation,
+        participant: TabMainFrameParticipantRegistry.Entry
+    ) -> Bool {
+        if continuation.isCompleted {
+            return continuation.navigationID == nil
+                && participant.phase == .completed
+        }
+        guard let navigationID = continuation.navigationID else { return false }
+        return participant.phase == .active(navigationID: navigationID)
     }
 
     private func candidateRank(
@@ -644,4 +657,5 @@ final class TabMainFrameAuthorityReducer {
             UInt(bitPattern: candidate.key)
         )
     }
+
 }

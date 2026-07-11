@@ -297,6 +297,7 @@ final class TabMainFrameParticipantRegistry {
         ) else {
             return nil
         }
+        guard entry.hasCommittedDocument == false else { return entry }
         entry.isPDFResponse = isPDF
         entriesByWebViewID[webViewID] = entry
         return entry

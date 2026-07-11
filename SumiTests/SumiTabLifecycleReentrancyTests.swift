@@ -5,6 +5,72 @@ import XCTest
 
 @MainActor
 final class SumiTabLifecycleReentrancyTests: XCTestCase {
+    func testDidStartStopsBeforeAuthorityPreparationWhenSharedStartBecomesStale() {
+        let fixture = makeFixture()
+        let successorURL = URL(string: "https://successor.example/shared-start")!
+        fixture.runtime.resetRevisitProtectionHook = { tab in
+            _ = tab.beginMainFrameNavigationIntent(to: successorURL)
+        }
+
+        fixture.responder.navigationDidStart(fixture.context)
+
+        XCTAssertEqual(fixture.tab.mainFrameLoads.currentIntent.targetURL, successorURL)
+        XCTAssertTrue(fixture.runtime.beforeCommitURLs.isEmpty)
+        XCTAssertEqual(fixture.tab.url, fixture.initialURL)
+    }
+
+    func testDidStartStopsAfterReentrantLoadingNotification() {
+        let fixture = makeFixture()
+        let successorURL = URL(string: "https://successor.example/loading-notification")!
+        let properties = NavigationRecordingTabExtensionPropertiesRuntime()
+        properties.notifyHook = { tab, _ in
+            _ = tab.beginMainFrameNavigationIntent(to: successorURL)
+        }
+        fixture.tab.navigationRuntime.extensionPropertiesRuntime = properties.runtime
+
+        fixture.responder.navigationDidStart(fixture.context)
+
+        XCTAssertEqual(fixture.tab.mainFrameLoads.currentIntent.targetURL, successorURL)
+        XCTAssertEqual(properties.properties.count, 1)
+        XCTAssertEqual(fixture.tab.url, fixture.initialURL)
+    }
+
+    func testStartPreparationUsesCanonicalParticipantTarget() {
+        let fixture = makeFixture()
+        let staleCallbackURL = URL(string: "https://stale-callback.example/page")!
+        let staleContext = SumiNavigationContext(
+            navigationID: fixture.context.navigationID,
+            navigationLifetime: fixture.context.navigationLifetime,
+            action: nil,
+            url: staleCallbackURL,
+            isCurrent: true,
+            isCommitted: false,
+            isMainFrame: true,
+            webView: fixture.webView
+        )
+
+        fixture.responder.navigationDidStart(staleContext)
+
+        XCTAssertEqual(fixture.runtime.preparedExtensionURLs, [fixture.targetURL])
+        XCTAssertEqual(fixture.runtime.beforeCommitURLs, [fixture.targetURL])
+    }
+
+    func testReentrantCommitInvalidatesPrecommitStartLease() {
+        let fixture = makeFixture()
+        let properties = NavigationRecordingTabExtensionPropertiesRuntime()
+        fixture.tab.navigationRuntime.extensionPropertiesRuntime = properties.runtime
+        fixture.runtime.resetRevisitProtectionHook = { [weak responder = fixture.responder] _ in
+            responder?.navigationDidCommit(fixture.context)
+        }
+
+        fixture.responder.navigationDidStart(fixture.context)
+
+        XCTAssertEqual(fixture.tab.loadingState, .didCommit)
+        XCTAssertEqual(fixture.runtime.resetRevisitProtectionTabIds, [fixture.tab.id])
+        XCTAssertEqual(fixture.runtime.beforeCommitURLs, [fixture.targetURL])
+        XCTAssertEqual(properties.properties.count, 2)
+    }
+
     func testCommitStopsWhenLocalPreparationStartsSuccessorIntent() {
         let fixture = makeFixture()
         let successorURL = URL(string: "https://successor.example/local")!
@@ -60,6 +126,14 @@ final class SumiTabLifecycleReentrancyTests: XCTestCase {
     func testFinishCannotPublishAfterCommitEffectStartsSuccessorIntent() {
         let fixture = makeFixture()
         let successorURL = URL(string: "https://successor.example/commit-effect")!
+        let properties = NavigationRecordingTabExtensionPropertiesRuntime()
+        fixture.tab.navigationRuntime.extensionPropertiesRuntime = properties.runtime
+        var syncedTabIDs: [UUID] = []
+        var routing = TabWebViewRoutingRuntime.inactive
+        routing.syncTabAcrossWindows = { tabID, _ in
+            syncedTabIDs.append(tabID)
+        }
+        fixture.tab.navigationRuntime.webViewRouting = routing
         fixture.runtime.markExtensionEligibleAfterCommitHook = {
             tab in
             _ = tab.beginMainFrameNavigationIntent(to: successorURL)
@@ -69,6 +143,8 @@ final class SumiTabLifecycleReentrancyTests: XCTestCase {
 
         XCTAssertEqual(fixture.tab.mainFrameLoads.currentIntent.targetURL, successorURL)
         XCTAssertNotEqual(fixture.tab.loadingState, .didFinish)
+        XCTAssertTrue(syncedTabIDs.isEmpty)
+        XCTAssertEqual(properties.properties.count, 1)
         XCTAssertTrue(fixture.runtime.siteDataPolicyTabIds.isEmpty)
         XCTAssertTrue(fixture.runtime.documentSuspensionReconcileTabIds.isEmpty)
     }
@@ -134,7 +210,9 @@ final class SumiTabLifecycleReentrancyTests: XCTestCase {
             runtime: runtime,
             responder: tab.makeMainFrameLifecycleResponder(),
             webView: webView,
-            context: context
+            context: context,
+            initialURL: initialURL,
+            targetURL: targetURL
         )
     }
 
@@ -144,5 +222,7 @@ final class SumiTabLifecycleReentrancyTests: XCTestCase {
         let responder: SumiTabLifecycleNavigationResponder
         let webView: WKWebView
         let context: SumiNavigationContext
+        let initialURL: URL
+        let targetURL: URL
     }
 }

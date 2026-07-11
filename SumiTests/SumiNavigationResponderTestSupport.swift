@@ -388,6 +388,7 @@ final class RecordingTabLifecycleNavigationRuntime {
     var prepareExtensionRuntimeBeforeCommitHook: ((Tab, URL) -> Void)?
     var markExtensionEligibleAfterCommitHook: ((Tab) -> Void)?
     var loadZoomHook: ((UUID, WKWebView) -> Void)?
+    var resetRevisitProtectionHook: ((Tab) -> Void)?
     private(set) var resetRevisitProtectionTabIds: [UUID] = []
     private(set) var documentSuspensionReconcileTabIds: [UUID] = []
     private(set) var preparedExtensionWebViewIds: [ObjectIdentifier] = []
@@ -409,6 +410,7 @@ final class RecordingTabLifecycleNavigationRuntime {
         TabLifecycleNavigationRuntime(
             resetRevisitProtection: { [weak self] tab in
                 self?.resetRevisitProtectionTabIds.append(tab.id)
+                self?.resetRevisitProtectionHook?(tab)
             },
             reconcileDocumentSuspensionState: { [weak self] tab in
                 self?.documentSuspensionReconcileTabIds.append(tab.id)
@@ -460,6 +462,7 @@ final class RecordingTabLifecycleNavigationRuntime {
 
 @MainActor
 final class NavigationRecordingTabExtensionPropertiesRuntime {
+    var notifyHook: ((Tab, WKWebExtension.TabChangedProperties) -> Void)?
     private(set) var tabIds: [UUID] = []
     private(set) var properties: [WKWebExtension.TabChangedProperties] = []
 
@@ -468,6 +471,7 @@ final class NavigationRecordingTabExtensionPropertiesRuntime {
             notifyTabPropertiesChanged: { [weak self] tab, properties in
                 self?.tabIds.append(tab.id)
                 self?.properties.append(properties)
+                self?.notifyHook?(tab, properties)
             }
         )
     }

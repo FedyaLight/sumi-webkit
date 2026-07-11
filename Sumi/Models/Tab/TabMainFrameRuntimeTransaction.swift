@@ -357,7 +357,7 @@ final class TabMainFrameRuntimeTransaction:
     func claimTransactionStartEffects(
         from webView: WKWebView,
         navigationID: ObjectIdentifier
-    ) -> Bool {
+    ) -> TabMainFrameEffectDecision<TabMainFrameActiveAuthorityLease> {
         lifecycle.claimTransactionStartEffects(
             from: webView,
             navigationID: navigationID,
@@ -368,7 +368,7 @@ final class TabMainFrameRuntimeTransaction:
     func claimAuthorityTargetPreparation(
         from webView: WKWebView,
         navigationID: ObjectIdentifier
-    ) -> Bool {
+    ) -> TabMainFrameEffectDecision<TabMainFrameActiveAuthorityLease> {
         lifecycle.claimAuthorityTargetPreparation(
             from: webView,
             navigationID: navigationID,
@@ -379,10 +379,17 @@ final class TabMainFrameRuntimeTransaction:
     func claimLocalStartEffects(
         from webView: WKWebView,
         navigationID: ObjectIdentifier
-    ) -> Bool {
+    ) -> TabMainFrameEffectDecision<URL> {
         lifecycle.claimLocalStartEffects(
             from: webView,
             navigationID: navigationID,
+            currentIntent: mainFrameLoads.currentIntent
+        )
+    }
+
+    func remainsCurrent(_ lease: TabMainFrameActiveAuthorityLease) -> Bool {
+        lifecycle.remainsCurrent(
+            lease,
             currentIntent: mainFrameLoads.currentIntent
         )
     }
@@ -403,6 +410,15 @@ final class TabMainFrameRuntimeTransaction:
     ) -> Bool {
         lifecycle.claimPromotedSharedFinishEffects(
             matching: continuation,
+            currentIntent: mainFrameLoads.currentIntent
+        )
+    }
+
+    func remainsCurrent(
+        matching continuation: TabMainFrameAuthorityContinuation
+    ) -> Bool {
+        lifecycle.remainsCurrent(
+            continuation,
             currentIntent: mainFrameLoads.currentIntent
         )
     }
@@ -441,7 +457,7 @@ final class TabMainFrameRuntimeTransaction:
             navigationID: navigationID,
             currentIntent: mainFrameLoads.currentIntent
         ) ?? false
-        let claim = committedDocumentRuntime.performTransition(
+        let transition = committedDocumentRuntime.performTransition(
             reason: .documentCommit
         ) {
             let transition = lifecycle.recordCommit(
@@ -454,27 +470,33 @@ final class TabMainFrameRuntimeTransaction:
             if let evidence = transition.evidence {
                 committedDocumentRuntime.recordCommit(
                     evidence,
-                    publishesCanonicalDocument:
-                        transition.claim.shouldPublishSharedEffects
+                    publishesCanonicalDocument: transition.publication != nil
                 )
             }
-            return transition.claim
+            return transition
         }
-        switch claim.role {
+        switch transition.role {
         case .stale:
             return .stale
         case .participant:
             return .recordedReplica
-        case .authority where claim.shouldPublishSharedEffects == false:
+        case .authority where transition.publication == nil:
             return .alreadyPublished
         case .authority:
-            return .publish(TabMainFrameCommitPublication(
-                webView: webView,
-                navigationID: navigationID,
-                targetURL: committedURL,
-                isPDF: isPDF
-            ))
+            guard let publication = transition.publication else {
+                return .alreadyPublished
+            }
+            return .publish(publication)
         }
+    }
+
+    func consumeCommitPublication(
+        _ publication: TabMainFrameCommitPublication
+    ) -> Bool {
+        lifecycle.consumeCommitPublication(
+            publication,
+            currentIntent: mainFrameLoads.currentIntent
+        )
     }
 
     func claimAuthorityForTerminalSuccess(

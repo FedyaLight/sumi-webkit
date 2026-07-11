@@ -60,7 +60,11 @@ enum TabMainFrameLifecycleReducer {
            promotion.claimSharedCommitEffects(
                matching: continuation
            ) {
-            publishCommit(.promotion(continuation), tab: tab)
+            let authority = Authority.promotion(continuation)
+            guard authority.applyURL(to: tab) else { return }
+            publishCommitEffects(authority, tab: tab) {
+                promotion.remainsCurrent(matching: continuation)
+            }
         }
         if continuation.needsSharedFinishEffects,
            promotion.claimSharedFinishEffects(
@@ -71,49 +75,78 @@ enum TabMainFrameLifecycleReducer {
     }
 
     static func publishCommit(
-        _ authority: Authority,
-        tab: Tab
+        _ publication: TabMainFrameCommitPublication,
+        tab: Tab,
+        lifecycle: any TabMainFrameLifecycleSettlement
     ) {
+        guard lifecycle.consumeCommitPublication(publication) else { return }
+        let authority = Authority.navigation(
+            webView: publication.webView,
+            navigationID: publication.authority.navigationID,
+            targetURL: publication.targetURL,
+            isPDF: publication.isPDF
+        )
         guard authority.applyURL(to: tab) else { return }
+        publishCommitEffects(authority, tab: tab) {
+            lifecycle.remainsCurrent(publication.authority)
+        }
+    }
+
+    private static func publishCommitEffects(
+        _ authority: Authority,
+        tab: Tab,
+        remainsCurrent: () -> Bool
+    ) {
         StartupPerformanceTrace.firstNavigationCommitted()
         tab.loadingState = .didCommit
+        guard remainsCurrent() else { return }
         tab.navigationRuntime.extensionPropertiesRuntime.notifyTabPropertiesChanged(
             tab,
             [.loading]
         )
+        guard remainsCurrent() else { return }
 
         let isBackForward = tab.navigationRuntime.navigationTransactionOwner
             .pendingMainFrameNavigationKind == .backForward
         if isBackForward {
             tab.handleNormalTabPermissionNavigation(to: authority.targetURL)
+            guard remainsCurrent() else { return }
         }
         tab.extensionPageRuntimeOwner.noteCommittedMainDocumentNavigation(
             to: authority.targetURL
         )
+        guard remainsCurrent() else { return }
         tab.clearSafariContentBlockerReloadRequirementIfResolved(
             for: authority.targetURL
         )
+        guard remainsCurrent() else { return }
         tab.clearProtectionReloadRequirementIfResolved(for: authority.targetURL)
+        guard remainsCurrent() else { return }
         tab.clearAutoplayReloadRequirementIfResolved(for: authority.targetURL)
+        guard remainsCurrent() else { return }
         tab.navigationRuntime.historyRecorder.didCommitMainFrameNavigation(
             to: authority.targetURL,
             kind: isBackForward ? .backForward : .regular,
             tab: tab
         )
+        guard remainsCurrent() else { return }
         tab.navigationRuntime.lifecycleNavigationRuntime.markExtensionEligibleAfterCommit(
             tab,
             "TabMainFrameLifecycleReducer.commit"
         )
+        guard remainsCurrent() else { return }
         if !isBackForward {
             tab.navigationRuntime.webViewRouting.syncTabAcrossWindows(
                 tab.id,
                 authority.webView
             )
+            guard remainsCurrent() else { return }
         }
         tab.navigationRuntime.extensionPropertiesRuntime.notifyTabPropertiesChanged(
             tab,
             [.URL, .loading]
         )
+        guard remainsCurrent() else { return }
         tab.stateChangeEmitter.postNavigationStateDidChange(for: tab)
     }
 

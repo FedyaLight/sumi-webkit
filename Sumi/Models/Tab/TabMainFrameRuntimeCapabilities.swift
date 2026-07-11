@@ -50,20 +50,26 @@ protocol TabMainFrameLifecycleSettlement: AnyObject {
         committedURL: URL
     ) -> TabMainFrameCommitDecision
 
+    func consumeCommitPublication(
+        _ publication: TabMainFrameCommitPublication
+    ) -> Bool
+
     func claimTransactionStartEffects(
         from webView: WKWebView,
         navigationID: ObjectIdentifier
-    ) -> Bool
+    ) -> TabMainFrameEffectDecision<TabMainFrameActiveAuthorityLease>
 
     func claimAuthorityTargetPreparation(
         from webView: WKWebView,
         navigationID: ObjectIdentifier
-    ) -> Bool
+    ) -> TabMainFrameEffectDecision<TabMainFrameActiveAuthorityLease>
 
     func claimLocalStartEffects(
         from webView: WKWebView,
         navigationID: ObjectIdentifier
-    ) -> Bool
+    ) -> TabMainFrameEffectDecision<URL>
+
+    func remainsCurrent(_ lease: TabMainFrameActiveAuthorityLease) -> Bool
 
     func claimAuthorityForTerminalSuccess(
         from webView: WKWebView,
@@ -96,6 +102,10 @@ protocol TabMainFramePromotionSettlement: AnyObject {
     ) -> Bool
 
     func claimSharedFinishEffects(
+        matching continuation: TabMainFrameAuthorityContinuation
+    ) -> Bool
+
+    func remainsCurrent(
         matching continuation: TabMainFrameAuthorityContinuation
     ) -> Bool
 }

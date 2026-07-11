@@ -91,6 +91,31 @@ tab_main_frame_capability_methods="$(
     "$tab_main_frame_capabilities" 2>/dev/null || true
 )"
 tab_main_frame_capability_methods="${tab_main_frame_capability_methods:-0}"
+tab_main_frame_authority_reducer="Sumi/Models/Tab/TabMainFrameAuthorityReducer.swift"
+tab_main_frame_authority_reducer_loc="$(count_lines "$tab_main_frame_authority_reducer")"
+tab_main_frame_authority_reducer_methods="$(
+  rg --count-matches '^\s*(public |private |internal |fileprivate )?func ' \
+    "$tab_main_frame_authority_reducer" 2>/dev/null || true
+)"
+tab_main_frame_authority_reducer_methods="${tab_main_frame_authority_reducer_methods:-0}"
+tab_main_frame_authority_state="Sumi/Models/Tab/TabMainFrameAuthorityState.swift"
+tab_main_frame_authority_state_loc="$(count_lines "$tab_main_frame_authority_state")"
+tab_main_frame_authority_state_methods="$(
+  rg --count-matches '^\s*(public |private |internal |fileprivate )?func ' \
+    "$tab_main_frame_authority_state" 2>/dev/null || true
+)"
+tab_main_frame_authority_state_methods="${tab_main_frame_authority_state_methods:-0}"
+tab_main_frame_lifecycle_machine="Sumi/Models/Tab/TabMainFrameLifecycleMachine.swift"
+tab_main_frame_lifecycle_machine_loc="$(count_lines "$tab_main_frame_lifecycle_machine")"
+tab_main_frame_lifecycle_machine_methods="$(
+  rg --count-matches '^\s*(public |private |internal |fileprivate )?func ' \
+    "$tab_main_frame_lifecycle_machine" 2>/dev/null || true
+)"
+tab_main_frame_lifecycle_machine_methods="${tab_main_frame_lifecycle_machine_methods:-0}"
+tab_main_frame_responder="Sumi/Models/Tab/Navigation/SumiTabLifecycleNavigationResponder.swift"
+tab_main_frame_responder_loc="$(count_lines "$tab_main_frame_responder")"
+tab_main_frame_promotion_reducer="Sumi/Models/Tab/Navigation/TabMainFrameLifecyclePromotionReducer.swift"
+tab_main_frame_promotion_reducer_loc="$(count_lines "$tab_main_frame_promotion_reducer")"
 tab_main_frame_load_runtime="Sumi/Models/Tab/TabMainFrameLoadRuntime.swift"
 tab_main_frame_load_runtime_loc="$(count_lines "$tab_main_frame_load_runtime")"
 tab_main_frame_load_runtime_methods="$(
@@ -821,13 +846,29 @@ check_max "TabManager.swift LOC" "$tm_loc" 220
 check_max "Tab.swift LOC" "$tab_model_loc" 704
 check_max "Tab.swift methods" "$tab_model_methods" 34
 check_max "TabMainFrameRuntimeTransaction.swift LOC" \
-  "$tab_main_frame_transaction_loc" 631
+  "$tab_main_frame_transaction_loc" 653
 check_max "TabMainFrameRuntimeTransaction methods" \
-  "$tab_main_frame_transaction_methods" 32
+  "$tab_main_frame_transaction_methods" 35
 check_max "TabMainFrameRuntimeCapabilities.swift LOC" \
-  "$tab_main_frame_capabilities_loc" 101
+  "$tab_main_frame_capabilities_loc" 111
 check_max "TabMainFrameRuntimeCapabilities methods" \
-  "$tab_main_frame_capability_methods" 16
+  "$tab_main_frame_capability_methods" 19
+check_max "TabMainFrameAuthorityReducer.swift LOC" \
+  "$tab_main_frame_authority_reducer_loc" 661
+check_max "TabMainFrameAuthorityReducer methods" \
+  "$tab_main_frame_authority_reducer_methods" 24
+check_max "TabMainFrameAuthorityState.swift LOC" \
+  "$tab_main_frame_authority_state_loc" 107
+check_max "TabMainFrameAuthorityState methods" \
+  "$tab_main_frame_authority_state_methods" 8
+check_max "TabMainFrameLifecycleMachine.swift LOC" \
+  "$tab_main_frame_lifecycle_machine_loc" 784
+check_max "TabMainFrameLifecycleMachine methods" \
+  "$tab_main_frame_lifecycle_machine_methods" 39
+check_max "SumiTabLifecycleNavigationResponder.swift LOC" \
+  "$tab_main_frame_responder_loc" 708
+check_max "TabMainFrameLifecyclePromotionReducer.swift LOC" \
+  "$tab_main_frame_promotion_reducer_loc" 197
 check_max "TabMainFrameLoadRuntime.swift LOC" \
   "$tab_main_frame_load_runtime_loc" 302
 check_max "TabMainFrameLoadRuntime methods" \

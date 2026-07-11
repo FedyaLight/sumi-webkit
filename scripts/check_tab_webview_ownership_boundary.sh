@@ -149,8 +149,8 @@ while IFS= read -r match; do
       fi
       ;;
     Sumi/Models/Tab/Navigation/TabMainFrameLifecyclePromotionReducer.swift)
-      if [[ ! "$content" =~ ^[[:space:]]+promotion:[[:space:]]+any[[:space:]]+TabMainFramePromotionSettlement$ ]]; then
-        printf 'error: promotion capability escaped reducer parameter: %s\n' \
+      if [[ ! "$content" =~ ^[[:space:]]+(promotion:[[:space:]]+any[[:space:]]+TabMainFramePromotionSettlement|lifecycle:[[:space:]]+any[[:space:]]+TabMainFrameLifecycleSettlement)$ ]]; then
+        printf 'error: lifecycle/promotion capability escaped reducer parameter: %s\n' \
           "$match" >&2
         status=1
       fi

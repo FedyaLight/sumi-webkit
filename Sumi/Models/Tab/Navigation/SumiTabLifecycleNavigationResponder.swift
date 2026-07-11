@@ -71,7 +71,7 @@ final class SumiTabLifecycleNavigationResponder:
             isCurrent: nil
         )
         if roleAfterLocalEffects.isAuthority {
-            publishAuthorityStartEffectsIfNeeded(
+            _ = publishAuthorityStartEffectsIfNeeded(
                 context,
                 tab: tab,
                 webView: webView
@@ -127,38 +127,34 @@ final class SumiTabLifecycleNavigationResponder:
             navigationID: context.navigationID,
             isCurrent: context.isCurrent
         )
-        if role.isAuthority {
-            publishAuthorityStartEffectsIfNeeded(
-                context,
-                tab: tab,
-                webView: webView
-            )
-        }
-        guard lifecycle.role(
-            from: webView,
-            navigationID: context.navigationID,
-            isCurrent: context.isCurrent
-        ).isAuthority else { return }
+        guard role.isAuthority,
+              let authorityLease = publishAuthorityStartEffectsIfNeeded(
+                  context,
+                  tab: tab,
+                  webView: webView
+              ) else { return }
 
         tab.beginLoadingPresentationIfNeeded()
+        guard lifecycle.remainsCurrent(authorityLease) else { return }
         tab.navigationRuntime.extensionPropertiesRuntime.notifyTabPropertiesChanged(tab, [.loading])
+        guard lifecycle.remainsCurrent(authorityLease) else { return }
         tab.resetPlaybackActivity()
 
         if let newURL = webView.url {
             if newURL.absoluteString != tab.url.absoluteString {
-                tab.applyAcceptedMainFrameLifecycleURL(
+                guard tab.applyAcceptedMainFrameLifecycleURL(
                     newURL,
                     from: webView,
                     navigationID: context.navigationID
-                )
+                ) else { return }
                 tab.applyCachedFaviconOrPlaceholder(for: newURL)
                 tab.refreshFaviconExtensionCache()
             } else {
-                tab.applyAcceptedMainFrameLifecycleURL(
+                guard tab.applyAcceptedMainFrameLifecycleURL(
                     newURL,
                     from: webView,
                     navigationID: context.navigationID
-                )
+                ) else { return }
             }
         }
     }
@@ -167,9 +163,7 @@ final class SumiTabLifecycleNavigationResponder:
         for response: SumiNavigationResponse,
         context: SumiNavigationContext?
     ) async -> SumiNavigationResponsePolicy? {
-        guard let tab,
-              response.isForMainFrame
-        else { return .next }
+        guard response.isForMainFrame else { return .next }
 
         if let context, let webView = context.webView {
             lifecycle.noteResponse(
@@ -212,21 +206,11 @@ final class SumiTabLifecycleNavigationResponder:
         )
         guard preparedRole.isParticipant else { return }
         if preparedRole.isAuthority {
-            guard lifecycle.role(
-                from: webView,
-                navigationID: context.navigationID,
-                isCurrent: nil
-            ).isAuthority else { return }
-            publishAuthorityStartEffectsIfNeeded(
+            guard publishAuthorityStartEffectsIfNeeded(
                 context,
                 tab: tab,
                 webView: webView
-            )
-            guard lifecycle.role(
-                from: webView,
-                navigationID: context.navigationID,
-                isCurrent: nil
-            ).isAuthority else { return }
+            ) != nil else { return }
         }
         guard let committedURL = webView.committedURL ?? webView.url ?? context.url else {
             return
@@ -239,13 +223,9 @@ final class SumiTabLifecycleNavigationResponder:
         guard case .publish(let publication) = decision else { return }
 
         TabMainFrameLifecycleReducer.publishCommit(
-            .navigation(
-                webView: publication.webView,
-                navigationID: publication.navigationID,
-                targetURL: publication.targetURL,
-                isPDF: publication.isPDF
-            ),
-            tab: tab
+            publication,
+            tab: tab,
+            lifecycle: lifecycle
         )
     }
 
@@ -309,7 +289,11 @@ final class SumiTabLifecycleNavigationResponder:
             return
         }
 
-        publishAuthorityStartEffectsIfNeeded(context, tab: tab, webView: webView)
+        guard publishAuthorityStartEffectsIfNeeded(
+            context,
+            tab: tab,
+            webView: webView
+        ) != nil else { return }
         navigationDidCommit(context)
         guard lifecycle.role(
             from: webView,
@@ -606,68 +590,81 @@ final class SumiTabLifecycleNavigationResponder:
         tab: Tab,
         webView: WKWebView
     ) {
-        guard context.action?.navigationType != .sameDocumentNavigation,
-              let url = context.url ?? context.action?.request.url,
-              lifecycle.claimLocalStartEffects(
-            from: webView,
-            navigationID: context.navigationID
-        ) else {
+        guard context.action?.navigationType != .sameDocumentNavigation else {
             return
         }
-        tab.navigationRuntime.lifecycleNavigationRuntime.prepareExtensionWebView(
-            webView,
-            url,
-            "SumiTabLifecycleNavigationResponder.start"
+        let decision = lifecycle.claimLocalStartEffects(
+            from: webView,
+            navigationID: context.navigationID
         )
+        guard let targetURL = decision.value else { return }
+        if case .publish = decision {
+            tab.navigationRuntime.lifecycleNavigationRuntime.prepareExtensionWebView(
+                webView,
+                targetURL,
+                "SumiTabLifecycleNavigationResponder.start"
+            )
+        }
     }
 
     private func publishAuthorityStartEffectsIfNeeded(
         _ context: SumiNavigationContext,
         tab: Tab,
         webView: WKWebView
-    ) {
+    ) -> TabMainFrameActiveAuthorityLease? {
         guard context.action?.navigationType != .sameDocumentNavigation else {
-            return
+            return nil
         }
-        if lifecycle.claimTransactionStartEffects(
+        let transactionStart = lifecycle.claimTransactionStartEffects(
             from: webView,
             navigationID: context.navigationID
-        ) {
-            publishSharedTransactionStartEffects(
-                context,
+        )
+        guard let transactionLease = transactionStart.value else { return nil }
+        if case .publish = transactionStart {
+            guard publishSharedTransactionStartEffects(
+                transactionLease,
                 tab: tab,
-                webView: webView
+                webView: webView,
+                isBackForward: context.action?.navigationType.isBackForward == true
+            ) else { return nil }
+        }
+        guard lifecycle.remainsCurrent(transactionLease) else { return nil }
+        guard context.action?.navigationType.isBackForward != true else {
+            return transactionLease
+        }
+        let targetPreparation = lifecycle.claimAuthorityTargetPreparation(
+            from: webView,
+            navigationID: context.navigationID
+        )
+        guard let targetLease = targetPreparation.value else { return nil }
+        if case .publish = targetPreparation {
+            tab.navigationRuntime.lifecycleNavigationRuntime.prepareExtensionRuntimeBeforeCommit(
+                tab,
+                targetLease.targetURL,
+                "SumiTabLifecycleNavigationResponder.start"
             )
         }
-        guard context.action?.navigationType.isBackForward != true,
-              let url = context.url ?? context.action?.request.url,
-              lifecycle.claimAuthorityTargetPreparation(
-            from: webView,
-            navigationID: context.navigationID
-        ) else {
-            return
-        }
-        tab.navigationRuntime.lifecycleNavigationRuntime.prepareExtensionRuntimeBeforeCommit(
-            tab,
-            url,
-            "SumiTabLifecycleNavigationResponder.start"
-        )
+        return lifecycle.remainsCurrent(targetLease) ? targetLease : nil
     }
 
     private func publishSharedTransactionStartEffects(
-        _ context: SumiNavigationContext,
+        _ lease: TabMainFrameActiveAuthorityLease,
         tab: Tab,
-        webView: WKWebView
-    ) {
+        webView: WKWebView,
+        isBackForward: Bool
+    ) -> Bool {
         StartupPerformanceTrace.firstNavigationStarted()
-        let isBackForward = context.action?.navigationType.isBackForward == true
         if isBackForward {
             tab.beginBackForwardNavigationTracking(on: webView)
+            guard lifecycle.remainsCurrent(lease) else { return false }
         } else {
-            tab.handleNormalTabPermissionNavigation(to: context.url)
+            tab.handleNormalTabPermissionNavigation(to: lease.targetURL)
+            guard lifecycle.remainsCurrent(lease) else { return false }
             tab.markRegularMainFrameNavigation(on: webView)
+            guard lifecycle.remainsCurrent(lease) else { return false }
         }
         tab.navigationRuntime.lifecycleNavigationRuntime.resetRevisitProtection(tab)
+        return lifecycle.remainsCurrent(lease)
     }
 
     private func settleAbortedNavigationPresentation(_ tab: Tab) {

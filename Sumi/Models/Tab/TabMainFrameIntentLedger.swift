@@ -431,14 +431,16 @@ final class TabMainFrameIntentLedger {
             revision: candidate.value.revision,
             documentGeneration: candidate.value.documentGeneration,
             participantID: candidate.value.participantID,
-            webViewID: candidate.key
+            webViewID: candidate.key,
+            source: .pendingSubmission
         )
     }
 
     func isCurrentPendingAuthority(
         _ continuation: TabMainFrameAuthorityContinuation
     ) -> Bool {
-        guard authorityCandidateWebViewID == continuation.webViewID,
+        guard continuation.source == .pendingSubmission,
+              authorityCandidateWebViewID == continuation.webViewID,
               let load = pendingLoadsByWebViewID[continuation.webViewID],
               load.webViewReference.matches(continuation.webView),
               load.phase == .submitted else {
@@ -450,6 +452,10 @@ final class TabMainFrameIntentLedger {
             && continuation.documentGeneration == load.documentGeneration
             && continuation.participantID == load.participantID
             && continuation.webViewID == ObjectIdentifier(continuation.webView)
+            && continuation.targetURL == load.targetURL
+            && continuation.isPDF == false
+            && continuation.needsSharedCommitEffects == false
+            && continuation.needsSharedFinishEffects == false
     }
 
     func hasPendingAuthority() -> Bool {

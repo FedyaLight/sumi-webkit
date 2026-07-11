@@ -19,6 +19,30 @@ struct TabMainFrameSubmissionLease: Equatable {
     let webViewID: ObjectIdentifier
 }
 
+struct TabMainFrameActiveAuthorityLease: Equatable {
+    let revision: UInt64
+    let documentGeneration: UInt64
+    let participantID: UUID
+    let webViewID: ObjectIdentifier
+    let navigationID: ObjectIdentifier
+    let targetURL: URL
+    let hasCommittedDocument: Bool
+    let authorityEpoch: UInt64
+}
+
+enum TabMainFrameEffectDecision<Lease> {
+    case stale
+    case alreadyClaimed(Lease)
+    case publish(Lease)
+
+    var value: Lease? {
+        switch self {
+        case .stale: nil
+        case .alreadyClaimed(let lease), .publish(let lease): lease
+        }
+    }
+}
+
 enum TabDeferredMainFrameLoadClaim: Equatable {
     case claimed
     case alreadyScheduled
@@ -34,6 +58,11 @@ enum TabMainFrameNavigationAbortResult: Equatable {
     case authoritativeRollback(URL)
 }
 
+enum TabMainFrameAuthorityContinuationSource: Equatable {
+    case pendingSubmission
+    case lifecycle(authorityEpoch: UInt64)
+}
+
 struct TabMainFrameAuthorityContinuation: Equatable {
     let webView: WKWebView
     let navigationID: ObjectIdentifier?
@@ -46,6 +75,7 @@ struct TabMainFrameAuthorityContinuation: Equatable {
     let documentGeneration: UInt64
     let participantID: UUID
     let webViewID: ObjectIdentifier
+    let source: TabMainFrameAuthorityContinuationSource
 
     static func == (
         lhs: TabMainFrameAuthorityContinuation,
@@ -62,19 +92,20 @@ struct TabMainFrameAuthorityContinuation: Equatable {
             && lhs.documentGeneration == rhs.documentGeneration
             && lhs.participantID == rhs.participantID
             && lhs.webViewID == rhs.webViewID
+            && lhs.source == rhs.source
     }
 }
 
-struct TabMainFrameCommitSnapshotClaim: Equatable {
-    let role: TabMainFrameLifecycleRole
-    let shouldPublishSharedEffects: Bool
+struct TabMainFrameCommitPermit: Hashable {
+    let id: UUID
 }
 
 struct TabMainFrameCommitPublication {
     let webView: WKWebView
-    let navigationID: ObjectIdentifier
     let targetURL: URL
     let isPDF: Bool
+    let authority: TabMainFrameActiveAuthorityLease
+    let permit: TabMainFrameCommitPermit
 }
 
 enum TabMainFrameCommitDecision {
