@@ -2,11 +2,17 @@ import Foundation
 import SumiWebRuntime
 import WebKit
 
+@MainActor
+protocol TabWebContentRecovery: AnyObject {
+    func beginRecovery(on webView: WKWebView) -> TabWebContentProcessRecoveryPlan
+    func isRecoveryRequired(on webView: WKWebView) -> Bool
+}
+
 /// Atomic boundary for main-frame transitions that change more than one
 /// authority. `Tab` exposes narrower load and committed-document capabilities;
 /// only this transaction can replace intent or settle lifecycle authority.
 @MainActor
-final class TabMainFrameRuntimeTransaction {
+final class TabMainFrameRuntimeTransaction: TabWebContentRecovery {
     struct LifecycleAcceptance {
         let role: TabMainFrameLifecycleRole
         let beganNewIntent: Bool
@@ -20,7 +26,7 @@ final class TabMainFrameRuntimeTransaction {
     let mainFrameLoads: TabMainFrameLoadRuntime
     private let lifecycle: TabMainFrameLifecycleMachine
     let committedDocumentRuntime: TabCommittedDocumentRuntime
-    private let recovery: TabWebContentRecoveryPlanner
+    private let recoveryMarkers: TabWebContentRecoveryMarkerLedger
 
     init(initialURL: URL) {
         let lifecycle = TabMainFrameLifecycleMachine()
@@ -34,7 +40,7 @@ final class TabMainFrameRuntimeTransaction {
             initialURL: initialURL,
             evidenceSource: mainFrameLoads
         )
-        self.recovery = TabWebContentRecoveryPlanner()
+        self.recoveryMarkers = TabWebContentRecoveryMarkerLedger()
     }
 
     func semanticRevision(
@@ -76,7 +82,7 @@ final class TabMainFrameRuntimeTransaction {
         ) else {
             return false
         }
-        recovery.finish(on: webView)
+        recoveryMarkers.clear(on: webView)
         return true
     }
 
@@ -126,16 +132,6 @@ final class TabMainFrameRuntimeTransaction {
         }
     }
 
-    func webViewDidLeaveRuntime(
-        _ webView: WKWebView,
-        preferredAuthorityWebView: WKWebView?
-    ) -> TabMainFrameRuntimeDepartureResult {
-        webViewsDidLeaveRuntime(
-            [webView],
-            preferredAuthorityWebView: preferredAuthorityWebView
-        )
-    }
-
     func webViewsDidLeaveRuntime(
         _ webViews: [WKWebView],
         preferredAuthorityWebView: WKWebView?
@@ -154,7 +150,7 @@ final class TabMainFrameRuntimeTransaction {
                 departingWebViewIDs.contains(ObjectIdentifier($0)) ? nil : $0
             }
 
-            departingWebViews.forEach(recovery.remove)
+            departingWebViews.forEach { recoveryMarkers.clear(on: $0) }
             committedDocumentRuntime.removeWebViews(
                 departingWebViews,
                 preferredSourceWebView: preferredSurvivor
@@ -183,14 +179,14 @@ final class TabMainFrameRuntimeTransaction {
         }
     }
 
-    func beginWebContentProcessRecovery(
+    func beginRecovery(
         on webView: WKWebView
     ) -> TabWebContentProcessRecoveryPlan {
         committedDocumentRuntime.performTransition(
             reason: .processRecovery
         ) {
             let intent = mainFrameLoads.currentIntent
-            guard recovery.markRequired(on: webView) else {
+            guard recoveryMarkers.markRequired(on: webView) else {
                 return TabWebContentProcessRecoveryPlan(
                     scope: .replica(intent),
                     authorityContinuation: nil
@@ -222,8 +218,8 @@ final class TabMainFrameRuntimeTransaction {
         }
     }
 
-    func requiresWebContentProcessRecovery(on webView: WKWebView) -> Bool {
-        recovery.requiresRecovery(on: webView)
+    func isRecoveryRequired(on webView: WKWebView) -> Bool {
+        recoveryMarkers.isRecoveryRequired(on: webView)
     }
 
     func abortNavigation(
@@ -303,7 +299,7 @@ final class TabMainFrameRuntimeTransaction {
                     }
                 }
             }
-            recovery.finish(on: webView)
+            recoveryMarkers.clear(on: webView)
             return LifecycleAcceptance(role: role, beganNewIntent: false)
         case .unmatched:
             break
@@ -324,7 +320,7 @@ final class TabMainFrameRuntimeTransaction {
             navigationID: navigationID,
             navigationLifetime: navigationLifetime
         )
-        recovery.finish(on: webView)
+        recoveryMarkers.clear(on: webView)
         return LifecycleAcceptance(role: .authority, beganNewIntent: true)
     }
 

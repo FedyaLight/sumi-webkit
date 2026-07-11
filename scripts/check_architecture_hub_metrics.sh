@@ -86,6 +86,14 @@ tab_main_frame_load_runtime_methods="$(
     "$tab_main_frame_load_runtime" 2>/dev/null || true
 )"
 tab_main_frame_load_runtime_methods="${tab_main_frame_load_runtime_methods:-0}"
+tab_recovery_marker_ledger="Sumi/Models/Tab/TabWebContentRecoveryMarkerLedger.swift"
+tab_recovery_marker_ledger_loc="$(count_lines "$tab_recovery_marker_ledger")"
+tab_recovery_marker_ledger_methods="$(
+  rg --count-matches \
+    '^\s*(public |private |internal |fileprivate )?func ' \
+    "$tab_recovery_marker_ledger" 2>/dev/null || true
+)"
+tab_recovery_marker_ledger_methods="${tab_recovery_marker_ledger_methods:-0}"
 tab_committed_document_runtime="Sumi/Models/Tab/TabCommittedDocumentRuntime.swift"
 tab_committed_document_runtime_loc="$(count_lines "$tab_committed_document_runtime")"
 tab_committed_document_runtime_methods="$(
@@ -797,16 +805,22 @@ printf '%s\n' 'Architecture hub metrics freeze'
 printf '%s\n' '--------------------------------'
 check_max "BrowserManager.swift LOC" "$bm_loc" 200
 check_max "TabManager.swift LOC" "$tm_loc" 220
-check_max "Tab.swift LOC" "$tab_model_loc" 899
-check_max "Tab.swift methods" "$tab_model_methods" 54
+check_max "Tab.swift LOC" "$tab_model_loc" 891
+check_max "Tab.swift methods" "$tab_model_methods" 52
 check_max "TabMainFrameRuntimeTransaction.swift LOC" \
-  "$tab_main_frame_transaction_loc" 621
+  "$tab_main_frame_transaction_loc" 617
 check_max "TabMainFrameLoadRuntime.swift LOC" \
   "$tab_main_frame_load_runtime_loc" 302
 check_max "TabMainFrameLoadRuntime methods" \
   "$tab_main_frame_load_runtime_methods" 40
 check_max "TabMainFrameLoadRuntime collaborators" \
   "$(rg --count-matches '^    private (let|weak var) [a-zA-Z_]' "$tab_main_frame_load_runtime")" 2
+check_max "TabWebContentRecoveryMarkerLedger.swift LOC" \
+  "$tab_recovery_marker_ledger_loc" 44
+check_max "TabWebContentRecoveryMarkerLedger methods" \
+  "$tab_recovery_marker_ledger_methods" 3
+check_max "TabWebContentRecoveryMarkerLedger stored state" \
+  "$(rg --count-matches '^    private (let|var|weak var) [a-zA-Z_]' "$tab_recovery_marker_ledger")" 1
 check_max "TabCommittedDocumentRuntime.swift LOC" \
   "$tab_committed_document_runtime_loc" 294
 check_max "TabCommittedDocumentRuntime methods" \

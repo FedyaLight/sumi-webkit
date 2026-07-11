@@ -18,32 +18,6 @@ extension Tab {
         webViewSession.currentWebView
     }
 
-    @discardableResult
-    func retainWebContentProcessRecovery(on webView: WKWebView) -> Bool {
-        guard webViewSession.owns(webView),
-              requiresWebContentProcessRecovery(on: webView) else {
-            return false
-        }
-        return navigationRuntime.webViewRouting.retainWebContentProcessRecovery(
-            id,
-            webView
-        )
-    }
-
-    @discardableResult
-    func reconcileWebContentProcessRecovery(
-        on webView: WKWebView
-    ) -> TabMainFrameReloadCommandOutcome {
-        guard webViewSession.owns(webView),
-              requiresWebContentProcessRecovery(on: webView) else {
-            return .failed
-        }
-        return navigationRuntime.webViewRouting.recoverWebContentProcess(
-            id,
-            webView
-        )
-    }
-
     /// Parked/staging WebView from session (or pre-runtime local session).
     func resolvedParkedWebView() -> WKWebView? {
         webViewSession.parkedWebView

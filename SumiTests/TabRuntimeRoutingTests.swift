@@ -28,9 +28,10 @@ final class TabRuntimeRoutingTests: XCTestCase {
         tab.replaceUntrackedWebView(webView)
         let routing = RecordingTabWebViewRouting()
         tab.navigationRuntime.webViewRouting = routing.runtime
-        _ = tab.beginWebContentProcessRecovery(on: webView)
+        _ = tab.webContentRecovery.beginRecovery(on: webView)
 
-        let outcome = tab.reconcileWebContentProcessRecovery(on: webView)
+        let outcome = tab.navigationRuntime.webViewRouting
+            .recoverWebContentProcess(tab.id, webView)
 
         XCTAssertEqual(outcome, .scheduled)
         XCTAssertEqual(routing.processRecoveryCalls.count, 1)
@@ -39,7 +40,7 @@ final class TabRuntimeRoutingTests: XCTestCase {
             routing.processRecoveryCalls.first?.1,
             ObjectIdentifier(webView)
         )
-        XCTAssertTrue(tab.requiresWebContentProcessRecovery(on: webView))
+        XCTAssertTrue(tab.webContentRecovery.isRecoveryRequired(on: webView))
     }
 
     func testGlobalProcessRecoveryRetainsOwnerBeforeConfigurationFailure() {
@@ -49,7 +50,7 @@ final class TabRuntimeRoutingTests: XCTestCase {
         tab.replaceUntrackedWebView(webView)
         let routing = RecordingTabWebViewRouting()
         tab.navigationRuntime.webViewRouting = routing.runtime
-        _ = tab.beginWebContentProcessRecovery(on: webView)
+        _ = tab.webContentRecovery.beginRecovery(on: webView)
 
         let outcome = tab.navigationCommandOwner.recoverWebContentProcess(
             tab,
@@ -66,7 +67,7 @@ final class TabRuntimeRoutingTests: XCTestCase {
             ObjectIdentifier(webView)
         )
         XCTAssertTrue(routing.processRecoveryCalls.isEmpty)
-        XCTAssertTrue(tab.requiresWebContentProcessRecovery(on: webView))
+        XCTAssertTrue(tab.webContentRecovery.isRecoveryRequired(on: webView))
     }
 
     func testWebViewDepartureCancelsRetainedProcessRecoveryBeforeRetiringMarker() {
@@ -78,7 +79,7 @@ final class TabRuntimeRoutingTests: XCTestCase {
         tab.replaceUntrackedWebView(webView)
         let routing = RecordingTabWebViewRouting()
         tab.navigationRuntime.webViewRouting = routing.runtime
-        _ = tab.beginWebContentProcessRecovery(on: webView)
+        _ = tab.webContentRecovery.beginRecovery(on: webView)
 
         tab.webViewDidLeaveNavigationRuntime(webView)
 
@@ -86,7 +87,7 @@ final class TabRuntimeRoutingTests: XCTestCase {
             routing.cancelledProcessRecoveryWebViewIDs,
             [ObjectIdentifier(webView)]
         )
-        XCTAssertFalse(tab.requiresWebContentProcessRecovery(on: webView))
+        XCTAssertFalse(tab.webContentRecovery.isRecoveryRequired(on: webView))
     }
 
     func testReplicaProcessTerminationKeepsSemanticRevisionAndRepairsExactReplica() {
@@ -128,7 +129,7 @@ final class TabRuntimeRoutingTests: XCTestCase {
             navigationID: ObjectIdentifier(authorityNavigation),
             isCurrent: true
         ))
-        XCTAssertTrue(tab.requiresWebContentProcessRecovery(on: crashedReplica))
+        XCTAssertTrue(tab.webContentRecovery.isRecoveryRequired(on: crashedReplica))
     }
 
     func testAuthorityProcessTerminationStartsGlobalRevisionAndRetainsExactRepair() {
@@ -158,7 +159,7 @@ final class TabRuntimeRoutingTests: XCTestCase {
             routing.processRecoveryCalls.first?.1,
             ObjectIdentifier(crashedWebView)
         )
-        XCTAssertTrue(tab.requiresWebContentProcessRecovery(on: crashedWebView))
+        XCTAssertTrue(tab.webContentRecovery.isRecoveryRequired(on: crashedWebView))
 
         SumiTabLifecycleNavigationResponder(tab: tab)
             .webContentProcessDidTerminate(on: crashedWebView)

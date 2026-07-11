@@ -20,6 +20,7 @@ handle_source="Packages/SumiWebRuntime/Sources/SumiWebRuntime/Session/WebViewSes
 main_frame_load_runtime="Sumi/Models/Tab/TabMainFrameLoadRuntime.swift"
 web_view_rebuild_epoch="Sumi/Models/Tab/TabWebViewRebuildEpoch.swift"
 main_frame_transaction="Sumi/Models/Tab/TabMainFrameRuntimeTransaction.swift"
+recovery_marker_ledger="Sumi/Models/Tab/TabWebContentRecoveryMarkerLedger.swift"
 committed_document_runtime="Sumi/Models/Tab/TabCommittedDocumentRuntime.swift"
 status=0
 
@@ -33,7 +34,8 @@ fail_matches() {
 
 for required in "$repository_source" "$handle_source" "$main_frame_load_runtime" \
   "$web_view_rebuild_epoch" \
-  "$main_frame_transaction" "$committed_document_runtime"; do
+  "$main_frame_transaction" "$recovery_marker_ledger" \
+  "$committed_document_runtime"; do
   if [[ ! -f "$required" ]]; then
     printf 'error: required WebView/main-frame architecture source missing: %s\n' \
       "$required" >&2
@@ -47,6 +49,18 @@ legacy_type_hits="$(
     "${all_swift_roots[@]}" -g '*.swift' -g '!**/.build/**' || true
 )"
 fail_matches "deleted WebView ownership type reintroduced" "$legacy_type_hits"
+
+if [[ -e Sumi/Models/Tab/TabWebContentRecoveryPlanner.swift ]]; then
+  printf 'error: retired TabWebContentRecoveryPlanner.swift must stay deleted\n' >&2
+  status=1
+fi
+
+retired_recovery_planner_hits="$(
+  rg -n '\bTabWebContentRecoveryPlanner\b' \
+    "${all_swift_roots[@]}" -g '*.swift' -g '!**/.build/**' || true
+)"
+fail_matches "retired TabWebContentRecoveryPlanner type reintroduced" \
+  "$retired_recovery_planner_hits"
 
 # These assignment-shaped Tab APIs silently mutate a mirror and are forbidden.
 legacy_assignment_hits="$(
@@ -180,7 +194,7 @@ tab_mirror_hits="$(
     Sumi/Models/Tab/Tab.swift Sumi/Models/Tab/Tab+WebViewRuntime.swift \
     Sumi/Models/Tab/TabMainFrame*.swift \
     Sumi/Models/Tab/TabCommittedDocumentLedger.swift \
-    Sumi/Models/Tab/TabWebContentRecoveryPlanner.swift || true
+    "$recovery_marker_ledger" || true
 )"
 fail_matches "Tab WKWebView ownership mirror/façade reintroduced" "$tab_mirror_hits"
 
@@ -227,7 +241,7 @@ if [[ "$load_runtime_ledger_storage_count" -ne 1 ]]; then
 fi
 
 main_frame_aggregate_construction_hits="$(
-  rg -n '\b(TabMainFrameLoadRuntime|TabMainFrameLifecycleMachine|TabWebContentRecoveryPlanner)\s*\(' \
+  rg -n '\b(TabMainFrameLoadRuntime|TabMainFrameLifecycleMachine|TabWebContentRecoveryMarkerLedger)\s*\(' \
     "${production_roots[@]}" -g '*.swift' || true
 )"
 while IFS= read -r match; do
@@ -239,6 +253,73 @@ while IFS= read -r match; do
     status=1
   fi
 done <<< "$main_frame_aggregate_construction_hits"
+
+recovery_marker_storage_hits="$(
+  rg -n '\b(let|var)\s+\w+\s*:\s*TabWebContentRecoveryMarkerLedger\b' \
+    "${production_roots[@]}" -g '*.swift' || true
+)"
+while IFS= read -r match; do
+  [[ -z "$match" ]] && continue
+  file="${match%%:*}"
+  if [[ "$file" != "$main_frame_transaction" ]]; then
+    printf 'error: WebContent recovery marker ledger stored outside transaction: %s\n' \
+      "$match" >&2
+    status=1
+  fi
+done <<< "$recovery_marker_storage_hits"
+
+transaction_recovery_marker_storage_count="$(
+  rg --count-matches \
+    '^    private let recoveryMarkers: TabWebContentRecoveryMarkerLedger$' \
+    "$main_frame_transaction" 2>/dev/null || true
+)"
+transaction_recovery_marker_storage_count="${transaction_recovery_marker_storage_count:-0}"
+if [[ "$transaction_recovery_marker_storage_count" -ne 1 ]]; then
+  printf 'error: main-frame transaction must privately retain exactly one recovery marker ledger (%s != 1)\n' \
+    "$transaction_recovery_marker_storage_count" >&2
+  status=1
+fi
+
+recovery_marker_mutation_hits="$(
+  rg -n '\brecoveryMarkers\.(markRequired|clear)\s*\(' \
+    "${production_roots[@]}" -g '*.swift' || true
+)"
+while IFS= read -r match; do
+  [[ -z "$match" ]] && continue
+  file="${match%%:*}"
+  if [[ "$file" != "$main_frame_transaction" ]]; then
+    printf 'error: WebContent recovery marker mutation escaped transaction: %s\n' \
+      "$match" >&2
+    status=1
+  fi
+done <<< "$recovery_marker_mutation_hits"
+
+tab_recovery_capability_storage_count="$(
+  rg --count-matches \
+    '^    let webContentRecovery: any TabWebContentRecovery$' \
+    Sumi/Models/Tab/Tab.swift 2>/dev/null || true
+)"
+tab_recovery_capability_storage_count="${tab_recovery_capability_storage_count:-0}"
+if [[ "$tab_recovery_capability_storage_count" -ne 1 ]]; then
+  printf 'error: Tab must retain exactly one protocol-typed WebContent recovery capability (%s != 1)\n' \
+    "$tab_recovery_capability_storage_count" >&2
+  status=1
+fi
+
+production_recovery_begin_hits="$(
+  rg -n '\.webContentRecovery\.beginRecovery\s*\(' \
+    "${production_roots[@]}" -g '*.swift' || true
+)"
+production_recovery_begin_count="$(
+  printf '%s\n' "$production_recovery_begin_hits" | sed '/^$/d' | wc -l | tr -d ' '
+)"
+if [[ "$production_recovery_begin_count" -ne 1 ]] ||
+   [[ "$production_recovery_begin_hits" != \
+     Sumi/Models/Tab/Navigation/SumiTabLifecycleNavigationResponder.swift:* ]]; then
+  printf 'error: WebContent recovery admission must remain in the exact lifecycle callback (%s)\n' \
+    "${production_recovery_begin_hits:-none}" >&2
+  status=1
+fi
 
 rebuild_epoch_construction_hits="$(
   rg -n '\bTabWebViewRebuildEpoch\s*\(' \
@@ -343,6 +424,13 @@ retired_main_frame_load_facade_hits="$(
 fail_matches "retired Tab main-frame load façade reintroduced" \
   "$retired_main_frame_load_facade_hits"
 
+retired_tab_recovery_facade_hits="$(
+  rg -n '^\s*func\s+(beginWebContentProcessRecovery|requiresWebContentProcessRecovery|retainWebContentProcessRecovery|reconcileWebContentProcessRecovery)\b' \
+    Sumi/Models/Tab -g '*.swift' || true
+)"
+fail_matches "retired Tab WebContent recovery façade reintroduced" \
+  "$retired_tab_recovery_facade_hits"
+
 document_script_tab_root_hits="$(
   rg -n '\b(private\s+)?weak\s+var\s+tab\s*:\s*Tab\?' \
     Sumi/UserScripts/SumiDocumentSuspensionSensorUserScript.swift \
@@ -352,7 +440,7 @@ fail_matches "document sensor user script regained Tab root" \
   "$document_script_tab_root_hits"
 
 tab_main_frame_component_storage_hits="$(
-  rg -n '\b(let|var)\s+\w+\s*:\s*(TabMainFrameIntentLedger|TabMainFrameLifecycleMachine|TabCommittedDocumentLedger|TabWebContentRecoveryPlanner)\b' \
+  rg -n '\b(let|var)\s+\w+\s*:\s*(TabMainFrameIntentLedger|TabMainFrameLifecycleMachine|TabCommittedDocumentLedger|TabWebContentRecoveryMarkerLedger)\b' \
     Sumi/Models/Tab/Tab.swift || true
 )"
 fail_matches "Tab directly retains a main-frame state component" "$tab_main_frame_component_storage_hits"

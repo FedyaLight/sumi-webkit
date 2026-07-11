@@ -111,14 +111,14 @@ final class TabMainFrameRuntimeTransactionTests: XCTestCase {
             matching: crashedLease
         ))
 
-        let firstPlan = tab.beginWebContentProcessRecovery(on: webView)
+        let firstPlan = tab.webContentRecovery.beginRecovery(on: webView)
         XCTAssertEqual(firstPlan.scope, .global(targetURL))
-        XCTAssertTrue(tab.requiresWebContentProcessRecovery(on: webView))
+        XCTAssertTrue(tab.webContentRecovery.isRecoveryRequired(on: webView))
 
-        let duplicatePlan = tab.beginWebContentProcessRecovery(on: webView)
+        let duplicatePlan = tab.webContentRecovery.beginRecovery(on: webView)
         XCTAssertEqual(duplicatePlan.scope, .replica(intent))
         XCTAssertNil(duplicatePlan.authorityContinuation)
-        XCTAssertTrue(tab.requiresWebContentProcessRecovery(on: webView))
+        XCTAssertTrue(tab.webContentRecovery.isRecoveryRequired(on: webView))
 
         let successorLease = try XCTUnwrap(
             tab.mainFrameLoads.claimDirectSubmission(on: webView)
@@ -130,7 +130,91 @@ final class TabMainFrameRuntimeTransactionTests: XCTestCase {
             navigationLifetime: successorNavigation,
             matching: successorLease
         ))
-        XCTAssertFalse(tab.requiresWebContentProcessRecovery(on: webView))
+        XCTAssertFalse(tab.webContentRecovery.isRecoveryRequired(on: webView))
+    }
+
+    func testSiblingBindingCannotConsumeCrashedWebViewRecoveryMarker() throws {
+        let targetURL = try XCTUnwrap(
+            URL(string: "https://example.com/sibling-recovery")
+        )
+        let crashedWebView = WKWebView()
+        let siblingWebView = WKWebView()
+        let tab = Tab(url: targetURL, loadsCachedFaviconOnInit: false)
+        _ = tab.beginMainFrameNavigationIntent(to: targetURL)
+        let crashedNavigation = NSObject()
+        let crashedLease = try XCTUnwrap(
+            tab.mainFrameLoads.claimDirectSubmission(on: crashedWebView)
+        )
+        XCTAssertTrue(tab.bindSubmittedMainFrameLoad(
+            on: crashedWebView,
+            navigationID: ObjectIdentifier(crashedNavigation),
+            navigationLifetime: crashedNavigation,
+            matching: crashedLease
+        ))
+        let siblingLease = try XCTUnwrap(
+            tab.mainFrameLoads.claimDirectSubmission(on: siblingWebView)
+        )
+
+        let plan = tab.webContentRecovery.beginRecovery(on: crashedWebView)
+
+        XCTAssertIdentical(plan.authorityContinuation?.webView, siblingWebView)
+        XCTAssertTrue(
+            tab.webContentRecovery.isRecoveryRequired(on: crashedWebView)
+        )
+        let siblingNavigation = NSObject()
+        XCTAssertTrue(tab.bindSubmittedMainFrameLoad(
+            on: siblingWebView,
+            navigationID: ObjectIdentifier(siblingNavigation),
+            navigationLifetime: siblingNavigation,
+            matching: siblingLease
+        ))
+        XCTAssertTrue(
+            tab.webContentRecovery.isRecoveryRequired(on: crashedWebView)
+        )
+        XCTAssertFalse(
+            tab.webContentRecovery.isRecoveryRequired(on: siblingWebView)
+        )
+    }
+
+    func testAcceptedUnboundLifecycleConsumesOnlyItsExactRecoveryMarker() throws {
+        let targetURL = try XCTUnwrap(
+            URL(string: "https://example.com/unbound-recovery")
+        )
+        let recoveredWebView = WKWebView()
+        let unrelatedWebView = WKWebView()
+        let tab = Tab(url: targetURL, loadsCachedFaviconOnInit: false)
+        _ = tab.webContentRecovery.beginRecovery(on: recoveredWebView)
+        _ = tab.webContentRecovery.beginRecovery(on: unrelatedWebView)
+        let navigation = NSObject()
+
+        XCTAssertEqual(tab.beginMainFrameLifecycle(
+            from: recoveredWebView,
+            navigationID: ObjectIdentifier(navigation),
+            navigationLifetime: navigation,
+            targetURL: targetURL,
+            allowsUserInitiatedSupersession: false,
+            continuationKind: nil
+        ), .authority)
+
+        XCTAssertFalse(
+            tab.webContentRecovery.isRecoveryRequired(on: recoveredWebView)
+        )
+        XCTAssertTrue(
+            tab.webContentRecovery.isRecoveryRequired(on: unrelatedWebView)
+        )
+    }
+
+    func testRecoveryMarkerDoesNotRetainReleasedWebView() {
+        let markers = TabWebContentRecoveryMarkerLedger()
+        weak var releasedWebView: WKWebView?
+
+        autoreleasepool {
+            let webView = WKWebView()
+            releasedWebView = webView
+            XCTAssertTrue(markers.markRequired(on: webView))
+        }
+
+        XCTAssertNil(releasedWebView)
     }
 
     func testProcessRecoveryPublishesOneSettledDecisionAfterLifecycleDeparture() throws {
@@ -194,11 +278,25 @@ final class TabMainFrameRuntimeTransactionTests: XCTestCase {
                 isCurrent: true
             )
         }
-        let plan = transaction.beginWebContentProcessRecovery(on: webView)
+        let plan = transaction.beginRecovery(on: webView)
 
         XCTAssertEqual(plan.scope, .global(targetURL))
         XCTAssertEqual(effects.reasons, ["web-content-process-recovery"])
         XCTAssertEqual(roleObservedByEffect, .stale)
+        XCTAssertEqual(
+            transaction.committedDocumentRuntime.suspensionDecision,
+            .awaitingEvidence
+        )
+        effects.reset()
+
+        let duplicatePlan = transaction.beginRecovery(on: webView)
+
+        XCTAssertEqual(
+            duplicatePlan.scope,
+            .replica(transaction.mainFrameLoads.currentIntent)
+        )
+        XCTAssertNil(duplicatePlan.authorityContinuation)
+        XCTAssertTrue(effects.reasons.isEmpty)
         XCTAssertEqual(
             transaction.committedDocumentRuntime.suspensionDecision,
             .awaitingEvidence

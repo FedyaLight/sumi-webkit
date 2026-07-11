@@ -4,9 +4,9 @@ import WebKit
 
 /// Owns physical WebContent-process repair independently from the semantic
 /// main-frame transaction. A crash marker is retained by
-/// `TabWebContentRecoveryPlanner`; this service keeps attempting delivery until
-/// a concrete Navigation binds and consumes that marker, or the exact WebView
-/// leaves its canonical residence.
+/// the Tab's exact recovery capability; this service keeps attempting delivery
+/// until a concrete Navigation binds and consumes that marker, or the exact
+/// WebView leaves its canonical residence.
 @MainActor
 final class WebContentProcessRecoveryService {
     typealias ProtectionResolver = @MainActor (WKWebView) -> Bool
@@ -77,7 +77,7 @@ final class WebContentProcessRecoveryService {
         for tab: Tab
     ) -> Bool {
         guard tab.webViewSession.owns(webView),
-              tab.requiresWebContentProcessRecovery(on: webView) else {
+              tab.webContentRecovery.isRecoveryRequired(on: webView) else {
             return false
         }
         let webViewID = ObjectIdentifier(webView)
@@ -148,7 +148,7 @@ final class WebContentProcessRecoveryService {
               let tab = request.tabReference.resolve(),
               tab.id == request.tabID,
               tab.webViewSession.owns(expectedWebView),
-              tab.requiresWebContentProcessRecovery(on: expectedWebView) else {
+              tab.webContentRecovery.isRecoveryRequired(on: expectedWebView) else {
             finish(webViewID: webViewID, matching: requestID)
             return .failed
         }
@@ -172,7 +172,7 @@ final class WebContentProcessRecoveryService {
             return outcome
         }
         guard tab.webViewSession.owns(expectedWebView),
-              tab.requiresWebContentProcessRecovery(on: expectedWebView) else {
+              tab.webContentRecovery.isRecoveryRequired(on: expectedWebView) else {
             finish(webViewID: webViewID, matching: requestID)
             return outcome
         }

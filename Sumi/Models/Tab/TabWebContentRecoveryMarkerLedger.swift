@@ -1,11 +1,11 @@
 import SumiWebRuntime
 import WebKit
 
-/// Owns exact-WebView crash repair requirements. Navigation authority decides
-/// replica-versus-global scope; this planner only guards the physical recovery
-/// marker against ObjectIdentifier reuse (ABA).
+/// Stores exact-WebView crash-repair markers. Scope and authority settlement
+/// stay in `TabMainFrameRuntimeTransaction`; this ledger only protects marker
+/// identity against `ObjectIdentifier` reuse.
 @MainActor
-final class TabWebContentRecoveryPlanner {
+final class TabWebContentRecoveryMarkerLedger {
     private typealias WeakWebViewReference = WebViewIdentityWitness
 
     private var requirementsByWebViewID: [
@@ -22,7 +22,7 @@ final class TabWebContentRecoveryPlanner {
         return true
     }
 
-    func requiresRecovery(on webView: WKWebView) -> Bool {
+    func isRecoveryRequired(on webView: WKWebView) -> Bool {
         let webViewID = ObjectIdentifier(webView)
         guard let requirement = requirementsByWebViewID[webViewID] else {
             return false
@@ -34,15 +34,7 @@ final class TabWebContentRecoveryPlanner {
         return true
     }
 
-    func finish(on webView: WKWebView) {
-        let webViewID = ObjectIdentifier(webView)
-        guard requirementsByWebViewID[webViewID]?.matches(webView) == true else {
-            return
-        }
-        requirementsByWebViewID.removeValue(forKey: webViewID)
-    }
-
-    func remove(_ webView: WKWebView) {
+    func clear(on webView: WKWebView) {
         let webViewID = ObjectIdentifier(webView)
         guard requirementsByWebViewID[webViewID]?.matches(webView) == true else {
             return

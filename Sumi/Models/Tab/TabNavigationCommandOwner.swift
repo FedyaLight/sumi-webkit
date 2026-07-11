@@ -207,7 +207,8 @@ final class TabNavigationCommandOwner {
         sourceWebView: WKWebView,
         configurationPolicyRebuilder: ConfigurationPolicyRebuilder? = nil
     ) -> TabMainFrameReloadCommandOutcome {
-        guard tab.retainWebContentProcessRecovery(on: sourceWebView) else {
+        guard tab.navigationRuntime.webViewRouting
+            .retainWebContentProcessRecovery(tab.id, sourceWebView) else {
             return .failed
         }
         return refresh(
@@ -409,9 +410,8 @@ final class TabNavigationCommandOwner {
             broadcastOutcome = .scheduled
         }
 
-        let sourceOutcome = tab.reconcileWebContentProcessRecovery(
-            on: sourceWebView
-        )
+        let sourceOutcome = tab.navigationRuntime.webViewRouting
+            .recoverWebContentProcess(tab.id, sourceWebView)
         if sourceOutcome == .scheduled || broadcastOutcome == .scheduled {
             return .scheduled
         }

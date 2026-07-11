@@ -512,7 +512,7 @@ final class SumiTabLifecycleNavigationResponder:
             .handleDestructiveDataCleanupProcessTermination(webView) {
             return
         }
-        let recoveryPlan = tab.beginWebContentProcessRecovery(on: webView)
+        let recoveryPlan = tab.webContentRecovery.beginRecovery(on: webView)
         if let continuation = recoveryPlan.authorityContinuation {
             TabMainFrameLifecycleReducer.replayIfNeeded(
                 continuation,
@@ -523,7 +523,8 @@ final class SumiTabLifecycleNavigationResponder:
 
         switch recoveryPlan.scope {
         case .replica:
-            _ = tab.reconcileWebContentProcessRecovery(on: webView)
+            _ = tab.navigationRuntime.webViewRouting
+                .recoverWebContentProcess(tab.id, webView)
         case .global(let targetURL):
             _ = tab.navigationCommandOwner.recoverWebContentProcess(
                 tab,

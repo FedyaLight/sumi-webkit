@@ -222,7 +222,7 @@ fi
 
 transaction_batch_departure_body="$(
   if [[ -f "$main_frame_transaction_file" ]]; then
-    sed -n '/^    func webViewsDidLeaveRuntime(/,/^    func beginWebContentProcessRecovery(/p' \
+    sed -n '/^    func webViewsDidLeaveRuntime(/,/^    func beginRecovery(/p' \
       "$main_frame_transaction_file"
   fi
 )"

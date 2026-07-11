@@ -61,6 +61,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     public let webViewSession: WebViewSessionHandle
     private let mainFrameRuntimeTransaction: TabMainFrameRuntimeTransaction
     let mainFrameLoads: any TabMainFrameLoads
+    let webContentRecovery: any TabWebContentRecovery
     let webViewRebuildEpoch = TabWebViewRebuildEpoch()
     let committedDocumentRuntime: TabCommittedDocumentRuntime
     let webViewConfigurationOwner = TabWebViewConfigurationOwner()
@@ -334,16 +335,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
             url = rollbackURL
         }
         return result
-    }
-
-    func beginWebContentProcessRecovery(
-        on webView: WKWebView
-    ) -> TabWebContentProcessRecoveryPlan {
-        mainFrameRuntimeTransaction.beginWebContentProcessRecovery(on: webView)
-    }
-
-    func requiresWebContentProcessRecovery(on webView: WKWebView) -> Bool {
-        mainFrameRuntimeTransaction.requiresWebContentProcessRecovery(on: webView)
     }
 
     func beginMainFrameLifecycle(
@@ -732,6 +723,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         )
         self.mainFrameRuntimeTransaction = mainFrameRuntimeTransaction
         self.mainFrameLoads = mainFrameRuntimeTransaction.mainFrameLoads
+        self.webContentRecovery = mainFrameRuntimeTransaction
         self.committedDocumentRuntime =
             mainFrameRuntimeTransaction.committedDocumentRuntime
         self.name = name

@@ -810,11 +810,11 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
             navigationLifetime: navigation
         ))
 
-        let recoveryPlan = tab.beginWebContentProcessRecovery(on: webView)
+        let recoveryPlan = tab.webContentRecovery.beginRecovery(on: webView)
 
         XCTAssertEqual(recoveryPlan.scope, .global(targetURL))
         XCTAssertNil(recoveryPlan.authorityContinuation)
-        XCTAssertTrue(tab.requiresWebContentProcessRecovery(on: webView))
+        XCTAssertTrue(tab.webContentRecovery.isRecoveryRequired(on: webView))
         XCTAssertFalse(tab.shouldAcceptMainFrameLifecycle(
             from: webView,
             navigationID: navigationID,
@@ -865,7 +865,7 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
             navigationID: replicaID
         )
 
-        let recoveryPlan = tab.beginWebContentProcessRecovery(on: crashedReplica)
+        let recoveryPlan = tab.webContentRecovery.beginRecovery(on: crashedReplica)
 
         XCTAssertEqual(recoveryPlan.scope, .replica(intent))
         XCTAssertNil(recoveryPlan.authorityContinuation)
@@ -874,7 +874,7 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
                 == true
         )
         XCTAssertNil(tab.committedDocumentRuntime.lease(for: crashedReplica))
-        XCTAssertTrue(tab.requiresWebContentProcessRecovery(on: crashedReplica))
+        XCTAssertTrue(tab.webContentRecovery.isRecoveryRequired(on: crashedReplica))
         XCTAssertTrue(tab.mainFrameLoads.isCurrent(intent))
     }
 
@@ -886,7 +886,7 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
         SumiTabLifecycleNavigationResponder(tab: tab)
             .webContentProcessDidTerminate(on: webView)
 
-        XCTAssertFalse(tab.requiresWebContentProcessRecovery(on: webView))
+        XCTAssertFalse(tab.webContentRecovery.isRecoveryRequired(on: webView))
         XCTAssertEqual(tab.mainFrameLoads.currentIntent.targetURL, targetURL)
     }
 
