@@ -822,10 +822,12 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
         let targetURL = try XCTUnwrap(
             URL(string: "https://example.com/replacement-commit")
         )
+        let transaction = TabMainFrameRuntimeTransaction(initialURL: targetURL)
         let tab = Tab(
             url: targetURL,
             webViewSessions: repository,
-            loadsCachedFaviconOnInit: false
+            loadsCachedFaviconOnInit: false,
+            mainFrameRuntimeTransaction: transaction
         )
         let primaryWindowID = UUID()
         let cloneWindowID = UUID()
@@ -863,7 +865,7 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
             to: tab
         )
         XCTAssertEqual(
-            tab.recordMainFrameCommitSnapshot(
+            transaction.recordCommit(
                 from: oldPrimary,
                 navigationID: ObjectIdentifier(primaryNavigation),
                 committedURL: targetURL,
@@ -872,7 +874,7 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
             .authority
         )
         XCTAssertEqual(
-            tab.recordMainFrameCommitSnapshot(
+            transaction.recordCommit(
                 from: oldClone,
                 navigationID: ObjectIdentifier(cloneNavigation),
                 committedURL: targetURL,
@@ -881,7 +883,7 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
             .participant
         )
         XCTAssertEqual(
-            tab.recordMainFrameCommitSnapshot(
+            transaction.recordCommit(
                 from: replacement,
                 navigationID: ObjectIdentifier(replacementNavigation),
                 committedURL: targetURL,
@@ -967,7 +969,7 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
         XCTAssertEqual(events.first, "departure")
         XCTAssertEqual(Set(destroyed), Set(departureBatches[0]))
         XCTAssertEqual(
-            tab.mainFrameLifecycleRole(
+            transaction.role(
                 from: oldPrimary,
                 navigationID: ObjectIdentifier(primaryNavigation),
                 isCurrent: true
@@ -975,7 +977,7 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
             .stale
         )
         XCTAssertEqual(
-            tab.mainFrameLifecycleRole(
+            transaction.role(
                 from: oldClone,
                 navigationID: ObjectIdentifier(cloneNavigation),
                 isCurrent: true
@@ -983,7 +985,7 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
             .stale
         )
         XCTAssertEqual(
-            tab.mainFrameLifecycleRole(
+            transaction.role(
                 from: replacement,
                 navigationID: ObjectIdentifier(replacementNavigation),
                 isCurrent: true
@@ -1351,10 +1353,12 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
         let targetURL = try XCTUnwrap(
             URL(string: "https://example.com/replacement-rollback")
         )
+        let transaction = TabMainFrameRuntimeTransaction(initialURL: targetURL)
         let tab = Tab(
             url: targetURL,
             webViewSessions: repository,
-            loadsCachedFaviconOnInit: false
+            loadsCachedFaviconOnInit: false,
+            mainFrameRuntimeTransaction: transaction
         )
         let primaryWindowID = UUID()
         let cloneWindowID = UUID()
@@ -1392,7 +1396,7 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
             to: tab
         )
         XCTAssertEqual(
-            tab.prepareMainFrameAuthorityForCommit(
+            transaction.prepareAuthorityForCommit(
                 from: discardedReplacement,
                 navigationID: ObjectIdentifier(replacementNavigation)
             ),
@@ -1499,7 +1503,7 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
             oldClone
         )
         XCTAssertEqual(
-            tab.mainFrameLifecycleRole(
+            transaction.role(
                 from: discardedReplacement,
                 navigationID: ObjectIdentifier(replacementNavigation),
                 isCurrent: true
@@ -1507,7 +1511,7 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
             .stale
         )
         XCTAssertEqual(
-            tab.mainFrameLifecycleRole(
+            transaction.role(
                 from: oldPrimary,
                 navigationID: ObjectIdentifier(primaryNavigation),
                 isCurrent: true
@@ -1515,7 +1519,7 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
             .authority
         )
         XCTAssertEqual(
-            tab.mainFrameLifecycleRole(
+            transaction.role(
                 from: oldClone,
                 navigationID: ObjectIdentifier(cloneNavigation),
                 isCurrent: true
@@ -1560,7 +1564,7 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
             tab.mainFrameLoads.claimDirectSubmission(on: webView)
         )
         let navigation = NSObject()
-        XCTAssertTrue(tab.bindSubmittedMainFrameLoad(
+        XCTAssertTrue(tab.mainFrameSubmission.bindSubmittedLoad(
             on: webView,
             navigationID: ObjectIdentifier(navigation),
             navigationLifetime: navigation,

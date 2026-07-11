@@ -79,7 +79,7 @@ enum SumiWebViewNavigator {
         }
         guard let tab else { return }
         precondition(
-            tab.bindSubmittedMainFrameLoad(
+            tab.mainFrameSubmission.bindSubmittedLoad(
                 on: webView,
                 navigationID: expectedNavigation.stableIdentifier,
                 navigationLifetime: expectedNavigation.identityLifetime,

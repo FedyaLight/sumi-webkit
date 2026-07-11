@@ -290,7 +290,7 @@ final class DeferredProtectedCommandTests: XCTestCase {
         ))
 
         let staleNavigation = NSObject()
-        SumiTabLifecycleNavigationResponder(tab: tab).navigationDidStart(
+        tab.makeMainFrameLifecycleResponder().navigationDidStart(
             SumiNavigationContext(
                 navigationID: ObjectIdentifier(staleNavigation),
                 navigationLifetime: staleNavigation,

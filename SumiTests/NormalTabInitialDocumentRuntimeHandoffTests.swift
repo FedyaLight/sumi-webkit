@@ -9,24 +9,27 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
     func testDuplicateReadinessReservationCannotReplaceActiveNavigation() throws {
         let targetURL = try XCTUnwrap(URL(string: "https://example.com/active"))
         let webView = WKWebView()
-        let tab = Tab(url: targetURL, loadsCachedFaviconOnInit: false)
+        let (tab, mainFrameRuntimeTransaction) = makeTab(
+            url: targetURL
+        )
         let intent = tab.beginMainFrameNavigationIntent(to: targetURL)
         let navigation = NSObject()
         let navigationID = ObjectIdentifier(navigation)
 
         XCTAssertNotNil(tab.mainFrameLoads.claimDirectSubmission(on: webView))
-        XCTAssertTrue(tab.bindSubmittedMainFrameLoad(
+        XCTAssertTrue(tab.mainFrameSubmission.bindSubmittedLoad(
             on: webView,
             navigationID: navigationID,
-            navigationLifetime: navigation
+            navigationLifetime: navigation,
+            matching: nil
         ))
 
         XCTAssertNil(tab.mainFrameLoads.beginPreparedLoad(on: webView, intent: intent))
-        XCTAssertTrue(tab.shouldAcceptMainFrameLifecycle(
+        XCTAssertTrue(mainFrameRuntimeTransaction.role(
             from: webView,
             navigationID: navigationID,
             isCurrent: true
-        ))
+        ).isAuthority)
     }
 
     func testAuthorityMovesToActiveSiblingWhenAuthoritativeWebViewLeaves() throws {
@@ -35,7 +38,9 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
         let siblingCommitURL = try XCTUnwrap(URL(string: "https://example.com/sibling"))
         let authoritativeWebView = WKWebView()
         let siblingWebView = WKWebView()
-        let tab = Tab(url: initialURL, loadsCachedFaviconOnInit: false)
+        let (tab, mainFrameRuntimeTransaction) = makeTab(
+            url: initialURL
+        )
         _ = tab.beginMainFrameNavigationIntent(to: initialURL)
         let firstNavigation = NSObject()
         let siblingNavigation = NSObject()
@@ -43,16 +48,18 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
         let siblingNavigationID = ObjectIdentifier(siblingNavigation)
 
         XCTAssertNotNil(tab.mainFrameLoads.claimDirectSubmission(on: authoritativeWebView))
-        XCTAssertTrue(tab.bindSubmittedMainFrameLoad(
+        XCTAssertTrue(tab.mainFrameSubmission.bindSubmittedLoad(
             on: authoritativeWebView,
             navigationID: firstNavigationID,
-            navigationLifetime: firstNavigation
+            navigationLifetime: firstNavigation,
+            matching: nil
         ))
         XCTAssertNotNil(tab.mainFrameLoads.claimDirectSubmission(on: siblingWebView))
-        XCTAssertTrue(tab.bindSubmittedMainFrameLoad(
+        XCTAssertTrue(tab.mainFrameSubmission.bindSubmittedLoad(
             on: siblingWebView,
             navigationID: siblingNavigationID,
-            navigationLifetime: siblingNavigation
+            navigationLifetime: siblingNavigation,
+            matching: nil
         ))
         tab.applyAcceptedMainFrameLifecycleURL(
             firstRedirectURL,
@@ -68,11 +75,11 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
         XCTAssertEqual(tab.url, firstRedirectURL)
 
         tab.webViewDidLeaveNavigationRuntime(authoritativeWebView)
-        XCTAssertTrue(tab.shouldAcceptMainFrameLifecycle(
+        XCTAssertTrue(mainFrameRuntimeTransaction.role(
             from: siblingWebView,
             navigationID: siblingNavigationID,
             isCurrent: true
-        ))
+        ).isAuthority)
         tab.applyAcceptedMainFrameLifecycleURL(
             siblingCommitURL,
             from: siblingWebView,
@@ -85,7 +92,9 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
         let targetURL = try XCTUnwrap(URL(string: "https://example.com/loading"))
         let firstWebView = StopTrackingWebView(frame: .zero)
         let secondWebView = StopTrackingWebView(frame: .zero)
-        let tab = Tab(url: targetURL, loadsCachedFaviconOnInit: false)
+        let (tab, mainFrameRuntimeTransaction) = makeTab(
+            url: targetURL
+        )
         _ = tab.beginMainFrameNavigationIntent(to: targetURL)
         tab.beginLoadingPresentationIfNeeded()
         let firstNavigation = NSObject()
@@ -93,16 +102,18 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
         let firstID = ObjectIdentifier(firstNavigation)
         let secondID = ObjectIdentifier(secondNavigation)
         XCTAssertNotNil(tab.mainFrameLoads.claimDirectSubmission(on: firstWebView))
-        XCTAssertTrue(tab.bindSubmittedMainFrameLoad(
+        XCTAssertTrue(tab.mainFrameSubmission.bindSubmittedLoad(
             on: firstWebView,
             navigationID: firstID,
-            navigationLifetime: firstNavigation
+            navigationLifetime: firstNavigation,
+            matching: nil
         ))
         XCTAssertNotNil(tab.mainFrameLoads.claimDirectSubmission(on: secondWebView))
-        XCTAssertTrue(tab.bindSubmittedMainFrameLoad(
+        XCTAssertTrue(tab.mainFrameSubmission.bindSubmittedLoad(
             on: secondWebView,
             navigationID: secondID,
-            navigationLifetime: secondNavigation
+            navigationLifetime: secondNavigation,
+            matching: nil
         ))
 
         tab.stopLoading(on: secondWebView)
@@ -110,16 +121,16 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
         XCTAssertEqual(firstWebView.stopLoadingCount, 1)
         XCTAssertEqual(secondWebView.stopLoadingCount, 1)
         XCTAssertFalse(tab.loadingState.isLoading)
-        XCTAssertFalse(tab.shouldAcceptMainFrameLifecycle(
+        XCTAssertFalse(mainFrameRuntimeTransaction.role(
             from: firstWebView,
             navigationID: firstID,
             isCurrent: true
-        ))
-        XCTAssertFalse(tab.shouldAcceptMainFrameLifecycle(
+        ).isAuthority)
+        XCTAssertFalse(mainFrameRuntimeTransaction.role(
             from: secondWebView,
             navigationID: secondID,
             isCurrent: true
-        ))
+        ).isAuthority)
     }
 
     func testRedirectCanSupersedeActiveSiblingWithProtectedDeferredTarget() throws {
@@ -127,7 +138,9 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
         let redirectURL = try XCTUnwrap(URL(string: "https://example.com/redirect"))
         let authoritativeWebView = WKWebView()
         let protectedSibling = WKWebView()
-        let tab = Tab(url: initialURL, loadsCachedFaviconOnInit: false)
+        let (tab, mainFrameRuntimeTransaction) = makeTab(
+            url: initialURL
+        )
         _ = tab.beginMainFrameNavigationIntent(to: initialURL)
         let authorityNavigation = NSObject()
         let siblingNavigation = NSObject()
@@ -135,16 +148,18 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
         let siblingID = ObjectIdentifier(siblingNavigation)
 
         XCTAssertNotNil(tab.mainFrameLoads.claimDirectSubmission(on: authoritativeWebView))
-        XCTAssertTrue(tab.bindSubmittedMainFrameLoad(
+        XCTAssertTrue(tab.mainFrameSubmission.bindSubmittedLoad(
             on: authoritativeWebView,
             navigationID: authorityID,
-            navigationLifetime: authorityNavigation
+            navigationLifetime: authorityNavigation,
+            matching: nil
         ))
         XCTAssertNotNil(tab.mainFrameLoads.claimDirectSubmission(on: protectedSibling))
-        XCTAssertTrue(tab.bindSubmittedMainFrameLoad(
+        XCTAssertTrue(tab.mainFrameSubmission.bindSubmittedLoad(
             on: protectedSibling,
             navigationID: siblingID,
-            navigationLifetime: siblingNavigation
+            navigationLifetime: siblingNavigation,
+            matching: nil
         ))
         tab.applyAcceptedMainFrameLifecycleURL(
             redirectURL,
@@ -159,11 +174,11 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
             on: protectedSibling,
             intent: redirectedIntent
         ))
-        XCTAssertFalse(tab.shouldAcceptMainFrameLifecycle(
+        XCTAssertFalse(mainFrameRuntimeTransaction.role(
             from: protectedSibling,
             navigationID: siblingID,
             isCurrent: true
-        ))
+        ).isAuthority)
         XCTAssertEqual(
             tab.mainFrameLoads.claimDeferredSubmission(
                 on: protectedSibling,
@@ -189,10 +204,11 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
             ),
             .claimed
         )
-        tab.restoreDeferredMainFrameLoadAfterFailedSubmission(
+        tab.mainFrameSubmission.restoreDeferredLoadAfterFailedSubmission(
             on: webView,
             revision: intent.revision,
-            targetURL: targetURL
+            targetURL: targetURL,
+            matching: nil
         )
         XCTAssertEqual(
             tab.mainFrameLoads.claimDeferredSubmission(
@@ -208,7 +224,9 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
         let targetURL = try XCTUnwrap(URL(string: "https://example.com/protected"))
         let failedDeferredWebView = WKWebView()
         let activeSibling = WKWebView()
-        let tab = Tab(url: targetURL, loadsCachedFaviconOnInit: false)
+        let (tab, mainFrameRuntimeTransaction) = makeTab(
+            url: targetURL
+        )
         let intent = tab.beginMainFrameNavigationIntent(to: targetURL)
         let siblingNavigation = NSObject()
         let siblingNavigationID = ObjectIdentifier(siblingNavigation)
@@ -222,56 +240,63 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
             revision: intent.revision,
             targetURL: targetURL
         ), .claimed)
-        tab.restoreDeferredMainFrameLoadAfterFailedSubmission(
+        tab.mainFrameSubmission.restoreDeferredLoadAfterFailedSubmission(
             on: failedDeferredWebView,
             revision: intent.revision,
-            targetURL: targetURL
+            targetURL: targetURL,
+            matching: nil
         )
 
         XCTAssertNotNil(tab.mainFrameLoads.claimDirectSubmission(on: activeSibling))
-        XCTAssertTrue(tab.bindSubmittedMainFrameLoad(
+        XCTAssertTrue(tab.mainFrameSubmission.bindSubmittedLoad(
             on: activeSibling,
             navigationID: siblingNavigationID,
-            navigationLifetime: siblingNavigation
+            navigationLifetime: siblingNavigation,
+            matching: nil
         ))
-        XCTAssertTrue(tab.shouldAcceptMainFrameLifecycle(
+        XCTAssertTrue(mainFrameRuntimeTransaction.role(
             from: activeSibling,
             navigationID: siblingNavigationID,
             isCurrent: true
-        ))
+        ).isAuthority)
     }
 
     func testFailedAuthoritySubmissionPromotesAlreadyActiveSibling() throws {
         let targetURL = try XCTUnwrap(URL(string: "https://example.com/shared"))
         let failedWebView = WKWebView()
         let activeSibling = WKWebView()
-        let tab = Tab(url: targetURL, loadsCachedFaviconOnInit: false)
+        let (tab, mainFrameRuntimeTransaction) = makeTab(
+            url: targetURL
+        )
         _ = tab.beginMainFrameNavigationIntent(to: targetURL)
         let siblingNavigation = NSObject()
         let siblingNavigationID = ObjectIdentifier(siblingNavigation)
 
         XCTAssertNotNil(tab.mainFrameLoads.claimDirectSubmission(on: failedWebView))
         XCTAssertNotNil(tab.mainFrameLoads.claimDirectSubmission(on: activeSibling))
-        XCTAssertTrue(tab.bindSubmittedMainFrameLoad(
+        XCTAssertTrue(tab.mainFrameSubmission.bindSubmittedLoad(
             on: activeSibling,
             navigationID: siblingNavigationID,
-            navigationLifetime: siblingNavigation
+            navigationLifetime: siblingNavigation,
+            matching: nil
         ))
 
-        tab.failSubmittedMainFrameLoad(on: failedWebView)
+        tab.mainFrameSubmission.failSubmittedLoad(on: failedWebView, matching: nil)
 
-        XCTAssertTrue(tab.shouldAcceptMainFrameLifecycle(
+        XCTAssertTrue(mainFrameRuntimeTransaction.role(
             from: activeSibling,
             navigationID: siblingNavigationID,
             isCurrent: true
-        ))
+        ).isAuthority)
     }
 
     func testCompletedIdentityIsRetiredAndNextLifecycleGetsNewRevision() throws {
         let firstURL = try XCTUnwrap(URL(string: "https://example.com/first"))
         let secondURL = try XCTUnwrap(URL(string: "https://example.com/second"))
         let webView = WKWebView()
-        let tab = Tab(url: firstURL, loadsCachedFaviconOnInit: false)
+        let (tab, mainFrameRuntimeTransaction) = makeTab(
+            url: firstURL
+        )
         let firstNavigation = NSObject()
         let secondNavigation = NSObject()
         let firstID = ObjectIdentifier(firstNavigation)
@@ -286,12 +311,12 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
             continuationKind: nil
         ), .authority)
         let firstIntent = try XCTUnwrap(tab.mainFrameLoads.currentIntent(matching: firstURL))
-        tab.finishMainFrameLifecycle(from: webView, navigationID: firstID)
-        XCTAssertFalse(tab.shouldAcceptMainFrameLifecycle(
+        mainFrameRuntimeTransaction.finish(from: webView, navigationID: firstID)
+        XCTAssertFalse(mainFrameRuntimeTransaction.role(
             from: webView,
             navigationID: firstID,
             isCurrent: true
-        ))
+        ).isAuthority)
 
         XCTAssertEqual(tab.beginMainFrameLifecycle(
             from: webView,
@@ -310,7 +335,9 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
         let hiddenTargetURL = try XCTUnwrap(URL(string: "https://hidden.example/next"))
         let authorityWebView = WKWebView()
         let hiddenWebView = WKWebView()
-        let tab = Tab(url: settledURL, loadsCachedFaviconOnInit: false)
+        let (tab, mainFrameRuntimeTransaction) = makeTab(
+            url: settledURL
+        )
         _ = tab.beginMainFrameNavigationIntent(to: settledURL)
         let authorityNavigation = NSObject()
         let hiddenNavigation = NSObject()
@@ -319,34 +346,36 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
         let hiddenID = ObjectIdentifier(hiddenNavigation)
 
         XCTAssertNotNil(tab.mainFrameLoads.claimDirectSubmission(on: authorityWebView))
-        XCTAssertTrue(tab.bindSubmittedMainFrameLoad(
+        XCTAssertTrue(tab.mainFrameSubmission.bindSubmittedLoad(
             on: authorityWebView,
             navigationID: authorityID,
-            navigationLifetime: authorityNavigation
+            navigationLifetime: authorityNavigation,
+            matching: nil
         ))
         XCTAssertNotNil(tab.mainFrameLoads.claimDirectSubmission(on: hiddenWebView))
-        XCTAssertTrue(tab.bindSubmittedMainFrameLoad(
+        XCTAssertTrue(tab.mainFrameSubmission.bindSubmittedLoad(
             on: hiddenWebView,
             navigationID: hiddenID,
-            navigationLifetime: hiddenNavigation
+            navigationLifetime: hiddenNavigation,
+            matching: nil
         ))
-        XCTAssertTrue(tab.recordMainFrameCommitSnapshot(
+        XCTAssertTrue(mainFrameRuntimeTransaction.recordCommit(
             from: authorityWebView,
             navigationID: authorityID,
             committedURL: settledURL,
             isPDF: false
         ).shouldPublishSharedEffects)
-        XCTAssertEqual(tab.recordMainFrameCommitSnapshot(
+        XCTAssertEqual(mainFrameRuntimeTransaction.recordCommit(
             from: hiddenWebView,
             navigationID: hiddenID,
             committedURL: settledURL,
             isPDF: false
         ).role, .participant)
-        tab.finishMainFrameLifecycle(
+        mainFrameRuntimeTransaction.finish(
             from: authorityWebView,
             navigationID: authorityID
         )
-        tab.finishMainFrameLifecycle(
+        mainFrameRuntimeTransaction.finish(
             from: hiddenWebView,
             navigationID: hiddenID
         )
@@ -381,7 +410,9 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
         let settledURL = try XCTUnwrap(URL(string: "https://example.com/settled"))
         let cancelledURL = try XCTUnwrap(URL(string: "https://example.com/cancelled"))
         let webView = WKWebView()
-        let tab = Tab(url: settledURL, loadsCachedFaviconOnInit: false)
+        let (tab, mainFrameRuntimeTransaction) = makeTab(
+            url: settledURL
+        )
         _ = tab.beginMainFrameNavigationIntent(to: cancelledURL)
         tab.cancelMainFrameNavigationIntent()
         let lateNavigation = NSObject()
@@ -394,11 +425,11 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
             allowsUserInitiatedSupersession: false,
             continuationKind: nil
         ), .stale)
-        XCTAssertFalse(tab.shouldAcceptMainFrameLifecycle(
+        XCTAssertFalse(mainFrameRuntimeTransaction.role(
             from: webView,
             navigationID: ObjectIdentifier(lateNavigation),
             isCurrent: true
-        ))
+        ).isAuthority)
     }
 
     func testCancelledUserNavigationRejectsLateDidStartForSameLifetime() throws {
@@ -435,7 +466,9 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
         let committedURL = try XCTUnwrap(URL(string: "https://example.com/final"))
         let authorityWebView = WKWebView()
         let siblingWebView = WKWebView()
-        let tab = Tab(url: requestedURL, loadsCachedFaviconOnInit: false)
+        let (tab, mainFrameRuntimeTransaction) = makeTab(
+            url: requestedURL
+        )
         _ = tab.beginMainFrameNavigationIntent(to: requestedURL)
         let authorityNavigation = NSObject()
         let siblingNavigation = NSObject()
@@ -443,30 +476,32 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
         let siblingID = ObjectIdentifier(siblingNavigation)
 
         XCTAssertNotNil(tab.mainFrameLoads.claimDirectSubmission(on: authorityWebView))
-        XCTAssertTrue(tab.bindSubmittedMainFrameLoad(
+        XCTAssertTrue(tab.mainFrameSubmission.bindSubmittedLoad(
             on: authorityWebView,
             navigationID: authorityID,
-            navigationLifetime: authorityNavigation
+            navigationLifetime: authorityNavigation,
+            matching: nil
         ))
         XCTAssertNotNil(tab.mainFrameLoads.claimDirectSubmission(on: siblingWebView))
-        XCTAssertTrue(tab.bindSubmittedMainFrameLoad(
+        XCTAssertTrue(tab.mainFrameSubmission.bindSubmittedLoad(
             on: siblingWebView,
             navigationID: siblingID,
-            navigationLifetime: siblingNavigation
+            navigationLifetime: siblingNavigation,
+            matching: nil
         ))
-        XCTAssertTrue(tab.recordMainFrameCommitSnapshot(
+        XCTAssertTrue(mainFrameRuntimeTransaction.recordCommit(
             from: authorityWebView,
             navigationID: authorityID,
             committedURL: committedURL,
             isPDF: false
         ).shouldPublishSharedEffects)
-        XCTAssertEqual(tab.recordMainFrameCommitSnapshot(
+        XCTAssertEqual(mainFrameRuntimeTransaction.recordCommit(
             from: siblingWebView,
             navigationID: siblingID,
             committedURL: committedURL,
             isPDF: false
         ).role, .participant)
-        tab.finishMainFrameLifecycle(
+        mainFrameRuntimeTransaction.finish(
             from: siblingWebView,
             navigationID: siblingID
         )
@@ -485,7 +520,9 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
         let firstWebView = WKWebView()
         let promotedWebView = WKWebView()
         let laterWebView = WKWebView()
-        let tab = Tab(url: firstURL, loadsCachedFaviconOnInit: false)
+        let (tab, mainFrameRuntimeTransaction) = makeTab(
+            url: firstURL
+        )
         _ = tab.beginMainFrameNavigationIntent(to: firstURL)
         let firstNavigation = NSObject()
         let promotedNavigation = NSObject()
@@ -495,31 +532,33 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
         let laterID = ObjectIdentifier(laterNavigation)
 
         XCTAssertNotNil(tab.mainFrameLoads.claimDirectSubmission(on: firstWebView))
-        XCTAssertTrue(tab.bindSubmittedMainFrameLoad(
+        XCTAssertTrue(tab.mainFrameSubmission.bindSubmittedLoad(
             on: firstWebView,
             navigationID: firstID,
-            navigationLifetime: firstNavigation
+            navigationLifetime: firstNavigation,
+            matching: nil
         ))
         XCTAssertNotNil(tab.mainFrameLoads.claimDirectSubmission(on: promotedWebView))
-        XCTAssertTrue(tab.bindSubmittedMainFrameLoad(
+        XCTAssertTrue(tab.mainFrameSubmission.bindSubmittedLoad(
             on: promotedWebView,
             navigationID: promotedID,
-            navigationLifetime: promotedNavigation
+            navigationLifetime: promotedNavigation,
+            matching: nil
         ))
-        XCTAssertTrue(tab.recordMainFrameCommitSnapshot(
+        XCTAssertTrue(mainFrameRuntimeTransaction.recordCommit(
             from: firstWebView,
             navigationID: firstID,
             committedURL: firstURL,
             isPDF: false
         ).shouldPublishSharedEffects)
-        XCTAssertEqual(tab.recordMainFrameCommitSnapshot(
+        XCTAssertEqual(mainFrameRuntimeTransaction.recordCommit(
             from: promotedWebView,
             navigationID: promotedID,
             committedURL: promotedURL,
             isPDF: false
         ).role, .participant)
-        tab.finishMainFrameLifecycle(from: firstWebView, navigationID: firstID)
-        tab.finishMainFrameLifecycle(
+        mainFrameRuntimeTransaction.finish(from: firstWebView, navigationID: firstID)
+        mainFrameRuntimeTransaction.finish(
             from: promotedWebView,
             navigationID: promotedID
         )
@@ -530,18 +569,19 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
         XCTAssertEqual(tab.url, promotedURL)
 
         XCTAssertNotNil(tab.mainFrameLoads.claimDirectSubmission(on: laterWebView))
-        XCTAssertTrue(tab.bindSubmittedMainFrameLoad(
+        XCTAssertTrue(tab.mainFrameSubmission.bindSubmittedLoad(
             on: laterWebView,
             navigationID: laterID,
-            navigationLifetime: laterNavigation
+            navigationLifetime: laterNavigation,
+            matching: nil
         ))
-        XCTAssertEqual(tab.recordMainFrameCommitSnapshot(
+        XCTAssertEqual(mainFrameRuntimeTransaction.recordCommit(
             from: laterWebView,
             navigationID: laterID,
             committedURL: laterURL,
             isPDF: false
         ).role, .participant)
-        tab.finishMainFrameLifecycle(from: laterWebView, navigationID: laterID)
+        mainFrameRuntimeTransaction.finish(from: laterWebView, navigationID: laterID)
 
         let secondDeparture = tab.webViewDidLeaveNavigationRuntime(promotedWebView)
         XCTAssertEqual(secondDeparture.continuation?.targetURL, laterURL)
@@ -555,7 +595,9 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
         let originalWebView = WKWebView()
         let firstPromotedReplica = WKWebView()
         let secondPromotedReplica = WKWebView()
-        let tab = Tab(url: originalURL, loadsCachedFaviconOnInit: false)
+        let (tab, mainFrameRuntimeTransaction) = makeTab(
+            url: originalURL
+        )
         _ = tab.beginMainFrameNavigationIntent(to: originalURL)
 
         let originalNavigation = NSObject()
@@ -568,21 +610,22 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
         ]
         for (webView, navigation) in participants {
             XCTAssertNotNil(tab.mainFrameLoads.claimDirectSubmission(on: webView))
-            XCTAssertTrue(tab.bindSubmittedMainFrameLoad(
+            XCTAssertTrue(tab.mainFrameSubmission.bindSubmittedLoad(
                 on: webView,
                 navigationID: ObjectIdentifier(navigation),
-                navigationLifetime: navigation
+                navigationLifetime: navigation,
+                matching: nil
             ))
         }
 
-        XCTAssertTrue(tab.recordMainFrameCommitSnapshot(
+        XCTAssertTrue(mainFrameRuntimeTransaction.recordCommit(
             from: originalWebView,
             navigationID: ObjectIdentifier(originalNavigation),
             committedURL: originalURL,
             isPDF: false
         ).shouldPublishSharedEffects)
         for (webView, navigation) in participants.dropFirst() {
-            XCTAssertEqual(tab.recordMainFrameCommitSnapshot(
+            XCTAssertEqual(mainFrameRuntimeTransaction.recordCommit(
                 from: webView,
                 navigationID: ObjectIdentifier(navigation),
                 committedURL: promotedURL,
@@ -590,7 +633,7 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
             ).role, .participant)
         }
         for (webView, navigation) in participants {
-            tab.finishMainFrameLifecycle(
+            mainFrameRuntimeTransaction.finish(
                 from: webView,
                 navigationID: ObjectIdentifier(navigation)
             )
@@ -636,20 +679,23 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
         let cancelledURL = try XCTUnwrap(URL(string: "https://example.com/cancelled"))
         let webView = SumiNavigationURLReportingWebView(frame: .zero)
         webView.reportedURL = survivingURL
-        let tab = Tab(url: survivingURL, loadsCachedFaviconOnInit: false)
+        let (tab, mainFrameRuntimeTransaction) = makeTab(
+            url: survivingURL
+        )
         _ = tab.beginMainFrameNavigationIntent(to: cancelledURL)
         tab.url = cancelledURL
         tab.beginLoadingPresentationIfNeeded()
         let navigation = NSObject()
         let navigationID = ObjectIdentifier(navigation)
         XCTAssertNotNil(tab.mainFrameLoads.claimDirectSubmission(on: webView))
-        XCTAssertTrue(tab.bindSubmittedMainFrameLoad(
+        XCTAssertTrue(tab.mainFrameSubmission.bindSubmittedLoad(
             on: webView,
             navigationID: navigationID,
-            navigationLifetime: navigation
+            navigationLifetime: navigation,
+            matching: nil
         ))
 
-        SumiTabLifecycleNavigationResponder(tab: tab).mainFrameNavigationDidTerminate(
+        tab.makeMainFrameLifecycleResponder().mainFrameNavigationDidTerminate(
             SumiMainFrameNavigationTermination(
                 navigationID: navigationID,
                 navigationLifetime: navigation,
@@ -661,11 +707,11 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
         XCTAssertEqual(tab.url, survivingURL)
         XCTAssertNotNil(tab.mainFrameLoads.currentIntent(matching: survivingURL))
         XCTAssertFalse(tab.loadingState.isLoading)
-        XCTAssertFalse(tab.shouldAcceptMainFrameLifecycle(
+        XCTAssertFalse(mainFrameRuntimeTransaction.role(
             from: webView,
             navigationID: navigationID,
             isCurrent: true
-        ))
+        ).isAuthority)
     }
 
     func testUnboundTerminalIdentityCannotAbortSubmittedAuthority() throws {
@@ -680,7 +726,7 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
         XCTAssertNotNil(tab.mainFrameLoads.claimDirectSubmission(on: webView))
         let navigation = NSObject()
 
-        SumiTabLifecycleNavigationResponder(tab: tab).mainFrameNavigationDidTerminate(
+        tab.makeMainFrameLifecycleResponder().mainFrameNavigationDidTerminate(
             SumiMainFrameNavigationTermination(
                 navigationID: ObjectIdentifier(navigation),
                 navigationLifetime: navigation,
@@ -697,19 +743,22 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
     func testTerminalIdentityCannotAbortWithoutExactNavigationLifetime() throws {
         let targetURL = try XCTUnwrap(URL(string: "https://example.com/target"))
         let webView = SumiNavigationURLReportingWebView(frame: .zero)
-        let tab = Tab(url: targetURL, loadsCachedFaviconOnInit: false)
+        let (tab, mainFrameRuntimeTransaction) = makeTab(
+            url: targetURL
+        )
         _ = tab.beginMainFrameNavigationIntent(to: targetURL)
         let navigation = NSObject()
         let navigationID = ObjectIdentifier(navigation)
         XCTAssertNotNil(tab.mainFrameLoads.claimDirectSubmission(on: webView))
-        XCTAssertTrue(tab.bindSubmittedMainFrameLoad(
+        XCTAssertTrue(tab.mainFrameSubmission.bindSubmittedLoad(
             on: webView,
             navigationID: navigationID,
-            navigationLifetime: navigation
+            navigationLifetime: navigation,
+            matching: nil
         ))
 
         let wrongLifetime = NSObject()
-        SumiTabLifecycleNavigationResponder(tab: tab).mainFrameNavigationDidTerminate(
+        tab.makeMainFrameLifecycleResponder().mainFrameNavigationDidTerminate(
             SumiMainFrameNavigationTermination(
                 navigationID: navigationID,
                 navigationLifetime: wrongLifetime,
@@ -718,12 +767,12 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
             )
         )
 
-        XCTAssertTrue(tab.shouldAcceptMainFrameLifecycle(
+        XCTAssertTrue(mainFrameRuntimeTransaction.role(
             from: webView,
             navigationID: navigationID,
             isCurrent: true
-        ))
-        SumiTabLifecycleNavigationResponder(tab: tab).mainFrameNavigationDidTerminate(
+        ).isAuthority)
+        tab.makeMainFrameLifecycleResponder().mainFrameNavigationDidTerminate(
             SumiMainFrameNavigationTermination(
                 navigationID: navigationID,
                 navigationLifetime: navigation,
@@ -731,11 +780,11 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
                 reason: .actionCancelled
             )
         )
-        XCTAssertFalse(tab.shouldAcceptMainFrameLifecycle(
+        XCTAssertFalse(mainFrameRuntimeTransaction.role(
             from: webView,
             navigationID: navigationID,
             isCurrent: true
-        ))
+        ).isAuthority)
     }
 
     func testFailedAuthorityPromotesActiveSiblingWithoutPublishingSharedFailure() throws {
@@ -745,7 +794,9 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
         let activeSibling = SumiNavigationURLReportingWebView(frame: .zero)
         failedWebView.reportedURL = targetURL
         activeSibling.reportedURL = siblingCommitURL
-        let tab = Tab(url: targetURL, loadsCachedFaviconOnInit: false)
+        let (tab, mainFrameRuntimeTransaction) = makeTab(
+            url: targetURL
+        )
         _ = tab.beginMainFrameNavigationIntent(to: targetURL)
         tab.beginLoadingPresentationIfNeeded()
         let failedNavigation = NSObject()
@@ -753,19 +804,21 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
         let failedID = ObjectIdentifier(failedNavigation)
         let siblingID = ObjectIdentifier(siblingNavigation)
         XCTAssertNotNil(tab.mainFrameLoads.claimDirectSubmission(on: failedWebView))
-        XCTAssertTrue(tab.bindSubmittedMainFrameLoad(
+        XCTAssertTrue(tab.mainFrameSubmission.bindSubmittedLoad(
             on: failedWebView,
             navigationID: failedID,
-            navigationLifetime: failedNavigation
+            navigationLifetime: failedNavigation,
+            matching: nil
         ))
         XCTAssertNotNil(tab.mainFrameLoads.claimDirectSubmission(on: activeSibling))
-        XCTAssertTrue(tab.bindSubmittedMainFrameLoad(
+        XCTAssertTrue(tab.mainFrameSubmission.bindSubmittedLoad(
             on: activeSibling,
             navigationID: siblingID,
-            navigationLifetime: siblingNavigation
+            navigationLifetime: siblingNavigation,
+            matching: nil
         ))
 
-        SumiTabLifecycleNavigationResponder(tab: tab).navigationDidFail(
+        tab.makeMainFrameLifecycleResponder().navigationDidFail(
             WKError(.unknown),
             context: SumiNavigationContext(
                 navigationID: failedID,
@@ -778,11 +831,11 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
             )
         )
 
-        XCTAssertTrue(tab.shouldAcceptMainFrameLifecycle(
+        XCTAssertTrue(mainFrameRuntimeTransaction.role(
             from: activeSibling,
             navigationID: siblingID,
             isCurrent: true
-        ))
+        ).isAuthority)
         XCTAssertFalse({
             if case .didFail = tab.loadingState { return true }
             return false
@@ -798,16 +851,19 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
     func testProcessTerminationWithoutSurvivorRequiresGlobalRecovery() throws {
         let targetURL = try XCTUnwrap(URL(string: "https://example.com/process"))
         let webView = WKWebView()
-        let tab = Tab(url: targetURL, loadsCachedFaviconOnInit: false)
+        let (tab, mainFrameRuntimeTransaction) = makeTab(
+            url: targetURL
+        )
         _ = tab.beginMainFrameNavigationIntent(to: targetURL)
         tab.beginLoadingPresentationIfNeeded()
         let navigation = NSObject()
         let navigationID = ObjectIdentifier(navigation)
         XCTAssertNotNil(tab.mainFrameLoads.claimDirectSubmission(on: webView))
-        XCTAssertTrue(tab.bindSubmittedMainFrameLoad(
+        XCTAssertTrue(tab.mainFrameSubmission.bindSubmittedLoad(
             on: webView,
             navigationID: navigationID,
-            navigationLifetime: navigation
+            navigationLifetime: navigation,
+            matching: nil
         ))
 
         let recoveryPlan = tab.webContentRecovery.beginRecovery(on: webView)
@@ -815,52 +871,56 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
         XCTAssertEqual(recoveryPlan.scope, .global(targetURL))
         XCTAssertNil(recoveryPlan.authorityContinuation)
         XCTAssertTrue(tab.webContentRecovery.isRecoveryRequired(on: webView))
-        XCTAssertFalse(tab.shouldAcceptMainFrameLifecycle(
+        XCTAssertFalse(mainFrameRuntimeTransaction.role(
             from: webView,
             navigationID: navigationID,
             isCurrent: true
-        ))
+        ).isAuthority)
     }
 
     func testCompletedReplicaCrashKeepsHealthyAuthorityAndRevision() throws {
         let targetURL = try XCTUnwrap(URL(string: "https://example.com/process"))
         let authorityWebView = WKWebView()
         let crashedReplica = WKWebView()
-        let tab = Tab(url: targetURL, loadsCachedFaviconOnInit: false)
+        let (tab, mainFrameRuntimeTransaction) = makeTab(
+            url: targetURL
+        )
         let intent = tab.beginMainFrameNavigationIntent(to: targetURL)
         let authorityNavigation = NSObject()
         let replicaNavigation = NSObject()
         let authorityID = ObjectIdentifier(authorityNavigation)
         let replicaID = ObjectIdentifier(replicaNavigation)
         XCTAssertNotNil(tab.mainFrameLoads.claimDirectSubmission(on: authorityWebView))
-        XCTAssertTrue(tab.bindSubmittedMainFrameLoad(
+        XCTAssertTrue(tab.mainFrameSubmission.bindSubmittedLoad(
             on: authorityWebView,
             navigationID: authorityID,
-            navigationLifetime: authorityNavigation
+            navigationLifetime: authorityNavigation,
+            matching: nil
         ))
         XCTAssertNotNil(tab.mainFrameLoads.claimDirectSubmission(on: crashedReplica))
-        XCTAssertTrue(tab.bindSubmittedMainFrameLoad(
+        XCTAssertTrue(tab.mainFrameSubmission.bindSubmittedLoad(
             on: crashedReplica,
             navigationID: replicaID,
-            navigationLifetime: replicaNavigation
+            navigationLifetime: replicaNavigation,
+            matching: nil
         ))
-        XCTAssertTrue(tab.recordMainFrameCommitSnapshot(
+        XCTAssertTrue(mainFrameRuntimeTransaction.recordCommit(
             from: authorityWebView,
             navigationID: authorityID,
             committedURL: targetURL,
             isPDF: false
         ).shouldPublishSharedEffects)
-        XCTAssertEqual(tab.recordMainFrameCommitSnapshot(
+        XCTAssertEqual(mainFrameRuntimeTransaction.recordCommit(
             from: crashedReplica,
             navigationID: replicaID,
             committedURL: targetURL,
             isPDF: false
         ).role, .participant)
-        tab.finishMainFrameLifecycle(
+        mainFrameRuntimeTransaction.finish(
             from: authorityWebView,
             navigationID: authorityID
         )
-        tab.finishMainFrameLifecycle(
+        mainFrameRuntimeTransaction.finish(
             from: crashedReplica,
             navigationID: replicaID
         )
@@ -883,7 +943,7 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
         let webView = WKWebView()
         let tab = Tab(url: targetURL, loadsCachedFaviconOnInit: false)
 
-        SumiTabLifecycleNavigationResponder(tab: tab)
+        tab.makeMainFrameLifecycleResponder()
             .webContentProcessDidTerminate(on: webView)
 
         XCTAssertFalse(tab.webContentRecovery.isRecoveryRequired(on: webView))
@@ -894,7 +954,9 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
         let initialURL = try XCTUnwrap(URL(string: "https://example.com/start"))
         let continuationURL = try XCTUnwrap(URL(string: "https://example.com/spa"))
         let webView = WKWebView()
-        let tab = Tab(url: initialURL, loadsCachedFaviconOnInit: false)
+        let (tab, mainFrameRuntimeTransaction) = makeTab(
+            url: initialURL
+        )
         let firstNavigation = NSObject()
         let continuationNavigation = NSObject()
         let firstID = ObjectIdentifier(firstNavigation)
@@ -924,16 +986,16 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
             tab.mainFrameLoads.currentIntent(matching: continuationURL)?.revision,
             revision
         )
-        XCTAssertFalse(tab.shouldAcceptMainFrameLifecycle(
+        XCTAssertFalse(mainFrameRuntimeTransaction.role(
             from: webView,
             navigationID: firstID,
             isCurrent: true
-        ))
-        XCTAssertTrue(tab.shouldAcceptMainFrameLifecycle(
+        ).isAuthority)
+        XCTAssertTrue(mainFrameRuntimeTransaction.role(
             from: webView,
             navigationID: continuationID,
             isCurrent: true
-        ))
+        ).isAuthority)
     }
 
     func testPresentationURLWriteDoesNotInvalidateNavigationIntent() throws {
@@ -967,10 +1029,11 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
         let navigation = NSObject()
         let navigationIdentity = ObjectIdentifier(navigation)
         XCTAssertNotNil(tab.mainFrameLoads.claimDirectSubmission(on: originatingWebView))
-        XCTAssertTrue(tab.bindSubmittedMainFrameLoad(
+        XCTAssertTrue(tab.mainFrameSubmission.bindSubmittedLoad(
             on: originatingWebView,
             navigationID: navigationIdentity,
-            navigationLifetime: navigation
+            navigationLifetime: navigation,
+            matching: nil
         ))
         tab.applyAcceptedMainFrameLifecycleURL(
             redirectURL,
@@ -1341,6 +1404,20 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
 
         XCTAssertFalse(tab.hasBrowserRuntime)
         XCTAssertEqual(warmedProfileIds, [profileId])
+    }
+
+    private func makeTab(
+        url: URL
+    ) -> (Tab, TabMainFrameRuntimeTransaction) {
+        let transaction = TabMainFrameRuntimeTransaction(initialURL: url)
+        return (
+            Tab(
+                url: url,
+                loadsCachedFaviconOnInit: false,
+                mainFrameRuntimeTransaction: transaction
+            ),
+            transaction
+        )
     }
 }
 

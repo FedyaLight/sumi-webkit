@@ -478,16 +478,19 @@ final class SumiReaderPresentationTests: XCTestCase {
     func testReaderPresentationLeavesCanonicalHistoryAndTabStateUntouched() async throws {
         let sourceURL = try XCTUnwrap(URL(string: "https://example.com/article"))
         let canonicalWebView = ReaderExtractionWebView()
+        let transaction = TabMainFrameRuntimeTransaction(initialURL: sourceURL)
         let tab = Tab(
             url: sourceURL,
             name: "Canonical title",
             existingWebView: canonicalWebView,
-            loadsCachedFaviconOnInit: false
+            loadsCachedFaviconOnInit: false,
+            mainFrameRuntimeTransaction: transaction
         )
         tab.replaceUntrackedWebView(canonicalWebView)
         let navigationLifetime = bindCommittedDocument(
             on: canonicalWebView,
             tab: tab,
+            transaction: transaction,
             url: sourceURL
         )
         let host = SumiWebViewContainerView(tabID: tab.id, webView: canonicalWebView)
@@ -546,15 +549,18 @@ final class SumiReaderPresentationTests: XCTestCase {
         let sourceURL = try XCTUnwrap(URL(string: "https://example.com/article"))
         let replacementURL = try XCTUnwrap(URL(string: "https://example.com/replacement"))
         let canonicalWebView = ReaderExtractionWebView()
+        let transaction = TabMainFrameRuntimeTransaction(initialURL: sourceURL)
         let tab = Tab(
             url: sourceURL,
             existingWebView: canonicalWebView,
-            loadsCachedFaviconOnInit: false
+            loadsCachedFaviconOnInit: false,
+            mainFrameRuntimeTransaction: transaction
         )
         tab.replaceUntrackedWebView(canonicalWebView)
         let navigationLifetime = bindCommittedDocument(
             on: canonicalWebView,
             tab: tab,
+            transaction: transaction,
             url: sourceURL
         )
         let host = SumiWebViewContainerView(tabID: tab.id, webView: canonicalWebView)
@@ -587,15 +593,18 @@ final class SumiReaderPresentationTests: XCTestCase {
         let sourceURL = try XCTUnwrap(URL(string: "https://example.com/article"))
         let replacementURL = try XCTUnwrap(URL(string: "https://example.com/replacement"))
         let canonicalWebView = ReaderExtractionWebView()
+        let transaction = TabMainFrameRuntimeTransaction(initialURL: sourceURL)
         let tab = Tab(
             url: sourceURL,
             existingWebView: canonicalWebView,
-            loadsCachedFaviconOnInit: false
+            loadsCachedFaviconOnInit: false,
+            mainFrameRuntimeTransaction: transaction
         )
         tab.replaceUntrackedWebView(canonicalWebView)
         let navigationLifetime = bindCommittedDocument(
             on: canonicalWebView,
             tab: tab,
+            transaction: transaction,
             url: sourceURL
         )
         let host = SumiWebViewContainerView(
@@ -1028,6 +1037,7 @@ final class SumiReaderPresentationTests: XCTestCase {
     private func bindCommittedDocument(
         on webView: ReaderExtractionWebView,
         tab: Tab,
+        transaction: TabMainFrameRuntimeTransaction,
         url: URL
     ) -> NSObject {
         webView.reportedCommittedURL = url
@@ -1041,7 +1051,7 @@ final class SumiReaderPresentationTests: XCTestCase {
             allowsUserInitiatedSupersession: true,
             continuationKind: nil
         ), .authority)
-        XCTAssertTrue(tab.recordMainFrameCommitSnapshot(
+        XCTAssertTrue(transaction.recordCommit(
             from: webView,
             navigationID: navigationID,
             committedURL: url,

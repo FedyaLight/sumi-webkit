@@ -53,14 +53,19 @@ enum TabMainFrameLifecycleReducer {
 
     static func replayIfNeeded(
         _ continuation: TabMainFrameAuthorityContinuation,
-        tab: Tab
+        tab: Tab,
+        promotion: any TabMainFramePromotionSettlement
     ) {
         if continuation.needsSharedCommitEffects,
-           tab.claimPromotedSharedCommitEffects(matching: continuation) {
+           promotion.claimSharedCommitEffects(
+               matching: continuation
+           ) {
             publishCommit(.promotion(continuation), tab: tab)
         }
         if continuation.needsSharedFinishEffects,
-           tab.claimPromotedSharedFinishEffects(matching: continuation) {
+           promotion.claimSharedFinishEffects(
+               matching: continuation
+           ) {
             publishFinish(.promotion(continuation), tab: tab)
         }
     }

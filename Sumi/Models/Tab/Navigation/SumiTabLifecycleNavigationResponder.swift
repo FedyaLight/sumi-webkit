@@ -13,9 +13,20 @@ final class SumiTabLifecycleNavigationResponder:
     SumiSameDocumentNavigationResponding,
     SumiNavigationAuthChallengeResponding {
     private weak var tab: Tab?
+    private let submission: any TabMainFrameSubmissionSettlement
+    private let lifecycle: any TabMainFrameLifecycleSettlement
+    private let promotion: any TabMainFramePromotionSettlement
 
-    init(tab: Tab) {
+    init(
+        tab: Tab,
+        submission: any TabMainFrameSubmissionSettlement,
+        lifecycle: any TabMainFrameLifecycleSettlement,
+        promotion: any TabMainFramePromotionSettlement
+    ) {
         self.tab = tab
+        self.submission = submission
+        self.lifecycle = lifecycle
+        self.promotion = promotion
     }
 
     func navigationWillStart(_ context: SumiNavigationContext) {
@@ -32,8 +43,8 @@ final class SumiTabLifecycleNavigationResponder:
                 context.navigationID,
                 context.navigationLifetime,
                 context.action?.request.url ?? context.url,
-                tab.submittedMainFrameSemanticRevision(
-                    on: webView,
+                submission.semanticRevision(
+                    for: webView,
                     navigationID: context.navigationID,
                     navigationLifetime: context.navigationLifetime
                 )
@@ -54,7 +65,7 @@ final class SumiTabLifecycleNavigationResponder:
         )
         guard role.isParticipant else { return }
         publishLocalStartEffectsIfNeeded(context, tab: tab, webView: webView)
-        let roleAfterLocalEffects = tab.mainFrameLifecycleRole(
+        let roleAfterLocalEffects = lifecycle.role(
             from: webView,
             navigationID: context.navigationID,
             isCurrent: nil
@@ -82,8 +93,8 @@ final class SumiTabLifecycleNavigationResponder:
                 context.navigationID,
                 context.navigationLifetime,
                 context.action?.request.url ?? context.url,
-                tab.submittedMainFrameSemanticRevision(
-                    on: webView,
+                submission.semanticRevision(
+                    for: webView,
                     navigationID: context.navigationID,
                     navigationLifetime: context.navigationLifetime
                 )
@@ -96,7 +107,7 @@ final class SumiTabLifecycleNavigationResponder:
         ) {
             return
         }
-        var role = tab.mainFrameLifecycleRole(
+        var role = lifecycle.role(
             from: webView,
             navigationID: context.navigationID,
             isCurrent: context.isCurrent
@@ -111,7 +122,7 @@ final class SumiTabLifecycleNavigationResponder:
         }
         guard role.isParticipant else { return }
         publishLocalStartEffectsIfNeeded(context, tab: tab, webView: webView)
-        role = tab.mainFrameLifecycleRole(
+        role = lifecycle.role(
             from: webView,
             navigationID: context.navigationID,
             isCurrent: context.isCurrent
@@ -123,7 +134,7 @@ final class SumiTabLifecycleNavigationResponder:
                 webView: webView
             )
         }
-        guard tab.mainFrameLifecycleRole(
+        guard lifecycle.role(
             from: webView,
             navigationID: context.navigationID,
             isCurrent: context.isCurrent
@@ -161,7 +172,7 @@ final class SumiTabLifecycleNavigationResponder:
         else { return .next }
 
         if let context, let webView = context.webView {
-            tab.recordMainFrameResponse(
+            lifecycle.recordResponse(
                 isPDF: response.mimeType?.lowercased() == "application/pdf",
                 from: webView,
                 navigationID: context.navigationID
@@ -183,25 +194,25 @@ final class SumiTabLifecycleNavigationResponder:
         ) {
             return
         }
-        let initialRole = tab.mainFrameLifecycleRole(
+        let initialRole = lifecycle.role(
             from: webView,
             navigationID: context.navigationID,
             isCurrent: nil
         )
         guard initialRole.isParticipant else { return }
         publishLocalStartEffectsIfNeeded(context, tab: tab, webView: webView)
-        guard tab.mainFrameLifecycleRole(
+        guard lifecycle.role(
             from: webView,
             navigationID: context.navigationID,
             isCurrent: nil
         ).isParticipant else { return }
-        let preparedRole = tab.prepareMainFrameAuthorityForCommit(
+        let preparedRole = lifecycle.prepareAuthorityForCommit(
             from: webView,
             navigationID: context.navigationID
         )
         guard preparedRole.isParticipant else { return }
         if preparedRole.isAuthority {
-            guard tab.mainFrameLifecycleRole(
+            guard lifecycle.role(
                 from: webView,
                 navigationID: context.navigationID,
                 isCurrent: nil
@@ -211,20 +222,20 @@ final class SumiTabLifecycleNavigationResponder:
                 tab: tab,
                 webView: webView
             )
-            guard tab.mainFrameLifecycleRole(
+            guard lifecycle.role(
                 from: webView,
                 navigationID: context.navigationID,
                 isCurrent: nil
             ).isAuthority else { return }
         }
-        let isPDF = tab.mainFrameResponseIsPDF(
+        let isPDF = lifecycle.responseIsPDF(
             from: webView,
             navigationID: context.navigationID
         ) ?? false
         guard let committedURL = webView.committedURL ?? webView.url ?? context.url else {
             return
         }
-        let claim = tab.recordMainFrameCommitSnapshot(
+        let claim = lifecycle.recordCommit(
             from: webView,
             navigationID: context.navigationID,
             committedURL: committedURL,
@@ -264,7 +275,7 @@ final class SumiTabLifecycleNavigationResponder:
         ) {
             return
         }
-        let initialRole = tab.mainFrameLifecycleRole(
+        let initialRole = lifecycle.role(
             from: webView,
             navigationID: context.navigationID,
             isCurrent: nil
@@ -283,12 +294,12 @@ final class SumiTabLifecycleNavigationResponder:
             tab.id,
             webView
         )
-        guard tab.mainFrameLifecycleRole(
+        guard lifecycle.role(
             from: webView,
             navigationID: context.navigationID,
             isCurrent: nil
         ).isParticipant else { return }
-        let role = tab.claimMainFrameAuthorityForTerminalSuccess(
+        let role = lifecycle.claimAuthorityForTerminalSuccess(
             from: webView,
             navigationID: context.navigationID,
             terminalURL: webView.url ?? context.url,
@@ -296,7 +307,7 @@ final class SumiTabLifecycleNavigationResponder:
         )
         guard role.isParticipant else { return }
         guard role.isAuthority else {
-            tab.finishMainFrameLifecycle(
+            lifecycle.finish(
                 from: webView,
                 navigationID: context.navigationID
             )
@@ -305,16 +316,16 @@ final class SumiTabLifecycleNavigationResponder:
 
         publishAuthorityStartEffectsIfNeeded(context, tab: tab, webView: webView)
         navigationDidCommit(context)
-        guard tab.mainFrameLifecycleRole(
+        guard lifecycle.role(
             from: webView,
             navigationID: context.navigationID,
             isCurrent: nil
         ).isAuthority,
-        tab.claimSharedMainFrameFinishEffects(
+        lifecycle.claimSharedFinishEffects(
             from: webView,
             navigationID: context.navigationID
         ) else {
-            tab.finishMainFrameLifecycle(
+            lifecycle.finish(
                 from: webView,
                 navigationID: context.navigationID
             )
@@ -331,7 +342,7 @@ final class SumiTabLifecycleNavigationResponder:
             ),
             tab: tab
         )
-        tab.finishMainFrameLifecycle(
+        lifecycle.finish(
             from: webView,
             navigationID: context.navigationID
         )
@@ -363,14 +374,14 @@ final class SumiTabLifecycleNavigationResponder:
             continuationKind: .sameDocument
         )
         guard beginRole.isParticipant else { return }
-        let role = tab.claimMainFrameAuthorityForTerminalSuccess(
+        let role = lifecycle.claimAuthorityForTerminalSuccess(
             from: webView,
             navigationID: context.navigationID,
             terminalURL: newURL,
             completesDocumentNavigation: false
         )
         guard role.isAuthority else {
-            tab.finishMainFrameLifecycle(
+            lifecycle.finish(
                 from: webView,
                 navigationID: context.navigationID
             )
@@ -396,7 +407,7 @@ final class SumiTabLifecycleNavigationResponder:
         }
 
         tab.navigationRuntime.extensionPropertiesRuntime.notifyTabPropertiesChanged(tab, [.URL])
-        tab.finishMainFrameLifecycle(
+        lifecycle.finish(
             from: webView,
             navigationID: context.navigationID
         )
@@ -435,7 +446,8 @@ final class SumiTabLifecycleNavigationResponder:
         case .authoritativeContinuation(let continuation):
             TabMainFrameLifecycleReducer.replayIfNeeded(
                 continuation,
-                tab: tab
+                tab: tab,
+                promotion: promotion
             )
             tab.finishBackForwardNavigationTrackingIfOwned(by: webView)
             return
@@ -485,7 +497,8 @@ final class SumiTabLifecycleNavigationResponder:
         case .authoritativeContinuation(let continuation):
             TabMainFrameLifecycleReducer.replayIfNeeded(
                 continuation,
-                tab: tab
+                tab: tab,
+                promotion: promotion
             )
             tab.finishBackForwardNavigationTrackingIfOwned(
                 by: termination.webView
@@ -516,7 +529,8 @@ final class SumiTabLifecycleNavigationResponder:
         if let continuation = recoveryPlan.authorityContinuation {
             TabMainFrameLifecycleReducer.replayIfNeeded(
                 continuation,
-                tab: tab
+                tab: tab,
+                promotion: promotion
             )
         }
         tab.finishBackForwardNavigationTrackingIfOwned(by: webView)
@@ -599,7 +613,7 @@ final class SumiTabLifecycleNavigationResponder:
     ) {
         guard context.action?.navigationType != .sameDocumentNavigation,
               let url = context.url ?? context.action?.request.url,
-              tab.claimMainFrameLocalStartEffects(
+              lifecycle.claimLocalStartEffects(
             from: webView,
             navigationID: context.navigationID
         ) else {
@@ -620,7 +634,7 @@ final class SumiTabLifecycleNavigationResponder:
         guard context.action?.navigationType != .sameDocumentNavigation else {
             return
         }
-        if tab.claimMainFrameTransactionStartEffects(
+        if lifecycle.claimTransactionStartEffects(
             from: webView,
             navigationID: context.navigationID
         ) {
@@ -632,7 +646,7 @@ final class SumiTabLifecycleNavigationResponder:
         }
         guard context.action?.navigationType.isBackForward != true,
               let url = context.url ?? context.action?.request.url,
-              tab.claimMainFrameAuthorityTargetPreparation(
+              lifecycle.claimAuthorityTargetPreparation(
             from: webView,
             navigationID: context.navigationID
         ) else {

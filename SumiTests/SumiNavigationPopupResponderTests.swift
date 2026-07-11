@@ -395,7 +395,10 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
 
     func testPopupResponderRejectsNonFocusableSourceEvenWithCommittedDocumentLease() async {
         let profile = Profile(name: "Popup Runtime")
-        let tab = Tab(url: URL(string: "https://source.example/page")!, loadsCachedFaviconOnInit: false)
+        let tab = Tab(
+            url: URL(string: "https://source.example/page")!,
+            loadsCachedFaviconOnInit: false
+        )
         tab.profileId = profile.id
         tab.navigationRuntime.profileResolutionRuntime = TabProfileResolutionRuntime(
             ephemeralProfileForTab: { _, _ in nil },
@@ -1019,24 +1022,24 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
         )
         let navigation = NSObject()
         XCTAssertTrue(
-            tab.bindSubmittedMainFrameLoad(
+            tab.mainFrameSubmission.bindSubmittedLoad(
                 on: webView,
                 navigationID: ObjectIdentifier(navigation),
-                navigationLifetime: navigation
+                navigationLifetime: navigation,
+                matching: nil
             )
         )
-        XCTAssertNotEqual(
-            tab.recordMainFrameCommitSnapshot(
-                from: webView,
-                navigationID: ObjectIdentifier(navigation),
-                committedURL: committedURL,
-                isPDF: false
-            ).role,
-            .stale
+        let context = SumiNavigationContext(
+            navigationID: ObjectIdentifier(navigation),
+            navigationLifetime: navigation,
+            action: nil,
+            url: committedURL,
+            isCurrent: nil,
+            isCommitted: true,
+            isMainFrame: true,
+            webView: webView
         )
-        tab.extensionPageRuntimeOwner.noteCommittedMainDocumentNavigation(
-            to: committedURL
-        )
+        tab.makeMainFrameLifecycleResponder().navigationDidCommit(context)
         return navigation
     }
 

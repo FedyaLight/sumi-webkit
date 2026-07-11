@@ -20,6 +20,7 @@ handle_source="Packages/SumiWebRuntime/Sources/SumiWebRuntime/Session/WebViewSes
 main_frame_load_runtime="Sumi/Models/Tab/TabMainFrameLoadRuntime.swift"
 web_view_rebuild_epoch="Sumi/Models/Tab/TabWebViewRebuildEpoch.swift"
 main_frame_transaction="Sumi/Models/Tab/TabMainFrameRuntimeTransaction.swift"
+main_frame_capabilities="Sumi/Models/Tab/TabMainFrameRuntimeCapabilities.swift"
 recovery_marker_ledger="Sumi/Models/Tab/TabWebContentRecoveryMarkerLedger.swift"
 committed_document_runtime="Sumi/Models/Tab/TabCommittedDocumentRuntime.swift"
 status=0
@@ -34,7 +35,8 @@ fail_matches() {
 
 for required in "$repository_source" "$handle_source" "$main_frame_load_runtime" \
   "$web_view_rebuild_epoch" \
-  "$main_frame_transaction" "$recovery_marker_ledger" \
+  "$main_frame_transaction" "$main_frame_capabilities" \
+  "$recovery_marker_ledger" \
   "$committed_document_runtime"; do
   if [[ ! -f "$required" ]]; then
     printf 'error: required WebView/main-frame architecture source missing: %s\n' \
@@ -42,6 +44,227 @@ for required in "$repository_source" "$handle_source" "$main_frame_load_runtime"
     status=1
   fi
 done
+
+# Tab composes the concrete transaction once and stores only the narrow
+# submission port. Lifecycle/promotion ports are injected directly into the
+# WebKit responder; the concrete type is not a general feature dependency.
+transaction_construction_hits="$(
+  rg -n '\bTabMainFrameRuntimeTransaction\s*\(' \
+    "${production_roots[@]}" -g '*.swift' || true
+)"
+while IFS= read -r match; do
+  [[ -z "$match" ]] && continue
+  file="${match%%:*}"
+  if [[ "$file" != "Sumi/Models/Tab/Tab.swift" ]]; then
+    printf 'error: main-frame transaction constructed outside Tab composition: %s\n' \
+      "$match" >&2
+    status=1
+  fi
+done <<< "$transaction_construction_hits"
+
+transaction_construction_count="$({
+  printf '%s\n' "$transaction_construction_hits"
+} | sed '/^$/d' | wc -l | tr -d ' ')"
+if [[ "$transaction_construction_count" -ne 1 ]]; then
+  printf 'error: production must construct exactly one main-frame transaction (%s != 1)\n' \
+    "$transaction_construction_count" >&2
+  status=1
+fi
+
+transaction_storage_hits="$(
+  rg -n '\b(let|var)\s+\w+\s*:\s*TabMainFrameRuntimeTransaction\b' \
+    "${production_roots[@]}" -g '*.swift' || true
+)"
+while IFS= read -r match; do
+  [[ -z "$match" ]] && continue
+  if [[ "$match" != \
+    Sumi/Models/Tab/Tab.swift:*:'    private let mainFrameRuntimeTransaction: TabMainFrameRuntimeTransaction' ]]; then
+    printf 'error: concrete main-frame transaction storage escaped Tab: %s\n' \
+      "$match" >&2
+    status=1
+  fi
+done <<< "$transaction_storage_hits"
+
+transaction_storage_count="$(
+  rg --count-matches \
+    '^    private let mainFrameRuntimeTransaction: TabMainFrameRuntimeTransaction$' \
+    Sumi/Models/Tab/Tab.swift 2>/dev/null || true
+)"
+transaction_storage_count="${transaction_storage_count:-0}"
+if [[ "$transaction_storage_count" -ne 1 ]]; then
+  printf 'error: Tab must privately retain exactly one concrete main-frame transaction (%s != 1)\n' \
+    "$transaction_storage_count" >&2
+  status=1
+fi
+
+submission_capability_storage_count="$(
+  rg --count-matches \
+    '^    let mainFrameSubmission: any TabMainFrameSubmissionSettlement$' \
+    Sumi/Models/Tab/Tab.swift 2>/dev/null || true
+)"
+submission_capability_storage_count="${submission_capability_storage_count:-0}"
+if [[ "$submission_capability_storage_count" -ne 1 ]]; then
+  printf 'error: Tab must retain exactly one protocol-typed mainFrameSubmission capability (%s != 1)\n' \
+    "$submission_capability_storage_count" >&2
+  status=1
+fi
+
+tab_lifecycle_promotion_surface_hits="$(
+  {
+    rg -n '\b(let|var)\s+mainFrame(Lifecycle|Promotion)\b' \
+      Sumi/Models/Tab/Tab.swift Sumi/Models/Tab/Tab+*.swift || true
+    rg -n '\btab\.mainFrame(Lifecycle|Promotion)\b' \
+      "${all_swift_roots[@]}" -g '*.swift' -g '!**/.build/**' || true
+  }
+)"
+fail_matches "Tab regained stored/accessed lifecycle or promotion capability" \
+  "$tab_lifecycle_promotion_surface_hits"
+
+# Lifecycle and promotion settlement ports are callback-local: the concrete
+# transaction conforms, the responder privately retains its injected ports,
+# and the promotion reducer receives its port as an explicit parameter.
+lifecycle_promotion_type_hits="$(
+  rg -n '\bTabMainFrame(Lifecycle|Promotion)Settlement\b' \
+    "${production_roots[@]}" -g '*.swift' || true
+)"
+while IFS= read -r match; do
+  [[ -z "$match" ]] && continue
+  file="${match%%:*}"
+  content="${match#*:*:}"
+  case "$file" in
+    "$main_frame_capabilities")
+      ;;
+    "$main_frame_transaction")
+      if [[ ! "$content" =~ ^[[:space:]]+TabMainFrame(Lifecycle|Promotion)Settlement,$ ]]; then
+        printf 'error: lifecycle/promotion capability used beyond transaction conformance: %s\n' \
+          "$match" >&2
+        status=1
+      fi
+      ;;
+    Sumi/Models/Tab/Navigation/SumiTabLifecycleNavigationResponder.swift)
+      if [[ ! "$content" =~ ^[[:space:]]+(private[[:space:]]+let[[:space:]]+(lifecycle|promotion):[[:space:]]+any[[:space:]]+TabMainFrame(Lifecycle|Promotion)Settlement|lifecycle:[[:space:]]+any[[:space:]]+TabMainFrameLifecycleSettlement,|promotion:[[:space:]]+any[[:space:]]+TabMainFramePromotionSettlement)$ ]]; then
+        printf 'error: lifecycle/promotion capability escaped responder private storage/init: %s\n' \
+          "$match" >&2
+        status=1
+      fi
+      ;;
+    Sumi/Models/Tab/Navigation/TabMainFrameLifecyclePromotionReducer.swift)
+      if [[ ! "$content" =~ ^[[:space:]]+promotion:[[:space:]]+any[[:space:]]+TabMainFramePromotionSettlement$ ]]; then
+        printf 'error: promotion capability escaped reducer parameter: %s\n' \
+          "$match" >&2
+        status=1
+      fi
+      ;;
+    *)
+      printf 'error: lifecycle/promotion capability escaped callback settlement boundary: %s\n' \
+        "$match" >&2
+      status=1
+      ;;
+  esac
+done <<< "$lifecycle_promotion_type_hits"
+
+main_frame_responder_factory_count="$(
+  rg --count-matches \
+    '^    func makeMainFrameLifecycleResponder\(\) -> SumiTabLifecycleNavigationResponder \{$' \
+    Sumi/Models/Tab/Tab.swift 2>/dev/null || true
+)"
+main_frame_responder_factory_count="${main_frame_responder_factory_count:-0}"
+if [[ "$main_frame_responder_factory_count" -ne 1 ]]; then
+  printf 'error: Tab must expose exactly one main-frame lifecycle responder factory (%s != 1)\n' \
+    "$main_frame_responder_factory_count" >&2
+  status=1
+fi
+
+responder_construction_hits="$(
+  rg -n '\bSumiTabLifecycleNavigationResponder\s*\(' \
+    "${production_roots[@]}" -g '*.swift' || true
+)"
+while IFS= read -r match; do
+  [[ -z "$match" ]] && continue
+  file="${match%%:*}"
+  if [[ "$file" != "Sumi/Models/Tab/Tab.swift" ]]; then
+    printf 'error: lifecycle responder constructed outside Tab factory: %s\n' \
+      "$match" >&2
+    status=1
+  fi
+done <<< "$responder_construction_hits"
+
+responder_construction_count="$({
+  printf '%s\n' "$responder_construction_hits"
+} | sed '/^$/d' | wc -l | tr -d ' ')"
+if [[ "$responder_construction_count" -ne 1 ]]; then
+  printf 'error: production must construct exactly one lifecycle responder (%s != 1)\n' \
+    "$responder_construction_count" >&2
+  status=1
+fi
+
+responder_factory_usage_hits="$(
+  rg -n '\.makeMainFrameLifecycleResponder\s*\(' \
+    "${production_roots[@]}" -g '*.swift' || true
+)"
+responder_factory_usage_count="$({
+  printf '%s\n' "$responder_factory_usage_hits"
+} | sed '/^$/d' | wc -l | tr -d ' ')"
+while IFS= read -r match; do
+  [[ -z "$match" ]] && continue
+  file="${match%%:*}"
+  if [[ "$file" != \
+    "Sumi/Models/Tab/Navigation/SumiTabNavigationDelegateBundle.swift" ]]; then
+    printf 'error: lifecycle responder factory consumed outside navigation delegate bundle: %s\n' \
+      "$match" >&2
+    status=1
+  fi
+done <<< "$responder_factory_usage_hits"
+if [[ "$responder_factory_usage_count" -ne 1 ]]; then
+  printf 'error: navigation delegate bundle must acquire exactly one lifecycle responder (%s != 1)\n' \
+    "$responder_factory_usage_count" >&2
+  status=1
+fi
+
+production_transaction_injection_hits="$(
+  rg -n '\bmainFrameRuntimeTransaction\s*:' \
+    "${production_roots[@]}" -g '*.swift' \
+    | rg -v '^Sumi/Models/Tab/Tab\.swift:[0-9]+:    private let mainFrameRuntimeTransaction:' \
+    || true
+)"
+fail_matches "main-frame transaction test injection label used in production" \
+  "$production_transaction_injection_hits"
+
+# Concrete injection is temporary test scaffolding for transaction-coupled unit
+# scenarios. Keep it inside the audited files; BrowserManager-backed fixtures
+# must use TabFactory/createNewTab and the real responder path.
+test_transaction_injection_files="$(
+  rg -l 'mainFrameRuntimeTransaction\s*:' SumiTests -g '*.swift' \
+    | sort || true
+)"
+allowed_test_transaction_injection_files="$(cat <<'EOF'
+SumiTests/NormalTabInitialDocumentRuntimeHandoffTests.swift
+SumiTests/SumiGPCTests.swift
+SumiTests/SumiReaderPresentationTests.swift
+SumiTests/TabMainFrameRuntimeTransactionTests.swift
+SumiTests/TabNavigationCommandsTests.swift
+SumiTests/TabRuntimeRoutingTests.swift
+SumiTests/TabScriptMessageHandlerIsolationTests.swift
+SumiTests/TabSuspensionArchitectureTests.swift
+SumiTests/TabWebViewMaterializationAndRebuildTests.swift
+EOF
+)"
+if [[ "$test_transaction_injection_files" != \
+  "$allowed_test_transaction_injection_files" ]]; then
+  printf 'error: concrete main-frame transaction injection escaped audited unit fixtures:\n%s\n' \
+    "${test_transaction_injection_files:-none}" >&2
+  status=1
+fi
+
+# Callback capabilities settle already-admitted work. Cross-boundary
+# admission, departure, recovery, and rollback remain atomic Tab/transaction
+# operations and must not be smuggled into these protocol surfaces.
+side_effectful_capability_hits="$(
+  rg -n '^\s*func\s+(beginExplicitIntent|beginLifecycle|abortNavigation|webViewsDidLeaveRuntime|accept[A-Za-z0-9_]*Target|rollback[A-Za-z0-9_]*|beginRecovery)\b' \
+    "$main_frame_capabilities" || true
+)"
+fail_matches "main-frame settlement capability gained cross-boundary mutation" \
+  "$side_effectful_capability_hits"
 
 # Tombstones: the split registry/session/owner model must not return.
 legacy_type_hits="$(
@@ -430,6 +653,17 @@ retired_tab_recovery_facade_hits="$(
 )"
 fail_matches "retired Tab WebContent recovery façade reintroduced" \
   "$retired_tab_recovery_facade_hits"
+
+# These nineteen forwarding methods were removed when navigation callbacks
+# received narrow settlement capabilities. Only Tab façade definitions are
+# tombstoned: lifecycle-machine/transaction internals remain free to use their
+# domain names.
+retired_tab_main_frame_settlement_facade_hits="$(
+  rg -n '^\s*(public |private |internal |fileprivate )?func\s+(submittedMainFrameSemanticRevision|bindSubmittedMainFrameLoad|failSubmittedMainFrameLoad|restoreDeferredMainFrameLoadAfterFailedSubmission|mainFrameLifecycleRole|shouldAcceptMainFrameLifecycle|prepareMainFrameAuthorityForCommit|recordMainFrameCommitSnapshot|claimMainFrameTransactionStartEffects|claimMainFrameAuthorityTargetPreparation|claimMainFrameLocalStartEffects|claimMainFrameAuthorityForTerminalSuccess|claimSharedMainFrameFinishEffects|claimPromotedSharedCommitEffects|claimPromotedSharedFinishEffects|recordMainFrameResponse|mainFrameResponseIsPDF|finishMainFrameLifecycle|isCurrentMainFrameNavigationRevision)\b' \
+    Sumi/Models/Tab/Tab.swift Sumi/Models/Tab/Tab+*.swift || true
+)"
+fail_matches "retired Tab main-frame settlement façade reintroduced" \
+  "$retired_tab_main_frame_settlement_facade_hits"
 
 document_script_tab_root_hits="$(
   rg -n '\b(private\s+)?weak\s+var\s+tab\s*:\s*Tab\?' \

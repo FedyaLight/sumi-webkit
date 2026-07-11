@@ -71,7 +71,7 @@ final class SumiTabNavigationDelegateAdapter {
             autoplayPolicy: tab.navigationRuntime.navigationDelegateRuntime.autoplayPolicy
         )
         self.autoplayPolicyAdapter = SumiNavigationResponderAdapter(target: autoplayPolicy)
-        self.lifecycle = SumiTabLifecycleNavigationResponder(tab: tab)
+        self.lifecycle = tab.makeMainFrameLifecycleResponder()
         self.lifecycleAdapter = SumiNavigationResponderAdapter(target: lifecycle)
         self.inlineUIExtensionResources = SafariExtensionInlineUINavigationResponder()
         self.inlineUIExtensionResourcesAdapter = SumiNavigationResponderAdapter(

@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 @testable import Sumi
 import WebKit
 import XCTest
@@ -22,9 +23,13 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
     }
 
     func testLinkHoverMessagesRemainScopedToPhysicalWebViewClones() async throws {
-        let tab = Tab(name: "Cloned")
-        let firstWebView = try await makeWebView(with: tab)
-        let secondWebView = try await makeWebView(with: tab)
+        let transaction = TabMainFrameRuntimeTransaction(initialURL: SumiSurface.emptyTabURL)
+        let tab = Tab(
+            name: "Cloned",
+            mainFrameRuntimeTransaction: transaction
+        )
+        let firstWebView = try await makeWebView(with: tab, transaction: transaction)
+        let secondWebView = try await makeWebView(with: tab, transaction: transaction)
         let firstDelivered = expectation(description: "first physical WebView delivered")
         let secondDelivered = expectation(description: "second physical WebView delivered")
         let firstObservation = firstWebView.hoveredLink.observe { href in
@@ -60,9 +65,13 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
     }
 
     func testContextMenuMessagesRemainScopedToPhysicalWebViewClones() async throws {
-        let tab = Tab(name: "Context Clones")
-        let firstWebView = try await makeWebView(with: tab)
-        let secondWebView = try await makeWebView(with: tab)
+        let transaction = TabMainFrameRuntimeTransaction(initialURL: SumiSurface.emptyTabURL)
+        let tab = Tab(
+            name: "Context Clones",
+            mainFrameRuntimeTransaction: transaction
+        )
+        let firstWebView = try await makeWebView(with: tab, transaction: transaction)
+        let secondWebView = try await makeWebView(with: tab, transaction: transaction)
 
         try await postContextMenuTarget(
             kind: .link,
@@ -127,8 +136,12 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
     }
 
     func testMalformedLinkHoverPayloadFailsLocally() async throws {
-        let tab = Tab(name: "Malformed")
-        let webView = try await makeWebView(with: tab)
+        let transaction = TabMainFrameRuntimeTransaction(initialURL: SumiSurface.emptyTabURL)
+        let tab = Tab(
+            name: "Malformed",
+            mainFrameRuntimeTransaction: transaction
+        )
+        let webView = try await makeWebView(with: tab, transaction: transaction)
         let malformedDidNotFire = expectation(description: "malformed payload has no side effects")
         malformedDidNotFire.isInverted = true
         let observation = webView.hoveredLink.observe { _ in
@@ -155,8 +168,12 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
     }
 
     func testUnknownLinkHoverMethodIsIgnoredSafely() async throws {
-        let tab = Tab(name: "Unknown")
-        let webView = try await makeWebView(with: tab)
+        let transaction = TabMainFrameRuntimeTransaction(initialURL: SumiSurface.emptyTabURL)
+        let tab = Tab(
+            name: "Unknown",
+            mainFrameRuntimeTransaction: transaction
+        )
+        let webView = try await makeWebView(with: tab, transaction: transaction)
         let unknownDidNotFire = expectation(description: "unknown message has no side effects")
         unknownDidNotFire.isInverted = true
         let observation = webView.hoveredLink.observe { _ in
@@ -183,13 +200,17 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
     }
 
     func testTabSuspensionPageAPIUpdatesPageVetoState() async throws {
-        let tab = Tab(name: "Suspension")
+        let transaction = TabMainFrameRuntimeTransaction(initialURL: SumiSurface.emptyTabURL)
+        let tab = Tab(
+            name: "Suspension",
+            mainFrameRuntimeTransaction: transaction
+        )
         var evidenceChangeCount = 0
         tab.navigationRuntime.lifecycleNavigationRuntime
             .reconcileDocumentSuspensionState = { _ in
                 evidenceChangeCount += 1
             }
-        let webView = try await makeWebView(with: tab)
+        let webView = try await makeWebView(with: tab, transaction: transaction)
         XCTAssertEqual(evidenceChangeCount, 1)
 
         try await evaluate(
@@ -211,10 +232,24 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
     }
 
     func testTabSuspensionMessagesRemainScopedByContext() async throws {
-        let firstTab = Tab(name: "First Suspension")
-        let secondTab = Tab(name: "Second Suspension")
-        let firstWebView = try await makeWebView(with: firstTab)
-        let secondWebView = try await makeWebView(with: secondTab)
+        let firstTransaction = TabMainFrameRuntimeTransaction(initialURL: SumiSurface.emptyTabURL)
+        let firstTab = Tab(
+            name: "First Suspension",
+            mainFrameRuntimeTransaction: firstTransaction
+        )
+        let secondTransaction = TabMainFrameRuntimeTransaction(initialURL: SumiSurface.emptyTabURL)
+        let secondTab = Tab(
+            name: "Second Suspension",
+            mainFrameRuntimeTransaction: secondTransaction
+        )
+        let firstWebView = try await makeWebView(
+            with: firstTab,
+            transaction: firstTransaction
+        )
+        let secondWebView = try await makeWebView(
+            with: secondTab,
+            transaction: secondTransaction
+        )
 
         try await postTabSuspensionCanBeSuspended(
             false,
@@ -233,8 +268,12 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
     }
 
     func testMalformedAndIrrelevantTabSuspensionMessagesAreIgnoredSafely() async throws {
-        let tab = Tab(name: "Malformed Suspension")
-        let webView = try await makeWebView(with: tab)
+        let transaction = TabMainFrameRuntimeTransaction(initialURL: SumiSurface.emptyTabURL)
+        let tab = Tab(
+            name: "Malformed Suspension",
+            mainFrameRuntimeTransaction: transaction
+        )
+        let webView = try await makeWebView(with: tab, transaction: transaction)
 
         try await evaluate(
             """
@@ -266,8 +305,12 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
     }
 
     func testSubframeCannotPublishMainDocumentSuspensionEvidence() async throws {
-        let tab = Tab(name: "Subframe Suspension")
-        let webView = try await makeWebView(with: tab)
+        let transaction = TabMainFrameRuntimeTransaction(initialURL: SumiSurface.emptyTabURL)
+        let tab = Tab(
+            name: "Subframe Suspension",
+            mainFrameRuntimeTransaction: transaction
+        )
+        let webView = try await makeWebView(with: tab, transaction: transaction)
         try await evaluate(
             "window.__sumiTabSuspension.canBeSuspended(true);",
             in: webView
@@ -306,10 +349,15 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
     }
 
     func testUntrackedWebViewCannotOverwriteCanonicalReplicaReport() async throws {
-        let tab = Tab(name: "Untracked Suspension")
-        let trackedWebView = try await makeWebView(with: tab)
+        let transaction = TabMainFrameRuntimeTransaction(initialURL: SumiSurface.emptyTabURL)
+        let tab = Tab(
+            name: "Untracked Suspension",
+            mainFrameRuntimeTransaction: transaction
+        )
+        let trackedWebView = try await makeWebView(with: tab, transaction: transaction)
         let untrackedWebView = try await makeWebView(
             with: tab,
+            transaction: transaction,
             establishDocument: false
         )
         try await evaluate(
@@ -328,8 +376,12 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
     }
 
     func testPictureInPictureInsideIframeVetoesPhysicalDocument() async throws {
-        let tab = Tab(name: "Iframe PiP")
-        let webView = try await makeWebView(with: tab)
+        let transaction = TabMainFrameRuntimeTransaction(initialURL: SumiSurface.emptyTabURL)
+        let tab = Tab(
+            name: "Iframe PiP",
+            mainFrameRuntimeTransaction: transaction
+        )
+        let webView = try await makeWebView(with: tab, transaction: transaction)
 
         try await evaluate(
             """
@@ -390,6 +442,7 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
 
     private func makeWebView(
         with tab: Tab,
+        transaction: TabMainFrameRuntimeTransaction,
         establishDocument: Bool = true
     ) async throws -> FocusableWKWebView {
         let scriptsProvider = SumiNormalTabUserScripts(
@@ -409,7 +462,11 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
         await normalTabController.waitForContentBlockingAssetsInstalled()
         await loadBlankDocument(into: webView)
         if establishDocument {
-            establishCommittedDocument(on: webView, for: tab)
+            establishCommittedDocument(
+                on: webView,
+                for: tab,
+                transaction: transaction
+            )
             try await waitForSuspensionDecision(.allowed, on: tab)
         }
         return webView
@@ -508,7 +565,11 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
         )
     }
 
-    private func establishCommittedDocument(on webView: WKWebView, for tab: Tab) {
+    private func establishCommittedDocument(
+        on webView: WKWebView,
+        for tab: Tab,
+        transaction: TabMainFrameRuntimeTransaction
+    ) {
         let url = webView.url ?? URL(string: "about:blank")!
         _ = tab.beginMainFrameNavigationIntent(to: url)
         guard let submission = tab.mainFrameLoads.claimDirectSubmission(on: webView) else {
@@ -516,13 +577,13 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
         }
         let navigation = NSObject()
         let navigationID = ObjectIdentifier(navigation)
-        XCTAssertTrue(tab.bindSubmittedMainFrameLoad(
+        XCTAssertTrue(tab.mainFrameSubmission.bindSubmittedLoad(
             on: webView,
             navigationID: navigationID,
             navigationLifetime: navigation,
             matching: submission
         ))
-        XCTAssertTrue(tab.recordMainFrameCommitSnapshot(
+        XCTAssertTrue(transaction.recordCommit(
             from: webView,
             navigationID: navigationID,
             committedURL: url,

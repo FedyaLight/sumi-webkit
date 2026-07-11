@@ -78,6 +78,19 @@ tab_model_methods="$(
 tab_model_methods="${tab_model_methods:-0}"
 tab_main_frame_transaction="Sumi/Models/Tab/TabMainFrameRuntimeTransaction.swift"
 tab_main_frame_transaction_loc="$(count_lines "$tab_main_frame_transaction")"
+tab_main_frame_transaction_methods="$(
+  rg --count-matches \
+    '^\s*(public |private |internal |fileprivate )?func ' \
+    "$tab_main_frame_transaction" 2>/dev/null || true
+)"
+tab_main_frame_transaction_methods="${tab_main_frame_transaction_methods:-0}"
+tab_main_frame_capabilities="Sumi/Models/Tab/TabMainFrameRuntimeCapabilities.swift"
+tab_main_frame_capabilities_loc="$(count_lines "$tab_main_frame_capabilities")"
+tab_main_frame_capability_methods="$(
+  rg --count-matches '^\s*func ' \
+    "$tab_main_frame_capabilities" 2>/dev/null || true
+)"
+tab_main_frame_capability_methods="${tab_main_frame_capability_methods:-0}"
 tab_main_frame_load_runtime="Sumi/Models/Tab/TabMainFrameLoadRuntime.swift"
 tab_main_frame_load_runtime_loc="$(count_lines "$tab_main_frame_load_runtime")"
 tab_main_frame_load_runtime_methods="$(
@@ -805,10 +818,16 @@ printf '%s\n' 'Architecture hub metrics freeze'
 printf '%s\n' '--------------------------------'
 check_max "BrowserManager.swift LOC" "$bm_loc" 200
 check_max "TabManager.swift LOC" "$tm_loc" 220
-check_max "Tab.swift LOC" "$tab_model_loc" 891
-check_max "Tab.swift methods" "$tab_model_methods" 52
+check_max "Tab.swift LOC" "$tab_model_loc" 700
+check_max "Tab.swift methods" "$tab_model_methods" 34
 check_max "TabMainFrameRuntimeTransaction.swift LOC" \
-  "$tab_main_frame_transaction_loc" 617
+  "$tab_main_frame_transaction_loc" 623
+check_max "TabMainFrameRuntimeTransaction methods" \
+  "$tab_main_frame_transaction_methods" 33
+check_max "TabMainFrameRuntimeCapabilities.swift LOC" \
+  "$tab_main_frame_capabilities_loc" 108
+check_max "TabMainFrameRuntimeCapabilities methods" \
+  "$tab_main_frame_capability_methods" 17
 check_max "TabMainFrameLoadRuntime.swift LOC" \
   "$tab_main_frame_load_runtime_loc" 302
 check_max "TabMainFrameLoadRuntime methods" \

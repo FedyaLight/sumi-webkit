@@ -9,10 +9,16 @@ protocol TabWebContentRecovery: AnyObject {
 }
 
 /// Atomic boundary for main-frame transitions that change more than one
-/// authority. `Tab` exposes narrower load and committed-document capabilities;
-/// only this transaction can replace intent or settle lifecycle authority.
+/// authority. `Tab` exposes narrow load, submission, document, and recovery
+/// capabilities; lifecycle settlement is injected into its WebKit responder.
+/// Only this transaction can replace intent or settle lifecycle authority.
 @MainActor
-final class TabMainFrameRuntimeTransaction: TabWebContentRecovery {
+final class TabMainFrameRuntimeTransaction:
+    TabMainFrameSubmissionSettlement,
+    TabMainFrameLifecycleSettlement,
+    TabMainFramePromotionSettlement,
+    TabWebContentRecovery
+{
     struct LifecycleAcceptance {
         let role: TabMainFrameLifecycleRole
         let beganNewIntent: Bool
@@ -324,7 +330,7 @@ final class TabMainFrameRuntimeTransaction: TabWebContentRecovery {
         return LifecycleAcceptance(role: .authority, beganNewIntent: true)
     }
 
-    func lifecycleRole(
+    func role(
         from webView: WKWebView,
         navigationID: ObjectIdentifier?,
         isCurrent: Bool?
@@ -392,7 +398,7 @@ final class TabMainFrameRuntimeTransaction: TabWebContentRecovery {
         )
     }
 
-    func claimPromotedSharedFinishEffects(
+    func claimSharedFinishEffects(
         matching continuation: TabMainFrameAuthorityContinuation
     ) -> Bool {
         lifecycle.claimPromotedSharedFinishEffects(
@@ -425,7 +431,7 @@ final class TabMainFrameRuntimeTransaction: TabWebContentRecovery {
         )
     }
 
-    func finishLifecycle(
+    func finish(
         from webView: WKWebView,
         navigationID: ObjectIdentifier?
     ) {
@@ -492,7 +498,7 @@ final class TabMainFrameRuntimeTransaction: TabWebContentRecovery {
         }
     }
 
-    func claimPromotedSharedCommitEffects(
+    func claimSharedCommitEffects(
         matching continuation: TabMainFrameAuthorityContinuation
     ) -> Bool {
         committedDocumentRuntime.performTransition(

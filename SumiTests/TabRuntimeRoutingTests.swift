@@ -92,7 +92,12 @@ final class TabRuntimeRoutingTests: XCTestCase {
 
     func testReplicaProcessTerminationKeepsSemanticRevisionAndRepairsExactReplica() {
         let targetURL = URL(string: "https://example.com/replica-recovery")!
-        let tab = Tab(url: targetURL, loadsCachedFaviconOnInit: false)
+        let transaction = TabMainFrameRuntimeTransaction(initialURL: targetURL)
+        let tab = Tab(
+            url: targetURL,
+            loadsCachedFaviconOnInit: false,
+            mainFrameRuntimeTransaction: transaction
+        )
         let authorityWebView = WKWebView()
         let crashedReplica = WKWebView()
         tab.replaceUntrackedWebView(authorityWebView)
@@ -103,19 +108,21 @@ final class TabRuntimeRoutingTests: XCTestCase {
         let authorityNavigation = NSObject()
         let replicaNavigation = NSObject()
         XCTAssertNotNil(tab.mainFrameLoads.claimDirectSubmission(on: authorityWebView))
-        XCTAssertTrue(tab.bindSubmittedMainFrameLoad(
+        XCTAssertTrue(tab.mainFrameSubmission.bindSubmittedLoad(
             on: authorityWebView,
             navigationID: ObjectIdentifier(authorityNavigation),
-            navigationLifetime: authorityNavigation
+            navigationLifetime: authorityNavigation,
+            matching: nil
         ))
         XCTAssertNotNil(tab.mainFrameLoads.claimDirectSubmission(on: crashedReplica))
-        XCTAssertTrue(tab.bindSubmittedMainFrameLoad(
+        XCTAssertTrue(tab.mainFrameSubmission.bindSubmittedLoad(
             on: crashedReplica,
             navigationID: ObjectIdentifier(replicaNavigation),
-            navigationLifetime: replicaNavigation
+            navigationLifetime: replicaNavigation,
+            matching: nil
         ))
 
-        SumiTabLifecycleNavigationResponder(tab: tab)
+        tab.makeMainFrameLifecycleResponder()
             .webContentProcessDidTerminate(on: crashedReplica)
 
         XCTAssertEqual(tab.mainFrameLoads.currentIntent, intent)
@@ -124,17 +131,22 @@ final class TabRuntimeRoutingTests: XCTestCase {
             routing.processRecoveryCalls.first?.1,
             ObjectIdentifier(crashedReplica)
         )
-        XCTAssertTrue(tab.shouldAcceptMainFrameLifecycle(
+        XCTAssertTrue(transaction.role(
             from: authorityWebView,
             navigationID: ObjectIdentifier(authorityNavigation),
             isCurrent: true
-        ))
+        ).isAuthority)
         XCTAssertTrue(tab.webContentRecovery.isRecoveryRequired(on: crashedReplica))
     }
 
     func testAuthorityProcessTerminationStartsGlobalRevisionAndRetainsExactRepair() {
         let targetURL = URL(string: "https://example.com/global-recovery")!
-        let tab = Tab(url: targetURL, loadsCachedFaviconOnInit: false)
+        let transaction = TabMainFrameRuntimeTransaction(initialURL: targetURL)
+        let tab = Tab(
+            url: targetURL,
+            loadsCachedFaviconOnInit: false,
+            mainFrameRuntimeTransaction: transaction
+        )
         let crashedWebView = WKWebView()
         tab.replaceUntrackedWebView(crashedWebView)
         let routing = RecordingTabWebViewRouting()
@@ -142,13 +154,14 @@ final class TabRuntimeRoutingTests: XCTestCase {
         let crashedIntent = tab.beginMainFrameNavigationIntent(to: targetURL)
         let navigation = NSObject()
         XCTAssertNotNil(tab.mainFrameLoads.claimDirectSubmission(on: crashedWebView))
-        XCTAssertTrue(tab.bindSubmittedMainFrameLoad(
+        XCTAssertTrue(tab.mainFrameSubmission.bindSubmittedLoad(
             on: crashedWebView,
             navigationID: ObjectIdentifier(navigation),
-            navigationLifetime: navigation
+            navigationLifetime: navigation,
+            matching: nil
         ))
 
-        SumiTabLifecycleNavigationResponder(tab: tab)
+        tab.makeMainFrameLifecycleResponder()
             .webContentProcessDidTerminate(on: crashedWebView)
 
         let recoveryIntent = tab.mainFrameLoads.currentIntent
@@ -161,7 +174,7 @@ final class TabRuntimeRoutingTests: XCTestCase {
         )
         XCTAssertTrue(tab.webContentRecovery.isRecoveryRequired(on: crashedWebView))
 
-        SumiTabLifecycleNavigationResponder(tab: tab)
+        tab.makeMainFrameLifecycleResponder()
             .webContentProcessDidTerminate(on: crashedWebView)
 
         XCTAssertEqual(tab.mainFrameLoads.currentIntent, recoveryIntent)

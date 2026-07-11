@@ -9,7 +9,12 @@ final class TabMainFrameRuntimeTransactionTests: XCTestCase {
         let targetURL = try XCTUnwrap(URL(string: "https://example.com/document"))
         let authorityWebView = WKWebView()
         let submittedWebView = WKWebView()
-        let tab = Tab(url: targetURL, loadsCachedFaviconOnInit: false)
+        let transaction = TabMainFrameRuntimeTransaction(initialURL: targetURL)
+        let tab = Tab(
+            url: targetURL,
+            loadsCachedFaviconOnInit: false,
+            mainFrameRuntimeTransaction: transaction
+        )
         let intent = tab.beginMainFrameNavigationIntent(to: targetURL)
         let authorityNavigation = NSObject()
         let authorityNavigationID = ObjectIdentifier(authorityNavigation)
@@ -17,7 +22,7 @@ final class TabMainFrameRuntimeTransactionTests: XCTestCase {
         let authorityLease = try XCTUnwrap(
             tab.mainFrameLoads.claimDirectSubmission(on: authorityWebView)
         )
-        XCTAssertTrue(tab.bindSubmittedMainFrameLoad(
+        XCTAssertTrue(tab.mainFrameSubmission.bindSubmittedLoad(
             on: authorityWebView,
             navigationID: authorityNavigationID,
             navigationLifetime: authorityNavigation,
@@ -43,13 +48,13 @@ final class TabMainFrameRuntimeTransactionTests: XCTestCase {
 
         let promotedNavigation = NSObject()
         let promotedNavigationID = ObjectIdentifier(promotedNavigation)
-        XCTAssertTrue(tab.bindSubmittedMainFrameLoad(
+        XCTAssertTrue(tab.mainFrameSubmission.bindSubmittedLoad(
             on: submittedWebView,
             navigationID: promotedNavigationID,
             navigationLifetime: promotedNavigation,
             matching: submittedLease
         ))
-        XCTAssertEqual(tab.recordMainFrameCommitSnapshot(
+        XCTAssertEqual(transaction.recordCommit(
             from: submittedWebView,
             navigationID: promotedNavigationID,
             committedURL: targetURL,
@@ -62,19 +67,24 @@ final class TabMainFrameRuntimeTransactionTests: XCTestCase {
         let committedURL = try XCTUnwrap(URL(string: "https://example.com/committed"))
         let failedURL = try XCTUnwrap(URL(string: "safari-web-extension://broken/page.html"))
         let webView = WKWebView()
-        let tab = Tab(url: initialURL, loadsCachedFaviconOnInit: false)
+        let transaction = TabMainFrameRuntimeTransaction(initialURL: initialURL)
+        let tab = Tab(
+            url: initialURL,
+            loadsCachedFaviconOnInit: false,
+            mainFrameRuntimeTransaction: transaction
+        )
         _ = tab.beginMainFrameNavigationIntent(to: committedURL)
         let navigation = NSObject()
         let navigationID = ObjectIdentifier(navigation)
 
         let lease = try XCTUnwrap(tab.mainFrameLoads.claimDirectSubmission(on: webView))
-        XCTAssertTrue(tab.bindSubmittedMainFrameLoad(
+        XCTAssertTrue(tab.mainFrameSubmission.bindSubmittedLoad(
             on: webView,
             navigationID: navigationID,
             navigationLifetime: navigation,
             matching: lease
         ))
-        XCTAssertTrue(tab.recordMainFrameCommitSnapshot(
+        XCTAssertTrue(transaction.recordCommit(
             from: webView,
             navigationID: navigationID,
             committedURL: committedURL,
@@ -104,7 +114,7 @@ final class TabMainFrameRuntimeTransactionTests: XCTestCase {
         let crashedNavigationID = ObjectIdentifier(crashedNavigation)
 
         let crashedLease = try XCTUnwrap(tab.mainFrameLoads.claimDirectSubmission(on: webView))
-        XCTAssertTrue(tab.bindSubmittedMainFrameLoad(
+        XCTAssertTrue(tab.mainFrameSubmission.bindSubmittedLoad(
             on: webView,
             navigationID: crashedNavigationID,
             navigationLifetime: crashedNavigation,
@@ -124,7 +134,7 @@ final class TabMainFrameRuntimeTransactionTests: XCTestCase {
             tab.mainFrameLoads.claimDirectSubmission(on: webView)
         )
         let successorNavigation = NSObject()
-        XCTAssertTrue(tab.bindSubmittedMainFrameLoad(
+        XCTAssertTrue(tab.mainFrameSubmission.bindSubmittedLoad(
             on: webView,
             navigationID: ObjectIdentifier(successorNavigation),
             navigationLifetime: successorNavigation,
@@ -145,7 +155,7 @@ final class TabMainFrameRuntimeTransactionTests: XCTestCase {
         let crashedLease = try XCTUnwrap(
             tab.mainFrameLoads.claimDirectSubmission(on: crashedWebView)
         )
-        XCTAssertTrue(tab.bindSubmittedMainFrameLoad(
+        XCTAssertTrue(tab.mainFrameSubmission.bindSubmittedLoad(
             on: crashedWebView,
             navigationID: ObjectIdentifier(crashedNavigation),
             navigationLifetime: crashedNavigation,
@@ -162,7 +172,7 @@ final class TabMainFrameRuntimeTransactionTests: XCTestCase {
             tab.webContentRecovery.isRecoveryRequired(on: crashedWebView)
         )
         let siblingNavigation = NSObject()
-        XCTAssertTrue(tab.bindSubmittedMainFrameLoad(
+        XCTAssertTrue(tab.mainFrameSubmission.bindSubmittedLoad(
             on: siblingWebView,
             navigationID: ObjectIdentifier(siblingNavigation),
             navigationLifetime: siblingNavigation,
@@ -272,7 +282,7 @@ final class TabMainFrameRuntimeTransactionTests: XCTestCase {
 
         var roleObservedByEffect: TabMainFrameLifecycleRole?
         effects.onDecisionChange = {
-            roleObservedByEffect = transaction.lifecycleRole(
+            roleObservedByEffect = transaction.role(
                 from: webView,
                 navigationID: navigationID,
                 isCurrent: true

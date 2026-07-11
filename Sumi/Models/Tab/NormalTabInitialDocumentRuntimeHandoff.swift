@@ -228,7 +228,7 @@ enum NormalTabInitialDocumentRuntimeHandoff {
         expectedResidence: WebViewResidence
     ) -> Bool {
         guard let tab, let webView else { return false }
-        return tab.isCurrentMainFrameNavigationRevision(intentRevision)
+        return tab.mainFrameLoads.currentIntent.revision == intentRevision
             && isCompatibleResidence(
                 tab.webViewSession.residence(of: webView),
                 withScheduledResidence: expectedResidence

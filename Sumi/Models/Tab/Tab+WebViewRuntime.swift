@@ -281,7 +281,7 @@ extension Tab {
             return .alreadyScheduled
         }
         guard let navigator = webView.navigator() else {
-            let failure = failSubmittedMainFrameLoad(
+            let failure = mainFrameSubmission.failSubmittedLoad(
                 on: webView,
                 matching: submissionLease
             )
@@ -299,7 +299,7 @@ extension Tab {
             performLoad: performLoad
         )
         if didCreateNavigation == false {
-            let failure = failSubmittedMainFrameLoad(
+            let failure = mainFrameSubmission.failSubmittedLoad(
                 on: webView,
                 matching: submissionLease
             )
@@ -355,7 +355,7 @@ extension Tab {
             return .submissionFailed
         }
         guard let navigator = webView.navigator() else {
-            restoreDeferredMainFrameLoadAfterFailedSubmission(
+            mainFrameSubmission.restoreDeferredLoadAfterFailedSubmission(
                 on: webView,
                 revision: revision,
                 targetURL: targetURL,
@@ -373,7 +373,7 @@ extension Tab {
             performLoad: performLoad
         )
         guard didCreateNavigation else {
-            restoreDeferredMainFrameLoadAfterFailedSubmission(
+            mainFrameSubmission.restoreDeferredLoadAfterFailedSubmission(
                 on: webView,
                 revision: revision,
                 targetURL: targetURL,
@@ -403,7 +403,7 @@ extension Tab {
                 }
                 let expectedNavigation = navigator.expect(navigation)
                 precondition(
-                    bindSubmittedMainFrameLoad(
+                    mainFrameSubmission.bindSubmittedLoad(
                         on: resolvedWebView,
                         navigationID: expectedNavigation.stableIdentifier,
                         navigationLifetime: expectedNavigation.identityLifetime,

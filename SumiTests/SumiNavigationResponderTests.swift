@@ -1095,7 +1095,7 @@ final class SumiNavigationResponderTests: SumiNavigationResponderTestCase {
 
     func testPDFPresentationChangesOnlyWhenExactMainFrameResponseCommits() async {
         let tab = Tab(url: URL(string: "https://example.com/start")!)
-        let responder = SumiTabLifecycleNavigationResponder(tab: tab)
+        let responder = tab.makeMainFrameLifecycleResponder()
         let adapter = SumiNavigationResponderAdapter(target: responder)
         let webView = SumiNavigationURLReportingWebView(frame: .zero)
         let pdfURL = URL(string: "https://example.com/report.pdf")!
@@ -1195,7 +1195,7 @@ final class SumiNavigationResponderTests: SumiNavigationResponderTestCase {
         let tab = Tab(loadsCachedFaviconOnInit: false)
         let lifecycle = RecordingTabLifecycleNavigationRuntime()
         tab.navigationRuntime.lifecycleNavigationRuntime = lifecycle.runtime
-        let responder = SumiTabLifecycleNavigationResponder(tab: tab)
+        let responder = tab.makeMainFrameLifecycleResponder()
         let webView = SumiNavigationURLReportingWebView(frame: .zero)
         let navigation = NSObject()
 
@@ -1222,7 +1222,7 @@ final class SumiNavigationResponderTests: SumiNavigationResponderTestCase {
 
     func testTabLifecycleWillStartResetsOnlyExactSourceCloneInteractionState() {
         let tab = Tab(loadsCachedFaviconOnInit: false)
-        let responder = SumiTabLifecycleNavigationResponder(tab: tab)
+        let responder = tab.makeMainFrameLifecycleResponder()
         let sourceWebView = FocusableWKWebView()
         let siblingClone = FocusableWKWebView()
         let sourceEvent = makeMouseEvent(
@@ -1293,7 +1293,7 @@ final class SumiNavigationResponderTests: SumiNavigationResponderTestCase {
         let extensionProperties = NavigationRecordingTabExtensionPropertiesRuntime()
         tab.navigationRuntime.lifecycleNavigationRuntime = lifecycle.runtime
         tab.navigationRuntime.extensionPropertiesRuntime = extensionProperties.runtime
-        let responder = SumiTabLifecycleNavigationResponder(tab: tab)
+        let responder = tab.makeMainFrameLifecycleResponder()
         let webView = SumiNavigationURLReportingWebView(frame: .zero)
         webView.reportedURL = finalURL
         let navigation = NSObject()
@@ -1336,7 +1336,7 @@ final class SumiNavigationResponderTests: SumiNavigationResponderTestCase {
         let lifecycle = RecordingTabLifecycleNavigationRuntime()
         lifecycle.authDisposition = .credential(credential)
         tab.navigationRuntime.lifecycleNavigationRuntime = lifecycle.runtime
-        let responder = SumiTabLifecycleNavigationResponder(tab: tab)
+        let responder = tab.makeMainFrameLifecycleResponder()
         let challenge = makeAuthenticationChallenge()
 
         let disposition = await responder.didReceive(challenge)
@@ -1359,7 +1359,7 @@ final class SumiNavigationResponderTests: SumiNavigationResponderTestCase {
         lifecycle.isPreparingForDestructiveCleanup = true
         tab.navigationRuntime.lifecycleNavigationRuntime = lifecycle.runtime
         tab.navigationRuntime.extensionPropertiesRuntime = extensionProperties.runtime
-        let responder = SumiTabLifecycleNavigationResponder(tab: tab)
+        let responder = tab.makeMainFrameLifecycleResponder()
         let webView = SumiNavigationURLReportingWebView(frame: .zero)
         let navigation = NSObject()
 
@@ -1387,7 +1387,7 @@ final class SumiNavigationResponderTests: SumiNavigationResponderTestCase {
         let initialURL = URL(string: "https://example.com/page")!
         let sameDocumentURL = URL(string: "https://example.com/page#running")!
         let tab = Tab(url: initialURL)
-        let responder = SumiTabLifecycleNavigationResponder(tab: tab)
+        let responder = tab.makeMainFrameLifecycleResponder()
         let webView = SumiNavigationURLReportingWebView(frame: .zero)
         webView.reportedURL = sameDocumentURL
         let navigation = NSObject()

@@ -105,13 +105,23 @@ final class TabSuspensionArchitectureTests: XCTestCase {
         let monitor = SuspensionMemoryMonitorProbe()
         let commitProbe = SuspensionCommitProbe()
         let webView = WKWebView()
-        let tab = makeTab(path: "transaction")
+        let url = URL(string: "https://example.com/transaction")!
+        let transaction = TabMainFrameRuntimeTransaction(initialURL: url)
+        let tab = Tab(
+            url: url,
+            loadsCachedFaviconOnInit: false,
+            mainFrameRuntimeTransaction: transaction
+        )
         let suspensionDate = Date(timeIntervalSince1970: 123)
         let controller = TabSuspensionController(
             memoryMonitor: monitor,
             dateProvider: { suspensionDate }
         )
-        establishAllowedSuspensionDocument(on: webView, for: tab)
+        establishAllowedSuspensionDocument(
+            on: webView,
+            for: tab,
+            transaction: transaction
+        )
         controller.install(
             runtime: TabSuspensionRuntimePorts(
                 context: TabSuspensionContextRuntime(
@@ -176,7 +186,13 @@ final class TabSuspensionArchitectureTests: XCTestCase {
         let clock = MutableSuspensionClock(liveUptime: 0)
         var visibleTabIDs: Set<UUID> = []
         let webView = WKWebView()
-        let tab = makeTab(path: "rebuild")
+        let url = URL(string: "https://example.com/rebuild")!
+        let transaction = TabMainFrameRuntimeTransaction(initialURL: url)
+        let tab = Tab(
+            url: url,
+            loadsCachedFaviconOnInit: false,
+            mainFrameRuntimeTransaction: transaction
+        )
         let controller = TabSuspensionController(
             memoryMonitor: nil,
             suspensionClock: clock,
@@ -184,7 +200,11 @@ final class TabSuspensionArchitectureTests: XCTestCase {
                 try await Task.sleep(nanoseconds: 1_000_000_000)
             }
         )
-        establishAllowedSuspensionDocument(on: webView, for: tab)
+        establishAllowedSuspensionDocument(
+            on: webView,
+            for: tab,
+            transaction: transaction
+        )
         controller.install(
             runtime: TabSuspensionRuntimePorts(
                 context: TabSuspensionContextRuntime(
@@ -235,7 +255,8 @@ final class TabSuspensionArchitectureTests: XCTestCase {
 
     private func establishAllowedSuspensionDocument(
         on webView: WKWebView,
-        for tab: Tab
+        for tab: Tab,
+        transaction: TabMainFrameRuntimeTransaction
     ) {
         _ = tab.beginMainFrameNavigationIntent(to: tab.url)
         guard let submission = tab.mainFrameLoads.claimDirectSubmission(on: webView) else {
@@ -243,13 +264,13 @@ final class TabSuspensionArchitectureTests: XCTestCase {
         }
         let navigation = NSObject()
         let navigationID = ObjectIdentifier(navigation)
-        XCTAssertTrue(tab.bindSubmittedMainFrameLoad(
+        XCTAssertTrue(tab.mainFrameSubmission.bindSubmittedLoad(
             on: webView,
             navigationID: navigationID,
             navigationLifetime: navigation,
             matching: submission
         ))
-        XCTAssertTrue(tab.recordMainFrameCommitSnapshot(
+        XCTAssertTrue(transaction.recordCommit(
             from: webView,
             navigationID: navigationID,
             committedURL: tab.url,

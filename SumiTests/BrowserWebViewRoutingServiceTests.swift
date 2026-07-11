@@ -291,10 +291,11 @@ final class BrowserWebViewRoutingServiceTests: XCTestCase {
                 let navigation = NSObject()
                 boundNavigation = navigation
                 XCTAssertNotNil(tab.mainFrameLoads.claimDirectSubmission(on: webView))
-                XCTAssertTrue(tab.bindSubmittedMainFrameLoad(
+                XCTAssertTrue(tab.mainFrameSubmission.bindSubmittedLoad(
                     on: webView,
                     navigationID: ObjectIdentifier(navigation),
-                    navigationLifetime: navigation
+                    navigationLifetime: navigation,
+                    matching: nil
                 ))
                 return TabMainFrameReloadCommandOutcome.accepted
             }
@@ -448,10 +449,11 @@ final class BrowserWebViewRoutingServiceTests: XCTestCase {
                 let navigation = NSObject()
                 boundNavigation = navigation
                 XCTAssertNotNil(tab.mainFrameLoads.claimDirectSubmission(on: webView))
-                XCTAssertTrue(tab.bindSubmittedMainFrameLoad(
+                XCTAssertTrue(tab.mainFrameSubmission.bindSubmittedLoad(
                     on: webView,
                     navigationID: ObjectIdentifier(navigation),
-                    navigationLifetime: navigation
+                    navigationLifetime: navigation,
+                    matching: nil
                 ))
                 return .accepted
             }

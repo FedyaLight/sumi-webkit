@@ -61,6 +61,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     public let webViewSession: WebViewSessionHandle
     private let mainFrameRuntimeTransaction: TabMainFrameRuntimeTransaction
     let mainFrameLoads: any TabMainFrameLoads
+    let mainFrameSubmission: any TabMainFrameSubmissionSettlement
     let webContentRecovery: any TabWebContentRecovery
     let webViewRebuildEpoch = TabWebViewRebuildEpoch()
     let committedDocumentRuntime: TabCommittedDocumentRuntime
@@ -211,6 +212,15 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     let configurationPolicyRebuildService =
         TabConfigurationPolicyRebuildService()
 
+    func makeMainFrameLifecycleResponder() -> SumiTabLifecycleNavigationResponder {
+        SumiTabLifecycleNavigationResponder(
+            tab: self,
+            submission: mainFrameRuntimeTransaction,
+            lifecycle: mainFrameRuntimeTransaction,
+            promotion: mainFrameRuntimeTransaction
+        )
+    }
+
     @discardableResult
     func beginMainFrameNavigationIntent(to targetURL: URL) -> TabMainFrameNavigationIntent {
         let intent = mainFrameRuntimeTransaction.beginExplicitIntent(to: targetURL)
@@ -223,58 +233,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
             host.dismissReader()
         }
         return intent
-    }
-
-    func submittedMainFrameSemanticRevision(
-        on webView: WKWebView,
-        navigationID: ObjectIdentifier,
-        navigationLifetime: AnyObject
-    ) -> UInt64? {
-        mainFrameRuntimeTransaction.semanticRevision(
-            for: webView,
-            navigationID: navigationID,
-            navigationLifetime: navigationLifetime
-        )
-    }
-
-    @discardableResult
-    func bindSubmittedMainFrameLoad(
-        on webView: WKWebView,
-        navigationID: ObjectIdentifier,
-        navigationLifetime: AnyObject,
-        matching lease: TabMainFrameSubmissionLease? = nil
-    ) -> Bool {
-        mainFrameRuntimeTransaction.bindSubmittedLoad(
-            on: webView,
-            navigationID: navigationID,
-            navigationLifetime: navigationLifetime,
-            matching: lease
-        )
-    }
-
-    @discardableResult
-    func failSubmittedMainFrameLoad(
-        on webView: WKWebView,
-        matching lease: TabMainFrameSubmissionLease? = nil
-    ) -> TabMainFrameNavigationAbortResult {
-        mainFrameRuntimeTransaction.failSubmittedLoad(
-            on: webView,
-            matching: lease
-        )
-    }
-
-    func restoreDeferredMainFrameLoadAfterFailedSubmission(
-        on webView: WKWebView,
-        revision: UInt64,
-        targetURL: URL,
-        matching lease: TabMainFrameSubmissionLease? = nil
-    ) {
-        mainFrameRuntimeTransaction.restoreDeferredLoadAfterFailedSubmission(
-            on: webView,
-            revision: revision,
-            targetURL: targetURL,
-            matching: lease
-        )
     }
 
     @discardableResult
@@ -311,7 +269,8 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         if let continuation = result.continuation {
             TabMainFrameLifecycleReducer.replayIfNeeded(
                 continuation,
-                tab: self
+                tab: self,
+                promotion: mainFrameRuntimeTransaction
             )
         }
         return result
@@ -359,126 +318,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         return acceptance.role
     }
 
-    func mainFrameLifecycleRole(
-        from webView: WKWebView,
-        navigationID: ObjectIdentifier?,
-        isCurrent: Bool?
-    ) -> TabMainFrameLifecycleRole {
-        mainFrameRuntimeTransaction.lifecycleRole(
-            from: webView,
-            navigationID: navigationID,
-            isCurrent: isCurrent
-        )
-    }
-
-    func shouldAcceptMainFrameLifecycle(
-        from webView: WKWebView,
-        navigationID: ObjectIdentifier?,
-        isCurrent: Bool?
-    ) -> Bool {
-        mainFrameRuntimeTransaction.lifecycleRole(
-            from: webView,
-            navigationID: navigationID,
-            isCurrent: isCurrent
-        ).isAuthority
-    }
-
-    func prepareMainFrameAuthorityForCommit(
-        from webView: WKWebView,
-        navigationID: ObjectIdentifier
-    ) -> TabMainFrameLifecycleRole {
-        mainFrameRuntimeTransaction.prepareAuthorityForCommit(
-            from: webView,
-            navigationID: navigationID
-        )
-    }
-
-    func recordMainFrameCommitSnapshot(
-        from webView: WKWebView,
-        navigationID: ObjectIdentifier,
-        committedURL: URL,
-        isPDF: Bool
-    ) -> TabMainFrameCommitSnapshotClaim {
-        let claim = mainFrameRuntimeTransaction.recordCommit(
-            from: webView,
-            navigationID: navigationID,
-            committedURL: committedURL,
-            isPDF: isPDF
-        )
-        return claim
-    }
-
-    func claimMainFrameTransactionStartEffects(
-        from webView: WKWebView,
-        navigationID: ObjectIdentifier
-    ) -> Bool {
-        mainFrameRuntimeTransaction.claimTransactionStartEffects(
-            from: webView,
-            navigationID: navigationID
-        )
-    }
-
-    func claimMainFrameAuthorityTargetPreparation(
-        from webView: WKWebView,
-        navigationID: ObjectIdentifier
-    ) -> Bool {
-        mainFrameRuntimeTransaction.claimAuthorityTargetPreparation(
-            from: webView,
-            navigationID: navigationID
-        )
-    }
-
-    func claimMainFrameLocalStartEffects(
-        from webView: WKWebView,
-        navigationID: ObjectIdentifier
-    ) -> Bool {
-        mainFrameRuntimeTransaction.claimLocalStartEffects(
-            from: webView,
-            navigationID: navigationID
-        )
-    }
-
-    func claimMainFrameAuthorityForTerminalSuccess(
-        from webView: WKWebView,
-        navigationID: ObjectIdentifier,
-        terminalURL: URL?,
-        completesDocumentNavigation: Bool
-    ) -> TabMainFrameLifecycleRole {
-        mainFrameRuntimeTransaction.claimAuthorityForTerminalSuccess(
-            from: webView,
-            navigationID: navigationID,
-            terminalURL: terminalURL,
-            completesDocumentNavigation: completesDocumentNavigation
-        )
-    }
-
-    func claimSharedMainFrameFinishEffects(
-        from webView: WKWebView,
-        navigationID: ObjectIdentifier
-    ) -> Bool {
-        mainFrameRuntimeTransaction.claimSharedFinishEffects(
-            from: webView,
-            navigationID: navigationID
-        )
-    }
-
-    func claimPromotedSharedCommitEffects(
-        matching continuation: TabMainFrameAuthorityContinuation
-    ) -> Bool {
-        let claimed = mainFrameRuntimeTransaction.claimPromotedSharedCommitEffects(
-            matching: continuation
-        )
-        return claimed
-    }
-
-    func claimPromotedSharedFinishEffects(
-        matching continuation: TabMainFrameAuthorityContinuation
-    ) -> Bool {
-        mainFrameRuntimeTransaction.claimPromotedSharedFinishEffects(
-            matching: continuation
-        )
-    }
-
     func applyPromotedAuthorityURL(
         _ targetURL: URL,
         matching continuation: TabMainFrameAuthorityContinuation
@@ -488,29 +327,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
             matching: continuation
         ) else { return }
         url = targetURL
-    }
-
-    @discardableResult
-    func recordMainFrameResponse(
-        isPDF: Bool,
-        from webView: WKWebView,
-        navigationID: ObjectIdentifier
-    ) -> TabMainFrameLifecycleRole {
-        mainFrameRuntimeTransaction.recordResponse(
-            isPDF: isPDF,
-            from: webView,
-            navigationID: navigationID
-        )
-    }
-
-    func mainFrameResponseIsPDF(
-        from webView: WKWebView,
-        navigationID: ObjectIdentifier
-    ) -> Bool? {
-        mainFrameRuntimeTransaction.responseIsPDF(
-            from: webView,
-            navigationID: navigationID
-        )
     }
 
     func applyAcceptedMainFrameLifecycleURL(
@@ -524,16 +340,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
             navigationID: navigationID
         ) else { return }
         url = targetURL
-    }
-
-    func finishMainFrameLifecycle(
-        from webView: WKWebView,
-        navigationID: ObjectIdentifier?
-    ) {
-        mainFrameRuntimeTransaction.finishLifecycle(
-            from: webView,
-            navigationID: navigationID
-        )
     }
 
     func cancelMainFrameNavigationIntent() {
@@ -578,10 +384,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         mediaRuntime.callbacks.scheduleBackgroundMediaReconcile(
             "navigation-submission-failed"
         )
-    }
-
-    func isCurrentMainFrameNavigationRevision(_ revision: UInt64) -> Bool {
-        mainFrameLoads.currentIntent.revision == revision
     }
 
     var hasBrowserRuntime: Bool {
@@ -714,15 +516,22 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         loadsCachedFaviconOnInit: Bool = true,
         faviconService: any BrowserFaviconServicing = TabDependencyIsolationDefaults.faviconService,
         faviconCapabilities: BrowserFaviconCapabilities = TabDependencyIsolationDefaults.faviconCapabilities,
-        visitedLinkStore: any BrowserVisitedLinkStoreManaging = TabDependencyIsolationDefaults.visitedLinkStore
+        visitedLinkStore: any BrowserVisitedLinkStoreManaging = TabDependencyIsolationDefaults.visitedLinkStore,
+        mainFrameRuntimeTransaction injectedMainFrameRuntimeTransaction:
+            TabMainFrameRuntimeTransaction? = nil
     ) {
         self.id = id
         self.url = url
-        let mainFrameRuntimeTransaction = TabMainFrameRuntimeTransaction(
-            initialURL: url
+        let mainFrameRuntimeTransaction = injectedMainFrameRuntimeTransaction
+            ?? TabMainFrameRuntimeTransaction(initialURL: url)
+        precondition(
+            mainFrameRuntimeTransaction.mainFrameLoads.currentIntent
+                == TabMainFrameNavigationIntent(revision: 0, targetURL: url),
+            "Tab requires a pristine main-frame transaction for its initial URL"
         )
         self.mainFrameRuntimeTransaction = mainFrameRuntimeTransaction
         self.mainFrameLoads = mainFrameRuntimeTransaction.mainFrameLoads
+        self.mainFrameSubmission = mainFrameRuntimeTransaction
         self.webContentRecovery = mainFrameRuntimeTransaction
         self.committedDocumentRuntime =
             mainFrameRuntimeTransaction.committedDocumentRuntime

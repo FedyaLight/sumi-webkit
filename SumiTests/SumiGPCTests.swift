@@ -226,8 +226,14 @@ final class SumiGPCNavigationResponderTests: XCTestCase {
 
     func testOriginalCancellationCannotRetireRewrittenNavigation() async {
         let targetURL = URL(string: "https://example.com/rewrite")!
+        let initialURL = URL(string: "https://example.com")!
         let webView = SumiGPCLoadRecordingWebView()
-        let tab = makeTab()
+        let transaction = TabMainFrameRuntimeTransaction(initialURL: initialURL)
+        let tab = Tab(
+            url: initialURL,
+            mainFrameRuntimeTransaction: transaction
+        )
+        retainedTabs.append(tab)
         _ = tab.installNavigationDelegate(on: webView)
         let responder = SumiGPCNavigationResponder(
             tab: tab,
@@ -248,7 +254,7 @@ final class SumiGPCNavigationResponderTests: XCTestCase {
         )
         XCTAssertEqual(policy, .cancel)
 
-        SumiTabLifecycleNavigationResponder(tab: tab).mainFrameNavigationDidTerminate(
+        tab.makeMainFrameLifecycleResponder().mainFrameNavigationDidTerminate(
             SumiMainFrameNavigationTermination(
                 navigationID: originalID,
                 navigationLifetime: originalNavigation,
@@ -257,11 +263,11 @@ final class SumiGPCNavigationResponderTests: XCTestCase {
             )
         )
 
-        XCTAssertFalse(tab.shouldAcceptMainFrameLifecycle(
+        XCTAssertFalse(transaction.role(
             from: webView,
             navigationID: originalID,
             isCurrent: true
-        ))
+        ).isAuthority)
         XCTAssertNotNil(tab.mainFrameLoads.currentIntent(matching: targetURL))
     }
 

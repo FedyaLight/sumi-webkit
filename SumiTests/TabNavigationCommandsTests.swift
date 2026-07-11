@@ -39,7 +39,7 @@ final class TabNavigationCommandsTests: XCTestCase {
         let firstLifetime = NSObject()
         let firstNavigationID = ObjectIdentifier(firstLifetime)
         XCTAssertTrue(
-            tab.bindSubmittedMainFrameLoad(
+            tab.mainFrameSubmission.bindSubmittedLoad(
                 on: webView,
                 navigationID: firstNavigationID,
                 navigationLifetime: firstLifetime,
@@ -47,8 +47,8 @@ final class TabNavigationCommandsTests: XCTestCase {
             )
         )
         XCTAssertEqual(
-            tab.submittedMainFrameSemanticRevision(
-                on: webView,
+            tab.mainFrameSubmission.semanticRevision(
+                for: webView,
                 navigationID: firstNavigationID,
                 navigationLifetime: firstLifetime
             ),
@@ -58,8 +58,8 @@ final class TabNavigationCommandsTests: XCTestCase {
         let newerIntent = tab.beginMainFrameNavigationIntent(to: targetURL)
         XCTAssertGreaterThan(newerIntent.revision, firstIntent.revision)
         XCTAssertNotEqual(
-            tab.submittedMainFrameSemanticRevision(
-                on: webView,
+            tab.mainFrameSubmission.semanticRevision(
+                for: webView,
                 navigationID: firstNavigationID,
                 navigationLifetime: firstLifetime
             ),
@@ -292,10 +292,12 @@ final class TabNavigationCommandsTests: XCTestCase {
         let firstPendingURL = try XCTUnwrap(URL(string: "https://example.com/first-pending"))
         let failedURL = try XCTUnwrap(URL(string: "https://example.com/failed"))
         let webView = NavigationRecordingWebView()
+        let transaction = TabMainFrameRuntimeTransaction(initialURL: committedURL)
         let tab = Tab(
             url: committedURL,
             existingWebView: webView,
-            loadsCachedFaviconOnInit: false
+            loadsCachedFaviconOnInit: false,
+            mainFrameRuntimeTransaction: transaction
         )
         tab.replaceUntrackedWebView(webView)
         _ = tab.installNavigationDelegate(on: webView)
@@ -310,13 +312,13 @@ final class TabNavigationCommandsTests: XCTestCase {
             allowsUserInitiatedSupersession: true,
             continuationKind: nil
         ), .authority)
-        XCTAssertTrue(tab.recordMainFrameCommitSnapshot(
+        XCTAssertTrue(transaction.recordCommit(
             from: webView,
             navigationID: committedNavigationID,
             committedURL: committedURL,
             isPDF: false
         ).shouldPublishSharedEffects)
-        tab.finishMainFrameLifecycle(
+        transaction.finish(
             from: webView,
             navigationID: committedNavigationID
         )
@@ -349,40 +351,47 @@ final class TabNavigationCommandsTests: XCTestCase {
         let pdfWebView = NavigationRecordingWebView()
         htmlWebView.reportedCommittedURL = committedURL
         pdfWebView.reportedCommittedURL = committedURL
-        let tab = Tab(url: committedURL, loadsCachedFaviconOnInit: false)
+        let transaction = TabMainFrameRuntimeTransaction(initialURL: committedURL)
+        let tab = Tab(
+            url: committedURL,
+            loadsCachedFaviconOnInit: false,
+            mainFrameRuntimeTransaction: transaction
+        )
         _ = tab.beginMainFrameNavigationIntent(to: committedURL)
 
         let htmlNavigation = NSObject()
         let pdfNavigation = NSObject()
         XCTAssertNotNil(tab.mainFrameLoads.claimDirectSubmission(on: htmlWebView))
-        XCTAssertTrue(tab.bindSubmittedMainFrameLoad(
+        XCTAssertTrue(tab.mainFrameSubmission.bindSubmittedLoad(
             on: htmlWebView,
             navigationID: ObjectIdentifier(htmlNavigation),
-            navigationLifetime: htmlNavigation
+            navigationLifetime: htmlNavigation,
+            matching: nil
         ))
         XCTAssertNotNil(tab.mainFrameLoads.claimDirectSubmission(on: pdfWebView))
-        XCTAssertTrue(tab.bindSubmittedMainFrameLoad(
+        XCTAssertTrue(tab.mainFrameSubmission.bindSubmittedLoad(
             on: pdfWebView,
             navigationID: ObjectIdentifier(pdfNavigation),
-            navigationLifetime: pdfNavigation
+            navigationLifetime: pdfNavigation,
+            matching: nil
         ))
-        XCTAssertTrue(tab.recordMainFrameCommitSnapshot(
+        XCTAssertTrue(transaction.recordCommit(
             from: htmlWebView,
             navigationID: ObjectIdentifier(htmlNavigation),
             committedURL: committedURL,
             isPDF: false
         ).shouldPublishSharedEffects)
-        XCTAssertEqual(tab.recordMainFrameCommitSnapshot(
+        XCTAssertEqual(transaction.recordCommit(
             from: pdfWebView,
             navigationID: ObjectIdentifier(pdfNavigation),
             committedURL: committedURL,
             isPDF: true
         ).role, .participant)
-        tab.finishMainFrameLifecycle(
+        transaction.finish(
             from: htmlWebView,
             navigationID: ObjectIdentifier(htmlNavigation)
         )
-        tab.finishMainFrameLifecycle(
+        transaction.finish(
             from: pdfWebView,
             navigationID: ObjectIdentifier(pdfNavigation)
         )

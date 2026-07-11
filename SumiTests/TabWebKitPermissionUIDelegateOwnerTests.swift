@@ -54,7 +54,7 @@ final class TabWebKitPermissionUIDelegateOwnerTests: XCTestCase {
         ))
         await loadDocument(on: webView, at: tab.url)
         let committedURL = try XCTUnwrap(webView.committedURL)
-        let navigation = bindCommittedDocument(
+        let navigation = await bindCommittedDocument(
             on: webView,
             tab: tab,
             committedURL: committedURL
@@ -85,7 +85,7 @@ final class TabWebKitPermissionUIDelegateOwnerTests: XCTestCase {
         let authorityWebView = FocusableWKWebView()
         await loadDocument(on: authorityWebView, at: tab.url)
         let committedURL = try XCTUnwrap(authorityWebView.committedURL)
-        let navigation = bindCommittedDocument(
+        let navigation = await bindCommittedDocument(
             on: authorityWebView,
             tab: tab,
             committedURL: committedURL
@@ -118,7 +118,7 @@ final class TabWebKitPermissionUIDelegateOwnerTests: XCTestCase {
         let callbackWebView = FocusableWKWebView()
         await loadDocument(on: callbackWebView, at: tab.url)
         let committedURL = try XCTUnwrap(callbackWebView.committedURL)
-        let navigation = bindCommittedDocument(
+        let navigation = await bindCommittedDocument(
             on: callbackWebView,
             tab: tab,
             committedURL: committedURL
@@ -196,7 +196,7 @@ final class TabWebKitPermissionUIDelegateOwnerTests: XCTestCase {
         on webView: WKWebView,
         tab: Tab,
         committedURL: URL
-    ) -> NSObject {
+    ) async -> NSObject {
         let intent = tab.beginMainFrameNavigationIntent(to: committedURL)
         XCTAssertTrue(tab.mainFrameLoads.markDeferredLoad(on: webView, intent: intent))
         XCTAssertEqual(
@@ -208,20 +208,24 @@ final class TabWebKitPermissionUIDelegateOwnerTests: XCTestCase {
             .claimed
         )
         let navigation = NSObject()
-        XCTAssertTrue(tab.bindSubmittedMainFrameLoad(
+        XCTAssertTrue(tab.mainFrameSubmission.bindSubmittedLoad(
             on: webView,
             navigationID: ObjectIdentifier(navigation),
-            navigationLifetime: navigation
+            navigationLifetime: navigation,
+            matching: nil
         ))
-        XCTAssertNotEqual(
-            tab.recordMainFrameCommitSnapshot(
-                from: webView,
-                navigationID: ObjectIdentifier(navigation),
-                committedURL: committedURL,
-                isPDF: false
-            ).role,
-            .stale
+        let context = SumiNavigationContext(
+            navigationID: ObjectIdentifier(navigation),
+            navigationLifetime: navigation,
+            action: nil,
+            url: committedURL,
+            isCurrent: nil,
+            isCommitted: true,
+            isMainFrame: true,
+            webView: webView
         )
+        tab.makeMainFrameLifecycleResponder().navigationDidCommit(context)
+        XCTAssertNotNil(tab.committedDocumentRuntime.lease(for: webView))
         return navigation
     }
 }

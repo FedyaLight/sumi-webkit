@@ -36,7 +36,7 @@ extension Tab {
         on webView: WKWebView,
         matching lease: TabMainFrameSubmissionLease
     ) {
-        let result = failSubmittedMainFrameLoad(
+        let result = mainFrameSubmission.failSubmittedLoad(
             on: webView,
             matching: lease
         )
