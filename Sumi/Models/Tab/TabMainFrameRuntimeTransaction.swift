@@ -19,14 +19,18 @@ final class TabMainFrameRuntimeTransaction {
 
     private let intentLedger: TabMainFrameIntentLedger
     private let lifecycle: TabMainFrameLifecycleMachine
-    private let committedDocuments: TabCommittedDocumentLedger
+    let committedDocumentRuntime: TabCommittedDocumentRuntime
     private let recovery: TabWebContentRecoveryPlanner
 
     init(initialURL: URL) {
-        self.intentLedger = TabMainFrameIntentLedger(initialURL: initialURL)
-        self.lifecycle = TabMainFrameLifecycleMachine()
-        self.committedDocuments = TabCommittedDocumentLedger(
-            initialURL: initialURL
+        let intentLedger = TabMainFrameIntentLedger(initialURL: initialURL)
+        let lifecycle = TabMainFrameLifecycleMachine()
+        self.intentLedger = intentLedger
+        self.lifecycle = lifecycle
+        self.committedDocumentRuntime = TabCommittedDocumentRuntime(
+            initialURL: initialURL,
+            intentLedger: intentLedger,
+            lifecycle: lifecycle
         )
         self.recovery = TabWebContentRecoveryPlanner()
     }
@@ -199,16 +203,22 @@ final class TabMainFrameRuntimeTransaction {
         on webView: WKWebView,
         matching lease: TabMainFrameSubmissionLease?
     ) -> TabMainFrameNavigationAbortResult {
-        let failure = intentLedger.failSubmittedLoad(
-            on: webView,
-            matching: lease
-        )
-        guard failure.removedSubmission else { return .ignored }
-        guard failure.wasAuthorityCandidate else { return .participant }
-        if let continuation = promoteAuthority(preferredWebViewID: nil) {
-            return .authoritativeContinuation(continuation)
+        committedDocumentRuntime.performTransition(
+            reason: .submissionFailure
+        ) {
+            let failure = intentLedger.failSubmittedLoad(
+                on: webView,
+                matching: lease
+            )
+            guard failure.removedSubmission else { return .ignored }
+            guard failure.wasAuthorityCandidate else { return .participant }
+            if let continuation = promoteAuthority(
+                preferredWebViewID: nil
+            ) {
+                return .authoritativeContinuation(continuation)
+            }
+            return .authoritativeTerminated
         }
-        return .authoritativeTerminated
     }
 
     func restoreDeferredLoadAfterFailedSubmission(
@@ -217,15 +227,21 @@ final class TabMainFrameRuntimeTransaction {
         targetURL: URL,
         matching lease: TabMainFrameSubmissionLease?
     ) {
-        let relinquishedAuthority = intentLedger
-            .restoreDeferredLoadAfterFailedSubmission(
-                on: webView,
-                revision: revision,
-                targetURL: targetURL,
-                matching: lease
-            )
-        if relinquishedAuthority {
-            _ = promoteAuthority(preferredWebViewID: nil)
+        committedDocumentRuntime.performTransition(
+            reason: .submissionFailure
+        ) {
+            let relinquishedAuthority = intentLedger
+                .restoreDeferredLoadAfterFailedSubmission(
+                    on: webView,
+                    revision: revision,
+                    targetURL: targetURL,
+                    matching: lease
+                )
+            if relinquishedAuthority {
+                _ = promoteAuthority(
+                    preferredWebViewID: nil
+                )
+            }
         }
     }
 
@@ -243,76 +259,86 @@ final class TabMainFrameRuntimeTransaction {
         _ webViews: [WKWebView],
         preferredAuthorityWebView: WKWebView?
     ) -> TabMainFrameRuntimeDepartureResult {
-        var seen: Set<ObjectIdentifier> = []
-        let departingWebViews = webViews.filter {
-            seen.insert(ObjectIdentifier($0)).inserted
-        }
-        let departingWebViewIDs = Set(
-            departingWebViews.map(ObjectIdentifier.init)
-        )
-        let preferredSurvivor = preferredAuthorityWebView.flatMap {
-            departingWebViewIDs.contains(ObjectIdentifier($0)) ? nil : $0
-        }
-
-        departingWebViews.forEach(recovery.remove)
-        committedDocuments.removeWebViews(
-            departingWebViews,
-            preferredSourceWebView: preferredSurvivor
-        )
-        let pendingDeparture = intentLedger.departure(of: departingWebViews)
-        let lifecycleDeparture = lifecycle.departure(
-            of: departingWebViews,
-            currentIntent: intentLedger.intent
-        )
-
-        let wasAuthoritative = pendingDeparture.wasAuthorityCandidate
-            || lifecycleDeparture.wasAuthoritative
-        let continuation = wasAuthoritative
-            ? promoteAuthority(
-                preferredWebViewID: preferredSurvivor.map(
-                    ObjectIdentifier.init
-                )
+        committedDocumentRuntime.performTransition(
+            reason: .replicaDeparture
+        ) {
+            var seen: Set<ObjectIdentifier> = []
+            let departingWebViews = webViews.filter {
+                seen.insert(ObjectIdentifier($0)).inserted
+            }
+            let departingWebViewIDs = Set(
+                departingWebViews.map(ObjectIdentifier.init)
             )
-            : nil
-        return TabMainFrameRuntimeDepartureResult(
-            removedParticipant: pendingDeparture.removedLoad
-                || lifecycleDeparture.removedParticipant,
-            wasAuthoritative: wasAuthoritative,
-            continuation: continuation
-        )
+            let preferredSurvivor = preferredAuthorityWebView.flatMap {
+                departingWebViewIDs.contains(ObjectIdentifier($0)) ? nil : $0
+            }
+
+            departingWebViews.forEach(recovery.remove)
+            committedDocumentRuntime.removeWebViews(
+                departingWebViews,
+                preferredSourceWebView: preferredSurvivor
+            )
+            let pendingDeparture = intentLedger.departure(of: departingWebViews)
+            let lifecycleDeparture = lifecycle.departure(
+                of: departingWebViews,
+                currentIntent: intentLedger.intent
+            )
+
+            let wasAuthoritative = pendingDeparture.wasAuthorityCandidate
+                || lifecycleDeparture.wasAuthoritative
+            let continuation = wasAuthoritative
+                ? promoteAuthority(
+                    preferredWebViewID: preferredSurvivor.map(
+                        ObjectIdentifier.init
+                    )
+                )
+                : nil
+            return TabMainFrameRuntimeDepartureResult(
+                removedParticipant: pendingDeparture.removedLoad
+                    || lifecycleDeparture.removedParticipant,
+                wasAuthoritative: wasAuthoritative,
+                continuation: continuation
+            )
+        }
     }
 
     func beginWebContentProcessRecovery(
         on webView: WKWebView
     ) -> TabWebContentProcessRecoveryPlan {
-        let intent = intentLedger.intent
-        guard recovery.markRequired(on: webView) else {
+        committedDocumentRuntime.performTransition(
+            reason: .processRecovery
+        ) {
+            let intent = intentLedger.intent
+            guard recovery.markRequired(on: webView) else {
+                return TabWebContentProcessRecoveryPlan(
+                    scope: .replica(intent),
+                    authorityContinuation: nil
+                )
+            }
+
+            committedDocumentRuntime.removeWebView(webView)
+            let pendingDeparture = intentLedger.departure(of: webView)
+            let lifecycleDeparture = lifecycle.departure(
+                of: webView,
+                currentIntent: intent
+            )
+            var continuation: TabMainFrameAuthorityContinuation?
+            if pendingDeparture.wasAuthorityCandidate
+                || lifecycleDeparture.wasAuthoritative
+                || hasCurrentAuthority() == false {
+                continuation = promoteAuthority(
+                    preferredWebViewID: nil
+                )
+            }
+
+            let scope: TabWebContentProcessRecoveryScope = hasCurrentAuthority()
+                ? .replica(intentLedger.intent)
+                : .global(intentLedger.intent.targetURL)
             return TabWebContentProcessRecoveryPlan(
-                scope: .replica(intent),
-                authorityContinuation: nil
+                scope: scope,
+                authorityContinuation: continuation
             )
         }
-
-        committedDocuments.removeWebView(webView)
-        let pendingDeparture = intentLedger.departure(of: webView)
-        let lifecycleDeparture = lifecycle.departure(
-            of: webView,
-            currentIntent: intent
-        )
-        var continuation: TabMainFrameAuthorityContinuation?
-        if pendingDeparture.wasAuthorityCandidate
-            || lifecycleDeparture.wasAuthoritative
-            || hasCurrentAuthority() == false {
-            continuation = promoteAuthority(preferredWebViewID: nil)
-        }
-
-        let scope: TabWebContentProcessRecoveryScope = hasCurrentAuthority()
-            ? .replica(intentLedger.intent)
-            : .global(intentLedger.intent.targetURL)
-        return TabWebContentProcessRecoveryPlan(
-            scope: scope,
-            authorityContinuation: continuation
-        )
     }
 
     func requiresWebContentProcessRecovery(on webView: WKWebView) -> Bool {
@@ -326,31 +352,39 @@ final class TabMainFrameRuntimeTransaction {
         survivingCommittedURL: URL?,
         rollsBackWhenUnreplaced: Bool
     ) -> TabMainFrameNavigationAbortResult {
-        if let survivingCommittedURL {
-            committedDocuments.noteSurvivingDocument(
-                on: webView,
-                committedURL: survivingCommittedURL
-            )
-        }
-        switch lifecycle.abortNavigation(
-            from: webView,
-            navigationID: navigationID,
-            navigationLifetime: navigationLifetime,
-            currentIntent: intentLedger.intent
+        committedDocumentRuntime.performTransition(
+            reason: .navigationAbort
         ) {
-        case .ignored:
-            return .ignored
-        case .participant:
-            return .participant
-        case .authority(let promotion):
-            if let continuation = apply(promotion)
-                ?? promoteAuthority(preferredWebViewID: nil) {
-                return .authoritativeContinuation(continuation)
+            if let survivingCommittedURL {
+                committedDocumentRuntime.noteSurvivingDocument(
+                    on: webView,
+                    committedURL: survivingCommittedURL
+                )
             }
-            guard rollsBackWhenUnreplaced else {
-                return .authoritativeTerminated
+            switch lifecycle.abortNavigation(
+                from: webView,
+                navigationID: navigationID,
+                navigationLifetime: navigationLifetime,
+                currentIntent: intentLedger.intent
+            ) {
+            case .ignored:
+                return .ignored
+            case .participant:
+                return .participant
+            case .authority(let promotion):
+                if let continuation = apply(promotion)
+                    ?? promoteAuthority(
+                        preferredWebViewID: nil
+                    ) {
+                    return .authoritativeContinuation(continuation)
+                }
+                guard rollsBackWhenUnreplaced else {
+                    return .authoritativeTerminated
+                }
+                return .authoritativeRollback(
+                    applyDurableDocumentRollback()
+                )
             }
-            return .authoritativeRollback(rollbackToDurableDocument())
         }
     }
 
@@ -378,6 +412,15 @@ final class TabMainFrameRuntimeTransaction {
         case .accepted(let role, let targetURLToAdopt):
             if let targetURLToAdopt {
                 intentLedger.updateTargetWithinRevision(targetURLToAdopt)
+                if continuationKind == .sameDocument,
+                   committedDocumentRuntime.lease(for: webView) != nil {
+                    committedDocumentRuntime.performTransition(reason: .sameDocumentPresentation) {
+                        committedDocumentRuntime.updatePresentation(
+                            targetURLToAdopt,
+                            on: webView
+                        )
+                    }
+                }
             }
             recovery.finish(on: webView)
             return LifecycleAcceptance(role: role, beganNewIntent: false)
@@ -530,20 +573,25 @@ final class TabMainFrameRuntimeTransaction {
         committedURL: URL,
         isPDF: Bool
     ) -> TabMainFrameCommitSnapshotClaim {
-        let transition = lifecycle.recordCommit(
-            from: webView,
-            navigationID: navigationID,
-            committedURL: committedURL,
-            isPDF: isPDF,
-            currentIntent: intentLedger.intent
-        )
-        if let evidence = transition.evidence {
-            committedDocuments.recordReplica(evidence)
-            if transition.claim.shouldPublishSharedEffects {
-                committedDocuments.adoptCanonicalDocument(evidence)
+        committedDocumentRuntime.performTransition(
+            reason: .documentCommit
+        ) {
+            let transition = lifecycle.recordCommit(
+                from: webView,
+                navigationID: navigationID,
+                committedURL: committedURL,
+                isPDF: isPDF,
+                currentIntent: intentLedger.intent
+            )
+            if let evidence = transition.evidence {
+                committedDocumentRuntime.recordCommit(
+                    evidence,
+                    publishesCanonicalDocument:
+                        transition.claim.shouldPublishSharedEffects
+                )
             }
+            return transition.claim
         }
-        return transition.claim
     }
 
     func claimAuthorityForTerminalSuccess(
@@ -552,33 +600,44 @@ final class TabMainFrameRuntimeTransaction {
         terminalURL: URL?,
         completesDocumentNavigation: Bool
     ) -> TabMainFrameLifecycleRole {
-        let transition = lifecycle.claimAuthorityForTerminalSuccess(
-            from: webView,
-            navigationID: navigationID,
-            terminalURL: terminalURL,
-            completesDocumentNavigation: completesDocumentNavigation,
-            currentIntent: intentLedger.intent
-        )
-        if let evidence = transition.evidence {
-            committedDocuments.recordReplica(evidence)
+        committedDocumentRuntime.performTransition(
+            reason: .terminalSuccess
+        ) {
+            let transition = lifecycle.claimAuthorityForTerminalSuccess(
+                from: webView,
+                navigationID: navigationID,
+                terminalURL: terminalURL,
+                completesDocumentNavigation: completesDocumentNavigation,
+                currentIntent: intentLedger.intent
+            )
+            if let evidence = transition.evidence {
+                committedDocumentRuntime.recordReplica(evidence)
+            }
+            if let presentationURL = transition.presentationURLToAdopt {
+                committedDocumentRuntime.updatePresentation(
+                    presentationURL,
+                    on: webView
+                )
+            }
+            return transition.role
         }
-        if let presentationURL = transition.presentationURLToAdopt {
-            committedDocuments.updatePresentation(presentationURL, on: webView)
-        }
-        return transition.role
     }
 
     func claimPromotedSharedCommitEffects(
         matching continuation: TabMainFrameAuthorityContinuation
     ) -> Bool {
-        guard let evidence = lifecycle.claimPromotedSharedCommitEffects(
-            matching: continuation,
-            currentIntent: intentLedger.intent
-        ) else {
-            return false
+        committedDocumentRuntime.performTransition(
+            reason: .authorityPromotion
+        ) {
+            guard let evidence = lifecycle.claimPromotedSharedCommitEffects(
+                matching: continuation,
+                currentIntent: intentLedger.intent
+            ) else {
+                return false
+            }
+            committedDocumentRuntime.adoptCanonicalDocument(evidence)
+            return true
         }
-        committedDocuments.adoptCanonicalDocument(evidence)
-        return true
     }
 
     func acceptPromotedAuthorityTarget(
@@ -612,92 +671,16 @@ final class TabMainFrameRuntimeTransaction {
         return true
     }
 
-    func documentLease(for webView: WKWebView) -> TabMainFrameDocumentLease? {
-        guard let proof = lifecycle.documentEvidence(
-            for: webView,
-            currentIntent: intentLedger.intent
-        ) else {
-            return nil
-        }
-        return committedDocuments.documentLease(
-            matching: proof.evidence,
-            isAuthority: proof.isAuthority
-        )
-    }
-
-    func recordSuspensionReport(
-        _ report: TabDocumentSuspensionReport,
-        from webView: WKWebView,
-        matching lease: TabMainFrameDocumentLease
-    ) -> Bool {
-        guard let currentLease = documentLease(for: webView),
-              currentLease.revision == lease.revision,
-              currentLease.documentGeneration == lease.documentGeneration,
-              currentLease.webViewID == lease.webViewID,
-              currentLease.participantID == lease.participantID,
-              WebRuntimeNavigationIdentity(currentLease.committedURL)
-                == WebRuntimeNavigationIdentity(lease.committedURL),
-              currentLease.isPDF == lease.isPDF else {
-            return false
-        }
-        return committedDocuments.recordSuspensionReport(
-            report,
-            from: webView,
-            matching: currentLease
-        )
-    }
-
-    func recordSubframePictureInPictureReport(
-        _ report: TabSubframePictureInPictureReport,
-        from webView: WKWebView,
-        matching lease: TabMainFrameDocumentLease
-    ) -> Bool {
-        guard let currentLease = documentLease(for: webView),
-              currentLease.revision == lease.revision,
-              currentLease.documentGeneration == lease.documentGeneration,
-              currentLease.webViewID == lease.webViewID,
-              currentLease.participantID == lease.participantID else {
-            return false
-        }
-        return committedDocuments.recordSubframePictureInPictureReport(
-            report,
-            from: webView,
-            matching: currentLease
-        )
-    }
-
-    func documentSuspensionDecision() -> TabDocumentSuspensionDecision {
-        committedDocuments.suspensionDecision()
-    }
-
-    func documentSuspensionToken(for webView: WKWebView) -> String? {
-        guard let lease = documentLease(for: webView) else { return nil }
-        return committedDocuments.suspensionToken(
-            for: webView,
-            matching: lease
-        )
-    }
-
-    func takePendingDocumentSuspensionActivations() -> [(
-        webView: WKWebView,
-        token: String,
-        epoch: UInt64
-    )] {
-        committedDocuments.takePendingSuspensionActivations()
-    }
-
-    func documentSuspensionActivationDidFail(
-        for webView: WKWebView,
-        token: String
-    ) -> Bool {
-        committedDocuments.suspensionActivationDidFail(
-            for: webView,
-            token: token
-        )
-    }
-
     func rollbackToDurableDocument() -> URL {
-        let snapshot = committedDocuments.rollbackSnapshot()
+        committedDocumentRuntime.performTransition(
+            reason: .navigationCancel
+        ) {
+            applyDurableDocumentRollback()
+        }
+    }
+
+    private func applyDurableDocumentRollback() -> URL {
+        let snapshot = committedDocumentRuntime.prepareRollbackSnapshot()
         let intent = intentLedger.beginRollbackIntent(to: snapshot.targetURL)
         lifecycle.resetForNewIntent()
         let rehydration = lifecycle.rehydrate(
@@ -705,7 +688,7 @@ final class TabMainFrameRuntimeTransaction {
             preferredAuthorityWebViewID: snapshot.preferredAuthorityWebViewID,
             intent: intent
         )
-        committedDocuments.adoptRehydratedEvidence(
+        committedDocumentRuntime.adoptRehydratedEvidence(
             rehydration.evidence,
             authorityWebViewID: rehydration.authorityWebViewID
         )
@@ -715,18 +698,22 @@ final class TabMainFrameRuntimeTransaction {
     func rollbackAfterFailedSubmission(
         survivingWebViews: [WKWebView]
     ) -> FailedSubmissionRollback {
-        for webView in survivingWebViews {
-            guard let committedURL = webView.committedURL else { continue }
-            committedDocuments.noteSurvivingDocument(
-                on: webView,
-                committedURL: committedURL
+        committedDocumentRuntime.performTransition(
+            reason: .submissionFailure
+        ) {
+            for webView in survivingWebViews {
+                guard let committedURL = webView.committedURL else { continue }
+                committedDocumentRuntime.noteSurvivingDocument(
+                    on: webView,
+                    committedURL: committedURL
+                )
+            }
+            let navigationStateSource = committedDocumentRuntime.sourceWebView()
+            return FailedSubmissionRollback(
+                targetURL: applyDurableDocumentRollback(),
+                navigationStateSource: navigationStateSource
             )
         }
-        let navigationStateSource = committedDocuments.sourceWebView()
-        return FailedSubmissionRollback(
-            targetURL: rollbackToDurableDocument(),
-            navigationStateSource: navigationStateSource
-        )
     }
 
     func loadingWebViews() -> [WKWebView] {
@@ -763,7 +750,7 @@ final class TabMainFrameRuntimeTransaction {
         _ promotion: TabMainFrameAuthorityPromotion?
     ) -> TabMainFrameAuthorityContinuation? {
         guard let promotion else { return nil }
-        promotion.migratedEvidence.forEach(committedDocuments.recordReplica)
+        committedDocumentRuntime.recordReplicas(promotion.migratedEvidence)
         if let targetURL = promotion.targetURLToAdopt {
             intentLedger.updateTargetWithinRevision(targetURL)
         }

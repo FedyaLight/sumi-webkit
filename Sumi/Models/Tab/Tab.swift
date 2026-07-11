@@ -60,6 +60,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     let extensionPageRuntimeOwner = TabExtensionPageRuntimeOwner()
     public let webViewSession: WebViewSessionHandle
     private let mainFrameRuntimeTransaction: TabMainFrameRuntimeTransaction
+    let committedDocumentRuntime: TabCommittedDocumentRuntime
     let webViewConfigurationOwner = TabWebViewConfigurationOwner()
     let normalWebViewSetupOwner = TabNormalWebViewSetupOwner()
     let webViewProvisioningOwner = TabWebViewProvisioningOwner()
@@ -372,7 +373,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         _ webViews: [WKWebView],
         preferredAuthorityWebView: WKWebView?
     ) -> TabMainFrameRuntimeDepartureResult {
-        let previousSuspensionDecision = documentSuspensionDecision
         var seen: Set<ObjectIdentifier> = []
         let departingWebViews = webViews.filter {
             seen.insert(ObjectIdentifier($0)).inserted
@@ -390,10 +390,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
                 tab: self
             )
         }
-        reconcileDocumentSuspensionStateIfChanged(
-            from: previousSuspensionDecision,
-            reason: "document-replica-departure"
-        )
         return result
     }
 
@@ -403,7 +399,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         navigationLifetime: AnyObject,
         rollsBackWhenUnreplaced: Bool = true
     ) -> TabMainFrameNavigationAbortResult {
-        let previousSuspensionDecision = documentSuspensionDecision
         let result = mainFrameRuntimeTransaction.abortNavigation(
             from: webView,
             navigationID: navigationID,
@@ -414,12 +409,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         if case .authoritativeRollback(let rollbackURL) = result {
             _ = beginWebViewRebuildIntent()
             url = rollbackURL
-            activatePendingDocumentSuspensionReports()
         }
-        reconcileDocumentSuspensionStateIfChanged(
-            from: previousSuspensionDecision,
-            reason: "document-navigation-abort"
-        )
         return result
     }
 
@@ -431,48 +421,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
 
     func requiresWebContentProcessRecovery(on webView: WKWebView) -> Bool {
         mainFrameRuntimeTransaction.requiresWebContentProcessRecovery(on: webView)
-    }
-
-    func mainFrameDocumentLease(
-        for webView: WKWebView
-    ) -> TabMainFrameDocumentLease? {
-        mainFrameRuntimeTransaction.documentLease(for: webView)
-    }
-
-    var documentSuspensionDecision: TabDocumentSuspensionDecision {
-        mainFrameRuntimeTransaction.documentSuspensionDecision()
-    }
-
-    @discardableResult
-    func recordDocumentSuspensionReport(
-        _ report: TabDocumentSuspensionReport,
-        from webView: WKWebView,
-        matching lease: TabMainFrameDocumentLease
-    ) -> Bool {
-        mainFrameRuntimeTransaction.recordSuspensionReport(
-            report,
-            from: webView,
-            matching: lease
-        )
-    }
-
-    @discardableResult
-    func recordSubframePictureInPictureReport(
-        _ report: TabSubframePictureInPictureReport,
-        from webView: WKWebView,
-        matching lease: TabMainFrameDocumentLease
-    ) -> Bool {
-        mainFrameRuntimeTransaction.recordSubframePictureInPictureReport(
-            report,
-            from: webView,
-            matching: lease
-        )
-    }
-
-    func documentSuspensionActivationToken(
-        for webView: WKWebView
-    ) -> String? {
-        mainFrameRuntimeTransaction.documentSuspensionToken(for: webView)
     }
 
     func beginPreparedMainFrameLoad(
@@ -585,17 +533,11 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         committedURL: URL,
         isPDF: Bool
     ) -> TabMainFrameCommitSnapshotClaim {
-        let previousSuspensionDecision = documentSuspensionDecision
         let claim = mainFrameRuntimeTransaction.recordCommit(
             from: webView,
             navigationID: navigationID,
             committedURL: committedURL,
             isPDF: isPDF
-        )
-        activatePendingDocumentSuspensionReports()
-        reconcileDocumentSuspensionStateIfChanged(
-            from: previousSuspensionDecision,
-            reason: "document-commit"
         )
         return claim
     }
@@ -657,17 +599,9 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     func claimPromotedSharedCommitEffects(
         matching continuation: TabMainFrameAuthorityContinuation
     ) -> Bool {
-        let previousSuspensionDecision = documentSuspensionDecision
         let claimed = mainFrameRuntimeTransaction.claimPromotedSharedCommitEffects(
             matching: continuation
         )
-        if claimed {
-            activatePendingDocumentSuspensionReports()
-            reconcileDocumentSuspensionStateIfChanged(
-                from: previousSuspensionDecision,
-                reason: "document-authority-promotion"
-            )
-        }
         return claimed
     }
 
@@ -737,19 +671,12 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     }
 
     func cancelMainFrameNavigationIntent() {
-        let previousSuspensionDecision = documentSuspensionDecision
         _ = mainFrameRuntimeTransaction.rollbackToDurableDocument()
-        activatePendingDocumentSuspensionReports()
-        reconcileDocumentSuspensionStateIfChanged(
-            from: previousSuspensionDecision,
-            reason: "document-navigation-cancel"
-        )
     }
 
     func rollbackMainFrameNavigationAfterFailedSubmission(
         on webView: WKWebView?
     ) {
-        let previousSuspensionDecision = documentSuspensionDecision
         var survivingWebViews = webViewSession.allKnownWebViews
         if let webView,
            survivingWebViews.contains(where: { $0 === webView }) == false {
@@ -757,11 +684,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         }
         let rollback = mainFrameRuntimeTransaction.rollbackAfterFailedSubmission(
             survivingWebViews: survivingWebViews
-        )
-        activatePendingDocumentSuspensionReports()
-        reconcileDocumentSuspensionStateIfChanged(
-            from: previousSuspensionDecision,
-            reason: "document-submission-rollback"
         )
         let rollbackURL = rollback.targetURL
         _ = beginWebViewRebuildIntent()
@@ -790,45 +712,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         mediaRuntime.callbacks.scheduleBackgroundMediaReconcile(
             "navigation-submission-failed"
         )
-    }
-
-    private func activatePendingDocumentSuspensionReports() {
-        for activation in mainFrameRuntimeTransaction
-            .takePendingDocumentSuspensionActivations() {
-            let webView = activation.webView
-            let token = activation.token
-            SumiDocumentSuspensionSensorUserScript.activateCommittedDocument(
-                on: webView,
-                token: token,
-                epoch: activation.epoch,
-                completion: { [weak self, weak webView] activated in
-                    guard activated == false,
-                          let self,
-                          let webView,
-                          self.mainFrameRuntimeTransaction
-                            .documentSuspensionActivationDidFail(
-                                for: webView,
-                                token: token
-                            ) else {
-                        return
-                    }
-                    Task { @MainActor [weak self] in
-                        await Task.yield()
-                        self?.activatePendingDocumentSuspensionReports()
-                    }
-                }
-            )
-        }
-    }
-
-    private func reconcileDocumentSuspensionStateIfChanged(
-        from previousDecision: TabDocumentSuspensionDecision,
-        reason: String
-    ) {
-        guard documentSuspensionDecision != previousDecision else { return }
-        navigationRuntime.lifecycleNavigationRuntime
-            .reconcileDocumentSuspensionState(self)
-        mediaRuntime.callbacks.scheduleBackgroundMediaReconcile(reason)
     }
 
     func isCurrentMainFrameNavigationRevision(_ revision: UInt64) -> Bool {
@@ -969,9 +852,12 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     ) {
         self.id = id
         self.url = url
-        self.mainFrameRuntimeTransaction = TabMainFrameRuntimeTransaction(
+        let mainFrameRuntimeTransaction = TabMainFrameRuntimeTransaction(
             initialURL: url
         )
+        self.mainFrameRuntimeTransaction = mainFrameRuntimeTransaction
+        self.committedDocumentRuntime =
+            mainFrameRuntimeTransaction.committedDocumentRuntime
         self.name = name
         self.faviconPresentation = .systemSymbol(favicon)
         self.faviconIsTemplateGlobePlaceholder = (favicon == "globe")
@@ -989,6 +875,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
             visitedLinkStore: visitedLinkStore
         )
         super.init()
+        committedDocumentRuntime.attachSuspensionEffects(self)
         self.spaceId = spaceId
         self.index = index
         navigationStateController.delegate = self

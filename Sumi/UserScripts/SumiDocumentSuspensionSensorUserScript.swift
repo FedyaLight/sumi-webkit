@@ -10,16 +10,19 @@ final class SumiDocumentSuspensionSensorUserScript: NSObject, SumiUserScript,
     WKScriptMessageHandlerWithReply
 {
     private let context: String
-    private weak var tab: Tab?
+    private weak var committedDocumentRuntime: TabCommittedDocumentRuntime?
 
     let source: String
     let injectionTime: WKUserScriptInjectionTime = .atDocumentStart
     let forMainFrameOnly = true
     let messageNames: [String]
 
-    init(tabID: UUID, tab: Tab) {
+    init(
+        tabID: UUID,
+        committedDocumentRuntime: TabCommittedDocumentRuntime
+    ) {
         context = "sumiDocumentSuspensionSensor_\(tabID.uuidString)"
-        self.tab = tab
+        self.committedDocumentRuntime = committedDocumentRuntime
         messageNames = [context]
         source = Self.makeSource(context: context)
         super.init()
@@ -217,9 +220,9 @@ final class SumiDocumentSuspensionSensorUserScript: NSObject, SumiUserScript,
         guard message.name == context,
               message.frameInfo.isMainFrame,
               let webView = message.webView,
-              let tab,
+              let committedDocumentRuntime,
               let payload = Payload(message: message, context: context),
-              let lease = tab.mainFrameDocumentLease(for: webView),
+              let lease = committedDocumentRuntime.lease(for: webView),
               payload.matches(lease: lease),
               message.frameInfo.sumiWebKitRequestURL.map({
                   payload.matches(url: $0, lease: lease)
@@ -227,21 +230,11 @@ final class SumiDocumentSuspensionSensorUserScript: NSObject, SumiUserScript,
             return false
         }
 
-        let previousDecision = tab.documentSuspensionDecision
-        let accepted = tab.recordDocumentSuspensionReport(
+        return committedDocumentRuntime.recordSuspensionReport(
             payload.report,
             from: webView,
             matching: lease
         )
-        if accepted,
-           tab.documentSuspensionDecision != previousDecision {
-            tab.navigationRuntime.lifecycleNavigationRuntime
-                .reconcileDocumentSuspensionState(tab)
-            tab.mediaRuntime.callbacks.scheduleBackgroundMediaReconcile(
-                "document-suspension-state"
-            )
-        }
-        return accepted
     }
 }
 

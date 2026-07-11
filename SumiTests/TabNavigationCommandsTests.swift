@@ -335,7 +335,7 @@ final class TabNavigationCommandsTests: XCTestCase {
         XCTAssertEqual(tab.url, committedURL)
         XCTAssertNotNil(tab.currentMainFrameNavigationIntent(matching: committedURL))
         let restoredDocument = try XCTUnwrap(
-            tab.mainFrameDocumentLease(for: webView)
+            tab.committedDocumentRuntime.lease(for: webView)
         )
         XCTAssertEqual(restoredDocument.committedURL, committedURL)
         XCTAssertTrue(restoredDocument.isAuthority)
@@ -391,12 +391,12 @@ final class TabNavigationCommandsTests: XCTestCase {
         tab.cancelMainFrameNavigationIntent()
 
         let restoredLease = try XCTUnwrap(
-            tab.mainFrameDocumentLease(for: htmlWebView)
+            tab.committedDocumentRuntime.lease(for: htmlWebView)
         )
         XCTAssertEqual(restoredLease.committedURL, committedURL)
         XCTAssertFalse(restoredLease.isPDF)
         XCTAssertTrue(restoredLease.isAuthority)
-        XCTAssertNil(tab.mainFrameDocumentLease(for: pdfWebView))
+        XCTAssertNil(tab.committedDocumentRuntime.lease(for: pdfWebView))
         XCTAssertNotNil(tab.currentMainFrameNavigationIntent(matching: committedURL))
     }
 

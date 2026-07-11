@@ -85,7 +85,7 @@ if rg -q 'documentLeaseToken|activateCommittedDocument' "$suspension_script"; th
 fi
 
 if ! rg -q 'message\.frameInfo\.isMainFrame' "$document_sensor" \
-  || ! rg -q 'mainFrameDocumentLease\(for: webView\)' "$document_sensor" \
+  || ! rg -q 'committedDocumentRuntime\.lease\(for: webView\)' "$document_sensor" \
   || ! rg -q 'documentLeaseToken' "$document_sensor" \
   || ! rg -q 'documentLeaseEpoch' "$document_sensor" \
   || ! rg -q 'suspensionActivationEpoch' \
@@ -101,7 +101,9 @@ if ! rg -q 'forMainFrameOnly = false' "$subframe_pip_sensor" \
   status=1
 fi
 
-if ! rg -q 'reconcileDocumentSuspensionState' "$document_sensor" \
+if ! rg -q 'recordSuspensionReport' "$document_sensor" \
+  || ! rg -q 'committedDocumentSuspensionDecisionDidChange' \
+    Sumi/Models/Tab/TabCommittedDocumentRuntime.swift \
   || ! rg -q 'reconcileDocumentSuspensionState' \
     Sumi/Models/Tab/Navigation/TabMainFrameLifecyclePromotionReducer.swift \
   || ! rg -q 'reconcileDocumentSuspensionState' \

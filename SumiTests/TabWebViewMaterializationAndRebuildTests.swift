@@ -990,10 +990,10 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
             ),
             .authority
         )
-        XCTAssertNil(tab.mainFrameDocumentLease(for: oldPrimary))
-        XCTAssertNil(tab.mainFrameDocumentLease(for: oldClone))
+        XCTAssertNil(tab.committedDocumentRuntime.lease(for: oldPrimary))
+        XCTAssertNil(tab.committedDocumentRuntime.lease(for: oldClone))
         XCTAssertEqual(
-            tab.mainFrameDocumentLease(for: replacement)?.isAuthority,
+            tab.committedDocumentRuntime.lease(for: replacement)?.isAuthority,
             true
         )
     }

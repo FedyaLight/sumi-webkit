@@ -5,9 +5,15 @@ func makeNormalTabCoreUserScripts(for tab: Tab) -> [SumiUserScript] {
     var scripts: [SumiUserScript] = [
         SumiLinkInteractionUserScript(contextID: tab.id),
         SumiWebPageContextMenuUserScript(contextID: tab.id),
-        SumiDocumentSuspensionSensorUserScript(tabID: tab.id, tab: tab),
+        SumiDocumentSuspensionSensorUserScript(
+            tabID: tab.id,
+            committedDocumentRuntime: tab.committedDocumentRuntime
+        ),
         SumiTabSuspensionUserScript(tabID: tab.id),
-        SumiSubframePictureInPictureUserScript(tabID: tab.id, tab: tab),
+        SumiSubframePictureInPictureUserScript(
+            tabID: tab.id,
+            committedDocumentRuntime: tab.committedDocumentRuntime
+        ),
         SumiWebNotificationUserScript(tab: tab),
         SumiNativeScrollbarHideUserScript(),
     ]

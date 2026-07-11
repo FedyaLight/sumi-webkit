@@ -268,7 +268,7 @@ final class SumiBackgroundMediaOptimizationService {
 
     private func isEligibleForOptimization(tab: Tab, webView: WKWebView) -> Bool {
         guard isOptimizableContentURL(tab.url) else { return false }
-        switch tab.documentSuspensionDecision {
+        switch tab.committedDocumentRuntime.suspensionDecision {
         case .vetoed(.pdfDocument), .vetoed(.pictureInPicture):
             return false
         case .awaitingEvidence, .allowed, .vetoed(.pageReportedUnableToSuspend):

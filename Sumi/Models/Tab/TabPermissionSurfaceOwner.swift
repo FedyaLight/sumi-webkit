@@ -373,7 +373,7 @@ extension TabPermissionSurfaceOwner.Context {
                     ?? fallbackPageIdentity(tabId: tabId)
             },
             documentLease: { [weak tab] webView in
-                tab?.mainFrameDocumentLease(for: webView)
+                tab?.committedDocumentRuntime.lease(for: webView)
             },
             isCurrentPage: { [weak tab] pageId, pageGeneration in
                 guard let tab else { return false }

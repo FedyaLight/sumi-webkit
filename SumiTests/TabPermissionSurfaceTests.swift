@@ -356,10 +356,10 @@ final class TabPermissionSurfaceTests: XCTestCase {
         )
 
         let authorityLease = try XCTUnwrap(
-            tab.mainFrameDocumentLease(for: authorityWebView)
+            tab.committedDocumentRuntime.lease(for: authorityWebView)
         )
         let cloneLease = try XCTUnwrap(
-            tab.mainFrameDocumentLease(for: cloneWebView)
+            tab.committedDocumentRuntime.lease(for: cloneWebView)
         )
         XCTAssertTrue(authorityLease.isAuthority)
         XCTAssertFalse(cloneLease.isAuthority)
@@ -421,18 +421,18 @@ final class TabPermissionSurfaceTests: XCTestCase {
         )
         tab.extensionPageRuntimeOwner.committedMainDocumentURL = committedURL
 
-        XCTAssertNil(tab.mainFrameDocumentLease(for: divergedWebView))
+        XCTAssertNil(tab.committedDocumentRuntime.lease(for: divergedWebView))
         XCTAssertNil(tab.popupPermissionTabContext(for: divergedWebView))
         XCTAssertNil(tab.externalSchemePermissionTabContext(for: divergedWebView))
         XCTAssertNil(tab.webNotificationTabContext(for: divergedWebView))
-        XCTAssertNil(tab.mainFrameDocumentLease(for: pdfMismatchWebView))
+        XCTAssertNil(tab.committedDocumentRuntime.lease(for: pdfMismatchWebView))
         XCTAssertNil(tab.popupPermissionTabContext(for: pdfMismatchWebView))
 
         _ = tab.beginMainFrameNavigationIntent(
             to: URL(string: "https://newer.example/document")!
         )
 
-        XCTAssertNil(tab.mainFrameDocumentLease(for: compatibleClone))
+        XCTAssertNil(tab.committedDocumentRuntime.lease(for: compatibleClone))
         XCTAssertNil(tab.externalSchemePermissionTabContext(for: compatibleClone))
         withExtendedLifetime(
             (
@@ -489,7 +489,9 @@ final class TabPermissionSurfaceTests: XCTestCase {
         )
 
         XCTAssertFalse(try XCTUnwrap(context.isCurrentPage)())
-        let updatedLease = try XCTUnwrap(tab.mainFrameDocumentLease(for: webView))
+        let updatedLease = try XCTUnwrap(
+            tab.committedDocumentRuntime.lease(for: webView)
+        )
         XCTAssertEqual(updatedLease.committedURL, actualCommittedURL)
         XCTAssertEqual(updatedLease.presentationURL, presentationURL)
         XCTAssertNotNil(tab.externalSchemePermissionTabContext(for: webView))

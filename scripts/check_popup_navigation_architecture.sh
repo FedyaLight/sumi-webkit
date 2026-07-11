@@ -233,7 +233,7 @@ fail_matches "popup responder regained direct child-surface dispatch" \
 
 require_pattern \
   "$child_webview_transaction" \
-  'let[[:space:]]+sourceDocumentLease[[:space:]]*=[[:space:]]*tab\.mainFrameDocumentLease' \
+  'let[[:space:]]+sourceDocumentLease[[:space:]]*=[[:space:]]*tab\.committedDocumentRuntime\.lease' \
   "WebKit child admission must capture the exact source document"
 require_pattern \
   "$child_webview_transaction" \

@@ -13,6 +13,16 @@ fi
 
 failures=0
 
+for retired_document_owner in \
+  Sumi/Models/Tab/TabCommittedDocumentOwner.swift \
+  Sumi/Models/Tab/TabDocumentSuspensionOwner.swift; do
+  if [[ -e "$retired_document_owner" ]]; then
+    printf 'error: committed-document authority must not regrow as an Owner façade: %s\n' \
+      "$retired_document_owner" >&2
+    failures=$((failures + 1))
+  fi
+done
+
 count_lines() {
   local file="$1"
   if [[ ! -f "$file" ]]; then
@@ -66,6 +76,15 @@ tab_model_methods="$(
     Sumi/Models/Tab/Tab.swift 2>/dev/null || true
 )"
 tab_model_methods="${tab_model_methods:-0}"
+tab_main_frame_transaction_loc="$(count_lines Sumi/Models/Tab/TabMainFrameRuntimeTransaction.swift)"
+tab_committed_document_runtime="Sumi/Models/Tab/TabCommittedDocumentRuntime.swift"
+tab_committed_document_runtime_loc="$(count_lines "$tab_committed_document_runtime")"
+tab_committed_document_runtime_methods="$(
+  rg --count-matches \
+    '^\s*(public |private |internal |fileprivate )?func ' \
+    "$tab_committed_document_runtime" 2>/dev/null || true
+)"
+tab_committed_document_runtime_methods="${tab_committed_document_runtime_methods:-0}"
 retired_tab_profile_assignment_facade="$(
   count_matches \
     'beginProfileAssignmentIntent|isCurrentProfileAssignmentIntent|hasPendingProfileAssignment|hasUnsettledProfileAssignment|cancelPendingProfileAssignment|commitProfileAssignmentIntent|stageProfileAssignmentIntent|isCurrentStagedProfileAssignmentIntent|finishStagedProfileAssignmentIntent|rollbackStagedProfileAssignmentIntent|abortProfileAssignmentIntent' \
@@ -769,8 +788,16 @@ printf '%s\n' 'Architecture hub metrics freeze'
 printf '%s\n' '--------------------------------'
 check_max "BrowserManager.swift LOC" "$bm_loc" 200
 check_max "TabManager.swift LOC" "$tm_loc" 220
-check_max "Tab.swift LOC" "$tab_model_loc" 1136
-check_max "Tab.swift methods" "$tab_model_methods" 77
+check_max "Tab.swift LOC" "$tab_model_loc" 1023
+check_max "Tab.swift methods" "$tab_model_methods" 71
+check_max "TabMainFrameRuntimeTransaction.swift LOC" \
+  "$tab_main_frame_transaction_loc" 759
+check_max "TabCommittedDocumentRuntime.swift LOC" \
+  "$tab_committed_document_runtime_loc" 300
+check_max "TabCommittedDocumentRuntime methods" \
+  "$tab_committed_document_runtime_methods" 22
+check_max "TabCommittedDocumentRuntime collaborators" \
+  "$(rg --count-matches '^    private (let|weak var) [a-zA-Z_]' "$tab_committed_document_runtime")" 4
 check_exact "Retired Tab profile-assignment facade" \
   "$retired_tab_profile_assignment_facade" 0
 check_exact "Tab profile mutation outside transaction services" \

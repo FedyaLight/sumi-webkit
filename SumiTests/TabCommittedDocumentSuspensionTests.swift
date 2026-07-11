@@ -349,11 +349,18 @@ final class TabCommittedDocumentSuspensionTests: XCTestCase {
         )
         XCTAssertFalse(ledger.suspensionActivationDidFail(
             for: webView,
-            token: "wrong-token"
+            token: "wrong-token",
+            epoch: first.epoch
+        ))
+        XCTAssertFalse(ledger.suspensionActivationDidFail(
+            for: webView,
+            token: first.token,
+            epoch: first.epoch &+ 1
         ))
         XCTAssertTrue(ledger.suspensionActivationDidFail(
             for: webView,
-            token: first.token
+            token: first.token,
+            epoch: first.epoch
         ))
 
         let second = try XCTUnwrap(
@@ -363,7 +370,8 @@ final class TabCommittedDocumentSuspensionTests: XCTestCase {
         XCTAssertEqual(second.epoch, first.epoch)
         XCTAssertTrue(ledger.suspensionActivationDidFail(
             for: webView,
-            token: second.token
+            token: second.token,
+            epoch: second.epoch
         ))
 
         let third = try XCTUnwrap(
@@ -373,10 +381,124 @@ final class TabCommittedDocumentSuspensionTests: XCTestCase {
         XCTAssertEqual(third.epoch, first.epoch)
         XCTAssertFalse(ledger.suspensionActivationDidFail(
             for: webView,
-            token: third.token
+            token: third.token,
+            epoch: third.epoch
         ))
         XCTAssertTrue(ledger.takePendingSuspensionActivations().isEmpty)
         XCTAssertEqual(ledger.suspensionDecision(), .awaitingEvidence)
+    }
+
+    func testSuccessorDocumentRejectsStaleActivationFailureEvidence() throws {
+        let url = try XCTUnwrap(URL(string: "https://example.com/successor"))
+        let webView = WKWebView()
+        let ledger = TabCommittedDocumentLedger(initialURL: url)
+        let firstDocument = evidence(
+            webView: webView,
+            url: url,
+            revision: 1,
+            generation: 1
+        )
+        ledger.adoptCanonicalDocument(firstDocument)
+        let firstActivation = try XCTUnwrap(
+            ledger.takePendingSuspensionActivations().first
+        )
+
+        let successor = evidence(
+            webView: webView,
+            url: url,
+            revision: 2,
+            generation: 2
+        )
+        ledger.adoptCanonicalDocument(successor)
+        let successorActivation = try XCTUnwrap(
+            ledger.takePendingSuspensionActivations().first
+        )
+
+        XCTAssertNotEqual(successorActivation.token, firstActivation.token)
+        XCTAssertNotEqual(successorActivation.epoch, firstActivation.epoch)
+        XCTAssertFalse(ledger.suspensionActivationDidFail(
+            for: webView,
+            token: firstActivation.token,
+            epoch: firstActivation.epoch
+        ))
+        XCTAssertTrue(ledger.suspensionActivationDidFail(
+            for: webView,
+            token: successorActivation.token,
+            epoch: successorActivation.epoch
+        ))
+    }
+
+    func testLedgerDoesNotRetainReleasedWebViewThroughDocumentEvidence() throws {
+        let url = try XCTUnwrap(URL(string: "https://example.com/released"))
+        let ledger = TabCommittedDocumentLedger(initialURL: url)
+        weak var releasedWebView: WKWebView?
+
+        autoreleasepool {
+            let webView = WKWebView()
+            releasedWebView = webView
+            ledger.adoptCanonicalDocument(evidence(
+                webView: webView,
+                url: url,
+                revision: 1,
+                generation: 1
+            ))
+        }
+
+        XCTAssertNil(releasedWebView)
+        XCTAssertEqual(ledger.suspensionDecision(), .awaitingEvidence)
+        XCTAssertTrue(ledger.rollbackSnapshot().candidates.isEmpty)
+    }
+
+    func testPDFDocumentSkipsSensorActivationUntilNonPDFSuccessor() throws {
+        let url = try XCTUnwrap(URL(string: "https://example.com/document.pdf"))
+        let webView = WKWebView()
+        let ledger = TabCommittedDocumentLedger(initialURL: url)
+        ledger.adoptCanonicalDocument(evidence(
+            webView: webView,
+            url: url,
+            revision: 1,
+            generation: 1,
+            isPDF: true
+        ))
+
+        XCTAssertEqual(ledger.suspensionDecision(), .vetoed(.pdfDocument))
+        XCTAssertTrue(ledger.takePendingSuspensionActivations().isEmpty)
+
+        ledger.adoptCanonicalDocument(evidence(
+            webView: webView,
+            url: url,
+            revision: 2,
+            generation: 2
+        ))
+        XCTAssertEqual(
+            ledger.takePendingSuspensionActivations().count,
+            1
+        )
+    }
+
+    func testDocumentLeaseReadsDurablePresentationFromLedger() throws {
+        let committedURL = try XCTUnwrap(
+            URL(string: "https://example.com/document")
+        )
+        let presentationURL = try XCTUnwrap(
+            URL(string: "https://example.com/document#reader")
+        )
+        let webView = WKWebView()
+        let ledger = TabCommittedDocumentLedger(initialURL: committedURL)
+        let document = evidence(
+            webView: webView,
+            url: committedURL,
+            revision: 1,
+            generation: 1
+        )
+        ledger.adoptCanonicalDocument(document)
+        ledger.updatePresentation(presentationURL, on: webView)
+
+        let documentLease = try XCTUnwrap(
+            ledger.documentLease(matching: document, isAuthority: true)
+        )
+        XCTAssertEqual(documentLease.committedURL, committedURL)
+        XCTAssertEqual(documentLease.presentationURL, presentationURL)
     }
 
     func testBatchDepartureRemovesVetoesWithoutDiscardingSurvivorReport() throws {

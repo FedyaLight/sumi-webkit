@@ -100,7 +100,7 @@ final class WebKitChildWebViewTransaction {
               tab.hasBrowserRuntime,
               let sourceWebView = webView as? FocusableWKWebView,
               sourceWebView.owningTab === tab,
-              let sourceDocumentLease = tab.mainFrameDocumentLease(
+              let sourceDocumentLease = tab.committedDocumentRuntime.lease(
                   for: sourceWebView
               ),
               configuration.websiteDataStore ===
@@ -222,7 +222,7 @@ final class WebKitChildWebViewTransaction {
         guard permissionResult.isAllowed,
               pending.tab.hasBrowserRuntime,
               pending.sourceWebView.owningTab === pending.tab,
-              pending.tab.mainFrameDocumentLease(
+              pending.tab.committedDocumentRuntime.lease(
                   for: pending.sourceWebView
               ) == pending.sourceDocumentLease,
               pending.permissionContext.isCurrentPage(),

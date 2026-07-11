@@ -11,7 +11,9 @@ enum SumiReaderModeService {
     static func toggleReaderMode(on webView: WKWebView, tab: Tab?) async throws {
         guard let tab,
               let host = webView.sumiReaderPresentationHost,
-              let documentLease = tab.mainFrameDocumentLease(for: webView) else {
+              let documentLease = tab.committedDocumentRuntime.lease(
+                for: webView
+              ) else {
             throw ReaderError.unavailable
         }
         host.invalidateReaderPresentation(unless: documentLease)
@@ -28,7 +30,7 @@ enum SumiReaderModeService {
         guard let article = try await extractArticle(from: webView) else {
             throw ReaderError.extractionFailed
         }
-        guard tab.mainFrameDocumentLease(for: webView) == documentLease,
+        guard tab.committedDocumentRuntime.lease(for: webView) == documentLease,
               webView.sumiReaderPresentationHost === host else {
             throw ReaderError.unavailable
         }
@@ -89,7 +91,8 @@ enum SumiReaderModeService {
     ) -> SumiReaderSourceDocument {
         let isCurrentDocument: @MainActor () -> Bool = { [weak tab, weak webView] in
             guard let tab, let webView else { return false }
-            return tab.mainFrameDocumentLease(for: webView) == documentLease
+            return tab.committedDocumentRuntime.lease(for: webView)
+                == documentLease
         }
         return SumiReaderSourceDocument(
             webView: webView,
@@ -102,7 +105,7 @@ enum SumiReaderModeService {
             ),
             currentLease: { [weak tab, weak webView] in
                 guard let tab, let webView else { return nil }
-                return tab.mainFrameDocumentLease(for: webView)
+                return tab.committedDocumentRuntime.lease(for: webView)
             },
             routeWebLink: { [weak tab, weak webView] destinationURL, behavior in
                 guard let tab, let webView, isCurrentDocument() else {

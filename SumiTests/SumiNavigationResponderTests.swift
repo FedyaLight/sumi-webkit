@@ -1125,9 +1125,15 @@ final class SumiNavigationResponderTests: SumiNavigationResponderTestCase {
         )
 
         XCTAssertNil(pdfPolicy)
-        XCTAssertNotEqual(tab.documentSuspensionDecision, .vetoed(.pdfDocument))
+        XCTAssertNotEqual(
+            tab.committedDocumentRuntime.suspensionDecision,
+            .vetoed(.pdfDocument)
+        )
         adapter.didCommit(pdfNavigation)
-        XCTAssertEqual(tab.documentSuspensionDecision, .vetoed(.pdfDocument))
+        XCTAssertEqual(
+            tab.committedDocumentRuntime.suspensionDecision,
+            .vetoed(.pdfDocument)
+        )
 
         let subframePolicy = await adapter.decidePolicy(
             for: NavigationResponse(
@@ -1144,7 +1150,10 @@ final class SumiNavigationResponderTests: SumiNavigationResponderTestCase {
         )
 
         XCTAssertNil(subframePolicy)
-        XCTAssertEqual(tab.documentSuspensionDecision, .vetoed(.pdfDocument))
+        XCTAssertEqual(
+            tab.committedDocumentRuntime.suspensionDecision,
+            .vetoed(.pdfDocument)
+        )
 
         adapter.navigationDidFinish(pdfNavigation)
         let htmlURL = URL(string: "https://example.com/page")!
@@ -1175,7 +1184,10 @@ final class SumiNavigationResponderTests: SumiNavigationResponderTestCase {
 
         XCTAssertNil(htmlPolicy)
         adapter.didCommit(htmlNavigation)
-        XCTAssertNotEqual(tab.documentSuspensionDecision, .vetoed(.pdfDocument))
+        XCTAssertNotEqual(
+            tab.committedDocumentRuntime.suspensionDecision,
+            .vetoed(.pdfDocument)
+        )
     }
 
     func testTabLifecycleWillStartUsesInjectedRuntimeWithoutBrowserManager() {

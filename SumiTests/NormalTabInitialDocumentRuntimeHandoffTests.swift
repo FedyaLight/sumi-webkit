@@ -371,7 +371,10 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
             continuationKind: .clientRedirect
         ), .participant)
         XCTAssertNotNil(tab.currentMainFrameNavigationIntent(matching: settledURL))
-        XCTAssertTrue(tab.mainFrameDocumentLease(for: authorityWebView)?.isAuthority == true)
+        XCTAssertTrue(
+            tab.committedDocumentRuntime.lease(for: authorityWebView)?.isAuthority
+                == true
+        )
     }
 
     func testCancelledIntentRejectsLateUnboundLifecycle() throws {
@@ -599,10 +602,10 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
         XCTAssertTrue(firstContinuation.needsSharedCommitEffects)
 
         let firstLease = try XCTUnwrap(
-            tab.mainFrameDocumentLease(for: firstPromotedReplica)
+            tab.committedDocumentRuntime.lease(for: firstPromotedReplica)
         )
         let secondLease = try XCTUnwrap(
-            tab.mainFrameDocumentLease(for: secondPromotedReplica)
+            tab.committedDocumentRuntime.lease(for: secondPromotedReplica)
         )
         XCTAssertEqual(firstLease.revision, secondLease.revision)
         XCTAssertEqual(firstLease.documentGeneration, secondLease.documentGeneration)
@@ -618,7 +621,7 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
         XCTAssertEqual(secondContinuation.targetURL, promotedURL)
         XCTAssertFalse(secondContinuation.needsSharedCommitEffects)
         let survivingLease = try XCTUnwrap(
-            tab.mainFrameDocumentLease(for: remainingReplica)
+            tab.committedDocumentRuntime.lease(for: remainingReplica)
         )
         XCTAssertTrue(survivingLease.isAuthority)
         XCTAssertEqual(survivingLease.revision, firstLease.revision)
@@ -866,8 +869,11 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
 
         XCTAssertEqual(recoveryPlan.scope, .replica(intent))
         XCTAssertNil(recoveryPlan.authorityContinuation)
-        XCTAssertTrue(tab.mainFrameDocumentLease(for: authorityWebView)?.isAuthority == true)
-        XCTAssertNil(tab.mainFrameDocumentLease(for: crashedReplica))
+        XCTAssertTrue(
+            tab.committedDocumentRuntime.lease(for: authorityWebView)?.isAuthority
+                == true
+        )
+        XCTAssertNil(tab.committedDocumentRuntime.lease(for: crashedReplica))
         XCTAssertTrue(tab.requiresWebContentProcessRecovery(on: crashedReplica))
         XCTAssertTrue(tab.isCurrentMainFrameNavigationIntent(intent))
     }

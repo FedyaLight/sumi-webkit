@@ -225,7 +225,10 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
             .vetoed(.pageReportedUnableToSuspend),
             on: secondTab
         )
-        XCTAssertEqual(firstTab.documentSuspensionDecision, .allowed)
+        XCTAssertEqual(
+            firstTab.committedDocumentRuntime.suspensionDecision,
+            .allowed
+        )
         withExtendedLifetime(firstWebView) {}
     }
 
@@ -259,7 +262,7 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
         )
 
         try await Task.sleep(nanoseconds: 200_000_000)
-        XCTAssertEqual(tab.documentSuspensionDecision, .allowed)
+        XCTAssertEqual(tab.committedDocumentRuntime.suspensionDecision, .allowed)
     }
 
     func testSubframeCannotPublishMainDocumentSuspensionEvidence() async throws {
@@ -299,7 +302,7 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
         )
         try await Task.sleep(nanoseconds: 100_000_000)
 
-        XCTAssertEqual(tab.documentSuspensionDecision, .allowed)
+        XCTAssertEqual(tab.committedDocumentRuntime.suspensionDecision, .allowed)
     }
 
     func testUntrackedWebViewCannotOverwriteCanonicalReplicaReport() async throws {
@@ -321,7 +324,7 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
         )
         try await Task.sleep(nanoseconds: 100_000_000)
 
-        XCTAssertEqual(tab.documentSuspensionDecision, .allowed)
+        XCTAssertEqual(tab.committedDocumentRuntime.suspensionDecision, .allowed)
     }
 
     func testPictureInPictureInsideIframeVetoesPhysicalDocument() async throws {
@@ -491,14 +494,14 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
         line: UInt = #line
     ) async throws {
         for _ in 0..<100 {
-            if tab.documentSuspensionDecision == expected {
+            if tab.committedDocumentRuntime.suspensionDecision == expected {
                 return
             }
             try await Task.sleep(nanoseconds: 20_000_000)
         }
 
         XCTAssertEqual(
-            tab.documentSuspensionDecision,
+            tab.committedDocumentRuntime.suspensionDecision,
             expected,
             file: file,
             line: line

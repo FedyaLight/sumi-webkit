@@ -11,17 +11,20 @@ final class SumiSubframePictureInPictureUserScript: NSObject, SumiUserScript,
 {
     private let bootstrapContext: String
     private let reportContext: String
-    private weak var tab: Tab?
+    private weak var committedDocumentRuntime: TabCommittedDocumentRuntime?
 
     let source: String
     let injectionTime: WKUserScriptInjectionTime = .atDocumentStart
     let forMainFrameOnly = false
     let messageNames: [String]
 
-    init(tabID: UUID, tab: Tab) {
+    init(
+        tabID: UUID,
+        committedDocumentRuntime: TabCommittedDocumentRuntime
+    ) {
         bootstrapContext = "sumiSubframePiPBootstrap_\(tabID.uuidString)"
         reportContext = "sumiSubframePiPReport_\(tabID.uuidString)"
-        self.tab = tab
+        self.committedDocumentRuntime = committedDocumentRuntime
         messageNames = [bootstrapContext, reportContext]
         source = Self.makeBootstrapSource(context: bootstrapContext)
         super.init()
@@ -177,14 +180,15 @@ final class SumiSubframePictureInPictureUserScript: NSObject, SumiUserScript,
     ) -> Bool {
         guard message.frameInfo.isMainFrame == false,
               let webView = message.webView,
-              let tab,
-              let lease = tab.mainFrameDocumentLease(for: webView),
-              let token = tab.documentSuspensionActivationToken(for: webView)
+              let committedDocumentRuntime,
+              let lease = committedDocumentRuntime.lease(for: webView),
+              let token = committedDocumentRuntime
+                .suspensionActivationToken(for: webView)
         else { return false }
         installSensor(
             in: message.frameInfo,
             webView: webView,
-            tab: tab,
+            committedDocumentRuntime: committedDocumentRuntime,
             lease: lease,
             token: token,
             attempt: 1
@@ -195,7 +199,7 @@ final class SumiSubframePictureInPictureUserScript: NSObject, SumiUserScript,
     private func installSensor(
         in frame: WKFrameInfo,
         webView: WKWebView,
-        tab: Tab,
+        committedDocumentRuntime: TabCommittedDocumentRuntime,
         lease: TabMainFrameDocumentLease,
         token: String,
         attempt: Int
@@ -208,7 +212,8 @@ final class SumiSubframePictureInPictureUserScript: NSObject, SumiUserScript,
             ],
             in: frame,
             in: .defaultClient,
-            completionHandler: { [weak self, weak webView, weak tab] result in
+            completionHandler: {
+                [weak self, weak webView, weak committedDocumentRuntime] result in
                 let installed: Bool
                 switch result {
                 case .success(let value):
@@ -221,17 +226,17 @@ final class SumiSubframePictureInPictureUserScript: NSObject, SumiUserScript,
                     await Task.yield()
                     guard let self,
                           let webView,
-                          let tab,
+                          let committedDocumentRuntime,
                           self.matchesCurrentDocument(
                               lease,
                               token: token,
                               webView: webView,
-                              tab: tab
+                              committedDocumentRuntime: committedDocumentRuntime
                           ) else { return }
                     self.installSensor(
                         in: frame,
                         webView: webView,
-                        tab: tab,
+                        committedDocumentRuntime: committedDocumentRuntime,
                         lease: lease,
                         token: token,
                         attempt: attempt + 1
@@ -245,13 +250,17 @@ final class SumiSubframePictureInPictureUserScript: NSObject, SumiUserScript,
         _ lease: TabMainFrameDocumentLease,
         token: String,
         webView: WKWebView,
-        tab: Tab
+        committedDocumentRuntime: TabCommittedDocumentRuntime
     ) -> Bool {
-        guard let currentLease = tab.mainFrameDocumentLease(for: webView),
+        guard let currentLease = committedDocumentRuntime.lease(
+            for: webView
+        ),
               currentLease.revision == lease.revision,
               currentLease.documentGeneration == lease.documentGeneration,
               currentLease.participantID == lease.participantID,
-              tab.documentSuspensionActivationToken(for: webView) == token else {
+              committedDocumentRuntime.suspensionActivationToken(
+                for: webView
+              ) == token else {
             return false
         }
         return true
@@ -263,30 +272,20 @@ final class SumiSubframePictureInPictureUserScript: NSObject, SumiUserScript,
         guard message.name == reportContext,
               message.frameInfo.isMainFrame == false,
               let webView = message.webView,
-              let tab,
+              let committedDocumentRuntime,
               let payload = Payload(message: message, context: reportContext),
               let frameURL = message.frameInfo.sumiWebKitRequestURL,
               WebRuntimeNavigationIdentity(frameURL)
                 == WebRuntimeNavigationIdentity(payload.documentURL),
-              let lease = tab.mainFrameDocumentLease(for: webView) else {
+              let lease = committedDocumentRuntime.lease(for: webView) else {
             return false
         }
 
-        let previousDecision = tab.documentSuspensionDecision
-        let accepted = tab.recordSubframePictureInPictureReport(
+        return committedDocumentRuntime.recordSubframePictureInPictureReport(
             payload.report,
             from: webView,
             matching: lease
         )
-        if accepted,
-           tab.documentSuspensionDecision != previousDecision {
-            tab.navigationRuntime.lifecycleNavigationRuntime
-                .reconcileDocumentSuspensionState(tab)
-            tab.mediaRuntime.callbacks.scheduleBackgroundMediaReconcile(
-                "subframe-picture-in-picture-state"
-            )
-        }
-        return accepted
     }
 }
 

@@ -9,12 +9,14 @@ cd "$repo_root"
 # - WebViewSessionHandle is Tab's narrow detached-placement/read boundary.
 # - tracked window mutations stay package-only behind WebViewTrackingLifecycleOwner.
 # - Tab stores no WKWebView mirror and exposes no ownership façade.
-# - TabMainFrameRuntimeTransaction exclusively owns semantic navigation state.
+# - TabMainFrameRuntimeTransaction owns intent/lifecycle/recovery transitions.
+# - TabCommittedDocumentRuntime alone owns durable committed-document state.
 
 production_roots=(App Sumi SidebarChrome FloatingBar Settings UI)
 all_swift_roots=("${production_roots[@]}" Packages SumiTests)
 repository_source="Packages/SumiWebRuntime/Sources/SumiWebRuntime/Session/WebViewSessionRepository.swift"
 handle_source="Packages/SumiWebRuntime/Sources/SumiWebRuntime/Session/WebViewSessionHandle.swift"
+committed_document_runtime="Sumi/Models/Tab/TabCommittedDocumentRuntime.swift"
 status=0
 
 fail_matches() {
@@ -25,7 +27,7 @@ fail_matches() {
   status=1
 }
 
-for required in "$repository_source" "$handle_source"; do
+for required in "$repository_source" "$handle_source" "$committed_document_runtime"; do
   if [[ ! -f "$required" ]]; then
     printf 'error: canonical WebView ownership source missing: %s\n' "$required" >&2
     status=1
@@ -175,11 +177,11 @@ tab_mirror_hits="$(
 )"
 fail_matches "Tab WKWebView ownership mirror/façade reintroduced" "$tab_mirror_hits"
 
-# The main-frame aggregate is intentionally the only production construction
-# seam for its four independently mutable state components. Retaining any of
-# them directly from Tab would reopen non-atomic mutation paths.
+# The main-frame transaction constructs the intent/lifecycle/recovery state.
+# Durable document state has its own exact runtime and cannot be constructed or
+# mutated through the wider Tab/main-frame façade.
 main_frame_component_construction_hits="$(
-  rg -n '\b(TabMainFrameIntentLedger|TabMainFrameLifecycleMachine|TabCommittedDocumentLedger|TabWebContentRecoveryPlanner)\s*\(' \
+  rg -n '\b(TabMainFrameIntentLedger|TabMainFrameLifecycleMachine|TabWebContentRecoveryPlanner)\s*\(' \
     "${production_roots[@]}" -g '*.swift' || true
 )"
 while IFS= read -r match; do
@@ -190,6 +192,67 @@ while IFS= read -r match; do
     status=1
   fi
 done <<< "$main_frame_component_construction_hits"
+
+committed_document_runtime_construction_hits="$(
+  rg -n '\bTabCommittedDocumentRuntime\s*\(' \
+    "${production_roots[@]}" -g '*.swift' || true
+)"
+while IFS= read -r match; do
+  [[ -z "$match" ]] && continue
+  file="${match%%:*}"
+  if [[ "$file" != "Sumi/Models/Tab/TabMainFrameRuntimeTransaction.swift" ]]; then
+    printf 'error: committed-document runtime constructed outside main-frame composition: %s\n' "$match" >&2
+    status=1
+  fi
+done <<< "$committed_document_runtime_construction_hits"
+
+committed_document_ledger_construction_hits="$(
+  rg -n '\bTabCommittedDocumentLedger\s*\(' \
+    "${production_roots[@]}" -g '*.swift' || true
+)"
+while IFS= read -r match; do
+  [[ -z "$match" ]] && continue
+  file="${match%%:*}"
+  if [[ "$file" != "$committed_document_runtime" ]]; then
+    printf 'error: durable document ledger constructed outside exact runtime: %s\n' "$match" >&2
+    status=1
+  fi
+done <<< "$committed_document_ledger_construction_hits"
+
+durable_webview_evidence_hits="$(
+  rg -n '\b(let|var)\s+\w+\s*:\s*TabCommittedDocumentEvidence\b' \
+    Sumi/Models/Tab/TabCommittedDocumentLedger.swift || true
+)"
+fail_matches "durable ledger regained strong WKWebView evidence storage" \
+  "$durable_webview_evidence_hits"
+
+committed_document_mutation_hits="$(
+  rg -n '\bcommittedDocumentRuntime\.(performTransition|recordReplica|recordReplicas|recordCommit|adoptCanonicalDocument|updatePresentation|noteSurvivingDocument|removeWebView|removeWebViews|prepareRollbackSnapshot|adoptRehydratedEvidence)\s*\(' \
+    "${production_roots[@]}" -g '*.swift' || true
+)"
+while IFS= read -r match; do
+  [[ -z "$match" ]] && continue
+  file="${match%%:*}"
+  if [[ "$file" != "Sumi/Models/Tab/TabMainFrameRuntimeTransaction.swift" ]]; then
+    printf 'error: committed-document transition mutation escaped main-frame transaction: %s\n' "$match" >&2
+    status=1
+  fi
+done <<< "$committed_document_mutation_hits"
+
+retired_document_facade_hits="$(
+  rg -n '\b(mainFrameDocumentLease|documentSuspensionDecision|recordDocumentSuspensionReport|documentSuspensionActivationToken|activatePendingDocumentSuspensionReports|reconcileDocumentSuspensionStateIfChanged)\b' \
+    Sumi/Models/Tab/Tab.swift || true
+)"
+fail_matches "retired Tab committed-document façade reintroduced" \
+  "$retired_document_facade_hits"
+
+document_script_tab_root_hits="$(
+  rg -n '\b(private\s+)?weak\s+var\s+tab\s*:\s*Tab\?' \
+    Sumi/UserScripts/SumiDocumentSuspensionSensorUserScript.swift \
+    Sumi/UserScripts/SumiSubframePictureInPictureUserScript.swift || true
+)"
+fail_matches "document sensor user script regained Tab root" \
+  "$document_script_tab_root_hits"
 
 tab_main_frame_component_storage_hits="$(
   rg -n '\b(let|var)\s+\w+\s*:\s*(TabMainFrameIntentLedger|TabMainFrameLifecycleMachine|TabCommittedDocumentLedger|TabWebContentRecoveryPlanner)\b' \

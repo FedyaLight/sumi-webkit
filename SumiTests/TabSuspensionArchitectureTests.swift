@@ -255,13 +255,14 @@ final class TabSuspensionArchitectureTests: XCTestCase {
             committedURL: tab.url,
             isPDF: false
         ).shouldPublishSharedEffects)
-        guard let lease = tab.mainFrameDocumentLease(for: webView) else {
+        guard let lease = tab.committedDocumentRuntime.lease(for: webView) else {
             return XCTFail("Expected committed-document lease")
         }
-        guard let token = tab.documentSuspensionActivationToken(for: webView) else {
+        guard let token = tab.committedDocumentRuntime
+            .suspensionActivationToken(for: webView) else {
             return XCTFail("Expected exact document suspension token")
         }
-        XCTAssertTrue(tab.recordDocumentSuspensionReport(
+        XCTAssertTrue(tab.committedDocumentRuntime.recordSuspensionReport(
             TabDocumentSuspensionReport(
                 documentNonce: "test-document",
                 documentLeaseToken: token,

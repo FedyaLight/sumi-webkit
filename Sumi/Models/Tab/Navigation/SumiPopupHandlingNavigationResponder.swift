@@ -132,7 +132,7 @@ final class SumiPopupHandlingNavigationResponder:
         }
         guard let sourceTab = sourceWebView.owningTab,
               sourceTab.hasBrowserRuntime,
-              let sourceDocumentLease = sourceTab.mainFrameDocumentLease(
+              let sourceDocumentLease = sourceTab.committedDocumentRuntime.lease(
                   for: sourceWebView
               )
         else {
@@ -242,7 +242,7 @@ final class SumiPopupHandlingNavigationResponder:
                   sourceTab.hasBrowserRuntime,
                   targetTab.hasBrowserRuntime,
                   sourceWebView.owningTab === sourceTab,
-                  sourceTab.mainFrameDocumentLease(
+                  sourceTab.committedDocumentRuntime.lease(
                       for: sourceWebView
                   ) == sourceDocumentLease,
                   tabContext.isCurrentPage(),

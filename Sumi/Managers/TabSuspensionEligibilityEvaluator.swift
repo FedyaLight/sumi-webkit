@@ -117,7 +117,7 @@ final class TabSuspensionEligibilityEvaluator {
         guard !tab.isLoading else { return .ineligible(reason: .loading) }
         guard !tab.audioState.isPlayingAudio else { return .ineligible(reason: .playingAudio) }
         guard !isRecentlyAudible(tab) else { return .ineligible(reason: .recentlyAudible) }
-        switch tab.documentSuspensionDecision {
+        switch tab.committedDocumentRuntime.suspensionDecision {
         case .awaitingEvidence:
             return .ineligible(reason: .documentEvidencePending)
         case .allowed:

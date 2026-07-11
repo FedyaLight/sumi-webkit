@@ -92,7 +92,7 @@ final class TabMainFrameRuntimeTransactionTests: XCTestCase {
             tab.currentMainFrameNavigationIntent(matching: committedURL)
         )
         XCTAssertEqual(rollbackIntent.revision, failedIntent.revision + 1)
-        XCTAssertNil(tab.mainFrameDocumentLease(for: webView))
+        XCTAssertNil(tab.committedDocumentRuntime.lease(for: webView))
     }
 
     func testSuccessfulSuccessorBindingConsumesExactRecoveryMarker() throws {
@@ -131,5 +131,185 @@ final class TabMainFrameRuntimeTransactionTests: XCTestCase {
             matching: successorLease
         ))
         XCTAssertFalse(tab.requiresWebContentProcessRecovery(on: webView))
+    }
+
+    func testProcessRecoveryPublishesOneSettledDecisionAfterLifecycleDeparture() throws {
+        let targetURL = try XCTUnwrap(
+            URL(string: "https://example.com/settled-recovery")
+        )
+        let webView = WKWebView()
+        let transaction = TabMainFrameRuntimeTransaction(initialURL: targetURL)
+        let effects = CommittedDocumentSuspensionEffectsProbe()
+        transaction.committedDocumentRuntime.attachSuspensionEffects(effects)
+        _ = transaction.beginExplicitIntent(to: targetURL)
+        let submission = try XCTUnwrap(
+            transaction.claimDirectSubmission(on: webView)
+        )
+        let navigation = NSObject()
+        let navigationID = ObjectIdentifier(navigation)
+        XCTAssertTrue(transaction.bindSubmittedLoad(
+            on: webView,
+            navigationID: navigationID,
+            navigationLifetime: navigation,
+            matching: submission
+        ))
+        XCTAssertTrue(transaction.recordCommit(
+            from: webView,
+            navigationID: navigationID,
+            committedURL: targetURL,
+            isPDF: false
+        ).shouldPublishSharedEffects)
+
+        let lease = try XCTUnwrap(
+            transaction.committedDocumentRuntime.lease(for: webView)
+        )
+        let token = try XCTUnwrap(
+            transaction.committedDocumentRuntime
+                .suspensionActivationToken(for: webView)
+        )
+        XCTAssertTrue(
+            transaction.committedDocumentRuntime.recordSuspensionReport(
+                TabDocumentSuspensionReport(
+                    documentNonce: "settled-recovery",
+                    documentLeaseToken: token,
+                    sequence: 1,
+                    canBeSuspended: true,
+                    hasPictureInPictureVideo: false
+                ),
+                from: webView,
+                matching: lease
+            )
+        )
+        XCTAssertEqual(
+            transaction.committedDocumentRuntime.suspensionDecision,
+            .allowed
+        )
+        effects.reset()
+
+        var roleObservedByEffect: TabMainFrameLifecycleRole?
+        effects.onDecisionChange = {
+            roleObservedByEffect = transaction.lifecycleRole(
+                from: webView,
+                navigationID: navigationID,
+                isCurrent: true
+            )
+        }
+        let plan = transaction.beginWebContentProcessRecovery(on: webView)
+
+        XCTAssertEqual(plan.scope, .global(targetURL))
+        XCTAssertEqual(effects.reasons, ["web-content-process-recovery"])
+        XCTAssertEqual(roleObservedByEffect, .stale)
+        XCTAssertEqual(
+            transaction.committedDocumentRuntime.suspensionDecision,
+            .awaitingEvidence
+        )
+    }
+
+    func testRejectedAndPictureInPictureReportsPublishOnlyRealDecisionChanges() throws {
+        let targetURL = try XCTUnwrap(
+            URL(string: "https://example.com/report-settlement")
+        )
+        let webView = WKWebView()
+        let transaction = TabMainFrameRuntimeTransaction(initialURL: targetURL)
+        let effects = CommittedDocumentSuspensionEffectsProbe()
+        transaction.committedDocumentRuntime.attachSuspensionEffects(effects)
+        _ = transaction.beginExplicitIntent(to: targetURL)
+        let submission = try XCTUnwrap(
+            transaction.claimDirectSubmission(on: webView)
+        )
+        let navigation = NSObject()
+        let navigationID = ObjectIdentifier(navigation)
+        XCTAssertTrue(transaction.bindSubmittedLoad(
+            on: webView,
+            navigationID: navigationID,
+            navigationLifetime: navigation,
+            matching: submission
+        ))
+        _ = transaction.recordCommit(
+            from: webView,
+            navigationID: navigationID,
+            committedURL: targetURL,
+            isPDF: false
+        )
+        let lease = try XCTUnwrap(
+            transaction.committedDocumentRuntime.lease(for: webView)
+        )
+        let token = try XCTUnwrap(
+            transaction.committedDocumentRuntime
+                .suspensionActivationToken(for: webView)
+        )
+        let allowedReport = TabDocumentSuspensionReport(
+            documentNonce: "main-document",
+            documentLeaseToken: token,
+            sequence: 1,
+            canBeSuspended: true,
+            hasPictureInPictureVideo: false
+        )
+        XCTAssertTrue(
+            transaction.committedDocumentRuntime.recordSuspensionReport(
+                allowedReport,
+                from: webView,
+                matching: lease
+            )
+        )
+        effects.reset()
+
+        XCTAssertFalse(
+            transaction.committedDocumentRuntime.recordSuspensionReport(
+                allowedReport,
+                from: webView,
+                matching: lease
+            )
+        )
+        XCTAssertTrue(effects.reasons.isEmpty)
+
+        XCTAssertTrue(
+            transaction.committedDocumentRuntime
+                .recordSubframePictureInPictureReport(
+                    TabSubframePictureInPictureReport(
+                        documentNonce: "frame-document",
+                        documentLeaseToken: token,
+                        sequence: 1,
+                        isActive: true
+                    ),
+                    from: webView,
+                    matching: lease
+                )
+        )
+        XCTAssertEqual(effects.reasons, ["subframe-picture-in-picture-state"])
+        effects.reset()
+
+        XCTAssertTrue(
+            transaction.committedDocumentRuntime
+                .recordSubframePictureInPictureReport(
+                    TabSubframePictureInPictureReport(
+                        documentNonce: "frame-document",
+                        documentLeaseToken: token,
+                        sequence: 2,
+                        isActive: false
+                    ),
+                    from: webView,
+                    matching: lease
+                )
+        )
+        XCTAssertEqual(effects.reasons, ["subframe-picture-in-picture-state"])
+    }
+}
+
+@MainActor
+private final class CommittedDocumentSuspensionEffectsProbe:
+    TabCommittedDocumentSuspensionEffects
+{
+    private(set) var reasons: [String] = []
+    var onDecisionChange: (() -> Void)?
+
+    func committedDocumentSuspensionDecisionDidChange(reason: String) {
+        reasons.append(reason)
+        onDecisionChange?()
+    }
+
+    func reset() {
+        reasons = []
+        onDecisionChange = nil
     }
 }

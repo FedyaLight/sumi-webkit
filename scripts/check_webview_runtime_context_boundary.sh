@@ -227,7 +227,9 @@ transaction_batch_departure_body="$(
   fi
 )"
 if [[ -z "$transaction_batch_departure_body" ]] \
-    || ! rg -q 'committedDocuments\.removeWebViews\(' \
+    || ! rg -q 'committedDocumentRuntime\.performTransition\(' \
+      <<< "$transaction_batch_departure_body" \
+    || ! rg -q 'committedDocumentRuntime\.removeWebViews\(' \
       <<< "$transaction_batch_departure_body" \
     || ! rg -q 'intentLedger\.departure\(of: departingWebViews\)' \
       <<< "$transaction_batch_departure_body" \

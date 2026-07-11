@@ -326,7 +326,8 @@ final class SumiTabLifecycleNavigationResponder:
                 webView: webView,
                 navigationID: context.navigationID,
                 targetURL: webView.url ?? context.url ?? tab.url,
-                isPDF: tab.mainFrameDocumentLease(for: webView)?.isPDF ?? false
+                isPDF: tab.committedDocumentRuntime.lease(for: webView)?.isPDF
+                    ?? false
             ),
             tab: tab
         )

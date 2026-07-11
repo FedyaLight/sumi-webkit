@@ -41,7 +41,8 @@ final class SumiExternalSchemeNavigationResponder:
         permissionBridge: SumiExternalSchemePermissionBridge? = nil,
         tabContextProvider: TabContextProvider? = nil,
         documentLeaseProvider: @escaping DocumentLeaseProvider = {
-            tab, webView in tab.mainFrameDocumentLease(for: webView)
+            tab, webView in
+            tab.committedDocumentRuntime.lease(for: webView)
         }
     ) {
         self.tab = tab

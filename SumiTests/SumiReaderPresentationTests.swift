@@ -1047,7 +1047,7 @@ final class SumiReaderPresentationTests: XCTestCase {
             committedURL: url,
             isPDF: false
         ).shouldPublishSharedEffects)
-        XCTAssertNotNil(tab.mainFrameDocumentLease(for: webView))
+        XCTAssertNotNil(tab.committedDocumentRuntime.lease(for: webView))
         return navigationLifetime
     }
 

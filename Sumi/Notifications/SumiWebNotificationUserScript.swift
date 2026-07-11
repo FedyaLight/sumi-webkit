@@ -545,7 +545,7 @@ extension Tab {
         guard let profile = resolveProfile(),
               let webView,
               let callbackCommittedURL = webView.committedURL,
-              let documentLease = mainFrameDocumentLease(for: webView),
+              let documentLease = committedDocumentRuntime.lease(for: webView),
               WebRuntimeNavigationIdentity.matches(
                   callbackCommittedURL,
                   documentLease.committedURL
@@ -569,7 +569,8 @@ extension Tab {
             navigationOrPageGeneration: identity.pageGeneration,
             isCurrentPage: { [weak self, weak webView] in
                 guard let self, let webView,
-                      self.mainFrameDocumentLease(for: webView) == documentLease,
+                      self.committedDocumentRuntime.lease(for: webView)
+                        == documentLease,
                       let currentCommittedURL = webView.committedURL,
                       WebRuntimeNavigationIdentity.matches(
                           currentCommittedURL,

@@ -32,9 +32,54 @@ struct TabCommittedDocumentRollbackSnapshot {
 final class TabCommittedDocumentLedger {
     private typealias WeakWebViewReference = WebViewIdentityWitness
 
+    private struct DocumentIdentity {
+        let revision: UInt64
+        let documentGeneration: UInt64
+        let participantID: UUID
+        let committedURL: URL
+        let presentationURL: URL
+        let isPDF: Bool
+
+        init(_ evidence: TabCommittedDocumentEvidence) {
+            revision = evidence.revision
+            documentGeneration = evidence.documentGeneration
+            participantID = evidence.participantID
+            committedURL = evidence.committedURL
+            presentationURL = evidence.presentationURL
+            isPDF = evidence.isPDF
+        }
+
+        private init(
+            revision: UInt64,
+            documentGeneration: UInt64,
+            participantID: UUID,
+            committedURL: URL,
+            presentationURL: URL,
+            isPDF: Bool
+        ) {
+            self.revision = revision
+            self.documentGeneration = documentGeneration
+            self.participantID = participantID
+            self.committedURL = committedURL
+            self.presentationURL = presentationURL
+            self.isPDF = isPDF
+        }
+
+        func updatingPresentation(_ presentationURL: URL) -> Self {
+            Self(
+                revision: revision,
+                documentGeneration: documentGeneration,
+                participantID: participantID,
+                committedURL: committedURL,
+                presentationURL: presentationURL,
+                isPDF: isPDF
+            )
+        }
+    }
+
     private struct Replica {
         let webViewReference: WeakWebViewReference
-        var evidence: TabCommittedDocumentEvidence
+        var document: DocumentIdentity
         let suspensionToken: String
         let suspensionActivationEpoch: UInt64
         var suspensionActivationRequested: Bool
@@ -67,16 +112,12 @@ final class TabCommittedDocumentLedger {
         committedIdentityURL = initialURL
     }
 
-    var rollbackTargetURL: URL {
-        committedPresentationURL
-    }
-
     func recordReplica(_ evidence: TabCommittedDocumentEvidence) {
         let webViewID = ObjectIdentifier(evidence.webView)
         let existing = replicasByWebViewID[webViewID]
         let preservesDocument = existing.map {
             $0.webViewReference.matches(evidence.webView)
-                && Self.sameDocument($0.evidence, evidence)
+                && Self.sameDocument($0.document, evidence)
         } ?? false
         let suspensionActivationEpoch: UInt64
         if preservesDocument, let existing {
@@ -87,7 +128,7 @@ final class TabCommittedDocumentLedger {
         }
         replicasByWebViewID[webViewID] = Replica(
             webViewReference: WeakWebViewReference(evidence.webView),
-            evidence: evidence,
+            document: DocumentIdentity(evidence),
             suspensionToken: preservesDocument
                 ? existing?.suspensionToken ?? UUID().uuidString
                 : UUID().uuidString,
@@ -120,7 +161,7 @@ final class TabCommittedDocumentLedger {
         recordReplica(evidence)
         replicasByWebViewID = replicasByWebViewID.filter { _, replica in
             guard replica.webViewReference.resolve() != nil else { return false }
-            return isCanonicalReplica(replica.evidence)
+            return isCanonicalReplica(replica.document)
         }
     }
 
@@ -132,15 +173,8 @@ final class TabCommittedDocumentLedger {
               replica.webViewReference.matches(webView) else {
             return
         }
-        let evidence = replica.evidence
-        replica.evidence = TabCommittedDocumentEvidence(
-            webView: webView,
-            revision: evidence.revision,
-            documentGeneration: evidence.documentGeneration,
-            participantID: evidence.participantID,
-            committedURL: evidence.committedURL,
-            presentationURL: presentationURL,
-            isPDF: evidence.isPDF
+        replica.document = replica.document.updatingPresentation(
+            presentationURL
         )
         replicasByWebViewID[webViewID] = replica
     }
@@ -150,21 +184,14 @@ final class TabCommittedDocumentLedger {
         guard var replica = replicasByWebViewID[webViewID],
               replica.webViewReference.matches(webView),
               WebRuntimeNavigationIdentity(committedURL)
-                == WebRuntimeNavigationIdentity(replica.evidence.committedURL),
+                == WebRuntimeNavigationIdentity(replica.document.committedURL),
               WebRuntimeNavigationIdentity(committedURL)
                 == WebRuntimeNavigationIdentity(committedIdentityURL),
-              isCanonicalReplica(replica.evidence) else {
+              isCanonicalReplica(replica.document) else {
             return
         }
-        let evidence = replica.evidence
-        replica.evidence = TabCommittedDocumentEvidence(
-            webView: webView,
-            revision: evidence.revision,
-            documentGeneration: evidence.documentGeneration,
-            participantID: evidence.participantID,
-            committedURL: evidence.committedURL,
-            presentationURL: committedPresentationURL,
-            isPDF: evidence.isPDF
+        replica.document = replica.document.updatingPresentation(
+            committedPresentationURL
         )
         replicasByWebViewID[webViewID] = replica
         if sourceWebViewReference?.resolve() == nil {
@@ -176,7 +203,7 @@ final class TabCommittedDocumentLedger {
         guard let webView = sourceWebViewReference?.resolve(),
               let replica = replicasByWebViewID[ObjectIdentifier(webView)],
               replica.webViewReference.matches(webView),
-              isCanonicalReplica(replica.evidence) else {
+              isCanonicalReplica(replica.document) else {
             return nil
         }
         return webView
@@ -189,20 +216,18 @@ final class TabCommittedDocumentLedger {
         let webViewID = ObjectIdentifier(evidence.webView)
         guard let replica = replicasByWebViewID[webViewID],
               replica.webViewReference.matches(evidence.webView),
-              replica.evidence.revision == evidence.revision,
-              replica.evidence.documentGeneration == evidence.documentGeneration,
-              replica.evidence.participantID == evidence.participantID,
-              isCanonicalReplica(evidence) else {
+              Self.sameDocument(replica.document, evidence),
+              isCanonicalReplica(replica.document) else {
             return nil
         }
         return TabMainFrameDocumentLease(
-            revision: evidence.revision,
-            documentGeneration: evidence.documentGeneration,
+            revision: replica.document.revision,
+            documentGeneration: replica.document.documentGeneration,
             webViewID: webViewID,
-            participantID: evidence.participantID,
-            committedURL: evidence.committedURL,
-            presentationURL: evidence.presentationURL,
-            isPDF: evidence.isPDF,
+            participantID: replica.document.participantID,
+            committedURL: replica.document.committedURL,
+            presentationURL: replica.document.presentationURL,
+            isPDF: replica.document.isPDF,
             isAuthority: isAuthority
         )
     }
@@ -218,14 +243,14 @@ final class TabCommittedDocumentLedger {
               report.documentNonce.utf8.count <= 256,
               var replica = replicasByWebViewID[webViewID],
               replica.webViewReference.matches(webView),
-              replica.evidence.revision == lease.revision,
-              replica.evidence.documentGeneration == lease.documentGeneration,
-              replica.evidence.participantID == lease.participantID,
+              replica.document.revision == lease.revision,
+              replica.document.documentGeneration == lease.documentGeneration,
+              replica.document.participantID == lease.participantID,
               replica.suspensionToken == report.documentLeaseToken,
-              WebRuntimeNavigationIdentity(replica.evidence.committedURL)
+              WebRuntimeNavigationIdentity(replica.document.committedURL)
                 == WebRuntimeNavigationIdentity(lease.committedURL),
-              replica.evidence.isPDF == lease.isPDF,
-              isCanonicalReplica(replica.evidence) else {
+              replica.document.isPDF == lease.isPDF,
+              isCanonicalReplica(replica.document) else {
             return false
         }
 
@@ -260,11 +285,11 @@ final class TabCommittedDocumentLedger {
               report.documentNonce.utf8.count <= 256,
               var replica = replicasByWebViewID[webViewID],
               replica.webViewReference.matches(webView),
-              replica.evidence.revision == lease.revision,
-              replica.evidence.documentGeneration == lease.documentGeneration,
-              replica.evidence.participantID == lease.participantID,
+              replica.document.revision == lease.revision,
+              replica.document.documentGeneration == lease.documentGeneration,
+              replica.document.participantID == lease.participantID,
               replica.suspensionToken == report.documentLeaseToken,
-              isCanonicalReplica(replica.evidence) else {
+              isCanonicalReplica(replica.document) else {
             return false
         }
 
@@ -301,10 +326,10 @@ final class TabCommittedDocumentLedger {
         guard lease.webViewID == webViewID,
               let replica = replicasByWebViewID[webViewID],
               replica.webViewReference.matches(webView),
-              replica.evidence.revision == lease.revision,
-              replica.evidence.documentGeneration == lease.documentGeneration,
-              replica.evidence.participantID == lease.participantID,
-              isCanonicalReplica(replica.evidence) else {
+              replica.document.revision == lease.revision,
+              replica.document.documentGeneration == lease.documentGeneration,
+              replica.document.participantID == lease.participantID,
+              isCanonicalReplica(replica.document) else {
             return nil
         }
         return replica.suspensionToken
@@ -315,6 +340,7 @@ final class TabCommittedDocumentLedger {
         token: String,
         epoch: UInt64
     )] {
+        guard committedIsPDF == false else { return [] }
         var activations: [(
             webView: WKWebView,
             token: String,
@@ -324,7 +350,7 @@ final class TabCommittedDocumentLedger {
         for (webViewID, replica) in replicasByWebViewID {
             guard replica.suspensionActivationRequested == false,
                   replica.suspensionActivationAttemptCount < 3,
-                  isCanonicalReplica(replica.evidence),
+                  isCanonicalReplica(replica.document),
                   let webView = replica.webViewReference.resolve() else {
                 continue
             }
@@ -346,16 +372,18 @@ final class TabCommittedDocumentLedger {
 
     func suspensionActivationDidFail(
         for webView: WKWebView,
-        token: String
+        token: String,
+        epoch: UInt64
     ) -> Bool {
         let webViewID = ObjectIdentifier(webView)
         guard var replica = replicasByWebViewID[webViewID],
               replica.webViewReference.matches(webView),
               replica.suspensionToken == token,
+              replica.suspensionActivationEpoch == epoch,
               replica.suspensionReport == nil,
               replica.suspensionActivationRequested,
               replica.suspensionActivationAttemptCount < 3,
-              isCanonicalReplica(replica.evidence) else {
+              isCanonicalReplica(replica.document) else {
             return false
         }
         replica.suspensionActivationRequested = false
@@ -368,23 +396,19 @@ final class TabCommittedDocumentLedger {
             return .vetoed(.pdfDocument)
         }
 
-        var expiredWebViewIDs: [ObjectIdentifier] = []
         var hasCanonicalReplica = false
         var awaitsEvidence = false
         var pageVeto = false
         var pictureInPictureVeto = false
 
         for (webViewID, replica) in replicasByWebViewID {
-            guard replica.webViewReference.resolve() != nil else {
-                expiredWebViewIDs.append(webViewID)
-                continue
-            }
-            guard isCanonicalReplica(replica.evidence) else { continue }
+            guard replica.webViewReference.resolve() != nil else { continue }
+            guard isCanonicalReplica(replica.document) else { continue }
             hasCanonicalReplica = true
             guard let report = replica.suspensionReport,
-                  report.revision == replica.evidence.revision,
-                  report.documentGeneration == replica.evidence.documentGeneration,
-                  report.participantID == replica.evidence.participantID else {
+                  report.revision == replica.document.revision,
+                  report.documentGeneration == replica.document.documentGeneration,
+                  report.participantID == replica.document.participantID else {
                 awaitsEvidence = true
                 continue
             }
@@ -396,10 +420,6 @@ final class TabCommittedDocumentLedger {
                     where: \.isActive
                 )
         }
-        expiredWebViewIDs.forEach {
-            replicasByWebViewID.removeValue(forKey: $0)
-        }
-
         if pictureInPictureVeto {
             return .vetoed(.pictureInPicture)
         }
@@ -451,18 +471,18 @@ final class TabCommittedDocumentLedger {
             guard let webView = replica.webViewReference.resolve(),
                   let physicalCommittedURL = webView.committedURL,
                   WebRuntimeNavigationIdentity(physicalCommittedURL)
-                    == WebRuntimeNavigationIdentity(replica.evidence.committedURL),
-                  WebRuntimeNavigationIdentity(replica.evidence.committedURL)
+                    == WebRuntimeNavigationIdentity(replica.document.committedURL),
+                  WebRuntimeNavigationIdentity(replica.document.committedURL)
                     == committedIdentity,
-                  isCanonicalReplica(replica.evidence) else {
+                  isCanonicalReplica(replica.document) else {
                 expiredWebViewIDs.append(webViewID)
                 continue
             }
             candidates.append(TabCommittedDocumentCandidate(
                 webView: webView,
-                committedURL: replica.evidence.committedURL,
-                presentationURL: replica.evidence.presentationURL,
-                isPDF: replica.evidence.isPDF
+                committedURL: replica.document.committedURL,
+                presentationURL: replica.document.presentationURL,
+                isPDF: replica.document.isPDF
             ))
         }
         for webViewID in expiredWebViewIDs {
@@ -494,19 +514,21 @@ final class TabCommittedDocumentLedger {
             recordReplica(item)
         }
         guard let authorityWebViewID,
-              let authority = replicasByWebViewID[authorityWebViewID]?.evidence else {
+              let authority = replicasByWebViewID[authorityWebViewID],
+              let authorityWebView = authority.webViewReference.resolve()
+        else {
             return
         }
-        committedIdentityURL = authority.committedURL
-        committedPresentationURL = authority.presentationURL
-        committedIsPDF = authority.isPDF
-        committedRevision = authority.revision
-        committedDocumentGeneration = authority.documentGeneration
+        committedIdentityURL = authority.document.committedURL
+        committedPresentationURL = authority.document.presentationURL
+        committedIsPDF = authority.document.isPDF
+        committedRevision = authority.document.revision
+        committedDocumentGeneration = authority.document.documentGeneration
         replicasByWebViewID = replicasByWebViewID.filter { _, replica in
             replica.webViewReference.resolve() != nil
-                && isCanonicalReplica(replica.evidence)
+                && isCanonicalReplica(replica.document)
         }
-        sourceWebViewReference = WeakWebViewReference(authority.webView)
+        sourceWebViewReference = WeakWebViewReference(authorityWebView)
     }
 
     private func canonicalReplicaSource(
@@ -520,9 +542,9 @@ final class TabCommittedDocumentLedger {
                   replica.webViewReference.matches(webView) else {
                 return false
             }
-            return WebRuntimeNavigationIdentity(replica.evidence.committedURL)
+            return WebRuntimeNavigationIdentity(replica.document.committedURL)
                     == canonicalIdentity
-                && self.isCanonicalReplica(replica.evidence)
+                && self.isCanonicalReplica(replica.document)
         }
 
         if let preferredWebView, isCanonicalReplica(preferredWebView) {
@@ -536,21 +558,21 @@ final class TabCommittedDocumentLedger {
     }
 
     private func isCanonicalReplica(
-        _ evidence: TabCommittedDocumentEvidence
+        _ document: DocumentIdentity
     ) -> Bool {
         guard let committedRevision,
               let committedDocumentGeneration else {
             return false
         }
-        return evidence.revision == committedRevision
-            && evidence.documentGeneration == committedDocumentGeneration
-            && WebRuntimeNavigationIdentity(evidence.committedURL)
+        return document.revision == committedRevision
+            && document.documentGeneration == committedDocumentGeneration
+            && WebRuntimeNavigationIdentity(document.committedURL)
                 == WebRuntimeNavigationIdentity(committedIdentityURL)
-            && evidence.isPDF == committedIsPDF
+            && document.isPDF == committedIsPDF
     }
 
     private static func sameDocument(
-        _ lhs: TabCommittedDocumentEvidence,
+        _ lhs: DocumentIdentity,
         _ rhs: TabCommittedDocumentEvidence
     ) -> Bool {
         lhs.revision == rhs.revision
