@@ -6,6 +6,7 @@
 import SwiftUI
 
 struct SplitGroupSegment: View {
+    let groupID: UUID
     let item: SplitGroupSidebarItem
     let spaceId: UUID
     let isActive: Bool
@@ -86,8 +87,9 @@ struct SplitGroupSegment: View {
         }
         guard let tab = item.tab else { return nil }
         return SidebarDragSourceConfiguration(
-            item: SumiDragItem(
-                tabId: tab.id,
+            item: SumiDragItem.splitMember(
+                item.id,
+                groupID: groupID,
                 title: tab.name,
                 urlString: tab.url.absoluteString
             ),
@@ -101,12 +103,7 @@ struct SplitGroupSegment: View {
     }
 
     private var rowSourceID: String {
-        switch item {
-        case .tab(let tab):
-            return "space-split-tab-\(tab.id.uuidString)"
-        case .pin(let pin):
-            return "space-split-pin-\(pin.id.uuidString)"
-        }
+        "space-split-member-\(item.stableIDDescription)"
     }
 
     private var showsActionControls: Bool {
@@ -142,7 +139,9 @@ struct SplitGroupSegment: View {
         .sidebarZenActionOpacity(showsActionControls)
         .allowsHitTesting(showsActionControls && !windowState.sidebarInteractionState.freezesSidebarHoverState)
         .sidebarDDGHover($isActionHovered, isEnabled: showsActionControls && isAppKitInteractionEnabled)
-        .accessibilityIdentifier("\(action.accessibilityPrefix)-\(item.id.uuidString)")
+        .accessibilityIdentifier(
+            "\(action.accessibilityPrefix)-\(item.stableIDDescription)"
+        )
         .help(action.help)
         .sidebarAppKitPrimaryAction(
             isEnabled: showsActionControls && !windowState.sidebarInteractionState.freezesSidebarHoverState,

@@ -10,8 +10,27 @@ enum BrowserSplitViewRuntimeFactory {
             currentTab: { [weak browserManager] windowState in
                 browserManager?.shellRuntime.windowTabs.currentTab(for: windowState)
             },
-            selectTab: { [weak browserManager] tab, windowState in
-                browserManager?.selectTab(tab, in: windowState)
+            selectTabWithoutPersistence: { [weak browserManager] tab, windowState in
+                browserManager?.applyTabSelection(
+                    tab,
+                    in: windowState,
+                    updateSpaceFromTab: true,
+                    updateTheme: true,
+                    rememberSelection: true,
+                    persistSelection: false
+                )
+            },
+            restoreShortcutMember: {
+                [weak browserManager]
+                memberID,
+                group,
+                windowState in
+                browserManager?.sidebarCommandService.splitShortcuts
+                    .memberRestoration.restoreShortcutSplitMember(
+                        memberID,
+                        from: group,
+                        in: windowState
+                    ) == true
             },
             refreshCompositor: { [weak browserManager] windowState in
                 browserManager?.shellRuntime.windowVisuals.refreshCompositor(for: windowState)

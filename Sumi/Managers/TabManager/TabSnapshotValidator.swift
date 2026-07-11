@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 import OSLog
 
 /// Pure structural-validity policy for a full snapshot or incremental delta.

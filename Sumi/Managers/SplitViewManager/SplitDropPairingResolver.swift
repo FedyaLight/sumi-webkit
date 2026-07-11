@@ -1,24 +1,24 @@
 import Foundation
+import SumiDomain
 
 enum SplitDropPairingResolver {
     static func flatThreeTarget(
         in context: SplitDropResolutionContext
     ) -> SplitDropTarget? {
-        guard let draggedTabId = context.draggedTabId,
-              context.group.tabIds.count == 3,
+        guard let draggedMember = context.draggedMember,
+              context.group.memberIDs.count == 3,
               let flatAxis = SplitDropLayoutEligibility.flatAxis(
                   in: context.group.layoutTree,
                   childCount: 3
               ),
               let hit = context.leafHit,
-              hit.tabId != draggedTabId,
-              SplitDropTargetGeometry.isNearInternalDivider(
+              hit.memberID != draggedMember.memberID,
+              !SplitDropTargetGeometry.isNearInternalDivider(
                   location: context.location,
                   leafRect: hit.rect,
                   bounds: context.bounds,
                   rootAxis: flatAxis
-              ) == false
-        else {
+              ) else {
             return nil
         }
 
@@ -28,8 +28,7 @@ enum SplitDropPairingResolver {
             mode: .create
         ) {
             guard let insertionAxis = side.insertionAxis,
-                  insertionAxis != flatAxis
-            else {
+                  insertionAxis != flatAxis else {
                 continue
             }
 
@@ -38,7 +37,7 @@ enum SplitDropPairingResolver {
                 in: hit.rect
             )
             let target = SplitDropTarget(
-                tabId: hit.tabId,
+                targetMemberID: hit.memberID,
                 side: side,
                 targetRect: previewRect,
                 scope: .pane,
@@ -48,7 +47,7 @@ enum SplitDropPairingResolver {
             )
             if let resolved = SplitDropCandidate(
                 target: target,
-                draggedTabId: draggedTabId,
+                draggedMember: draggedMember,
                 previewRect: previewRect
             ).resolved(in: context.group.layoutTree, bounds: context.bounds) {
                 return resolved
@@ -60,19 +59,18 @@ enum SplitDropPairingResolver {
     static func mixedThreeOneTarget(
         in context: SplitDropResolutionContext
     ) -> SplitDropTarget? {
-        guard let draggedTabId = context.draggedTabId,
-              context.draggedTabIsInGroup,
-              context.group.tabIds.count == SplitGroup.maximumTabs,
+        guard let draggedMember = context.draggedMember,
+              context.draggedMemberIsInGroup,
+              context.group.memberIDs.count == SplitGroup.maximumMembers,
               let structure = SplitDropLayoutEligibility.mixedThreeOne(
                   in: context.group.layoutTree
               ),
               let hit = context.leafHit,
-              hit.tabId != draggedTabId,
+              hit.memberID != draggedMember.memberID,
               structure.canPair(
-                  draggedTabId: draggedTabId,
-                  targetTabId: hit.tabId
-              )
-        else {
+                  draggedMemberID: draggedMember.memberID,
+                  targetMemberID: hit.memberID
+              ) else {
             return nil
         }
 
@@ -86,7 +84,7 @@ enum SplitDropPairingResolver {
                 in: hit.rect
             )
             let target = SplitDropTarget(
-                tabId: hit.tabId,
+                targetMemberID: hit.memberID,
                 side: side,
                 targetRect: previewRect,
                 scope: .pane,
@@ -96,7 +94,7 @@ enum SplitDropPairingResolver {
             )
             if let resolved = SplitDropCandidate(
                 target: target,
-                draggedTabId: draggedTabId,
+                draggedMember: draggedMember,
                 previewRect: previewRect
             ).resolved(in: context.group.layoutTree, bounds: context.bounds) {
                 return resolved

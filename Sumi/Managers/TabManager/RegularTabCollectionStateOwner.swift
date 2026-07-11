@@ -44,6 +44,12 @@ final class RegularTabCollectionStateOwner {
         tabsBySpace.values.flatMap(\.self)
     }
 
+    func tab(for id: UUID) -> Tab? {
+        tabsBySpace.values.lazy
+            .flatMap(\.self)
+            .first { $0.id == id }
+    }
+
     func contains(_ tab: Tab) -> Bool {
         guard let spaceId = tab.spaceId else { return false }
         return (tabsBySpace[spaceId] ?? []).contains { $0.id == tab.id }

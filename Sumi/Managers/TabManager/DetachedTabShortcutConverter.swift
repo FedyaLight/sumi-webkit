@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 /// Replaces a regular tab that is not displayed by any browser window with a
 /// durable shortcut definition. It deliberately creates no live shortcut tab;
@@ -43,7 +44,9 @@ final class DetachedTabShortcutConverter {
         )
     }
 
-    func commit(
+    func apply(
+        to pin: ShortcutPin,
+        transition: RegularTabShortcutWindowTransitionPlan,
         using authorization: AuthorizedDetachedTabShortcutConversion
     ) {
         let tab = authorization.tab
@@ -57,6 +60,7 @@ final class DetachedTabShortcutConverter {
         if let runtime {
             let changedWindows = windowReconciler.reconcile(
                 originalTabId: tab.id,
+                splitTransition: transition,
                 sourceSpaceId: tab.spaceId,
                 liveTabsByWindowId: [:],
                 selectedWindowIds: [],

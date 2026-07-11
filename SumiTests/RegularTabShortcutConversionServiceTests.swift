@@ -1,10 +1,85 @@
 import Combine
+import SumiDomain
 import XCTest
 
 @testable import Sumi
 
 @MainActor
 final class RegularTabShortcutConversionServiceTests: XCTestCase {
+    func testSplitConversionReplacesDurableTabWithPinAndProjectsEachWindow() throws {
+        let first = BrowserWindowState()
+        let second = BrowserWindowState()
+        let states = [first.id: first, second.id: second]
+        var visibleIds: [UUID] = []
+        let tabManager = try makeInMemoryTabManager(
+            windowState: { states[$0] },
+            windows: { states.map { ($0.key, $0.value) } },
+            visibleSplitTabIds: { _ in visibleIds },
+            primaryTrackedWindowId: { _ in first.id }
+        )
+        first.tabManager = tabManager
+        second.tabManager = tabManager
+        let space = tabManager.spaceServices.catalog.createSpace(name: "Space")
+        let source = tabManager.regularTabLifecycleOwner.createNewTab(
+            url: "https://split-conversion.example/source",
+            in: space,
+            activate: false
+        )
+        let companion = tabManager.regularTabLifecycleOwner.createNewTab(
+            url: "https://split-conversion.example/companion",
+            in: space,
+            activate: false
+        )
+        let group = try XCTUnwrap(SplitGroup.make(
+            members: [.regularTab(source.id), .regularTab(companion.id)],
+            layoutKind: .vertical,
+            container: .regularTabs(spaceId: space.id)
+        ))
+        XCTAssertTrue(tabManager.splitGroupMutations.insert(group, persist: false))
+        visibleIds = [source.id, companion.id]
+        for windowState in [first, second] {
+            windowState.currentSpaceId = space.id
+            windowState.currentTabId = source.id
+            windowState.splitSelection = WindowSplitSelection(
+                groupID: group.id,
+                activeMemberID: .regularTab(source.id)
+            )
+        }
+
+        let pin = try XCTUnwrap(
+            tabManager.shortcutPinCommandOwner.convertTabToShortcutPin(
+                source,
+                role: .spacePinned,
+                profileId: nil,
+                spaceId: space.id,
+                folderId: nil,
+                at: 0,
+                preferredWindowId: second.id
+            )
+        )
+
+        let replacement = try XCTUnwrap(
+            tabManager.splitGroupStore.group(id: group.id)
+        )
+        XCTAssertTrue(replacement.contains(.shortcutPin(pin.id)))
+        XCTAssertFalse(replacement.contains(.regularTab(source.id)))
+        XCTAssertEqual(
+            first.splitSelection?.activeMemberID,
+            .shortcutPin(pin.id)
+        )
+        XCTAssertEqual(
+            second.splitSelection?.activeMemberID,
+            .shortcutPin(pin.id)
+        )
+        XCTAssertIdentical(
+            tabManager.liveShortcutTabs.tab(for: pin.id, in: first.id),
+            source
+        )
+        XCTAssertNotNil(
+            tabManager.liveShortcutTabs.tab(for: pin.id, in: second.id)
+        )
+    }
+
     func testPrimarySelectedWindowKeepsOriginalAndSecondaryMaterializesAfterCommit() throws {
         let primary = BrowserWindowState()
         let secondary = BrowserWindowState()
@@ -236,16 +311,22 @@ final class RegularTabShortcutConversionServiceTests: XCTestCase {
         window.currentTabId = source.id
         let group = try XCTUnwrap(
             SplitGroup.make(
-                tabIds: [source.id, companion.id],
+                members: [
+                    .regularTab(source.id),
+                    .regularTab(companion.id)
+                ],
                 layoutKind: .vertical,
-                host: .regular(spaceId: space.id)
+                container: .regularTabs(spaceId: space.id)
             )
         )
-        visibleSplitIds = group.tabIds
-        tabManager.splitGroupStructureOwner.upsertSplitGroup(
+        visibleSplitIds = group.memberIDs.compactMap { memberId in
+            guard case .regularTab(let tabId) = memberId else { return nil }
+            return tabId
+        }
+        XCTAssertTrue(tabManager.splitGroupMutations.insert(
             group,
-            schedulePersistence: false
-        )
+            persist: false
+        ))
         let preparation = tabManager.regularTabShortcutConversion
             .prepare(
                 source,
@@ -281,7 +362,7 @@ final class RegularTabShortcutConversionServiceTests: XCTestCase {
         XCTAssertFalse(source.isShortcutLiveInstance)
         XCTAssertFalse(other.isShortcutLiveInstance)
         XCTAssertEqual(
-            tabManager.splitGroupCollectionStateOwner.group(with: group.id),
+            tabManager.splitGroupStore.group(id: group.id),
             group
         )
         XCTAssertEqual(
@@ -309,5 +390,222 @@ final class RegularTabShortcutConversionServiceTests: XCTestCase {
         XCTAssertTrue(tabManager.regularTabCollectionOwner.contains(tab))
         XCTAssertFalse(tab.isShortcutLiveInstance)
         XCTAssertTrue(tabManager.liveShortcutTabs.snapshot.isEmpty)
+    }
+
+    func testShortcutSidebarDropMovesStableMemberAndEveryWindowToTargetGroup() throws {
+        let first = BrowserWindowState()
+        let second = BrowserWindowState()
+        let states = [first.id: first, second.id: second]
+        let tabManager = try makeInMemoryTabManager(
+            windowState: { states[$0] },
+            windows: { states.map { ($0.key, $0.value) } },
+            primaryTrackedWindowId: { _ in first.id }
+        )
+        first.tabManager = tabManager
+        second.tabManager = tabManager
+        let space = tabManager.spaceServices.catalog.createSpace(name: "Space")
+        let source = tabManager.regularTabLifecycleOwner.createNewTab(
+            url: "https://sidebar-drop.example/source",
+            in: space,
+            activate: false
+        )
+        let companion = tabManager.regularTabLifecycleOwner.createNewTab(
+            url: "https://sidebar-drop.example/companion",
+            in: space,
+            activate: false
+        )
+        let firstPin = Self.pin(spaceID: space.id, index: 0)
+        let secondPin = Self.pin(spaceID: space.id, index: 1)
+        tabManager.structuralCollectionMutationOwner.setSpacePinnedShortcuts(
+            [firstPin, secondPin],
+            for: space.id
+        )
+        let sourceGroup = try XCTUnwrap(SplitGroup.make(
+            members: [.regularTab(source.id), .regularTab(companion.id)],
+            layoutKind: .vertical,
+            container: .regularTabs(spaceId: space.id)
+        ))
+        let targetGroup = try XCTUnwrap(SplitGroup.make(
+            members: [
+                .shortcutPin(
+                    firstPin.id,
+                    returnPlacement: .spacePinned(
+                        spaceId: space.id,
+                        folderId: nil,
+                        index: 0
+                    )
+                ),
+                .shortcutPin(
+                    secondPin.id,
+                    returnPlacement: .spacePinned(
+                        spaceId: space.id,
+                        folderId: nil,
+                        index: 1
+                    )
+                ),
+            ],
+            layoutKind: .vertical,
+            container: .shortcutSidebar(
+                spaceId: space.id,
+                profileId: nil,
+                folderId: nil,
+                index: 0
+            )
+        ))
+        XCTAssertTrue(tabManager.splitGroupMutations.replaceAll(
+            expected: [],
+            with: [sourceGroup, targetGroup],
+            persist: false
+        ))
+        for state in [first, second] {
+            state.currentSpaceId = space.id
+            state.currentTabId = source.id
+            state.splitSelection = WindowSplitSelection(
+                groupID: sourceGroup.id,
+                activeMemberID: .regularTab(source.id)
+            )
+        }
+
+        let prepared = try XCTUnwrap(
+            tabManager.regularTabShortcutConversion
+                .prepareShortcutSidebarDrop(
+                    source,
+                    into: targetGroup,
+                    preferredWindowId: second.id
+                )
+        )
+        let replacementTarget = try XCTUnwrap(targetGroup.inserting(
+            prepared.member,
+            relativeTo: .shortcutPin(firstPin.id),
+            side: .right
+        ))
+        let replacement = prepared.expectedSplitGroups.compactMap { group in
+            if group.id == sourceGroup.id {
+                return group.removingMember(.regularTab(source.id))
+            }
+            return group.id == targetGroup.id ? replacementTarget : group
+        }
+        let pin = try XCTUnwrap(
+            tabManager.regularTabShortcutConversion
+                .commitShortcutSidebarDrop(
+                    prepared,
+                    replacingSplitGroupsWith: replacement
+                )
+        )
+
+        XCTAssertEqual(pin.id, prepared.candidatePin.id)
+        XCTAssertNil(tabManager.splitGroupStore.group(id: sourceGroup.id))
+        XCTAssertEqual(
+            tabManager.splitGroupStore.group(id: targetGroup.id),
+            replacementTarget
+        )
+        guard case .generatedSpacePinnedFromRegular(let restoredSpaceID, _) =
+            replacementTarget.member(for: prepared.member.memberID)?
+                .returnPlacement else {
+            return XCTFail("Expected generated regular-tab return placement")
+        }
+        XCTAssertEqual(restoredSpaceID, space.id)
+        for state in [first, second] {
+            XCTAssertEqual(state.splitSelection?.groupID, targetGroup.id)
+            XCTAssertEqual(
+                state.splitSelection?.activeMemberID,
+                prepared.member.memberID
+            )
+            XCTAssertNotNil(
+                tabManager.liveShortcutTabs.tab(for: pin.id, in: state.id)
+            )
+        }
+    }
+
+    func testStaleShortcutSidebarDropDoesNotInsertCandidatePin() throws {
+        let tabManager = try makeInMemoryTabManager()
+        let space = tabManager.spaceServices.catalog.createSpace(name: "Space")
+        let source = tabManager.regularTabLifecycleOwner.createNewTab(
+            url: "https://sidebar-drop.example/stale",
+            in: space,
+            activate: false
+        )
+        let firstPin = Self.pin(spaceID: space.id, index: 0)
+        let secondPin = Self.pin(spaceID: space.id, index: 1)
+        tabManager.structuralCollectionMutationOwner.setSpacePinnedShortcuts(
+            [firstPin, secondPin],
+            for: space.id
+        )
+        let target = try XCTUnwrap(SplitGroup.make(
+            members: [
+                .shortcutPin(
+                    firstPin.id,
+                    returnPlacement: .spacePinned(
+                        spaceId: space.id,
+                        folderId: nil,
+                        index: 0
+                    )
+                ),
+                .shortcutPin(
+                    secondPin.id,
+                    returnPlacement: .spacePinned(
+                        spaceId: space.id,
+                        folderId: nil,
+                        index: 1
+                    )
+                ),
+            ],
+            layoutKind: .vertical,
+            container: .shortcutSidebar(
+                spaceId: space.id,
+                profileId: nil,
+                folderId: nil,
+                index: 0
+            )
+        ))
+        XCTAssertTrue(tabManager.splitGroupMutations.insert(target, persist: false))
+        let prepared = try XCTUnwrap(
+            tabManager.regularTabShortcutConversion
+                .prepareShortcutSidebarDrop(
+                    source,
+                    into: target,
+                    preferredWindowId: UUID()
+                )
+        )
+        let replacementTarget = try XCTUnwrap(target.inserting(
+            prepared.member,
+            relativeTo: .shortcutPin(firstPin.id),
+            side: .right
+        ))
+        let replacement = prepared.expectedSplitGroups.map {
+            $0.id == target.id ? replacementTarget : $0
+        }
+        let staleTarget = try XCTUnwrap(target.changingLayout(to: .horizontal))
+        XCTAssertTrue(tabManager.splitGroupMutations.replace(
+            target,
+            with: staleTarget,
+            persist: false
+        ))
+
+        XCTAssertNil(
+            tabManager.regularTabShortcutConversion
+                .commitShortcutSidebarDrop(
+                    prepared,
+                    replacingSplitGroupsWith: replacement
+                )
+        )
+        XCTAssertNil(
+            tabManager.shortcutPinCollectionStateOwner.shortcutPin(
+                by: prepared.candidatePin.id
+            )
+        )
+        XCTAssertTrue(tabManager.regularTabCollectionOwner.contains(source))
+        XCTAssertEqual(tabManager.splitGroupStore.group(id: target.id), staleTarget)
+    }
+
+    private static func pin(spaceID: UUID, index: Int) -> ShortcutPin {
+        ShortcutPin(
+            id: UUID(),
+            role: .spacePinned,
+            spaceId: spaceID,
+            index: index,
+            launchURL: URL(string: "https://sidebar-pin-\(index).example")!,
+            title: "Pin \(index)"
+        )
     }
 }

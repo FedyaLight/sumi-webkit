@@ -35,7 +35,6 @@ final class WindowSessionArchiveRestoreTests: XCTestCase {
         let targetWindow = BrowserWindowState()
         registry.register(targetWindow)
         let exactSnapshot = WindowSessionSnapshotFactory(
-            splitManager: delegate.splitManager,
             glanceManager: delegate.glanceManager
         ).make(for: sourceWindow)
 

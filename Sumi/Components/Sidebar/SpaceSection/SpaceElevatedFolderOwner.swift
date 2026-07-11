@@ -31,14 +31,22 @@ struct SpaceElevatedFolderOwner {
                 }
             }
 
-            let allSplitGroups = tabManager.splitGroupStructureOwner.shortcutHostedSplitGroups(for: space.id)
-            for group in allSplitGroups {
-                if group.contains(currentTabId) {
-                    if let folderId = tabManager.splitGroupStructureOwner.shortcutHostedSplitGroupFolderId(group, in: space.id) {
-                        elevateAncestors(of: folderId, into: &elevated, tabManager: tabManager)
-                    }
-                }
-            }
+        }
+
+        if let selectedGroupID = windowState.splitSelection?.groupID,
+           let group = tabManager.splitGroupStore.group(id: selectedGroupID),
+           case .shortcutSidebar(
+            let groupSpaceID,
+            _,
+            let folderID,
+            _
+           ) = group.container,
+           groupSpaceID == space.id {
+            elevateAncestors(
+                of: folderID,
+                into: &elevated,
+                tabManager: tabManager
+            )
         }
 
         return elevated

@@ -7,38 +7,143 @@ import SwiftUI
 struct SplitViewRuntime {
     let tabManager: @MainActor () -> TabManager?
     let currentTab: @MainActor (BrowserWindowState) -> Tab?
-    let selectTab: @MainActor (Tab, BrowserWindowState) -> Void
+    let selectTabWithoutPersistence: @MainActor (
+        Tab,
+        BrowserWindowState
+    ) -> Void
+    let restoreShortcutMember: @MainActor (
+        SplitMemberID,
+        SumiDomain.SplitGroup,
+        BrowserWindowState
+    ) -> Bool
     let refreshCompositor: @MainActor (BrowserWindowState) -> Void
     let schedulePersistWindowSession: @MainActor (BrowserWindowState) -> Void
-    let focusFloatingBar: @MainActor (BrowserWindowState, FloatingBarPresentationReason) -> Void
+    let focusFloatingBar: @MainActor (
+        BrowserWindowState,
+        FloatingBarPresentationReason
+    ) -> Void
     let notifications: @MainActor () -> (any BrowserNotificationPresenting)?
 }
 
+/// SwiftUI/AppKit adapter for the split subsystem. Durable state, layout
+/// mutations, drop transactions, runtime projection and preview state live in
+/// separate collaborators; this object only exposes the UI-facing commands.
 @MainActor
 final class SplitViewManager: ObservableObject {
-    typealias WindowSplitPreviewState = SplitPreviewStateOwner.WindowSplitPreviewState
+    typealias WindowSplitPreviewState = SplitPreviewSession.WindowState
 
     weak var windowRegistry: WindowRegistry?
     private var runtime: SplitViewRuntime?
 
-    private let groupedDropTargetResolver = SplitGroupedDropTargetResolver()
-    private var fullGroupLayoutCatalog = SplitFullGroupLayoutCatalog()
-
-    private lazy var previewStateOwner = SplitPreviewStateOwner(
-        activeWindowId: { [weak self] in self?.windowRegistry?.activeWindow?.id },
-        notifyActiveWindowPreviewChanged: { [weak self] in self?.objectWillChange.send() },
-        refreshWindow: { [weak self] windowId in self?.refreshWindow(windowId) }
+    private lazy var previewSession = SplitPreviewSession(
+        activeWindowID: { [weak self] in
+            self?.windowRegistry?.activeWindow?.id
+        },
+        publishActiveWindowChange: { [weak self] in
+            self?.objectWillChange.send()
+        },
+        refreshWindow: { [weak self] windowID in
+            self?.refreshCompositor(in: windowID)
+        }
     )
 
-    private lazy var membershipResolutionOwner = SplitMembershipResolutionOwner(
+    private lazy var memberResolver = SplitRuntimeMemberResolver(
         tabManager: { [weak self] in self?.tabManager }
     )
 
-    private lazy var emptyPlaceholderOwner = SplitEmptyPlaceholderOwner(
+    private lazy var windowQuery = WindowSplitQuery(
         tabManager: { [weak self] in self?.tabManager },
-        membershipResolution: membershipResolutionOwner,
-        selectTab: { [weak self] tab, windowState in self?.runtime?.selectTab(tab, windowState) },
-        notifyChanged: { [weak self] windowId in self?.notifyChanged(for: windowId) }
+        windowState: { [weak self] in self?.windowRegistry?.windows[$0] },
+        previewIsActive: { [weak self] in
+            self?.previewSession.isActive(in: $0) == true
+        }
+    )
+
+    private lazy var presentationSynchronizer =
+        WindowSplitPresentationSynchronizer(
+            tabManager: { [weak self] in self?.tabManager },
+            windows: { [weak self] in
+                guard let values = self?.windowRegistry?.windows.values else {
+                    return []
+                }
+                return Array(values)
+            },
+            selectTabWithoutPersistence: { [weak self] tab, windowState in
+                self?.runtime?.selectTabWithoutPersistence(tab, windowState)
+            },
+            publishWindowChange: { [weak self] windowID in
+                self?.previewSession.syncPublishedState(
+                    for: windowID,
+                    force: true
+                )
+            },
+            refreshCompositor: { [weak self] windowState in
+                self?.runtime?.refreshCompositor(windowState)
+            },
+            persistWindowSession: { [weak self] windowState in
+                self?.runtime?.schedulePersistWindowSession(windowState)
+            }
+        )
+
+    private lazy var launcherPlacement = ShortcutSplitLauncherPlacementService(
+        tabManager: { [weak self] in self?.tabManager }
+    )
+
+    private lazy var dissolution = SplitGroupDissolutionService(
+        tabManager: { [weak self] in self?.tabManager },
+        launcherPlacement: launcherPlacement,
+        presentations: presentationSynchronizer
+    )
+
+    private lazy var layoutWeightMutations = SplitLayoutWeightMutationService(
+        tabManager: { [weak self] in self?.tabManager }
+    )
+
+    private lazy var dropTargets = SplitDropTargetService(
+        tabManager: { [weak self] in self?.tabManager },
+        windowState: { [weak self] in self?.windowRegistry?.windows[$0] },
+        currentTab: { [weak self] in self?.runtime?.currentTab($0) },
+        query: windowQuery,
+        memberResolver: memberResolver
+    )
+
+    private lazy var dropService = SplitDropService(
+        tabManager: { [weak self] in self?.tabManager },
+        memberResolver: memberResolver,
+        launcherPlacement: launcherPlacement,
+        reconcileAfterCommit: { [weak self] effect in
+            self?.finishDropCommit(effect)
+        },
+        notifyLimit: { [weak self] windowState in
+            self?.runtime?.notifications()?
+                .presentSplitViewLimitNotification(in: windowState)
+        }
+    )
+
+    private lazy var layoutService = SplitLayoutService(
+        tabManager: { [weak self] in self?.tabManager },
+        query: windowQuery,
+        weightMutations: layoutWeightMutations,
+        presentations: presentationSynchronizer,
+        dissolution: dissolution,
+        launcherPlacement: launcherPlacement,
+        restoreShortcutMember: { [weak self] memberID, group, windowState in
+            self?.runtime?.restoreShortcutMember(
+                memberID,
+                group,
+                windowState
+            ) == true
+        }
+    )
+
+    private lazy var emptySplits = EmptySplitService(
+        tabManager: { [weak self] in self?.tabManager },
+        currentTab: { [weak self] in self?.runtime?.currentTab($0) },
+        memberResolver: memberResolver,
+        dropService: dropService,
+        focusFloatingBar: { [weak self] windowState, reason in
+            self?.runtime?.focusFloatingBar(windowState, reason)
+        }
     )
 
     init(runtime: SplitViewRuntime? = nil) {
@@ -53,211 +158,168 @@ final class SplitViewManager: ObservableObject {
         runtime?.tabManager()
     }
 
-    // MARK: - Queries
+    // MARK: Read model
 
-    func previewState(for windowId: UUID) -> WindowSplitPreviewState {
-        previewStateOwner.previewState(for: windowId)
+    func previewState(for windowID: UUID) -> WindowSplitPreviewState {
+        previewSession.state(for: windowID)
     }
 
-    func splitGroup(for windowId: UUID) -> SplitGroup? {
-        guard let windowState = windowRegistry?.windows[windowId] else { return nil }
-        guard let currentTabId = windowState.currentTabId else { return nil }
-        return tabManager?.splitGroupStructureOwner.splitGroup(containing: currentTabId)
+    func splitGroup(for windowID: UUID) -> SumiDomain.SplitGroup? {
+        windowQuery.group(in: windowID)
     }
 
-    func visibleTabIds(for windowId: UUID) -> [UUID] {
-        guard isPreviewActive(for: windowId) == false else {
-            guard let windowState = windowRegistry?.windows[windowId] else { return [] }
-            return windowState.currentTabId.map { [$0] } ?? []
-        }
-        return splitGroup(for: windowId)?.tabIds ?? []
+    func visibleTabIds(for windowID: UUID) -> [UUID] {
+        windowQuery.visibleTabIDs(in: windowID)
     }
 
-    func isSplit(for windowId: UUID) -> Bool {
-        splitGroup(for: windowId) != nil
+    func isSplit(for windowID: UUID) -> Bool {
+        windowQuery.group(in: windowID) != nil
     }
 
-    func isTabVisibleInSplit(_ tabId: UUID, in windowId: UUID) -> Bool {
-        splitGroup(for: windowId)?.contains(tabId) == true
+    func isTabVisibleInSplit(_ tabID: UUID, in windowID: UUID) -> Bool {
+        windowQuery.contains(tabID: tabID, in: windowID)
     }
 
-    func isTabActiveInSplit(_ tabId: UUID, in windowId: UUID) -> Bool {
-        let group = splitGroup(for: windowId)
-        return activeTabId(for: windowId, in: group) == tabId
+    func isTabActiveInSplit(_ tabID: UUID, in windowID: UUID) -> Bool {
+        windowQuery.isActive(tabID: tabID, in: windowID)
     }
 
-    func isPreviewActive(for windowId: UUID) -> Bool {
-        previewStateOwner.isPreviewActive(for: windowId)
+    func isPreviewActive(for windowID: UUID) -> Bool {
+        previewSession.isActive(in: windowID)
     }
 
-    // MARK: - Layout & lifecycle
+    // MARK: Layout lifecycle
 
-    func updateLayoutSizes(groupId: UUID, path: [Int], sizes: [Double], for windowId: UUID) {
-        guard let tabManager,
-              let group = tabManager.splitGroupCollectionStateOwner.group(with: groupId)
-        else { return }
-        let resizedTree = SplitLayoutSizing.updatingChildSizes(
-            in: group.layoutTree,
-            at: path,
-            sizes: sizes
+    func updateSplitLayoutWeights(
+        expectedGroup: SumiDomain.SplitGroup,
+        path: [Int],
+        weights: [Double],
+        for windowID: UUID
+    ) {
+        layoutService.updateWeights(
+            expectedGroup: expectedGroup,
+            path: path,
+            weights: weights,
+            in: windowID
         )
-        let updatedTree = SplitLayoutReconciler.canonicalizedForTiles(resizedTree)
-            ?? group.layoutTree
-        tabManager.splitGroupStructureOwner.upsertSplitGroup(
-            SplitGroup(
-                id: group.id,
-                layoutKind: group.layoutKind,
-                layoutTree: updatedTree,
-                activeTabId: activeTabId(for: windowId, in: group),
-                host: group.host,
-                members: group.members
-            )
-        )
-        notifyChanged(for: windowId)
     }
 
-    func refreshPublishedState(for windowId: UUID) {
-        previewStateOwner.syncPublishedStateIfNeeded(for: windowId)
+    func refreshPublishedState(for windowID: UUID) {
+        previewSession.syncPublishedState(for: windowID)
     }
 
-    func cleanupWindow(_ windowId: UUID) {
-        emptyPlaceholderOwner.cleanupWindow(windowId)
-        previewStateOwner.cleanupWindow(windowId)
+    func cleanupWindow(_ windowID: UUID) {
+        emptySplits.removeWindow(windowID)
+        previewSession.removeWindow(windowID)
     }
 
-    func handleTabClosure(_ tabId: UUID) {
-        handleTabClosures([tabId])
+    func handleTabClosure(_ tabID: UUID) {
+        handleTabClosures([tabID])
     }
 
-    func handleTabClosures(_ tabIds: Set<UUID>) {
-        guard !tabIds.isEmpty else { return }
-        fullGroupLayoutCatalog.removeAll(keepingCapacity: true)
-        tabManager?.splitGroupStructureOwner.removeSplitGroups(
-            containingAny: tabIds
-        )
-        guard let windows = windowRegistry?.windows else { return }
-        for windowState in windows.values {
-            runtime?.refreshCompositor(windowState)
+    func handleTabClosures(_ tabIDs: Set<UUID>) {
+        dropTargets.clearCachedLayouts()
+        layoutService.handleClosedRegularTabs(tabIDs)
+    }
+
+    func unsplitActiveGroup(for windowID: UUID) {
+        guard let windowState = windowRegistry?.windows[windowID] else {
+            return
         }
-        objectWillChange.send()
+        layoutService.unsplit(in: windowState)
     }
 
-    func updateActiveSide(for tabId: UUID, in windowId: UUID) {
-        guard let tabManager,
-              let group = tabManager.splitGroupStructureOwner.splitGroup(containing: tabId)
-        else { return }
-        tabManager.splitGroupStructureOwner.upsertSplitGroup(group.settingActiveTab(tabId), schedulePersistence: false)
-        notifyChanged(for: windowId)
-    }
-
-    func exitSplit(for windowId: UUID) {
-        guard let group = splitGroup(for: windowId) else { return }
-        let windowState = windowRegistry?.windows[windowId]
-        let focusTab = windowState.flatMap {
-            membershipResolutionOwner.preferredFocusTabAfterUnsplit(group, in: $0)
-        }
-        tabManager?.splitGroupStructureOwner.removeSplitGroup(id: group.id)
-        if let focusTab, let windowState {
-            runtime?.selectTab(focusTab, windowState)
-        }
-        notifyChanged(for: windowId)
-    }
-
-    func unsplitActiveGroup(for windowId: UUID) {
-        exitSplit(for: windowId)
-    }
-
-    func setLayoutKind(_ layoutKind: SplitLayoutKind, for windowId: UUID) {
-        guard let group = splitGroup(for: windowId) else { return }
-        tabManager?.splitGroupStructureOwner.upsertSplitGroup(group.settingLayoutKind(layoutKind))
-        notifyChanged(for: windowId)
+    func setLayoutKind(_ layoutKind: SplitLayoutKind, for windowID: UUID) {
+        layoutService.setLayoutKind(layoutKind, in: windowID)
     }
 
     func expandSplitPane(tabId: UUID, in windowState: BrowserWindowState) {
-        guard let tabManager,
-              let tab = tabManager.tabCollectionMembershipOwner.tab(for: tabId),
-              let group = tabManager.splitGroupStructureOwner.splitGroup(containing: tabId)
-        else { return }
-
-        if let remainingGroup = group.removing(tabId: tabId) {
-            tabManager.splitGroupStructureOwner.upsertSplitGroup(remainingGroup)
-        } else {
-            tabManager.splitGroupStructureOwner.removeSplitGroup(id: group.id)
-        }
-        runtime?.selectTab(tab, windowState)
-        runtime?.refreshCompositor(windowState)
-        notifyChanged(for: windowState.id)
+        layoutService.expand(tabID: tabId, in: windowState)
     }
 
-    // MARK: - Empty split placeholder
+    // MARK: Empty split
 
     func createEmptySplit(
         side: SplitDropSide = .right,
         in windowState: BrowserWindowState,
         floatingBarPresentationReason: FloatingBarPresentationReason = .keyboard
     ) {
-        guard let tabManager,
-              let current = runtime?.currentTab(windowState),
-              current.representsSumiNativeSurface == false
-        else { return }
-        let targetSpace =
-            windowState.currentSpaceId.flatMap { id in tabManager.spaceStateOwner.spaces.first(where: { $0.id == id }) }
-            ?? tabManager.spaceStateOwner.currentSpace
-        let tab = tabManager.regularTabLifecycleOwner.createNewTab(
-            url: SumiSurface.emptyTabURL.absoluteString,
-            in: targetSpace,
-            activate: false
+        emptySplits.create(
+            side: side,
+            in: windowState,
+            floatingBarReason: floatingBarPresentationReason
         )
-        enterSplit(with: tab, placeOn: side, in: windowState)
-        if tabManager.splitGroupStructureOwner.splitGroup(containing: tab.id) != nil {
-            emptyPlaceholderOwner.registerPlaceholder(tabId: tab.id, for: windowState.id)
-        }
-        runtime?.focusFloatingBar(windowState, floatingBarPresentationReason)
     }
 
-    func commitEmptySplitPlaceholder(tabId: UUID, in windowState: BrowserWindowState) {
-        emptyPlaceholderOwner.commitPlaceholder(tabId: tabId, in: windowState)
-    }
-
-    @discardableResult
-    func replaceEmptySplitPlaceholder(with tab: Tab, in windowState: BrowserWindowState) -> Bool {
-        emptyPlaceholderOwner.replacePlaceholder(with: tab, in: windowState)
+    func commitEmptySplitPlaceholder(
+        tabId: UUID,
+        in windowState: BrowserWindowState
+    ) {
+        emptySplits.commit(tabID: tabId, in: windowState.id)
     }
 
     @discardableResult
-    func cancelEmptySplitPlaceholder(in windowState: BrowserWindowState) -> Bool {
-        emptyPlaceholderOwner.cancelPlaceholder(in: windowState)
+    func replaceEmptySplitPlaceholder(
+        with tab: Tab,
+        in windowState: BrowserWindowState
+    ) -> Bool {
+        emptySplits.replace(with: tab, in: windowState)
     }
 
-    // MARK: - Drop commit
+    @discardableResult
+    func cancelEmptySplitPlaceholder(
+        in windowState: BrowserWindowState
+    ) -> Bool {
+        emptySplits.cancel(in: windowState)
+    }
+
+    // MARK: Drop commit and hit testing
 
     func enterSplit(
         with tab: Tab,
         placeOn side: SplitDropSide = .right,
         in windowState: BrowserWindowState
     ) {
-        guard let tabManager else { return }
-        guard tab.representsSumiNativeSurface == false else { return }
-        guard let current = runtime?.currentTab(windowState), current.representsSumiNativeSurface == false else { return }
-
-        let anchorGroup = tabManager.splitGroupStructureOwner.splitGroup(containing: current.id)
-        let anchorTab = anchorGroup?.activeTabId.flatMap { tabManager.tabCollectionMembershipOwner.tab(for: $0) } ?? current
-        dropTab(tab, placeOn: side, relativeTo: anchorTab.id, in: windowState)
+        guard let current = runtime?.currentTab(windowState),
+              current.representsSumiNativeSurface == false,
+              let targetMemberID = windowState.splitSelection?.activeMemberID
+                ?? memberResolver.memberID(for: current) else {
+            return
+        }
+        _ = dropService.drop(
+            tab,
+            on: SplitDropTarget(
+                targetMemberID: targetMemberID,
+                side: side,
+                targetRect: .zero,
+                intent: .firstSplit
+            ),
+            in: windowState
+        )
     }
 
     @discardableResult
     func dropTab(
         _ tab: Tab,
         placeOn side: SplitDropSide,
-        relativeTo targetTabId: UUID?,
+        relativeTo targetTabID: UUID?,
         in windowState: BrowserWindowState
     ) -> Bool {
-        guard let tabManager else { return false }
-        guard let targetTab = targetTabId.flatMap({ tabManager.tabCollectionMembershipOwner.tab(for: $0) }) ?? runtime?.currentTab(windowState),
-              targetTab.representsSumiNativeSurface == false else { return false }
-        return dropTab(
+        let targetMemberID = targetTabID.flatMap {
+            windowQuery.memberID(for: $0, in: windowState.id)
+                ?? memberResolver.memberID(forLookupID: $0)
+        } ?? windowState.splitSelection?.activeMemberID
+            ?? runtime?.currentTab(windowState).flatMap {
+                memberResolver.memberID(for: $0)
+            }
+        guard let targetMemberID else { return false }
+        return dropService.drop(
             tab,
-            on: SplitDropTarget(tabId: targetTab.id, side: side, targetRect: .zero),
+            on: SplitDropTarget(
+                targetMemberID: targetMemberID,
+                side: side,
+                targetRect: .zero
+            ),
             in: windowState
         )
     }
@@ -268,257 +330,70 @@ final class SplitViewManager: ObservableObject {
         on target: SplitDropTarget,
         in windowState: BrowserWindowState
     ) -> Bool {
-        guard let tabManager else { return false }
-        let side = target.side
-        guard tab.representsSumiNativeSurface == false else { return false }
-        guard let targetTab = tabManager.tabCollectionMembershipOwner.tab(for: target.tabId) ?? runtime?.currentTab(windowState),
-              targetTab.representsSumiNativeSurface == false
-        else { return false }
-
-        let targetGroup = tabManager.splitGroupStructureOwner.splitGroup(containing: targetTab.id)
-        if let targetGroup, targetGroup.contains(tab.id) {
-            let updated: SplitGroup?
-            if let resolved = SplitLayoutDropMutation.resolve(
-                in: targetGroup.layoutTree,
-                draggedTabId: tab.id,
-                target: target,
-                bounds: target.targetRect
-            ) {
-                updated = SplitGroup(
-                    id: targetGroup.id,
-                    layoutKind: targetGroup.layoutKind,
-                    layoutTree: resolved.layoutTree,
-                    activeTabId: tab.id,
-                    host: targetGroup.host,
-                    members: targetGroup.members
-                )
-            } else if target.scope == .group, side != .center {
-                updated = targetGroup.movingTabToRootEdge(tab.id, side: side)
-            } else {
-                updated = targetGroup.movingTab(tab.id, relativeTo: targetTab.id, side: side)
-            }
-            guard let updated else { return false }
-            tabManager.splitGroupStructureOwner.upsertSplitGroup(updated)
-            runtime?.selectTab(tab, windowState)
-            runtime?.refreshCompositor(windowState)
-            notifyChanged(for: windowState.id)
-            return true
-        }
-
-        let sourceGroup = membershipResolutionOwner.sourceSplitGroup(for: tab)
-
-        if let targetGroup {
-            guard let resolvedIncoming = membershipResolutionOwner.resolvedSplitTab(
-                tab,
-                host: targetGroup.host,
-                sourceGroup: sourceGroup,
-                in: windowState
-            ) else {
-                return false
-            }
-            let group: SplitGroup?
-            if side == .center {
-                group = SplitGroup(
-                    id: targetGroup.id,
-                    layoutKind: targetGroup.layoutKind,
-                    layoutTree: targetGroup.layoutTree.replacingTab(targetTab.id, with: resolvedIncoming.tab.id),
-                    activeTabId: resolvedIncoming.tab.id,
-                    host: targetGroup.host,
-                    members: targetGroup.removingMember(tabId: targetTab.id).members + [resolvedIncoming.member]
-                )
-            } else if let resolved = SplitLayoutDropMutation.resolve(
-                in: targetGroup.layoutTree,
-                draggedTabId: resolvedIncoming.tab.id,
-                target: target,
-                bounds: target.targetRect
-            ) {
-                group = SplitGroup(
-                    id: targetGroup.id,
-                    layoutKind: targetGroup.layoutKind,
-                    layoutTree: resolved.layoutTree,
-                    activeTabId: resolvedIncoming.tab.id,
-                    host: targetGroup.host,
-                    members: targetGroup.upsertingMember(resolvedIncoming.member).members
-                )
-            } else if target.scope == .group {
-                group = targetGroup.insertingAtRoot(
-                    tabId: resolvedIncoming.tab.id,
-                    side: side
-                )?.upsertingMember(resolvedIncoming.member)
-            } else {
-                group = targetGroup.inserting(
-                    tabId: resolvedIncoming.tab.id,
-                    relativeTo: targetTab.id,
-                    side: side
-                )?.upsertingMember(resolvedIncoming.member)
-            }
-            if group == nil {
-                notifySplitViewLimitIfNeeded(
-                    targetGroup: targetGroup,
-                    incomingTabId: resolvedIncoming.tab.id,
-                    in: windowState
-                )
-            }
-            guard let group else { return false }
-            removeFromSourceSplitIfNeeded(
-                sourceGroup,
-                movedTabId: membershipResolutionOwner.sourceRemovalId(for: tab, in: sourceGroup) ?? tab.id,
-                excludingGroupId: group.id
-            )
-            tabManager.splitGroupStructureOwner.upsertSplitGroup(group)
-            runtime?.selectTab(resolvedIncoming.tab, windowState)
-            runtime?.refreshCompositor(windowState)
-            notifyChanged(for: windowState.id)
-            return true
-        }
-
-        let host = membershipResolutionOwner.initialHost(for: tab, targetTab: targetTab, in: windowState)
-        guard let resolvedIncoming = membershipResolutionOwner.resolvedSplitTab(
-            tab,
-            host: host,
-            sourceGroup: sourceGroup,
-            in: windowState
-        ),
-        let resolvedAnchor = membershipResolutionOwner.resolvedSplitTab(
-            targetTab,
-            host: host,
-            sourceGroup: tabManager.splitGroupStructureOwner.splitGroup(containing: targetTab.id),
-            in: windowState
-        ) else {
-            return false
-        }
-        let ids: [UUID]
-        switch side {
-        case .left, .top:
-            ids = [resolvedIncoming.tab.id, resolvedAnchor.tab.id]
-        case .right, .bottom, .center:
-            ids = [resolvedAnchor.tab.id, resolvedIncoming.tab.id]
-        }
-        let kind: SplitLayoutKind = (side == .top || side == .bottom) ? .horizontal : .vertical
-        guard let group = SplitGroup.make(
-            tabIds: ids,
-            layoutKind: kind,
-            activeTabId: resolvedIncoming.tab.id,
-            host: host,
-            members: [resolvedAnchor.member, resolvedIncoming.member]
-        ) else { return false }
-
-        removeFromSourceSplitIfNeeded(
-            sourceGroup,
-            movedTabId: membershipResolutionOwner.sourceRemovalId(for: tab, in: sourceGroup) ?? tab.id,
-            excludingGroupId: group.id
-        )
-        tabManager.splitGroupStructureOwner.upsertSplitGroup(group)
-        runtime?.selectTab(resolvedIncoming.tab, windowState)
-        runtime?.refreshCompositor(windowState)
-        notifyChanged(for: windowState.id)
-        return true
+        dropService.drop(tab, on: target, in: windowState)
     }
-
-    private func notifySplitViewLimitIfNeeded(
-        targetGroup: SplitGroup,
-        incomingTabId: UUID,
-        in windowState: BrowserWindowState
-    ) {
-        guard targetGroup.tabIds.count >= SplitGroup.maximumTabs,
-              !targetGroup.contains(incomingTabId)
-        else { return }
-        runtime?.notifications()?.presentSplitViewLimitNotification(in: windowState)
-    }
-
-    private func removeFromSourceSplitIfNeeded(
-        _ sourceGroup: SplitGroup?,
-        movedTabId: UUID,
-        excludingGroupId: UUID
-    ) {
-        guard let sourceGroup, sourceGroup.id != excludingGroupId else { return }
-        if let remaining = sourceGroup.removing(tabId: movedTabId) {
-            tabManager?.splitGroupStructureOwner.upsertSplitGroup(remaining)
-        } else {
-            tabManager?.splitGroupStructureOwner.removeSplitGroup(id: sourceGroup.id)
-        }
-    }
-
-    // MARK: - Drop target resolution
 
     func dropTarget(
         at location: CGPoint,
         in bounds: CGRect,
-        for windowId: UUID,
+        for windowID: UUID,
+        draggedMemberID: SplitMemberID? = nil,
         draggedTabId: UUID? = nil
     ) -> SplitDropTarget? {
-        guard bounds.width > 0, bounds.height > 0, bounds.contains(location) else { return nil }
-        guard let windowState = windowRegistry?.windows[windowId],
-              let tabManager else {
-            return nil
-        }
-
-        if let currentTabId = windowState.currentTabId,
-           let group = tabManager.splitGroupStructureOwner.splitGroup(containing: currentTabId) {
-            return groupedDropTargetResolver.target(
-                in: group,
-                at: location,
-                bounds: bounds,
-                draggedTabId: draggedTabId,
-                fullGroupLayouts: &fullGroupLayoutCatalog
-            )
-        }
-
-        guard let currentTab = windowState.currentTabId.flatMap({ tabManager.tabCollectionMembershipOwner.tab(for: $0) })
-                ?? runtime?.currentTab(windowState),
-              currentTab.representsSumiNativeSurface == false else {
-            return nil
-        }
-
-        return SplitFirstDropTargetResolver.target(
-            currentTabId: currentTab.id,
+        dropTargets.target(
             at: location,
-            bounds: bounds,
-            draggedTabId: draggedTabId
+            in: bounds,
+            windowID: windowID,
+            draggedMemberID: draggedMemberID,
+            draggedLookupID: draggedTabId
         )
     }
-
-    // MARK: - Preview
 
     func beginPreview(
         targetRect: CGRect? = nil,
         style: SplitDropPreviewStyle = .edge,
-        for windowId: UUID
+        for windowID: UUID
     ) {
-        previewStateOwner.beginPreview(targetRect: targetRect, style: style, for: windowId)
+        previewSession.begin(
+            targetRect: targetRect,
+            style: style,
+            in: windowID
+        )
     }
 
     func updatePreview(
         targetRect: CGRect?,
         style: SplitDropPreviewStyle = .edge,
-        for windowId: UUID
+        for windowID: UUID
     ) {
-        previewStateOwner.updatePreview(targetRect: targetRect, style: style, for: windowId)
+        previewSession.update(
+            targetRect: targetRect,
+            style: style,
+            in: windowID
+        )
     }
 
-    func endPreview(for windowId: UUID) {
-        previewStateOwner.endPreview(for: windowId)
+    func endPreview(for windowID: UUID) {
+        previewSession.end(in: windowID)
     }
 
-    // MARK: - Shared plumbing
-
-    private func activeTabId(for windowId: UUID, in group: SplitGroup?) -> UUID? {
-        guard let group else { return nil }
-        let current = windowRegistry?.windows[windowId]?.currentTabId
-        if let current, group.contains(current) { return current }
-        if let active = group.activeTabId, group.contains(active) { return active }
-        return group.tabIds.first
+    private func finishDropCommit(_ effect: SplitDropCommitEffect) {
+        presentationSynchronizer.synchronize(
+            previousGroups: effect.previousGroups,
+            affectedGroupIDs: effect.affectedGroupIDs,
+            preferredSelections: [
+                effect.callerWindowID: WindowSplitSelection(
+                    groupID: effect.targetGroupID,
+                    activeMemberID: effect.preferredActiveMemberID
+                )
+            ]
+        )
     }
 
-    private func notifyChanged(for windowId: UUID) {
-        previewStateOwner.syncPublishedStateIfNeeded(for: windowId, forceNotify: true)
-        refreshWindow(windowId)
-    }
-
-    private func refreshWindow(_ windowId: UUID) {
-        if let windowState = windowRegistry?.windows[windowId] {
-            runtime?.refreshCompositor(windowState)
-            runtime?.schedulePersistWindowSession(windowState)
+    private func refreshCompositor(in windowID: UUID) {
+        guard let windowState = windowRegistry?.windows[windowID] else {
+            return
         }
+        runtime?.refreshCompositor(windowState)
     }
 }

@@ -28,7 +28,7 @@ final class SumiImportRuntimeStore: SumiImportRuntimeMutating {
                 .spacePinnedShortcutsSnapshot(),
             pendingPinnedWithoutProfile: tabManager.shortcutPinCollectionStateOwner
                 .pendingPinnedWithoutProfileSnapshot(),
-            splitGroups: tabManager.splitGroupCollectionStateOwner.splitGroups,
+            splitGroups: tabManager.splitGroupStore.groups,
             currentSpace: tabManager.spaceStateOwner.currentSpace,
             currentTab: tabManager.selectionStateOwner.currentTab
         )

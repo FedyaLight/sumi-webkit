@@ -4,8 +4,8 @@
 //
 //
 
-import SwiftUI
 import SumiDomain
+import SwiftUI
 
 struct TabFolderView: View {
     var folder: TabFolder
@@ -24,8 +24,12 @@ struct TabFolderView: View {
     let nestingDepth: Int
     let onUngroup: () -> Void
     let onDelete: () -> Void
-    let onPrepareShortcutRestoreGap: (SplitGroupSidebarItem, SplitGroup) -> Void
-    let onPerformShortcutRestoreWithPreparedGap: (SplitGroupSidebarItem, SplitGroup, @escaping () -> Void) -> Void
+    let onPrepareShortcutRestoreGap: (UUID, SplitMemberID) -> Void
+    let onPerformShortcutRestoreWithPreparedGap: (
+        UUID,
+        SplitMemberID,
+        @escaping () -> Void
+    ) -> Void
 
     @State var displayedCollapsedProjectionIDs: [UUID] = []
 

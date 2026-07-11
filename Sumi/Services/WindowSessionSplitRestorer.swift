@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 @MainActor
 struct WindowSessionSplitRestorer {
@@ -9,19 +10,26 @@ struct WindowSessionSplitRestorer {
         in windowState: BrowserWindowState
     ) {
         restoreLegacyGroupIfNeeded(in: windowState)
-        guard let groupId = windowState.pendingSessionSplitGroupId else {
+        guard let pending = windowState.pendingSessionSplitSelection else {
             return
         }
-        guard let group = tabManager.splitGroupCollectionStateOwner
-            .group(with: groupId) else {
+        guard let group = tabManager.splitGroupStore.group(id: pending.groupID) else {
             if tabManager.startupRestoreLifecycle.hasLoadedInitialData {
-                windowState.pendingSessionSplitGroupId = nil
+                windowState.pendingSessionSplitSelection = nil
             }
             return
         }
 
-        windowState.pendingSessionSplitGroupId = nil
-        focus.focusSplitGroup(group, in: windowState)
+        windowState.pendingSessionSplitSelection = nil
+        focus.focusSplitGroup(
+            group,
+            preferredMemberID: resolvedPreferredMember(
+                pending.preferredMemberID,
+                in: group,
+                windowState: windowState
+            ),
+            in: windowState
+        )
     }
 
     private func restoreLegacyGroupIfNeeded(
@@ -32,17 +40,44 @@ struct WindowSessionSplitRestorer {
             return
         }
 
-        guard group.tabIds.allSatisfy({
-            tabManager.tabCollectionMembershipOwner.tab(for: $0) != nil
+        guard group.memberIDs.allSatisfy({ memberID in
+            guard case .regularTab(let tabID) = memberID else { return false }
+            return tabManager.tabCollectionMembershipOwner.tab(for: tabID) != nil
         }) else {
             windowState.pendingSessionLegacySplitGroup = nil
-            if windowState.pendingSessionSplitGroupId == group.id {
-                windowState.pendingSessionSplitGroupId = nil
+            if windowState.pendingSessionSplitSelection?.groupID == group.id {
+                windowState.pendingSessionSplitSelection = nil
             }
             return
         }
 
-        tabManager.splitGroupStructureOwner.upsertSplitGroup(group)
+        guard tabManager.splitGroupMutations.insert(group) else {
+            windowState.pendingSessionLegacySplitGroup = nil
+            if tabManager.splitGroupStore.group(id: group.id) == nil,
+               windowState.pendingSessionSplitSelection?.groupID == group.id {
+                windowState.pendingSessionSplitSelection = nil
+            }
+            return
+        }
         windowState.pendingSessionLegacySplitGroup = nil
+    }
+
+    private func resolvedPreferredMember(
+        _ persistedMemberID: SplitMemberID?,
+        in group: SumiDomain.SplitGroup,
+        windowState: BrowserWindowState
+    ) -> SplitMemberID? {
+        if let persistedMemberID, group.contains(persistedMemberID) {
+            return persistedMemberID
+        }
+        if let pinID = windowState.currentShortcutPinId {
+            let memberID = SplitMemberID.shortcutPin(pinID)
+            if group.contains(memberID) { return memberID }
+        }
+        if let tabID = windowState.currentTabId {
+            let memberID = SplitMemberID.regularTab(tabID)
+            if group.contains(memberID) { return memberID }
+        }
+        return group.memberIDs.first
     }
 }

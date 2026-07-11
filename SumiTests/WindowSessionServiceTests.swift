@@ -536,13 +536,14 @@ final class WindowSessionServiceTests: XCTestCase {
         let second = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://two.example", in: space, activate: false)
         let group = try XCTUnwrap(
             SplitGroup.make(
-                tabIds: [first.id, second.id],
+                members: [.regularTab(first.id), .regularTab(second.id)],
                 layoutKind: .vertical,
-                activeTabId: second.id,
-                host: .regular(spaceId: space.id)
+                container: .regularTabs(spaceId: space.id)
             )
         )
-        tabManager.splitGroupStructureOwner.upsertSplitGroup(group, schedulePersistence: false)
+        XCTAssertTrue(
+            tabManager.splitGroupMutations.insert(group, persist: false)
+        )
 
         let snapshot = WindowSessionSnapshot(
             currentTabId: nil,
@@ -561,7 +562,10 @@ final class WindowSessionServiceTests: XCTestCase {
             )),
             isSidebarVisible: true,
             floatingBarDraft: FloatingBarDraftState(text: "", navigateCurrentTab: false),
-            activeSplitGroupId: group.id
+            splitSelection: WindowSplitSelection(
+                groupID: group.id,
+                activeMemberID: .regularTab(second.id)
+            )
         )
         let delegate = TestWindowSessionDelegate(tabManager: tabManager)
         let service = delegate.makeRestoreService(lastWindowSessionKey: "SumiTests.windowSession.\(UUID().uuidString)")
@@ -571,7 +575,7 @@ final class WindowSessionServiceTests: XCTestCase {
 
         XCTAssertEqual(delegate.focusedSplitGroupIds, [group.id])
         XCTAssertEqual(windowState.currentTabId, second.id)
-        XCTAssertNil(windowState.pendingSessionSplitGroupId)
+        XCTAssertNil(windowState.pendingSessionSplitSelection)
     }
 
     func testLegacySplitSessionSnapshotMigratesAfterTabLoad() throws {
@@ -599,21 +603,34 @@ final class WindowSessionServiceTests: XCTestCase {
         service.setupWindowState(windowState, currentProfile: delegate.currentProfile)
 
         XCTAssertEqual(windowState.currentTabId, left.id)
-        XCTAssertNotNil(windowState.pendingSessionSplitGroupId)
+        XCTAssertNotNil(windowState.pendingSessionSplitSelection)
         XCTAssertNotNil(windowState.pendingSessionLegacySplitGroup)
-        XCTAssertNil(tabManager.splitGroupStructureOwner.splitGroup(containing: left.id))
+        XCTAssertNil(
+            tabManager.splitGroupStore.group(containing: .regularTab(left.id))
+        )
 
         tabManager.startupRestoreLifecycle.markLoadFinished()
         service.handleTabManagerDataLoaded(windows: delegate.windowRegistry?.allWindows ?? [])
 
-        let group = try XCTUnwrap(tabManager.splitGroupStructureOwner.splitGroup(containing: left.id))
-        XCTAssertEqual(Set(group.tabIds), Set([left.id, right.id]))
+        let group = try XCTUnwrap(
+            tabManager.splitGroupStore.group(containing: .regularTab(left.id))
+        )
+        XCTAssertEqual(
+            Set(group.memberIDs),
+            Set([.regularTab(left.id), .regularTab(right.id)])
+        )
         XCTAssertEqual(group.layoutKind, .horizontal)
-        XCTAssertEqual(group.activeTabId, right.id)
-        XCTAssertEqual(group.host, .regular(spaceId: space.id))
+        XCTAssertEqual(group.container, .regularTabs(spaceId: space.id))
         XCTAssertEqual(delegate.focusedSplitGroupIds, [group.id])
         XCTAssertEqual(windowState.currentTabId, right.id)
-        XCTAssertNil(windowState.pendingSessionSplitGroupId)
+        XCTAssertEqual(
+            windowState.splitSelection,
+            WindowSplitSelection(
+                groupID: group.id,
+                activeMemberID: .regularTab(right.id)
+            )
+        )
+        XCTAssertNil(windowState.pendingSessionSplitSelection)
         XCTAssertNil(windowState.pendingSessionLegacySplitGroup)
     }
 
@@ -915,7 +932,6 @@ final class TestWindowSessionDelegate:
     WindowSessionThemeCommitting,
     WindowSessionSplitFocusing {
     let tabManager: TabManager
-    let splitManager = SplitViewManager()
     let glanceManager = GlanceManager()
     let shellSelectionService = ShellSelectionService(splitTabsForWindow: { _ in [] })
     var currentProfile: Profile?
@@ -938,7 +954,6 @@ final class TestWindowSessionDelegate:
         let store = WindowSessionSnapshotStore(key: lastWindowSessionKey)
         let scheduler = WindowSessionPersistenceScheduler()
         let snapshotFactory = WindowSessionSnapshotFactory(
-            splitManager: splitManager,
             glanceManager: glanceManager
         )
         let persistenceComposition = WindowSessionPersistenceTestComposition(
@@ -1002,10 +1017,25 @@ final class TestWindowSessionDelegate:
         return tabManager.spaceStateOwner.spaces.first { $0.id == spaceId }
     }
 
-    func focusSplitGroup(_ group: SplitGroup, in windowState: BrowserWindowState) {
+    func focusSplitGroup(
+        _ group: SplitGroup,
+        preferredMemberID: SplitMemberID?,
+        in windowState: BrowserWindowState
+    ) {
         focusedSplitGroupIds.append(group.id)
-        let targetTabId = group.activeTabId.flatMap { group.contains($0) ? $0 : nil }
-            ?? group.tabIds.first
+        let selectedMemberID = preferredMemberID.flatMap {
+            group.contains($0) ? $0 : nil
+        } ?? group.memberIDs.first
+        windowState.splitSelection = selectedMemberID.map {
+            WindowSplitSelection(
+                groupID: group.id,
+                activeMemberID: $0
+            )
+        }
+        let targetTabId = selectedMemberID.flatMap { memberID -> UUID? in
+            guard case .regularTab(let tabID) = memberID else { return nil }
+            return tabID
+        }
         if let tab = targetTabId.flatMap({ tabManager.tabCollectionMembershipOwner.tab(for: $0) }) {
             applyTabSelection(
                 tab,

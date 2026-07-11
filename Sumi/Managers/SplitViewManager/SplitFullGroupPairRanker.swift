@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import SumiDomain
 
 enum SplitFullGroupPairRanker {
     private struct Score {
@@ -30,37 +31,41 @@ enum SplitFullGroupPairRanker {
 
     private struct PairSignature: Hashable {
         let axis: SplitAxis
-        let first: UUID
-        let second: UUID
+        let first: SplitMemberID
+        let second: SplitMemberID
     }
 
     static func bestTree(
         among candidates: [SplitLayoutTree],
         preserving tree: SplitLayoutTree,
-        draggedTabId: UUID,
-        targetTabId: UUID,
+        draggedMemberID: SplitMemberID,
+        targetMemberID: SplitMemberID,
         side: SplitDropSide,
         desiredRect: CGRect,
         bounds: CGRect
     ) -> SplitLayoutTree? {
         guard let pairAxis = side.insertionAxis,
-              tree.tabIds.count == SplitGroup.maximumTabs,
-              tree.contains(draggedTabId),
-              tree.contains(targetTabId),
-              draggedTabId != targetTabId
-        else {
+              tree.memberIDs.count == SplitGroup.maximumMembers,
+              tree.contains(draggedMemberID),
+              tree.contains(targetMemberID),
+              draggedMemberID != targetMemberID else {
             return nil
         }
 
         let orderedPair = pairOrder(
-            draggedTabId: draggedTabId,
-            targetTabId: targetTabId,
+            draggedMemberID: draggedMemberID,
+            targetMemberID: targetMemberID,
             side: side
         )
         let originalRootAxis = rootAxis(of: tree)
-        let currentRects = SplitLayoutGeometry.leafRects(in: tree, rect: bounds)
+        let currentRects = SplitLayoutGeometry.leafRects(
+            in: tree,
+            rect: bounds
+        )
         let preservedPairs = directLeafPairSignatures(in: tree)
-            .filter { $0.first != draggedTabId && $0.second != draggedTabId }
+            .filter {
+                $0.first != draggedMemberID && $0.second != draggedMemberID
+            }
         var bestScore: Score?
 
         for candidate in candidates {
@@ -77,9 +82,8 @@ enum SplitFullGroupPairRanker {
                 in: candidate,
                 rect: bounds
             )
-            guard candidate.hasSameStructure(as: tree) == false,
-                  let draggedRect = candidateRects[draggedTabId]
-            else {
+            guard !candidate.hasSameStructure(as: tree),
+                  let draggedRect = candidateRects[draggedMemberID] else {
                 continue
             }
 
@@ -100,7 +104,7 @@ enum SplitFullGroupPairRanker {
                 stableMovement: stableLeafMovement(
                     from: currentRects,
                     to: candidateRects,
-                    excluding: draggedTabId
+                    excluding: draggedMemberID
                 )
             )
             if score.isBetter(than: bestScore) {
@@ -112,14 +116,14 @@ enum SplitFullGroupPairRanker {
     }
 
     private static func pairOrder(
-        draggedTabId: UUID,
-        targetTabId: UUID,
+        draggedMemberID: SplitMemberID,
+        targetMemberID: SplitMemberID,
         side: SplitDropSide
-    ) -> (first: UUID, second: UUID) {
-        if side == .left || side == .top {
-            return (draggedTabId, targetTabId)
+    ) -> (first: SplitMemberID, second: SplitMemberID) {
+        if side.insertsBeforeTarget {
+            return (draggedMemberID, targetMemberID)
         }
-        return (targetTabId, draggedTabId)
+        return (targetMemberID, draggedMemberID)
     }
 
     private static func rootAxis(of tree: SplitLayoutTree) -> SplitAxis? {
@@ -141,7 +145,11 @@ enum SplitFullGroupPairRanker {
                case .leaf(let first, _) = children[0],
                case .leaf(let second, _) = children[1] {
                 result.insert(
-                    PairSignature(axis: axis, first: first, second: second)
+                    PairSignature(
+                        axis: axis,
+                        first: first.memberID,
+                        second: second.memberID
+                    )
                 )
             }
             for child in children {
@@ -152,15 +160,14 @@ enum SplitFullGroupPairRanker {
     }
 
     private static func stableLeafMovement(
-        from currentRects: [UUID: CGRect],
-        to candidateRects: [UUID: CGRect],
-        excluding draggedTabId: UUID
+        from currentRects: [SplitMemberID: CGRect],
+        to candidateRects: [SplitMemberID: CGRect],
+        excluding draggedMemberID: SplitMemberID
     ) -> CGFloat {
         currentRects.reduce(CGFloat(0)) { partial, element in
-            let (tabId, currentRect) = element
-            guard tabId != draggedTabId,
-                  let candidateRect = candidateRects[tabId]
-            else {
+            let (memberID, currentRect) = element
+            guard memberID != draggedMemberID,
+                  let candidateRect = candidateRects[memberID] else {
                 return partial
             }
             return partial + hypot(
@@ -171,19 +178,22 @@ enum SplitFullGroupPairRanker {
     }
 
     private static func area(of rect: CGRect) -> CGFloat {
-        guard rect.isNull == false, rect.isInfinite == false else { return 0 }
+        guard !rect.isNull, !rect.isInfinite else { return 0 }
         return max(0, rect.width) * max(0, rect.height)
     }
 
-    private static func intersectionArea(_ lhs: CGRect, _ rhs: CGRect) -> CGFloat {
+    private static func intersectionArea(
+        _ lhs: CGRect,
+        _ rhs: CGRect
+    ) -> CGFloat {
         area(of: lhs.intersection(rhs))
     }
 
     private static func hasDirectedLeafPair(
         in tree: SplitLayoutTree,
         axis expectedAxis: SplitAxis,
-        first expectedFirst: UUID,
-        second expectedSecond: UUID
+        first expectedFirst: SplitMemberID,
+        second expectedSecond: SplitMemberID
     ) -> Bool {
         switch tree {
         case .leaf:
@@ -193,8 +203,8 @@ enum SplitFullGroupPairRanker {
                children.count == 2,
                case .leaf(let first, _) = children[0],
                case .leaf(let second, _) = children[1],
-               first == expectedFirst,
-               second == expectedSecond {
+               first.memberID == expectedFirst,
+               second.memberID == expectedSecond {
                 return true
             }
             return children.contains {

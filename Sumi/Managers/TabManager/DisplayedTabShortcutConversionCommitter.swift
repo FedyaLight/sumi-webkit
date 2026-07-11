@@ -1,7 +1,8 @@
 import Foundation
+import SumiDomain
 
-/// Executes a previously authorized displayed-tab conversion as one
-/// structural batch. It performs no planning or stale-plan recovery.
+/// Applies the non-fallible runtime half of an already authorized conversion.
+/// The caller owns the structural transaction and exact split replacement.
 @MainActor
 final class DisplayedTabShortcutConversionCommitter {
     private struct WebViewMaterialization {
@@ -28,8 +29,9 @@ final class DisplayedTabShortcutConversionCommitter {
         )
     }
 
-    func commit(
+    func apply(
         to pin: ShortcutPin,
+        transition: RegularTabShortcutWindowTransitionPlan,
         using authorization: AuthorizedDisplayedTabShortcutConversion
     ) {
         let tab = authorization.tab
@@ -39,37 +41,36 @@ final class DisplayedTabShortcutConversionCommitter {
         var liveTabsByWindowId: [UUID: Tab] = [:]
         var changedWindows: [BrowserWindowState] = []
 
-        structuralLookup.withTransaction {
-            authorization.structure.commit(insertedPin: pin)
-            containerRemoval.removeFromCurrentContainer(tab)
-            materializer.adopt(
-                tab,
-                for: pin,
-                in: plan.firstWindowId,
-                currentSpaceId: plan.firstWindow.currentSpaceId
-            )
-            liveTabsByWindowId[plan.firstWindowId] = tab
+        containerRemoval.removeFromCurrentContainer(tab)
+        materializer.adopt(
+            tab,
+            for: pin,
+            in: plan.firstWindowId,
+            currentSpaceId: plan.firstWindow.currentSpaceId
+        )
+        liveTabsByWindowId[plan.firstWindowId] = tab
 
-            for windowState in authorization.selectedWindows
-                where windowState.id != plan.firstWindowId {
-                let liveTab = materializer.materialize(
-                    pin,
-                    in: windowState.id,
-                    currentSpaceId: windowState.currentSpaceId
-                )
-                liveTabsByWindowId[windowState.id] = liveTab
-                materializations.append(
-                    WebViewMaterialization(tab: liveTab, windowState: windowState)
-                )
-            }
-            changedWindows = windowReconciler.reconcile(
-                originalTabId: tab.id,
-                sourceSpaceId: sourceSpaceId,
-                liveTabsByWindowId: liveTabsByWindowId,
-                selectedWindowIds: Set(plan.selectedWindowIds),
-                using: plan.runtime
+        for windowState in authorization.presentationWindows
+            where windowState.id != plan.firstWindowId {
+            let liveTab = materializer.materialize(
+                pin,
+                in: windowState.id,
+                currentSpaceId: windowState.currentSpaceId
+            )
+            liveTabsByWindowId[windowState.id] = liveTab
+            materializations.append(
+                WebViewMaterialization(tab: liveTab, windowState: windowState)
             )
         }
+
+        changedWindows = windowReconciler.reconcile(
+            originalTabId: tab.id,
+            splitTransition: transition,
+            sourceSpaceId: sourceSpaceId,
+            liveTabsByWindowId: liveTabsByWindowId,
+            selectedWindowIds: Set(plan.selectedWindowIds),
+            using: plan.runtime
+        )
 
         structuralLookup.runAfterCurrentBatch {
             for work in materializations {

@@ -4,33 +4,32 @@
 //
 
 import Foundation
+import SumiDomain
 
-/// Resolves the display/action/drag semantics for a single segment (tab or
-/// shortcut-backed placeholder) inside a split group rendered in the regular
-/// tabs section of a space. Pure decision logic — no environment/state
-/// dependencies — so it can be exercised directly in tests.
+/// Pure sidebar projection for split groups hosted by the regular tab list.
 @MainActor
 struct RegularSplitSegmentResolver {
     let space: Space
     let isInteractive: Bool
 
-    /// Visible split groups for the current tab list: dragging suppresses all
-    /// split-group rendering, and each group must still contain at least the
-    /// minimum member count and at least one currently-visible tab.
     func visibleSplitGroups(
         currentTabs: [Tab],
         isDragging: Bool,
-        splitGroup: (UUID) -> SplitGroup?
+        splitGroup: (SplitMemberID) -> SplitGroup?
     ) -> [SplitGroup] {
         guard !isDragging else { return [] }
-        let currentTabIds = Set(currentTabs.map(\.id))
-        var seenGroupIds = Set<UUID>()
+        let currentMemberIDs = Set(
+            currentTabs.map { SplitMemberID.regularTab($0.id) }
+        )
+        var seenGroupIDs = Set<UUID>()
+
         return currentTabs.compactMap { tab in
-            guard let group = splitGroup(tab.id),
-                  !group.isShortcutHosted,
-                  seenGroupIds.insert(group.id).inserted,
-                  group.tabIds.count >= SplitGroup.minimumTabs,
-                  group.tabIds.contains(where: { currentTabIds.contains($0) })
+            let memberID = SplitMemberID.regularTab(tab.id)
+            guard let group = splitGroup(memberID),
+                  !group.container.isShortcutSidebar,
+                  seenGroupIDs.insert(group.id).inserted,
+                  group.memberIDs.count >= SplitGroup.minimumMembers,
+                  group.memberIDs.contains(where: currentMemberIDs.contains)
             else {
                 return nil
             }
@@ -40,63 +39,55 @@ struct RegularSplitSegmentResolver {
 
     func splitGroupItems(
         for group: SplitGroup,
-        tabById: [UUID: Tab],
-        liveTab: (UUID) -> Tab?,
+        tabByID: [UUID: Tab],
+        regularTab: (UUID) -> Tab?,
+        shortcutLiveTab: (UUID) -> Tab?,
         shortcutPin: (UUID) -> ShortcutPin?
     ) -> [SplitGroupSidebarItem] {
-        group.tabIds.compactMap { id in
-            if let tab = tabById[id] ?? liveTab(id) {
-                return .tab(tab)
+        group.members.compactMap { member in
+            switch member.memberID {
+            case .regularTab(let tabID):
+                guard let tab = tabByID[tabID] ?? regularTab(tabID) else {
+                    return nil
+                }
+                return .regular(member, tab: tab)
+
+            case .shortcutPin(let pinID):
+                guard let pin = shortcutPin(pinID) else { return nil }
+                return .shortcut(
+                    member,
+                    pin: pin,
+                    liveTab: shortcutLiveTab(pinID)
+                )
             }
-            if let pinId = group.member(for: id)?.pinId,
-               let pin = shortcutPin(pinId) {
-                return .pin(pin)
-            }
-            if let pin = shortcutPin(id) {
-                return .pin(pin)
-            }
-            return nil
         }
     }
 
     func action(
         for item: SplitGroupSidebarItem,
-        in group: SplitGroup
+        in _: SplitGroup
     ) -> SplitGroupSidebarSegmentAction? {
-        if member(for: item, in: group)?.isShortcutBacked == true {
+        switch item.id {
+        case .shortcutPin:
             return .restore
+        case .regularTab:
+            return item.tab == nil ? nil : .close
         }
-        return item.tab == nil ? nil : .close
     }
 
     func member(
         for item: SplitGroupSidebarItem,
         in group: SplitGroup
-    ) -> SplitGroupMember? {
-        if let pin = item.pin {
-            return group.member(forPinId: pin.id) ?? group.member(for: pin.id)
-        }
-        if let tab = item.tab {
-            if let pinId = tab.shortcutPinId {
-                return group.member(forPinId: pinId) ?? group.member(for: tab.id)
-            }
-            return group.member(for: tab.id)
-        }
-        return nil
+    ) -> SplitMember? {
+        group.member(for: item.id)
     }
 
     func shortcutPin(
         for item: SplitGroupSidebarItem,
-        member: SplitGroupMember?,
-        shortcutPin: (UUID) -> ShortcutPin?
+        member _: SplitMember?,
+        shortcutPin _: (UUID) -> ShortcutPin?
     ) -> ShortcutPin? {
-        if let pin = item.pin {
-            return pin
-        }
-        if let pinId = item.tab?.shortcutPinId ?? member?.pinId {
-            return shortcutPin(pinId)
-        }
-        return nil
+        item.pin
     }
 
     func sourceZone(for pin: ShortcutPin) -> DropZoneID {
@@ -115,37 +106,35 @@ struct RegularSplitSegmentResolver {
         for item: SplitGroupSidebarItem,
         in group: SplitGroup,
         shortcutPin: (UUID) -> ShortcutPin?,
-        onActivateTab: @escaping (Tab) -> Void,
-        onActivateGroup: @escaping () -> Void
+        onActivateMember: @escaping () -> Void
     ) -> SidebarDragSourceConfiguration? {
-        let resolvedMember = member(for: item, in: group)
-        if let pin = self.shortcutPin(for: item, member: resolvedMember, shortcutPin: shortcutPin) {
-            let dragItemId = item.tab?.id ?? pin.id
+        if let pin = self.shortcutPin(
+            for: item,
+            member: member(for: item, in: group),
+            shortcutPin: shortcutPin
+        ) {
             return SidebarDragSourceConfiguration(
-                item: SumiDragItem(
-                    tabId: dragItemId,
+                item: SumiDragItem.splitMember(
+                    item.id,
+                    groupID: group.id,
                     title: item.title,
-                    urlString: item.tab?.url.absoluteString ?? pin.launchURL.absoluteString
+                    urlString: item.tab?.url.absoluteString
+                        ?? pin.launchURL.absoluteString
                 ),
                 sourceZone: sourceZone(for: pin),
                 previewKind: .row,
                 previewIcon: item.tab?.favicon ?? pin.storedFavicon,
                 exclusionZones: [.trailingStrip(32)],
-                onActivate: {
-                    if let tab = item.tab {
-                        onActivateTab(tab)
-                    } else {
-                        onActivateGroup()
-                    }
-                },
+                onActivate: onActivateMember,
                 isEnabled: isInteractive
             )
         }
 
         guard let tab = item.tab else { return nil }
         return SidebarDragSourceConfiguration(
-            item: SumiDragItem(
-                tabId: tab.id,
+            item: SumiDragItem.splitMember(
+                item.id,
+                groupID: group.id,
                 title: tab.name,
                 urlString: tab.url.absoluteString
             ),
@@ -153,7 +142,7 @@ struct RegularSplitSegmentResolver {
             previewKind: .row,
             previewIcon: tab.favicon,
             exclusionZones: [.trailingStrip(32)],
-            onActivate: { onActivateTab(tab) },
+            onActivate: onActivateMember,
             isEnabled: isInteractive
         )
     }

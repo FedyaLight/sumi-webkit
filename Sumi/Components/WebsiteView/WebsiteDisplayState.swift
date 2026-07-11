@@ -1,29 +1,34 @@
 import Foundation
 
 struct WebsiteDisplayState: Equatable {
-    let splitGroup: SplitGroup?
+    let splitPresentation: WindowSplitPresentation?
     let currentId: UUID?
     let compositorVersion: Int
     let currentTabUnloaded: Bool
-    let visibleTabIds: Set<UUID>
     let isSplitDropCaptureActive: Bool
 
-    var activeSplitGroup: SplitGroup? {
-        guard let splitGroup,
+    var activeSplitPresentation: WindowSplitPresentation? {
+        guard let splitPresentation,
               let currentId,
-              splitGroup.contains(currentId)
+              splitPresentation.activeTabID == currentId
         else {
             return nil
         }
-        return splitGroup
+        return splitPresentation
+    }
+
+    var visibleTabIDs: Set<UUID> {
+        if let activeSplitPresentation {
+            return Set(activeSplitPresentation.visibleTabIDs)
+        }
+        return currentId.map { Set([$0]) } ?? []
     }
 
     static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.splitGroup == rhs.splitGroup
+        lhs.splitPresentation == rhs.splitPresentation
             && lhs.currentId == rhs.currentId
             && lhs.compositorVersion == rhs.compositorVersion
             && lhs.currentTabUnloaded == rhs.currentTabUnloaded
-            && lhs.visibleTabIds == rhs.visibleTabIds
             && lhs.isSplitDropCaptureActive == rhs.isSplitDropCaptureActive
     }
 }

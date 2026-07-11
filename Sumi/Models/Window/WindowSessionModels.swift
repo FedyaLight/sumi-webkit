@@ -66,14 +66,26 @@ struct LegacySplitSessionSnapshot: Codable, Equatable, Hashable {
     var activeSideRawValue: String?
     var orientation: LegacySplitOrientation
 
-    func makeSplitGroup(spaceId: UUID?) -> SplitGroup? {
-        SplitGroup.make(
-            tabIds: [leftTabId, rightTabId],
+    func makeSplitMigration(spaceId: UUID?) -> LegacyWindowSplitMigration? {
+        guard let group = SumiDomain.SplitGroup.make(
+            members: [.regularTab(leftTabId), .regularTab(rightTabId)],
             layoutKind: orientation == .vertical ? .horizontal : .vertical,
-            activeTabId: activeSideRawValue == "left" ? leftTabId : rightTabId,
-            host: .regular(spaceId: spaceId)
+            container: .regularTabs(spaceId: spaceId)
+        ) else {
+            return nil
+        }
+        return LegacyWindowSplitMigration(
+            group: group,
+            preferredMemberID: .regularTab(
+                activeSideRawValue == "left" ? leftTabId : rightTabId
+            )
         )
     }
+}
+
+struct LegacyWindowSplitMigration {
+    let group: SumiDomain.SplitGroup
+    let preferredMemberID: SplitMemberID
 }
 
 struct WindowSessionSnapshot: Codable, Equatable, Hashable {
@@ -97,9 +109,10 @@ struct WindowSessionSnapshot: Codable, Equatable, Hashable {
     var sidebarContentWidth: Double
     var isSidebarVisible: Bool
     var floatingBarDraft: FloatingBarDraftState
-    var activeSplitGroupId: UUID? = nil
+    var splitSelection: WindowSplitSelection? = nil
     var glanceSession: GlanceSessionSnapshot? = nil
     var legacySplitSessionForMigration: LegacySplitSessionSnapshot?
+    var legacyActiveSplitGroupID: UUID?
 
     private enum CodingKeys: String, CodingKey {
         case currentTabId
@@ -116,6 +129,7 @@ struct WindowSessionSnapshot: Codable, Equatable, Hashable {
         case sidebarContentWidth
         case isSidebarVisible
         case floatingBarDraft
+        case splitSelection
         case activeSplitGroupId
         case glanceSession
         case splitSession
@@ -136,7 +150,7 @@ struct WindowSessionSnapshot: Codable, Equatable, Hashable {
         sidebarContentWidth: Double,
         isSidebarVisible: Bool,
         floatingBarDraft: FloatingBarDraftState,
-        activeSplitGroupId: UUID? = nil,
+        splitSelection: WindowSplitSelection? = nil,
         glanceSession: GlanceSessionSnapshot? = nil
     ) {
         self.currentTabId = currentTabId
@@ -153,9 +167,10 @@ struct WindowSessionSnapshot: Codable, Equatable, Hashable {
         self.sidebarContentWidth = sidebarContentWidth
         self.isSidebarVisible = isSidebarVisible
         self.floatingBarDraft = floatingBarDraft
-        self.activeSplitGroupId = activeSplitGroupId
+        self.splitSelection = splitSelection
         self.glanceSession = glanceSession
         legacySplitSessionForMigration = nil
+        legacyActiveSplitGroupID = nil
     }
 
     init(from decoder: Decoder) throws {
@@ -184,7 +199,13 @@ struct WindowSessionSnapshot: Codable, Equatable, Hashable {
         sidebarContentWidth = try container.decode(Double.self, forKey: .sidebarContentWidth)
         isSidebarVisible = try container.decode(Bool.self, forKey: .isSidebarVisible)
         floatingBarDraft = try container.decode(FloatingBarDraftState.self, forKey: .floatingBarDraft)
-        activeSplitGroupId = try container.decodeIfPresent(UUID.self, forKey: .activeSplitGroupId)
+        splitSelection = try container.decodeIfPresent(
+            WindowSplitSelection.self,
+            forKey: .splitSelection
+        )
+        legacyActiveSplitGroupID = splitSelection == nil
+            ? try container.decodeIfPresent(UUID.self, forKey: .activeSplitGroupId)
+            : nil
         glanceSession = try container.decodeIfPresent(GlanceSessionSnapshot.self, forKey: .glanceSession)
         legacySplitSessionForMigration = try container.decodeIfPresent(
             LegacySplitSessionSnapshot.self,
@@ -208,7 +229,7 @@ struct WindowSessionSnapshot: Codable, Equatable, Hashable {
         try container.encode(sidebarContentWidth, forKey: .sidebarContentWidth)
         try container.encode(isSidebarVisible, forKey: .isSidebarVisible)
         try container.encode(floatingBarDraft, forKey: .floatingBarDraft)
-        try container.encodeIfPresent(activeSplitGroupId, forKey: .activeSplitGroupId)
+        try container.encodeIfPresent(splitSelection, forKey: .splitSelection)
         try container.encodeIfPresent(glanceSession, forKey: .glanceSession)
     }
 

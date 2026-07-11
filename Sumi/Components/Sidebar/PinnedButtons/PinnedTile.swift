@@ -65,8 +65,8 @@ func makePinnedTileDragSourceConfiguration(
     isEnabled: Bool = true
 ) -> SidebarDragSourceConfiguration {
     SidebarDragSourceConfiguration(
-        item: SumiDragItem(
-            tabId: pin.id,
+        item: SumiDragItem.shortcutPin(
+            pin.id,
             title: resolvedTitle,
             urlString: pin.launchURL.absoluteString
         ),

@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 /// Retires startup-only live tab instances and clears regular collections while
 /// preserving spaces, folders, and persisted launcher definitions.
@@ -9,7 +10,8 @@ final class TabStartupStateReset {
     private let persistence: TabStructuralPersistenceService
     private let structuralMutations: TabStructuralCollectionMutationOwner
     private let structuralLookup: TabStructuralLookupCoordinator
-    private let splitGroups: TabSplitGroupStructureOwner
+    private let splitGroupStore: SplitGroupStore
+    private let splitGroupMutations: SplitGroupMutationService
     private let liveShortcutTabs: LiveShortcutTabRegistry
     private let runtimePorts: () -> RuntimePortRegistry?
     private let runtimeTeardown: TabRuntimeTeardownService
@@ -20,7 +22,8 @@ final class TabStartupStateReset {
         persistence: TabStructuralPersistenceService,
         structuralMutations: TabStructuralCollectionMutationOwner,
         structuralLookup: TabStructuralLookupCoordinator,
-        splitGroups: TabSplitGroupStructureOwner,
+        splitGroupStore: SplitGroupStore,
+        splitGroupMutations: SplitGroupMutationService,
         liveShortcutTabs: LiveShortcutTabRegistry,
         runtimePorts: @escaping () -> RuntimePortRegistry?,
         runtimeTeardown: TabRuntimeTeardownService
@@ -30,7 +33,8 @@ final class TabStartupStateReset {
         self.persistence = persistence
         self.structuralMutations = structuralMutations
         self.structuralLookup = structuralLookup
-        self.splitGroups = splitGroups
+        self.splitGroupStore = splitGroupStore
+        self.splitGroupMutations = splitGroupMutations
         self.liveShortcutTabs = liveShortcutTabs
         self.runtimePorts = runtimePorts
         self.runtimeTeardown = runtimeTeardown
@@ -47,10 +51,30 @@ final class TabStartupStateReset {
 
         structuralLookup.withTransaction {
             lazyRestore.clear()
-            splitGroups.removeSplitGroups(
-                containingAny: Set(closingTabs.map(\.id)),
-                schedulePersistence: false
-            )
+            let regularTabIDs = Set(regularTabs.map(\.id))
+            let currentGroups = splitGroupStore.groups
+            let updatedGroups = currentGroups.compactMap {
+                group -> SumiDomain.SplitGroup? in
+                let removedMemberIDs = group.memberIDs.filter {
+                    guard case .regularTab(let tabID) = $0 else {
+                        return false
+                    }
+                    return regularTabIDs.contains(tabID)
+                }
+                return removedMemberIDs.reduce(Optional(group)) {
+                    $0?.removingMember($1)
+                }
+            }
+            if updatedGroups != currentGroups {
+                precondition(
+                    splitGroupMutations.replaceAll(
+                        expected: currentGroups,
+                        with: updatedGroups,
+                        persist: false
+                    ),
+                    "Startup reset lost its exact split-group snapshot"
+                )
+            }
             liveShortcutTabs.removeAll()
 
             for space in state.spaces.spaces {

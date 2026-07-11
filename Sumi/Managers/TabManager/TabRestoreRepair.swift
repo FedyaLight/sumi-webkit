@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 /// Pure repair/sanitize policy for persisted tab data during startup restore, split out of
 /// `TabRestoreLoader`. Given possibly-corrupt persisted structures it returns valid domain
@@ -48,68 +49,152 @@ enum TabRestoreRepair {
         }
     }
 
-    /// Decodes persisted split groups, repairs shortcut-backed member bindings, drops groups
-    /// that no longer meet the minimum-tab requirement, and sanitizes overlaps.
+    /// Decodes the versioned durable split archive or migrates the exact
+    /// decode-only v1 wire shape. Regular tabs and shortcut pins are separate
+    /// catalogs so a stale runtime UUID can never be guessed into existence.
     static func restoreSplitGroups(
         from data: Data?,
-        validTabIds: Set<UUID>,
+        regularTabIDs: Set<UUID>,
+        shortcutReturnPlacementsByPinID: [
+            UUID: SumiDomain.SplitShortcutReturnPlacement
+        ],
         repairReasons: inout Set<String>
-    ) -> [SplitGroup] {
+    ) -> [SumiDomain.SplitGroup] {
         guard let data, data.isEmpty == false else { return [] }
         do {
-            let decoded = try TabPersistenceCodec().decodeSplitGroups(from: data)
-            let restored = decoded.compactMap { group -> SplitGroup? in
-                let repairedGroup = repairShortcutBackedSplitGroup(
-                    group,
-                    validTabIds: validTabIds,
-                    repairReasons: &repairReasons
-                )
-                let tabIds = repairedGroup.tabIds.filter { validTabIds.contains($0) }
-                guard tabIds.count >= SplitGroup.minimumTabs else {
-                    repairReasons.insert("removed stale split group")
-                    return nil
-                }
-                if tabIds != repairedGroup.tabIds {
-                    repairReasons.insert("repaired stale split group tabs")
-                    return SplitGroup.make(
-                        tabIds: tabIds,
-                        layoutKind: repairedGroup.layoutKind,
-                        activeTabId: repairedGroup.activeTabId.flatMap { tabIds.contains($0) ? $0 : tabIds.first },
-                        host: repairedGroup.host,
-                        members: repairedGroup.members
+            switch try TabPersistenceCodec().decodeSplitGroupArchive(
+                from: data
+            ) {
+            case .version2(let groups, let discardedEntryCount):
+                if discardedEntryCount > 0 {
+                    repairReasons.insert(
+                        "removed unreadable split group entry"
                     )
                 }
-                return repairedGroup
+                return repairVersion2SplitGroups(
+                    groups,
+                    regularTabIDs: regularTabIDs,
+                    shortcutPinIDs: Set(
+                        shortcutReturnPlacementsByPinID.keys
+                    ),
+                    repairReasons: &repairReasons
+                )
+
+            case .legacyVersion1(let groups):
+                return LegacySplitGroupV1Migrator(
+                    regularTabIDs: regularTabIDs,
+                    shortcutReturnPlacementsByPinID:
+                        shortcutReturnPlacementsByPinID
+                ).migrate(
+                    groups,
+                    repairReasons: &repairReasons
+                )
             }
-            let sanitized = SplitGroup.sanitized(restored)
-            if sanitized.count != restored.count {
-                repairReasons.insert("removed overlapping split groups")
-            }
-            return sanitized
         } catch {
             repairReasons.insert("removed unreadable split groups")
             return []
         }
     }
 
-    /// Rebinds a split-group member whose live tab id is gone to its backing shortcut pin id
-    /// when that pin is still valid, so a shortcut-hosted split survives a live-tab teardown.
-    static func repairShortcutBackedSplitGroup(
-        _ group: SplitGroup,
-        validTabIds: Set<UUID>,
+    private static func repairVersion2SplitGroups(
+        _ groups: [SumiDomain.SplitGroup],
+        regularTabIDs: Set<UUID>,
+        shortcutPinIDs: Set<UUID>,
         repairReasons: inout Set<String>
-    ) -> SplitGroup {
-        var repaired = group
-        for tabId in group.tabIds where !validTabIds.contains(tabId) {
-            guard let member = repaired.member(for: tabId),
-                  let pinId = member.pinId,
-                  validTabIds.contains(pinId)
-            else {
-                continue
+    ) -> [SumiDomain.SplitGroup] {
+        let restored = groups.compactMap { group -> SumiDomain.SplitGroup? in
+            var didRemoveMember = false
+            var didCollapseLayout = false
+            guard let tree = pruningStaleMembers(
+                from: group.layoutTree,
+                regularTabIDs: regularTabIDs,
+                shortcutPinIDs: shortcutPinIDs,
+                didRemoveMember: &didRemoveMember,
+                didCollapseLayout: &didCollapseLayout
+            ), let repairedGroup = SumiDomain.SplitGroup(
+                id: group.id,
+                layoutKind: group.layoutKind,
+                layoutTree: tree,
+                container: group.container
+            ) else {
+                repairReasons.insert("removed stale split group")
+                return nil
             }
-            repairReasons.insert("repaired split group shortcut binding")
-            repaired = repaired.replacingMemberTab(tabId, with: pinId)
+
+            if didRemoveMember {
+                repairReasons.insert("removed stale split group member")
+            }
+            if didCollapseLayout {
+                repairReasons.insert("collapsed stale split group layout")
+            }
+            return repairedGroup
         }
-        return repaired
+
+        let sanitized = SumiDomain.SplitGroup.sanitized(restored)
+        if sanitized.count != restored.count {
+            repairReasons.insert("removed overlapping split groups")
+        }
+        return sanitized
+    }
+
+    private static func pruningStaleMembers(
+        from tree: SumiDomain.SplitLayoutTree,
+        regularTabIDs: Set<UUID>,
+        shortcutPinIDs: Set<UUID>,
+        didRemoveMember: inout Bool,
+        didCollapseLayout: inout Bool
+    ) -> SumiDomain.SplitLayoutTree? {
+        switch tree {
+        case .leaf(let member, let weight):
+            let exists: Bool
+            switch member.memberID {
+            case .regularTab(let tabID):
+                exists = regularTabIDs.contains(tabID)
+            case .shortcutPin(let pinID):
+                exists = shortcutPinIDs.contains(pinID)
+            }
+            guard exists else {
+                didRemoveMember = true
+                return nil
+            }
+            return .leaf(member: member, weight: weight)
+
+        case .split(let axis, let weight, let children):
+            let kept = children.compactMap { child in
+                pruningStaleMembers(
+                    from: child,
+                    regularTabIDs: regularTabIDs,
+                    shortcutPinIDs: shortcutPinIDs,
+                    didRemoveMember: &didRemoveMember,
+                    didCollapseLayout: &didCollapseLayout
+                )
+            }
+            guard let first = kept.first else { return nil }
+            guard kept.count > 1 else {
+                didCollapseLayout = true
+                return settingWeight(weight, in: first)
+            }
+            return .split(
+                axis: axis,
+                weight: weight,
+                children: kept
+            )
+        }
+    }
+
+    private static func settingWeight(
+        _ weight: Double,
+        in tree: SumiDomain.SplitLayoutTree
+    ) -> SumiDomain.SplitLayoutTree {
+        switch tree {
+        case .leaf(let member, _):
+            return .leaf(member: member, weight: weight)
+        case .split(let axis, _, let children):
+            return .split(
+                axis: axis,
+                weight: weight,
+                children: children
+            )
+        }
     }
 }

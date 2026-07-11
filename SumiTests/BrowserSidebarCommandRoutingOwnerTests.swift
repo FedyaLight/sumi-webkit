@@ -1,4 +1,5 @@
 @testable import Sumi
+import SumiDomain
 import XCTest
 
 @MainActor
@@ -10,10 +11,17 @@ final class BrowserSidebarCommandRoutingOwnerTests: XCTestCase {
         let actions = owner.makeActions()
         let windowState = BrowserWindowState()
         let tab = makeTab()
+        let secondTabID = UUID()
         let group = try XCTUnwrap(
-            SplitGroup.make(tabIds: [tab.id, UUID()], layoutKind: .vertical)
+            SplitGroup.make(
+                members: [
+                    .regularTab(tab.id),
+                    .regularTab(secondTabID),
+                ],
+                layoutKind: .vertical
+            )
         )
-        let memberId = UUID()
+        let memberID = SplitMemberID.regularTab(tab.id)
         let preferredSpaceId = UUID()
 
         XCTAssertTrue(actions.canCreateFolderInCurrentSpace(windowState))
@@ -34,8 +42,9 @@ final class BrowserSidebarCommandRoutingOwnerTests: XCTestCase {
         actions.closeTab(tab, windowState)
         actions.moveTabUp(tab.id)
         actions.moveTabDown(tab.id)
-        actions.focusSplitGroup(group, windowState)
-        actions.restoreShortcutSplitMember(memberId, group, windowState)
+        actions.focusSplitGroup(group.id, memberID, windowState.id)
+        actions.restoreShortcutSplitMember(group.id, memberID, windowState.id)
+        actions.closeSplitMember(group.id, memberID, windowState.id)
         let openedTab = actions.openForegroundTab("https://example.com", windowState, preferredSpaceId)
         actions.openNewTabOrFloatingBar(windowState)
         actions.duplicateTab(tab, windowState)
@@ -55,7 +64,8 @@ final class BrowserSidebarCommandRoutingOwnerTests: XCTestCase {
                 .moveTabUp(tab.id),
                 .moveTabDown(tab.id),
                 .focusSplitGroup(group.id, windowState.id),
-                .restoreShortcutSplitMember(memberId, group.id, windowState.id),
+                .restoreShortcutSplitMember(tab.id, group.id, windowState.id),
+                .closeSplitMember(tab.id, group.id, windowState.id),
                 .openForegroundTab("https://example.com", windowState.id, preferredSpaceId),
                 .openNewTabOrFloatingBar(windowState.id),
                 .duplicateTab(tab.id, windowState.id),
@@ -165,19 +175,34 @@ final class BrowserSidebarCommandRoutingOwnerTests: XCTestCase {
                     spy.events.append(.duplicateTab(tab.id, windowState.id))
                 }
             ),
-            splitCommands: SidebarSplitShortcutCommands(
-                focusGroup: { group, windowState in
+            splitCommands: SidebarSplitCommands(
+                focusGroup: { groupID, _, windowID in
                     spy.events.append(
-                        .focusSplitGroup(group.id, windowState.id)
+                        .focusSplitGroup(groupID, windowID)
                     )
                 },
-                restoreMember: { itemId, group, windowState in
+                restoreMember: { groupID, memberID, windowID in
+                    let rawMemberID: UUID
+                    switch memberID {
+                    case .regularTab(let tabID): rawMemberID = tabID
+                    case .shortcutPin(let pinID): rawMemberID = pinID
+                    }
                     spy.events.append(
                         .restoreShortcutSplitMember(
-                            itemId,
-                            group.id,
-                            windowState.id
+                            rawMemberID,
+                            groupID,
+                            windowID
                         )
+                    )
+                },
+                closeMember: { groupID, memberID, windowID in
+                    let rawMemberID: UUID
+                    switch memberID {
+                    case .regularTab(let tabID): rawMemberID = tabID
+                    case .shortcutPin(let pinID): rawMemberID = pinID
+                    }
+                    spy.events.append(
+                        .closeSplitMember(rawMemberID, groupID, windowID)
                     )
                 }
             ),
@@ -279,6 +304,7 @@ extension BrowserSidebarCommandRoutingOwnerTests {
         case moveTabDown(UUID)
         case focusSplitGroup(UUID, UUID)
         case restoreShortcutSplitMember(UUID, UUID, UUID)
+        case closeSplitMember(UUID, UUID, UUID)
         case openForegroundTab(String, UUID, UUID?)
         case openNewTabOrFloatingBar(UUID)
         case duplicateTab(UUID, UUID)

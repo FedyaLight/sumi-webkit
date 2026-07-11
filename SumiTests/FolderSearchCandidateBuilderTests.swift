@@ -1,4 +1,5 @@
 @testable import Sumi
+import SumiDomain
 import SwiftUI
 import XCTest
 
@@ -88,21 +89,31 @@ final class FolderSearchCandidateBuilderTests: XCTestCase {
         let second = try makePin(title: "Second Pane", folderId: folder.id, spaceId: space.id, index: 1)
         let group = try XCTUnwrap(
             SplitGroup.make(
-                tabIds: [first.id, second.id],
-                layoutKind: .vertical,
-                host: .shortcutPinned(spaceId: space.id, profileId: nil, index: first.index),
                 members: [
-                    SplitGroupMember(
-                        tabId: first.id,
-                        pinId: first.id,
-                        origin: .spacePinned(spaceId: space.id, folderId: folder.id, index: first.index)
+                    .shortcutPin(
+                        first.id,
+                        returnPlacement: .spacePinned(
+                            spaceId: space.id,
+                            folderId: folder.id,
+                            index: first.index
+                        )
                     ),
-                    SplitGroupMember(
-                        tabId: second.id,
-                        pinId: second.id,
-                        origin: .spacePinned(spaceId: space.id, folderId: folder.id, index: second.index)
+                    .shortcutPin(
+                        second.id,
+                        returnPlacement: .spacePinned(
+                            spaceId: space.id,
+                            folderId: folder.id,
+                            index: second.index
+                        )
                     ),
-                ]
+                ],
+                layoutKind: .vertical,
+                container: .shortcutSidebar(
+                    spaceId: space.id,
+                    profileId: nil,
+                    folderId: folder.id,
+                    index: first.index
+                )
             )
         )
 
@@ -112,7 +123,7 @@ final class FolderSearchCandidateBuilderTests: XCTestCase {
         tabManager.shortcutPinCollectionStateOwner.replaceSpacePinnedShortcuts([
             space.id: [first, second],
         ])
-        tabManager.splitGroupCollectionStateOwner.replaceSplitGroups([group])
+        tabManager.splitGroupStore.replaceAll(with: [group])
 
         let candidates = makeBuilder(tabManager: tabManager, liveProvider: liveProvider).candidates(
             for: folder,

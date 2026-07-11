@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 @MainActor
 protocol WindowWebContentBrowserContext: AnyObject {
@@ -6,18 +7,17 @@ protocol WindowWebContentBrowserContext: AnyObject {
 
     func currentTab(for windowState: BrowserWindowState) -> Tab?
     func tab(for tabId: UUID) -> Tab?
-    func splitGroup(for windowId: UUID) -> SplitGroup?
+    func splitResolution(for windowState: BrowserWindowState) -> WindowSplitResolution
     func schedulePrepareVisibleWebViews(for windowState: BrowserWindowState)
     func enqueueWindowMutationDuringHistorySwipe(
         _ kind: HistorySwipeDeferredWindowMutationKind,
         for windowState: BrowserWindowState
     )
-    func removeSplitGroup(id: UUID)
-    func updateSplitLayoutSizes(
-        groupId: UUID,
+    func updateSplitLayoutWeights(
+        expectedGroup: SumiDomain.SplitGroup,
         path: [Int],
-        sizes: [Double],
-        for windowId: UUID
+        weights: [Double],
+        for windowID: UUID
     )
     func configureSplitDropCapture(_ view: SplitDropCaptureView, windowId: UUID)
     func configureSplitControls(
@@ -29,59 +29,64 @@ protocol WindowWebContentBrowserContext: AnyObject {
 
 @MainActor
 final class BrowserManagerWindowWebContentContext: WindowWebContentBrowserContext {
-    private let browserManager: BrowserManager
+    private weak var browserManager: BrowserManager?
+    private let splitProjection: WindowSplitProjection
     let sidebarDragState: SidebarDragState
 
     init(
         browserManager: BrowserManager,
+        splitProjection: WindowSplitProjection,
         sidebarDragState: SidebarDragState
     ) {
         self.browserManager = browserManager
+        self.splitProjection = splitProjection
         self.sidebarDragState = sidebarDragState
     }
 
     func currentTab(for windowState: BrowserWindowState) -> Tab? {
-        browserManager.shellRuntime.windowTabs.currentTab(for: windowState)
+        browserManager?.shellRuntime.windowTabs.currentTab(for: windowState)
     }
 
     func tab(for tabId: UUID) -> Tab? {
-        browserManager.tabManager.tabCollectionMembershipOwner.tab(for: tabId)
+        browserManager?.tabManager.tabCollectionMembershipOwner.tab(for: tabId)
     }
 
-    func splitGroup(for windowId: UUID) -> SplitGroup? {
-        browserManager.splitManager.splitGroup(for: windowId)
+    func splitResolution(
+        for windowState: BrowserWindowState
+    ) -> WindowSplitResolution {
+        splitProjection.resolve(
+            selection: windowState.splitSelection,
+            in: windowState.id
+        )
     }
 
-    func removeSplitGroup(id: UUID) {
-        browserManager.tabManager.splitGroupStructureOwner.removeSplitGroup(id: id)
-    }
-
-    func updateSplitLayoutSizes(
-        groupId: UUID,
+    func updateSplitLayoutWeights(
+        expectedGroup: SumiDomain.SplitGroup,
         path: [Int],
-        sizes: [Double],
-        for windowId: UUID
+        weights: [Double],
+        for windowID: UUID
     ) {
-        browserManager.splitManager.updateLayoutSizes(
-            groupId: groupId,
+        browserManager?.splitManager.updateSplitLayoutWeights(
+            expectedGroup: expectedGroup,
             path: path,
-            sizes: sizes,
-            for: windowId
+            weights: weights,
+            for: windowID
         )
     }
 
     func schedulePrepareVisibleWebViews(for windowState: BrowserWindowState) {
-        browserManager.shellRuntime.windowVisuals.schedulePrepareVisibleWebViews(for: windowState)
+        browserManager?.shellRuntime.windowVisuals.schedulePrepareVisibleWebViews(for: windowState)
     }
 
     func enqueueWindowMutationDuringHistorySwipe(
         _ kind: HistorySwipeDeferredWindowMutationKind,
         for windowState: BrowserWindowState
     ) {
-        browserManager.shellRuntime.windowVisuals.enqueueWindowMutationDuringHistorySwipe(kind, for: windowState)
+        browserManager?.shellRuntime.windowVisuals.enqueueWindowMutationDuringHistorySwipe(kind, for: windowState)
     }
 
     func configureSplitDropCapture(_ view: SplitDropCaptureView, windowId: UUID) {
+        guard let browserManager else { return }
         view.configure(
             runtime: SplitDropCaptureRuntime(
                 splitManager: browserManager.splitManager,
@@ -89,8 +94,9 @@ final class BrowserManagerWindowWebContentContext: WindowWebContentBrowserContex
                 windowState: { [weak browserManager] windowId in
                     browserManager?.windowRegistry?.windows[windowId]
                 },
-                resolveDragTab: { [weak browserManager] tabId in
-                    browserManager?.tabManager.sidebarDragRoutingOwner.resolveDragTab(for: tabId)
+                resolveDragTab: { [weak browserManager] item in
+                    browserManager?.tabManager.sidebarDragRouter
+                        .resolveDragTab(for: item)
                 }
             ),
             windowId: windowId
@@ -102,6 +108,7 @@ final class BrowserManagerWindowWebContentContext: WindowWebContentBrowserContex
         tab: Tab,
         windowState: BrowserWindowState
     ) {
+        guard let browserManager else { return }
         controls.configure(
             tab: tab,
             splitManager: browserManager.splitManager,

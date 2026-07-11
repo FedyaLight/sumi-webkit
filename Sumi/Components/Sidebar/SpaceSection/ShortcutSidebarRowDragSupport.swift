@@ -22,8 +22,8 @@ func makeShortcutSidebarDragSourceConfiguration(
     guard let dragSourceZone else { return nil }
 
     return SidebarDragSourceConfiguration(
-        item: SumiDragItem(
-            tabId: pin.id,
+        item: SumiDragItem.shortcutPin(
+            pin.id,
             title: resolvedTitle,
             urlString: pin.launchURL.absoluteString
         ),

@@ -1,7 +1,8 @@
 import Foundation
+import SumiDomain
 
-/// Rewrites a shortcut-hosted split back to canonical pin proxies and retires
-/// every window-local live instance in one structural publication.
+/// Stops presenting a shortcut-sidebar split in one window. The durable group
+/// is already canonical and is therefore never rewritten during unload.
 @MainActor
 final class ShortcutHostedSplitUnloadService {
     private let runtimeLease: () -> SplitShortcutRuntimeLease?
@@ -29,67 +30,40 @@ final class ShortcutHostedSplitUnloadService {
 
     @discardableResult
     func unloadShortcutHostedSplitGroup(
-        _ group: SplitGroup,
+        _ group: SumiDomain.SplitGroup,
         in windowState: BrowserWindowState
     ) -> Bool {
-        guard let runtime = runtimeLease() else { return false }
-        guard group.isShortcutHosted else { return false }
-        let tabManager = runtime.tabManager
-        var retirements: [PreparedShortcutLiveTabRetirement] = []
-        var hasVisualReplacement = false
-        var didCommit = false
-        tabManager.structuralLookupCoordinator.withTransaction {
-            var proxyGroup = group
-            for member in group.members where member.isShortcutBacked {
-                guard let pinId = member.pinId else { continue }
-                guard let retirement = tabManager.shortcutLiveTabRetirement
-                    .prepareRetirement(
-                        pinId: pinId,
-                        in: windowState.id
-                    ) else { return }
-                retirements.append(retirement)
-                if group.tabIds.contains(member.tabId) {
-                    proxyGroup = proxyGroup.replacingMemberTab(
-                        member.tabId,
-                        with: pinId
-                    )
-                }
-            }
-            hasVisualReplacement = prepareVisualReplacement(
-                in: windowState,
-                tabManager: tabManager
-            )
-            tabManager.splitGroupStructureOwner.upsertSplitGroup(
-                proxyGroup.settingActiveTab(proxyGroup.tabIds.first)
-            )
-            didCommit = true
-        }
-        guard didCommit else { return false }
-        if hasVisualReplacement == false {
-            showEmptyStateWithoutPersistence(windowState)
-            performImmediateVisualHandoff(windowState)
-        }
-        retirements.forEach {
-            _ = tabManager.shortcutLiveTabRetirement.finish($0)
-        }
-        runtime.splitManager.refreshPublishedState(for: windowState.id)
-        refreshCompositor(windowState)
-        persistWindowSession(windowState)
-        return true
-    }
-
-    private func prepareVisualReplacement(
-        in windowState: BrowserWindowState,
-        tabManager: TabManager
-    ) -> Bool {
-        guard let fallback = fallbackVisibleRegularTab(
-            in: windowState,
-            tabManager: tabManager
-        ) else {
+        guard let runtime = runtimeLease(),
+              group.container.isShortcutSidebar,
+              runtime.tabManager.splitGroupStore.group(id: group.id) == group
+        else {
             return false
         }
-        selectTabWithoutPersistence(fallback, windowState)
+
+        let pinIDs = Set(group.memberIDs.compactMap { memberID -> UUID? in
+            guard case .shortcutPin(let pinID) = memberID else { return nil }
+            return pinID
+        })
+        guard pinIDs.count == group.memberIDs.count,
+              let retirement = runtime.tabManager.shortcutLiveTabRetirement
+                .prepareRetirements(pinIds: pinIDs, in: windowState.id) else {
+            return false
+        }
+
+        windowState.splitSelection = nil
+        if let fallback = fallbackVisibleRegularTab(
+            in: windowState,
+            tabManager: runtime.tabManager
+        ) {
+            selectTabWithoutPersistence(fallback, windowState)
+        } else {
+            showEmptyStateWithoutPersistence(windowState)
+        }
         performImmediateVisualHandoff(windowState)
+
+        _ = runtime.tabManager.shortcutLiveTabRetirement.finish(retirement)
+        refreshCompositor(windowState)
+        persistWindowSession(windowState)
         return true
     }
 
@@ -97,9 +71,10 @@ final class ShortcutHostedSplitUnloadService {
         in windowState: BrowserWindowState,
         tabManager: TabManager
     ) -> Tab? {
-        guard let spaceId = windowState.currentSpaceId,
-              let space = tabManager.spaceStateOwner.space(with: spaceId)
-        else { return nil }
+        guard let spaceID = windowState.currentSpaceId,
+              let space = tabManager.spaceStateOwner.space(with: spaceID) else {
+            return nil
+        }
         return tabManager.regularTabCollectionOwner.tabs(in: space).first
     }
 }

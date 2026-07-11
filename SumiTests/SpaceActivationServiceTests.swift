@@ -170,7 +170,7 @@ final class SpaceActivationServiceTests: XCTestCase {
     ) -> SpaceActivationService {
         SpaceActivationService(
             state: tabManager.stateStore,
-            projection: tabManager.spaceLauncherProjectionOwner,
+            projection: tabManager.spaceLauncherProjection,
             persistence: tabManager.structuralPersistence,
             profileIds: {
                 (current: currentProfileId(), default: defaultProfileId())

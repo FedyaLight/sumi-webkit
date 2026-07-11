@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 @MainActor
 final class ShortcutLiveTabCloseService {
@@ -41,10 +42,12 @@ final class ShortcutLiveTabCloseService {
         presentNotification: Bool = true
     ) -> Bool {
         guard tab.isShortcutLiveInstance,
+              let pinId = tab.shortcutPinId,
               let tabManager = tabManager() else { return false }
-        if let group = tabManager.splitGroupStructureOwner.splitGroup(containing: tab.id)
-            ?? tab.shortcutPinId.flatMap({ tabManager.splitGroupStructureOwner.splitGroup(containingPinId: $0) }) {
-            if group.isShortcutHosted {
+        if let group = tabManager.splitGroupStore.group(
+            containing: .shortcutPin(pinId)
+        ) {
+            if group.container.isShortcutSidebar {
                 guard let hostedUnload = splitShortcuts()?.hostedUnload,
                       hostedUnload.unloadShortcutHostedSplitGroup(
                           group,
@@ -59,24 +62,21 @@ final class ShortcutLiveTabCloseService {
                 }
                 return true
             }
-            if group.member(for: tab.id)?.isShortcutBacked == true
-                || tab.shortcutPinId.flatMap({ group.member(forPinId: $0)?.isShortcutBacked }) == true {
-                guard let memberRestoration = splitShortcuts()?.memberRestoration,
-                      memberRestoration.restoreShortcutSplitMember(
-                          tab.id,
-                          from: group,
-                          in: windowState,
-                          preserveLiveInstance: false
-                      ) else { return false }
-                captureClosedShortcutLiveInstance(tab, in: windowState, tabManager: tabManager)
-                if presentNotification {
-                    notifications()?.presentTabUnloadedNotification(
-                        count: 1,
-                        in: windowState
-                    )
-                }
-                return true
+            guard let memberRestoration = splitShortcuts()?.memberRestoration,
+                  memberRestoration.restoreShortcutSplitMember(
+                      .shortcutPin(pinId),
+                      from: group,
+                      in: windowState,
+                      preserveLiveInstance: false
+                  ) else { return false }
+            captureClosedShortcutLiveInstance(tab, in: windowState, tabManager: tabManager)
+            if presentNotification {
+                notifications()?.presentTabUnloadedNotification(
+                    count: 1,
+                    in: windowState
+                )
             }
+            return true
         }
 
         let wasCurrent = ShortcutSelectionIdentity.isSelected(
@@ -92,14 +92,12 @@ final class ShortcutLiveTabCloseService {
             )
             : nil
 
-        let preparedRetirement = (tab.shortcutPinId ?? windowState.currentShortcutPinId)
-            .flatMap { pinId in
-                tabManager.structuralLookupCoordinator.withTransaction {
-                    tabManager.shortcutLiveTabRetirement.prepareRetirement(
-                        pinId: pinId,
-                        in: windowState.id
-                    )
-                }
+        let preparedRetirement = tabManager.structuralLookupCoordinator
+            .withTransaction {
+                tabManager.shortcutLiveTabRetirement.prepareRetirement(
+                    pinId: pinId,
+                    in: windowState.id
+                )
             }
         guard let preparedRetirement else { return false }
         let retirement = preparedRetirement.result

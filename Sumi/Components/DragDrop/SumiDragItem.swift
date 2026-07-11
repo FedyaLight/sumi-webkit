@@ -5,6 +5,7 @@
 
 import AppKit
 import Foundation
+import SumiDomain
 
 extension NSPasteboard.PasteboardType {
     static let sumiSidebarDragPayload = NSPasteboard.PasteboardType("com.sumi.sidebar-drag-payload")
@@ -86,7 +87,7 @@ struct SidebarDragScope: Equatable {
         self.spaceId = spaceId
         self.profileId = windowState?.currentProfileId
         self.sourceContainer = sourceZone.asDragContainer
-        self.sourceItemId = item.tabId
+        self.sourceItemId = item.stableID
         self.sourceItemKind = item.kind
     }
 
@@ -106,7 +107,7 @@ struct SidebarDragScope: Equatable {
 }
 
 struct SidebarDragPasteboardPayload: Codable, Equatable {
-    static let currentSchemaVersion = 1
+    static let currentSchemaVersion = 2
 
     let schemaVersion: Int
     let item: SumiDragItem
@@ -179,20 +180,66 @@ enum SumiDragItemKind: String, Codable, Equatable {
 }
 
 struct SumiDragItem: Codable, Equatable {
+    /// Canonical raw identity used by the existing sidebar geometry model.
+    /// Split members additionally carry their typed identity below; for a
+    /// shortcut member this is always the pin UUID, never a live-tab UUID.
     let tabId: UUID
     var kind: SumiDragItemKind
     var title: String
     var urlString: String
+    let splitMemberID: SplitMemberID?
+    let splitGroupID: UUID?
 
-    init(tabId: UUID, kind: SumiDragItemKind = .tab, title: String, urlString: String = "") {
+    init(
+        tabId: UUID,
+        kind: SumiDragItemKind = .tab,
+        title: String,
+        urlString: String = "",
+        splitMemberID: SplitMemberID? = nil,
+        splitGroupID: UUID? = nil
+    ) {
         self.tabId = tabId
         self.kind = kind
         self.title = title
         self.urlString = urlString
+        self.splitMemberID = splitMemberID
+        self.splitGroupID = splitGroupID
     }
 
     static func folder(folderId: UUID, title: String) -> SumiDragItem {
         SumiDragItem(tabId: folderId, kind: .folder, title: title)
+    }
+
+    static func splitMember(
+        _ memberID: SplitMemberID,
+        groupID: UUID,
+        title: String,
+        urlString: String = ""
+    ) -> SumiDragItem {
+        SumiDragItem(
+            tabId: memberID.rawUUID,
+            title: title,
+            urlString: urlString,
+            splitMemberID: memberID,
+            splitGroupID: groupID
+        )
+    }
+
+    static func shortcutPin(
+        _ pinID: UUID,
+        title: String,
+        urlString: String = ""
+    ) -> SumiDragItem {
+        SumiDragItem(
+            tabId: pinID,
+            title: title,
+            urlString: urlString,
+            splitMemberID: .shortcutPin(pinID)
+        )
+    }
+
+    var stableID: UUID {
+        splitMemberID?.rawUUID ?? tabId
     }
 }
 
@@ -207,7 +254,18 @@ extension SumiDragItem {
             RuntimeDiagnostics.emit("SidebarDragPasteboardPayload encoding failed: \(error)")
         }
 
-        item.setString(tabId.uuidString, forType: .string)
+        item.setString(stableID.uuidString, forType: .string)
         return item
+    }
+}
+
+private extension SplitMemberID {
+    var rawUUID: UUID {
+        switch self {
+        case .regularTab(let tabID):
+            return tabID
+        case .shortcutPin(let pinID):
+            return pinID
+        }
     }
 }

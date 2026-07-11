@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import SumiDomain
 import SwiftData
 import XCTest
 
@@ -79,6 +80,63 @@ final class SidebarDragCurrentContextTests: XCTestCase {
 
         let renderedKinds = session.map { Set($0.previewAssets.keys) } ?? Set<SidebarDragPreviewKind>()
         XCTAssertEqual(renderedKinds, [.folderRow])
+    }
+
+    func testStandaloneShortcutPayloadResolvesByTypedPinIdentity() throws {
+        let tabManager = try makeInMemoryTabManager()
+        let profileID = UUID()
+        let space = tabManager.spaceServices.catalog.createSpace(
+            name: "Work",
+            profileId: profileID
+        )
+        let pin = try makeSpacePinnedPin(
+            tabManager,
+            in: space,
+            url: "https://example.com/typed-pin",
+            index: 0
+        )
+        let item = SumiDragItem.shortcutPin(
+            pin.id,
+            title: pin.title,
+            urlString: pin.launchURL.absoluteString
+        )
+
+        guard case .pin(let resolvedPin)? = tabManager.sidebarDragRouter
+            .resolveSidebarDragPayload(for: item) else {
+            return XCTFail("Expected a typed shortcut payload")
+        }
+        XCTAssertEqual(resolvedPin.id, pin.id)
+        XCTAssertEqual(
+            tabManager.sidebarDragRouter.resolveDragTab(for: item)?
+                .shortcutPinId,
+            pin.id
+        )
+    }
+
+    func testStaleSplitMemberPayloadDoesNotFallBackToRawUUID() throws {
+        let tabManager = try makeInMemoryTabManager()
+        let profileID = UUID()
+        let space = tabManager.spaceServices.catalog.createSpace(
+            name: "Work",
+            profileId: profileID
+        )
+        let pin = try makeSpacePinnedPin(
+            tabManager,
+            in: space,
+            url: "https://example.com/stale-split-member",
+            index: 0
+        )
+        let item = SumiDragItem.splitMember(
+            .shortcutPin(pin.id),
+            groupID: UUID(),
+            title: pin.title,
+            urlString: pin.launchURL.absoluteString
+        )
+
+        XCTAssertNil(
+            tabManager.sidebarDragRouter.resolveSidebarDragPayload(for: item)
+        )
+        XCTAssertNil(tabManager.sidebarDragRouter.resolveDragTab(for: item))
     }
 
     func testLauncherPreviewPolicyTransformsRowIntoEssentialsTileOnEssentialsHover() {
@@ -215,7 +273,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
             item: dragItem(first)
         )
 
-        let didMove = tabManager.sidebarDragRoutingOwner.performSidebarDragOperation(
+        let didMove = tabManager.sidebarDragRouter.performSidebarDragOperation(
             DragOperation(
                 payload: .tab(first),
                 scope: scope,
@@ -242,7 +300,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
             item: dragItem(tab)
         )
 
-        let didMove = tabManager.sidebarDragRoutingOwner.performSidebarDragOperation(
+        let didMove = tabManager.sidebarDragRouter.performSidebarDragOperation(
             DragOperation(
                 payload: .tab(tab),
                 scope: scope,
@@ -274,7 +332,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
             item: dragItem(tab)
         )
 
-        let didMove = tabManager.sidebarDragRoutingOwner.performSidebarDragOperation(
+        let didMove = tabManager.sidebarDragRouter.performSidebarDragOperation(
             DragOperation(
                 payload: .tab(tab),
                 scope: scope,
@@ -308,7 +366,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
 
         XCTAssertFalse(folder.isOpen)
 
-        let didMove = tabManager.sidebarDragRoutingOwner.performSidebarDragOperation(
+        let didMove = tabManager.sidebarDragRouter.performSidebarDragOperation(
             DragOperation(
                 payload: .tab(tab),
                 scope: scope,
@@ -336,7 +394,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
             item: dragItem(tab)
         )
 
-        let didMove = tabManager.sidebarDragRoutingOwner.performSidebarDragOperation(
+        let didMove = tabManager.sidebarDragRouter.performSidebarDragOperation(
             DragOperation(
                 payload: .tab(tab),
                 scope: scope,
@@ -372,7 +430,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
             item: dragItem(tab)
         )
 
-        let didMove = tabManager.sidebarDragRoutingOwner.performSidebarDragOperation(
+        let didMove = tabManager.sidebarDragRouter.performSidebarDragOperation(
             DragOperation(
                 payload: .tab(tab),
                 scope: scope,
@@ -414,7 +472,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
             item: dragItem(tab)
         )
 
-        let didMove = tabManager.sidebarDragRoutingOwner.performSidebarDragOperation(
+        let didMove = tabManager.sidebarDragRouter.performSidebarDragOperation(
             DragOperation(
                 payload: .tab(tab),
                 scope: scope,
@@ -455,7 +513,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
             item: dragItem(tab)
         )
 
-        let didMove = tabManager.sidebarDragRoutingOwner.performSidebarDragOperation(
+        let didMove = tabManager.sidebarDragRouter.performSidebarDragOperation(
             DragOperation(
                 payload: .tab(tab),
                 scope: scope,
@@ -492,12 +550,24 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         harness.windowState.currentTabId = currentTab.id
         let splitGroup = try XCTUnwrap(
             SplitGroup.make(
-                tabIds: [currentTab.id, draggedTab.id],
+                members: [
+                    .regularTab(currentTab.id),
+                    .regularTab(draggedTab.id),
+                ],
                 layoutKind: .vertical,
-                activeTabId: currentTab.id
+                container: .regularTabs(spaceId: space.id)
             )
         )
-        tabManager.splitGroupStructureOwner.upsertSplitGroup(splitGroup, schedulePersistence: false)
+        XCTAssertTrue(
+            tabManager.splitGroupMutations.insert(
+                splitGroup,
+                persist: false
+            )
+        )
+        harness.windowState.splitSelection = WindowSplitSelection(
+            groupID: splitGroup.id,
+            activeMemberID: .regularTab(currentTab.id)
+        )
         harness.browserManager.materializeVisibleTabWebViewIfNeeded(
             draggedTab,
             in: harness.windowState
@@ -514,7 +584,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
             item: dragItem(draggedTab)
         )
 
-        let didMove = tabManager.sidebarDragRoutingOwner.performSidebarDragOperation(
+        let didMove = tabManager.sidebarDragRouter.performSidebarDragOperation(
             DragOperation(
                 payload: .tab(draggedTab),
                 scope: scope,
@@ -533,15 +603,18 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         XCTAssertEqual(liveTab.shortcutPinId, pin.id)
         XCTAssertEqual(liveTab.shortcutPinRole, .spacePinned)
         let convertedGroup = try XCTUnwrap(
-            tabManager.splitGroupCollectionStateOwner.group(with: splitGroup.id)
+            tabManager.splitGroupStore.group(id: splitGroup.id)
         )
-        XCTAssertEqual(convertedGroup.layoutTree, splitGroup.layoutTree)
+        XCTAssertEqual(convertedGroup.layoutKind, splitGroup.layoutKind)
         XCTAssertEqual(
-            convertedGroup.member(for: draggedTab.id),
-            SplitGroupMember(
-                tabId: draggedTab.id,
-                pinId: pin.id,
-                origin: .spacePinned(
+            Set(convertedGroup.memberIDs),
+            [.regularTab(currentTab.id), .shortcutPin(pin.id)]
+        )
+        XCTAssertEqual(
+            convertedGroup.member(for: .shortcutPin(pin.id)),
+            SplitMember.shortcutPin(
+                pin.id,
+                returnPlacement: .spacePinned(
                     spaceId: space.id,
                     folderId: nil,
                     index: 0
@@ -564,12 +637,24 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         harness.windowState.currentTabId = currentTab.id
         let splitGroup = try XCTUnwrap(
             SplitGroup.make(
-                tabIds: [currentTab.id, draggedTab.id],
+                members: [
+                    .regularTab(currentTab.id),
+                    .regularTab(draggedTab.id),
+                ],
                 layoutKind: .vertical,
-                activeTabId: currentTab.id
+                container: .regularTabs(spaceId: space.id)
             )
         )
-        tabManager.splitGroupStructureOwner.upsertSplitGroup(splitGroup, schedulePersistence: false)
+        XCTAssertTrue(
+            tabManager.splitGroupMutations.insert(
+                splitGroup,
+                persist: false
+            )
+        )
+        harness.windowState.splitSelection = WindowSplitSelection(
+            groupID: splitGroup.id,
+            activeMemberID: .regularTab(currentTab.id)
+        )
         harness.browserManager.materializeVisibleTabWebViewIfNeeded(
             draggedTab,
             in: harness.windowState
@@ -586,7 +671,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
             item: dragItem(draggedTab)
         )
 
-        let didMove = tabManager.sidebarDragRoutingOwner.performSidebarDragOperation(
+        let didMove = tabManager.sidebarDragRouter.performSidebarDragOperation(
             DragOperation(
                 payload: .tab(draggedTab),
                 scope: scope,
@@ -606,15 +691,21 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         XCTAssertEqual(liveTab.shortcutPinRole, .essential)
         XCTAssertNil(liveTab.spaceId)
         let convertedGroup = try XCTUnwrap(
-            tabManager.splitGroupCollectionStateOwner.group(with: splitGroup.id)
+            tabManager.splitGroupStore.group(id: splitGroup.id)
         )
-        XCTAssertEqual(convertedGroup.layoutTree, splitGroup.layoutTree)
+        XCTAssertEqual(convertedGroup.layoutKind, splitGroup.layoutKind)
         XCTAssertEqual(
-            convertedGroup.member(for: draggedTab.id),
-            SplitGroupMember(
-                tabId: draggedTab.id,
-                pinId: pin.id,
-                origin: .essential(profileId: profileId, index: 0)
+            Set(convertedGroup.memberIDs),
+            [.regularTab(currentTab.id), .shortcutPin(pin.id)]
+        )
+        XCTAssertEqual(
+            convertedGroup.member(for: .shortcutPin(pin.id)),
+            SplitMember.shortcutPin(
+                pin.id,
+                returnPlacement: .essential(
+                    profileId: profileId,
+                    index: 0
+                )
             )
         )
         XCTAssertTrue(harness.browserManager.splitManager.isSplit(for: harness.windowState.id))
@@ -668,7 +759,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
             item: dragItem(first)
         )
 
-        let didMove = tabManager.sidebarDragRoutingOwner.performSidebarDragOperation(
+        let didMove = tabManager.sidebarDragRouter.performSidebarDragOperation(
             DragOperation(
                 payload: .pin(first),
                 scope: scope,
@@ -716,7 +807,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
             item: dragItem(first)
         )
 
-        let didMove = tabManager.sidebarDragRoutingOwner.performSidebarDragOperation(
+        let didMove = tabManager.sidebarDragRouter.performSidebarDragOperation(
             DragOperation(
                 payload: .pin(first),
                 scope: scope,
@@ -765,7 +856,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
             item: dragItem(first)
         )
 
-        let didMove = tabManager.sidebarDragRoutingOwner.performSidebarDragOperation(
+        let didMove = tabManager.sidebarDragRouter.performSidebarDragOperation(
             DragOperation(
                 payload: .pin(first),
                 scope: scope,
@@ -794,7 +885,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
             item: dragItem(first)
         )
 
-        let didMove = tabManager.sidebarDragRoutingOwner.performSidebarDragOperation(
+        let didMove = tabManager.sidebarDragRouter.performSidebarDragOperation(
             DragOperation(
                 payload: .folder(first),
                 scope: scope,
@@ -822,7 +913,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
             item: dragItem(moving)
         )
 
-        let didMove = tabManager.sidebarDragRoutingOwner.performSidebarDragOperation(
+        let didMove = tabManager.sidebarDragRouter.performSidebarDragOperation(
             DragOperation(
                 payload: .folder(moving),
                 scope: scope,
@@ -851,7 +942,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
             item: dragItem(parent)
         )
 
-        let didMove = tabManager.sidebarDragRoutingOwner.performSidebarDragOperation(
+        let didMove = tabManager.sidebarDragRouter.performSidebarDragOperation(
             DragOperation(
                 payload: .folder(parent),
                 scope: scope,
@@ -961,7 +1052,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
             item: dragItem(pin)
         )
 
-        let didMove = tabManager.sidebarDragRoutingOwner.performSidebarDragOperation(
+        let didMove = tabManager.sidebarDragRouter.performSidebarDragOperation(
             DragOperation(
                 payload: .pin(pin),
                 scope: scope,
@@ -1007,7 +1098,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
             item: dragItem(pin)
         )
 
-        let didMove = tabManager.sidebarDragRoutingOwner.performSidebarDragOperation(
+        let didMove = tabManager.sidebarDragRouter.performSidebarDragOperation(
             DragOperation(
                 payload: .pin(pin),
                 scope: scope,
@@ -1055,7 +1146,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
             item: dragItem(pin)
         )
 
-        let didMove = tabManager.sidebarDragRoutingOwner.performSidebarDragOperation(
+        let didMove = tabManager.sidebarDragRouter.performSidebarDragOperation(
             DragOperation(
                 payload: .pin(pin),
                 scope: scope,
@@ -1102,7 +1193,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
             item: dragItem(pin)
         )
 
-        let didMove = tabManager.sidebarDragRoutingOwner.performSidebarDragOperation(
+        let didMove = tabManager.sidebarDragRouter.performSidebarDragOperation(
             DragOperation(
                 payload: .pin(pin),
                 scope: scope,
@@ -1150,7 +1241,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
             item: dragItem(pin)
         )
 
-        let didMove = tabManager.sidebarDragRoutingOwner.performSidebarDragOperation(
+        let didMove = tabManager.sidebarDragRouter.performSidebarDragOperation(
             DragOperation(
                 payload: .pin(pin),
                 scope: scope,
@@ -1198,7 +1289,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
             item: dragItem(pin)
         )
 
-        let didMove = tabManager.sidebarDragRoutingOwner.performSidebarDragOperation(
+        let didMove = tabManager.sidebarDragRouter.performSidebarDragOperation(
             DragOperation(
                 payload: .pin(pin),
                 scope: scope,
@@ -1248,7 +1339,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
             item: dragItem(pin)
         )
 
-        let didMove = tabManager.sidebarDragRoutingOwner.performSidebarDragOperation(
+        let didMove = tabManager.sidebarDragRouter.performSidebarDragOperation(
             DragOperation(
                 payload: .pin(pin),
                 scope: scope,
@@ -1287,7 +1378,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
             item: dragItem(pin)
         )
 
-        let didMove = tabManager.sidebarDragRoutingOwner.performSidebarDragOperation(
+        let didMove = tabManager.sidebarDragRouter.performSidebarDragOperation(
             DragOperation(
                 payload: .pin(pin),
                 scope: scope,
@@ -1324,7 +1415,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
             item: dragItem(pin)
         )
 
-        let didMove = tabManager.sidebarDragRoutingOwner.performSidebarDragOperation(
+        let didMove = tabManager.sidebarDragRouter.performSidebarDragOperation(
             DragOperation(
                 payload: .pin(pin),
                 scope: scope,
@@ -1361,7 +1452,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
             item: dragItem(pin)
         )
 
-        let didMove = tabManager.sidebarDragRoutingOwner.performSidebarDragOperation(
+        let didMove = tabManager.sidebarDragRouter.performSidebarDragOperation(
             DragOperation(
                 payload: .pin(pin),
                 scope: scope,
@@ -1416,7 +1507,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
             item: dragItem(tab)
         )
 
-        let didMove = tabManager.sidebarDragRoutingOwner.performSidebarDragOperation(
+        let didMove = tabManager.sidebarDragRouter.performSidebarDragOperation(
             DragOperation(
                 payload: .tab(tab),
                 scope: scope,
@@ -1443,7 +1534,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
             item: dragItem(tab)
         )
 
-        let didMove = tabManager.sidebarDragRoutingOwner.performSidebarDragOperation(
+        let didMove = tabManager.sidebarDragRouter.performSidebarDragOperation(
             DragOperation(
                 payload: .tab(tab),
                 scope: scope,
@@ -1471,7 +1562,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
             item: dragItem(tab)
         )
 
-        let didMove = tabManager.sidebarDragRoutingOwner.performSidebarDragOperation(
+        let didMove = tabManager.sidebarDragRouter.performSidebarDragOperation(
             DragOperation(
                 payload: .tab(tab),
                 scope: scope,
@@ -1500,7 +1591,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
             item: dragItem(otherTab)
         )
 
-        let didMove = tabManager.sidebarDragRoutingOwner.performSidebarDragOperation(
+        let didMove = tabManager.sidebarDragRouter.performSidebarDragOperation(
             DragOperation(
                 payload: .tab(otherTab),
                 scope: scope,
@@ -1569,16 +1660,21 @@ final class SidebarDragCurrentContextTests: XCTestCase {
             : companion.id
         let group = try XCTUnwrap(
             SplitGroup.make(
-                tabIds: [companion.id, draggedTab.id],
+                members: [
+                    .regularTab(companion.id),
+                    .regularTab(draggedTab.id),
+                ],
                 layoutKind: .vertical,
-                activeTabId: draggedTab.id,
-                host: .regular(spaceId: space.id)
+                container: .regularTabs(spaceId: space.id)
             )
         )
-        visibleSplitIds = group.tabIds
-        tabManager.splitGroupStructureOwner.upsertSplitGroup(
-            group,
-            schedulePersistence: false
+        visibleSplitIds = [companion.id, draggedTab.id]
+        XCTAssertTrue(
+            tabManager.splitGroupMutations.insert(group, persist: false)
+        )
+        primaryWindow.splitSelection = WindowSplitSelection(
+            groupID: group.id,
+            activeMemberID: .regularTab(draggedTab.id)
         )
         let primarySession = ShortcutConversionWindowSessionState(primaryWindow)
         let secondarySession = ShortcutConversionWindowSessionState(secondaryWindow)
@@ -1591,7 +1687,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
             .structureChangedPublisher.sink { structuralEvents += 1 }
         structuralEvents = 0
 
-        let didMove = tabManager.sidebarDragRoutingOwner
+        let didMove = tabManager.sidebarDragRouter
             .performSidebarDragOperation(
                 DragOperation(
                     payload: .tab(draggedTab),
@@ -1618,7 +1714,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
                 .spacePinnedPins(for: space.id).isEmpty
         )
         XCTAssertEqual(
-            tabManager.splitGroupCollectionStateOwner.group(with: group.id),
+            tabManager.splitGroupStore.group(id: group.id),
             group
         )
         XCTAssertEqual(
@@ -1691,8 +1787,8 @@ final class SidebarDragCurrentContextTests: XCTestCase {
     }
 
     private func dragItem(_ pin: ShortcutPin) -> SumiDragItem {
-        SumiDragItem(
-            tabId: pin.id,
+        SumiDragItem.shortcutPin(
+            pin.id,
             title: pin.title,
             urlString: pin.launchURL.absoluteString
         )
@@ -1786,7 +1882,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
             item: dragItem(tab)
         )
 
-        let didMove = tabManager.sidebarDragRoutingOwner.performSidebarDragOperation(
+        let didMove = tabManager.sidebarDragRouter.performSidebarDragOperation(
             DragOperation(
                 payload: .tab(tab),
                 scope: scope,
@@ -1833,7 +1929,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
             item: dragItem(pin)
         )
 
-        let didMove = tabManager.sidebarDragRoutingOwner.performSidebarDragOperation(
+        let didMove = tabManager.sidebarDragRouter.performSidebarDragOperation(
             DragOperation(
                 payload: .pin(pin),
                 scope: scope,
@@ -1885,7 +1981,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
             item: dragItem(pin)
         )
 
-        let didMove = tabManager.sidebarDragRoutingOwner.performSidebarDragOperation(
+        let didMove = tabManager.sidebarDragRouter.performSidebarDragOperation(
             DragOperation(
                 payload: .pin(pin),
                 scope: scope,
@@ -1938,7 +2034,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
             item: dragItem(pin)
         )
 
-        let didMove = tabManager.sidebarDragRoutingOwner.performSidebarDragOperation(
+        let didMove = tabManager.sidebarDragRouter.performSidebarDragOperation(
             DragOperation(
                 payload: .pin(pin),
                 scope: scope,

@@ -3,8 +3,8 @@
 //  Sumi
 //
 
-import SwiftUI
 import SumiDomain
+import SwiftUI
 
 extension TabFolderView {
     func refreshLiveFolderIfNeeded() {

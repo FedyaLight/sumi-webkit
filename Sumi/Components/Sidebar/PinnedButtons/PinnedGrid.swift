@@ -3,6 +3,7 @@
 //      Sumi
 //
 //
+import SumiDomain
 import SwiftUI
 
 enum PinnedGridContextResolver {
@@ -196,7 +197,11 @@ struct PinnedGrid: View {
                 accessibilityID: "essential-split-placeholder-\(pin.id.uuidString)",
                 isAppKitInteractionEnabled: isAppKitInteractionEnabled,
                 onActivate: {
-                    browserContext.commands.focusSplitGroup(placeholderGroup, windowState)
+                    browserContext.commands.focusSplitGroup(
+                        placeholderGroup.id,
+                        .shortcutPin(pin.id),
+                        windowState.id
+                    )
                 }
             )
             .frame(width: tileSize.width, height: tileSize.height, alignment: .center)
@@ -273,18 +278,20 @@ struct PinnedGrid: View {
     }
 
     private func splitPlaceholderGroup(for pin: ShortcutPin) -> SplitGroup? {
-        browserContext.tabManager.splitGroupStructureOwner.splitGroup(containingPinId: pin.id)
+        guard let group = browserContext.tabManager.splitGroupStore.group(
+            containing: .shortcutPin(pin.id)
+        ), !group.container.isShortcutSidebar else {
+            return nil
+        }
+        return group
     }
 
     private func isSplitPlaceholderSelected(_ group: SplitGroup, pin: ShortcutPin) -> Bool {
         if windowState.currentShortcutPinId == pin.id {
             return true
         }
-        guard let currentTabId = windowState.currentTabId else {
-            return false
-        }
-        return group.contains(currentTabId)
-            || group.member(forPinId: pin.id)?.tabId == currentTabId
+        return windowState.splitSelection?.groupID == group.id
+            && windowState.splitSelection?.activeMemberID == .shortcutPin(pin.id)
     }
 
     private func activate(_ pin: ShortcutPin) {

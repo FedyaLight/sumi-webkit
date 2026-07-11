@@ -1,4 +1,5 @@
 import AppKit
+import SumiDomain
 import SumiWebRuntime
 import WebKit
 import XCTest
@@ -336,14 +337,29 @@ final class GlanceManagerTests: XCTestCase {
 
         browserManager.glanceManager.moveToSplitView()
 
-        let splitGroup = try XCTUnwrap(browserManager.tabManager.splitGroupStructureOwner.splitGroup(containing: previewTab.id))
-        let placeholderId = try XCTUnwrap(splitGroup.tabIds.last)
+        let splitGroup = try XCTUnwrap(
+            browserManager.tabManager.splitGroupStore.group(
+                containing: .regularTab(previewTab.id)
+            )
+        )
+        guard case .regularTab(let placeholderId) = splitGroup.memberIDs.last else {
+            return XCTFail("Expected the split picker placeholder to remain a regular tab.")
+        }
         let placeholderTab = try XCTUnwrap(browserManager.tabManager.tabCollectionMembershipOwner.tab(for: placeholderId))
         XCTAssertNil(browserManager.glanceManager.currentSession)
         XCTAssertEqual(browserManager.glanceManager.phase, .idle)
-        XCTAssertEqual(splitGroup.tabIds, [previewTab.id, placeholderId])
-        XCTAssertEqual(splitGroup.activeTabId, placeholderId)
-        XCTAssertFalse(splitGroup.contains(sourceTab.id))
+        XCTAssertEqual(
+            splitGroup.memberIDs,
+            [.regularTab(previewTab.id), .regularTab(placeholderId)]
+        )
+        XCTAssertEqual(
+            sourceWindow.splitSelection,
+            WindowSplitSelection(
+                groupID: splitGroup.id,
+                activeMemberID: .regularTab(placeholderId)
+            )
+        )
+        XCTAssertFalse(splitGroup.contains(.regularTab(sourceTab.id)))
         XCTAssertTrue(placeholderTab.representsSumiEmptySurface)
         XCTAssertEqual(windowRegistry.activeWindow?.id, sourceWindow.id)
         XCTAssertEqual(sourceWindow.currentTabId, placeholderId)
@@ -368,9 +384,22 @@ final class GlanceManagerTests: XCTestCase {
             in: sourceWindow
         )
 
-        let filledGroup = try XCTUnwrap(browserManager.tabManager.splitGroupStructureOwner.splitGroup(containing: previewTab.id))
-        XCTAssertEqual(filledGroup.tabIds, [previewTab.id, sourceTab.id])
-        XCTAssertEqual(filledGroup.activeTabId, sourceTab.id)
+        let filledGroup = try XCTUnwrap(
+            browserManager.tabManager.splitGroupStore.group(
+                containing: .regularTab(previewTab.id)
+            )
+        )
+        XCTAssertEqual(
+            filledGroup.memberIDs,
+            [.regularTab(previewTab.id), .regularTab(sourceTab.id)]
+        )
+        XCTAssertEqual(
+            sourceWindow.splitSelection,
+            WindowSplitSelection(
+                groupID: filledGroup.id,
+                activeMemberID: .regularTab(sourceTab.id)
+            )
+        )
         XCTAssertEqual(sourceWindow.currentTabId, sourceTab.id)
         XCTAssertNil(browserManager.tabManager.tabCollectionMembershipOwner.tab(for: placeholderId))
         XCTAssertFalse(sourceWindow.isFloatingBarVisible)

@@ -1,4 +1,5 @@
 import AppKit
+import SumiDomain
 import SwiftUI
 
 @MainActor
@@ -34,8 +35,9 @@ struct SidebarBrowserCommandActions {
     let closeTab: (Tab, BrowserWindowState) -> Void
     let moveTabUp: (UUID) -> Void
     let moveTabDown: (UUID) -> Void
-    let focusSplitGroup: (SplitGroup, BrowserWindowState) -> Void
-    let restoreShortcutSplitMember: (UUID, SplitGroup, BrowserWindowState) -> Void
+    let focusSplitGroup: (UUID, SplitMemberID?, UUID) -> Void
+    let restoreShortcutSplitMember: (UUID, SplitMemberID, UUID) -> Void
+    let closeSplitMember: (UUID, SplitMemberID, UUID) -> Void
     let openForegroundTab: (String, BrowserWindowState, UUID?) -> Tab?
     let openNewTabOrFloatingBar: (BrowserWindowState) -> Void
     let duplicateTab: (Tab, BrowserWindowState) -> Void

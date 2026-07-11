@@ -1,7 +1,9 @@
 import Foundation
-@testable import Sumi
+import SumiDomain
 import WebKit
 import XCTest
+
+@testable import Sumi
 
 @MainActor
 final class SpaceRemovalServiceTests: XCTestCase {
@@ -109,7 +111,7 @@ final class SpaceRemovalServiceTests: XCTestCase {
         XCTAssertEqual(runtimeProbe.removedWebViewTabIds, fixture.removedTabIds)
         XCTAssertEqual(runtimeProbe.fullscreenCloseRequests, [true, true, true, true])
         XCTAssertEqual(runtimeProbe.auxiliaryCloseTabIds, [fixture.auxiliary.id])
-        XCTAssertTrue(tabManager.splitGroupCollectionStateOwner.splitGroups.isEmpty)
+        XCTAssertTrue(tabManager.splitGroupStore.groups.isEmpty)
         XCTAssertTrue(
             tabManager.transientTabRegistryOwner
                 .transientExtensionTabsByID.isEmpty
@@ -141,7 +143,7 @@ final class SpaceRemovalServiceTests: XCTestCase {
         XCTAssertEqual(flushedRuntimeStates, 0)
     }
 
-    func testHistoryOnlyCleanupDoesNotPersistWindowSession() throws {
+    func testHistoryOnlyCleanupPersistsRepairedWindowSession() throws {
         let tabManager = try makeInMemoryTabManager()
         let survivingSpace = tabManager.spaceServices.catalog.createSpace(
             name: "Surviving"
@@ -169,7 +171,7 @@ final class SpaceRemovalServiceTests: XCTestCase {
             windowState.selectionHistory
                 .recentRegularTabIdsBySpace[removedSpace.id]
         )
-        XCTAssertTrue(persistedWindowIds.isEmpty)
+        XCTAssertEqual(persistedWindowIds, [windowState.id])
     }
 
     private func assertRemoval(
@@ -236,7 +238,10 @@ final class SpaceRemovalServiceTests: XCTestCase {
             contentRetirement: SpaceContentRetirementService(
                 state: tabManager.stateStore,
                 structuralMutations: tabManager.structuralCollectionMutationOwner,
-                splitGroups: tabManager.splitGroupStructureOwner,
+                splitGroups: SpaceSplitGroupRetirementService(
+                    store: tabManager.splitGroupStore,
+                    mutations: tabManager.splitGroupMutations
+                ),
                 liveShortcutTabs: tabManager.liveShortcutTabs,
                 runtimeTeardown: TabRuntimeTeardownService(
                     persistence: tabManager.structuralPersistence,
@@ -335,28 +340,39 @@ final class SpaceRemovalServiceTests: XCTestCase {
         crossSpaceTabs: (Tab, Tab),
         tabManager: TabManager
     ) throws -> (SplitGroup, SplitGroup) {
+        let shortcutPinID = try XCTUnwrap(
+            deletedHostTabs.1.shortcutPinId
+        )
         let deletedHostGroup = try XCTUnwrap(
             SplitGroup.make(
-                tabIds: [deletedHostTabs.0.id, deletedHostTabs.1.id],
+                members: [
+                    .regularTab(deletedHostTabs.0.id),
+                    .shortcutPin(
+                        shortcutPinID,
+                        returnPlacement: .spacePinned(
+                            spaceId: removedSpaceId,
+                            folderId: nil,
+                            index: 0
+                        )
+                    ),
+                ],
                 layoutKind: .vertical,
-                host: .shortcutPinned(
-                    spaceId: removedSpaceId,
-                    profileId: nil,
-                    index: 0
-                )
+                container: .regularTabs(spaceId: removedSpaceId)
             )
         )
         let crossSpaceGroup = try XCTUnwrap(
             SplitGroup.make(
-                tabIds: [crossSpaceTabs.0.id, crossSpaceTabs.1.id],
+                members: [
+                    .regularTab(crossSpaceTabs.0.id),
+                    .regularTab(crossSpaceTabs.1.id),
+                ],
                 layoutKind: .horizontal,
-                host: .regular(spaceId: survivingSpaceId)
+                container: .regularTabs(spaceId: survivingSpaceId)
             )
         )
-        tabManager.splitGroupCollectionStateOwner.replaceSplitGroups([
-            deletedHostGroup,
-            crossSpaceGroup,
-        ])
+        tabManager.splitGroupStore.replaceAll(
+            with: [deletedHostGroup, crossSpaceGroup]
+        )
         return (deletedHostGroup, crossSpaceGroup)
     }
 }
@@ -399,10 +415,14 @@ private extension BrowserWindowState {
             .shortcutPin(shortcutPin.id),
         ]
         pendingSplitGroupFocusRequest = SplitGroupFocusRequest(
-            groupId: pendingGroupId,
-            targetSpaceId: pendingGroupSpaceId
+            groupID: pendingGroupId,
+            preferredMemberID: nil,
+            targetSpaceID: pendingGroupSpaceId
         )
-        pendingSessionSplitGroupId = sessionGroupId
+        pendingSessionSplitSelection = PendingWindowSplitSelection(
+            groupID: sessionGroupId,
+            preferredMemberID: nil
+        )
     }
 }
 
@@ -467,6 +487,6 @@ private final class SpaceRemovalRuntimeProbe {
             && persisted.selectionHistory
                 .recentSelectionItemsBySpace[removedSpaceId] == nil
             && persisted.pendingSplitGroupFocusRequest == nil
-            && persisted.pendingSessionSplitGroupId == nil
+            && persisted.pendingSessionSplitSelection == nil
     }
 }

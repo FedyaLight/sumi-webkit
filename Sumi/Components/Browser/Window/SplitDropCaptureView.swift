@@ -1,4 +1,5 @@
 import AppKit
+import SumiDomain
 
 enum SplitDropCaptureHitPolicy {
     enum Mode {
@@ -53,7 +54,7 @@ struct SplitDropCaptureRuntime {
     let splitManager: SplitViewManager
     let sidebarDragState: SidebarDragState
     let windowState: (UUID) -> BrowserWindowState?
-    let resolveDragTab: (UUID) -> Tab?
+    let resolveDragTab: (SumiDragItem) -> Tab?
 }
 
 final class SplitDropCaptureView: NSView {
@@ -135,8 +136,8 @@ final class SplitDropCaptureView: NSView {
               let windowId,
               let windowState = runtime.windowState(windowId),
               let item = SidebarDropCoordinator.draggedItem(from: sender.draggingPasteboard),
-              let tab = runtime.resolveDragTab(item.tabId),
-              let target = currentTarget ?? resolvedDropTarget(sender)
+              let tab = runtime.resolveDragTab(item),
+              let target = currentTarget ?? resolvedDropTarget(sender, item: item)
         else {
             finishDrag(resetSidebarDragState: true)
             return false
@@ -166,7 +167,7 @@ final class SplitDropCaptureView: NSView {
 
         updateSidebarDragPreviewLocation(sender)
 
-        guard let target = resolvedDropTarget(sender, draggedTabId: item.tabId) else {
+        guard let target = resolvedDropTarget(sender, item: item) else {
             cancelActiveDragPreview()
             return []
         }
@@ -188,16 +189,20 @@ final class SplitDropCaptureView: NSView {
         return operation
     }
 
-    private func resolvedDropTarget(_ sender: NSDraggingInfo, draggedTabId: UUID? = nil) -> SplitDropTarget? {
+    private func resolvedDropTarget(
+        _ sender: NSDraggingInfo,
+        item explicitItem: SumiDragItem? = nil
+    ) -> SplitDropTarget? {
         let location = convert(sender.draggingLocation, from: nil)
-        let resolvedDraggedTabId = draggedTabId
-            ?? SidebarDropCoordinator.draggedItem(from: sender.draggingPasteboard)?.tabId
+        let item = explicitItem
+            ?? SidebarDropCoordinator.draggedItem(from: sender.draggingPasteboard)
         guard let runtime, let windowId else { return nil }
         return runtime.splitManager.dropTarget(
             at: location,
             in: bounds,
             for: windowId,
-            draggedTabId: resolvedDraggedTabId
+            draggedMemberID: item?.splitMemberID,
+            draggedTabId: item?.splitMemberID == nil ? item?.tabId : nil
         )
     }
 

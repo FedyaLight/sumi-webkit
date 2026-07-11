@@ -3,6 +3,7 @@
 //  Sumi
 //
 
+import SumiDomain
 import SwiftUI
 
 private enum RegularExternalDropGapPlacement: Equatable {
@@ -197,10 +198,19 @@ extension SpaceView {
         LazyVStack(alignment: .leading, spacing: 2) {
             let tabById = Dictionary(uniqueKeysWithValues: currentTabs.map { ($0.id, $0) })
             let splitGroups = visibleSplitGroups(currentTabs: currentTabs)
-            let groupedTabIds = Set(splitGroups.flatMap(\.tabIds))
+            let groupedTabIds = Set(splitGroups.flatMap { group in
+                group.memberIDs.compactMap { memberID -> UUID? in
+                    guard case .regularTab(let tabID) = memberID else {
+                        return nil
+                    }
+                    return tabID
+                }
+            })
             let splitGroupByFirstTabId = Dictionary(
                 uniqueKeysWithValues: splitGroups.compactMap { group -> (UUID, SplitGroup)? in
-                    guard let first = currentTabs.first(where: { group.contains($0.id) })?.id else { return nil }
+                    guard let first = currentTabs.first(where: {
+                        group.contains(.regularTab($0.id))
+                    })?.id else { return nil }
                     return (first, group)
                 }
             )
@@ -222,18 +232,32 @@ extension SpaceView {
                                 splitSegmentDragSource(for: item, in: group)
                             },
                             contextMenuEntries: regularTabContextMenuEntries,
-                            onActivate: onActivateTab,
-                            onActivateGroup: { browserContext.commands.focusSplitGroup(group, windowState) },
-                            onSegmentActionAnimationStart: { item in
-                                if splitSegmentAction(for: item, in: group) == .restore {
-                                    prepareShortcutRestoreGap(for: item, in: group)
+                            onActivateMember: { memberID in
+                                browserContext.commands.focusSplitGroup(
+                                    group.id,
+                                    memberID,
+                                    windowState.id
+                                )
+                            },
+                            onSegmentActionAnimationStart: { memberID in
+                                if case .shortcutPin = memberID {
+                                    prepareShortcutRestoreGap(
+                                        groupID: group.id,
+                                        memberID: memberID
+                                    )
                                 }
                             },
-                            onSegmentAction: { item in
-                                performSplitSegmentAction(for: item, in: group)
+                            onSegmentAction: { memberID in
+                                performSplitSegmentAction(
+                                    memberID: memberID,
+                                    groupID: group.id
+                                )
                             },
-                            onSegmentMiddleClick: { item in
-                                performSplitSegmentMiddleClick(for: item, in: group)
+                            onSegmentMiddleClick: { memberID in
+                                performSplitSegmentMiddleClick(
+                                    memberID: memberID,
+                                    groupID: group.id
+                                )
                             }
                         )
                         .environmentObject(splitManager)
@@ -275,8 +299,12 @@ extension SpaceView {
     ) -> [SplitGroupSidebarItem] {
         regularSplitSegmentResolver.splitGroupItems(
             for: group,
-            tabById: tabById,
-            liveTab: { browserContext.regularTabs.tab(for: $0) },
+            tabByID: tabById,
+            regularTab: { browserContext.regularTabs.tab(for: $0) },
+            shortcutLiveTab: { pinID in
+                browserContext.tabManager.shortcutPresentationOwner
+                    .shortcutLiveTab(for: pinID, in: windowState.id)
+            },
             shortcutPin: { browserContext.regularTabs.shortcutPin(by: $0) }
         )
     }
@@ -289,53 +317,56 @@ extension SpaceView {
     }
 
     private func performSplitSegmentAction(
-        for item: SplitGroupSidebarItem,
-        in group: SplitGroup
+        memberID: SplitMemberID,
+        groupID: UUID
     ) {
-        if splitMember(for: item, in: group)?.isShortcutBacked == true {
-            performShortcutRestoreWithPreparedGap(for: item, in: group) {
+        if case .shortcutPin = memberID {
+            performShortcutRestoreWithPreparedGap(
+                groupID: groupID,
+                memberID: memberID
+            ) {
                 performRegularSplitModelMutation {
-                    browserContext.commands.restoreShortcutSplitMember(item.id, group, windowState)
+                    browserContext.commands.restoreShortcutSplitMember(
+                        groupID,
+                        memberID,
+                        windowState.id
+                    )
                 }
             }
             return
         }
 
-        guard let tab = item.tab else { return }
+        guard case .regularTab(let tabID) = memberID else {
+            return
+        }
         performRegularSplitModelMutation {
-            regularSplitSegmentRemovalIds.insert(tab.id)
-            onCloseTab(tab)
+            regularSplitSegmentRemovalIds.insert(tabID)
+            browserContext.commands.closeSplitMember(
+                groupID,
+                memberID,
+                windowState.id
+            )
         }
     }
 
     private func performSplitSegmentMiddleClick(
-        for item: SplitGroupSidebarItem,
-        in group: SplitGroup
+        memberID: SplitMemberID,
+        groupID: UUID
     ) {
-        if splitMember(for: item, in: group)?.isShortcutBacked == true {
-            guard let tab = item.tab else { return }
-            performRegularSplitModelMutation {
-                browserContext.commands.closeTab(tab, windowState)
-            }
-            return
-        }
-
-        guard let tab = item.tab else { return }
         performRegularSplitModelMutation {
-            regularSplitSegmentRemovalIds.insert(tab.id)
-            onCloseTab(tab)
+            if case .regularTab(let tabID) = memberID {
+                regularSplitSegmentRemovalIds.insert(tabID)
+            }
+            browserContext.commands.closeSplitMember(
+                groupID,
+                memberID,
+                windowState.id
+            )
         }
     }
 
     private func performRegularSplitModelMutation(_ update: () -> Void) {
         SidebarMotionTransaction.withoutAnimation(update)
-    }
-
-    private func splitMember(
-        for item: SplitGroupSidebarItem,
-        in group: SplitGroup
-    ) -> SplitGroupMember? {
-        regularSplitSegmentResolver.member(for: item, in: group)
     }
 
     private func splitSegmentDragSource(
@@ -346,8 +377,13 @@ extension SpaceView {
             for: item,
             in: group,
             shortcutPin: { browserContext.regularTabs.shortcutPin(by: $0) },
-            onActivateTab: { onActivateTab($0) },
-            onActivateGroup: { browserContext.commands.focusSplitGroup(group, windowState) }
+            onActivateMember: {
+                browserContext.commands.focusSplitGroup(
+                    group.id,
+                    item.id,
+                    windowState.id
+                )
+            }
         )
     }
 
@@ -378,9 +414,9 @@ extension SpaceView {
 
     private func regularSplitGroupRowZIndex(_ group: SplitGroup) -> Double {
         SidebarSelectionElevation.zIndex(
-            isElevated: SidebarSelectionElevation.splitGroupContainsCurrentTab(
+            isElevated: SidebarSelectionElevation.splitGroupIsSelected(
                 group,
-                currentTabId: windowState.currentTabId
+                selectedGroupID: windowState.splitSelection?.groupID
             )
         )
     }

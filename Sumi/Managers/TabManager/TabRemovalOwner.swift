@@ -4,14 +4,17 @@ import Foundation
 final class TabRemovalOwner {
     struct Dependencies {
         let withStructuralUpdateTransaction: (@MainActor () -> Void) -> Void
-        let runtimePorts: () -> RuntimePortRegistry?
         let requireRuntimePorts: () -> RuntimePortRegistry
         let cancelRuntimeStatePersistence: (UUID) -> Void
         let currentTab: () -> Tab?
         let replaceCurrentTab: (Tab?) -> Void
         let removeTransientExtensionTab: (UUID) -> Bool
         let closeAuxiliaryMiniWindowTabIfPresent: (UUID) -> Bool
-        let removeRegularTab: (UUID, [Space], UUID?) -> RegularTabCollectionOwner.Removal?
+        let removeRegularTabs: (
+            Set<UUID>,
+            [Space],
+            UUID?
+        ) -> [RegularTabCollectionOwner.Removal]
         let spaces: () -> [Space]
         let currentSpace: () -> Space?
         let retireShortcutTabIfPresent: (UUID) -> Bool
@@ -24,7 +27,6 @@ final class TabRemovalOwner {
         let captureClosedTab: (Tab, UUID?) -> Void
         let notifications: @MainActor () -> (any BrowserNotificationPresenting)?
         let tabsBelow: (Tab) -> [Tab]?
-        let setActiveTab: (Tab) -> Void
     }
 
     private let dependencies: Dependencies
@@ -34,65 +36,81 @@ final class TabRemovalOwner {
     }
 
     func removeTab(_ id: UUID) {
+        removeTabs([id])
+    }
+
+    /// Removes a mixed candidate batch, but reports split closure only for the
+    /// exact durable regular tabs that were actually present and removed.
+    func removeTabs(_ ids: [UUID]) {
         dependencies.withStructuralUpdateTransaction {
-            if dependencies.retireShortcutTabIfPresent(id) {
-                return
+            var seen = Set<UUID>()
+            let uniqueIDs = ids.filter { seen.insert($0).inserted }
+            guard !uniqueIDs.isEmpty else { return }
+
+            var regularCandidates = Set<UUID>()
+            for id in uniqueIDs {
+                if dependencies.retireShortcutTabIfPresent(id) {
+                    continue
+                }
+                dependencies.cancelRuntimeStatePersistence(id)
+                if dependencies.removeTransientExtensionTab(id) {
+                    continue
+                }
+                if dependencies.closeAuxiliaryMiniWindowTabIfPresent(id) {
+                    continue
+                }
+                regularCandidates.insert(id)
             }
-            dependencies.runtimePorts()?.handleTabClosure(id)
-            dependencies.cancelRuntimeStatePersistence(id)
 
-            let wasCurrent = (dependencies.currentTab()?.id == id)
-            var removed: Tab?
-            var removedSpaceId: UUID?
-            var removedIndexInCurrentSpace: Int?
-
-            if dependencies.removeTransientExtensionTab(id) {
-                return
-            }
-
-            if dependencies.closeAuxiliaryMiniWindowTabIfPresent(id) {
-                return
-            }
-
-            if let removal = dependencies.removeRegularTab(
-                id,
+            let currentTabAtStart = dependencies.currentTab()
+            let removals = dependencies.removeRegularTabs(
+                regularCandidates,
                 dependencies.spaces(),
                 dependencies.currentSpace()?.id
-            ) {
-                removed = removal.tab
-                removedSpaceId = removal.spaceId
-                removedIndexInCurrentSpace = removal.indexInCurrentSpace
-            }
-            guard let tab = removed else { return }
+            )
+            guard !removals.isEmpty else { return }
+
             let runtimePorts = dependencies.requireRuntimePorts()
+            let removedTabIDs = Set(removals.map(\.tab.id))
+            runtimePorts.handleTabClosures(removedTabIDs)
 
-            runtimePorts.notifyTabClosedIfLoaded(tab)
+            for removal in removals {
+                let tab = removal.tab
+                runtimePorts.notifyTabClosedIfLoaded(tab)
 
-            runtimePorts.forEachWindowState { windowState in
-                windowState.selectionHistory.removeFromRegularTabHistory(tab.id)
-            }
+                runtimePorts.forEachWindowState { windowState in
+                    windowState.selectionHistory
+                        .removeFromRegularTabHistory(tab.id)
+                }
 
-            captureRecentlyClosedTab(tab, spaceId: removedSpaceId)
+                runtimePorts.webViewLifecycle.unloadTab(tab)
+                runtimePorts.webViewLifecycle.requireRemoveAllWebViews(
+                    for: tab,
+                    closeActiveFullscreenMedia: true
+                )
+                dependencies.detach(tab)
 
-            runtimePorts.webViewLifecycle.unloadTab(tab)
-            runtimePorts.webViewLifecycle.requireRemoveAllWebViews(
-                for: tab,
-                closeActiveFullscreenMedia: true
-            )
-            dependencies.detach(tab)
-
-            NotificationCenter.default.post(
-                name: .sumiTabLifecycleDidChange,
-                object: tab
-            )
-
-            if wasCurrent {
-                updateCurrentTabAfterRemovingCurrentTab(
-                    tab,
-                    removedIndexInCurrentSpace: removedIndexInCurrentSpace
+                NotificationCenter.default.post(
+                    name: .sumiTabLifecycleDidChange,
+                    object: tab
                 )
             }
 
+            if let currentTabAtStart,
+               let currentRemoval = removals.first(where: {
+                   $0.tab.id == currentTabAtStart.id
+               }) {
+                updateCurrentTabAfterRemovingCurrentTab(
+                    currentRemoval.tab,
+                    removedIndexInCurrentSpace:
+                        currentRemoval.indexInCurrentSpace
+                )
+            }
+
+            captureRecentlyClosedTabs(
+                removals.map { ($0.tab, $0.spaceId) },
+                count: removals.count
+            )
             dependencies.scheduleStructuralPersistence()
             _ = runtimePorts.validateWindowStates()
         }
@@ -158,11 +176,6 @@ final class TabRemovalOwner {
 
     // MARK: - Closure Undo Capture
 
-    func captureRecentlyClosedTab(_ tab: Tab, spaceId: UUID?) {
-        dependencies.captureClosedTab(tab, spaceId)
-        dependencies.notifications()?.presentTabClosureNotification(tabCount: 1)
-    }
-
     private func captureRecentlyClosedTabs(_ tabs: [(tab: Tab, spaceId: UUID?)], count: Int) {
         for (tab, spaceId) in tabs {
             dependencies.captureClosedTab(tab, spaceId)
@@ -174,89 +187,32 @@ final class TabRemovalOwner {
     // MARK: - Bulk Removal
 
     func closeAllTabsBelow(_ tab: Tab) {
-        dependencies.withStructuralUpdateTransaction {
-            guard let spaceId = tab.spaceId else { return }
-            guard let tabsBelow = dependencies.tabsBelow(tab) else { return }
-            if tabsBelow.isEmpty {
-                return
-            }
-
-            let tabsToTrack = tabsBelow.map { (tab: $0, spaceId: spaceId) }
-            for tabToClose in tabsBelow {
-                closeTabWithoutTracking(tabToClose.id)
-            }
-
-            captureRecentlyClosedTabs(tabsToTrack, count: tabsBelow.count)
+        guard tab.spaceId != nil,
+              let tabsBelow = dependencies.tabsBelow(tab),
+              !tabsBelow.isEmpty else {
+            return
         }
+        removeTabs(tabsBelow.map(\.id))
     }
 
     func clearRegularTabs(for spaceId: UUID) {
-        dependencies.withStructuralUpdateTransaction {
-            let tabs = dependencies.regularTabs(spaceId)
-            guard !tabs.isEmpty else { return }
+        let tabs = dependencies.regularTabs(spaceId)
+        guard !tabs.isEmpty else { return }
 
-            RuntimeDiagnostics.emit("🧹 [TabRemovalOwner] Clearing \(tabs.count) regular tabs for space \(spaceId)")
+        RuntimeDiagnostics.emit("🧹 [TabRemovalOwner] Clearing \(tabs.count) regular tabs for space \(spaceId)")
 
-            let inactiveRegular = tabs.filter { $0.id != dependencies.currentTab()?.id }
-            if !inactiveRegular.isEmpty {
-                for tab in inactiveRegular {
-                    removeTab(tab.id)
-                }
-                return
-            }
-            if let active = dependencies.currentTab(),
-               active.spaceId == spaceId,
-               tabs.contains(where: { $0.id == active.id }) {
-                removeTab(active.id)
-            }
+        let inactiveRegular = tabs.filter {
+            $0.id != dependencies.currentTab()?.id
         }
-    }
-
-    private func closeTabWithoutTracking(_ id: UUID) {
-        dependencies.cancelRuntimeStatePersistence(id)
-        let wasCurrent = dependencies.currentTab()?.id == id
-        var removed: Tab?
-        var removedIndexInCurrentSpace: Int?
-
-        if let removal = dependencies.removeRegularTab(
-                id,
-                dependencies.spaces(),
-                dependencies.currentSpace()?.id
-            ) {
-            removed = removal.tab
-            removedIndexInCurrentSpace = removal.indexInCurrentSpace
+        if !inactiveRegular.isEmpty {
+            removeTabs(inactiveRegular.map(\.id))
+            return
         }
-
-        guard let tab = removed else { return }
-
-        let runtimePorts = dependencies.requireRuntimePorts()
-        runtimePorts.webViewLifecycle.unloadTab(tab)
-        runtimePorts.webViewLifecycle.requireRemoveAllWebViews(
-            for: tab,
-            closeActiveFullscreenMedia: true
-        )
-
-        NotificationCenter.default.post(
-            name: .sumiTabLifecycleDidChange,
-            object: tab
-        )
-
-        if wasCurrent {
-            if tab.spaceId == nil {
-                let tabs = dependencies.activeEssentialTabs(runtimePorts.currentProfileId)
-                if let first = tabs.first {
-                    dependencies.setActiveTab(first)
-                }
-            } else if let spaceId = tab.spaceId {
-                let spaceTabs = dependencies.regularTabs(spaceId)
-                if !spaceTabs.isEmpty {
-                    let targetIndex = min(removedIndexInCurrentSpace ?? 0, spaceTabs.count - 1)
-                    dependencies.setActiveTab(spaceTabs[targetIndex])
-                }
-            }
+        if let active = dependencies.currentTab(),
+           active.spaceId == spaceId,
+           tabs.contains(where: { $0.id == active.id }) {
+            removeTabs([active.id])
         }
-
-        dependencies.scheduleStructuralPersistence()
     }
 }
 
@@ -270,9 +226,6 @@ extension TabRemovalOwner.Dependencies {
                     return
                 }
                 tabManager.structuralLookupCoordinator.withTransaction(operation)
-            },
-            runtimePorts: { [weak tabManager] in
-                tabManager?.runtimePorts
             },
             requireRuntimePorts: { [weak tabManager] in
                 guard let tabManager else {
@@ -295,8 +248,13 @@ extension TabRemovalOwner.Dependencies {
             closeAuxiliaryMiniWindowTabIfPresent: { [weak tabManager] tabId in
                 tabManager?.transientWebKitTabLifecycleOwner.closeAuxiliaryMiniWindowTabIfPresent(id: tabId) ?? false
             },
-            removeRegularTab: { [weak tabManager] tabId, spaces, currentSpaceId in
-                tabManager?.regularTabCollectionOwner.remove(tabId, in: spaces, currentSpaceId: currentSpaceId)
+            removeRegularTabs: {
+                [weak tabManager] tabIds, spaces, currentSpaceId in
+                tabManager?.regularTabCollectionOwner.remove(
+                    tabIds,
+                    in: spaces,
+                    currentSpaceId: currentSpaceId
+                ) ?? []
             },
             spaces: { [weak tabManager] in
                 tabManager?.spaceStateOwner.spaces ?? []
@@ -333,9 +291,6 @@ extension TabRemovalOwner.Dependencies {
             },
             tabsBelow: { [weak tabManager] tab in
                 tabManager?.regularTabCollectionOwner.tabsBelow(tab)
-            },
-            setActiveTab: { [weak tabManager] tab in
-                tabManager?.activeSelectionOwner.setActiveTab(tab)
             }
         )
     }

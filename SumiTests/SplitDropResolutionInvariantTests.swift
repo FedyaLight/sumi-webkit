@@ -1,19 +1,22 @@
 import CoreGraphics
+import SumiDomain
 import XCTest
 
 @testable import Sumi
 
 final class SplitDropResolutionInvariantTests: XCTestCase {
     func testResolvedCandidatePublishesCanonicalMutationEvidence() throws {
-        let ids = (0..<3).map { _ in UUID() }
+        let members = makeMembers(3)
         let bounds = CGRect(x: 0, y: 0, width: 900, height: 600)
-        let tree = SplitLayoutFactory.equalSplit(
-            axis: .row,
-            tabIds: Array(ids.prefix(2))
+        let tree = try XCTUnwrap(
+            SplitLayoutFactory.equalSplit(
+                axis: .row,
+                members: Array(members.prefix(2))
+            )
         )
         let previewRect = CGRect(x: 0, y: 300, width: 450, height: 300)
         let target = SplitDropTarget(
-            tabId: ids[0],
+            targetMemberID: members[0].memberID,
             side: .top,
             targetRect: bounds,
             scope: .plane,
@@ -24,26 +27,31 @@ final class SplitDropResolutionInvariantTests: XCTestCase {
         let resolved = try XCTUnwrap(
             SplitDropCandidate(
                 target: target,
-                draggedTabId: ids[2],
+                draggedMember: members[2],
                 previewRect: previewRect
             ).resolved(in: tree, bounds: bounds)
         )
         let resolvedTree = try XCTUnwrap(resolved.resolvedLayoutTree)
 
         XCTAssertEqual(resolved.targetRect, previewRect)
-        XCTAssertEqual(Set(resolvedTree.tabIds), Set(ids))
         XCTAssertEqual(
-            SplitLayoutReconciler.canonicalTreePreservingSizes(resolvedTree),
+            Set(resolvedTree.memberIDs),
+            Set(members.map(\.memberID))
+        )
+        XCTAssertEqual(
+            SplitLayoutReconciler.canonicalTreePreservingWeights(resolvedTree),
             resolvedTree
         )
     }
 
-    func testResolvedCandidateRejectsNoOpRearrangement() {
-        let ids = (0..<2).map { _ in UUID() }
+    func testResolvedCandidateRejectsNoOpRearrangement() throws {
+        let members = makeMembers(2)
         let bounds = CGRect(x: 0, y: 0, width: 800, height: 600)
-        let tree = SplitLayoutFactory.equalSplit(axis: .row, tabIds: ids)
+        let tree = try XCTUnwrap(
+            SplitLayoutFactory.equalSplit(axis: .row, members: members)
+        )
         let target = SplitDropTarget(
-            tabId: ids[0],
+            targetMemberID: members[0].memberID,
             side: .right,
             targetRect: bounds,
             scope: .pane,
@@ -54,25 +62,27 @@ final class SplitDropResolutionInvariantTests: XCTestCase {
         XCTAssertNil(
             SplitDropCandidate(
                 target: target,
-                draggedTabId: ids[1]
+                draggedMember: members[1]
             ).resolved(in: tree, bounds: bounds)
         )
     }
 
-    func testFullGroupCatalogOwnsUniqueCanonicalTopologies() throws {
-        let ids = (0..<SplitGroup.maximumTabs).map { _ in UUID() }
+    func testFullGroupCatalogOwnsUniqueCanonicalTopologies() {
+        let members = makeMembers(SplitGroup.maximumMembers)
         var catalog = SplitFullGroupLayoutCatalog()
 
-        let trees = catalog.trees(for: ids)
-        let cachedForDifferentOrder = catalog.trees(for: Array(ids.reversed()))
+        let trees = catalog.trees(for: members)
+        let cachedForDifferentOrder = catalog.trees(
+            for: Array(members.reversed())
+        )
 
         XCTAssertFalse(trees.isEmpty)
         XCTAssertEqual(trees, cachedForDifferentOrder)
         XCTAssertEqual(Set(trees).count, trees.count)
         for tree in trees {
-            XCTAssertEqual(Set(tree.tabIds), Set(ids))
+            XCTAssertEqual(Set(tree.memberIDs), Set(members.map(\.memberID)))
             XCTAssertEqual(
-                SplitLayoutReconciler.canonicalTreePreservingSizes(tree),
+                SplitLayoutReconciler.canonicalTreePreservingWeights(tree),
                 tree
             )
         }
@@ -107,39 +117,86 @@ final class SplitDropResolutionInvariantTests: XCTestCase {
     }
 
     func testGroupedResolverNeverPublishesUnresolvedMutationTarget() throws {
-        let ids = (0..<5).map { _ in UUID() }
+        let members = makeMembers(5)
         let bounds = CGRect(x: 0, y: 0, width: 1_000, height: 800)
         let group = try XCTUnwrap(
             SplitGroup.make(
-                tabIds: Array(ids.prefix(4)),
-                layoutKind: .grid,
-                activeTabId: ids[0]
+                members: Array(members.prefix(4)),
+                layoutKind: .grid
             )
         )
         let resolver = SplitGroupedDropTargetResolver()
         var catalog = SplitFullGroupLayoutCatalog()
-        let scenarios: [(CGPoint, UUID)] = [
-            (CGPoint(x: 40, y: 740), ids[3]),
-            (CGPoint(x: 460, y: 740), ids[2]),
-            (CGPoint(x: 960, y: 60), ids[0]),
+        let scenarios: [(CGPoint, SplitMember)] = [
+            (CGPoint(x: 40, y: 740), members[3]),
+            (CGPoint(x: 460, y: 740), members[2]),
+            (CGPoint(x: 960, y: 60), members[0]),
         ]
 
-        for (location, draggedTabId) in scenarios {
+        for (location, draggedMember) in scenarios {
             let target = try XCTUnwrap(
                 resolver.target(
                     in: group,
                     at: location,
                     bounds: bounds,
-                    draggedTabId: draggedTabId,
+                    draggedMember: draggedMember,
                     fullGroupLayouts: &catalog
                 )
             )
             let resolvedTree = try XCTUnwrap(target.resolvedLayoutTree)
-            XCTAssertEqual(Set(resolvedTree.tabIds), Set(group.tabIds))
+            XCTAssertEqual(Set(resolvedTree.memberIDs), Set(group.memberIDs))
             XCTAssertFalse(
                 resolvedTree.hasSameStructure(as: group.layoutTree),
-                "Published rearrangement must change the tab topology"
+                "Published rearrangement must change the member topology"
             )
         }
+    }
+
+    func testTypedTargetAndMutationPreserveShortcutPlacementMetadata() throws {
+        let regular = SplitMember.regularTab(UUID())
+        let pinID = UUID()
+        let placement = SplitShortcutReturnPlacement.spacePinned(
+            spaceId: UUID(),
+            folderId: UUID(),
+            index: 7
+        )
+        let shortcut = SplitMember.shortcutPin(
+            pinID,
+            returnPlacement: placement
+        )
+        let incoming = SplitMember.regularTab(UUID())
+        let tree = try XCTUnwrap(
+            SplitLayoutFactory.equalSplit(
+                axis: .row,
+                members: [regular, shortcut]
+            )
+        )
+        let target = SplitDropTarget(
+            targetMemberID: .shortcutPin(pinID),
+            side: .top,
+            targetRect: CGRect(x: 0, y: 0, width: 800, height: 600),
+            planePath: [1],
+            intent: .siblingEdge
+        )
+
+        let resolved = try XCTUnwrap(
+            SplitLayoutDropMutation.resolve(
+                in: tree,
+                draggedMember: incoming,
+                target: target,
+                bounds: target.targetRect
+            )
+        )
+
+        XCTAssertEqual(resolved.target.targetMemberID, .shortcutPin(pinID))
+        XCTAssertEqual(
+            resolved.layoutTree.member(for: .shortcutPin(pinID))?
+                .returnPlacement,
+            placement
+        )
+    }
+
+    private func makeMembers(_ count: Int) -> [SplitMember] {
+        (0..<count).map { _ in .regularTab(UUID()) }
     }
 }

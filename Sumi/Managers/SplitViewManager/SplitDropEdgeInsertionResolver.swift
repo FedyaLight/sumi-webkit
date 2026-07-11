@@ -1,22 +1,22 @@
 import Foundation
+import SumiDomain
 
 enum SplitDropEdgeInsertionResolver {
     static func leafLocalOrthogonalTarget(
         in context: SplitDropResolutionContext
     ) -> SplitDropTarget? {
-        guard context.group.tabIds.count < SplitGroup.maximumTabs,
+        guard context.group.memberIDs.count < SplitGroup.maximumMembers,
               let flatAxis = SplitDropLayoutEligibility.flatAxis(
                   in: context.group.layoutTree,
                   childCount: 2
               ),
               let hit = context.leafHit,
-              SplitDropTargetGeometry.isNearInternalDivider(
+              !SplitDropTargetGeometry.isNearInternalDivider(
                   location: context.location,
                   leafRect: hit.rect,
                   bounds: context.bounds,
                   rootAxis: flatAxis
-              ) == false
-        else {
+              ) else {
             return nil
         }
 
@@ -26,12 +26,11 @@ enum SplitDropEdgeInsertionResolver {
             mode: .create
         ) {
             guard let insertionAxis = side.insertionAxis,
-                  insertionAxis != flatAxis
-            else {
+                  insertionAxis != flatAxis else {
                 continue
             }
             let target = SplitDropTarget(
-                tabId: hit.tabId,
+                targetMemberID: hit.memberID,
                 side: side,
                 targetRect: hit.rect,
                 scope: .plane,
@@ -41,7 +40,7 @@ enum SplitDropEdgeInsertionResolver {
             )
             if let resolved = SplitDropCandidate(
                 target: target,
-                draggedTabId: context.previewTabId
+                draggedMember: context.previewMember
             ).resolved(in: context.group.layoutTree, bounds: context.bounds) {
                 return resolved
             }
@@ -52,18 +51,20 @@ enum SplitDropEdgeInsertionResolver {
     static func rootOrPlaneTarget(
         in context: SplitDropResolutionContext
     ) -> SplitDropTarget? {
-        if context.draggedTabIsInGroup == false,
+        if !context.draggedMemberIsInGroup,
            let rootSide = SplitDropCaptureHitPolicy.side(
                at: context.location,
                in: context.bounds,
                mode: .create
            ) {
+            let targetMemberID = SplitLayoutGeometry.edgeMemberID(
+                in: context.group.layoutTree,
+                for: rootSide,
+                in: context.bounds
+            ) ?? context.group.memberIDs.first
+                ?? context.previewMember.memberID
             let target = SplitDropTarget(
-                tabId: SplitLayoutGeometry.edgeTabId(
-                    in: context.group.layoutTree,
-                    for: rootSide,
-                    in: context.bounds
-                ) ?? context.group.tabIds.first ?? context.previewTabId,
+                targetMemberID: targetMemberID,
                 side: rootSide,
                 targetRect: context.bounds,
                 scope: .group,
@@ -73,7 +74,7 @@ enum SplitDropEdgeInsertionResolver {
             )
             if let resolved = SplitDropCandidate(
                 target: target,
-                draggedTabId: context.previewTabId
+                draggedMember: context.previewMember
             ).resolved(in: context.group.layoutTree, bounds: context.bounds) {
                 return resolved
             }
@@ -90,16 +91,15 @@ enum SplitDropEdgeInsertionResolver {
                 mode: .create
             ) {
                 guard let node = context.group.layoutTree.node(at: plane.path),
-                      let targetTabId = SplitLayoutGeometry.edgeTabId(
+                      let targetMemberID = SplitLayoutGeometry.edgeMemberID(
                           in: node,
                           for: side,
                           in: plane.rect
-                      ) ?? node.tabIds.first
-                else {
+                      ) ?? node.memberIDs.first else {
                     continue
                 }
                 let target = SplitDropTarget(
-                    tabId: targetTabId,
+                    targetMemberID: targetMemberID,
                     side: side,
                     targetRect: plane.rect,
                     scope: plane.path.isEmpty ? .group : .plane,
@@ -109,7 +109,7 @@ enum SplitDropEdgeInsertionResolver {
                 )
                 if let resolved = SplitDropCandidate(
                     target: target,
-                    draggedTabId: context.previewTabId
+                    draggedMember: context.previewMember
                 ).resolved(in: context.group.layoutTree, bounds: context.bounds) {
                     return resolved
                 }
@@ -124,8 +124,7 @@ enum SplitDropEdgeInsertionResolver {
         guard let flatAxis = SplitDropLayoutEligibility.flatAxis(
             in: context.group.layoutTree
         ),
-        let hit = context.leafHit
-        else {
+        let hit = context.leafHit else {
             return nil
         }
 
@@ -135,7 +134,7 @@ enum SplitDropEdgeInsertionResolver {
             mode: .create
         ) where side.insertionAxis == flatAxis {
             let target = SplitDropTarget(
-                tabId: hit.tabId,
+                targetMemberID: hit.memberID,
                 side: side,
                 targetRect: hit.rect,
                 scope: .pane,
@@ -145,7 +144,7 @@ enum SplitDropEdgeInsertionResolver {
             )
             if let resolved = SplitDropCandidate(
                 target: target,
-                draggedTabId: context.previewTabId
+                draggedMember: context.previewMember
             ).resolved(in: context.group.layoutTree, bounds: context.bounds) {
                 return resolved
             }
@@ -156,15 +155,14 @@ enum SplitDropEdgeInsertionResolver {
     static func parentSiblingTarget(
         in context: SplitDropResolutionContext
     ) -> SplitDropTarget? {
-        guard let draggedTabId = context.draggedTabId,
-              context.draggedTabIsInGroup,
+        guard let draggedMember = context.draggedMember,
+              context.draggedMemberIsInGroup,
               let hit = context.leafHit,
-              hit.tabId != draggedTabId,
+              hit.memberID != draggedMember.memberID,
               let parentAxis = SplitDropLayoutEligibility.parentAxis(
                   for: hit.path,
                   in: context.group.layoutTree
-              )
-        else {
+              ) else {
             return nil
         }
 
@@ -174,7 +172,7 @@ enum SplitDropEdgeInsertionResolver {
             in: hit.rect
         ) where side.insertionAxis == parentAxis {
             let target = SplitDropTarget(
-                tabId: hit.tabId,
+                targetMemberID: hit.memberID,
                 side: side,
                 targetRect: hit.rect,
                 scope: parentPath.isEmpty ? .group : .plane,
@@ -184,7 +182,7 @@ enum SplitDropEdgeInsertionResolver {
             )
             if let resolved = SplitDropCandidate(
                 target: target,
-                draggedTabId: draggedTabId
+                draggedMember: draggedMember
             ).resolved(in: context.group.layoutTree, bounds: context.bounds) {
                 return resolved
             }

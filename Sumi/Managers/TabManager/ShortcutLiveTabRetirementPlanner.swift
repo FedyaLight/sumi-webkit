@@ -49,6 +49,44 @@ final class ShortcutLiveTabRetirementPlanner {
         )
     }
 
+    func prepare(
+        pinIds: Set<UUID>,
+        in windowId: UUID
+    ) -> PreparedShortcutLiveTabRetirement? {
+        let existingEntries = registry.entries(in: windowId).filter {
+            pinIds.contains($0.pinId)
+        }
+        guard !existingEntries.isEmpty else {
+            return PreparedShortcutLiveTabRetirement(
+                tabs: [],
+                runtime: nil,
+                result: ShortcutLiveTabRetirementResult()
+            )
+        }
+        guard let runtime = runtimePorts() else { return nil }
+
+        let entries = registry.removeAll(pinIds: pinIds, in: windowId)
+        var result = ShortcutLiveTabRetirementResult(
+            retiredTabIds: entries.map(\.tab.id)
+        )
+        if let windowState = runtime.windowState(for: windowId) {
+            for entry in entries {
+                result.merge(
+                    ShortcutSelectionReconciler.reconcileRetiredInstance(
+                        pinId: entry.pinId,
+                        tabId: entry.tab.id,
+                        in: windowState
+                    )
+                )
+            }
+        }
+        return PreparedShortcutLiveTabRetirement(
+            tabs: entries.map(\.tab),
+            runtime: runtime,
+            result: result
+        )
+    }
+
     func prepareDeletedPins(
         _ pinIds: Set<UUID>
     ) -> PreparedShortcutLiveTabRetirement? {

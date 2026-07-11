@@ -63,10 +63,6 @@ final class WindowWebContentController: NSViewController {
     private lazy var hoverSession = WindowWebContentHoverSession(
         mutationGate: compositorMutationGate
     )
-    private lazy var splitRepairScheduler = WindowWebContentSplitRepairScheduler(
-        browserContext: browserContext,
-        mutationGate: compositorMutationGate
-    )
     private lazy var backgroundTransitions = WindowWebContentBackgroundTransitionSession(
         compositorRuntime: webViewCompositorRuntime
     )
@@ -100,7 +96,7 @@ final class WindowWebContentController: NSViewController {
     )
     private lazy var presentationPlanner = WindowWebContentPresentationPlanner(
         browserContext: browserContext,
-        windowID: windowState.id,
+        windowState: windowState,
         containerView: containerView,
         hostRegistry: hostRegistry,
         protectionRuntime: webViewProtectionRuntime
@@ -190,7 +186,6 @@ final class WindowWebContentController: NSViewController {
         appliedDisplayState = nil
         isDisplayStateApplyScheduled = false
         hoverSession.invalidate()
-        splitRepairScheduler.cancel()
         mediaTouchBarRecoveryScheduler.stop()
         visualHandoffSession.release()
         guard let registration else { return }
@@ -254,8 +249,8 @@ final class WindowWebContentController: NSViewController {
             deliver: hoveredLinkHandler
         )
 
-        if !displayState.visibleTabIds.isEmpty
-            && hasMissingPreparedWebViews(for: displayState.visibleTabIds) {
+        if !displayState.visibleTabIDs.isEmpty
+            && hasMissingPreparedWebViews(for: displayState.visibleTabIDs) {
             browserContext.schedulePrepareVisibleWebViews(for: windowState)
         }
 
@@ -352,20 +347,14 @@ final class WindowWebContentController: NSViewController {
         }
 
         switch decision {
-        case .single(let tab, let repairSplitGroupID):
-            if let repairSplitGroupID {
-                splitRepairScheduler.schedule(
-                    groupID: repairSplitGroupID,
-                    containerRegistration: containerRegistration
-                )
-            }
+        case .single(let tab):
             return panePresenter.presentSinglePane(
                 tab: tab,
                 containerRegistration: containerRegistration
             )
-        case .split(let group, let tabs):
+        case .split(let presentation, let tabs):
             return panePresenter.presentSplitGroup(
-                group,
+                presentation,
                 tabs: tabs,
                 containerRegistration: containerRegistration
             )
@@ -446,7 +435,7 @@ struct TabCompositorWrapper: NSViewControllerRepresentable {
     let webViewCompositorRuntime: WebViewCompositorRuntime
     let webViewProtectionRuntime: WebViewProtectionRuntime
     @Binding var hoveredLink: String?
-    var splitGroup: SplitGroup?
+    var splitPresentation: WindowSplitPresentation?
     var isSplitDropCaptureActive: Bool
     var chromeGeometry: BrowserChromeGeometry
     let windowState: BrowserWindowState
@@ -456,7 +445,7 @@ struct TabCompositorWrapper: NSViewControllerRepresentable {
         browserContext: any WindowWebContentBrowserContext,
         webViewCoordinator: WebViewCoordinator,
         hoveredLink: Binding<String?>,
-        splitGroup: SplitGroup?,
+        splitPresentation: WindowSplitPresentation?,
         isSplitDropCaptureActive: Bool,
         chromeGeometry: BrowserChromeGeometry,
         windowState: BrowserWindowState,
@@ -471,7 +460,7 @@ struct TabCompositorWrapper: NSViewControllerRepresentable {
         self.webViewCompositorRuntime = webViewCoordinator.compositorRuntime
         self.webViewProtectionRuntime = webViewCoordinator.protectionRuntime
         self._hoveredLink = hoveredLink
-        self.splitGroup = splitGroup
+        self.splitPresentation = splitPresentation
         self.isSplitDropCaptureActive = isSplitDropCaptureActive
         self.chromeGeometry = chromeGeometry
         self.windowState = windowState
@@ -547,22 +536,14 @@ struct TabCompositorWrapper: NSViewControllerRepresentable {
         controller.tearDownController()
     }
 
-    private func visibleTabIds(currentId: UUID?) -> Set<UUID> {
-        Set(VisibleTabPreparationPlan.visibleTabIDs(
-            currentTabId: currentId,
-            splitTabIds: splitGroup?.tabIds ?? []
-        ))
-    }
-
     private func makeDisplayState() -> WebsiteDisplayState {
         let currentTab = currentTabForDisplayState(windowState)
         let currentId = currentTab?.id
         return WebsiteDisplayState(
-            splitGroup: splitGroup,
+            splitPresentation: splitPresentation,
             currentId: currentId,
             compositorVersion: windowState.compositorInvalidation.compositorVersion,
             currentTabUnloaded: currentTab?.isUnloaded ?? true,
-            visibleTabIds: visibleTabIds(currentId: currentId),
             isSplitDropCaptureActive: isSplitDropCaptureActive
         )
     }

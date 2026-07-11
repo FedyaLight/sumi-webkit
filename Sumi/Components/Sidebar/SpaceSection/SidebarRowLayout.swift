@@ -3,6 +3,7 @@
 //  Sumi
 //
 
+import SumiDomain
 import SwiftUI
 
 enum SidebarRowLayout {
@@ -71,9 +72,11 @@ enum SidebarSelectionElevation {
         isElevated ? SidebarRowLayout.selectionZIndex : 0
     }
 
-    static func splitGroupContainsCurrentTab(_ group: SplitGroup, currentTabId: UUID?) -> Bool {
-        guard let currentTabId else { return false }
-        return group.contains(currentTabId)
+    static func splitGroupIsSelected(
+        _ group: SplitGroup,
+        selectedGroupID: UUID?
+    ) -> Bool {
+        group.id == selectedGroupID
     }
 
     static func folderContainsSelection(

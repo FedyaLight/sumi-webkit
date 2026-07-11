@@ -1,61 +1,53 @@
 import Foundation
+import SumiDomain
 
-/// Promotes a shortcut to one regular tab and removes its launcher in the same
-/// structural transaction before completing runtime retirement.
+/// Converts a canonical pin through a preflighted promotion plan and an exact
+/// split transition. Transaction mechanics live in a dedicated collaborator.
 @MainActor
 final class ShortcutPinToRegularTabService {
     private let promotion: ShortcutTabPromotionService
-    private let removeShortcutPin: (ShortcutPin) -> Void
-    private let scheduleStructuralPersistence: () -> Void
-    private let structuralLookup: TabStructuralLookupCoordinator
+    private let splitGroups: SplitGroupStore
+    private let canonicalPin: (UUID) -> ShortcutPin?
+    private let transaction: ShortcutPinRegularConversionTransaction
 
     init(
         promotion: ShortcutTabPromotionService,
-        removeShortcutPin: @escaping (ShortcutPin) -> Void,
-        scheduleStructuralPersistence: @escaping () -> Void,
-        structuralLookup: TabStructuralLookupCoordinator
+        splitGroups: SplitGroupStore,
+        canonicalPin: @escaping (UUID) -> ShortcutPin?,
+        transaction: ShortcutPinRegularConversionTransaction
     ) {
         self.promotion = promotion
-        self.removeShortcutPin = removeShortcutPin
-        self.scheduleStructuralPersistence = scheduleStructuralPersistence
-        self.structuralLookup = structuralLookup
-    }
-
-    convenience init(tabManager: TabManager) {
-        self.init(
-            promotion: tabManager.shortcutTabPromotion,
-            removeShortcutPin: { [weak tabManager] pin in
-                tabManager?.shortcutPinStoreOwner.removeFromContainers(pin)
-            },
-            scheduleStructuralPersistence: { [weak tabManager] in
-                tabManager?.structuralPersistence
-                    .scheduleStructuralPersistence()
-            },
-            structuralLookup: tabManager.structuralLookupCoordinator
-        )
+        self.splitGroups = splitGroups
+        self.canonicalPin = canonicalPin
+        self.transaction = transaction
     }
 
     @discardableResult
     func convert(
-        _ pin: ShortcutPin,
+        _ candidatePin: ShortcutPin,
         into targetSpaceId: UUID,
         at targetIndex: Int? = nil,
         preferredWindowId: UUID? = nil
     ) -> Bool {
-        let prepared: PreparedShortcutTabPromotion? = structuralLookup
-            .withTransaction {
-                guard let prepared = promotion.preparePromotion(
-                    pin,
-                    into: targetSpaceId,
-                    at: targetIndex,
-                    preferredWindowId: preferredWindowId
-                ) else { return nil }
-                removeShortcutPin(pin)
-                return prepared
-            }
-        guard let prepared else { return false }
-        _ = promotion.finish(prepared)
-        scheduleStructuralPersistence()
-        return true
+        guard let pin = canonicalPin(candidatePin.id),
+              let plan = promotion.preparePromotion(
+                  pin,
+                  into: targetSpaceId,
+                  at: targetIndex,
+                  preferredWindowId: preferredWindowId,
+                  allowsGroupedPin: true
+              ) else { return false }
+
+        let group = splitGroups.group(containing: .shortcutPin(pin.id))
+        let split = group.flatMap {
+            ShortcutPinRegularSplitTransitionPlanner().transition(
+                group: $0,
+                pinID: pin.id,
+                promotedTabID: plan.tab.id,
+                targetSpaceID: targetSpaceId
+            )
+        }
+        guard group == nil || split != nil else { return false }
+        return transaction.commit(pin: pin, plan: plan, split: split)
     }
 }

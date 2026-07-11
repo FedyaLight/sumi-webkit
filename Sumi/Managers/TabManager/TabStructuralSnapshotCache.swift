@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 /// Read-only view of the live tab structure used to materialize persistence
 /// snapshots without coupling the cache to the tab model owner.

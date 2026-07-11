@@ -1,4 +1,5 @@
 import SwiftData
+import SumiDomain
 
 enum TabStoreRecordMutation {
     static func upsert(

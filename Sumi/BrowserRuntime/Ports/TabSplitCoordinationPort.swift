@@ -7,7 +7,6 @@ protocol TabSplitCoordinationPort {
     func visibleSplitTabIds(for windowId: UUID) -> [UUID]
     func isTabVisibleInSplit(_ tabId: UUID, in windowId: UUID) -> Bool
     func isTabActiveInSplit(_ tabId: UUID, in windowId: UUID) -> Bool
-    func updateActiveSplitSide(for tabId: UUID, in windowId: UUID)
 }
 
 extension TabSplitCoordinationPort {
@@ -46,7 +45,4 @@ struct LiveTabSplitCoordinationPort: TabSplitCoordinationPort {
         runtime.require().splitManager.isTabActiveInSplit(tabId, in: windowId)
     }
 
-    func updateActiveSplitSide(for tabId: UUID, in windowId: UUID) {
-        runtime.require().splitManager.updateActiveSide(for: tabId, in: windowId)
-    }
 }

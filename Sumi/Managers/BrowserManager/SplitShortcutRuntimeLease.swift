@@ -1,8 +1,6 @@
-/// A synchronous, operation-scoped view of the split runtime. Services retain
-/// only a provider; a successful command keeps both managers alive until its
-/// mutation and publication sequence has finished.
+/// Synchronous operation-scoped access to the tab runtime. Services retain
+/// only a provider, so late calls after browser teardown become no-ops.
 @MainActor
 struct SplitShortcutRuntimeLease {
     let tabManager: TabManager
-    let splitManager: SplitViewManager
 }

@@ -21,8 +21,22 @@ extension BrowserTabSelectionOwner {
             liveShortcutTabs: { [weak browserManager] windowId in
                 browserManager?.tabManager.shortcutPresentationOwner.liveShortcutTabs(in: windowId) ?? []
             },
-            updateActiveSplitSide: { [weak browserManager] tabId, windowId in
-                browserManager?.splitManager.updateActiveSide(for: tabId, in: windowId)
+            reconcileSplitSelection: { [weak browserManager] tab, windowState in
+                guard let tabManager = browserManager?.tabManager else {
+                    windowState.splitSelection = nil
+                    return
+                }
+                let memberID = tabManager.splitGroupMembership.memberID(for: tab)
+                guard let group = tabManager.splitGroupStore.group(
+                    containing: memberID
+                ) else {
+                    windowState.splitSelection = nil
+                    return
+                }
+                windowState.splitSelection = WindowSplitSelection(
+                    groupID: group.id,
+                    activeMemberID: memberID
+                )
             },
             syncWindowSpaceContext: { [weak browserManager] windowState in
                 browserManager?.windowStateReconciler.synchronizeSpaceContext(

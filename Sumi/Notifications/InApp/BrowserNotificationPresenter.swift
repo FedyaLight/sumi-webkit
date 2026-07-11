@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 /// Presents transient in-app notifications in the target (or active) window,
 /// honoring the user's browser notification visibility setting.
@@ -100,6 +101,6 @@ final class BrowserNotificationPresenter {
     }
 
     func presentSplitViewLimitNotification(in windowState: BrowserWindowState) {
-        presentNotification(.splitViewLimit(maximumPanes: SplitGroup.maximumTabs), in: windowState)
+        presentNotification(.splitViewLimit(maximumPanes: SplitGroup.maximumMembers), in: windowState)
     }
 }

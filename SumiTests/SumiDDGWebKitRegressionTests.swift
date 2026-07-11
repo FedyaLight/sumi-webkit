@@ -1,5 +1,6 @@
 import AppKit
 @testable import Sumi
+import SumiDomain
 import SumiWebRuntime
 import WebKit
 import XCTest
@@ -326,44 +327,57 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         withExtendedLifetime(container) {}
     }
 
-    func testWebsiteDisplayStateActiveSplitGroupRequiresCurrentTabMembership() throws {
+    func testWebsiteDisplayStateActivatesOnlyTheWindowSelectedSplitPane() throws {
         let current = UUID()
         let secondary = UUID()
         let outside = UUID()
-        let group = try XCTUnwrap(SplitGroup.make(
-            tabIds: [current, secondary],
+        let group = try XCTUnwrap(SumiDomain.SplitGroup.make(
+            members: [.regularTab(current), .regularTab(secondary)],
             layoutKind: .vertical
+        ))
+        let selection = WindowSplitSelection(
+            groupID: group.id,
+            activeMemberID: .regularTab(current)
+        )
+        let presentation = try XCTUnwrap(WindowSplitPresentation(
+            windowID: UUID(),
+            group: group,
+            selection: selection,
+            liveTabIDByMemberID: [
+                .regularTab(current): current,
+                .regularTab(secondary): secondary,
+            ]
         ))
 
         let activeState = WebsiteDisplayState(
-            splitGroup: group,
+            splitPresentation: presentation,
             currentId: current,
             compositorVersion: 1,
             currentTabUnloaded: false,
-            visibleTabIds: [current, secondary],
             isSplitDropCaptureActive: false
         )
-        XCTAssertEqual(activeState.activeSplitGroup?.id, group.id)
+        XCTAssertEqual(activeState.activeSplitPresentation?.groupID, group.id)
+        XCTAssertEqual(activeState.visibleTabIDs, [current, secondary])
 
         let outsideState = WebsiteDisplayState(
-            splitGroup: group,
+            splitPresentation: presentation,
             currentId: outside,
             compositorVersion: 1,
             currentTabUnloaded: false,
-            visibleTabIds: [outside],
             isSplitDropCaptureActive: false
         )
-        XCTAssertNil(outsideState.activeSplitGroup)
+        XCTAssertNil(outsideState.activeSplitPresentation)
+        XCTAssertEqual(outsideState.visibleTabIDs, [outside])
 
         let nilCurrentState = WebsiteDisplayState(
-            splitGroup: group,
+            splitPresentation: presentation,
             currentId: nil,
             compositorVersion: 1,
             currentTabUnloaded: true,
-            visibleTabIds: [],
             isSplitDropCaptureActive: false
         )
-        XCTAssertNil(nilCurrentState.activeSplitGroup)
+        XCTAssertNil(nilCurrentState.activeSplitPresentation)
+        XCTAssertTrue(nilCurrentState.visibleTabIDs.isEmpty)
     }
 
     func testWindowWebContentUsesBrowserContextBoundary() {
@@ -375,7 +389,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             browserContext: browserContext,
             webViewCoordinator: webViewCoordinator,
             hoveredLink: .constant(nil),
-            splitGroup: nil,
+            splitPresentation: nil,
             isSplitDropCaptureActive: false,
             chromeGeometry: BrowserChromeGeometry(),
             windowState: windowState,
@@ -383,6 +397,81 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         )
 
         XCTAssertFalse(wrapper.isSplitDropCaptureActive)
+    }
+
+    func testPresentationPlannerUsesWindowLiveIDsInsteadOfCanonicalShortcutIDs() throws {
+        let regularTab = Tab(
+            url: try XCTUnwrap(URL(string: "https://regular.example")),
+            loadsCachedFaviconOnInit: false
+        )
+        let liveShortcutTab = Tab(
+            url: try XCTUnwrap(URL(string: "https://shortcut.example")),
+            loadsCachedFaviconOnInit: false
+        )
+        let pinID = UUID()
+        let group = try XCTUnwrap(SumiDomain.SplitGroup.make(
+            members: [
+                .regularTab(regularTab.id),
+                .shortcutPin(
+                    pinID,
+                    returnPlacement: .spacePinned(
+                        spaceId: UUID(),
+                        folderId: nil,
+                        index: 0
+                    )
+                ),
+            ],
+            layoutKind: .vertical
+        ))
+        let windowState = BrowserWindowState()
+        let presentation = try XCTUnwrap(WindowSplitPresentation(
+            windowID: windowState.id,
+            group: group,
+            selection: WindowSplitSelection(
+                groupID: group.id,
+                activeMemberID: .shortcutPin(pinID)
+            ),
+            liveTabIDByMemberID: [
+                .regularTab(regularTab.id): regularTab.id,
+                .shortcutPin(pinID): liveShortcutTab.id,
+            ]
+        ))
+        let browserContext = CompositorBrowserContextStub()
+        browserContext.tabsByID = [
+            regularTab.id: regularTab,
+            liveShortcutTab.id: liveShortcutTab,
+        ]
+        let coordinator = WebViewCoordinator()
+        let container = WindowWebContentSplitHostLayoutView(
+            browserContext: browserContext,
+            windowId: windowState.id,
+            chromeGeometry: BrowserChromeGeometry()
+        )
+        let planner = WindowWebContentPresentationPlanner(
+            browserContext: browserContext,
+            windowState: windowState,
+            containerView: container,
+            hostRegistry: WindowWebContentHostRegistry(),
+            protectionRuntime: coordinator.protectionRuntime
+        )
+        let displayState = WebsiteDisplayState(
+            splitPresentation: presentation,
+            currentId: liveShortcutTab.id,
+            compositorVersion: 0,
+            currentTabUnloaded: false,
+            isSplitDropCaptureActive: false
+        )
+
+        guard case .split(let resolvedPresentation, let tabs) = planner
+            .presentationDecision(
+                for: displayState,
+                currentTab: liveShortcutTab
+            ) else {
+            return XCTFail("Expected a split presentation")
+        }
+        XCTAssertEqual(resolvedPresentation, presentation)
+        XCTAssertEqual(tabs.map(\.id), [regularTab.id, liveShortcutTab.id])
+        XCTAssertFalse(tabs.map(\.id).contains(pinID))
     }
 
     func testWindowWebContentHoverSessionDetachesOldTabAndRejectsStaleRegistration() async throws {
@@ -436,47 +525,6 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         session.invalidate()
         XCTAssertNil(secondTab.onLinkHover)
         withExtendedLifetime((firstContainer, replacementContainer)) {}
-    }
-
-    func testWindowWebContentSplitRepairCoalescesAndRejectsInvalidatedWork() async {
-        let webViewCoordinator = WebViewCoordinator()
-        let windowID = UUID()
-        let container = NSView()
-        let registration = webViewCoordinator.compositorRuntime.registerContainer(
-            container,
-            for: windowID
-        )
-        let mutationGate = WindowWebContentCompositorMutationGate(
-            isCurrentRegistration: webViewCoordinator.compositorRuntime.owns
-        )
-        mutationGate.activate(registration)
-        let browserContext = CompositorBrowserContextStub()
-        let scheduler = WindowWebContentSplitRepairScheduler(
-            browserContext: browserContext,
-            mutationGate: mutationGate
-        )
-        let activeGroupID = UUID()
-
-        scheduler.schedule(
-            groupID: activeGroupID,
-            containerRegistration: registration
-        )
-        scheduler.schedule(
-            groupID: activeGroupID,
-            containerRegistration: registration
-        )
-        await drainMainQueue()
-        XCTAssertEqual(browserContext.removedSplitGroupIDs, [activeGroupID])
-
-        let invalidatedGroupID = UUID()
-        scheduler.schedule(
-            groupID: invalidatedGroupID,
-            containerRegistration: registration
-        )
-        _ = mutationGate.invalidate()
-        await drainMainQueue()
-        XCTAssertEqual(browserContext.removedSplitGroupIDs, [activeGroupID])
-        withExtendedLifetime(container) {}
     }
 
     func testCloneWebViewPrimaryWindowSelectionUsesStableRegistryFallback() {
@@ -818,18 +866,20 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
     @MainActor
     private final class CompositorBrowserContextStub: WindowWebContentBrowserContext {
         let sidebarDragState = SidebarDragState()
-        var removedSplitGroupIDs: [UUID] = []
+        var tabsByID: [UUID: Tab] = [:]
 
         func currentTab(for _: BrowserWindowState) -> Tab? {
             nil
         }
 
-        func tab(for _: UUID) -> Tab? {
-            nil
+        func tab(for tabID: UUID) -> Tab? {
+            tabsByID[tabID]
         }
 
-        func splitGroup(for _: UUID) -> SplitGroup? {
-            nil
+        func splitResolution(
+            for _: BrowserWindowState
+        ) -> WindowSplitResolution {
+            .inactive
         }
 
         func schedulePrepareVisibleWebViews(for _: BrowserWindowState) { /* no-op */ }
@@ -839,14 +889,10 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             for _: BrowserWindowState
         ) { /* no-op */ }
 
-        func removeSplitGroup(id: UUID) {
-            removedSplitGroupIDs.append(id)
-        }
-
-        func updateSplitLayoutSizes(
-            groupId _: UUID,
+        func updateSplitLayoutWeights(
+            expectedGroup _: SumiDomain.SplitGroup,
             path _: [Int],
-            sizes _: [Double],
+            weights _: [Double],
             for _: UUID
         ) { /* no-op */ }
 

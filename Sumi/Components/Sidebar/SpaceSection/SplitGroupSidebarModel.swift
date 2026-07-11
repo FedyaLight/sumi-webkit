@@ -3,41 +3,66 @@
 //  Sumi
 //
 
+import SumiDomain
 import SwiftUI
 
-import SwiftUI
+/// Window presentation for one durable split member.
+///
+/// `id` is the canonical member identity. In particular, a shortcut segment
+/// keeps its pin identity even when this window currently has a live tab for
+/// it. That makes SwiftUI diffing, drag payloads, and delayed actions immune to
+/// live-tab replacement.
+struct SplitGroupSidebarItem: Identifiable {
+    let member: SplitMember
+    let tab: Tab?
+    let pin: ShortcutPin?
 
-enum SplitGroupSidebarItem: Identifiable {
-    case tab(Tab)
-    case pin(ShortcutPin)
+    var id: SplitMemberID { member.memberID }
 
-    var id: UUID {
-        switch self {
-        case .tab(let tab):
-            return tab.id
-        case .pin(let pin):
-            return pin.id
+    var persistentID: UUID {
+        switch id {
+        case .regularTab(let tabID):
+            return tabID
+        case .shortcutPin(let pinID):
+            return pinID
+        }
+    }
+
+    var stableIDDescription: String {
+        switch id {
+        case .regularTab(let tabID):
+            return "regular-tab-\(tabID.uuidString)"
+        case .shortcutPin(let pinID):
+            return "shortcut-pin-\(pinID.uuidString)"
         }
     }
 
     @MainActor
     var title: String {
-        switch self {
-        case .tab(let tab):
-            return tab.name
-        case .pin(let pin):
-            return pin.preferredDisplayTitle
+        tab?.name ?? pin?.preferredDisplayTitle ?? "Split member"
+    }
+
+    @MainActor
+    static func regular(_ member: SplitMember, tab: Tab) -> Self? {
+        guard case .regularTab(let tabID) = member.memberID,
+              tab.id == tabID else {
+            return nil
         }
+        return Self(member: member, tab: tab, pin: nil)
     }
 
-    var tab: Tab? {
-        if case .tab(let tab) = self { return tab }
-        return nil
-    }
-
-    var pin: ShortcutPin? {
-        if case .pin(let pin) = self { return pin }
-        return nil
+    @MainActor
+    static func shortcut(
+        _ member: SplitMember,
+        pin: ShortcutPin,
+        liveTab: Tab?
+    ) -> Self? {
+        guard case .shortcutPin(let pinID) = member.memberID,
+              pin.id == pinID,
+              liveTab?.shortcutPinId == pinID || liveTab == nil else {
+            return nil
+        }
+        return Self(member: member, tab: liveTab, pin: pin)
     }
 }
 
@@ -75,66 +100,60 @@ enum SplitGroupSidebarSegmentAction {
 
 enum SplitGroupSidebarModel {
     @MainActor
-    static func items(for group: SplitGroup, tabManager: TabManager) -> [SplitGroupSidebarItem] {
-        group.tabIds.compactMap { id in
-            if let tab = tabManager.tabCollectionMembershipOwner.tab(for: id) {
-                return .tab(tab)
+    static func items(
+        for group: SplitGroup,
+        tabManager: TabManager,
+        windowID: UUID? = nil
+    ) -> [SplitGroupSidebarItem] {
+        group.members.compactMap { member in
+            switch member.memberID {
+            case .regularTab(let tabID):
+                guard let tab = tabManager.tabCollectionMembershipOwner
+                    .tab(for: tabID) else {
+                    return nil
+                }
+                return .regular(member, tab: tab)
+
+            case .shortcutPin(let pinID):
+                guard let pin = tabManager.shortcutPinCollectionStateOwner
+                    .shortcutPin(by: pinID) else {
+                    return nil
+                }
+                let liveTab = windowID.flatMap { windowID in
+                    tabManager.shortcutPresentationOwner.shortcutLiveTab(
+                        for: pinID,
+                        in: windowID
+                    )
+                }
+                return .shortcut(member, pin: pin, liveTab: liveTab)
             }
-            if let pinId = group.member(for: id)?.pinId,
-               let pin = tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: pinId) {
-                return .pin(pin)
-            }
-            if let pin = tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: id) {
-                return .pin(pin)
-            }
-            return nil
         }
     }
 
-    @MainActor
-    static func member(
-        for item: SplitGroupSidebarItem,
-        in group: SplitGroup
-    ) -> SplitGroupMember? {
-        if let pin = item.pin {
-            return group.member(forPinId: pin.id) ?? group.member(for: pin.id)
-        }
-        if let tab = item.tab {
-            if let pinId = tab.shortcutPinId {
-                return group.member(forPinId: pinId) ?? group.member(for: tab.id)
-            }
-            return group.member(for: tab.id)
-        }
-        return nil
-    }
-
-    @MainActor
     static func segmentAction(
         for item: SplitGroupSidebarItem,
-        in group: SplitGroup
+        in _: SplitGroup
     ) -> SplitGroupSidebarSegmentAction? {
-        if member(for: item, in: group)?.isShortcutBacked == true {
+        switch item.id {
+        case .shortcutPin:
             return .restore
+        case .regularTab:
+            return item.tab == nil ? nil : .close
         }
-        return item.tab == nil ? nil : .close
     }
 
-    @MainActor
     static func shortcutPin(
         for item: SplitGroupSidebarItem,
-        member: SplitGroupMember?,
-        tabManager: TabManager
+        member _: SplitMember?,
+        tabManager _: TabManager
     ) -> ShortcutPin? {
-        if let pin = item.pin {
-            return pin
-        }
-        if let pinId = item.tab?.shortcutPinId ?? member?.pinId {
-            return tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: pinId)
-        }
-        return nil
+        item.pin
     }
 
-    static func sourceZone(for pin: ShortcutPin, fallbackSpaceId: UUID) -> DropZoneID {
+    static func sourceZone(
+        for pin: ShortcutPin,
+        fallbackSpaceId: UUID
+    ) -> DropZoneID {
         switch pin.role {
         case .essential:
             return .essentials

@@ -57,7 +57,6 @@ enum TestRuntimePorts {
         visibleSplitTabIds: @escaping (UUID) -> [UUID] = { _ in [] },
         isTabVisibleInSplit: @escaping (UUID, UUID) -> Bool = { _, _ in false },
         isTabActiveInSplit: @escaping (UUID, UUID) -> Bool = { _, _ in false },
-        updateActiveSplitSide: @escaping (UUID, UUID) -> Void = { _, _ in /* No-op. */ },
         notifyTabClosedIfLoaded: @escaping (Tab) -> Void = { _ in /* No-op. */ },
         notifyTabActivatedIfLoaded: @escaping (Tab, Tab?) -> Void = { _, _ in /* No-op. */ },
         captureClosedTab: @escaping (Tab, UUID?) -> Void = { _, _ in /* No-op. */ },
@@ -92,8 +91,7 @@ enum TestRuntimePorts {
                 handleTabClosures: handleTabClosures,
                 visibleSplitTabIds: visibleSplitTabIds,
                 isTabVisibleInSplit: isTabVisibleInSplit,
-                isTabActiveInSplit: isTabActiveInSplit,
-                updateActiveSplitSide: updateActiveSplitSide
+                isTabActiveInSplit: isTabActiveInSplit
             ),
             extensionLifecycle: ClosureTabExtensionLifecyclePort(
                 notifyTabClosedIfLoaded: notifyTabClosedIfLoaded,
@@ -217,22 +215,19 @@ private final class ClosureTabSplitCoordinationPort: TabSplitCoordinationPort {
     private let visibleSplitTabIdsProvider: (UUID) -> [UUID]
     private let isTabVisibleInSplitProvider: (UUID, UUID) -> Bool
     private let isTabActiveInSplitProvider: (UUID, UUID) -> Bool
-    private let updateActiveSplitSideHandler: (UUID, UUID) -> Void
 
     init(
         handleTabClosure: @escaping (UUID) -> Void,
         handleTabClosures: ((Set<UUID>) -> Void)?,
         visibleSplitTabIds: @escaping (UUID) -> [UUID],
         isTabVisibleInSplit: @escaping (UUID, UUID) -> Bool,
-        isTabActiveInSplit: @escaping (UUID, UUID) -> Bool,
-        updateActiveSplitSide: @escaping (UUID, UUID) -> Void
+        isTabActiveInSplit: @escaping (UUID, UUID) -> Bool
     ) {
         self.handleTabClosureHandler = handleTabClosure
         self.handleTabClosuresHandler = handleTabClosures
         self.visibleSplitTabIdsProvider = visibleSplitTabIds
         self.isTabVisibleInSplitProvider = isTabVisibleInSplit
         self.isTabActiveInSplitProvider = isTabActiveInSplit
-        self.updateActiveSplitSideHandler = updateActiveSplitSide
     }
 
     func handleTabClosure(_ tabId: UUID) {
@@ -257,10 +252,6 @@ private final class ClosureTabSplitCoordinationPort: TabSplitCoordinationPort {
 
     func isTabActiveInSplit(_ tabId: UUID, in windowId: UUID) -> Bool {
         isTabActiveInSplitProvider(tabId, windowId)
-    }
-
-    func updateActiveSplitSide(for tabId: UUID, in windowId: UUID) {
-        updateActiveSplitSideHandler(tabId, windowId)
     }
 }
 

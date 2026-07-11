@@ -1,84 +1,42 @@
 import Foundation
 
-/// Acquires every fallible conversion dependency before a shortcut pin is
-/// inserted or a regular tab leaves its structural container.
+/// Joins an exact durable snapshot with an independently resolved window plan.
 @MainActor
 final class RegularTabShortcutConversionPlanner {
-    private let windows: ShortcutTabWindowQuery
-    private let structureTransition: RegularTabShortcutStructureTransition
-    private let runtimePorts: () -> RuntimePortRegistry?
+    private let structure: RegularTabShortcutStructureTransition
+    private let windows: RegularTabShortcutWindowPlanResolver
 
     init(
         windows: ShortcutTabWindowQuery,
         structureTransition: RegularTabShortcutStructureTransition,
         runtimePorts: @escaping () -> RuntimePortRegistry?
     ) {
-        self.windows = windows
-        self.structureTransition = structureTransition
-        self.runtimePorts = runtimePorts
+        structure = structureTransition
+        self.windows = RegularTabShortcutWindowPlanResolver(
+            windows: windows,
+            runtimePorts: runtimePorts
+        )
     }
 
     func prepareConversion(
         _ tab: Tab,
         preferredWindowId: UUID?
     ) -> TabShortcutConversionPreparation {
-        guard let structure = structureTransition.prepare(tab) else {
+        guard let durablePlan = structure.prepare(tab) else {
             return .rejected
         }
-        guard let runtime = runtimePorts() else {
-            return tab.hasBrowserRuntime
-                || structure.sourceSplitGroupSnapshot != nil
-                ? .rejected
-                : .detached(DetachedTabShortcutConversionPlan(
-                    sourceTabId: tab.id,
-                    runtime: nil,
-                    structure: structure
-                ))
-        }
-        let primaryWindowId = runtime.webViewLifecycle
-            .primaryTrackedWindowId(for: tab.id)
-        let selectedWindowIds = windows.windowIdsSelecting(
-            tabId: tab.id,
-            preferredWindowId: preferredWindowId,
-            using: runtime
+        return windows.resolve(
+            tab: tab,
+            structure: durablePlan,
+            preferredWindowID: preferredWindowId
         )
-        let displayingWindowIds = windows.windowIdsDisplaying(
-            tabId: tab.id,
-            preferredWindowId: preferredWindowId,
-            using: runtime
-        )
-        guard let firstWindowId = selectedWindowIds.first
-                ?? displayingWindowIds.first else {
-            return structure.sourceSplitGroupSnapshot == nil
-                ? .detached(DetachedTabShortcutConversionPlan(
-                    sourceTabId: tab.id,
-                    runtime: runtime,
-                    structure: structure
-                ))
-                : .rejected
-        }
-        guard primaryWindowId == nil || primaryWindowId == firstWindowId else {
-            return .rejected
-        }
-        guard let firstWindow = runtime.windowState(for: firstWindowId) else {
-            return .rejected
-        }
-        guard structure.acceptsRuntimeExposure(
-            of: tab.id,
-            in: displayingWindowIds,
-            using: runtime
-        ) else {
-            return .rejected
-        }
-        return .displayed(DisplayedTabShortcutConversionPlan(
-            sourceTabId: tab.id,
-            runtime: runtime,
-            structure: structure,
-            selectedWindowIds: selectedWindowIds,
-            displayingWindowIds: displayingWindowIds,
-            primaryWindowId: primaryWindowId,
-            firstWindowId: firstWindowId,
-            firstWindow: firstWindow
-        ))
+    }
+
+    func isStructureCurrent(
+        _ preparation: TabShortcutConversionPreparation,
+        for tab: Tab
+    ) -> Bool {
+        guard let durablePlan = preparation.structurePlan else { return false }
+        return structure.isCurrent(durablePlan, for: tab)
     }
 }

@@ -8,7 +8,7 @@ final class SpaceActivationService {
     typealias ProfileIds = (current: UUID?, default: UUID?)
 
     private let state: TabStateStore
-    private let projection: SpaceLauncherProjectionOwner
+    private let projection: SpaceLauncherProjectionService
     private let persistence: TabStructuralPersistenceService
     private let profileIds: @MainActor () -> ProfileIds
     private let assignSpaceProfile: @MainActor (
@@ -19,7 +19,7 @@ final class SpaceActivationService {
 
     init(
         state: TabStateStore,
-        projection: SpaceLauncherProjectionOwner,
+        projection: SpaceLauncherProjectionService,
         persistence: TabStructuralPersistenceService,
         profileIds: @escaping @MainActor () -> ProfileIds,
         assignSpaceProfile: @escaping @MainActor (

@@ -1,5 +1,6 @@
 import AppKit
 import QuartzCore
+import SumiDomain
 
 @MainActor
 final class SplitPaneControlsView: NSVisualEffectView {
@@ -296,10 +297,16 @@ private final class SplitPaneDragButton: SplitPaneToolbarButton, NSDraggingSourc
     private func startDrag(with event: NSEvent, sessionEvent: NSEvent) {
         guard let tab, let windowState, let sidebarDragState else { return }
         let spaceId = tab.spaceId ?? windowState.currentSpaceId
-        guard let spaceId else { return }
+        guard let spaceId,
+              let groupID = windowState.splitSelection?.groupID else {
+            return
+        }
 
-        let item = SumiDragItem(
-            tabId: tab.id,
+        let memberID = tab.shortcutPinId.map(SplitMemberID.shortcutPin)
+            ?? .regularTab(tab.id)
+        let item = SumiDragItem.splitMember(
+            memberID,
+            groupID: groupID,
             title: tab.name,
             urlString: tab.url.absoluteString
         )
@@ -308,7 +315,7 @@ private final class SplitPaneDragButton: SplitPaneToolbarButton, NSDraggingSourc
             spaceId: spaceId,
             profileId: windowState.currentProfileId,
             sourceContainer: .spaceRegular(spaceId),
-            sourceItemId: tab.id,
+            sourceItemId: item.stableID,
             sourceItemKind: .tab
         )
 

@@ -1,7 +1,8 @@
 import Foundation
+import SumiDomain
 
-/// Materializes shortcut split leaves and applies window focus. All selection
-/// mutations are non-persisting; public operations own one final session write.
+/// Materializes one durable split group for one window and selects its stable
+/// member. Focus never mutates the shared split structure.
 @MainActor
 final class SplitShortcutFocusService {
     private let runtimeLease: () -> SplitShortcutRuntimeLease?
@@ -22,19 +23,27 @@ final class SplitShortcutFocusService {
     }
 
     func focusSplitGroup(
-        _ group: SplitGroup,
+        _ group: SumiDomain.SplitGroup,
+        preferredMemberID: SplitMemberID? = nil,
         in windowState: BrowserWindowState
     ) {
         guard let runtime = runtimeLease() else { return }
         guard canFocus(group, in: windowState) else {
-            queueFocus(group, in: windowState)
+            queueFocus(
+                group,
+                preferredMemberID: preferredMemberID,
+                in: windowState
+            )
             return
         }
         guard applyFocusWithinRuntimeLease(
             group,
+            preferredMemberID: preferredMemberID,
             in: windowState,
             runtime: runtime
-        ) else { return }
+        ) else {
+            return
+        }
         persistWindowSession(windowState)
     }
 
@@ -44,135 +53,104 @@ final class SplitShortcutFocusService {
     ) {
         guard let runtime = runtimeLease(),
               let request = windowState.pendingSplitGroupFocusRequest,
-              request.targetSpaceId == spaceId else { return }
+              request.targetSpaceID == spaceId else {
+            return
+        }
 
         windowState.pendingSplitGroupFocusRequest = nil
-        guard let group = runtime.tabManager.splitGroupCollectionStateOwner
-            .group(with: request.groupId),
-              applyFocusWithinRuntimeLease(
-                group,
-                in: windowState,
-                runtime: runtime
-              ) else {
+        guard let group = runtime.tabManager.splitGroupStore.group(
+            id: request.groupID
+        ), applyFocusWithinRuntimeLease(
+            group,
+            preferredMemberID: request.preferredMemberID,
+            in: windowState,
+            runtime: runtime
+        ) else {
             refreshCompositor(windowState)
             return
         }
         persistWindowSession(windowState)
     }
 
-    /// Internal transaction helper for a caller that already owns the one
-    /// runtime lease for its complete mutation sequence.
+    /// Used by a larger operation that already holds the runtime lease and
+    /// owns the final session write.
     @discardableResult
     func applyFocusWithinRuntimeLease(
-        _ group: SplitGroup,
+        _ group: SumiDomain.SplitGroup,
+        preferredMemberID: SplitMemberID? = nil,
         in windowState: BrowserWindowState,
         runtime: SplitShortcutRuntimeLease
     ) -> Bool {
         guard canFocus(group, in: windowState) else { return false }
         let tabManager = runtime.tabManager
-        let resolvedGroup = materializeShortcutMembers(
+        let activeMemberID = resolvedActiveMemberID(
+            preferredMemberID,
             in: group,
-            windowState: windowState,
-            tabManager: tabManager
+            windowState: windowState
         )
-        let targetTabId = resolvedGroup.activeTabId
-            .flatMap { resolvedGroup.contains($0) ? $0 : nil }
-            ?? resolvedGroup.tabIds.first
-        guard let targetTab = targetTabId.flatMap(
-            tabManager.tabCollectionMembershipOwner.tab(for:)
-        ) else {
-            refreshCompositor(windowState)
+        guard let activeMemberID else { return false }
+        let selection = WindowSplitSelection(
+            groupID: group.id,
+            activeMemberID: activeMemberID
+        )
+        guard let materialized = WindowSplitMaterializationService()
+            .materialize(
+                group,
+                selection: selection,
+                in: windowState,
+                tabManager: tabManager
+            ) else {
             return false
         }
 
-        if tabManager.splitGroupCollectionStateOwner
-            .group(with: resolvedGroup.id) == nil {
-            tabManager.splitGroupStructureOwner.upsertSplitGroup(resolvedGroup)
-        }
-        selectTabWithoutPersistence(targetTab, windowState)
-        runtime.splitManager.refreshPublishedState(for: windowState.id)
+        selectTabWithoutPersistence(materialized.activeTab, windowState)
+        windowState.splitSelection = materialized.presentation.selection
         refreshCompositor(windowState)
         return true
     }
 
-    /// Internal counterpart used by a larger operation-scoped lease.
-    func refreshPresentationWithinRuntimeLease(
-        in windowState: BrowserWindowState,
-        runtime: SplitShortcutRuntimeLease
-    ) {
-        runtime.splitManager.refreshPublishedState(for: windowState.id)
+    func refreshPresentation(in windowState: BrowserWindowState) {
         refreshCompositor(windowState)
     }
 
     private func canFocus(
-        _ group: SplitGroup,
+        _ group: SumiDomain.SplitGroup,
         in windowState: BrowserWindowState
     ) -> Bool {
-        group.hostSpaceId == nil
-            || group.hostSpaceId == windowState.currentSpaceId
+        group.container.spaceId == nil
+            || group.container.spaceId == windowState.currentSpaceId
     }
 
     private func queueFocus(
-        _ group: SplitGroup,
+        _ group: SumiDomain.SplitGroup,
+        preferredMemberID: SplitMemberID?,
         in windowState: BrowserWindowState
     ) {
-        guard let hostSpaceId = group.hostSpaceId else { return }
+        guard let hostSpaceID = group.container.spaceId else { return }
         windowState.pendingSplitGroupFocusRequest = SplitGroupFocusRequest(
-            groupId: group.id,
-            targetSpaceId: hostSpaceId
+            groupID: group.id,
+            preferredMemberID: preferredMemberID,
+            targetSpaceID: hostSpaceID
         )
     }
 
-    private func materializeShortcutMembers(
-        in group: SplitGroup,
-        windowState: BrowserWindowState,
-        tabManager: TabManager
-    ) -> SplitGroup {
-        var updatedGroup = group
-        var didChange = false
-
-        for leafId in group.tabIds
-            where tabManager.tabCollectionMembershipOwner.tab(for: leafId) == nil {
-            guard let member = updatedGroup.member(for: leafId),
-                  let pinId = member.pinId,
-                  let pin = tabManager.shortcutPinCollectionStateOwner
-                    .shortcutPin(by: pinId) else { continue }
-            let liveTab = tabManager.shortcutTabMaterializer.materialize(
-                pin,
-                in: windowState.id,
-                currentSpaceId: group.hostSpaceId
-                    ?? pin.spaceId
-                    ?? windowState.currentSpaceId
-            )
-            updatedGroup = updatedGroup.replacingMemberTab(
-                leafId,
-                with: liveTab.id
-            )
-            didChange = true
+    private func resolvedActiveMemberID(
+        _ preferredMemberID: SplitMemberID?,
+        in group: SumiDomain.SplitGroup,
+        windowState: BrowserWindowState
+    ) -> SplitMemberID? {
+        if let preferredMemberID, group.contains(preferredMemberID) {
+            return preferredMemberID
         }
-        for member in updatedGroup.members where member.isShortcutBacked {
-            guard updatedGroup.tabIds.contains(member.tabId),
-                  tabManager.tabCollectionMembershipOwner
-                    .tab(for: member.tabId) == nil,
-                  let pinId = member.pinId,
-                  let pin = tabManager.shortcutPinCollectionStateOwner
-                    .shortcutPin(by: pinId) else { continue }
-            let liveTab = tabManager.shortcutTabMaterializer.materialize(
-                pin,
-                in: windowState.id,
-                currentSpaceId: group.hostSpaceId
-                    ?? pin.spaceId
-                    ?? windowState.currentSpaceId
-            )
-            updatedGroup = updatedGroup.replacingMemberTab(
-                member.tabId,
-                with: liveTab.id
-            )
-            didChange = true
+        if let pinID = windowState.currentShortcutPinId {
+            let memberID = SplitMemberID.shortcutPin(pinID)
+            if group.contains(memberID) { return memberID }
         }
-        if didChange {
-            tabManager.splitGroupStructureOwner.upsertSplitGroup(updatedGroup)
+        if let tabID = windowState.currentTabId {
+            let memberID = SplitMemberID.regularTab(tabID)
+            if group.contains(memberID) { return memberID }
         }
-        return updatedGroup
+        return group.memberIDs.first
     }
+
 }

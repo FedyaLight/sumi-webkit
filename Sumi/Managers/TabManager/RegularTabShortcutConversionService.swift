@@ -10,62 +10,62 @@ struct TabShortcutPinDestination {
     let opensFolder: Bool
 }
 
-/// Atomically turns a regular tab into a shortcut. Planning and authorization
-/// are read-only; insertion and the authorized commit share one batch.
+/// Narrow command surface for regular-tab conversion. Preparation, replacement
+/// validation and transactional commit have independent concrete services.
 @MainActor
 final class RegularTabShortcutConversionService {
-    private let scheduleStructuralPersistence: () -> Void
-    private let makeShortcutPin: (
-        Tab,
-        ShortcutPinRole,
-        UUID?,
-        UUID?,
-        UUID?,
-        Int
-    ) -> ShortcutPin
-    private let insertShortcutPin: (ShortcutPin, Int, Bool) -> ShortcutPin?
-    private let planner: RegularTabShortcutConversionPlanner
-    private let authorizer: TabShortcutConversionAuthorizer
-    private let displayedCommitter: DisplayedTabShortcutConversionCommitter
-    private let detachedConverter: DetachedTabShortcutConverter
-    private let structuralLookup: TabStructuralLookupCoordinator
+    private let candidates: RegularTabShortcutCandidatePreparer
+    private let sidebarCandidates: RegularTabShortcutSidebarCandidatePreparer
+    private let replacementValidator: ShortcutSidebarDropReplacementValidator
+    private let transaction: RegularTabShortcutCommitTransaction
 
     init(
-        scheduleStructuralPersistence: @escaping () -> Void,
-        makeShortcutPin: @escaping (
-            Tab,
-            ShortcutPinRole,
-            UUID?,
-            UUID?,
-            UUID?,
-            Int
-        ) -> ShortcutPin,
-        insertShortcutPin: @escaping (
-            ShortcutPin,
-            Int,
-            Bool
-        ) -> ShortcutPin?,
-        planner: RegularTabShortcutConversionPlanner,
-        authorizer: TabShortcutConversionAuthorizer,
-        displayedCommitter: DisplayedTabShortcutConversionCommitter,
-        detachedConverter: DetachedTabShortcutConverter,
-        structuralLookup: TabStructuralLookupCoordinator
+        candidates: RegularTabShortcutCandidatePreparer,
+        sidebarCandidates: RegularTabShortcutSidebarCandidatePreparer,
+        replacementValidator: ShortcutSidebarDropReplacementValidator,
+        transaction: RegularTabShortcutCommitTransaction
     ) {
-        self.scheduleStructuralPersistence = scheduleStructuralPersistence
-        self.makeShortcutPin = makeShortcutPin
-        self.insertShortcutPin = insertShortcutPin
-        self.planner = planner
-        self.authorizer = authorizer
-        self.displayedCommitter = displayedCommitter
-        self.detachedConverter = detachedConverter
-        self.structuralLookup = structuralLookup
+        self.candidates = candidates
+        self.sidebarCandidates = sidebarCandidates
+        self.replacementValidator = replacementValidator
+        self.transaction = transaction
     }
 
     func prepare(
         _ tab: Tab,
         preferredWindowId: UUID? = nil
     ) -> TabShortcutConversionPreparation {
-        planner.prepareConversion(tab, preferredWindowId: preferredWindowId)
+        candidates.prepare(tab, preferredWindowID: preferredWindowId)
+    }
+
+    func prepareShortcutSidebarDrop(
+        _ tab: Tab,
+        into targetGroup: SumiDomain.SplitGroup,
+        preferredWindowId: UUID
+    ) -> PreparedRegularTabShortcutSidebarDrop? {
+        sidebarCandidates.prepare(
+            tab: tab,
+            targetGroup: targetGroup,
+            preferredWindowID: preferredWindowId
+        )
+    }
+
+    @discardableResult
+    func commitShortcutSidebarDrop(
+        _ prepared: PreparedRegularTabShortcutSidebarDrop,
+        replacingSplitGroupsWith replacement: [SumiDomain.SplitGroup],
+        applyingSplitSideEffect: @escaping @MainActor () -> Bool = { true }
+    ) -> ShortcutPin? {
+        guard replacementValidator.accepts(replacement, for: prepared),
+              let authorization = candidates.authorization(
+                  for: prepared.conversion
+              ) else { return nil }
+        return transaction.commit(
+            prepared,
+            replacement: replacement,
+            authorization: authorization,
+            applyingSplitSideEffect: applyingSplitSideEffect
+        )
     }
 
     @discardableResult
@@ -76,10 +76,7 @@ final class RegularTabShortcutConversionService {
     ) -> ShortcutPin? {
         commit(
             tab,
-            preparation: prepare(
-                tab,
-                preferredWindowId: preferredWindowId
-            ),
+            preparation: prepare(tab, preferredWindowId: preferredWindowId),
             destination: destination
         )
     }
@@ -90,35 +87,13 @@ final class RegularTabShortcutConversionService {
         preparation: TabShortcutConversionPreparation,
         destination: TabShortcutPinDestination
     ) -> ShortcutPin? {
-        let pin = makeShortcutPin(
-            tab,
-            destination.role,
-            destination.profileId,
-            destination.spaceId,
-            destination.folderId,
-            destination.index
-        )
-        guard let authorization = authorizer.authorize(
-            preparation,
+        guard let candidate = candidates.candidate(
             for: tab,
-            candidatePin: pin
-        ) else { return nil }
-        let insertedPin: ShortcutPin? = structuralLookup.withTransaction {
-            guard let inserted = insertShortcutPin(
-                pin,
-                destination.index,
-                destination.opensFolder
-            ) else { return nil }
-            switch authorization {
-            case .displayed(let authorized):
-                displayedCommitter.commit(to: inserted, using: authorized)
-            case .detached(let authorized):
-                detachedConverter.commit(using: authorized)
-            }
-            return inserted
+            preparation: preparation,
+            destination: destination
+        ), let authorization = candidates.authorization(for: candidate) else {
+            return nil
         }
-        guard let insertedPin else { return nil }
-        scheduleStructuralPersistence()
-        return insertedPin
+        return transaction.commit(candidate, authorization: authorization)
     }
 }

@@ -1,4 +1,5 @@
 import AppKit
+import SumiDomain
 import WebKit
 
 @MainActor
@@ -19,7 +20,7 @@ private func hasHostedWebView(in root: NSView) -> Bool {
 final class WindowWebContentSplitHostLayoutView: NSView, WindowWebContentVisualHandoffCoverContainer {
     enum PaneLayout: Equatable {
         case single
-        case split(SplitGroup)
+        case split(WindowSplitPresentation)
     }
 
     let singlePaneView = PaneContainerView()
@@ -140,20 +141,20 @@ final class WindowWebContentSplitHostLayoutView: NSView, WindowWebContentVisualH
             singlePaneView.frame = bounds
             splitRootView.frame = .zero
 
-        case .split(let group):
+        case .split(let presentation):
             singlePaneView.isHidden = true
             splitRootView.isHidden = false
             singlePaneView.frame = .zero
             splitRootView.frame = bounds
             splitRootView.configure(
-                group: group,
+                presentation: presentation,
                 chromeGeometry: chromeGeometry,
                 onResize: { [weak self] path, sizes in
                     guard let self else { return }
-                    self.browserContext?.updateSplitLayoutSizes(
-                        groupId: group.id,
+                    self.browserContext?.updateSplitLayoutWeights(
+                        expectedGroup: presentation.group,
                         path: path,
-                        sizes: sizes,
+                        weights: sizes,
                         for: self.windowId
                     )
                 }
@@ -172,7 +173,7 @@ private final class SplitRootView: NSView {
     private var chromeGeometry = BrowserChromeGeometry()
     private var paneViewsByTabId: [UUID: PaneContainerView] = [:]
     private var rootView: NSView?
-    private var currentGroup: SplitGroup?
+    private var currentPresentation: WindowSplitPresentation?
     private var onResize: (([Int], [Double]) -> Void)?
     private var layoutGeneration: UInt = 0
 
@@ -190,32 +191,44 @@ private final class SplitRootView: NSView {
     }
 
     func configure(
-        group: SplitGroup,
+        presentation: WindowSplitPresentation,
         chromeGeometry: BrowserChromeGeometry,
         onResize: @escaping ([Int], [Double]) -> Void
     ) {
         self.onResize = onResize
         setChromeGeometry(chromeGeometry)
-        if let currentGroup,
-           currentGroup.layoutTree.hasSameStructure(as: group.layoutTree) {
-            self.currentGroup = group
+        if let currentPresentation,
+           currentPresentation.group.layoutTree.hasSameStructure(
+               as: presentation.group.layoutTree
+           ),
+           currentPresentation.liveTabIDByMemberID
+               == presentation.liveTabIDByMemberID {
+            self.currentPresentation = presentation
             rootView?.frame = bounds
-            applyStoredSizes(from: group.layoutTree, to: rootView)
+            applyStoredSizes(
+                from: presentation.group.layoutTree,
+                to: rootView
+            )
             return
         }
 
         rootView?.removeFromSuperview()
         paneViewsByTabId.removeAll(keepingCapacity: true)
-        currentGroup = group
+        currentPresentation = presentation
         layoutGeneration &+= 1
-        let view = makeView(for: group.layoutTree, path: [], generation: layoutGeneration)
+        let view = makeView(
+            for: presentation.group.layoutTree,
+            presentation: presentation,
+            path: [],
+            generation: layoutGeneration
+        )
         rootView = view
         addSubview(view)
         needsLayout = true
     }
 
     func clear() {
-        currentGroup = nil
+        currentPresentation = nil
         layoutGeneration &+= 1
         paneViewsByTabId.values.forEach { $0.clearSplitControls() }
         rootView?.removeFromSuperview()
@@ -232,9 +245,21 @@ private final class SplitRootView: NSView {
         rootView?.frame = bounds
     }
 
-    private func makeView(for tree: SplitLayoutTree, path: [Int], generation: UInt) -> NSView {
+    private func makeView(
+        for tree: SumiDomain.SplitLayoutTree,
+        presentation: WindowSplitPresentation,
+        path: [Int],
+        generation: UInt
+    ) -> NSView {
         switch tree {
-        case .leaf(let tabId, _):
+        case .leaf(let member, _):
+            guard let tabId = presentation.tabID(
+                for: member.memberID
+            ) else {
+                preconditionFailure(
+                    "Validated split presentation lost a member mapping"
+                )
+            }
             let pane = PaneContainerView()
             pane.identifier = NSUserInterfaceItemIdentifier("split-pane-\(tabId.uuidString)")
             pane.setChromeGeometry(chromeGeometry)
@@ -242,26 +267,38 @@ private final class SplitRootView: NSView {
             return pane
 
         case .split(let axis, _, let children):
-            let split = NativeSplitTreeView(axis: axis, path: path, sizes: children.map(\.sizeInParent))
+            let split = NativeSplitTreeView(
+                axis: axis,
+                path: path,
+                sizes: children.map(\.weightInParent)
+            )
             split.resizeHandler = { [weak self] resizePath, sizes in
                 guard let self, generation == self.layoutGeneration else { return }
                 self.onResize?(resizePath, sizes)
             }
             for (index, child) in children.enumerated() {
-                split.addSubview(makeView(for: child, path: path + [index], generation: generation))
+                split.addSubview(makeView(
+                    for: child,
+                    presentation: presentation,
+                    path: path + [index],
+                    generation: generation
+                ))
             }
             return split
         }
     }
 
-    private func applyStoredSizes(from tree: SplitLayoutTree, to view: NSView?) {
+    private func applyStoredSizes(
+        from tree: SumiDomain.SplitLayoutTree,
+        to view: NSView?
+    ) {
         guard let view else { return }
         switch tree {
         case .leaf:
             return
         case .split(_, _, let children):
             if let splitView = view as? NativeSplitTreeView {
-                splitView.updateStoredSizes(children.map(\.sizeInParent))
+                splitView.updateStoredSizes(children.map(\.weightInParent))
             }
             for (childTree, childView) in zip(children, view.subviews) {
                 applyStoredSizes(from: childTree, to: childView)

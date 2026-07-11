@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 /// Repairs every window reference after a regular tab becomes a shortcut.
 /// Displaying windows receive their exact live instance; other windows only
@@ -13,6 +14,7 @@ final class RegularTabShortcutWindowReconciler {
 
     func reconcile(
         originalTabId: UUID,
+        splitTransition: RegularTabShortcutWindowTransitionPlan,
         sourceSpaceId: UUID?,
         liveTabsByWindowId: [UUID: Tab],
         selectedWindowIds: Set<UUID>,
@@ -23,6 +25,7 @@ final class RegularTabShortcutWindowReconciler {
             if DisplayedTabShortcutWindowTransition.apply(
                 to: windowState,
                 originalTabId: originalTabId,
+                splitTransition: splitTransition,
                 liveTab: liveTabsByWindowId[windowId],
                 sourceSpaceId: sourceSpaceId,
                 isSelected: selectedWindowIds.contains(windowId),

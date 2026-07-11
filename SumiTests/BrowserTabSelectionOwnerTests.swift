@@ -68,7 +68,7 @@ final class BrowserTabSelectionOwnerTests: XCTestCase {
             [
                 "nowPlayingActivated",
                 "dismissFloatingBar",
-                "splitSide",
+                "splitSelection",
                 "syncSpaceContext",
                 "workspaceTheme:true",
                 "fetchFavicon",
@@ -322,7 +322,9 @@ final class BrowserTabSelectionOwnerTests: XCTestCase {
             ephemeralTab: { tabId, _ in ephemeralTabsById[tabId] },
             currentTab: { _ in currentTab },
             liveShortcutTabs: { _ in liveShortcutTabs },
-            updateActiveSplitSide: { _, _ in probe.events.append("splitSide") },
+            reconcileSplitSelection: { _, _ in
+                probe.events.append("splitSelection")
+            },
             syncWindowSpaceContext: { _ in probe.events.append("syncSpaceContext") },
             space: { spaceId in
                 guard let space, space.id == spaceId else { return nil }

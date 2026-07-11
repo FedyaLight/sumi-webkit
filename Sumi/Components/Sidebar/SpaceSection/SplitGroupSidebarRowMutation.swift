@@ -3,6 +3,7 @@
 //  Sumi
 //
 
+import SumiDomain
 import SwiftUI
 
 extension SplitGroupSidebarRow {
@@ -33,20 +34,22 @@ extension SplitGroupSidebarRow {
     }
 
     func performSegmentMutation(for item: SplitGroupSidebarItem, in rowItems: [SplitGroupSidebarItem]) {
+        let memberID = item.id
         guard !reduceMotion && !sumiSettings.shouldReduceChromeMotion else {
-            onSegmentAction(item)
+            onSegmentAction(memberID)
             return
         }
 
-        onSegmentActionAnimationStart(item)
+        onSegmentActionAnimationStart(memberID)
         withAnimation(SidebarDropMotion.contentLayout) {
             let _ = departingItemIds.insert(item.id)
             if shouldCollapseRowAfterRemoving(item, from: rowItems) {
                 isCollapsingRow = true
             }
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + segmentActionCompletionDelay(for: item)) {
-            onSegmentAction(item)
+        let completionDelay = segmentActionCompletionDelay(for: item)
+        DispatchQueue.main.asyncAfter(deadline: .now() + completionDelay) {
+            onSegmentAction(memberID)
         }
     }
 
@@ -60,14 +63,14 @@ extension SplitGroupSidebarRow {
         _ item: SplitGroupSidebarItem,
         from rowItems: [SplitGroupSidebarItem]
     ) -> Bool {
-        guard !group.isShortcutHosted,
+        guard !group.container.isShortcutSidebar,
               segmentAction(item) == .close
         else {
             return false
         }
 
         let activeItems = rowItems.filter { !isDeparting($0) }
-        guard activeItems.count <= SplitGroup.minimumTabs else {
+        guard activeItems.count <= SplitGroup.minimumMembers else {
             return false
         }
 
@@ -76,17 +79,8 @@ extension SplitGroupSidebarRow {
     }
 
     func isShortcutBacked(_ item: SplitGroupSidebarItem) -> Bool {
-        switch item {
-        case .pin(let pin):
-            return group.member(forPinId: pin.id)?.isShortcutBacked == true
-                || group.member(for: pin.id)?.isShortcutBacked == true
-        case .tab(let tab):
-            if let pinId = tab.shortcutPinId,
-               group.member(forPinId: pinId)?.isShortcutBacked == true {
-                return true
-            }
-            return group.member(for: tab.id)?.isShortcutBacked == true
-        }
+        if case .shortcutPin = item.id { return true }
+        return false
     }
 
     func reconcileDisplayedItems(with newItems: [SplitGroupSidebarItem]) {
@@ -120,7 +114,7 @@ extension SplitGroupSidebarRow {
             return
         }
 
-        var seenIds = Set<UUID>()
+        var seenIds = Set<SplitMemberID>()
         var projectedItems: [SplitGroupSidebarItem] = oldItems.map { oldItem in
             seenIds.insert(oldItem.id)
             return newItemsById[oldItem.id] ?? oldItem

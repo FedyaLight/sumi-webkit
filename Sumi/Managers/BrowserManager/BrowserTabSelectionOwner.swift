@@ -14,7 +14,7 @@ final class BrowserTabSelectionOwner {
         let ephemeralTab: (UUID, BrowserWindowState) -> Tab?
         let currentTab: (BrowserWindowState) -> Tab?
         let liveShortcutTabs: (UUID) -> [Tab]
-        let updateActiveSplitSide: (UUID, UUID) -> Void
+        let reconcileSplitSelection: (Tab, BrowserWindowState) -> Void
         let syncWindowSpaceContext: (BrowserWindowState) -> Void
         let space: (UUID?) -> Space?
         let updateWorkspaceTheme: (BrowserWindowState, WorkspaceTheme, Bool) -> Void
@@ -117,7 +117,7 @@ final class BrowserTabSelectionOwner {
         actions.handleNativeNowPlayingTabActivated(tab.id)
         tab.noteAccess()
         actions.dismissFloatingBarAfterSelection(windowState)
-        actions.updateActiveSplitSide(tab.id, windowState.id)
+        actions.reconcileSplitSelection(tab, windowState)
 
         actions.syncWindowSpaceContext(windowState)
 
@@ -230,6 +230,7 @@ final class BrowserTabSelectionOwner {
         windowState.currentTabId = nil
         windowState.currentShortcutPinId = nil
         windowState.currentShortcutPinRole = nil
+        windowState.splitSelection = nil
         windowState.isShowingEmptyState = true
         actions.syncWindowSpaceContext(windowState)
         actions.clearFindManagerCurrentTab()

@@ -10,8 +10,23 @@ import SwiftUI
 
 struct SplitGroupFocusRequest: Equatable {
     let id = UUID()
-    let groupId: UUID
-    let targetSpaceId: UUID
+    let groupID: UUID
+    let preferredMemberID: SplitMemberID?
+    let targetSpaceID: UUID
+}
+
+/// Durable split selection for this exact browser window. The selected member
+/// is a regular-tab or shortcut-pin identity, never a window-local live tab ID.
+struct WindowSplitSelection: Codable, Equatable, Hashable, Sendable {
+    let groupID: UUID
+    let activeMemberID: SplitMemberID
+}
+
+/// Split selection awaiting structural restore. Legacy sessions know the
+/// group but may not have recorded a stable active member.
+struct PendingWindowSplitSelection: Equatable, Sendable {
+    let groupID: UUID
+    let preferredMemberID: SplitMemberID?
 }
 
 /// Represents the state of a single browser window, allowing multiple windows
@@ -86,13 +101,18 @@ class BrowserWindowState {
     /// Deferred split focus request used when a sidebar placeholder targets a split in another space.
     var pendingSplitGroupFocusRequest: SplitGroupFocusRequest?
 
-    /// Split group from the persisted window session, resolved after tab data finishes loading.
+    /// Split group and pane selected in this window. Runtime presentation maps
+    /// the durable member identity to this window's exact live tab.
+    var splitSelection: WindowSplitSelection?
+
+    /// Split selection from the persisted window session, resolved after tab
+    /// data finishes loading.
     @ObservationIgnored
-    var pendingSessionSplitGroupId: UUID?
+    var pendingSessionSplitSelection: PendingWindowSplitSelection?
 
     /// Decode-only migrated split group from older window-session snapshots.
     @ObservationIgnored
-    var pendingSessionLegacySplitGroup: SplitGroup?
+    var pendingSessionLegacySplitGroup: SumiDomain.SplitGroup?
 
     /// Window-scoped AppKit coordinator for sidebar context menus.
     @ObservationIgnored

@@ -5,7 +5,7 @@ extension TabSpaceServices {
     static func live(tabManager: TabManager) -> Self {
         let activation = SpaceActivationService(
             state: tabManager.stateStore,
-            projection: tabManager.spaceLauncherProjectionOwner,
+            projection: tabManager.spaceLauncherProjection,
             persistence: tabManager.structuralPersistence,
             profileIds: { [weak tabManager] in
                 (
@@ -53,7 +53,10 @@ extension TabSpaceServices {
             contentRetirement: SpaceContentRetirementService(
                 state: tabManager.stateStore,
                 structuralMutations: tabManager.structuralCollectionMutationOwner,
-                splitGroups: tabManager.splitGroupStructureOwner,
+                splitGroups: SpaceSplitGroupRetirementService(
+                    store: tabManager.splitGroupStore,
+                    mutations: tabManager.splitGroupMutations
+                ),
                 liveShortcutTabs: tabManager.liveShortcutTabs,
                 runtimeTeardown: tabManager.runtimeTeardown
             ),

@@ -14,7 +14,7 @@ enum SpaceDeletionConfirmationPresenter {
 
         let alert = makeAlert(
             spaceName: space.name,
-            tabsCount: browserManager.tabManager.spaceLauncherProjectionOwner.projection(for: space.id).userVisibleTabCount
+            tabsCount: browserManager.tabManager.spaceLauncherProjection.projection(for: space.id).userVisibleTabCount
         )
         alert.sumiApplyNativeSurfaceAppearance(
             windowState: window.flatMap { browserManager.windowRegistry?.windowState(containing: $0) },

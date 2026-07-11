@@ -400,7 +400,6 @@ final class BrowserWindowLifecycleWorkflowTests: XCTestCase {
                     environment: { [:] }
                 ),
                 snapshotFactory: WindowSessionSnapshotFactory(
-                    splitManager: browserManager.splitManager,
                     glanceManager: browserManager.glanceManager
                 )
             ),

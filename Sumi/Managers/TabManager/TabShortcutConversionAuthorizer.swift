@@ -1,7 +1,6 @@
 import Foundation
 
-/// Revalidates prepared conversion facts before shortcut insertion can open a
-/// folder, publish structure, or mutate any window state.
+/// Revalidates the window/runtime half of a prepared conversion.
 @MainActor
 final class TabShortcutConversionAuthorizer {
     private let windows: ShortcutTabWindowQuery
@@ -12,16 +11,15 @@ final class TabShortcutConversionAuthorizer {
 
     func authorize(
         _ preparation: TabShortcutConversionPreparation,
-        for tab: Tab,
-        candidatePin: ShortcutPin
+        for tab: Tab
     ) -> AuthorizedTabShortcutConversion? {
         switch preparation {
         case .displayed(let plan):
-            return authorize(plan, for: tab, candidatePin: candidatePin).map {
+            return authorize(plan, for: tab).map {
                 .displayed($0)
             }
         case .detached(let plan):
-            return authorize(plan, for: tab, candidatePin: candidatePin).map {
+            return authorize(plan, for: tab).map {
                 .detached($0)
             }
         case .rejected:
@@ -31,14 +29,9 @@ final class TabShortcutConversionAuthorizer {
 
     func authorize(
         _ plan: DisplayedTabShortcutConversionPlan,
-        for tab: Tab,
-        candidatePin: ShortcutPin
+        for tab: Tab
     ) -> AuthorizedDisplayedTabShortcutConversion? {
-        guard plan.sourceTabId == tab.id,
-              let structure = plan.structure.authorize(
-                  candidatePin,
-                  for: tab
-              ) else { return nil }
+        guard plan.sourceTabId == tab.id else { return nil }
         let selectedWindowIds = windows.windowIdsSelecting(
             tabId: tab.id,
             preferredWindowId: plan.firstWindowId,
@@ -49,44 +42,48 @@ final class TabShortcutConversionAuthorizer {
             preferredWindowId: plan.firstWindowId,
             using: plan.runtime
         )
+        let snapshots = ShortcutConversionWindowSnapshotResolver()
+        let presentationWindowIds = snapshots.presentationWindowIDs(
+            structure: plan.structure,
+            selected: selectedWindowIds,
+            displaying: displayingWindowIds,
+            runtime: plan.runtime
+        )
         guard plan.runtime.webViewLifecycle.primaryTrackedWindowId(
                   for: tab.id
               ) == plan.primaryWindowId,
               Set(selectedWindowIds) == Set(plan.selectedWindowIds),
               Set(displayingWindowIds) == Set(plan.displayingWindowIds),
+              Set(presentationWindowIds) == Set(plan.presentationWindowIds),
               plan.runtime.windowState(for: plan.firstWindowId)
                 === plan.firstWindow,
-              plan.structure.acceptsRuntimeExposure(
-                  of: tab.id,
-                  in: displayingWindowIds,
-                  using: plan.runtime
+              snapshots.runtimeExposureIsValid(
+                  tabID: tab.id,
+                  structure: plan.structure,
+                  presentationWindowIDs: presentationWindowIds,
+                  runtime: plan.runtime
               ) else {
             return nil
         }
-        let selectedWindows = plan.selectedWindowIds.compactMap {
+        let presentationWindows = plan.presentationWindowIds.compactMap {
             plan.runtime.windowState(for: $0)
         }
-        guard selectedWindows.count == plan.selectedWindowIds.count else {
+        guard presentationWindows.count == plan.presentationWindowIds.count else {
             return nil
         }
         return AuthorizedDisplayedTabShortcutConversion(
             tab: tab,
             plan: plan,
-            structure: structure,
-            selectedWindows: selectedWindows
+            structure: plan.structure,
+            presentationWindows: presentationWindows
         )
     }
 
     private func authorize(
         _ plan: DetachedTabShortcutConversionPlan,
-        for tab: Tab,
-        candidatePin: ShortcutPin
+        for tab: Tab
     ) -> AuthorizedDetachedTabShortcutConversion? {
-        guard plan.sourceTabId == tab.id,
-              plan.structure.authorize(
-                  candidatePin,
-                  for: tab
-              ) != nil else { return nil }
+        guard plan.sourceTabId == tab.id else { return nil }
         if let runtime = plan.runtime {
             guard windows.windowIdsDisplaying(
                 tabId: tab.id,
@@ -98,7 +95,9 @@ final class TabShortcutConversionAuthorizer {
         }
         return AuthorizedDetachedTabShortcutConversion(
             tab: tab,
-            runtime: plan.runtime
+            runtime: plan.runtime,
+            structure: plan.structure
         )
     }
+
 }

@@ -174,9 +174,7 @@ final class TabFolderMutationOwner {
                 dependencies.runtimePorts()?.captureDeletedShortcutLauncher(pin)
             }
 
-            for tabId in liveTabsToRemove {
-                dependencies.tabRemovalOwner.removeTab(tabId)
-            }
+            dependencies.tabRemovalOwner.removeTabs(liveTabsToRemove)
 
             dependencies.shortcutLiveTabRetirement
                 .finishAfterCurrentBatch(retirement)

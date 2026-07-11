@@ -1,3 +1,4 @@
+import SumiDomain
 import WebKit
 import XCTest
 

@@ -18,27 +18,27 @@ private func hostedWebViewCount(in root: NSView, stoppingAfter limit: Int = .max
 }
 
 enum WindowWebContentPresentationDecision {
-    case single(tab: Tab?, repairSplitGroupID: UUID?)
-    case split(group: SplitGroup, tabs: [Tab])
+    case single(tab: Tab?)
+    case split(presentation: WindowSplitPresentation, tabs: [Tab])
 }
 
 @MainActor
 final class WindowWebContentPresentationPlanner {
     private let browserContext: any WindowWebContentBrowserContext
-    private let windowID: UUID
+    private let windowState: BrowserWindowState
     private let containerView: WindowWebContentSplitHostLayoutView
     private let hostRegistry: WindowWebContentHostRegistry
     private let protectionRuntime: WebViewProtectionRuntime
 
     init(
         browserContext: any WindowWebContentBrowserContext,
-        windowID: UUID,
+        windowState: BrowserWindowState,
         containerView: WindowWebContentSplitHostLayoutView,
         hostRegistry: WindowWebContentHostRegistry,
         protectionRuntime: WebViewProtectionRuntime
     ) {
         self.browserContext = browserContext
-        self.windowID = windowID
+        self.windowState = windowState
         self.containerView = containerView
         self.hostRegistry = hostRegistry
         self.protectionRuntime = protectionRuntime
@@ -57,41 +57,42 @@ final class WindowWebContentPresentationPlanner {
         for displayState: WebsiteDisplayState,
         currentTab: Tab?
     ) -> WindowWebContentPresentationDecision {
-        guard let group = displayState.activeSplitGroup else {
-            return .single(tab: currentTab, repairSplitGroupID: nil)
+        guard let presentation = displayState.activeSplitPresentation else {
+            return .single(tab: currentTab)
         }
 
-        let tabs = group.tabIds.compactMap(browserContext.tab(for:))
-        guard tabs.count == group.tabIds.count else {
-            return .single(tab: currentTab, repairSplitGroupID: group.id)
+        let tabs = presentation.visibleTabIDs.compactMap(browserContext.tab(for:))
+        guard tabs.count == presentation.visibleTabIDs.count else {
+            return .single(tab: currentTab)
         }
-        return .split(group: group, tabs: tabs)
+        return .split(presentation: presentation, tabs: tabs)
     }
 
     func immediatePresentationDecision(
         currentTab: Tab?
     ) -> WindowWebContentPresentationDecision? {
-        guard !protectionRuntime.hasActiveHistorySwipe(in: windowID),
+        guard !protectionRuntime.hasActiveHistorySwipe(in: windowState.id),
               let currentTab,
               currentTab.requiresPrimaryWebView
         else {
             return nil
         }
 
-        if let group = browserContext.splitGroup(for: windowID),
-           group.contains(currentTab.id) {
-            let tabs = group.tabIds.compactMap(browserContext.tab(for:))
-            guard tabs.count == group.tabIds.count else { return nil }
-            return .split(group: group, tabs: tabs)
+        if case .ready(let presentation) = browserContext
+            .splitResolution(for: windowState),
+           presentation.activeTabID == currentTab.id {
+            let tabs = presentation.visibleTabIDs.compactMap(browserContext.tab(for:))
+            guard tabs.count == presentation.visibleTabIDs.count else { return nil }
+            return .split(presentation: presentation, tabs: tabs)
         }
-        return .single(tab: currentTab, repairSplitGroupID: nil)
+        return .single(tab: currentTab)
     }
 
     func incomingTabIDsForVisualHandoff(
         _ decision: WindowWebContentPresentationDecision
     ) -> Set<UUID>? {
         switch decision {
-        case .single(let tab, _):
+        case .single(let tab):
             guard let tab,
                   tab.requiresPrimaryWebView,
                   hostRegistry.displayedHost(for: tab.id) == nil
@@ -99,8 +100,8 @@ final class WindowWebContentPresentationPlanner {
                 return nil
             }
             return [tab.id]
-        case .split(let group, _):
-            return Set(group.tabIds)
+        case .split(let presentation, _):
+            return Set(presentation.visibleTabIDs)
         }
     }
 
@@ -108,11 +109,11 @@ final class WindowWebContentPresentationPlanner {
         currentTab: Tab?,
         displayState: WebsiteDisplayState
     ) -> Bool {
-        guard !protectionRuntime.hasActiveHistorySwipe(in: windowID) else {
+        guard !protectionRuntime.hasActiveHistorySwipe(in: windowState.id) else {
             return false
         }
 
-        guard let activeSplitGroup = displayState.activeSplitGroup else {
+        guard let activeSplitPresentation = displayState.activeSplitPresentation else {
             let expectedCount = currentTab != nil && !displayState.currentTabUnloaded ? 1 : 0
             if hostedWebViewCount(
                 in: containerView.singlePaneView,
@@ -127,7 +128,7 @@ final class WindowWebContentPresentationPlanner {
             return true
         }
         return hostRegistry.splitPaneTabIds.contains {
-            !activeSplitGroup.contains($0)
+            !activeSplitPresentation.contains(tabID: $0)
         }
     }
 }

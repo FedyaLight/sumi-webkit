@@ -3,6 +3,7 @@
 //  Sumi
 //
 
+import SumiDomain
 import SwiftUI
 
 enum SpaceViewRenderMode {
@@ -119,13 +120,16 @@ struct SpaceView: View {
 
 extension SpaceView {
     func prepareShortcutRestoreGap(
-        for item: SplitGroupSidebarItem,
-        in group: SplitGroup
+        groupID: UUID,
+        memberID: SplitMemberID
     ) {
         guard isInteractive,
               !reduceMotion,
               !sumiSettings.shouldReduceChromeMotion,
-              let gap = shortcutRestoreGap(for: item, in: group),
+              let gap = shortcutRestoreGap(
+                groupID: groupID,
+                memberID: memberID
+              ),
               shortcutRestoreGaps.firstIndex(where: { $0.pinId == gap.pinId && $0.container == gap.container }) == nil
         else {
             return
@@ -145,11 +149,14 @@ extension SpaceView {
     }
 
     func performShortcutRestoreWithPreparedGap(
-        for item: SplitGroupSidebarItem,
-        in group: SplitGroup,
+        groupID: UUID,
+        memberID: SplitMemberID,
         update: @escaping () -> Void
     ) {
-        guard let gap = shortcutRestoreGap(for: item, in: group),
+        guard let gap = shortcutRestoreGap(
+            groupID: groupID,
+            memberID: memberID
+        ),
               let existingGap = shortcutRestoreGaps.first(where: { $0.pinId == gap.pinId && $0.container == gap.container })
         else {
             update()
@@ -164,13 +171,13 @@ extension SpaceView {
     }
 
     private func shortcutRestoreGap(
-        for item: SplitGroupSidebarItem,
-        in group: SplitGroup
+        groupID: UUID,
+        memberID: SplitMemberID
     ) -> ShortcutRestoreGap? {
-        SpaceShortcutRestoreOwner(
+        SpaceShortcutRestorePlanner(
             browserContext: browserContext,
             space: space
-        ).shortcutRestoreGap(for: item, in: group)
+        ).shortcutRestoreGap(groupID: groupID, memberID: memberID)
     }
 
     var elevatedFolderIds: Set<UUID> {

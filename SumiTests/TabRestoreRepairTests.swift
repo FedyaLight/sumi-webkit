@@ -78,13 +78,27 @@ final class TabRestoreRepairTests: XCTestCase {
 
     func testRestoreSplitGroupsReturnsEmptyForNilData() {
         var reasons: Set<String> = []
-        XCTAssertTrue(TabRestoreRepair.restoreSplitGroups(from: nil, validTabIds: [], repairReasons: &reasons).isEmpty)
+        XCTAssertTrue(
+            TabRestoreRepair.restoreSplitGroups(
+                from: nil,
+                regularTabIDs: [],
+                shortcutReturnPlacementsByPinID: [:],
+                repairReasons: &reasons
+            ).isEmpty
+        )
         XCTAssertTrue(reasons.isEmpty)
     }
 
     func testRestoreSplitGroupsReturnsEmptyForEmptyData() {
         var reasons: Set<String> = []
-        XCTAssertTrue(TabRestoreRepair.restoreSplitGroups(from: Data(), validTabIds: [], repairReasons: &reasons).isEmpty)
+        XCTAssertTrue(
+            TabRestoreRepair.restoreSplitGroups(
+                from: Data(),
+                regularTabIDs: [],
+                shortcutReturnPlacementsByPinID: [:],
+                repairReasons: &reasons
+            ).isEmpty
+        )
         XCTAssertTrue(reasons.isEmpty)
     }
 
@@ -92,7 +106,12 @@ final class TabRestoreRepairTests: XCTestCase {
         var reasons: Set<String> = []
         let garbage = Data("not json".utf8)
 
-        let result = TabRestoreRepair.restoreSplitGroups(from: garbage, validTabIds: [], repairReasons: &reasons)
+        let result = TabRestoreRepair.restoreSplitGroups(
+            from: garbage,
+            regularTabIDs: [],
+            shortcutReturnPlacementsByPinID: [:],
+            repairReasons: &reasons
+        )
 
         XCTAssertTrue(result.isEmpty)
         XCTAssertTrue(reasons.contains("removed unreadable split groups"))

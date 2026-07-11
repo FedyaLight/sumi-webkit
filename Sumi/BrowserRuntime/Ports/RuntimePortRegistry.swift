@@ -93,10 +93,6 @@ struct RuntimePortRegistry {
         splitCoordination.isTabActiveInSplit(tabId, in: windowId)
     }
 
-    func updateActiveSplitSide(for tabId: UUID, in windowId: UUID) {
-        splitCoordination.updateActiveSplitSide(for: tabId, in: windowId)
-    }
-
     // MARK: - Extension lifecycle surface
 
     func notifyTabClosedIfLoaded(_ tab: Tab) {

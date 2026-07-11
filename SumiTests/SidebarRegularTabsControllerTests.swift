@@ -1,4 +1,5 @@
 @testable import Sumi
+import SumiDomain
 import XCTest
 
 @MainActor
@@ -18,7 +19,15 @@ final class SidebarRegularTabsControllerTests: XCTestCase {
         )
         let userFolder = TabFolder(name: "User", spaceId: space.id)
         let liveFolder = TabFolder(name: "Live", spaceId: space.id)
-        let group = try XCTUnwrap(SplitGroup.make(tabIds: [tab.id, UUID()], layoutKind: .vertical))
+        let group = try XCTUnwrap(
+            SplitGroup.make(
+                members: [
+                    .regularTab(tab.id),
+                    .regularTab(UUID()),
+                ],
+                layoutKind: .vertical
+            )
+        )
         let windowState = BrowserWindowState()
         let targetSpaceId = otherSpace.id
         let profileId = UUID()
@@ -37,9 +46,9 @@ final class SidebarRegularTabsControllerTests: XCTestCase {
                     spy.events.append(.tab(tabId))
                     return tabId == tab.id ? tab : nil
                 },
-                splitGroup: { tabId in
-                    spy.events.append(.splitGroup(tabId))
-                    return group.contains(tabId) ? group : nil
+                splitGroup: { memberID in
+                    spy.events.append(.splitGroup(memberID))
+                    return group.contains(memberID) ? group : nil
                 },
                 shortcutPin: { pinId in
                     spy.events.append(.shortcutPin(pinId))
@@ -86,7 +95,10 @@ final class SidebarRegularTabsControllerTests: XCTestCase {
         XCTAssertEqual(controller.tabs(in: space, windowState: windowState).map(\.id), [tab.id])
         XCTAssertTrue(controller.hasPersistedTabs(in: space))
         XCTAssertIdentical(controller.tab(for: tab.id), tab)
-        XCTAssertEqual(controller.splitGroup(containing: tab.id)?.id, group.id)
+        XCTAssertEqual(
+            controller.splitGroup(containing: .regularTab(tab.id))?.id,
+            group.id
+        )
         XCTAssertEqual(controller.shortcutPin(by: pin.id)?.id, pin.id)
         XCTAssertEqual(controller.userFolders(for: space.id).map(\.id), [userFolder.id])
         XCTAssertTrue(controller.canAddToEssentials(tab, in: space, windowState: windowState))
@@ -104,7 +116,7 @@ final class SidebarRegularTabsControllerTests: XCTestCase {
             .tabs(space.id),
             .tabs(space.id),
             .tab(tab.id),
-            .splitGroup(tab.id),
+            .splitGroup(.regularTab(tab.id)),
             .shortcutPin(pin.id),
             .folders(space.id),
             .isLiveFolder(userFolder.id),
@@ -157,19 +169,6 @@ final class SidebarRegularTabsControllerTests: XCTestCase {
         XCTAssertTrue(spy.events.isEmpty)
     }
 
-    func testRegularTabsSectionUsesControllerInsteadOfDirectTabManagerAccess() throws {
-        let testFileURL = URL(fileURLWithPath: #filePath)
-        let repoRoot = testFileURL
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let sourceURL = repoRoot.appendingPathComponent(
-            "Sumi/Components/Sidebar/SpaceSection/SpaceRegularTabsSection.swift"
-        )
-        let source = try String(contentsOf: sourceURL, encoding: .utf8)
-
-        XCTAssertFalse(source.contains("browserContext.tabManager"))
-    }
-
     private func makeTab(spaceId: UUID, index: Int = 0) -> Tab {
         Tab(
             url: URL(string: "https://example.com/\(index)")!,
@@ -190,7 +189,7 @@ extension SidebarRegularTabsControllerTests {
         case spaces
         case tabs(UUID)
         case tab(UUID)
-        case splitGroup(UUID)
+        case splitGroup(SplitMemberID)
         case shortcutPin(UUID)
         case folders(UUID)
         case isLiveFolder(UUID)

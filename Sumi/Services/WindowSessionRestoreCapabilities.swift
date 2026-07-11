@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 /// Selection side effects required while reconciling a restored window.
 /// The restore subsystem deliberately does not know about `BrowserManager`.
@@ -36,7 +37,11 @@ protocol WindowSessionThemeCommitting: AnyObject {
 
 @MainActor
 protocol WindowSessionSplitFocusing: AnyObject {
-    func focusSplitGroup(_ group: SplitGroup, in windowState: BrowserWindowState)
+    func focusSplitGroup(
+        _ group: SumiDomain.SplitGroup,
+        preferredMemberID: SplitMemberID?,
+        in windowState: BrowserWindowState
+    )
 }
 
 extension BrowserManager: WindowSessionSelectionApplying {}

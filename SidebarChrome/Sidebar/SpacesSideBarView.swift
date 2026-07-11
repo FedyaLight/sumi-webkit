@@ -240,15 +240,15 @@ struct SpacesSideBarView: View {
     ) {
         guard let request else { return }
 
-        if windowState.currentSpaceId == request.targetSpaceId {
+        if windowState.currentSpaceId == request.targetSpaceID {
             browserContext.spaceTransitions.completePendingSplitGroupFocusIfReady(
                 windowState,
-                request.targetSpaceId
+                request.targetSpaceID
             )
             return
         }
 
-        guard let targetSpace = space(for: request.targetSpaceId, in: spaces) else {
+        guard let targetSpace = space(for: request.targetSpaceID, in: spaces) else {
             windowState.pendingSplitGroupFocusRequest = nil
             return
         }

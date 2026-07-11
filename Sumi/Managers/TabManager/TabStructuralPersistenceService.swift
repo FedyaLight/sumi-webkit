@@ -253,7 +253,7 @@ final class TabStructuralPersistenceService {
             spacePinnedShortcuts: state.shortcutPins.spacePinnedShortcutsSnapshot(),
             tabsBySpace: state.regularTabs.tabsBySpaceSnapshot(),
             foldersBySpace: state.folders.foldersBySpaceSnapshot(),
-            splitGroups: state.splitGroups.splitGroups,
+            splitGroups: state.splitGroups.groups,
             currentTabId: persistableCurrentTabID(),
             currentSpaceId: state.spaces.currentSpaceId,
             shouldPersistRegularTab: shouldPersistRegularTab
@@ -263,7 +263,7 @@ final class TabStructuralPersistenceService {
     private func makeSnapshotSource() -> TabStructuralSnapshotSource {
         TabStructuralSnapshotSource(
             spaces: state.spaces.spaces,
-            splitGroups: state.splitGroups.splitGroups,
+            splitGroups: state.splitGroups.groups,
             pinnedByProfile: state.shortcutPins.pinnedByProfileSnapshot(),
             spacePinnedShortcuts: state.shortcutPins.spacePinnedShortcutsSnapshot(),
             tabsBySpace: state.regularTabs.tabsBySpaceSnapshot(),

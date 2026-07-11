@@ -10,7 +10,29 @@ enum WebsiteViewContextFactory {
         for browserManager: BrowserManager,
         sidebarDragState: SidebarDragState
     ) -> WebsiteViewBrowserContext {
-        WebsiteViewBrowserContext(
+        let splitProjection = WindowSplitProjection(
+            group: { [weak browserManager] groupID in
+                browserManager?.tabManager.splitGroupStore.group(id: groupID)
+            },
+            regularTabExists: { [weak browserManager] tabID in
+                browserManager?.tabManager.regularTabCollectionOwner
+                    .tab(for: tabID) != nil
+            },
+            shortcutPinExists: { [weak browserManager] pinID in
+                browserManager?.tabManager.shortcutPinCollectionStateOwner
+                    .shortcutPin(by: pinID) != nil
+            },
+            shortcutLiveTabID: { [weak browserManager] pinID, windowID in
+                browserManager?.tabManager.liveShortcutTabs
+                    .tab(for: pinID, in: windowID)?.id
+            }
+        )
+        let webContentContext = BrowserManagerWindowWebContentContext(
+            browserManager: browserManager,
+            splitProjection: splitProjection,
+            sidebarDragState: sidebarDragState
+        )
+        return WebsiteViewBrowserContext(
             currentTab: { [weak browserManager] windowState in
                 browserManager?.shellRuntime.windowTabs.currentTab(for: windowState)
             },
@@ -20,12 +42,13 @@ enum WebsiteViewContextFactory {
                         .workspaceTheme
                 }
             },
-            makeWebContentContext: {
-                BrowserManagerWindowWebContentContext(
-                    browserManager: browserManager,
-                    sidebarDragState: sidebarDragState
+            splitResolution: { windowState in
+                splitProjection.resolve(
+                    selection: windowState.splitSelection,
+                    in: windowState.id
                 )
-            }
+            },
+            makeWebContentContext: { webContentContext }
         )
     }
 

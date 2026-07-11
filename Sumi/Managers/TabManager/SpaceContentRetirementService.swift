@@ -13,14 +13,14 @@ struct PreparedSpaceContentRetirement {
 final class SpaceContentRetirementService {
     private let state: TabStateStore
     private let structuralMutations: TabStructuralCollectionMutationOwner
-    private let splitGroups: TabSplitGroupStructureOwner
+    private let splitGroups: SpaceSplitGroupRetirementService
     private let liveShortcutTabs: LiveShortcutTabRegistry
     private let runtimeTeardown: TabRuntimeTeardownService
 
     init(
         state: TabStateStore,
         structuralMutations: TabStructuralCollectionMutationOwner,
-        splitGroups: TabSplitGroupStructureOwner,
+        splitGroups: SpaceSplitGroupRetirementService,
         liveShortcutTabs: LiveShortcutTabRegistry,
         runtimeTeardown: TabRuntimeTeardownService
     ) {
@@ -40,10 +40,10 @@ final class SpaceContentRetirementService {
             state.shortcutPins.spacePinnedPins(for: spaceId).map(\.id)
                 + inventory.all.compactMap(\.shortcutPinId)
         )
-        let removedGroupIds = splitGroups.removeSplitGroups(
-            hostedBy: spaceId,
-            containingAny: inventory.tabIds.union(shortcutPinIds),
-            schedulePersistence: false
+        let affectedGroupIDs = splitGroups.retireGroups(
+            in: spaceId,
+            regularTabIDs: inventory.tabIds,
+            shortcutPinIDs: shortcutPinIds
         )
 
         if state.selection.currentTab.map({
@@ -62,7 +62,7 @@ final class SpaceContentRetirementService {
                 spaceId: spaceId,
                 tabIds: inventory.tabIds,
                 shortcutPinIds: shortcutPinIds,
-                splitGroupIds: removedGroupIds
+                splitGroupIds: affectedGroupIDs
             ),
             tabs: inventory.all,
             runtime: runtime

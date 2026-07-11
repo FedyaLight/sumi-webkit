@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import SumiDomain
 
 enum TabDragManager {
     enum DragContainer: Equatable {

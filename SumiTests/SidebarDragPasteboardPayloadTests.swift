@@ -1,9 +1,77 @@
 import AppKit
+import SumiDomain
 import XCTest
 
 @testable import Sumi
 
 final class SidebarDragPasteboardPayloadTests: XCTestCase {
+    func testStandaloneShortcutRoundTripCarriesTypedPinIdentity() throws {
+        let pinID = UUID()
+        let spaceID = UUID()
+        let item = SumiDragItem.shortcutPin(
+            pinID,
+            title: "Shortcut",
+            urlString: "https://example.com"
+        )
+        let scope = SidebarDragScope(
+            windowId: UUID(),
+            spaceId: spaceID,
+            profileId: UUID(),
+            sourceContainer: .spacePinned(spaceID),
+            sourceItemId: item.stableID,
+            sourceItemKind: item.kind
+        )
+        let pasteboard = NSPasteboard(
+            name: NSPasteboard.Name("SumiTypedShortcut-\(pinID)")
+        )
+        pasteboard.clearContents()
+        XCTAssertTrue(
+            pasteboard.writeObjects([item.pasteboardItem(scope: scope)])
+        )
+
+        let payload = try XCTUnwrap(
+            SidebarDragPasteboardPayload.fromPasteboard(pasteboard)
+        )
+        XCTAssertEqual(payload.item.splitMemberID, .shortcutPin(pinID))
+        XCTAssertNil(payload.item.splitGroupID)
+        XCTAssertEqual(payload.sourceItemId, pinID)
+    }
+
+    func testShortcutSplitMemberRoundTripUsesDurablePinIdentity() throws {
+        let pinID = UUID()
+        let liveTabID = UUID()
+        let groupID = UUID()
+        let spaceID = UUID()
+        let item = SumiDragItem.splitMember(
+            .shortcutPin(pinID),
+            groupID: groupID,
+            title: "Shortcut"
+        )
+        let scope = SidebarDragScope(
+            windowId: UUID(),
+            spaceId: spaceID,
+            profileId: UUID(),
+            sourceContainer: .spacePinned(spaceID),
+            sourceItemId: item.stableID,
+            sourceItemKind: item.kind
+        )
+        let pasteboard = NSPasteboard(
+            name: NSPasteboard.Name("SumiSplitMember-\(liveTabID)")
+        )
+        pasteboard.clearContents()
+        XCTAssertTrue(
+            pasteboard.writeObjects([item.pasteboardItem(scope: scope)])
+        )
+
+        let payload = try XCTUnwrap(
+            SidebarDragPasteboardPayload.fromPasteboard(pasteboard)
+        )
+        XCTAssertEqual(payload.item.splitMemberID, .shortcutPin(pinID))
+        XCTAssertEqual(payload.item.splitGroupID, groupID)
+        XCTAssertEqual(payload.sourceItemId, pinID)
+        XCTAssertNotEqual(payload.sourceItemId, liveTabID)
+    }
+
     func testPayloadRoundTripsThroughPasteboard() throws {
         let spaceId = UUID()
         let profileId = UUID()

@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 struct TabRestoreSnapshotBuilder: Sendable {
     func makeSnapshot(

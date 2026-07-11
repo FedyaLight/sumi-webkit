@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 @MainActor
 struct WindowSessionSnapshotApplier {
@@ -60,14 +61,35 @@ struct WindowSessionSnapshotApplier {
         windowState.floatingBarDraftNavigatesCurrentTab = snapshot
             .floatingBarDraft.navigateCurrentTab
 
-        if snapshot.activeSplitGroupId == nil,
-           let legacyGroup = snapshot.legacySplitSessionForMigration?
-            .makeSplitGroup(spaceId: snapshot.currentSpaceId) {
-            windowState.pendingSessionLegacySplitGroup = legacyGroup
-            windowState.pendingSessionSplitGroupId = legacyGroup.id
-        } else {
+        windowState.splitSelection = nil
+        if let selection = snapshot.splitSelection {
             windowState.pendingSessionLegacySplitGroup = nil
-            windowState.pendingSessionSplitGroupId = snapshot.activeSplitGroupId
+            windowState.pendingSessionSplitSelection = PendingWindowSplitSelection(
+                groupID: selection.groupID,
+                preferredMemberID: selection.activeMemberID
+            )
+            return
         }
+
+        if let migration = snapshot.legacySplitSessionForMigration?
+            .makeSplitMigration(spaceId: snapshot.currentSpaceId) {
+            windowState.pendingSessionLegacySplitGroup = migration.group
+            windowState.pendingSessionSplitSelection = PendingWindowSplitSelection(
+                groupID: migration.group.id,
+                preferredMemberID: migration.preferredMemberID
+            )
+            return
+        }
+
+        windowState.pendingSessionLegacySplitGroup = nil
+        windowState.pendingSessionSplitSelection = snapshot
+            .legacyActiveSplitGroupID.map { groupID in
+                PendingWindowSplitSelection(
+                    groupID: groupID,
+                    preferredMemberID: snapshot.activeShortcutPinId
+                        .map(SplitMemberID.shortcutPin)
+                        ?? snapshot.currentTabId.map(SplitMemberID.regularTab)
+                )
+            }
     }
 }

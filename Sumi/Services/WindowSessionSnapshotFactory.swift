@@ -2,7 +2,6 @@ import Foundation
 
 @MainActor
 struct WindowSessionSnapshotFactory {
-    let splitManager: SplitViewManager
     let glanceManager: GlanceManager
 
     func make(for windowState: BrowserWindowState) -> WindowSessionSnapshot {
@@ -32,8 +31,7 @@ struct WindowSessionSnapshotFactory {
                 navigateCurrentTab: windowState
                     .floatingBarDraftNavigatesCurrentTab
             ),
-            activeSplitGroupId: splitManager
-                .splitGroup(for: windowState.id)?.id,
+            splitSelection: windowState.splitSelection,
             glanceSession: glanceManager
                 .makeSessionSnapshot(for: windowState)
         )

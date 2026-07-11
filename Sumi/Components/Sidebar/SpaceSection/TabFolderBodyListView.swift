@@ -33,8 +33,12 @@ struct TabFolderBodyListView: View {
     let folderLayoutAnimation: Animation?
     let contextMenuActionOwner: TabFolderContextMenuActionOwner
     let mutationActions: TabFolderMutationActions
-    let onPrepareShortcutRestoreGap: (SplitGroupSidebarItem, SplitGroup) -> Void
-    let onPerformShortcutRestoreWithPreparedGap: (SplitGroupSidebarItem, SplitGroup, @escaping () -> Void) -> Void
+    let onPrepareShortcutRestoreGap: (UUID, SplitMemberID) -> Void
+    let onPerformShortcutRestoreWithPreparedGap: (
+        UUID,
+        SplitMemberID,
+        @escaping () -> Void
+    ) -> Void
     let onActivateShortcutPin: (ShortcutPin) -> Void
 
     @EnvironmentObject var splitManager: SplitViewManager
@@ -191,9 +195,9 @@ struct TabFolderBodyListView: View {
             guard let group = projection.splitGroup(with: groupId) else {
                 return false
             }
-            return SidebarSelectionElevation.splitGroupContainsCurrentTab(
+            return SidebarSelectionElevation.splitGroupIsSelected(
                 group,
-                currentTabId: windowState.currentTabId
+                selectedGroupID: windowState.splitSelection?.groupID
             )
         case .restoreGap, .placeholder:
             return false
@@ -239,20 +243,37 @@ struct TabFolderBodyListView: View {
                 browserContext: browserContext,
                 isAppKitInteractionEnabled: isInteractive,
                 accessibilityID: "folder-shortcut-host-split-row-\(group.id.uuidString)",
-                onActivateTab: { tab in
-                    browserContext.commands.requestUserTabActivation(tab, windowState)
+                onActivateMember: { memberID in
+                    browserContext.commands.focusSplitGroup(
+                        group.id,
+                        memberID,
+                        windowState.id
+                    )
                 },
-                onActivateGroup: { group in
-                    browserContext.commands.focusSplitGroup(group, windowState)
+                onRestoreShortcutMember: { memberID in
+                    browserContext.commands.restoreShortcutSplitMember(
+                        group.id,
+                        memberID,
+                        windowState.id
+                    )
                 },
-                onRestoreShortcutSplitMember: { item, group in
-                    browserContext.commands.restoreShortcutSplitMember(item.id, group, windowState)
+                onCloseMember: { memberID in
+                    browserContext.commands.closeSplitMember(
+                        group.id,
+                        memberID,
+                        windowState.id
+                    )
                 },
-                onCloseTab: { tab in
-                    browserContext.commands.closeTab(tab, windowState)
+                onPrepareShortcutRestoreGap: { memberID in
+                    onPrepareShortcutRestoreGap(group.id, memberID)
                 },
-                onPrepareShortcutRestoreGap: onPrepareShortcutRestoreGap,
-                onPerformShortcutRestoreWithPreparedGap: onPerformShortcutRestoreWithPreparedGap
+                onPerformShortcutRestoreWithPreparedGap: { memberID, update in
+                    onPerformShortcutRestoreWithPreparedGap(
+                        group.id,
+                        memberID,
+                        update
+                    )
+                }
             )
             .environmentObject(splitManager)
         }
@@ -267,7 +288,11 @@ struct TabFolderBodyListView: View {
                 accessibilityID: "folder-split-placeholder-\(pin.id.uuidString)",
                 isAppKitInteractionEnabled: isInteractive,
                 action: {
-                    browserContext.commands.focusSplitGroup(placeholderGroup, windowState)
+                    browserContext.commands.focusSplitGroup(
+                        placeholderGroup.id,
+                        .shortcutPin(pin.id),
+                        windowState.id
+                    )
                 }
             )
             .opacity(
@@ -325,10 +350,8 @@ struct TabFolderBodyListView: View {
         if windowState.currentShortcutPinId == pin.id {
             return true
         }
-        guard let currentTabId = windowState.currentTabId else {
-            return false
-        }
-        return group.contains(currentTabId)
-            || group.member(forPinId: pin.id)?.tabId == currentTabId
+        return windowState.splitSelection?.groupID == group.id
+            && windowState.splitSelection?.activeMemberID == .shortcutPin(pin.id)
     }
+
 }

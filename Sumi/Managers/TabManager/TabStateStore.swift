@@ -13,7 +13,7 @@ final class TabStateStore {
     let spaces = TabSpaceCollectionStateOwner()
     let regularTabs = RegularTabCollectionStateOwner()
     let selection = TabSelectionStateOwner()
-    let splitGroups = SplitGroupCollectionStateOwner()
+    let splitGroups = SplitGroupStore()
     let folders = TabFolderCollectionStateOwner()
     let shortcutPins = ShortcutPinCollectionStateOwner()
     let transientTabs = TabTransientTabRegistryOwner()

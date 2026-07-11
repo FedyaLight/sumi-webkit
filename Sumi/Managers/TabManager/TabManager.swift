@@ -26,7 +26,7 @@ class TabManager: ObservableObject {
     var spaceStateOwner: TabSpaceCollectionStateOwner { stateStore.spaces }
     var regularTabCollectionStateOwner: RegularTabCollectionStateOwner { stateStore.regularTabs }
     var selectionStateOwner: TabSelectionStateOwner { stateStore.selection }
-    var splitGroupCollectionStateOwner: SplitGroupCollectionStateOwner { stateStore.splitGroups }
+    var splitGroupStore: SplitGroupStore { stateStore.splitGroups }
     var folderCollectionStateOwner: TabFolderCollectionStateOwner { stateStore.folders }
     var shortcutPinCollectionStateOwner: ShortcutPinCollectionStateOwner { stateStore.shortcutPins }
     var transientTabRegistryOwner: TabTransientTabRegistryOwner { stateStore.transientTabs }
@@ -44,18 +44,18 @@ class TabManager: ObservableObject {
     lazy var shortcutTabWindowQuery = ShortcutTabWindowQuery(tabManager: self)
     lazy var shortcutTabBindings = ShortcutTabBindingSynchronizer(tabManager: self)
     lazy var shortcutTabMaterializer = ShortcutTabMaterializer(tabManager: self)
+    lazy var splitGroupMutations = SplitGroupMutationService(tabManager: self)
+    lazy var splitGroupSidebarOrdering = SplitGroupSidebarOrderingService(
+        tabManager: self
+    )
+    lazy var splitGroupMembership = SplitGroupMembershipQuery(tabManager: self)
     lazy var regularTabShortcutConversion = RegularTabShortcutConversionService(
         tabManager: self
     )
     lazy var shortcutPinToRegularTab = ShortcutPinToRegularTabService(
         tabManager: self
     )
-    lazy var shortcutLiveTabRetirement = ShortcutLiveTabRetirementService(
-        registry: liveShortcutTabs,
-        structuralLookup: structuralLookupCoordinator,
-        runtimePorts: { [weak self] in self?.runtimePorts },
-        runtimeTeardown: runtimeTeardown
-    )
+    lazy var shortcutLiveTabRetirement = ShortcutLiveTabRetirementService(tabManager: self)
     lazy var shortcutTabPromotion = ShortcutTabPromotionService(tabManager: self)
     lazy var runtimeTeardown = TabRuntimeTeardownService(
         persistence: structuralPersistence,
@@ -75,7 +75,6 @@ class TabManager: ObservableObject {
         structuralLookup: structuralLookupCoordinator,
         loadLifecycle: startupRestoreLifecycle,
         structuralInstaller: structuralInstallOwner,
-        splitGroupStructure: splitGroupStructureOwner,
         runtimePreparation: runtimePreparationOwner,
         lazyRestore: lazyRestoreCoordinator,
         persistence: structuralPersistence
@@ -86,7 +85,8 @@ class TabManager: ObservableObject {
         persistence: structuralPersistence,
         structuralMutations: structuralCollectionMutationOwner,
         structuralLookup: structuralLookupCoordinator,
-        splitGroups: splitGroupStructureOwner,
+        splitGroupStore: splitGroupStore,
+        splitGroupMutations: splitGroupMutations,
         liveShortcutTabs: liveShortcutTabs,
         runtimePorts: { [weak self] in self?.runtimePorts },
         runtimeTeardown: runtimeTeardown

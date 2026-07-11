@@ -1,7 +1,8 @@
 import Foundation
-@testable import Sumi
-import XCTest
 import SumiDomain
+import XCTest
+
+@testable import Sumi
 
 @MainActor
 final class TabStructuralCollectionMutationOwnerTests: XCTestCase {
@@ -181,7 +182,11 @@ final class TabStructuralInstallOwnerTests: XCTestCase {
         let spacePin = Self.makePin(role: .spacePinned, spaceId: space.id, index: 0)
         let pendingPin = Self.makePin(role: .essential, index: 1)
         let group = try XCTUnwrap(
-            SplitGroup.make(tabIds: [tab.id, siblingTabId], layoutKind: .vertical, activeTabId: tab.id)
+            SplitGroup.make(
+                members: [.regularTab(tab.id), .regularTab(siblingTabId)],
+                layoutKind: .vertical,
+                container: .regularTabs(spaceId: space.id)
+            )
         )
 
         owner.install(

@@ -3,12 +3,16 @@
 //  Sumi
 //
 
+import SumiDomain
 import SwiftUI
 
 extension SpaceView {
     private var launcherProjection: SpaceLauncherProjectionSnapshot? {
         guard windowState.isIncognito == false else { return nil }
-        return browserContext.tabManager.spaceLauncherProjectionOwner.projection(for: space.id, in: windowState.id)
+        return browserContext.tabManager.spaceLauncherProjection.projection(
+            for: space.id,
+            in: windowState.id
+        )
     }
 
     private var topLevelPinnedPins: [ShortcutPin] {
@@ -47,7 +51,8 @@ extension SpaceView {
 
     private var spacePinnedItems: [SpacePinnedListItem] {
         guard !windowState.isIncognito else { return [] }
-        return browserContext.tabManager.splitGroupStructureOwner.topLevelSpacePinnedVisualItems(for: space.id)
+        return browserContext.tabManager.splitGroupSidebarOrdering
+            .topLevelItems(for: space.id)
     }
 
     private var spacePinnedDisplayModel: SpacePinnedDisplayModel {
@@ -139,7 +144,11 @@ extension SpaceView {
 
     @ViewBuilder
     private func shortcutHostedSplitGroupView(_ group: SplitGroup, topLevelPinnedIndex: Int) -> some View {
-        let items = SplitGroupSidebarModel.items(for: group, tabManager: browserContext.tabManager)
+        let items = SplitGroupSidebarModel.items(
+            for: group,
+            tabManager: browserContext.tabManager,
+            windowID: windowState.id
+        )
         if !items.isEmpty {
             ShortcutHostedSplitGroupRow(
                 group: group,
@@ -148,23 +157,39 @@ extension SpaceView {
                 tabManager: browserContext.tabManager,
                 isAppKitInteractionEnabled: isInteractive,
                 accessibilityID: "shortcut-host-split-row-\(group.id.uuidString)",
-                onActivateTab: { tab in
-                    browserContext.commands.requestUserTabActivation(tab, windowState)
+                onActivateMember: { memberID in
+                    browserContext.commands.focusSplitGroup(
+                        group.id,
+                        memberID,
+                        windowState.id
+                    )
                 },
-                onActivateGroup: { group in
-                    browserContext.commands.focusSplitGroup(group, windowState)
+                onRestoreShortcutMember: { memberID in
+                    browserContext.commands.restoreShortcutSplitMember(
+                        group.id,
+                        memberID,
+                        windowState.id
+                    )
                 },
-                onRestoreShortcutSplitMember: { item, group in
-                    browserContext.commands.restoreShortcutSplitMember(item.id, group, windowState)
+                onCloseMember: { memberID in
+                    browserContext.commands.closeSplitMember(
+                        group.id,
+                        memberID,
+                        windowState.id
+                    )
                 },
-                onCloseTab: { tab in
-                    browserContext.commands.closeTab(tab, windowState)
+                onPrepareShortcutRestoreGap: { memberID in
+                    prepareShortcutRestoreGap(
+                        groupID: group.id,
+                        memberID: memberID
+                    )
                 },
-                onPrepareShortcutRestoreGap: { item, group in
-                    prepareShortcutRestoreGap(for: item, in: group)
-                },
-                onPerformShortcutRestoreWithPreparedGap: { item, group, update in
-                    performShortcutRestoreWithPreparedGap(for: item, in: group, update: update)
+                onPerformShortcutRestoreWithPreparedGap: { memberID, update in
+                    performShortcutRestoreWithPreparedGap(
+                        groupID: group.id,
+                        memberID: memberID,
+                        update: update
+                    )
                 }
             )
             .environmentObject(splitManager)
@@ -201,7 +226,7 @@ extension SpaceView {
                             pinnedShortcutView(pin, topLevelPinnedIndex: entry.dropIndex)
                         }
                     case .item(.splitGroup(let groupId)):
-                        if let group = browserContext.tabManager.splitGroupCollectionStateOwner.group(with: groupId) {
+                        if let group = browserContext.tabManager.splitGroupStore.group(id: groupId) {
                             shortcutHostedSplitGroupView(group, topLevelPinnedIndex: entry.dropIndex)
                         }
                     case .dragPlaceholder:
@@ -243,12 +268,12 @@ extension SpaceView {
             guard let pin = topLevelPinnedPins.first(where: { $0.id == pinId }) else {
                 return false
             }
-            if let placeholderGroup = browserContext.tabManager.splitGroupStructureOwner.regularHostedSplitGroup(containingPinId: pin.id) {
+            if let placeholderGroup = regularSplitGroup(containing: pin.id) {
                 return isPinnedSplitPlaceholderSelected(placeholderGroup, pin: pin)
             }
             return shortcutPinIsElevated(pin)
         case .splitGroup(let groupId):
-            guard let group = browserContext.tabManager.splitGroupCollectionStateOwner.group(with: groupId) else {
+            guard let group = browserContext.tabManager.splitGroupStore.group(id: groupId) else {
                 return false
             }
             return splitGroupIsElevated(group)
@@ -260,9 +285,9 @@ extension SpaceView {
     }
 
     private func splitGroupIsElevated(_ group: SplitGroup) -> Bool {
-        SidebarSelectionElevation.splitGroupContainsCurrentTab(
+        SidebarSelectionElevation.splitGroupIsSelected(
             group,
-            currentTabId: windowState.currentTabId
+            selectedGroupID: windowState.splitSelection?.groupID
         )
     }
 
@@ -332,11 +357,18 @@ extension SpaceView {
             nestingDepth: 0,
             onUngroup: { spacePinnedActionOwner.ungroupFolder(folder) },
             onDelete: { spacePinnedActionOwner.deleteFolder(folder) },
-            onPrepareShortcutRestoreGap: { item, group in
-                prepareShortcutRestoreGap(for: item, in: group)
+            onPrepareShortcutRestoreGap: { groupID, memberID in
+                prepareShortcutRestoreGap(
+                    groupID: groupID,
+                    memberID: memberID
+                )
             },
-            onPerformShortcutRestoreWithPreparedGap: { item, group, update in
-                performShortcutRestoreWithPreparedGap(for: item, in: group, update: update)
+            onPerformShortcutRestoreWithPreparedGap: { groupID, memberID, update in
+                performShortcutRestoreWithPreparedGap(
+                    groupID: groupID,
+                    memberID: memberID,
+                    update: update
+                )
             }
         )
         .environment(windowState)
@@ -352,14 +384,18 @@ extension SpaceView {
 
     @ViewBuilder
     private func pinnedShortcutView(_ pin: ShortcutPin, topLevelPinnedIndex: Int) -> some View {
-        if let placeholderGroup = browserContext.tabManager.splitGroupStructureOwner.regularHostedSplitGroup(containingPinId: pin.id) {
+        if let placeholderGroup = regularSplitGroup(containing: pin.id) {
             ShortcutSplitPlaceholderRow(
                 pin: pin,
                 isSelected: isPinnedSplitPlaceholderSelected(placeholderGroup, pin: pin),
                 accessibilityID: "space-pinned-split-placeholder-\(pin.id.uuidString)",
                 isAppKitInteractionEnabled: isInteractive,
                 action: {
-                    browserContext.commands.focusSplitGroup(placeholderGroup, windowState)
+                    browserContext.commands.focusSplitGroup(
+                        placeholderGroup.id,
+                        .shortcutPin(pin.id),
+                        windowState.id
+                    )
                 }
             )
             .opacity(
@@ -424,11 +460,17 @@ extension SpaceView {
         if windowState.currentShortcutPinId == pin.id {
             return true
         }
-        guard let currentTabId = windowState.currentTabId else {
-            return false
+        return windowState.splitSelection?.groupID == group.id
+            && windowState.splitSelection?.activeMemberID == .shortcutPin(pin.id)
+    }
+
+    private func regularSplitGroup(containing pinID: UUID) -> SplitGroup? {
+        guard let group = browserContext.tabManager.splitGroupStore.group(
+            containing: .shortcutPin(pinID)
+        ), !group.container.isShortcutSidebar else {
+            return nil
         }
-        return group.contains(currentTabId)
-            || group.member(forPinId: pin.id)?.tabId == currentTabId
+        return group
     }
 
     private func activateShortcutPin(_ pin: ShortcutPin) {

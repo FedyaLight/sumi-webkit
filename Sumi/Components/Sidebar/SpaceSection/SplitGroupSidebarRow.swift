@@ -3,6 +3,7 @@
 //  Sumi
 //
 
+import SumiDomain
 import SwiftUI
 
 struct SplitGroupSidebarRow: View {
@@ -14,11 +15,10 @@ struct SplitGroupSidebarRow: View {
     let segmentAction: (SplitGroupSidebarItem) -> SplitGroupSidebarSegmentAction?
     var dragSource: (SplitGroupSidebarItem) -> SidebarDragSourceConfiguration? = { _ in nil }
     let contextMenuEntries: (Tab) -> [SidebarContextMenuEntry]
-    let onActivate: (Tab) -> Void
-    let onActivateGroup: () -> Void
-    var onSegmentActionAnimationStart: (SplitGroupSidebarItem) -> Void = { _ in }
-    let onSegmentAction: (SplitGroupSidebarItem) -> Void
-    let onSegmentMiddleClick: (SplitGroupSidebarItem) -> Void
+    let onActivateMember: (SplitMemberID) -> Void
+    var onSegmentActionAnimationStart: (SplitMemberID) -> Void = { _ in }
+    let onSegmentAction: (SplitMemberID) -> Void
+    let onSegmentMiddleClick: (SplitMemberID) -> Void
 
     @EnvironmentObject var splitManager: SplitViewManager
     @Environment(BrowserWindowState.self) var windowState
@@ -27,7 +27,7 @@ struct SplitGroupSidebarRow: View {
     @Environment(\.resolvedThemeContext) var themeContext
     @State var isRowHovered = false
     @State var displayedItems: [SplitGroupSidebarItem] = []
-    @State var departingItemIds = Set<UUID>()
+    @State var departingItemIds = Set<SplitMemberID>()
     @State var isCollapsingRow = false
 
     var body: some View {
@@ -43,6 +43,7 @@ struct SplitGroupSidebarRow: View {
             HStack(spacing: 0) {
                 ForEach(Array(rowItems.enumerated()), id: \.element.id) { index, item in
                     SplitGroupSegment(
+                        groupID: group.id,
                         item: item,
                         spaceId: spaceId,
                         isActive: isActive(item),
@@ -55,7 +56,7 @@ struct SplitGroupSidebarRow: View {
                         },
                         onActivate: { activate(item) },
                         onSegmentAction: { performSegmentMutation(for: item, in: rowItems) },
-                        onMiddleClick: { onSegmentMiddleClick(item) }
+                        onMiddleClick: { onSegmentMiddleClick(item.id) }
                     )
                     .frame(width: isDeparting(item) ? 0 : segmentWidth)
                     .clipped()
@@ -74,7 +75,7 @@ struct SplitGroupSidebarRow: View {
             )
             .animation(
                 shouldAnimateProjectedLayout ? SidebarDropMotion.contentLayout : nil,
-                value: departingItemIds.map(\.uuidString).sorted()
+                value: departingItemIds.map(\.sidebarStableDescription).sorted()
             )
         }
         .sidebarRowLifecycle(isCollapsed: isCollapsingRow)
@@ -100,13 +101,7 @@ struct SplitGroupSidebarRow: View {
     }
 
     func activate(_ item: SplitGroupSidebarItem) {
-        if item.tab == nil {
-            onActivateGroup()
-            return
-        }
-        if let tab = item.tab {
-            onActivate(tab)
-        }
+        onActivateMember(item.id)
     }
 
     var rowBackground: Color {
@@ -136,23 +131,20 @@ struct SplitGroupSidebarRow: View {
     }
 
     var isFocusedGroup: Bool {
-        guard let currentTabId else { return false }
-        return group.contains(currentTabId)
+        windowState.splitSelection?.groupID == group.id
     }
 
     func isActive(_ item: SplitGroupSidebarItem) -> Bool {
-        if currentTabId == item.id {
+        if windowState.splitSelection?.groupID == group.id,
+           windowState.splitSelection?.activeMemberID == item.id {
             return true
         }
-        if let pin = item.pin {
-            return windowState.currentShortcutPinId == pin.id
-                || group.activeTabId == pin.id
-                || group.member(forPinId: pin.id)?.tabId == currentTabId
+        switch item.id {
+        case .regularTab(let tabID):
+            return currentTabId == tabID
+        case .shortcutPin(let pinID):
+            return windowState.currentShortcutPinId == pinID
         }
-        if let tab = item.tab, let pinId = tab.shortcutPinId {
-            return windowState.currentShortcutPinId == pinId
-        }
-        return false
     }
 
     func splitContextMenuEntries(for tab: Tab) -> [SidebarContextMenuEntry] {
@@ -200,5 +192,16 @@ struct SplitGroupSidebarRow: View {
         entries.append(.separator)
         entries.append(contentsOf: splitEntries)
         return entries
+    }
+}
+
+private extension SplitMemberID {
+    var sidebarStableDescription: String {
+        switch self {
+        case .regularTab(let tabID):
+            return "regular-tab-\(tabID.uuidString)"
+        case .shortcutPin(let pinID):
+            return "shortcut-pin-\(pinID.uuidString)"
+        }
     }
 }

@@ -1,4 +1,5 @@
 import AppKit
+import SumiDomain
 
 final class NativeSplitTreeView: NSSplitView, NSSplitViewDelegate {
     let path: [Int]
@@ -8,7 +9,7 @@ final class NativeSplitTreeView: NSSplitView, NSSplitViewDelegate {
     private var isApplyingStoredSizes = false
     private var lastReportedSizes: [Double] = []
 
-    init(axis: SplitAxis, path: [Int], sizes: [Double]) {
+    init(axis: SumiDomain.SplitAxis, path: [Int], sizes: [Double]) {
         self.path = path
         self.storedSizes = sizes
         super.init(frame: .zero)

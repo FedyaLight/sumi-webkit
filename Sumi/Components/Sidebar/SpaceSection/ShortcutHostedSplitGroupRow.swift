@@ -1,3 +1,4 @@
+import SumiDomain
 import SwiftUI
 
 struct ShortcutHostedSplitGroupRow: View {
@@ -7,12 +8,14 @@ struct ShortcutHostedSplitGroupRow: View {
     let tabManager: TabManager
     let isAppKitInteractionEnabled: Bool
     let accessibilityID: String
-    let onActivateTab: (Tab) -> Void
-    let onActivateGroup: (SplitGroup) -> Void
-    let onRestoreShortcutSplitMember: (SplitGroupSidebarItem, SplitGroup) -> Void
-    let onCloseTab: (Tab) -> Void
-    let onPrepareShortcutRestoreGap: (SplitGroupSidebarItem, SplitGroup) -> Void
-    let onPerformShortcutRestoreWithPreparedGap: (SplitGroupSidebarItem, SplitGroup, @escaping () -> Void) -> Void
+    let onActivateMember: (SplitMemberID) -> Void
+    let onRestoreShortcutMember: (SplitMemberID) -> Void
+    let onCloseMember: (SplitMemberID) -> Void
+    let onPrepareShortcutRestoreGap: (SplitMemberID) -> Void
+    let onPerformShortcutRestoreWithPreparedGap: (
+        SplitMemberID,
+        @escaping () -> Void
+    ) -> Void
 
     @EnvironmentObject private var splitManager: SplitViewManager
     @Environment(BrowserWindowState.self) private var windowState
@@ -24,12 +27,14 @@ struct ShortcutHostedSplitGroupRow: View {
         browserContext: SidebarBrowserContext,
         isAppKitInteractionEnabled: Bool,
         accessibilityID: String,
-        onActivateTab: @escaping (Tab) -> Void,
-        onActivateGroup: @escaping (SplitGroup) -> Void,
-        onRestoreShortcutSplitMember: @escaping (SplitGroupSidebarItem, SplitGroup) -> Void,
-        onCloseTab: @escaping (Tab) -> Void,
-        onPrepareShortcutRestoreGap: @escaping (SplitGroupSidebarItem, SplitGroup) -> Void,
-        onPerformShortcutRestoreWithPreparedGap: @escaping (SplitGroupSidebarItem, SplitGroup, @escaping () -> Void) -> Void
+        onActivateMember: @escaping (SplitMemberID) -> Void,
+        onRestoreShortcutMember: @escaping (SplitMemberID) -> Void,
+        onCloseMember: @escaping (SplitMemberID) -> Void,
+        onPrepareShortcutRestoreGap: @escaping (SplitMemberID) -> Void,
+        onPerformShortcutRestoreWithPreparedGap: @escaping (
+            SplitMemberID,
+            @escaping () -> Void
+        ) -> Void
     ) {
         self.group = group
         self.items = items
@@ -37,12 +42,12 @@ struct ShortcutHostedSplitGroupRow: View {
         self.tabManager = browserContext.tabManager
         self.isAppKitInteractionEnabled = isAppKitInteractionEnabled
         self.accessibilityID = accessibilityID
-        self.onActivateTab = onActivateTab
-        self.onActivateGroup = onActivateGroup
-        self.onRestoreShortcutSplitMember = onRestoreShortcutSplitMember
-        self.onCloseTab = onCloseTab
+        self.onActivateMember = onActivateMember
+        self.onRestoreShortcutMember = onRestoreShortcutMember
+        self.onCloseMember = onCloseMember
         self.onPrepareShortcutRestoreGap = onPrepareShortcutRestoreGap
-        self.onPerformShortcutRestoreWithPreparedGap = onPerformShortcutRestoreWithPreparedGap
+        self.onPerformShortcutRestoreWithPreparedGap =
+            onPerformShortcutRestoreWithPreparedGap
     }
 
     init(
@@ -52,12 +57,14 @@ struct ShortcutHostedSplitGroupRow: View {
         tabManager: TabManager,
         isAppKitInteractionEnabled: Bool,
         accessibilityID: String,
-        onActivateTab: @escaping (Tab) -> Void,
-        onActivateGroup: @escaping (SplitGroup) -> Void,
-        onRestoreShortcutSplitMember: @escaping (SplitGroupSidebarItem, SplitGroup) -> Void,
-        onCloseTab: @escaping (Tab) -> Void,
-        onPrepareShortcutRestoreGap: @escaping (SplitGroupSidebarItem, SplitGroup) -> Void,
-        onPerformShortcutRestoreWithPreparedGap: @escaping (SplitGroupSidebarItem, SplitGroup, @escaping () -> Void) -> Void
+        onActivateMember: @escaping (SplitMemberID) -> Void,
+        onRestoreShortcutMember: @escaping (SplitMemberID) -> Void,
+        onCloseMember: @escaping (SplitMemberID) -> Void,
+        onPrepareShortcutRestoreGap: @escaping (SplitMemberID) -> Void,
+        onPerformShortcutRestoreWithPreparedGap: @escaping (
+            SplitMemberID,
+            @escaping () -> Void
+        ) -> Void
     ) {
         self.group = group
         self.items = items
@@ -65,12 +72,12 @@ struct ShortcutHostedSplitGroupRow: View {
         self.tabManager = tabManager
         self.isAppKitInteractionEnabled = isAppKitInteractionEnabled
         self.accessibilityID = accessibilityID
-        self.onActivateTab = onActivateTab
-        self.onActivateGroup = onActivateGroup
-        self.onRestoreShortcutSplitMember = onRestoreShortcutSplitMember
-        self.onCloseTab = onCloseTab
+        self.onActivateMember = onActivateMember
+        self.onRestoreShortcutMember = onRestoreShortcutMember
+        self.onCloseMember = onCloseMember
         self.onPrepareShortcutRestoreGap = onPrepareShortcutRestoreGap
-        self.onPerformShortcutRestoreWithPreparedGap = onPerformShortcutRestoreWithPreparedGap
+        self.onPerformShortcutRestoreWithPreparedGap =
+            onPerformShortcutRestoreWithPreparedGap
     }
 
     var body: some View {
@@ -83,86 +90,71 @@ struct ShortcutHostedSplitGroupRow: View {
             segmentAction: { item in
                 SplitGroupSidebarModel.segmentAction(for: item, in: group)
             },
-            dragSource: { item in
-                shortcutHostedSplitSegmentDragSource(for: item)
-            },
+            dragSource: shortcutHostedSplitSegmentDragSource,
             contextMenuEntries: { _ in [] },
-            onActivate: { tab in
-                onActivateTab(tab)
-            },
-            onActivateGroup: {
-                onActivateGroup(group)
-            },
-            onSegmentActionAnimationStart: { item in
-                if SplitGroupSidebarModel.segmentAction(for: item, in: group) == .restore {
-                    onPrepareShortcutRestoreGap(item, group)
+            onActivateMember: onActivateMember,
+            onSegmentActionAnimationStart: { memberID in
+                if isShortcut(memberID) {
+                    onPrepareShortcutRestoreGap(memberID)
                 }
             },
-            onSegmentAction: { item in
-                performShortcutHostedSegmentAction(for: item)
-            },
-            onSegmentMiddleClick: { item in
-                performShortcutHostedSegmentMiddleClick(for: item)
-            }
+            onSegmentAction: performShortcutHostedSegmentAction,
+            onSegmentMiddleClick: onCloseMember
         )
         .environmentObject(splitManager)
         .accessibilityIdentifier(accessibilityID)
     }
 
-    private func performShortcutHostedSegmentAction(for item: SplitGroupSidebarItem) {
-        if SplitGroupSidebarModel.segmentAction(for: item, in: group) == .restore {
-            onPerformShortcutRestoreWithPreparedGap(item, group) {
+    private func performShortcutHostedSegmentAction(
+        for memberID: SplitMemberID
+    ) {
+        if isShortcut(memberID) {
+            onPerformShortcutRestoreWithPreparedGap(memberID) {
                 SidebarMotionTransaction.withoutAnimation {
-                    onRestoreShortcutSplitMember(item, group)
+                    onRestoreShortcutMember(memberID)
                 }
             }
             return
         }
-
-        guard let tab = item.tab else { return }
         SidebarMotionTransaction.withoutAnimation {
-            onCloseTab(tab)
+            onCloseMember(memberID)
         }
     }
 
-    private func performShortcutHostedSegmentMiddleClick(for item: SplitGroupSidebarItem) {
-        guard let tab = item.tab else { return }
-        SidebarMotionTransaction.withoutAnimation {
-            onCloseTab(tab)
-        }
+    private func isShortcut(_ memberID: SplitMemberID) -> Bool {
+        if case .shortcutPin = memberID { return true }
+        return false
     }
 
     private func shortcutHostedSplitSegmentDragSource(
         for item: SplitGroupSidebarItem
     ) -> SidebarDragSourceConfiguration? {
-        let member = SplitGroupSidebarModel.member(for: item, in: group)
-        if let pin = SplitGroupSidebarModel.shortcutPin(
-            for: item,
-            member: member,
-            tabManager: tabManager
-        ) {
-            let dragItemId = item.tab?.id ?? pin.id
+        if let pin = item.pin {
             return SidebarDragSourceConfiguration(
-                item: SumiDragItem(
-                    tabId: dragItemId,
+                item: SumiDragItem.splitMember(
+                    item.id,
+                    groupID: group.id,
                     title: item.title,
-                    urlString: item.tab?.url.absoluteString ?? pin.launchURL.absoluteString
+                    urlString: item.tab?.url.absoluteString
+                        ?? pin.launchURL.absoluteString
                 ),
-                sourceZone: SplitGroupSidebarModel.sourceZone(for: pin, fallbackSpaceId: spaceId),
+                sourceZone: SplitGroupSidebarModel.sourceZone(
+                    for: pin,
+                    fallbackSpaceId: spaceId
+                ),
                 previewKind: .row,
                 previewIcon: item.tab?.favicon ?? pin.storedFavicon,
                 exclusionZones: [.trailingStrip(32)],
-                onActivate: {
-                    onActivateGroup(group)
-                },
+                onActivate: { onActivateMember(item.id) },
                 isEnabled: isAppKitInteractionEnabled
             )
         }
 
         guard let tab = item.tab else { return nil }
         return SidebarDragSourceConfiguration(
-            item: SumiDragItem(
-                tabId: tab.id,
+            item: SumiDragItem.splitMember(
+                item.id,
+                groupID: group.id,
                 title: tab.name,
                 urlString: tab.url.absoluteString
             ),
@@ -170,9 +162,7 @@ struct ShortcutHostedSplitGroupRow: View {
             previewKind: .row,
             previewIcon: tab.favicon,
             exclusionZones: [.trailingStrip(32)],
-            onActivate: {
-                onActivateTab(tab)
-            },
+            onActivate: { onActivateMember(item.id) },
             isEnabled: isAppKitInteractionEnabled
         )
     }

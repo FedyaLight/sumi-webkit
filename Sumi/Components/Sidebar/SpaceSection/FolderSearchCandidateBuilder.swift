@@ -1,3 +1,4 @@
+import SumiDomain
 import SwiftUI
 
 enum FolderSearchPopoverPolicy {
@@ -118,7 +119,7 @@ struct FolderSearchCandidateBuilder {
                 )
 
             case .splitGroup(let groupID):
-                guard let group = tabManager.splitGroupCollectionStateOwner.group(with: groupID) else {
+                guard let group = tabManager.splitGroupStore.group(id: groupID) else {
                     return []
                 }
                 return SplitGroupSidebarModel.items(for: group, tabManager: tabManager).map { item in
@@ -189,8 +190,11 @@ struct FolderSearchCandidateBuilder {
         let title = item.title
 
         return FolderSearchCandidate(
-            id: "split-\(group.id.uuidString)-\(item.id.uuidString)",
-            kind: .splitGroupItem(groupId: group.id, itemId: item.id),
+            id: "split-\(group.id.uuidString)-\(item.stableIDDescription)",
+            kind: .splitGroupItem(
+                groupId: group.id,
+                itemId: item.persistentID
+            ),
             title: title,
             secondaryText: secondaryText(host: host, folderPath: folderPath),
             icon: item.tab?.favicon ?? item.pin?.storedFavicon ?? Image(systemName: "square.split.2x2"),

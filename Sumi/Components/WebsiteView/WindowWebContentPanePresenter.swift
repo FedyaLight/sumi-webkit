@@ -68,15 +68,15 @@ final class WindowWebContentPanePresenter {
 
     @discardableResult
     func presentSplitGroup(
-        _ group: SplitGroup,
+        _ presentation: WindowSplitPresentation,
         tabs: [Tab],
         containerRegistration: WebViewCompositorContainerRegistration
     ) -> Bool {
         guard compositorRuntime.owns(containerRegistration) else { return false }
-        containerView.setPaneLayout(.split(group))
+        containerView.setPaneLayout(.split(presentation))
         containerView.layoutSubtreeIfNeeded()
 
-        let visibleTabIDs = Set(group.tabIds)
+        let visibleTabIDs = Set(presentation.visibleTabIDs)
         for tabID in hostRegistry.splitPaneTabIds where !visibleTabIDs.contains(tabID) {
             guard compositorRuntime.owns(containerRegistration) else { return false }
             hostAttachments.clearSplitPaneHost(tabID)

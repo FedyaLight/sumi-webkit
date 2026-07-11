@@ -79,6 +79,13 @@ final class ShortcutLiveTabRetirementService {
         planner.prepare(pinId: pinId, in: windowId)
     }
 
+    func prepareRetirements(
+        pinIds: Set<UUID>,
+        in windowId: UUID
+    ) -> PreparedShortcutLiveTabRetirement? {
+        planner.prepare(pinIds: pinIds, in: windowId)
+    }
+
     func prepareDeletedPinRetirement(
         _ pinId: UUID
     ) -> PreparedShortcutLiveTabRetirement? {
@@ -119,5 +126,16 @@ final class ShortcutLiveTabRetirementService {
         structuralLookup.runAfterCurrentBatch { [self] in
             _ = finish(prepared)
         }
+    }
+}
+
+extension ShortcutLiveTabRetirementService {
+    convenience init(tabManager: TabManager) {
+        self.init(
+            registry: tabManager.liveShortcutTabs,
+            structuralLookup: tabManager.structuralLookupCoordinator,
+            runtimePorts: { [weak tabManager] in tabManager?.runtimePorts },
+            runtimeTeardown: tabManager.runtimeTeardown
+        )
     }
 }

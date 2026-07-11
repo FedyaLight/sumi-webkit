@@ -319,7 +319,6 @@ final class WindowSessionPersistenceSchedulerTests: XCTestCase {
         )
         let scheduler = WindowSessionPersistenceScheduler()
         let snapshotFactory = WindowSessionSnapshotFactory(
-            splitManager: SplitViewManager(),
             glanceManager: GlanceManager()
         )
         let historyStore = LastSessionWindowsStore(userDefaults: defaults)
@@ -381,7 +380,6 @@ final class WindowSessionPersistenceSchedulerTests: XCTestCase {
             environment: { [:] }
         )
         let snapshotFactory = WindowSessionSnapshotFactory(
-            splitManager: SplitViewManager(),
             glanceManager: GlanceManager()
         )
         return DurableWriteHarness(

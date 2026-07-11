@@ -1,9 +1,10 @@
 import CoreGraphics
 import Foundation
+import SumiDomain
 
 enum SplitLayoutGeometry {
     struct LeafHit: Equatable {
-        let tabId: UUID
+        let memberID: SplitMemberID
         let rect: CGRect
         let path: [Int]
     }
@@ -11,15 +12,15 @@ enum SplitLayoutGeometry {
     struct TilePlane: Equatable {
         let path: [Int]
         let rect: CGRect
-        let tabIds: [UUID]
+        let memberIDs: [SplitMemberID]
     }
 
-    static func leafTabId(
+    static func leafMemberID(
         in tree: SplitLayoutTree,
         at point: CGPoint,
         in rect: CGRect
-    ) -> UUID? {
-        leafHit(in: tree, at: point, in: rect)?.tabId
+    ) -> SplitMemberID? {
+        leafHit(in: tree, at: point, in: rect)?.memberID
     }
 
     static func leafHit(
@@ -40,46 +41,58 @@ enum SplitLayoutGeometry {
     static func leafRects(
         in tree: SplitLayoutTree,
         rect: CGRect
-    ) -> [UUID: CGRect] {
-        Dictionary(uniqueKeysWithValues: leafHits(in: tree, rect: rect).map { ($0.tabId, $0.rect) })
+    ) -> [SplitMemberID: CGRect] {
+        Dictionary(
+            uniqueKeysWithValues: leafHits(in: tree, rect: rect).map {
+                ($0.memberID, $0.rect)
+            }
+        )
     }
 
     static func leafRect(
-        for tabId: UUID,
+        for memberID: SplitMemberID,
         in tree: SplitLayoutTree,
         rect: CGRect
     ) -> CGRect? {
-        leafHit(for: tabId, in: tree, rect: rect, path: [])?.rect
+        leafHit(for: memberID, in: tree, rect: rect, path: [])?.rect
     }
 
-    static func edgeTabId(
+    static func edgeMemberID(
         in tree: SplitLayoutTree,
         for side: SplitDropSide,
         in rect: CGRect
-    ) -> UUID? {
+    ) -> SplitMemberID? {
         let leaves = leafHits(in: tree, rect: rect)
-        guard leaves.isEmpty == false else { return nil }
+        guard !leaves.isEmpty else { return nil }
         switch side {
         case .left:
             return leaves.min {
-                if $0.rect.minX == $1.rect.minX { return $0.rect.maxY > $1.rect.maxY }
+                if $0.rect.minX == $1.rect.minX {
+                    return $0.rect.maxY > $1.rect.maxY
+                }
                 return $0.rect.minX < $1.rect.minX
-            }?.tabId
+            }?.memberID
         case .right:
             return leaves.max {
-                if $0.rect.maxX == $1.rect.maxX { return $0.rect.maxY < $1.rect.maxY }
+                if $0.rect.maxX == $1.rect.maxX {
+                    return $0.rect.maxY < $1.rect.maxY
+                }
                 return $0.rect.maxX < $1.rect.maxX
-            }?.tabId
+            }?.memberID
         case .top:
             return leaves.max {
-                if $0.rect.maxY == $1.rect.maxY { return $0.rect.minX > $1.rect.minX }
+                if $0.rect.maxY == $1.rect.maxY {
+                    return $0.rect.minX > $1.rect.minX
+                }
                 return $0.rect.maxY < $1.rect.maxY
-            }?.tabId
+            }?.memberID
         case .bottom:
             return leaves.min {
-                if $0.rect.minY == $1.rect.minY { return $0.rect.minX < $1.rect.minX }
+                if $0.rect.minY == $1.rect.minY {
+                    return $0.rect.minX < $1.rect.minX
+                }
                 return $0.rect.minY < $1.rect.minY
-            }?.tabId
+            }?.memberID
         case .center:
             return nil
         }
@@ -87,7 +100,7 @@ enum SplitLayoutGeometry {
 
     static func hasSecondaryPlane(in tree: SplitLayoutTree) -> Bool {
         guard case .split(_, _, let children) = tree else { return false }
-        return children.contains { isLeaf($0) == false }
+        return children.contains { !isLeaf($0) }
     }
 
     static func tilePlanes(
@@ -95,7 +108,12 @@ enum SplitLayoutGeometry {
         rect: CGRect,
         includeChildPlanes: Bool
     ) -> [TilePlane] {
-        tilePlanes(in: tree, rect: rect, path: [], includeChildPlanes: includeChildPlanes)
+        tilePlanes(
+            in: tree,
+            rect: rect,
+            path: [],
+            includeChildPlanes: includeChildPlanes
+        )
     }
 
     private static func leafHit(
@@ -104,21 +122,33 @@ enum SplitLayoutGeometry {
         in rect: CGRect,
         path: [Int]
     ) -> LeafHit? {
-        guard rect.width > 0, rect.height > 0, rect.contains(point) else { return nil }
+        guard rect.width > 0, rect.height > 0, rect.contains(point) else {
+            return nil
+        }
         switch tree {
-        case .leaf(let tabId, _):
-            return LeafHit(tabId: tabId, rect: rect, path: path)
+        case .leaf(let member, _):
+            return LeafHit(memberID: member.memberID, rect: rect, path: path)
         case .split(let axis, _, let children):
             let childRects = childRects(in: rect, axis: axis, children: children)
             guard childRects.count == children.count else { return nil }
             for (index, child) in children.enumerated() {
                 let childRect = childRects[index]
                 if childRect.contains(point) {
-                    return leafHit(in: child, at: point, in: childRect, path: path + [index])
+                    return leafHit(
+                        in: child,
+                        at: point,
+                        in: childRect,
+                        path: path + [index]
+                    )
                 }
             }
             guard let lastIndex = children.indices.last else { return nil }
-            return leafHit(in: children[lastIndex], at: point, in: childRects[lastIndex], path: path + [lastIndex])
+            return leafHit(
+                in: children[lastIndex],
+                at: point,
+                in: childRects[lastIndex],
+                path: path + [lastIndex]
+            )
         }
     }
 
@@ -129,40 +159,46 @@ enum SplitLayoutGeometry {
     ) -> [LeafHit] {
         guard rect.width > 0, rect.height > 0 else { return [] }
         switch tree {
-        case .leaf(let tabId, _):
-            return [LeafHit(tabId: tabId, rect: rect, path: path)]
+        case .leaf(let member, _):
+            return [
+                LeafHit(memberID: member.memberID, rect: rect, path: path),
+            ]
         case .split(let axis, _, let children):
             let childRects = childRects(in: rect, axis: axis, children: children)
             guard childRects.count == children.count else { return [] }
-            return children.enumerated().flatMap { index, child -> [LeafHit] in
-                leafHits(in: child, rect: childRects[index], path: path + [index])
+            return children.enumerated().flatMap { index, child in
+                leafHits(
+                    in: child,
+                    rect: childRects[index],
+                    path: path + [index]
+                )
             }
         }
     }
 
     private static func leafHit(
-        for tabId: UUID,
+        for memberID: SplitMemberID,
         in tree: SplitLayoutTree,
         rect: CGRect,
         path: [Int]
     ) -> LeafHit? {
         guard rect.width > 0, rect.height > 0 else { return nil }
         switch tree {
-        case .leaf(let id, _):
-            return id == tabId ? LeafHit(tabId: id, rect: rect, path: path) : nil
+        case .leaf(let member, _):
+            guard member.memberID == memberID else { return nil }
+            return LeafHit(memberID: memberID, rect: rect, path: path)
         case .split(let axis, _, let children):
             let childRects = childRects(in: rect, axis: axis, children: children)
             guard childRects.count == children.count else { return nil }
             for (index, child) in children.enumerated() {
-                guard let hit = leafHit(
-                    for: tabId,
+                if let hit = leafHit(
+                    for: memberID,
                     in: child,
                     rect: childRects[index],
                     path: path + [index]
-                ) else {
-                    continue
+                ) {
+                    return hit
                 }
-                return hit
             }
             return nil
         }
@@ -175,21 +211,21 @@ enum SplitLayoutGeometry {
         includeChildPlanes: Bool
     ) -> [TilePlane] {
         var planes = [
-            TilePlane(path: path, rect: rect, tabIds: tree.tabIds),
+            TilePlane(path: path, rect: rect, memberIDs: tree.memberIDs),
         ]
         guard includeChildPlanes,
-              case .split(let axis, _, let children) = tree
-        else {
+              case .split(let axis, _, let children) = tree else {
             return planes
         }
 
         let childRects = childRects(in: rect, axis: axis, children: children)
+        guard childRects.count == children.count else { return planes }
         for (index, child) in children.enumerated() {
             planes.append(
                 TilePlane(
                     path: path + [index],
                     rect: childRects[index],
-                    tabIds: child.tabIds
+                    memberIDs: child.memberIDs
                 )
             )
         }
@@ -201,7 +237,9 @@ enum SplitLayoutGeometry {
         axis: SplitAxis,
         children: [SplitLayoutTree]
     ) -> [CGRect] {
-        let weights = SplitLayoutSizing.normalizedWeights(children.map(\.sizeInParent))
+        let weights = SplitLayoutSizing.normalizedWeights(
+            children.map(\.weightInParent)
+        )
         guard weights.count == children.count else { return [] }
         var cursor: CGFloat = 0
         return weights.enumerated().map { index, weight in
@@ -213,14 +251,24 @@ enum SplitLayoutGeometry {
                     ? remaining
                     : min(remaining, rect.width * fraction)
                 defer { cursor += width }
-                return CGRect(x: rect.minX + cursor, y: rect.minY, width: width, height: rect.height)
+                return CGRect(
+                    x: rect.minX + cursor,
+                    y: rect.minY,
+                    width: width,
+                    height: rect.height
+                )
             case .column:
                 let remaining = max(0, rect.height - cursor)
                 let height = index == weights.count - 1
                     ? remaining
                     : min(remaining, rect.height * fraction)
                 defer { cursor += height }
-                return CGRect(x: rect.minX, y: rect.maxY - cursor - height, width: rect.width, height: height)
+                return CGRect(
+                    x: rect.minX,
+                    y: rect.maxY - cursor - height,
+                    width: rect.width,
+                    height: height
+                )
             }
         }
     }

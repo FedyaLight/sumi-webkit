@@ -249,8 +249,10 @@ tab_space_services=(
 )
 tab_space_removal_helpers=(
   "Sumi/Managers/TabManager/SpaceContentRetirementService.swift"
+  "Sumi/Managers/TabManager/SpaceSplitGroupRetirementService.swift"
   "Sumi/Managers/TabManager/SpaceTabInventory.swift"
   "Sumi/Managers/TabManager/DeletedSpaceWindowStateReconciler.swift"
+  "Sumi/Managers/TabManager/DeletedSpaceWindowReferencePruner.swift"
   "Sumi/Managers/TabManager/TabRuntimeTeardownService.swift"
 )
 tab_space_group="Sumi/Managers/TabManager/TabSpaceServices.swift"
@@ -326,6 +328,7 @@ tab_lifecycle_bag_capabilities="${tab_lifecycle_bag_capabilities:-0}"
 shortcut_retirement_file="Sumi/Managers/TabManager/ShortcutLiveTabRetirementService.swift"
 shortcut_selection_file="Sumi/Managers/TabManager/ShortcutSelectionReconciler.swift"
 shortcut_registry_file="Sumi/Managers/TabManager/LiveShortcutTabRegistry.swift"
+shortcut_registry_snapshot="Sumi/Managers/TabManager/LiveShortcutTabSnapshot.swift"
 shortcut_window_query_file="Sumi/Managers/TabManager/ShortcutTabWindowQuery.swift"
 shortcut_binding_file="Sumi/Managers/TabManager/ShortcutTabBindingSynchronizer.swift"
 shortcut_materializer_file="Sumi/Managers/TabManager/ShortcutTabMaterializer.swift"
@@ -342,6 +345,7 @@ shortcut_promotion_file="Sumi/Managers/TabManager/ShortcutTabPromotionService.sw
 shortcut_selection_transition_file="Sumi/Managers/TabManager/ShortcutSelectionTransition.swift"
 shortcut_runtime_files=(
   "$shortcut_registry_file"
+  "$shortcut_registry_snapshot"
   "$shortcut_window_query_file"
   "$shortcut_binding_file"
   "$shortcut_materializer_file"
@@ -414,18 +418,27 @@ shortcut_retirement_browser_policy="$(
 split_shortcut_group="Sumi/Managers/BrowserManager/SplitShortcutServices.swift"
 split_shortcut_runtime_lease="Sumi/Managers/BrowserManager/SplitShortcutRuntimeLease.swift"
 split_shortcut_focus="Sumi/Managers/BrowserManager/SplitShortcutFocusService.swift"
+split_shortcut_materialization="Sumi/Managers/BrowserManager/WindowSplitMaterializationService.swift"
 split_shortcut_resolver="Sumi/Managers/BrowserManager/SplitShortcutMemberResolver.swift"
 split_shortcut_restore="Sumi/Managers/BrowserManager/SplitShortcutMemberRestoreService.swift"
 split_shortcut_launcher="Sumi/Managers/BrowserManager/ShortcutSplitLauncherPlacementService.swift"
+split_shortcut_launcher_resolver="Sumi/Managers/BrowserManager/ShortcutSplitLauncherDestinationResolver.swift"
+split_shortcut_launcher_transaction="Sumi/Managers/BrowserManager/ShortcutSplitLauncherMoveTransaction.swift"
+split_shortcut_launcher_catalog="Sumi/Managers/BrowserManager/ShortcutSplitLauncherCatalogAdapter.swift"
 split_shortcut_launcher_composition="Sumi/Managers/BrowserManager/ShortcutSplitLauncherPlacementService+Live.swift"
 split_shortcut_unload="Sumi/Managers/BrowserManager/ShortcutHostedSplitUnloadService.swift"
 split_shortcut_composition="Sumi/Managers/BrowserManager/SplitShortcutServices+Live.swift"
-split_shortcut_sidebar_commands="Sumi/Managers/BrowserManager/SidebarSplitShortcutCommands.swift"
+split_shortcut_sidebar_commands="Sumi/Managers/BrowserManager/SidebarSplitCommands.swift"
+split_shortcut_sidebar_commands_composition="Sumi/Managers/BrowserManager/SidebarSplitCommands+Live.swift"
 split_shortcut_files=(
   "$split_shortcut_focus"
+  "$split_shortcut_materialization"
   "$split_shortcut_resolver"
   "$split_shortcut_restore"
   "$split_shortcut_launcher"
+  "$split_shortcut_launcher_resolver"
+  "$split_shortcut_launcher_transaction"
+  "$split_shortcut_launcher_catalog"
   "$split_shortcut_unload"
 )
 for service_file in \
@@ -433,6 +446,7 @@ for service_file in \
   "$split_shortcut_group" \
   "$split_shortcut_runtime_lease" \
   "$split_shortcut_sidebar_commands" \
+  "$split_shortcut_sidebar_commands_composition" \
   "$split_shortcut_launcher_composition" \
   "$split_shortcut_composition"; do
   if [[ ! -f "$service_file" ]]; then
@@ -857,10 +871,14 @@ check_max "SpaceRemovalService.swift LOC" "$(count_lines Sumi/Managers/TabManage
 check_max "SpaceRemovalService stored collaborators" "$(count_stored_collaborators Sumi/Managers/TabManager/SpaceRemovalService.swift)" 6
 check_max "SpaceContentRetirementService.swift LOC" "$(count_lines Sumi/Managers/TabManager/SpaceContentRetirementService.swift)" 80
 check_max "SpaceContentRetirementService stored collaborators" "$(count_stored_collaborators Sumi/Managers/TabManager/SpaceContentRetirementService.swift)" 5
+check_max "SpaceSplitGroupRetirementService.swift LOC" "$(count_lines Sumi/Managers/TabManager/SpaceSplitGroupRetirementService.swift)" 65
+check_max "Space split-group retirement collaborators" "$(count_stored_collaborators Sumi/Managers/TabManager/SpaceSplitGroupRetirementService.swift)" 2
 check_max "SpaceTabInventory.swift LOC" "$(count_lines Sumi/Managers/TabManager/SpaceTabInventory.swift)" 40
 check_max "SpaceTabInventory stored collaborators" "$(count_stored_collaborators Sumi/Managers/TabManager/SpaceTabInventory.swift)" 0
 check_max "DeletedSpaceWindowStateReconciler.swift LOC" "$(count_lines Sumi/Managers/TabManager/DeletedSpaceWindowStateReconciler.swift)" 135
 check_max "DeletedSpaceWindowStateReconciler collaborators" "$(count_stored_collaborators Sumi/Managers/TabManager/DeletedSpaceWindowStateReconciler.swift)" 1
+check_max "DeletedSpaceWindowReferencePruner.swift LOC" "$(count_lines Sumi/Managers/TabManager/DeletedSpaceWindowReferencePruner.swift)" 120
+check_max "Deleted Space reference pruner collaborators" "$(count_stored_collaborators Sumi/Managers/TabManager/DeletedSpaceWindowReferencePruner.swift)" 0
 check_max "TabRuntimeTeardownService.swift LOC" "$(count_lines Sumi/Managers/TabManager/TabRuntimeTeardownService.swift)" 65
 check_max "TabRuntimeTeardownService stored collaborators" "$(count_stored_collaborators Sumi/Managers/TabManager/TabRuntimeTeardownService.swift)" 3
 check_max "SpaceActivationService.swift LOC" "$(count_lines Sumi/Managers/TabManager/SpaceActivationService.swift)" 160
@@ -894,28 +912,39 @@ check_exact "Split-shortcut runtime lease providers" "$split_shortcut_runtime_pr
 check_exact "Split services stored runtime managers" "$split_shortcut_stored_runtime_managers" 0
 check_exact "Split services separate runtime providers" "$split_shortcut_separate_runtime_providers" 0
 check_exact "Split command runtime lease acquisitions" "$split_shortcut_runtime_lease_acquisitions" 4
-check_exact "SplitShortcutRuntimeLease capabilities" "$split_shortcut_runtime_lease_capabilities" 2
+check_exact "SplitShortcutRuntimeLease capabilities" "$split_shortcut_runtime_lease_capabilities" 1
 check_exact "Split live weak runtime provider" "$split_shortcut_live_weak_runtime_provider" 1
 check_max "SplitShortcutRuntimeLease.swift LOC" "$(count_lines "$split_shortcut_runtime_lease")" 8
 check_max "SplitShortcutFocusService.swift LOC" "$(count_lines "$split_shortcut_focus")" 178
 check_max "SplitShortcutFocusService collaborators" "$(count_stored_collaborators "$split_shortcut_focus")" 4
+check_max "WindowSplitMaterializationService.swift LOC" "$(count_lines "$split_shortcut_materialization")" 110
+check_max "Window split materialization collaborators" "$(count_stored_collaborators "$split_shortcut_materialization")" 0
 check_max "SplitShortcutMemberResolver.swift LOC" "$(count_lines "$split_shortcut_resolver")" 90
 check_max "SplitShortcutMemberResolver collaborators" "$(count_stored_collaborators "$split_shortcut_resolver")" 0
 check_max "SplitShortcutMemberRestoreService.swift LOC" "$(count_lines "$split_shortcut_restore")" 192
 check_max "SplitShortcutMemberRestoreService collaborators" "$(count_stored_collaborators "$split_shortcut_restore")" 7
 check_max "ShortcutSplitLauncherPlacementService.swift LOC" "$(count_lines "$split_shortcut_launcher")" 90
 check_max "ShortcutSplitLauncherPlacementService collaborators" "$(count_stored_collaborators "$split_shortcut_launcher")" 4
+check_max "ShortcutSplitLauncherDestinationResolver LOC" "$(count_lines "$split_shortcut_launcher_resolver")" 60
+check_max "Shortcut launcher destination collaborators" "$(count_stored_collaborators "$split_shortcut_launcher_resolver")" 2
+check_max "ShortcutSplitLauncherMoveTransaction LOC" "$(count_lines "$split_shortcut_launcher_transaction")" 85
+check_max "Shortcut launcher move collaborators" "$(count_stored_collaborators "$split_shortcut_launcher_transaction")" 3
+check_max "ShortcutSplitLauncherCatalogAdapter LOC" "$(count_lines "$split_shortcut_launcher_catalog")" 65
+check_max "Shortcut launcher catalog collaborators" "$(count_stored_collaborators "$split_shortcut_launcher_catalog")" 1
 check_max "ShortcutSplitLauncherPlacement live composition LOC" "$(count_lines "$split_shortcut_launcher_composition")" 40
 check_max "ShortcutSplitLauncherPlacement live stored state" "$(count_stored_collaborators "$split_shortcut_launcher_composition")" 0
 check_max "ShortcutHostedSplitUnloadService.swift LOC" "$(count_lines "$split_shortcut_unload")" 105
 check_max "ShortcutHostedSplitUnloadService collaborators" "$(count_stored_collaborators "$split_shortcut_unload")" 6
-check_max "SidebarSplitShortcutCommands.swift LOC" "$(count_lines "$split_shortcut_sidebar_commands")" 30
+check_max "SidebarSplitCommands.swift LOC" "$(count_lines "$split_shortcut_sidebar_commands")" 30
+check_max "SidebarSplitCommands live composition LOC" "$(count_lines "$split_shortcut_sidebar_commands_composition")" 60
 check_max "Split-shortcut live composition LOC" "$(count_lines "$split_shortcut_composition")" 138
 check_exact "Retired shortcut live close Owner" "$retired_shortcut_live_close_owner" 0
 check_max "ShortcutLiveTabCloseService.swift LOC" "$(count_lines "$shortcut_live_close")" 145
 check_max "ShortcutLiveTabCloseService collaborators" "$(count_stored_collaborators "$shortcut_live_close")" 9
 check_max "LiveShortcutTabRegistry.swift LOC" "$(count_lines "$shortcut_registry_file")" 175
 check_max "LiveShortcutTabRegistry collaborators" "$(count_stored_collaborators "$shortcut_registry_file")" 2
+check_max "LiveShortcutTabSnapshot.swift LOC" "$(count_lines "$shortcut_registry_snapshot")" 45
+check_max "Live shortcut snapshot collaborators" "$(count_stored_collaborators "$shortcut_registry_snapshot")" 0
 check_max "ShortcutTabWindowQuery.swift LOC" "$(count_lines "$shortcut_window_query_file")" 110
 check_max "ShortcutTabWindowQuery collaborators" "$(count_stored_collaborators "$shortcut_window_query_file")" 1
 check_max "ShortcutTabBindingSynchronizer.swift LOC" "$(count_lines "$shortcut_binding_file")" 200

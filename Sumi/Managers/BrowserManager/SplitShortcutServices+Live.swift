@@ -6,8 +6,7 @@ extension SplitShortcutServices {
         let runtimeLease: () -> SplitShortcutRuntimeLease? = { [weak browserManager] in
             guard let browserManager else { return nil }
             return SplitShortcutRuntimeLease(
-                tabManager: browserManager.tabManager,
-                splitManager: browserManager.splitManager
+                tabManager: browserManager.tabManager
             )
         }
         let focus = SplitShortcutFocusService(
@@ -17,13 +16,16 @@ extension SplitShortcutServices {
         let launcherPlacement = ShortcutSplitLauncherPlacementService(
             liveBrowserManager: browserManager
         )
+        let presentations = WindowSplitPresentationSynchronizer(
+            liveBrowserManager: browserManager
+        )
         return Self(
             focus: focus,
             memberRestoration: SplitShortcutMemberRestoreService(
                 runtimeLease: runtimeLease,
                 browserManager: browserManager,
-                focus: focus,
-                launcherPlacement: launcherPlacement
+                launcherPlacement: launcherPlacement,
+                presentations: presentations
             ),
             hostedUnload: ShortcutHostedSplitUnloadService(
                 runtimeLease: runtimeLease,
@@ -68,33 +70,16 @@ private extension SplitShortcutMemberRestoreService {
     convenience init(
         runtimeLease: @escaping () -> SplitShortcutRuntimeLease?,
         browserManager: BrowserManager,
-        focus: SplitShortcutFocusService,
-        launcherPlacement: ShortcutSplitLauncherPlacementService
+        launcherPlacement: ShortcutSplitLauncherPlacementService,
+        presentations: WindowSplitPresentationSynchronizer
     ) {
         self.init(
             runtimeLease: runtimeLease,
-            focus: focus,
             launcherPlacement: launcherPlacement,
-            selectTabWithoutPersistence: { [weak browserManager] tab, windowState in
-                browserManager?.applyTabSelection(
-                    tab,
-                    in: windowState,
-                    updateSpaceFromTab: true,
-                    updateTheme: true,
-                    rememberSelection: true,
-                    persistSelection: false
-                )
-            },
-            showEmptyStateWithoutPersistence: { [weak browserManager] windowState in
-                browserManager?.showEmptyStateWithoutPersistence(in: windowState)
-            },
+            presentations: presentations,
             performImmediateVisualHandoff: { [weak browserManager] windowState in
                 _ = browserManager?.shellRuntime.windowVisuals
                     .performImmediateVisualHandoffIfPossible(in: windowState)
-            },
-            persistWindowSession: { [weak browserManager] windowState in
-                browserManager?.windowSessionBundle.persistence
-                    .persist(windowState)
             }
         )
     }

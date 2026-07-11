@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import SumiDomain
 import SwiftUI
 
 @MainActor

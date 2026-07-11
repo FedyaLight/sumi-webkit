@@ -1,4 +1,5 @@
 import Combine
+import SumiDomain
 import SumiWebRuntime
 import SwiftData
 import XCTest
@@ -7,6 +8,87 @@ import XCTest
 
 @MainActor
 final class ShortcutTabPromotionServiceTests: XCTestCase {
+    func testGroupedPinPromotionReplacesStableMemberInEveryWindow() throws {
+        let first = BrowserWindowState()
+        let second = BrowserWindowState()
+        let probe = PromotionProbe()
+        let tabManager = try makeTabManager(
+            windows: [first, second],
+            probe: probe
+        )
+        first.tabManager = tabManager
+        second.tabManager = tabManager
+        let space = tabManager.spaceServices.catalog.createSpace(name: "Space")
+        let companion = tabManager.regularTabLifecycleOwner.createNewTab(
+            url: "https://promotion.example/companion",
+            in: space,
+            activate: false
+        )
+        let pin = makePin(spaceId: space.id)
+        tabManager.structuralCollectionMutationOwner
+            .setSpacePinnedShortcuts([pin], for: space.id)
+        let group = try XCTUnwrap(SplitGroup.make(
+            members: [
+                .shortcutPin(
+                    pin.id,
+                    returnPlacement: .spacePinned(
+                        spaceId: space.id,
+                        folderId: nil,
+                        index: 0
+                    )
+                ),
+                .regularTab(companion.id)
+            ],
+            layoutKind: .vertical,
+            container: .regularTabs(spaceId: space.id)
+        ))
+        XCTAssertTrue(tabManager.splitGroupMutations.insert(group, persist: false))
+        for windowState in [first, second] {
+            let live = tabManager.shortcutTabMaterializer.materialize(
+                pin,
+                in: windowState.id,
+                currentSpaceId: space.id
+            )
+            windowState.currentSpaceId = space.id
+            windowState.currentTabId = live.id
+            windowState.currentShortcutPinId = pin.id
+            windowState.currentShortcutPinRole = pin.role
+            windowState.splitSelection = WindowSplitSelection(
+                groupID: group.id,
+                activeMemberID: .shortcutPin(pin.id)
+            )
+        }
+
+        XCTAssertTrue(
+            tabManager.shortcutPinCommandOwner.convertShortcutPinToRegularTab(
+                pin,
+                in: space.id,
+                at: 0,
+                preferredWindowId: second.id
+            )
+        )
+
+        let promoted = try XCTUnwrap(
+            tabManager.regularTabCollectionOwner.tabs(in: space).first
+        )
+        let replacement = try XCTUnwrap(
+            tabManager.splitGroupStore.group(id: group.id)
+        )
+        XCTAssertTrue(replacement.contains(.regularTab(promoted.id)))
+        XCTAssertFalse(replacement.contains(.shortcutPin(pin.id)))
+        XCTAssertEqual(
+            first.splitSelection?.activeMemberID,
+            .regularTab(promoted.id)
+        )
+        XCTAssertEqual(
+            second.splitSelection?.activeMemberID,
+            .regularTab(promoted.id)
+        )
+        XCTAssertEqual(first.currentTabId, promoted.id)
+        XCTAssertEqual(second.currentTabId, promoted.id)
+        XCTAssertTrue(tabManager.liveShortcutTabs.entries(for: pin.id).isEmpty)
+    }
+
     func testPreferredWindowInstanceIsPromotedAndOtherInstancesRetireAfterCommit() throws {
         let first = BrowserWindowState(id: try XCTUnwrap(
             UUID(uuidString: "00000000-0000-0000-0000-000000000001")

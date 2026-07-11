@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import SumiDomain
 
 enum SplitDropTargetGeometry {
     static func isNearInternalDivider(
@@ -150,15 +151,17 @@ enum SplitDropTargetGeometry {
     }
 
     static func firstSplitPreviewRect(
-        currentTabId: UUID,
-        previewTabId: UUID,
+        currentMember: SplitMember,
+        previewMember: SplitMember,
         side: SplitDropSide,
         bounds: CGRect
     ) -> CGRect? {
-        let previewTree = SplitLayoutTree.leaf(tabId: currentTabId, size: 1)
-            .insertingAtRoot(tabId: previewTabId, side: side)
+        let previewTree = SplitLayoutTree
+            .leaf(member: currentMember, weight: 1)
+            .insertingAtRoot(previewMember, side: side)
+        guard let previewTree else { return nil }
         return SplitLayoutGeometry.leafRect(
-            for: previewTabId,
+            for: previewMember.memberID,
             in: previewTree,
             rect: bounds
         )

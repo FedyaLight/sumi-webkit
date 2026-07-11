@@ -79,9 +79,19 @@ final class TabStructuralSnapshotMaterializerTests: XCTestCase {
 
         let splitGroup = try XCTUnwrap(
             SplitGroup.make(
-                tabIds: [persistedTab.id, spacePin.id],
+                members: [
+                    .regularTab(persistedTab.id),
+                    .shortcutPin(
+                        spacePin.id,
+                        returnPlacement: .spacePinned(
+                            spaceId: secondSpace.id,
+                            folderId: persistedTab.folderId,
+                            index: spacePin.index
+                        )
+                    ),
+                ],
                 layoutKind: .vertical,
-                activeTabId: persistedTab.id
+                container: .regularTabs(spaceId: secondSpace.id)
             )
         )
 

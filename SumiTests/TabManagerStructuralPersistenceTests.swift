@@ -1,5 +1,6 @@
-import SwiftData
+import SumiDomain
 import SumiWebRuntime
+import SwiftData
 import WebKit
 import XCTest
 
@@ -144,7 +145,6 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
             },
             loadLifecycle: tabManager.startupRestoreLifecycle,
             structuralInstaller: tabManager.structuralInstallOwner,
-            splitGroupStructure: tabManager.splitGroupStructureOwner,
             runtimePreparation: tabManager.runtimePreparationOwner,
             lazyRestore: tabManager.lazyRestoreCoordinator,
             persistence: tabManager.structuralPersistence,
@@ -598,7 +598,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         let spaceB = tabManager.spaceServices.catalog.createSpace(name: "B", profileId: profileId)
         let tabB = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/b", in: spaceB, activate: true)
 
-        tabManager.sidebarDragRoutingOwner.moveTab(tabA.id, to: spaceB.id)
+        tabManager.sidebarDragRouter.moveTab(tabA.id, to: spaceB.id)
         tabManager.regularTabCollectionOwner.reorderRegularTabs(tabA, in: spaceB.id, to: 0)
 
         try await waitForStore(in: container) { context in
@@ -790,44 +790,47 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         ]
         let baseGroup = try XCTUnwrap(
             SplitGroup.make(
-                tabIds: tabs.map(\.id),
+                members: tabs.map { .regularTab($0.id) },
                 layoutKind: .vertical,
-                activeTabId: tabs[1].id
+                container: .regularTabs(spaceId: space.id)
             )
         )
-        let resizedGroup = SplitGroup(
-            id: baseGroup.id,
-            layoutKind: .vertical,
-            layoutTree: SplitLayoutSizing.updatingChildSizes(
-                in: baseGroup.layoutTree,
-                at: [],
-                sizes: [0.2, 0.3, 0.5]
-            ),
-            activeTabId: tabs[1].id
+        let resizedGroup = try XCTUnwrap(
+            baseGroup.replacingLayoutTree(
+                with: SplitLayoutSizing.updatingChildWeights(
+                    in: baseGroup.layoutTree,
+                    at: [],
+                    weights: [0.2, 0.3, 0.5]
+                )
+            )
         )
 
-        tabManager.splitGroupStructureOwner.upsertSplitGroup(resizedGroup)
+        XCTAssertTrue(tabManager.splitGroupMutations.insert(resizedGroup))
 
         try await waitForPersistedState(in: container) { state in
             guard let data = state.splitGroupsData,
-                  let decoded = try? JSONDecoder().decode([SplitGroup].self, from: data),
+                  let archive = try? TabPersistenceCodec()
+                    .decodeSplitGroupArchive(from: data),
+                  case .version2(let decoded, _) = archive,
                   let storedGroup = decoded.first(where: { $0.id == resizedGroup.id })
             else {
                 return false
             }
             return storedGroup.layoutKind == resizedGroup.layoutKind
                 && storedGroup.layoutTree == resizedGroup.layoutTree
-                && storedGroup.activeTabId == resizedGroup.activeTabId
+                && storedGroup.container == resizedGroup.container
         }
 
         let restoredManager = makeTabManager(context: ModelContext(container))
         let didLoad = await restoredManager.storeRestore.loadFromStoreAwaitingResult()
 
         XCTAssertTrue(didLoad)
-        let restoredGroup = try XCTUnwrap(restoredManager.splitGroupCollectionStateOwner.group(with: resizedGroup.id))
+        let restoredGroup = try XCTUnwrap(
+            restoredManager.splitGroupStore.group(id: resizedGroup.id)
+        )
         XCTAssertEqual(restoredGroup.layoutKind, resizedGroup.layoutKind)
         XCTAssertEqual(restoredGroup.layoutTree, resizedGroup.layoutTree)
-        XCTAssertEqual(restoredGroup.activeTabId, resizedGroup.activeTabId)
+        XCTAssertEqual(restoredGroup.container, resizedGroup.container)
     }
 
     func testShortcutBackedSplitGroupPersistsThroughStoreReload() async throws {
@@ -854,44 +857,49 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         let livePinnedTab = tabManager.shortcutTabMaterializer.materialize(pin, in: windowId, currentSpaceId: space.id)
         let group = try XCTUnwrap(
             SplitGroup.make(
-                tabIds: [regular.id, livePinnedTab.id],
-                layoutKind: .vertical,
-                activeTabId: livePinnedTab.id,
-                host: .regular(spaceId: space.id),
                 members: [
-                    SplitGroupMember(
-                        tabId: regular.id,
-                        pinId: nil,
-                        origin: .regular(spaceId: space.id, index: regular.index)
+                    .regularTab(regular.id),
+                    .shortcutPin(
+                        pin.id,
+                        returnPlacement: .spacePinned(
+                            spaceId: space.id,
+                            folderId: nil,
+                            index: pin.index
+                        )
                     ),
-                    SplitGroupMember(
-                        tabId: livePinnedTab.id,
-                        pinId: pin.id,
-                        origin: .spacePinned(spaceId: space.id, folderId: nil, index: pin.index)
-                    ),
-                ]
+                ],
+                layoutKind: .vertical,
+                container: .regularTabs(spaceId: space.id)
             )
         )
-        tabManager.splitGroupStructureOwner.upsertSplitGroup(group)
+        XCTAssertTrue(tabManager.splitGroupMutations.insert(group))
 
         try await waitForPersistedState(in: container) { state in
             guard let data = state.splitGroupsData,
-                  let decoded = try? JSONDecoder().decode([SplitGroup].self, from: data)
+                  let archive = try? TabPersistenceCodec()
+                    .decodeSplitGroupArchive(from: data),
+                  case .version2(let decoded, _) = archive
             else {
                 return false
             }
-            return decoded.contains { $0.id == group.id && $0.contains(livePinnedTab.id) }
+            return decoded.contains {
+                $0.id == group.id && $0.contains(.shortcutPin(pin.id))
+            }
         }
 
         let restoredManager = makeTabManager(context: ModelContext(container))
         let didLoad = await restoredManager.storeRestore.loadFromStoreAwaitingResult()
 
         XCTAssertTrue(didLoad)
-        let restoredGroup = try XCTUnwrap(restoredManager.splitGroupStructureOwner.splitGroup(containingPinId: pin.id))
+        let restoredGroup = try XCTUnwrap(
+            restoredManager.splitGroupStore.group(
+                containing: .shortcutPin(pin.id)
+            )
+        )
         XCTAssertEqual(restoredGroup.id, group.id)
-        XCTAssertTrue(restoredGroup.contains(regular.id))
-        XCTAssertTrue(restoredGroup.containsPin(pin.id))
-        XCTAssertFalse(restoredGroup.contains(livePinnedTab.id))
+        XCTAssertTrue(restoredGroup.contains(.regularTab(regular.id)))
+        XCTAssertTrue(restoredGroup.contains(.shortcutPin(pin.id)))
+        XCTAssertFalse(restoredGroup.contains(.regularTab(livePinnedTab.id)))
     }
 
     func testFullReconcileDeletesStaleEntitiesAndPreservesFolders() async throws {

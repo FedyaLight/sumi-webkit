@@ -3,6 +3,7 @@
 //  Sumi
 //
 
+import SumiDomain
 import SwiftUI
 
 enum SidebarFolderListItem: Hashable {
@@ -346,9 +347,9 @@ struct SidebarFolderViewProjection {
         let liveFolderItems = liveFolderSource == nil
             ? []
             : liveFolderManager.visibleItems(for: folder.id)
-        let shortcutHostedGroups = tabManager.splitGroupStructureOwner.shortcutHostedSplitGroups(
+        let shortcutHostedGroups = tabManager.splitGroupSidebarOrdering.groups(
             for: space.id,
-            inFolder: folder.id
+            folderID: folder.id
         )
         let restorePins = shortcutRestoreGaps
             .filter { $0.container == .folder(folder.id) }
@@ -364,20 +365,31 @@ struct SidebarFolderViewProjection {
         self.baseItems = Self.makeBaseItems(
             liveFolderItems: liveFolderItems,
             isLiveFolder: liveFolderSource != nil,
-            visualItems: tabManager.spacePinnedStructureOwner.folderChildVisualItems(for: folder.id, in: space.id)
+            visualItems: tabManager.splitGroupSidebarOrdering
+                .resolver(for: space.id)
+                .folderItems(for: folder.id)
         )
         self.splitGroupsById = Dictionary(
             uniqueKeysWithValues: shortcutHostedGroups.map { ($0.id, $0) }
         )
         self.splitGroupItemsById = Dictionary(
             uniqueKeysWithValues: shortcutHostedGroups.map { group in
-                (group.id, SplitGroupSidebarModel.items(for: group, tabManager: tabManager))
+                (
+                    group.id,
+                    SplitGroupSidebarModel.items(
+                        for: group,
+                        tabManager: tabManager,
+                        windowID: windowState.id
+                    )
+                )
             }
         )
         self.shortcutPinsById = projectionPinsById
         self.regularPlaceholderGroupsByPinId = Dictionary(
             uniqueKeysWithValues: uniqueProjectionPins.compactMap { pin in
-                guard let group = tabManager.splitGroupStructureOwner.regularHostedSplitGroup(containingPinId: pin.id) else {
+                guard let group = tabManager.splitGroupStore.group(
+                    containing: .shortcutPin(pin.id)
+                ), !group.container.isShortcutSidebar else {
                     return nil
                 }
                 return (pin.id, group)
@@ -432,7 +444,7 @@ struct SidebarFolderViewProjection {
     private static func makeBaseItems(
         liveFolderItems: [SumiLiveFolderItem],
         isLiveFolder: Bool,
-        visualItems: [SpacePinnedStructureOwner.FolderChildVisualItem]
+        visualItems: [SplitGroupVisualListItem]
     ) -> [SidebarFolderListItem] {
         if isLiveFolder {
             return liveFolderItems.map { .liveItem($0.id) }

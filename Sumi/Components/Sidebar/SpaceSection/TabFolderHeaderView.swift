@@ -162,11 +162,11 @@ struct TabFolderHeaderView: View {
                     browserContext.liveFolderManager.open(item: item, in: windowState)
                 },
                 activateSplitGroupItem: { item, group in
-                    if let tab = item.tab {
-                        browserContext.commands.requestUserTabActivation(tab, windowState)
-                    } else {
-                        browserContext.commands.focusSplitGroup(group, windowState)
-                    }
+                    browserContext.commands.focusSplitGroup(
+                        group.id,
+                        item.id,
+                        windowState.id
+                    )
                 }
             )
         )

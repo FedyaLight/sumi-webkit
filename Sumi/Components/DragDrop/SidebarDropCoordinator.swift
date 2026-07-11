@@ -14,7 +14,7 @@ enum SidebarDropCoordinator {
     ) -> SidebarDragScope? {
         guard let payload = SidebarDragPasteboardPayload.fromPasteboard(pasteboard),
               payload.item == item,
-              payload.sourceItemId == item.tabId,
+              payload.sourceItemId == item.stableID,
               payload.sourceItemKind == item.kind,
               payload.scope.matches(windowId: windowState?.id),
               payload.sourceSpaceId == windowState?.currentSpaceId,
@@ -73,7 +73,7 @@ enum SidebarDropCoordinator {
                 pasteboard: pasteboard,
                 windowState: windowState
             ),
-                  let payload = browserManager.tabManager.sidebarDragRoutingOwner.resolveSidebarDragPayload(for: draggedItem) else {
+                  let payload = browserManager.tabManager.sidebarDragRouter.resolveSidebarDragPayload(for: draggedItem) else {
                 return false
             }
 
@@ -92,7 +92,7 @@ enum SidebarDropCoordinator {
                 toIndex: operationIndex
             )
 
-            return browserManager.tabManager.sidebarDragRoutingOwner.performSidebarDragOperation(operation)
+            return browserManager.tabManager.sidebarDragRouter.performSidebarDragOperation(operation)
         }
 
         guard let droppedURL = pasteboard.sumiDroppedURL,
@@ -166,7 +166,8 @@ enum SidebarDropCoordinator {
             return tabManager.shortcutPinCollectionStateOwner.essentialPins(for: scope.profileId).count
 
         case .spacePinned(let spaceId):
-            return tabManager.splitGroupStructureOwner.topLevelSpacePinnedVisualItems(for: spaceId).count
+            return tabManager.splitGroupSidebarOrdering
+                .topLevelItems(for: spaceId).count
 
         case .spaceRegular(let spaceId):
             return tabManager.regularTabCollectionOwner.tabs(in: spaceId).count
@@ -197,7 +198,7 @@ enum SidebarDropCoordinator {
                 .firstIndex { $0.id == sourceItemId || payload.matchesShortcutPinId($0.id) }
 
         case .spacePinned(let spaceId):
-            return tabManager.splitGroupStructureOwner.topLevelSpacePinnedVisualItems(for: spaceId)
+            return tabManager.splitGroupSidebarOrdering.topLevelItems(for: spaceId)
                 .firstIndex { item in
                     switch item {
                     case .folder(let folderId):

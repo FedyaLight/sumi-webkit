@@ -109,6 +109,12 @@ final class RegularTabCollectionOwner {
         stateOwner.allTabs(in: spaces)
     }
 
+    /// Resolves only a durable regular tab. Transient shortcut, extension and
+    /// auxiliary tabs intentionally cannot satisfy this lookup.
+    func tab(for id: UUID) -> Tab? {
+        stateOwner.tab(for: id)
+    }
+
     func contains(_ tab: Tab) -> Bool {
         stateOwner.contains(tab)
     }
@@ -168,6 +174,46 @@ final class RegularTabCollectionOwner {
             }
         }
         return nil
+    }
+
+    /// Removes a durable regular-tab batch with one collection replacement per
+    /// affected Space. Returned removals are therefore the exact tabs that
+    /// existed, rather than the caller's requested candidates.
+    func remove(
+        _ tabIds: Set<UUID>,
+        in spaces: [Space],
+        currentSpaceId: UUID?
+    ) -> [Removal] {
+        guard !tabIds.isEmpty else { return [] }
+
+        var removals: [Removal] = []
+        for space in spaces {
+            let existing = stateOwner.tabs(in: space.id)
+            guard existing.contains(where: { tabIds.contains($0.id) }) else {
+                continue
+            }
+
+            var remaining: [Tab] = []
+            remaining.reserveCapacity(existing.count)
+            for (index, tab) in existing.enumerated() {
+                if tabIds.contains(tab.id) {
+                    removals.append(
+                        Removal(
+                            tab: tab,
+                            spaceId: space.id,
+                            indexInCurrentSpace:
+                                space.id == currentSpaceId ? index : nil
+                        )
+                    )
+                } else {
+                    remaining.append(tab)
+                }
+            }
+
+            reindex(remaining)
+            setTabs(remaining, space.id)
+        }
+        return removals
     }
 
     func remove(_ tabId: UUID, from spaceId: UUID, currentSpaceId: UUID?) -> Removal? {

@@ -1,3 +1,4 @@
+import SumiDomain
 import WebKit
 import XCTest
 
@@ -54,29 +55,27 @@ final class ActivePageBrowserManagerIntegrationTests: XCTestCase {
             .createNewTab(url: "https://first.example", in: firstSpace)
         let active = browserManager.tabManager.regularTabLifecycleOwner
             .createNewTab(url: "https://active.example", in: secondSpace)
-        let group = try XCTUnwrap(SplitGroup.make(
-            tabIds: [first.id, active.id],
-            layoutKind: .vertical,
-            activeTabId: active.id,
-            host: .regular(spaceId: firstSpace.id),
-            members: [
-                SplitGroupMember(
-                    tabId: first.id,
-                    pinId: nil,
-                    origin: .regular(spaceId: firstSpace.id, index: 0)
-                ),
-                SplitGroupMember(
-                    tabId: active.id,
-                    pinId: nil,
-                    origin: .regular(spaceId: secondSpace.id, index: 0)
-                ),
-            ]
-        ))
-        browserManager.tabManager.splitGroupStructureOwner.upsertSplitGroup(group)
+        let group = try XCTUnwrap(
+            SplitGroup.make(
+                members: [.regularTab(first.id), .regularTab(active.id)],
+                layoutKind: .vertical,
+                container: .regularTabs(spaceId: firstSpace.id)
+            )
+        )
+        XCTAssertTrue(
+            browserManager.tabManager.splitGroupMutations.insert(
+                group,
+                persist: false
+            )
+        )
         let window = BrowserWindowState()
         window.tabManager = browserManager.tabManager
         window.currentSpaceId = firstSpace.id
         window.currentTabId = active.id
+        window.splitSelection = WindowSplitSelection(
+            groupID: group.id,
+            activeMemberID: .regularTab(active.id)
+        )
         registry.register(window)
         registry.setActive(window)
 

@@ -5,7 +5,7 @@
 
 import Foundation
 
-typealias SpacePinnedListItem = TabSplitGroupStructureOwner.SpacePinnedVisualItem
+typealias SpacePinnedListItem = SplitGroupVisualListItem
 
 enum SpacePinnedRenderedItem: Hashable {
     case item(SpacePinnedListItem)

@@ -1,14 +1,15 @@
+import SumiDomain
+
 enum SplitFullGroupDropResolver {
     static func panePairTarget(
         in context: SplitDropResolutionContext,
         layouts: inout SplitFullGroupLayoutCatalog
     ) -> SplitDropTarget? {
-        guard let draggedTabId = context.draggedTabId,
-              context.draggedTabIsInGroup,
-              context.group.tabIds.count == SplitGroup.maximumTabs,
+        guard let draggedMember = context.draggedMember,
+              context.draggedMemberIsInGroup,
+              context.group.memberIDs.count == SplitGroup.maximumMembers,
               let hit = context.leafHit,
-              hit.tabId != draggedTabId
-        else {
+              hit.memberID != draggedMember.memberID else {
             return nil
         }
 
@@ -20,8 +21,7 @@ enum SplitFullGroupDropResolver {
                   SplitDropLayoutEligibility.parentAxis(
                       for: hit.path,
                       in: context.group.layoutTree
-                  ) != insertionAxis
-            else {
+                  ) != insertionAxis else {
                 continue
             }
 
@@ -30,10 +30,10 @@ enum SplitFullGroupDropResolver {
                 in: hit.rect
             )
             guard let resolvedTree = SplitFullGroupPairRanker.bestTree(
-                among: layouts.trees(for: context.group.tabIds),
+                among: layouts.trees(for: context.group.members),
                 preserving: context.group.layoutTree,
-                draggedTabId: draggedTabId,
-                targetTabId: hit.tabId,
+                draggedMemberID: draggedMember.memberID,
+                targetMemberID: hit.memberID,
                 side: side,
                 desiredRect: previewRect,
                 bounds: context.bounds
@@ -42,7 +42,7 @@ enum SplitFullGroupDropResolver {
             }
 
             let target = SplitDropTarget(
-                tabId: hit.tabId,
+                targetMemberID: hit.memberID,
                 side: side,
                 targetRect: previewRect,
                 scope: .pane,
@@ -53,7 +53,7 @@ enum SplitFullGroupDropResolver {
             )
             if let resolved = SplitDropCandidate(
                 target: target,
-                draggedTabId: draggedTabId,
+                draggedMember: draggedMember,
                 previewRect: previewRect
             ).resolved(in: context.group.layoutTree, bounds: context.bounds) {
                 return resolved
@@ -65,15 +65,14 @@ enum SplitFullGroupDropResolver {
     static func flatLineTarget(
         in context: SplitDropResolutionContext
     ) -> SplitDropTarget? {
-        guard let draggedTabId = context.draggedTabId,
-              context.draggedTabIsInGroup,
-              context.group.tabIds.count == SplitGroup.maximumTabs,
+        guard let draggedMember = context.draggedMember,
+              context.draggedMemberIsInGroup,
+              context.group.memberIDs.count == SplitGroup.maximumMembers,
               let flatAxis = SplitDropLayoutEligibility.flatAxis(
                   in: context.group.layoutTree,
-                  childCount: SplitGroup.maximumTabs
+                  childCount: SplitGroup.maximumMembers
               ),
-              let hit = context.leafHit
-        else {
+              let hit = context.leafHit else {
             return nil
         }
 
@@ -84,9 +83,9 @@ enum SplitFullGroupDropResolver {
             guard let insertionAxis = side.insertionAxis else { continue }
 
             if insertionAxis == flatAxis {
-                guard hit.tabId != draggedTabId else { continue }
+                guard hit.memberID != draggedMember.memberID else { continue }
                 let target = SplitDropTarget(
-                    tabId: hit.tabId,
+                    targetMemberID: hit.memberID,
                     side: side,
                     targetRect: hit.rect,
                     scope: .pane,
@@ -96,16 +95,16 @@ enum SplitFullGroupDropResolver {
                 )
                 if let resolved = SplitDropCandidate(
                     target: target,
-                    draggedTabId: draggedTabId
+                    draggedMember: draggedMember
                 ).resolved(in: context.group.layoutTree, bounds: context.bounds) {
                     return resolved
                 }
                 continue
             }
 
-            if hit.tabId == draggedTabId {
+            if hit.memberID == draggedMember.memberID {
                 let target = SplitDropTarget(
-                    tabId: hit.tabId,
+                    targetMemberID: hit.memberID,
                     side: side,
                     targetRect: context.bounds,
                     scope: .group,
@@ -115,7 +114,7 @@ enum SplitFullGroupDropResolver {
                 )
                 if let resolved = SplitDropCandidate(
                     target: target,
-                    draggedTabId: draggedTabId
+                    draggedMember: draggedMember
                 ).resolved(in: context.group.layoutTree, bounds: context.bounds) {
                     return resolved
                 }
@@ -127,7 +126,7 @@ enum SplitFullGroupDropResolver {
                 in: hit.rect
             )
             let target = SplitDropTarget(
-                tabId: hit.tabId,
+                targetMemberID: hit.memberID,
                 side: side,
                 targetRect: previewRect,
                 scope: .pane,
@@ -137,26 +136,25 @@ enum SplitFullGroupDropResolver {
             )
             if let resolved = SplitDropCandidate(
                 target: target,
-                draggedTabId: draggedTabId,
+                draggedMember: draggedMember,
                 previewRect: previewRect
             ).resolved(in: context.group.layoutTree, bounds: context.bounds) {
                 return resolved
             }
         }
 
-        guard hit.tabId != draggedTabId,
+        guard hit.memberID != draggedMember.memberID,
               let middleSide = SplitDropTargetGeometry.middleRootSide(
                   for: flatAxis,
                   at: context.location,
                   in: hit.rect
-              )
-        else {
+              ) else {
             return nil
         }
 
         return SplitDropCandidate(
             target: SplitDropTarget(
-                tabId: hit.tabId,
+                targetMemberID: hit.memberID,
                 side: middleSide,
                 targetRect: context.bounds,
                 scope: .group,
@@ -164,7 +162,7 @@ enum SplitFullGroupDropResolver {
                 planePath: [],
                 intent: .rootEdge
             ),
-            draggedTabId: draggedTabId
+            draggedMember: draggedMember
         ).resolved(in: context.group.layoutTree, bounds: context.bounds)
     }
 }

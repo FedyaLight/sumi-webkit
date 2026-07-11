@@ -5,6 +5,7 @@
 //
 
 import AppKit
+import SumiDomain
 import SumiWebRuntime
 import SwiftUI
 import WebKit
@@ -157,7 +158,7 @@ final class GlanceManager: ObservableObject {
         guard let runtime,
               let windowId = currentSession?.windowId else { return false }
 
-        return runtime.visibleSplitTabCount(windowId) < SplitGroup.maximumTabs
+        return runtime.visibleSplitTabCount(windowId) < SplitGroup.maximumMembers
     }
 
     func dismissFloatingBarIfVisible(in windowId: UUID) -> Bool {

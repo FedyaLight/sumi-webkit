@@ -1,20 +1,21 @@
 import CoreGraphics
 import Foundation
+import SumiDomain
 
-/// A proposed pointer intent is not publishable until the layout mutation can
-/// produce a canonical tree. This value keeps that invariant at one boundary.
+/// A pointer intent is publishable only after it produces a canonical durable
+/// tree. The candidate carries the whole incoming member, never a runtime tab.
 struct SplitDropCandidate {
     let target: SplitDropTarget
-    let draggedTabId: UUID
+    let draggedMember: SplitMember
     let previewRect: CGRect?
 
     init(
         target: SplitDropTarget,
-        draggedTabId: UUID,
+        draggedMember: SplitMember,
         previewRect: CGRect? = nil
     ) {
         self.target = target
-        self.draggedTabId = draggedTabId
+        self.draggedMember = draggedMember
         self.previewRect = previewRect
     }
 
@@ -24,7 +25,7 @@ struct SplitDropCandidate {
     ) -> SplitDropTarget? {
         guard let resolution = SplitLayoutDropMutation.resolve(
             in: tree,
-            draggedTabId: draggedTabId,
+            draggedMember: draggedMember,
             target: target,
             bounds: bounds
         ) else {

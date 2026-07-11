@@ -9,78 +9,75 @@ struct ShortcutSplitLauncherDestination {
     let index: Int
 }
 
+struct PreparedShortcutSplitLauncherRestoration {
+    let pin: ShortcutPin
+    let destination: ShortcutSplitLauncherDestination
+}
+
 /// Restores only durable shortcut-container placement and cannot mutate window
 /// selection or resolve dependencies through a manager façade.
 @MainActor
 final class ShortcutSplitLauncherPlacementService {
     private let shortcutPin: (UUID) -> ShortcutPin?
-    private let folderSpaceId: (UUID) -> UUID?
-    private let topLevelItemCount: (UUID) -> Int
-    private let moveShortcut: (
-        ShortcutPin,
-        ShortcutSplitLauncherDestination
-    ) -> Void
+    private let destinationResolver: ShortcutSplitLauncherDestinationResolver
+    private let moves: ShortcutSplitLauncherMoveTransaction
 
     init(
         shortcutPin: @escaping (UUID) -> ShortcutPin?,
-        folderSpaceId: @escaping (UUID) -> UUID?,
-        topLevelItemCount: @escaping (UUID) -> Int,
-        moveShortcut: @escaping (
-            ShortcutPin,
-            ShortcutSplitLauncherDestination
-        ) -> Void
+        destinationResolver: ShortcutSplitLauncherDestinationResolver,
+        moves: ShortcutSplitLauncherMoveTransaction
     ) {
         self.shortcutPin = shortcutPin
-        self.folderSpaceId = folderSpaceId
-        self.topLevelItemCount = topLevelItemCount
-        self.moveShortcut = moveShortcut
+        self.destinationResolver = destinationResolver
+        self.moves = moves
     }
 
-    func restore(_ member: SplitGroupMember) {
-        guard let pinId = member.pinId,
-              let pin = shortcutPin(pinId),
-              let destination = destination(for: member, pin: pin)
-        else { return }
-        moveShortcut(pin, destination)
-    }
-
-    private func destination(
-        for member: SplitGroupMember,
-        pin: ShortcutPin
-    ) -> ShortcutSplitLauncherDestination? {
-        switch member.origin {
-        case .essential(let profileId, let index):
-            guard let targetProfileId = profileId ?? pin.profileId else {
-                return nil
-            }
-            return ShortcutSplitLauncherDestination(
-                role: .essential,
-                profileId: targetProfileId,
-                spaceId: nil,
-                folderId: nil,
-                index: index
-            )
-        case .spacePinned(let spaceId, let folderId, let index):
-            let validFolderId = folderId.flatMap {
-                folderSpaceId($0) == spaceId ? $0 : nil
-            }
-            return ShortcutSplitLauncherDestination(
-                role: .spacePinned,
-                profileId: nil,
-                spaceId: spaceId,
-                folderId: validFolderId,
-                index: index
-            )
-        case .generatedSpacePinnedFromRegular(let spaceId, _):
-            return ShortcutSplitLauncherDestination(
-                role: .spacePinned,
-                profileId: nil,
-                spaceId: spaceId,
-                folderId: nil,
-                index: topLevelItemCount(spaceId)
-            )
-        case .regular:
+    func prepareRestoration(
+        for member: SplitMember
+    ) -> PreparedShortcutSplitLauncherRestoration? {
+        guard case .shortcutPin(let pinID) = member.memberID,
+              let pin = shortcutPin(pinID),
+              let destination = destinationResolver.destination(
+                  for: member,
+                  pin: pin
+              ), moves.accepts(pin, destination: destination)
+        else {
             return nil
         }
+        return PreparedShortcutSplitLauncherRestoration(
+            pin: pin,
+            destination: destination
+        )
+    }
+
+    func prepareRestorations(
+        for members: [SplitMember]
+    ) -> [PreparedShortcutSplitLauncherRestoration]? {
+        let shortcutMembers = members.filter {
+            if case .shortcutPin = $0.memberID { return true }
+            return false
+        }
+        let restorations = shortcutMembers.compactMap(prepareRestoration(for:))
+        guard restorations.count == shortcutMembers.count,
+              Set(restorations.map { $0.pin.id }).count == restorations.count else {
+            return nil
+        }
+        return restorations
+    }
+
+    @discardableResult
+    func apply(_ restoration: PreparedShortcutSplitLauncherRestoration) -> Bool {
+        apply([restoration])
+    }
+
+    /// Applies a preflighted batch without scheduling persistence. The caller
+    /// must invoke this inside the same structural transaction as the split
+    /// mutation. Unexpected catalog drift is rolled back before reporting
+    /// failure.
+    @discardableResult
+    func apply(
+        _ restorations: [PreparedShortcutSplitLauncherRestoration]
+    ) -> Bool {
+        moves.apply(restorations)
     }
 }

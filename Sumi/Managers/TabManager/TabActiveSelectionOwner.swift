@@ -36,7 +36,6 @@ final class TabActiveSelectionOwner {
             dependencies.replaceCurrentTab(tab)
         }
 
-        updateActiveSplitSelection(for: tab)
         updateActiveTabSpaceSelectionState(for: tab, refreshCurrentSpaceReference: false)
 
         if previous?.id != tab.id {
@@ -78,18 +77,6 @@ final class TabActiveSelectionOwner {
             }
 
         return dependencies.activeEssentialTabs(contextProfileId) + (activeLauncherTab.map { [$0] } ?? []) + regularTabs
-    }
-
-    private func updateActiveSplitSelection(for tab: Tab) {
-        guard let runtimePorts = dependencies.runtimePorts() else { return }
-        runtimePorts.forEachWindow { windowId, windowState in
-            if runtimePorts.visibleSplitTabIds(for: windowId).contains(tab.id) {
-                runtimePorts.updateActiveSplitSide(for: tab.id, in: windowId)
-                if windowState.currentTabId != tab.id {
-                    windowState.currentTabId = tab.id
-                }
-            }
-        }
     }
 
     private func updateActiveTabSpaceSelectionState(

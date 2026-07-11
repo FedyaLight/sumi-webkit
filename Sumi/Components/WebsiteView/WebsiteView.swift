@@ -121,6 +121,7 @@ struct LinkStatusBar: View {
 struct WebsiteViewBrowserContext {
     let currentTab: (BrowserWindowState) -> Tab?
     let workspaceTheme: (UUID?) -> WorkspaceTheme?
+    let splitResolution: (BrowserWindowState) -> WindowSplitResolution
     let makeWebContentContext: () -> any WindowWebContentBrowserContext
 }
 
@@ -182,10 +183,13 @@ struct WebsiteView: View {
     }
 
     var body: some View {
-        let nativeSurfaceKind = activeNativeSurfaceKind
+        let splitResolution = browserContext.splitResolution(windowState)
+        let nativeSurfaceKind = activeNativeSurfaceKind(
+            hasSelectedSplit: splitResolution.hasReadyPresentation
+        )
 
         ZStack {
-            tabCompositor
+            tabCompositor(splitPresentation: splitResolution.presentation)
                 .allowsHitTesting(nativeSurfaceKind == nil)
 
             nativeSurface(kind: nativeSurfaceKind)
@@ -219,8 +223,10 @@ struct WebsiteView: View {
         case empty
     }
 
-    private var activeNativeSurfaceKind: NativeSurfaceKind? {
-        guard splitManager.isSplit(for: windowState.id) == false else { return nil }
+    private func activeNativeSurfaceKind(
+        hasSelectedSplit: Bool
+    ) -> NativeSurfaceKind? {
+        guard !hasSelectedSplit else { return nil }
         guard let currentTab = browserContext.currentTab(windowState) else { return .empty }
         if currentTab.representsSumiHistorySurface { return .history }
         if currentTab.representsSumiBookmarksSurface { return .bookmarks }
@@ -229,12 +235,14 @@ struct WebsiteView: View {
         return nil
     }
 
-    private var tabCompositor: some View {
+    private func tabCompositor(
+        splitPresentation: WindowSplitPresentation?
+    ) -> some View {
         TabCompositorWrapper(
             browserContext: browserContext.makeWebContentContext(),
             webViewCoordinator: webViewCoordinator,
             hoveredLink: $hoveredLink,
-            splitGroup: splitManager.splitGroup(for: windowState.id),
+            splitPresentation: splitPresentation,
             isSplitDropCaptureActive: sidebarDragState.isInternalDragGeometryArmed
                 || (sidebarDragState.isDragging && sidebarDragState.isInternalDragSession),
             chromeGeometry: chromeGeometry,

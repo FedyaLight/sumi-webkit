@@ -1,8 +1,9 @@
 import CoreGraphics
 import Foundation
+import SumiDomain
 
-/// Applies an already-resolved drag intent to a layout tree. Hit testing and
-/// target selection live outside this component.
+/// Applies an already-resolved pointer intent to the durable layout algebra.
+/// Hit testing and window-local tab projection stay outside this component.
 enum SplitLayoutDropMutation {
     struct Resolution: Equatable {
         let target: SplitDropTarget
@@ -12,19 +13,19 @@ enum SplitLayoutDropMutation {
     private struct ThreeLeafPlane {
         let index: Int
         let axis: SplitAxis
-        let size: Double
-        let leaves: [(tabId: UUID, size: Double)]
+        let weight: Double
+        let leaves: [(member: SplitMember, weight: Double)]
     }
 
     private struct SingletonLeaf {
         let index: Int
-        let tabId: UUID
-        let size: Double
+        let member: SplitMember
+        let weight: Double
     }
 
     private struct MixedThreeOneStructure {
         let rootAxis: SplitAxis
-        let rootSize: Double
+        let rootWeight: Double
         let children: [SplitLayoutTree]
         let plane: ThreeLeafPlane
         let singleton: SingletonLeaf
@@ -32,133 +33,162 @@ enum SplitLayoutDropMutation {
 
     static func resolve(
         in tree: SplitLayoutTree,
-        draggedTabId: UUID,
+        draggedMember: SplitMember,
         target: SplitDropTarget,
         bounds: CGRect
     ) -> Resolution? {
+        let draggedMemberID = draggedMember.memberID
         let original = SplitLayoutReconciler.canonicalizedForTiles(tree) ?? tree
-        let resolvedTree = target.resolvedLayoutTree?.contains(draggedTabId) == true
+        let structuralMember = original.member(for: draggedMemberID)
+            ?? draggedMember
+        let resolvedTree = target.resolvedLayoutTree?
+            .contains(draggedMemberID) == true
             ? target.resolvedLayoutTree
-            : resolvingTileDrop(in: original, tabId: draggedTabId, target: target)
+            : resolvingTileDrop(
+                in: original,
+                member: structuralMember,
+                target: target
+            )
         guard let resolvedTree,
-              let canonicalTree = SplitLayoutReconciler.canonicalTreePreservingSizes(resolvedTree)
-        else {
+              let canonicalTree = SplitLayoutReconciler
+              .canonicalTreePreservingWeights(resolvedTree) else {
             return nil
         }
         let dropTree = target.side == .center
             ? canonicalTree
-            : SplitLayoutSizing.equalizingStructuralDropSizes(in: canonicalTree)
-        if tree.contains(draggedTabId),
+            : SplitLayoutSizing.equalizingAllSiblingWeights(in: canonicalTree)
+        if tree.contains(draggedMemberID),
            dropTree.hasSameStructure(as: original) {
             return nil
         }
         guard let targetRect = SplitLayoutGeometry.leafRect(
-            for: draggedTabId,
+            for: draggedMemberID,
             in: dropTree,
             rect: bounds
         ) else {
             return nil
         }
         return Resolution(
-            target: target.resolving(targetRect: targetRect, resolvedLayoutTree: dropTree),
+            target: target.resolving(
+                targetRect: targetRect,
+                resolvedLayoutTree: dropTree
+            ),
             layoutTree: dropTree
         )
     }
 
     private static func resolvingTileDrop(
         in tree: SplitLayoutTree,
-        tabId: UUID,
+        member: SplitMember,
         target: SplitDropTarget
     ) -> SplitLayoutTree? {
         guard target.side != .center else {
-            return resolvingCenterDrop(in: tree, tabId: tabId, targetTabId: target.tabId)
+            return resolvingCenterDrop(
+                in: tree,
+                member: member,
+                targetMemberID: target.targetMemberID
+            )
         }
 
         switch target.intent {
         case .siblingEdge:
-            return resolvingSiblingDrop(in: tree, tabId: tabId, target: target)
+            return resolvingSiblingDrop(in: tree, member: member, target: target)
         case .flatFourPair:
             return pairingFlatFour(
                 in: tree,
-                tabId: tabId,
-                targetTabId: target.tabId,
+                member: member,
+                targetMemberID: target.targetMemberID,
                 side: target.side
             )
         case .flatThreePair:
             return pairingFlatThree(
                 in: tree,
-                tabId: tabId,
-                targetTabId: target.tabId,
+                member: member,
+                targetMemberID: target.targetMemberID,
                 side: target.side
             )
         case .flatFourReorder:
             return reorderingFlatFour(
                 in: tree,
-                tabId: tabId,
-                targetTabId: target.tabId,
+                memberID: member.memberID,
+                targetMemberID: target.targetMemberID,
                 side: target.side
             )
         case .mixedThreeOnePair:
             return pairingMixedThreeOne(
                 in: tree,
-                tabId: tabId,
-                targetTabId: target.tabId,
+                memberID: member.memberID,
+                targetMemberID: target.targetMemberID,
                 side: target.side
             )
         default:
-            return resolvingPlaneDrop(in: tree, tabId: tabId, target: target)
+            return resolvingPlaneDrop(in: tree, member: member, target: target)
         }
     }
 
     private static func resolvingCenterDrop(
         in tree: SplitLayoutTree,
-        tabId: UUID,
-        targetTabId: UUID
+        member: SplitMember,
+        targetMemberID: SplitMemberID
     ) -> SplitLayoutTree? {
-        if tree.contains(tabId) {
-            guard tabId != targetTabId else { return nil }
-            return SplitLayoutReconciler.canonicalTreePreservingSizes(
-                tree.swappingTabs(tabId, targetTabId)
+        let candidate: SplitLayoutTree?
+        if tree.contains(member.memberID) {
+            candidate = tree.swappingMembers(
+                member.memberID,
+                targetMemberID
             )
+        } else {
+            candidate = tree.replacingMember(targetMemberID, with: member)
         }
-        return SplitLayoutReconciler.canonicalTreePreservingSizes(
-            tree.replacingTab(targetTabId, with: tabId)
+        return candidate.flatMap(
+            SplitLayoutReconciler.canonicalTreePreservingWeights
         )
     }
 
     private static func resolvingSiblingDrop(
         in tree: SplitLayoutTree,
-        tabId: UUID,
+        member: SplitMember,
         target: SplitDropTarget
     ) -> SplitLayoutTree? {
-        if tree.contains(tabId) {
-            guard let moved = tree.movingTab(
-                tabId,
-                relativeTo: target.tabId,
+        let candidate: SplitLayoutTree?
+        if tree.contains(member.memberID) {
+            candidate = tree.movingMember(
+                member.memberID,
+                relativeTo: target.targetMemberID,
                 side: target.side
-            ) else {
-                return nil
-            }
-            return SplitLayoutReconciler.canonicalTreePreservingSizes(moved)
+            )
+        } else {
+            candidate = tree.inserting(
+                member,
+                relativeTo: target.targetMemberID,
+                side: target.side
+            )
         }
-        return SplitLayoutReconciler.canonicalTreePreservingSizes(
-            tree.inserting(tabId: tabId, relativeTo: target.tabId, side: target.side)
+        return candidate.flatMap(
+            SplitLayoutReconciler.canonicalTreePreservingWeights
         )
     }
 
     private static func resolvingPlaneDrop(
         in tree: SplitLayoutTree,
-        tabId: UUID,
+        member: SplitMember,
         target: SplitDropTarget
     ) -> SplitLayoutTree? {
-        let originalTargetIds = tree.node(at: target.planePath)?.tabIds ?? []
+        let memberID = member.memberID
+        let originalTargetIDs = tree.node(at: target.planePath)?.memberIDs ?? []
         let base: SplitLayoutTree
         var insertionPath = target.planePath
-        if tree.contains(tabId) {
-            let targetIdsAfterMove = originalTargetIds.filter { $0 != tabId }
-            guard !targetIdsAfterMove.isEmpty else { return nil }
-            base = tree.removingForMove(tabId: tabId)
-            if let adjustedPath = pathForNode(in: base, withTabIds: targetIdsAfterMove) {
+        if tree.contains(memberID) {
+            let targetIDsAfterMove = originalTargetIDs.filter { $0 != memberID }
+            guard !targetIDsAfterMove.isEmpty,
+                  let remaining = tree.removing(memberID: memberID) else {
+                return nil
+            }
+            base = remaining
+            if let adjustedPath = pathForNode(
+                in: base,
+                withMemberIDs: targetIDsAfterMove
+            ) {
                 insertionPath = adjustedPath
             } else if base.node(at: insertionPath) == nil {
                 return nil
@@ -172,235 +202,270 @@ enum SplitLayoutDropMutation {
            SplitLayoutGeometry.hasSecondaryPlane(in: base),
            case .split(let axis, _, _) = base,
            axis == insertionAxis {
-            var ids = base.tabIds
-            if target.side == .left || target.side == .top {
-                ids.insert(tabId, at: 0)
+            var members = base.members
+            if target.side.insertsBeforeTarget {
+                members.insert(member, at: 0)
             } else {
-                ids.append(tabId)
+                members.append(member)
             }
-            return SplitLayoutReconciler.canonicalTreePreservingSizes(
-                SplitLayoutFactory.equalSplit(axis: insertionAxis, tabIds: ids)
+            guard let equalTree = SplitLayoutFactory.equalSplit(
+                axis: insertionAxis,
+                members: members
+            ) else {
+                return nil
+            }
+            return SplitLayoutReconciler.canonicalTreePreservingWeights(
+                equalTree
             )
         }
 
         guard let inserted = insertingTile(
             in: base,
-            tabId: tabId,
+            member: member,
             at: insertionPath,
             side: target.side
         ),
-        inserted.tabIds.count <= SplitGroup.maximumTabs,
-        Set(inserted.tabIds).count == inserted.tabIds.count
-        else {
+        inserted.memberIDs.count <= SplitGroup.maximumMembers,
+        Set(inserted.memberIDs).count == inserted.memberIDs.count else {
             return nil
         }
-        return SplitLayoutReconciler.canonicalTreePreservingSizes(inserted)
+        return SplitLayoutReconciler.canonicalTreePreservingWeights(inserted)
     }
 
     private static func pairingFlatThree(
         in tree: SplitLayoutTree,
-        tabId: UUID,
-        targetTabId: UUID,
+        member: SplitMember,
+        targetMemberID: SplitMemberID,
         side: SplitDropSide
     ) -> SplitLayoutTree? {
-        guard tree.contains(targetTabId),
+        let memberID = member.memberID
+        guard tree.contains(targetMemberID),
               let insertionAxis = side.insertionAxis,
-              case .split(let rootAxis, let rootSize, let children) = tree,
+              case .split(let rootAxis, let rootWeight, let children) = tree,
               children.count == 3,
               children.allSatisfy(isLeaf),
               insertionAxis != rootAxis,
-              tabId != targetTabId
-        else {
+              memberID != targetMemberID else {
             return nil
         }
 
-        let leafChildren: [(tabId: UUID, size: Double)] = children.compactMap { child in
-            if case .leaf(let id, let size) = child {
-                return (id, size)
-            }
-            return nil
-        }
+        let leafChildren = leafMembers(in: children)
         guard leafChildren.count == children.count,
-              leafChildren.contains(where: { $0.tabId == targetTabId })
-        else {
+              leafChildren.contains(where: {
+                  $0.member.memberID == targetMemberID
+              }) else {
             return nil
         }
-        let pairedIds = (side == .left || side == .top)
-            ? [tabId, targetTabId]
-            : [targetTabId, tabId]
-
-        let pairedPlane = SplitLayoutFactory.equalSplit(axis: insertionAxis, tabIds: pairedIds)
+        let pairedMembers = side.insertsBeforeTarget
+            ? [member, tree.member(for: targetMemberID)].compactMap { $0 }
+            : [tree.member(for: targetMemberID), member].compactMap { $0 }
+        guard let pairedPlane = SplitLayoutFactory.equalSplit(
+            axis: insertionAxis,
+            members: pairedMembers
+        ) else {
+            return nil
+        }
         let updatedChildren = leafChildren.compactMap { leaf -> SplitLayoutTree? in
-            if tree.contains(tabId), leaf.tabId == tabId {
+            if tree.contains(memberID), leaf.member.memberID == memberID {
                 return nil
             }
-            if leaf.tabId == targetTabId {
-                return SplitLayoutSizing.settingSize(leaf.size, in: pairedPlane)
+            if leaf.member.memberID == targetMemberID {
+                return SplitLayoutSizing.settingWeight(
+                    leaf.weight,
+                    in: pairedPlane
+                )
             }
-            return .leaf(tabId: leaf.tabId, size: leaf.size)
+            return .leaf(member: leaf.member, weight: leaf.weight)
         }
-        guard !tree.contains(tabId) || updatedChildren.count == 2 else {
+        guard !tree.contains(memberID) || updatedChildren.count == 2 else {
             return nil
         }
-        return SplitLayoutReconciler.canonicalTreePreservingSizes(
-            .split(axis: rootAxis, size: rootSize, children: updatedChildren)
+        return SplitLayoutReconciler.canonicalTreePreservingWeights(
+            .split(
+                axis: rootAxis,
+                weight: rootWeight,
+                children: updatedChildren
+            )
         )
     }
 
     private static func pairingFlatFour(
         in tree: SplitLayoutTree,
-        tabId: UUID,
-        targetTabId: UUID,
+        member: SplitMember,
+        targetMemberID: SplitMemberID,
         side: SplitDropSide
     ) -> SplitLayoutTree? {
-        guard tree.contains(tabId),
-              tree.contains(targetTabId),
-              tabId != targetTabId,
+        let memberID = member.memberID
+        guard tree.contains(memberID),
+              tree.contains(targetMemberID),
+              memberID != targetMemberID,
               let insertionAxis = side.insertionAxis,
-              case .split(let rootAxis, let rootSize, let children) = tree,
-              children.count == SplitGroup.maximumTabs,
+              case .split(let rootAxis, let rootWeight, let children) = tree,
+              children.count == SplitGroup.maximumMembers,
               children.allSatisfy(isLeaf),
-              insertionAxis != rootAxis
-        else {
+              insertionAxis != rootAxis else {
             return nil
         }
 
-        let leafChildren: [(tabId: UUID, size: Double)] = children.compactMap { child in
-            if case .leaf(let id, let size) = child {
-                return (id, size)
-            }
-            return nil
-        }
+        let leafChildren = leafMembers(in: children)
         guard leafChildren.count == children.count,
-              leafChildren.contains(where: { $0.tabId == targetTabId })
-        else {
+              let targetMember = tree.member(for: targetMemberID),
+              let pairedPlane = SplitLayoutFactory.equalSplit(
+                  axis: insertionAxis,
+                  members: side.insertsBeforeTarget
+                      ? [member, targetMember]
+                      : [targetMember, member]
+              ) else {
             return nil
         }
-        let pairedIds = (side == .left || side == .top)
-            ? [tabId, targetTabId]
-            : [targetTabId, tabId]
-
-        let pairedPlane = SplitLayoutFactory.equalSplit(axis: insertionAxis, tabIds: pairedIds)
         let updatedChildren = leafChildren.compactMap { leaf -> SplitLayoutTree? in
-            if leaf.tabId == tabId {
+            if leaf.member.memberID == memberID {
                 return nil
             }
-            if leaf.tabId == targetTabId {
-                return SplitLayoutSizing.settingSize(leaf.size, in: pairedPlane)
+            if leaf.member.memberID == targetMemberID {
+                return SplitLayoutSizing.settingWeight(
+                    leaf.weight,
+                    in: pairedPlane
+                )
             }
-            return .leaf(tabId: leaf.tabId, size: leaf.size)
+            return .leaf(member: leaf.member, weight: leaf.weight)
         }
         guard updatedChildren.count == 3 else { return nil }
-        return SplitLayoutReconciler.canonicalTreePreservingSizes(
-            .split(axis: rootAxis, size: rootSize, children: updatedChildren)
+        return SplitLayoutReconciler.canonicalTreePreservingWeights(
+            .split(
+                axis: rootAxis,
+                weight: rootWeight,
+                children: updatedChildren
+            )
         )
     }
 
     private static func pairingMixedThreeOne(
         in tree: SplitLayoutTree,
-        tabId: UUID,
-        targetTabId: UUID,
+        memberID: SplitMemberID,
+        targetMemberID: SplitMemberID,
         side: SplitDropSide
     ) -> SplitLayoutTree? {
-        guard tree.contains(tabId),
-              tree.contains(targetTabId),
-              tabId != targetTabId,
+        guard tree.contains(memberID),
+              tree.contains(targetMemberID),
+              memberID != targetMemberID,
               let insertionAxis = side.insertionAxis,
-              let structure = mixedThreeOneStructure(in: tree)
-        else {
+              let structure = mixedThreeOneStructure(in: tree),
+              let draggedMember = tree.member(for: memberID),
+              let targetMember = tree.member(for: targetMemberID) else {
             return nil
         }
         let splitInfo = structure.plane
-        let leafInfo = structure.singleton
-
-        let splitIds = splitInfo.leaves.map(\.tabId)
-        let draggedIsSingleton = leafInfo.tabId == tabId && splitIds.contains(targetTabId)
-        let targetIsSingleton = leafInfo.tabId == targetTabId && splitIds.contains(tabId)
+        let singleton = structure.singleton
+        let splitIDs = splitInfo.leaves.map(\.member.memberID)
+        let draggedIsSingleton = singleton.member.memberID == memberID
+            && splitIDs.contains(targetMemberID)
+        let targetIsSingleton = singleton.member.memberID == targetMemberID
+            && splitIDs.contains(memberID)
         guard draggedIsSingleton || targetIsSingleton else { return nil }
 
-        let pairedIds = (side == .left || side == .top)
-            ? [tabId, targetTabId]
-            : [targetTabId, tabId]
+        let pairedMembers = side.insertsBeforeTarget
+            ? [draggedMember, targetMember]
+            : [targetMember, draggedMember]
         if insertionAxis != splitInfo.axis {
-            let replacedTabId = draggedIsSingleton ? targetTabId : tabId
-            let pairedPlane = SplitLayoutFactory.equalSplit(
+            let replacedMemberID = draggedIsSingleton
+                ? targetMemberID
+                : memberID
+            guard let pairedPlane = SplitLayoutFactory.equalSplit(
                 axis: insertionAxis,
-                tabIds: pairedIds
-            )
-            let updated = splitInfo.leaves.map { leaf -> SplitLayoutTree in
-                if leaf.tabId == replacedTabId {
-                    return SplitLayoutSizing.settingSize(leaf.size, in: pairedPlane)
-                }
-                return .leaf(tabId: leaf.tabId, size: leaf.size)
+                members: pairedMembers
+            ) else {
+                return nil
             }
-            return SplitLayoutReconciler.canonicalTreePreservingSizes(
-                .split(axis: splitInfo.axis, size: structure.rootSize, children: updated)
+            let updated = splitInfo.leaves.map { leaf -> SplitLayoutTree in
+                if leaf.member.memberID == replacedMemberID {
+                    return SplitLayoutSizing.settingWeight(
+                        leaf.weight,
+                        in: pairedPlane
+                    )
+                }
+                return .leaf(member: leaf.member, weight: leaf.weight)
+            }
+            return SplitLayoutReconciler.canonicalTreePreservingWeights(
+                .split(
+                    axis: splitInfo.axis,
+                    weight: structure.rootWeight,
+                    children: updated
+                )
             )
         }
 
-        let remainingIds = splitIds.filter { $0 != tabId && $0 != targetTabId }
-        guard remainingIds.count == 2 else { return nil }
-        let pairedPlane = SplitLayoutFactory.equalSplit(
-            axis: splitInfo.axis,
-            tabIds: pairedIds
-        )
-        let remainingPlane = SplitLayoutFactory.equalSplit(
-            axis: splitInfo.axis,
-            tabIds: remainingIds
-        )
+        let remainingMembers = splitInfo.leaves
+            .map(\.member)
+            .filter {
+                $0.memberID != memberID && $0.memberID != targetMemberID
+            }
+        guard remainingMembers.count == 2,
+              let pairedPlane = SplitLayoutFactory.equalSplit(
+                  axis: splitInfo.axis,
+                  members: pairedMembers
+              ),
+              let remainingPlane = SplitLayoutFactory.equalSplit(
+                  axis: splitInfo.axis,
+                  members: remainingMembers
+              ) else {
+            return nil
+        }
 
         var updated = structure.children
         if draggedIsSingleton {
-            updated[splitInfo.index] = SplitLayoutSizing.settingSize(
-                splitInfo.size,
+            updated[splitInfo.index] = SplitLayoutSizing.settingWeight(
+                splitInfo.weight,
                 in: pairedPlane
             )
-            updated[leafInfo.index] = SplitLayoutSizing.settingSize(
-                leafInfo.size,
+            updated[singleton.index] = SplitLayoutSizing.settingWeight(
+                singleton.weight,
                 in: remainingPlane
             )
         } else {
-            updated[splitInfo.index] = SplitLayoutSizing.settingSize(
-                splitInfo.size,
+            updated[splitInfo.index] = SplitLayoutSizing.settingWeight(
+                splitInfo.weight,
                 in: remainingPlane
             )
-            updated[leafInfo.index] = SplitLayoutSizing.settingSize(
-                leafInfo.size,
+            updated[singleton.index] = SplitLayoutSizing.settingWeight(
+                singleton.weight,
                 in: pairedPlane
             )
         }
 
-        return SplitLayoutReconciler.canonicalTreePreservingSizes(
-            .split(axis: structure.rootAxis, size: structure.rootSize, children: updated)
+        return SplitLayoutReconciler.canonicalTreePreservingWeights(
+            .split(
+                axis: structure.rootAxis,
+                weight: structure.rootWeight,
+                children: updated
+            )
         )
     }
 
     private static func mixedThreeOneStructure(
         in tree: SplitLayoutTree
     ) -> MixedThreeOneStructure? {
-        guard case .split(let rootAxis, let rootSize, let children) = tree,
-              children.count == 2
-        else {
+        guard case .split(let rootAxis, let rootWeight, let children) = tree,
+              children.count == 2 else {
             return nil
         }
         var plane: ThreeLeafPlane?
         var singleton: SingletonLeaf?
         for (index, child) in children.enumerated() {
             switch child {
-            case .leaf(let id, let size):
-                singleton = SingletonLeaf(index: index, tabId: id, size: size)
-            case .split(let axis, let size, let grandchildren):
-                let leaves: [(tabId: UUID, size: Double)] = grandchildren.compactMap { grandchild in
-                    if case .leaf(let id, let leafSize) = grandchild {
-                        return (id, leafSize)
-                    }
-                    return nil
-                }
+            case .leaf(let member, let weight):
+                singleton = SingletonLeaf(
+                    index: index,
+                    member: member,
+                    weight: weight
+                )
+            case .split(let axis, let weight, let grandchildren):
+                let leaves = leafMembers(in: grandchildren)
                 if leaves.count == 3 {
                     plane = ThreeLeafPlane(
                         index: index,
                         axis: axis,
-                        size: size,
+                        weight: weight,
                         leaves: leaves
                     )
                 }
@@ -409,7 +474,7 @@ enum SplitLayoutDropMutation {
         guard let plane, let singleton else { return nil }
         return MixedThreeOneStructure(
             rootAxis: rootAxis,
-            rootSize: rootSize,
+            rootWeight: rootWeight,
             children: children,
             plane: plane,
             singleton: singleton
@@ -418,46 +483,58 @@ enum SplitLayoutDropMutation {
 
     private static func reorderingFlatFour(
         in tree: SplitLayoutTree,
-        tabId: UUID,
-        targetTabId: UUID,
+        memberID: SplitMemberID,
+        targetMemberID: SplitMemberID,
         side: SplitDropSide
     ) -> SplitLayoutTree? {
-        guard tree.contains(tabId),
-              tree.contains(targetTabId),
-              tabId != targetTabId,
+        guard tree.contains(memberID),
+              tree.contains(targetMemberID),
+              memberID != targetMemberID,
               let insertionAxis = side.insertionAxis,
-              case .split(let rootAxis, let rootSize, let children) = tree,
-              children.count == SplitGroup.maximumTabs,
+              case .split(let rootAxis, let rootWeight, let children) = tree,
+              children.count == SplitGroup.maximumMembers,
               children.allSatisfy(isLeaf),
-              insertionAxis == rootAxis
-        else {
+              insertionAxis == rootAxis,
+              let movingMember = tree.member(for: memberID) else {
             return nil
         }
 
-        var ids = tree.tabIds.filter { $0 != tabId }
-        guard let targetIndex = ids.firstIndex(of: targetTabId) else { return nil }
-        let insertBefore = side == .left || side == .top
-        ids.insert(tabId, at: insertBefore ? targetIndex : targetIndex + 1)
-        guard ids != tree.tabIds else { return nil }
-        return SplitLayoutReconciler.canonicalTreePreservingSizes(
-            SplitLayoutSizing.settingSize(
-                rootSize,
-                in: SplitLayoutFactory.equalSplit(axis: rootAxis, tabIds: ids)
-            )
+        var members = tree.members.filter { $0.memberID != memberID }
+        guard let targetIndex = members.firstIndex(where: {
+            $0.memberID == targetMemberID
+        }) else {
+            return nil
+        }
+        members.insert(
+            movingMember,
+            at: side.insertsBeforeTarget ? targetIndex : targetIndex + 1
+        )
+        guard members.map(\.memberID) != tree.memberIDs,
+              let equalTree = SplitLayoutFactory.equalSplit(
+                  axis: rootAxis,
+                  members: members
+              ) else {
+            return nil
+        }
+        return SplitLayoutReconciler.canonicalTreePreservingWeights(
+            SplitLayoutSizing.settingWeight(rootWeight, in: equalTree)
         )
     }
 
     private static func pathForNode(
         in tree: SplitLayoutTree,
-        withTabIds ids: [UUID]
+        withMemberIDs memberIDs: [SplitMemberID]
     ) -> [Int]? {
-        guard !ids.isEmpty else { return nil }
-        if tree.tabIds == ids {
+        guard !memberIDs.isEmpty else { return nil }
+        if tree.memberIDs == memberIDs {
             return []
         }
         guard case .split(_, _, let children) = tree else { return nil }
         for (index, child) in children.enumerated() {
-            if let childPath = pathForNode(in: child, withTabIds: ids) {
+            if let childPath = pathForNode(
+                in: child,
+                withMemberIDs: memberIDs
+            ) {
                 return [index] + childPath
             }
         }
@@ -466,71 +543,97 @@ enum SplitLayoutDropMutation {
 
     private static func insertingTile(
         in tree: SplitLayoutTree,
-        tabId: UUID,
+        member: SplitMember,
         at path: [Int],
         side: SplitDropSide
     ) -> SplitLayoutTree? {
         guard !path.isEmpty else {
-            return insertingTileAtCurrentNode(in: tree, tabId: tabId, side: side)
+            return insertingTileAtCurrentNode(
+                in: tree,
+                member: member,
+                side: side
+            )
         }
-        guard case .split(let axis, let size, let children) = tree,
+        guard case .split(let axis, let weight, let children) = tree,
               let index = path.first,
-              children.indices.contains(index)
-        else {
+              children.indices.contains(index) else {
             return nil
         }
         var updated = children
         guard let insertedChild = insertingTile(
             in: updated[index],
-            tabId: tabId,
+            member: member,
             at: Array(path.dropFirst()),
             side: side
         ) else {
             return nil
         }
         updated[index] = insertedChild
-        return .split(axis: axis, size: size, children: updated)
+        return .split(axis: axis, weight: weight, children: updated)
     }
 
     private static func insertingTileAtCurrentNode(
         in tree: SplitLayoutTree,
-        tabId: UUID,
+        member: SplitMember,
         side: SplitDropSide
     ) -> SplitLayoutTree? {
         guard let insertionAxis = side.insertionAxis else { return nil }
-        let insertBefore = side == .left || side == .top
-        let incoming = SplitLayoutTree.leaf(tabId: tabId, size: 1)
+        let incoming = SplitLayoutTree.leaf(member: member, weight: 1)
 
         switch tree {
-        case .leaf(let existingTabId, let size):
-            let existing = SplitLayoutTree.leaf(tabId: existingTabId, size: 0.5)
-            let inserted = SplitLayoutTree.leaf(tabId: tabId, size: 0.5)
+        case .leaf(let existingMember, let weight):
+            let existing = SplitLayoutTree.leaf(
+                member: existingMember,
+                weight: 0.5
+            )
+            let inserted = SplitLayoutTree.leaf(member: member, weight: 0.5)
             return .split(
                 axis: insertionAxis,
-                size: size,
-                children: insertBefore ? [inserted, existing] : [existing, inserted]
+                weight: weight,
+                children: side.insertsBeforeTarget
+                    ? [inserted, existing]
+                    : [existing, inserted]
             )
 
-        case .split(let axis, let size, let children):
+        case .split(let axis, let weight, let children):
             if axis == insertionAxis {
-                var updated = children.map { SplitLayoutSizing.settingSize(1, in: $0) }
-                if insertBefore {
+                var updated = children.map {
+                    SplitLayoutSizing.settingWeight(1, in: $0)
+                }
+                if side.insertsBeforeTarget {
                     updated.insert(incoming, at: 0)
                 } else {
                     updated.append(incoming)
                 }
-                return SplitLayoutSizing.equalizingImmediateChildSizes(
-                    in: .split(axis: axis, size: size, children: updated)
+                return SplitLayoutSizing.equalizingImmediateChildWeights(
+                    in: .split(
+                        axis: axis,
+                        weight: weight,
+                        children: updated
+                    )
                 )
             }
 
-            let existing = SplitLayoutSizing.settingSize(0.5, in: tree)
-            let inserted = SplitLayoutTree.leaf(tabId: tabId, size: 0.5)
+            let existing = SplitLayoutSizing.settingWeight(0.5, in: tree)
+            let inserted = SplitLayoutTree.leaf(member: member, weight: 0.5)
             return .split(
                 axis: insertionAxis,
-                size: tree.sizeInParent,
-                children: insertBefore ? [inserted, existing] : [existing, inserted]
+                weight: tree.weightInParent,
+                children: side.insertsBeforeTarget
+                    ? [inserted, existing]
+                    : [existing, inserted]
             )
+        }
+    }
+
+    private static func leafMembers(
+        in children: [SplitLayoutTree]
+    ) -> [(member: SplitMember, weight: Double)] {
+        children.compactMap { child in
+            if case .leaf(let member, let weight) = child {
+                return (member, weight)
+            }
+            return nil
         }
     }
 

@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 import SwiftData
 
 /// Restores the persisted tab structure from the SwiftData store at startup and
@@ -12,7 +13,6 @@ final class TabStoreRestoreService {
     private let structuralRevision: () -> UInt64
     private let loadLifecycle: TabStartupRestoreLifecycle
     private let structuralInstaller: TabStructuralInstallOwner
-    private let splitGroupStructure: TabSplitGroupStructureOwner
     private let runtimePreparation: TabRuntimePreparationOwner
     private let lazyRestore: TabLazyRestoreCoordinator
     private let persistence: TabStructuralPersistenceService
@@ -27,7 +27,6 @@ final class TabStoreRestoreService {
         structuralRevision: @escaping () -> UInt64,
         loadLifecycle: TabStartupRestoreLifecycle,
         structuralInstaller: TabStructuralInstallOwner,
-        splitGroupStructure: TabSplitGroupStructureOwner,
         runtimePreparation: TabRuntimePreparationOwner,
         lazyRestore: TabLazyRestoreCoordinator,
         persistence: TabStructuralPersistenceService,
@@ -40,7 +39,6 @@ final class TabStoreRestoreService {
         self.structuralRevision = structuralRevision
         self.loadLifecycle = loadLifecycle
         self.structuralInstaller = structuralInstaller
-        self.splitGroupStructure = splitGroupStructure
         self.runtimePreparation = runtimePreparation
         self.lazyRestore = lazyRestore
         self.persistence = persistence
@@ -55,7 +53,6 @@ final class TabStoreRestoreService {
         structuralLookup: TabStructuralLookupCoordinator,
         loadLifecycle: TabStartupRestoreLifecycle,
         structuralInstaller: TabStructuralInstallOwner,
-        splitGroupStructure: TabSplitGroupStructureOwner,
         runtimePreparation: TabRuntimePreparationOwner,
         lazyRestore: TabLazyRestoreCoordinator,
         persistence: TabStructuralPersistenceService
@@ -68,7 +65,6 @@ final class TabStoreRestoreService {
             structuralRevision: { structuralLookup.mutationRevision },
             loadLifecycle: loadLifecycle,
             structuralInstaller: structuralInstaller,
-            splitGroupStructure: splitGroupStructure,
             runtimePreparation: runtimePreparation,
             lazyRestore: lazyRestore,
             persistence: persistence,
@@ -191,7 +187,7 @@ final class TabStoreRestoreService {
 
         structuralInstaller.installRestoredCollections(
             restoredState,
-            splitGroups: splitGroupStructure.sanitizedRepairedSplitGroups(payload.splitGroups),
+            splitGroups: SumiDomain.SplitGroup.sanitized(payload.splitGroups),
             currentSpace: restoredCurrentSpace,
             currentTab: restoredCurrentTab
         )

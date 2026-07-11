@@ -1,4 +1,5 @@
 import Combine
+import SumiDomain
 import SumiWebRuntime
 import XCTest
 
@@ -279,16 +280,16 @@ final class ShortcutPinAtomicityTests: XCTestCase {
         window.currentTabId = tab.id
         let group = try XCTUnwrap(
             SplitGroup.make(
-                tabIds: [tab.id, companion.id],
+                members: [.regularTab(tab.id), .regularTab(companion.id)],
                 layoutKind: .vertical,
-                host: .regular(spaceId: space.id)
+                container: .regularTabs(spaceId: space.id)
             )
         )
-        visibleSplitIds = group.tabIds
-        tabManager.splitGroupStructureOwner.upsertSplitGroup(
+        visibleSplitIds = [tab.id, companion.id]
+        XCTAssertTrue(tabManager.splitGroupMutations.insert(
             group,
-            schedulePersistence: false
-        )
+            persist: false
+        ))
         var structuralEvents = 0
         let cancellable = tabManager.tabStructureEventBus
             .structureChangedPublisher.sink { structuralEvents += 1 }
@@ -313,15 +314,16 @@ final class ShortcutPinAtomicityTests: XCTestCase {
             tab
         )
         let convertedGroup = try XCTUnwrap(
-            tabManager.splitGroupCollectionStateOwner.group(with: group.id)
+            tabManager.splitGroupStore.group(id: group.id)
         )
-        XCTAssertEqual(convertedGroup.layoutTree, group.layoutTree)
+        XCTAssertEqual(convertedGroup.layoutKind, group.layoutKind)
+        XCTAssertEqual(convertedGroup.container, group.container)
+        XCTAssertFalse(convertedGroup.contains(.regularTab(tab.id)))
         XCTAssertEqual(
-            convertedGroup.member(for: tab.id),
-            SplitGroupMember(
-                tabId: tab.id,
-                pinId: converted.id,
-                origin: .spacePinned(
+            convertedGroup.member(for: .shortcutPin(converted.id)),
+            SplitMember.shortcutPin(
+                converted.id,
+                returnPlacement: .spacePinned(
                     spaceId: space.id,
                     folderId: nil,
                     index: 0
@@ -361,16 +363,16 @@ final class ShortcutPinAtomicityTests: XCTestCase {
         window.currentTabId = tab.id
         let group = try XCTUnwrap(
             SplitGroup.make(
-                tabIds: [tab.id, companion.id],
+                members: [.regularTab(tab.id), .regularTab(companion.id)],
                 layoutKind: .vertical,
-                host: .regular(spaceId: space.id)
+                container: .regularTabs(spaceId: space.id)
             )
         )
-        visibleSplitIds = group.tabIds
-        tabManager.splitGroupStructureOwner.upsertSplitGroup(
+        visibleSplitIds = [tab.id, companion.id]
+        XCTAssertTrue(tabManager.splitGroupMutations.insert(
             group,
-            schedulePersistence: false
-        )
+            persist: false
+        ))
         let preparation = tabManager.regularTabShortcutConversion
             .prepare(
                 tab,
@@ -379,14 +381,17 @@ final class ShortcutPinAtomicityTests: XCTestCase {
         guard case .displayed = preparation else {
             return XCTFail("Expected a valid single-window split plan")
         }
-        let changedGroup = group.settingLayoutKind(.horizontal)
+        let changedGroup = try XCTUnwrap(
+            group.changingLayout(to: .horizontal)
+        )
         var structuralEvents = 0
         let cancellable = tabManager.tabStructureEventBus
             .structureChangedPublisher.sink { structuralEvents += 1 }
-        tabManager.splitGroupStructureOwner.upsertSplitGroup(
-            changedGroup,
-            schedulePersistence: false
-        )
+        XCTAssertTrue(tabManager.splitGroupMutations.replace(
+            group,
+            with: changedGroup,
+            persist: false
+        ))
         structuralEvents = 0
         let windowSession = ShortcutConversionWindowSessionState(window)
 
@@ -415,7 +420,7 @@ final class ShortcutPinAtomicityTests: XCTestCase {
                 .spacePinnedPins(for: space.id).isEmpty
         )
         XCTAssertEqual(
-            tabManager.splitGroupCollectionStateOwner.group(with: group.id),
+            tabManager.splitGroupStore.group(id: group.id),
             changedGroup
         )
         XCTAssertEqual(
@@ -425,7 +430,7 @@ final class ShortcutPinAtomicityTests: XCTestCase {
         _ = cancellable
     }
 
-    func testHeadlessConversionRejectsPersistedSplitWithoutMutation() throws {
+    func testHeadlessConversionReplacesPersistedSplitMemberAtomically() throws {
         let tabManager = try makeInMemoryTabManager()
         let space = tabManager.spaceServices.catalog.createSpace(name: "Space")
         let tab = tabManager.regularTabLifecycleOwner.createNewTab(
@@ -440,15 +445,15 @@ final class ShortcutPinAtomicityTests: XCTestCase {
         )
         let group = try XCTUnwrap(
             SplitGroup.make(
-                tabIds: [tab.id, companion.id],
+                members: [.regularTab(tab.id), .regularTab(companion.id)],
                 layoutKind: .vertical,
-                host: .regular(spaceId: space.id)
+                container: .regularTabs(spaceId: space.id)
             )
         )
-        tabManager.splitGroupStructureOwner.upsertSplitGroup(
+        XCTAssertTrue(tabManager.splitGroupMutations.insert(
             group,
-            schedulePersistence: false
-        )
+            persist: false
+        ))
 
         let converted = tabManager.shortcutPinCommandOwner
             .convertTabToShortcutPin(
@@ -460,17 +465,17 @@ final class ShortcutPinAtomicityTests: XCTestCase {
                 at: 0
             )
 
-        XCTAssertNil(converted)
-        XCTAssertTrue(tabManager.regularTabCollectionOwner.contains(tab))
-        XCTAssertTrue(
+        let pin = try XCTUnwrap(converted)
+        XCTAssertFalse(tabManager.regularTabCollectionOwner.contains(tab))
+        XCTAssertNotNil(
             tabManager.shortcutPinCollectionStateOwner
-                .spacePinnedPins(for: space.id).isEmpty
+                .shortcutPin(by: pin.id)
         )
-        let preservedGroup = try XCTUnwrap(
-            tabManager.splitGroupCollectionStateOwner.group(with: group.id)
+        let convertedGroup = try XCTUnwrap(
+            tabManager.splitGroupStore.group(id: group.id)
         )
-        XCTAssertEqual(preservedGroup.tabIds, group.tabIds)
-        XCTAssertEqual(preservedGroup.members, group.members)
+        XCTAssertFalse(convertedGroup.contains(.regularTab(tab.id)))
+        XCTAssertTrue(convertedGroup.contains(.shortcutPin(pin.id)))
     }
 
     func testPublicConversionRepairsNonDisplayingWindowAfterCommit() throws {

@@ -198,7 +198,7 @@ extension SpacePinnedStructureOwner.Dependencies {
             },
             visualOrderingResolver: { [weak tabManager] spaceId in
                 guard let tabManager else { preconditionFailure("TabManager dependency used after deallocation") }
-                return tabManager.splitGroupStructureOwner.visualOrderingResolver(for: spaceId)
+                return tabManager.splitGroupSidebarOrdering.resolver(for: spaceId)
             },
             childFolders: { [weak tabManager] parentId, spaceId in
                 tabManager?.folderCollectionStateOwner.childFolders(of: parentId, in: spaceId) ?? []

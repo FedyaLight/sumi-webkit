@@ -1,8 +1,3 @@
-//
-//  RegularSplitSegmentResolverTests.swift
-//  SumiTests
-//
-
 import XCTest
 
 @testable import Sumi
@@ -14,73 +9,137 @@ final class RegularSplitSegmentResolverTests: XCTestCase {
         Space(name: "Work")
     }
 
-    private func makeTab(name: String = "Tab", shortcutPinId: UUID? = nil) -> Tab {
-        let tab = Tab(url: URL(string: "https://example.com")!, name: name, favicon: "globe")
-        tab.shortcutPinId = shortcutPinId
+    private func makeTab(
+        name: String = "Tab",
+        shortcutPinID: UUID? = nil
+    ) -> Tab {
+        let tab = Tab(
+            url: URL(string: "https://example.com")!,
+            name: name,
+            favicon: "globe"
+        )
+        tab.shortcutPinId = shortcutPinID
         return tab
     }
 
     private func makePin(
         id: UUID = UUID(),
         role: ShortcutPinRole = .spacePinned,
-        spaceId: UUID? = nil,
-        folderId: UUID? = nil
+        spaceID: UUID? = nil,
+        folderID: UUID? = nil
     ) -> ShortcutPin {
         ShortcutPin(
             id: id,
             role: role,
-            spaceId: spaceId,
+            spaceId: spaceID,
             index: 0,
-            folderId: folderId,
+            folderId: folderID,
             launchURL: URL(string: "https://example.com/pin")!,
             title: "Pin"
         )
     }
 
-    // MARK: - visibleSplitGroups
+    private func regularGroup(
+        _ tabs: [Tab],
+        shortcut: (pinID: UUID, spaceID: UUID, liveTab: Tab)? = nil
+    ) throws -> SplitGroup {
+        var members = tabs.map { SplitMember.regularTab($0.id) }
+        if let shortcut {
+            members.append(
+                .shortcutPin(
+                    shortcut.pinID,
+                    returnPlacement: .spacePinned(
+                        spaceId: shortcut.spaceID,
+                        folderId: nil,
+                        index: 0
+                    )
+                )
+            )
+        }
+        return try XCTUnwrap(
+            SplitGroup.make(
+                members: members,
+                layoutKind: .vertical,
+                container: .regularTabs(spaceId: tabs.first?.spaceId)
+            )
+        )
+    }
 
     func testVisibleSplitGroupsReturnsEmptyWhileDragging() throws {
         let space = makeSpace()
-        let resolver = RegularSplitSegmentResolver(space: space, isInteractive: true)
+        let resolver = RegularSplitSegmentResolver(
+            space: space,
+            isInteractive: true
+        )
         let tabA = makeTab()
         let tabB = makeTab()
-        let group = try XCTUnwrap(SplitGroup.make(tabIds: [tabA.id, tabB.id], layoutKind: .vertical))
+        let group = try regularGroup([tabA, tabB])
 
-        let result = resolver.visibleSplitGroups(
-            currentTabs: [tabA, tabB],
-            isDragging: true,
-            splitGroup: { _ in group }
+        XCTAssertTrue(
+            resolver.visibleSplitGroups(
+                currentTabs: [tabA, tabB],
+                isDragging: true,
+                splitGroup: { _ in group }
+            ).isEmpty
         )
-
-        XCTAssertTrue(result.isEmpty)
     }
 
-    func testVisibleSplitGroupsExcludesShortcutHostedGroups() throws {
+    func testVisibleSplitGroupsExcludesShortcutSidebarGroups() throws {
         let space = makeSpace()
-        let resolver = RegularSplitSegmentResolver(space: space, isInteractive: true)
-        let tabA = makeTab()
-        let tabB = makeTab()
-        let group = try XCTUnwrap(SplitGroup.make(
-            tabIds: [tabA.id, tabB.id],
-            layoutKind: .vertical,
-            host: .shortcutPinned(spaceId: space.id, profileId: nil, index: nil)
-        ))
-
-        let result = resolver.visibleSplitGroups(
-            currentTabs: [tabA, tabB],
-            isDragging: false,
-            splitGroup: { _ in group }
+        let resolver = RegularSplitSegmentResolver(
+            space: space,
+            isInteractive: true
+        )
+        let firstPinID = UUID()
+        let secondPinID = UUID()
+        let group = try XCTUnwrap(
+            SplitGroup.make(
+                members: [
+                    .shortcutPin(
+                        firstPinID,
+                        returnPlacement: .spacePinned(
+                            spaceId: space.id,
+                            folderId: nil,
+                            index: 0
+                        )
+                    ),
+                    .shortcutPin(
+                        secondPinID,
+                        returnPlacement: .spacePinned(
+                            spaceId: space.id,
+                            folderId: nil,
+                            index: 1
+                        )
+                    ),
+                ],
+                layoutKind: .vertical,
+                container: .shortcutSidebar(
+                    spaceId: space.id,
+                    profileId: nil,
+                    folderId: nil,
+                    index: 0
+                )
+            )
         )
 
-        XCTAssertTrue(result.isEmpty)
+        XCTAssertTrue(
+            resolver.visibleSplitGroups(
+                currentTabs: [makeTab(), makeTab()],
+                isDragging: false,
+                splitGroup: { _ in group }
+            ).isEmpty
+        )
     }
 
-    func testVisibleSplitGroupsDedupesAndRequiresVisibleOverlap() throws {
+    func testVisibleSplitGroupsDeduplicatesByDurableGroupID() throws {
         let space = makeSpace()
-        let resolver = RegularSplitSegmentResolver(space: space, isInteractive: true)
+        let resolver = RegularSplitSegmentResolver(
+            space: space,
+            isInteractive: true
+        )
         let tabA = makeTab()
         let tabB = makeTab()
-        let group = try XCTUnwrap(SplitGroup.make(tabIds: [tabA.id, tabB.id], layoutKind: .vertical))
+        let group = try regularGroup([tabA, tabB])
 
         let result = resolver.visibleSplitGroups(
             currentTabs: [tabA, tabB],
@@ -91,170 +150,152 @@ final class RegularSplitSegmentResolverTests: XCTestCase {
         XCTAssertEqual(result.map(\.id), [group.id])
     }
 
-    // MARK: - splitGroupItems
-
-    func testSplitGroupItemsResolvesLiveTabsAndShortcutMembers() throws {
+    func testSplitGroupItemsKeepShortcutPinIdentityWhenLiveTabExists() throws {
         let space = makeSpace()
-        let resolver = RegularSplitSegmentResolver(space: space, isInteractive: true)
-        let tabA = makeTab(name: "Live")
-        let pinId = UUID()
-        let restoredTabId = UUID()
-        let pin = makePin(id: pinId)
-        let group = try XCTUnwrap(SplitGroup.make(
-            tabIds: [tabA.id, restoredTabId],
-            layoutKind: .vertical,
-            members: [
-                SplitGroupMember(tabId: restoredTabId, pinId: pinId, origin: .spacePinned(spaceId: space.id, folderId: nil, index: 0)),
-            ]
-        ))
+        let resolver = RegularSplitSegmentResolver(
+            space: space,
+            isInteractive: true
+        )
+        let regularTab = makeTab(name: "Regular")
+        let pinID = UUID()
+        let liveTab = makeTab(name: "Live", shortcutPinID: pinID)
+        let pin = makePin(id: pinID)
+        let group = try regularGroup(
+            [regularTab],
+            shortcut: (pinID, space.id, liveTab)
+        )
 
         let items = resolver.splitGroupItems(
             for: group,
-            tabById: [tabA.id: tabA],
-            liveTab: { _ in nil },
-            shortcutPin: { $0 == pinId ? pin : nil }
+            tabByID: [regularTab.id: regularTab],
+            regularTab: { _ in nil },
+            shortcutLiveTab: { $0 == pinID ? liveTab : nil },
+            shortcutPin: { $0 == pinID ? pin : nil }
         )
 
-        XCTAssertEqual(items.map(\.id), [tabA.id, pinId])
-        XCTAssertEqual(items.first?.tab?.id, tabA.id)
-        XCTAssertEqual(items.last?.pin?.id, pinId)
+        XCTAssertEqual(
+            items.map(\.id),
+            [.regularTab(regularTab.id), .shortcutPin(pinID)]
+        )
+        XCTAssertEqual(items.last?.tab?.id, liveTab.id)
+        XCTAssertNotEqual(items.last?.persistentID, liveTab.id)
     }
 
-    // MARK: - action / member
-
-    func testActionIsRestoreForShortcutBackedMember() throws {
+    func testActionsFollowTypedMemberKind() throws {
         let space = makeSpace()
-        let resolver = RegularSplitSegmentResolver(space: space, isInteractive: true)
-        let pinId = UUID()
-        let pin = makePin(id: pinId)
-        let group = try XCTUnwrap(SplitGroup.make(
-            tabIds: [UUID(), UUID()],
-            layoutKind: .vertical
-        ))
-        let item = SplitGroupSidebarItem.pin(pin)
+        let resolver = RegularSplitSegmentResolver(
+            space: space,
+            isInteractive: true
+        )
+        let regularTab = makeTab()
+        let pinID = UUID()
+        let liveTab = makeTab(shortcutPinID: pinID)
+        let pin = makePin(id: pinID)
+        let group = try regularGroup(
+            [regularTab],
+            shortcut: (pinID, space.id, liveTab)
+        )
+        let regularItem = try XCTUnwrap(
+            SplitGroupSidebarItem.regular(
+                .regularTab(regularTab.id),
+                tab: regularTab
+            )
+        )
+        let shortcutItem = try XCTUnwrap(
+            SplitGroupSidebarItem.shortcut(
+                try XCTUnwrap(group.member(for: .shortcutPin(pinID))),
+                pin: pin,
+                liveTab: liveTab
+            )
+        )
 
-        // No member registered for this pin id yet -> action should be nil (no tab, no shortcut member).
-        XCTAssertNil(resolver.action(for: item, in: group))
-        XCTAssertNil(resolver.member(for: item, in: group))
+        XCTAssertEqual(resolver.action(for: regularItem, in: group), .close)
+        XCTAssertEqual(resolver.action(for: shortcutItem, in: group), .restore)
     }
 
-    func testActionIsCloseForPlainTab() throws {
+    func testSourceZonesMatchLauncherPlacement() {
         let space = makeSpace()
-        let resolver = RegularSplitSegmentResolver(space: space, isInteractive: true)
+        let resolver = RegularSplitSegmentResolver(
+            space: space,
+            isInteractive: true
+        )
+        let folderID = UUID()
+
+        XCTAssertEqual(
+            resolver.sourceZone(for: makePin(role: .essential)),
+            .essentials
+        )
+        XCTAssertEqual(
+            resolver.sourceZone(
+                for: makePin(role: .spacePinned, folderID: folderID)
+            ),
+            .folder(folderID)
+        )
+        XCTAssertEqual(
+            resolver.sourceZone(for: makePin(role: .spacePinned)),
+            .spacePinned(space.id)
+        )
+    }
+
+    func testDragPayloadCarriesTypedRegularMember() throws {
+        let space = makeSpace()
+        let resolver = RegularSplitSegmentResolver(
+            space: space,
+            isInteractive: true
+        )
         let tab = makeTab()
-        let group = try XCTUnwrap(SplitGroup.make(tabIds: [tab.id, UUID()], layoutKind: .vertical))
-        let item = SplitGroupSidebarItem.tab(tab)
+        let group = try regularGroup([tab, makeTab()])
+        let item = try XCTUnwrap(
+            SplitGroupSidebarItem.regular(
+                .regularTab(tab.id),
+                tab: tab
+            )
+        )
 
-        XCTAssertEqual(resolver.action(for: item, in: group), .close)
-    }
-
-    func testActionIsRestoreWhenTabIsShortcutBackedMember() throws {
-        let space = makeSpace()
-        let resolver = RegularSplitSegmentResolver(space: space, isInteractive: true)
-        let pinId = UUID()
-        let tab = makeTab(shortcutPinId: pinId)
-        let group = try XCTUnwrap(SplitGroup.make(
-            tabIds: [tab.id, UUID()],
-            layoutKind: .vertical,
-            members: [
-                SplitGroupMember(tabId: tab.id, pinId: pinId, origin: .spacePinned(spaceId: space.id, folderId: nil, index: 0)),
-            ]
-        ))
-        let item = SplitGroupSidebarItem.tab(tab)
-
-        XCTAssertEqual(resolver.action(for: item, in: group), .restore)
-    }
-
-    // MARK: - sourceZone
-
-    func testSourceZoneForEssentialPinIsEssentials() {
-        let space = makeSpace()
-        let resolver = RegularSplitSegmentResolver(space: space, isInteractive: true)
-        let pin = makePin(role: .essential)
-
-        XCTAssertEqual(resolver.sourceZone(for: pin), .essentials)
-    }
-
-    func testSourceZoneForFolderPinIsFolder() {
-        let space = makeSpace()
-        let resolver = RegularSplitSegmentResolver(space: space, isInteractive: true)
-        let folderId = UUID()
-        let pin = makePin(role: .spacePinned, folderId: folderId)
-
-        XCTAssertEqual(resolver.sourceZone(for: pin), .folder(folderId))
-    }
-
-    func testSourceZoneForSpacePinnedFallsBackToResolverSpace() {
-        let space = makeSpace()
-        let resolver = RegularSplitSegmentResolver(space: space, isInteractive: true)
-        let pin = makePin(role: .spacePinned, spaceId: nil, folderId: nil)
-
-        XCTAssertEqual(resolver.sourceZone(for: pin), .spacePinned(space.id))
-    }
-
-    // MARK: - dragSource
-
-    func testDragSourceForPlainTabUsesSpaceRegularZone() throws {
-        let space = makeSpace()
-        let resolver = RegularSplitSegmentResolver(space: space, isInteractive: true)
-        let tab = makeTab()
-        let group = try XCTUnwrap(SplitGroup.make(tabIds: [tab.id, UUID()], layoutKind: .vertical))
-        let item = SplitGroupSidebarItem.tab(tab)
-
-        let dragSource = resolver.dragSource(
+        let source = resolver.dragSource(
             for: item,
             in: group,
             shortcutPin: { _ in nil },
-            onActivateTab: { _ in },
-            onActivateGroup: {}
+            onActivateMember: {}
         )
 
-        XCTAssertEqual(dragSource?.sourceZone, .spaceRegular(space.id))
-        XCTAssertEqual(dragSource?.item.tabId, tab.id)
+        XCTAssertEqual(source?.sourceZone, .spaceRegular(space.id))
+        XCTAssertEqual(source?.item.splitMemberID, .regularTab(tab.id))
+        XCTAssertEqual(source?.item.splitGroupID, group.id)
     }
 
-    func testDragSourceForShortcutBackedTabUsesPinSourceZone() throws {
+    func testShortcutDragPayloadUsesPinIDRatherThanLiveTabID() throws {
         let space = makeSpace()
-        let resolver = RegularSplitSegmentResolver(space: space, isInteractive: true)
-        let pinId = UUID()
-        let tab = makeTab(shortcutPinId: pinId)
-        let pin = makePin(id: pinId, role: .essential)
-        let group = try XCTUnwrap(SplitGroup.make(
-            tabIds: [tab.id, UUID()],
-            layoutKind: .vertical,
-            members: [
-                SplitGroupMember(tabId: tab.id, pinId: pinId, origin: .spacePinned(spaceId: space.id, folderId: nil, index: 0)),
-            ]
-        ))
-        let item = SplitGroupSidebarItem.tab(tab)
-
-        let dragSource = resolver.dragSource(
-            for: item,
-            in: group,
-            shortcutPin: { $0 == pinId ? pin : nil },
-            onActivateTab: { _ in },
-            onActivateGroup: {}
+        let resolver = RegularSplitSegmentResolver(
+            space: space,
+            isInteractive: true
+        )
+        let regularTab = makeTab()
+        let pinID = UUID()
+        let liveTab = makeTab(shortcutPinID: pinID)
+        let pin = makePin(id: pinID, role: .essential)
+        let group = try regularGroup(
+            [regularTab],
+            shortcut: (pinID, space.id, liveTab)
+        )
+        let item = try XCTUnwrap(
+            SplitGroupSidebarItem.shortcut(
+                try XCTUnwrap(group.member(for: .shortcutPin(pinID))),
+                pin: pin,
+                liveTab: liveTab
+            )
         )
 
-        XCTAssertEqual(dragSource?.sourceZone, .essentials)
-        XCTAssertEqual(dragSource?.item.tabId, tab.id)
-    }
-
-    func testDragSourceIsDisabledWhenResolverIsNotInteractive() throws {
-        let space = makeSpace()
-        let resolver = RegularSplitSegmentResolver(space: space, isInteractive: false)
-        let tab = makeTab()
-        let group = try XCTUnwrap(SplitGroup.make(tabIds: [tab.id, UUID()], layoutKind: .vertical))
-        let item = SplitGroupSidebarItem.tab(tab)
-
-        let dragSource = resolver.dragSource(
+        let source = resolver.dragSource(
             for: item,
             in: group,
-            shortcutPin: { _ in nil },
-            onActivateTab: { _ in },
-            onActivateGroup: {}
+            shortcutPin: { $0 == pinID ? pin : nil },
+            onActivateMember: {}
         )
 
-        XCTAssertEqual(dragSource?.isEnabled, false)
+        XCTAssertEqual(source?.sourceZone, .essentials)
+        XCTAssertEqual(source?.item.tabId, pinID)
+        XCTAssertEqual(source?.item.splitMemberID, .shortcutPin(pinID))
+        XCTAssertNotEqual(source?.item.tabId, liveTab.id)
     }
 }

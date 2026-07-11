@@ -1,11 +1,12 @@
 import Foundation
+import SumiDomain
 
 struct SplitFullGroupLayoutCatalog {
     private struct CacheKey: Hashable {
-        let tabIds: Set<UUID>
+        let members: Set<SplitMember>
 
-        init(tabIds: [UUID]) {
-            self.tabIds = Set(tabIds)
+        init(members: [SplitMember]) {
+            self.members = Set(members)
         }
     }
 
@@ -15,14 +16,13 @@ struct SplitFullGroupLayoutCatalog {
         treesByKey.removeAll(keepingCapacity: keepingCapacity)
     }
 
-    mutating func trees(for tabIds: [UUID]) -> [SplitLayoutTree] {
-        guard tabIds.count == SplitGroup.maximumTabs,
-              Set(tabIds).count == tabIds.count
-        else {
+    mutating func trees(for members: [SplitMember]) -> [SplitLayoutTree] {
+        guard members.count == SplitGroup.maximumMembers,
+              Set(members.map(\.memberID)).count == members.count else {
             return []
         }
 
-        let key = CacheKey(tabIds: tabIds)
+        let key = CacheKey(members: members)
         if let cached = treesByKey[key] {
             return cached
         }
@@ -31,45 +31,61 @@ struct SplitFullGroupLayoutCatalog {
         var trees: [SplitLayoutTree] = []
 
         func append(_ tree: SplitLayoutTree) {
-            guard let canonical = SplitLayoutReconciler.canonicalizedForTiles(tree),
-                  seen.insert(canonical).inserted
-            else {
+            guard let canonical = SplitLayoutReconciler
+                .canonicalizedForTiles(tree),
+                seen.insert(canonical).inserted else {
                 return
             }
             trees.append(canonical)
         }
 
         for rootAxis in [SplitAxis.row, .column] {
-            forEachPermutation(of: tabIds) { ids in
+            forEachPermutation(of: members) { permutation in
                 let childAxis = perpendicularAxis(to: rootAxis)
                 append(
-                    SplitLayoutTree.split(
+                    .split(
                         axis: rootAxis,
-                        size: 1,
+                        weight: 1,
                         children: [
-                            equalLeafSplit(axis: childAxis, tabIds: Array(ids[0..<2]), size: 0.5),
-                            equalLeafSplit(axis: childAxis, tabIds: Array(ids[2..<4]), size: 0.5),
+                            equalLeafSplit(
+                                axis: childAxis,
+                                members: Array(permutation[0..<2]),
+                                weight: 0.5
+                            ),
+                            equalLeafSplit(
+                                axis: childAxis,
+                                members: Array(permutation[2..<4]),
+                                weight: 0.5
+                            ),
                         ]
                     )
                 )
 
                 append(
-                    SplitLayoutTree.split(
+                    .split(
                         axis: rootAxis,
-                        size: 1,
+                        weight: 1,
                         children: [
-                            equalLeafSplit(axis: childAxis, tabIds: Array(ids[0..<3]), size: 0.5),
-                            SplitLayoutTree.leaf(tabId: ids[3], size: 0.5),
+                            equalLeafSplit(
+                                axis: childAxis,
+                                members: Array(permutation[0..<3]),
+                                weight: 0.5
+                            ),
+                            .leaf(member: permutation[3], weight: 0.5),
                         ]
                     )
                 )
                 append(
-                    SplitLayoutTree.split(
+                    .split(
                         axis: rootAxis,
-                        size: 1,
+                        weight: 1,
                         children: [
-                            SplitLayoutTree.leaf(tabId: ids[0], size: 0.5),
-                            equalLeafSplit(axis: childAxis, tabIds: Array(ids[1..<4]), size: 0.5),
+                            .leaf(member: permutation[0], weight: 0.5),
+                            equalLeafSplit(
+                                axis: childAxis,
+                                members: Array(permutation[1..<4]),
+                                weight: 0.5
+                            ),
                         ]
                     )
                 )
@@ -80,23 +96,25 @@ struct SplitFullGroupLayoutCatalog {
                         if index == splitIndex {
                             let split = equalLeafSplit(
                                 axis: childAxis,
-                                tabIds: Array(ids[cursor..<cursor + 2]),
-                                size: 1.0 / 3.0
+                                members: Array(
+                                    permutation[cursor..<cursor + 2]
+                                ),
+                                weight: 1.0 / 3.0
                             )
                             cursor += 2
                             return split
                         }
                         let leaf = SplitLayoutTree.leaf(
-                            tabId: ids[cursor],
-                            size: 1.0 / 3.0
+                            member: permutation[cursor],
+                            weight: 1.0 / 3.0
                         )
                         cursor += 1
                         return leaf
                     }
                     append(
-                        SplitLayoutTree.split(
+                        .split(
                             axis: rootAxis,
-                            size: 1,
+                            weight: 1,
                             children: children
                         )
                     )
@@ -113,29 +131,29 @@ struct SplitFullGroupLayoutCatalog {
 
     private func equalLeafSplit(
         axis: SplitAxis,
-        tabIds: [UUID],
-        size: Double
+        members: [SplitMember],
+        weight: Double
     ) -> SplitLayoutTree {
-        let childSize = 1 / Double(max(1, tabIds.count))
-        return SplitLayoutTree.split(
+        let childWeight = 1 / Double(members.count)
+        return .split(
             axis: axis,
-            size: size,
-            children: tabIds.map {
-                SplitLayoutTree.leaf(tabId: $0, size: childSize)
+            weight: weight,
+            children: members.map {
+                .leaf(member: $0, weight: childWeight)
             }
         )
     }
 
     private func forEachPermutation(
-        of ids: [UUID],
-        _ body: ([UUID]) -> Void
+        of members: [SplitMember],
+        _ body: ([SplitMember]) -> Void
     ) {
-        guard ids.isEmpty == false else {
+        guard !members.isEmpty else {
             body([])
             return
         }
 
-        var values = ids
+        var values = members
         func permute(from startIndex: Int) {
             if startIndex == values.count {
                 body(values)

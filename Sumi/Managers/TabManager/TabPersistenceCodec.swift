@@ -1,4 +1,105 @@
 import Foundation
+import SumiDomain
+
+enum DecodedSplitGroupArchive {
+    case version2(
+        groups: [SumiDomain.SplitGroup],
+        discardedEntryCount: Int
+    )
+    case legacyVersion1([LegacySplitGroupV1])
+}
+
+private struct SplitGroupArchiveV2: Encodable {
+    static let schemaVersion = 2
+
+    let groups: [SumiDomain.SplitGroup]
+
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion
+        case groups
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(Self.schemaVersion, forKey: .schemaVersion)
+        try container.encode(groups, forKey: .groups)
+    }
+}
+
+private enum SplitGroupArchivePayload: Decodable {
+    case version2(
+        groups: [SumiDomain.SplitGroup],
+        discardedEntryCount: Int
+    )
+    case legacyVersion1([LegacySplitGroupV1])
+
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion
+        case groups
+    }
+
+    init(from decoder: Decoder) throws {
+        if let container = try? decoder.container(
+            keyedBy: CodingKeys.self
+        ), container.contains(.schemaVersion) {
+            let schemaVersion = try container.decode(
+                Int.self,
+                forKey: .schemaVersion
+            )
+            guard schemaVersion == SplitGroupArchiveV2.schemaVersion else {
+                throw DecodingError.dataCorruptedError(
+                    forKey: .schemaVersion,
+                    in: container,
+                    debugDescription:
+                        "Unsupported split group archive schema version \(schemaVersion)."
+                )
+            }
+            let decodedGroups = try container.decode(
+                LossySplitGroupArray.self,
+                forKey: .groups
+            )
+            self = .version2(
+                groups: decodedGroups.groups,
+                discardedEntryCount: decodedGroups.discardedEntryCount
+            )
+            return
+        }
+
+        self = .legacyVersion1(
+            try decoder.singleValueContainer().decode(
+                [LegacySplitGroupV1].self
+            )
+        )
+    }
+}
+
+/// Advances through the archive one complete JSON value at a time, so a
+/// malformed group cannot make its valid siblings unreadable. `SplitGroup`'s
+/// decoder remains the per-entry domain validator.
+private struct LossySplitGroupArray: Decodable {
+    let groups: [SumiDomain.SplitGroup]
+    let discardedEntryCount: Int
+
+    init(from decoder: Decoder) throws {
+        var container = try decoder.unkeyedContainer()
+        var groups: [SumiDomain.SplitGroup] = []
+        var discardedEntryCount = 0
+
+        while !container.isAtEnd {
+            let entryDecoder = try container.superDecoder()
+            do {
+                groups.append(
+                    try SumiDomain.SplitGroup(from: entryDecoder)
+                )
+            } catch {
+                discardedEntryCount += 1
+            }
+        }
+
+        self.groups = groups
+        self.discardedEntryCount = discardedEntryCount
+    }
+}
 
 struct TabPersistenceCodec: Sendable {
     func encodeSnapshot(_ snapshot: TabPersistenceSnapshot) throws -> Data {
@@ -13,12 +114,35 @@ struct TabPersistenceCodec: Sendable {
         try JSONDecoder().decode(TabPersistenceSnapshot.self, from: data)
     }
 
-    func encodeSplitGroups(_ splitGroups: [SplitGroup]) throws -> Data {
-        try JSONEncoder().encode(SplitGroup.sanitized(splitGroups))
+    func encodeSplitGroups(
+        _ splitGroups: [SumiDomain.SplitGroup]
+    ) throws -> Data {
+        let encoder = JSONEncoder()
+        #if DEBUG
+        encoder.outputFormatting = [.sortedKeys]
+        #endif
+        return try encoder.encode(
+            SplitGroupArchiveV2(
+                groups: SumiDomain.SplitGroup.sanitized(splitGroups)
+            )
+        )
     }
 
-    func decodeSplitGroups(from data: Data) throws -> [SplitGroup] {
-        try JSONDecoder().decode([SplitGroup].self, from: data)
+    func decodeSplitGroupArchive(
+        from data: Data
+    ) throws -> DecodedSplitGroupArchive {
+        switch try JSONDecoder().decode(
+            SplitGroupArchivePayload.self,
+            from: data
+        ) {
+        case .version2(let groups, let discardedEntryCount):
+            return .version2(
+                groups: groups,
+                discardedEntryCount: discardedEntryCount
+            )
+        case .legacyVersion1(let groups):
+            return .legacyVersion1(groups)
+        }
     }
 }
 

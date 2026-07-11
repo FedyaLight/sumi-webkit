@@ -26,7 +26,7 @@ final class ClosedWindowHistoryRecorder {
             return
         }
         guard snapshot.currentTabId != nil
-            || snapshot.activeSplitGroupId != nil
+            || snapshot.splitSelection != nil
             || !snapshot.isShowingEmptyState
         else { return }
         recentlyClosedManager().captureClosedWindow(

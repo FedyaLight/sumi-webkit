@@ -35,25 +35,8 @@ final class TabStructureOwnerBag {
         }
     )
     lazy var spacePinnedStructureOwner = SpacePinnedStructureOwner(dependencies: .live(tabManager: tm))
-    lazy var sidebarDragRoutingOwner = SidebarDragOperationRoutingOwner(dependencies: .live(tabManager: tm))
-    lazy var spaceLauncherProjectionOwner = SpaceLauncherProjectionOwner(tabManager: tm)
-    lazy var splitGroupRepairOwner = TabManagerSplitGroupRepairOwner(
-        shortcutPin: { [weak self] id in
-            self?.tm.shortcutPinCollectionStateOwner.shortcutPin(by: id)
-        },
-        tab: { [weak self] id in
-            self?.tm.tabCollectionMembershipOwner.tab(for: id)
-        },
-        folderSpaceId: { [weak self] folderId in
-            self?.tm.folderCollectionStateOwner.spaceId(for: folderId)
-        },
-        spaceExists: { [weak self] spaceId in
-            self?.tm.spaceStateOwner.contains(spaceId: spaceId) ?? false
-        }
-    )
-    lazy var splitGroupStructureOwner = TabSplitGroupStructureOwner(
-        dependencies: .live(tabManager: tm)
-    )
+    lazy var sidebarDragRouter = SidebarDragOperationRouter(dependencies: .live(tabManager: tm))
+    lazy var spaceLauncherProjection = SpaceLauncherProjectionService(tabManager: tm)
     lazy var structuralCollectionMutationOwner = TabStructuralCollectionMutationOwner(
         dependencies: .live(tabManager: tm)
     )

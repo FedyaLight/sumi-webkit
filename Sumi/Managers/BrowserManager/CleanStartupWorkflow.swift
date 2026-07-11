@@ -84,7 +84,9 @@ final class CleanStartupWorkflow {
             windowState.selectionHistory.recentRegularTabIdsBySpace.removeAll()
             windowState.selectedShortcutPinForSpace.removeAll()
             windowState.selectionHistory.recentSelectionItemsBySpace.removeAll()
-            windowState.pendingSessionSplitGroupId = nil
+            windowState.splitSelection = nil
+            windowState.pendingSessionSplitSelection = nil
+            windowState.pendingSessionLegacySplitGroup = nil
             windowState.isShowingEmptyState = windowState.id == selectedWindow.id
             windowState.floatingBarPresentationReason = .none
             windowState.isFloatingBarVisible = false

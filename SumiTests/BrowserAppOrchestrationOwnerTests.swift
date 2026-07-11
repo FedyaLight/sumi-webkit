@@ -180,14 +180,15 @@ final class BrowserAppOrchestrationOwnerTests: XCTestCase {
         commands.tabClosing.closeTab(lateTab, in: lateWindow)
         XCTAssertNil(lateWindow.currentTabId)
 
-        let targetSpaceId = UUID()
+        let targetSpaceID = UUID()
         lateWindow.pendingSplitGroupFocusRequest = SplitGroupFocusRequest(
-            groupId: UUID(),
-            targetSpaceId: targetSpaceId
+            groupID: UUID(),
+            preferredMemberID: nil,
+            targetSpaceID: targetSpaceID
         )
         commands.splitFocus.completePendingSplitGroupFocusIfReady(
             in: lateWindow,
-            spaceId: targetSpaceId
+            spaceId: targetSpaceID
         )
         XCTAssertNotNil(lateWindow.pendingSplitGroupFocusRequest)
 

@@ -25,7 +25,7 @@ extension TabManager {
         lifecycleOwners.profileAssignments
     }
     var shortcutPinCommandOwner: ShortcutPinCommandOwner { shortcutOwners.shortcutPinCommandOwner }
-    var sidebarDragRoutingOwner: SidebarDragOperationRoutingOwner { structureOwners.sidebarDragRoutingOwner }
+    var sidebarDragRouter: SidebarDragOperationRouter { structureOwners.sidebarDragRouter }
     var essentialsShortcutPlacementOwner: EssentialsShortcutPlacementOwner {
         shortcutOwners.essentialsShortcutPlacementOwner
     }
@@ -38,11 +38,9 @@ extension TabManager {
     var shortcutContainerRemovalOwner: ShortcutContainerRemovalOwner {
         shortcutOwners.shortcutContainerRemovalOwner
     }
-    var spaceLauncherProjectionOwner: SpaceLauncherProjectionOwner {
-        structureOwners.spaceLauncherProjectionOwner
+    var spaceLauncherProjection: SpaceLauncherProjectionService {
+        structureOwners.spaceLauncherProjection
     }
-    var splitGroupRepairOwner: TabManagerSplitGroupRepairOwner { structureOwners.splitGroupRepairOwner }
-    var splitGroupStructureOwner: TabSplitGroupStructureOwner { structureOwners.splitGroupStructureOwner }
     var structuralCollectionMutationOwner: TabStructuralCollectionMutationOwner {
         structureOwners.structuralCollectionMutationOwner
     }

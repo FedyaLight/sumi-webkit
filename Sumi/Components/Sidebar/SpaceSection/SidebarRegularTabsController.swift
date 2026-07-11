@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 @MainActor
 protocol SidebarRegularTabsControlling {
@@ -7,7 +8,7 @@ protocol SidebarRegularTabsControlling {
     func tabs(in space: Space, windowState: BrowserWindowState) -> [Tab]
     func hasPersistedTabs(in space: Space) -> Bool
     func tab(for id: UUID) -> Tab?
-    func splitGroup(containing tabId: UUID) -> SplitGroup?
+    func splitGroup(containing memberID: SplitMemberID) -> SplitGroup?
     func shortcutPin(by id: UUID) -> ShortcutPin?
     func userFolders(for spaceId: UUID) -> [TabFolder]
     func canAddToEssentials(_ tab: Tab, in space: Space, windowState: BrowserWindowState) -> Bool
@@ -27,7 +28,7 @@ struct SidebarRegularTabsController: SidebarRegularTabsControlling {
         let spaces: @MainActor () -> [Space]
         let tabs: @MainActor (Space) -> [Tab]
         let tab: @MainActor (UUID) -> Tab?
-        let splitGroup: @MainActor (UUID) -> SplitGroup?
+        let splitGroup: @MainActor (SplitMemberID) -> SplitGroup?
         let shortcutPin: @MainActor (UUID) -> ShortcutPin?
         let folders: @MainActor (UUID) -> [TabFolder]
         let isLiveFolder: @MainActor (UUID) -> Bool
@@ -66,8 +67,8 @@ struct SidebarRegularTabsController: SidebarRegularTabsControlling {
         dependencies.tab(id)
     }
 
-    func splitGroup(containing tabId: UUID) -> SplitGroup? {
-        dependencies.splitGroup(tabId)
+    func splitGroup(containing memberID: SplitMemberID) -> SplitGroup? {
+        dependencies.splitGroup(memberID)
     }
 
     func shortcutPin(by id: UUID) -> ShortcutPin? {
@@ -149,8 +150,8 @@ extension SidebarRegularTabsController.Dependencies {
             tab: { [weak tabManager] id in
                 tabManager?.tabCollectionMembershipOwner.tab(for: id)
             },
-            splitGroup: { [weak tabManager] tabId in
-                tabManager?.splitGroupStructureOwner.splitGroup(containing: tabId)
+            splitGroup: { [weak tabManager] memberID in
+                tabManager?.splitGroupStore.group(containing: memberID)
             },
             shortcutPin: { [weak tabManager] id in
                 tabManager?.shortcutPinCollectionStateOwner.shortcutPin(by: id)
@@ -177,7 +178,7 @@ extension SidebarRegularTabsController.Dependencies {
                 tabManager?.tabRemovalOwner.closeAllTabsBelow(tab)
             },
             moveTab: { [weak tabManager] tabId, targetSpaceId in
-                tabManager?.sidebarDragRoutingOwner.moveTab(tabId, to: targetSpaceId)
+                tabManager?.sidebarDragRouter.moveTab(tabId, to: targetSpaceId)
             },
             moveTabToFolder: { [weak tabManager] tab, folderId in
                 tabManager?.folderMutationOwner.moveTabToFolder(tab: tab, folderId: folderId)

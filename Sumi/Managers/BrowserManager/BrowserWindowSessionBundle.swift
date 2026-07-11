@@ -23,7 +23,6 @@ final class BrowserWindowSessionBundle {
         startupSessionRestoreOwner: BrowserStartupSessionRestoreOwner
     ) {
         let snapshotFactory = WindowSessionSnapshotFactory(
-            splitManager: browserManager.splitManager,
             glanceManager: browserManager.glanceManager
         )
         let persistenceRuntime = browserManager.windowSessionPersistence

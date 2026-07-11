@@ -5,7 +5,7 @@ final class BrowserSidebarCommandRoutingOwner {
     private let folderCommand: BrowserSidebarFolderCommandOwner
     private let chromeCommand: BrowserSidebarChromeCommandOwner
     private let tabCommand: BrowserSidebarTabCommandOwner
-    private let splitCommands: SidebarSplitShortcutCommands
+    private let splitCommands: SidebarSplitCommands
     private let shortcutPromotion: BrowserSidebarShortcutPromotionOwner
     private let shortcutPinUnload: BrowserShortcutPinUnloadOwner
 
@@ -13,7 +13,7 @@ final class BrowserSidebarCommandRoutingOwner {
         folderCommand: BrowserSidebarFolderCommandOwner,
         chromeCommand: BrowserSidebarChromeCommandOwner,
         tabCommand: BrowserSidebarTabCommandOwner,
-        splitCommands: SidebarSplitShortcutCommands,
+        splitCommands: SidebarSplitCommands,
         shortcutPromotion: BrowserSidebarShortcutPromotionOwner,
         shortcutPinUnload: BrowserShortcutPinUnloadOwner
     ) {
@@ -54,11 +54,14 @@ final class BrowserSidebarCommandRoutingOwner {
             moveTabDown: { [tabCommand] tabId in
                 tabCommand.moveTabDown(tabId)
             },
-            focusSplitGroup: { [splitCommands] group, windowState in
-                splitCommands.focusGroup(group, windowState)
+            focusSplitGroup: { [splitCommands] groupID, memberID, windowID in
+                splitCommands.focusGroup(groupID, memberID, windowID)
             },
-            restoreShortcutSplitMember: { [splitCommands] memberId, group, windowState in
-                splitCommands.restoreMember(memberId, group, windowState)
+            restoreShortcutSplitMember: { [splitCommands] groupID, memberID, windowID in
+                splitCommands.restoreMember(groupID, memberID, windowID)
+            },
+            closeSplitMember: { [splitCommands] groupID, memberID, windowID in
+                splitCommands.closeMember(groupID, memberID, windowID)
             },
             openForegroundTab: { [tabCommand] url, windowState, preferredSpaceId in
                 tabCommand.openForegroundTab(

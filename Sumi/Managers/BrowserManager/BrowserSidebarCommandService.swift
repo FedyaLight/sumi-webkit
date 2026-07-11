@@ -27,8 +27,30 @@ final class BrowserSidebarCommandService {
             folderCommand: folderCommand,
             chromeCommand: chromeCommand,
             tabCommand: tabCommand,
-            splitCommands: SidebarSplitShortcutCommands(
-                services: splitShortcuts
+            splitCommands: SidebarSplitCommands(
+                services: splitShortcuts,
+                splitGroup: { [weak browserManager] groupID in
+                    browserManager?.tabManager.splitGroupStore.group(id: groupID)
+                },
+                windowState: { [weak browserManager] windowID in
+                    browserManager?.windowRegistry?.windows[windowID]
+                },
+                liveTab: { [weak browserManager] memberID, windowState in
+                    guard let tabManager = browserManager?.tabManager else {
+                        return nil
+                    }
+                    switch memberID {
+                    case .regularTab(let tabID):
+                        return tabManager.tabCollectionMembershipOwner
+                            .tab(for: tabID)
+                    case .shortcutPin(let pinID):
+                        return tabManager.shortcutPresentationOwner
+                            .shortcutLiveTab(for: pinID, in: windowState.id)
+                    }
+                },
+                closeTab: { [tabCommand] tab, windowState in
+                    tabCommand.closeTab(tab, in: windowState)
+                }
             ),
             shortcutPromotion: shortcutPromotion,
             shortcutPinUnload: shortcutPinUnload

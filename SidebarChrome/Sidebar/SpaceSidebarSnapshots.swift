@@ -288,7 +288,10 @@ enum SpaceSidebarTransitionSnapshotBuilder {
     ) -> SpaceSidebarPageSnapshot {
         let projection = windowState.isIncognito
             ? nil
-            : browserContext.tabManager.spaceLauncherProjectionOwner.projection(for: space.id, in: windowState.id)
+            : browserContext.tabManager.spaceLauncherProjection.projection(
+                for: space.id,
+                in: windowState.id
+            )
         let tabs = windowState.isIncognito
             ? windowState.ephemeralTabs.sorted { $0.index < $1.index }
             : (projection?.regularTabs ?? browserContext.tabManager.regularTabCollectionOwner.tabs(in: space))
@@ -680,7 +683,9 @@ enum SpaceSidebarTransitionSnapshotBuilder {
             in: windowState,
             splitManager: browserContext.splitManager
         )
-        let isSplitPlaceholder = browserContext.tabManager.splitGroupStructureOwner.splitGroup(containingPinId: pin.id) != nil
+        let isSplitPlaceholder = browserContext.tabManager.splitGroupStore.group(
+            containing: .shortcutPin(pin.id)
+        ).map { !$0.container.isShortcutSidebar } == true
 
         return SpaceShortcutSnapshot(
             id: pin.id,

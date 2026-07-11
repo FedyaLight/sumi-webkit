@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import SumiDomain
 
 @MainActor
 final class TabStructuralInstallOwner {
@@ -112,7 +113,7 @@ extension TabStructuralInstallOwner.Dependencies {
                 tabManager?.folderCollectionStateOwner.replaceFoldersBySpace(foldersBySpace)
             },
             replaceSplitGroups: { [weak tabManager] splitGroups in
-                tabManager?.splitGroupCollectionStateOwner.replaceSplitGroups(splitGroups)
+                tabManager?.splitGroupStore.replaceAll(with: splitGroups)
             },
             replaceShortcutPins: { [weak tabManager] pinnedByProfile, spacePinnedShortcuts, pendingPinnedWithoutProfile in
                 tabManager?.shortcutPinCollectionStateOwner.replaceAll(

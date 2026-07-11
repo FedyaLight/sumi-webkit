@@ -1,13 +1,19 @@
 import Foundation
+import SumiDomain
 
 enum SplitDropLayoutEligibility {
     struct MixedThreeOne {
-        let splitTabIds: Set<UUID>
-        let singletonTabId: UUID
+        let splitMemberIDs: Set<SplitMemberID>
+        let singletonMemberID: SplitMemberID
 
-        func canPair(draggedTabId: UUID, targetTabId: UUID) -> Bool {
-            (draggedTabId == singletonTabId && splitTabIds.contains(targetTabId))
-                || (targetTabId == singletonTabId && splitTabIds.contains(draggedTabId))
+        func canPair(
+            draggedMemberID: SplitMemberID,
+            targetMemberID: SplitMemberID
+        ) -> Bool {
+            (draggedMemberID == singletonMemberID
+                && splitMemberIDs.contains(targetMemberID))
+                || (targetMemberID == singletonMemberID
+                    && splitMemberIDs.contains(draggedMemberID))
         }
     }
 
@@ -17,8 +23,7 @@ enum SplitDropLayoutEligibility {
     ) -> SplitAxis? {
         guard case .split(let axis, _, let children) = tree,
               childCount.map({ children.count == $0 }) ?? true,
-              children.allSatisfy(isLeaf)
-        else {
+              children.allSatisfy(isLeaf) else {
             return nil
         }
         return axis
@@ -26,36 +31,35 @@ enum SplitDropLayoutEligibility {
 
     static func mixedThreeOne(in tree: SplitLayoutTree) -> MixedThreeOne? {
         guard case .split(_, _, let children) = tree,
-              children.count == 2
-        else {
+              children.count == 2 else {
             return nil
         }
 
-        var splitTabIds: Set<UUID> = []
-        var singletonTabId: UUID?
+        var splitMemberIDs: Set<SplitMemberID> = []
+        var singletonMemberID: SplitMemberID?
         for child in children {
             switch child {
-            case .leaf(let tabId, _):
-                singletonTabId = tabId
+            case .leaf(let member, _):
+                singletonMemberID = member.memberID
             case .split(_, _, let grandchildren):
-                let leafIds = grandchildren.compactMap { grandchild -> UUID? in
-                    if case .leaf(let tabId, _) = grandchild {
-                        return tabId
+                let leafIDs = grandchildren.compactMap { grandchild in
+                    if case .leaf(let member, _) = grandchild {
+                        return member.memberID
                     }
                     return nil
                 }
-                if leafIds.count == 3 {
-                    splitTabIds = Set(leafIds)
+                if leafIDs.count == 3 {
+                    splitMemberIDs = Set(leafIDs)
                 }
             }
         }
 
-        guard splitTabIds.isEmpty == false, let singletonTabId else {
+        guard !splitMemberIDs.isEmpty, let singletonMemberID else {
             return nil
         }
         return MixedThreeOne(
-            splitTabIds: splitTabIds,
-            singletonTabId: singletonTabId
+            splitMemberIDs: splitMemberIDs,
+            singletonMemberID: singletonMemberID
         )
     }
 
@@ -63,12 +67,11 @@ enum SplitDropLayoutEligibility {
         for path: [Int],
         in tree: SplitLayoutTree
     ) -> SplitAxis? {
-        guard path.isEmpty == false else { return nil }
+        guard !path.isEmpty else { return nil }
         var node = tree
         for index in path.dropLast() {
             guard case .split(_, _, let children) = node,
-                  children.indices.contains(index)
-            else {
+                  children.indices.contains(index) else {
                 return nil
             }
             node = children[index]

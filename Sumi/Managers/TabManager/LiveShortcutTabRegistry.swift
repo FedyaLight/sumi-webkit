@@ -35,20 +35,28 @@ final class LiveShortcutTabRegistry {
         storage.transientShortcutTabsByWindow
     }
 
+    private var readModel: LiveShortcutTabSnapshot {
+        LiveShortcutTabSnapshot(tabsByWindow: snapshot)
+    }
+
     func tab(for pinId: UUID, in windowId: UUID) -> Tab? {
         storage.transientShortcutTabsByWindow[windowId]?[pinId]
     }
 
     func entries(for pinId: UUID) -> [Entry] {
-        allEntries().filter { $0.pinId == pinId }
+        readModel.entries(for: pinId)
+    }
+
+    func entries(in windowId: UUID) -> [Entry] {
+        readModel.entries(in: windowId)
     }
 
     func entry(containing tab: Tab) -> Entry? {
-        allEntries().first { $0.tab === tab }
+        readModel.entry(containing: tab)
     }
 
     func entry(tabId: UUID) -> Entry? {
-        allEntries().first { $0.tab.id == tabId }
+        readModel.entry(tabID: tabId)
     }
 
     @discardableResult
@@ -58,7 +66,7 @@ final class LiveShortcutTabRegistry {
             return false
         }
         precondition(
-            allEntries().contains { $0.tab === tab } == false,
+            readModel.entry(containing: tab) == nil,
             "Live shortcut tab registered in more than one slot"
         )
         storage.updateTransientShortcutTabsByWindow { tabsByWindow in
@@ -126,6 +134,18 @@ final class LiveShortcutTabRegistry {
     }
 
     @discardableResult
+    func removeAll(pinIds: Set<UUID>, in windowId: UUID) -> [Entry] {
+        removeAll {
+            $0.windowId == windowId && pinIds.contains($0.pinId)
+        }
+    }
+
+    @discardableResult
+    func removeAll(in windowId: UUID) -> [Entry] {
+        removeAll { $0.windowId == windowId }
+    }
+
+    @discardableResult
     func removeAll(inSpace spaceId: UUID) -> [Entry] {
         removeAll { $0.tab.spaceId == spaceId }
     }
@@ -138,7 +158,7 @@ final class LiveShortcutTabRegistry {
     private func removeAll(
         matching predicate: (Entry) -> Bool
     ) -> [Entry] {
-        let matches = allEntries().filter(predicate)
+        let matches = readModel.orderedEntries.filter(predicate)
         guard matches.isEmpty == false else { return [] }
         storage.updateTransientShortcutTabsByWindow { tabsByWindow in
             for entry in matches {
@@ -150,19 +170,5 @@ final class LiveShortcutTabRegistry {
         }
         structuralLookup.notifyTransientShortcutStateChanged()
         return matches
-    }
-
-    private func allEntries() -> [Entry] {
-        storage.transientShortcutTabsByWindow.flatMap { windowId, tabsByPin in
-            tabsByPin.map { pinId, tab in
-                Entry(windowId: windowId, pinId: pinId, tab: tab)
-            }
-        }
-        .sorted {
-            if $0.windowId != $1.windowId {
-                return $0.windowId.uuidString < $1.windowId.uuidString
-            }
-            return $0.pinId.uuidString < $1.pinId.uuidString
-        }
     }
 }

@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 struct TabPersistenceTab: Codable, Sendable {
     let id: UUID

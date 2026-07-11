@@ -103,7 +103,7 @@ final class ShortcutPinStoreOwner {
         openTargetFolder: Bool = true
     ) -> ShortcutPin? {
         guard let sourcePin = canonicalSource(matching: pin) else { return nil }
-        guard canMove(
+        guard acceptsMove(
             sourcePin,
             to: role,
             profileId: profileId,
@@ -136,6 +136,28 @@ final class ShortcutPinStoreOwner {
             return nil
         }
         return inserted
+    }
+
+    /// Exact preflight used by compound split/pin transactions. This performs
+    /// the same catalog and capacity checks as `move` without mutating state or
+    /// scheduling persistence.
+    func canMove(
+        _ pin: ShortcutPin,
+        to role: ShortcutPinRole,
+        profileId: UUID?,
+        spaceId: UUID?,
+        folderId: UUID?
+    ) -> Bool {
+        guard let sourcePin = canonicalSource(matching: pin) else {
+            return false
+        }
+        return acceptsMove(
+            sourcePin,
+            to: role,
+            profileId: profileId,
+            spaceId: spaceId,
+            folderId: folderId
+        )
     }
 
     func removeFromContainers(_ pin: ShortcutPin) {
@@ -177,7 +199,7 @@ private extension ShortcutPinStoreOwner {
         }
     }
 
-    func canMove(
+    func acceptsMove(
         _ pin: ShortcutPin,
         to role: ShortcutPinRole,
         profileId: UUID?,
