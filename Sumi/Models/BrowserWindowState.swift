@@ -29,6 +29,13 @@ struct PendingWindowSplitSelection: Equatable, Sendable {
     let preferredMemberID: SplitMemberID?
 }
 
+/// Provenance for a native shell created to host one WebKit top-level child.
+/// The tab identity lets close routing preserve user-added tabs while still
+/// closing a shell that contains only its original script-created context.
+struct WebKitChildWindowIdentity: Equatable, Sendable {
+    let initialTabID: UUID
+}
+
 /// Represents the state of a single browser window, allowing multiple windows
 /// to have independent tab selections and UI states while sharing the same tab data.
 @MainActor
@@ -55,6 +62,19 @@ class BrowserWindowState {
     /// and chrome-state changes and is used to prevent duplicate restoration.
     @ObservationIgnored
     var restoredSessionWindowId: UUID?
+
+    /// Present only for a shell created from WebKit's `createWebViewWith`
+    /// callback. Ordinary browser windows never infer this role from shape.
+    @ObservationIgnored
+    var webKitChildWindowIdentity: WebKitChildWindowIdentity?
+
+    /// Once another Tab is intentionally introduced into a WebKit-child
+    /// shell, that shell becomes an ordinary browser window and must no longer
+    /// disappear when its original script-created page calls `window.close()`.
+    func markWebKitChildWindowAdopted(by tabID: UUID) {
+        guard webKitChildWindowIdentity?.initialTabID != tabID else { return }
+        webKitChildWindowIdentity = nil
+    }
 
     /// Currently active tab in this window
     var currentTabId: UUID?

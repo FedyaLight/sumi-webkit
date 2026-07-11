@@ -498,7 +498,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         XCTAssertFalse(tabs.map(\.id).contains(pinID))
     }
 
-    func testWindowWebContentHoverSessionDetachesOldTabAndRejectsStaleRegistration() async throws {
+    func testWindowWebContentHoverSessionReconcilesExactWebViewAndRejectsStaleRegistration() async throws {
         let webViewRuntime = makeTestWebViewRuntimeGraph()
         let windowID = UUID()
         let firstContainer = NSView()
@@ -511,44 +511,190 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         )
         mutationGate.activate(firstRegistration)
         let session = WindowWebContentHoverSession(mutationGate: mutationGate)
-        let firstTab = Tab(url: try XCTUnwrap(URL(string: "https://first.example")))
-        let secondTab = Tab(url: try XCTUnwrap(URL(string: "https://second.example")))
+        let firstWebView = FocusableWKWebView(
+            frame: .zero,
+            configuration: WKWebViewConfiguration()
+        )
+        let replacementWebView = FocusableWKWebView(
+            frame: .zero,
+            configuration: WKWebViewConfiguration()
+        )
         var deliveredLinks: [String] = []
 
-        session.update(
-            tabID: firstTab.id,
-            tab: firstTab,
+        session.reconcile(
+            webViews: [firstWebView],
             registration: firstRegistration,
             deliver: { link in
                 if let link { deliveredLinks.append(link) }
             }
         )
-        firstTab.onLinkHover?("https://first.example/link")
+        firstWebView.hoveredLink.update("https://first.example/link")
         await drainMainQueue()
         XCTAssertEqual(deliveredLinks, ["https://first.example/link"])
 
-        session.update(
-            tabID: secondTab.id,
-            tab: secondTab,
+        session.reconcile(
+            webViews: [replacementWebView],
             registration: firstRegistration,
             deliver: { link in
                 if let link { deliveredLinks.append(link) }
             }
         )
-        XCTAssertNil(firstTab.onLinkHover)
+        firstWebView.hoveredLink.update("https://first.example/retired")
+        replacementWebView.hoveredLink.update("https://replacement.example/link")
+        await drainMainQueue()
+        XCTAssertEqual(
+            deliveredLinks,
+            ["https://first.example/link", "https://replacement.example/link"]
+        )
 
         let replacementContainer = NSView()
         _ = webViewRuntime.compositorRuntime.registerContainer(
             replacementContainer,
             for: windowID
         )
-        secondTab.onLinkHover?("https://second.example/stale")
+        replacementWebView.hoveredLink.update("https://replacement.example/stale")
         await drainMainQueue()
-        XCTAssertEqual(deliveredLinks, ["https://first.example/link"])
+        XCTAssertEqual(
+            deliveredLinks,
+            ["https://first.example/link", "https://replacement.example/link"]
+        )
 
         session.invalidate()
-        XCTAssertNil(secondTab.onLinkHover)
         withExtendedLifetime((firstContainer, replacementContainer)) {}
+    }
+
+    func testSameTabPhysicalHoverSessionsRemainIndependentWhenOneWindowTearsDown() async {
+        let webViewRuntime = makeTestWebViewRuntimeGraph()
+        let tab = Tab(name: "Cloned")
+        let firstWebView = FocusableWKWebView(
+            frame: .zero,
+            configuration: WKWebViewConfiguration()
+        )
+        let secondWebView = FocusableWKWebView(
+            frame: .zero,
+            configuration: WKWebViewConfiguration()
+        )
+        firstWebView.owningTab = tab
+        secondWebView.owningTab = tab
+
+        let firstContainer = NSView()
+        let firstRegistration = webViewRuntime.compositorRuntime.registerContainer(
+            firstContainer,
+            for: UUID()
+        )
+        let firstGate = WindowWebContentCompositorMutationGate(
+            isCurrentRegistration: webViewRuntime.compositorRuntime.owns
+        )
+        firstGate.activate(firstRegistration)
+        let firstSession = WindowWebContentHoverSession(mutationGate: firstGate)
+
+        let secondContainer = NSView()
+        let secondRegistration = webViewRuntime.compositorRuntime.registerContainer(
+            secondContainer,
+            for: UUID()
+        )
+        let secondGate = WindowWebContentCompositorMutationGate(
+            isCurrentRegistration: webViewRuntime.compositorRuntime.owns
+        )
+        secondGate.activate(secondRegistration)
+        let secondSession = WindowWebContentHoverSession(mutationGate: secondGate)
+        var firstLinks: [String] = []
+        var secondLinks: [String] = []
+
+        firstSession.reconcile(
+            webViews: [firstWebView],
+            registration: firstRegistration,
+            deliver: { link in
+                if let link { firstLinks.append(link) }
+            }
+        )
+        secondSession.reconcile(
+            webViews: [secondWebView],
+            registration: secondRegistration,
+            deliver: { link in
+                if let link { secondLinks.append(link) }
+            }
+        )
+
+        firstWebView.hoveredLink.update("https://first-window.example/link")
+        secondWebView.hoveredLink.update("https://second-window.example/link")
+        await drainMainQueue()
+        XCTAssertEqual(firstLinks, ["https://first-window.example/link"])
+        XCTAssertEqual(secondLinks, ["https://second-window.example/link"])
+
+        firstSession.invalidate()
+        firstWebView.hoveredLink.update("https://first-window.example/after-teardown")
+        secondWebView.hoveredLink.update("https://second-window.example/still-live")
+        await drainMainQueue()
+
+        XCTAssertEqual(firstLinks, ["https://first-window.example/link"])
+        XCTAssertEqual(
+            secondLinks,
+            [
+                "https://second-window.example/link",
+                "https://second-window.example/still-live",
+            ]
+        )
+        secondSession.invalidate()
+        withExtendedLifetime((firstContainer, secondContainer)) {}
+    }
+
+    func testSplitHoverInactiveSourceNilDoesNotEraseActiveSource() async {
+        let webViewRuntime = makeTestWebViewRuntimeGraph()
+        let container = NSView()
+        let registration = webViewRuntime.compositorRuntime.registerContainer(
+            container,
+            for: UUID()
+        )
+        let mutationGate = WindowWebContentCompositorMutationGate(
+            isCurrentRegistration: webViewRuntime.compositorRuntime.owns
+        )
+        mutationGate.activate(registration)
+        let session = WindowWebContentHoverSession(mutationGate: mutationGate)
+        let firstWebView = FocusableWKWebView(
+            frame: .zero,
+            configuration: WKWebViewConfiguration()
+        )
+        let secondWebView = FocusableWKWebView(
+            frame: .zero,
+            configuration: WKWebViewConfiguration()
+        )
+        var latestLink: String?
+        var deliveryCount = 0
+
+        session.reconcile(
+            webViews: [firstWebView, secondWebView],
+            registration: registration,
+            deliver: {
+                latestLink = $0
+                deliveryCount += 1
+            }
+        )
+        latestLink = nil
+        deliveryCount = 0
+
+        firstWebView.hoveredLink.update("https://first-pane.example/link")
+        await drainMainQueue()
+        XCTAssertEqual(latestLink, "https://first-pane.example/link")
+        XCTAssertEqual(deliveryCount, 1)
+
+        secondWebView.hoveredLink.update("https://second-pane.example/link")
+        await drainMainQueue()
+        XCTAssertEqual(latestLink, "https://second-pane.example/link")
+        XCTAssertEqual(deliveryCount, 2)
+
+        firstWebView.hoveredLink.update(nil)
+        await drainMainQueue()
+        XCTAssertEqual(latestLink, "https://second-pane.example/link")
+        XCTAssertEqual(deliveryCount, 2)
+
+        secondWebView.hoveredLink.update(nil)
+        await drainMainQueue()
+        XCTAssertNil(latestLink)
+        XCTAssertEqual(deliveryCount, 3)
+
+        session.invalidate()
+        withExtendedLifetime(container) {}
     }
 
     func testCloneWebViewPrimaryWindowSelectionUsesStableRegistryFallback() {

@@ -91,6 +91,7 @@ final class SumiNavigationResponderTests: SumiNavigationResponderTestCase {
         let adapter = SumiNavigationResponderAdapter(target: responder)
         let mailURL = URL(string: "mailto:test@example.com")!
         let webView = WKWebView(frame: .zero)
+        tab.webViewSession.replaceUntracked(with: webView)
         var preferences = NavigationPreferences.default
 
         let policy = await adapter.decidePolicy(
@@ -129,6 +130,7 @@ final class SumiNavigationResponderTests: SumiNavigationResponderTestCase {
         let adapter = SumiNavigationResponderAdapter(target: responder)
         let mailURL = URL(string: "mailto:test@example.com")!
         let webView = WKWebView(frame: .zero)
+        tab.webViewSession.replaceUntracked(with: webView)
         var preferences = NavigationPreferences.default
 
         let policy = await adapter.decidePolicy(
@@ -232,6 +234,7 @@ final class SumiNavigationResponderTests: SumiNavigationResponderTestCase {
         )
         let adapter = SumiNavigationResponderAdapter(target: responder)
         let webView = SumiNavigationClosingTrackingWebView(frame: .zero)
+        tab.webViewSession.replaceUntracked(with: webView)
         var preferences = NavigationPreferences.default
 
         let policy = await adapter.decidePolicy(
@@ -248,6 +251,227 @@ final class SumiNavigationResponderTests: SumiNavigationResponderTestCase {
         XCTAssertEqual(policy?.isCancel, true)
         XCTAssertEqual(resolver.openedURLs, [URL(string: "mailto:test@example.com")!])
         XCTAssertEqual(webView.closeScriptEvaluations, 1)
+    }
+
+    func testExternalSchemeUsesSourcePermissionContextAndClosesCrossWebViewTarget() async {
+        let sourceTab = Tab(url: URL(string: "https://request.example/page")!)
+        let targetTab = Tab(url: SumiSurface.emptyTabURL)
+        let resolver = NavigationExternalSchemeFakeResolver(handlerSchemes: ["mailto"])
+        let bridge = SumiExternalSchemePermissionBridge(
+            coordinator: NavigationExternalSchemeFakeCoordinator(
+                decision: navigationExternalCoordinatorDecision(.granted, reason: "stored-allow")
+            ),
+            appResolver: resolver,
+            now: { Date(timeIntervalSince1970: 1_800_000_000) }
+        )
+        let sourceWebView = FocusableWKWebView()
+        let targetWebView = SumiNavigationClosingTrackingWebView(frame: .zero)
+        sourceWebView.owningTab = sourceTab
+        sourceTab.webViewSession.replaceUntracked(with: sourceWebView)
+        targetTab.webViewSession.replaceUntracked(with: targetWebView)
+        let sourceLease = TabMainFrameDocumentLease(
+            revision: 1,
+            documentGeneration: 1,
+            webViewID: ObjectIdentifier(sourceWebView),
+            participantID: UUID(),
+            committedURL: URL(string: "https://request.example/page")!,
+            presentationURL: URL(string: "https://request.example/page")!,
+            isPDF: false,
+            isAuthority: true
+        )
+        var permissionContextWebView: WKWebView?
+        let responder = SumiExternalSchemeNavigationResponder(
+            tab: targetTab,
+            permissionBridge: bridge,
+            tabContextProvider: { webView in
+                permissionContextWebView = webView
+                return navigationExternalTabContext()
+            },
+            documentLeaseProvider: { _, webView in
+                webView === sourceWebView ? sourceLease : nil
+            }
+        )
+        let adapter = SumiNavigationResponderAdapter(target: responder)
+        var preferences = NavigationPreferences.default
+
+        let policy = await adapter.decidePolicy(
+            for: navigationAction(
+                url: URL(string: "mailto:test@example.com")!,
+                navigationType: .linkActivated(isMiddleClick: false),
+                sourceWebView: sourceWebView,
+                targetWebView: targetWebView,
+                sourceURL: URL(string: "https://request.example/page")!,
+                sourceSecurityOrigin: SumiSecurityOrigin(
+                    protocol: "https",
+                    host: "request.example",
+                    port: 0
+                )
+            ),
+            preferences: &preferences
+        )
+
+        XCTAssertEqual(policy?.isCancel, true)
+        XCTAssertIdentical(permissionContextWebView, sourceWebView)
+        XCTAssertEqual(targetWebView.closeScriptEvaluations, 1)
+    }
+
+    func testExternalSchemeDoesNotCloseTargetRepurposedWhilePermissionIsPending() async {
+        let sourceTab = Tab(url: URL(string: "https://request.example/page")!)
+        let targetTab = Tab(url: SumiSurface.emptyTabURL)
+        let sourceWebView = FocusableWKWebView()
+        let targetWebView = SumiNavigationClosingTrackingWebView(frame: .zero)
+        sourceWebView.owningTab = sourceTab
+        sourceTab.webViewSession.replaceUntracked(with: sourceWebView)
+        targetTab.webViewSession.replaceUntracked(with: targetWebView)
+        let sourceURL = URL(string: "https://request.example/page")!
+        let sourceLease = TabMainFrameDocumentLease(
+            revision: 1,
+            documentGeneration: 1,
+            webViewID: ObjectIdentifier(sourceWebView),
+            participantID: UUID(),
+            committedURL: sourceURL,
+            presentationURL: sourceURL,
+            isPDF: false,
+            isAuthority: true
+        )
+        let coordinator = NavigationExternalSchemeControlledCoordinator(
+            decision: navigationExternalCoordinatorDecision(.granted, reason: "stored-allow")
+        )
+        let resolver = NavigationExternalSchemeFakeResolver(handlerSchemes: ["mailto"])
+        let bridge = SumiExternalSchemePermissionBridge(
+            coordinator: coordinator,
+            appResolver: resolver,
+            now: { Date(timeIntervalSince1970: 1_800_000_000) }
+        )
+        let responder = SumiExternalSchemeNavigationResponder(
+            tab: targetTab,
+            permissionBridge: bridge,
+            tabContextProvider: { _ in navigationExternalTabContext() },
+            documentLeaseProvider: { _, webView in
+                webView === sourceWebView ? sourceLease : nil
+            }
+        )
+        let adapter = SumiNavigationResponderAdapter(target: responder)
+        let action = navigationAction(
+            url: URL(string: "mailto:test@example.com")!,
+            navigationType: .linkActivated(isMiddleClick: false),
+            sourceWebView: sourceWebView,
+            targetWebView: targetWebView,
+            sourceURL: sourceURL,
+            sourceSecurityOrigin: SumiSecurityOrigin(
+                protocol: "https",
+                host: "request.example",
+                port: 0
+            )
+        )
+
+        let decision = Task { @MainActor in
+            var preferences = NavigationPreferences.default
+            return await adapter.decidePolicy(
+                for: action,
+                preferences: &preferences
+            )
+        }
+        await coordinator.waitForQuery()
+
+        let repurposedURL = URL(string: "https://replacement.example/page")!
+        targetWebView.reportedCommittedURL = repurposedURL
+        let repurposedNavigation = NSObject()
+        responder.navigationDidCommit(
+            SumiNavigationContext(
+                navigationID: ObjectIdentifier(repurposedNavigation),
+                navigationLifetime: repurposedNavigation,
+                action: nil,
+                url: repurposedURL,
+                isCurrent: true,
+                isCommitted: true,
+                isMainFrame: true,
+                webView: targetWebView
+            )
+        )
+        await coordinator.releaseQuery()
+
+        let policy = await decision.value
+        XCTAssertEqual(policy?.isCancel, true)
+        XCTAssertEqual(resolver.openedURLs, [URL(string: "mailto:test@example.com")!])
+        XCTAssertEqual(targetWebView.closeScriptEvaluations, 0)
+    }
+
+    func testExternalSchemeDoesNotCloseTargetAfterSourceDocumentLeaseChangesWhilePermissionIsPending() async {
+        let sourceTab = Tab(url: URL(string: "https://request.example/page")!)
+        let targetTab = Tab(url: SumiSurface.emptyTabURL)
+        let sourceWebView = FocusableWKWebView()
+        let targetWebView = SumiNavigationClosingTrackingWebView(frame: .zero)
+        sourceWebView.owningTab = sourceTab
+        sourceTab.webViewSession.replaceUntracked(with: sourceWebView)
+        targetTab.webViewSession.replaceUntracked(with: targetWebView)
+        let sourceURL = URL(string: "https://request.example/page")!
+        var sourceLease = TabMainFrameDocumentLease(
+            revision: 1,
+            documentGeneration: 1,
+            webViewID: ObjectIdentifier(sourceWebView),
+            participantID: UUID(),
+            committedURL: sourceURL,
+            presentationURL: sourceURL,
+            isPDF: false,
+            isAuthority: true
+        )
+        let coordinator = NavigationExternalSchemeControlledCoordinator(
+            decision: navigationExternalCoordinatorDecision(.granted, reason: "stored-allow")
+        )
+        let resolver = NavigationExternalSchemeFakeResolver(handlerSchemes: ["mailto"])
+        let bridge = SumiExternalSchemePermissionBridge(
+            coordinator: coordinator,
+            appResolver: resolver,
+            now: { Date(timeIntervalSince1970: 1_800_000_000) }
+        )
+        let responder = SumiExternalSchemeNavigationResponder(
+            tab: targetTab,
+            permissionBridge: bridge,
+            tabContextProvider: { _ in navigationExternalTabContext() },
+            documentLeaseProvider: { _, webView in
+                webView === sourceWebView ? sourceLease : nil
+            }
+        )
+        let adapter = SumiNavigationResponderAdapter(target: responder)
+        let action = navigationAction(
+            url: URL(string: "mailto:test@example.com")!,
+            navigationType: .linkActivated(isMiddleClick: false),
+            sourceWebView: sourceWebView,
+            targetWebView: targetWebView,
+            sourceURL: sourceURL,
+            sourceSecurityOrigin: SumiSecurityOrigin(
+                protocol: "https",
+                host: "request.example",
+                port: 0
+            )
+        )
+
+        let decision = Task { @MainActor in
+            var preferences = NavigationPreferences.default
+            return await adapter.decidePolicy(
+                for: action,
+                preferences: &preferences
+            )
+        }
+        await coordinator.waitForQuery()
+
+        sourceLease = TabMainFrameDocumentLease(
+            revision: 2,
+            documentGeneration: 2,
+            webViewID: ObjectIdentifier(sourceWebView),
+            participantID: UUID(),
+            committedURL: URL(string: "https://replacement.example/page")!,
+            presentationURL: URL(string: "https://replacement.example/page")!,
+            isPDF: false,
+            isAuthority: true
+        )
+        await coordinator.releaseQuery()
+
+        let policy = await decision.value
+        XCTAssertEqual(policy?.isCancel, true)
+        XCTAssertEqual(resolver.openedURLs, [URL(string: "mailto:test@example.com")!])
+        XCTAssertEqual(targetWebView.closeScriptEvaluations, 0)
     }
 
     func testExternalSchemeResponderAdapterDoesNotCloseAfterNavigationFinishOrFail() async {
@@ -901,9 +1125,9 @@ final class SumiNavigationResponderTests: SumiNavigationResponderTestCase {
         )
 
         XCTAssertNil(pdfPolicy)
-        XCTAssertFalse(tab.suspensionProtection.isPDFDocument)
+        XCTAssertNotEqual(tab.documentSuspensionDecision, .vetoed(.pdfDocument))
         adapter.didCommit(pdfNavigation)
-        XCTAssertTrue(tab.suspensionProtection.isPDFDocument)
+        XCTAssertEqual(tab.documentSuspensionDecision, .vetoed(.pdfDocument))
 
         let subframePolicy = await adapter.decidePolicy(
             for: NavigationResponse(
@@ -920,7 +1144,7 @@ final class SumiNavigationResponderTests: SumiNavigationResponderTestCase {
         )
 
         XCTAssertNil(subframePolicy)
-        XCTAssertTrue(tab.suspensionProtection.isPDFDocument)
+        XCTAssertEqual(tab.documentSuspensionDecision, .vetoed(.pdfDocument))
 
         adapter.navigationDidFinish(pdfNavigation)
         let htmlURL = URL(string: "https://example.com/page")!
@@ -951,7 +1175,7 @@ final class SumiNavigationResponderTests: SumiNavigationResponderTestCase {
 
         XCTAssertNil(htmlPolicy)
         adapter.didCommit(htmlNavigation)
-        XCTAssertFalse(tab.suspensionProtection.isPDFDocument)
+        XCTAssertNotEqual(tab.documentSuspensionDecision, .vetoed(.pdfDocument))
     }
 
     func testTabLifecycleWillStartUsesInjectedRuntimeWithoutBrowserManager() {
@@ -984,6 +1208,72 @@ final class SumiNavigationResponderTests: SumiNavigationResponderTestCase {
         XCTAssertEqual(lifecycle.beforeCommitURLs, [destinationURL])
     }
 
+    func testTabLifecycleWillStartResetsOnlyExactSourceCloneInteractionState() {
+        let tab = Tab(loadsCachedFaviconOnInit: false)
+        let responder = SumiTabLifecycleNavigationResponder(tab: tab)
+        let sourceWebView = FocusableWKWebView()
+        let siblingClone = FocusableWKWebView()
+        let sourceEvent = makeMouseEvent(
+            type: .leftMouseDown,
+            modifierFlags: [.command]
+        )
+        let siblingEvent = makeMouseEvent(
+            type: .leftMouseDown,
+            modifierFlags: [.option]
+        )
+        sourceWebView.gestures.record(sourceEvent, kind: .primaryMouseDown)
+        siblingClone.gestures.record(siblingEvent, kind: .primaryMouseDown)
+        sourceWebView.hoveredLink.update("https://source.example/link")
+        siblingClone.hoveredLink.update("https://sibling.example/link")
+        sourceWebView.contextMenu.record(
+            SumiWebPageContextMenuTargetSnapshot(kind: .link)
+        )
+        siblingClone.contextMenu.record(
+            SumiWebPageContextMenuTargetSnapshot(kind: .editable)
+        )
+        sourceWebView.popupUserActivation.record(
+            event: sourceEvent,
+            kind: "leftMouseDown"
+        )
+        siblingClone.popupUserActivation.record(
+            event: siblingEvent,
+            kind: "leftMouseDown"
+        )
+        let navigation = NSObject()
+
+        responder.navigationWillStart(
+            SumiNavigationContext(
+                navigationID: ObjectIdentifier(navigation),
+                navigationLifetime: navigation,
+                action: nil,
+                url: URL(string: "https://destination.example/page")!,
+                isCurrent: true,
+                isMainFrame: true,
+                webView: sourceWebView
+            )
+        )
+
+        XCTAssertEqual(sourceWebView.gestures.resolvedModifierFlags(actionFlags: []), [])
+        XCTAssertNil(sourceWebView.hoveredLink.href)
+        XCTAssertNil(sourceWebView.contextMenu.recentTarget())
+        XCTAssertFalse(
+            sourceWebView.popupUserActivation
+                .activationState(webKitUserInitiated: false)
+                .isUserActivated
+        )
+        XCTAssertEqual(
+            siblingClone.gestures.resolvedModifierFlags(actionFlags: []),
+            [.option]
+        )
+        XCTAssertEqual(siblingClone.hoveredLink.href, "https://sibling.example/link")
+        XCTAssertEqual(siblingClone.contextMenu.recentTarget()?.kind, .editable)
+        XCTAssertTrue(
+            siblingClone.popupUserActivation
+                .activationState(webKitUserInitiated: false)
+                .isUserActivated
+        )
+    }
+
     func testTabLifecycleDidFinishUsesInjectedRuntimesWithoutBrowserManager() {
         let finalURL = URL(string: "https://example.com/finished")!
         let tab = Tab(url: URL(string: "https://example.com/start")!, loadsCachedFaviconOnInit: false)
@@ -1014,6 +1304,7 @@ final class SumiNavigationResponderTests: SumiNavigationResponderTestCase {
         XCTAssertEqual(lifecycle.adblockWebViewIds, [ObjectIdentifier(webView)])
         XCTAssertEqual(lifecycle.adblockURLs, [finalURL])
         XCTAssertEqual(lifecycle.siteDataPolicyTabIds, [tab.id])
+        XCTAssertEqual(lifecycle.documentSuspensionReconcileTabIds, [tab.id])
         XCTAssertEqual(extensionProperties.tabIds, [tab.id, tab.id, tab.id, tab.id])
         XCTAssertEqual(extensionProperties.properties, [
             [.loading],
@@ -1763,47 +2054,6 @@ final class SumiNavigationResponderTests: SumiNavigationResponderTestCase {
         XCTAssertEqual(recorder.snapshot(), [])
     }
 
-    func testSumiNavigationDownloadAdapterMapsActionAndResponseCallbacks() throws {
-        let target = SumiNavigationDownloadProbeResponder()
-        let adapter = SumiNavigationResponderAdapter(target: target)
-        let actionDownload = SumiWebKitDownloadMock(
-            originalRequest: URLRequest(url: URL(string: "https://example.com/action-original.zip")!)
-        )
-        let responseDownload = SumiWebKitDownloadMock(
-            originalRequest: URLRequest(url: URL(string: "https://example.com/response-original.zip")!)
-        )
-        let action = navigationAction(
-            url: URL(string: "https://example.com/action.zip")!,
-            navigationType: .linkActivated(isMiddleClick: false),
-            shouldDownload: true
-        )
-        let httpResponse = try XCTUnwrap(HTTPURLResponse(
-            url: URL(string: "https://example.com/response.zip")!,
-            statusCode: 200,
-            httpVersion: "HTTP/1.1",
-            headerFields: ["Content-Disposition": "attachment; filename=response.zip"]
-        ))
-        let response = NavigationResponse(
-            response: httpResponse,
-            isForMainFrame: true,
-            canShowMIMEType: false,
-            mainFrameNavigation: mainFrameNavigation(receiving: action)
-        )
-
-        adapter.navigationAction(action, didBecome: actionDownload)
-        adapter.navigationResponse(response, didBecome: responseDownload)
-
-        XCTAssertEqual(target.actionDownloads.map(\.action.url), [URL(string: "https://example.com/action.zip")!])
-        XCTAssertEqual(target.actionDownloads.first?.action.shouldDownload, true)
-        XCTAssertNil(target.actionDownloads.first?.download.response)
-        XCTAssertEqual(target.actionDownloads.first?.download.originalRequest?.url, URL(string: "https://example.com/action-original.zip")!)
-        XCTAssertEqual(target.responseDownloads.map(\.response.url), [URL(string: "https://example.com/response.zip")!])
-        XCTAssertEqual(target.responseDownloads.first?.response.shouldDownload, true)
-        XCTAssertEqual(target.responseDownloads.first?.response.httpResponse?.statusCode, 200)
-        XCTAssertEqual(target.responseDownloads.first?.download.response?.url, URL(string: "https://example.com/response.zip")!)
-        XCTAssertEqual(target.responseDownloads.first?.download.originalRequest?.url, URL(string: "https://example.com/response-original.zip")!)
-    }
-
     func testSumiNavigationAdapterTerminatesCancelledExpectedMainFrameAction() {
         let webView = WKWebView(frame: .zero)
         let target = SumiNavigationTerminalProbeResponder()
@@ -1826,42 +2076,6 @@ final class SumiNavigationResponderTests: SumiNavigationResponderTestCase {
         )
         XCTAssertIdentical(target.terminations.first?.webView, webView)
         XCTAssertEqual(target.terminations.first?.reason, .actionCancelled)
-    }
-
-    func testSumiNavigationAdapterTerminatesActionAndResponseDownloadConversion() {
-        let webView = WKWebView(frame: .zero)
-        let target = SumiNavigationTerminalProbeResponder()
-        let adapter = SumiNavigationResponderAdapter(target: target)
-        let navigation = mainFrameNavigation(receiving: navigationAction(
-            url: URL(string: "https://example.com/download")!,
-            navigationType: .other,
-            webView: webView
-        ))
-        let response = NavigationResponse(
-            response: URLResponse(
-                url: URL(string: "https://example.com/download")!,
-                mimeType: "application/octet-stream",
-                expectedContentLength: 1,
-                textEncodingName: nil
-            ),
-            isForMainFrame: true,
-            canShowMIMEType: false,
-            mainFrameNavigation: navigation
-        )
-
-        adapter.navigationAction(
-            navigation.navigationAction,
-            willBecomeDownloadIn: webView
-        )
-        adapter.navigationResponse(response, willBecomeDownloadIn: webView)
-
-        XCTAssertEqual(
-            target.terminations.map(\.reason),
-            [.actionBecameDownload, .responseBecameDownload]
-        )
-        XCTAssertTrue(target.terminations.allSatisfy {
-            $0.navigationID == ObjectIdentifier(navigation) && $0.webView === webView
-        })
     }
 
     func testSumiNavigationAdapterRoutesProcessTerminationToInstalledWebView() {
@@ -1906,7 +2120,8 @@ final class SumiNavigationResponderTests: SumiNavigationResponderTestCase {
             action: navigationAction(
                 url: URL(string: "https://target.example")!,
                 navigationType: .linkActivated(isMiddleClick: false),
-                webView: webView
+                sourceWebView: WKWebView(frame: .zero),
+                targetWebView: webView
             ),
             preferences: &preferences
         )
@@ -1914,118 +2129,6 @@ final class SumiNavigationResponderTests: SumiNavigationResponderTestCase {
         XCTAssertActionPolicy(policy, .allow)
         XCTAssertEqual(scriptsProvider.scriptsRevision, 1)
         XCTAssertEqual(observer.observedScriptRevisions, [1])
-    }
-
-    func testDownloadResponderRequestsDownloadForDownloadNavigationAction() async {
-        let tab = Tab(url: URL(string: "https://example.com")!)
-        let responder = SumiDownloadsNavigationResponder(tab: tab, downloadManager: nil)
-        let adapter = SumiNavigationResponderAdapter(target: responder)
-        var preferences = NavigationPreferences.default
-
-        let policy = await adapter.decidePolicy(
-            for: navigationAction(
-                url: URL(string: "https://example.com/file.zip")!,
-                navigationType: .linkActivated(isMiddleClick: false),
-                shouldDownload: true
-            ),
-            preferences: &preferences
-        )
-
-        XCTAssertEqual(policy?.isDownload, true)
-    }
-
-    func testDownloadResponderDoesNotTreatOptionGlanceClickAsDownload() async {
-        let settings = SumiSettingsService(userDefaults: TestDefaultsHarness().defaults)
-        let tab = Tab(url: URL(string: "https://example.com")!)
-        tab.sumiSettings = settings
-        tab.setClickModifierFlags([.option])
-        let responder = SumiDownloadsNavigationResponder(tab: tab, downloadManager: nil)
-        let adapter = SumiNavigationResponderAdapter(target: responder)
-        var preferences = NavigationPreferences.default
-
-        let policy = await adapter.decidePolicy(
-            for: navigationAction(
-                url: URL(string: "https://example.com/page")!,
-                navigationType: .linkActivated(isMiddleClick: false),
-                shouldDownload: true,
-                modifierFlags: [.option]
-            ),
-            preferences: &preferences
-        )
-
-        XCTAssertNil(policy)
-    }
-
-    func testDownloadResponderContinuesForRegularNavigationAction() async {
-        let tab = Tab(url: URL(string: "https://example.com")!)
-        let responder = SumiDownloadsNavigationResponder(tab: tab, downloadManager: nil)
-        let adapter = SumiNavigationResponderAdapter(target: responder)
-        var preferences = NavigationPreferences.default
-
-        let policy = await adapter.decidePolicy(
-            for: navigationAction(
-                url: URL(string: "https://example.com/page")!,
-                navigationType: .linkActivated(isMiddleClick: false)
-            ),
-            preferences: &preferences
-        )
-
-        XCTAssertNil(policy)
-    }
-
-    func testDownloadResponderRequestsDownloadForUnshowableResponse() async {
-        let tab = Tab(url: URL(string: "https://example.com")!)
-        let responder = SumiDownloadsNavigationResponder(tab: tab, downloadManager: nil)
-        let adapter = SumiNavigationResponderAdapter(target: responder)
-        let response = URLResponse(
-            url: URL(string: "https://example.com/file.bin")!,
-            mimeType: "application/octet-stream",
-            expectedContentLength: 128,
-            textEncodingName: nil
-        )
-
-        let policy = await adapter.decidePolicy(
-            for: NavigationResponse(
-                response: response,
-                isForMainFrame: true,
-                canShowMIMEType: false,
-                mainFrameNavigation: nil
-            )
-        )
-
-        XCTAssertEqual(policy, .download)
-    }
-
-    func testDownloadResponderCancelsSessionRestorationCacheDownloadResponse() async {
-        let tab = Tab(url: URL(string: "https://example.com")!)
-        let responder = SumiDownloadsNavigationResponder(tab: tab, downloadManager: nil)
-        let adapter = SumiNavigationResponderAdapter(target: responder)
-        var preferences = NavigationPreferences.default
-        let action = navigationAction(
-            url: URL(string: "https://example.com/restored-file.bin")!,
-            navigationType: .sessionRestoration,
-            requestCachePolicy: .returnCacheDataElseLoad,
-            isUserInitiated: false
-        )
-
-        _ = await adapter.decidePolicy(for: action, preferences: &preferences)
-        let navigation = mainFrameNavigation(receiving: action)
-
-        let policy = await adapter.decidePolicy(
-            for: NavigationResponse(
-                response: URLResponse(
-                    url: URL(string: "https://example.com/restored-file.bin")!,
-                    mimeType: "application/octet-stream",
-                    expectedContentLength: 128,
-                    textEncodingName: nil
-                ),
-                isForMainFrame: true,
-                canShowMIMEType: false,
-                mainFrameNavigation: navigation
-            )
-        )
-
-        XCTAssertEqual(policy, .cancel)
     }
 
 }

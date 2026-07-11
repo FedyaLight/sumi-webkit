@@ -38,6 +38,10 @@ enum TabBrowserExtensionRuntimeFactory {
             },
             extensionSurfaceStore: { [weak browserManager] in
                 browserManager?.optionalModules.extensions.surfaceStore
+            },
+            shortcutLaunchURL: { [weak browserManager] shortcutPinId in
+                browserManager?.tabManager.shortcutPinCollectionStateOwner
+                    .shortcutPin(by: shortcutPinId)?.launchURL
             }
         )
     }
@@ -87,6 +91,12 @@ extension TabNormalWebViewExtensionRuntime {
             },
             pageContextMenuItems: { tab in
                 extensionsModule()?.pageContextMenuItemsIfLoaded(for: tab) ?? []
+            },
+            reconcileOnUserGesture: { tab, reason in
+                extensionsModule()?.reconcileExtensionRuntimeOnUserGestureIfNeeded(
+                    tab,
+                    reason: reason
+                )
             }
         )
     }
@@ -96,14 +106,16 @@ extension TabNormalWebViewExtensionRuntime {
 extension TabFaviconExtensionRuntime {
     static func make(
         extensionsModule: @escaping () -> SumiExtensionsModule?,
-        extensionSurfaceStore: @escaping () -> BrowserExtensionSurfaceStore?
+        extensionSurfaceStore: @escaping () -> BrowserExtensionSurfaceStore?,
+        shortcutLaunchURL: @escaping (UUID) -> URL?
     ) -> Self {
         Self(
             installedExtensions: {
                 extensionsModule()?.managerIfLoadedAndEnabled()?.installedExtensionCollection.records
                     ?? extensionSurfaceStore()?.installedExtensions
                     ?? []
-            }
+            },
+            shortcutLaunchURL: shortcutLaunchURL
         )
     }
 }

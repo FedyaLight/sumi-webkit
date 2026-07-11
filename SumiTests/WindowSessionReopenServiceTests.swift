@@ -12,7 +12,7 @@ final class WindowSessionReopenServiceTests: XCTestCase {
         let snapshot = archivedWindowSnapshot(profileID: UUID())
         var events: [String] = []
         var registeredProfileID: UUID?
-        windowRegistry.onWindowRegister = { windowState in
+        windowRegistry.prepareWindowRegistration = { windowState in
             events.append("register")
             registeredProfileID = windowState.currentProfileId
         }
@@ -167,6 +167,18 @@ final class WindowSessionReopenServiceTests: XCTestCase {
     func testReopenRejectsRegisteredStateWithWrongArchiveIdentity() async {
         let windowRegistry = WindowRegistry()
         let wrongWindow = BrowserWindowState()
+        var publishedWindowIDs: [UUID] = []
+        var closedWindowIDs: [UUID] = []
+        var allWindowsClosedCount = 0
+        windowRegistry.publishWindowRegistration = {
+            publishedWindowIDs.append($0.id)
+        }
+        windowRegistry.onWindowClose = {
+            closedWindowIDs.append($0.id)
+        }
+        windowRegistry.onAllWindowsClosed = {
+            allWindowsClosedCount += 1
+        }
         let service = WindowSessionReopenService(
             windowRegistry: { windowRegistry },
             createRestoredWindow: { _ in
@@ -182,6 +194,39 @@ final class WindowSessionReopenServiceTests: XCTestCase {
         )
 
         XCTAssertFalse(didReopen)
+        XCTAssertEqual(publishedWindowIDs, [wrongWindow.id])
+        XCTAssertEqual(closedWindowIDs, [wrongWindow.id])
+        XCTAssertEqual(allWindowsClosedCount, 1)
+        XCTAssertTrue(windowRegistry.windows.isEmpty)
+    }
+
+    func testReopenCancelsExactProvisionalStateWithoutCloseLifecycle() async {
+        let windowRegistry = WindowRegistry()
+        let provisionalWindow = BrowserWindowState()
+        let snapshot = archivedWindowSnapshot()
+        var closedWindowIDs: [UUID] = []
+        windowRegistry.onWindowClose = {
+            closedWindowIDs.append($0.id)
+        }
+        let service = WindowSessionReopenService(
+            windowRegistry: { windowRegistry },
+            createRestoredWindow: { receivedSnapshot in
+                provisionalWindow.restoredSessionWindowId = receivedSnapshot.id
+                provisionalWindow.isAwaitingInitialSessionResolution = false
+                XCTAssertEqual(
+                    windowRegistry.beginRegistration(provisionalWindow),
+                    .registered
+                )
+                return provisionalWindow
+            }
+        )
+
+        let didReopen = await service.reopenWindow(from: snapshot)
+
+        XCTAssertFalse(didReopen)
+        XCTAssertTrue(closedWindowIDs.isEmpty)
+        XCTAssertFalse(windowRegistry.commitRegistration(provisionalWindow))
+        XCTAssertTrue(windowRegistry.windows.isEmpty)
     }
 
     private func archivedWindowSnapshot(

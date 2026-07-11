@@ -48,38 +48,41 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
         XCTAssertFalse(tab.shouldOpenDynamicallyInGlance(url: externalURL, modifierFlags: []))
     }
 
-    func testGlanceClickUsesEventModifierFlagsInsteadOfStaleClickState() throws {
+    func testGlanceTriggerUsesExactSourceWebViewGestureInsteadOfAnotherViewState() throws {
         let settings = SumiSettingsService(userDefaults: TestDefaultsHarness().defaults)
-        let browserManager = try makePopupBrowserManager()
-        browserManager.sumiSettings = settings
-        let tab = browserManager.tabManager.tabFactory.makeTab(
+        let tab = Tab(
             url: URL(string: "https://source.example/page")!
         )
-        tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
         tab.sumiSettings = settings
-        let targetURL = URL(string: "https://destination.example/page")!
+        let staleWebView = FocusableWKWebView()
+        let sourceWebView = FocusableWKWebView()
 
-        tab.setClickModifierFlags([.command])
-        if tab.isGlanceTriggerActive([.command]) {
-            tab.openURLInGlance(targetURL)
-        }
-        XCTAssertNil(browserManager.glanceManager.currentSession)
+        staleWebView.gestures.record(
+            makeMouseEvent(type: .leftMouseDown, modifierFlags: [.command]),
+            kind: .primaryMouseDown
+        )
+        sourceWebView.gestures.record(
+            makeMouseEvent(type: .leftMouseDown, modifierFlags: [.option]),
+            kind: .primaryMouseDown
+        )
 
-        if tab.isGlanceTriggerActive([.option]) {
-            tab.openURLInGlance(targetURL)
-        }
-        XCTAssertEqual(browserManager.glanceManager.currentSession?.currentURL, targetURL)
+        XCTAssertFalse(tab.isGlanceTriggerActive(
+            staleWebView.gestures.resolvedModifierFlags(actionFlags: [])
+        ))
+        XCTAssertTrue(tab.isGlanceTriggerActive(
+            sourceWebView.gestures.resolvedModifierFlags(actionFlags: [])
+        ))
     }
 
     func testFreshNativeMouseDownWinsOverStaleWebKitModifierFlags() {
-        let tab = Tab(url: URL(string: "https://source.example/page")!)
-        tab.setClickModifierFlags([.command])
-        tab.recordWebViewInteraction(
-            makeMouseEvent(type: .leftMouseDown, modifierFlags: [.option])
+        let sourceWebView = FocusableWKWebView()
+        sourceWebView.gestures.record(
+            makeMouseEvent(type: .leftMouseDown, modifierFlags: [.option]),
+            kind: .primaryMouseDown
         )
 
         XCTAssertEqual(
-            tab.resolvedNavigationModifierFlags(actionFlags: [.command, .option]),
+            sourceWebView.gestures.resolvedModifierFlags(actionFlags: [.command, .option]),
             [.option]
         )
     }
@@ -87,86 +90,209 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
     /// Mirrors post-`createWebView` / `decidePolicy` cleanup so Cmd+click does not leave stale `lastWebViewInteractionEvent`.
     func testClearingModifierSnapshotAfterCmdGestureAllowsFreshGlanceResolution() {
         let tab = Tab(url: URL(string: "https://source.example/page")!)
-        tab.recordWebViewInteraction(
-            makeMouseEvent(type: .leftMouseDown, modifierFlags: [.command])
+        let sourceWebView = FocusableWKWebView()
+        sourceWebView.gestures.record(
+            makeMouseEvent(type: .leftMouseDown, modifierFlags: [.command]),
+            kind: .primaryMouseDown
         )
 
         XCTAssertEqual(
-            tab.resolvedNavigationModifierFlags(actionFlags: []),
+            sourceWebView.gestures.resolvedModifierFlags(actionFlags: []),
             [.command]
         )
 
-        tab.clearWebViewInteractionEvent()
-        tab.setClickModifierFlags([])
+        sourceWebView.gestures.clear()
 
-        XCTAssertEqual(tab.resolvedNavigationModifierFlags(actionFlags: []), [])
+        XCTAssertEqual(sourceWebView.gestures.resolvedModifierFlags(actionFlags: []), [])
 
-        tab.recordWebViewInteraction(
-            makeMouseEvent(type: .leftMouseDown, modifierFlags: [.option])
+        sourceWebView.gestures.record(
+            makeMouseEvent(type: .leftMouseDown, modifierFlags: [.option]),
+            kind: .primaryMouseDown
         )
-        let resolved = tab.resolvedNavigationModifierFlags(actionFlags: [])
+        let resolved = sourceWebView.gestures.resolvedModifierFlags(actionFlags: [])
         XCTAssertEqual(resolved, [.option])
         XCTAssertTrue(tab.isGlanceTriggerActive(resolved))
     }
 
-    func testNativeContextMenuProbeConsumesChildWebViewRequestBeforeDynamicGlance() throws {
-        let settings = SumiSettingsService(userDefaults: TestDefaultsHarness().defaults)
-        let browserManager = try makePopupBrowserManager()
-        browserManager.sumiSettings = settings
-        let tab = browserManager.tabManager.tabFactory.makeTab(
-            url: URL(string: "https://source.example/page")!
+    func testPopupUserActivationCannotCrossCloneBoundary() {
+        let activatedSource = FocusableWKWebView()
+        let siblingClone = FocusableWKWebView()
+        activatedSource.popupUserActivation.record(
+            event: makeMouseEvent(type: .leftMouseDown, modifierFlags: []),
+            kind: "leftMouseDown"
         )
-        tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
-        tab.sumiSettings = settings
-        tab.shortcutPinRole = .essential
-        let responder = SumiPopupHandlingNavigationResponder(tab: tab)
-        let sourceWebView = WKWebView(frame: .zero)
-        let destinationURL = URL(string: "https://destination.example/image.png")!
-        let navigationAction = SumiWKNavigationActionMock(
-            sourceFrame: nil,
-            targetFrame: nil,
-            navigationType: .other,
-            request: URLRequest(url: destinationURL)
-        ).navigationAction
-        let probe = SumiNativeContextMenuProbe()
-        var childWebView: WKWebView?
-        var capturedURL: URL?
-        probe.onAction = {
-            childWebView = responder.createWebView(
-                from: sourceWebView,
-                with: WKWebViewConfiguration(),
-                for: navigationAction,
-                windowFeatures: WKWindowFeatures()
-            )
-        }
-        let item = NSMenuItem(
-            title: "Open Image in New Window",
-            action: #selector(SumiNativeContextMenuProbe.performAction(_:)),
-            keyEquivalent: ""
+
+        XCTAssertTrue(
+            activatedSource.popupUserActivation
+                .activationState(webKitUserInitiated: false)
+                .isUserActivated
         )
-        item.target = probe
+        XCTAssertFalse(
+            siblingClone.popupUserActivation
+                .activationState(webKitUserInitiated: false)
+                .isUserActivated
+        )
+    }
 
-        let didConsume = responder.consumeNativeContextMenuRequest(from: item) { action in
-            capturedURL = action.request.url
+    func testPopupActivationConsumptionDoesNotConsumeSiblingClone() {
+        let sourceWebView = FocusableWKWebView()
+        let siblingClone = FocusableWKWebView()
+        let event = makeMouseEvent(type: .leftMouseDown, modifierFlags: [])
+        sourceWebView.popupUserActivation.record(event: event, kind: "leftMouseDown")
+        siblingClone.popupUserActivation.record(event: event, kind: "leftMouseDown")
+
+        let sourceActivation = sourceWebView.popupUserActivation.evaluate(
+            webKitUserInitiated: false
+        )
+        sourceWebView.popupUserActivation.consume(sourceActivation)
+
+        XCTAssertFalse(
+            sourceWebView.popupUserActivation
+                .activationState(webKitUserInitiated: false)
+                .isUserActivated
+        )
+        XCTAssertTrue(
+            siblingClone.popupUserActivation
+                .activationState(webKitUserInitiated: false)
+                .isUserActivated
+        )
+    }
+
+    func testConsumingPopupActivationEvaluationAfterNewRecordPreservesNewActivation() {
+        let sourceWebView = FocusableWKWebView()
+        sourceWebView.popupUserActivation.record(
+            event: makeMouseEvent(type: .leftMouseDown, modifierFlags: []),
+            kind: "firstGesture"
+        )
+        let firstEvaluation = sourceWebView.popupUserActivation.evaluate(
+            webKitUserInitiated: false
+        )
+        sourceWebView.popupUserActivation.record(
+            event: makeMouseEvent(type: .leftMouseDown, modifierFlags: []),
+            kind: "secondGesture"
+        )
+
+        sourceWebView.popupUserActivation.consume(firstEvaluation)
+
+        let remainingState = sourceWebView.popupUserActivation.activationState(
+            webKitUserInitiated: false
+        )
+        guard case .recentBrowserEvent(let kind, _, _) = remainingState else {
+            return XCTFail("Expected the newer browser activation to remain")
         }
+        XCTAssertEqual(kind, "secondGesture")
+    }
 
-        XCTAssertTrue(didConsume)
-        XCTAssertEqual(capturedURL, destinationURL)
-        XCTAssertNil(childWebView)
-        XCTAssertNil(browserManager.glanceManager.currentSession)
+    func testDirectWebKitEvaluationConsumesOnlyItsSnapshottedBrowserActivation() {
+        let sourceWebView = FocusableWKWebView()
+        sourceWebView.popupUserActivation.record(
+            event: makeMouseEvent(type: .leftMouseDown, modifierFlags: []),
+            kind: "firstGesture"
+        )
+        let directWebKitEvaluation = sourceWebView.popupUserActivation.evaluate(
+            webKitUserInitiated: true
+        )
+        sourceWebView.popupUserActivation.record(
+            event: makeMouseEvent(type: .leftMouseDown, modifierFlags: []),
+            kind: "secondGesture"
+        )
+
+        sourceWebView.popupUserActivation.consume(directWebKitEvaluation)
+
+        let secondState = sourceWebView.popupUserActivation.activationState(
+            webKitUserInitiated: false
+        )
+        guard case .recentBrowserEvent(let kind, _, _) = secondState else {
+            return XCTFail("Direct WebKit evaluation must preserve a newer browser gesture")
+        }
+        XCTAssertEqual(kind, "secondGesture")
+
+        let currentDirectEvaluation = sourceWebView.popupUserActivation.evaluate(
+            webKitUserInitiated: true
+        )
+        sourceWebView.popupUserActivation.consume(currentDirectEvaluation)
+        XCTAssertFalse(
+            sourceWebView.popupUserActivation
+                .activationState(webKitUserInitiated: false)
+                .isUserActivated
+        )
+    }
+
+    func testModifierResolutionAndClearDoNotCrossCloneBoundary() {
+        let sourceWebView = FocusableWKWebView()
+        let siblingClone = FocusableWKWebView()
+        sourceWebView.gestures.record(
+            makeMouseEvent(type: .leftMouseDown, modifierFlags: [.command]),
+            kind: .primaryMouseDown
+        )
+        siblingClone.gestures.record(
+            makeMouseEvent(type: .leftMouseDown, modifierFlags: [.option]),
+            kind: .primaryMouseDown
+        )
+
+        sourceWebView.gestures.clear()
+
+        XCTAssertEqual(sourceWebView.gestures.resolvedModifierFlags(actionFlags: []), [])
+        XCTAssertEqual(
+            siblingClone.gestures.resolvedModifierFlags(actionFlags: []),
+            [.option]
+        )
+    }
+
+    func testStaleGestureClearReceiptPreservesNewerGesture() {
+        let sourceWebView = FocusableWKWebView()
+        let firstReceipt = sourceWebView.gestures.record(
+            makeMouseEvent(type: .leftMouseDown, modifierFlags: [.command]),
+            kind: .primaryMouseDown
+        )
+        _ = sourceWebView.gestures.record(
+            makeMouseEvent(type: .leftMouseDown, modifierFlags: [.option]),
+            kind: .primaryMouseDown
+        )
+
+        sourceWebView.gestures.clear(ifCurrent: firstReceipt)
+
+        XCTAssertEqual(
+            sourceWebView.gestures.resolvedModifierFlags(actionFlags: []),
+            [.option]
+        )
+    }
+
+    func testPopupActivationClaimCannotBeSpentTwiceByConcurrentRequests() {
+        let sourceWebView = FocusableWKWebView()
+        sourceWebView.popupUserActivation.record(
+            event: makeMouseEvent(type: .leftMouseDown, modifierFlags: []),
+            kind: "mouseDown"
+        )
+
+        let firstClaim = sourceWebView.popupUserActivation.claim(
+            webKitUserInitiated: false
+        )
+        let secondClaim = sourceWebView.popupUserActivation.claim(
+            webKitUserInitiated: true
+        )
+
+        XCTAssertTrue(firstClaim.isUserActivated)
+        XCTAssertEqual(secondClaim, .none)
+
+        sourceWebView.popupUserActivation.record(
+            event: makeMouseEvent(type: .leftMouseDown, modifierFlags: []),
+            kind: "mouseDown"
+        )
+        XCTAssertTrue(
+            sourceWebView.popupUserActivation
+                .claim(webKitUserInitiated: true)
+                .isUserActivated
+        )
     }
 
     func testPopupResponderOptionClickRoutesToGlance() async throws {
-        let settings = SumiSettingsService(userDefaults: TestDefaultsHarness().defaults)
-        let browserManager = try makePopupBrowserManager()
-        browserManager.sumiSettings = settings
-        let tab = browserManager.tabManager.tabFactory.makeTab(
-            url: URL(string: "https://source.example/page")!
+        let harness = try await makePopupFocusHarness()
+        harness.sourceWebView.gestures.record(
+            makeMouseEvent(type: .leftMouseDown, modifierFlags: [.option]),
+            kind: .primaryMouseDown
         )
-        tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
-        tab.sumiSettings = settings
-        tab.setClickModifierFlags([.option])
-        let responder = SumiPopupHandlingNavigationResponder(tab: tab)
+        let responder = popupResponder(for: harness.sourceTab)
         let adapter = SumiNavigationResponderAdapter(target: responder)
         let targetURL = URL(string: "https://destination.example/page")!
         var preferences = NavigationPreferences.default
@@ -176,26 +302,23 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
                 url: targetURL,
                 navigationType: .linkActivated(isMiddleClick: false),
                 shouldDownload: true,
-                sourceURL: tab.url
+                webView: harness.sourceWebView,
+                sourceURL: harness.sourceTab.url
             ),
             preferences: &preferences
         )
 
         XCTAssertEqual(policy?.isCancel, true)
-        XCTAssertEqual(browserManager.glanceManager.currentSession?.currentURL, targetURL)
+        XCTAssertEqual(
+            harness.browserManager.glanceManager.currentSession?.currentURL,
+            targetURL
+        )
     }
 
     func testPopupResponderEssentialExternalCleanClickRoutesToGlance() async throws {
-        let settings = SumiSettingsService(userDefaults: TestDefaultsHarness().defaults)
-        let browserManager = try makePopupBrowserManager()
-        browserManager.sumiSettings = settings
-        let tab = browserManager.tabManager.tabFactory.makeTab(
-            url: URL(string: "https://source.example/page")!
-        )
-        tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
-        tab.sumiSettings = settings
-        tab.shortcutPinRole = .essential
-        let responder = SumiPopupHandlingNavigationResponder(tab: tab)
+        let harness = try await makePopupFocusHarness()
+        harness.sourceTab.shortcutPinRole = .essential
+        let responder = popupResponder(for: harness.sourceTab)
         let adapter = SumiNavigationResponderAdapter(target: responder)
         let targetURL = URL(string: "https://destination.example/page")!
         var preferences = NavigationPreferences.default
@@ -204,25 +327,22 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
             for: navigationAction(
                 url: targetURL,
                 navigationType: .linkActivated(isMiddleClick: false),
-                sourceURL: tab.url
+                webView: harness.sourceWebView,
+                sourceURL: harness.sourceTab.url
             ),
             preferences: &preferences
         )
 
         XCTAssertEqual(policy?.isCancel, true)
-        XCTAssertEqual(browserManager.glanceManager.currentSession?.currentURL, targetURL)
+        XCTAssertEqual(
+            harness.browserManager.glanceManager.currentSession?.currentURL,
+            targetURL
+        )
     }
 
     func testPopupResponderRegularExternalCleanClickDoesNotRouteToGlance() async throws {
-        let settings = SumiSettingsService(userDefaults: TestDefaultsHarness().defaults)
-        let browserManager = try makePopupBrowserManager()
-        browserManager.sumiSettings = settings
-        let tab = browserManager.tabManager.tabFactory.makeTab(
-            url: URL(string: "https://source.example/page")!
-        )
-        tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
-        tab.sumiSettings = settings
-        let responder = SumiPopupHandlingNavigationResponder(tab: tab)
+        let harness = try await makePopupFocusHarness()
+        let responder = popupResponder(for: harness.sourceTab)
         let adapter = SumiNavigationResponderAdapter(target: responder)
         let targetURL = URL(string: "https://destination.example/page")!
         var preferences = NavigationPreferences.default
@@ -231,25 +351,22 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
             for: navigationAction(
                 url: targetURL,
                 navigationType: .linkActivated(isMiddleClick: false),
-                sourceURL: tab.url
+                webView: harness.sourceWebView,
+                sourceURL: harness.sourceTab.url
             ),
             preferences: &preferences
         )
 
-        XCTAssertNil(browserManager.glanceManager.currentSession)
+        XCTAssertNil(harness.browserManager.glanceManager.currentSession)
     }
 
     func testPopupResponderCommandClickDoesNotRouteToGlance() async throws {
-        let settings = SumiSettingsService(userDefaults: TestDefaultsHarness().defaults)
-        let browserManager = try makePopupBrowserManager()
-        browserManager.sumiSettings = settings
-        let tab = browserManager.tabManager.tabFactory.makeTab(
-            url: URL(string: "https://source.example/page")!
+        let harness = try await makePopupFocusHarness()
+        harness.sourceWebView.gestures.record(
+            makeMouseEvent(type: .leftMouseDown, modifierFlags: [.command]),
+            kind: .primaryMouseDown
         )
-        tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
-        tab.sumiSettings = settings
-        tab.setClickModifierFlags([.command])
-        let responder = SumiPopupHandlingNavigationResponder(tab: tab)
+        let responder = popupResponder(for: harness.sourceTab)
         let adapter = SumiNavigationResponderAdapter(target: responder)
         let targetURL = URL(string: "https://destination.example/page")!
         var preferences = NavigationPreferences.default
@@ -258,12 +375,13 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
             for: navigationAction(
                 url: targetURL,
                 navigationType: .linkActivated(isMiddleClick: false),
-                sourceURL: tab.url
+                webView: harness.sourceWebView,
+                sourceURL: harness.sourceTab.url
             ),
             preferences: &preferences
         )
 
-        XCTAssertNil(browserManager.glanceManager.currentSession)
+        XCTAssertNil(harness.browserManager.glanceManager.currentSession)
         XCTAssertEqual(
             SumiLinkOpenBehavior(
                 buttonIsMiddle: false,
@@ -275,7 +393,7 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
         )
     }
 
-    func testPopupResponderUsesInjectedRuntimeWithoutBrowserManager() async {
+    func testPopupResponderRejectsNonFocusableSourceEvenWithCommittedDocumentLease() async {
         let profile = Profile(name: "Popup Runtime")
         let tab = Tab(url: URL(string: "https://source.example/page")!, loadsCachedFaviconOnInit: false)
         tab.profileId = profile.id
@@ -288,27 +406,11 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
             currentProfile: { nil },
             firstProfile: { nil }
         )
-        var evaluatedRequests: [SumiPopupPermissionRequest] = []
-        var evaluatedContexts: [SumiPopupPermissionTabContext] = []
-        tab.navigationRuntime.popupHandlingRuntime = TabPopupHandlingRuntime(
-            hasBrowserRuntime: { true },
-            consumeRecentlyOpenedExtensionTabRequest: { _ in false },
-            evaluatePopupPermission: { request, context in
-                evaluatedRequests.append(request)
-                evaluatedContexts.append(context)
-                return SumiPopupPermissionResult(action: .allow)
-            },
-            evaluatePopupPermissionForWebKitFallback: { _, _ in nil },
-            openExtensionExternalTab: { _, _ in false },
-            presentWebPopup: { _, _, _, _, _ in nil },
-            applyVisitedLinksToPopupConfiguration: { _, _ in /* No-op. */ },
-            createPopupTab: { _, _ in nil },
-            installUntrackedOwnedWebView: { _, _ in /* No-op. */ },
-            windowStateContainingTab: { _ in nil },
-            selectTab: { _, _ in /* No-op. */ },
-            notifications: { nil }
-        )
-        let responder = SumiPopupHandlingNavigationResponder(tab: tab)
+        let permissions = PopupPermissionEvaluatorSpy()
+        var runtime = TabBrowserRuntime.inactive
+        runtime.popupPermissionEvaluator = permissions
+        tab.attachBrowserRuntime(runtime)
+        let responder = popupResponder(for: tab)
         let adapter = SumiNavigationResponderAdapter(target: responder)
         let webView = PopupCommittedURLWebView(frame: .zero)
         let targetURL = URL(string: "https://destination.example/page")!
@@ -330,18 +432,17 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
             preferences: &preferences
         )
 
-        XCTAssertFalse(tab.hasBrowserRuntime)
+        XCTAssertTrue(tab.hasBrowserRuntime)
         XCTAssertEqual(policy?.isCancel, true)
-        XCTAssertEqual(evaluatedRequests.map(\.targetURL), [targetURL])
-        XCTAssertEqual(evaluatedContexts.map(\.tabId), [tab.id.uuidString.lowercased()])
-        XCTAssertEqual(evaluatedContexts.map(\.profilePartitionId), [profile.id.uuidString.lowercased()])
+        XCTAssertTrue(permissions.requests.isEmpty)
+        XCTAssertTrue(permissions.contexts.isEmpty)
         withExtendedLifetime(sourceNavigation) { /* Keep the exact document participant alive. */ }
     }
 
-    func testPopupCreateWebViewFocusesCleanClickNewTab() throws {
-        let harness = try makePopupFocusHarness()
-        let responder = SumiPopupHandlingNavigationResponder(tab: harness.sourceTab)
-        let configuration = WKWebViewConfiguration()
+    func testPopupCreateWebViewFocusesCleanClickNewTab() async throws {
+        let harness = try await makePopupFocusHarness()
+        let responder = popupResponder(for: harness.sourceTab)
+        let configuration = popupConfiguration(for: harness)
         let markerScript = WKUserScript(
             source: "window.__sumiPopupConfigurationMarker = true;",
             injectionTime: .atDocumentStart,
@@ -363,8 +464,9 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
 
         XCTAssertNotNil(childWebView)
         XCTAssertEqual(
-            childWebView?.configuration.userContentController.userScripts.map(\.source),
-            [markerScript.source]
+            childWebView?.configuration.userContentController.userScripts
+                .contains(where: { $0.source == markerScript.source }),
+            true
         )
         XCTAssertNotEqual(harness.windowState.currentTabId, harness.sourceTab.id)
         XCTAssertEqual(
@@ -377,22 +479,17 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
     }
 
     func testExtensionPopupExternalCreateWebViewOpensNormalBrowserTab() async throws {
-        let harness = try makePopupFocusHarness()
+        let harness = try await makePopupFocusHarness()
         let extensionPopupURL = URL(
             string: "safari-web-extension://extension-id/popup.html"
         )!
         let targetURL = URL(string: "https://account.example.test/login")!
         harness.sourceTab.url = extensionPopupURL
-        let sourceNavigation = bindCommittedPopupDocument(
-            on: harness.sourceWebView,
-            tab: harness.sourceTab,
-            committedURL: extensionPopupURL
-        )
         let initialRegularTabCount = harness.browserManager.tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[
             harness.browserManager.tabManager.spaceStateOwner.currentSpace!.id
         ]?.count ?? 0
 
-        let responder = SumiPopupHandlingNavigationResponder(tab: harness.sourceTab)
+        let responder = popupResponder(for: harness.sourceTab)
         let action = popupNavigationAction(
             sourceURL: extensionPopupURL,
             targetURL: targetURL,
@@ -401,7 +498,7 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
 
         let childWebView = await responder.createWebViewAsync(
             from: harness.sourceWebView,
-            with: WKWebViewConfiguration(),
+            with: popupConfiguration(for: harness),
             for: action,
             windowFeatures: WKWindowFeatures()
         )
@@ -421,12 +518,11 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
         XCTAssertNil(openedTab.webViewConfigurationOverride)
         XCTAssertEqual(harness.windowState.currentTabId, openedTab.id)
         XCTAssertNotNil(openedTab.resolvedAssignedWebView() ?? openedTab.resolvedCurrentWebView())
-        withExtendedLifetime(sourceNavigation) { /* Keep the exact document participant alive. */ }
     }
 
-    func testExtensionPopupExternalCreateWebViewUsesOpenerWindowSpaceWhenSourceSpaceIsMissing()
+    func testExtensionPopupExternalCreateWebViewRejectsMissingSourceResidence()
         async throws {
-        let harness = try makePopupFocusHarness()
+        let harness = try await makePopupFocusHarness()
         let secondarySpace = Space(
             name: "Secondary",
             profileId: harness.sourceSpace.profileId
@@ -440,11 +536,6 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
         )!
         let targetURL = URL(string: "https://account.example.test/login")!
         harness.sourceTab.url = extensionPopupURL
-        let sourceNavigation = bindCommittedPopupDocument(
-            on: harness.sourceWebView,
-            tab: harness.sourceTab,
-            committedURL: extensionPopupURL
-        )
         let initialWindowSpaceTabCount = harness.browserManager.tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[
             harness.sourceSpace.id
         ]?.count ?? 0
@@ -452,7 +543,7 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
             secondarySpace.id
         ]?.count ?? 0
 
-        let responder = SumiPopupHandlingNavigationResponder(tab: harness.sourceTab)
+        let responder = popupResponder(for: harness.sourceTab)
         let action = popupNavigationAction(
             sourceURL: extensionPopupURL,
             targetURL: targetURL,
@@ -461,7 +552,7 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
 
         let childWebView = await responder.createWebViewAsync(
             from: harness.sourceWebView,
-            with: WKWebViewConfiguration(),
+            with: popupConfiguration(for: harness),
             for: action,
             windowFeatures: WKWindowFeatures()
         )
@@ -469,34 +560,35 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
         XCTAssertNil(childWebView)
         XCTAssertEqual(
             harness.browserManager.tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[harness.sourceSpace.id]?.count,
-            initialWindowSpaceTabCount + 1
+            initialWindowSpaceTabCount
         )
         XCTAssertEqual(
             harness.browserManager.tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[secondarySpace.id]?.count ?? 0,
             initialGlobalSpaceTabCount
         )
-        let openedTab = try XCTUnwrap(harness.browserManager.tabManager.regularTabCollectionStateOwner.allTabsSnapshot().last)
-        XCTAssertEqual(openedTab.url, targetURL)
-        XCTAssertEqual(openedTab.spaceId, harness.sourceSpace.id)
-        XCTAssertEqual(harness.windowState.currentTabId, openedTab.id)
-        withExtendedLifetime(sourceNavigation) { /* Keep the exact document participant alive. */ }
+        XCTAssertEqual(
+            harness.browserManager.tabManager.regularTabCollectionStateOwner
+                .allTabsSnapshot().filter { $0.url == targetURL }.count,
+            0
+        )
+        XCTAssertEqual(
+            harness.windowState.currentTabId,
+            harness.sourceTab.id
+        )
     }
 
-    func testExtensionPopupExternalCreateWebViewUsesTabURLWhenSourceFrameMissing()
+    func testPopupOriginDoesNotBorrowLogicalTabURLWhenSourceFrameIsMissing()
         async throws {
-        let harness = try makePopupFocusHarness()
+        let harness = try await makePopupFocusHarness()
         let extensionPopupURL = URL(
             string: "safari-web-extension://extension-id/popup.html"
         )!
         let targetURL = URL(string: "https://account.example.test/login")!
         harness.sourceTab.url = extensionPopupURL
-        let sourceNavigation = bindCommittedPopupDocument(
-            on: harness.sourceWebView,
-            tab: harness.sourceTab,
-            committedURL: extensionPopupURL
-        )
+        let initialRegularTabCount = harness.browserManager.tabManager
+            .regularTabCollectionStateOwner.allTabsSnapshot().count
 
-        let responder = SumiPopupHandlingNavigationResponder(tab: harness.sourceTab)
+        let responder = popupResponder(for: harness.sourceTab)
         let action = popupNavigationAction(
             sourceURL: nil,
             targetURL: targetURL,
@@ -505,29 +597,29 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
 
         let childWebView = await responder.createWebViewAsync(
             from: harness.sourceWebView,
-            with: WKWebViewConfiguration(),
+            with: popupConfiguration(for: harness),
             for: action,
             windowFeatures: WKWindowFeatures()
         )
 
         XCTAssertNil(childWebView)
-        XCTAssertTrue(harness.browserManager.tabManager.transientTabRegistryOwner.auxiliaryMiniWindowTabsByID.isEmpty)
-        let openedTab = try XCTUnwrap(harness.browserManager.tabManager.regularTabCollectionStateOwner.allTabsSnapshot().last)
-        XCTAssertEqual(openedTab.url, targetURL)
-        XCTAssertFalse(openedTab.isAuxiliaryMiniWindow)
-        XCTAssertFalse(openedTab.isPopupHost)
-        XCTAssertNil(openedTab.webViewConfigurationOverride)
-        XCTAssertEqual(harness.windowState.currentTabId, openedTab.id)
-        XCTAssertNotNil(openedTab.resolvedAssignedWebView() ?? openedTab.resolvedCurrentWebView())
-        withExtendedLifetime(sourceNavigation) { /* Keep the exact document participant alive. */ }
+        XCTAssertEqual(
+            harness.browserManager.tabManager.regularTabCollectionStateOwner
+                .allTabsSnapshot().count,
+            initialRegularTabCount
+        )
+        XCTAssertEqual(harness.windowState.currentTabId, harness.sourceTab.id)
+        XCTAssertEqual(harness.sourceTab.url, extensionPopupURL)
+        XCTAssertNotEqual(harness.sourceTab.url, targetURL)
     }
 
-    func testPopupCreateWebViewLeavesCommandClickNewTabInBackground() throws {
-        let harness = try makePopupFocusHarness()
-        harness.sourceTab.recordWebViewInteraction(
-            makeMouseEvent(type: .leftMouseDown, modifierFlags: [.command])
+    func testPopupCreateWebViewLeavesCommandClickNewTabInBackground() async throws {
+        let harness = try await makePopupFocusHarness()
+        harness.sourceWebView.gestures.record(
+            makeMouseEvent(type: .leftMouseDown, modifierFlags: [.command]),
+            kind: .primaryMouseDown
         )
-        let responder = SumiPopupHandlingNavigationResponder(tab: harness.sourceTab)
+        let responder = popupResponder(for: harness.sourceTab)
         let action = popupNavigationAction(
             sourceURL: harness.sourceTab.url,
             targetURL: URL(string: "https://destination.example/page")!,
@@ -537,14 +629,17 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
 
         let childWebView = responder.createWebView(
             from: harness.sourceWebView,
-            with: WKWebViewConfiguration(),
+            with: popupConfiguration(for: harness),
             for: action,
             windowFeatures: WKWindowFeatures()
         )
 
         XCTAssertNotNil(childWebView)
         XCTAssertEqual(harness.windowState.currentTabId, harness.sourceTab.id)
-        XCTAssertEqual(harness.sourceTab.resolvedNavigationModifierFlags(actionFlags: []), [])
+        XCTAssertEqual(
+            harness.sourceWebView.gestures.resolvedModifierFlags(actionFlags: []),
+            []
+        )
     }
 
     func testPolicyGeneratedCleanNewTabSelectsButCommandNewTabStaysBackground() {
@@ -581,6 +676,21 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
         )
     }
 
+    private func popupResponder(
+        for tab: Tab
+    ) -> SumiPopupHandlingNavigationResponder {
+        SumiPopupHandlingNavigationResponder(
+            tab: tab,
+            permissions: tab.navigationRuntime.popupPermissionEvaluator,
+            extensionRequests:
+                tab.navigationRuntime.extensionPopupRequestConsumer,
+            extensionTabs: tab.navigationRuntime.extensionExternalTabOpening,
+            webPopups: tab.navigationRuntime.physicalWebPopupOpening,
+            childTabs: tab.navigationRuntime.webKitChildTabOpening,
+            childWindows: tab.navigationRuntime.webKitChildWindowOpening
+        )
+    }
+
     private func makePopupModuleRegistry() -> SumiModuleRegistry {
         let suiteName = UUID().uuidString
         let userDefaults = UserDefaults(suiteName: suiteName)!
@@ -604,12 +714,13 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
         let windowRegistry: WindowRegistry
         let windowState: BrowserWindowState
         let sourceSpace: Space
+        let sourceProfile: Profile
         let sourceTab: Tab
-        let sourceWebView: PopupCommittedURLWebView
+        let sourceWebView: FocusableWKWebView
         let sourceNavigation: NSObject
     }
 
-    private func makePopupFocusHarness() throws -> PopupFocusHarness {
+    private func makePopupFocusHarness() async throws -> PopupFocusHarness {
         let settings = SumiSettingsService(userDefaults: TestDefaultsHarness().defaults)
         let browserManager = try makePopupBrowserManager()
         let windowRegistry = WindowRegistry()
@@ -637,36 +748,67 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
         )
         browserManager.selectTab(sourceTab, in: windowState)
 
-        let sourceWebView = PopupCommittedURLWebView(frame: .zero)
+        let sourceConfiguration = WKWebViewConfiguration()
+        sourceConfiguration.websiteDataStore = profile.dataStore
+        let sourceWebView = FocusableWKWebView(
+            frame: .zero,
+            configuration: sourceConfiguration
+        )
         browserManager.testWebViewRuntime().ownershipService.assign(
             sourceWebView,
             to: sourceTab,
             in: windowState.id
         )
+        await loadPopupDocument(on: sourceWebView, at: sourceTab.url)
+        let committedURL = try XCTUnwrap(sourceWebView.committedURL)
         let sourceNavigation = bindCommittedPopupDocument(
             on: sourceWebView,
             tab: sourceTab,
-            committedURL: sourceTab.url
+            committedURL: committedURL
         )
+        browserManager.selectTab(sourceTab, in: windowState)
 
         return PopupFocusHarness(
             browserManager: browserManager,
             windowRegistry: windowRegistry,
             windowState: windowState,
             sourceSpace: space,
+            sourceProfile: profile,
             sourceTab: sourceTab,
             sourceWebView: sourceWebView,
             sourceNavigation: sourceNavigation
         )
     }
 
+    private func popupConfiguration(
+        for harness: PopupFocusHarness
+    ) -> WKWebViewConfiguration {
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = harness.sourceProfile.dataStore
+        return configuration
+    }
+
+    private func loadPopupDocument(
+        on webView: WKWebView,
+        at url: URL
+    ) async {
+        let didFinish = expectation(description: "popup source document loaded")
+        let delegate = PopupDocumentNavigationDelegate {
+            didFinish.fulfill()
+        }
+        webView.navigationDelegate = delegate
+        webView.loadHTMLString("<html><body>popup source</body></html>", baseURL: url)
+        await fulfillment(of: [didFinish], timeout: 5)
+        webView.navigationDelegate = nil
+    }
+
     @discardableResult
     private func bindCommittedPopupDocument(
-        on webView: PopupCommittedURLWebView,
+        on webView: WKWebView,
         tab: Tab,
         committedURL: URL
     ) -> NSObject {
-        webView.reportedCommittedURL = committedURL
+        (webView as? PopupCommittedURLWebView)?.reportedCommittedURL = committedURL
         let intent = tab.beginMainFrameNavigationIntent(to: committedURL)
         XCTAssertTrue(tab.markDeferredMainFrameLoad(on: webView, intent: intent))
         XCTAssertEqual(
@@ -778,5 +920,44 @@ private final class PopupCommittedURLWebView: WKWebView {
             return MainActor.assumeIsolated { reportedCommittedURL }
         }
         return super.value(forKey: key)
+    }
+}
+
+private final class PopupDocumentNavigationDelegate: NSObject, WKNavigationDelegate {
+    private let onFinish: () -> Void
+
+    init(onFinish: @escaping () -> Void) {
+        self.onFinish = onFinish
+    }
+
+    func webView(
+        _: WKWebView,
+        didFinish _: WKNavigation! // swiftlint:disable:this implicitly_unwrapped_optional
+    ) {
+        onFinish()
+    }
+}
+
+@MainActor
+private final class PopupPermissionEvaluatorSpy: PopupPermissionEvaluating {
+    private(set) var requests: [SumiPopupPermissionRequest] = []
+    private(set) var contexts: [SumiPopupPermissionTabContext] = []
+
+    func evaluate(
+        _ request: SumiPopupPermissionRequest,
+        tabContext: SumiPopupPermissionTabContext
+    ) async -> SumiPopupPermissionResult {
+        requests.append(request)
+        contexts.append(tabContext)
+        return SumiPopupPermissionResult(action: .allow)
+    }
+
+    func evaluateSynchronouslyForWebKitFallback(
+        _ request: SumiPopupPermissionRequest,
+        tabContext: SumiPopupPermissionTabContext
+    ) -> SumiPopupPermissionResult {
+        requests.append(request)
+        contexts.append(tabContext)
+        return SumiPopupPermissionResult(action: .allow)
     }
 }

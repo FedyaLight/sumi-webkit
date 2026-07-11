@@ -46,13 +46,19 @@ final class SumiWebPageMenuControllerTests: XCTestCase {
         XCTAssertNil(menu.item(identifier: SumiWebKitMenuItemIdentifier.inspectElement.rawValue))
     }
 
-    func testLinkMenuRemovesCurrentOpenAndSplitsNewTabFromNewWindow() {
+    func testLinkMenuPreservesNativeNewWindowActionAndTarget() {
         let menu = NSMenu()
         let openLink = webKitItem(title: "Open Link", identifier: .openLink)
         openLink.target = self
         openLink.action = #selector(noop(_:))
         menu.addItem(openLink)
-        menu.addItem(webKitItem(title: "Open Link in New Window", identifier: .openLinkInNewWindow))
+        let nativeNewWindow = webKitItem(
+            title: "Open Link in New Window",
+            identifier: .openLinkInNewWindow
+        )
+        nativeNewWindow.target = self
+        nativeNewWindow.action = #selector(noop(_:))
+        menu.addItem(nativeNewWindow)
         menu.addItem(webKitItem(title: "Copy Link", identifier: .copyLink))
         menu.addItem(webKitItem(title: "Reload", identifier: .reload))
 
@@ -60,26 +66,42 @@ final class SumiWebPageMenuControllerTests: XCTestCase {
 
         XCTAssertNil(menu.item(identifier: SumiWebKitMenuItemIdentifier.openLink.rawValue))
         XCTAssertNotNil(menu.item(identifier: SumiWebKitMenuItemIdentifier.reload.rawValue))
-        XCTAssertNil(menu.item(identifier: SumiWebKitMenuItemIdentifier.openLinkInNewWindow.rawValue))
-        XCTAssertNotNil(menu.item(identifier: SumiWebPageMenuCommand.openLinkInNewTab.rawValue)?.image)
-        XCTAssertNotNil(menu.item(identifier: SumiWebPageMenuCommand.openLinkInNewWindow.rawValue)?.image)
+        XCTAssertIdentical(
+            menu.item(identifier: SumiWebKitMenuItemIdentifier.openLinkInNewWindow.rawValue),
+            nativeNewWindow
+        )
+        XCTAssertIdentical(nativeNewWindow.target as AnyObject?, self)
+        XCTAssertEqual(nativeNewWindow.action, #selector(noop(_:)))
         XCTAssertNil(menu.item(identifier: SumiWebPageMenuCommand.back.rawValue))
         XCTAssertNil(menu.item(identifier: SumiWebPageMenuCommand.bookmarkPage.rawValue))
     }
 
     func testSelectedLinkMenuKeepsLinkCommandsAndAddsSelectionFallbacks() {
         let menu = NSMenu()
-        menu.addItem(webKitItem(title: "Open Link in New Window", identifier: .openLinkInNewWindow))
-        menu.addItem(webKitItem(title: "Download Linked File", identifier: .downloadLinkedFile))
+        let nativeNewWindow = webKitItem(
+            title: "Open Link in New Window",
+            identifier: .openLinkInNewWindow
+        )
+        let nativeDownload = webKitItem(
+            title: "Download Linked File",
+            identifier: .downloadLinkedFile
+        )
+        menu.addItem(nativeNewWindow)
+        menu.addItem(nativeDownload)
         menu.addItem(webKitItem(title: "Copy Link", identifier: .copyLink))
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Services", action: nil, keyEquivalent: ""))
 
         prepare(menu, targetHint: .link, selectedText: "Chicken Curry Live")
 
-        XCTAssertNotNil(menu.item(identifier: SumiWebPageMenuCommand.openLinkInNewTab.rawValue))
-        XCTAssertNotNil(menu.item(identifier: SumiWebPageMenuCommand.openLinkInNewWindow.rawValue))
-        XCTAssertNotNil(menu.item(identifier: SumiWebPageMenuCommand.downloadLinkedFile.rawValue))
+        XCTAssertIdentical(
+            menu.item(identifier: SumiWebKitMenuItemIdentifier.openLinkInNewWindow.rawValue),
+            nativeNewWindow
+        )
+        XCTAssertIdentical(
+            menu.item(identifier: SumiWebKitMenuItemIdentifier.downloadLinkedFile.rawValue),
+            nativeDownload
+        )
         XCTAssertNotNil(menu.item(identifier: SumiWebKitMenuItemIdentifier.copyLink.rawValue))
         XCTAssertNotNil(menu.item(identifier: SumiWebPageMenuCommand.copySelection.rawValue))
         XCTAssertNotNil(menu.item(identifier: SumiWebPageMenuCommand.copyLinkToSelectedText.rawValue))
@@ -92,23 +114,33 @@ final class SumiWebPageMenuControllerTests: XCTestCase {
         )
     }
 
-    func testImageMenuUsesSumiDownloadPathAndAddsImageAddressCommand() {
+    func testImageMenuPreservesNativeResourceCommands() {
         let menu = NSMenu()
-        menu.addItem(webKitItem(title: "Open Image in New Window", identifier: .openImageInNewWindow))
-        menu.addItem(webKitItem(title: "Save Image", identifier: .downloadImage))
+        let nativeOpen = webKitItem(
+            title: "Open Image in New Window",
+            identifier: .openImageInNewWindow
+        )
+        let nativeDownload = webKitItem(title: "Save Image", identifier: .downloadImage)
+        nativeOpen.target = self
+        nativeOpen.action = #selector(noop(_:))
+        nativeDownload.target = self
+        nativeDownload.action = #selector(noop(_:))
+        menu.addItem(nativeOpen)
+        menu.addItem(nativeDownload)
         menu.addItem(webKitItem(title: "Copy Image", identifier: .copyImage))
 
         prepare(menu)
 
-        XCTAssertNil(menu.item(identifier: SumiWebKitMenuItemIdentifier.openImageInNewWindow.rawValue))
-        XCTAssertNil(menu.item(identifier: SumiWebKitMenuItemIdentifier.downloadImage.rawValue))
-        XCTAssertNotNil(menu.item(identifier: SumiWebPageMenuCommand.openImageInNewTab.rawValue))
-        XCTAssertNotNil(menu.item(identifier: SumiWebPageMenuCommand.openImageInNewWindow.rawValue))
-        XCTAssertNotNil(menu.item(identifier: SumiWebPageMenuCommand.copyImageAddress.rawValue))
-        XCTAssertEqual(
-            menu.item(identifier: SumiWebPageMenuCommand.downloadImage.rawValue)?.action,
-            #selector(SumiWebPageMenuController.downloadNativeContextResource(_:))
+        XCTAssertIdentical(
+            menu.item(identifier: SumiWebKitMenuItemIdentifier.openImageInNewWindow.rawValue),
+            nativeOpen
         )
+        XCTAssertIdentical(
+            menu.item(identifier: SumiWebKitMenuItemIdentifier.downloadImage.rawValue),
+            nativeDownload
+        )
+        XCTAssertIdentical(nativeOpen.target as AnyObject?, self)
+        XCTAssertIdentical(nativeDownload.target as AnyObject?, self)
         XCTAssertNil(menu.item(identifier: SumiWebPageMenuCommand.back.rawValue))
     }
 
@@ -132,16 +164,12 @@ final class SumiWebPageMenuControllerTests: XCTestCase {
 
         XCTAssertNil(menu.item(identifier: SumiWebKitMenuItemIdentifier.openLink.rawValue))
         XCTAssertNil(menu.item(identifier: SumiWebKitMenuItemIdentifier.downloadLinkedFile.rawValue))
-        XCTAssertNil(menu.item(identifier: SumiWebKitMenuItemIdentifier.openImageInNewWindow.rawValue))
-        XCTAssertNil(menu.item(identifier: SumiWebPageMenuCommand.openImageInNewWindow.rawValue))
+        XCTAssertNotNil(menu.item(identifier: SumiWebKitMenuItemIdentifier.openImageInNewWindow.rawValue))
         XCTAssertNil(menu.item(identifier: SumiWebKitMenuItemIdentifier.lookUp.rawValue))
         XCTAssertNil(menu.item(identifier: SumiWebKitMenuItemIdentifier.shareMenu.rawValue))
-        XCTAssertNotNil(menu.item(identifier: SumiWebPageMenuCommand.openLinkInNewTab.rawValue))
-        XCTAssertNotNil(menu.item(identifier: SumiWebPageMenuCommand.openLinkInNewWindow.rawValue))
+        XCTAssertNotNil(menu.item(identifier: SumiWebKitMenuItemIdentifier.openLinkInNewWindow.rawValue))
         XCTAssertNotNil(menu.item(identifier: SumiWebKitMenuItemIdentifier.copyLink.rawValue))
-        XCTAssertNotNil(menu.item(identifier: SumiWebPageMenuCommand.openImageInNewTab.rawValue))
-        XCTAssertNotNil(menu.item(identifier: SumiWebPageMenuCommand.copyImageAddress.rawValue))
-        XCTAssertNotNil(menu.item(identifier: SumiWebPageMenuCommand.downloadImage.rawValue))
+        XCTAssertNotNil(menu.item(identifier: SumiWebKitMenuItemIdentifier.downloadImage.rawValue))
         XCTAssertNotNil(menu.item(identifier: SumiWebKitMenuItemIdentifier.copyImage.rawValue))
         XCTAssertNil(menu.item(identifier: SumiWebKitMenuItemIdentifier.inspectElement.rawValue))
     }
@@ -188,6 +216,81 @@ final class SumiWebPageMenuControllerTests: XCTestCase {
         XCTAssertEqual(menu.items.count {
             $0.identifier?.rawValue == SumiWebPageMenuCommand.bookmarkPage.rawValue
         }, 1)
+    }
+
+    func testContextMenuSnapshotsRemainScopedToPhysicalWebViewClones() {
+        let tab = Tab(
+            url: URL(string: "https://example.com")!,
+            loadsCachedFaviconOnInit: false
+        )
+        let elementWebView = FocusableWKWebView(
+            frame: .zero,
+            configuration: WKWebViewConfiguration()
+        )
+        let pageWebView = FocusableWKWebView(
+            frame: .zero,
+            configuration: WKWebViewConfiguration()
+        )
+        elementWebView.owningTab = tab
+        pageWebView.owningTab = tab
+        elementWebView.contextMenu.record(
+            SumiWebPageContextMenuTargetSnapshot(
+                kind: .interactiveElement,
+                selectedText: "first clone selection"
+            )
+        )
+        pageWebView.contextMenu.record(
+            SumiWebPageContextMenuTargetSnapshot(kind: .page)
+        )
+
+        let elementMenu = NSMenu()
+        elementMenu.addItem(webKitItem(title: "Reload", identifier: .reload))
+        let pageMenu = NSMenu()
+        pageMenu.addItem(webKitItem(title: "Reload", identifier: .reload))
+
+        SumiWebPageMenuController().prepare(elementMenu, for: elementWebView)
+        SumiWebPageMenuController().prepare(pageMenu, for: pageWebView)
+
+        XCTAssertNil(elementMenu.item(identifier: SumiWebPageMenuCommand.back.rawValue))
+        XCTAssertNil(elementMenu.item(identifier: SumiWebPageMenuCommand.bookmarkPage.rawValue))
+        XCTAssertNotNil(elementMenu.item(identifier: SumiWebPageMenuCommand.copySelection.rawValue))
+        XCTAssertNotNil(elementMenu.item(identifier: SumiWebPageMenuCommand.searchSelection.rawValue))
+
+        XCTAssertNotNil(pageMenu.item(identifier: SumiWebPageMenuCommand.back.rawValue))
+        XCTAssertNotNil(pageMenu.item(identifier: SumiWebPageMenuCommand.bookmarkPage.rawValue))
+        XCTAssertNil(pageMenu.item(identifier: SumiWebPageMenuCommand.copySelection.rawValue))
+        XCTAssertNil(pageMenu.item(identifier: SumiWebPageMenuCommand.searchSelection.rawValue))
+    }
+
+    func testLaterContextSnapshotCannotReplacePreparedNativeActionIdentity() throws {
+        let webView = FocusableWKWebView(
+            frame: .zero,
+            configuration: WKWebViewConfiguration()
+        )
+        webView.contextMenu.record(
+            SumiWebPageContextMenuTargetSnapshot(kind: .image)
+        )
+        let menu = NSMenu()
+        let nativeOpen = webKitItem(
+            title: "Open Image in New Window",
+            identifier: .openImageInNewWindow
+        )
+        nativeOpen.target = self
+        nativeOpen.action = #selector(noop(_:))
+        menu.addItem(nativeOpen)
+        let controller = SumiWebPageMenuController()
+        controller.prepare(menu, for: webView)
+        let preparedItem = try XCTUnwrap(
+            menu.item(identifier: SumiWebKitMenuItemIdentifier.openImageInNewWindow.rawValue)
+        )
+
+        webView.contextMenu.record(
+            SumiWebPageContextMenuTargetSnapshot(kind: .link)
+        )
+
+        XCTAssertIdentical(preparedItem, nativeOpen)
+        XCTAssertIdentical(preparedItem.target as AnyObject?, self)
+        XCTAssertEqual(preparedItem.action, #selector(noop(_:)))
     }
 
     func testExtensionMenuItemsUseInjectedTabRuntimeAndAppendAfterSeparator() {

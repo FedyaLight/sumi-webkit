@@ -19,6 +19,7 @@ final class BrowserExtensionBridgeComposition {
     let webViews: BrowserExtensionWebViewAdapter
     let auxiliaryWindows: BrowserExtensionAuxiliaryWindowAdapter
     let presentation: BrowserExtensionWindowPresentationAdapter
+    let requestedWindows: BrowserExtensionRequestedWindowTransaction
 
     init(browserManager: BrowserManager) {
         let webViewOwnershipQuery = browserManager.webViewRuntime.ownershipQuery
@@ -140,6 +141,9 @@ final class BrowserExtensionBridgeComposition {
             selectTab: { [weak browserManager] tab, windowState in
                 browserManager?.selectTab(tab, in: windowState)
             },
+            placeTab: { tab, windowState in
+                windowState.markWebKitChildWindowAdopted(by: tab.id)
+            },
             promoteTransientTab: { [weak browserManager] tab in
                 guard let tabManager = browserManager?.tabManager,
                       tabManager.transientWebKitTabLifecycleOwner
@@ -254,15 +258,50 @@ final class BrowserExtensionBridgeComposition {
             windowQuery: windows,
             popups: browserManager.auxiliaryWindows.popups,
             extensionWindows: browserManager.auxiliaryWindows.extensionWindows,
-            createWindow: { [weak browserManager] in
-                browserManager?.windowCommands.createNewWindow()
-            },
             urlHubAnchorView: { [weak browserManager] windowID in
                 browserManager?.chromeBundle.commands
                     .urlBarHubPopoverPresenter.anchorView(for: windowID)
             },
             settings: { [weak browserManager] in
                 browserManager?.sumiSettings
+            }
+        )
+        let requestedWindows = BrowserExtensionRequestedWindowTransaction(
+            commands: browserManager.windowCommands,
+            restoration: browserManager.windowSessionBundle.restoreService,
+            extensionPublication: browserManager.windowExtensionPublication,
+            tabs: browserManager.tabManager,
+            webViews: browserManager.webViewRuntime.lifecycleService,
+            ownership: webViewOwnershipQuery,
+            registeredWindow: { [weak browserManager] windowID in
+                browserManager?.windowRegistry?.windows[windowID]
+            },
+            materialize: { [weak browserManager] tab, window in
+                guard let browserManager else { return nil }
+                browserManager.materializeVisibleTabWebViewIfNeeded(
+                    tab,
+                    in: window
+                )
+                return browserManager.webViewRuntime.ownershipQuery.webView(
+                    for: tab.id,
+                    in: window.id
+                ) as? FocusableWKWebView
+            },
+            rollbackRegisteredWindow: { [weak browserManager] window in
+                guard let registry = browserManager?.windowRegistry,
+                      registry.windows[window.id] === window
+                else {
+                    return false
+                }
+                let appKitWindow = registry.appKitWindow(for: window)
+                guard registry.discardRejectedRegistration(window) else {
+                    return false
+                }
+                appKitWindow?.close()
+                return registry.windows[window.id] !== window
+            },
+            persistWindow: { [weak browserManager] window in
+                browserManager?.windowSessionBundle.persistence.persist(window)
             }
         )
 
@@ -274,5 +313,6 @@ final class BrowserExtensionBridgeComposition {
         self.webViews = webViews
         self.auxiliaryWindows = auxiliaryWindows
         self.presentation = presentation
+        self.requestedWindows = requestedWindows
     }
 }

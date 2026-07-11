@@ -181,6 +181,22 @@ final class WebViewRuntimeGraph {
                 self?.processRecoveryService.cancel(webView)
                 self?.compositorRuntime.removeWebViewFromContainers(webView)
             },
+            retireNavigationGeneration: {
+                [weak self] tabID,
+                webViews,
+                preferredWebView in
+                guard let self,
+                      let tab = self.runtimeTabs.resolve(
+                          tabID,
+                          resolveRuntimeTab: self.resolveRuntimeTab
+                      ) else {
+                    return
+                }
+                tab.webViewsDidLeaveNavigationRuntime(
+                    webViews,
+                    preferredAuthorityWebView: preferredWebView
+                )
+            },
             destroy: { [weak self] tabID, webView in
                 guard let self else { return }
                 self.websiteDataCleanupService.webViewDidLeaveRuntime(webView)

@@ -71,9 +71,16 @@ final class WindowMediaTouchBarRestorationService {
         else {
             return
         }
+        let focusTarget = host.activePresentationWebView
+        guard focusTarget.window === window,
+              !focusTarget.isHidden
+        else {
+            return
+        }
 
         resetTouchBar(
             for: webView,
+            restoringFocusTo: focusTarget,
             in: window,
             containerRegistration: registration
         )
@@ -81,18 +88,19 @@ final class WindowMediaTouchBarRestorationService {
 
     private func resetTouchBar(
         for webView: WKWebView,
+        restoringFocusTo focusTarget: NSView,
         in window: NSWindow,
         containerRegistration: WebViewCompositorContainerRegistration
     ) {
         guard mutationGate.owns(containerRegistration) else { return }
-        let wasFirstResponder = window.firstResponder === webView
+        let wasFirstResponder = window.firstResponder === focusTarget
         webView.touchBar = nil
         if wasFirstResponder {
             guard mutationGate.owns(containerRegistration) else { return }
             window.makeFirstResponder(nil)
         }
         guard mutationGate.owns(containerRegistration) else { return }
-        window.makeFirstResponder(webView)
+        window.makeFirstResponder(focusTarget)
         guard mutationGate.owns(containerRegistration) else { return }
         webView.touchBar = nil
     }

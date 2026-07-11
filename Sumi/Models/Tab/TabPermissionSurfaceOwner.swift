@@ -14,8 +14,8 @@ final class TabPermissionSurfaceOwner {
         let tabId: UUID
         let currentURL: @MainActor () -> URL
         let resolveProfile: @MainActor () -> Profile?
-        let isActiveTab: @MainActor () -> Bool
-        let isVisibleTab: @MainActor () -> Bool
+        let profile: @MainActor (WKWebView) -> Profile?
+        let surfaceState: @MainActor (WKWebView) -> TabPermissionSurfaceState
         let pageIdentity: @MainActor () -> TabExtensionPageIdentity
         let documentLease: @MainActor (WKWebView) -> TabMainFrameDocumentLease?
         let isCurrentPage: @MainActor (_ pageId: String, _ pageGeneration: String) -> Bool
@@ -40,7 +40,9 @@ final class TabPermissionSurfaceOwner {
            isActiveGlancePreviewSurface(for: webView) {
             return (true, true)
         }
-        return (context.isActiveTab(), context.isVisibleTab())
+        guard let webView else { return (false, false) }
+        let state = context.surfaceState(webView)
+        return (state.isActive, state.isVisible)
     }
 
     func permissionSurface(for webView: WKWebView?) -> SumiPermissionSecurityContext.Surface {
@@ -65,7 +67,7 @@ final class TabPermissionSurfaceOwner {
     }
 
     func popupContext(for webView: WKWebView) -> SumiPopupPermissionTabContext? {
-        guard let profile = context.resolveProfile(),
+        guard let profile = context.profile(webView),
               let document = exactPermissionDocument(for: webView) else {
             return nil
         }
@@ -73,6 +75,7 @@ final class TabPermissionSurfaceOwner {
         let identity = pageIdentity()
         let committedURL = document.committedURL
         let currentURL = context.currentURL()
+        let surfaceState = surfaceState(for: webView)
         return SumiPopupPermissionTabContext(
             tabId: identity.tabId,
             pageId: identity.pageId,
@@ -82,8 +85,8 @@ final class TabPermissionSurfaceOwner {
             committedURL: committedURL,
             visibleURL: webView.url ?? currentURL,
             mainFrameURL: committedURL,
-            isActiveTab: context.isActiveTab(),
-            isVisibleTab: context.isVisibleTab(),
+            isActiveTab: surfaceState.isActive,
+            isVisibleTab: surfaceState.isVisible,
             navigationOrPageGeneration: identity.pageGeneration,
             isCurrentPage: isCurrentPageClosure(
                 pageId: identity.pageId,
@@ -95,7 +98,7 @@ final class TabPermissionSurfaceOwner {
     }
 
     func externalSchemeContext(for webView: WKWebView) -> SumiExternalSchemePermissionTabContext? {
-        guard let profile = context.resolveProfile(),
+        guard let profile = context.profile(webView),
               let document = exactPermissionDocument(for: webView) else {
             return nil
         }
@@ -103,6 +106,7 @@ final class TabPermissionSurfaceOwner {
         let identity = pageIdentity()
         let committedURL = document.committedURL
         let currentURL = context.currentURL()
+        let surfaceState = surfaceState(for: webView)
         return SumiExternalSchemePermissionTabContext(
             tabId: identity.tabId,
             pageId: identity.pageId,
@@ -112,8 +116,8 @@ final class TabPermissionSurfaceOwner {
             committedURL: committedURL,
             visibleURL: webView.url ?? currentURL,
             mainFrameURL: committedURL,
-            isActiveTab: context.isActiveTab(),
-            isVisibleTab: context.isVisibleTab(),
+            isActiveTab: surfaceState.isActive,
+            isVisibleTab: surfaceState.isVisible,
             navigationOrPageGeneration: identity.pageGeneration,
             isCurrentPage: isCurrentPageClosure(
                 pageId: identity.pageId,
@@ -125,7 +129,7 @@ final class TabPermissionSurfaceOwner {
     }
 
     func geolocationContext(for webView: WKWebView) -> SumiWebKitGeolocationTabContext? {
-        guard let profile = context.resolveProfile(),
+        guard let profile = context.profile(webView),
               let document = exactPermissionDocument(for: webView) else {
             return nil
         }
@@ -156,7 +160,7 @@ final class TabPermissionSurfaceOwner {
     }
 
     func mediaCaptureContext(for webView: WKWebView) -> SumiWebKitMediaCaptureTabContext? {
-        guard let profile = context.resolveProfile(),
+        guard let profile = context.profile(webView),
               let document = exactPermissionDocument(for: webView) else {
             return nil
         }
@@ -187,7 +191,7 @@ final class TabPermissionSurfaceOwner {
     }
 
     func filePickerContext(for webView: WKWebView) -> SumiFilePickerPermissionTabContext? {
-        guard let profile = context.resolveProfile(),
+        guard let profile = context.profile(webView),
               let document = exactPermissionDocument(for: webView) else {
             return nil
         }
@@ -218,7 +222,7 @@ final class TabPermissionSurfaceOwner {
     }
 
     func storageAccessContext(for webView: WKWebView) -> SumiStorageAccessTabContext? {
-        guard let profile = context.resolveProfile(),
+        guard let profile = context.profile(webView),
               let document = exactPermissionDocument(for: webView) else {
             return nil
         }
@@ -350,12 +354,19 @@ extension TabPermissionSurfaceOwner.Context {
             resolveProfile: { [weak tab] in
                 tab?.resolveProfile()
             },
-            isActiveTab: { [weak tab] in
-                tab?.isCurrentTab ?? false
+            profile: { [weak tab] webView in
+                guard let tab else { return nil }
+                return tab.navigationRuntime.permissionRuntime.profile(
+                    tabId,
+                    webView
+                )
             },
-            isVisibleTab: { [weak tab] in
-                // Visible when assigned to a window slot (session/registry).
-                tab?.resolvedAssignedWebView() != nil || tab?.resolvedPrimaryWindowId() != nil
+            surfaceState: { [weak tab] webView in
+                guard let tab else { return .inactive }
+                return tab.navigationRuntime.permissionRuntime.surfaceState(
+                    tabId,
+                    webView
+                )
             },
             pageIdentity: { [weak tab] in
                 tab?.extensionPageRuntimeOwner.pageIdentity(tabId: tabId)

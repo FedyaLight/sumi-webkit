@@ -20,6 +20,8 @@ class SumiNavigationResponderTestCase: XCTestCase {
         httpMethod: String? = nil,
         httpBody: Data? = nil,
         webView: WKWebView? = nil,
+        sourceWebView: WKWebView? = nil,
+        targetWebView: WKWebView? = nil,
         sourceURL: URL? = nil,
         sourceSecurityOrigin: SumiSecurityOrigin? = nil,
         isUserInitiated: Bool = true,
@@ -30,7 +32,7 @@ class SumiNavigationResponderTestCase: XCTestCase {
         mainFrameNavigation: Navigation? = nil,
         modifierFlags: NSEvent.ModifierFlags = []
     ) -> NavigationAction {
-        let webView = webView ?? WKWebView(frame: .zero)
+        let sourceWebView = sourceWebView ?? webView ?? WKWebView(frame: .zero)
         let frameURL = sourceURL ?? url
         let securityOrigin = sourceSecurityOrigin ?? SumiSecurityOrigin(
             protocol: frameURL.scheme ?? "",
@@ -38,13 +40,13 @@ class SumiNavigationResponderTestCase: XCTestCase {
             port: frameURL.port ?? 0
         )
         let frame = securityOrigin.navigationFrameInfo(
-            webView: webView,
+            webView: sourceWebView,
             handle: FrameHandle(rawValue: UInt64(1))!,
             isMainFrame: isMainFrame,
             url: frameURL
         )
         let targetFrame = isTargetingNewWindow ? nil : securityOrigin.navigationFrameInfo(
-            webView: webView,
+            webView: targetWebView ?? webView ?? sourceWebView,
             handle: FrameHandle(rawValue: UInt64(2))!,
             isMainFrame: targetFrameIsMainFrame ?? isMainFrame,
             url: frameURL
@@ -205,6 +207,7 @@ class SumiNavigationResponderTestCase: XCTestCase {
             tabContextProvider: { _ in navigationExternalTabContext() }
         )
         let adapter = SumiNavigationResponderAdapter(target: responder)
+        tab.webViewSession.replaceUntracked(with: webView)
         let navigation = mainFrameNavigation(receiving: navigationAction(
             url: URL(string: "https://request.example/page")!,
             navigationType: .linkActivated(isMiddleClick: false),
@@ -337,6 +340,23 @@ extension NavigationPreferences {
 @MainActor
 final class SumiNavigationClosingTrackingWebView: WKWebView {
     private(set) var closeScriptEvaluations = 0
+    var reportedCommittedURL: URL?
+
+    override func responds(to aSelector: ObjectiveC.Selector?) -> Bool {
+        guard let aSelector else { return false }
+        let selectorName = NSStringFromSelector(aSelector)
+        if selectorName == "committedURL" || selectorName == "_committedURL" {
+            return true
+        }
+        return super.responds(to: aSelector)
+    }
+
+    override func value(forKey key: String) -> Any? {
+        if key == "committedURL" {
+            return MainActor.assumeIsolated { reportedCommittedURL }
+        }
+        return super.value(forKey: key)
+    }
 
     override func evaluateJavaScript(
         _ javaScriptString: String,
@@ -365,6 +385,7 @@ final class RecordingTabLifecycleNavigationRuntime {
     var authDisposition: SumiAuthChallengeDisposition? = .next
     var isPreparingForDestructiveCleanup = false
     private(set) var resetRevisitProtectionTabIds: [UUID] = []
+    private(set) var documentSuspensionReconcileTabIds: [UUID] = []
     private(set) var preparedExtensionWebViewIds: [ObjectIdentifier] = []
     private(set) var preparedExtensionURLs: [URL] = []
     private(set) var preparedExtensionReasons: [String] = []
@@ -384,6 +405,9 @@ final class RecordingTabLifecycleNavigationRuntime {
         TabLifecycleNavigationRuntime(
             resetRevisitProtection: { [weak self] tab in
                 self?.resetRevisitProtectionTabIds.append(tab.id)
+            },
+            reconcileDocumentSuspensionState: { [weak self] tab in
+                self?.documentSuspensionReconcileTabIds.append(tab.id)
             },
             prepareExtensionWebView: { [weak self] webView, url, reason in
                 self?.preparedExtensionWebViewIds.append(ObjectIdentifier(webView))
@@ -1087,6 +1111,83 @@ actor NavigationExternalSchemeFakeCoordinator: SumiPermissionCoordinating {
     }
 }
 
+actor NavigationExternalSchemeControlledCoordinator: SumiPermissionCoordinating {
+    private let decision: SumiPermissionCoordinatorDecision
+    private var queryHasStarted = false
+    private var isReleased = false
+    private var queryStartWaiters: [CheckedContinuation<Void, Never>] = []
+    private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
+
+    init(decision: SumiPermissionCoordinatorDecision) {
+        self.decision = decision
+    }
+
+    func waitForQuery() async {
+        guard !queryHasStarted else { return }
+        await withCheckedContinuation { continuation in
+            queryStartWaiters.append(continuation)
+        }
+    }
+
+    func releaseQuery() {
+        isReleased = true
+        let waiters = releaseWaiters
+        releaseWaiters.removeAll()
+        waiters.forEach { $0.resume() }
+    }
+
+    func requestPermission(_: SumiPermissionSecurityContext) async -> SumiPermissionCoordinatorDecision {
+        decision
+    }
+
+    func queryPermissionState(_: SumiPermissionSecurityContext) async -> SumiPermissionCoordinatorDecision {
+        queryHasStarted = true
+        let startWaiters = queryStartWaiters
+        queryStartWaiters.removeAll()
+        startWaiters.forEach { $0.resume() }
+        if !isReleased {
+            await withCheckedContinuation { continuation in
+                releaseWaiters.append(continuation)
+            }
+        }
+        return decision
+    }
+
+    func activeQuery(forPageId _: String) -> SumiPermissionAuthorizationQuery? {
+        nil
+    }
+
+    func stateSnapshot() -> SumiPermissionCoordinatorState {
+        SumiPermissionCoordinatorState()
+    }
+
+    func events() -> AsyncStream<SumiPermissionCoordinatorEvent> {
+        AsyncStream { continuation in
+            continuation.finish()
+        }
+    }
+
+    @discardableResult
+    func cancel(requestId _: String, reason: String) -> SumiPermissionCoordinatorDecision {
+        navigationExternalCoordinatorDecision(.cancelled, reason: reason)
+    }
+
+    @discardableResult
+    func cancel(pageId _: String, reason: String) -> SumiPermissionCoordinatorDecision {
+        navigationExternalCoordinatorDecision(.cancelled, reason: reason)
+    }
+
+    @discardableResult
+    func cancelNavigation(pageId _: String, reason: String) -> SumiPermissionCoordinatorDecision {
+        navigationExternalCoordinatorDecision(.cancelled, reason: reason)
+    }
+
+    @discardableResult
+    func cancelTab(tabId _: String, reason: String) -> SumiPermissionCoordinatorDecision {
+        navigationExternalCoordinatorDecision(.cancelled, reason: reason)
+    }
+}
+
 actor NavigationExternalSchemeRecordingCoordinator: SumiPermissionCoordinating {
     private var contexts: [SumiPermissionSecurityContext] = []
 
@@ -1139,7 +1240,9 @@ actor NavigationExternalSchemeRecordingCoordinator: SumiPermissionCoordinating {
     }
 }
 
-func navigationExternalTabContext() -> SumiExternalSchemePermissionTabContext {
+func navigationExternalTabContext(
+    isCurrentPage: @escaping @MainActor @Sendable () -> Bool = { true }
+) -> SumiExternalSchemePermissionTabContext {
     SumiExternalSchemePermissionTabContext(
         tabId: "tab-a",
         pageId: "tab-a:1",
@@ -1151,7 +1254,8 @@ func navigationExternalTabContext() -> SumiExternalSchemePermissionTabContext {
         mainFrameURL: URL(string: "https://top.example"),
         isActiveTab: true,
         isVisibleTab: true,
-        navigationOrPageGeneration: "1"
+        navigationOrPageGeneration: "1",
+        isCurrentPage: isCurrentPage
     )
 }
 

@@ -11,12 +11,27 @@ final class GlanceManagerTests: XCTestCase {
     func testSameURLPresentationIsNoOp() throws {
         let browserManager = makeBrowserManager()
         let sourceTab = makeSourceTab(in: browserManager)
+        let (_, sourceWindow) = makeRegisteredWindow(
+            in: browserManager,
+            selecting: sourceTab
+        )
         let url = URL(string: "https://destination.example/page")!
+        let origin = CGRect(x: 10, y: 20, width: 30, height: 40)
 
-        browserManager.glanceManager.presentExternalURL(url, from: sourceTab)
+        browserManager.glanceManager.presentExternalURL(
+            url,
+            from: sourceTab,
+            in: sourceWindow,
+            originRectInWindow: origin
+        )
         let session = try XCTUnwrap(browserManager.glanceManager.currentSession)
 
-        browserManager.glanceManager.presentExternalURL(url, from: sourceTab)
+        browserManager.glanceManager.presentExternalURL(
+            url,
+            from: sourceTab,
+            in: sourceWindow,
+            originRectInWindow: origin
+        )
 
         XCTAssertIdentical(browserManager.glanceManager.currentSession, session)
         XCTAssertEqual(browserManager.glanceManager.phase, .opening)
@@ -40,6 +55,130 @@ final class GlanceManagerTests: XCTestCase {
         XCTAssertNotEqual(secondSession.id, firstSession.id)
         XCTAssertEqual(secondSession.currentURL, secondURL)
         XCTAssertNil(firstPreviewTab.resolvedCurrentWebView())
+    }
+
+    func testExactWindowPresentationMovesSameURLBetweenPhysicalTabPresentations() throws {
+        let browserManager = makeBrowserManager()
+        let sourceTab = makeSourceTab(in: browserManager)
+        let (windowRegistry, firstWindow) = makeRegisteredWindow(
+            in: browserManager,
+            selecting: sourceTab
+        )
+        let secondWindow = BrowserWindowState()
+        secondWindow.tabManager = browserManager.tabManager
+        secondWindow.currentSpaceId = sourceTab.spaceId
+        secondWindow.currentTabId = sourceTab.id
+        windowRegistry.register(secondWindow)
+        let url = try XCTUnwrap(
+            URL(string: "https://destination.example/same-url")
+        )
+
+        browserManager.glanceManager.presentExternalURL(
+            url,
+            from: sourceTab,
+            in: firstWindow
+        )
+        let firstSession = try XCTUnwrap(
+            browserManager.glanceManager.currentSession
+        )
+        XCTAssertEqual(firstSession.windowId, firstWindow.id)
+
+        browserManager.glanceManager.presentExternalURL(
+            url,
+            from: sourceTab,
+            in: secondWindow
+        )
+
+        let secondSession = try XCTUnwrap(
+            browserManager.glanceManager.currentSession
+        )
+        XCTAssertNotEqual(secondSession.id, firstSession.id)
+        XCTAssertEqual(secondSession.currentURL, url)
+        XCTAssertEqual(secondSession.windowId, secondWindow.id)
+    }
+
+    func testExactWindowPresentationReanchorsSameURLToNewSourceTab() throws {
+        let browserManager = makeBrowserManager()
+        let firstSourceTab = makeSourceTab(in: browserManager)
+        let secondSourceTab = browserManager.tabManager.regularTabLifecycleOwner
+            .createNewTab(
+                url: "https://second-source.example/page",
+                in: browserManager.tabManager.spaceStateOwner.currentSpace,
+                activate: false
+            )
+        let (_, windowState) = makeRegisteredWindow(
+            in: browserManager,
+            selecting: firstSourceTab
+        )
+        let url = try XCTUnwrap(
+            URL(string: "https://destination.example/same-url")
+        )
+        let origin = CGRect(x: 1, y: 2, width: 30, height: 40)
+
+        browserManager.glanceManager.presentExternalURL(
+            url,
+            from: firstSourceTab,
+            in: windowState,
+            originRectInWindow: origin
+        )
+        let firstSession = try XCTUnwrap(
+            browserManager.glanceManager.currentSession
+        )
+        windowState.currentTabId = secondSourceTab.id
+
+        browserManager.glanceManager.presentExternalURL(
+            url,
+            from: secondSourceTab,
+            in: windowState,
+            originRectInWindow: origin
+        )
+
+        let secondSession = try XCTUnwrap(
+            browserManager.glanceManager.currentSession
+        )
+        XCTAssertNotEqual(secondSession.id, firstSession.id)
+        XCTAssertIdentical(secondSession.sourceTab, secondSourceTab)
+        XCTAssertIdentical(
+            browserManager.glanceManager.presentedSession(for: windowState),
+            secondSession
+        )
+    }
+
+    func testExactWindowPresentationReanchorsSameURLWhenOriginChanges() throws {
+        let browserManager = makeBrowserManager()
+        let sourceTab = makeSourceTab(in: browserManager)
+        let (_, windowState) = makeRegisteredWindow(
+            in: browserManager,
+            selecting: sourceTab
+        )
+        let url = try XCTUnwrap(
+            URL(string: "https://destination.example/same-url")
+        )
+        let firstOrigin = CGRect(x: 1, y: 2, width: 30, height: 40)
+        let secondOrigin = CGRect(x: 50, y: 60, width: 70, height: 80)
+
+        browserManager.glanceManager.presentExternalURL(
+            url,
+            from: sourceTab,
+            in: windowState,
+            originRectInWindow: firstOrigin
+        )
+        let firstSession = try XCTUnwrap(
+            browserManager.glanceManager.currentSession
+        )
+
+        browserManager.glanceManager.presentExternalURL(
+            url,
+            from: sourceTab,
+            in: windowState,
+            originRectInWindow: secondOrigin
+        )
+
+        let secondSession = try XCTUnwrap(
+            browserManager.glanceManager.currentSession
+        )
+        XCTAssertNotEqual(secondSession.id, firstSession.id)
+        XCTAssertEqual(secondSession.originRectInWindow, secondOrigin)
     }
 
     func testPresentationWithoutSourceUsesActiveWindowSpaceInsteadOfGlobalCurrentSpace() throws {
@@ -463,7 +602,10 @@ final class GlanceManagerTests: XCTestCase {
             manager: browserManager.glanceManager
         )
 
-        XCTAssertFalse(previewTab.isCurrentTab)
+        XCTAssertNotEqual(
+            windowRegistry.activeWindow?.currentTabId,
+            previewTab.id
+        )
         XCTAssertNil(previewTab.resolvedPrimaryWindowId())
         XCTAssertTrue(previewTab.permissionRequestIsActiveSurface(for: webView))
         XCTAssertTrue(previewTab.permissionRequestIsVisibleSurface(for: webView))

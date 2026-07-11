@@ -9,6 +9,7 @@ final class SafariExtensionActionPopupAnchorTests: XCTestCase {
     func testAnchorModelCapturesExtensionProfileWindowSessionAndWeakButton() throws {
         let profileId = try uuid("11111111-2222-3333-4444-555555555555")
         let windowId = try uuid("AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEE1")
+        let tabId = try uuid("AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEE2")
         let sessionToken = try uuid("AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEE0001")
         let buttonView = NSView(frame: NSRect(x: 10, y: 20, width: 30, height: 40))
 
@@ -16,6 +17,7 @@ final class SafariExtensionActionPopupAnchorTests: XCTestCase {
             extensionID: "tracked-extension",
             profileID: profileId,
             windowID: windowId,
+            tabID: tabId,
             sessionToken: sessionToken,
             capturedAt: Date(timeIntervalSince1970: 1_000),
             buttonView: buttonView,
@@ -25,6 +27,7 @@ final class SafariExtensionActionPopupAnchorTests: XCTestCase {
         XCTAssertEqual(anchor.extensionID, "tracked-extension")
         XCTAssertEqual(anchor.profileID, profileId)
         XCTAssertEqual(anchor.windowID, windowId)
+        XCTAssertEqual(anchor.tabID, tabId)
         XCTAssertEqual(anchor.sessionToken, sessionToken)
         XCTAssertIdentical(anchor.buttonView, buttonView)
         XCTAssertEqual(

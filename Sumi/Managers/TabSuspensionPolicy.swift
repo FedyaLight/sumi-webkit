@@ -86,6 +86,7 @@ enum TabSuspensionEligibility: Equatable {
         case popupHost
         case noPrimaryWebView
         case compositorProtected
+        case documentEvidencePending
     }
 
     var isEligible: Bool {

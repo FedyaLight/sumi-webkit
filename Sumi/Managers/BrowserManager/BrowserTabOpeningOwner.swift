@@ -139,6 +139,7 @@ final class BrowserTabOpeningOwner {
             in: targetSpace,
             activate: false
         )
+        windowState.markWebKitChildWindowAdopted(by: newTab.id)
 
         DispatchQueue.main.asyncAfter(deadline: .now() + SidebarDropMotion.contentLayoutDuration) { [weak self, weak newTab] in
             guard let self,
@@ -177,6 +178,7 @@ final class BrowserTabOpeningOwner {
                 in: resolvedWindowState,
                 profile: profile
             )
+            resolvedWindowState.markWebKitChildWindowAdopted(by: newTab.id)
 
             switch context.activationPolicy {
             case .foreground(let windowState, let loadPolicy):
@@ -207,6 +209,7 @@ final class BrowserTabOpeningOwner {
             activate: false,
             regularInsertionIndex: regularInsertionIndex
         )
+        resolvedWindowState?.markWebKitChildWindowAdopted(by: newTab.id)
 
         switch context.activationPolicy {
         case .foreground(let windowState, let loadPolicy):
@@ -272,6 +275,7 @@ final class BrowserTabOpeningOwner {
                 in: sourceWindowState,
                 profile: profile
             )
+            sourceWindowState.markWebKitChildWindowAdopted(by: popupTab.id)
             popupTab.isPopupHost = true
             if let webViewConfigurationOverride {
                 popupTab.applyWebViewConfigurationOverride(webViewConfigurationOverride)
@@ -295,12 +299,14 @@ final class BrowserTabOpeningOwner {
             openedFrom: sourceTab,
             in: targetSpace
         )
-        return tabManager.regularTabLifecycleOwner.createPopupTab(
+        let popupTab = tabManager.regularTabLifecycleOwner.createPopupTab(
             in: targetSpace,
             activate: activate,
             webViewConfigurationOverride: webViewConfigurationOverride,
             regularInsertionIndex: insertionIndex
         )
+        sourceWindowState?.markWebKitChildWindowAdopted(by: popupTab.id)
+        return popupTab
     }
 
     func resolvedTabOpenSpace(for context: BrowserTabOpenContext) -> Space? {

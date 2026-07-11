@@ -51,7 +51,8 @@ final class BrowserAppOrchestrationOwnerTests: XCTestCase {
 
         harness.owner.setupIfNeeded(dependencies: harness.dependencies)
 
-        XCTAssertNotNil(harness.windowRegistry.onWindowRegister)
+        XCTAssertNotNil(harness.windowRegistry.prepareWindowRegistration)
+        XCTAssertNotNil(harness.windowRegistry.publishWindowRegistration)
         XCTAssertNotNil(harness.windowRegistry.onWindowClose)
         XCTAssertNotNil(harness.windowRegistry.onActiveWindowChange)
         XCTAssertNotNil(harness.windowRegistry.onWindowVisibilityChange)
@@ -94,6 +95,8 @@ final class BrowserAppOrchestrationOwnerTests: XCTestCase {
         weak let releasedBrowserManager = browserManager
         weak var releasedRestorationService: BrowserWindowSessionRestorationService?
         weak var releasedActivationService: BrowserWindowActivationService?
+        weak var releasedWindowExtensionPublication:
+            WindowExtensionPublicationTransaction?
         weak var releasedTabManager: TabManager?
         weak var releasedProfileManager: ProfileManager?
 
@@ -103,6 +106,8 @@ final class BrowserAppOrchestrationOwnerTests: XCTestCase {
             releasedProfileManager = browserManager.profileManager
             releasedRestorationService = browserManager.windowSessionBundle.restoration
             releasedActivationService = browserManager.windowSessionBundle.activation
+            releasedWindowExtensionPublication =
+                browserManager.windowExtensionPublication
             let contentFactory: BrowserWindowShellService.ContentViewFactory = { [weak browserManager] _, _ in
                 guard browserManager != nil else { return NSView() }
                 return NSView()
@@ -129,12 +134,14 @@ final class BrowserAppOrchestrationOwnerTests: XCTestCase {
             releasedBrowserManager == nil
                 && releasedRestorationService == nil
                 && releasedActivationService == nil
+                && releasedWindowExtensionPublication == nil
                 && releasedTabManager == nil
                 && releasedProfileManager == nil
         }
         XCTAssertNil(releasedBrowserManager)
         XCTAssertNil(releasedRestorationService)
         XCTAssertNil(releasedActivationService)
+        XCTAssertNil(releasedWindowExtensionPublication)
         XCTAssertNil(releasedTabManager)
         XCTAssertNil(releasedProfileManager)
         XCTAssertNotNil(appDelegate.terminationCoordinator)

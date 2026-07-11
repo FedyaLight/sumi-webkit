@@ -52,6 +52,7 @@ final class TabOwnedWebViewPreparationOwner {
     }
 
     func prepareReusedOrExternallyCreatedWebView(_ webView: WKWebView) {
+        bindPhysicalTab(to: webView)
         dependencies.visitedLinkStore()?.enableVisitedLinkRecording(on: webView)
         applyOwnedTabWebViewNavigationSetup(to: webView)
         installRuntimeObservers(on: webView)
@@ -59,6 +60,7 @@ final class TabOwnedWebViewPreparationOwner {
     }
 
     func prepareAssignedWebView(_ webView: WKWebView) {
+        bindPhysicalTab(to: webView)
         dependencies.installNavigationDelegate(webView)
         installRuntimeObservers(on: webView)
     }
@@ -88,8 +90,12 @@ final class TabOwnedWebViewPreparationOwner {
 
     private func applyOwnedTabWebViewOwnershipBaseline(to webView: FocusableWKWebView) {
         webView.sumiSetDrawsBackground(true)
-        webView.owningTab = dependencies.tab()
+        bindPhysicalTab(to: webView)
         SumiUserAgent.apply(to: webView)
+    }
+
+    private func bindPhysicalTab(to webView: WKWebView) {
+        (webView as? FocusableWKWebView)?.owningTab = dependencies.tab()
     }
 
     private func installFaviconRuntimeIfAvailable(on webView: WKWebView) {

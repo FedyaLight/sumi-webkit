@@ -212,6 +212,7 @@ final class ExtensionManager: NSObject, ObservableObject {
     lazy var pageNavigationPreparationOwner =
         ExtensionPageNavigationPreparationOwner()
     lazy var browserRuntimeBridgeOwner = ExtensionBrowserRuntimeBridgeOwner(
+        manager: self,
         dependencies: .live(manager: self)
     )
     lazy var runtimeLifecycleOwner = ExtensionRuntimeLifecycleOwner(
@@ -303,6 +304,8 @@ final class ExtensionManager: NSObject, ObservableObject {
     weak var extensionWebViewHosting: (any ExtensionTabWebViewHosting)?
     weak var extensionAuxiliaryWindows: (any ExtensionAuxiliaryWindowControl)?
     weak var extensionWindowPresentation: (any ExtensionWindowPresentation)?
+    weak var extensionRequestedWindowCreation:
+        (any ExtensionRequestedWindowCreating)?
     var runtime = ExtensionManagerRuntime.inactive
     let runtimeSession = ExtensionRuntimeSession()
     let webExtensionStorageCleanupPlanner: WebExtensionStorageCleanupPlanner
@@ -497,6 +500,7 @@ final class ExtensionManager: NSObject, ObservableObject {
             var didOpenTab: ((UUID) -> Void)?
             var didDeferOpenTab: ((UUID, String) -> Void)?
             var didCloseTab: ((UUID) -> Void)?
+            var didFocusWindow: ((UUID) -> Void)?
             var didActivateTab: ((UUID) -> Void)?
             var didChangeTabProperties:
                 ((UUID, WKWebExtension.TabChangedProperties) -> Void)?

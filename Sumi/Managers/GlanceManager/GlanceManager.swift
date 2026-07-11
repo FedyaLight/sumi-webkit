@@ -36,27 +36,72 @@ final class GlanceManager: ObservableObject {
         self.runtime = runtime
     }
 
+    @discardableResult
     func presentExternalURL(
         _ url: URL,
         from tab: Tab?,
         originRectInWindow: CGRect? = nil
-    ) {
-        guard let runtime else { return }
-
-        if currentSession?.currentURL == url {
-            return
-        }
+    ) -> Bool {
+        guard let runtime else { return false }
 
         let windowState = tab.flatMap { runtime.windowStateContainingTab($0) } ?? windowRegistry?.activeWindow
-        let windowId = windowState?.id ?? UUID()
-        beginSession(
+        return presentExternalURL(
+            url,
+            from: tab,
+            resolvedWindowState: windowState,
+            fallbackWindowId: windowState?.id ?? UUID(),
+            originRectInWindow: originRectInWindow
+        )
+    }
+
+    /// Presents from an exact browser-window witness. Browser content commands
+    /// use this overload so a Tab shown in multiple windows cannot fall back to
+    /// an arbitrary logical-Tab lookup.
+    @discardableResult
+    func presentExternalURL(
+        _ url: URL,
+        from tab: Tab,
+        in sourceWindow: BrowserWindowState,
+        originRectInWindow: CGRect? = nil
+    ) -> Bool {
+        guard runtime != nil else { return false }
+        return presentExternalURL(
+            url,
+            from: tab,
+            resolvedWindowState: sourceWindow,
+            fallbackWindowId: sourceWindow.id,
+            originRectInWindow: originRectInWindow
+        )
+    }
+
+    private func presentExternalURL(
+        _ url: URL,
+        from tab: Tab?,
+        resolvedWindowState windowState: BrowserWindowState?,
+        fallbackWindowId: UUID,
+        originRectInWindow: CGRect?
+    ) -> Bool {
+        guard runtime != nil else { return false }
+
+        let resolvedOriginRect = originRectInWindow
+            ?? GlanceManager.fallbackOriginRect(
+                in: windowState.flatMap { windowRegistry?.appKitWindow(for: $0) }
+            )
+
+        if let currentSession,
+           currentSession.currentURL == url,
+           currentSession.windowId == fallbackWindowId,
+           currentSession.sourceTab?.id == tab?.id,
+           currentSession.originRectInWindow == resolvedOriginRect {
+            return true
+        }
+
+        return beginSession(
             url,
             sourceTab: tab,
             windowState: windowState,
-            fallbackWindowId: windowId,
-            originRectInWindow: originRectInWindow
-                ?? tab?.glanceOriginRectInWindow()
-                ?? GlanceManager.fallbackOriginRect(in: windowState.flatMap { windowRegistry?.appKitWindow(for: $0) }),
+            fallbackWindowId: fallbackWindowId,
+            originRectInWindow: resolvedOriginRect,
             persistsWindowSession: true
         )
     }
@@ -327,6 +372,7 @@ final class GlanceManager: ObservableObject {
         }
     }
 
+    @discardableResult
     private func beginSession(
         _ url: URL,
         sourceTab tab: Tab?,
@@ -335,15 +381,15 @@ final class GlanceManager: ObservableObject {
         originRectInWindow originRect: CGRect,
         initialTitle: String? = nil,
         persistsWindowSession: Bool
-    ) {
-        guard let runtime else { return }
+    ) -> Bool {
+        guard let runtime else { return false }
         promotionCompletionOwner.cancel()
         if currentSession != nil {
             finishCurrentSession(preservesPreviewWebView: false, persistsWindowSession: false)
         }
 
         guard let previewTab = runtime.makePreviewTab(url, tab, windowState) else {
-            return
+            return false
         }
         let windowId = windowState?.id ?? fallbackWindowId
         let session = GlanceSession(
@@ -374,6 +420,7 @@ final class GlanceManager: ObservableObject {
             session.observe(webView)
             self.currentSession = session
         }
+        return true
     }
 
     private func persistWindowSession(for windowId: UUID) {

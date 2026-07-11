@@ -42,6 +42,7 @@ protocol ExtensionTabCreation: AnyObject {
         targetSpace: Space?
     )
     func selectExtensionTab(_ tab: Tab, in windowState: BrowserWindowState)
+    func placeExtensionTab(_ tab: Tab, in windowState: BrowserWindowState)
 }
 
 @available(macOS 15.5, *)
@@ -81,8 +82,11 @@ protocol ExtensionWindowQuery: AnyObject {
     func extensionWindowState(forAppKitWindow window: NSWindow) -> BrowserWindowState?
     func appKitWindow(for windowState: BrowserWindowState) -> NSWindow?
     func currentExtensionTab(in windowState: BrowserWindowState) -> Tab?
+    func extensionTab(
+        withID tabID: UUID,
+        in windowState: BrowserWindowState
+    ) -> Tab?
     func currentExtensionTabForActiveWindow() -> Tab?
-    func currentExtensionTabForPopup() -> Tab?
     func tabsForExtensionWindow(_ windowState: BrowserWindowState) -> [Tab]
     func preferredExtensionWindowState(containing tab: Tab) -> BrowserWindowState?
 }
@@ -129,13 +133,13 @@ protocol ExtensionAuxiliaryWindowControl: AnyObject {
 @available(macOS 15.5, *)
 @MainActor
 protocol ExtensionWindowPresentation: AnyObject {
-    func createExtensionWindow()
-    func awaitNextExtensionWindow(excluding existingWindowIDs: Set<UUID>) async -> BrowserWindowState?
     func presentExtensionExternalWebPopup(
         configuration: WKWebViewConfiguration,
         request: URLRequest?,
         windowFeatures: WKWindowFeatures,
         openerTab: Tab,
+        openerWindow: NSWindow,
+        openerProfileID: UUID,
         shouldActivateApp: Bool,
         extensionOwnedSourceURL: URL?,
         ownerExtensionID: String?
@@ -199,17 +203,19 @@ enum ExtensionBridgeCallbackSupport {
 final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
     let windowId: UUID
 
+    private weak var exactWindowState: BrowserWindowState?
     private weak var windowQuery: (any ExtensionWindowQuery)?
     private weak var windowActivation: (any ExtensionWindowActivation)?
     private weak var extensionManager: ExtensionManager?
 
     init(
-        windowId: UUID,
+        windowState: BrowserWindowState,
         windowQuery: any ExtensionWindowQuery,
         windowActivation: any ExtensionWindowActivation,
         extensionManager: ExtensionManager
     ) {
-        self.windowId = windowId
+        self.windowId = windowState.id
+        self.exactWindowState = windowState
         self.windowQuery = windowQuery
         self.windowActivation = windowActivation
         self.extensionManager = extensionManager
@@ -217,20 +223,39 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
     }
 
     private var windowState: BrowserWindowState? {
-        windowQuery?.extensionWindowState(for: windowId)
+        guard let exactWindowState,
+              windowQuery?.extensionWindowState(for: windowId)
+                === exactWindowState
+        else {
+            return nil
+        }
+        return exactWindowState
     }
 
-    private func profileMatchedWindowState(
+    private func publishedWindowState(
         for extensionContext: WKWebExtensionContext
     ) -> BrowserWindowState? {
         guard let extensionManager,
               let windowState,
               let contextProfileId = extensionManager.profileId(for: extensionContext),
-              extensionManager.windowMatchesProfile(windowState, profileId: contextProfileId)
+              extensionManager.windowMatchesProfile(
+                windowState,
+                profileId: contextProfileId
+              ),
+              extensionManager.browserRuntimeBridgeOwner
+                .publishedWindowAdapter(
+                    for: windowState,
+                    profileID: contextProfileId
+                ) === self
         else {
             return nil
         }
         return windowState
+    }
+
+    func represents(_ windowState: BrowserWindowState) -> Bool {
+        exactWindowState === windowState
+            && self.windowState === windowState
     }
 
     override func isEqual(_ object: Any?) -> Bool {
@@ -246,9 +271,8 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
         guard
             let windowQuery,
             let extensionManager,
-            let windowState,
+            let windowState = publishedWindowState(for: extensionContext),
             let contextProfileId = extensionManager.profileId(for: extensionContext),
-            extensionManager.windowMatchesProfile(windowState, profileId: contextProfileId),
             let tab = windowQuery.currentExtensionTab(in: windowState),
             extensionManager.resolvedProfileId(for: tab) == contextProfileId,
             extensionManager.isTabEligibleForCurrentExtensionRuntime(tab)
@@ -273,9 +297,12 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
     func tabs(for extensionContext: WKWebExtensionContext) -> [any WKWebExtensionTab] {
         guard let windowQuery,
               let extensionManager,
-              let windowState,
+              let windowState = publishedWindowState(for: extensionContext),
               let contextProfileId = extensionManager.profileId(for: extensionContext),
-              extensionManager.windowMatchesProfile(windowState, profileId: contextProfileId)
+              extensionManager.windowMatchesProfile(
+                windowState,
+                profileId: contextProfileId
+              )
         else { return [] }
 
         return windowQuery.tabsForExtensionWindow(windowState).filter {
@@ -298,7 +325,7 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
         for extensionContext: WKWebExtensionContext,
         completionHandler: @escaping (Error?) -> Void
     ) {
-        guard let windowState = profileMatchedWindowState(for: extensionContext) else {
+        guard let windowState = publishedWindowState(for: extensionContext) else {
             ExtensionBridgeCallbackSupport.complete(
                 completionHandler,
                 api: .windowAdapterCompletion,
@@ -316,7 +343,7 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
     }
 
     func isPrivate(for extensionContext: WKWebExtensionContext) -> Bool {
-        profileMatchedWindowState(for: extensionContext)?.isIncognito ?? false
+        publishedWindowState(for: extensionContext)?.isIncognito ?? false
     }
 
     func windowType(for _: WKWebExtensionContext) -> WKWebExtension.WindowType {
@@ -411,7 +438,9 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
     }
 
     private func appKitWindow(for extensionContext: WKWebExtensionContext) -> NSWindow? {
-        guard let windowState = profileMatchedWindowState(for: extensionContext) else { return nil }
+        guard let windowState = publishedWindowState(for: extensionContext) else {
+            return nil
+        }
         return appKitWindow(for: windowState)
     }
 

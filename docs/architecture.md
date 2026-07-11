@@ -157,6 +157,57 @@ retry from silently becoming navigation authority by mutating only one store.
 The ownership guard rejects production construction of those components
 outside the aggregate and rejects direct component storage on `Tab`.
 
+Pointer, gesture, and short-lived permission evidence belong to the physical
+`FocusableWKWebView`, not to the logical `Tab`. Each view keeps separate value
+snapshots for modifiers and Glance origin, hovered-link observations,
+context-menu target state, and popup user activation; no `NSEvent` or
+cross-view callback is retained by `Tab`. Script handlers route through the
+exact `WKScriptMessage.webView`, navigation and permission delegates consume
+the exact source view, and missing physical identity fails closed for
+activation-sensitive operations. A window hover session subscribes only to
+its currently displayed physical hosts, supports independent split-pane
+sources, and revalidates the compositor lease before delivery. Consequently a
+clone in another window cannot contribute modifiers, hover URLs, menu targets,
+or user activation to its sibling.
+
+Link and Glance presentation commands also start from the exact
+`FocusableWKWebView`. `TabLinkPresentationCommands` validates that view against
+the canonical tracked `(tabID, windowID)` residence and resolves that specific
+window before opening anything; it never asks which arbitrary window contains
+the logical `Tab`. New-tab and new-window dispositions both retain their
+selection flag, while an untracked or mismatched physical source fails closed.
+Glance receives the resolved window explicitly, so the same logical tab shown
+in two windows presents over the window where the gesture occurred. Physical
+gesture state is consumed only after the command reports that this exact route
+was accepted; failure continues normal WebKit event delivery and never invokes
+logical-Tab activation as a fallback. When Glance requires source selection,
+that selection is applied to the already-resolved physical window before the
+overlay is presented.
+
+Popup navigation is composed from explicit capabilities rather than a
+per-Tab closure bag. Permission evaluation, extension-request consumption,
+external extension Tab opening, auxiliary Web popup presentation, WebKit child
+Tab creation, and WebKit child-window creation are injected independently into
+the navigation delegate. The behavioral services resolve the exact physical
+source and data-store partition and fail before structural mutation when the
+source shell, extension registrar, or partition proof is unavailable. The
+first Tab of a WebKit-created window is staged through the same reversible
+extension-publication receipt as its window: exact Tab/WebView validation runs
+before registry commit, then extension observers receive window-open before
+Tab-open. A rejected or extension-originated suppressed projection rolls the
+whole provisional child back. Lifecycle and Glance Tab creation reuse the
+assembled runtime, so adding a Tab does not allocate another copy of these
+stateless browser services.
+
+Window-to-extension publication is one process-wide transaction, exposed
+explicitly by the browser composition root rather than hidden in the session
+persistence bundle. Session restoration, WebKit child windows, link-created
+windows, and extension-requested windows all use that same ledger. Repeated
+prepare calls are idempotent while an exact window is pending, committing, or
+committed; registry repair revokes the exact initial-Tab receipt before its
+window receipt. Publication and focus notification are separate capabilities,
+so activation code cannot acquire the mutation side of the ledger.
+
 ## Runtime Assembly
 
 `BrowserManager` owns one `WebViewRuntimeGraph` built by
@@ -259,6 +310,11 @@ is real-world password-manager extension compatibility.
 Normal browsing views are the default extension participation surface. Helper
 surfaces such as favicon downloads, previews, and mini windows should not
 participate unless a future design explicitly opts them in.
+
+An extension action popup keeps the exact click-time window, tab, profile, and
+WebKit data-store receipt for its lifetime. Nested `window.open` requests must
+revalidate that receipt and fail closed; they must never rediscover an opener
+through whichever browser window happens to be active later.
 
 ## AI Policy
 

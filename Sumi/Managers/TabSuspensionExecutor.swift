@@ -33,7 +33,6 @@ final class TabSuspensionExecutor {
             return ineligibility
         }
         return eligibilityEvaluator.evaluateWebViews(
-            tab: tab,
             liveWebViews: runtime.liveWebViews(tab),
             isProtectedFromCompositorMutation: runtime.isProtectedFromCompositorMutation
         )

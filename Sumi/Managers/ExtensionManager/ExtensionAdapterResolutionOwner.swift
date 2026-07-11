@@ -8,6 +8,7 @@
 
 import AppKit
 import Foundation
+import WebKit
 
 @available(macOS 15.5, *)
 @MainActor
@@ -58,18 +59,45 @@ final class ExtensionAdapterResolutionOwner {
             guard let manager,
                   let windowQuery = manager.extensionWindowQuery,
                   let windowActivation = manager.extensionWindowActivation,
-                  windowQuery.extensionWindowState(for: windowId) != nil
+                  let windowState = windowQuery.extensionWindowState(
+                    for: windowId
+                  )
             else {
                 return nil
             }
 
             return ExtensionWindowAdapter(
-                windowId: windowId,
+                windowState: windowState,
                 windowQuery: windowQuery,
                 windowActivation: windowActivation,
                 extensionManager: manager
             )
         }
+    }
+
+    /// Resolves only a normal window already published to the exact WebKit
+    /// profile represented by `extensionContext`. This is the read boundary;
+    /// `windowAdapter(for:)` exists only for lifecycle materialization.
+    func publishedNormalWindowAdapter(
+        for windowState: BrowserWindowState,
+        extensionContext: WKWebExtensionContext
+    ) -> ExtensionWindowAdapter? {
+        guard let manager,
+              let windowQuery = manager.extensionWindowQuery,
+              windowQuery.extensionWindowState(for: windowState.id)
+                === windowState,
+              let profileID = manager.profileId(for: extensionContext),
+              manager.windowMatchesProfile(windowState, profileId: profileID),
+              let adapter = manager.browserRuntimeBridgeOwner
+                .publishedWindowAdapter(
+                    for: windowState,
+                    profileID: profileID
+                ),
+              adapter.represents(windowState)
+        else {
+            return nil
+        }
+        return adapter
     }
 
     func stableAdapter(for tab: Tab) -> ExtensionTabAdapter? {

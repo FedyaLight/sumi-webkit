@@ -27,10 +27,10 @@ final class SumiNavigationResponderAdapter: NavigationResponder {
         var sumiPreferences = SumiNavigationPreferences(preferences)
         let sumiAction = SumiNavigationAction(navigationAction)
         let decision: SumiNavigationActionPolicy?
-        if let responder = responder as? any SumiNavigationActionContextResponding {
+        if let responder = responder as? any SumiNavigationActionTargetContextResponding {
             decision = await responder.decidePolicy(
                 for: sumiAction,
-                webView: webView(for: navigationAction),
+                targetWebView: targetWebView(for: navigationAction),
                 context: SumiNavigationActionContext(
                     navigationID: navigationAction.mainFrameNavigation.map(
                         ObjectIdentifier.init
@@ -39,10 +39,23 @@ final class SumiNavigationResponderAdapter: NavigationResponder {
                 ),
                 preferences: &sumiPreferences
             )
-        } else if let responder = responder as? any SumiNavigationActionWebViewResponding {
+        } else if let responder = responder as? any SumiNavigationActionSourceAndTargetWebViewResponding {
             decision = await responder.decidePolicy(
                 for: sumiAction,
-                webView: webView(for: navigationAction),
+                sourceWebView: sourceWebView(for: navigationAction),
+                targetWebView: targetWebView(for: navigationAction),
+                preferences: &sumiPreferences
+            )
+        } else if let responder = responder as? any SumiNavigationActionSourceWebViewResponding {
+            decision = await responder.decidePolicy(
+                for: sumiAction,
+                sourceWebView: sourceWebView(for: navigationAction),
+                preferences: &sumiPreferences
+            )
+        } else if let responder = responder as? any SumiNavigationActionTargetWebViewResponding {
+            decision = await responder.decidePolicy(
+                for: sumiAction,
+                targetWebView: targetWebView(for: navigationAction),
                 preferences: &sumiPreferences
             )
         } else {
@@ -77,7 +90,7 @@ final class SumiNavigationResponderAdapter: NavigationResponder {
         withRedirectNavigations expectedNavigations: [ExpectedNavigation]?
     ) {
         guard navigationAction.isForMainFrame,
-              let webView = webView(for: navigationAction),
+              let webView = navigationWebView(for: navigationAction),
               let responder = target as? any SumiNavigationTerminalResponding else {
             return
         }
@@ -191,8 +204,16 @@ final class SumiNavigationResponderAdapter: NavigationResponder {
         responder.webContentProcessDidTerminate(on: webView)
     }
 
-    private func webView(for navigationAction: NavigationAction) -> WKWebView? {
-        navigationAction.targetFrame?.webView ?? navigationAction.sourceFrame.webView
+    private func sourceWebView(for navigationAction: NavigationAction) -> WKWebView? {
+        navigationAction.sourceFrame.webView
+    }
+
+    private func targetWebView(for navigationAction: NavigationAction) -> WKWebView? {
+        navigationAction.targetFrame?.webView
+    }
+
+    private func navigationWebView(for navigationAction: NavigationAction) -> WKWebView? {
+        targetWebView(for: navigationAction) ?? sourceWebView(for: navigationAction)
     }
 
     private func notifyDownloadTermination(

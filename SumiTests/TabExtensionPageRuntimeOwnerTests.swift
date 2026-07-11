@@ -192,4 +192,86 @@ final class TabExtensionPageRuntimeOwnerTests: XCTestCase {
         ))
         XCTAssertEqual(owner.committedMainDocumentURL, URL(string: "https://example.com/one")!)
     }
+
+    func testCommittedWindowPrepublicationRevokeRestoresExactSnapshot() {
+        let owner = TabExtensionPageRuntimeOwner()
+        let token = owner.prepareForWindowPrepublication(generation: 17)
+        XCTAssertTrue(
+            owner.commitWindowPrepublication(
+                token,
+                willEmitOpen: true
+            )
+        )
+        XCTAssertTrue(
+            owner.markDidOpenTab(
+                generation: 17,
+                committedWindowPrepublication: token
+            )
+        )
+
+        XCTAssertTrue(
+            owner.revokeCommittedWindowPrepublication(
+                token,
+                openGeneration: 17
+            )
+        )
+        XCTAssertEqual(owner.controllerGeneration, 0)
+        XCTAssertEqual(owner.currentEligibleGeneration(), 0)
+        XCTAssertEqual(owner.currentOpenNotificationGeneration(), 0)
+        XCTAssertFalse(
+            owner.revokeCommittedWindowPrepublication(
+                token,
+                openGeneration: 17
+            )
+        )
+    }
+
+    func testNewPublisherMakesOldWindowPrepublicationTokenStale() {
+        let owner = TabExtensionPageRuntimeOwner()
+        let token = owner.prepareForWindowPrepublication(generation: 23)
+        XCTAssertTrue(
+            owner.commitWindowPrepublication(
+                token,
+                willEmitOpen: true
+            )
+        )
+        XCTAssertTrue(
+            owner.markDidOpenTab(
+                generation: 23,
+                committedWindowPrepublication: token
+            )
+        )
+
+        owner.markDidOpenTab(generation: 23)
+
+        XCTAssertFalse(
+            owner.revokeCommittedWindowPrepublication(
+                token,
+                openGeneration: 23
+            )
+        )
+        XCTAssertTrue(owner.hasDidOpenTabNotification(for: 23))
+    }
+
+    func testPreexistingOpenIsNotClaimedByWindowPrepublicationToken() {
+        let owner = TabExtensionPageRuntimeOwner()
+        owner.prepareGeneration(29)
+        owner.markEligible(for: 29)
+        owner.markDidOpenTab(generation: 29)
+        let token = owner.prepareForWindowPrepublication(generation: 29)
+
+        XCTAssertTrue(
+            owner.commitWindowPrepublication(
+                token,
+                willEmitOpen: false
+            )
+        )
+        XCTAssertFalse(
+            owner.revokeCommittedWindowPrepublication(
+                token,
+                openGeneration: 29
+            )
+        )
+        XCTAssertTrue(owner.hasDidOpenTabNotification(for: 29))
+    }
 }

@@ -129,7 +129,7 @@ final class ExtensionRequestedTabServicesTests: XCTestCase {
         XCTAssertNil(targetSpace)
     }
 
-    func testPopupCurrentTabDoesNotFallbackToGlobalTabManagerCurrentTab() throws {
+    func testActiveWindowCurrentTabDoesNotFallbackToGlobalTabManagerCurrentTab() throws {
         let harness = try makeProfileRoutingHarness()
         let tab = harness.browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://example.com/current",
@@ -140,7 +140,7 @@ final class ExtensionRequestedTabServicesTests: XCTestCase {
         XCTAssertEqual(harness.browserManager.tabManager.selectionStateOwner.currentTab?.id, tab.id)
         XCTAssertNil(
             harness.browserManager.extensionBridgeComposition.windows
-                .currentExtensionTabForPopup()
+                .currentExtensionTabForActiveWindow()
         )
     }
 

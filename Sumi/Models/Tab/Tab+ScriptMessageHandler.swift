@@ -1,53 +1,33 @@
 import AppKit
 import Foundation
-import WebKit
 
 extension Tab {
     func normalTabCoreUserScripts() -> [SumiUserScript] {
-        scriptMessageRuntimeOwner.normalTabCoreUserScripts()
+        makeNormalTabCoreUserScripts(for: self)
     }
 
-    func setClickModifierFlags(_ flags: NSEvent.ModifierFlags) {
-        scriptMessageRuntimeOwner.setClickModifierFlags(flags)
-    }
-
-    func isGlanceTriggerActive(_ flags: NSEvent.ModifierFlags? = nil) -> Bool {
-        scriptMessageRuntimeOwner.isGlanceTriggerActive(flags)
-    }
-
-    func openURLInGlance(_ url: URL, originRectInWindow: CGRect? = nil) {
-        scriptMessageRuntimeOwner.openURLInGlance(url, originRectInWindow: originRectInWindow)
-    }
-
-    func openURLInGlanceFromLinkGesture(_ url: URL) {
-        scriptMessageRuntimeOwner.openURLInGlanceFromLinkGesture(url)
-    }
-
-    func updateHoveredLink(_ href: String?) {
-        scriptMessageRuntimeOwner.updateHoveredLink(href)
-    }
-
-    func dynamicGlanceURLForWebViewMouseDown(_ event: NSEvent) -> URL? {
-        scriptMessageRuntimeOwner.dynamicGlanceURLForWebViewMouseDown(event)
-    }
-
-    func glanceOriginRectInWindow(maxAge: TimeInterval = 1.5) -> CGRect? {
-        scriptMessageRuntimeOwner.glanceOriginRectInWindow(maxAge: maxAge)
-    }
-
-    func navigationModifierFlags(from navigationAction: WKNavigationAction) -> NSEvent.ModifierFlags {
-        scriptMessageRuntimeOwner.navigationModifierFlags(from: navigationAction)
-    }
-
-    /// Resolves link gesture modifiers when WebKit reports empty or stale flags.
-    func resolvedNavigationModifierFlags(actionFlags: NSEvent.ModifierFlags) -> NSEvent.ModifierFlags {
-        scriptMessageRuntimeOwner.resolvedNavigationModifierFlags(actionFlags: actionFlags)
+    func isGlanceTriggerActive(_ flags: NSEvent.ModifierFlags) -> Bool {
+        guard sumiSettings?.glanceEnabled ?? true else { return false }
+        return flags.intersection([.command, .option, .control, .shift]) == [.option]
     }
 
     func shouldOpenDynamicallyInGlance(
         url: URL,
         modifierFlags: NSEvent.ModifierFlags
     ) -> Bool {
-        scriptMessageRuntimeOwner.shouldOpenDynamicallyInGlance(url: url, modifierFlags: modifierFlags)
+        guard sumiSettings?.glanceEnabled ?? true else { return false }
+        guard modifierFlags.isDisjoint(with: [.command, .option, .control, .shift]) else {
+            return false
+        }
+        guard isPinned || shortcutPinRole == .essential else { return false }
+        guard url.sumiIsGlancePreviewableLink else { return false }
+
+        if url.sumiNavigationalScheme == .file {
+            return self.url != url
+        }
+
+        guard let currentHost = self.url.host,
+              let newHost = url.host else { return false }
+        return currentHost != newHost
     }
 }

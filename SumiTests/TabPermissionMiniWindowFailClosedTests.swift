@@ -82,8 +82,13 @@ final class TabPermissionMiniWindowFailClosedTests: XCTestCase {
                 tabId: tabId,
                 currentURL: { URL(string: "https://example.com/")! },
                 resolveProfile: { profile },
-                isActiveTab: { true },
-                isVisibleTab: { true },
+                profile: { _ in profile },
+                surfaceState: { _ in
+                    TabPermissionSurfaceState(
+                        isActive: true,
+                        isVisible: true
+                    )
+                },
                 pageIdentity: {
                     let tabIdString = tabId.uuidString.lowercased()
                     return TabExtensionPageIdentity(
@@ -121,8 +126,13 @@ final class TabPermissionMiniWindowFailClosedTests: XCTestCase {
                 tabId: tabId,
                 currentURL: { URL(string: "https://example.com/")! },
                 resolveProfile: { profile },
-                isActiveTab: { true },
-                isVisibleTab: { true },
+                profile: { _ in profile },
+                surfaceState: { _ in
+                    TabPermissionSurfaceState(
+                        isActive: true,
+                        isVisible: true
+                    )
+                },
                 pageIdentity: {
                     let tabIdString = tabId.uuidString.lowercased()
                     return TabExtensionPageIdentity(

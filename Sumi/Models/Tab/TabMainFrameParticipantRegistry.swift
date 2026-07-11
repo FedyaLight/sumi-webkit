@@ -157,13 +157,25 @@ final class TabMainFrameParticipantRegistry {
     }
 
     func remove(_ webView: WKWebView) -> Entry? {
-        let webViewID = ObjectIdentifier(webView)
-        guard let entry = entriesByWebViewID[webViewID],
-              entry.webViewReference.matches(webView) else {
-            return nil
+        removeAll([webView]).first
+    }
+
+    func removeAll(_ webViews: [WKWebView]) -> [Entry] {
+        var removed: [Entry] = []
+        var seen: Set<ObjectIdentifier> = []
+        for webView in webViews {
+            let webViewID = ObjectIdentifier(webView)
+            guard seen.insert(webViewID).inserted,
+                  let entry = entriesByWebViewID[webViewID],
+                  entry.webViewReference.matches(webView) else {
+                continue
+            }
+            retireNavigationIdentity(of: entry)
+            entriesByWebViewID.removeValue(forKey: webViewID)
+            removed.append(entry)
         }
-        retireNavigationIdentity(of: entry)
-        return entriesByWebViewID.removeValue(forKey: webViewID)
+        pruneRetiredNavigationIdentities()
+        return removed
     }
 
     func remove(webViewID: ObjectIdentifier) -> Entry? {

@@ -8,7 +8,8 @@ import SumiWebRuntime
 
 @MainActor
 struct TabBrowserRuntime {
-    var browserActionService: TabBrowserActionService
+    var linkPresentationCommands: TabLinkPresentationCommands
+    var webPageMenuCommands: TabWebPageMenuCommands
     var webViewRoutingRuntime: TabWebViewRoutingRuntime
     var persistenceRuntimeCallbacks: TabRuntimePersistenceCallbacks
     var mediaRuntimeCallbacks: TabMediaRuntimeCallbacks
@@ -24,10 +25,15 @@ struct TabBrowserRuntime {
     var permissionRuntime: TabPermissionRuntime
     var webViewCleanupRuntime: TabWebViewCleanupRuntime
     var normalWebViewExtensionRuntime: TabNormalWebViewExtensionRuntime
-    var scriptMessageRuntime: TabScriptMessageRuntime
     var navigationDelegateRuntime: TabNavigationDelegateRuntime
     var faviconExtensionRuntime: TabFaviconExtensionRuntime
-    var popupHandlingRuntime: TabPopupHandlingRuntime
+    var popupPermissionEvaluator: (any PopupPermissionEvaluating)?
+    var extensionPopupRequestConsumer:
+        (any ExtensionPopupRequestConsuming)?
+    var extensionExternalTabOpening: (any ExtensionExternalTabOpening)?
+    var physicalWebPopupOpening: (any PhysicalWebPopupOpening)?
+    var webKitChildTabOpening: (any WebKitChildTabOpening)?
+    var webKitChildWindowOpening: (any WebKitChildWindowOpening)?
     var installNavigationRuntime: TabInstallNavigationRuntime
     var webKitUIRuntime: TabWebKitUIRuntime
     var webViewReplacementRuntime: TabWebViewReplacementRuntime
@@ -37,7 +43,8 @@ struct TabBrowserRuntime {
     var settings: () -> SumiSettingsService?
 
     static let inactive = Self(
-        browserActionService: .inactive,
+        linkPresentationCommands: .inactive,
+        webPageMenuCommands: .inactive,
         webViewRoutingRuntime: .inactive,
         persistenceRuntimeCallbacks: .inactive,
         mediaRuntimeCallbacks: .inactive,
@@ -53,10 +60,14 @@ struct TabBrowserRuntime {
         permissionRuntime: .inactive,
         webViewCleanupRuntime: .inactive,
         normalWebViewExtensionRuntime: .inactive,
-        scriptMessageRuntime: .inactive,
         navigationDelegateRuntime: .inactive,
         faviconExtensionRuntime: .inactive,
-        popupHandlingRuntime: .inactive,
+        popupPermissionEvaluator: nil,
+        extensionPopupRequestConsumer: nil,
+        extensionExternalTabOpening: nil,
+        physicalWebPopupOpening: nil,
+        webKitChildTabOpening: nil,
+        webKitChildWindowOpening: nil,
         installNavigationRuntime: .inactive,
         webKitUIRuntime: .inactive,
         webViewReplacementRuntime: .inactive,
@@ -64,39 +75,6 @@ struct TabBrowserRuntime {
         dataServices: { nil },
         currentProfileUpdates: { nil },
         settings: { nil }
-    )
-}
-
-@MainActor
-struct TabBrowserActionService {
-    var hasBrowserRuntime: () -> Bool
-    var webPageMenuAppearance: (Tab, NSAppearance?) -> NSAppearance?
-    var canBookmark: (Tab) -> Bool
-    var requestBookmarkEditorFromMenu: () -> Void
-    var canStartContextMenuDownload: () -> Bool
-    var startContextMenuDownload: (WKWebView, URLRequest) -> Void
-    var openURLInForegroundTab: (URL, Tab) -> Void
-    var openURLsInNewWindow: ([URL]) -> Void
-    var notificationPermissionBridge: () -> SumiNotificationPermissionBridge?
-    var shortcutLaunchURL: (UUID) -> URL?
-    var reconcileExtensionRuntimeOnUserGesture: (Tab, String) -> Void
-    var isCurrentTab: (Tab) -> Bool
-    var activate: (Tab) -> Void
-
-    static let inactive = Self(
-        hasBrowserRuntime: { false },
-        webPageMenuAppearance: { _, fallback in fallback },
-        canBookmark: { _ in false },
-        requestBookmarkEditorFromMenu: { /* No-op. */ },
-        canStartContextMenuDownload: { false },
-        startContextMenuDownload: { _, _ in /* No-op. */ },
-        openURLInForegroundTab: { _, _ in /* No-op. */ },
-        openURLsInNewWindow: { _ in /* No-op. */ },
-        notificationPermissionBridge: { nil },
-        shortcutLaunchURL: { _ in nil },
-        reconcileExtensionRuntimeOnUserGesture: { _, _ in /* No-op. */ },
-        isCurrentTab: { _ in false },
-        activate: { _ in /* No-op. */ }
     )
 }
 
@@ -158,15 +136,6 @@ struct TabMediaRuntimeCallbacks {
         scheduleBackgroundMediaReconcile: { _ in /* No-op. */ },
         invalidateBackgroundMediaCommand: { _ in /* No-op. */ },
         notifyNowPlayingTabUnloaded: { _ in /* No-op. */ }
-    )
-}
-
-@MainActor
-struct TabScriptMessageRuntime {
-    var presentExternalURLInGlance: (URL, Tab, CGRect?) -> Void
-
-    static let inactive = Self(
-        presentExternalURLInGlance: { _, _, _ in /* No-op. */ }
     )
 }
 
@@ -277,6 +246,7 @@ struct TabCloseLifecycleRuntime {
 @MainActor
 struct TabLifecycleNavigationRuntime {
     var resetRevisitProtection: (Tab) -> Void
+    var reconcileDocumentSuspensionState: (Tab) -> Void
     var prepareExtensionWebView: (WKWebView, URL, String) -> Void
     var prepareExtensionRuntimeBeforeCommit: (Tab, URL, String) -> Void
     var markExtensionEligibleAfterCommit: (Tab, String) -> Void
@@ -309,6 +279,7 @@ struct TabLifecycleNavigationRuntime {
 
     static let inactive = Self(
         resetRevisitProtection: { _ in /* No-op. */ },
+        reconcileDocumentSuspensionState: { _ in /* No-op. */ },
         prepareExtensionWebView: { _, _, _ in /* No-op. */ },
         prepareExtensionRuntimeBeforeCommit: { _, _, _ in /* No-op. */ },
         markExtensionEligibleAfterCommit: { _, _ in /* No-op. */ },
@@ -324,15 +295,27 @@ struct TabLifecycleNavigationRuntime {
 }
 
 @MainActor
+struct TabPermissionSurfaceState: Equatable {
+    let isActive: Bool
+    let isVisible: Bool
+
+    static let inactive = Self(isActive: false, isVisible: false)
+}
+
+@MainActor
 struct TabPermissionRuntime {
     var permissionBridges: () -> BrowserPermissionBridgeRegistry?
     var handlePermissionLifecycleEvent: (SumiPermissionLifecycleEvent) -> Void
     var isActiveGlancePreviewSurface: (_ tabId: UUID, _ webView: WKWebView) -> Bool
+    var surfaceState: (_ tabId: UUID, _ webView: WKWebView) -> TabPermissionSurfaceState
+    var profile: (_ tabId: UUID, _ webView: WKWebView) -> Profile?
 
     static let inactive = Self(
         permissionBridges: { nil },
         handlePermissionLifecycleEvent: { _ in /* No-op. */ },
-        isActiveGlancePreviewSurface: { _, _ in false }
+        isActiveGlancePreviewSurface: { _, _ in false },
+        surfaceState: { _, _ in .inactive },
+        profile: { _, _ in nil }
     )
 }
 
@@ -374,12 +357,14 @@ struct TabNormalWebViewExtensionRuntime {
     var prepareWebViewForExtensionRuntime: (WKWebView, URL?, String) -> Void
     var ensureInitialExtensionContextsIfNeeded: (UUID) async -> Void
     var pageContextMenuItems: (Tab) -> [NSMenuItem] = { _ in [] }
+    var reconcileOnUserGesture: (Tab, String) -> Void = { _, _ in }
 
     static let inactive = Self(
         registerTabWithExtensionRuntimeIfNeeded: { _, _ in /* No-op. */ },
         prepareWebViewForExtensionRuntime: { _, _, _ in /* No-op. */ },
         ensureInitialExtensionContextsIfNeeded: { _ in /* No-op. */ },
-        pageContextMenuItems: { _ in [] }
+        pageContextMenuItems: { _ in [] },
+        reconcileOnUserGesture: { _, _ in /* No-op. */ }
     )
 }
 
@@ -400,52 +385,11 @@ struct TabNavigationDelegateRuntime {
 @MainActor
 struct TabFaviconExtensionRuntime {
     var installedExtensions: () -> [InstalledExtension]
+    var shortcutLaunchURL: (UUID) -> URL? = { _ in nil }
 
     static let inactive = Self(
-        installedExtensions: { [] }
-    )
-}
-
-@MainActor
-struct TabPopupHandlingRuntime {
-    var hasBrowserRuntime: () -> Bool
-    var consumeRecentlyOpenedExtensionTabRequest: (URL) -> Bool
-    var evaluatePopupPermission: (
-        _ request: SumiPopupPermissionRequest,
-        _ tabContext: SumiPopupPermissionTabContext
-    ) async -> SumiPopupPermissionResult?
-    var evaluatePopupPermissionForWebKitFallback: (
-        _ request: SumiPopupPermissionRequest,
-        _ tabContext: SumiPopupPermissionTabContext
-    ) -> SumiPopupPermissionResult?
-    var openExtensionExternalTab: (_ requestURL: URL, _ openerTab: Tab) -> Bool
-    var presentWebPopup: (
-        _ configuration: WKWebViewConfiguration,
-        _ request: URLRequest,
-        _ windowFeatures: WKWindowFeatures,
-        _ openerTab: Tab,
-        _ isExtensionOriginated: Bool
-    ) -> WKWebView?
-    var applyVisitedLinksToPopupConfiguration: (_ openerTab: Tab, _ configuration: WKWebViewConfiguration) -> Void
-    var createPopupTab: (_ openerTab: Tab, _ activate: Bool) -> Tab?
-    var installUntrackedOwnedWebView: (_ webView: WKWebView, _ tab: Tab) -> Void
-    var windowStateContainingTab: (Tab) -> BrowserWindowState?
-    var selectTab: (_ tab: Tab, _ windowState: BrowserWindowState) -> Void
-    var notifications: () -> (any BrowserNotificationPresenting)?
-
-    static let inactive = Self(
-        hasBrowserRuntime: { false },
-        consumeRecentlyOpenedExtensionTabRequest: { _ in false },
-        evaluatePopupPermission: { _, _ in nil },
-        evaluatePopupPermissionForWebKitFallback: { _, _ in nil },
-        openExtensionExternalTab: { _, _ in false },
-        presentWebPopup: { _, _, _, _, _ in nil },
-        applyVisitedLinksToPopupConfiguration: { _, _ in /* No-op. */ },
-        createPopupTab: { _, _ in nil },
-        installUntrackedOwnedWebView: { _, _ in /* No-op. */ },
-        windowStateContainingTab: { _ in nil },
-        selectTab: { _, _ in /* No-op. */ },
-        notifications: { nil }
+        installedExtensions: { [] },
+        shortcutLaunchURL: { _ in nil }
     )
 }
 
@@ -605,10 +549,15 @@ final class TabNavigationRuntime {
     var permissionRuntime = TabPermissionRuntime.inactive
     var webViewCleanupRuntime = TabWebViewCleanupRuntime.inactive
     var normalWebViewExtensionRuntime = TabNormalWebViewExtensionRuntime.inactive
-    var scriptMessageRuntime = TabScriptMessageRuntime.inactive
     var navigationDelegateRuntime = TabNavigationDelegateRuntime.inactive
     var faviconExtensionRuntime = TabFaviconExtensionRuntime.inactive
-    var popupHandlingRuntime = TabPopupHandlingRuntime.inactive
+    var popupPermissionEvaluator: (any PopupPermissionEvaluating)?
+    var extensionPopupRequestConsumer:
+        (any ExtensionPopupRequestConsuming)?
+    var extensionExternalTabOpening: (any ExtensionExternalTabOpening)?
+    var physicalWebPopupOpening: (any PhysicalWebPopupOpening)?
+    var webKitChildTabOpening: (any WebKitChildTabOpening)?
+    var webKitChildWindowOpening: (any WebKitChildWindowOpening)?
     var webKitUIRuntime = TabWebKitUIRuntime.inactive
     var installNavigationRuntime = TabInstallNavigationRuntime.inactive
     var webViewReplacementRuntime =
@@ -628,9 +577,4 @@ final class TabMediaRuntime {
     var lastMediaActivityAt: Date = .distantPast
     var audioStateCancellables: [ObjectIdentifier: AnyCancellable] = [:]
     var callbacks = TabMediaRuntimeCallbacks.inactive
-}
-
-enum TabPageSuspensionVeto: Equatable {
-    case none
-    case pageReportedUnableToSuspend
 }

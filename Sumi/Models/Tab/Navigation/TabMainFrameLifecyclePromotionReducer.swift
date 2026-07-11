@@ -70,7 +70,6 @@ enum TabMainFrameLifecycleReducer {
         tab: Tab
     ) {
         authority.applyURL(to: tab)
-        tab.suspensionProtection.isPDFDocument = authority.isPDF
         StartupPerformanceTrace.firstNavigationCommitted()
         tab.loadingState = .didCommit
         tab.navigationRuntime.extensionPropertiesRuntime.notifyTabPropertiesChanged(
@@ -149,6 +148,8 @@ enum TabMainFrameLifecycleReducer {
             tab,
             [.URL, .title, .loading]
         )
+        tab.navigationRuntime.lifecycleNavigationRuntime
+            .reconcileDocumentSuspensionState(tab)
         tab.mediaRuntime.callbacks.scheduleBackgroundMediaReconcile(
             "navigation-promoted-finish"
         )

@@ -53,15 +53,9 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         set { surfaceStateOwner.isAuxiliaryMiniWindow = newValue }
     }
 
-    // Track the current click modifiers for native popup/link routing fallback.
-    var clickModifierFlags: NSEvent.ModifierFlags {
-        get { webViewInteractionStateOwner.clickModifierFlags }
-        set { webViewInteractionStateOwner.clickModifierFlags = newValue }
-    }
     let stateChangeEmitter = TabStateChangeEmitter()
     let navigationRuntime = TabNavigationRuntime()
     let mediaRuntime = TabMediaRuntime()
-    let popupUserActivationTracker = SumiPopupUserActivationTracker()
     let faviconRuntime = TabFaviconRuntime()
     let profileResolutionOwner = TabProfileResolutionOwner()
     let extensionPageRuntimeOwner = TabExtensionPageRuntimeOwner()
@@ -85,18 +79,15 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         dependencies: .live(tab: self)
     )
     var suspensionState = TabSuspensionState()
-    var suspensionProtection = TabSuspensionProtectionState()
     var lastSelectedAt: Date?
-    private let webViewInteractionStateOwner = TabWebViewInteractionStateOwner()
     lazy var permissionSurfaceOwner = TabPermissionSurfaceOwner(context: .live(tab: self))
     lazy var webKitUIDelegateOwner = TabWebKitUIDelegateOwner(tab: self)
     lazy var webKitPermissionUIDelegateOwner = TabWebKitPermissionUIDelegateOwner(tab: self)
-    lazy var scriptMessageRuntimeOwner = TabScriptMessageRuntimeOwner(tab: self)
     private var browserRuntime = TabBrowserRuntime.inactive
-    /// Web-page context-menu / bookmark / download UI actions, delegated to whatever owns
-    /// the active browser runtime. Callers invoke this directly instead of routing through
-    /// per-action forwarders on `Tab` (see `SumiWebPageMenuController`, `SumiWebNotificationUserScript`).
-    private(set) var browserActionService = TabBrowserActionService.inactive
+    private var browserRuntimeAttached = false
+    private(set) var linkPresentationCommands =
+        TabLinkPresentationCommands.inactive
+    private(set) var webPageMenuCommands = TabWebPageMenuCommands.inactive
     private let dependencyStateOwner: TabDependencyStateOwner
 
     // MARK: - Pin State
@@ -218,7 +209,16 @@ public class Tab: NSObject, Identifiable, ObservableObject {
 
     @discardableResult
     func beginMainFrameNavigationIntent(to targetURL: URL) -> TabMainFrameNavigationIntent {
-        mainFrameRuntimeTransaction.beginExplicitIntent(to: targetURL)
+        let intent = mainFrameRuntimeTransaction.beginExplicitIntent(to: targetURL)
+        for webView in webViewSession.allKnownWebViews {
+            guard let host = webView.sumiReaderPresentationHost,
+                  host.tabID == id,
+                  host.webView === webView else {
+                continue
+            }
+            host.dismissReader()
+        }
+        return intent
     }
 
     func currentMainFrameNavigationIntent(
@@ -344,15 +344,33 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     func webViewDidLeaveNavigationRuntime(
         _ webView: WKWebView
     ) -> TabMainFrameRuntimeDepartureResult {
-        navigationRuntime.webViewRouting.cancelWebContentProcessRecovery(
-            webView
-        )
         let preferredWebView = resolvedCurrentWebView().flatMap {
             $0 === webView ? nil : $0
         }
-        let result = mainFrameRuntimeTransaction.webViewDidLeaveRuntime(
-            webView,
+        return webViewsDidLeaveNavigationRuntime(
+            [webView],
             preferredAuthorityWebView: preferredWebView
+        )
+    }
+
+    /// Retires a complete physical generation before any member is destroyed.
+    /// Authority is reduced and replayed once after the whole set has departed.
+    @discardableResult
+    func webViewsDidLeaveNavigationRuntime(
+        _ webViews: [WKWebView],
+        preferredAuthorityWebView: WKWebView?
+    ) -> TabMainFrameRuntimeDepartureResult {
+        let previousSuspensionDecision = documentSuspensionDecision
+        var seen: Set<ObjectIdentifier> = []
+        let departingWebViews = webViews.filter {
+            seen.insert(ObjectIdentifier($0)).inserted
+        }
+        departingWebViews.forEach {
+            navigationRuntime.webViewRouting.cancelWebContentProcessRecovery($0)
+        }
+        let result = mainFrameRuntimeTransaction.webViewsDidLeaveRuntime(
+            departingWebViews,
+            preferredAuthorityWebView: preferredAuthorityWebView
         )
         if let continuation = result.continuation {
             TabMainFrameLifecycleReducer.replayIfNeeded(
@@ -360,6 +378,10 @@ public class Tab: NSObject, Identifiable, ObservableObject {
                 tab: self
             )
         }
+        reconcileDocumentSuspensionStateIfChanged(
+            from: previousSuspensionDecision,
+            reason: "document-replica-departure"
+        )
         return result
     }
 
@@ -369,6 +391,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         navigationLifetime: AnyObject,
         rollsBackWhenUnreplaced: Bool = true
     ) -> TabMainFrameNavigationAbortResult {
+        let previousSuspensionDecision = documentSuspensionDecision
         let result = mainFrameRuntimeTransaction.abortNavigation(
             from: webView,
             navigationID: navigationID,
@@ -379,7 +402,12 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         if case .authoritativeRollback(let rollbackURL) = result {
             _ = beginWebViewRebuildIntent()
             url = rollbackURL
+            activatePendingDocumentSuspensionReports()
         }
+        reconcileDocumentSuspensionStateIfChanged(
+            from: previousSuspensionDecision,
+            reason: "document-navigation-abort"
+        )
         return result
     }
 
@@ -397,6 +425,42 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         for webView: WKWebView
     ) -> TabMainFrameDocumentLease? {
         mainFrameRuntimeTransaction.documentLease(for: webView)
+    }
+
+    var documentSuspensionDecision: TabDocumentSuspensionDecision {
+        mainFrameRuntimeTransaction.documentSuspensionDecision()
+    }
+
+    @discardableResult
+    func recordDocumentSuspensionReport(
+        _ report: TabDocumentSuspensionReport,
+        from webView: WKWebView,
+        matching lease: TabMainFrameDocumentLease
+    ) -> Bool {
+        mainFrameRuntimeTransaction.recordSuspensionReport(
+            report,
+            from: webView,
+            matching: lease
+        )
+    }
+
+    @discardableResult
+    func recordSubframePictureInPictureReport(
+        _ report: TabSubframePictureInPictureReport,
+        from webView: WKWebView,
+        matching lease: TabMainFrameDocumentLease
+    ) -> Bool {
+        mainFrameRuntimeTransaction.recordSubframePictureInPictureReport(
+            report,
+            from: webView,
+            matching: lease
+        )
+    }
+
+    func documentSuspensionActivationToken(
+        for webView: WKWebView
+    ) -> String? {
+        mainFrameRuntimeTransaction.documentSuspensionToken(for: webView)
     }
 
     func beginPreparedMainFrameLoad(
@@ -509,12 +573,19 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         committedURL: URL,
         isPDF: Bool
     ) -> TabMainFrameCommitSnapshotClaim {
-        mainFrameRuntimeTransaction.recordCommit(
+        let previousSuspensionDecision = documentSuspensionDecision
+        let claim = mainFrameRuntimeTransaction.recordCommit(
             from: webView,
             navigationID: navigationID,
             committedURL: committedURL,
             isPDF: isPDF
         )
+        activatePendingDocumentSuspensionReports()
+        reconcileDocumentSuspensionStateIfChanged(
+            from: previousSuspensionDecision,
+            reason: "document-commit"
+        )
+        return claim
     }
 
     func claimMainFrameTransactionStartEffects(
@@ -574,9 +645,18 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     func claimPromotedSharedCommitEffects(
         matching continuation: TabMainFrameAuthorityContinuation
     ) -> Bool {
-        mainFrameRuntimeTransaction.claimPromotedSharedCommitEffects(
+        let previousSuspensionDecision = documentSuspensionDecision
+        let claimed = mainFrameRuntimeTransaction.claimPromotedSharedCommitEffects(
             matching: continuation
         )
+        if claimed {
+            activatePendingDocumentSuspensionReports()
+            reconcileDocumentSuspensionStateIfChanged(
+                from: previousSuspensionDecision,
+                reason: "document-authority-promotion"
+            )
+        }
+        return claimed
     }
 
     func claimPromotedSharedFinishEffects(
@@ -645,12 +725,19 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     }
 
     func cancelMainFrameNavigationIntent() {
+        let previousSuspensionDecision = documentSuspensionDecision
         _ = mainFrameRuntimeTransaction.rollbackToDurableDocument()
+        activatePendingDocumentSuspensionReports()
+        reconcileDocumentSuspensionStateIfChanged(
+            from: previousSuspensionDecision,
+            reason: "document-navigation-cancel"
+        )
     }
 
     func rollbackMainFrameNavigationAfterFailedSubmission(
         on webView: WKWebView?
     ) {
+        let previousSuspensionDecision = documentSuspensionDecision
         var survivingWebViews = webViewSession.allKnownWebViews
         if let webView,
            survivingWebViews.contains(where: { $0 === webView }) == false {
@@ -658,6 +745,11 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         }
         let rollback = mainFrameRuntimeTransaction.rollbackAfterFailedSubmission(
             survivingWebViews: survivingWebViews
+        )
+        activatePendingDocumentSuspensionReports()
+        reconcileDocumentSuspensionStateIfChanged(
+            from: previousSuspensionDecision,
+            reason: "document-submission-rollback"
         )
         let rollbackURL = rollback.targetURL
         _ = beginWebViewRebuildIntent()
@@ -688,22 +780,51 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         )
     }
 
+    private func activatePendingDocumentSuspensionReports() {
+        for activation in mainFrameRuntimeTransaction
+            .takePendingDocumentSuspensionActivations() {
+            let webView = activation.webView
+            let token = activation.token
+            SumiDocumentSuspensionSensorUserScript.activateCommittedDocument(
+                on: webView,
+                token: token,
+                epoch: activation.epoch,
+                completion: { [weak self, weak webView] activated in
+                    guard activated == false,
+                          let self,
+                          let webView,
+                          self.mainFrameRuntimeTransaction
+                            .documentSuspensionActivationDidFail(
+                                for: webView,
+                                token: token
+                            ) else {
+                        return
+                    }
+                    Task { @MainActor [weak self] in
+                        await Task.yield()
+                        self?.activatePendingDocumentSuspensionReports()
+                    }
+                }
+            )
+        }
+    }
+
+    private func reconcileDocumentSuspensionStateIfChanged(
+        from previousDecision: TabDocumentSuspensionDecision,
+        reason: String
+    ) {
+        guard documentSuspensionDecision != previousDecision else { return }
+        navigationRuntime.lifecycleNavigationRuntime
+            .reconcileDocumentSuspensionState(self)
+        mediaRuntime.callbacks.scheduleBackgroundMediaReconcile(reason)
+    }
+
     func isCurrentMainFrameNavigationRevision(_ revision: UInt64) -> Bool {
         mainFrameRuntimeTransaction.currentIntent.revision == revision
     }
 
-    // MARK: - WebView Interaction State
-    var lastWebViewInteractionEvent: NSEvent? {
-        get { webViewInteractionStateOwner.lastWebViewInteractionEvent }
-        set { webViewInteractionStateOwner.lastWebViewInteractionEvent = newValue }
-    }
-    var webViewInteractionCancellables: [ObjectIdentifier: AnyCancellable] {
-        get { webViewInteractionStateOwner.webViewInteractionCancellables }
-        set { webViewInteractionStateOwner.webViewInteractionCancellables = newValue }
-    }
-
     var hasBrowserRuntime: Bool {
-        browserActionService.hasBrowserRuntime()
+        browserRuntimeAttached
     }
 
     func makeWebViewConfigurationContext() -> TabWebViewConfigurationContext {
@@ -712,7 +833,9 @@ public class Tab: NSObject, Identifiable, ObservableObject {
 
     func attachBrowserRuntime(_ runtime: TabBrowserRuntime) {
         browserRuntime = runtime
-        browserActionService = runtime.browserActionService
+        browserRuntimeAttached = true
+        linkPresentationCommands = runtime.linkPresentationCommands
+        webPageMenuCommands = runtime.webPageMenuCommands
         navigationRuntime.webViewRouting = runtime.webViewRoutingRuntime
         navigationRuntime.persistenceCallbacks = runtime.persistenceRuntimeCallbacks
         mediaRuntime.callbacks = runtime.mediaRuntimeCallbacks
@@ -728,10 +851,20 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         navigationRuntime.permissionRuntime = runtime.permissionRuntime
         navigationRuntime.webViewCleanupRuntime = runtime.webViewCleanupRuntime
         navigationRuntime.normalWebViewExtensionRuntime = runtime.normalWebViewExtensionRuntime
-        navigationRuntime.scriptMessageRuntime = runtime.scriptMessageRuntime
         navigationRuntime.navigationDelegateRuntime = runtime.navigationDelegateRuntime
         navigationRuntime.faviconExtensionRuntime = runtime.faviconExtensionRuntime
-        navigationRuntime.popupHandlingRuntime = runtime.popupHandlingRuntime
+        navigationRuntime.popupPermissionEvaluator =
+            runtime.popupPermissionEvaluator
+        navigationRuntime.extensionPopupRequestConsumer =
+            runtime.extensionPopupRequestConsumer
+        navigationRuntime.extensionExternalTabOpening =
+            runtime.extensionExternalTabOpening
+        navigationRuntime.physicalWebPopupOpening =
+            runtime.physicalWebPopupOpening
+        navigationRuntime.webKitChildTabOpening =
+            runtime.webKitChildTabOpening
+        navigationRuntime.webKitChildWindowOpening =
+            runtime.webKitChildWindowOpening
         navigationRuntime.installNavigationRuntime = runtime.installNavigationRuntime
         navigationRuntime.webKitUIRuntime = runtime.webKitUIRuntime
         navigationRuntime.webViewReplacementRuntime =
@@ -741,10 +874,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
             self?.browserRuntime.dataServices()
         }
         sumiSettings = runtime.settings()
-    }
-
-    func attachBrowserActionService(_ service: TabBrowserActionService) {
-        browserActionService = service
     }
 
     var sumiSettings: SumiSettingsService? {
@@ -764,74 +893,8 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         dependencyStateOwner.visitedLinkStore
     }
 
-    // MARK: - Link Hover Callback
-    var onLinkHover: ((String?) -> Void)? {
-        get { webViewInteractionStateOwner.onLinkHover }
-        set { webViewInteractionStateOwner.onLinkHover = newValue }
-    }
-    var lastHoveredLinkURL: URL? {
-        get { webViewInteractionStateOwner.lastHoveredLinkURL }
-        set { webViewInteractionStateOwner.lastHoveredLinkURL = newValue }
-    }
-    var lastWebPageContextMenuTarget: SumiWebPageContextMenuTargetSnapshot? {
-        get { webViewInteractionStateOwner.lastWebPageContextMenuTarget }
-        set { webViewInteractionStateOwner.lastWebPageContextMenuTarget = newValue }
-    }
-    var lastGlanceMouseDownOrigin: SumiGlanceOriginSnapshot? {
-        get { webViewInteractionStateOwner.lastGlanceMouseDownOrigin }
-        set { webViewInteractionStateOwner.lastGlanceMouseDownOrigin = newValue }
-    }
-
     private var navigationStateController: TabNavigationStateController {
         navigationRuntime.navigationStateController
-    }
-
-    func recordPopupUserActivation(_ event: NSEvent, kind: String) {
-        recordWebViewInteraction(event)
-        popupUserActivationTracker.record(event: event, kind: kind)
-    }
-
-    func recordWebViewInteraction(_ interactionEvent: SumiWebViewInteractionEvent) {
-        switch interactionEvent {
-        case .mouseDown(let event),
-             .middleMouseDown(let event),
-             .keyDown(let event):
-            recordWebViewInteraction(event)
-            browserActionService.reconcileExtensionRuntimeOnUserGesture(
-                self,
-                "Tab.recordWebViewInteraction"
-            )
-        case .scrollWheel:
-            break
-        }
-    }
-
-    func recordWebViewInteraction(_ event: NSEvent) {
-        webViewInteractionStateOwner.recordInteraction(event)
-    }
-
-    func clearWebViewInteractionEvent() {
-        webViewInteractionStateOwner.clearInteractionEvent()
-    }
-
-    func recentWebViewInteractionModifierFlags(maxAge: TimeInterval = 1.0) -> NSEvent.ModifierFlags? {
-        webViewInteractionStateOwner.recentInteractionModifierFlags(maxAge: maxAge)
-    }
-
-    func recentWebViewMouseDownModifierFlags(maxAge: TimeInterval = 1.0) -> NSEvent.ModifierFlags? {
-        webViewInteractionStateOwner.recentMouseDownModifierFlags(maxAge: maxAge)
-    }
-
-    func recordGlanceMouseDownOriginIfNeeded(_ event: NSEvent) {
-        webViewInteractionStateOwner.recordGlanceMouseDownOriginIfNeeded(event)
-    }
-
-    func recentGlanceMouseDownOriginRect(maxAge: TimeInterval = 1.5) -> CGRect? {
-        webViewInteractionStateOwner.recentGlanceMouseDownOriginRect(maxAge: maxAge)
-    }
-
-    var isCurrentTab: Bool {
-        browserActionService.isCurrentTab(self)
     }
 
     var isLoading: Bool {
@@ -1159,9 +1222,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         navigationStateController.remove(webView)
     }
 
-    func activate() {
-        browserActionService.activate(self)
-    }
 }
 
 // MARK: - Hashable & Equatable

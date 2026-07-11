@@ -5,6 +5,21 @@ import XCTest
 
 @MainActor
 final class TabSuspensionArchitectureTests: XCTestCase {
+    func testTabWithoutCommittedReplicaEvidenceFailsClosed() {
+        let tab = makeTab(path: "awaiting-document-evidence")
+        let evaluator = TabSuspensionEligibilityEvaluator()
+        let context = TabSuspensionEvaluationContext(
+            visibleTabIDs: [],
+            selectedTabIDs: [],
+            policy: TabSuspensionPolicy(memoryMode: .balanced)
+        )
+
+        XCTAssertEqual(
+            evaluator.tabIneligibility(for: tab, context: context),
+            .ineligible(reason: .documentEvidencePending)
+        )
+    }
+
     func testInstallPublishesCompletePolicyAndVisibilityContextToCatalog() {
         let harness = TabSuspensionHarness(installImmediately: false)
         let windowID = UUID()
@@ -96,6 +111,7 @@ final class TabSuspensionArchitectureTests: XCTestCase {
             memoryMonitor: monitor,
             dateProvider: { suspensionDate }
         )
+        establishAllowedSuspensionDocument(on: webView, for: tab)
         controller.install(
             runtime: TabSuspensionRuntimePorts(
                 context: TabSuspensionContextRuntime(
@@ -168,6 +184,7 @@ final class TabSuspensionArchitectureTests: XCTestCase {
                 try await Task.sleep(nanoseconds: 1_000_000_000)
             }
         )
+        establishAllowedSuspensionDocument(on: webView, for: tab)
         controller.install(
             runtime: TabSuspensionRuntimePorts(
                 context: TabSuspensionContextRuntime(
@@ -214,6 +231,48 @@ final class TabSuspensionArchitectureTests: XCTestCase {
             url: URL(string: "https://example.com/\(path)")!,
             loadsCachedFaviconOnInit: false
         )
+    }
+
+    private func establishAllowedSuspensionDocument(
+        on webView: WKWebView,
+        for tab: Tab
+    ) {
+        _ = tab.beginMainFrameNavigationIntent(to: tab.url)
+        guard let submission = tab.claimDirectMainFrameLoadLease(on: webView) else {
+            return XCTFail("Expected main-frame submission lease")
+        }
+        let navigation = NSObject()
+        let navigationID = ObjectIdentifier(navigation)
+        XCTAssertTrue(tab.bindSubmittedMainFrameLoad(
+            on: webView,
+            navigationID: navigationID,
+            navigationLifetime: navigation,
+            matching: submission
+        ))
+        XCTAssertTrue(tab.recordMainFrameCommitSnapshot(
+            from: webView,
+            navigationID: navigationID,
+            committedURL: tab.url,
+            isPDF: false
+        ).shouldPublishSharedEffects)
+        guard let lease = tab.mainFrameDocumentLease(for: webView) else {
+            return XCTFail("Expected committed-document lease")
+        }
+        guard let token = tab.documentSuspensionActivationToken(for: webView) else {
+            return XCTFail("Expected exact document suspension token")
+        }
+        XCTAssertTrue(tab.recordDocumentSuspensionReport(
+            TabDocumentSuspensionReport(
+                documentNonce: "test-document",
+                documentLeaseToken: token,
+                sequence: 1,
+                canBeSuspended: true,
+                hasPictureInPictureVideo: false
+            ),
+            from: webView,
+            matching: lease
+        ))
+        withExtendedLifetime(navigation) {}
     }
 }
 

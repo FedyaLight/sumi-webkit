@@ -11,6 +11,8 @@ browser_manager_file="Sumi/Managers/BrowserManager/BrowserManager.swift"
 runtime_factory_file="Sumi/Managers/BrowserManager/BrowserManagerWebViewRuntimeFactory.swift"
 runtime_lifecycle_file="Sumi/Managers/WebViewRuntime/WebViewLifecycleService.swift"
 replacement_pipeline_file="Sumi/Managers/WebViewRuntime/WebViewReplacementPipeline.swift"
+tab_file="Sumi/Models/Tab/Tab.swift"
+main_frame_transaction_file="Sumi/Models/Tab/TabMainFrameRuntimeTransaction.swift"
 status=0
 
 fail_matches() {
@@ -36,11 +38,11 @@ is_allowed_web_view_runtime_access() {
     Sumi/Managers/BrowserManager/BrowserTabManagerWebViewLifecycleFactory.swift|\
     Sumi/Managers/BrowserManager/BrowserTabRuntimeCompositionService.swift|\
     Sumi/Managers/BrowserManager/BrowserTabSelectionOwner+Live.swift|\
+    Sumi/Managers/BrowserManager/TabBrowserRuntimeFactory.swift|\
     Sumi/Managers/BrowserManager/BrowserWebViewCloseRouter.swift|\
     Sumi/Managers/BrowserManager/BrowserWindowViewRuntimeWiring.swift|\
     Sumi/Managers/BrowserManager/TabBrowserNavigationRuntimeFactory.swift|\
-    Sumi/Managers/BrowserManager/TabBrowserWebViewRuntimeFactory.swift|\
-    Sumi/Managers/BrowserManager/TabPopupRuntimeFactory.swift)
+    Sumi/Managers/BrowserManager/TabBrowserWebViewRuntimeFactory.swift)
       return 0
       ;;
     *)
@@ -179,6 +181,59 @@ if [[ -z "$replacement_reset_body" ]] \
     || ! rg -q 'settlementService\.resetForTerminalShutdown\(\)' \
       <<< "$replacement_reset_body"; then
   printf 'error: WebViewReplacementPipeline terminal reset must reach settlement service\n' >&2
+  status=1
+fi
+
+replacement_destroy_body="$(
+  if [[ -f "$replacement_pipeline_file" ]]; then
+    sed -n '/^    private static func destroy(/,/^    private static func preferredWebView(/p' \
+      "$replacement_pipeline_file"
+  fi
+)"
+if [[ -z "$replacement_destroy_body" ]] \
+    || ! rg -q 'runtime\.retireNavigationGeneration\(' \
+      <<< "$replacement_destroy_body"; then
+  printf 'error: replacement generations must leave Tab navigation runtime before physical destruction\n' >&2
+  status=1
+elif [[ "$(rg -n 'runtime\.retireNavigationGeneration\(' <<< "$replacement_destroy_body" | cut -d: -f1 | head -1)" -ge \
+        "$(rg -n 'runtime\.destroy\(' <<< "$replacement_destroy_body" | cut -d: -f1 | head -1)" ]]; then
+  printf 'error: replacement generation departure must precede every physical destroy\n' >&2
+  status=1
+fi
+
+if ! rg -q 'tab\.webViewsDidLeaveNavigationRuntime\(' "$graph_file"; then
+  printf 'error: replacement pipeline generation departure must reach the exact Tab runtime\n' >&2
+  status=1
+fi
+
+tab_batch_departure_body="$(
+  if [[ -f "$tab_file" ]]; then
+    sed -n '/^    func webViewsDidLeaveNavigationRuntime(/,/^    }$/p' "$tab_file"
+  fi
+)"
+if [[ -z "$tab_batch_departure_body" ]] \
+    || ! rg -q 'mainFrameRuntimeTransaction\.webViewsDidLeaveRuntime\(' \
+      <<< "$tab_batch_departure_body" \
+    || ! rg -q 'TabMainFrameLifecycleReducer\.replayIfNeeded\(' \
+      <<< "$tab_batch_departure_body"; then
+  printf 'error: Tab replacement departure must reduce a whole generation and replay once\n' >&2
+  status=1
+fi
+
+transaction_batch_departure_body="$(
+  if [[ -f "$main_frame_transaction_file" ]]; then
+    sed -n '/^    func webViewsDidLeaveRuntime(/,/^    func beginWebContentProcessRecovery(/p' \
+      "$main_frame_transaction_file"
+  fi
+)"
+if [[ -z "$transaction_batch_departure_body" ]] \
+    || ! rg -q 'committedDocuments\.removeWebViews\(' \
+      <<< "$transaction_batch_departure_body" \
+    || ! rg -q 'intentLedger\.departure\(of: departingWebViews\)' \
+      <<< "$transaction_batch_departure_body" \
+    || ! rg -q 'lifecycle\.departure\(' \
+      <<< "$transaction_batch_departure_body"; then
+  printf 'error: main-frame replacement departure must batch every authority store\n' >&2
   status=1
 fi
 

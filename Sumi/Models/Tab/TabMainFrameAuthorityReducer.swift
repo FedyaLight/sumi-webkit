@@ -68,11 +68,11 @@ final class TabMainFrameAuthorityReducer {
     }
 
     func removeAuthorityIfMatching(
-        webViewID: ObjectIdentifier,
+        webViewIDs: Set<ObjectIdentifier>,
         revision: UInt64
     ) -> Bool {
         guard authority?.revision == revision,
-              authority?.webViewID == webViewID else {
+              authority.map({ webViewIDs.contains($0.webViewID) }) == true else {
             return false
         }
         authority = nil

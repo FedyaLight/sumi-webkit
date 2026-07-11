@@ -17,6 +17,7 @@ class WindowRegistry {
         case registered
         case alreadyRegistered
         case rejectedIdentityConflict
+        case rejectedDuringPublication
     }
 
     private struct WindowAwaiter {
@@ -27,6 +28,12 @@ class WindowRegistry {
     /// All registered window states (ignored from observation to avoid actor isolation issues)
     @ObservationIgnored
     private var _windows: [UUID: BrowserWindowState] = [:]
+
+    /// Window models being synchronously restored and validated. They are not
+    /// externally discoverable until `commitRegistration` moves the exact
+    /// object into `_windows`.
+    @ObservationIgnored
+    private var provisionalWindows: [UUID: BrowserWindowState] = [:]
 
     @ObservationIgnored
     private var windowAwaiters: [UUID: WindowAwaiter] = [:]
@@ -54,7 +61,13 @@ class WindowRegistry {
 
     /// Callback for post-registration setup (e.g., setting TabManager reference)
     @ObservationIgnored
-    var onWindowRegister: ((BrowserWindowState) -> Void)?
+    var prepareWindowRegistration: ((BrowserWindowState) -> Void)?
+
+    /// Callback after a prepared window has passed validation and entered the
+    /// public registry. Extension lifecycle publication belongs here, not in
+    /// the provisional restoration callback above.
+    @ObservationIgnored
+    var publishWindowRegistration: ((BrowserWindowState) -> Void)?
 
     /// Callback when active window changes
     @ObservationIgnored
@@ -79,7 +92,20 @@ class WindowRegistry {
     /// Register a new window
     @discardableResult
     func register(_ window: BrowserWindowState) -> RegistrationResult {
-        if let registeredWindow = _windows[window.id] {
+        let result = beginRegistration(window)
+        guard result == .registered else { return result }
+        return commitRegistration(window)
+            ? .registered
+            : .rejectedDuringPublication
+    }
+
+    /// Makes the exact model available only to the synchronous restoration
+    /// transaction. Awaiters, extension observers, and normal registry reads
+    /// cannot observe this provisional state.
+    @discardableResult
+    func beginRegistration(_ window: BrowserWindowState) -> RegistrationResult {
+        if let registeredWindow = _windows[window.id]
+            ?? provisionalWindows[window.id] {
             guard registeredWindow !== window else {
                 return .alreadyRegistered
             }
@@ -89,7 +115,44 @@ class WindowRegistry {
             return .rejectedIdentityConflict
         }
 
+        provisionalWindows[window.id] = window
+        prepareWindowRegistration?(window)
+        return .registered
+    }
+
+    /// Atomically publishes one exact prepared object. Publication callbacks
+    /// run before awaiters resume, so a consumer can never receive a window
+    /// whose extension lifecycle has not yet been committed.
+    @discardableResult
+    func commitRegistration(
+        _ window: BrowserWindowState,
+        validatePublication: @MainActor (BrowserWindowState) -> Bool = { _ in true }
+    ) -> Bool {
+        guard provisionalWindows[window.id] === window,
+              _windows[window.id] == nil
+        else {
+            return false
+        }
+
+        provisionalWindows.removeValue(forKey: window.id)
         _windows[window.id] = window
+        publishWindowRegistration?(window)
+        guard _windows[window.id] === window,
+              validatePublication(window),
+              _windows[window.id] === window
+        else {
+            // A synchronous publication callback may reject or close the exact
+            // object. Do not resume awaiters or activation observers with a
+            // half-committed registration.
+            if _windows[window.id] === window {
+                _windows.removeValue(forKey: window.id)
+                unbindAppKitWindow(for: window.id)
+                if activeWindowId == window.id {
+                    activeWindowId = nil
+                }
+            }
+            return false
+        }
         let matchingAwaiterIDs = windowAwaiters.compactMap { entry in
             entry.value.existingWindowIDs.contains(window.id) ? nil : entry.key
         }
@@ -100,14 +163,13 @@ class WindowRegistry {
             awaiter.continuation.resume(returning: window)
         }
 
-        onWindowRegister?(window)
         if activeWindowId == window.id {
             onActiveWindowChange?(window)
         }
         RuntimeDiagnostics.emit {
             "🪟 [WindowRegistry] Registered window: \(window.id)"
         }
-        return .registered
+        return true
     }
 
     /// Unregister a window when it closes
@@ -119,11 +181,16 @@ class WindowRegistry {
             return
         }
 
-        // Call cleanup callback if set
-        onWindowClose?(closingWindow)
-
+        let wasActive = activeWindowId == id
         _windows.removeValue(forKey: id)
         unbindAppKitWindow(for: id)
+        if wasActive {
+            activeWindowId = nil
+        }
+
+        // External cleanup observes the window as already detached. Reentrant
+        // unregister therefore cannot duplicate close/all-windows callbacks.
+        onWindowClose?(closingWindow)
 
         if windows.isEmpty {
             onAllWindowsClosed?()
@@ -132,12 +199,10 @@ class WindowRegistry {
         // AppKit focus/key-window state owns active-window selection. Closing
         // the active window may only promote a surviving window AppKit already
         // reports as key/main; otherwise wait for the next didBecomeKey signal.
-        if activeWindowId == id {
+        if wasActive, activeWindowId == nil {
             if let focusedWindow = focusedRegisteredWindow() {
                 activeWindowId = focusedWindow.id
                 onActiveWindowChange?(focusedWindow)
-            } else {
-                activeWindowId = nil
             }
         }
 
@@ -146,15 +211,38 @@ class WindowRegistry {
         }
     }
 
-    /// Rolls back a failed synchronous shell publication without emitting a
-    /// user-visible close or all-windows-closed lifecycle event.
-    func rollbackRegistration(_ window: BrowserWindowState) {
-        guard _windows[window.id] === window else { return }
-        _windows.removeValue(forKey: window.id)
+    /// Cancels only the exact model that has not crossed the publication
+    /// boundary. A committed window must leave through `unregister(_:)` so its
+    /// close, extension, focus, and all-windows-closed lifecycles stay balanced.
+    @discardableResult
+    func rollbackProvisionalRegistration(
+        _ window: BrowserWindowState
+    ) -> Bool {
+        guard provisionalWindows[window.id] === window else {
+            return false
+        }
+        provisionalWindows.removeValue(forKey: window.id)
         unbindAppKitWindow(for: window.id)
         if activeWindowId == window.id {
             activeWindowId = nil
         }
+        return true
+    }
+
+    /// Rejects one exact registration regardless of whether it is still
+    /// provisional or has just crossed publication. Committed state leaves
+    /// through normal unregister lifecycle; an object sharing only the UUID
+    /// can never discard the registered model.
+    @discardableResult
+    func discardRejectedRegistration(
+        _ window: BrowserWindowState
+    ) -> Bool {
+        if rollbackProvisionalRegistration(window) {
+            return true
+        }
+        guard windows[window.id] === window else { return false }
+        unregister(window.id)
+        return true
     }
 
     /// Set the active (focused) window

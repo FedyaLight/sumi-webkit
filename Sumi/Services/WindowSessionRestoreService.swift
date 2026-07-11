@@ -5,9 +5,14 @@ import Foundation
 /// are implemented by separate collaborators.
 @MainActor
 final class WindowSessionRestoreService {
+    private enum PreparedRegistrationKind {
+        case archived(glanceSession: GlanceSessionSnapshot?)
+        case contextualWindowWithInitialTab(executionProfileID: UUID)
+    }
+
     private struct PreparedRegistration {
         let windowIdentity: ObjectIdentifier
-        let glanceSession: GlanceSessionSnapshot?
+        let kind: PreparedRegistrationKind
     }
 
     private let snapshotStore: WindowSessionSnapshotStore
@@ -182,12 +187,44 @@ final class WindowSessionRestoreService {
         windowState.isAwaitingInitialSessionResolution = true
         preparedRegistrationsByWindowID[windowState.id] = PreparedRegistration(
             windowIdentity: ObjectIdentifier(windowState),
-            glanceSession: snapshot.session.glanceSession
+            kind: .archived(glanceSession: snapshot.session.glanceSession)
         )
         snapshotApplier.prepareForRegistration(
             snapshot.session,
             to: windowState
         )
+    }
+
+    /// A WebKit child window arrives with a concrete configuration that must
+    /// be installed before the shell can become observable. This preparation
+    /// records that the exact initial Tab will already exist at registration.
+    @discardableResult
+    func prepareContextualWindowWithInitialTab(
+        profileID: UUID,
+        spaceID: UUID,
+        initialTabExecutionProfileID: UUID,
+        forRegistration windowState: BrowserWindowState
+    ) -> Bool {
+        precondition(
+            preparedRegistrationsByWindowID[windowState.id] == nil,
+            "A browser window cannot prepare two registration contexts"
+        )
+        guard let space = spaceResolver.space(for: spaceID),
+              space.profileId == profileID
+        else {
+            return false
+        }
+        windowState.tabManager = tabManager
+        windowState.isAwaitingInitialSessionResolution = true
+        windowState.currentProfileId = profileID
+        windowState.currentSpaceId = space.id
+        preparedRegistrationsByWindowID[windowState.id] = PreparedRegistration(
+            windowIdentity: ObjectIdentifier(windowState),
+            kind: .contextualWindowWithInitialTab(
+                executionProfileID: initialTabExecutionProfileID
+            )
+        )
+        return true
     }
 
     /// Discards an unconsumed preparation when shell publication is rejected.
@@ -224,19 +261,34 @@ final class WindowSessionRestoreService {
             prepared.windowIdentity == ObjectIdentifier(windowState),
             "A different window object attempted to consume a prepared session"
         )
-        precondition(
-            windowState.restoredSessionWindowId != nil,
-            "Prepared archived window lost its stable session identity"
-        )
-        glanceManager.restoreSession(
-            prepared.glanceSession,
-            in: windowState
-        )
-        finalizeWindowStateRestore(
-            windowState,
-            source: "preparedArchivedWindow",
-            persistsWindowSession: false
-        )
+        switch prepared.kind {
+        case .archived(let glanceSession):
+            precondition(
+                windowState.restoredSessionWindowId != nil,
+                "Prepared archived window lost its stable session identity"
+            )
+            glanceManager.restoreSession(
+                glanceSession,
+                in: windowState
+            )
+            finalizeWindowStateRestore(
+                windowState,
+                source: "preparedArchivedWindow",
+                persistsWindowSession: false
+            )
+        case .contextualWindowWithInitialTab(let executionProfileID):
+            guard windowState.restoredSessionWindowId == nil,
+                  finalizeContextualWindowWithInitialTab(
+                      windowState,
+                      executionProfileID: executionProfileID
+                  )
+            else {
+                RuntimeDiagnostics.emit(
+                    "[WindowSessionRestore] Rejected inconsistent contextual WebKit child window \(windowState.id)"
+                )
+                return
+            }
+        }
     }
 
     func applyWindowSessionSnapshot(
@@ -278,6 +330,36 @@ final class WindowSessionRestoreService {
         }
     }
 
+    private func finalizeContextualWindowWithInitialTab(
+        _ windowState: BrowserWindowState,
+        executionProfileID: UUID
+    ) -> Bool {
+        guard let tabID = windowState.currentTabId,
+              let tab = tabManager.tabCollectionMembershipOwner.tab(for: tabID)
+        else {
+            return false
+        }
+        guard let spaceID = windowState.currentSpaceId,
+              tab.spaceId == spaceID,
+              let spaceProfileID = tabManager.spaceStateOwner.profileId(
+                  for: spaceID
+              ),
+              spaceProfileID == windowState.currentProfileId,
+              (tab.profileId ?? spaceProfileID) == executionProfileID
+        else {
+            return false
+        }
+        windowState.isShowingEmptyState = false
+        floatingBarSanitizer.sanitize(in: windowState)
+        requiredSelection().syncShortcutSelectionState(for: windowState)
+        themeRestorer.restore(
+            for: windowState,
+            source: "preparedContextualWindowWithInitialTab"
+        )
+        completeInitialResolution(for: windowState)
+        return true
+    }
+
     private func makeSelectionReconciler(
         selection: any WindowSessionSelectionApplying
     ) -> WindowSessionSelectionReconciler {
@@ -305,4 +387,5 @@ final class WindowSessionRestoreService {
         StartupPerformanceTrace.firstSelectedTabResolved()
         StartupPerformanceTrace.firstTabsClickable()
     }
+
 }

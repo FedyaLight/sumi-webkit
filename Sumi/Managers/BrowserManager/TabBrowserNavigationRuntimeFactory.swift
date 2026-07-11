@@ -21,11 +21,15 @@ enum TabBrowserNavigationRuntimeFactory {
     ) -> TabProfileResolutionRuntime {
         .make(
             ephemeralProfileForTab: { [weak browserManager] tabId, profileId in
-                browserManager?.windowRegistry?.windows.values.first(where: { window in
+                guard let browserManager else { return nil }
+                if let tracked = browserManager.windowRegistry?.windows.values.first(where: { window in
                     window.ephemeralTabs.contains(where: { $0.id == tabId })
-                })?.ephemeralProfile.flatMap { profile in
-                    profile.id == profileId ? profile : nil
+                })?.ephemeralProfile,
+                   tracked.id == profileId {
+                    return tracked
                 }
+                return browserManager.profileManager
+                    .ephemeralProfile(withID: profileId)
             },
             profile: { [weak browserManager] profileId in
                 browserManager?.profileManager.profiles.first { $0.id == profileId }
@@ -117,6 +121,12 @@ enum TabBrowserNavigationRuntimeFactory {
                 resetTabSuspensionRevisitProtection: {
                     [weak tabSuspensionController] tab in
                     tabSuspensionController?.navigationDidStart(for: tab)
+                },
+                reconcileDocumentSuspensionState: {
+                    [weak tabSuspensionController] _ in
+                    tabSuspensionController?.scheduleReconciliation(
+                        reason: "document-suspension-state"
+                    )
                 },
                 extensionsModule: { [weak browserManager] in
                     browserManager?.optionalModules.extensions
@@ -215,6 +225,7 @@ extension TabHistorySwipeRuntime {
 extension TabLifecycleNavigationRuntime {
     struct LiveDependencies {
         let resetTabSuspensionRevisitProtection: (Tab) -> Void
+        let reconcileDocumentSuspensionState: (Tab) -> Void
         let extensionsModule: () -> SumiExtensionsModule?
         let loadZoomForTab: (UUID, WKWebView) -> Void
         let adBlockingModule: () -> SumiAdBlockingModule?
@@ -229,6 +240,8 @@ extension TabLifecycleNavigationRuntime {
             resetRevisitProtection: { tab in
                 dependencies.resetTabSuspensionRevisitProtection(tab)
             },
+            reconcileDocumentSuspensionState:
+                dependencies.reconcileDocumentSuspensionState,
             prepareExtensionWebView: { webView, url, reason in
                 dependencies.extensionsModule()?.prepareWebViewForExtensionRuntime(
                     webView,

@@ -7,7 +7,7 @@ final class WindowRegistryTests: XCTestCase {
         let registry = WindowRegistry()
         let window = BrowserWindowState()
         var registrationCount = 0
-        registry.onWindowRegister = { _ in registrationCount += 1 }
+        registry.prepareWindowRegistration = { _ in registrationCount += 1 }
 
         let firstResult = registry.register(window)
         let secondResult = registry.register(window)
@@ -24,7 +24,7 @@ final class WindowRegistryTests: XCTestCase {
         let registeredWindow = BrowserWindowState(id: sharedID)
         let conflictingWindow = BrowserWindowState(id: sharedID)
         var registrationCount = 0
-        registry.onWindowRegister = { _ in registrationCount += 1 }
+        registry.prepareWindowRegistration = { _ in registrationCount += 1 }
 
         XCTAssertEqual(registry.register(registeredWindow), .registered)
         let result = registry.register(conflictingWindow)
@@ -51,6 +51,97 @@ final class WindowRegistryTests: XCTestCase {
 
         let awaitedWindow = await awaitedWindowTask.value
         XCTAssertEqual(awaitedWindow?.id, newWindow.id)
+    }
+
+    func testAwaiterCannotObserveRolledBackProvisionalWindow() async {
+        let registry = WindowRegistry()
+        let provisional = BrowserWindowState()
+
+        XCTAssertEqual(registry.beginRegistration(provisional), .registered)
+        XCTAssertTrue(registry.windows.isEmpty)
+
+        let awaitedWindowTask = Task { @MainActor in
+            await registry.awaitNextRegisteredWindow(
+                excluding: [],
+                timeoutNanoseconds: 500_000_000
+            )
+        }
+        await Task.yield()
+
+        XCTAssertTrue(
+            registry.rollbackProvisionalRegistration(provisional)
+        )
+        let committed = BrowserWindowState()
+        registry.register(committed)
+
+        let awaitedWindow = await awaitedWindowTask.value
+        XCTAssertIdentical(awaitedWindow, committed)
+        XCTAssertNotIdentical(awaitedWindow, provisional)
+    }
+
+    func testAwaiterCannotObserveRegistrationRejectedByCommittedValidator()
+        async
+    {
+        let registry = WindowRegistry()
+        let rejected = BrowserWindowState()
+        XCTAssertEqual(registry.beginRegistration(rejected), .registered)
+
+        let awaitedWindowTask = Task { @MainActor in
+            await registry.awaitNextRegisteredWindow(
+                excluding: [],
+                timeoutNanoseconds: 500_000_000
+            )
+        }
+        await Task.yield()
+
+        XCTAssertFalse(
+            registry.commitRegistration(
+                rejected,
+                validatePublication: { candidate in
+                    XCTAssertIdentical(candidate, rejected)
+                    return false
+                }
+            )
+        )
+        XCTAssertNil(registry.windows[rejected.id])
+
+        let accepted = BrowserWindowState()
+        registry.register(accepted)
+        let awaitedWindow = await awaitedWindowTask.value
+
+        XCTAssertIdentical(awaitedWindow, accepted)
+        XCTAssertNotIdentical(awaitedWindow, rejected)
+    }
+
+    func testReentrantCloseDuringPublicationDoesNotResumeAwaiterWithRejectedWindow()
+        async
+    {
+        let registry = WindowRegistry()
+        let rejected = BrowserWindowState()
+        XCTAssertEqual(registry.beginRegistration(rejected), .registered)
+        registry.publishWindowRegistration = { candidate in
+            XCTAssertIdentical(candidate, rejected)
+            registry.unregister(candidate.id)
+        }
+
+        let awaitedWindowTask = Task { @MainActor in
+            await registry.awaitNextRegisteredWindow(
+                excluding: [],
+                timeoutNanoseconds: 500_000_000
+            )
+        }
+        await Task.yield()
+
+        XCTAssertFalse(registry.commitRegistration(rejected))
+        XCTAssertNil(registry.windows[rejected.id])
+
+        registry.publishWindowRegistration = nil
+        let accepted = BrowserWindowState()
+        registry.register(accepted)
+        let awaitedWindow = await awaitedWindowTask.value
+
+        XCTAssertIdentical(awaitedWindow, accepted)
+        XCTAssertNotIdentical(awaitedWindow, rejected)
     }
 
     func testAwaitNextRegisteredWindowReturnsAlreadyRegisteredWindowWhenAvailable() async {
@@ -107,6 +198,30 @@ final class WindowRegistryTests: XCTestCase {
         XCTAssertEqual(closedWindowIds, [window.id])
         XCTAssertEqual(allWindowsClosedCount, 1)
         XCTAssertNil(registry.activeWindowId)
+        XCTAssertTrue(registry.windows.isEmpty)
+    }
+
+    func testReentrantUnregisterFromCloseCallbackRunsLifecycleExactlyOnce() {
+        let registry = WindowRegistry()
+        let window = BrowserWindowState()
+        var closeCount = 0
+        var allWindowsClosedCount = 0
+        var didRequestReentrantClose = false
+        registry.onWindowClose = { closingWindow in
+            closeCount += 1
+            XCTAssertIdentical(closingWindow, window)
+            if didRequestReentrantClose == false {
+                didRequestReentrantClose = true
+                registry.unregister(closingWindow.id)
+            }
+        }
+        registry.onAllWindowsClosed = { allWindowsClosedCount += 1 }
+        registry.register(window)
+
+        registry.unregister(window.id)
+
+        XCTAssertEqual(closeCount, 1)
+        XCTAssertEqual(allWindowsClosedCount, 1)
         XCTAssertTrue(registry.windows.isEmpty)
     }
 
@@ -211,20 +326,80 @@ final class WindowRegistryTests: XCTestCase {
         XCTAssertEqual(activatedWindowIds, [window.id])
     }
 
-    func testRollbackRegistrationSkipsCloseLifecycle() {
+    func testProvisionalRollbackDoesNotEmitCloseLifecycle() {
         let registry = WindowRegistry()
         let window = BrowserWindowState()
         var closeCount = 0
         var allWindowsClosedCount = 0
         registry.onWindowClose = { _ in closeCount += 1 }
         registry.onAllWindowsClosed = { allWindowsClosedCount += 1 }
-        registry.register(window)
+        XCTAssertEqual(registry.beginRegistration(window), .registered)
 
-        registry.rollbackRegistration(window)
+        XCTAssertTrue(registry.rollbackProvisionalRegistration(window))
 
         XCTAssertTrue(registry.windows.isEmpty)
         XCTAssertEqual(closeCount, 0)
         XCTAssertEqual(allWindowsClosedCount, 0)
+    }
+
+    func testProvisionalRollbackRejectsCommittedWindow() {
+        let registry = WindowRegistry()
+        let window = BrowserWindowState()
+        var closeCount = 0
+        registry.onWindowClose = { _ in closeCount += 1 }
+        registry.register(window)
+
+        XCTAssertFalse(registry.rollbackProvisionalRegistration(window))
+
+        XCTAssertIdentical(registry.windows[window.id], window)
+        XCTAssertEqual(closeCount, 0)
+    }
+
+    func testProvisionalRollbackRequiresExactObjectIdentity() {
+        let registry = WindowRegistry()
+        let sharedID = UUID()
+        let provisional = BrowserWindowState(id: sharedID)
+        let impostor = BrowserWindowState(id: sharedID)
+        XCTAssertEqual(registry.beginRegistration(provisional), .registered)
+
+        XCTAssertFalse(registry.rollbackProvisionalRegistration(impostor))
+        XCTAssertTrue(registry.commitRegistration(provisional))
+
+        XCTAssertIdentical(registry.windows[sharedID], provisional)
+    }
+
+    func testProvisionalCommitRequiresExactObjectIdentity() {
+        let registry = WindowRegistry()
+        let sharedID = UUID()
+        let provisional = BrowserWindowState(id: sharedID)
+        let impostor = BrowserWindowState(id: sharedID)
+        XCTAssertEqual(registry.beginRegistration(provisional), .registered)
+
+        XCTAssertFalse(registry.commitRegistration(impostor))
+        XCTAssertTrue(registry.windows.isEmpty)
+        XCTAssertTrue(registry.commitRegistration(provisional))
+
+        XCTAssertIdentical(registry.windows[sharedID], provisional)
+    }
+
+    func testRejectedRegistrationUsesBalancedLifecycleOnlyForExactCommittedObject() {
+        let registry = WindowRegistry()
+        let sharedID = UUID()
+        let committed = BrowserWindowState(id: sharedID)
+        let impostor = BrowserWindowState(id: sharedID)
+        var closed: [UUID] = []
+        var allClosedCount = 0
+        registry.onWindowClose = { closed.append($0.id) }
+        registry.onAllWindowsClosed = { allClosedCount += 1 }
+        registry.register(committed)
+
+        XCTAssertFalse(registry.discardRejectedRegistration(impostor))
+        XCTAssertIdentical(registry.windows[sharedID], committed)
+        XCTAssertTrue(registry.discardRejectedRegistration(committed))
+
+        XCTAssertNil(registry.windows[sharedID])
+        XCTAssertEqual(closed, [sharedID])
+        XCTAssertEqual(allClosedCount, 1)
     }
 
     func testWindowStateContainingReturnsParentForChildWindow() {

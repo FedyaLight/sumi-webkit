@@ -325,7 +325,9 @@ final class ExtensionTabAdapter: NSObject, WKWebExtensionTab {
         false
     }
 
-    func window(for _: WKWebExtensionContext) -> (any WKWebExtensionWindow)? {
+    func window(
+        for extensionContext: WKWebExtensionContext
+    ) -> (any WKWebExtensionWindow)? {
         guard let tab = eligibleTab() else { return nil }
         if tabQuery?.isAuxiliaryMiniWindowTab(tab) == true {
             return extensionManager?.adapterResolutionOwner.miniWindowAdapter(for: tab)
@@ -333,7 +335,17 @@ final class ExtensionTabAdapter: NSObject, WKWebExtensionTab {
         if let miniWindowAdapter = extensionManager?.adapterResolutionOwner.miniWindowAdapter(for: tab) {
             return miniWindowAdapter
         }
-        guard let windowId = resolvedWindowState()?.id else { return nil }
-        return extensionManager?.adapterResolutionOwner.windowAdapter(for: windowId)
+        guard let extensionManager,
+              let profileID = extensionManager.profileId(for: extensionContext),
+              extensionManager.resolvedProfileId(for: tab) == profileID,
+              let windowState = resolvedWindowState()
+        else {
+            return nil
+        }
+        return extensionManager.adapterResolutionOwner
+            .publishedNormalWindowAdapter(
+                for: windowState,
+                extensionContext: extensionContext
+            )
     }
 }

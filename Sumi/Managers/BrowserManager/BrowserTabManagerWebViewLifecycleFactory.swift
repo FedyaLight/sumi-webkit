@@ -10,6 +10,7 @@ enum BrowserTabManagerWebViewLifecycleFactory {
         let ownershipQuery = browserManager.webViewRuntime.ownershipQuery
         let rebuild = browserManager.webViewRuntime.rebuildService
         let profileAssignment = browserManager.webViewRuntime.profileAssignmentService
+        let tabBrowserRuntime = TabBrowserRuntimeFactory.make(for: browserManager)
         return TabManagerWebViewLifecycleService(
             materializeVisibleTabWebViewIfNeeded: { tab, windowState in
                 runtime.require().materializeVisibleTabWebViewIfNeeded(tab, in: windowState)
@@ -42,9 +43,7 @@ enum BrowserTabManagerWebViewLifecycleFactory {
                 }
             },
             prepareTab: { tab in
-                tab.attachBrowserRuntime(
-                    TabBrowserRuntimeFactory.make(for: runtime.require())
-                )
+                tab.attachBrowserRuntime(tabBrowserRuntime)
                 if tab.hasCurrentWebView == false {
                     _ = tab.navigationCommandOwner
                         .prepareMainFrameConfigurationPolicyIfNeeded(

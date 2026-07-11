@@ -12,7 +12,7 @@ final class BrowserWindowActivationService {
     private let persistence: WindowSessionPersistenceCoordinator
     private let activePageResolver: ActivePageResolver
     private let findManager: FindManager
-    private let extensions: any BrowserWindowExtensionLifecycleNotifying
+    private let extensions: any BrowserWindowExtensionFocusNotifying
     private let synchronizeFocusedContext: (BrowserWindowState) -> Void
     private let nowPlaying: any SumiNativeNowPlayingRuntimeControlling
     private let backgroundMedia: SumiBackgroundMediaOptimizationService
@@ -23,7 +23,7 @@ final class BrowserWindowActivationService {
         persistence: WindowSessionPersistenceCoordinator,
         activePageResolver: ActivePageResolver,
         findManager: FindManager,
-        extensions: any BrowserWindowExtensionLifecycleNotifying,
+        extensions: any BrowserWindowExtensionFocusNotifying,
         synchronizeFocusedContext: @escaping (BrowserWindowState) -> Void,
         nowPlaying: any SumiNativeNowPlayingRuntimeControlling,
         backgroundMedia: SumiBackgroundMediaOptimizationService

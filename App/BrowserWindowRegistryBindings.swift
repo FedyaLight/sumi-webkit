@@ -13,7 +13,8 @@ enum BrowserWindowRegistryBinding {
         on registry: WindowRegistry
     ) {
         precondition(
-            registry.onWindowRegister == nil
+            registry.prepareWindowRegistration == nil
+                && registry.publishWindowRegistration == nil
                 && registry.onWindowClose == nil
                 && registry.onActiveWindowChange == nil
                 && registry.onWindowVisibilityChange == nil
@@ -21,8 +22,11 @@ enum BrowserWindowRegistryBinding {
             "WindowRegistry browser workflows must be installed exactly once"
         )
 
-        registry.onWindowRegister = { [weak registration] windowState in
-            registration?.restore(windowState)
+        registry.prepareWindowRegistration = { [weak registration] windowState in
+            registration?.prepareRegistration(windowState)
+        }
+        registry.publishWindowRegistration = { [weak registration] windowState in
+            registration?.commitRegistration(windowState)
         }
         registry.onWindowClose = { [weak registration, weak activity] windowState in
             registration?.discardRegistration(windowState)

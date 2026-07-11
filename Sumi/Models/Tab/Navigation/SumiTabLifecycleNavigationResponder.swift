@@ -23,6 +23,7 @@ final class SumiTabLifecycleNavigationResponder:
               context.isMainFrame == true,
               let webView = context.webView
         else { return }
+        (webView as? FocusableWKWebView)?.resetPageInteractionState()
         webView.sumiReaderPresentationHost?.dismissReader()
 
         tab.navigationRuntime.lifecycleNavigationRuntime
@@ -72,6 +73,7 @@ final class SumiTabLifecycleNavigationResponder:
               context.isMainFrame == true,
               let webView = context.webView
         else { return }
+        (webView as? FocusableWKWebView)?.resetPageInteractionState()
         webView.sumiReaderPresentationHost?.dismissReader()
 
         tab.navigationRuntime.lifecycleNavigationRuntime
@@ -324,7 +326,7 @@ final class SumiTabLifecycleNavigationResponder:
                 webView: webView,
                 navigationID: context.navigationID,
                 targetURL: webView.url ?? context.url ?? tab.url,
-                isPDF: tab.suspensionProtection.isPDFDocument
+                isPDF: tab.mainFrameDocumentLease(for: webView)?.isPDF ?? false
             ),
             tab: tab
         )
@@ -503,6 +505,7 @@ final class SumiTabLifecycleNavigationResponder:
 
     func webContentProcessDidTerminate(on webView: WKWebView) {
         guard let tab, tab.webViewSession.owns(webView) else { return }
+        (webView as? FocusableWKWebView)?.resetPageInteractionState()
         webView.sumiReaderPresentationHost?.dismissReader()
         if tab.navigationRuntime.lifecycleNavigationRuntime
             .handleDestructiveDataCleanupProcessTermination(webView) {
@@ -653,7 +656,6 @@ final class SumiTabLifecycleNavigationResponder:
             tab.handleNormalTabPermissionNavigation(to: context.url)
             tab.markRegularMainFrameNavigation(on: webView)
         }
-        tab.suspensionProtection.resetForNewPage()
         tab.navigationRuntime.lifecycleNavigationRuntime.resetRevisitProtection(tab)
     }
 

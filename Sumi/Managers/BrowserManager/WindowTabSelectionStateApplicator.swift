@@ -112,6 +112,11 @@ enum WindowTabSelectionStateApplicator {
         )
 
         var stateDidChange = false
+        if windowState.webKitChildWindowIdentity != nil,
+           windowState.webKitChildWindowIdentity?.initialTabID != tab.id {
+            windowState.markWebKitChildWindowAdopted(by: tab.id)
+            stateDidChange = true
+        }
         stateDidChange = assignIfChanged(\.currentTabId, targetState.currentTabId, in: windowState) || stateDidChange
         stateDidChange = assignIfChanged(\.isShowingEmptyState, targetState.isShowingEmptyState, in: windowState) || stateDidChange
         stateDidChange = assignIfChanged(\.currentSpaceId, targetState.currentSpaceId, in: windowState) || stateDidChange

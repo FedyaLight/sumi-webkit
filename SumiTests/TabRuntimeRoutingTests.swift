@@ -271,7 +271,9 @@ final class TabRuntimeRoutingTests: XCTestCase {
             handlePermissionLifecycleEvent: { _ in
                 permissionLifecycleEventCount += 1
             },
-            isActiveGlancePreviewSurface: { _, _ in false }
+            isActiveGlancePreviewSurface: { _, _ in false },
+            surfaceState: { _, _ in .inactive },
+            profile: { _, _ in nil }
         )
         tab.navigationRuntime.webViewCleanupRuntime = TabWebViewCleanupRuntime(
             deferProtectedWebViewCleanup: { candidateWebView, tabId, reason in
@@ -356,128 +358,6 @@ final class TabRuntimeRoutingTests: XCTestCase {
         XCTAssertIdentical(preparedWebViews.first, webView)
         XCTAssertEqual(preparedURLs, [targetURL])
         XCTAssertEqual(preparedReasons, ["test.extension-runtime"])
-    }
-
-    func testScriptMessageGlanceUsesInjectedRuntimeWithoutBrowserManager() {
-        let tab = Tab(loadsCachedFaviconOnInit: false)
-        let targetURL = URL(string: "https://example.com/glance")!
-        let originRect = CGRect(x: 12, y: 24, width: 36, height: 48)
-        var capturedURL: URL?
-        var capturedTab: Tab?
-        var capturedOriginRect: CGRect?
-        tab.navigationRuntime.scriptMessageRuntime = TabScriptMessageRuntime(
-            presentExternalURLInGlance: { url, sourceTab, originRectInWindow in
-                capturedURL = url
-                capturedTab = sourceTab
-                capturedOriginRect = originRectInWindow
-            }
-        )
-
-        tab.scriptMessageRuntimeOwner.openURLInGlance(
-            targetURL,
-            originRectInWindow: originRect
-        )
-
-        XCTAssertFalse(tab.hasBrowserRuntime)
-        XCTAssertEqual(capturedURL, targetURL)
-        XCTAssertIdentical(capturedTab, tab)
-        XCTAssertEqual(capturedOriginRect, originRect)
-    }
-
-    func testBrowserActionsUseInjectedServiceWithoutBrowserManager() throws {
-        let tab = Tab(loadsCachedFaviconOnInit: false)
-        let webView = WKWebView()
-        let downloadURL = try XCTUnwrap(URL(string: "https://example.com/download.zip"))
-        let foregroundURL = try XCTUnwrap(URL(string: "https://example.com/foreground"))
-        let newWindowURL = try XCTUnwrap(URL(string: "https://example.com/window"))
-        let shortcutId = UUID()
-        let shortcutURL = try XCTUnwrap(URL(string: "https://example.com/shortcut"))
-        var bookmarkChecks: [UUID] = []
-        var bookmarkEditorRequestCount = 0
-        var downloadRequests: [(ObjectIdentifier, URL?)] = []
-        var foregroundRequests: [(URL, UUID)] = []
-        var newWindowRequests: [[URL]] = []
-        var gestureReconciliations: [(UUID, String)] = []
-        var activatedTabIds: [UUID] = []
-        let fallbackAppearance = try XCTUnwrap(NSAppearance(named: .aqua))
-        let interactionEvent = try XCTUnwrap(
-            NSEvent.mouseEvent(
-                with: .leftMouseDown,
-                location: .zero,
-                modifierFlags: [],
-                timestamp: 1,
-                windowNumber: 0,
-                context: nil,
-                eventNumber: 1,
-                clickCount: 1,
-                pressure: 0
-            )
-        )
-        tab.attachBrowserActionService(
-            TabBrowserActionService(
-                hasBrowserRuntime: { true },
-                webPageMenuAppearance: { _, fallback in fallback },
-                canBookmark: { candidate in
-                    bookmarkChecks.append(candidate.id)
-                    return true
-                },
-                requestBookmarkEditorFromMenu: {
-                    bookmarkEditorRequestCount += 1
-                },
-                canStartContextMenuDownload: { true },
-                startContextMenuDownload: { sourceWebView, request in
-                    downloadRequests.append((ObjectIdentifier(sourceWebView), request.url))
-                },
-                openURLInForegroundTab: { url, sourceTab in
-                    foregroundRequests.append((url, sourceTab.id))
-                },
-                openURLsInNewWindow: { urls in
-                    newWindowRequests.append(urls)
-                },
-                notificationPermissionBridge: { nil },
-                shortcutLaunchURL: { candidateId in
-                    candidateId == shortcutId ? shortcutURL : nil
-                },
-                reconcileExtensionRuntimeOnUserGesture: { sourceTab, reason in
-                    gestureReconciliations.append((sourceTab.id, reason))
-                },
-                isCurrentTab: { candidate in
-                    candidate.id == tab.id
-                },
-                activate: { sourceTab in
-                    activatedTabIds.append(sourceTab.id)
-                }
-            )
-        )
-
-        XCTAssertTrue(tab.hasBrowserRuntime)
-        let resolvedAppearance = try XCTUnwrap(
-            tab.browserActionService.webPageMenuAppearance(tab, fallbackAppearance)
-        )
-        XCTAssertIdentical(resolvedAppearance, fallbackAppearance)
-        XCTAssertTrue(tab.browserActionService.canBookmark(tab))
-        tab.browserActionService.requestBookmarkEditorFromMenu()
-        XCTAssertTrue(tab.browserActionService.canStartContextMenuDownload())
-        tab.browserActionService.startContextMenuDownload(webView, URLRequest(url: downloadURL))
-        tab.browserActionService.openURLInForegroundTab(foregroundURL, tab)
-        tab.browserActionService.openURLsInNewWindow([newWindowURL])
-        XCTAssertNil(tab.browserActionService.notificationPermissionBridge())
-        XCTAssertEqual(tab.browserActionService.shortcutLaunchURL(shortcutId), shortcutURL)
-        tab.recordWebViewInteraction(.mouseDown(interactionEvent))
-        XCTAssertTrue(tab.isCurrentTab)
-        tab.activate()
-
-        XCTAssertFalse(tab.hasCurrentWebView)
-        XCTAssertEqual(bookmarkChecks, [tab.id])
-        XCTAssertEqual(bookmarkEditorRequestCount, 1)
-        XCTAssertEqual(downloadRequests.map(\.0), [ObjectIdentifier(webView)])
-        XCTAssertEqual(downloadRequests.map(\.1), [downloadURL])
-        XCTAssertEqual(foregroundRequests.map(\.0), [foregroundURL])
-        XCTAssertEqual(foregroundRequests.map(\.1), [tab.id])
-        XCTAssertEqual(newWindowRequests, [[newWindowURL]])
-        XCTAssertEqual(gestureReconciliations.map(\.0), [tab.id])
-        XCTAssertEqual(gestureReconciliations.map(\.1), ["Tab.recordWebViewInteraction"])
-        XCTAssertEqual(activatedTabIds, [tab.id])
     }
 
     func testExtensionPageFaviconUsesInjectedRuntimeWithoutBrowserManager() async throws {
@@ -600,9 +480,15 @@ final class TabRuntimeRoutingTests: XCTestCase {
         )
         XCTAssertTrue(host.presentReader(
             html: "<html><body><article>Reader</article></body></html>",
-            sourceURL: tab.url,
-            documentLease: lease,
-            navigate: { _ in XCTFail("Reader navigation was not requested") }
+            sourceDocument: SumiReaderSourceDocument(
+                webView: canonicalWebView,
+                lease: lease,
+                sourceURL: tab.url,
+                remoteResourcePolicy: .denyRemoteResources,
+                currentLease: { lease },
+                routeWebLink: { _, _ in false },
+                routeExternalLink: { _ in }
+            )
         ))
         tab.navigationRuntime.findInPageRuntime = TabFindInPageRuntime(
             webView: { _, _ in canonicalWebView }

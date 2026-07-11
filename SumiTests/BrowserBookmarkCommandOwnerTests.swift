@@ -20,7 +20,7 @@ final class BrowserBookmarkCommandOwnerTests: XCTestCase {
         try await super.tearDown()
     }
 
-    func testRequestBookmarkEditorSetsRequestOnlyForActiveBookmarkablePage() throws {
+    func testRequestBookmarkEditorUsesExactWindowAndBookmarkableTab() throws {
         let harness = makeHarness()
         let presenter = FakeBookmarkCommandPresenter()
         let owner = harness.makeOwner(presenter: presenter)
@@ -30,21 +30,25 @@ final class BrowserBookmarkCommandOwnerTests: XCTestCase {
             name: "Example"
         )
 
-        harness.activeWindow = windowState
-        harness.activeTabsByWindowID[windowState.id] = bookmarkableTab
-
-        owner.requestBookmarkEditorForActiveWindowFromMenu()
+        XCTAssertTrue(
+            owner.requestBookmarkEditor(
+                for: bookmarkableTab,
+                in: windowState
+            )
+        )
 
         XCTAssertEqual(harness.bookmarkEditorPresentationRequest?.windowID, windowState.id)
         XCTAssertEqual(harness.bookmarkEditorPresentationRequest?.tabID, bookmarkableTab.id)
 
         let existingRequest = try XCTUnwrap(harness.bookmarkEditorPresentationRequest)
-        harness.activeTabsByWindowID[windowState.id] = Tab(
+        let emptyTab = Tab(
             url: SumiSurface.emptyTabURL,
             name: "Empty"
         )
 
-        owner.requestBookmarkEditorForActiveWindowFromMenu()
+        XCTAssertFalse(
+            owner.requestBookmarkEditor(for: emptyTab, in: windowState)
+        )
 
         XCTAssertEqual(harness.bookmarkEditorPresentationRequest, existingRequest)
     }

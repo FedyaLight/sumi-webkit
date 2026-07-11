@@ -35,13 +35,22 @@ final class SumiTabNavigationDelegateAdapter {
 
     init(tab: Tab) {
         self.navigationResponderChain = DistributedNavigationDelegate()
-        self.glanceNavigation = SumiGlanceNavigationResponder(tab: tab)
+        self.glanceNavigation = SumiGlanceNavigationResponder()
         self.glanceNavigationAdapter = SumiNavigationResponderAdapter(target: glanceNavigation)
         self.installNavigation = SumiInstallNavigationResponder(tab: tab)
         self.installNavigationAdapter = SumiNavigationResponderAdapter(target: installNavigation)
         self.internalSurfaceNavigation = SumiInternalSurfaceNavigationResponder()
         self.internalSurfaceNavigationAdapter = SumiNavigationResponderAdapter(target: internalSurfaceNavigation)
-        self.popupHandling = SumiPopupHandlingNavigationResponder(tab: tab)
+        self.popupHandling = SumiPopupHandlingNavigationResponder(
+            tab: tab,
+            permissions: tab.navigationRuntime.popupPermissionEvaluator,
+            extensionRequests:
+                tab.navigationRuntime.extensionPopupRequestConsumer,
+            extensionTabs: tab.navigationRuntime.extensionExternalTabOpening,
+            webPopups: tab.navigationRuntime.physicalWebPopupOpening,
+            childTabs: tab.navigationRuntime.webKitChildTabOpening,
+            childWindows: tab.navigationRuntime.webKitChildWindowOpening
+        )
         self.popupHandlingAdapter = SumiNavigationResponderAdapter(target: popupHandling)
         self.externalScheme = SumiExternalSchemeNavigationResponder(
             tab: tab,
@@ -127,14 +136,6 @@ final class SumiTabNavigationDelegateAdapter {
         )
     }
 
-    @discardableResult
-    func consumeNativeContextMenuRequest(
-        from item: NSMenuItem,
-        perform handler: @escaping @MainActor (WKNavigationAction) -> Void
-    ) -> Bool {
-        popupHandling.consumeNativeContextMenuRequest(from: item, perform: handler)
-    }
-
     func hasResponder<T: AnyObject>(_ type: T.Type) -> Bool {
         navigationResponderChain.getResponders().contains { responder in
             guard let adapter = responder as? SumiNavigationResponderAdapter else {
@@ -154,14 +155,12 @@ extension Tab {
     func installNavigationDelegate(on webView: WKWebView) -> SumiTabNavigationDelegateAdapter {
         if let existing = navigationDelegateBundle(for: webView) {
             existing.install(on: webView)
-            bindWebViewInteractionEvents(on: webView)
             return existing
         }
 
         let bundle = SumiTabNavigationDelegateAdapter(tab: self)
         navigationRuntime.navigationDelegateBundles.setObject(bundle, forKey: webView)
         bundle.install(on: webView)
-        bindWebViewInteractionEvents(on: webView)
         return bundle
     }
 
@@ -171,7 +170,6 @@ extension Tab {
 
     func removeNavigationDelegateBundle(for webView: WKWebView) {
         navigationRuntime.navigationDelegateBundles.removeObject(forKey: webView)
-        webViewInteractionCancellables.removeValue(forKey: ObjectIdentifier(webView))
     }
 
     func dispatchCreateWebView(
@@ -185,16 +183,4 @@ extension Tab {
         }
     }
 
-    private func bindWebViewInteractionEvents(on webView: WKWebView) {
-        guard let webView = webView as? FocusableWKWebView else { return }
-        let webViewID = ObjectIdentifier(webView)
-        guard webViewInteractionCancellables[webViewID] == nil else { return }
-
-        webViewInteractionCancellables[webViewID] = webView.interactionEventsPublisher
-            .sink { [weak self] interactionEvent in
-                MainActor.assumeIsolated {
-                    self?.recordWebViewInteraction(interactionEvent)
-                }
-            }
-    }
 }

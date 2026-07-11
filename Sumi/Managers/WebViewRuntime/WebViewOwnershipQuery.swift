@@ -34,6 +34,14 @@ final class WebViewOwnershipQuery {
         webViewSessions.windowIDs(for: tabID)
     }
 
+    func trackedTabCount(in windowID: UUID) -> Int {
+        Set(
+            webViewSessions.trackedWebViews(in: windowID).map {
+                $0.0.tabID
+            }
+        ).count
+    }
+
     func primaryWindowID(for tabID: UUID) -> UUID? {
         webViewSessions.primaryWindowID(for: tabID)
     }

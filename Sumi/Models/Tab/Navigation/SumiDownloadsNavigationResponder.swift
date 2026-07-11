@@ -4,7 +4,7 @@ import SumiDomain
 import WebKit
 
 @MainActor
-final class SumiDownloadsNavigationResponder: SumiNavigationActionResponding, SumiNavigationResponseResponding, SumiNavigationDownloadResponding {
+final class SumiDownloadsNavigationResponder: SumiNavigationActionSourceWebViewResponding, SumiNavigationResponseResponding, SumiNavigationDownloadResponding {
     private weak var tab: Tab?
     private weak var downloadManager: DownloadManager?
     private var isRestoringSessionState = false
@@ -18,6 +18,7 @@ final class SumiDownloadsNavigationResponder: SumiNavigationActionResponding, Su
 
     func decidePolicy(
         for navigationAction: SumiNavigationAction,
+        sourceWebView: WKWebView?,
         preferences _: inout SumiNavigationPreferences
     ) async -> SumiNavigationActionPolicy? {
         let signpostState = PerformanceTrace.beginInterval("NavigationPolicy.downloadActionResponder")
@@ -37,9 +38,13 @@ final class SumiDownloadsNavigationResponder: SumiNavigationActionResponding, Su
         }
 
         let actionModifierFlags = navigationAction.modifierFlags.intersection([.command, .option, .control, .shift])
-        let modifierFlags = tab?.resolvedNavigationModifierFlags(actionFlags: actionModifierFlags)
-            ?? navigationAction.modifierFlags
-        let optionGlanceRequested = tab?.isGlanceTriggerActive(modifierFlags) == true
+        let physicalSource = sourceWebView as? FocusableWKWebView
+        let modifierFlags = physicalSource?
+            .gestures.resolvedModifierFlags(actionFlags: actionModifierFlags)
+            ?? actionModifierFlags
+        let gestureTab = physicalSource?.owningTab
+            ?? (sourceWebView == nil ? tab : nil)
+        let optionGlanceRequested = gestureTab?.isGlanceTriggerActive(modifierFlags) == true
         let optionDownloadRequested = navigationAction.navigationType.isLinkActivated
             && modifierFlags.contains(.option)
             && !modifierFlags.contains(.command)

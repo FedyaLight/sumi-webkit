@@ -74,9 +74,10 @@ final class WindowSessionReopenService: WindowSessionReopening {
         guard registry.windows[targetWindow.id] === targetWindow,
               targetWindow.restoredSessionWindowId == snapshot.id,
               targetWindow.isAwaitingInitialSessionResolution == false else {
-            let appKitWindow = registry.appKitWindow(for: targetWindow)
-            registry.rollbackRegistration(targetWindow)
-            appKitWindow?.close()
+            let shell = registry.appKitWindow(for: targetWindow)
+            if registry.discardRejectedRegistration(targetWindow) {
+                shell?.close()
+            }
             return false
         }
         NSApp.activate(ignoringOtherApps: true)

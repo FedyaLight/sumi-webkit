@@ -69,7 +69,7 @@ final class BrowserWindowSessionBundle {
 
         self.restoration = BrowserWindowSessionRestorationService(
             restoration: restoreService,
-            extensions: browserManager.optionalModules.extensions,
+            extensionPublication: browserManager.windowExtensionPublication,
             profileSupport: browserManager,
             startupSessions: browserManager
         )

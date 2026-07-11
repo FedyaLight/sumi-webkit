@@ -12,7 +12,7 @@ final class BrowserWebViewCloseRouter {
     private let isAuxiliaryMiniWindowTab: @MainActor (Tab) -> Bool
     private let removeAuxiliaryMiniWindowTab: @MainActor (Tab) -> Void
     private let notifyExtensionTabClosedAction: @MainActor (Tab) -> Void
-    private let makeWebKitCloseRoutingRuntime: @MainActor () -> BrowserWebKitCloseRoutingOwner.Runtime
+    private let closeNormalWebView: @MainActor (WKWebView) -> Bool
 
     init(
         glanceHandleWebViewDidClose: @escaping @MainActor (WKWebView) -> Bool,
@@ -22,7 +22,7 @@ final class BrowserWebViewCloseRouter {
         isAuxiliaryMiniWindowTab: @escaping @MainActor (Tab) -> Bool,
         removeAuxiliaryMiniWindowTab: @escaping @MainActor (Tab) -> Void,
         notifyExtensionTabClosed: @escaping @MainActor (Tab) -> Void,
-        makeWebKitCloseRoutingRuntime: @escaping @MainActor () -> BrowserWebKitCloseRoutingOwner.Runtime
+        closeNormalWebView: @escaping @MainActor (WKWebView) -> Bool
     ) {
         self.glanceHandleWebViewDidClose = glanceHandleWebViewDidClose
         self.auxiliaryContains = auxiliaryContains
@@ -31,11 +31,42 @@ final class BrowserWebViewCloseRouter {
         self.isAuxiliaryMiniWindowTab = isAuxiliaryMiniWindowTab
         self.removeAuxiliaryMiniWindowTab = removeAuxiliaryMiniWindowTab
         self.notifyExtensionTabClosedAction = notifyExtensionTabClosed
-        self.makeWebKitCloseRoutingRuntime = makeWebKitCloseRoutingRuntime
+        self.closeNormalWebView = closeNormalWebView
     }
 
     convenience init(browserManager: BrowserManager) {
         let webViewLifecycle = browserManager.webViewRuntime.lifecycleService
+        let ownershipQuery = browserManager.webViewRuntime.ownershipQuery
+        let targetResolver = WebKitCloseTargetResolver(
+            lifecycle: webViewLifecycle,
+            ownership: ownershipQuery,
+            tabs: browserManager.tabManager,
+            windowTabs: browserManager.shellRuntime.windowTabs,
+            routing: browserManager.webViewRoutingService,
+            registry: { [weak browserManager] in
+                browserManager?.windowRegistry
+            }
+        )
+        let childWindows = WebKitChildWindowCloseTransaction(
+            lifecycle: webViewLifecycle,
+            ownership: ownershipQuery,
+            tabs: browserManager.tabManager,
+            windowTabs: browserManager.shellRuntime.windowTabs,
+            windowCommands: browserManager.windowCommands,
+            registry: { [weak browserManager] in
+                browserManager?.windowRegistry
+            }
+        )
+        let closeCommands = BrowserWebKitCloseCommands(
+            lifecycle: webViewLifecycle,
+            tabClose: browserManager.tabLifecycleService.closeOrchestration,
+            tabs: browserManager.tabManager
+        )
+        let normalClose = BrowserTabWebKitCloseService(
+            targets: targetResolver,
+            childWindows: childWindows,
+            commands: closeCommands
+        )
         self.init(
             glanceHandleWebViewDidClose: { [weak browserManager] webView in
                 browserManager?.glanceManager.handleWebViewDidClose(webView) ?? false
@@ -63,42 +94,8 @@ final class BrowserWebViewCloseRouter {
             notifyExtensionTabClosed: { [weak browserManager] tab in
                 browserManager?.optionalModules.extensions.notifyTabClosedIfLoaded(tab)
             },
-            makeWebKitCloseRoutingRuntime: { [weak browserManager] in
-                BrowserWebKitCloseRoutingOwner.Runtime(
-                    prepareClose: { [webViewLifecycle] webView in
-                        webViewLifecycle.prepareWebKitClose(webView)
-                    },
-                    cleanupTrackedWebView: { [webViewLifecycle] webView, owner in
-                        webViewLifecycle.cleanupTrackedWebViewAfterWebKitClose(
-                                webView,
-                                owner: owner
-                            )
-                    },
-                    tab: { [weak browserManager] tabID in
-                        browserManager?.tabManager.tabCollectionMembershipOwner.tab(for: tabID)
-                    },
-                    regularTabs: { [weak browserManager] in
-                        browserManager?.tabManager.tabCollectionMembershipOwner.allTabs() ?? []
-                    },
-                    allWindows: { [weak browserManager] in
-                        browserManager?.windowRegistry?.allWindows ?? []
-                    },
-                    window: { [weak browserManager] windowID in
-                        browserManager?.windowRegistry?.windows[windowID]
-                    },
-                    windowContaining: { [weak browserManager] tab in
-                        browserManager?.shellRuntime.windowTabs.windowState(containing: tab)
-                    },
-                    ownsLiveWebView: { [weak browserManager] webView, tab in
-                        browserManager?.webViewRoutingService.ownsLiveWebView(webView, for: tab) ?? false
-                    },
-                    closeTab: { [weak browserManager] tab, windowState in
-                        browserManager?.tabLifecycleService.closeOrchestration.closeTab(tab, in: windowState)
-                    },
-                    removeTab: { [weak browserManager] tabID in
-                        browserManager?.tabManager.tabRemovalOwner.removeTab(tabID)
-                    }
-                )
+            closeNormalWebView: { [normalClose] webView in
+                normalClose.handleWebViewDidClose(webView)
             }
         )
     }
@@ -119,10 +116,7 @@ final class BrowserWebViewCloseRouter {
 
     @discardableResult
     func handleNormalWebViewDidClose(_ webView: WKWebView) -> Bool {
-        BrowserWebKitCloseRoutingOwner().handleWebViewDidClose(
-            webView,
-            runtime: makeWebKitCloseRoutingRuntime()
-        )
+        closeNormalWebView(webView)
     }
 
     func closeAuxiliaryMiniWindow(

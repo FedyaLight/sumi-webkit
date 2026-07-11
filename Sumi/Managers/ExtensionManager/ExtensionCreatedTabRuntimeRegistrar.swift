@@ -69,7 +69,6 @@ struct ExtensionCreatedTabRuntimeRegistrar {
                 contextReadiness: .unknown
             )
         }
-        tab.extensionPageRuntimeOwner.markDidOpenTab(generation: generation)
         diagnostics.trace(
             "registerExtensionCreatedTab marked reason=\(reason) generation=\(generation) \(tabDescription(tab))"
         )

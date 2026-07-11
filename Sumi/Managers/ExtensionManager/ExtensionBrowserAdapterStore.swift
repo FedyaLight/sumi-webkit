@@ -4,7 +4,7 @@ import Foundation
 @MainActor
 final class ExtensionBrowserAdapterStore {
     var tabAdapters: [UUID: ExtensionTabAdapter] = [:]
-    var windowAdapters: [UUID: ExtensionWindowAdapter] = [:]
+    private var windowAdapters: [UUID: ExtensionWindowAdapter] = [:]
     var miniWindowAdapters: [UUID: ExtensionMiniWindowAdapter] = [:]
 
     func miniWindowAdapter(
@@ -35,6 +35,14 @@ final class ExtensionBrowserAdapterStore {
         return created
     }
 
+    /// Non-creating identity read for lifecycle transaction validation. UI and
+    /// WebExtension consumers must resolve through the published projection.
+    func existingWindowAdapter(
+        for windowID: UUID
+    ) -> ExtensionWindowAdapter? {
+        windowAdapters[windowID]
+    }
+
     func tabAdapter(
         for tabId: UUID,
         create: () -> ExtensionTabAdapter?
@@ -53,12 +61,36 @@ final class ExtensionBrowserAdapterStore {
         windowAdapters.removeValue(forKey: windowId)
     }
 
+    @discardableResult
+    func removeWindowAdapter(
+        for windowId: UUID,
+        ifIdenticalTo expectedAdapter: ExtensionWindowAdapter
+    ) -> Bool {
+        guard windowAdapters[windowId] === expectedAdapter else {
+            return false
+        }
+        windowAdapters.removeValue(forKey: windowId)
+        return true
+    }
+
     func removeMiniWindowAdapter(for sessionId: UUID) {
         miniWindowAdapters.removeValue(forKey: sessionId)
     }
 
     func removeTabAdapter(for tabId: UUID) {
         tabAdapters.removeValue(forKey: tabId)
+    }
+
+    /// Removes only the adapter created by a rejected prepublication
+    /// transaction. A replacement adapter for the same UUID is never evicted.
+    @discardableResult
+    func removeTabAdapter(
+        for tabId: UUID,
+        ifIdenticalTo expectedAdapter: ExtensionTabAdapter
+    ) -> Bool {
+        guard tabAdapters[tabId] === expectedAdapter else { return false }
+        tabAdapters.removeValue(forKey: tabId)
+        return true
     }
 
     func prune(liveTabIDs: Set<UUID>, liveWindowIDs: Set<UUID>) {

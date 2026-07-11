@@ -46,6 +46,28 @@ final class BrowserTabOpeningOwnerTests: XCTestCase {
         )
     }
 
+    func testBackgroundOpenAdoptsDedicatedWebKitChildWindow() {
+        let harness = makeHarness()
+        let initialTab = harness.browserManager.tabManager
+            .regularTabLifecycleOwner.createNewTab(
+                in: harness.primarySpace,
+                activate: false
+            )
+        harness.windowState.currentTabId = initialTab.id
+        harness.windowState.webKitChildWindowIdentity =
+            WebKitChildWindowIdentity(initialTabID: initialTab.id)
+
+        let opened = harness.browserManager.tabLifecycleService.opening
+            .openNewTab(context: .background(
+                windowState: harness.windowState,
+                sourceTab: initialTab
+            ))
+
+        XCTAssertEqual(harness.windowState.currentTabId, initialTab.id)
+        XCTAssertNotEqual(opened.id, initialTab.id)
+        XCTAssertNil(harness.windowState.webKitChildWindowIdentity)
+    }
+
     func testDuplicateUsesWindowSpaceBeforeSourceSpace() {
         let harness = makeHarness()
         let source = harness.browserManager.tabManager.regularTabLifecycleOwner.createNewTab(

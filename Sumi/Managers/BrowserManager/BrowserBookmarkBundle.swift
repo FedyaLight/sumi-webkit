@@ -17,7 +17,8 @@ final class BrowserBookmarkBundle {
         self.bookmarkCommandOwner = BrowserBookmarkCommandOwner(
             activeWindow: { [weak browserManager] in browserManager?.windowRegistry?.activeWindow },
             activePageTab: { [weak browserManager] windowState in
-                browserManager?.shellRuntime.activePageResolver.resolve(in: windowState)?.tab
+                browserManager?.shellRuntime.activePageResolver
+                    .resolve(in: windowState)?.tab
             },
             bookmarkManager: { [weak browserManager] in browserManager?.bookmarkManager },
             bookmarkEditorPresentationRequest: { [weak browserManager] in

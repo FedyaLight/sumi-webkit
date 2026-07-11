@@ -48,15 +48,23 @@ enum SumiPopupUserActivationState: Equatable, Sendable {
     }
 }
 
+struct SumiPopupUserActivationEvaluation: Equatable, Sendable {
+    let state: SumiPopupUserActivationState
+    fileprivate let recordedGeneration: UInt64?
+}
+
 @MainActor
 final class SumiPopupUserActivationTracker {
     struct RecordedActivation {
         let kind: String
         let timestamp: TimeInterval
+        let generation: UInt64
+        var isSpent: Bool
     }
 
     private let threshold: TimeInterval
     private let currentTime: () -> TimeInterval
+    private var nextGeneration: UInt64 = 0
     private var lastActivation: RecordedActivation?
 
     init(
@@ -74,9 +82,12 @@ final class SumiPopupUserActivationTracker {
     }
 
     func record(event: NSEvent, kind: String) {
+        nextGeneration &+= 1
         lastActivation = RecordedActivation(
             kind: kind,
-            timestamp: event.timestamp
+            timestamp: event.timestamp,
+            generation: nextGeneration,
+            isSpent: false
         )
     }
 
@@ -84,29 +95,97 @@ final class SumiPopupUserActivationTracker {
         webKitUserInitiated: Bool?,
         navigationActionUserInitiated: Bool? = nil
     ) -> SumiPopupUserActivationState {
-        if webKitUserInitiated == true {
-            return .directWebKit
-        }
-        if navigationActionUserInitiated == true {
-            return .navigationAction
-        }
-        guard let lastActivation else {
-            return webKitUserInitiated == nil && navigationActionUserInitiated == nil ? .unknown : .none
-        }
-        let now = currentTime()
-        if (0...threshold).contains(now - lastActivation.timestamp) {
-            return .recentBrowserEvent(
-                kind: lastActivation.kind,
-                eventTimestamp: lastActivation.timestamp,
-                currentTime: now
-            )
-        }
-        return .none
+        evaluate(
+            webKitUserInitiated: webKitUserInitiated,
+            navigationActionUserInitiated: navigationActionUserInitiated
+        ).state
     }
 
-    func consumeIfUserActivated(_ activationState: SumiPopupUserActivationState) {
-        guard activationState.isUserActivated else { return }
+    func evaluate(
+        webKitUserInitiated: Bool?,
+        navigationActionUserInitiated: Bool? = nil
+    ) -> SumiPopupUserActivationEvaluation {
+        let hadRecordedActivation = lastActivation != nil
+        if let lastActivation {
+            let now = currentTime()
+            let isRecent = (0...threshold).contains(now - lastActivation.timestamp)
+            if isRecent {
+                guard !lastActivation.isSpent else {
+                    return SumiPopupUserActivationEvaluation(
+                        state: .none,
+                        recordedGeneration: nil
+                    )
+                }
+                let state: SumiPopupUserActivationState
+                if webKitUserInitiated == true {
+                    state = .directWebKit
+                } else if navigationActionUserInitiated == true {
+                    state = .navigationAction
+                } else {
+                    state = .recentBrowserEvent(
+                        kind: lastActivation.kind,
+                        eventTimestamp: lastActivation.timestamp,
+                        currentTime: now
+                    )
+                }
+                return SumiPopupUserActivationEvaluation(
+                    state: state,
+                    recordedGeneration: lastActivation.generation
+                )
+            }
+        }
+
+        if webKitUserInitiated == true {
+            return SumiPopupUserActivationEvaluation(
+                state: .directWebKit,
+                recordedGeneration: nil
+            )
+        }
+        if navigationActionUserInitiated == true {
+            return SumiPopupUserActivationEvaluation(
+                state: .navigationAction,
+                recordedGeneration: nil
+            )
+        }
+        return SumiPopupUserActivationEvaluation(
+            state: !hadRecordedActivation
+                && webKitUserInitiated == nil
+                && navigationActionUserInitiated == nil
+                ? .unknown
+                : .none,
+            recordedGeneration: nil
+        )
+    }
+
+    func claim(
+        webKitUserInitiated: Bool?,
+        navigationActionUserInitiated: Bool? = nil
+    ) -> SumiPopupUserActivationState {
+        let evaluation = evaluate(
+            webKitUserInitiated: webKitUserInitiated,
+            navigationActionUserInitiated: navigationActionUserInitiated
+        )
+        consume(evaluation)
+        return evaluation.state
+    }
+
+    func consume(_ evaluation: SumiPopupUserActivationEvaluation) {
+        guard let recordedGeneration = evaluation.recordedGeneration,
+              var lastActivation,
+              lastActivation.generation == recordedGeneration
+        else { return }
+        lastActivation.isSpent = true
+        self.lastActivation = lastActivation
+    }
+
+    func clear() {
         lastActivation = nil
+    }
+
+    func spendCurrentActivation() {
+        guard var lastActivation else { return }
+        lastActivation.isSpent = true
+        self.lastActivation = lastActivation
     }
 }
 

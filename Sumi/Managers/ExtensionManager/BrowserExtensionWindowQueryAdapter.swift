@@ -57,11 +57,14 @@ final class BrowserExtensionWindowQueryAdapter: ExtensionWindowQuery {
         currentTab(windowState)
     }
 
-    func currentExtensionTabForActiveWindow() -> Tab? {
-        currentTabForActiveWindow()
+    func extensionTab(
+        withID tabID: UUID,
+        in windowState: BrowserWindowState
+    ) -> Tab? {
+        tabs(windowState).first { $0.id == tabID }
     }
 
-    func currentExtensionTabForPopup() -> Tab? {
+    func currentExtensionTabForActiveWindow() -> Tab? {
         currentTabForActiveWindow()
     }
 

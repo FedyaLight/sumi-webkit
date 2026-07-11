@@ -113,22 +113,28 @@ final class BrowserBookmarkCommandOwner {
         )
     }
 
-    @MainActor
-    func requestBookmarkEditorForActiveWindowFromMenu() {
-        guard let bookmarkManager = bookmarkManager(),
-              let windowState = activeWindow(),
-              let tab = activePageTab(windowState),
-              bookmarkManager.canBookmark(tab)
-        else {
-            return
-        }
-
+    @discardableResult
+    func requestBookmarkEditor(
+        for tab: Tab,
+        in windowState: BrowserWindowState
+    ) -> Bool {
+        guard bookmarkManager()?.canBookmark(tab) == true else { return false }
         setBookmarkEditorPresentationRequest(
             SumiBookmarkEditorPresentationRequest(
                 windowID: windowState.id,
                 tabID: tab.id
             )
         )
+        return true
+    }
+
+    func requestBookmarkEditorForActiveWindowFromMenu() {
+        guard let windowState = activeWindow(),
+              let tab = activePageTab(windowState)
+        else {
+            return
+        }
+        _ = requestBookmarkEditor(for: tab, in: windowState)
     }
 
     @MainActor

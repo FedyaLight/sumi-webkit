@@ -16,6 +16,7 @@ final class TabExtensionRuntimeState {
     var lastReportedTitle: String?
     var didReportOpenForGeneration: UInt64 = 0
     var eligibleGeneration: UInt64 = 0
+    var committedWindowPrepublicationTokenIdentity: ObjectIdentifier?
 }
 
 enum TabExtensionContextReadiness: Equatable, Sendable {
@@ -25,7 +26,7 @@ enum TabExtensionContextReadiness: Equatable, Sendable {
     case missing
 }
 
-private enum TabExtensionLoadingReport: Equatable {
+fileprivate enum TabExtensionLoadingReport: Equatable {
     case notReported
     case reported(Bool)
 
@@ -35,6 +36,47 @@ private enum TabExtensionLoadingReport: Equatable {
 
     func matches(_ isLoadingComplete: Bool) -> Bool {
         self == .reported(isLoadingComplete)
+    }
+}
+
+fileprivate struct TabExtensionPrepublicationSnapshot {
+    let controllerGeneration: UInt64
+    let documentSequence: UInt64
+    let committedMainDocumentURL: URL?
+    let openNotifiedDocumentSequence: UInt64?
+    let openNotifiedContextBindingGeneration: UInt64?
+    let openNotifiedContextReadiness: TabExtensionContextReadiness
+    let lastReportedURL: URL?
+    let lastReportedLoading: TabExtensionLoadingReport
+    let lastReportedTitle: String?
+    let didReportOpenForGeneration: UInt64
+    let eligibleGeneration: UInt64
+    let committedWindowPrepublicationTokenIdentity: ObjectIdentifier?
+}
+
+fileprivate enum TabExtensionPrepublicationPhase: Equatable {
+    case prepared
+    case committed
+    case finished
+}
+
+/// Opaque, single-use rollback token for extension state prepared before a
+/// browser window crosses its publication boundary.
+@MainActor
+final class TabExtensionPrepublicationToken {
+    fileprivate let sourceIdentity: ObjectIdentifier
+    fileprivate let generation: UInt64
+    fileprivate let snapshot: TabExtensionPrepublicationSnapshot
+    fileprivate var phase = TabExtensionPrepublicationPhase.prepared
+
+    fileprivate init(
+        sourceIdentity: ObjectIdentifier,
+        generation: UInt64,
+        snapshot: TabExtensionPrepublicationSnapshot
+    ) {
+        self.sourceIdentity = sourceIdentity
+        self.generation = generation
+        self.snapshot = snapshot
     }
 }
 
@@ -120,6 +162,7 @@ final class TabExtensionPageRuntimeOwner {
 
     func clearOpenNotificationGeneration() {
         state.didReportOpenForGeneration = 0
+        state.committedWindowPrepublicationTokenIdentity = nil
     }
 
     func prepareGeneration(_ generation: UInt64) {
@@ -137,12 +180,172 @@ final class TabExtensionPageRuntimeOwner {
         state.eligibleGeneration = generation
     }
 
+    /// Makes a new Tab queryable by extension window adapters without emitting
+    /// `didOpenTab`. The returned token must be committed after window
+    /// publication or rolled back if the window transaction is rejected.
+    func prepareForWindowPrepublication(
+        generation: UInt64
+    ) -> TabExtensionPrepublicationToken {
+        let token = TabExtensionPrepublicationToken(
+            sourceIdentity: ObjectIdentifier(self),
+            generation: generation,
+            snapshot: TabExtensionPrepublicationSnapshot(
+                controllerGeneration: state.controllerGeneration,
+                documentSequence: state.documentSequence,
+                committedMainDocumentURL: state.committedMainDocumentURL,
+                openNotifiedDocumentSequence:
+                    state.openNotifiedDocumentSequence,
+                openNotifiedContextBindingGeneration:
+                    state.openNotifiedContextBindingGeneration,
+                openNotifiedContextReadiness:
+                    state.openNotifiedContextReadiness,
+                lastReportedURL: state.lastReportedURL,
+                lastReportedLoading: state.lastReportedLoading,
+                lastReportedTitle: state.lastReportedTitle,
+                didReportOpenForGeneration:
+                    state.didReportOpenForGeneration,
+                eligibleGeneration: state.eligibleGeneration,
+                committedWindowPrepublicationTokenIdentity:
+                    state.committedWindowPrepublicationTokenIdentity
+            )
+        )
+        prepareGeneration(generation)
+        markEligible(for: generation)
+        return token
+    }
+
+    @discardableResult
+    func commitWindowPrepublication(
+        _ token: TabExtensionPrepublicationToken,
+        willEmitOpen: Bool
+    ) -> Bool {
+        guard canCommitWindowPrepublication(token) else { return false }
+        if willEmitOpen {
+            token.phase = .committed
+            state.committedWindowPrepublicationTokenIdentity =
+                ObjectIdentifier(token)
+        } else {
+            token.phase = .finished
+        }
+        return true
+    }
+
+    func canCommitWindowPrepublication(
+        _ token: TabExtensionPrepublicationToken
+    ) -> Bool {
+        token.sourceIdentity == ObjectIdentifier(self)
+            && token.phase == .prepared
+            && state.controllerGeneration == token.generation
+            && state.eligibleGeneration == token.generation
+    }
+
+    /// Restores every field touched by generation preparation. The generation
+    /// checks prevent a stale transaction from erasing a newer runtime bind.
+    @discardableResult
+    func rollbackWindowPrepublication(
+        _ token: TabExtensionPrepublicationToken
+    ) -> Bool {
+        guard token.sourceIdentity == ObjectIdentifier(self),
+              token.phase == .prepared,
+              state.controllerGeneration == token.generation,
+              state.eligibleGeneration == token.generation
+        else {
+            return false
+        }
+
+        restoreWindowPrepublicationSnapshot(token.snapshot)
+        token.phase = .finished
+        return true
+    }
+
+    /// Reverses only the exact initial-Tab open emitted after a committed
+    /// window prepublication token. A newer generation or a second publisher
+    /// makes the token stale instead of allowing it to erase newer state.
+    @discardableResult
+    func revokeCommittedWindowPrepublication(
+        _ token: TabExtensionPrepublicationToken,
+        openGeneration: UInt64
+    ) -> Bool {
+        guard token.sourceIdentity == ObjectIdentifier(self),
+              token.phase == .committed,
+              token.generation == openGeneration,
+              state.committedWindowPrepublicationTokenIdentity
+                == ObjectIdentifier(token),
+              state.controllerGeneration == openGeneration,
+              state.eligibleGeneration == openGeneration,
+              state.didReportOpenForGeneration == openGeneration
+        else {
+            return false
+        }
+
+        restoreWindowPrepublicationSnapshot(token.snapshot)
+        token.phase = .finished
+        return true
+    }
+
+    @discardableResult
+    func abortCommittedWindowPrepublicationBeforeOpen(
+        _ token: TabExtensionPrepublicationToken
+    ) -> Bool {
+        guard token.sourceIdentity == ObjectIdentifier(self),
+              token.phase == .committed,
+              state.committedWindowPrepublicationTokenIdentity
+                == ObjectIdentifier(token),
+              state.controllerGeneration == token.generation,
+              state.eligibleGeneration == token.generation,
+              state.didReportOpenForGeneration
+                == token.snapshot.didReportOpenForGeneration
+        else {
+            return false
+        }
+        restoreWindowPrepublicationSnapshot(token.snapshot)
+        token.phase = .finished
+        return true
+    }
+
+    private func restoreWindowPrepublicationSnapshot(
+        _ snapshot: TabExtensionPrepublicationSnapshot
+    ) {
+        state.controllerGeneration = snapshot.controllerGeneration
+        state.documentSequence = snapshot.documentSequence
+        state.committedMainDocumentURL = snapshot.committedMainDocumentURL
+        state.openNotifiedDocumentSequence =
+            snapshot.openNotifiedDocumentSequence
+        state.openNotifiedContextBindingGeneration =
+            snapshot.openNotifiedContextBindingGeneration
+        state.openNotifiedContextReadiness =
+            snapshot.openNotifiedContextReadiness
+        state.lastReportedURL = snapshot.lastReportedURL
+        state.lastReportedLoading = snapshot.lastReportedLoading
+        state.lastReportedTitle = snapshot.lastReportedTitle
+        state.didReportOpenForGeneration =
+            snapshot.didReportOpenForGeneration
+        state.eligibleGeneration = snapshot.eligibleGeneration
+        state.committedWindowPrepublicationTokenIdentity =
+            snapshot.committedWindowPrepublicationTokenIdentity
+    }
+
     func isEligible(for generation: UInt64) -> Bool {
         state.eligibleGeneration == generation
     }
 
     func hasDidOpenTabNotification(for generation: UInt64) -> Bool {
         state.didReportOpenForGeneration == generation
+    }
+
+    /// Atomically tombstones one exact generation before crossing WebKit's
+    /// synchronous `didCloseTab` boundary. A nested reload or teardown sees
+    /// the tombstone and cannot balance the same open twice.
+    @discardableResult
+    func claimDidOpenTabNotificationForClose(
+        generation: UInt64
+    ) -> Bool {
+        guard state.didReportOpenForGeneration == generation else {
+            return false
+        }
+        state.didReportOpenForGeneration = 0
+        state.committedWindowPrepublicationTokenIdentity = nil
+        return true
     }
 
     func hasAnyDidOpenTabNotification() -> Bool {
@@ -242,7 +445,28 @@ final class TabExtensionPageRuntimeOwner {
     }
 
     func markDidOpenTab(generation: UInt64) {
+        state.committedWindowPrepublicationTokenIdentity = nil
         state.didReportOpenForGeneration = generation
+    }
+
+    @discardableResult
+    func markDidOpenTab(
+        generation: UInt64,
+        committedWindowPrepublication token:
+            TabExtensionPrepublicationToken
+    ) -> Bool {
+        guard token.sourceIdentity == ObjectIdentifier(self),
+              token.phase == .committed,
+              token.generation == generation,
+              state.committedWindowPrepublicationTokenIdentity
+                == ObjectIdentifier(token),
+              state.controllerGeneration == generation,
+              state.eligibleGeneration == generation
+        else {
+            return false
+        }
+        state.didReportOpenForGeneration = generation
+        return true
     }
 
     func pageIdentity(tabId: UUID) -> TabExtensionPageIdentity {

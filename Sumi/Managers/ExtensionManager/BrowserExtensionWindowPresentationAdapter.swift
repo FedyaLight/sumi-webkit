@@ -11,7 +11,6 @@ final class BrowserExtensionWindowPresentationAdapter:
     private let windowQuery: any ExtensionWindowQuery
     private let popups: AuxiliaryPopupOpeningService
     private let extensionWindows: ExtensionAuxiliaryWindowOpeningService
-    private let createWindow: @MainActor () -> Void
     private let urlHubAnchorView: @MainActor (UUID) -> NSView?
     private let settings: @MainActor () -> SumiSettingsService?
 
@@ -20,7 +19,6 @@ final class BrowserExtensionWindowPresentationAdapter:
         windowQuery: any ExtensionWindowQuery,
         popups: AuxiliaryPopupOpeningService,
         extensionWindows: ExtensionAuxiliaryWindowOpeningService,
-        createWindow: @escaping @MainActor () -> Void,
         urlHubAnchorView: @escaping @MainActor (UUID) -> NSView?,
         settings: @escaping @MainActor () -> SumiSettingsService?
     ) {
@@ -28,21 +26,8 @@ final class BrowserExtensionWindowPresentationAdapter:
         self.windowQuery = windowQuery
         self.popups = popups
         self.extensionWindows = extensionWindows
-        self.createWindow = createWindow
         self.urlHubAnchorView = urlHubAnchorView
         self.settings = settings
-    }
-
-    func createExtensionWindow() {
-        createWindow()
-    }
-
-    func awaitNextExtensionWindow(
-        excluding existingWindowIDs: Set<UUID>
-    ) async -> BrowserWindowState? {
-        await windowRegistry()?.awaitNextRegisteredWindow(
-            excluding: existingWindowIDs
-        )
     }
 
     func presentExtensionExternalWebPopup(
@@ -50,6 +35,8 @@ final class BrowserExtensionWindowPresentationAdapter:
         request: URLRequest?,
         windowFeatures: WKWindowFeatures,
         openerTab: Tab,
+        openerWindow: NSWindow,
+        openerProfileID: UUID,
         shouldActivateApp: Bool,
         extensionOwnedSourceURL: URL?,
         ownerExtensionID: String?
@@ -59,6 +46,8 @@ final class BrowserExtensionWindowPresentationAdapter:
             request: request,
             windowFeatures: windowFeatures,
             openerTab: openerTab,
+            explicitOpenerWindow: openerWindow,
+            explicitOpenerProfileID: openerProfileID,
             shouldActivateApp: shouldActivateApp,
             extensionOwnedSourceURL: extensionOwnedSourceURL,
             ownerExtensionID: ownerExtensionID

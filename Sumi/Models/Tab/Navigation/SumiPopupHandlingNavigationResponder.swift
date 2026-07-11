@@ -5,54 +5,73 @@ import WebKit
 import SumiWebRuntime
 
 @MainActor
-final class SumiGlanceNavigationResponder: SumiNavigationActionWebViewResponding {
-    private weak var tab: Tab?
-
-    init(tab: Tab) {
-        self.tab = tab
-    }
-
+final class SumiGlanceNavigationResponder: SumiNavigationActionSourceWebViewResponding {
     func decidePolicy(
         for navigationAction: SumiNavigationAction,
-        webView _: WKWebView?,
+        sourceWebView: WKWebView?,
         preferences _: inout SumiNavigationPreferences
     ) async -> SumiNavigationActionPolicy? {
-        guard let tab,
-              tab.navigationRuntime.popupHandlingRuntime.hasBrowserRuntime(),
+        guard let sourceWebView = sourceWebView as? FocusableWKWebView,
+              let sourceTab = sourceWebView.owningTab,
+              sourceTab.hasBrowserRuntime,
               let url = navigationAction.url,
               url.sumiIsGlancePreviewableLink,
               navigationAction.isNativeGlanceLinkActivation
         else { return .next }
 
         let flags = navigationAction.modifierFlags.intersection([.command, .option, .control, .shift])
-        let modifierFlags = tab.resolvedNavigationModifierFlags(actionFlags: flags)
-        guard tab.isGlanceTriggerActive(modifierFlags) else { return .next }
+        let modifierFlags = sourceWebView.gestures.resolvedModifierFlags(
+            actionFlags: flags
+        )
+        guard sourceTab.isGlanceTriggerActive(modifierFlags) else { return .next }
 
         let signpostState = PerformanceTrace.beginInterval("NavigationPolicy.glanceResponder")
         defer {
             PerformanceTrace.endInterval("NavigationPolicy.glanceResponder", signpostState)
         }
 
-        tab.openURLInGlanceFromLinkGesture(url)
-        tab.clearWebViewInteractionEvent()
-        tab.setClickModifierFlags([])
-        return .cancel
+        let didPresent = sourceTab.linkPresentationCommands.presentInGlance(
+            url,
+            from: sourceWebView,
+            originRectInWindow: sourceWebView.gestures
+                .recentGlanceOriginRect(maxAge: 2)
+        )
+        if didPresent {
+            sourceWebView.consumeGestureForBrowserCommand()
+            return .cancel
+        }
+        return .next
     }
 }
 
 @MainActor
-final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewResponding, SumiNavigationStartResponding {
-    private enum PendingNewWindow {
-        case child(SumiNewWindowPolicy)
-        case consumed
-    }
-
+final class SumiPopupHandlingNavigationResponder:
+    SumiNavigationActionSourceAndTargetWebViewResponding
+{
     private weak var tab: Tab?
-    private var onNewWindow: ((WKNavigationAction) -> PendingNewWindow?)?
-    private var contextMenuRouteToken: UInt64?
+    private let permissions: (any PopupPermissionEvaluating)?
+    private let extensionRequests: (any ExtensionPopupRequestConsuming)?
+    private let extensionTabs: (any ExtensionExternalTabOpening)?
+    private let webPopups: (any PhysicalWebPopupOpening)?
+    private let childTabs: (any WebKitChildTabOpening)?
+    private let childWindows: (any WebKitChildWindowOpening)?
 
-    init(tab: Tab) {
+    init(
+        tab: Tab,
+        permissions: (any PopupPermissionEvaluating)?,
+        extensionRequests: (any ExtensionPopupRequestConsuming)?,
+        extensionTabs: (any ExtensionExternalTabOpening)?,
+        webPopups: (any PhysicalWebPopupOpening)?,
+        childTabs: (any WebKitChildTabOpening)?,
+        childWindows: (any WebKitChildWindowOpening)?
+    ) {
         self.tab = tab
+        self.permissions = permissions
+        self.extensionRequests = extensionRequests
+        self.extensionTabs = extensionTabs
+        self.webPopups = webPopups
+        self.childTabs = childTabs
+        self.childWindows = childWindows
     }
 
     func createWebView(
@@ -70,7 +89,8 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
     }
 
     /// WebKit `createWebView` path: merged navigation modifier flags drive routing —
-    /// Glance when explicitly triggered (Option) → pending `window.open` match → Zen-like essential external Glance → new tab/window.
+    /// explicit Glance first, then the native context-menu command, dynamic Glance,
+    /// and finally the WebKit-requested popup/tab/window disposition.
     func createWebViewAsync(
         from webView: WKWebView,
         with configuration: WKWebViewConfiguration,
@@ -78,10 +98,21 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
         windowFeatures: WKWindowFeatures
     ) async -> WKWebView? {
         guard let tab,
-              tab.navigationRuntime.popupHandlingRuntime.hasBrowserRuntime()
+              let sourceWebView = webView as? FocusableWKWebView,
+              sourceWebView.owningTab === tab,
+              tab.hasBrowserRuntime
         else { return nil }
+        let gestureReceipt = sourceWebView.gestures.currentReceipt
+        guard let sourceDocumentLease = tab.mainFrameDocumentLease(
+            for: sourceWebView
+        ) else {
+            return nil
+        }
 
-        let sourceURL = navigationAction.sumiWebKitSourceURL ?? webView.url ?? tab.url
+        let sourceURL = exactSourceURL(
+            for: navigationAction,
+            sourceWebView: sourceWebView
+        )
         let requestURL = navigationAction.request.url
         let isExtensionOriginated = SumiPopupNavigationOrigin.isExtensionOriginatedPopupNavigation(
             sourceURL: sourceURL,
@@ -90,32 +121,23 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
 
         if let requestURL,
            SumiPopupNavigationOrigin.isExtensionOriginatedExternalPopupNavigation(sourceURL: sourceURL, requestURL: requestURL),
-           tab.navigationRuntime.popupHandlingRuntime.consumeRecentlyOpenedExtensionTabRequest(requestURL) {
+           extensionRequests?
+            .consumeRecentlyOpenedExtensionTabRequestIfLoaded(
+                for: requestURL
+            ) == true {
             return nil
         }
 
-        let navigationFlags = tab.navigationModifierFlags(from: navigationAction)
+        let navigationFlags = sourceWebView.gestures.resolvedModifierFlags(
+            actionFlags: navigationAction.modifierFlags
+        )
         if routeExplicitGlanceIfNeeded(
             requestURL,
             isRequested: tab.isGlanceTriggerActive(navigationFlags),
-            tab: tab
+            tab: tab,
+            sourceWebView: sourceWebView
         ) {
             return nil
-        }
-
-        if let pendingNewWindow = newWindowPolicy(for: navigationAction) {
-            guard case .child(let policy) = pendingNewWindow else {
-                resetLinkGestureModifierState(for: tab)
-                return nil
-            }
-            return createChildWebView(
-                from: webView,
-                with: configuration,
-                for: navigationAction,
-                windowFeatures: windowFeatures,
-                policy: policy,
-                isExtensionOriginated: isExtensionOriginated
-            )
         }
 
         let shouldOpenDynamicGlance = !isExtensionOriginated && (
@@ -127,13 +149,15 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
             requestURL,
             isRequested: shouldOpenDynamicGlance,
             tab: tab,
+            sourceWebView: sourceWebView,
             isExtensionOriginated: isExtensionOriginated
         ) {
             return nil
         }
 
         let behavior = SumiLinkOpenBehavior(
-            buttonIsMiddle: false,
+            buttonIsMiddle: navigationAction.buttonNumber == 2
+                || sourceWebView.gestures.hasRecentAuxiliaryMouseDown,
             modifierFlags: navigationFlags,
             switchToNewTabWhenOpenedPreference: false,
             canOpenLinkInCurrentTab: false,
@@ -145,8 +169,10 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
             preferTabsToWindows: true
         )
 
-        guard let tabContext = tab.popupPermissionTabContext(for: webView) else { return nil }
-        let activationState = tab.popupUserActivationTracker.activationState(
+        guard let tabContext = tab.popupPermissionTabContext(for: sourceWebView) else {
+            return nil
+        }
+        let activationState = sourceWebView.popupUserActivation.claim(
             webKitUserInitiated: navigationAction.isUserInitiated
         )
         let request = SumiPopupPermissionRequest.fromWKNavigationAction(
@@ -155,20 +181,26 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
             activationState: activationState,
             isExtensionOriginated: isExtensionOriginated
         )
-        let permissionResult = await tab.navigationRuntime.popupHandlingRuntime.evaluatePopupPermission(
+        guard let permissions else { return nil }
+        let permissionResult = await permissions.evaluate(
             request,
-            tabContext
+            tabContext: tabContext
         )
-        guard permissionResult?.isAllowed == true else { return nil }
-        tab.popupUserActivationTracker.consumeIfUserActivated(request.userActivation)
-
+        guard permissionResult.isAllowed,
+              sourceWebView.owningTab === tab,
+              tab.mainFrameDocumentLease(for: sourceWebView)
+                == sourceDocumentLease
+        else {
+            return nil
+        }
         return createChildWebView(
-            from: webView,
+            from: sourceWebView,
             with: configuration,
             for: navigationAction,
             windowFeatures: windowFeatures,
             policy: policy,
-            isExtensionOriginated: isExtensionOriginated
+            isExtensionOriginated: isExtensionOriginated,
+            gestureReceipt: gestureReceipt
         )
     }
 
@@ -180,10 +212,16 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
         windowFeatures: WKWindowFeatures
     ) -> WKWebView? {
         guard let tab,
-              tab.navigationRuntime.popupHandlingRuntime.hasBrowserRuntime()
+              let sourceWebView = webView as? FocusableWKWebView,
+              sourceWebView.owningTab === tab,
+              tab.hasBrowserRuntime
         else { return nil }
+        let gestureReceipt = sourceWebView.gestures.currentReceipt
 
-        let sourceURL = navigationAction.sumiWebKitSourceURL ?? webView.url ?? tab.url
+        let sourceURL = exactSourceURL(
+            for: navigationAction,
+            sourceWebView: sourceWebView
+        )
         let requestURL = navigationAction.request.url
         let isExtensionOriginated = SumiPopupNavigationOrigin.isExtensionOriginatedPopupNavigation(
             sourceURL: sourceURL,
@@ -192,32 +230,23 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
 
         if let requestURL,
            SumiPopupNavigationOrigin.isExtensionOriginatedExternalPopupNavigation(sourceURL: sourceURL, requestURL: requestURL),
-           tab.navigationRuntime.popupHandlingRuntime.consumeRecentlyOpenedExtensionTabRequest(requestURL) {
+           extensionRequests?
+            .consumeRecentlyOpenedExtensionTabRequestIfLoaded(
+                for: requestURL
+            ) == true {
             return nil
         }
 
-        let navigationFlags = tab.navigationModifierFlags(from: navigationAction)
+        let navigationFlags = sourceWebView.gestures.resolvedModifierFlags(
+            actionFlags: navigationAction.modifierFlags
+        )
         if routeExplicitGlanceIfNeeded(
             requestURL,
             isRequested: tab.isGlanceTriggerActive(navigationFlags),
-            tab: tab
+            tab: tab,
+            sourceWebView: sourceWebView
         ) {
             return nil
-        }
-
-        if let pendingNewWindow = newWindowPolicy(for: navigationAction) {
-            guard case .child(let policy) = pendingNewWindow else {
-                resetLinkGestureModifierState(for: tab)
-                return nil
-            }
-            return createChildWebView(
-                from: webView,
-                with: configuration,
-                for: navigationAction,
-                windowFeatures: windowFeatures,
-                policy: policy,
-                isExtensionOriginated: isExtensionOriginated
-            )
         }
 
         let shouldOpenDynamicGlance = !isExtensionOriginated && (
@@ -229,13 +258,15 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
             requestURL,
             isRequested: shouldOpenDynamicGlance,
             tab: tab,
+            sourceWebView: sourceWebView,
             isExtensionOriginated: isExtensionOriginated
         ) {
             return nil
         }
 
         let behavior = SumiLinkOpenBehavior(
-            buttonIsMiddle: false,
+            buttonIsMiddle: navigationAction.buttonNumber == 2
+                || sourceWebView.gestures.hasRecentAuxiliaryMouseDown,
             modifierFlags: navigationFlags,
             switchToNewTabWhenOpenedPreference: false,
             canOpenLinkInCurrentTab: false,
@@ -247,8 +278,10 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
             preferTabsToWindows: true
         )
 
-        guard let tabContext = tab.popupPermissionTabContext(for: webView) else { return nil }
-        let activationState = tab.popupUserActivationTracker.activationState(
+        guard let tabContext = tab.popupPermissionTabContext(for: sourceWebView) else {
+            return nil
+        }
+        let activationState = sourceWebView.popupUserActivation.claim(
             webKitUserInitiated: navigationAction.isUserInitiated
         )
         let request = SumiPopupPermissionRequest.fromWKNavigationAction(
@@ -257,39 +290,35 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
             activationState: activationState,
             isExtensionOriginated: isExtensionOriginated
         )
-        let permissionResult = tab.navigationRuntime.popupHandlingRuntime.evaluatePopupPermissionForWebKitFallback(
+        guard let permissions else { return nil }
+        let permissionResult = permissions.evaluateSynchronouslyForWebKitFallback(
             request,
-            tabContext
+            tabContext: tabContext
         )
-        guard permissionResult?.isAllowed == true else { return nil }
-        tab.popupUserActivationTracker.consumeIfUserActivated(request.userActivation)
-
+        guard permissionResult.isAllowed else { return nil }
         return createChildWebView(
-            from: webView,
+            from: sourceWebView,
             with: configuration,
             for: navigationAction,
             windowFeatures: windowFeatures,
             policy: policy,
-            isExtensionOriginated: isExtensionOriginated
+            isExtensionOriginated: isExtensionOriginated,
+            gestureReceipt: gestureReceipt
         )
-    }
-
-    func navigationWillStart(_: SumiNavigationContext) {
-        onNewWindow = nil
-        contextMenuRouteToken = nil
     }
 
     func decidePolicy(
         for navigationAction: SumiNavigationAction,
-        webView targetWebView: WKWebView?,
+        sourceWebView: WKWebView?,
+        targetWebView: WKWebView?,
         preferences _: inout SumiNavigationPreferences
     ) async -> SumiNavigationActionPolicy? {
-        guard let tab,
-              tab.navigationRuntime.popupHandlingRuntime.hasBrowserRuntime()
+        guard let targetTab = tab,
+              targetTab.hasBrowserRuntime
         else { return .next }
 
         if let url = navigationAction.url,
-           tab.isPopupHost,
+           targetTab.isPopupHost,
            isSumiInternalURL(url) {
             return .cancel
         }
@@ -300,17 +329,30 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
             && (navigationAction.navigationType.isLinkActivated
                 || (navigationAction.navigationType == .other && navigationAction.isUserInitiated))
         guard isLinkActivated else { return .next }
+        guard let sourceWebView = sourceWebView as? FocusableWKWebView else {
+            return .cancel
+        }
+        guard let sourceTab = sourceWebView.owningTab else { return .next }
+        if let targetWebView = targetWebView as? FocusableWKWebView {
+            guard targetWebView.owningTab === targetTab else { return .next }
+        } else {
+            guard sourceTab === targetTab else { return .next }
+        }
+        let gestureReceipt = sourceWebView.gestures.currentReceipt
 
         let signpostState = PerformanceTrace.beginInterval("NavigationPolicy.popupResponder")
         defer {
             PerformanceTrace.endInterval("NavigationPolicy.popupResponder", signpostState)
         }
 
-        let modifierFlags = navigationModifierFlags(from: navigationAction, tab: tab)
+        let modifierFlags = sourceWebView.gestures.resolvedModifierFlags(
+            actionFlags: navigationAction.modifierFlags
+        )
         if routeExplicitGlanceIfNeeded(
             url,
-            isRequested: tab.isGlanceTriggerActive(modifierFlags),
-            tab: tab
+            isRequested: sourceTab.isGlanceTriggerActive(modifierFlags),
+            tab: sourceTab,
+            sourceWebView: sourceWebView
         ) {
             return .cancel
         }
@@ -318,20 +360,23 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
         guard let targetFrame = navigationAction.targetFrame else { return .next }
 
         let isExtensionOriginated = SumiPopupNavigationOrigin.isExtensionOriginatedPopupNavigation(
-            sourceURL: navigationAction.sourceURL,
+            sourceURL: navigationAction.sourceURL
+                ?? sourceWebView.committedURL
+                ?? sourceWebView.url,
             requestURL: url
         )
         let isMiddleButtonClick = navigationAction.navigationType.isMiddleButtonClick
         let shouldOpenDynamicGlance = !isExtensionOriginated
             && !isMiddleButtonClick
-            && tab.shouldOpenDynamicallyInGlance(
+            && sourceTab.shouldOpenDynamicallyInGlance(
                 url: url,
                 modifierFlags: modifierFlags
             )
         if routeDynamicGlanceIfNeeded(
             url,
             isRequested: shouldOpenDynamicGlance,
-            tab: tab,
+            tab: sourceTab,
+            sourceWebView: sourceWebView,
             isExtensionOriginated: isExtensionOriginated,
             isMiddleButtonClick: isMiddleButtonClick
         ) {
@@ -339,8 +384,20 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
         }
 
         let canOpenLinkInCurrentTab: Bool = {
-            let navigatingToAnotherDomain = url.host != targetFrame.url?.host && !(targetFrame.url?.sumiIsEmpty ?? true)
-            let navigatingAwayFromPinnedTab = tab.isPinned && navigatingToAnotherDomain && navigationAction.isForMainFrame
+            guard targetTab.isPinned, navigationAction.isForMainFrame else {
+                return true
+            }
+            let exactTargetURL = targetWebView?.committedURL
+                ?? targetWebView?.url
+                ?? targetFrame.url
+            guard let targetURL = exactTargetURL,
+                  targetURL.sumiIsEmpty == false,
+                  let targetHost = targetURL.host,
+                  let destinationHost = url.host
+            else {
+                return false
+            }
+            let navigatingAwayFromPinnedTab = destinationHost != targetHost
             return !navigatingAwayFromPinnedTab
         }()
 
@@ -356,12 +413,11 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
         case .currentTab:
             return .next
         case .newTab, .newWindow:
-            guard let targetWebView,
-                  let tabContext = tab.popupPermissionTabContext(for: targetWebView)
+            guard let tabContext = sourceTab.popupPermissionTabContext(for: sourceWebView)
             else {
                 return .cancel
             }
-            let activationState = tab.popupUserActivationTracker.activationState(
+            let activationState = sourceWebView.popupUserActivation.claim(
                 webKitUserInitiated: nil,
                 navigationActionUserInitiated: navigationAction.isUserInitiated
             )
@@ -369,100 +425,63 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
                 navigationAction,
                 activationState: activationState
             )
-            let permissionResult = await tab.navigationRuntime.popupHandlingRuntime.evaluatePopupPermission(
+            guard let permissions else { return .cancel }
+            let permissionResult = await permissions.evaluate(
                 request,
-                tabContext
+                tabContext: tabContext
             )
-            guard permissionResult?.isAllowed == true,
-                  let policy = behavior.newWindowPolicy()
-            else {
+            guard permissionResult.isAllowed else {
                 return .cancel
             }
-            tab.popupUserActivationTracker.consumeIfUserActivated(request.userActivation)
-            contextMenuRouteToken = nil
-            onNewWindow = { newWindowNavigationAction in
-                guard newWindowNavigationAction.request.url?.matches(url) ?? false else {
-                    return nil
-                }
-                return .child(policy)
+
+            let disposition: TabLinkDisposition
+            switch behavior {
+            case .currentTab:
+                preconditionFailure("Current-tab behavior returned from a new-surface branch")
+            case .newTab(let selected):
+                disposition = .newTab(selected: selected)
+            case .newWindow(let selected):
+                disposition = .newWindow(selected: selected)
             }
-            resetLinkGestureModifierState(for: tab)
-            targetWebView.sumiLoadInNewWindow(url)
+            if sourceTab.linkPresentationCommands.open(
+                url,
+                from: sourceWebView,
+                disposition: disposition
+            ) {
+                sourceWebView.gestures.clear(ifCurrent: gestureReceipt)
+            }
             return .cancel
         }
-    }
-
-    private func navigationModifierFlags(
-        from navigationAction: SumiNavigationAction,
-        tab: Tab
-    ) -> NSEvent.ModifierFlags {
-        let flags = navigationAction.modifierFlags.intersection([.command, .option, .control, .shift])
-        return tab.resolvedNavigationModifierFlags(actionFlags: flags)
-    }
-
-    private func newWindowPolicy(for navigationAction: WKNavigationAction) -> PendingNewWindow? {
-        if let decision = onNewWindow?(navigationAction) {
-            onNewWindow = nil
-            contextMenuRouteToken = nil
-            return decision
-        }
-        return nil
-    }
-
-    /// Native WebKit context items already know the exact URL under the pointer.
-    /// Sumi consumes that one request and performs the browser command itself.
-    @discardableResult
-    func consumeNativeContextMenuRequest(
-        from item: NSMenuItem,
-        perform handler: @escaping @MainActor (WKNavigationAction) -> Void
-    ) -> Bool {
-        guard let action = item.action else { return false }
-
-        let token = (contextMenuRouteToken ?? 0) &+ 1
-        contextMenuRouteToken = token
-        onNewWindow = { [weak self] navigationAction in
-            self?.contextMenuRouteToken = nil
-            handler(navigationAction)
-            return .consumed
-        }
-
-        let didSendAction = NSApp.sendAction(action, to: item.target, from: item)
-        guard didSendAction else {
-            clearContextMenuRoute(token)
-            return false
-        }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
-            self?.clearContextMenuRoute(token)
-        }
-        return true
-    }
-
-    private func clearContextMenuRoute(_ token: UInt64) {
-        guard contextMenuRouteToken == token else { return }
-        onNewWindow = nil
-        contextMenuRouteToken = nil
     }
 
     private func routeExplicitGlanceIfNeeded(
         _ url: URL?,
         isRequested: Bool,
-        tab: Tab
+        tab: Tab,
+        sourceWebView: FocusableWKWebView
     ) -> Bool {
         guard let url,
               url.sumiIsGlancePreviewableLink,
               isRequested
         else { return false }
 
-        tab.openURLInGlanceFromLinkGesture(url)
-        resetLinkGestureModifierState(for: tab)
-        return true
+        let didPresent = tab.linkPresentationCommands.presentInGlance(
+            url,
+            from: sourceWebView,
+            originRectInWindow: sourceWebView.gestures
+                .recentGlanceOriginRect(maxAge: 2)
+        )
+        if didPresent {
+            sourceWebView.consumeGestureForBrowserCommand()
+        }
+        return didPresent
     }
 
     private func routeDynamicGlanceIfNeeded(
         _ url: URL?,
         isRequested: Bool,
         tab: Tab,
+        sourceWebView: FocusableWKWebView,
         isExtensionOriginated: Bool,
         isMiddleButtonClick: Bool = false
     ) -> Bool {
@@ -472,21 +491,29 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
               isRequested
         else { return false }
 
-        tab.openURLInGlanceFromLinkGesture(url)
-        resetLinkGestureModifierState(for: tab)
-        return true
+        let didPresent = tab.linkPresentationCommands.presentInGlance(
+            url,
+            from: sourceWebView,
+            originRectInWindow: sourceWebView.gestures
+                .recentGlanceOriginRect(maxAge: 2)
+        )
+        if didPresent {
+            sourceWebView.consumeGestureForBrowserCommand()
+        }
+        return didPresent
     }
 
     private func createChildWebView(
-        from webView: WKWebView,
+        from webView: FocusableWKWebView,
         with configuration: WKWebViewConfiguration,
         for navigationAction: WKNavigationAction,
         windowFeatures: WKWindowFeatures,
         policy: SumiNewWindowPolicy,
-        isExtensionOriginated: Bool
+        isExtensionOriginated: Bool,
+        gestureReceipt: WebViewGestureReceipt?
     ) -> WKWebView? {
         guard let tab,
-              tab.navigationRuntime.popupHandlingRuntime.hasBrowserRuntime()
+              tab.hasBrowserRuntime
         else { return nil }
 
         if navigationAction.request.url?.sumiNavigationalScheme == .javascript {
@@ -498,71 +525,79 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
             return nil
         }
 
-        let sourceURL = navigationAction.sumiWebKitSourceURL ?? webView.url ?? tab.url
+        let sourceURL = exactSourceURL(
+            for: navigationAction,
+            sourceWebView: webView
+        )
         if let requestURL = navigationAction.request.url,
            SumiPopupNavigationOrigin.isExtensionOriginatedExternalPopupNavigation(
                sourceURL: sourceURL,
                requestURL: requestURL
-           ) {
-            _ = tab.navigationRuntime.popupHandlingRuntime.openExtensionExternalTab(requestURL, tab)
-            resetLinkGestureModifierState(for: tab)
+            ) {
+            if extensionTabs?.open(
+                requestURL,
+                from: webView
+            ) == true {
+                webView.gestures.clear(ifCurrent: gestureReceipt)
+            }
             return nil
         }
 
         if policy.isPopup {
-            let popupWebView = tab.navigationRuntime.popupHandlingRuntime.presentWebPopup(
-                configuration,
-                navigationAction.request,
-                windowFeatures,
-                tab,
-                isExtensionOriginated
+            let popupWebView = webPopups?.open(
+                configuration: configuration,
+                request: navigationAction.request,
+                windowFeatures: windowFeatures,
+                from: webView,
+                isExtensionOriginated: isExtensionOriginated
             )
-            resetLinkGestureModifierState(for: tab)
+            if popupWebView != nil {
+                webView.gestures.clear(ifCurrent: gestureReceipt)
+            }
             return popupWebView
         }
 
-        tab.navigationRuntime.popupHandlingRuntime.applyVisitedLinksToPopupConfiguration(tab, configuration)
+        if case .window(let active) = policy {
+            let childWebView = childWindows?.open(
+                configuration: configuration,
+                requestURL: navigationAction.request.url,
+                from: webView,
+                activate: active,
+                isExtensionOriginated: isExtensionOriginated
+            )
+            if childWebView != nil {
+                webView.gestures.clear(ifCurrent: gestureReceipt)
+            }
+            return childWebView
+        }
 
         WebContentProcessDisplayNameProvider.apply(
             WebContentProcessDisplayNameProvider.popup,
             to: configuration
         )
-
-        guard let childTab = tab.navigationRuntime.popupHandlingRuntime.createPopupTab(
-            tab,
-            policy.shouldActivateTab
-        ) else { return nil }
-        let childWebView = childTab.createPopupWebViewFromWebKitConfiguration(
-            configuration,
-            currentURL: navigationAction.request.url,
-            isExtensionOriginated: isExtensionOriginated,
-            reason: "SumiPopupHandlingNavigationResponder.createChildWebView"
-        )
-        tab.navigationRuntime.popupHandlingRuntime.installUntrackedOwnedWebView(
-            childWebView,
-            childTab
-        )
-        if policy.shouldActivateTab,
-           let windowState = tab.navigationRuntime.popupHandlingRuntime.windowStateContainingTab(tab) {
-            tab.navigationRuntime.popupHandlingRuntime.selectTab(childTab, windowState)
-        } else if !policy.shouldActivateTab,
-                  !policy.isPopup,
-                  !isExtensionOriginated,
-                  let windowState = tab.navigationRuntime.popupHandlingRuntime.windowStateContainingTab(tab) {
-            tab.navigationRuntime.popupHandlingRuntime.notifications()?.presentBackgroundTabOpenedNotification(
-                tabId: childTab.id,
-                in: windowState
-            )
+        guard case .tab(let selected) = policy else {
+            return nil
         }
-        resetLinkGestureModifierState(for: tab)
+        let childWebView = childTabs?.open(
+            configuration: configuration,
+            requestURL: navigationAction.request.url,
+            from: webView,
+            selected: selected,
+            isExtensionOriginated: isExtensionOriginated
+        )
+        if childWebView != nil {
+            webView.gestures.clear(ifCurrent: gestureReceipt)
+        }
         return childWebView
     }
 
-    /// Clears AppKit/WebKit modifier snapshots on the opener after a link gesture opens another web view so later
-    /// link navigations (Glance, Cmd+new tab, middle-click, etc.) resolve modifiers from a clean slate — same idea as after ``decidePolicy`` new-window loads.
-    private func resetLinkGestureModifierState(for tab: Tab) {
-        tab.clearWebViewInteractionEvent()
-        tab.setClickModifierFlags([])
+    private func exactSourceURL(
+        for navigationAction: WKNavigationAction,
+        sourceWebView: WKWebView
+    ) -> URL? {
+        navigationAction.sumiWebKitSourceURL
+            ?? sourceWebView.committedURL
+            ?? sourceWebView.url
     }
 
     private func isSumiInternalURL(_ url: URL) -> Bool {

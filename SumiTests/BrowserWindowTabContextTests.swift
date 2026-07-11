@@ -120,6 +120,43 @@ final class BrowserWindowTabContextTests: XCTestCase {
         )
     }
 
+    func testWindowLocalResidenceExcludesSharedSpaceProjection() {
+        let current = makeTab("https://current.example")
+        let sharedSpaceOnly = makeTab("https://shared.example")
+        let shortcut = makeTab("https://shortcut.example")
+        let trackedBackground = makeTab("https://tracked.example")
+        let split = makeTab("https://split.example")
+        let windowState = BrowserWindowState()
+        windowState.currentTabId = current.id
+        let harness = BrowserWindowTabContextHarness(
+            allTabs: [current, sharedSpaceOnly],
+            windows: [windowState],
+            liveShortcutTabsByWindowId: [windowState.id: [shortcut]],
+            visibleSplitTabIdsByWindowId: [windowState.id: [split.id]],
+            trackedTabIdsByWindowId: [windowState.id: [trackedBackground.id]]
+        )
+
+        XCTAssertEqual(
+            harness.makeOwner().windowLocalTabResidenceIDs(in: windowState),
+            [current.id, shortcut.id, trackedBackground.id, split.id]
+        )
+    }
+
+    func testPrivateWindowResidenceIncludesBackgroundEphemeralTabs() {
+        let current = makeTab("https://private-current.example")
+        let background = makeTab("https://private-background.example")
+        let windowState = BrowserWindowState()
+        windowState.isIncognito = true
+        windowState.ephemeralTabs = [current, background]
+        windowState.currentTabId = current.id
+        let harness = BrowserWindowTabContextHarness(windows: [windowState])
+
+        XCTAssertEqual(
+            harness.makeOwner().windowLocalTabResidenceIDs(in: windowState),
+            [current.id, background.id]
+        )
+    }
+
     private func makeTab(_ urlString: String, spaceId: UUID? = nil) -> Tab {
         Tab(
             url: URL(string: urlString)!,
@@ -137,6 +174,7 @@ private final class BrowserWindowTabContextHarness {
     let windows: [BrowserWindowState]
     let liveShortcutTabsByWindowId: [UUID: [Tab]]
     let visibleSplitTabIdsByWindowId: [UUID: Set<UUID>]
+    let trackedTabIdsByWindowId: [UUID: Set<UUID>]
 
     init(
         spaces: [Space] = [],
@@ -144,7 +182,8 @@ private final class BrowserWindowTabContextHarness {
         tabsBySpace: [UUID: [Tab]] = [:],
         windows: [BrowserWindowState] = [],
         liveShortcutTabsByWindowId: [UUID: [Tab]] = [:],
-        visibleSplitTabIdsByWindowId: [UUID: Set<UUID>] = [:]
+        visibleSplitTabIdsByWindowId: [UUID: Set<UUID>] = [:],
+        trackedTabIdsByWindowId: [UUID: Set<UUID>] = [:]
     ) {
         self.tabStore = FakeWindowTabContextStore(
             spaces: spaces,
@@ -155,6 +194,7 @@ private final class BrowserWindowTabContextHarness {
         self.windows = windows
         self.liveShortcutTabsByWindowId = liveShortcutTabsByWindowId
         self.visibleSplitTabIdsByWindowId = visibleSplitTabIdsByWindowId
+        self.trackedTabIdsByWindowId = trackedTabIdsByWindowId
     }
 
     func makeOwner() -> BrowserWindowTabContext {
@@ -167,6 +207,9 @@ private final class BrowserWindowTabContextHarness {
             },
             visibleSplitTabIds: { [weak self] windowId in
                 self?.visibleSplitTabIdsByWindowId[windowId] ?? []
+            },
+            trackedTabIds: { [weak self] windowId in
+                self?.trackedTabIdsByWindowId[windowId] ?? []
             }
         )
     }

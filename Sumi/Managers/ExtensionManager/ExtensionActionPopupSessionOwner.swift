@@ -19,6 +19,7 @@ final class ExtensionActionPopupSessionOwner: NSObject, NSPopoverDelegate {
     private weak var activePopupWebView: WKWebView?
 
     private(set) var activeIdentity: ExtensionActionPopupIdentity?
+    private(set) var activeSourceReceipt: ExtensionActionPopupSourceReceipt?
     private var popupUIDelegates: [String: ExtensionActionPopupUIDelegate] = [:]
     private var deferredContextUnloadTasks:
         [ExtensionActionPopupIdentity: Task<Void, Never>] = [:]
@@ -137,6 +138,12 @@ final class ExtensionActionPopupSessionOwner: NSObject, NSPopoverDelegate {
         popover.behavior = .transient
 
         let popupWebView = action.popupWebView
+        if let previousExtensionID = activeIdentity?.extensionId {
+            popupUIDelegates.removeValue(forKey: previousExtensionID)
+        }
+        activeIdentity = nil
+        activeSourceReceipt?.invalidate()
+        activeSourceReceipt = nil
         activePopover = popover
         activePopupWebView = popupWebView
 
@@ -149,14 +156,35 @@ final class ExtensionActionPopupSessionOwner: NSObject, NSPopoverDelegate {
             // Retargeting its configuration here is too late to repair origin
             // or resource loading, and can invalidate extension-owned popup
             // pages that rely on nested extension resources.
-            let popupUIDelegate = ExtensionActionPopupUIDelegate(
-                manager: manager,
-                popover: popover
-            )
-            if let extensionId {
-                popupUIDelegates[extensionId] = popupUIDelegate
+            let profileId = manager.profileId(for: extensionContext)
+            let sourceReceipt: ExtensionActionPopupSourceReceipt?
+            if let extensionId,
+               let profileId,
+               let anchor = manager.actionPopupAnchorStore.latestAnchor(
+                for: extensionId
+               ) {
+                sourceReceipt = ExtensionActionPopupSourceReceipt.capture(
+                    extensionID: extensionId,
+                    profileID: profileId,
+                    anchor: anchor,
+                    popupWebView: popupWebView,
+                    manager: manager
+                )
+            } else {
+                sourceReceipt = nil
             }
-            popupWebView.uiDelegate = popupUIDelegate
+            if let extensionId, let sourceReceipt {
+                let popupUIDelegate = ExtensionActionPopupUIDelegate(
+                    manager: manager,
+                    popover: popover,
+                    sourceReceipt: sourceReceipt
+                )
+                popupUIDelegates[extensionId] = popupUIDelegate
+                activeSourceReceipt = sourceReceipt
+                popupWebView.uiDelegate = popupUIDelegate
+            } else {
+                popupWebView.uiDelegate = nil
+            }
         }
 
         if let extensionId {
@@ -178,6 +206,11 @@ final class ExtensionActionPopupSessionOwner: NSObject, NSPopoverDelegate {
                 )
                 return
             }
+            guard self.activePopover === popover,
+                  self.activePopupWebView === popupWebView else {
+                completionHandler(CancellationError())
+                return
+            }
             popover.behavior = .transient
             popover.delegate = self
             manager.isPopupActive = true
@@ -190,11 +223,10 @@ final class ExtensionActionPopupSessionOwner: NSObject, NSPopoverDelegate {
             }
 
             let profileId = manager.profileId(for: extensionContext)
-            let preferredWindowId = manager.extensionWindowQuery?
-                .activeExtensionWindowState.flatMap { windowState in
-                guard let profileId else { return windowState.id }
-                return manager.windowMatchesProfile(windowState, profileId: profileId) ? windowState.id : nil
-            }
+            let preferredWindowId = self.activeSourceReceipt?.windowID
+                ?? manager.actionPopupAnchorStore.latestAnchor(
+                    for: extensionId
+                )?.windowID
             let resolution = manager.actionPopupAnchorResolver.presentResolvedExtensionActionPopup(
                 popover,
                 for: extensionId,
@@ -208,6 +240,10 @@ final class ExtensionActionPopupSessionOwner: NSObject, NSPopoverDelegate {
             )
 
             guard resolution.anchorResolved else {
+                self.activeSourceReceipt?.invalidate()
+                self.activeSourceReceipt = nil
+                self.popupUIDelegates.removeValue(forKey: extensionId)
+                popupWebView?.uiDelegate = nil
                 completionHandler(
                     ExtensionManagerCallbackError
                         .actionPopupAnchorUnavailable(anchorSource: resolution.anchorSource?.rawValue)
@@ -245,9 +281,15 @@ final class ExtensionActionPopupSessionOwner: NSObject, NSPopoverDelegate {
     // MARK: - NSPopoverDelegate
 
     func popoverDidClose(_ notification: Notification) {
+        guard let closedPopover = notification.object as? NSPopover,
+              activePopover === closedPopover else {
+            return
+        }
         manager?.isPopupActive = false
         activePopover = nil
         activePopupWebView = nil
+        activeSourceReceipt?.invalidate()
+        activeSourceReceipt = nil
         if let popupIdentity = activeIdentity {
             let extensionId = popupIdentity.extensionId
             SafariExtensionAutofillFillDiagnostics.setPopupActive(false, extensionId: extensionId)
@@ -291,6 +333,8 @@ final class ExtensionActionPopupSessionOwner: NSObject, NSPopoverDelegate {
         activePopover?.close()
         manager?.isPopupActive = false
         popupUIDelegates.removeValue(forKey: activeIdentity.extensionId)
+        activeSourceReceipt?.invalidate()
+        activeSourceReceipt = nil
         self.activeIdentity = nil
         activePopover = nil
         activePopupWebView = nil

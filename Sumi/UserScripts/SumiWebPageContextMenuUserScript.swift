@@ -3,7 +3,6 @@ import WebKit
 
 @MainActor
 final class SumiWebPageContextMenuUserScript: NSObject, SumiUserScript {
-    private weak var tab: Tab?
     private let context: String
 
     let source: String
@@ -12,9 +11,8 @@ final class SumiWebPageContextMenuUserScript: NSObject, SumiUserScript {
     let requiresRunInPageContentWorld = false
     let messageNames: [String]
 
-    init(tab: Tab) {
-        self.tab = tab
-        self.context = "sumiWebPageContextMenu_\(tab.id.uuidString)"
+    init(contextID: UUID = UUID()) {
+        self.context = "sumiWebPageContextMenu_\(contextID.uuidString)"
         self.messageNames = [context]
         self.source = Self.makeSource(context: context)
         super.init()
@@ -123,11 +121,14 @@ final class SumiWebPageContextMenuUserScript: NSObject, SumiUserScript {
         _ = userContentController
         guard let dictionary = message.body as? [String: Any],
               let rawKind = dictionary["kind"] as? String,
-              let kind = SumiWebPageContextMenuTargetKind(rawValue: rawKind)
+              let kind = SumiWebPageContextMenuTargetKind(rawValue: rawKind),
+              let webView = message.webView as? FocusableWKWebView
         else { return }
-        tab?.lastWebPageContextMenuTarget = SumiWebPageContextMenuTargetSnapshot(
-            kind: kind,
-            selectedText: dictionary["selectedText"] as? String
+        webView.contextMenu.record(
+            SumiWebPageContextMenuTargetSnapshot(
+                kind: kind,
+                selectedText: dictionary["selectedText"] as? String
+            )
         )
     }
 }

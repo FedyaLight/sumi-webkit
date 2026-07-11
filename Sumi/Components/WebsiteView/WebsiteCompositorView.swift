@@ -50,6 +50,7 @@ final class WindowWebContentController: NSViewController {
     private var pendingDisplayState: WebsiteDisplayState?
     private var appliedDisplayState: WebsiteDisplayState?
     private var isDisplayStateApplyScheduled = false
+    private var hoveredLinkHandler: ((String?) -> Void)?
     private var contentBackgroundColor: Color = .white
     private lazy var compositorMutationGate = WindowWebContentCompositorMutationGate(
         isCurrentRegistration: { [weak self] registration in
@@ -58,7 +59,12 @@ final class WindowWebContentController: NSViewController {
         }
     )
     private lazy var hoverSession = WindowWebContentHoverSession(
-        mutationGate: compositorMutationGate
+        mutationGate: compositorMutationGate,
+        isDisplayed: { [weak self] webView in
+            self?.hostRegistry.displayedHosts.contains {
+                $0.activePresentationWebView === webView
+            } == true
+        }
     )
     private lazy var backgroundTransitions = WindowWebContentBackgroundTransitionSession(
         compositorRuntime: webViewCompositorRuntime
@@ -201,6 +207,7 @@ final class WindowWebContentController: NSViewController {
         pendingDisplayState = nil
         appliedDisplayState = nil
         isDisplayStateApplyScheduled = false
+        hoveredLinkHandler = nil
         hoverSession.invalidate()
         mediaTouchBarRecoveryScheduler.stop()
         visualHandoffSession.release()
@@ -258,12 +265,18 @@ final class WindowWebContentController: NSViewController {
         }
 
         pendingDisplayState = displayState
-        hoverSession.update(
-            tabID: displayState.currentId,
-            tab: currentTab,
-            registration: registration,
-            deliver: hoveredLinkHandler
-        )
+        self.hoveredLinkHandler = hoveredLinkHandler
+        if needsDisplayStateApply {
+            hoverSession.reconcile(
+                hosts: [],
+                registration: registration,
+                deliver: hoveredLinkHandler
+            )
+        } else {
+            refreshHoverSession(
+                containerRegistration: registration
+            )
+        }
 
         if !displayState.visibleTabIDs.isEmpty
             && hasMissingPreparedWebViews(for: displayState.visibleTabIDs) {
@@ -314,6 +327,9 @@ final class WindowWebContentController: NSViewController {
             containerRegistration: registration
         ), compositorMutationGate.owns(registration) else { return }
         appliedDisplayState = displayState
+        refreshHoverSession(
+            containerRegistration: registration
+        )
 
         if previousCurrentId != displayState.currentId {
             restoreFocusIfNeeded(
@@ -390,6 +406,7 @@ final class WindowWebContentController: NSViewController {
 
         guard apply(decision, containerRegistration: registration),
               compositorMutationGate.owns(registration) else { return false }
+        refreshHoverSession(containerRegistration: registration)
 
         guard let currentTab else { return false }
         return hostRegistry.displayedHost(for: currentTab.id) != nil
@@ -408,10 +425,16 @@ final class WindowWebContentController: NSViewController {
         else {
             return
         }
-        guard !host.webView.sumiIsInFullscreenElementPresentation else { return }
-        guard window.firstResponder !== host.webView else { return }
+        let focusTarget = host.activePresentationWebView
+        guard focusTarget.window === window,
+              !focusTarget.isHidden
+        else {
+            return
+        }
+        guard !host.activePresentationWebView.sumiIsInFullscreenElementPresentation else { return }
+        guard window.firstResponder !== focusTarget else { return }
         guard compositorMutationGate.owns(containerRegistration) else { return }
-        window.makeFirstResponder(host.webView)
+        window.makeFirstResponder(focusTarget)
     }
 
     private func restoreDisplayedHostForMediaTouchBar(
@@ -429,8 +452,26 @@ final class WindowWebContentController: NSViewController {
             return false
         }
         appliedDisplayState = displayState
+        refreshHoverSession(
+            containerRegistration: containerRegistration
+        )
         return hostRegistry.displayedHost(for: currentTab.id) != nil
     }
+
+    private func refreshHoverSession(
+        containerRegistration: WebViewCompositorContainerRegistration
+    ) {
+        guard compositorMutationGate.owns(containerRegistration),
+              let hoveredLinkHandler
+        else { return }
+
+        hoverSession.reconcile(
+            hosts: hostRegistry.displayedHosts,
+            registration: containerRegistration,
+            deliver: hoveredLinkHandler
+        )
+    }
+
     private func hasMissingPreparedWebViews(for visibleTabIDs: Set<UUID>) -> Bool {
         visibleTabIDs.contains { tabID in
             if let tab = browserContext.tab(for: tabID),

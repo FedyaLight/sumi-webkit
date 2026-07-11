@@ -136,7 +136,7 @@ final class SumiGPCNavigationResponderTests: XCTestCase {
 
         let policy = await responder.decidePolicy(
             for: mainFrameAction(url: URL(string: "https://example.com/")!),
-            webView: webView,
+            targetWebView: webView,
             context: SumiNavigationActionContext(
                 navigationID: ObjectIdentifier(originalNavigation),
                 navigationLifetime: originalNavigation
@@ -162,7 +162,7 @@ final class SumiGPCNavigationResponderTests: XCTestCase {
 
         let policy = await responder.decidePolicy(
             for: mainFrameAction(url: URL(string: "https://example.com/already-tagged")!, httpMethod: "GET"),
-            webView: webView,
+            targetWebView: webView,
             context: SumiNavigationActionContext(
                 navigationID: ObjectIdentifier(originalNavigation),
                 navigationLifetime: originalNavigation
@@ -196,7 +196,7 @@ final class SumiGPCNavigationResponderTests: XCTestCase {
         )
         let secondPolicy = await responder.decidePolicy(
             for: secondAction,
-            webView: webView,
+            targetWebView: webView,
             preferences: &preferences
         )
 
@@ -216,7 +216,7 @@ final class SumiGPCNavigationResponderTests: XCTestCase {
 
         let policy = await responder.decidePolicy(
             for: mainFrameAction(url: URL(string: "https://example.com/")!),
-            webView: webView,
+            targetWebView: webView,
             preferences: &preferences
         )
 
@@ -239,7 +239,7 @@ final class SumiGPCNavigationResponderTests: XCTestCase {
 
         let policy = await responder.decidePolicy(
             for: mainFrameAction(url: targetURL),
-            webView: webView,
+            targetWebView: webView,
             context: SumiNavigationActionContext(
                 navigationID: originalID,
                 navigationLifetime: originalNavigation
@@ -275,7 +275,7 @@ final class SumiGPCNavigationResponderTests: XCTestCase {
 
         let policy = await responder.decidePolicy(
             for: mainFrameAction(url: URL(string: "https://example.com/")!),
-            webView: webView,
+            targetWebView: webView,
             preferences: &preferences
         )
 
@@ -312,7 +312,7 @@ final class SumiGPCNavigationResponderTests: XCTestCase {
 
         let policy = await responder.decidePolicy(
             for: subframeAction,
-            webView: webView,
+            targetWebView: webView,
             preferences: &preferences
         )
 

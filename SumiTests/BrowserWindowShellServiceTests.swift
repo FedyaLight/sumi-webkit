@@ -8,6 +8,57 @@ import SumiWebRuntime
 
 @MainActor
 final class BrowserWindowShellServiceTests: XCTestCase {
+    func testPresentRegisteredWindowActivatesAndPresentsExactShell() {
+        let service = BrowserWindowShellService()
+        let registry = WindowRegistry()
+        let windowState = BrowserWindowState()
+        let window = makePresentationRecordingWindow()
+        registry.bindAppKitWindow(window, to: windowState)
+        XCTAssertEqual(registry.register(windowState), .registered)
+        defer {
+            window.close()
+            registry.unregister(windowState.id)
+        }
+
+        XCTAssertTrue(
+            service.presentRegisteredWindow(
+                windowState,
+                in: registry,
+                activate: true
+            )
+        )
+        XCTAssertEqual(registry.activeWindowId, windowState.id)
+        XCTAssertEqual(window.makeKeyAndOrderFrontCallCount, 1)
+        XCTAssertEqual(window.orderFrontCallCount, 0)
+    }
+
+    func testPresentRegisteredWindowDoesNotPresentShellClosedByActivationObserver() {
+        let service = BrowserWindowShellService()
+        let registry = WindowRegistry()
+        let windowState = BrowserWindowState()
+        let window = makePresentationRecordingWindow()
+        registry.keyAppKitWindowProvider = { nil }
+        registry.mainAppKitWindowProvider = { nil }
+        registry.bindAppKitWindow(window, to: windowState)
+        XCTAssertEqual(registry.register(windowState), .registered)
+        registry.onActiveWindowChange = { activatedWindow in
+            registry.unregister(activatedWindow.id)
+        }
+        defer { window.close() }
+
+        XCTAssertFalse(
+            service.presentRegisteredWindow(
+                windowState,
+                in: registry,
+                activate: true
+            )
+        )
+        XCTAssertNil(registry.windows[windowState.id])
+        XCTAssertNil(registry.activeWindowId)
+        XCTAssertEqual(window.makeKeyAndOrderFrontCallCount, 0)
+        XCTAssertEqual(window.orderFrontCallCount, 0)
+    }
+
     func testCreateIncognitoWindowShowsFloatingBarEmptyStateWithoutCreatingEmptyTab() throws {
         let harness = try makeHarness()
         let service = BrowserWindowShellService()
@@ -59,7 +110,7 @@ final class BrowserWindowShellServiceTests: XCTestCase {
         let service = BrowserWindowShellService()
         var factoryWindowStates: [BrowserWindowState] = []
         var registeredWindowHadNSWindow: Bool?
-        harness.windowRegistry.onWindowRegister = { windowState in
+        harness.windowRegistry.prepareWindowRegistration = { windowState in
             registeredWindowHadNSWindow = harness.windowRegistry.appKitWindow(for: windowState) != nil
         }
 
@@ -101,7 +152,7 @@ final class BrowserWindowShellServiceTests: XCTestCase {
         var events: [String] = []
         var registeredState: BrowserWindowState?
         var activeState: BrowserWindowState?
-        harness.windowRegistry.onWindowRegister = { windowState in
+        harness.windowRegistry.prepareWindowRegistration = { windowState in
             events.append("register")
             registeredState = windowState
             XCTAssertEqual(windowState.restoredSessionWindowId, archiveID)
@@ -117,6 +168,14 @@ final class BrowserWindowShellServiceTests: XCTestCase {
             events.append("active")
             activeState = windowState
             XCTAssertFalse(windowState.isAwaitingInitialSessionResolution)
+        }
+        harness.windowRegistry.publishWindowRegistration = { windowState in
+            events.append("publish")
+            XCTAssertIdentical(registeredState, windowState)
+            XCTAssertIdentical(
+                harness.windowRegistry.windows[windowState.id],
+                windowState
+            )
         }
         let context = BrowserWindowShellService.Context(
             windowRegistry: harness.windowRegistry,
@@ -144,7 +203,7 @@ final class BrowserWindowShellServiceTests: XCTestCase {
                 windowState.currentProfileId = profileID
                 windowState.isAwaitingInitialSessionResolution = true
             },
-            validateAfterRegistration: {
+            validateRestoredStateBeforePublication: {
                 $0.isAwaitingInitialSessionResolution == false
             },
             compensateRejectedRegistration: { _ in
@@ -156,21 +215,27 @@ final class BrowserWindowShellServiceTests: XCTestCase {
             harness.windowRegistry.unregister(windowState.id)
         }
 
-        XCTAssertEqual(events, ["prepare", "content", "register", "active"])
+        XCTAssertEqual(
+            events,
+            ["prepare", "content", "register", "publish", "active"]
+        )
         XCTAssertIdentical(registeredState, windowState)
         XCTAssertIdentical(activeState, windowState)
     }
 
-    func testRejectedRegistrationRunsCompensationBeforeRegistryRollback() throws {
+    func testRejectedRegistrationRollsBackBeforeExternalCompensation() throws {
         let harness = try makeHarness()
         let service = BrowserWindowShellService()
         var events: [String] = []
         var preparedWindow: BrowserWindowState?
-        harness.windowRegistry.onWindowRegister = { _ in
+        harness.windowRegistry.prepareWindowRegistration = { _ in
             events.append("register")
         }
         harness.windowRegistry.onWindowClose = { _ in
             XCTFail("Rejected publication is not a user-visible window close")
+        }
+        harness.windowRegistry.publishWindowRegistration = { _ in
+            XCTFail("Rejected provisional state must never be published")
         }
         let context = makeContext(harness: harness) { _, _ in /* No-op. */ }
 
@@ -181,12 +246,12 @@ final class BrowserWindowShellServiceTests: XCTestCase {
                 preparedWindow = windowState
                 windowState.isAwaitingInitialSessionResolution = true
             },
-            validateAfterRegistration: { _ in false },
+            validateRestoredStateBeforePublication: { _ in false },
             compensateRejectedRegistration: { windowState in
                 events.append("compensate")
-                XCTAssertIdentical(
-                    harness.windowRegistry.windows[windowState.id],
-                    windowState
+                XCTAssertNil(harness.windowRegistry.windows[windowState.id])
+                XCTAssertNil(
+                    harness.windowRegistry.appKitWindow(for: windowState)
                 )
             }
         )
@@ -199,6 +264,132 @@ final class BrowserWindowShellServiceTests: XCTestCase {
                 harness.windowRegistry.appKitWindow(for: $0)
             }
         )
+    }
+
+    func testCommittedValidationRejectionCompensatesWithoutActivationOrVisibleShell()
+        throws
+    {
+        let harness = try makeHarness()
+        let service = BrowserWindowShellService()
+        var events: [String] = []
+        var rejectedWindow: BrowserWindowState?
+        harness.windowRegistry.prepareWindowRegistration = { _ in
+            events.append("registry-prepare")
+        }
+        harness.windowRegistry.publishWindowRegistration = { _ in
+            events.append("registry-publish")
+        }
+        harness.windowRegistry.onWindowClose = { _ in
+            XCTFail("A validator-rejected registration is not a user-visible close")
+        }
+        harness.windowRegistry.onActiveWindowChange = { _ in
+            XCTFail("A validator-rejected registration must never activate")
+        }
+        let context = BrowserWindowShellService.Context(
+            windowRegistry: harness.windowRegistry,
+            webViewLifecycle: harness.webViewRuntime.lifecycleService,
+            permissionLifecycleController: harness
+                .permissionLifecycleController,
+            profileManager: harness.profileManager,
+            tabManager: harness.tabManager,
+            makeContentView: { _, _ in
+                events.append("content")
+                return NSView()
+            },
+            showEmptyState: { _, _ in /* No-op. */ },
+            sidebarHostRecoveryCoordinator: SidebarHostRecoveryCoordinator()
+        )
+
+        let result = service.createNewWindow(
+            using: context,
+            initializeBeforePublication: { window in
+                events.append("initialize")
+                rejectedWindow = window
+            },
+            validateRestoredStateBeforePublication: { _ in
+                events.append("restored-validation")
+                return true
+            },
+            validateCommittedRegistration: { window in
+                events.append("committed-validation")
+                XCTAssertIdentical(
+                    harness.windowRegistry.windows[window.id],
+                    window
+                )
+                XCTAssertNotNil(
+                    harness.windowRegistry.appKitWindow(for: window)
+                )
+                return false
+            },
+            compensateRejectedRegistration: { window in
+                events.append("compensate")
+                XCTAssertIdentical(window, rejectedWindow)
+                XCTAssertNil(harness.windowRegistry.windows[window.id])
+                XCTAssertNil(harness.windowRegistry.appKitWindow(for: window))
+            }
+        )
+
+        XCTAssertNil(result)
+        XCTAssertEqual(
+            events,
+            [
+                "initialize",
+                "content",
+                "registry-prepare",
+                "restored-validation",
+                "registry-publish",
+                "committed-validation",
+                "compensate",
+            ]
+        )
+        XCTAssertTrue(harness.windowRegistry.windows.isEmpty)
+        XCTAssertNil(harness.windowRegistry.activeWindowId)
+    }
+
+    func testRejectedPrepublicationPreparationNeverBuildsOrRegistersShell()
+        throws
+    {
+        let harness = try makeHarness()
+        let service = BrowserWindowShellService()
+        var events: [String] = []
+        harness.windowRegistry.prepareWindowRegistration = { _ in
+            XCTFail("A rejected preparation must never enter WindowRegistry")
+        }
+        let context = BrowserWindowShellService.Context(
+            windowRegistry: harness.windowRegistry,
+            webViewLifecycle: harness.webViewRuntime.lifecycleService,
+            permissionLifecycleController: harness
+                .permissionLifecycleController,
+            profileManager: harness.profileManager,
+            tabManager: harness.tabManager,
+            makeContentView: { _, _ in
+                XCTFail("A rejected preparation must not construct content")
+                return NSView()
+            },
+            showEmptyState: { _, _ in /* No-op. */ },
+            sidebarHostRecoveryCoordinator: SidebarHostRecoveryCoordinator()
+        )
+
+        let result = service.createNewWindow(
+            using: context,
+            initializeBeforePublication: { _ in events.append("prepare") },
+            validateBeforeShellPublication: { _ in false },
+            validateRestoredStateBeforePublication: { _ in
+                XCTFail("A rejected preparation cannot be post-validated")
+                return false
+            },
+            compensateRejectedRegistration: { windowState in
+                events.append("compensate")
+                XCTAssertNil(harness.windowRegistry.windows[windowState.id])
+                XCTAssertNil(
+                    harness.windowRegistry.appKitWindow(for: windowState)
+                )
+            }
+        )
+
+        XCTAssertNil(result)
+        XCTAssertEqual(events, ["prepare", "compensate"])
+        XCTAssertTrue(harness.windowRegistry.windows.isEmpty)
     }
 
     func testEphemeralTabsUseMonotonicIndexesAndIncognitoCleanupIsIdempotent() async throws {
@@ -331,6 +522,19 @@ final class BrowserWindowShellServiceTests: XCTestCase {
         )
     }
 
+    private func makePresentationRecordingWindow()
+        -> WindowPresentationRecordingWindow
+    {
+        let window = WindowPresentationRecordingWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 200, height: 120),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false
+        return window
+    }
+
     private func makeContext(
         harness: Harness,
         showEmptyState: @escaping @MainActor (BrowserWindowState, Bool) -> Void
@@ -368,6 +572,21 @@ final class BrowserWindowShellServiceTests: XCTestCase {
 
         let calls = await coordinator.profileCloseCalls
         XCTFail("Missing profile close event in \(calls)", file: file, line: line)
+    }
+}
+
+private final class WindowPresentationRecordingWindow: NSWindow {
+    private(set) var makeKeyAndOrderFrontCallCount = 0
+    private(set) var orderFrontCallCount = 0
+
+    override func makeKeyAndOrderFront(_ sender: Any?) {
+        makeKeyAndOrderFrontCallCount += 1
+        _ = sender
+    }
+
+    override func orderFront(_ sender: Any?) {
+        orderFrontCallCount += 1
+        _ = sender
     }
 }
 

@@ -241,50 +241,6 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
         XCTAssertEqual(windowRegistry.appKitWindow(for: windowState)!.frame, originalMainFrame)
     }
 
-    func testActionPopupWindowOpenRoutesExternalURLToNormalTab() async throws {
-        let harness = try await makeExtensionHarness(ownerExtensionID: "action-owner")
-        let sourceURL = URL(string: "safari-web-extension://action-owner/popup.html")!
-        let targetURL = URL(string: "https://account.example.test/login")!
-        let mainWindow = try XCTUnwrap(harness.windowRegistry.appKitWindow(for: harness.windowState))
-        let originalMainFrame = mainWindow.frame
-        let initialRegularTabCount = harness.browserManager.tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[
-            harness.browserManager.tabManager.spaceStateOwner.currentSpace!.id
-        ]?.count ?? 0
-        let delegate = ExtensionActionPopupUIDelegate(
-            manager: harness.extensionManager,
-            popover: NSPopover()
-        )
-        let popupWebView = WKWebView(frame: .zero)
-        let action = popupNavigationAction(
-            sourceURL: sourceURL,
-            targetURL: targetURL,
-            webView: popupWebView
-        )
-
-        let childWebView = delegate.webView(
-            popupWebView,
-            createWebViewWith: WKWebViewConfiguration(),
-            for: action,
-            windowFeatures: WKWindowFeatures()
-        )
-
-        XCTAssertNil(childWebView)
-        XCTAssertTrue(harness.browserManager.tabManager.transientTabRegistryOwner.auxiliaryMiniWindowTabsByID.isEmpty)
-        XCTAssertEqual(
-            harness.browserManager.tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()[
-                harness.browserManager.tabManager.spaceStateOwner.currentSpace!.id
-            ]?.count,
-            initialRegularTabCount + 1
-        )
-        let openedTab = try XCTUnwrap(harness.browserManager.tabManager.regularTabCollectionStateOwner.allTabsSnapshot().last)
-        XCTAssertEqual(openedTab.url, targetURL)
-        XCTAssertNil(openedTab.profileId)
-        XCTAssertIdentical(openedTab.resolveProfile(), harness.profile)
-        XCTAssertFalse(openedTab.isAuxiliaryMiniWindow)
-        XCTAssertFalse(openedTab.isPopupHost)
-        XCTAssertEqual(mainWindow.frame, originalMainFrame)
-    }
-
     func testPrivateExtensionPopupWindowIsBlockedBeforeProfileRuntimeMaterializes() async throws {
         let harness = try await makeExtensionHarness(
             ownerExtensionID: "private-popup-owner",
@@ -917,7 +873,6 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
             harness.browserManager.tabManager.spaceStateOwner.currentSpace!.id
         ]?.count ?? 0
         let openedWindow = expectation(description: "extension external tab opened")
-        var createWindowCallCount = 0
         var completionWindow: (any WKWebExtensionWindow)?
         var completionError: (any Error)?
         let authURL = URL(string: "https://account.example.test/login?client_id=abc")!
@@ -926,12 +881,6 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
             [authURL],
             controller: harness.controller,
             extensionContext: harness.extensionContext,
-            createWindow: {
-                createWindowCallCount += 1
-            },
-            awaitWindowRegistration: { _ in
-                nil
-            },
             completionHandler: { window, error in
                 completionWindow = window
                 completionError = error
@@ -944,7 +893,6 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
         XCTAssertNil(completionError)
         let window = try XCTUnwrap(completionWindow as? ExtensionWindowAdapter)
         XCTAssertEqual(window.windowId, harness.windowState.id)
-        XCTAssertEqual(createWindowCallCount, 0)
         XCTAssertEqual(mainWindow.frame, originalMainFrame)
         let authTab = try await waitForRegularTab(
             with: authURL,

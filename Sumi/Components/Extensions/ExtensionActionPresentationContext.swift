@@ -88,7 +88,8 @@ struct ExtensionActionPresentationContext {
         browserContext.extensionsModule.captureActionPopupAnchor(
             extensionId: installedExtension.id,
             windowId: browserContext.windowState.id,
-            profileId: actionProfileId
+            profileId: actionProfileId,
+            tabId: currentTab?.id
         )
 
         let result = await browserContext.extensionsModule

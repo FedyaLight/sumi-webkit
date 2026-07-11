@@ -18,7 +18,8 @@ final class TabWebKitPermissionUIDelegateOwner {
         // swiftlint:disable:next discouraged_optional_collection
         completionHandler: @escaping @MainActor @Sendable ([URL]?) -> Void
     ) {
-        guard let permissionBridges = tab.navigationRuntime.permissionRuntime.permissionBridges(),
+        guard let sourceWebView = webView as? FocusableWKWebView,
+              let permissionBridges = tab.navigationRuntime.permissionRuntime.permissionBridges(),
               let tabContext = filePickerPermissionTabContext(for: webView)
         else {
             RuntimeDiagnostics.emit("📁 [Tab] Denying file picker because browser/profile context is unavailable.")
@@ -26,7 +27,9 @@ final class TabWebKitPermissionUIDelegateOwner {
             return
         }
 
-        let activationState = tab.popupUserActivationTracker.activationState(webKitUserInitiated: nil)
+        let activationState = sourceWebView.popupUserActivation.claim(
+            webKitUserInitiated: nil
+        )
         let request = SumiFilePickerPermissionRequest(
             parameters: parameters,
             frame: frame,
@@ -39,7 +42,6 @@ final class TabWebKitPermissionUIDelegateOwner {
             currentPageId: { [weak tab] in tab?.currentPermissionPageId() },
             completionHandler: completionHandler
         )
-        tab.popupUserActivationTracker.consumeIfUserActivated(activationState)
     }
 
     @available(macOS 13.0, *)

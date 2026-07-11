@@ -89,6 +89,10 @@ enum SumiWebViewShutdown {
 
         if case .normal = scope {
             normalTabRuntime?.removeWebViewFromContainers(webView)
+            if let focusableWebView = webView as? FocusableWKWebView {
+                focusableWebView.resetPageInteractionState()
+                focusableWebView.owningTab = nil
+            }
         }
     }
 

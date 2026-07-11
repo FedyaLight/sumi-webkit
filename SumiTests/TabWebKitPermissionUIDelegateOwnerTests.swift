@@ -1,3 +1,4 @@
+import AppKit
 import WebKit
 import XCTest
 
@@ -10,7 +11,7 @@ final class TabWebKitPermissionUIDelegateOwnerTests: XCTestCase {
             url: URL(string: "https://top.example/page")!,
             loadsCachedFaviconOnInit: false
         )
-        let webView = WKWebView()
+        let webView = FocusableWKWebView()
         var decisions: [Bool] = []
 
         tab.webKitUIDelegateOwner.webView(
@@ -25,38 +26,50 @@ final class TabWebKitPermissionUIDelegateOwnerTests: XCTestCase {
         XCTAssertEqual(decisions, [false])
     }
 
-    func testFilePickerPermissionContextFacadeRemainsAvailableForAuxiliaryDelegatePath() throws {
+    func testFilePickerPermissionContextUsesExactFocusableDocument() async throws {
         let browserManager = BrowserManager()
         let tab = browserManager.tabManager.tabFactory.makeTab(
             url: URL(string: "https://files.example/page")!,
             loadsCachedFaviconOnInit: false
         )
         tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
-        let webView = PermissionCommittedURLWebView()
-        let navigation = bindCommittedDocument(on: webView, tab: tab)
+        let webView = FocusableWKWebView()
+        await loadDocument(on: webView, at: tab.url)
+        let committedURL = try XCTUnwrap(webView.committedURL)
+        let navigation = bindCommittedDocument(
+            on: webView,
+            tab: tab,
+            committedURL: committedURL
+        )
 
         let context = try XCTUnwrap(tab.filePickerPermissionTabContext(for: webView))
 
         XCTAssertEqual(context.tabId, tab.id.uuidString.lowercased())
         XCTAssertEqual(context.pageId, tab.currentPermissionPageId())
         XCTAssertEqual(context.profilePartitionId, browserManager.currentProfile?.id.uuidString.lowercased())
-        XCTAssertEqual(context.visibleURL, tab.url)
-        XCTAssertEqual(context.mainFrameURL, tab.url)
+        XCTAssertEqual(context.visibleURL, webView.url)
+        XCTAssertEqual(context.mainFrameURL, committedURL)
         XCTAssertTrue(context.isCurrentPage())
         withExtendedLifetime(navigation) { /* Keep navigation identity alive. */ }
     }
 
-    func testLegacyMediaUIDelegateRejectsCallbackWebViewWithoutExactDocumentLease() {
+    func testLegacyMediaUIDelegateRejectsCallbackWebViewWithoutExactDocumentLease() async throws {
         let browserManager = BrowserManager()
         let tab = browserManager.tabManager.tabFactory.makeTab(
             url: URL(string: "https://top.example/page")!,
             loadsCachedFaviconOnInit: false
         )
         tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
-        let authorityWebView = PermissionCommittedURLWebView()
-        let navigation = bindCommittedDocument(on: authorityWebView, tab: tab)
-        let unrelatedCallbackWebView = PermissionCommittedURLWebView()
-        unrelatedCallbackWebView.reportedCommittedURL = tab.url
+        let authorityWebView = FocusableWKWebView()
+        await loadDocument(on: authorityWebView, at: tab.url)
+        let committedURL = try XCTUnwrap(authorityWebView.committedURL)
+        let navigation = bindCommittedDocument(
+            on: authorityWebView,
+            tab: tab,
+            committedURL: committedURL
+        )
+        let unrelatedCallbackWebView = FocusableWKWebView()
+        await loadDocument(on: unrelatedCallbackWebView, at: tab.url)
         var decisions: [Bool] = []
 
         tab.webKitUIDelegateOwner.webView(
@@ -72,19 +85,103 @@ final class TabWebKitPermissionUIDelegateOwnerTests: XCTestCase {
         withExtendedLifetime(navigation) { /* Keep navigation identity alive. */ }
     }
 
+    func testFilePickerActivationCannotCrossFocusableWebViewCloneBoundary() async throws {
+        let presenter = PermissionFilePickerPanelPresenter()
+        let browserManager = BrowserManager(filePickerPanelPresenter: presenter)
+        let tab = browserManager.tabManager.tabFactory.makeTab(
+            url: URL(string: "https://files.example/page")!,
+            loadsCachedFaviconOnInit: false
+        )
+        tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
+        let callbackWebView = FocusableWKWebView()
+        await loadDocument(on: callbackWebView, at: tab.url)
+        let committedURL = try XCTUnwrap(callbackWebView.committedURL)
+        let navigation = bindCommittedDocument(
+            on: callbackWebView,
+            tab: tab,
+            committedURL: committedURL
+        )
+        let activatedSiblingClone = FocusableWKWebView()
+        activatedSiblingClone.popupUserActivation.record(
+            event: makeMouseEvent(),
+            kind: "leftMouseDown"
+        )
+        let frame = SumiWKFrameInfoMock(
+            isMainFrame: true,
+            request: URLRequest(url: committedURL),
+            securityOrigin: SumiWKSecurityOriginMock.new(url: committedURL),
+            webView: callbackWebView
+        ).frameInfo
+        let completion = expectation(description: "file picker denied")
+        var results: [[URL]?] = []
+
+        tab.webKitPermissionUIDelegateOwner.runOpenPanel(
+            callbackWebView,
+            parameters: WKOpenPanelParameters(),
+            initiatedByFrame: frame
+        ) { urls in
+            results.append(urls)
+            completion.fulfill()
+        }
+
+        await fulfillment(of: [completion], timeout: 2)
+        XCTAssertEqual(results.count, 1)
+        XCTAssertNil(results[0])
+        XCTAssertTrue(presenter.requests.isEmpty)
+        XCTAssertTrue(
+            activatedSiblingClone.popupUserActivation
+                .activationState(webKitUserInitiated: false)
+                .isUserActivated
+        )
+        XCTAssertFalse(
+            callbackWebView.popupUserActivation
+                .activationState(webKitUserInitiated: false)
+                .isUserActivated
+        )
+        withExtendedLifetime(navigation) { /* Keep navigation identity alive. */ }
+    }
+
+    private func loadDocument(on webView: WKWebView, at url: URL) async {
+        let didFinish = expectation(description: "permission source document loaded")
+        let delegate = PermissionDocumentNavigationDelegate {
+            didFinish.fulfill()
+        }
+        webView.navigationDelegate = delegate
+        webView.loadHTMLString("<html><body>permission source</body></html>", baseURL: url)
+        await fulfillment(of: [didFinish], timeout: 5)
+        webView.navigationDelegate = nil
+    }
+
+    private func makeMouseEvent() -> NSEvent {
+        guard let event = NSEvent.mouseEvent(
+            with: .leftMouseDown,
+            location: .zero,
+            modifierFlags: [],
+            timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: 0,
+            context: nil,
+            eventNumber: 1,
+            clickCount: 1,
+            pressure: 1
+        ) else {
+            fatalError("Failed to create mouse event")
+        }
+        return event
+    }
+
     @discardableResult
     private func bindCommittedDocument(
-        on webView: PermissionCommittedURLWebView,
-        tab: Tab
+        on webView: WKWebView,
+        tab: Tab,
+        committedURL: URL
     ) -> NSObject {
-        let intent = tab.beginMainFrameNavigationIntent(to: tab.url)
-        webView.reportedCommittedURL = tab.url
+        let intent = tab.beginMainFrameNavigationIntent(to: committedURL)
         XCTAssertTrue(tab.markDeferredMainFrameLoad(on: webView, intent: intent))
         XCTAssertEqual(
             tab.claimDeferredMainFrameLoad(
                 on: webView,
                 revision: intent.revision,
-                targetURL: intent.targetURL
+                targetURL: committedURL
             ),
             .claimed
         )
@@ -98,11 +195,40 @@ final class TabWebKitPermissionUIDelegateOwnerTests: XCTestCase {
             tab.recordMainFrameCommitSnapshot(
                 from: webView,
                 navigationID: ObjectIdentifier(navigation),
-                committedURL: tab.url,
+                committedURL: committedURL,
                 isPDF: false
             ).role,
             .stale
         )
         return navigation
+    }
+}
+
+@MainActor
+private final class PermissionFilePickerPanelPresenter: SumiFilePickerPanelPresenting {
+    private(set) var requests: [SumiFilePickerPanelPresentationRequest] = []
+
+    func presentFilePicker(
+        _ request: SumiFilePickerPanelPresentationRequest,
+        for _: WKWebView?,
+        completion: @escaping @MainActor (SumiFilePickerPanelResult) -> Void
+    ) {
+        requests.append(request)
+        completion(.cancelled)
+    }
+}
+
+private final class PermissionDocumentNavigationDelegate: NSObject, WKNavigationDelegate {
+    private let onFinish: () -> Void
+
+    init(onFinish: @escaping () -> Void) {
+        self.onFinish = onFinish
+    }
+
+    func webView(
+        _: WKWebView,
+        didFinish _: WKNavigation! // swiftlint:disable:this implicitly_unwrapped_optional
+    ) {
+        onFinish()
     }
 }

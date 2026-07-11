@@ -113,15 +113,6 @@ private extension String {
     }
 }
 
-extension Tab {
-    func recentWebPageContextMenuTarget() -> SumiWebPageContextMenuTargetSnapshot? {
-        guard let lastWebPageContextMenuTarget,
-              lastWebPageContextMenuTarget.isRecent()
-        else { return nil }
-        return lastWebPageContextMenuTarget
-    }
-}
-
 enum SumiWebPageMenuCommand: String, CaseIterable {
     case back = "SumiWebPageMenu.Back"
     case forward = "SumiWebPageMenu.Forward"
@@ -133,17 +124,6 @@ enum SumiWebPageMenuCommand: String, CaseIterable {
     case copySelection = "SumiWebPageMenu.CopySelection"
     case copyLinkToSelectedText = "SumiWebPageMenu.CopyLinkToSelectedText"
     case searchSelection = "SumiWebPageMenu.SearchSelection"
-    case openLinkInNewTab = "SumiWebPageMenu.OpenLinkInNewTab"
-    case openLinkInNewWindow = "SumiWebPageMenu.OpenLinkInNewWindow"
-    case openImageInNewTab = "SumiWebPageMenu.OpenImageInNewTab"
-    case openImageInNewWindow = "SumiWebPageMenu.OpenImageInNewWindow"
-    case openMediaInNewTab = "SumiWebPageMenu.OpenMediaInNewTab"
-    case openMediaInNewWindow = "SumiWebPageMenu.OpenMediaInNewWindow"
-    case openFrameInNewWindow = "SumiWebPageMenu.OpenFrameInNewWindow"
-    case downloadLinkedFile = "SumiWebPageMenu.DownloadLinkedFile"
-    case downloadImage = "SumiWebPageMenu.DownloadImage"
-    case downloadMedia = "SumiWebPageMenu.DownloadMedia"
-    case copyImageAddress = "SumiWebPageMenu.CopyImageAddress"
 
     init?(_ identifier: NSUserInterfaceItemIdentifier?) {
         guard let identifier else { return nil }

@@ -97,6 +97,10 @@ struct ExtensionRequestedTabOpeningService {
             )
         }
 
+        if let targetWindow = target.window {
+            browserContext.placeExtensionTab(newTab, in: targetWindow)
+        }
+
         if shouldBePinned {
             browserContext.pinExtensionTab(
                 newTab,

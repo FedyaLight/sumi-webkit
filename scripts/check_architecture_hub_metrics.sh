@@ -289,7 +289,7 @@ tab_space_reachback="$(
 )"
 retired_tab_creation_resolver_api="$(
   count_matches \
-    'TabTargetSpaceResolver|\btargetResolver\b|\bprofileIdForNewTab\b|\brequestTargetSpaceProfileBackfill\b|\binitialExplicitProfileId\b|\bprofileIdForUnassignedSpace\b|\bcreateNewTabWithWebView\b|\bduplicateAsRegularForSplit\b' \
+    'TabTargetSpaceResolver|\bprofileIdForNewTab\b|\brequestTargetSpaceProfileBackfill\b|\binitialExplicitProfileId\b|\bprofileIdForUnassignedSpace\b|\bcreateNewTabWithWebView\b|\bduplicateAsRegularForSplit\b' \
     App FloatingBar SidebarChrome Settings Sumi UI SumiTests
 )"
 mutable_browser_tab_manager="$(
@@ -778,7 +778,7 @@ check_exact "Retired window Space state Owner" "$retired_window_space_state_owne
 check_max "BrowserManager peer lazy *Owner" "$bm_peer_owners" 0
 check_max "BrowserManager façade *Owner accessors" "$bm_facade_owner_accessors" 0
 check_max "BrowserManager capability bundles" "$bm_bundles" 7
-check_max "BrowserManager bundled capabilities" "$bm_bundle_capabilities" 27
+check_max "BrowserManager bundled capabilities" "$bm_bundle_capabilities" 26
 check_max "Retired app command/lifecycle hubs" "$retired_app_command_hubs" 0
 check_max "Retired window-session reach-through" "$retired_window_session_reachthrough" 0
 check_max "Retired stateless routing objects" "$retired_stateless_routing_objects" 0

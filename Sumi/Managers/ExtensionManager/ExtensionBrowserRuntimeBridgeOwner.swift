@@ -14,9 +14,6 @@ final class ExtensionBrowserRuntimeBridgeOwner {
         let windowQuery: @MainActor () -> (any ExtensionWindowQuery)?
         let auxiliaryWindows:
             @MainActor () -> (any ExtensionAuxiliaryWindowControl)?
-        let controllersByProfile: @MainActor () -> [UUID: WKWebExtensionController]
-        let currentProfileId: @MainActor () -> UUID?
-        let resolvedProfileIdForWindow: @MainActor (BrowserWindowState) -> UUID?
         let resolvedProfileIdForTab: @MainActor (Tab?) -> UUID?
         let windowMatchesProfile: @MainActor (BrowserWindowState, UUID) -> Bool
         let windowAdapter: @MainActor (UUID) -> ExtensionWindowAdapter?
@@ -24,40 +21,58 @@ final class ExtensionBrowserRuntimeBridgeOwner {
         let extensionControllerForTab: @MainActor (Tab) -> WKWebExtensionController?
         let extensionContexts: @MainActor (UUID) -> [String: WKWebExtensionContext]
         let isTabEligibleForCurrentExtensionRuntime: @MainActor (Tab) -> Bool
-        let switchProfile: @MainActor (UUID) -> Void
         let extensionsLoaded: @MainActor () -> Bool
-        let tabOpenNotificationGeneration: @MainActor () -> UInt64
-        let bumpTabOpenNotificationGeneration: @MainActor () -> UInt64
-        let updateWebViewsForProfile: @MainActor (UUID, Bool) -> Void
-        let registerTabWithExtensionRuntime: @MainActor (Tab, String, Bool) -> Void
-        let notifyTabActivated: @MainActor (Tab, Tab?) -> Void
         let extensionLoadGeneration: @MainActor () -> UInt64
         let extensionControllerDescription: @MainActor (WKWebExtensionController?) -> String
         let currentExtensionController: @MainActor () -> WKWebExtensionController?
         let ownedUntrackedCurrentWebView: @MainActor (Tab) -> WKWebView?
         let trace: @MainActor (String) -> Void
+        let debugDidFocusWindow: @MainActor () -> ((UUID) -> Void)?
         let debugDidActivateTab: @MainActor () -> ((UUID) -> Void)?
     }
 
     private let dependencies: Dependencies
+    private let normalWindows: ExtensionNormalWindowLifecycle
+    private let runtimeReload: ExtensionRuntimeReloadTransaction
 
-    init(dependencies: Dependencies) {
+    init(
+        manager: ExtensionManager,
+        dependencies: Dependencies
+    ) {
         self.dependencies = dependencies
+        let normalWindows = ExtensionNormalWindowLifecycle(
+            resolver: ExtensionNormalWindowProjectionResolver(
+                manager: manager
+            ),
+            adapterStore: dependencies.adapterStore
+        )
+        self.normalWindows = normalWindows
+        runtimeReload = ExtensionRuntimeReloadTransaction(
+            runtimeSession: manager.runtimeSession,
+            profileRuntime: manager.profileRuntime,
+            normalWindows: normalWindows,
+            adapterResolution: manager.adapterResolutionOwner,
+            controllerBinding: manager.controllerAttachmentOwner,
+            tabPublication: manager.normalTabRuntimeBindingOwner,
+            diagnostics: manager.runtimeDiagnostics
+        )
     }
 
     // MARK: - Window Notifications
 
-    func notifyWindowOpened(_ windowState: BrowserWindowState) {
-        guard let profileId = dependencies.resolvedProfileIdForWindow(windowState),
-              let controller = dependencies.controllersByProfile()[profileId],
-              let adapter = dependencies.windowAdapter(windowState.id) else {
-            return
-        }
-        controller.didOpenWindow(adapter)
+    @discardableResult
+    func notifyWindowOpened(_ windowState: BrowserWindowState) -> Bool {
+        normalWindows.opened(windowState)
     }
 
-    func notifyWindowClosed(_ windowId: UUID) {
-        dependencies.adapterStore.removeWindowAdapter(for: windowId)
+    func publishWindow(
+        _ windowState: BrowserWindowState
+    ) -> (any BrowserWindowExtensionPublication)? {
+        normalWindows.publication(for: windowState)
+    }
+
+    func notifyWindowClosed(_ windowState: BrowserWindowState) {
+        normalWindows.closed(windowState)
     }
 
     func notifyAuxiliaryWindowOpened(_ session: AuxiliaryWindowSession) {
@@ -142,36 +157,53 @@ final class ExtensionBrowserRuntimeBridgeOwner {
             return
         }
 
-        let runtime = dependencies.runtime()
-        if windowState.isIncognito, let profile = windowState.ephemeralProfile {
-            dependencies.switchProfile(profile.id)
-        } else if let profileId = windowState.currentProfileId,
-                  runtime.profile(profileId) != nil {
-            dependencies.switchProfile(profileId)
-        } else if let currentProfile = runtime.currentProfile() {
-            dependencies.switchProfile(currentProfile.id)
-        }
+        normalWindows.focused(windowState)
+        dependencies.debugDidFocusWindow()?(windowState.id)
+    }
 
-        guard let profileId = dependencies.resolvedProfileIdForWindow(windowState),
-              let controller = dependencies.controllersByProfile()[profileId],
-              let adapter = dependencies.windowAdapter(windowState.id) else {
-            return
-        }
-        controller.didFocusWindow(adapter)
+    /// Balances every normal-window open before contexts/controllers are torn
+    /// down. Entries leave the map before callbacks so reentrant close cannot
+    /// publish a duplicate event.
+    @discardableResult
+    func closePublishedWindowsForRuntimeTeardown()
+        -> ExtensionRuntimeReloadTransaction.RetirementOutcome {
+        runtimeReload.retireRuntime(dependencies.runtime())
+    }
+
+    func publishedWindowAdapter(
+        for windowState: BrowserWindowState,
+        profileID: UUID
+    ) -> ExtensionWindowAdapter? {
+        normalWindows.publishedAdapter(
+            for: windowState,
+            profileID: profileID
+        )
+    }
+
+    func prepareTabOpen(_ tab: Tab) -> Bool {
+        normalWindows.prepareTabOpen(tab)
     }
 
     // MARK: - Tab Notifications
 
     func notifyTabActivated(newTab: Tab, previous: Tab?) {
+        guard normalWindows.prepareTabActivation(newTab) else {
+            return
+        }
         guard dependencies.isTabEligibleForCurrentExtensionRuntime(newTab) else {
             return
         }
         guard let controller = dependencies.extensionControllerForTab(newTab),
               let newAdapter = dependencies.stableAdapter(newTab) else { return }
-        let previousAdapter = previous.flatMap { tab in
-            dependencies.isTabEligibleForCurrentExtensionRuntime(tab)
-                ? dependencies.stableAdapter(tab)
-                : nil
+        let newProfileID = dependencies.resolvedProfileIdForTab(newTab)
+        let previousAdapter: ExtensionTabAdapter? = previous.flatMap { tab in
+            guard dependencies.isTabEligibleForCurrentExtensionRuntime(tab),
+                  dependencies.resolvedProfileIdForTab(tab) == newProfileID,
+                  dependencies.extensionControllerForTab(tab) === controller
+            else {
+                return nil
+            }
+            return dependencies.stableAdapter(tab)
         }
         controller.didActivateTab(newAdapter, previousActiveTab: previousAdapter)
         dependencies.debugDidActivateTab()?(newTab.id)
@@ -190,10 +222,6 @@ final class ExtensionBrowserRuntimeBridgeOwner {
 
     // MARK: - Runtime Reconciliation
 
-    /// Call immediately after `tabOpenNotificationGeneration` is incremented so WebKit never
-    /// observes a window whose `tabs(for:)` can list adapters while `activeTab(for:)` is `nil`
-    /// only because tabs have not yet been reconciled to the new generation.
-    ///
     /// - Parameter allowWhenExtensionsNotLoaded: Use during `performInstallation` so tabs re-bind
     ///   after `load(extensionContext:)` even before `loadInstalledExtensions` sets `extensionsLoaded`.
     /// Re-binds open tabs and late-assigns the extension controller after a context load
@@ -203,58 +231,31 @@ final class ExtensionBrowserRuntimeBridgeOwner {
         allowWhenExtensionsNotLoaded: Bool = false,
         profileId: UUID? = nil
     ) {
-        _ = dependencies.bumpTabOpenNotificationGeneration()
-        var profileIds = Set(dependencies.controllersByProfile().keys)
-        if let profileId {
-            profileIds.insert(profileId)
-        }
-        if let currentProfileId = dependencies.currentProfileId() {
-            profileIds.insert(currentProfileId)
-        }
-        // Attach or rebuild WebViews before `didOpenTab` so WebKit can inject manifest
-        // content scripts (including CSS) on already-open normal tabs.
-        for resolvedProfileId in profileIds {
-            dependencies.updateWebViewsForProfile(
-                resolvedProfileId,
-                allowWhenExtensionsNotLoaded
+        guard let commit = runtimeReload.reload(
+            ExtensionRuntimeReloadTransaction.Request(
+                reason: reason,
+                allowWhenExtensionsNotLoaded:
+                    allowWhenExtensionsNotLoaded,
+                requestedProfileID: profileId,
+                extensionsLoaded: dependencies.extensionsLoaded(),
+                runtime: dependencies.runtime(),
+                windowQuery: dependencies.windowQuery()
             )
-        }
-        resyncOpenTabsWithExtensionRuntimeAfterGenerationBump(
-            reason: reason,
-            allowWhenExtensionsNotLoaded: allowWhenExtensionsNotLoaded
-        )
-        registerExistingWindowStateIfAttached()
-    }
-
-    func resyncOpenTabsWithExtensionRuntimeAfterGenerationBump(
-        reason: String,
-        allowWhenExtensionsNotLoaded: Bool = false
-    ) {
-        guard dependencies.extensionsLoaded() || allowWhenExtensionsNotLoaded else { return }
-
-        let tabs = allKnownTabs()
-        dependencies.trace(
-            "resyncOpenTabsAfterGenerationBump start reason=\(reason) generation=\(dependencies.tabOpenNotificationGeneration()) tabs=\(tabs.count) allowWhenNotLoaded=\(allowWhenExtensionsNotLoaded)"
-        )
-
-        for tab in tabs {
-            dependencies.registerTabWithExtensionRuntime(
-                tab,
-                reason,
-                allowWhenExtensionsNotLoaded
-            )
+        ) else {
+            return
         }
 
-        if let windowQuery = dependencies.windowQuery(),
-           let activeWindow = windowQuery.activeExtensionWindowState,
-           let currentTab = windowQuery.currentExtensionTab(in: activeWindow),
-           dependencies.isTabEligibleForCurrentExtensionRuntime(currentTab) {
-            dependencies.notifyTabActivated(currentTab, nil)
+        if let activeWindow = commit.activeWindow,
+           commit.activeTab != nil {
+            notifyWindowFocused(activeWindow)
+            guard let target = runtimeReload.activationTarget(
+                after: commit,
+                windowQuery: dependencies.windowQuery()
+            ) else {
+                return
+            }
+            notifyTabActivated(newTab: target.tab, previous: nil)
         }
-
-        dependencies.trace(
-            "resyncOpenTabsAfterGenerationBump complete reason=\(reason) generation=\(dependencies.tabOpenNotificationGeneration())"
-        )
     }
 
     func registerExistingWindowStateIfAttached() {
@@ -262,7 +263,7 @@ final class ExtensionBrowserRuntimeBridgeOwner {
 
         let windows = windowQuery.allExtensionWindowStates
         dependencies.trace(
-            "registerExistingWindowState start generation=\(dependencies.extensionLoadGeneration()) notifyGeneration=\(dependencies.tabOpenNotificationGeneration()) windows=\(windows.count) controller=\(dependencies.extensionControllerDescription(dependencies.currentExtensionController()))"
+            "registerExistingWindowState start generation=\(dependencies.extensionLoadGeneration()) windows=\(windows.count) controller=\(dependencies.extensionControllerDescription(dependencies.currentExtensionController()))"
         )
 
         for windowState in windows {
@@ -274,7 +275,7 @@ final class ExtensionBrowserRuntimeBridgeOwner {
         }
 
         dependencies.trace(
-            "registerExistingWindowState complete generation=\(dependencies.extensionLoadGeneration()) notifyGeneration=\(dependencies.tabOpenNotificationGeneration()) windows=\(windows.count)"
+            "registerExistingWindowState complete generation=\(dependencies.extensionLoadGeneration()) windows=\(windows.count)"
         )
     }
 
@@ -339,13 +340,6 @@ extension ExtensionBrowserRuntimeBridgeOwner.Dependencies {
             auxiliaryWindows: { [weak manager] in
                 manager?.extensionAuxiliaryWindows
             },
-            controllersByProfile: { [weak manager] in
-                manager?.profileRuntime.controllersByProfile ?? [:]
-            },
-            currentProfileId: { [weak manager] in manager?.profileRuntime.currentProfileId },
-            resolvedProfileIdForWindow: { [weak manager] windowState in
-                manager?.resolvedProfileId(for: windowState)
-            },
             resolvedProfileIdForTab: { [weak manager] tab in
                 manager?.resolvedProfileId(for: tab)
             },
@@ -367,34 +361,7 @@ extension ExtensionBrowserRuntimeBridgeOwner.Dependencies {
             isTabEligibleForCurrentExtensionRuntime: { [weak manager] tab in
                 manager?.isTabEligibleForCurrentExtensionRuntime(tab) ?? false
             },
-            switchProfile: { [weak manager] profileId in
-                manager?.switchProfile(profileId: profileId)
-            },
             extensionsLoaded: { [weak manager] in manager?.extensionsLoaded ?? false },
-            tabOpenNotificationGeneration: { [weak manager] in
-                manager?.runtimeSession.tabOpenNotificationGeneration ?? 0
-            },
-            bumpTabOpenNotificationGeneration: { [weak manager] in
-                guard let manager else { return 0 }
-                manager.runtimeSession.tabOpenNotificationGeneration &+= 1
-                return manager.runtimeSession.tabOpenNotificationGeneration
-            },
-            updateWebViewsForProfile: { [weak manager] profileId, allowWhenExtensionsNotLoaded in
-                manager?.updateWebViewsForProfile(
-                    profileId,
-                    allowWhenExtensionsNotLoaded: allowWhenExtensionsNotLoaded
-                )
-            },
-            registerTabWithExtensionRuntime: { [weak manager] tab, reason, allowWhenExtensionsNotLoaded in
-                manager?.registerTabWithExtensionRuntime(
-                    tab,
-                    reason: reason,
-                    allowWhenExtensionsNotLoaded: allowWhenExtensionsNotLoaded
-                )
-            },
-            notifyTabActivated: { [weak manager] newTab, previous in
-                manager?.notifyTabActivated(newTab: newTab, previous: previous)
-            },
             extensionLoadGeneration: { [weak manager] in
                 manager?.runtimeSession.extensionLoadGeneration ?? 0
             },
@@ -407,6 +374,13 @@ extension ExtensionBrowserRuntimeBridgeOwner.Dependencies {
             },
             trace: { [weak manager] message in
                 manager?.runtimeDiagnostics.trace(message)
+            },
+            debugDidFocusWindow: { [weak manager] in
+                #if DEBUG
+                    manager?.testHooks.didFocusWindow
+                #else
+                    nil
+                #endif
             },
             debugDidActivateTab: { [weak manager] in
                 #if DEBUG
@@ -424,12 +398,13 @@ extension ExtensionBrowserRuntimeBridgeOwner.Dependencies {
 @available(macOS 15.5, *)
 @MainActor
 extension ExtensionManager {
-    func notifyWindowOpened(_ windowState: BrowserWindowState) {
+    @discardableResult
+    func notifyWindowOpened(_ windowState: BrowserWindowState) -> Bool {
         browserRuntimeBridgeOwner.notifyWindowOpened(windowState)
     }
 
-    func notifyWindowClosed(_ windowId: UUID) {
-        browserRuntimeBridgeOwner.notifyWindowClosed(windowId)
+    func notifyWindowClosed(_ windowState: BrowserWindowState) {
+        browserRuntimeBridgeOwner.notifyWindowClosed(windowState)
     }
 
     func notifyAuxiliaryWindowOpened(_ session: AuxiliaryWindowSession) {
@@ -465,16 +440,6 @@ extension ExtensionManager {
             reason: reason,
             allowWhenExtensionsNotLoaded: allowWhenExtensionsNotLoaded,
             profileId: profileId
-        )
-    }
-
-    func resyncOpenTabsWithExtensionRuntimeAfterGenerationBump(
-        reason: String,
-        allowWhenExtensionsNotLoaded: Bool = false
-    ) {
-        browserRuntimeBridgeOwner.resyncOpenTabsWithExtensionRuntimeAfterGenerationBump(
-            reason: reason,
-            allowWhenExtensionsNotLoaded: allowWhenExtensionsNotLoaded
         )
     }
 

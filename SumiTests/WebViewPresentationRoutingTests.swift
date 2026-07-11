@@ -1,0 +1,1213 @@
+import AppKit
+import SwiftData
+import WebKit
+import XCTest
+
+@testable import Sumi
+
+@MainActor
+final class WebViewPresentationRoutingTests: XCTestCase {
+    func testPageMenuCommandsResolveExactCloneWindowAndFailClosed() throws {
+        let harness = try makeRegularHarness()
+        defer { closePublishedShells(in: harness.windowRegistry) }
+        harness.settings.themeUseSystemColors = true
+
+        let secondWindow = BrowserWindowState()
+        secondWindow.tabManager = harness.browserManager.tabManager
+        secondWindow.currentProfileId = harness.sourceProfile.id
+        secondWindow.currentSpaceId = harness.sourceSpace.id
+        secondWindow.currentTabId = harness.sourceTab.id
+        harness.windowRegistry.register(secondWindow)
+
+        let firstShell = NSWindow(
+            contentRect: .zero,
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        firstShell.appearance = NSAppearance(named: .aqua)
+        harness.windowRegistry.bindAppKitWindow(
+            firstShell,
+            to: harness.sourceWindow
+        )
+        let secondShell = NSWindow(
+            contentRect: .zero,
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        secondShell.appearance = NSAppearance(named: .darkAqua)
+        harness.windowRegistry.bindAppKitWindow(secondShell, to: secondWindow)
+
+        let secondWebView = FocusableWKWebView(
+            frame: .zero,
+            configuration: webViewConfiguration(
+                dataStore: harness.sourceProfile.dataStore
+            )
+        )
+        secondWebView.owningTab = harness.sourceTab
+        harness.browserManager.testWebViewRuntime().ownershipService
+            .registerTrackedWebView(
+                secondWebView,
+                for: harness.sourceTab,
+                in: secondWindow.id
+            )
+
+        let firstAppearance = harness.sourceTab.webPageMenuCommands.appearance(
+            for: harness.sourceWebView,
+            fallback: nil
+        )
+        let secondAppearance = harness.sourceTab.webPageMenuCommands.appearance(
+            for: secondWebView,
+            fallback: nil
+        )
+        XCTAssertEqual(
+            firstAppearance?.bestMatch(from: [.aqua, .darkAqua]),
+            .aqua
+        )
+        XCTAssertEqual(
+            secondAppearance?.bestMatch(from: [.aqua, .darkAqua]),
+            .darkAqua
+        )
+
+        XCTAssertTrue(
+            harness.sourceTab.webPageMenuCommands.requestBookmarkEditor(
+                from: secondWebView
+            )
+        )
+        XCTAssertEqual(
+            harness.browserManager.bookmarkEditorPresentationRequest?.windowID,
+            secondWindow.id
+        )
+        XCTAssertEqual(
+            harness.browserManager.bookmarkEditorPresentationRequest?.tabID,
+            harness.sourceTab.id
+        )
+
+        let untracked = FocusableWKWebView(
+            frame: .zero,
+            configuration: WKWebViewConfiguration()
+        )
+        untracked.owningTab = harness.sourceTab
+        XCTAssertFalse(
+            harness.sourceTab.webPageMenuCommands.requestBookmarkEditor(
+                from: untracked
+            )
+        )
+
+        let mismatchedTab = Tab(loadsCachedFaviconOnInit: false)
+        let mismatched = FocusableWKWebView(
+            frame: .zero,
+            configuration: WKWebViewConfiguration()
+        )
+        mismatched.owningTab = mismatchedTab
+        harness.browserManager.testWebViewRuntime().ownershipService
+            .registerTrackedWebView(
+                mismatched,
+                for: harness.sourceTab,
+                in: secondWindow.id
+            )
+        XCTAssertFalse(
+            harness.sourceTab.webPageMenuCommands.requestBookmarkEditor(
+                from: mismatched
+            )
+        )
+    }
+
+    func testForegroundAndBackgroundLinksStayInSourceTabSpace() throws {
+        let harness = try makeRegularHarness()
+        defer { closePublishedShells(in: harness.windowRegistry) }
+
+        let backgroundURL = try XCTUnwrap(
+            URL(string: "https://target.example/background")
+        )
+        XCTAssertTrue(harness.sourceTab.linkPresentationCommands.open(
+            backgroundURL,
+            from: harness.sourceWebView,
+            disposition: .newTab(selected: false)
+        ))
+
+        let backgroundTab = try XCTUnwrap(
+            harness.browserManager.tabManager.regularTabCollectionOwner
+                .tabs(in: harness.sourceSpace)
+                .first { $0.url == backgroundURL }
+        )
+        XCTAssertEqual(backgroundTab.spaceId, harness.sourceSpace.id)
+        XCTAssertEqual(harness.sourceWindow.currentTabId, harness.sourceTab.id)
+        XCTAssertEqual(harness.sourceWindow.currentSpaceId, harness.sourceSpace.id)
+
+        let foregroundURL = try XCTUnwrap(
+            URL(string: "https://target.example/foreground")
+        )
+        XCTAssertTrue(harness.sourceTab.linkPresentationCommands.open(
+            foregroundURL,
+            from: harness.sourceWebView,
+            disposition: .newTab(selected: true)
+        ))
+
+        let foregroundTab = try XCTUnwrap(
+            harness.browserManager.tabManager.regularTabCollectionOwner
+                .tabs(in: harness.sourceSpace)
+                .first { $0.url == foregroundURL }
+        )
+        XCTAssertEqual(foregroundTab.spaceId, harness.sourceSpace.id)
+        XCTAssertEqual(harness.sourceWindow.currentTabId, foregroundTab.id)
+        XCTAssertEqual(harness.sourceWindow.currentSpaceId, harness.sourceSpace.id)
+        XCTAssertTrue(
+            harness.browserManager.tabManager.regularTabCollectionOwner
+                .tabs(in: harness.unrelatedSpace)
+                .allSatisfy { $0.url != backgroundURL && $0.url != foregroundURL },
+            "Link routing must not fall back to the process-global current space."
+        )
+    }
+
+    func testPhysicalWebPopupRejectsSourceWithoutPublishedShellBeforeMutation()
+        throws {
+        let harness = try makeRegularHarness()
+        defer { closePublishedShells(in: harness.windowRegistry) }
+        XCTAssertNil(
+            harness.windowRegistry.appKitWindow(for: harness.sourceWindow)
+        )
+        let configuration = webViewConfiguration(
+            dataStore: harness.sourceProfile.dataStore
+        )
+        let existingAuxiliaryTabIDs = Set(
+            harness.browserManager.tabManager.transientTabRegistryOwner
+                .auxiliaryMiniWindowTabsByID.keys
+        )
+
+        let popupWebView = harness.sourceTab.navigationRuntime
+            .physicalWebPopupOpening?.open(
+                configuration: configuration,
+                request: URLRequest(
+                    url: try XCTUnwrap(
+                        URL(string: "https://target.example/popup")
+                    )
+                ),
+                windowFeatures: WKWindowFeatures(),
+                from: harness.sourceWebView,
+                isExtensionOriginated: false
+            )
+
+        XCTAssertNil(popupWebView)
+        XCTAssertEqual(
+            Set(
+                harness.browserManager.tabManager.transientTabRegistryOwner
+                    .auxiliaryMiniWindowTabsByID.keys
+            ),
+            existingAuxiliaryTabIDs
+        )
+    }
+
+    func testExtensionTabOpenersRejectUnavailableRegistrarBeforeMutation()
+        throws {
+        let harness = try makeRegularHarness()
+        defer { closePublishedShells(in: harness.windowRegistry) }
+        let sources = physicalSourceResolver(for: harness)
+        let tabOpening = PhysicalSourceTabOpeningService(
+            tabs: harness.browserManager.tabManager,
+            opening: harness.browserManager.tabLifecycleService.opening,
+            select: { [weak browserManager = harness.browserManager]
+                tab,
+                window,
+                loadPolicy in
+                browserManager?.selectTab(
+                    tab,
+                    in: window,
+                    loadPolicy: loadPolicy
+                )
+            }
+        )
+        var externalRegistrar: ExtensionTabRegistrarSpy? =
+            ExtensionTabRegistrarSpy()
+        let externalOpening = ExtensionExternalTabOpeningService(
+            sources: sources,
+            tabs: tabOpening,
+            extensionTabs: try XCTUnwrap(externalRegistrar)
+        )
+        externalRegistrar = nil
+        let initialTabIDs = regularTabIDs(in: harness)
+
+        XCTAssertFalse(
+            externalOpening.open(
+                try XCTUnwrap(
+                    URL(string: "https://target.example/extension-external")
+                ),
+                from: harness.sourceWebView
+            )
+        )
+        XCTAssertEqual(regularTabIDs(in: harness), initialTabIDs)
+
+        var childRegistrar: ExtensionTabRegistrarSpy? =
+            ExtensionTabRegistrarSpy()
+        let childOpening = WebKitChildTabOpeningService(
+            sources: sources,
+            tabs: harness.browserManager.tabManager,
+            ownership: harness.browserManager.testWebViewRuntime()
+                .ownershipService,
+            selection: BrowserTabSelectionCommand {
+                [weak browserManager = harness.browserManager]
+                tab,
+                window,
+                loadPolicy in
+                browserManager?.selectTab(
+                    tab,
+                    in: window,
+                    loadPolicy: loadPolicy
+                )
+            },
+            notifications: harness.browserManager.notificationPresenter,
+            extensionTabs: try XCTUnwrap(childRegistrar)
+        )
+        childRegistrar = nil
+        let configuration = webViewConfiguration(
+            dataStore: harness.sourceProfile.dataStore
+        )
+
+        XCTAssertNil(
+            childOpening.open(
+                configuration: configuration,
+                requestURL: URL(
+                    string: "https://target.example/extension-child"
+                ),
+                from: harness.sourceWebView,
+                selected: true,
+                isExtensionOriginated: true
+            )
+        )
+        XCTAssertEqual(regularTabIDs(in: harness), initialTabIDs)
+    }
+
+    func testNewWindowLinkCopiesSourceProfileAndSpaceBeforeOpeningTab() throws {
+        let harness = try makeRegularHarness()
+        defer { closePublishedShells(in: harness.windowRegistry) }
+        let existingWindowIDs = Set(harness.windowRegistry.windows.keys)
+        let targetURL = try XCTUnwrap(URL(string: "https://target.example/window"))
+        let restoration = harness.browserManager.windowSessionBundle.restoration
+        var observedPreparedWindow = false
+        var selectedTabAtRegistration: UUID?
+        var initialTabAtRegistration: Tab?
+        var profileAtRegistration: UUID?
+        var spaceAtRegistration: UUID?
+        harness.windowRegistry.prepareWindowRegistration = { [weak restoration] windowState in
+            if existingWindowIDs.contains(windowState.id) == false {
+                observedPreparedWindow = true
+                selectedTabAtRegistration = windowState.currentTabId
+                initialTabAtRegistration = windowState.currentTabId.flatMap {
+                    harness.browserManager.tabManager
+                        .tabCollectionMembershipOwner.tab(for: $0)
+                }
+                profileAtRegistration = windowState.currentProfileId
+                spaceAtRegistration = windowState.currentSpaceId
+            }
+            restoration?.prepareRegistration(windowState)
+        }
+        harness.windowRegistry.publishWindowRegistration = { [weak restoration] windowState in
+            restoration?.commitRegistration(windowState)
+        }
+
+        XCTAssertTrue(harness.sourceTab.linkPresentationCommands.open(
+            targetURL,
+            from: harness.sourceWebView,
+            disposition: .newWindow(selected: true)
+        ))
+
+        let targetWindow = try XCTUnwrap(
+            harness.windowRegistry.allWindows.first {
+                existingWindowIDs.contains($0.id) == false
+            }
+        )
+        XCTAssertTrue(observedPreparedWindow)
+        XCTAssertEqual(selectedTabAtRegistration, initialTabAtRegistration?.id)
+        XCTAssertEqual(initialTabAtRegistration?.url, targetURL)
+        XCTAssertEqual(profileAtRegistration, harness.sourceProfile.id)
+        XCTAssertEqual(spaceAtRegistration, harness.sourceSpace.id)
+        XCTAssertFalse(targetWindow.isIncognito)
+        XCTAssertEqual(targetWindow.currentProfileId, harness.sourceProfile.id)
+        XCTAssertEqual(targetWindow.currentSpaceId, harness.sourceSpace.id)
+
+        let targetTabID = try XCTUnwrap(targetWindow.currentTabId)
+        let targetTab = try XCTUnwrap(
+            harness.browserManager.tabManager.regularTabCollectionOwner
+                .tabs(in: harness.sourceSpace)
+                .first { $0.id == targetTabID }
+        )
+        XCTAssertIdentical(targetTab, initialTabAtRegistration)
+        XCTAssertEqual(targetTab.url, targetURL)
+        XCTAssertNil(
+            targetTab.profileId,
+            "A stable regular Tab inherits its effective profile from its canonical Space."
+        )
+        XCTAssertEqual(targetTab.spaceId, harness.sourceSpace.id)
+        XCTAssertTrue(
+            harness.browserManager.tabManager.regularTabCollectionOwner
+                .tabs(in: harness.unrelatedSpace)
+                .allSatisfy { $0.url != targetURL },
+            "A contextual new-window link must not use the global current space."
+        )
+    }
+
+    func testIncognitoNewWindowLinkCreatesOnlyEphemeralTargetState() throws {
+        let browserManager = try makeBrowserManager()
+        let windowRegistry = WindowRegistry()
+        browserManager.windowRegistry = windowRegistry
+        browserManager.windowShellContentViewFactory = { _, _ in NSView() }
+        defer { closePublishedShells(in: windowRegistry) }
+
+        let sourceWindow = BrowserWindowState()
+        let sourceProfile = browserManager.profileManager.createEphemeralProfile(
+            for: sourceWindow.id
+        )
+        let sourceSpace = Space(
+            name: "Private Source",
+            profileId: sourceProfile.id
+        )
+        sourceSpace.isEphemeral = true
+        sourceWindow.isIncognito = true
+        sourceWindow.ephemeralProfile = sourceProfile
+        sourceWindow.ephemeralSpaces = [sourceSpace]
+        sourceWindow.currentProfileId = sourceProfile.id
+        sourceWindow.currentSpaceId = sourceSpace.id
+        sourceWindow.tabManager = browserManager.tabManager
+        windowRegistry.register(sourceWindow)
+        windowRegistry.setActive(sourceWindow)
+        installRegistrationRestoration(
+            from: browserManager,
+            on: windowRegistry
+        )
+
+        let sourceTab = browserManager.tabLifecycleService.opening.openNewTab(
+            url: "https://private-source.example",
+            context: .foreground(
+                windowState: sourceWindow,
+                preferredSpaceId: sourceSpace.id
+            )
+        )
+        let existingWindowIDs = Set(windowRegistry.windows.keys)
+        let targetURL = try XCTUnwrap(
+            URL(string: "https://private-target.example/window")
+        )
+        let restoration = browserManager.windowSessionBundle.restoration
+        var initialTabAtRegistration: Tab?
+        var profileAtRegistration: Profile?
+        windowRegistry.prepareWindowRegistration = { [weak restoration] window in
+            if existingWindowIDs.contains(window.id) == false {
+                initialTabAtRegistration = window.ephemeralTabs.first {
+                    $0.id == window.currentTabId
+                }
+                profileAtRegistration = window.ephemeralProfile
+            }
+            restoration?.prepareRegistration(window)
+        }
+        windowRegistry.publishWindowRegistration = { [weak restoration] window in
+            restoration?.commitRegistration(window)
+        }
+
+        let sourceConfiguration = WKWebViewConfiguration()
+        sourceConfiguration.websiteDataStore = sourceProfile.dataStore
+        let sourceWebView = FocusableWKWebView(
+            frame: .zero,
+            configuration: sourceConfiguration
+        )
+        sourceWebView.owningTab = sourceTab
+        browserManager.testWebViewRuntime().ownershipService.registerTrackedWebView(
+            sourceWebView,
+            for: sourceTab,
+            in: sourceWindow.id
+        )
+
+        XCTAssertTrue(sourceTab.linkPresentationCommands.open(
+            targetURL,
+            from: sourceWebView,
+            disposition: .newWindow(selected: true)
+        ))
+
+        let targetWindow = try XCTUnwrap(
+            windowRegistry.allWindows.first {
+                existingWindowIDs.contains($0.id) == false
+            }
+        )
+        let targetProfile = try XCTUnwrap(targetWindow.ephemeralProfile)
+        let targetSpace = try XCTUnwrap(targetWindow.ephemeralSpaces.first)
+        XCTAssertIdentical(profileAtRegistration, targetProfile)
+        XCTAssertTrue(targetWindow.isIncognito)
+        XCTAssertNotEqual(targetProfile.id, sourceProfile.id)
+        XCTAssertEqual(targetWindow.currentProfileId, targetProfile.id)
+        XCTAssertEqual(targetWindow.currentSpaceId, targetSpace.id)
+        XCTAssertEqual(targetSpace.profileId, targetProfile.id)
+        XCTAssertTrue(targetSpace.isEphemeral)
+
+        XCTAssertEqual(targetWindow.ephemeralTabs.count, 1)
+        let targetTab = try XCTUnwrap(targetWindow.ephemeralTabs.first)
+        XCTAssertIdentical(initialTabAtRegistration, targetTab)
+        XCTAssertEqual(targetWindow.currentTabId, targetTab.id)
+        XCTAssertEqual(targetTab.url, targetURL)
+        XCTAssertTrue(targetTab.isEphemeral)
+        XCTAssertEqual(targetTab.profileId, targetProfile.id)
+        XCTAssertNil(
+            targetTab.spaceId,
+            "Private tabs stay window-scoped instead of joining the shared regular-space graph."
+        )
+        XCTAssertTrue(
+            browserManager.tabManager.regularTabCollectionOwner
+                .allTabs(in: browserManager.tabManager.spaceStateOwner.spaces)
+                .allSatisfy { $0.url != targetURL },
+            "An incognito new-window link must never enter the persistent regular-tab graph."
+        )
+        XCTAssertEqual(
+            windowRegistry.allWindows
+                .flatMap(\.ephemeralTabs)
+                .filter { $0.url == targetURL }
+                .map(\.id),
+            [targetTab.id],
+            "The private URL must exist only in the newly created ephemeral window."
+        )
+    }
+
+    func testWebKitChildWindowPublishesExactTrackedChildBeforeRegistration()
+        throws {
+        let harness = try makeRegularHarness()
+        defer { closePublishedShells(in: harness.windowRegistry) }
+        let existingWindowIDs = Set(harness.windowRegistry.windows.keys)
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = harness.sourceProfile.dataStore
+        configuration.userContentController.addUserScript(
+            WKUserScript(
+                source: "window.__sumiExactChild = true;",
+                injectionTime: .atDocumentStart,
+                forMainFrameOnly: true
+            )
+        )
+        let targetURL = try XCTUnwrap(
+            URL(string: "https://target.example/webkit-child")
+        )
+        let restoration = harness.browserManager.windowSessionBundle.restoration
+        var selectedAtRegistration: UUID?
+        var trackedAtRegistration: WKWebView?
+        harness.windowRegistry.prepareWindowRegistration = { [weak restoration] window in
+            if existingWindowIDs.contains(window.id) == false,
+               let tabID = window.currentTabId {
+                selectedAtRegistration = tabID
+                trackedAtRegistration = harness.browserManager
+                    .testWebViewRuntime().ownershipQuery.webView(
+                        for: tabID,
+                        in: window.id
+                    )
+            }
+            restoration?.prepareRegistration(window)
+        }
+        harness.windowRegistry.publishWindowRegistration = { [weak restoration] window in
+            restoration?.commitRegistration(window)
+        }
+
+        let childWebView = harness.sourceTab.navigationRuntime
+            .webKitChildWindowOpening?.open(
+                configuration: configuration,
+                requestURL: targetURL,
+                from: harness.sourceWebView,
+                activate: false,
+                isExtensionOriginated: false
+            )
+
+        let exactChild = try XCTUnwrap(childWebView)
+        let targetWindow = try XCTUnwrap(
+            harness.windowRegistry.allWindows.first {
+                existingWindowIDs.contains($0.id) == false
+            }
+        )
+        let targetShell = try XCTUnwrap(
+            harness.windowRegistry.appKitWindow(for: targetWindow)
+        )
+        let targetTabID = try XCTUnwrap(targetWindow.currentTabId)
+        let targetTab = try XCTUnwrap(
+            harness.browserManager.tabManager.regularTabCollectionOwner
+                .tab(for: targetTabID)
+        )
+        XCTAssertEqual(selectedAtRegistration, targetTabID)
+        XCTAssertIdentical(trackedAtRegistration, exactChild)
+        XCTAssertIdentical(
+            harness.browserManager.testWebViewRuntime().ownershipQuery.webView(
+                for: targetTabID,
+                in: targetWindow.id
+            ),
+            exactChild
+        )
+        XCTAssertIdentical(
+            exactChild.configuration.websiteDataStore,
+            harness.sourceProfile.dataStore
+        )
+        XCTAssertEqual(targetTab.profileId, harness.sourceProfile.id)
+        XCTAssertEqual(targetTab.spaceId, harness.sourceSpace.id)
+        XCTAssertEqual(
+            targetWindow.webKitChildWindowIdentity,
+            WebKitChildWindowIdentity(initialTabID: targetTabID)
+        )
+        XCTAssertNil(targetTab.webViewConfigurationOverride)
+        XCTAssertTrue(
+            exactChild.configuration.userContentController.userScripts
+                .map(\.source)
+                .contains("window.__sumiExactChild = true;")
+        )
+        XCTAssertEqual(
+            harness.windowRegistry.activeWindowId,
+            harness.sourceWindow.id,
+            "A background WebKit child window must not steal activation."
+        )
+
+        XCTAssertTrue(
+            harness.browserManager.webViewCloseRouter
+                .handleNormalWebViewDidClose(exactChild)
+        )
+        XCTAssertNil(targetWindow.webKitChildWindowIdentity)
+        XCTAssertNil(
+            harness.browserManager.tabManager.tabCollectionMembershipOwner
+                .tab(for: targetTabID),
+            "Closing the sole physical residence must remove the script-created Tab from the durable graph."
+        )
+        XCTAssertNil(
+            harness.browserManager.testWebViewRuntime().ownershipQuery.webView(
+                for: targetTabID,
+                in: targetWindow.id
+            )
+        )
+        XCTAssertFalse(
+            targetShell.isVisible,
+            "A still-dedicated script-created shell must close."
+        )
+    }
+
+    func testWebKitChildWindowRejectsMismatchedDataStoreWithoutMutation()
+        throws {
+        let harness = try makeRegularHarness()
+        defer { closePublishedShells(in: harness.windowRegistry) }
+        let windowIDs = Set(harness.windowRegistry.windows.keys)
+        let tabIDs = Set(
+            harness.browserManager.tabManager.regularTabCollectionStateOwner
+                .allTabsSnapshot().map(\.id)
+        )
+        let mismatched = WKWebViewConfiguration()
+        mismatched.websiteDataStore = .nonPersistent()
+
+        let childWebView = harness.sourceTab.navigationRuntime
+            .webKitChildWindowOpening?.open(
+                configuration: mismatched,
+                requestURL: URL(
+                    string: "https://target.example/rejected"
+                ),
+                from: harness.sourceWebView,
+                activate: true,
+                isExtensionOriginated: false
+            )
+
+        XCTAssertNil(childWebView)
+        XCTAssertEqual(Set(harness.windowRegistry.windows.keys), windowIDs)
+        XCTAssertEqual(
+            Set(
+                harness.browserManager.tabManager
+                    .regularTabCollectionStateOwner.allTabsSnapshot()
+                    .map(\.id)
+            ),
+            tabIDs
+        )
+    }
+
+    func testExtensionWebKitChildWindowPublishesRegistryThenWindowThenExactTab()
+        throws {
+        let harness = try makeRegularHarness()
+        defer { closePublishedShells(in: harness.windowRegistry) }
+        let events = ChildWindowPublicationEvents()
+        let probe = ChildWindowExtensionPublicationProbe(
+            registry: harness.windowRegistry,
+            events: events,
+            preparation: .prepared
+        )
+        let publication = WindowExtensionPublicationTransaction(
+            preparation: probe,
+            publication: probe
+        )
+        installExtensionPublication(
+            publication,
+            events: events,
+            in: harness
+        )
+        let opening = makeChildWindowOpening(
+            for: harness,
+            extensionPublication: publication
+        )
+        let configuration = webViewConfiguration(
+            dataStore: harness.sourceProfile.dataStore
+        )
+
+        let childWebView = opening.open(
+            configuration: configuration,
+            requestURL: URL(
+                string: "https://target.example/extension-child-window"
+            ),
+            from: harness.sourceWebView,
+            activate: false,
+            isExtensionOriginated: true
+        )
+
+        XCTAssertNotNil(childWebView)
+        XCTAssertEqual(
+            events.values,
+            ["prepare", "validate", "validate", "registry", "window", "tab"]
+        )
+        XCTAssertTrue(probe.windowNotificationSawPublishedWindow)
+        XCTAssertTrue(events.tabPublicationSawPublishedWindow)
+    }
+
+    func testExtensionWebKitChildWindowRejectsSuppressedProjectionAndRollsBack()
+        throws {
+        let harness = try makeRegularHarness()
+        defer { closePublishedShells(in: harness.windowRegistry) }
+        let sourceShell = bindSourceShell(in: harness)
+        let initialWindowIDs = Set(harness.windowRegistry.windows.keys)
+        let initialTabIDs = regularTabIDs(in: harness)
+        let events = ChildWindowPublicationEvents()
+        let probe = ChildWindowExtensionPublicationProbe(
+            registry: harness.windowRegistry,
+            events: events,
+            preparation: .suppressed
+        )
+        let publication = WindowExtensionPublicationTransaction(
+            preparation: probe,
+            publication: probe
+        )
+        installExtensionPublication(
+            publication,
+            events: events,
+            in: harness
+        )
+        let opening = makeChildWindowOpening(
+            for: harness,
+            extensionPublication: publication
+        )
+
+        let childWebView = opening.open(
+            configuration: webViewConfiguration(
+                dataStore: harness.sourceProfile.dataStore
+            ),
+            requestURL: URL(
+                string: "https://target.example/suppressed-extension-child"
+            ),
+            from: harness.sourceWebView,
+            activate: true,
+            isExtensionOriginated: true
+        )
+
+        XCTAssertNil(childWebView)
+        XCTAssertEqual(events.values, ["prepare"])
+        XCTAssertEqual(
+            Set(harness.windowRegistry.windows.keys),
+            initialWindowIDs
+        )
+        XCTAssertEqual(regularTabIDs(in: harness), initialTabIDs)
+        withExtendedLifetime(sourceShell) {}
+    }
+
+    func testOrdinaryWebKitChildWindowAllowsSuppressedExtensionProjection()
+        throws {
+        let harness = try makeRegularHarness()
+        defer { closePublishedShells(in: harness.windowRegistry) }
+        let initialWindowIDs = Set(harness.windowRegistry.windows.keys)
+        let events = ChildWindowPublicationEvents()
+        let probe = ChildWindowExtensionPublicationProbe(
+            registry: harness.windowRegistry,
+            events: events,
+            preparation: .suppressed
+        )
+        let publication = WindowExtensionPublicationTransaction(
+            preparation: probe,
+            publication: probe
+        )
+        installExtensionPublication(
+            publication,
+            events: events,
+            in: harness
+        )
+        let opening = makeChildWindowOpening(
+            for: harness,
+            extensionPublication: publication
+        )
+
+        let childWebView = opening.open(
+            configuration: webViewConfiguration(
+                dataStore: harness.sourceProfile.dataStore
+            ),
+            requestURL: URL(
+                string: "https://target.example/suppressed-ordinary-child"
+            ),
+            from: harness.sourceWebView,
+            activate: false,
+            isExtensionOriginated: false
+        )
+
+        XCTAssertNotNil(childWebView)
+        XCTAssertEqual(events.values, ["prepare", "registry"])
+        XCTAssertEqual(
+            harness.windowRegistry.windows.keys.filter {
+                initialWindowIDs.contains($0) == false
+            }.count,
+            1
+        )
+        XCTAssertFalse(probe.windowNotificationSawPublishedWindow)
+        XCTAssertFalse(events.tabPublicationSawPublishedWindow)
+    }
+
+    func testPrivateWebKitChildWindowSharesPartitionUntilLastWindowCloses()
+        async throws {
+        let browserManager = try makeBrowserManager()
+        let windowRegistry = WindowRegistry()
+        browserManager.windowRegistry = windowRegistry
+        browserManager.windowShellContentViewFactory = { _, _ in NSView() }
+        defer { closePublishedShells(in: windowRegistry) }
+
+        let sourceWindow = BrowserWindowState()
+        let sourceProfile = browserManager.profileManager.createEphemeralProfile(
+            for: sourceWindow.id
+        )
+        let sourceSpace = Space(
+            name: "Private Source",
+            profileId: sourceProfile.id
+        )
+        sourceSpace.isEphemeral = true
+        sourceWindow.isIncognito = true
+        sourceWindow.ephemeralProfile = sourceProfile
+        sourceWindow.ephemeralSpaces = [sourceSpace]
+        sourceWindow.currentProfileId = sourceProfile.id
+        sourceWindow.currentSpaceId = sourceSpace.id
+        sourceWindow.tabManager = browserManager.tabManager
+        windowRegistry.register(sourceWindow)
+        windowRegistry.setActive(sourceWindow)
+        installRegistrationRestoration(
+            from: browserManager,
+            on: windowRegistry
+        )
+
+        let sourceTab = browserManager.tabManager.ephemeralLifecycleOwner
+            .createEphemeralTab(
+                url: try XCTUnwrap(
+                    URL(string: "https://private-source.example")
+                ),
+                in: sourceWindow,
+                profile: sourceProfile
+            )
+        let sourceConfiguration = WKWebViewConfiguration()
+        sourceConfiguration.websiteDataStore = sourceProfile.dataStore
+        let sourceWebView = FocusableWKWebView(
+            frame: .zero,
+            configuration: sourceConfiguration
+        )
+        sourceWebView.owningTab = sourceTab
+        browserManager.testWebViewRuntime().ownershipService
+            .registerTrackedWebView(
+                sourceWebView,
+                for: sourceTab,
+                in: sourceWindow.id
+            )
+        let existingWindowIDs = Set(windowRegistry.windows.keys)
+        let childConfiguration = WKWebViewConfiguration()
+        childConfiguration.websiteDataStore = sourceProfile.dataStore
+
+        let childWebView = sourceTab.navigationRuntime
+            .webKitChildWindowOpening?.open(
+                configuration: childConfiguration,
+                requestURL: nil,
+                from: sourceWebView,
+                activate: true,
+                isExtensionOriginated: false
+            )
+
+        let exactChild = try XCTUnwrap(childWebView)
+        let targetWindow = try XCTUnwrap(
+            windowRegistry.allWindows.first {
+                existingWindowIDs.contains($0.id) == false
+            }
+        )
+        let targetTab = try XCTUnwrap(targetWindow.ephemeralTabs.first)
+        XCTAssertIdentical(targetWindow.ephemeralProfile, sourceProfile)
+        XCTAssertEqual(targetWindow.currentProfileId, sourceProfile.id)
+        XCTAssertEqual(targetTab.profileId, sourceProfile.id)
+        XCTAssertIdentical(
+            exactChild.configuration.websiteDataStore,
+            sourceProfile.dataStore
+        )
+
+        await browserManager.windowCommands.closeIncognitoWindow(sourceWindow)
+        XCTAssertIdentical(
+            browserManager.profileManager.ephemeralProfile(
+                withID: sourceProfile.id
+            ),
+            sourceProfile
+        )
+        XCTAssertIdentical(targetWindow.ephemeralProfile, sourceProfile)
+
+        await browserManager.windowCommands.closeIncognitoWindow(targetWindow)
+        XCTAssertNil(
+            browserManager.profileManager.ephemeralProfile(
+                withID: sourceProfile.id
+            )
+        )
+    }
+
+    private func makeRegularHarness() throws -> RegularHarness {
+        let browserManager = try makeBrowserManager()
+        let windowRegistry = WindowRegistry()
+        let sourceProfile = Profile(name: "Source Profile")
+        let unrelatedProfile = Profile(name: "Unrelated Profile")
+        let sourceSpace = Space(
+            name: "Source Space",
+            profileId: sourceProfile.id
+        )
+        let unrelatedSpace = Space(
+            name: "Unrelated Space",
+            profileId: unrelatedProfile.id
+        )
+        let sourceWindow = BrowserWindowState()
+        let settings = SumiSettingsService(
+            userDefaults: TestDefaultsHarness().defaults
+        )
+
+        browserManager.profileManager.profiles = [sourceProfile, unrelatedProfile]
+        browserManager.sumiSettings = settings
+        browserManager.currentProfile = unrelatedProfile
+        browserManager.windowRegistry = windowRegistry
+        browserManager.windowShellContentViewFactory = { _, _ in NSView() }
+        browserManager.tabManager.spaceStateOwner.replaceSpaces([
+            sourceSpace,
+            unrelatedSpace,
+        ])
+        browserManager.tabManager.spaceStateOwner.replaceCurrentSpace(unrelatedSpace)
+
+        sourceWindow.tabManager = browserManager.tabManager
+        sourceWindow.currentProfileId = sourceProfile.id
+        sourceWindow.currentSpaceId = sourceSpace.id
+        windowRegistry.register(sourceWindow)
+        windowRegistry.setActive(sourceWindow)
+        installRegistrationRestoration(
+            from: browserManager,
+            on: windowRegistry
+        )
+
+        let sourceTab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
+            url: "https://source.example",
+            in: sourceSpace,
+            activate: false
+        )
+        sourceWindow.currentTabId = sourceTab.id
+        let sourceConfiguration = WKWebViewConfiguration()
+        sourceConfiguration.websiteDataStore = sourceProfile.dataStore
+        let sourceWebView = FocusableWKWebView(
+            frame: .zero,
+            configuration: sourceConfiguration
+        )
+        sourceWebView.owningTab = sourceTab
+        browserManager.testWebViewRuntime().ownershipService.registerTrackedWebView(
+            sourceWebView,
+            for: sourceTab,
+            in: sourceWindow.id
+        )
+
+        XCTAssertTrue(sourceTab.hasBrowserRuntime)
+        return RegularHarness(
+            browserManager: browserManager,
+            settings: settings,
+            windowRegistry: windowRegistry,
+            sourceWindow: sourceWindow,
+            sourceProfile: sourceProfile,
+            sourceSpace: sourceSpace,
+            unrelatedSpace: unrelatedSpace,
+            sourceTab: sourceTab,
+            sourceWebView: sourceWebView
+        )
+    }
+
+    private func makeBrowserManager() throws -> BrowserManager {
+        BrowserManager(
+            startupPersistence: BrowserManagerStartupPersistence(
+                container: try ModelContainer(
+                    for: SumiStartupPersistence.schema,
+                    configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
+                )
+            )
+        )
+    }
+
+    private func physicalSourceResolver(
+        for harness: RegularHarness
+    ) -> PhysicalWebViewSourceResolver {
+        PhysicalWebViewSourceResolver(
+            ownership: harness.browserManager.testWebViewRuntime()
+                .ownershipQuery,
+            tabs: harness.browserManager.tabManager,
+            profiles: harness.browserManager.profileManager,
+            registry: { [weak registry = harness.windowRegistry] in
+                registry
+            }
+        )
+    }
+
+    private func makeChildWindowOpening(
+        for harness: RegularHarness,
+        extensionPublication: WindowExtensionPublicationTransaction
+    ) -> WebKitChildWindowOpeningService {
+        let webViews = harness.browserManager.testWebViewRuntime()
+        return WebKitChildWindowOpeningService(
+            windowTransaction: WebKitChildWindowShellTransaction(
+                commands: harness.browserManager.windowCommands,
+                restoration: harness.browserManager.windowSessionBundle
+                    .restoreService,
+                profiles: harness.browserManager.profileManager,
+                tabs: harness.browserManager.tabManager
+            ),
+            tabs: harness.browserManager.tabManager,
+            ownership: webViews.ownershipService,
+            ownershipQuery: webViews.ownershipQuery,
+            sourceResolver: physicalSourceResolver(for: harness),
+            lifecycle: webViews.lifecycleService,
+            extensionPublication: extensionPublication,
+            persistWindowSession: { _ in /* Not relevant to routing tests. */ }
+        )
+    }
+
+    private func bindSourceShell(in harness: RegularHarness) -> NSWindow {
+        let shell = NSWindow(
+            contentRect: .zero,
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        harness.windowRegistry.bindAppKitWindow(
+            shell,
+            to: harness.sourceWindow
+        )
+        return shell
+    }
+
+    private func installExtensionPublication(
+        _ publication: WindowExtensionPublicationTransaction,
+        events: ChildWindowPublicationEvents,
+        in harness: RegularHarness
+    ) {
+        let restoration = harness.browserManager.windowSessionBundle.restoration
+        harness.windowRegistry.prepareWindowRegistration = {
+            [weak restoration] window in
+            restoration?.prepareRegistration(window)
+            publication.prepareRegistration(window)
+        }
+        harness.windowRegistry.publishWindowRegistration = {
+            [weak restoration] window in
+            events.values.append("registry")
+            publication.commitRegistration(window)
+            restoration?.commitRegistration(window)
+        }
+    }
+
+    private func regularTabIDs(in harness: RegularHarness) -> Set<UUID> {
+        Set(
+            harness.browserManager.tabManager.regularTabCollectionStateOwner
+                .allTabsSnapshot().map(\.id)
+        )
+    }
+
+    private func closePublishedShells(in windowRegistry: WindowRegistry) {
+        for windowState in windowRegistry.allWindows {
+            let shell = windowRegistry.appKitWindow(for: windowState)
+            windowRegistry.unregister(windowState.id)
+            shell?.orderOut(nil)
+        }
+    }
+
+    private func installRegistrationRestoration(
+        from browserManager: BrowserManager,
+        on windowRegistry: WindowRegistry
+    ) {
+        let restoration = browserManager.windowSessionBundle.restoration
+        windowRegistry.prepareWindowRegistration = { [weak restoration] windowState in
+            restoration?.prepareRegistration(windowState)
+        }
+        windowRegistry.publishWindowRegistration = { [weak restoration] windowState in
+            restoration?.commitRegistration(windowState)
+        }
+    }
+
+    private func webViewConfiguration(
+        dataStore: WKWebsiteDataStore
+    ) -> WKWebViewConfiguration {
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = dataStore
+        return configuration
+    }
+}
+
+@MainActor
+private struct RegularHarness {
+    let browserManager: BrowserManager
+    let settings: SumiSettingsService
+    let windowRegistry: WindowRegistry
+    let sourceWindow: BrowserWindowState
+    let sourceProfile: Profile
+    let sourceSpace: Space
+    let unrelatedSpace: Space
+    let sourceTab: Tab
+    let sourceWebView: FocusableWKWebView
+}
+
+@MainActor
+private final class ExtensionTabRegistrarSpy: ExtensionCreatedTabRegistering {
+    func registerExtensionCreatedTabWithExtensionRuntimeIfLoaded(
+        _: Tab,
+        reason _: String
+    ) {}
+}
+
+@MainActor
+private final class ChildWindowPublicationEvents {
+    var values: [String] = []
+    var tabPublicationSawPublishedWindow = false
+}
+
+@MainActor
+private final class ChildWindowExtensionPublicationProbe:
+    InitialTabExtensionPreparing,
+    BrowserWindowExtensionPublishing {
+    enum Preparation {
+        case prepared
+        case suppressed
+    }
+
+    private weak var registry: WindowRegistry?
+    private let events: ChildWindowPublicationEvents
+    private let preparation: Preparation
+    private(set) var windowNotificationSawPublishedWindow = false
+
+    init(
+        registry: WindowRegistry,
+        events: ChildWindowPublicationEvents,
+        preparation: Preparation
+    ) {
+        self.registry = registry
+        self.events = events
+        self.preparation = preparation
+    }
+
+    func prepareInitialTabExtensionPublication(
+        window: BrowserWindowState,
+        tab: Tab,
+        webView: FocusableWKWebView,
+        reason _: String
+    ) -> InitialTabExtensionPreparation {
+        events.values.append("prepare")
+        switch preparation {
+        case .prepared:
+            guard let registry else { return .rejected }
+            return .prepared(
+                ChildWindowInitialTabPublicationProbe(
+                    window: window,
+                    tab: tab,
+                    webView: webView,
+                    registry: registry,
+                    events: events
+                )
+            )
+        case .suppressed:
+            return .suppressed
+        }
+    }
+
+    func publishWindowIfLoaded(
+        _ windowState: BrowserWindowState
+    ) -> BrowserWindowExtensionPublicationOutcome {
+        windowNotificationSawPublishedWindow =
+            registry?.windows[windowState.id] === windowState
+        events.values.append("window")
+        return .published(
+            ChildWindowPublicationLease(
+                window: windowState,
+                registry: registry
+            )
+        )
+    }
+
+}
+
+@MainActor
+private final class ChildWindowPublicationLease:
+    BrowserWindowExtensionPublication {
+    private weak var window: BrowserWindowState?
+    private weak var registry: WindowRegistry?
+
+    init(window: BrowserWindowState, registry: WindowRegistry?) {
+        self.window = window
+        self.registry = registry
+    }
+
+    func isCurrent() -> Bool {
+        guard let window else { return false }
+        return registry?.windows[window.id] === window
+    }
+
+    func revokeIfCurrent() {}
+}
+
+@MainActor
+private final class ChildWindowInitialTabPublicationProbe:
+    InitialTabExtensionPublication {
+    private let window: BrowserWindowState
+    private let tab: Tab
+    private let webView: FocusableWKWebView
+    private weak var registry: WindowRegistry?
+    private let events: ChildWindowPublicationEvents
+    private var isPending = true
+
+    init(
+        window: BrowserWindowState,
+        tab: Tab,
+        webView: FocusableWKWebView,
+        registry: WindowRegistry,
+        events: ChildWindowPublicationEvents
+    ) {
+        self.window = window
+        self.tab = tab
+        self.webView = webView
+        self.registry = registry
+        self.events = events
+    }
+
+    func matches(
+        window: BrowserWindowState,
+        tab: Tab,
+        webView: FocusableWKWebView
+    ) -> Bool {
+        isPending
+            && self.window === window
+            && self.tab === tab
+            && self.webView === webView
+    }
+
+    func validateBeforeWindowPublication() -> Bool {
+        events.values.append("validate")
+        return isPending
+            && window.currentTabId == tab.id
+            && webView.owningTab === tab
+    }
+
+    func publishInitialTab(
+        afterWindowOpened publishedWindow: BrowserWindowState
+    ) -> Bool {
+        guard isPending, publishedWindow === window else { return false }
+        events.tabPublicationSawPublishedWindow =
+            registry?.windows[window.id] === window
+        events.values.append("tab")
+        isPending = false
+        return true
+    }
+
+    func cancel() -> Bool {
+        guard isPending else { return false }
+        events.values.append("cancel")
+        isPending = false
+        return true
+    }
+}

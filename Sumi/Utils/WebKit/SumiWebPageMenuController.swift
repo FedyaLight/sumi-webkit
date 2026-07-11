@@ -16,23 +16,24 @@ final class SumiWebPageMenuController: NSObject, NSMenuItemValidation {
         selectedText: String? = nil
     ) {
         self.webView = webView
-        let recentTarget = webView.owningTab?.recentWebPageContextMenuTarget()
-        preparedSelectedText = selectedText ?? recentTarget?.selectedText
+        let recentTarget = webView.contextMenu.recentTarget()
+        let resolvedTargetHint = targetHint ?? recentTarget?.kind
+        let resolvedSelectedText = selectedText ?? recentTarget?.selectedText
+        preparedSelectedText = resolvedSelectedText
         SumiWebPageMenuComposer(
             menu: menu,
             webView: webView,
             actionTarget: self,
-            targetHint: targetHint,
-            selectedText: selectedText
+            targetHint: resolvedTargetHint,
+            selectedText: resolvedSelectedText
         ).compose()
         appendExtensionMenuItems(to: menu, for: webView)
         updateOwnedItemState(in: menu)
 
-        if let tab = webView.owningTab,
-           let appearance = tab.browserActionService.webPageMenuAppearance(
-               tab,
-               webView.window?.effectiveAppearance
-           ) {
+        if let appearance = webView.owningTab?.webPageMenuCommands.appearance(
+            for: webView,
+            fallback: webView.window?.effectiveAppearance
+        ) {
             menu.sumiApplyAppearance(appearance)
         }
     }
@@ -52,7 +53,8 @@ final class SumiWebPageMenuController: NSObject, NSMenuItemValidation {
         case .stop:
             return webView.isLoading
         case .bookmarkPage:
-            return webView.owningTab.map { $0.browserActionService.canBookmark($0) } ?? false
+            return webView.owningTab?.webPageMenuCommands.canBookmark(webView)
+                ?? false
         case .copyPageAddress:
             return pageURL != nil
         case .copySelection:
@@ -63,18 +65,6 @@ final class SumiWebPageMenuController: NSObject, NSMenuItemValidation {
             return selectedTextSearchURL != nil
         case .printPage:
             return true
-        case .openLinkInNewTab,
-             .openLinkInNewWindow,
-             .openImageInNewTab,
-             .openImageInNewWindow,
-             .openMediaInNewTab,
-             .openMediaInNewWindow,
-             .openFrameInNewWindow,
-             .downloadLinkedFile,
-             .downloadImage,
-             .downloadMedia,
-             .copyImageAddress:
-            return SumiWebPageMenuNativeReference(menuItem)?.primaryItem.isEnabled ?? false
         }
     }
 
@@ -106,8 +96,10 @@ final class SumiWebPageMenuController: NSObject, NSMenuItemValidation {
     }
 
     @objc func bookmarkPage(_: Any?) {
-        webView?.owningTab?.activate()
-        webView?.owningTab?.browserActionService.requestBookmarkEditorFromMenu()
+        guard let webView else { return }
+        _ = webView.owningTab?.webPageMenuCommands.requestBookmarkEditor(
+            from: webView
+        )
     }
 
     @objc func copyPageAddress(_: Any?) {
@@ -157,46 +149,6 @@ final class SumiWebPageMenuController: NSObject, NSMenuItemValidation {
             } else {
                 operation.run()
             }
-        }
-    }
-
-    @objc func openNativeContextItemInNewTab(_ sender: NSMenuItem) {
-        consumeNativeContextReference(from: sender) { [weak self] navigationAction in
-            guard let url = navigationAction.request.url else { return }
-            self?.openInNewTab(url)
-        }
-    }
-
-    @objc func openNativeContextItemInNewWindow(_ sender: NSMenuItem) {
-        consumeNativeContextReference(from: sender) { [weak self] navigationAction in
-            guard let url = navigationAction.request.url else { return }
-            self?.openInNewWindow(url)
-        }
-    }
-
-    @objc func downloadNativeContextResource(_ sender: NSMenuItem) {
-        guard canStartSumiDownload,
-              let reference = SumiWebPageMenuNativeReference(sender),
-              let requestItem = reference.requestItem
-        else {
-            replayNativeItem(from: sender)
-            return
-        }
-
-        let isCapturingRequest = consumeNativeContextRequest(from: requestItem) { [weak self] navigationAction in
-            self?.startDownload(using: navigationAction.request)
-        }
-        if !isCapturingRequest {
-            replayNativeItem(from: sender)
-        }
-    }
-
-    @objc func copyNativeImageAddress(_ sender: NSMenuItem) {
-        consumeNativeContextReference(from: sender) { navigationAction in
-            guard let url = navigationAction.request.url else { return }
-            let pasteboard = NSPasteboard.general
-            pasteboard.clearContents()
-            pasteboard.setString(url.absoluteString, forType: .string)
         }
     }
 
@@ -260,55 +212,13 @@ final class SumiWebPageMenuController: NSObject, NSMenuItemValidation {
         }
     }
 
-    private var canStartSumiDownload: Bool {
-        webView?.owningTab?.browserActionService.canStartContextMenuDownload() ?? false
-    }
-
-    private func consumeNativeContextReference(
-        from sender: NSMenuItem,
-        perform handler: @escaping @MainActor (WKNavigationAction) -> Void
-    ) {
-        guard let originalItem = SumiWebPageMenuNativeReference(sender)?.primaryItem,
-              consumeNativeContextRequest(from: originalItem, perform: handler)
-        else {
-            return
-        }
-    }
-
-    @discardableResult
-    private func consumeNativeContextRequest(
-        from originalItem: NSMenuItem,
-        perform handler: @escaping @MainActor (WKNavigationAction) -> Void
-    ) -> Bool {
-        guard let webView,
-              let tab = webView.owningTab,
-              let navigationAdapter = tab.navigationDelegateBundle(for: webView)
-        else {
-            return false
-        }
-
-        return navigationAdapter.consumeNativeContextMenuRequest(
-            from: originalItem,
-            perform: handler
-        )
-    }
-
-    @discardableResult
-    private func replayNativeItem(from sender: NSMenuItem) -> Bool {
-        guard let item = SumiWebPageMenuNativeReference(sender)?.fallbackItem,
-              let action = item.action
-        else { return false }
-        return NSApp.sendAction(action, to: item.target, from: item)
-    }
-
     private func openInNewTab(_ url: URL) {
-        if let tab = webView?.owningTab {
-            tab.browserActionService.openURLInForegroundTab(url, tab)
-        }
-    }
-
-    private func openInNewWindow(_ url: URL) {
-        webView?.owningTab?.browserActionService.openURLsInNewWindow([url])
+        guard let webView else { return }
+        webView.owningTab?.linkPresentationCommands.open(
+            url,
+            from: webView,
+            disposition: .newTab(selected: true)
+        )
     }
 
     private func nonZeroPrintSize(for webView: WKWebView) -> CGSize {
@@ -318,15 +228,6 @@ final class SumiWebPageMenuController: NSObject, NSMenuItemValidation {
         }
 
         return CGSize(width: 800, height: 1_000)
-    }
-
-    private func startDownload(using request: URLRequest) {
-        guard let webView,
-              request.url != nil,
-              let tab = webView.owningTab
-        else { return }
-
-        tab.browserActionService.startContextMenuDownload(webView, request)
     }
 }
 

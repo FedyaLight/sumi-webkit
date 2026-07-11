@@ -1,4 +1,5 @@
 import Foundation
+import SumiWebRuntime
 import WebKit
 
 /// Aggregate boundary for a tab's main-frame runtime. The tab never retains or
@@ -232,25 +233,47 @@ final class TabMainFrameRuntimeTransaction {
         _ webView: WKWebView,
         preferredAuthorityWebView: WKWebView?
     ) -> TabMainFrameRuntimeDepartureResult {
-        recovery.remove(webView)
-        committedDocuments.removeWebView(webView)
-        let pendingDeparture = intentLedger.departure(of: webView)
+        webViewsDidLeaveRuntime(
+            [webView],
+            preferredAuthorityWebView: preferredAuthorityWebView
+        )
+    }
+
+    func webViewsDidLeaveRuntime(
+        _ webViews: [WKWebView],
+        preferredAuthorityWebView: WKWebView?
+    ) -> TabMainFrameRuntimeDepartureResult {
+        var seen: Set<ObjectIdentifier> = []
+        let departingWebViews = webViews.filter {
+            seen.insert(ObjectIdentifier($0)).inserted
+        }
+        let departingWebViewIDs = Set(
+            departingWebViews.map(ObjectIdentifier.init)
+        )
+        let preferredSurvivor = preferredAuthorityWebView.flatMap {
+            departingWebViewIDs.contains(ObjectIdentifier($0)) ? nil : $0
+        }
+
+        departingWebViews.forEach(recovery.remove)
+        committedDocuments.removeWebViews(
+            departingWebViews,
+            preferredSourceWebView: preferredSurvivor
+        )
+        let pendingDeparture = intentLedger.departure(of: departingWebViews)
         let lifecycleDeparture = lifecycle.departure(
-            of: webView,
-            preferredAuthorityWebView: preferredAuthorityWebView,
+            of: departingWebViews,
             currentIntent: intentLedger.intent
         )
 
         let wasAuthoritative = pendingDeparture.wasAuthorityCandidate
             || lifecycleDeparture.wasAuthoritative
-        var continuation = apply(lifecycleDeparture.promotion)
-        if wasAuthoritative && continuation == nil {
-            continuation = promoteAuthority(
-                preferredWebViewID: preferredAuthorityWebView.map(
+        let continuation = wasAuthoritative
+            ? promoteAuthority(
+                preferredWebViewID: preferredSurvivor.map(
                     ObjectIdentifier.init
                 )
             )
-        }
+            : nil
         return TabMainFrameRuntimeDepartureResult(
             removedParticipant: pendingDeparture.removedLoad
                 || lifecycleDeparture.removedParticipant,
@@ -274,15 +297,13 @@ final class TabMainFrameRuntimeTransaction {
         let pendingDeparture = intentLedger.departure(of: webView)
         let lifecycleDeparture = lifecycle.departure(
             of: webView,
-            preferredAuthorityWebView: nil,
             currentIntent: intent
         )
-        var continuation = apply(lifecycleDeparture.promotion)
+        var continuation: TabMainFrameAuthorityContinuation?
         if pendingDeparture.wasAuthorityCandidate
             || lifecycleDeparture.wasAuthoritative
             || hasCurrentAuthority() == false {
-            continuation = continuation
-                ?? promoteAuthority(preferredWebViewID: nil)
+            continuation = promoteAuthority(preferredWebViewID: nil)
         }
 
         let scope: TabWebContentProcessRecoveryScope = hasCurrentAuthority()
@@ -601,6 +622,77 @@ final class TabMainFrameRuntimeTransaction {
         return committedDocuments.documentLease(
             matching: proof.evidence,
             isAuthority: proof.isAuthority
+        )
+    }
+
+    func recordSuspensionReport(
+        _ report: TabDocumentSuspensionReport,
+        from webView: WKWebView,
+        matching lease: TabMainFrameDocumentLease
+    ) -> Bool {
+        guard let currentLease = documentLease(for: webView),
+              currentLease.revision == lease.revision,
+              currentLease.documentGeneration == lease.documentGeneration,
+              currentLease.webViewID == lease.webViewID,
+              currentLease.participantID == lease.participantID,
+              WebRuntimeNavigationIdentity(currentLease.committedURL)
+                == WebRuntimeNavigationIdentity(lease.committedURL),
+              currentLease.isPDF == lease.isPDF else {
+            return false
+        }
+        return committedDocuments.recordSuspensionReport(
+            report,
+            from: webView,
+            matching: currentLease
+        )
+    }
+
+    func recordSubframePictureInPictureReport(
+        _ report: TabSubframePictureInPictureReport,
+        from webView: WKWebView,
+        matching lease: TabMainFrameDocumentLease
+    ) -> Bool {
+        guard let currentLease = documentLease(for: webView),
+              currentLease.revision == lease.revision,
+              currentLease.documentGeneration == lease.documentGeneration,
+              currentLease.webViewID == lease.webViewID,
+              currentLease.participantID == lease.participantID else {
+            return false
+        }
+        return committedDocuments.recordSubframePictureInPictureReport(
+            report,
+            from: webView,
+            matching: currentLease
+        )
+    }
+
+    func documentSuspensionDecision() -> TabDocumentSuspensionDecision {
+        committedDocuments.suspensionDecision()
+    }
+
+    func documentSuspensionToken(for webView: WKWebView) -> String? {
+        guard let lease = documentLease(for: webView) else { return nil }
+        return committedDocuments.suspensionToken(
+            for: webView,
+            matching: lease
+        )
+    }
+
+    func takePendingDocumentSuspensionActivations() -> [(
+        webView: WKWebView,
+        token: String,
+        epoch: UInt64
+    )] {
+        committedDocuments.takePendingSuspensionActivations()
+    }
+
+    func documentSuspensionActivationDidFail(
+        for webView: WKWebView,
+        token: String
+    ) -> Bool {
+        committedDocuments.suspensionActivationDidFail(
+            for: webView,
+            token: token
         )
     }
 

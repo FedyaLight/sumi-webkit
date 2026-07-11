@@ -79,12 +79,24 @@ final class ExtensionNormalTabRuntimeBindingOwner: ExtensionTabOpenNotifying {
             return false
         }
 
+        // A lazily restored Tab can materialize after its window entered the
+        // registry. Reconcile the exact window projection first so WebKit can
+        // never observe didOpenTab before didOpenWindow.
+        guard manager.browserRuntimeBridgeOwner.prepareTabOpen(tab) else {
+            return deferOpen("windowProjectionUnavailable")
+        }
+
         manager.runtimeDiagnostics.trace(
             "didOpenTab start generation=\(manager.runtimeSession.extensionLoadGeneration) notifyGeneration=\(manager.runtimeSession.tabOpenNotificationGeneration) controller=\(ExtensionRuntimeDiagnostics.objectDescription(controller)) \(manager.runtimeDiagnostics.tabDescription(tab, manager: manager)) adapter=\(ExtensionRuntimeDiagnostics.objectDescription(adapter))"
         )
         tab.extensionPageRuntimeOwner.noteOpenNotification(
             extensionContextBindingGeneration: manager.extensionContextBindingGeneration(for: profileId),
             contextReadiness: .loaded
+        )
+        // Reserve the generation before the external callback. WebKit may
+        // synchronously re-enter registration from didOpenTab.
+        tab.extensionPageRuntimeOwner.markDidOpenTab(
+            generation: manager.runtimeSession.tabOpenNotificationGeneration
         )
         controller.didOpenTab(adapter)
         #if DEBUG
@@ -144,7 +156,6 @@ final class ExtensionNormalTabRuntimeBindingOwner: ExtensionTabOpenNotifying {
             return
         }
 
-        tab.extensionPageRuntimeOwner.markDidOpenTab(generation: generation)
         manager.runtimeDiagnostics.trace(
             "notifyTabOpenedIfNeeded marked reason=\(reason) generation=\(generation) \(manager.runtimeDiagnostics.tabDescription(tab, manager: manager))"
         )

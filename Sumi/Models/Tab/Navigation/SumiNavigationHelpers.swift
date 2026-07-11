@@ -29,21 +29,7 @@ extension URL {
     }
 }
 
-extension String {
-    func sumiEscapedJavaScriptString() -> String {
-        replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-            .replacingOccurrences(of: "'", with: "\\'")
-            .replacingOccurrences(of: "\n", with: "\\n")
-    }
-}
-
 extension WKWebView {
-    func sumiLoadInNewWindow(_ url: URL) {
-        let escapedURL = "'\(url.absoluteString.sumiEscapedJavaScriptString())'"
-        evaluateJavaScript("window.open(\(escapedURL), '_blank', 'noopener, noreferrer')")
-    }
-
     func sumiCloseWindow() {
         evaluateJavaScript("window.close()")
     }
@@ -152,19 +138,6 @@ enum SumiNewWindowPolicy: Equatable {
         return false
     }
 
-}
-
-extension SumiLinkOpenBehavior {
-    func newWindowPolicy() -> SumiNewWindowPolicy? {
-        switch self {
-        case .currentTab:
-            return nil
-        case .newTab(let selected):
-            return .tab(selected: selected)
-        case .newWindow(let selected):
-            return .window(active: selected)
-        }
-    }
 }
 
 extension WKWindowFeatures {

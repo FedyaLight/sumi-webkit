@@ -1,16 +1,22 @@
 import AppKit
-import WebKit
 import SumiDomain
+import WebKit
 
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionActionPopupUIDelegate: NSObject, WKUIDelegate {
     private weak var manager: ExtensionManager?
     private weak var popover: NSPopover?
+    private let sourceReceipt: ExtensionActionPopupSourceReceipt
 
-    init(manager: ExtensionManager, popover: NSPopover) {
+    init(
+        manager: ExtensionManager,
+        popover: NSPopover,
+        sourceReceipt: ExtensionActionPopupSourceReceipt
+    ) {
         self.manager = manager
         self.popover = popover
+        self.sourceReceipt = sourceReceipt
         super.init()
     }
 
@@ -26,7 +32,8 @@ final class ExtensionActionPopupUIDelegate: NSObject, WKUIDelegate {
             with: configuration,
             for: navigationAction,
             windowFeatures: windowFeatures,
-            manager: manager
+            manager: manager,
+            sourceReceipt: sourceReceipt
         )
     }
 
@@ -48,7 +55,8 @@ final class ExtensionActionPopupUIDelegate: NSObject, WKUIDelegate {
                 with: configuration,
                 for: navigationAction,
                 windowFeatures: windowFeatures,
-                manager: manager
+                manager: manager,
+                sourceReceipt: sourceReceipt
             ))
     }
 
@@ -102,58 +110,54 @@ enum ExtensionActionPopupPresentation {
         with configuration: WKWebViewConfiguration,
         for navigationAction: WKNavigationAction,
         windowFeatures: WKWindowFeatures,
-        manager: ExtensionManager
+        manager: ExtensionManager,
+        sourceReceipt: ExtensionActionPopupSourceReceipt
     ) -> WKWebView? {
         guard navigationAction.targetFrame == nil,
-              let windowQuery = manager.extensionWindowQuery,
-              let windowPresentation = manager.extensionWindowPresentation
+              let windowPresentation = manager.extensionWindowPresentation,
+              let source = sourceReceipt.resolve(
+                popupWebView: popupWebView,
+                childConfiguration: configuration,
+                manager: manager
+              )
         else {
             return nil
         }
 
         let sourceURL = navigationAction.sumiWebKitSourceURL ?? popupWebView.url
         let requestURL = navigationAction.request.url
-        let resolvedOwnerExtensionID = manager.ownerExtensionID(extensionOwnedSourceURL: sourceURL)
-            ?? manager.ownerExtensionID(extensionOwnedSourceURL: requestURL)
-            ?? manager.actionPopupSessionOwner.activeIdentity?.extensionId
-
-        guard resolvedOwnerExtensionID != nil
-            || SumiPopupNavigationOrigin.isExtensionOriginatedPopupNavigation(
-                sourceURL: sourceURL,
-                requestURL: requestURL
-            )
-        else {
+        guard manager.ownerExtensionID(extensionOwnedSourceURL: sourceURL)
+                == sourceReceipt.extensionID else {
             return nil
         }
+        let resolvedOwnerExtensionID = sourceReceipt.extensionID
 
         if let requestURL,
            isExtensionExternalWebPopupURL(requestURL) {
+            guard let extensionContext = manager.getExtensionContext(
+                for: resolvedOwnerExtensionID,
+                profileId: sourceReceipt.profileID
+            ),
+            manager.profileId(for: extensionContext)
+                == sourceReceipt.profileID,
+            let requestedWindow = manager.adapterResolutionOwner
+                .publishedNormalWindowAdapter(
+                    for: source.windowState,
+                    extensionContext: extensionContext
+                )
+            else {
+                return nil
+            }
             let popupController =
                 popupWebView.configuration.webExtensionController
                 ?? configuration.webExtensionController
             let popupControllerProfileId = popupController.flatMap {
                 manager.profileId(for: $0)
             }
-            let profileId =
-                manager.actionPopupSessionOwner.activeIdentity?.profileId
-                ?? popupControllerProfileId
-                ?? manager.fallbackProfileId
+            let profileId = sourceReceipt.profileID
             let controller =
                 (popupControllerProfileId == profileId ? popupController : nil)
-                ?? profileId.map { manager.ensureExtensionController(for: $0) }
-            guard let controller else { return nil }
-            let extensionContext = resolvedOwnerExtensionID.flatMap {
-                manager.getExtensionContext(for: $0, profileId: profileId)
-            }
-            let requestedWindow = windowQuery.currentExtensionTabForPopup()
-                .flatMap { openerTab -> ExtensionWindowAdapter? in
-                    guard let profileId else { return nil }
-                    guard manager.resolvedProfileId(for: openerTab) == profileId else {
-                        return nil
-                    }
-                    return windowQuery.extensionWindowState(containing: openerTab)
-                        .flatMap { manager.adapterResolutionOwner.windowAdapter(for: $0.id) }
-                }
+                ?? manager.ensureExtensionController(for: profileId)
 
             do {
                 _ = try manager.requestedTabOpening.open(
@@ -174,15 +178,13 @@ enum ExtensionActionPopupPresentation {
             }
         }
 
-        guard let openerTab = windowQuery.currentExtensionTabForPopup() else {
-            return nil
-        }
-
         return windowPresentation.presentExtensionExternalWebPopup(
             configuration: configuration,
             request: navigationAction.request,
             windowFeatures: windowFeatures,
-            openerTab: openerTab,
+            openerTab: source.tab,
+            openerWindow: source.window,
+            openerProfileID: sourceReceipt.profileID,
             shouldActivateApp: true,
             extensionOwnedSourceURL: sourceURL,
             ownerExtensionID: resolvedOwnerExtensionID

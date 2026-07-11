@@ -112,6 +112,7 @@ final class TabRegularLifecycleOwner {
         activate: Bool = true,
         webViewConfigurationOverride: WKWebViewConfiguration? = nil,
         webExtensionContextOverride: WKWebExtensionContext? = nil,
+        executionProfileID: UUID? = nil,
         regularInsertionIndex: Int? = nil
     ) -> Tab {
         dependencies.withStructuralUpdateTransaction {
@@ -127,12 +128,14 @@ final class TabRegularLifecycleOwner {
                     activate: activate,
                     webViewConfigurationOverride: webViewConfigurationOverride,
                     webExtensionContextOverride: webExtensionContextOverride,
+                    executionProfileID: executionProfileID,
                     regularInsertionIndex: regularInsertionIndex
                 )
             }
 
             let newTab = dependencies.creationPlacement.withCreationPlacement(
-                preferred: space
+                preferred: space,
+                inheritsSpaceProfile: executionProfileID == nil
             ) { placement in
                 let nextIndex = regularInsertionIndex
                     ?? dependencies.appendIndex(placement.space.id)
@@ -143,7 +146,8 @@ final class TabRegularLifecycleOwner {
                     spaceId: placement.space.id,
                     index: nextIndex
                 )
-                tab.profileId = placement.temporaryProfileOverrideId
+                tab.profileId = executionProfileID
+                    ?? placement.temporaryProfileOverrideId
                 tab.webExtensionContextOverride = webExtensionContextOverride
                 if let webViewConfigurationOverride {
                     tab.applyWebViewConfigurationOverride(
@@ -165,6 +169,7 @@ final class TabRegularLifecycleOwner {
         in space: Space? = nil,
         activate: Bool = true,
         webViewConfigurationOverride: WKWebViewConfiguration? = nil,
+        executionProfileID: UUID? = nil,
         regularInsertionIndex: Int? = nil
     ) -> Tab {
         dependencies.withStructuralUpdateTransaction {
@@ -172,7 +177,8 @@ final class TabRegularLifecycleOwner {
                 preconditionFailure("TabManager: invalid about:blank URL")
             }
             let newTab = dependencies.creationPlacement.withCreationPlacement(
-                preferred: space
+                preferred: space,
+                inheritsSpaceProfile: executionProfileID == nil
             ) { placement in
                 let resolvedIndex = regularInsertionIndex
                     .map {
@@ -189,7 +195,8 @@ final class TabRegularLifecycleOwner {
                     spaceId: placement.space.id,
                     index: resolvedIndex
                 )
-                tab.profileId = placement.temporaryProfileOverrideId
+                tab.profileId = executionProfileID
+                    ?? placement.temporaryProfileOverrideId
                 tab.isPopupHost = true
                 if let webViewConfigurationOverride {
                     tab.applyWebViewConfigurationOverride(

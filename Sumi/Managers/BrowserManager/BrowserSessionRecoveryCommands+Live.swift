@@ -17,8 +17,8 @@ extension BrowserSessionRecoveryCommands {
             },
             createRestoredWindow: { [weak browserManager, weak sessionRestore] snapshot in
                 guard let browserManager, let sessionRestore else { return nil }
-                return browserManager.windowCommands.createNewWindow(
-                    initializing: { windowState in
+                return browserManager.windowCommands.createPreparedWindow(
+                    initialize: { windowState in
                         sessionRestore.prepareArchivedWindow(
                             snapshot,
                             forRegistration: windowState

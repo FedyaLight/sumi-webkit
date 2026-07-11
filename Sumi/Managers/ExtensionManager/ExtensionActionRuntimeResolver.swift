@@ -194,7 +194,8 @@ final class ExtensionActionRuntimeResolver {
         _ = environment.anchorResolution.captureActionPopupAnchor(
             extensionId: extensionID,
             windowId: windowID,
-            profileId: profileID
+            profileId: profileID,
+            tabId: currentTab?.id
         )
     }
 

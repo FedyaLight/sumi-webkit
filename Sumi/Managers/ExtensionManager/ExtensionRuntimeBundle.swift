@@ -16,7 +16,7 @@ final class ExtensionRuntimeBundle {
     let windowFocusResolutionOwner: ExtensionWindowFocusResolutionOwner
     let siteAccessPolicyCoordinator: ExtensionSiteAccessPolicyCoordinator
     let backgroundWakeCoordinator: ExtensionBackgroundWakeCoordinator
-    let requestedWindowOpeningOwner: ExtensionRequestedWindowOpeningOwner
+    let windowRequests: ExtensionWindowRequestRouter
 
     init(manager: ExtensionManager) {
         self.windowFocusResolutionOwner = ExtensionWindowFocusResolutionOwner(
@@ -35,11 +35,11 @@ final class ExtensionRuntimeBundle {
             extensionIDForContext: { [weak manager] context in
                 manager?.extensionID(for: context)
             },
-            windowMatchesProfile: { [weak manager] windowState, profileId in
-                manager?.windowMatchesProfile(windowState, profileId: profileId) ?? false
-            },
-            windowAdapter: { [weak manager] windowId in
-                manager?.adapterResolutionOwner.windowAdapter(for: windowId)
+            publishedWindowAdapter: { [weak manager] windowState, profileId in
+                manager?.browserRuntimeBridgeOwner.publishedWindowAdapter(
+                    for: windowState,
+                    profileID: profileId
+                )
             },
             miniWindowAdapters: { [weak manager] in
                 manager.map { Array($0.adapterStore.miniWindowAdapters.values) } ?? []
@@ -105,72 +105,22 @@ final class ExtensionRuntimeBundle {
                 #endif
             }
         )
-        self.requestedWindowOpeningOwner = ExtensionRequestedWindowOpeningOwner(
+        self.windowRequests = ExtensionWindowRequestRouter(
+            profileRuntime: manager.profileRuntime,
+            targetResolver: manager.requestedTabTargetResolver,
+            loadResolver: manager.requestedTabLoadResolver,
+            contextPreloader: manager.requestedTabContextPreloader,
+            tabOpening: manager.requestedTabOpening,
             windowQuery: { [weak manager] in
                 manager?.extensionWindowQuery
             },
-            requestedTabTargets: { [weak manager] in
-                manager?.requestedTabTargetQuery
+            windowCreation: { [weak manager] in
+                manager?.extensionRequestedWindowCreation
             },
-            tabMutation: { [weak manager] in
-                manager?.extensionTabMutation
-            },
-            profileIdForContext: { [weak manager] context in
-                manager?.profileId(for: context)
-            },
-            windowMatchesProfile: { [weak manager] windowState, profileId in
-                manager?.windowMatchesProfile(windowState, profileId: profileId) ?? false
-            },
-            extensionLoadURL: { [weak manager] url, controller in
-                guard let manager else { return (nil, nil) }
-                let load = manager.requestedTabLoadResolver.resolve(
-                    url,
-                    controller: controller
-                )
-                return (load.url, load.extensionContext)
-            },
-            prepareContentScriptContextsForInitialLoad: { [weak manager] loadURL, contextOverride, targetWindow, targetSpace, controller in
-                guard let manager else { return }
-                _ = await manager.requestedTabContextPreloader.prepare(
-                    load: ExtensionRequestedTabLoad(
-                        url: loadURL,
-                        extensionContext: contextOverride
-                    ),
-                    targetWindow: targetWindow,
-                    targetSpace: targetSpace,
-                    controller: controller
-                )
-            },
-            openExtensionRequestedTab: { [weak manager] url, shouldBeActive, shouldBePinned, requestedWindow, controller, extensionContext, reason in
-                guard let manager else {
-                    throw ExtensionManagerCallbackError.extensionManagerUnavailable.nsError()
-                }
-                return try manager.requestedTabOpening.open(
-                    url: url,
-                    shouldBeActive: shouldBeActive,
-                    shouldBePinned: shouldBePinned,
-                    requestedWindow: requestedWindow,
-                    controller: controller,
-                    extensionContext: extensionContext,
-                    reason: reason
-                )
-            },
-            windowAdapter: { [weak manager] windowId in
-                manager?.adapterResolutionOwner.windowAdapter(for: windowId)
-            },
-            materializeNormalTabIfNeeded: { [weak manager] tab, isActive, targetWindow in
-                guard let manager else { return }
-                manager.requestedTabWebViewMaterializer
-                    .materializeNormalTabIfNeeded(
-                    tab,
-                    isActive: isActive,
-                    targetWindow: targetWindow
-                )
-            },
-            registerCreatedTabWithExtensionRuntime: { [weak manager] tab, reason in
-                guard let manager else { return }
-                manager.extensionCreatedTabRegistrar.register(
-                    tab, reason: reason
+            publishedWindow: { [weak manager] window, profileID in
+                manager?.browserRuntimeBridgeOwner.publishedWindowAdapter(
+                    for: window,
+                    profileID: profileID
                 )
             }
         )

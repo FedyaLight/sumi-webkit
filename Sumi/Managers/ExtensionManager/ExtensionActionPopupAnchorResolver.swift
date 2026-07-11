@@ -47,7 +47,8 @@ final class ExtensionActionPopupAnchorResolver {
     func captureActionPopupAnchor(
         extensionId: String,
         windowId: UUID,
-        profileId: UUID?
+        profileId: UUID?,
+        tabId: UUID? = nil
     ) -> UUID {
         let captureProfileId =
             profileId
@@ -74,6 +75,7 @@ final class ExtensionActionPopupAnchorResolver {
             extensionID: extensionId,
             profileID: captureProfileId,
             windowID: windowId,
+            tabID: tabId,
             buttonView: buttonView,
             validatedRectInWindow: validatedRectInWindow
         )
@@ -81,7 +83,7 @@ final class ExtensionActionPopupAnchorResolver {
         actionPopupAnchorStore.store(anchor)
 
         trace {
-            "actionPopupAnchor captured extensionId=\(extensionId) profileId=\(captureProfileId.uuidString) windowId=\(windowId.uuidString) sessionToken=\(anchor.sessionToken.uuidString) hasButtonView=\(buttonView != nil) hasRect=\(validatedRectInWindow != nil)"
+            "actionPopupAnchor captured extensionId=\(extensionId) profileId=\(captureProfileId.uuidString) windowId=\(windowId.uuidString) tabId=\(tabId?.uuidString ?? "nil") sessionToken=\(anchor.sessionToken.uuidString) hasButtonView=\(buttonView != nil) hasRect=\(validatedRectInWindow != nil)"
         }
         return anchor.sessionToken
     }

@@ -5,52 +5,34 @@ import XCTest
 
 @MainActor
 final class TabScriptMessageHandlerIsolationTests: XCTestCase {
-    private struct ScriptSignature: Equatable {
+    private struct ScriptShape: Equatable {
         let typeName: String
-        let source: String
         let injectionTime: WKUserScriptInjectionTime
         let forMainFrameOnly: Bool
         let requiresRunInPageContentWorld: Bool
-        let messageNames: [String]
     }
 
-    func testNormalTabCoreScriptFacadeDelegatesToRuntimeOwner() {
-        let tab = Tab(name: "Owner Wiring")
+    func testNormalTabCoreScriptFacadeBuildsCanonicalScriptSet() {
+        let tab = Tab(name: "Core Scripts")
 
         XCTAssertEqual(
-            scriptSignatures(tab.normalTabCoreUserScripts()),
-            scriptSignatures(tab.scriptMessageRuntimeOwner.normalTabCoreUserScripts())
+            scriptShapes(tab.normalTabCoreUserScripts()),
+            scriptShapes(makeNormalTabCoreUserScripts(for: tab))
         )
     }
 
-    func testBrokeredTabMessagesRemainScopedByContext() async throws {
-        let firstTab = Tab(name: "First")
-        let secondTab = Tab(name: "Second")
-        let scriptsProvider = SumiNormalTabUserScripts(
-            managedUserScripts: firstTab.normalTabCoreUserScripts() + secondTab.normalTabCoreUserScripts()
-        )
-        let controller: WKUserContentController = SumiNormalTabUserContentControllerFactory.makeController(
-            scriptsProvider: scriptsProvider
-        )
-        let normalTabController = try XCTUnwrap(controller.sumiNormalTabUserContentController)
-        let configuration = WKWebViewConfiguration()
-        configuration.userContentController = controller
-        let webView = WKWebView(
-            frame: CGRect(x: 0, y: 0, width: 800, height: 600),
-            configuration: configuration
-        )
-
-        await normalTabController.waitForContentBlockingAssetsInstalled()
-        await loadBlankDocument(into: webView)
-
-        let firstDelivered = expectation(description: "first tab message delivered")
-        let secondDelivered = expectation(description: "second tab message delivered")
-        firstTab.onLinkHover = { href in
+    func testLinkHoverMessagesRemainScopedToPhysicalWebViewClones() async throws {
+        let tab = Tab(name: "Cloned")
+        let firstWebView = try await makeWebView(with: tab)
+        let secondWebView = try await makeWebView(with: tab)
+        let firstDelivered = expectation(description: "first physical WebView delivered")
+        let secondDelivered = expectation(description: "second physical WebView delivered")
+        let firstObservation = firstWebView.hoveredLink.observe { href in
             if href == "https://first.example/" {
                 firstDelivered.fulfill()
             }
         }
-        secondTab.onLinkHover = { href in
+        let secondObservation = secondWebView.hoveredLink.observe { href in
             if href == "https://second.example/" {
                 secondDelivered.fulfill()
             }
@@ -58,16 +40,51 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
 
         try await postLinkHover(
             "https://first.example/",
-            context: linkContext(for: firstTab),
-            in: webView
+            context: linkContext(for: tab),
+            in: firstWebView
         )
+        await fulfillment(of: [firstDelivered], timeout: 5.0)
+        XCTAssertEqual(firstWebView.hoveredLink.href, "https://first.example/")
+        XCTAssertNil(secondWebView.hoveredLink.href)
+
         try await postLinkHover(
             "https://second.example/",
-            context: linkContext(for: secondTab),
-            in: webView
+            context: linkContext(for: tab),
+            in: secondWebView
         )
+        await fulfillment(of: [secondDelivered], timeout: 5.0)
 
-        await fulfillment(of: [firstDelivered, secondDelivered], timeout: 5.0)
+        XCTAssertEqual(firstWebView.hoveredLink.href, "https://first.example/")
+        XCTAssertEqual(secondWebView.hoveredLink.href, "https://second.example/")
+        withExtendedLifetime((firstObservation, secondObservation)) {}
+    }
+
+    func testContextMenuMessagesRemainScopedToPhysicalWebViewClones() async throws {
+        let tab = Tab(name: "Context Clones")
+        let firstWebView = try await makeWebView(with: tab)
+        let secondWebView = try await makeWebView(with: tab)
+
+        try await postContextMenuTarget(
+            kind: .link,
+            selectedText: "first selection",
+            context: try contextMenuContext(in: firstWebView),
+            in: firstWebView
+        )
+        let receivedFirstTarget = try await waitForContextMenuTarget(.link, on: firstWebView)
+        let firstTarget = try XCTUnwrap(receivedFirstTarget)
+        XCTAssertEqual(firstTarget.selectedText, "first selection")
+        XCTAssertNil(secondWebView.contextMenu.recentTarget())
+
+        try await postContextMenuTarget(
+            kind: .editable,
+            selectedText: "second selection",
+            context: try contextMenuContext(in: secondWebView),
+            in: secondWebView
+        )
+        let receivedSecondTarget = try await waitForContextMenuTarget(.editable, on: secondWebView)
+        let secondTarget = try XCTUnwrap(receivedSecondTarget)
+        XCTAssertEqual(secondTarget.selectedText, "second selection")
+        XCTAssertEqual(firstWebView.contextMenu.recentTarget()?.kind, .link)
     }
 
     func testControllerCleanupRemovesBrokerHandlers() async throws {
@@ -81,10 +98,11 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
         let normalTabController = try XCTUnwrap(controller.sumiNormalTabUserContentController)
         let configuration = WKWebViewConfiguration()
         configuration.userContentController = controller
-        let webView = WKWebView(
+        let webView = FocusableWKWebView(
             frame: CGRect(x: 0, y: 0, width: 800, height: 600),
             configuration: configuration
         )
+        webView.owningTab = tab
 
         await normalTabController.waitForContentBlockingAssetsInstalled()
         await loadBlankDocument(into: webView)
@@ -93,7 +111,7 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
 
         let removedHandlerDidNotFire = expectation(description: "removed handler stays detached")
         removedHandlerDidNotFire.isInverted = true
-        tab.onLinkHover = { _ in
+        let observation = webView.hoveredLink.observe { _ in
             removedHandlerDidNotFire.fulfill()
         }
 
@@ -104,14 +122,16 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
         )
 
         await fulfillment(of: [removedHandlerDidNotFire], timeout: 0.5)
+        XCTAssertNil(webView.hoveredLink.href)
+        withExtendedLifetime(observation) {}
     }
 
-    func testMalformedBrokerPayloadFailsLocally() async throws {
+    func testMalformedLinkHoverPayloadFailsLocally() async throws {
         let tab = Tab(name: "Malformed")
         let webView = try await makeWebView(with: tab)
         let malformedDidNotFire = expectation(description: "malformed payload has no side effects")
         malformedDidNotFire.isInverted = true
-        tab.onLinkHover = { _ in
+        let observation = webView.hoveredLink.observe { _ in
             malformedDidNotFire.fulfill()
         }
 
@@ -130,14 +150,16 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
         )
 
         await fulfillment(of: [malformedDidNotFire], timeout: 0.5)
+        XCTAssertNil(webView.hoveredLink.href)
+        withExtendedLifetime(observation) {}
     }
 
-    func testUnknownBrokerMethodIsIgnoredSafely() async throws {
+    func testUnknownLinkHoverMethodIsIgnoredSafely() async throws {
         let tab = Tab(name: "Unknown")
         let webView = try await makeWebView(with: tab)
         let unknownDidNotFire = expectation(description: "unknown message has no side effects")
         unknownDidNotFire.isInverted = true
-        tab.onLinkHover = { _ in
+        let observation = webView.hoveredLink.observe { _ in
             unknownDidNotFire.fulfill()
         }
 
@@ -156,53 +178,55 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
         )
 
         await fulfillment(of: [unknownDidNotFire], timeout: 0.5)
+        XCTAssertNil(webView.hoveredLink.href)
+        withExtendedLifetime(observation) {}
     }
 
     func testTabSuspensionPageAPIUpdatesPageVetoState() async throws {
         let tab = Tab(name: "Suspension")
+        var evidenceChangeCount = 0
+        tab.navigationRuntime.lifecycleNavigationRuntime
+            .reconcileDocumentSuspensionState = { _ in
+                evidenceChangeCount += 1
+            }
         let webView = try await makeWebView(with: tab)
+        XCTAssertEqual(evidenceChangeCount, 1)
 
         try await evaluate(
             "window.__sumiTabSuspension.canBeSuspended(false);",
             in: webView
         )
-        await waitForPageVeto(.pageReportedUnableToSuspend, on: tab)
+        try await waitForSuspensionDecision(
+            .vetoed(.pageReportedUnableToSuspend),
+            on: tab
+        )
+        XCTAssertEqual(evidenceChangeCount, 2)
 
         try await evaluate(
             "window.__sumiTabSuspension.canBeSuspended(true);",
             in: webView
         )
-        await waitForPageVeto(.none, on: tab)
+        try await waitForSuspensionDecision(.allowed, on: tab)
+        XCTAssertEqual(evidenceChangeCount, 3)
     }
 
     func testTabSuspensionMessagesRemainScopedByContext() async throws {
         let firstTab = Tab(name: "First Suspension")
         let secondTab = Tab(name: "Second Suspension")
-        let scriptsProvider = SumiNormalTabUserScripts(
-            managedUserScripts: firstTab.normalTabCoreUserScripts() + secondTab.normalTabCoreUserScripts()
-        )
-        let controller: WKUserContentController = SumiNormalTabUserContentControllerFactory.makeController(
-            scriptsProvider: scriptsProvider
-        )
-        let normalTabController = try XCTUnwrap(controller.sumiNormalTabUserContentController)
-        let configuration = WKWebViewConfiguration()
-        configuration.userContentController = controller
-        let webView = WKWebView(
-            frame: CGRect(x: 0, y: 0, width: 800, height: 600),
-            configuration: configuration
-        )
-
-        await normalTabController.waitForContentBlockingAssetsInstalled()
-        await loadBlankDocument(into: webView)
+        let firstWebView = try await makeWebView(with: firstTab)
+        let secondWebView = try await makeWebView(with: secondTab)
 
         try await postTabSuspensionCanBeSuspended(
             false,
-            context: tabSuspensionContext(for: secondTab),
-            in: webView
+            in: secondWebView
         )
 
-        await waitForPageVeto(.pageReportedUnableToSuspend, on: secondTab)
-        XCTAssertEqual(firstTab.suspensionProtection.pageVeto, .none)
+        try await waitForSuspensionDecision(
+            .vetoed(.pageReportedUnableToSuspend),
+            on: secondTab
+        )
+        XCTAssertEqual(firstTab.documentSuspensionDecision, .allowed)
+        withExtendedLifetime(firstWebView) {}
     }
 
     func testMalformedAndIrrelevantTabSuspensionMessagesAreIgnoredSafely() async throws {
@@ -235,7 +259,111 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
         )
 
         try await Task.sleep(nanoseconds: 200_000_000)
-        XCTAssertEqual(tab.suspensionProtection.pageVeto, .none)
+        XCTAssertEqual(tab.documentSuspensionDecision, .allowed)
+    }
+
+    func testSubframeCannotPublishMainDocumentSuspensionEvidence() async throws {
+        let tab = Tab(name: "Subframe Suspension")
+        let webView = try await makeWebView(with: tab)
+        try await evaluate(
+            "window.__sumiTabSuspension.canBeSuspended(true);",
+            in: webView
+        )
+        try await waitForSuspensionDecision(.allowed, on: tab)
+
+        let context = tabSuspensionContext(for: tab)
+        _ = try await webView.callAsyncJavaScript(
+            """
+            return await new Promise(resolve => {
+                const frame = document.createElement("iframe");
+                frame.srcdoc = "<!doctype html><body>frame</body>";
+                frame.onload = () => {
+                    frame.contentWindow.webkit?.messageHandlers?.[context]
+                        ?.postMessage({
+                            context,
+                            method: "pageState",
+                            params: {
+                                documentIdentity: "forged-subframe",
+                                sequence: 1000,
+                                canBeSuspended: false
+                            }
+                        });
+                    resolve(true);
+                };
+                document.body.appendChild(frame);
+            });
+            """,
+            arguments: ["context": context],
+            in: nil,
+            contentWorld: .page
+        )
+        try await Task.sleep(nanoseconds: 100_000_000)
+
+        XCTAssertEqual(tab.documentSuspensionDecision, .allowed)
+    }
+
+    func testUntrackedWebViewCannotOverwriteCanonicalReplicaReport() async throws {
+        let tab = Tab(name: "Untracked Suspension")
+        let trackedWebView = try await makeWebView(with: tab)
+        let untrackedWebView = try await makeWebView(
+            with: tab,
+            establishDocument: false
+        )
+        try await evaluate(
+            "window.__sumiTabSuspension.canBeSuspended(true);",
+            in: trackedWebView
+        )
+        try await waitForSuspensionDecision(.allowed, on: tab)
+
+        try await evaluate(
+            "window.__sumiTabSuspension.canBeSuspended(false);",
+            in: untrackedWebView
+        )
+        try await Task.sleep(nanoseconds: 100_000_000)
+
+        XCTAssertEqual(tab.documentSuspensionDecision, .allowed)
+    }
+
+    func testPictureInPictureInsideIframeVetoesPhysicalDocument() async throws {
+        let tab = Tab(name: "Iframe PiP")
+        let webView = try await makeWebView(with: tab)
+
+        try await evaluate(
+            """
+            const frame = document.createElement("iframe");
+            frame.id = "pip-frame";
+            frame.srcdoc = `<!doctype html><body><script>
+                const video = document.createElement("video");
+                document.body.appendChild(video);
+                setTimeout(() => {
+                    video.dispatchEvent(new Event("play"));
+                    setTimeout(() => {
+                        video.dispatchEvent(
+                            new Event("enterpictureinpicture")
+                        );
+                    }, 250);
+                }, 0);
+            </script></body>`;
+            document.body.appendChild(frame);
+            """,
+            in: webView
+        )
+        try await waitForSuspensionDecision(
+            .vetoed(.pictureInPicture),
+            on: tab
+        )
+
+        try await evaluate(
+            """
+            const frame = document.getElementById("pip-frame");
+            frame?.contentDocument?.querySelector("video")?.dispatchEvent(
+                new frame.contentWindow.Event("leavepictureinpicture")
+            );
+            frame?.remove();
+            """,
+            in: webView
+        )
+        try await waitForSuspensionDecision(.allowed, on: tab)
     }
 
     private func linkContext(for tab: Tab) -> String {
@@ -246,20 +374,21 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
         "sumiTabSuspension_\(tab.id.uuidString)"
     }
 
-    private func scriptSignatures(_ scripts: [SumiUserScript]) -> [ScriptSignature] {
+    private func scriptShapes(_ scripts: [SumiUserScript]) -> [ScriptShape] {
         scripts.map { script in
-            ScriptSignature(
+            ScriptShape(
                 typeName: String(describing: type(of: script)),
-                source: script.source,
                 injectionTime: script.injectionTime,
                 forMainFrameOnly: script.forMainFrameOnly,
-                requiresRunInPageContentWorld: script.requiresRunInPageContentWorld,
-                messageNames: script.messageNames
+                requiresRunInPageContentWorld: script.requiresRunInPageContentWorld
             )
         }
     }
 
-    private func makeWebView(with tab: Tab) async throws -> WKWebView {
+    private func makeWebView(
+        with tab: Tab,
+        establishDocument: Bool = true
+    ) async throws -> FocusableWKWebView {
         let scriptsProvider = SumiNormalTabUserScripts(
             managedUserScripts: tab.normalTabCoreUserScripts()
         )
@@ -269,12 +398,17 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
         let normalTabController = try XCTUnwrap(controller.sumiNormalTabUserContentController)
         let configuration = WKWebViewConfiguration()
         configuration.userContentController = controller
-        let webView = WKWebView(
+        let webView = FocusableWKWebView(
             frame: CGRect(x: 0, y: 0, width: 800, height: 600),
             configuration: configuration
         )
+        webView.owningTab = tab
         await normalTabController.waitForContentBlockingAssetsInstalled()
         await loadBlankDocument(into: webView)
+        if establishDocument {
+            establishCommittedDocument(on: webView, for: tab)
+            try await waitForSuspensionDecision(.allowed, on: tab)
+        }
         return webView
     }
 
@@ -296,37 +430,102 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
         )
     }
 
-    private func postTabSuspensionCanBeSuspended(_ canBeSuspended: Bool, context: String, in webView: WKWebView) async throws {
+    private func contextMenuContext(in webView: WKWebView) throws -> String {
+        let provider = try XCTUnwrap(
+            webView.configuration.userContentController.sumiNormalTabUserScriptsProvider
+        )
+        let script = try XCTUnwrap(provider.userScripts.first {
+            $0.source.contains("__sumiWebPageContextMenuInstalled")
+        })
+        return try XCTUnwrap(script.messageNames.first)
+    }
+
+    private func postContextMenuTarget(
+        kind: SumiWebPageContextMenuTargetKind,
+        selectedText: String,
+        context: String,
+        in webView: WKWebView
+    ) async throws {
         try await evaluate(
             """
             const handler = window.webkit?.messageHandlers?.["\(context)"];
             if (handler) {
                 handler.postMessage({
-                    context: "\(context)",
-                    featureName: "tabSuspension",
-                    method: "canBeSuspended",
-                    params: { canBeSuspended: \(canBeSuspended ? "true" : "false") }
+                    kind: "\(kind.rawValue)",
+                    selectedText: "\(selectedText)"
                 });
             }
             """,
+            in: webView,
+            contentWorld: .defaultClient
+        )
+    }
+
+    private func waitForContextMenuTarget(
+        _ kind: SumiWebPageContextMenuTargetKind,
+        on webView: FocusableWKWebView
+    ) async throws -> SumiWebPageContextMenuTargetSnapshot? {
+        for _ in 0..<100 {
+            if let target = webView.contextMenu.recentTarget(), target.kind == kind {
+                return target
+            }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        return nil
+    }
+
+    private func postTabSuspensionCanBeSuspended(
+        _ canBeSuspended: Bool,
+        in webView: WKWebView
+    ) async throws {
+        try await evaluate(
+            "window.__sumiTabSuspension.canBeSuspended(\(canBeSuspended ? "true" : "false"));",
             in: webView
         )
     }
 
-    private func waitForPageVeto(
-        _ expected: TabPageSuspensionVeto,
+    private func waitForSuspensionDecision(
+        _ expected: TabDocumentSuspensionDecision,
         on tab: Tab,
         file: StaticString = #filePath,
         line: UInt = #line
-    ) async {
+    ) async throws {
         for _ in 0..<100 {
-            if tab.suspensionProtection.pageVeto == expected {
+            if tab.documentSuspensionDecision == expected {
                 return
             }
-            try? await Task.sleep(nanoseconds: 20_000_000)
+            try await Task.sleep(nanoseconds: 20_000_000)
         }
 
-        XCTAssertEqual(tab.suspensionProtection.pageVeto, expected, file: file, line: line)
+        XCTAssertEqual(
+            tab.documentSuspensionDecision,
+            expected,
+            file: file,
+            line: line
+        )
+    }
+
+    private func establishCommittedDocument(on webView: WKWebView, for tab: Tab) {
+        let url = webView.url ?? URL(string: "about:blank")!
+        _ = tab.beginMainFrameNavigationIntent(to: url)
+        guard let submission = tab.claimDirectMainFrameLoadLease(on: webView) else {
+            return XCTFail("Expected a physical main-frame submission lease")
+        }
+        let navigation = NSObject()
+        let navigationID = ObjectIdentifier(navigation)
+        XCTAssertTrue(tab.bindSubmittedMainFrameLoad(
+            on: webView,
+            navigationID: navigationID,
+            navigationLifetime: navigation,
+            matching: submission
+        ))
+        XCTAssertTrue(tab.recordMainFrameCommitSnapshot(
+            from: webView,
+            navigationID: navigationID,
+            committedURL: url,
+            isPDF: false
+        ).role.isAuthority)
+        withExtendedLifetime(navigation) {}
     }
 
     private func loadBlankDocument(into webView: WKWebView) async {

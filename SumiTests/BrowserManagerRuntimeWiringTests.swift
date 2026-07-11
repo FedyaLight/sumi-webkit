@@ -221,7 +221,16 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         detachedTab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
 
         let targetURL = URL(string: "https://detached-target.example")!
-        detachedTab.browserActionService.openURLInForegroundTab(targetURL, detachedTab)
+        let untrackedSource = FocusableWKWebView(
+            frame: .zero,
+            configuration: WKWebViewConfiguration()
+        )
+        untrackedSource.owningTab = detachedTab
+        XCTAssertFalse(detachedTab.linkPresentationCommands.open(
+            targetURL,
+            from: untrackedSource,
+            disposition: .newTab(selected: true)
+        ))
 
         XCTAssertFalse(
             browserManager.tabManager.tabCollectionMembershipOwner.allTabs().contains { $0.url == targetURL },
@@ -998,11 +1007,21 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
 
         browserManager.optionalModules.extensions.notifyWindowOpenedIfLoaded(windowState)
         browserManager.optionalModules.extensions.notifyWindowFocusedIfLoaded(windowState)
+        let inactivePreparation = browserManager.optionalModules.extensions
+            .prepareInitialTabExtensionPublication(
+                window: windowState,
+                tab: tab,
+                webView: FocusableWKWebView(),
+                reason: "testRuntimeNotificationsPreserveLazyExtensionRuntime"
+            )
         runtimeNotifications.tabActivated(tab, nil)
         runtimeNotifications.tabSelectionChanged("test-tab-selection")
         closeRouter.notifyExtensionTabClosed(tab)
 
         XCTAssertFalse(browserManager.optionalModules.extensions.hasLoadedRuntime)
+        guard case .notParticipating = inactivePreparation else {
+            return XCTFail("An unloaded extension module must not participate")
+        }
     }
 
     func testSettingsMiniPlayerFeatureUpdatesUseInjectedNowPlayingController() throws {

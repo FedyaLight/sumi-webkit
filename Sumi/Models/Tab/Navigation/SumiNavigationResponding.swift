@@ -83,45 +83,95 @@ protocol SumiNavigationActionResponding: AnyObject {
 }
 
 @MainActor
-protocol SumiNavigationActionWebViewResponding: SumiNavigationActionResponding {
+protocol SumiNavigationActionSourceWebViewResponding: SumiNavigationActionResponding {
     func decidePolicy(
         for navigationAction: SumiNavigationAction,
-        webView: WKWebView?,
+        sourceWebView: WKWebView?,
         preferences: inout SumiNavigationPreferences
     ) async -> SumiNavigationActionPolicy?
 }
 
 @MainActor
-protocol SumiNavigationActionContextResponding: SumiNavigationActionWebViewResponding {
+protocol SumiNavigationActionTargetWebViewResponding: SumiNavigationActionResponding {
     func decidePolicy(
         for navigationAction: SumiNavigationAction,
-        webView: WKWebView?,
+        targetWebView: WKWebView?,
+        preferences: inout SumiNavigationPreferences
+    ) async -> SumiNavigationActionPolicy?
+}
+
+@MainActor
+protocol SumiNavigationActionSourceAndTargetWebViewResponding: SumiNavigationActionResponding {
+    func decidePolicy(
+        for navigationAction: SumiNavigationAction,
+        sourceWebView: WKWebView?,
+        targetWebView: WKWebView?,
+        preferences: inout SumiNavigationPreferences
+    ) async -> SumiNavigationActionPolicy?
+}
+
+@MainActor
+protocol SumiNavigationActionTargetContextResponding: SumiNavigationActionTargetWebViewResponding {
+    func decidePolicy(
+        for navigationAction: SumiNavigationAction,
+        targetWebView: WKWebView?,
         context: SumiNavigationActionContext,
         preferences: inout SumiNavigationPreferences
     ) async -> SumiNavigationActionPolicy?
 }
 
-extension SumiNavigationActionContextResponding {
+extension SumiNavigationActionTargetContextResponding {
     func decidePolicy(
         for navigationAction: SumiNavigationAction,
-        webView: WKWebView?,
+        targetWebView: WKWebView?,
         preferences: inout SumiNavigationPreferences
     ) async -> SumiNavigationActionPolicy? {
         await decidePolicy(
             for: navigationAction,
-            webView: webView,
+            targetWebView: targetWebView,
             context: SumiNavigationActionContext(navigationID: nil),
             preferences: &preferences
         )
     }
 }
 
-extension SumiNavigationActionWebViewResponding {
+extension SumiNavigationActionSourceWebViewResponding {
     func decidePolicy(
         for navigationAction: SumiNavigationAction,
         preferences: inout SumiNavigationPreferences
     ) async -> SumiNavigationActionPolicy? {
-        await decidePolicy(for: navigationAction, webView: nil, preferences: &preferences)
+        await decidePolicy(
+            for: navigationAction,
+            sourceWebView: nil,
+            preferences: &preferences
+        )
+    }
+}
+
+extension SumiNavigationActionTargetWebViewResponding {
+    func decidePolicy(
+        for navigationAction: SumiNavigationAction,
+        preferences: inout SumiNavigationPreferences
+    ) async -> SumiNavigationActionPolicy? {
+        await decidePolicy(
+            for: navigationAction,
+            targetWebView: nil,
+            preferences: &preferences
+        )
+    }
+}
+
+extension SumiNavigationActionSourceAndTargetWebViewResponding {
+    func decidePolicy(
+        for navigationAction: SumiNavigationAction,
+        preferences: inout SumiNavigationPreferences
+    ) async -> SumiNavigationActionPolicy? {
+        await decidePolicy(
+            for: navigationAction,
+            sourceWebView: nil,
+            targetWebView: nil,
+            preferences: &preferences
+        )
     }
 }
 

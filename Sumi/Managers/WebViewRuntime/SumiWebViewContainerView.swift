@@ -3,6 +3,24 @@ import WebKit
 import SumiWebRuntime
 
 @MainActor
+final class HostedWebViewPresentationObservation {
+    private var cancellation: (() -> Void)?
+
+    init(_ cancellation: @escaping () -> Void) {
+        self.cancellation = cancellation
+    }
+
+    func cancel() {
+        cancellation?()
+        cancellation = nil
+    }
+
+    isolated deinit {
+        cancellation?()
+    }
+}
+
+@MainActor
 final class SumiWebViewContainerView: NSView, WebRuntimePromotedHost {
     let tabID: UUID
     let webView: WKWebView
@@ -11,6 +29,7 @@ final class SumiWebViewContainerView: NSView, WebRuntimePromotedHost {
     private var preservesDisplayedContentOnNextRemoval = false
     private let overlayScrollChrome = WebContentOverlayScrollChrome()
     private var readerPresentationSession: ReaderPresentationSession?
+    private var presentationObservers: [UUID: (WKWebView) -> Void] = [:]
 
     override var constraints: [NSLayoutConstraint] { [] }
 
@@ -83,20 +102,17 @@ final class SumiWebViewContainerView: NSView, WebRuntimePromotedHost {
     @discardableResult
     func presentReader(
         html: String,
-        sourceURL: URL,
-        documentLease: TabMainFrameDocumentLease,
-        navigate: @escaping (URL) -> Void
+        sourceDocument: SumiReaderSourceDocument
     ) -> Bool {
-        guard ObjectIdentifier(webView) == documentLease.webViewID else {
+        guard sourceDocument.webView === webView,
+              sourceDocument.isCurrent else {
             return false
         }
 
         dismissReader()
-        let session = ReaderPresentationSession(
-            sourceDocumentLease: documentLease,
-            sourceURL: sourceURL,
-            navigate: navigate
-        )
+        guard let session = ReaderPresentationSession(
+            sourceDocument: sourceDocument
+        ) else { return false }
         session.webView.pageZoom = webView.pageZoom
         installReaderPresentation(session)
         session.load(html)
@@ -105,10 +121,14 @@ final class SumiWebViewContainerView: NSView, WebRuntimePromotedHost {
 
     func dismissReader() {
         guard let readerPresentationSession else { return }
+        let readerHadFocus = firstResponderIsInside(
+            readerPresentationSession.webView
+        )
+        let presentationWindow = readerPresentationSession.webView.window
+        readerPresentationSession.invalidate()
+        (webView as? FocusableWKWebView)?.resetPageInteractionState()
         let ownsCanonicalContent = webView.sumiFullscreenPresentation
             .tabContentView.superview === self
-        readerPresentationSession.webView.navigationDelegate = nil
-        readerPresentationSession.webView.stopLoading()
         readerPresentationSession.webView.removeFromSuperview()
         readerPresentationSession.detach(from: self)
         self.readerPresentationSession = nil
@@ -117,12 +137,30 @@ final class SumiWebViewContainerView: NSView, WebRuntimePromotedHost {
             webView.sumiFullscreenPresentation.tabContentView.isHidden = false
         }
         overlayScrollChrome.refreshGeometry(revealIfChanged: false)
+        notifyActivePresentationChanged()
+        if readerHadFocus,
+           let presentationWindow,
+           webView.window === presentationWindow,
+           !webView.isHidden {
+            presentationWindow.makeFirstResponder(webView)
+        }
     }
 
     /// The WebView that owns presentation-scoped interaction in this host.
     /// Navigation, lifecycle, permissions and history continue to use `webView`.
     var activePresentationWebView: WKWebView {
         readerPresentationSession?.webView ?? webView
+    }
+
+    func observeActivePresentationWebView(
+        _ observer: @escaping (WKWebView) -> Void
+    ) -> HostedWebViewPresentationObservation {
+        let id = UUID()
+        presentationObservers[id] = observer
+        observer(activePresentationWebView)
+        return HostedWebViewPresentationObservation { [weak self] in
+            self?.presentationObservers.removeValue(forKey: id)
+        }
     }
 
     func hasReaderPresentation(
@@ -176,6 +214,9 @@ final class SumiWebViewContainerView: NSView, WebRuntimePromotedHost {
     }
 
     private func installReaderPresentation(_ session: ReaderPresentationSession) {
+        let canonicalHadFocus = firstResponderIsInside(webView)
+        let presentationWindow = webView.window
+        (webView as? FocusableWKWebView)?.resetPageInteractionState()
         readerPresentationSession = session
         session.attach(to: self)
         session.webView.frame = bounds
@@ -183,14 +224,39 @@ final class SumiWebViewContainerView: NSView, WebRuntimePromotedHost {
         webView.sumiFullscreenPresentation.tabContentView.isHidden = true
         addSubview(session.webView)
         overlayScrollChrome.hideImmediately()
+        notifyActivePresentationChanged()
+        if canonicalHadFocus,
+           let presentationWindow,
+           session.webView.window === presentationWindow {
+            presentationWindow.makeFirstResponder(session.webView)
+        }
     }
 
     private func takeReaderPresentationForTransfer() -> ReaderPresentationSession? {
         guard let session = readerPresentationSession else { return nil }
+        (webView as? FocusableWKWebView)?.resetPageInteractionState()
         session.webView.removeFromSuperview()
         session.detach(from: self)
         readerPresentationSession = nil
         return session
+    }
+
+    private func notifyActivePresentationChanged() {
+        let activeWebView = activePresentationWebView
+        for observer in presentationObservers.values {
+            observer(activeWebView)
+        }
+    }
+
+    private func firstResponderIsInside(_ view: NSView) -> Bool {
+        guard let firstResponder = view.window?.firstResponder else {
+            return false
+        }
+        if firstResponder === view { return true }
+        guard let responderView = firstResponder as? NSView else {
+            return false
+        }
+        return responderView.isDescendant(of: view)
     }
 
     private func frameDisplayedContent(_ displayedView: NSView) {

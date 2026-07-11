@@ -387,6 +387,302 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
         tab.abortProfileAssignmentIntent(intent)
     }
 
+    func testCommittedReplacementRetiresWholeGenerationBeforeDestroyingIt()
+        throws {
+        let repository = WebViewSessionRepository()
+        let targetURL = try XCTUnwrap(
+            URL(string: "https://example.com/replacement-commit")
+        )
+        let tab = Tab(
+            url: targetURL,
+            webViewSessions: repository,
+            loadsCachedFaviconOnInit: false
+        )
+        let primaryWindowID = UUID()
+        let cloneWindowID = UUID()
+        let oldPrimary = WKWebView()
+        let oldClone = WKWebView()
+        let replacement = WKWebView()
+        register(
+            oldPrimary,
+            tabID: tab.id,
+            windowID: primaryWindowID,
+            in: repository
+        )
+        register(
+            oldClone,
+            tabID: tab.id,
+            windowID: cloneWindowID,
+            in: repository
+        )
+
+        let intent = tab.beginMainFrameNavigationIntent(to: targetURL)
+        let primaryNavigation = try bindMainFrameParticipant(
+            oldPrimary,
+            to: tab
+        )
+        let cloneNavigation = try bindMainFrameParticipant(oldClone, to: tab)
+        let replacementNavigation = try bindMainFrameParticipant(
+            replacement,
+            to: tab
+        )
+        XCTAssertEqual(
+            tab.recordMainFrameCommitSnapshot(
+                from: oldPrimary,
+                navigationID: ObjectIdentifier(primaryNavigation),
+                committedURL: targetURL,
+                isPDF: false
+            ).role,
+            .authority
+        )
+        XCTAssertEqual(
+            tab.recordMainFrameCommitSnapshot(
+                from: oldClone,
+                navigationID: ObjectIdentifier(cloneNavigation),
+                committedURL: targetURL,
+                isPDF: false
+            ).role,
+            .participant
+        )
+        XCTAssertEqual(
+            tab.recordMainFrameCommitSnapshot(
+                from: replacement,
+                navigationID: ObjectIdentifier(replacementNavigation),
+                committedURL: targetURL,
+                isPDF: false
+            ).role,
+            .participant
+        )
+
+        var departureBatches: [[ObjectIdentifier]] = []
+        var events: [String] = []
+        var destroyed: [ObjectIdentifier] = []
+        let pipeline = replacementPipeline(
+            repository: repository,
+            tab: tab,
+            departureBatches: { webViews in
+                events.append("departure")
+                departureBatches.append(
+                    webViews.map(ObjectIdentifier.init)
+                )
+            },
+            destroy: { webView in
+                events.append("destroy")
+                destroyed.append(ObjectIdentifier(webView))
+            }
+        )
+        let snapshot = repository.snapshot(for: tab.id)
+        let prepared = PreparedWebViewReplacement(
+            tab: tab,
+            snapshot: snapshot,
+            placement: .windowSet(
+                webViewsByWindowID: [primaryWindowID: replacement],
+                primaryWindowID: primaryWindowID
+            ),
+            replacements: [replacement],
+            trackedReplacements: [replacement],
+            bindingReplacements: [],
+            targetURL: targetURL,
+            semanticRevision: intent.revision,
+            profileID: nil,
+            requiresExtensionRuntimePreparation: false,
+            previousProtectionState: nil,
+            previousSafariContentBlockerState: nil
+        )
+
+        guard case .committed = pipeline.begin(
+            [prepared],
+            profileIDs: [],
+            validateModel: { true },
+            modelCommit: {},
+            modelRollback: {},
+            completion: { _ in }
+        ) else {
+            return XCTFail("Expected synchronous replacement commit")
+        }
+
+        XCTAssertEqual(departureBatches.count, 1)
+        XCTAssertEqual(
+            Set(departureBatches[0]),
+            [ObjectIdentifier(oldPrimary), ObjectIdentifier(oldClone)]
+        )
+        XCTAssertEqual(events.first, "departure")
+        XCTAssertEqual(Set(destroyed), Set(departureBatches[0]))
+        XCTAssertEqual(
+            tab.mainFrameLifecycleRole(
+                from: oldPrimary,
+                navigationID: ObjectIdentifier(primaryNavigation),
+                isCurrent: true
+            ),
+            .stale
+        )
+        XCTAssertEqual(
+            tab.mainFrameLifecycleRole(
+                from: oldClone,
+                navigationID: ObjectIdentifier(cloneNavigation),
+                isCurrent: true
+            ),
+            .stale
+        )
+        XCTAssertEqual(
+            tab.mainFrameLifecycleRole(
+                from: replacement,
+                navigationID: ObjectIdentifier(replacementNavigation),
+                isCurrent: true
+            ),
+            .authority
+        )
+        XCTAssertNil(tab.mainFrameDocumentLease(for: oldPrimary))
+        XCTAssertNil(tab.mainFrameDocumentLease(for: oldClone))
+        XCTAssertEqual(
+            tab.mainFrameDocumentLease(for: replacement)?.isAuthority,
+            true
+        )
+    }
+
+    func testRolledBackReplacementDiscardsOnlyReplacementGeneration()
+        throws {
+        let repository = WebViewSessionRepository()
+        let targetURL = try XCTUnwrap(
+            URL(string: "https://example.com/replacement-rollback")
+        )
+        let tab = Tab(
+            url: targetURL,
+            webViewSessions: repository,
+            loadsCachedFaviconOnInit: false
+        )
+        let primaryWindowID = UUID()
+        let cloneWindowID = UUID()
+        let oldPrimary = WKWebView()
+        let oldClone = WKWebView()
+        let discardedReplacement = WKWebView()
+        register(
+            oldPrimary,
+            tabID: tab.id,
+            windowID: primaryWindowID,
+            in: repository
+        )
+        register(
+            oldClone,
+            tabID: tab.id,
+            windowID: cloneWindowID,
+            in: repository
+        )
+
+        let intent = tab.beginMainFrameNavigationIntent(to: targetURL)
+        let primaryNavigation = try bindMainFrameParticipant(
+            oldPrimary,
+            to: tab
+        )
+        let cloneNavigation = try bindMainFrameParticipant(oldClone, to: tab)
+        let replacementNavigation = try bindMainFrameParticipant(
+            discardedReplacement,
+            to: tab
+        )
+        XCTAssertEqual(
+            tab.prepareMainFrameAuthorityForCommit(
+                from: discardedReplacement,
+                navigationID: ObjectIdentifier(replacementNavigation)
+            ),
+            .authority
+        )
+
+        var departureBatches: [[ObjectIdentifier]] = []
+        var events: [String] = []
+        var destroyed: [ObjectIdentifier] = []
+        let pipeline = replacementPipeline(
+            repository: repository,
+            tab: tab,
+            departureBatches: { webViews in
+                events.append("departure")
+                departureBatches.append(
+                    webViews.map(ObjectIdentifier.init)
+                )
+            },
+            destroy: { webView in
+                events.append("destroy")
+                destroyed.append(ObjectIdentifier(webView))
+            }
+        )
+        let snapshot = repository.snapshot(for: tab.id)
+        let prepared = PreparedWebViewReplacement(
+            tab: tab,
+            snapshot: snapshot,
+            placement: .windowSet(
+                webViewsByWindowID: [
+                    primaryWindowID: discardedReplacement,
+                ],
+                primaryWindowID: primaryWindowID
+            ),
+            replacements: [discardedReplacement],
+            trackedReplacements: [discardedReplacement],
+            bindingReplacements: [discardedReplacement],
+            targetURL: targetURL,
+            semanticRevision: intent.revision,
+            profileID: nil,
+            requiresExtensionRuntimePreparation: false,
+            previousProtectionState: nil,
+            previousSafariContentBlockerState: nil
+        )
+        var settlementOutcome: WebViewReplacementTransactionOutcome?
+        guard case .started(let receipt) = pipeline.begin(
+            [prepared],
+            profileIDs: [],
+            validateModel: { true },
+            modelCommit: {},
+            modelRollback: {},
+            completion: { settlementOutcome = $0 }
+        ), let token = receipt.bindingToken(for: discardedReplacement) else {
+            return XCTFail("Expected replacement settlement receipt")
+        }
+
+        pipeline.fail(token, reason: .submissionFailed)
+
+        XCTAssertEqual(
+            settlementOutcome,
+            .rolledBack(.bindingFailure(.submissionFailed))
+        )
+        XCTAssertEqual(departureBatches.count, 1)
+        XCTAssertEqual(
+            departureBatches[0],
+            [ObjectIdentifier(discardedReplacement)]
+        )
+        XCTAssertEqual(events, ["departure", "destroy"])
+        XCTAssertEqual(destroyed, [ObjectIdentifier(discardedReplacement)])
+        XCTAssertIdentical(
+            repository.webView(for: tab.id, in: primaryWindowID),
+            oldPrimary
+        )
+        XCTAssertIdentical(
+            repository.webView(for: tab.id, in: cloneWindowID),
+            oldClone
+        )
+        XCTAssertEqual(
+            tab.mainFrameLifecycleRole(
+                from: discardedReplacement,
+                navigationID: ObjectIdentifier(replacementNavigation),
+                isCurrent: true
+            ),
+            .stale
+        )
+        XCTAssertEqual(
+            tab.mainFrameLifecycleRole(
+                from: oldPrimary,
+                navigationID: ObjectIdentifier(primaryNavigation),
+                isCurrent: true
+            ),
+            .authority
+        )
+        XCTAssertEqual(
+            tab.mainFrameLifecycleRole(
+                from: oldClone,
+                navigationID: ObjectIdentifier(cloneNavigation),
+                isCurrent: true
+            ),
+            .participant
+        )
+    }
+
     private func makeMaterializationService(
         repository: WebViewSessionRepository,
         primaryCandidate: @escaping @MainActor @Sendable (UUID) -> (
@@ -425,6 +721,49 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
             ),
             planner: WebViewCreationPlanner()
         )
+    }
+
+    private func bindMainFrameParticipant(
+        _ webView: WKWebView,
+        to tab: Tab
+    ) throws -> NSObject {
+        let lease = try XCTUnwrap(
+            tab.claimDirectMainFrameLoadLease(on: webView)
+        )
+        let navigation = NSObject()
+        XCTAssertTrue(tab.bindSubmittedMainFrameLoad(
+            on: webView,
+            navigationID: ObjectIdentifier(navigation),
+            navigationLifetime: navigation,
+            matching: lease
+        ))
+        return navigation
+    }
+
+    private func replacementPipeline(
+        repository: WebViewSessionRepository,
+        tab: Tab,
+        departureBatches: @escaping ([WKWebView]) -> Void,
+        destroy: @escaping (WKWebView) -> Void
+    ) -> WebViewReplacementPipeline {
+        WebViewReplacementPipeline(runtime: .init(
+            webViewSessions: repository,
+            quiesce: { _ in },
+            retireNavigationGeneration: { tabID, webViews, preferredWebView in
+                XCTAssertEqual(tabID, tab.id)
+                departureBatches(webViews)
+                tab.webViewsDidLeaveNavigationRuntime(
+                    webViews,
+                    preferredAuthorityWebView: preferredWebView
+                )
+            },
+            destroy: { tabID, webView in
+                XCTAssertEqual(tabID, tab.id)
+                destroy(webView)
+            },
+            restore: { _, _ in },
+            uninstallObservationsIfUntracked: { _ in }
+        ))
     }
 
     private func makeIsolatedOwnershipBrowserManager() -> BrowserManager {

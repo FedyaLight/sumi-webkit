@@ -282,12 +282,34 @@ final class SumiExtensionsModule {
         )
     }
 
-    func notifyWindowOpenedIfLoaded(_ windowState: BrowserWindowState) {
-        managerIfLoadedAndEnabled()?.notifyWindowOpened(windowState)
+    func publishWindowIfLoaded(
+        _ windowState: BrowserWindowState
+    ) -> BrowserWindowExtensionPublicationOutcome {
+        guard let manager = managerIfLoadedAndEnabled(),
+              manager.extensionsLoaded
+        else {
+            return .notParticipating
+        }
+        guard let publication = manager.browserRuntimeBridgeOwner
+            .publishWindow(windowState)
+        else {
+            return .suppressed
+        }
+        return .published(publication)
     }
 
-    func notifyWindowClosedIfLoaded(_ windowId: UUID) {
-        managerIfLoadedAndEnabled()?.notifyWindowClosed(windowId)
+    @discardableResult
+    func notifyWindowOpenedIfLoaded(
+        _ windowState: BrowserWindowState
+    ) -> Bool {
+        if case .published = publishWindowIfLoaded(windowState) {
+            return true
+        }
+        return false
+    }
+
+    func notifyWindowClosedIfLoaded(_ windowState: BrowserWindowState) {
+        managerIfLoadedAndEnabled()?.notifyWindowClosed(windowState)
     }
 
     func notifyWindowFocusedIfLoaded(_ windowState: BrowserWindowState) {
@@ -381,6 +403,52 @@ final class SumiExtensionsModule {
             tab,
             reason: reason
         )
+    }
+
+    /// Silent half of initial-Tab/window publication. This deliberately uses
+    /// only an already loaded, enabled runtime; opening a browser window must
+    /// never boot the optional extension subsystem.
+    func prepareInitialTabExtensionPublication(
+        window: BrowserWindowState,
+        tab: Tab,
+        webView: FocusableWKWebView,
+        reason: String
+    ) -> InitialTabExtensionPreparation {
+        guard window.isIncognito == false, tab.isEphemeral == false else {
+            return .privateWindow
+        }
+        guard let manager = managerIfLoadedAndEnabled(),
+              manager.extensionsLoaded
+        else {
+            return .notParticipating
+        }
+        guard let windowProfileID = manager.resolvedProfileId(for: window),
+              let tabProfileID = manager.resolvedProfileId(for: tab)
+        else {
+            return .rejected
+        }
+        guard windowProfileID == tabProfileID
+        else {
+            return .suppressed
+        }
+        guard manager.extensionController(for: tab) != nil else {
+            return .notParticipating
+        }
+        guard manager.profileNeedsInitialDocumentExtensionContextLoad(
+            profileId: tabProfileID
+        ) == false else {
+            return .suppressed
+        }
+        guard let receipt = ExtensionInitialTabPublicationReceipt.prepare(
+            manager: manager,
+            window: window,
+            tab: tab,
+            webView: webView,
+            reason: reason
+        ) else {
+            return .rejected
+        }
+        return .prepared(receipt)
     }
 
     func enableExtension(_ extensionId: String) async throws -> InstalledExtension {
@@ -695,12 +763,14 @@ final class SumiExtensionsModule {
     func captureActionPopupAnchor(
         extensionId: String,
         windowId: UUID,
-        profileId: UUID?
+        profileId: UUID?,
+        tabId: UUID? = nil
     ) -> UUID {
         managerIfEnabled()?.actionPopupAnchorResolver.captureActionPopupAnchor(
             extensionId: extensionId,
             windowId: windowId,
-            profileId: profileId
+            profileId: profileId,
+            tabId: tabId
         ) ?? UUID()
     }
 

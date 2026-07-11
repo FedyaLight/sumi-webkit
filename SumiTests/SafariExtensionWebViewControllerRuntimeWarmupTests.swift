@@ -517,18 +517,6 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         manager.openExtensionWindowUsingTabURLs(
             [pageURL],
             controller: controller,
-            createWindow: {
-                let windowState = BrowserWindowState()
-                windowState.currentProfileId = profile.id
-                windowState.currentSpaceId = space.id
-                windowRegistry.register(windowState)
-                windowRegistry.setActive(windowState)
-            },
-            awaitWindowRegistration: { existingWindowIDs in
-                await windowRegistry.awaitNextRegisteredWindow(
-                    excluding: existingWindowIDs
-                )
-            },
             completionHandler: { window, error in
                 completionWindow = window
                 completionError = error

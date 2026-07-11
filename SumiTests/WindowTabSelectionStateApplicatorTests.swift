@@ -120,6 +120,28 @@ final class WindowTabSelectionStateApplicatorTests: XCTestCase {
         XCTAssertEqual(windowState.selectionHistory.recentSelectionItemsBySpace[spaceId], [.regularTab(tab.id)])
     }
 
+    func testSelectingAnotherTabConsumesDedicatedWebKitChildProvenance() {
+        let spaceId = UUID()
+        let initialTabID = UUID()
+        let replacement = makeTab(spaceId: spaceId)
+        let windowState = BrowserWindowState()
+        windowState.currentTabId = initialTabID
+        windowState.currentSpaceId = spaceId
+        windowState.webKitChildWindowIdentity = WebKitChildWindowIdentity(
+            initialTabID: initialTabID
+        )
+
+        let result = WindowTabSelectionStateApplicator.apply(
+            replacement,
+            to: windowState,
+            updateSpaceFromTab: true,
+            rememberSelection: true
+        )
+
+        XCTAssertTrue(result.stateDidChange)
+        XCTAssertNil(windowState.webKitChildWindowIdentity)
+    }
+
     private func makeTab(spaceId: UUID) -> Tab {
         Tab(
             url: URL(string: "https://example.com")!,

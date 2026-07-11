@@ -57,24 +57,6 @@ final class TabSuspensionLifecycleTests: XCTestCase {
         XCTAssertIdentical(recorder.firstObject, tab)
     }
 
-    func testResetPageSuspensionProtectionKeepsLifecycleAndRecency() {
-        let tab = makeTab()
-        let selectedAt = Date(timeIntervalSince1970: 25)
-        tab.suspensionProtection.pageVeto = .pageReportedUnableToSuspend
-        tab.suspensionProtection.hasPictureInPictureVideo = true
-        tab.suspensionProtection.isPDFDocument = true
-        tab.suspensionState.isSuspended = true
-        tab.lastSelectedAt = selectedAt
-
-        tab.suspensionProtection.resetForNewPage()
-
-        XCTAssertEqual(tab.suspensionProtection.pageVeto, .none)
-        XCTAssertFalse(tab.suspensionProtection.hasPictureInPictureVideo)
-        XCTAssertFalse(tab.suspensionProtection.isPDFDocument)
-        XCTAssertTrue(tab.suspensionState.isSuspended)
-        XCTAssertEqual(tab.lastSelectedAt, selectedAt)
-    }
-
     private func makeTab() -> Tab {
         Tab(
             url: URL(string: "https://example.com/page")!,

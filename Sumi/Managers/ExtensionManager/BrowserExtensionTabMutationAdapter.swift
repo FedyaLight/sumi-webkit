@@ -4,8 +4,7 @@ import WebKit
 @available(macOS 15.5, *)
 @MainActor
 final class BrowserExtensionTabMutationAdapter:
-    ExtensionTabMutation
-{
+    ExtensionTabMutation {
     private let createTab: @MainActor (
         URL?, Space?, Bool, WKWebExtensionContext?
     ) -> Tab
@@ -14,6 +13,7 @@ final class BrowserExtensionTabMutationAdapter:
     ) -> Tab
     private let pinTab: @MainActor (Tab, BrowserWindowState?, Space?) -> Void
     private let selectTab: @MainActor (Tab, BrowserWindowState) -> Void
+    private let placeTab: @MainActor (Tab, BrowserWindowState) -> Void
     private let promoteTransientTab: @MainActor (Tab) -> Bool
 
     init(
@@ -27,12 +27,14 @@ final class BrowserExtensionTabMutationAdapter:
             Tab, BrowserWindowState?, Space?
         ) -> Void,
         selectTab: @escaping @MainActor (Tab, BrowserWindowState) -> Void,
+        placeTab: @escaping @MainActor (Tab, BrowserWindowState) -> Void,
         promoteTransientTab: @escaping @MainActor (Tab) -> Bool
     ) {
         self.createTab = createTab
         self.createTransientTab = createTransientTab
         self.pinTab = pinTab
         self.selectTab = selectTab
+        self.placeTab = placeTab
         self.promoteTransientTab = promoteTransientTab
     }
 
@@ -66,6 +68,13 @@ final class BrowserExtensionTabMutationAdapter:
         in windowState: BrowserWindowState
     ) {
         selectTab(tab, windowState)
+    }
+
+    func placeExtensionTab(
+        _ tab: Tab,
+        in windowState: BrowserWindowState
+    ) {
+        placeTab(tab, windowState)
     }
 
     func promoteTransientExtensionTab(_ tab: Tab) -> Bool {

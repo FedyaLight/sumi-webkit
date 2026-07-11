@@ -16,8 +16,12 @@ fail_matches() {
 
 state_files=(
   Sumi/Models/Tab/TabSuspensionState.swift
-  Sumi/Models/Tab/TabSuspensionProtectionState.swift
+  Sumi/Models/Tab/TabDocumentSuspensionDecision.swift
 )
+
+suspension_script=Sumi/UserScripts/SumiTabSuspensionUserScript.swift
+document_sensor=Sumi/UserScripts/SumiDocumentSuspensionSensorUserScript.swift
+subframe_pip_sensor=Sumi/UserScripts/SumiSubframePictureInPictureUserScript.swift
 
 required_runtime_files=(
   Sumi/Managers/TabSuspensionController.swift
@@ -28,6 +32,13 @@ required_runtime_files=(
 for file in "${state_files[@]}"; do
   if [[ ! -f "$file" ]]; then
     printf 'error: suspension value-state boundary missing: %s\n' "$file" >&2
+    status=1
+  fi
+done
+
+for file in "$suspension_script" "$document_sensor" "$subframe_pip_sensor"; do
+  if [[ ! -f "$file" ]]; then
+    printf 'error: physical document suspension script missing: %s\n' "$file" >&2
     status=1
   fi
 done
@@ -49,6 +60,55 @@ legacy_hits="$(
     Sumi SumiTests -g '*.swift' || true
 )"
 fail_matches "deleted suspension facade/owner reintroduced" "$legacy_hits"
+
+logical_document_state_hits="$(
+  rg -n '\b(suspensionProtection|TabSuspensionProtectionState|TabPageSuspensionVeto)\b' \
+    Sumi SumiTests -g '*.swift' || true
+)"
+fail_matches "logical Tab suspension last-writer state reintroduced" "$logical_document_state_hits"
+
+embedded_script_hits="$(
+  rg -n '\b(class|struct) SumiTabSuspensionUserScript\b' \
+    Sumi/Models/Tab/TabCoreUserScripts.swift || true
+)"
+fail_matches "document suspension script embedded in Tab composition" "$embedded_script_hits"
+
+if ! rg -q 'func recordSuspensionReport\(' \
+  Sumi/Models/Tab/TabCommittedDocumentLedger.swift; then
+  printf 'error: committed-document ledger does not own suspension reports\n' >&2
+  status=1
+fi
+
+if rg -q 'documentLeaseToken|activateCommittedDocument' "$suspension_script"; then
+  printf 'error: page suspension API exposes native document authority\n' >&2
+  status=1
+fi
+
+if ! rg -q 'message\.frameInfo\.isMainFrame' "$document_sensor" \
+  || ! rg -q 'mainFrameDocumentLease\(for: webView\)' "$document_sensor" \
+  || ! rg -q 'documentLeaseToken' "$document_sensor" \
+  || ! rg -q 'documentLeaseEpoch' "$document_sensor" \
+  || ! rg -q 'suspensionActivationEpoch' \
+    Sumi/Models/Tab/TabCommittedDocumentLedger.swift; then
+  printf 'error: suspension message handler lacks physical main-document validation\n' >&2
+  status=1
+fi
+
+if ! rg -q 'forMainFrameOnly = false' "$subframe_pip_sensor" \
+  || ! rg -q 'in: \.defaultClient' "$subframe_pip_sensor" \
+  || ! rg -q 'documentLeaseToken' "$subframe_pip_sensor"; then
+  printf 'error: subframe PiP veto is not isolated and epoch-bound\n' >&2
+  status=1
+fi
+
+if ! rg -q 'reconcileDocumentSuspensionState' "$document_sensor" \
+  || ! rg -q 'reconcileDocumentSuspensionState' \
+    Sumi/Models/Tab/Navigation/TabMainFrameLifecyclePromotionReducer.swift \
+  || ! rg -q 'reconcileDocumentSuspensionState' \
+    Sumi/Managers/BrowserManager/TabBrowserNavigationRuntimeFactory.swift; then
+  printf 'error: document suspension evidence is not reconciled after reports and finish\n' >&2
+  status=1
+fi
 
 legacy_component_hits="$(
   rg -n '\b(MemoryPressureTabSuspensionService|tabSuspensionContextSource|tabSuspensionExecutor|proactiveTabSuspension|memoryPressureTabSuspension)\b' \

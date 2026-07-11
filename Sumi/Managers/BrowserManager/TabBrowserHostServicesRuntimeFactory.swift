@@ -25,12 +25,6 @@ enum TabBrowserHostServicesRuntimeFactory {
         )
     }
 
-    static func scriptMessageRuntime(
-        for browserManager: BrowserManager
-    ) -> TabScriptMessageRuntime {
-        .make(glanceManager: browserManager.glanceManager)
-    }
-
     static func closeLifecycleRuntime(
         for browserManager: BrowserManager
     ) -> TabCloseLifecycleRuntime {
@@ -48,7 +42,9 @@ enum TabBrowserHostServicesRuntimeFactory {
     }
 
     static func permissionRuntime(
-        for browserManager: BrowserManager
+        for browserManager: BrowserManager,
+        ownershipQuery: WebViewOwnershipQuery,
+        visibility: WebViewVisibilityRuntime
     ) -> TabPermissionRuntime {
         .make(
             permissionBridges: { [weak browserManager] in
@@ -71,6 +67,68 @@ enum TabBrowserHostServicesRuntimeFactory {
                     return false
                 }
                 return true
+            },
+            surfaceState: { [weak browserManager] tabId, webView in
+                guard let browserManager,
+                      let tracked = ownershipQuery.trackedOwner(
+                          containing: webView
+                      ),
+                      tracked.tabID == tabId,
+                      let registry = browserManager.windowRegistry,
+                      registry.windows[tracked.windowID] != nil
+                else {
+                    return .inactive
+                }
+                let isVisible = visibility
+                    .visibleTabIDs(in: tracked.windowID)
+                    .contains(tabId)
+                return TabPermissionSurfaceState(
+                    isActive: isVisible
+                        && registry.activeWindowId == tracked.windowID,
+                    isVisible: isVisible
+                )
+            },
+            profile: { [weak browserManager] tabId, webView in
+                guard let browserManager,
+                      let tracked = ownershipQuery.trackedOwner(
+                          containing: webView
+                      ),
+                      tracked.tabID == tabId,
+                      let sourceWindow = browserManager.windowRegistry?
+                          .windows[tracked.windowID],
+                      let sourceTab = (webView as? FocusableWKWebView)?.owningTab,
+                      sourceTab.id == tabId
+                else {
+                    return nil
+                }
+                if sourceWindow.isIncognito {
+                    guard let profile = sourceWindow.ephemeralProfile,
+                          sourceTab.profileId == nil
+                            || sourceTab.profileId == profile.id
+                    else {
+                        return nil
+                    }
+                    return profile
+                }
+
+                let sourceSpaceID = sourceTab.spaceId
+                    ?? sourceWindow.currentSpaceId
+                let spaceProfileID = sourceSpaceID.flatMap {
+                    browserManager.tabManager.spaceStateOwner.profileId(for: $0)
+                }
+                let candidates = [
+                    sourceTab.profileId,
+                    spaceProfileID,
+                    sourceWindow.currentProfileId,
+                ].compactMap(\.self)
+                guard Set(candidates).count == 1,
+                      let profileID = candidates.first
+                else {
+                    return nil
+                }
+                return browserManager.profileManager.profiles.first {
+                    $0.id == profileID
+                }
             }
         )
     }
@@ -177,21 +235,6 @@ extension TabMediaRuntimeCallbacks {
 }
 
 @MainActor
-extension TabScriptMessageRuntime {
-    static func make(glanceManager: GlanceManager) -> Self {
-        Self(
-            presentExternalURLInGlance: { [weak glanceManager] url, tab, originRectInWindow in
-                glanceManager?.presentExternalURL(
-                    url,
-                    from: tab,
-                    originRectInWindow: originRectInWindow
-                )
-            }
-        )
-    }
-}
-
-@MainActor
 extension TabCloseLifecycleRuntime {
     static func make(
         cleanupZoomForTab: @escaping (UUID) -> Void,
@@ -211,12 +254,22 @@ extension TabPermissionRuntime {
     static func make(
         permissionBridges: @escaping () -> BrowserPermissionBridgeRegistry?,
         handlePermissionLifecycleEvent: @escaping (SumiPermissionLifecycleEvent) -> Void,
-        isActiveGlancePreviewSurface: @escaping (_ tabId: UUID, _ webView: WKWebView) -> Bool
+        isActiveGlancePreviewSurface: @escaping (_ tabId: UUID, _ webView: WKWebView) -> Bool,
+        surfaceState: @escaping (
+            _ tabId: UUID,
+            _ webView: WKWebView
+        ) -> TabPermissionSurfaceState,
+        profile: @escaping (
+            _ tabId: UUID,
+            _ webView: WKWebView
+        ) -> Profile?
     ) -> Self {
         Self(
             permissionBridges: permissionBridges,
             handlePermissionLifecycleEvent: handlePermissionLifecycleEvent,
-            isActiveGlancePreviewSurface: isActiveGlancePreviewSurface
+            isActiveGlancePreviewSurface: isActiveGlancePreviewSurface,
+            surfaceState: surfaceState,
+            profile: profile
         )
     }
 }

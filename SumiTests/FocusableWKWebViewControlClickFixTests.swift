@@ -1,65 +1,10 @@
 import AppKit
 @testable import Sumi
+import WebKit
 import XCTest
 
 @MainActor
 final class FocusableWKWebViewControlClickFixTests: XCTestCase {
-    func testDynamicGlanceDefersOptionMouseDownToNavigationPolicy() throws {
-        let tab = Tab(
-            url: URL(string: "https://source.example/page")!,
-            name: "Source"
-        )
-        tab.updateHoveredLink("https://destination.example/page")
-
-        let event = try Self.mouseEvent(modifierFlags: .option)
-
-        XCTAssertNil(tab.dynamicGlanceURLForWebViewMouseDown(event))
-    }
-
-    func testDynamicGlanceRejectsCombinedOptionGesture() throws {
-        let tab = Tab(
-            url: URL(string: "https://source.example/page")!,
-            name: "Source"
-        )
-        tab.updateHoveredLink("https://destination.example/page")
-
-        let event = try Self.mouseEvent(modifierFlags: [.option, .command])
-
-        XCTAssertNil(tab.dynamicGlanceURLForWebViewMouseDown(event))
-    }
-
-    func testDynamicGlanceRequiresEssentialExternalCleanClick() throws {
-        let tab = Tab(
-            url: URL(string: "https://source.example/page")!,
-            name: "Source"
-        )
-        tab.updateHoveredLink("https://destination.example/page")
-
-        let cleanClick = try Self.mouseEvent(modifierFlags: [])
-        XCTAssertNil(tab.dynamicGlanceURLForWebViewMouseDown(cleanClick))
-
-        tab.isPinned = true
-        XCTAssertEqual(
-            tab.dynamicGlanceURLForWebViewMouseDown(cleanClick),
-            URL(string: "https://destination.example/page")
-        )
-
-        tab.updateHoveredLink("https://source.example/other")
-        XCTAssertNil(tab.dynamicGlanceURLForWebViewMouseDown(cleanClick))
-    }
-
-    func testDynamicGlanceRejectsNonPreviewableHoveredLink() throws {
-        let tab = Tab(
-            url: URL(string: "https://source.example/page")!,
-            name: "Source"
-        )
-        tab.updateHoveredLink("javascript:void(0)")
-
-        let event = try Self.mouseEvent(modifierFlags: .option)
-
-        XCTAssertNil(tab.dynamicGlanceURLForWebViewMouseDown(event))
-    }
-
     func testControlLeftMouseDownAllowlistedHostPassesGateWhenFixEnabled() throws {
         let event = try Self.mouseEvent(modifierFlags: .control)
         XCTAssertTrue(
@@ -118,5 +63,14 @@ final class FocusableWKWebViewControlClickFixTests: XCTestCase {
                 pressure: 1
             )
         )
+    }
+
+    private func makeWebView(for tab: Tab) -> FocusableWKWebView {
+        let webView = FocusableWKWebView(
+            frame: .zero,
+            configuration: WKWebViewConfiguration()
+        )
+        webView.owningTab = tab
+        return webView
     }
 }

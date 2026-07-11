@@ -73,9 +73,15 @@ final class ActivePageResolverTests: XCTestCase {
         )
         XCTAssertTrue(host.presentReader(
             html: "<article>Reader</article>",
-            sourceURL: sourceURL,
-            documentLease: lease,
-            navigate: { _ in }
+            sourceDocument: SumiReaderSourceDocument(
+                webView: canonicalWebView,
+                lease: lease,
+                sourceURL: sourceURL,
+                remoteResourcePolicy: .denyRemoteResources,
+                currentLease: { lease },
+                routeWebLink: { _, _ in false },
+                routeExternalLink: { _ in }
+            )
         ))
         let resolver = ActivePageResolver(
             activeWindow: { window },

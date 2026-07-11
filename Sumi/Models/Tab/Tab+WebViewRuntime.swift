@@ -93,7 +93,7 @@ extension Tab {
         currentURL: URL?,
         isExtensionOriginated: Bool,
         reason: String
-    ) -> WKWebView {
+    ) -> FocusableWKWebView {
         webViewProvisioningOwner.createPopupWebViewFromWebKitConfiguration(
             configuration,
             context: normalWebViewRuntimeContext(),

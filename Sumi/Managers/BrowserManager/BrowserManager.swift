@@ -70,6 +70,9 @@ class BrowserManager: ObservableObject {
     lazy var tabLifecycleService = BrowserTabLifecycleService(browserManager: self)
     lazy var privacyBundle = BrowserPrivacyBundle(browserManager: self)
     lazy var urlBarBundle = BrowserURLBarBundle(browserManager: self)
+    lazy var windowExtensionPublication = WindowExtensionPublicationTransaction.live(
+        browserManager: self, webViewOwnership: webViewRuntime.ownershipQuery
+    )
     lazy var windowSessionBundle = BrowserWindowSessionBundle(
         browserManager: self,
         startupSessionRestoreOwner: startupSessionRestoreOwner
@@ -88,7 +91,7 @@ class BrowserManager: ObservableObject {
     lazy var webViewCloseRouter = BrowserWebViewCloseRouter(browserManager: self)
     lazy var notificationPresenter = BrowserNotificationPresenter(browserManager: self)
     lazy var shortcutActionRouter = BrowserShortcutActionRouter(dependencies: .live(browserManager: self))
-    lazy var windowCommands = BrowserWindowCommands(browserRuntime: self)
+    lazy var windowCommands = BrowserWindowCommands.live(browserRuntime: self)
     lazy var windowStateReconciler = BrowserWindowStateReconciler(
         browserManager: self
     )

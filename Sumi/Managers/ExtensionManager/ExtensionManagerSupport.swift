@@ -23,6 +23,7 @@ enum ExtensionManagerCallbackError: LocalizedError, Equatable, Sendable {
     case optionsPageNotFound
     case privateWindowsUnsupported
     case optionsURLOutsideExtensionDirectory
+    case multipleWindowTabsUnsupported
 
     var code: Int {
         switch self {
@@ -45,6 +46,8 @@ enum ExtensionManagerCallbackError: LocalizedError, Equatable, Sendable {
         case .privateWindowsUnsupported,
              .optionsURLOutsideExtensionDirectory:
             return 7
+        case .multipleWindowTabsUnsupported:
+            return 8
         }
     }
 
@@ -74,6 +77,8 @@ enum ExtensionManagerCallbackError: LocalizedError, Equatable, Sendable {
             return "Sumi does not support private extension windows without an isolated private extension runtime"
         case .optionsURLOutsideExtensionDirectory:
             return "Options URL outside extension directory"
+        case .multipleWindowTabsUnsupported:
+            return "Sumi cannot atomically create an extension window with multiple initial tabs"
         }
     }
 
@@ -291,6 +296,7 @@ final class ExtensionActionPopupAnchor {
     let extensionID: String
     let profileID: UUID
     let windowID: UUID
+    let tabID: UUID?
     let sessionToken: UUID
     let capturedAt: Date
     weak var buttonView: NSView?
@@ -300,6 +306,7 @@ final class ExtensionActionPopupAnchor {
         extensionID: String,
         profileID: UUID,
         windowID: UUID,
+        tabID: UUID? = nil,
         sessionToken: UUID = UUID(),
         capturedAt: Date = Date(),
         buttonView: NSView?,
@@ -308,6 +315,7 @@ final class ExtensionActionPopupAnchor {
         self.extensionID = extensionID
         self.profileID = profileID
         self.windowID = windowID
+        self.tabID = tabID
         self.sessionToken = sessionToken
         self.capturedAt = capturedAt
         self.buttonView = buttonView

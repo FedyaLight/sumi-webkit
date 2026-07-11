@@ -52,7 +52,8 @@ final class AuxiliaryWindowUIDelegate: NSObject, WKUIDelegate {
             || windowFeatures.sumiOrigin != nil
 
         if isSizedPopup {
-            guard let popups,
+            guard let sourceWebView = webView as? FocusableWKWebView,
+                  let popups,
                   let sourceTab = sessions?.session(for: webView)?.tab
                     ?? openerTab
             else { return nil }
@@ -67,15 +68,18 @@ final class AuxiliaryWindowUIDelegate: NSObject, WKUIDelegate {
 
             let parentSession = sessions?.session(for: webView)
             let ownerExtensionID = parentSession?.ownerExtensionID
+            let sourceDocumentURL = navigationAction.sumiWebKitSourceURL
+                ?? sourceWebView.committedURL
+                ?? sourceWebView.url
             let isExtensionOriginated = ownerExtensionID != nil
                 || SumiPopupNavigationOrigin.isExtensionOriginatedExternalPopupNavigation(
-                    sourceURL: navigationAction.sumiWebKitSourceURL ?? sourceTab.url,
+                    sourceURL: sourceDocumentURL,
                     requestURL: navigationAction.request.url
                 )
             guard let tabContext = sourceTab.popupPermissionTabContext(for: webView) else {
                 return nil
             }
-            let activationState = sourceTab.popupUserActivationTracker.activationState(
+            let activationState = sourceWebView.popupUserActivation.claim(
                 webKitUserInitiated: navigationAction.isUserInitiated
             )
             let request = SumiPopupPermissionRequest.fromWKNavigationAction(
@@ -91,18 +95,19 @@ final class AuxiliaryWindowUIDelegate: NSObject, WKUIDelegate {
                 return nil
             }
             guard permissionResult.isAllowed else { return nil }
-            sourceTab.popupUserActivationTracker.consumeIfUserActivated(request.userActivation)
-
             return popups.presentWebPopup(
                 configuration: configuration,
                 request: navigationAction.request,
                 windowFeatures: windowFeatures,
                 openerTab: sourceTab,
+                explicitOpenerWindow: webView.window,
+                explicitOpenerProfileID: sourceTab.profileId
+                    ?? sourceTab.resolveProfile()?.id,
                 isExtensionOriginated: isExtensionOriginated,
                 shouldActivateApp: true,
                 nestedDepth: childDepth,
                 ownerExtensionID: ownerExtensionID,
-                extensionOwnedSourceURL: navigationAction.sumiWebKitSourceURL ?? sourceTab.url
+                extensionOwnedSourceURL: sourceDocumentURL
             )
         }
 
@@ -117,7 +122,8 @@ final class AuxiliaryWindowUIDelegate: NSObject, WKUIDelegate {
         initiatedByFrame frame: WKFrameInfo,
         completionHandler: @escaping @MainActor @Sendable ([URL]?) -> Void
     ) {
-        guard let tab = sessions?.session(for: webView)?.tab,
+        guard let sourceWebView = webView as? FocusableWKWebView,
+              let tab = sessions?.session(for: webView)?.tab,
               let tabContext = tab.filePickerPermissionTabContext(for: webView)
         else {
             RuntimeDiagnostics.emit("📁 [AuxiliaryWindowUIDelegate] Denying file picker because browser/profile context is unavailable.")
@@ -125,7 +131,9 @@ final class AuxiliaryWindowUIDelegate: NSObject, WKUIDelegate {
             return
         }
 
-        let activationState = tab.popupUserActivationTracker.activationState(webKitUserInitiated: nil)
+        let activationState = sourceWebView.popupUserActivation.claim(
+            webKitUserInitiated: nil
+        )
         let request = SumiFilePickerPermissionRequest(
             parameters: parameters,
             frame: frame,
@@ -143,7 +151,6 @@ final class AuxiliaryWindowUIDelegate: NSObject, WKUIDelegate {
             completionHandler(nil)
             return
         }
-        tab.popupUserActivationTracker.consumeIfUserActivated(activationState)
     }
 
     func webView(

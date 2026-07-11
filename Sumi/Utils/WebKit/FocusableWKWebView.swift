@@ -1,15 +1,7 @@
 import AppKit
 import Carbon
-import Combine
 import WebKit
 import SumiWebRuntime
-
-enum SumiWebViewInteractionEvent {
-    case mouseDown(NSEvent)
-    case middleMouseDown(NSEvent)
-    case keyDown(NSEvent)
-    case scrollWheel(NSEvent)
-}
 
 @MainActor
 @objc(Sumi_FocusableWKWebView)
@@ -33,11 +25,14 @@ final class FocusableWKWebView: WKWebView {
     private var glanceCursorStabilizationOwner: WebKitGlanceCursorStabilizationOwner?
 
     weak var owningTab: Tab?
+    let gestures = WebViewGestureState()
+    let hoveredLink = WebViewHoveredLinkState()
+    let contextMenu = WebViewContextMenuState()
+    let popupUserActivation = SumiPopupUserActivationTracker()
     /// AppKit overlay scroll chrome owned by `SumiWebViewContainerView`.
     weak var overlayScrollChrome: WebContentOverlayScrollChrome?
-    let interactionEventsPublisher = PassthroughSubject<SumiWebViewInteractionEvent, Never>()
     private var findInPageCompletionHandler: ((FindResult) -> Void)?
-    private var shouldSwallowNextMouseUpAfterDynamicGlance = false
+    private var primaryMouseDownReceipt: WebViewGestureReceipt?
     var isTransientChromeMouseTrackingSuppressionExempt = false {
         didSet {
             guard isTransientChromeMouseTrackingSuppressionExempt != oldValue else { return }
@@ -138,7 +133,7 @@ final class FocusableWKWebView: WKWebView {
                 self?.webKitMouseTrackingLoadSheddingOwner?.refresh()
             },
             clearHoveredLink: { [weak self] in
-                self?.owningTab?.updateHoveredLink(nil)
+                self?.hoveredLink.update(nil)
             }
         )
         transientChromeInteractionShieldOwner = owner
@@ -222,12 +217,7 @@ final class FocusableWKWebView: WKWebView {
     }
 
     override func mouseDown(with event: NSEvent) {
-        owningTab?.setClickModifierFlags(event.modifierFlags)
-        owningTab?.recordPopupUserActivation(event, kind: "mouseDown")
-
-        if routeDynamicGlanceIfNeeded(with: event) {
-            return
-        }
+        primaryMouseDownReceipt = recordUserGesture(event, kind: .primaryMouseDown)
 
         if Self.shouldApplyControlClickFix(
             event: event,
@@ -257,21 +247,9 @@ final class FocusableWKWebView: WKWebView {
         performDefaultMouseDownBehavior(with: event)
     }
 
-    private func routeDynamicGlanceIfNeeded(with event: NSEvent) -> Bool {
-        guard let tab = owningTab,
-              let targetURL = tab.dynamicGlanceURLForWebViewMouseDown(event)
-        else { return false }
-
-        shouldSwallowNextMouseUpAfterDynamicGlance = true
-        tab.openURLInGlanceFromLinkGesture(targetURL)
-        tab.activate()
-        tab.setClickModifierFlags([])
-        return true
-    }
-
     private func performDefaultMouseDownBehavior(with event: NSEvent) {
         super.mouseDown(with: event)
-        owningTab?.activate()
+        owningTab?.linkPresentationCommands.activateSource(of: self)
     }
 
     override func mouseMoved(with event: NSEvent) {
@@ -321,18 +299,13 @@ final class FocusableWKWebView: WKWebView {
     }
 
     override func otherMouseDown(with event: NSEvent) {
-        owningTab?.setClickModifierFlags(event.modifierFlags)
-        owningTab?.recordPopupUserActivation(event, kind: "middleMouseDown")
+        recordUserGesture(event, kind: .auxiliaryMouseDown)
         super.otherMouseDown(with: event)
-        if event.buttonNumber == 2 {
-            interactionEventsPublisher.send(.middleMouseDown(event))
-        }
     }
 
     override func keyDown(with event: NSEvent) {
-        owningTab?.recordPopupUserActivation(event, kind: "keyDown")
+        recordUserGesture(event, kind: .keyDown)
         super.keyDown(with: event)
-        interactionEventsPublisher.send(.keyDown(event))
         if Self.isPageScrollKey(event) {
             overlayScrollChrome?.handleScrollWheel()
         }
@@ -340,8 +313,35 @@ final class FocusableWKWebView: WKWebView {
 
     override func scrollWheel(with event: NSEvent) {
         super.scrollWheel(with: event)
-        interactionEventsPublisher.send(.scrollWheel(event))
         overlayScrollChrome?.handleScrollWheel()
+    }
+
+    @discardableResult
+    func recordUserGesture(
+        _ event: NSEvent,
+        kind: WebViewGestureKind
+    ) -> WebViewGestureReceipt {
+        let receipt = gestures.record(event, kind: kind)
+        popupUserActivation.record(event: event, kind: kind.popupActivationKind)
+        guard let tab = owningTab else { return receipt }
+        tab.navigationRuntime.normalWebViewExtensionRuntime.reconcileOnUserGesture(
+            tab,
+            "FocusableWKWebView.recordUserGesture"
+        )
+        return receipt
+    }
+
+    func resetPageInteractionState() {
+        primaryMouseDownReceipt = nil
+        gestures.clear()
+        hoveredLink.update(nil)
+        contextMenu.clear()
+        popupUserActivation.clear()
+    }
+
+    func consumeGestureForBrowserCommand() {
+        gestures.clear()
+        popupUserActivation.spendCurrentActivation()
     }
 
     private static func isPageScrollKey(_ event: NSEvent) -> Bool {
@@ -354,7 +354,7 @@ final class FocusableWKWebView: WKWebView {
     }
 
     override func rightMouseDown(with event: NSEvent) {
-        owningTab?.activate()
+        owningTab?.linkPresentationCommands.activateSource(of: self)
         if RuntimeDiagnostics.isDeveloperInspectionEnabled {
             isInspectable = true
         }
@@ -389,18 +389,11 @@ final class FocusableWKWebView: WKWebView {
     }
 
     override func mouseUp(with event: NSEvent) {
-        if shouldSwallowNextMouseUpAfterDynamicGlance {
-            shouldSwallowNextMouseUpAfterDynamicGlance = false
-            owningTab?.setClickModifierFlags([])
-            owningTab?.clearWebViewInteractionEvent()
-            return
-        }
-
         super.mouseUp(with: event)
-        let owningTab = owningTab
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-            owningTab?.setClickModifierFlags([])
-            owningTab?.clearWebViewInteractionEvent()
+        let gestureReceipt = primaryMouseDownReceipt
+        primaryMouseDownReceipt = nil
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+            self?.gestures.clear(ifCurrent: gestureReceipt)
         }
     }
 

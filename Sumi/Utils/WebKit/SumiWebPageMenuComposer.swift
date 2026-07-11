@@ -11,17 +11,15 @@ struct SumiWebPageMenuComposer {
     let selectedText: String?
 
     func compose() {
-        let targetSnapshot = webView.owningTab?.recentWebPageContextMenuTarget()
         let context = SumiWebPageMenuContext(
             menu: menu,
-            targetHint: targetHint ?? targetSnapshot?.kind,
-            selectedText: selectedText ?? targetSnapshot?.selectedText,
+            targetHint: targetHint,
+            selectedText: selectedText,
             searchProviderName: searchProviderName
         )
         let nativeComposer = SumiWebPageNativeMenuComposer(
             menu: menu,
-            context: context,
-            actionTarget: actionTarget
+            context: context
         )
         let ownedComposer = SumiWebPageOwnedMenuComposer(
             menu: menu,
@@ -40,8 +38,6 @@ struct SumiWebPageMenuComposer {
         if context.isPageBackground {
             nativeComposer.removePageNavigationItems()
             ownedComposer.insertPageBackgroundCommands()
-        } else {
-            nativeComposer.replaceAmbiguousItems()
         }
 
         ownedComposer.insertSelectionFallbackCommandsIfNeeded()

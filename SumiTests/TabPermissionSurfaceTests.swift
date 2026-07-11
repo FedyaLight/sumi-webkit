@@ -46,7 +46,9 @@ final class TabPermissionSurfaceTests: XCTestCase {
                 glanceLookupTabIds.append(tabId)
                 glanceLookupWebViewIds.append(ObjectIdentifier(candidateWebView))
                 return candidateWebView === webView
-            }
+            },
+            surfaceState: { _, _ in .inactive },
+            profile: { _, _ in nil }
         )
 
         let surfaceState = tab.permissionRequestSurfaceState(for: webView)
@@ -71,16 +73,29 @@ final class TabPermissionSurfaceTests: XCTestCase {
         )
     }
 
-    func testExternalSchemeCurrentPageClosureInvalidatesAfterWebViewReplacement() throws {
+    func testExternalSchemeCurrentPageClosureInvalidatesAfterWebViewReplacement() async throws {
         let browserManager = BrowserManager()
-        let tab = makeTab(browserManager: browserManager)
-        let webView = PermissionCommittedURLWebView()
-        let intent = tab.beginMainFrameNavigationIntent(to: tab.url)
+        let tab = makeManagedTab(in: browserManager)
+        let (windowRegistry, windowState) = registerWindow(
+            in: browserManager,
+            selecting: tab
+        )
+        let webView = try makePermissionWebView(for: tab)
+        browserManager.testWebViewRuntime().ownershipService.assign(
+            webView,
+            to: tab,
+            in: windowState.id
+        )
+        let committedURL = try await loadCommittedDocument(
+            on: webView,
+            at: tab.url
+        )
+        let intent = tab.beginMainFrameNavigationIntent(to: committedURL)
         let navigation = bindCommittedDocument(
             on: webView,
             tab: tab,
             intent: intent,
-            committedURL: tab.url
+            committedURL: committedURL
         )
         let context = try XCTUnwrap(tab.externalSchemePermissionTabContext(for: webView))
 
@@ -93,7 +108,9 @@ final class TabPermissionSurfaceTests: XCTestCase {
 
         XCTAssertFalse(try XCTUnwrap(context.isCurrentPage)())
         XCTAssertEqual(tab.currentPermissionPageId(), "\(tab.id.uuidString.lowercased()):1")
-        withExtendedLifetime(navigation) { /* Keep navigation identity alive. */ }
+        withExtendedLifetime((windowRegistry, navigation)) {
+            /* Keep the physical residence and navigation identity alive. */
+        }
     }
 
     func testPermissionSurfaceOwnerUsesNarrowContextWithoutTab() throws {
@@ -126,8 +143,13 @@ final class TabPermissionSurfaceTests: XCTestCase {
                 tabId: tabId,
                 currentURL: { currentURL },
                 resolveProfile: { profile },
-                isActiveTab: { true },
-                isVisibleTab: { false },
+                profile: { _ in profile },
+                surfaceState: { _ in
+                    TabPermissionSurfaceState(
+                        isActive: true,
+                        isVisible: false
+                    )
+                },
                 pageIdentity: {
                     let tabIdString = tabId.uuidString.lowercased()
                     let generation = String(pageGeneration)
@@ -194,26 +216,30 @@ final class TabPermissionSurfaceTests: XCTestCase {
         )
     }
 
-    func testPermissionSurfaceStateAndPopupContextUseActiveVisibleWindowSurface() throws {
+    func testPermissionSurfaceStateAndPopupContextUseActiveVisibleWindowSurface() async throws {
         let browserManager = BrowserManager()
         let tab = makeManagedTab(in: browserManager)
         let (windowRegistry, windowState) = registerWindow(in: browserManager, selecting: tab)
-        let webView = PermissionCommittedURLWebView()
-        let intent = tab.beginMainFrameNavigationIntent(to: tab.url)
+        let webView = try makePermissionWebView(for: tab)
+        let committedURL = try await loadCommittedDocument(
+            on: webView,
+            at: tab.url
+        )
+        let intent = tab.beginMainFrameNavigationIntent(to: committedURL)
         let navigation = bindCommittedDocument(
             on: webView,
             tab: tab,
             intent: intent,
-            committedURL: tab.url
+            committedURL: committedURL
         )
 
-        XCTAssertTrue(tab.permissionRequestSurfaceState(for: webView).isActive)
+        XCTAssertFalse(tab.permissionRequestSurfaceState(for: webView).isActive)
         XCTAssertFalse(tab.permissionRequestSurfaceState(for: webView).isVisible)
 
         let webViewRuntime = browserManager.testWebViewRuntime()
-        webViewRuntime.ownershipService.registerTrackedWebView(
+        webViewRuntime.ownershipService.assign(
             webView,
-            for: tab,
+            to: tab,
             in: windowState.id
         )
 
@@ -228,24 +254,105 @@ final class TabPermissionSurfaceTests: XCTestCase {
         withExtendedLifetime((windowRegistry, navigation)) { /* no-op */ }
     }
 
-    func testPermissionContextAcceptsAuthorityAndCompatibleCommittedClone() throws {
+    func testPermissionSurfaceStateFollowsExactCloneWindow() throws {
         let browserManager = BrowserManager()
-        let tab = makeTab(browserManager: browserManager)
+        let tab = makeManagedTab(in: browserManager)
+        let (windowRegistry, firstWindow) = registerWindow(
+            in: browserManager,
+            selecting: tab
+        )
+        let secondWindow = BrowserWindowState()
+        secondWindow.tabManager = browserManager.tabManager
+        secondWindow.currentSpaceId = firstWindow.currentSpaceId
+        secondWindow.currentProfileId = firstWindow.currentProfileId
+        secondWindow.currentTabId = tab.id
+        windowRegistry.register(secondWindow)
+
+        let firstWebView = PermissionCommittedURLWebView()
+        let secondWebView = PermissionCommittedURLWebView()
+        let intent = tab.beginMainFrameNavigationIntent(to: tab.url)
+        let firstNavigation = bindCommittedDocument(
+            on: firstWebView,
+            tab: tab,
+            intent: intent,
+            committedURL: tab.url
+        )
+        let secondNavigation = bindCommittedDocument(
+            on: secondWebView,
+            tab: tab,
+            intent: intent,
+            committedURL: tab.url
+        )
+        let runtime = browserManager.testWebViewRuntime()
+        runtime.ownershipService.registerTrackedWebView(
+            firstWebView,
+            for: tab,
+            in: firstWindow.id
+        )
+        runtime.ownershipService.registerTrackedWebView(
+            secondWebView,
+            for: tab,
+            in: secondWindow.id
+        )
+
+        var firstState = tab.permissionRequestSurfaceState(for: firstWebView)
+        var secondState = tab.permissionRequestSurfaceState(for: secondWebView)
+        XCTAssertTrue(firstState.isActive)
+        XCTAssertTrue(firstState.isVisible)
+        XCTAssertFalse(secondState.isActive)
+        XCTAssertTrue(secondState.isVisible)
+
+        windowRegistry.setActive(secondWindow)
+
+        firstState = tab.permissionRequestSurfaceState(for: firstWebView)
+        secondState = tab.permissionRequestSurfaceState(for: secondWebView)
+        XCTAssertFalse(firstState.isActive)
+        XCTAssertTrue(firstState.isVisible)
+        XCTAssertTrue(secondState.isActive)
+        XCTAssertTrue(secondState.isVisible)
+        withExtendedLifetime((firstNavigation, secondNavigation)) { /* no-op */ }
+    }
+
+    func testPermissionContextAcceptsAuthorityAndCompatibleCommittedClone() async throws {
+        let browserManager = BrowserManager()
+        let tab = makeManagedTab(in: browserManager)
+        let (windowRegistry, firstWindow) = registerWindow(
+            in: browserManager,
+            selecting: tab
+        )
+        let secondWindow = BrowserWindowState()
+        secondWindow.tabManager = browserManager.tabManager
+        secondWindow.currentSpaceId = firstWindow.currentSpaceId
+        secondWindow.currentProfileId = firstWindow.currentProfileId
+        secondWindow.currentTabId = tab.id
+        windowRegistry.register(secondWindow)
         let committedURL = URL(string: "https://committed.example/document")!
-        let authorityWebView = PermissionCommittedURLWebView()
-        let cloneWebView = PermissionCommittedURLWebView()
-        let intent = tab.beginMainFrameNavigationIntent(to: committedURL)
+        let authorityWebView = try makePermissionWebView(for: tab)
+        let cloneWebView = try makePermissionWebView(for: tab)
+        let ownership = browserManager.testWebViewRuntime().ownershipService
+        ownership.assign(authorityWebView, to: tab, in: firstWindow.id)
+        ownership.assign(cloneWebView, to: tab, in: secondWindow.id)
+        let authorityCommittedURL = try await loadCommittedDocument(
+            on: authorityWebView,
+            at: committedURL
+        )
+        let cloneCommittedURL = try await loadCommittedDocument(
+            on: cloneWebView,
+            at: committedURL
+        )
+        XCTAssertEqual(cloneCommittedURL, authorityCommittedURL)
+        let intent = tab.beginMainFrameNavigationIntent(to: authorityCommittedURL)
         let authorityNavigation = bindCommittedDocument(
             on: authorityWebView,
             tab: tab,
             intent: intent,
-            committedURL: committedURL
+            committedURL: authorityCommittedURL
         )
         let cloneNavigation = bindCommittedDocument(
             on: cloneWebView,
             tab: tab,
             intent: intent,
-            committedURL: committedURL
+            committedURL: cloneCommittedURL
         )
 
         let authorityLease = try XCTUnwrap(
@@ -262,17 +369,19 @@ final class TabPermissionSurfaceTests: XCTestCase {
             authorityLease.documentGeneration
         )
         XCTAssertNotEqual(cloneLease.participantID, authorityLease.participantID)
-        XCTAssertEqual(cloneLease.committedURL, committedURL)
-        XCTAssertEqual(cloneLease.presentationURL, committedURL)
+        XCTAssertEqual(cloneLease.committedURL, authorityCommittedURL)
+        XCTAssertEqual(cloneLease.presentationURL, authorityCommittedURL)
         XCTAssertEqual(
             tab.externalSchemePermissionTabContext(for: authorityWebView)?.committedURL,
-            committedURL
+            authorityCommittedURL
         )
         XCTAssertEqual(
             tab.externalSchemePermissionTabContext(for: cloneWebView)?.committedURL,
-            committedURL
+            cloneCommittedURL
         )
-        withExtendedLifetime((authorityNavigation, cloneNavigation)) { /* no-op */ }
+        withExtendedLifetime(
+            (windowRegistry, authorityNavigation, cloneNavigation)
+        ) { /* no-op */ }
     }
 
     func testPermissionContextRejectsDivergedAndStaleCloneWithoutBorrowingTabOrigin() {
@@ -335,18 +444,31 @@ final class TabPermissionSurfaceTests: XCTestCase {
         ) { /* no-op */ }
     }
 
-    func testPendingPermissionContextInvalidatesOnSameDocumentPresentationChange() throws {
+    func testPendingPermissionContextInvalidatesOnSameDocumentPresentationChange() async throws {
         let browserManager = BrowserManager()
-        let tab = makeTab(browserManager: browserManager)
+        let tab = makeManagedTab(in: browserManager)
+        let (windowRegistry, windowState) = registerWindow(
+            in: browserManager,
+            selecting: tab
+        )
         let committedURL = URL(string: "https://example.com/document")!
         let presentationURL = URL(string: "https://example.com/document#updated")!
-        let webView = PermissionCommittedURLWebView()
-        let intent = tab.beginMainFrameNavigationIntent(to: committedURL)
+        let webView = try makePermissionWebView(for: tab)
+        browserManager.testWebViewRuntime().ownershipService.assign(
+            webView,
+            to: tab,
+            in: windowState.id
+        )
+        let actualCommittedURL = try await loadCommittedDocument(
+            on: webView,
+            at: committedURL
+        )
+        let intent = tab.beginMainFrameNavigationIntent(to: actualCommittedURL)
         let navigation = bindCommittedDocument(
             on: webView,
             tab: tab,
             intent: intent,
-            committedURL: committedURL
+            committedURL: actualCommittedURL
         )
         let context = try XCTUnwrap(
             tab.externalSchemePermissionTabContext(for: webView)
@@ -368,10 +490,12 @@ final class TabPermissionSurfaceTests: XCTestCase {
 
         XCTAssertFalse(try XCTUnwrap(context.isCurrentPage)())
         let updatedLease = try XCTUnwrap(tab.mainFrameDocumentLease(for: webView))
-        XCTAssertEqual(updatedLease.committedURL, committedURL)
+        XCTAssertEqual(updatedLease.committedURL, actualCommittedURL)
         XCTAssertEqual(updatedLease.presentationURL, presentationURL)
         XCTAssertNotNil(tab.externalSchemePermissionTabContext(for: webView))
-        withExtendedLifetime((navigation, sameDocumentNavigation)) { /* no-op */ }
+        withExtendedLifetime(
+            (windowRegistry, navigation, sameDocumentNavigation)
+        ) { /* no-op */ }
     }
 
     private func makeTab(browserManager: BrowserManager? = nil) -> Tab {
@@ -401,15 +525,21 @@ final class TabPermissionSurfaceTests: XCTestCase {
         )
     }
 
+    private func makePermissionWebView(for tab: Tab) throws -> FocusableWKWebView {
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = try XCTUnwrap(tab.resolveProfile()).dataStore
+        return FocusableWKWebView(frame: .zero, configuration: configuration)
+    }
+
     @discardableResult
     private func bindCommittedDocument(
-        on webView: PermissionCommittedURLWebView,
+        on webView: WKWebView,
         tab: Tab,
         intent: TabMainFrameNavigationIntent,
         committedURL: URL,
         isPDF: Bool = false
     ) -> NSObject {
-        webView.reportedCommittedURL = committedURL
+        (webView as? PermissionCommittedURLWebView)?.reportedCommittedURL = committedURL
         XCTAssertTrue(tab.markDeferredMainFrameLoad(on: webView, intent: intent))
         XCTAssertEqual(
             tab.claimDeferredMainFrameLoad(
@@ -435,6 +565,25 @@ final class TabPermissionSurfaceTests: XCTestCase {
         return navigation
     }
 
+    private func loadCommittedDocument(
+        on webView: WKWebView,
+        at url: URL
+    ) async throws -> URL {
+        let didFinish = expectation(description: "permission document loaded")
+        let previousDelegate = webView.navigationDelegate
+        let delegate = PermissionDocumentNavigationDelegate {
+            didFinish.fulfill()
+        }
+        webView.navigationDelegate = delegate
+        webView.loadHTMLString(
+            "<html><body>permission source</body></html>",
+            baseURL: url
+        )
+        await fulfillment(of: [didFinish], timeout: 5)
+        webView.navigationDelegate = previousDelegate
+        return try XCTUnwrap(webView.committedURL)
+    }
+
     @discardableResult
     private func registerWindow(
         in browserManager: BrowserManager,
@@ -445,11 +594,26 @@ final class TabPermissionSurfaceTests: XCTestCase {
 
         let windowState = BrowserWindowState()
         windowState.tabManager = browserManager.tabManager
+        windowState.currentSpaceId = tab.spaceId
+        windowState.currentProfileId = tab.resolveProfile()?.id
         windowState.currentTabId = tab.id
         windowRegistry.register(windowState)
         windowRegistry.setActive(windowState)
 
         return (windowRegistry, windowState)
+    }
+}
+
+@MainActor
+private final class PermissionDocumentNavigationDelegate: NSObject, WKNavigationDelegate {
+    private let didFinish: () -> Void
+
+    init(didFinish: @escaping () -> Void) {
+        self.didFinish = didFinish
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        didFinish()
     }
 }
 

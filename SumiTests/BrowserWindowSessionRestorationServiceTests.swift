@@ -1,10 +1,570 @@
 import SwiftData
+import WebKit
 import XCTest
 
 @testable import Sumi
 
 @MainActor
 final class WindowSessionRegistrationTests: XCTestCase {
+    func testPreparedWindowDoesNotPublishExtensionLifecycleBeforeRegistryCommit()
+        throws {
+        let fixture = try makeFixture()
+        let windowState = BrowserWindowState()
+        fixture.registration.prepareRegistration(windowState)
+        let tab = Tab(url: URL(string: "https://initial.example")!)
+        let webView = FocusableWKWebView()
+        webView.owningTab = tab
+        windowState.currentTabId = tab.id
+        let events = ExtensionPublicationEventRecorder()
+        let receipt = RecordingInitialTabPublication(
+            window: windowState,
+            tab: tab,
+            webView: webView,
+            events: events
+        )
+        fixture.extensions.events = events
+        fixture.extensions.initialTabPreparation = .prepared(receipt)
+        fixture.extensions.onOpen = { publishedWindow in
+            XCTAssertIdentical(publishedWindow, windowState)
+            XCTAssertEqual(publishedWindow.currentTabId, tab.id)
+            XCTAssertTrue(receipt.validateBeforeWindowPublication())
+            XCTAssertEqual(events.values, ["window"])
+        }
+
+        XCTAssertEqual(
+            fixture.extensionPublication.stageInitialTab(
+                tab,
+                webView: webView,
+                in: windowState,
+                reason: "test"
+            ),
+            .extensionPrepared
+        )
+        XCTAssertTrue(
+            fixture.extensionPublication
+                .validateStagedInitialTab(
+                    tab,
+                    webView: webView,
+                    in: windowState
+                )
+        )
+        XCTAssertTrue(events.values.isEmpty)
+        XCTAssertTrue(fixture.extensions.openedWindowIDs.isEmpty)
+        XCTAssertEqual(receipt.publishCount, 0)
+
+        fixture.registration.commitRegistration(windowState)
+
+        XCTAssertEqual(events.values, ["window", "tab"])
+        XCTAssertEqual(receipt.publishCount, 1)
+        XCTAssertEqual(receipt.cancelCount, 0)
+    }
+
+    func testRejectedWindowCancelsInitialTabWithoutPublishingEvents() throws {
+        let fixture = try makeFixture()
+        let windowState = BrowserWindowState()
+        fixture.registration.prepareRegistration(windowState)
+        let tab = Tab(url: URL(string: "https://rollback.example")!)
+        let webView = FocusableWKWebView()
+        webView.owningTab = tab
+        windowState.currentTabId = tab.id
+        let events = ExtensionPublicationEventRecorder()
+        let receipt = RecordingInitialTabPublication(
+            window: windowState,
+            tab: tab,
+            webView: webView,
+            events: events
+        )
+        fixture.extensions.events = events
+        fixture.extensions.initialTabPreparation = .prepared(receipt)
+        XCTAssertEqual(
+            fixture.extensionPublication.stageInitialTab(
+                tab,
+                webView: webView,
+                in: windowState,
+                reason: "test"
+            ),
+            .extensionPrepared
+        )
+
+        fixture.registration.discardRegistration(windowState)
+
+        XCTAssertTrue(events.values.isEmpty)
+        XCTAssertEqual(receipt.cancelCount, 1)
+        XCTAssertEqual(receipt.publishCount, 0)
+    }
+
+    func testFailedTabPublicationRevokesWindowWithoutPreconditionCrash() throws {
+        let fixture = try makeFixture()
+        let window = BrowserWindowState()
+        fixture.registration.prepareRegistration(window)
+        let tab = Tab(url: URL(string: "https://reentrant.example")!)
+        let webView = FocusableWKWebView()
+        webView.owningTab = tab
+        window.currentTabId = tab.id
+        let events = ExtensionPublicationEventRecorder()
+        let receipt = RecordingInitialTabPublication(
+            window: window,
+            tab: tab,
+            webView: webView,
+            events: events
+        )
+        receipt.publishes = false
+        fixture.extensions.events = events
+        fixture.extensions.initialTabPreparation = .prepared(receipt)
+
+        XCTAssertEqual(
+            fixture.extensionPublication.stageInitialTab(
+                tab,
+                webView: webView,
+                in: window,
+                reason: "test"
+            ),
+            .extensionPrepared
+        )
+        fixture.registration.commitRegistration(window)
+
+        XCTAssertEqual(events.values, ["window", "window-revoked"])
+        XCTAssertEqual(fixture.extensions.revokedWindowIDs, [window.id])
+        XCTAssertEqual(
+            fixture.extensionPublication.initialPublicationResult(for: window),
+            .suppressed
+        )
+        XCTAssertEqual(receipt.cancelCount, 1)
+    }
+
+    func testRuntimeJoiningBetweenStageAndCommitRestagesBeforeWindowEvent() throws {
+        let fixture = try makeFixture()
+        let window = BrowserWindowState()
+        fixture.registration.prepareRegistration(window)
+        let tab = Tab(url: URL(string: "https://late-runtime.example")!)
+        let webView = FocusableWKWebView()
+        webView.owningTab = tab
+        window.currentTabId = tab.id
+        let events = ExtensionPublicationEventRecorder()
+        fixture.extensions.events = events
+        fixture.extensions.initialTabPreparation = .notParticipating
+
+        XCTAssertEqual(
+            fixture.extensionPublication.stageInitialTab(
+                tab,
+                webView: webView,
+                in: window,
+                reason: "test"
+            ),
+            .nativeOnly
+        )
+
+        let receipt = RecordingInitialTabPublication(
+            window: window,
+            tab: tab,
+            webView: webView,
+            events: events
+        )
+        fixture.extensions.initialTabPreparation = .prepared(receipt)
+        fixture.registration.commitRegistration(window)
+
+        XCTAssertEqual(events.values, ["window", "tab"])
+        XCTAssertEqual(
+            fixture.extensionPublication.initialPublicationResult(for: window),
+            .extensionPublished
+        )
+    }
+
+    func testReentrantRestageReceiptCannotBeRemovedWithoutPublishOrCancellation()
+        throws
+    {
+        let fixture = try makeFixture()
+        let window = BrowserWindowState()
+        fixture.registration.prepareRegistration(window)
+        let tab = Tab(url: URL(string: "https://nested-restage.example")!)
+        let webView = FocusableWKWebView()
+        webView.owningTab = tab
+        window.currentTabId = tab.id
+        let events = ExtensionPublicationEventRecorder()
+        fixture.extensions.events = events
+        fixture.extensions.initialTabPreparation = .notParticipating
+        XCTAssertEqual(
+            fixture.extensionPublication.stageInitialTab(
+                tab,
+                webView: webView,
+                in: window,
+                reason: "test-native-stage"
+            ),
+            .nativeOnly
+        )
+
+        let outerReceipt = RecordingInitialTabPublication(
+            window: window,
+            tab: tab,
+            webView: webView,
+            events: events
+        )
+        let nestedReceipt = RecordingInitialTabPublication(
+            window: window,
+            tab: tab,
+            webView: webView,
+            events: events
+        )
+        fixture.extensions.initialTabPreparation = .prepared(outerReceipt)
+        var didInjectNestedStage = false
+        fixture.extensions.onPrepare = { preparedWindow in
+            guard didInjectNestedStage == false else { return }
+            didInjectNestedStage = true
+            fixture.extensions.initialTabPreparation = .prepared(nestedReceipt)
+            XCTAssertEqual(
+                fixture.extensionPublication.stageInitialTab(
+                    tab,
+                    webView: webView,
+                    in: preparedWindow,
+                    reason: "test-nested-restage"
+                ),
+                .extensionPrepared
+            )
+        }
+
+        fixture.registration.commitRegistration(window)
+
+        XCTAssertTrue(didInjectNestedStage)
+        XCTAssertEqual(outerReceipt.cancelCount, 1)
+        XCTAssertEqual(
+            nestedReceipt.publishCount + nestedReceipt.cancelCount,
+            1,
+            "Every prepared receipt must be consumed or rolled back exactly once"
+        )
+    }
+
+    func testReentrantDiscardDuringInitialTabPreparationCannotResurrectPendingReceipt()
+        throws
+    {
+        let fixture = try makeFixture()
+        let window = BrowserWindowState()
+        fixture.registration.prepareRegistration(window)
+        let tab = Tab(url: URL(string: "https://prepare-reentrancy.example")!)
+        let webView = FocusableWKWebView()
+        webView.owningTab = tab
+        window.currentTabId = tab.id
+        let events = ExtensionPublicationEventRecorder()
+        let receipt = RecordingInitialTabPublication(
+            window: window,
+            tab: tab,
+            webView: webView,
+            events: events
+        )
+        fixture.extensions.events = events
+        fixture.extensions.initialTabPreparation = .prepared(receipt)
+        fixture.extensions.onPrepare = { preparedWindow in
+            XCTAssertIdentical(preparedWindow, window)
+            fixture.registration.discardRegistration(window)
+        }
+
+        let staging = fixture.extensionPublication.stageInitialTab(
+            tab,
+            webView: webView,
+            in: window,
+            reason: "test-reentrant-preparation"
+        )
+        fixture.registration.commitRegistration(window)
+
+        XCTAssertEqual(staging, .rejected)
+        XCTAssertEqual(receipt.cancelCount, 1)
+        XCTAssertEqual(receipt.publishCount, 0)
+        XCTAssertTrue(events.values.isEmpty)
+        XCTAssertNil(
+            fixture.extensionPublication.initialPublicationResult(for: window)
+        )
+    }
+
+    func testReentrantDiscardDuringInitialTabCallbackCannotPublishStaleCommitResult()
+        throws
+    {
+        let fixture = try makeFixture()
+        let window = BrowserWindowState()
+        fixture.registration.prepareRegistration(window)
+        let tab = Tab(url: URL(string: "https://publish-reentrancy.example")!)
+        let webView = FocusableWKWebView()
+        webView.owningTab = tab
+        window.currentTabId = tab.id
+        let events = ExtensionPublicationEventRecorder()
+        let receipt = RecordingInitialTabPublication(
+            window: window,
+            tab: tab,
+            webView: webView,
+            events: events
+        )
+        fixture.extensions.events = events
+        fixture.extensions.initialTabPreparation = .prepared(receipt)
+        receipt.onPublish = {
+            fixture.registration.discardRegistration(window)
+        }
+        XCTAssertEqual(
+            fixture.extensionPublication.stageInitialTab(
+                tab,
+                webView: webView,
+                in: window,
+                reason: "test-reentrant-publication"
+            ),
+            .extensionPrepared
+        )
+
+        fixture.registration.commitRegistration(window)
+
+        XCTAssertEqual(
+            events.values,
+            ["window", "tab", "tab-revoked", "window-revoked"]
+        )
+        XCTAssertEqual(receipt.publishCount, 1)
+        XCTAssertEqual(receipt.revokeCount, 1)
+        XCTAssertNil(
+            fixture.extensionPublication.initialPublicationResult(for: window),
+            "A close/discard from the synchronous Tab callback must remain authoritative"
+        )
+    }
+
+    func testRuntimeTeardownDuringInitialTabCallbackCannotLeavePublishedCommitResult()
+        throws
+    {
+        let fixture = try makeFixture()
+        let window = BrowserWindowState()
+        fixture.registration.prepareRegistration(window)
+        let tab = Tab(url: URL(string: "https://runtime-teardown.example")!)
+        let webView = FocusableWKWebView()
+        webView.owningTab = tab
+        window.currentTabId = tab.id
+        let events = ExtensionPublicationEventRecorder()
+        let receipt = RecordingInitialTabPublication(
+            window: window,
+            tab: tab,
+            webView: webView,
+            events: events
+        )
+        fixture.extensions.events = events
+        fixture.extensions.initialTabPreparation = .prepared(receipt)
+        receipt.onPublish = {
+            fixture.extensions.isPublicationCurrent = false
+        }
+        XCTAssertEqual(
+            fixture.extensionPublication.stageInitialTab(
+                tab,
+                webView: webView,
+                in: window,
+                reason: "test-runtime-teardown"
+            ),
+            .extensionPrepared
+        )
+
+        fixture.registration.commitRegistration(window)
+
+        XCTAssertEqual(
+            events.values,
+            ["window", "tab", "tab-revoked", "window-revoked"]
+        )
+        XCTAssertEqual(fixture.extensions.revokedWindowIDs, [window.id])
+        XCTAssertEqual(receipt.revokeCount, 1)
+        XCTAssertEqual(
+            fixture.extensionPublication.initialPublicationResult(for: window),
+            .suppressed
+        )
+    }
+
+    func testRegistryRepairBalancesExactTabBeforeWindowPublication() throws {
+        let fixture = try makeFixture()
+        let window = BrowserWindowState()
+        fixture.registration.prepareRegistration(window)
+        let tab = Tab(url: URL(string: "https://repair.example")!)
+        let webView = FocusableWKWebView()
+        webView.owningTab = tab
+        window.currentTabId = tab.id
+        let events = ExtensionPublicationEventRecorder()
+        let receipt = RecordingInitialTabPublication(
+            window: window,
+            tab: tab,
+            webView: webView,
+            events: events
+        )
+        fixture.extensions.events = events
+        fixture.extensions.initialTabPreparation = .prepared(receipt)
+        XCTAssertEqual(
+            fixture.extensionPublication.stageInitialTab(
+                tab,
+                webView: webView,
+                in: window,
+                reason: "test-registry-repair"
+            ),
+            .extensionPrepared
+        )
+        fixture.registration.commitRegistration(window)
+
+        fixture.extensionPublication.discardRegistrations(notIn: [])
+
+        XCTAssertEqual(
+            events.values,
+            ["window", "tab", "tab-revoked", "window-revoked"]
+        )
+        XCTAssertEqual(receipt.revokeCount, 1)
+        XCTAssertNil(
+            fixture.extensionPublication.initialPublicationResult(for: window)
+        )
+    }
+
+    func testPreparingExactCommittedWindowIsIdempotentUntilRegistryRepair()
+        throws {
+        let fixture = try makeFixture()
+        let window = BrowserWindowState()
+        fixture.registration.prepareRegistration(window)
+        let tab = Tab(url: URL(string: "https://idempotent.example")!)
+        let webView = FocusableWKWebView()
+        webView.owningTab = tab
+        window.currentTabId = tab.id
+        let events = ExtensionPublicationEventRecorder()
+        let receipt = RecordingInitialTabPublication(
+            window: window,
+            tab: tab,
+            webView: webView,
+            events: events
+        )
+        fixture.extensions.events = events
+        fixture.extensions.initialTabPreparation = .prepared(receipt)
+        XCTAssertEqual(
+            fixture.extensionPublication.stageInitialTab(
+                tab,
+                webView: webView,
+                in: window,
+                reason: "test-idempotent-prepare"
+            ),
+            .extensionPrepared
+        )
+        fixture.registration.commitRegistration(window)
+
+        fixture.extensionPublication.prepareRegistration(window)
+        XCTAssertEqual(
+            fixture.extensionPublication.initialPublicationResult(for: window),
+            .extensionPublished
+        )
+        fixture.extensionPublication.discardRegistrations(notIn: [])
+
+        XCTAssertEqual(
+            events.values,
+            ["window", "tab", "tab-revoked", "window-revoked"]
+        )
+        XCTAssertEqual(receipt.revokeCount, 1)
+        XCTAssertNil(
+            fixture.extensionPublication.initialPublicationResult(for: window)
+        )
+    }
+
+    func testUUIDImpostorCannotCancelExactInitialTabReceipt() throws {
+        let fixture = try makeFixture()
+        let original = BrowserWindowState()
+        fixture.registration.prepareRegistration(original)
+        let tab = Tab(url: URL(string: "https://identity.example")!)
+        let webView = FocusableWKWebView()
+        webView.owningTab = tab
+        original.currentTabId = tab.id
+        let receipt = RecordingInitialTabPublication(
+            window: original,
+            tab: tab,
+            webView: webView,
+            events: ExtensionPublicationEventRecorder()
+        )
+        fixture.extensions.initialTabPreparation = .prepared(receipt)
+        XCTAssertEqual(
+            fixture.extensionPublication.stageInitialTab(
+                tab,
+                webView: webView,
+                in: original,
+                reason: "test"
+            ),
+            .extensionPrepared
+        )
+
+        fixture.registration.discardRegistration(
+            BrowserWindowState(id: original.id)
+        )
+
+        XCTAssertEqual(receipt.cancelCount, 0)
+        fixture.registration.discardRegistration(original)
+        XCTAssertEqual(receipt.cancelCount, 1)
+    }
+
+    func testUUIDImpostorCannotReplacePendingInitialTabReceipt() throws {
+        let fixture = try makeFixture()
+        let sharedID = UUID()
+        let original = BrowserWindowState(id: sharedID)
+        let impostor = BrowserWindowState(id: sharedID)
+        fixture.extensionPublication.prepareRegistration(original)
+        let tab = Tab(url: URL(string: "https://pending-identity.example")!)
+        let webView = FocusableWKWebView()
+        webView.owningTab = tab
+        original.currentTabId = tab.id
+        let receipt = RecordingInitialTabPublication(
+            window: original,
+            tab: tab,
+            webView: webView,
+            events: ExtensionPublicationEventRecorder()
+        )
+        fixture.extensions.initialTabPreparation = .prepared(receipt)
+        XCTAssertEqual(
+            fixture.extensionPublication.stageInitialTab(
+                tab,
+                webView: webView,
+                in: original,
+                reason: "test-pending-identity"
+            ),
+            .extensionPrepared
+        )
+
+        fixture.extensionPublication.prepareRegistration(impostor)
+
+        XCTAssertTrue(
+            fixture.extensionPublication.validateStagedInitialTab(
+                tab,
+                webView: webView,
+                in: original
+            )
+        )
+        fixture.extensionPublication.discardRegistration(original)
+        XCTAssertEqual(receipt.cancelCount, 1)
+    }
+
+    func testSuppressedInitialTabPublishesNoExtensionWindowOrTab() throws {
+        let fixture = try makeFixture()
+        let windowState = BrowserWindowState()
+        fixture.registration.prepareRegistration(windowState)
+        let tab = Tab(url: URL(string: "https://cross-profile.example")!)
+        let webView = FocusableWKWebView()
+        webView.owningTab = tab
+        windowState.currentTabId = tab.id
+        fixture.extensions.initialTabPreparation = .suppressed
+
+        XCTAssertEqual(
+            fixture.extensionPublication.stageInitialTab(
+                tab,
+                webView: webView,
+                in: windowState,
+                reason: "test"
+            ),
+            .suppressed
+        )
+        fixture.registration.commitRegistration(windowState)
+
+        XCTAssertTrue(fixture.extensions.openedWindowIDs.isEmpty)
+    }
+
+    func testWindowWithoutExactInitialTabNeverPublishesExtensionLifecycle()
+        throws {
+        let fixture = try makeFixture()
+        let windowState = BrowserWindowState()
+
+        fixture.registration.prepareRegistration(windowState)
+
+        XCTAssertTrue(fixture.extensions.openedWindowIDs.isEmpty)
+        XCTAssertIdentical(windowState.tabManager, fixture.tabManager)
+
+        fixture.registration.commitRegistration(windowState)
+
+        XCTAssertTrue(fixture.extensions.openedWindowIDs.isEmpty)
+    }
+
     func testIncognitoRegistrationPreservesEphemeralIdentityAndSkipsDurableRestore()
         throws {
         let fixture = try makeFixture(
@@ -28,13 +588,6 @@ final class WindowSessionRegistrationTests: XCTestCase {
         windowState.currentProfileId = ephemeralProfile.id
         windowState.currentSpaceId = ephemeralSpace.id
         windowState.currentTabId = ephemeralTabID
-        fixture.extensions.onOpen = { publishedWindow in
-            XCTAssertIdentical(publishedWindow.ephemeralProfile, ephemeralProfile)
-            XCTAssertEqual(publishedWindow.currentProfileId, ephemeralProfile.id)
-            XCTAssertEqual(publishedWindow.currentSpaceId, ephemeralSpace.id)
-            XCTAssertEqual(publishedWindow.currentTabId, ephemeralTabID)
-        }
-
         fixture.registration.restore(windowState)
         fixture.restoreService.handleTabManagerDataLoaded(
             windows: [windowState]
@@ -46,7 +599,7 @@ final class WindowSessionRegistrationTests: XCTestCase {
         XCTAssertEqual(windowState.currentSpaceId, ephemeralSpace.id)
         XCTAssertEqual(windowState.currentTabId, ephemeralTabID)
         XCTAssertFalse(windowState.isAwaitingInitialSessionResolution)
-        XCTAssertEqual(fixture.extensions.openedWindowIDs, [windowState.id])
+        XCTAssertTrue(fixture.extensions.openedWindowIDs.isEmpty)
         XCTAssertEqual(fixture.startup.reconcileCallCount, 0)
     }
 
@@ -58,29 +611,21 @@ final class WindowSessionRegistrationTests: XCTestCase {
         fixture.tabManager.spaceStateOwner.replaceSpaces([space])
         let firstWindow = BrowserWindowState()
         let secondWindow = BrowserWindowState()
-        let tabManager = fixture.tabManager
-        fixture.extensions.onOpen = { openedWindow in
-            XCTAssertIdentical(openedWindow.tabManager, tabManager)
-            XCTAssertIdentical(firstWindow.tabManager, tabManager)
-            XCTAssertIdentical(secondWindow.tabManager, tabManager)
-            XCTAssertEqual(firstWindow.currentProfileId, profile.id)
-            XCTAssertEqual(secondWindow.currentProfileId, profile.id)
-            XCTAssertEqual(firstWindow.currentSpaceId, space.id)
-            XCTAssertEqual(secondWindow.currentSpaceId, space.id)
-        }
-
         fixture.registration.restoreRegisteredWindows(
             [firstWindow, secondWindow]
         )
 
-        XCTAssertEqual(
-            fixture.extensions.openedWindowIDs,
-            [firstWindow.id, secondWindow.id]
-        )
+        XCTAssertIdentical(firstWindow.tabManager, fixture.tabManager)
+        XCTAssertIdentical(secondWindow.tabManager, fixture.tabManager)
+        XCTAssertEqual(firstWindow.currentProfileId, profile.id)
+        XCTAssertEqual(secondWindow.currentProfileId, profile.id)
+        XCTAssertEqual(firstWindow.currentSpaceId, space.id)
+        XCTAssertEqual(secondWindow.currentSpaceId, space.id)
+        XCTAssertTrue(fixture.extensions.openedWindowIDs.isEmpty)
         XCTAssertEqual(fixture.startup.reconcileCallCount, 1)
     }
 
-    func testAwaitingRegistrationPublishesExactlyOnceAfterInitialResolution()
+    func testAwaitingRegistrationDoesNotInventAnExtensionProjectionAfterResolution()
         throws {
         let profile = Profile(name: "Regular")
         let space = Space(name: "Workspace", profileId: profile.id)
@@ -112,7 +657,7 @@ final class WindowSessionRegistrationTests: XCTestCase {
         )
 
         XCTAssertFalse(windowState.isAwaitingInitialSessionResolution)
-        XCTAssertEqual(fixture.extensions.openedWindowIDs, [windowState.id])
+        XCTAssertTrue(fixture.extensions.openedWindowIDs.isEmpty)
     }
 
     func testPendingRegistrationCannotPublishReplacementWithSameUUID()
@@ -226,9 +771,13 @@ final class WindowSessionRegistrationTests: XCTestCase {
         )
         let extensions = RecordingWindowExtensionLifecycle()
         let startup = RecordingStartupSessionReconciler()
+        let extensionPublication = WindowExtensionPublicationTransaction(
+            preparation: extensions,
+            publication: extensions
+        )
         let registration = BrowserWindowSessionRestorationService(
             restoration: restoreService,
-            extensions: extensions,
+            extensionPublication: extensionPublication,
             profileSupport: profileSupport,
             startupSessions: startup
         )
@@ -238,6 +787,7 @@ final class WindowSessionRegistrationTests: XCTestCase {
             restoreService: restoreService,
             profileSupport: profileSupport,
             extensions: extensions,
+            extensionPublication: extensionPublication,
             startup: startup,
             registration: registration
         )
@@ -282,24 +832,167 @@ private struct RegistrationFixture {
     let restoreService: WindowSessionRestoreService
     let profileSupport: RegistrationProfileSupport
     let extensions: RecordingWindowExtensionLifecycle
+    let extensionPublication: WindowExtensionPublicationTransaction
     let startup: RecordingStartupSessionReconciler
     let registration: BrowserWindowSessionRestorationService
 }
 
 @MainActor
 private final class RecordingWindowExtensionLifecycle:
-    BrowserWindowExtensionLifecycleNotifying {
+    BrowserWindowExtensionPublishing,
+    BrowserWindowExtensionFocusNotifying,
+    InitialTabExtensionPreparing {
     private(set) var openedWindowIDs: [UUID] = []
+    private(set) var revokedWindowIDs: [UUID] = []
     private(set) var focusedWindowIDs: [UUID] = []
     var onOpen: ((BrowserWindowState) -> Void)?
+    var onPrepare: ((BrowserWindowState) -> Void)?
+    var events: ExtensionPublicationEventRecorder?
+    var initialTabPreparation: InitialTabExtensionPreparation =
+        .notParticipating
+    var isPublicationCurrent = true
 
-    func notifyWindowOpenedIfLoaded(_ windowState: BrowserWindowState) {
+    func prepareInitialTabExtensionPublication(
+        window: BrowserWindowState,
+        tab _: Tab,
+        webView _: FocusableWKWebView,
+        reason _: String
+    ) -> InitialTabExtensionPreparation {
+        let preparation = initialTabPreparation
+        onPrepare?(window)
+        return preparation
+    }
+
+    func publishWindowIfLoaded(
+        _ windowState: BrowserWindowState
+    ) -> BrowserWindowExtensionPublicationOutcome {
+        events?.values.append("window")
         onOpen?(windowState)
         openedWindowIDs.append(windowState.id)
+        return .published(
+            RecordingWindowPublicationLease(
+                isOwned: { [weak self, weak windowState] in
+                    guard let self, let windowState else { return false }
+                    return self.openedWindowIDs.contains(windowState.id)
+                },
+                isCurrent: { [weak self, weak windowState] in
+                    guard let self, let windowState else { return false }
+                    return self.isPublicationCurrent
+                        && self.openedWindowIDs.contains(windowState.id)
+                },
+                revoke: { [weak self, weak windowState] in
+                    guard let self, let windowState else { return }
+                    self.revokeWindowPublicationIfLoaded(windowState)
+                }
+            )
+        )
+    }
+
+    func revokeWindowPublicationIfLoaded(_ windowState: BrowserWindowState) {
+        openedWindowIDs.removeAll { $0 == windowState.id }
+        revokedWindowIDs.append(windowState.id)
+        events?.values.append("window-revoked")
     }
 
     func notifyWindowFocusedIfLoaded(_ windowState: BrowserWindowState) {
         focusedWindowIDs.append(windowState.id)
+    }
+}
+
+@MainActor
+private final class RecordingWindowPublicationLease:
+    BrowserWindowExtensionPublication {
+    private let owned: @MainActor () -> Bool
+    private let current: @MainActor () -> Bool
+    private let revoke: @MainActor () -> Void
+
+    init(
+        isOwned: @escaping @MainActor () -> Bool,
+        isCurrent: @escaping @MainActor () -> Bool,
+        revoke: @escaping @MainActor () -> Void
+    ) {
+        self.owned = isOwned
+        self.current = isCurrent
+        self.revoke = revoke
+    }
+
+    func isCurrent() -> Bool { current() }
+    func revokeIfCurrent() {
+        guard owned() else { return }
+        revoke()
+    }
+}
+
+@MainActor
+private final class ExtensionPublicationEventRecorder {
+    var values: [String] = []
+}
+
+@MainActor
+private final class RecordingInitialTabPublication:
+    InitialTabExtensionPublication {
+    private let window: BrowserWindowState
+    private let tab: Tab
+    private let webView: FocusableWKWebView
+    private let events: ExtensionPublicationEventRecorder
+    var validates = true
+    var publishes = true
+    var onPublish: (() -> Void)?
+    private(set) var publishCount = 0
+    private(set) var cancelCount = 0
+    private(set) var revokeCount = 0
+
+    init(
+        window: BrowserWindowState,
+        tab: Tab,
+        webView: FocusableWKWebView,
+        events: ExtensionPublicationEventRecorder
+    ) {
+        self.window = window
+        self.tab = tab
+        self.webView = webView
+        self.events = events
+    }
+
+    func matches(
+        window: BrowserWindowState,
+        tab: Tab,
+        webView: FocusableWKWebView
+    ) -> Bool {
+        self.window === window
+            && self.tab === tab
+            && self.webView === webView
+    }
+
+    func validateBeforeWindowPublication() -> Bool {
+        validates
+    }
+
+    func publishInitialTab(
+        afterWindowOpened window: BrowserWindowState
+    ) -> Bool {
+        guard publishes,
+              window === self.window,
+              events.values == ["window"]
+        else {
+            return false
+        }
+        publishCount += 1
+        events.values.append("tab")
+        onPublish?()
+        return true
+    }
+
+    func cancel() -> Bool {
+        cancelCount += 1
+        return true
+    }
+
+    func revokePublishedIfCurrent() -> Bool {
+        guard publishCount > revokeCount else { return false }
+        revokeCount += 1
+        events.values.append("tab-revoked")
+        return true
     }
 }
 

@@ -387,7 +387,8 @@ private final class SumiWebNotificationSubfeature: NSObject, @MainActor SumiUser
 
     private func handle(method: String, params: Any, original: WKScriptMessage) async throws -> Encodable? {
         guard let tab,
-              let notificationPermissionBridge = tab.browserActionService.notificationPermissionBridge(),
+              let notificationPermissionBridge = tab.navigationRuntime.permissionRuntime
+                .permissionBridges()?.notificationPermissionBridge,
               let tabContext = tab.webNotificationTabContext(for: original.webView)
         else {
             return SumiJSONValue.object([

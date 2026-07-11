@@ -1188,6 +1188,8 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         let blockedScripts = [
             "__sumiFaviconTransportInstalled",
             "__sumiTabSuspension",
+            "__sumiDocumentSuspensionSensor",
+            "__sumiSubframePictureInPicture",
             SumiTransientChromeInteractionShieldUserScript.sourceMarker,
             "SUMI_USER_SCRIPT_RUNTIME",
             UserScriptInjector.userScriptMarker,
@@ -1221,6 +1223,8 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         for blockedMarker in [
             "__sumiFaviconTransportInstalled",
             "__sumiTabSuspension",
+            "__sumiDocumentSuspensionSensor",
+            "__sumiSubframePictureInPicture",
             SumiTransientChromeInteractionShieldUserScript.sourceMarker,
             "SUMI_USER_SCRIPT_RUNTIME",
             UserScriptInjector.userScriptMarker,
@@ -1273,17 +1277,43 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         })
     }
 
-    func testTabSuspensionBridgeScriptIsMainFrameOnly() throws {
+    func testTabSuspensionSeparatesPageAPIFromIsolatedSensors() throws {
         let tab = Tab(name: "Bridge")
+        let scripts = tab.normalTabCoreUserScripts()
         let bridgeScript = try XCTUnwrap(
-            tab.normalTabCoreUserScripts().first { script in
+            scripts.first { script in
                 script.source.contains("__sumiTabSuspension")
+            }
+        )
+        let documentSensor = try XCTUnwrap(
+            scripts.first { script in
+                script.source.contains("__sumiDocumentSuspensionSensor")
+            }
+        )
+        let subframeSensor = try XCTUnwrap(
+            scripts.first { script in
+                script.source.contains("__sumiSubframePictureInPictureBootstrap")
             }
         )
 
         XCTAssertTrue(bridgeScript.source.contains("sumiTabSuspension_"))
-        XCTAssertTrue(bridgeScript.source.contains("tabSuspension"))
+        XCTAssertTrue(bridgeScript.source.contains("let pageAllowsSuspension = true"))
+        XCTAssertTrue(
+            bridgeScript.source.contains("pageAllowsSuspension = canBeSuspended")
+        )
+        XCTAssertTrue(bridgeScript.source.contains("reply.catch(() => {})"))
         XCTAssertTrue(bridgeScript.forMainFrameOnly)
+        XCTAssertTrue(bridgeScript.requiresRunInPageContentWorld)
+        XCTAssertFalse(bridgeScript.source.contains("documentLeaseToken"))
+        XCTAssertFalse(bridgeScript.source.contains("activateCommittedDocument"))
+
+        XCTAssertTrue(documentSensor.forMainFrameOnly)
+        XCTAssertFalse(documentSensor.requiresRunInPageContentWorld)
+        XCTAssertTrue(documentSensor.source.contains("documentLeaseToken"))
+        XCTAssertTrue(documentSensor.source.contains("webkitpresentationmodechanged"))
+
+        XCTAssertFalse(subframeSensor.forMainFrameOnly)
+        XCTAssertFalse(subframeSensor.requiresRunInPageContentWorld)
     }
 
     private func assertNoTabSuspensionBridge(
@@ -1296,6 +1326,16 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             .joined(separator: "\n")
 
         XCTAssertFalse(source.contains("__sumiTabSuspension"), file: file, line: line)
+        XCTAssertFalse(
+            source.contains("__sumiDocumentSuspensionSensor"),
+            file: file,
+            line: line
+        )
+        XCTAssertFalse(
+            source.contains("__sumiSubframePictureInPicture"),
+            file: file,
+            line: line
+        )
         XCTAssertFalse(source.contains("sumiTabSuspension_"), file: file, line: line)
         XCTAssertFalse(source.contains("tabSuspension"), file: file, line: line)
     }

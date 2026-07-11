@@ -125,8 +125,8 @@ final class AuxiliaryWindowPresentationService {
         nestedPopups: AuxiliaryPopupOpeningService
     ) -> AuxiliaryWindowSession {
         let sessionID = UUID()
-        let openerWindow = request.openerTab.flatMap(context.parentWindow(for:))
-            ?? request.explicitOpenerWindow
+        let openerWindow = request.explicitOpenerWindow
+            ?? request.openerTab.flatMap(context.parentWindow(for:))
         let window = AuxiliaryCompactWindow(
             contentRect: request.geometry.contentRect
         )

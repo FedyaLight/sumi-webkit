@@ -8,6 +8,7 @@ enum BrowserGlanceRuntimeService {
         let emptySplitCreation = browserManager.splitComposition.emptyCreation
         let webViewCompositor = browserManager.webViewRuntime.compositorRuntime
         let webViewOwnership = browserManager.webViewRuntime.ownershipService
+        let tabBrowserRuntime = TabBrowserRuntimeFactory.make(for: browserManager)
 
         return GlanceManager.Runtime(
             windowStateContainingTab: { [weak browserManager] in
@@ -50,7 +51,8 @@ enum BrowserGlanceRuntimeService {
                     for: url,
                     sourceTab: sourceTab,
                     windowState: windowState,
-                    browserManager: browserManager
+                    browserManager: browserManager,
+                    tabBrowserRuntime: tabBrowserRuntime
                 )
             },
             adoptPreviewTab: { [weak browserManager] previewTab, sourceTab, windowState in
@@ -97,7 +99,8 @@ enum BrowserGlanceRuntimeService {
         for url: URL,
         sourceTab: Tab?,
         windowState: BrowserWindowState?,
-        browserManager: BrowserManager
+        browserManager: BrowserManager,
+        tabBrowserRuntime: TabBrowserRuntime
     ) -> Tab {
         let sourceProfile = sourceTab?.resolveProfile()
         let targetSpace = targetSpace(
@@ -113,7 +116,7 @@ enum BrowserGlanceRuntimeService {
             spaceId: targetSpace?.id,
             index: 0
         )
-        tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
+        tab.attachBrowserRuntime(tabBrowserRuntime)
         tab.profileId = sourceProfile?.id ?? targetSpace?.profileId ?? browserManager.currentProfile?.id
         return tab
     }

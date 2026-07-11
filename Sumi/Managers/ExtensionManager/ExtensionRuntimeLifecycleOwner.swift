@@ -386,6 +386,7 @@ extension ExtensionManager {
         extensionWebViewHosting = bridge.webViews
         extensionAuxiliaryWindows = bridge.auxiliaryWindows
         extensionWindowPresentation = bridge.presentation
+        extensionRequestedWindowCreation = bridge.requestedWindows
         runtime = BrowserExtensionManagerRuntimeFactory.runtime(for: browserManager)
 
         if runtime.activeWindowState() == nil,

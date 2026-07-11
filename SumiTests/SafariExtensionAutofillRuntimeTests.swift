@@ -133,6 +133,8 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
             initialProfile: profile
         )
         let browserManager = BrowserManager()
+        let windowRegistry = WindowRegistry()
+        browserManager.windowRegistry = windowRegistry
         manager.attach(browserManager: browserManager)
         browserManager.profileManager.profiles = [profile]
 
@@ -148,9 +150,39 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
         let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://example.com",
             in: browserManager.tabManager.spaceStateOwner.currentSpace,
-            activate: false
+            activate: true
         )
         tab.profileId = profile.id
+        let windowState = BrowserWindowState()
+        windowState.tabManager = browserManager.tabManager
+        windowState.currentSpaceId = tab.spaceId
+        windowState.currentProfileId = profile.id
+        windowState.currentTabId = tab.id
+        windowRegistry.register(windowState)
+        windowRegistry.setActive(windowState)
+        let configuration = manager.browserConfiguration
+            .auxiliaryWebViewConfiguration(surface: .extensionOptions)
+        manager.prepareWebViewConfigForExtensionRuntime(
+            configuration,
+            profileId: profile.id,
+            reason: "SafariExtensionAutofillRuntimeTests.runtimeReload"
+        )
+        let webView = FocusableWKWebView(
+            frame: .zero,
+            configuration: configuration
+        )
+        webView.owningTab = tab
+        tab.replaceUntrackedWebView(webView)
+        XCTAssertTrue(manager.allKnownTabs().contains { $0 === tab })
+        XCTAssertTrue(manager.liveWebViews(for: tab).contains { $0 === webView })
+        XCTAssertIdentical(
+            webView.configuration.webExtensionController,
+            manager.extensionController(for: tab)
+        )
+        XCTAssertIdentical(
+            manager.extensionWindowQuery?.currentExtensionTab(in: windowState),
+            tab
+        )
 
         manager.reconcileOpenTabsAfterExtensionContextLoad(
             reason: "SafariExtensionAutofillRuntimeTests",

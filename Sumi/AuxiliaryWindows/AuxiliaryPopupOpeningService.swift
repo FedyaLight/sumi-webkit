@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import WebKit
 
@@ -32,6 +33,8 @@ final class AuxiliaryPopupOpeningService {
         request: URLRequest?,
         windowFeatures: WKWindowFeatures,
         openerTab: Tab,
+        explicitOpenerWindow: NSWindow? = nil,
+        explicitOpenerProfileID: UUID? = nil,
         isExtensionOriginated: Bool = false,
         shouldActivateApp: Bool = true,
         nestedDepth: Int = 0,
@@ -44,6 +47,8 @@ final class AuxiliaryPopupOpeningService {
                 request: request,
                 windowFeatures: windowFeatures,
                 openerTab: openerTab,
+                explicitOpenerWindow: explicitOpenerWindow,
+                explicitOpenerProfileID: explicitOpenerProfileID,
                 shouldActivateApp: shouldActivateApp,
                 nestedDepth: nestedDepth,
                 extensionOwnedSourceURL: extensionOwnedSourceURL,
@@ -52,21 +57,33 @@ final class AuxiliaryPopupOpeningService {
         }
 
         guard nestingPolicy.allowsPresentation(at: nestedDepth),
-              admissionIsOpen(for: openerTab) else {
+              admissionIsOpen(
+                  for: openerTab,
+                  explicitProfileID: explicitOpenerProfileID
+              ) else {
             return nil
         }
 
-        let parentWindow = context.parentWindow(for: openerTab)
+        let parentWindow = explicitOpenerWindow
+            ?? context.parentWindow(for: openerTab)
         let geometry = AuxiliaryWindowGeometryResolver.resolve(
             windowFeatures: windowFeatures,
             parentWindow: parentWindow
         )
         guard let tab = tabs.createMiniWindowTab(
             openerTab: openerTab,
-            profileID: nil,
+            profileID: explicitOpenerProfileID,
             urlString: request?.url?.absoluteString,
             extensionContext: nil
         ) else {
+            return nil
+        }
+        guard configurationMatchesResolvedProfile(
+            configuration,
+            tab: tab,
+            explicitProfileID: explicitOpenerProfileID
+        ) else {
+            tabs.removeMiniWindowTab(tab)
             return nil
         }
 
@@ -83,7 +100,7 @@ final class AuxiliaryPopupOpeningService {
                 webView: webView,
                 geometry: geometry,
                 openerTab: openerTab,
-                explicitOpenerWindow: nil,
+                explicitOpenerWindow: parentWindow,
                 titleURL: request?.url,
                 shouldActivateApp: shouldActivateApp,
                 isPrivate: openerTab.isEphemeral,
@@ -102,13 +119,18 @@ final class AuxiliaryPopupOpeningService {
         request: URLRequest?,
         windowFeatures: WKWindowFeatures,
         openerTab: Tab,
+        explicitOpenerWindow: NSWindow? = nil,
+        explicitOpenerProfileID: UUID? = nil,
         shouldActivateApp: Bool = true,
         nestedDepth: Int = 0,
         extensionOwnedSourceURL: URL? = nil,
         ownerExtensionID: String? = nil
     ) -> WKWebView? {
         guard nestingPolicy.allowsPresentation(at: nestedDepth),
-              admissionIsOpen(for: openerTab) else {
+              admissionIsOpen(
+                  for: openerTab,
+                  explicitProfileID: explicitOpenerProfileID
+              ) else {
             return nil
         }
 
@@ -121,7 +143,8 @@ final class AuxiliaryPopupOpeningService {
             extensionOwnedSourceURL: extensionOwnedSourceURL,
             explicitExtensionID: ownerExtensionID
         )
-        let parentWindow = context.parentWindow(for: openerTab)
+        let parentWindow = explicitOpenerWindow
+            ?? context.parentWindow(for: openerTab)
         let hasExplicitGeometry = windowFeatures.width != nil
             || windowFeatures.height != nil
             || windowFeatures.sumiOrigin != nil
@@ -136,10 +159,18 @@ final class AuxiliaryPopupOpeningService {
 
         guard let tab = tabs.createMiniWindowTab(
             openerTab: openerTab,
-            profileID: nil,
+            profileID: explicitOpenerProfileID,
             urlString: request?.url?.absoluteString,
             extensionContext: nil
         ) else {
+            return nil
+        }
+        guard configurationMatchesResolvedProfile(
+            configuration,
+            tab: tab,
+            explicitProfileID: explicitOpenerProfileID
+        ) else {
+            tabs.removeMiniWindowTab(tab)
             return nil
         }
         let webView = tab.createAuxiliaryMiniWindowWebViewFromWebKitConfiguration(
@@ -174,11 +205,30 @@ final class AuxiliaryPopupOpeningService {
         return webView
     }
 
-    private func admissionIsOpen(for openerTab: Tab) -> Bool {
-        guard let profileID = openerTab.profileId
+    private func admissionIsOpen(
+        for openerTab: Tab,
+        explicitProfileID: UUID?
+    ) -> Bool {
+        guard let profileID = explicitProfileID
+            ?? openerTab.profileId
             ?? openerTab.resolveProfile()?.id else {
             return true
         }
         return admission.admissionIsBlocked(profileID: profileID) == false
+    }
+
+    private func configurationMatchesResolvedProfile(
+        _ configuration: WKWebViewConfiguration,
+        tab: Tab,
+        explicitProfileID: UUID?
+    ) -> Bool {
+        guard let explicitProfileID else { return true }
+        guard tab.profileId == explicitProfileID,
+              let profile = tab.resolveProfile(),
+              profile.id == explicitProfileID
+        else {
+            return false
+        }
+        return configuration.websiteDataStore === profile.dataStore
     }
 }

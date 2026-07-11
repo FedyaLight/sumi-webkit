@@ -235,15 +235,6 @@ final class ExtensionControllerDelegateBridge: NSObject, WKWebExtensionControlle
             configuration.tabURLs,
             controller: controller,
             extensionContext: extensionContext,
-            createWindow: { [weak manager] in
-                manager?.extensionWindowPresentation?.createExtensionWindow()
-            },
-            awaitWindowRegistration: { [weak manager] existingWindowIDs in
-                await manager?.extensionWindowPresentation?
-                    .awaitNextExtensionWindow(
-                    excluding: existingWindowIDs
-                )
-            },
             completionHandler: completionHandler
         )
     }

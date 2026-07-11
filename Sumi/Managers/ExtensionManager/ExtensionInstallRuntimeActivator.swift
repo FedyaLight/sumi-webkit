@@ -41,16 +41,11 @@ final class ExtensionInstallRuntimeActivator {
     func activate(_ request: Request) async {
         // New install-time contexts must see existing tabs/windows before
         // `extensionsLoaded` flips, or MV3 onboarding (`tabs.create`) may race.
-        manager.runtimeSession.tabOpenNotificationGeneration &+= 1
-        manager.updateWebViewsForProfile(
-            request.profileId,
-            allowWhenExtensionsNotLoaded: true
-        )
-        manager.resyncOpenTabsWithExtensionRuntimeAfterGenerationBump(
+        manager.reconcileOpenTabsAfterExtensionContextLoad(
             reason: request.operation.resyncReason,
-            allowWhenExtensionsNotLoaded: true
+            allowWhenExtensionsNotLoaded: true,
+            profileId: request.profileId
         )
-        manager.registerExistingWindowStateIfAttached()
 
         let installedWebExtension = request.extensionContext.webExtension
         let installedDisplayName =

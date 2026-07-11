@@ -38,6 +38,11 @@ final class WebViewReplacementPipeline {
     struct Runtime {
         let webViewSessions: WebViewSessionRepository
         let quiesce: (WKWebView) -> Void
+        let retireNavigationGeneration: (
+            UUID,
+            [WKWebView],
+            WKWebView?
+        ) -> Void
         let destroy: (UUID, WKWebView) -> Void
         let restore: (UUID, WebViewSessionSnapshot) -> Void
         let uninstallObservationsIfUntracked: (WKWebView) -> Void
@@ -189,10 +194,28 @@ final class WebViewReplacementPipeline {
         runtime: Runtime
     ) {
         for (tabID, snapshot) in snapshots {
-            for webView in snapshot.allKnownWebViews {
+            let departingWebViews = snapshot.allKnownWebViews
+            let survivingSnapshot = runtime.webViewSessions.snapshot(
+                for: tabID
+            )
+            runtime.retireNavigationGeneration(
+                tabID,
+                departingWebViews,
+                preferredWebView(in: survivingSnapshot)
+            )
+            for webView in departingWebViews {
                 runtime.uninstallObservationsIfUntracked(webView)
                 runtime.destroy(tabID, webView)
             }
         }
+    }
+
+    private static func preferredWebView(
+        in snapshot: WebViewSessionSnapshot
+    ) -> WKWebView? {
+        if let primaryWindowID = snapshot.primaryWindowID {
+            return snapshot.windowWebViews[primaryWindowID]
+        }
+        return snapshot.untrackedWebView ?? snapshot.parkedWebView
     }
 }

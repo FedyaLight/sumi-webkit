@@ -28,6 +28,8 @@ adapter_files=(
 required_files=(
   "$composition"
   Sumi/Managers/ExtensionManager/ExtensionBridge.swift
+  Sumi/Managers/ExtensionManager/ExtensionActionPopupPresentation.swift
+  Sumi/Managers/ExtensionManager/ExtensionActionPopupSourceReceipt.swift
   "${adapter_files[@]}"
 )
 
@@ -56,6 +58,89 @@ legacy_hits="$(
     App Sumi SumiTests -g '*.swift' || true
 )"
 fail_matches "retired aggregate extension bridge returned" "$legacy_hits"
+
+popup_active_lookup_hits="$(
+  rg -n '\b(currentExtensionTabForPopup|currentExtensionTabForActiveWindow|activeExtensionWindowState)\b' \
+    Sumi/Managers/ExtensionManager/ExtensionActionPopupPresentation.swift || true
+)"
+fail_matches \
+  "extension action popup routing rediscovered its opener through active-window state" \
+  "$popup_active_lookup_hits"
+
+legacy_popup_lookup_hits="$(
+  rg -n '\bcurrentExtensionTabForPopup\b' App Sumi -g '*.swift' || true
+)"
+fail_matches "ambiguous action-popup active-tab lookup returned" "$legacy_popup_lookup_hits"
+
+for required_popup_boundary in \
+  'sourceReceipt.resolve(' \
+  'openerProfileID: sourceReceipt.profileID'; do
+  if ! rg -Fq "$required_popup_boundary" \
+      Sumi/Managers/ExtensionManager/ExtensionActionPopupPresentation.swift; then
+    printf 'error: exact action-popup source boundary missing: %s\n' \
+      "$required_popup_boundary" >&2
+    status=1
+  fi
+done
+
+if ! rg -Fq 'childConfiguration.websiteDataStore === profile.dataStore' \
+    Sumi/Managers/ExtensionManager/ExtensionActionPopupSourceReceipt.swift; then
+  printf 'error: exact action-popup child data-store check missing\n' >&2
+    status=1
+fi
+
+normal_window_lookup_consumers=(
+  Sumi/Managers/ExtensionManager/ExtensionTabAdapter.swift
+  Sumi/Managers/ExtensionManager/ExtensionActionPopupPresentation.swift
+)
+raw_normal_window_lookup_hits="$(
+  rg -n '\b(browserRuntimeBridgeOwner\.publishedWindowAdapter|adapterResolutionOwner\.windowAdapter)\b' \
+    "${normal_window_lookup_consumers[@]}" || true
+)"
+fail_matches \
+  "normal-window consumer bypassed context-bound published projection" \
+  "$raw_normal_window_lookup_hits"
+
+for file in "${normal_window_lookup_consumers[@]}"; do
+  if ! rg -Fq 'publishedNormalWindowAdapter(' "$file"; then
+    printf 'error: context-bound normal-window projection lookup missing: %s\n' \
+      "$file" >&2
+    status=1
+  fi
+done
+
+for required_projection_boundary in \
+  'func publishedNormalWindowAdapter(' \
+  'extensionContext: WKWebExtensionContext' \
+  'adapter.represents(windowState)'; do
+  if ! rg -Fq "$required_projection_boundary" \
+      Sumi/Managers/ExtensionManager/ExtensionAdapterResolutionOwner.swift; then
+    printf 'error: published normal-window projection boundary missing: %s\n' \
+      "$required_projection_boundary" >&2
+    status=1
+  fi
+done
+
+for required_adapter_lease in \
+  'private weak var exactWindowState: BrowserWindowState?' \
+  'func publishedWindowState(' \
+  '.publishedWindowAdapter(' \
+  ') === self'; do
+  if ! rg -Fq "$required_adapter_lease" \
+      Sumi/Managers/ExtensionManager/ExtensionBridge.swift; then
+    printf 'error: normal-window adapter publication lease missing: %s\n' \
+      "$required_adapter_lease" >&2
+    status=1
+  fi
+done
+
+window_adapter_store_escape_hits="$(
+  rg -n '\.windowAdapters\b' App Sumi SumiTests -g '*.swift' \
+    -g '!ExtensionBrowserAdapterStore.swift' || true
+)"
+fail_matches \
+  "raw normal-window adapter store escaped its materialization boundary" \
+  "$window_adapter_store_escape_hits"
 
 unused_mutation_hits="$(
   rg -n '\b(assignExtensionWebView|replaceUntrackedExtensionWebView)\b' \

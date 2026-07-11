@@ -6,9 +6,10 @@
 //
 
 import Foundation
+import SumiDomain
 import SwiftData
 import SwiftUI
-import SumiDomain
+import WebKit
 
 @MainActor
 final class ProfileManager: ObservableObject {
@@ -158,24 +159,108 @@ final class ProfileManager: ObservableObject {
         return profile
     }
 
-    /// Remove an ephemeral profile when incognito window closes
-    /// This destroys the data store to ensure complete privacy
-    func removeEphemeralProfile(for windowId: UUID) async {
-        guard let profile = ephemeralProfiles[windowId] else { return }
+    /// Gives a browser-created child window the exact private partition of its
+    /// physical opener. WebKit child configurations retain the opener's data
+    /// store, so manufacturing a second profile here would make model identity
+    /// disagree with the actual `WKWebsiteDataStore`.
+    func shareEphemeralProfile(
+        from sourceWindowId: UUID,
+        with childWindowId: UUID
+    ) -> Profile? {
+        guard sourceWindowId != childWindowId,
+              ephemeralProfiles[childWindowId] == nil,
+              let profile = ephemeralProfiles[sourceWindowId],
+              profile.isEphemeral
+        else {
+            return nil
+        }
+        ephemeralProfiles[childWindowId] = profile
+        return profile
+    }
+
+    func ephemeralProfile(withID profileID: UUID) -> Profile? {
+        ephemeralProfiles.values.first { $0.id == profileID }
+    }
+
+    /// Proves that one exact private window owns a lease on one exact
+    /// non-persistent profile. Finding the profile under another window is not
+    /// sufficient: shared private partitions must be leased explicitly.
+    func hasEphemeralProfileLease(
+        _ profile: Profile,
+        forWindowID windowID: UUID
+    ) -> Bool {
+        ephemeralProfiles[windowID] === profile
+            && profile.isEphemeral
+            && profile.dataStore.isPersistent == false
+    }
+
+    /// Cancels a share that never reached window publication. Destruction is
+    /// intentionally impossible here because the source window still owns the
+    /// same partition.
+    @discardableResult
+    func cancelEphemeralProfileShare(
+        for childWindowId: UUID,
+        expected profile: Profile
+    ) -> Bool {
+        guard ephemeralProfiles[childWindowId] === profile,
+              ephemeralProfiles.contains(where: {
+                  $0.key != childWindowId && $0.value === profile
+              })
+        else {
+            return false
+        }
+        ephemeralProfiles.removeValue(forKey: childWindowId)
+        return true
+    }
+
+    /// Rolls back a private partition that was created for a window which was
+    /// never published. A shared partition must instead release only its
+    /// child-window lease through `cancelEphemeralProfileShare`.
+    @discardableResult
+    func cancelEphemeralProfileCreation(
+        for windowId: UUID,
+        expected profile: Profile
+    ) -> Bool {
+        guard ephemeralProfiles[windowId] === profile,
+              ephemeralProfiles.contains(where: {
+                  $0.key != windowId && $0.value === profile
+              }) == false
+        else {
+            return false
+        }
+        ephemeralProfiles.removeValue(forKey: windowId)
+        destroyEphemeralPartition(profile)
+        return true
+    }
+
+    /// Releases one private-window reference. The partition is destroyed only
+    /// after its final browser window closes.
+    func releaseEphemeralProfile(for windowId: UUID) async -> UUID? {
+        guard let profile = ephemeralProfiles[windowId] else { return nil }
 
         RuntimeDiagnostics.emit("🔒 [ProfileManager] Removing ephemeral profile: \(profile.id) for window: \(windowId)")
 
         // Remove from tracking immediately to stop tracking
         ephemeralProfiles.removeValue(forKey: windowId)
+        if ephemeralProfiles.values.contains(where: { $0 === profile }) {
+            RuntimeDiagnostics.emit(
+                "🔒 [ProfileManager] Retained shared ephemeral profile: \(profile.id)"
+            )
+            return nil
+        }
+        destroyEphemeralPartition(profile)
+
+        RuntimeDiagnostics.emit("🔒 [ProfileManager] Ephemeral profile removed: \(profile.id) for window: \(windowId)")
+        return profile.id
+    }
+
+    private func destroyEphemeralPartition(_ profile: Profile) {
         visitedLinkStore.discardStore(for: profile.id)
         _ = BasicAuthCredentialStore().deleteCredentials(
             profilePartitionId: profile.id,
             isEphemeralProfile: true
         )
-
         faviconService.clearFaviconPartition(for: profile)
         profile.destroyEphemeralDataStore()
-
-        RuntimeDiagnostics.emit("🔒 [ProfileManager] Ephemeral profile removed: \(profile.id) for window: \(windowId)")
     }
 }

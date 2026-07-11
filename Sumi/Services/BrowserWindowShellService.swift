@@ -9,6 +9,9 @@ final class BrowserWindowShellService {
     typealias RejectedRegistrationCompensation = @MainActor (
         BrowserWindowState
     ) -> Void
+    typealias CommittedRegistrationValidator = @MainActor (
+        BrowserWindowState
+    ) -> Bool
 
     struct Context {
         let windowRegistry: WindowRegistry
@@ -22,16 +25,13 @@ final class BrowserWindowShellService {
     }
 
     @discardableResult
-    func createNewWindow(using context: Context) -> BrowserWindowState {
-        guard let windowState = createNewWindow(
+    func createNewWindow(using context: Context) -> BrowserWindowState? {
+        createNewWindow(
             using: context,
             initializeBeforePublication: { _ in /* No-op. */ },
-            validateAfterRegistration: { _ in true },
+            validateRestoredStateBeforePublication: { _ in true },
             compensateRejectedRegistration: { _ in /* No-op. */ }
-        ) else {
-            preconditionFailure("Ordinary window registration cannot be rejected")
-        }
-        return windowState
+        )
     }
 
     /// Initializes model state before content construction, then validates the
@@ -40,45 +40,113 @@ final class BrowserWindowShellService {
     func createNewWindow(
         using context: Context,
         initializeBeforePublication: StateInitializer,
-        validateAfterRegistration: @MainActor (BrowserWindowState) -> Bool,
-        compensateRejectedRegistration: RejectedRegistrationCompensation
+        validateBeforeShellPublication: @MainActor (
+            BrowserWindowState
+        ) -> Bool = { _ in true },
+        validateRestoredStateBeforePublication: @MainActor (
+            BrowserWindowState
+        ) -> Bool,
+        validateCommittedRegistration:
+            @escaping CommittedRegistrationValidator = { _ in true },
+        compensateRejectedRegistration: RejectedRegistrationCompensation,
+        activateAfterRegistration: Bool = true,
+        presentAfterRegistration: Bool = true
     ) -> BrowserWindowState? {
         let windowState = BrowserWindowState(
             sidebarRecoveryCoordinator: context.sidebarHostRecoveryCoordinator
         )
         windowState.tabManager = context.tabManager
-        precondition(context.windowRegistry.windows[windowState.id] == nil)
+        guard context.windowRegistry.windows[windowState.id] == nil else {
+            compensateRejectedRegistration(windowState)
+            return nil
+        }
         initializeBeforePublication(windowState)
-        precondition(
-            context.windowRegistry.windows[windowState.id] == nil,
-            "Window initialization must not publish into WindowRegistry"
-        )
+        guard context.windowRegistry.windows[windowState.id] == nil else {
+            _ = context.windowRegistry.discardRejectedRegistration(windowState)
+            compensateRejectedRegistration(windowState)
+            return nil
+        }
+        guard validateBeforeShellPublication(windowState) else {
+            compensateRejectedRegistration(windowState)
+            return nil
+        }
 
         let newWindow = makeWindow(
-            title: "Sumi",
+            title: windowState.isIncognito ? "Incognito - Sumi" : "Sumi",
             contentView: context.makeContentView(
                 context.windowRegistry,
                 windowState
             )
         )
         context.windowRegistry.bindAppKitWindow(newWindow, to: windowState)
-        let registration = context.windowRegistry.register(windowState)
-        precondition(
-            registration == .registered,
-            "A newly created shell must publish one new window state"
-        )
-        guard validateAfterRegistration(windowState) else {
+        let registration = context.windowRegistry.beginRegistration(windowState)
+        guard registration == .registered else {
+            _ = context.windowRegistry.discardRejectedRegistration(windowState)
             compensateRejectedRegistration(windowState)
-            context.windowRegistry.rollbackRegistration(windowState)
             newWindow.close()
             return nil
         }
-        context.windowRegistry.setActive(windowState)
-        newWindow.makeKeyAndOrderFront(nil)
+        guard validateRestoredStateBeforePublication(windowState) else {
+            _ = context.windowRegistry.rollbackProvisionalRegistration(
+                windowState
+            )
+            compensateRejectedRegistration(windowState)
+            newWindow.close()
+            return nil
+        }
+        guard context.windowRegistry.commitRegistration(
+            windowState,
+            validatePublication: validateCommittedRegistration
+        ) else {
+            _ = context.windowRegistry.discardRejectedRegistration(windowState)
+            compensateRejectedRegistration(windowState)
+            newWindow.close()
+            return nil
+        }
+        if presentAfterRegistration {
+            presentRegisteredWindow(
+                windowState,
+                in: context.windowRegistry,
+                activate: activateAfterRegistration
+            )
+        }
         return windowState
     }
 
-    func createIncognitoWindow(using context: Context) {
+    /// Presents only the exact shell that still belongs to the registered
+    /// model. Activation observers may synchronously close the window, so the
+    /// binding is revalidated before crossing into AppKit presentation.
+    @discardableResult
+    func presentRegisteredWindow(
+        _ windowState: BrowserWindowState,
+        in windowRegistry: WindowRegistry,
+        activate: Bool
+    ) -> Bool {
+        guard windowRegistry.windows[windowState.id] === windowState,
+              let window = windowRegistry.appKitWindow(for: windowState)
+        else {
+            return false
+        }
+        if activate {
+            windowRegistry.setActive(windowState)
+            guard windowRegistry.windows[windowState.id] === windowState,
+                  windowRegistry.appKitWindow(for: windowState) === window
+            else {
+                return false
+            }
+            window.makeKeyAndOrderFront(nil)
+        } else {
+            window.orderFront(nil)
+        }
+        return windowRegistry.windows[windowState.id] === windowState
+            && windowRegistry.appKitWindow(for: windowState) === window
+    }
+
+    @discardableResult
+    func createIncognitoWindow(
+        using context: Context,
+        activateAfterRegistration: Bool = true
+    ) -> BrowserWindowState {
         let windowState = BrowserWindowState(
             sidebarRecoveryCoordinator: context.sidebarHostRecoveryCoordinator
         )
@@ -108,14 +176,17 @@ final class BrowserWindowShellService {
         )
         context.windowRegistry.bindAppKitWindow(newWindow, to: windowState)
         context.windowRegistry.register(windowState)
-        context.windowRegistry.setActive(windowState)
         context.showEmptyState(windowState, true)
 
-        newWindow.makeKeyAndOrderFront(nil)
-
+        presentRegisteredWindow(
+            windowState,
+            in: context.windowRegistry,
+            activate: activateAfterRegistration
+        )
         RuntimeDiagnostics.emit(
             "🔒 [WindowShellService] Created incognito window: \(windowState.id)"
         )
+        return windowState
     }
 
     func closeIncognitoWindow(
@@ -147,20 +218,20 @@ final class BrowserWindowShellService {
 
         let ephemeralTabs = windowState.ephemeralTabs
         let ephemeralSpaces = windowState.ephemeralSpaces
-        let ephemeralProfileId = windowState.ephemeralProfile?.id.uuidString
         windowState.ephemeralTabs.removeAll()
         windowState.ephemeralSpaces.removeAll()
         windowState.currentTabId = nil
 
-        if let ephemeralProfileId {
+        let releasedProfileID = await context.profileManager
+            .releaseEphemeralProfile(for: windowState.id)
+        if let releasedProfileID {
             context.permissionLifecycleController.handle(
                 .profileClosed(
-                    profilePartitionId: ephemeralProfileId,
+                    profilePartitionId: releasedProfileID.uuidString,
                     reason: "incognito-profile-close"
                 )
             )
         }
-        await context.profileManager.removeEphemeralProfile(for: windowState.id)
 
         windowState.ephemeralProfile = nil
         windowState.currentSpaceId = nil

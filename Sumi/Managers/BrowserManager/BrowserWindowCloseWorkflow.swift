@@ -63,7 +63,7 @@ final class BrowserWindowCloseWorkflow {
             recorder.recordWindowWillClose(windowState)
         }
         persistence.persistBeforeClosing(windowState)
-        extensions.notifyWindowClosedIfLoaded(windowState.id)
+        extensions.notifyWindowClosedIfLoaded(windowState)
         webViews.cleanupWindow(windowState.id)
         emptySplitPlaceholders.removeWindow(windowState.id)
         splitPreviews.removeWindow(windowState.id)

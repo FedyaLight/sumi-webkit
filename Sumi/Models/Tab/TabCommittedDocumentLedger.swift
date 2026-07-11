@@ -35,13 +35,32 @@ final class TabCommittedDocumentLedger {
     private struct Replica {
         let webViewReference: WeakWebViewReference
         var evidence: TabCommittedDocumentEvidence
+        let suspensionToken: String
+        let suspensionActivationEpoch: UInt64
+        var suspensionActivationRequested: Bool
+        var suspensionActivationAttemptCount: Int
+        var suspensionReport: SuspensionReport?
+        var subframePictureInPictureReports: [
+            String: TabSubframePictureInPictureReport
+        ]
+        var hasSubframePictureInPictureOverflowVeto: Bool
+    }
+
+    private struct SuspensionReport {
+        let revision: UInt64
+        let documentGeneration: UInt64
+        let participantID: UUID
+        let value: TabDocumentSuspensionReport
     }
 
     private var committedPresentationURL: URL
     private var committedIdentityURL: URL
     private var committedIsPDF = false
+    private var committedRevision: UInt64?
+    private var committedDocumentGeneration: UInt64?
     private var sourceWebViewReference: WeakWebViewReference?
     private var replicasByWebViewID: [ObjectIdentifier: Replica] = [:]
+    private var nextSuspensionActivationEpoch: UInt64 = 0
 
     init(initialURL: URL) {
         committedPresentationURL = initialURL
@@ -53,9 +72,41 @@ final class TabCommittedDocumentLedger {
     }
 
     func recordReplica(_ evidence: TabCommittedDocumentEvidence) {
-        replicasByWebViewID[ObjectIdentifier(evidence.webView)] = Replica(
+        let webViewID = ObjectIdentifier(evidence.webView)
+        let existing = replicasByWebViewID[webViewID]
+        let preservesDocument = existing.map {
+            $0.webViewReference.matches(evidence.webView)
+                && Self.sameDocument($0.evidence, evidence)
+        } ?? false
+        let suspensionActivationEpoch: UInt64
+        if preservesDocument, let existing {
+            suspensionActivationEpoch = existing.suspensionActivationEpoch
+        } else {
+            nextSuspensionActivationEpoch &+= 1
+            suspensionActivationEpoch = nextSuspensionActivationEpoch
+        }
+        replicasByWebViewID[webViewID] = Replica(
             webViewReference: WeakWebViewReference(evidence.webView),
-            evidence: evidence
+            evidence: evidence,
+            suspensionToken: preservesDocument
+                ? existing?.suspensionToken ?? UUID().uuidString
+                : UUID().uuidString,
+            suspensionActivationEpoch: suspensionActivationEpoch,
+            suspensionActivationRequested: preservesDocument
+                ? existing?.suspensionActivationRequested ?? false
+                : false,
+            suspensionActivationAttemptCount: preservesDocument
+                ? existing?.suspensionActivationAttemptCount ?? 0
+                : 0,
+            suspensionReport: preservesDocument
+                ? existing?.suspensionReport
+                : nil,
+            subframePictureInPictureReports: preservesDocument
+                ? existing?.subframePictureInPictureReports ?? [:]
+                : [:],
+            hasSubframePictureInPictureOverflowVeto: preservesDocument
+                ? existing?.hasSubframePictureInPictureOverflowVeto ?? false
+                : false
         )
     }
 
@@ -63,13 +114,13 @@ final class TabCommittedDocumentLedger {
         committedIdentityURL = evidence.committedURL
         committedPresentationURL = evidence.presentationURL
         committedIsPDF = evidence.isPDF
+        committedRevision = evidence.revision
+        committedDocumentGeneration = evidence.documentGeneration
         sourceWebViewReference = WeakWebViewReference(evidence.webView)
         recordReplica(evidence)
         replicasByWebViewID = replicasByWebViewID.filter { _, replica in
             guard replica.webViewReference.resolve() != nil else { return false }
-            return WebRuntimeNavigationIdentity(replica.evidence.committedURL)
-                    == WebRuntimeNavigationIdentity(evidence.committedURL)
-                && replica.evidence.isPDF == evidence.isPDF
+            return isCanonicalReplica(replica.evidence)
         }
     }
 
@@ -102,7 +153,7 @@ final class TabCommittedDocumentLedger {
                 == WebRuntimeNavigationIdentity(replica.evidence.committedURL),
               WebRuntimeNavigationIdentity(committedURL)
                 == WebRuntimeNavigationIdentity(committedIdentityURL),
-              replica.evidence.isPDF == committedIsPDF else {
+              isCanonicalReplica(replica.evidence) else {
             return
         }
         let evidence = replica.evidence
@@ -125,9 +176,7 @@ final class TabCommittedDocumentLedger {
         guard let webView = sourceWebViewReference?.resolve(),
               let replica = replicasByWebViewID[ObjectIdentifier(webView)],
               replica.webViewReference.matches(webView),
-              WebRuntimeNavigationIdentity(replica.evidence.committedURL)
-                == WebRuntimeNavigationIdentity(committedIdentityURL),
-              replica.evidence.isPDF == committedIsPDF else {
+              isCanonicalReplica(replica.evidence) else {
             return nil
         }
         return webView
@@ -143,9 +192,7 @@ final class TabCommittedDocumentLedger {
               replica.evidence.revision == evidence.revision,
               replica.evidence.documentGeneration == evidence.documentGeneration,
               replica.evidence.participantID == evidence.participantID,
-              WebRuntimeNavigationIdentity(evidence.committedURL)
-                == WebRuntimeNavigationIdentity(committedIdentityURL),
-              evidence.isPDF == committedIsPDF else {
+              isCanonicalReplica(evidence) else {
             return nil
         }
         return TabMainFrameDocumentLease(
@@ -160,8 +207,239 @@ final class TabCommittedDocumentLedger {
         )
     }
 
+    func recordSuspensionReport(
+        _ report: TabDocumentSuspensionReport,
+        from webView: WKWebView,
+        matching lease: TabMainFrameDocumentLease
+    ) -> Bool {
+        let webViewID = ObjectIdentifier(webView)
+        guard lease.webViewID == webViewID,
+              report.documentNonce.isEmpty == false,
+              report.documentNonce.utf8.count <= 256,
+              var replica = replicasByWebViewID[webViewID],
+              replica.webViewReference.matches(webView),
+              replica.evidence.revision == lease.revision,
+              replica.evidence.documentGeneration == lease.documentGeneration,
+              replica.evidence.participantID == lease.participantID,
+              replica.suspensionToken == report.documentLeaseToken,
+              WebRuntimeNavigationIdentity(replica.evidence.committedURL)
+                == WebRuntimeNavigationIdentity(lease.committedURL),
+              replica.evidence.isPDF == lease.isPDF,
+              isCanonicalReplica(replica.evidence) else {
+            return false
+        }
+
+        if let previous = replica.suspensionReport {
+            guard previous.revision == lease.revision,
+                  previous.documentGeneration == lease.documentGeneration,
+                  previous.participantID == lease.participantID,
+                  previous.value.documentNonce == report.documentNonce,
+                  report.sequence > previous.value.sequence else {
+                return false
+            }
+        }
+
+        replica.suspensionReport = SuspensionReport(
+            revision: lease.revision,
+            documentGeneration: lease.documentGeneration,
+            participantID: lease.participantID,
+            value: report
+        )
+        replicasByWebViewID[webViewID] = replica
+        return true
+    }
+
+    func recordSubframePictureInPictureReport(
+        _ report: TabSubframePictureInPictureReport,
+        from webView: WKWebView,
+        matching lease: TabMainFrameDocumentLease
+    ) -> Bool {
+        let webViewID = ObjectIdentifier(webView)
+        guard lease.webViewID == webViewID,
+              report.documentNonce.isEmpty == false,
+              report.documentNonce.utf8.count <= 256,
+              var replica = replicasByWebViewID[webViewID],
+              replica.webViewReference.matches(webView),
+              replica.evidence.revision == lease.revision,
+              replica.evidence.documentGeneration == lease.documentGeneration,
+              replica.evidence.participantID == lease.participantID,
+              replica.suspensionToken == report.documentLeaseToken,
+              isCanonicalReplica(replica.evidence) else {
+            return false
+        }
+
+        if let previous = replica.subframePictureInPictureReports[
+            report.documentNonce
+        ] {
+            guard report.sequence > previous.sequence else { return false }
+        }
+
+        if report.isActive {
+            if replica.subframePictureInPictureReports[report.documentNonce]
+                == nil,
+               replica.subframePictureInPictureReports.count >= 64 {
+                replica.hasSubframePictureInPictureOverflowVeto = true
+            } else {
+                replica.subframePictureInPictureReports[
+                    report.documentNonce
+                ] = report
+            }
+        } else {
+            replica.subframePictureInPictureReports.removeValue(
+                forKey: report.documentNonce
+            )
+        }
+        replicasByWebViewID[webViewID] = replica
+        return true
+    }
+
+    func suspensionToken(
+        for webView: WKWebView,
+        matching lease: TabMainFrameDocumentLease
+    ) -> String? {
+        let webViewID = ObjectIdentifier(webView)
+        guard lease.webViewID == webViewID,
+              let replica = replicasByWebViewID[webViewID],
+              replica.webViewReference.matches(webView),
+              replica.evidence.revision == lease.revision,
+              replica.evidence.documentGeneration == lease.documentGeneration,
+              replica.evidence.participantID == lease.participantID,
+              isCanonicalReplica(replica.evidence) else {
+            return nil
+        }
+        return replica.suspensionToken
+    }
+
+    func takePendingSuspensionActivations() -> [(
+        webView: WKWebView,
+        token: String,
+        epoch: UInt64
+    )] {
+        var activations: [(
+            webView: WKWebView,
+            token: String,
+            epoch: UInt64
+        )] = []
+        var activatedWebViewIDs: [ObjectIdentifier] = []
+        for (webViewID, replica) in replicasByWebViewID {
+            guard replica.suspensionActivationRequested == false,
+                  replica.suspensionActivationAttemptCount < 3,
+                  isCanonicalReplica(replica.evidence),
+                  let webView = replica.webViewReference.resolve() else {
+                continue
+            }
+            activations.append((
+                webView: webView,
+                token: replica.suspensionToken,
+                epoch: replica.suspensionActivationEpoch
+            ))
+            activatedWebViewIDs.append(webViewID)
+        }
+        for webViewID in activatedWebViewIDs {
+            guard var replica = replicasByWebViewID[webViewID] else { continue }
+            replica.suspensionActivationRequested = true
+            replica.suspensionActivationAttemptCount += 1
+            replicasByWebViewID[webViewID] = replica
+        }
+        return activations
+    }
+
+    func suspensionActivationDidFail(
+        for webView: WKWebView,
+        token: String
+    ) -> Bool {
+        let webViewID = ObjectIdentifier(webView)
+        guard var replica = replicasByWebViewID[webViewID],
+              replica.webViewReference.matches(webView),
+              replica.suspensionToken == token,
+              replica.suspensionReport == nil,
+              replica.suspensionActivationRequested,
+              replica.suspensionActivationAttemptCount < 3,
+              isCanonicalReplica(replica.evidence) else {
+            return false
+        }
+        replica.suspensionActivationRequested = false
+        replicasByWebViewID[webViewID] = replica
+        return true
+    }
+
+    func suspensionDecision() -> TabDocumentSuspensionDecision {
+        if committedIsPDF {
+            return .vetoed(.pdfDocument)
+        }
+
+        var expiredWebViewIDs: [ObjectIdentifier] = []
+        var hasCanonicalReplica = false
+        var awaitsEvidence = false
+        var pageVeto = false
+        var pictureInPictureVeto = false
+
+        for (webViewID, replica) in replicasByWebViewID {
+            guard replica.webViewReference.resolve() != nil else {
+                expiredWebViewIDs.append(webViewID)
+                continue
+            }
+            guard isCanonicalReplica(replica.evidence) else { continue }
+            hasCanonicalReplica = true
+            guard let report = replica.suspensionReport,
+                  report.revision == replica.evidence.revision,
+                  report.documentGeneration == replica.evidence.documentGeneration,
+                  report.participantID == replica.evidence.participantID else {
+                awaitsEvidence = true
+                continue
+            }
+            pageVeto = pageVeto || report.value.canBeSuspended == false
+            pictureInPictureVeto = pictureInPictureVeto
+                || report.value.hasPictureInPictureVideo
+                || replica.hasSubframePictureInPictureOverflowVeto
+                || replica.subframePictureInPictureReports.values.contains(
+                    where: \.isActive
+                )
+        }
+        expiredWebViewIDs.forEach {
+            replicasByWebViewID.removeValue(forKey: $0)
+        }
+
+        if pictureInPictureVeto {
+            return .vetoed(.pictureInPicture)
+        }
+        if pageVeto {
+            return .vetoed(.pageReportedUnableToSuspend)
+        }
+        guard hasCanonicalReplica, awaitsEvidence == false else {
+            return .awaitingEvidence
+        }
+        return .allowed
+    }
+
     func removeWebView(_ webView: WKWebView) {
-        replicasByWebViewID.removeValue(forKey: ObjectIdentifier(webView))
+        removeWebViews([webView], preferredSourceWebView: nil)
+    }
+
+    /// Retires one physical generation as a single document-ledger change.
+    /// Source selection happens only after every departing replica is gone, so
+    /// an intermediate member of the same generation cannot temporarily become
+    /// the durable-document source.
+    func removeWebViews(
+        _ webViews: [WKWebView],
+        preferredSourceWebView: WKWebView?
+    ) {
+        var seen: Set<ObjectIdentifier> = []
+        for webView in webViews {
+            let webViewID = ObjectIdentifier(webView)
+            guard seen.insert(webViewID).inserted,
+                  replicasByWebViewID[webViewID]?.webViewReference.matches(
+                      webView
+                  ) == true else {
+                continue
+            }
+            replicasByWebViewID.removeValue(forKey: webViewID)
+        }
+
+        guard sourceWebView() == nil else { return }
+        sourceWebViewReference = canonicalReplicaSource(
+            preferredWebView: preferredSourceWebView
+        ).map(WeakWebViewReference.init)
     }
 
     func rollbackSnapshot() -> TabCommittedDocumentRollbackSnapshot {
@@ -176,7 +454,7 @@ final class TabCommittedDocumentLedger {
                     == WebRuntimeNavigationIdentity(replica.evidence.committedURL),
                   WebRuntimeNavigationIdentity(replica.evidence.committedURL)
                     == committedIdentity,
-                  replica.evidence.isPDF == committedIsPDF else {
+                  isCanonicalReplica(replica.evidence) else {
                 expiredWebViewIDs.append(webViewID)
                 continue
             }
@@ -219,6 +497,67 @@ final class TabCommittedDocumentLedger {
               let authority = replicasByWebViewID[authorityWebViewID]?.evidence else {
             return
         }
+        committedIdentityURL = authority.committedURL
+        committedPresentationURL = authority.presentationURL
+        committedIsPDF = authority.isPDF
+        committedRevision = authority.revision
+        committedDocumentGeneration = authority.documentGeneration
+        replicasByWebViewID = replicasByWebViewID.filter { _, replica in
+            replica.webViewReference.resolve() != nil
+                && isCanonicalReplica(replica.evidence)
+        }
         sourceWebViewReference = WeakWebViewReference(authority.webView)
+    }
+
+    private func canonicalReplicaSource(
+        preferredWebView: WKWebView?
+    ) -> WKWebView? {
+        let canonicalIdentity = WebRuntimeNavigationIdentity(
+            committedIdentityURL
+        )
+        func isCanonicalReplica(_ webView: WKWebView) -> Bool {
+            guard let replica = replicasByWebViewID[ObjectIdentifier(webView)],
+                  replica.webViewReference.matches(webView) else {
+                return false
+            }
+            return WebRuntimeNavigationIdentity(replica.evidence.committedURL)
+                    == canonicalIdentity
+                && self.isCanonicalReplica(replica.evidence)
+        }
+
+        if let preferredWebView, isCanonicalReplica(preferredWebView) {
+            return preferredWebView
+        }
+        return replicasByWebViewID
+            .sorted { UInt(bitPattern: $0.key) < UInt(bitPattern: $1.key) }
+            .lazy
+            .compactMap { $0.value.webViewReference.resolve() }
+            .first(where: isCanonicalReplica)
+    }
+
+    private func isCanonicalReplica(
+        _ evidence: TabCommittedDocumentEvidence
+    ) -> Bool {
+        guard let committedRevision,
+              let committedDocumentGeneration else {
+            return false
+        }
+        return evidence.revision == committedRevision
+            && evidence.documentGeneration == committedDocumentGeneration
+            && WebRuntimeNavigationIdentity(evidence.committedURL)
+                == WebRuntimeNavigationIdentity(committedIdentityURL)
+            && evidence.isPDF == committedIsPDF
+    }
+
+    private static func sameDocument(
+        _ lhs: TabCommittedDocumentEvidence,
+        _ rhs: TabCommittedDocumentEvidence
+    ) -> Bool {
+        lhs.revision == rhs.revision
+            && lhs.documentGeneration == rhs.documentGeneration
+            && lhs.participantID == rhs.participantID
+            && WebRuntimeNavigationIdentity(lhs.committedURL)
+                == WebRuntimeNavigationIdentity(rhs.committedURL)
+            && lhs.isPDF == rhs.isPDF
     }
 }

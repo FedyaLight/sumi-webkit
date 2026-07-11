@@ -1,93 +1,100 @@
 import Foundation
 
-/// Creates, closes, and toggles browser shell windows. Profile maintenance and
-/// session persistence are deliberately outside this command surface.
+/// Creates and closes native browser shells. Contextual link and WebKit-child
+/// policy live in their own transactions instead of accumulating here.
 @MainActor
 final class BrowserWindowCommands {
-    private let windows = BrowserWindowShellService()
-    private weak var browserRuntime: BrowserManager?
+    typealias ContextProvider = @MainActor () -> BrowserWindowShellService.Context
+    typealias WindowRegistryProvider = @MainActor () -> WindowRegistry
 
-    init(browserRuntime: BrowserManager) {
-        self.browserRuntime = browserRuntime
+    private let shells = BrowserWindowShellService()
+    private let context: ContextProvider
+    private let windowRegistry: WindowRegistryProvider
+    private let discardRegistration: @MainActor (BrowserWindowState) -> Void
+    private let discardActivation: @MainActor (BrowserWindowState) -> Void
+
+    init(
+        context: @escaping ContextProvider,
+        windowRegistry: @escaping WindowRegistryProvider,
+        discardRegistration: @escaping @MainActor (BrowserWindowState) -> Void,
+        discardActivation: @escaping @MainActor (BrowserWindowState) -> Void
+    ) {
+        self.context = context
+        self.windowRegistry = windowRegistry
+        self.discardRegistration = discardRegistration
+        self.discardActivation = discardActivation
     }
 
     @discardableResult
-    func createNewWindow() -> BrowserWindowState {
-        windows.createNewWindow(using: makeContext())
+    func createNewWindow() -> BrowserWindowState? {
+        shells.createNewWindow(using: context())
     }
 
     @discardableResult
-    func createNewWindow(
-        initializing initializeBeforePublication:
-            BrowserWindowShellService.StateInitializer,
+    func createPreparedWindow(
+        initialize: BrowserWindowShellService.StateInitializer,
+        validateBeforeShell: @escaping @MainActor (
+            BrowserWindowState
+        ) -> Bool = { _ in true },
+        validateBeforePublication: @escaping @MainActor (
+            BrowserWindowState
+        ) -> Bool = { $0.isAwaitingInitialSessionResolution == false },
+        validateCommittedRegistration:
+            @escaping BrowserWindowShellService.CommittedRegistrationValidator = { _ in true },
         discardPreparedState:
-            BrowserWindowShellService.RejectedRegistrationCompensation
+            BrowserWindowShellService.RejectedRegistrationCompensation,
+        activate: Bool = true,
+        presentAfterRegistration: Bool = true
     ) -> BrowserWindowState? {
-        windows.createNewWindow(
-            using: makeContext(),
-            initializeBeforePublication: initializeBeforePublication,
-            validateAfterRegistration: {
-                $0.isAwaitingInitialSessionResolution == false
+        shells.createNewWindow(
+            using: context(),
+            initializeBeforePublication: initialize,
+            validateBeforeShellPublication: validateBeforeShell,
+            validateRestoredStateBeforePublication: validateBeforePublication,
+            validateCommittedRegistration: validateCommittedRegistration,
+            compensateRejectedRegistration: { [discardRegistration, discardActivation] window in
+                discardRegistration(window)
+                discardPreparedState(window)
+                discardActivation(window)
             },
-            compensateRejectedRegistration: { [weak self] windowState in
-                discardPreparedState(windowState)
-                self?.browserRuntime?.windowSessionBundle.restoration
-                    .discardRegistration(windowState)
-                self?.browserRuntime?.windowSessionBundle.activation
-                    .discardDeferredActivation(windowState)
-            }
+            activateAfterRegistration: activate,
+            presentAfterRegistration: presentAfterRegistration
         )
     }
 
-    func createIncognitoWindow() {
-        windows.createIncognitoWindow(using: makeContext())
+    @discardableResult
+    func presentPreparedWindow(
+        _ window: BrowserWindowState,
+        activate: Bool
+    ) -> Bool {
+        shells.presentRegisteredWindow(
+            window,
+            in: windowRegistry(),
+            activate: activate
+        )
     }
 
-    func closeIncognitoWindow(_ windowState: BrowserWindowState) async {
-        await windows.closeIncognitoWindow(windowState, using: makeContext())
+    @discardableResult
+    func createIncognitoWindow(activate: Bool = true) -> BrowserWindowState {
+        shells.createIncognitoWindow(
+            using: context(),
+            activateAfterRegistration: activate
+        )
+    }
+
+    func closeIncognitoWindow(_ window: BrowserWindowState) async {
+        await shells.closeIncognitoWindow(window, using: context())
     }
 
     func closeActiveWindow() {
-        windows.closeActiveWindow(in: windowRegistry())
+        shells.closeActiveWindow(in: windowRegistry())
     }
 
-    func closeWindow(_ windowState: BrowserWindowState) {
-        windows.closeWindow(windowState, in: windowRegistry())
+    func closeWindow(_ window: BrowserWindowState) {
+        shells.closeWindow(window, in: windowRegistry())
     }
 
     func toggleFullScreenForActiveWindow() {
-        windows.toggleFullScreenForActiveWindow(in: windowRegistry())
-    }
-
-    private func windowRegistry() -> WindowRegistry {
-        guard let browserRuntime else {
-            preconditionFailure(
-                "Browser runtime was released before a window command resolved its registry."
-            )
-        }
-        return browserRuntime.shellRuntime.requireWindowRegistry()
-    }
-
-    private func makeContext() -> BrowserWindowShellService.Context {
-        guard let browserRuntime else {
-            preconditionFailure(
-                "Browser runtime was released before a window command resolved its context."
-            )
-        }
-        return BrowserWindowShellService.Context(
-            windowRegistry: browserRuntime.shellRuntime.requireWindowRegistry(),
-            webViewLifecycle: browserRuntime.shellRuntime.webViewLifecycle,
-            permissionLifecycleController: browserRuntime.permissionRuntime.permissionLifecycleController,
-            profileManager: browserRuntime.profileManager,
-            tabManager: browserRuntime.tabManager,
-            makeContentView: browserRuntime.shellRuntime.requireWindowShellContentViewFactory(),
-            showEmptyState: { [weak browserRuntime] windowState, presentNewTabFloatingBar in
-                browserRuntime?.showEmptyState(
-                    in: windowState,
-                    presentNewTabFloatingBar: presentNewTabFloatingBar
-                )
-            },
-            sidebarHostRecoveryCoordinator: browserRuntime.sidebarHostRecoveryCoordinator
-        )
+        shells.toggleFullScreenForActiveWindow(in: windowRegistry())
     }
 }

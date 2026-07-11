@@ -38,6 +38,13 @@ final class BrowserShellRuntime {
         },
         visibleSplitTabIds: { [weak self] windowId in
             Set(self?.splitQuery?.visibleTabIDs(in: windowId) ?? [])
+        },
+        trackedTabIds: { [weak self] windowId in
+            Set(
+                self?.webViewSessions.trackedWebViews(in: windowId).map {
+                    $0.0.tabID
+                } ?? []
+            )
         }
     )
 
@@ -116,5 +123,4 @@ final class BrowserShellRuntime {
         retainedWindowRegistry = registry
         windowRegistryChanged?(registry)
     }
-
 }

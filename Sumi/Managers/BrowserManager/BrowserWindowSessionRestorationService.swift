@@ -7,59 +7,65 @@ protocol BrowserStartupSessionReconciling: AnyObject {
 
 extension BrowserManager: BrowserStartupSessionReconciling {}
 
-/// The extension events whose payload depends on a fully resolved window
-/// model. Keeping this capability narrow makes publication ordering explicit
-/// without exposing the extension module as a general-purpose dependency.
-@MainActor
-protocol BrowserWindowExtensionLifecycleNotifying: AnyObject {
-    func notifyWindowOpenedIfLoaded(_ windowState: BrowserWindowState)
-    func notifyWindowFocusedIfLoaded(_ windowState: BrowserWindowState)
-}
-
-extension SumiExtensionsModule: BrowserWindowExtensionLifecycleNotifying {}
-
 /// Resolves a newly registered window before extension-open notification and
 /// before the registry's subsequent active-window workflow can run.
 @MainActor
 final class BrowserWindowSessionRestorationService {
     private struct PendingPublication {
         let windowIdentity: ObjectIdentifier
+        var isRegistryCommitted: Bool
     }
 
     private let restoration: WindowSessionRestoreService
-    private let extensions: any BrowserWindowExtensionLifecycleNotifying
+    private let extensionPublication: WindowExtensionPublicationTransaction
     private weak var profileSupport: (any SumiProfileRoutingSupport)?
     private weak var startupSessions: (any BrowserStartupSessionReconciling)?
     private var pendingPublicationsByWindowID: [UUID: PendingPublication] = [:]
 
     init(
         restoration: WindowSessionRestoreService,
-        extensions: any BrowserWindowExtensionLifecycleNotifying,
+        extensionPublication: WindowExtensionPublicationTransaction,
         profileSupport: any SumiProfileRoutingSupport,
         startupSessions: any BrowserStartupSessionReconciling
     ) {
         self.restoration = restoration
-        self.extensions = extensions
+        self.extensionPublication = extensionPublication
         self.profileSupport = profileSupport
         self.startupSessions = startupSessions
     }
 
+    /// Standalone atomic entry point used outside WindowRegistry binding.
+    /// Registry-backed shell creation calls prepare/commit separately.
     func restore(_ windowState: BrowserWindowState) {
-        restoreRegisteredWindows([windowState])
+        prepareRegistration(windowState)
+        commitRegistration(windowState)
+    }
+
+    func prepareRegistration(_ windowState: BrowserWindowState) {
+        restoreModels([windowState])
+    }
+
+    func commitRegistration(_ windowState: BrowserWindowState) {
+        publishCommittedWindows([windowState])
     }
 
     /// Registration is a two-phase transaction: first every model in the
     /// batch is restored, then extension/startup observers can see the batch.
     /// An observer can therefore never see a half-restored preloaded registry.
     func restoreRegisteredWindows(_ windowStates: [BrowserWindowState]) {
-        var readyForPublication: [BrowserWindowState] = []
+        restoreModels(windowStates)
+        publishCommittedWindows(windowStates)
+    }
 
+    private func restoreModels(_ windowStates: [BrowserWindowState]) {
         for windowState in windowStates {
+            extensionPublication.prepareRegistration(windowState)
             if windowState.isIncognito {
-                pendingPublicationsByWindowID.removeValue(
-                    forKey: windowState.id
-                )
-                readyForPublication.append(windowState)
+                pendingPublicationsByWindowID[windowState.id] =
+                    PendingPublication(
+                        windowIdentity: ObjectIdentifier(windowState),
+                        isRegistryCommitted: false
+                    )
                 continue
             }
 
@@ -67,11 +73,28 @@ final class BrowserWindowSessionRestorationService {
                 windowState,
                 currentProfile: profileSupport?.currentProfile
             )
+            pendingPublicationsByWindowID[windowState.id] =
+                PendingPublication(
+                    windowIdentity: ObjectIdentifier(windowState),
+                    isRegistryCommitted: false
+                )
+        }
+    }
+
+    private func publishCommittedWindows(
+        _ windowStates: [BrowserWindowState]
+    ) {
+        var readyForPublication: [BrowserWindowState] = []
+        for windowState in windowStates {
+            guard var pending = pendingPublicationsByWindowID[windowState.id],
+                  pending.windowIdentity == ObjectIdentifier(windowState)
+            else {
+                continue
+            }
+
+            pending.isRegistryCommitted = true
             if windowState.isAwaitingInitialSessionResolution {
-                pendingPublicationsByWindowID[windowState.id] =
-                    PendingPublication(
-                        windowIdentity: ObjectIdentifier(windowState)
-                    )
+                pendingPublicationsByWindowID[windowState.id] = pending
             } else {
                 pendingPublicationsByWindowID.removeValue(
                     forKey: windowState.id
@@ -96,6 +119,9 @@ final class BrowserWindowSessionRestorationService {
         var readyForPublication: [BrowserWindowState] = []
         let registeredWindowIDs = Set(registeredWindows.map(\.id))
         let pendingWindowIDs = Array(pendingPublicationsByWindowID.keys)
+        extensionPublication.discardRegistrations(
+            notIn: registeredWindows
+        )
 
         for windowID in pendingWindowIDs
             where registeredWindowIDs.contains(windowID) == false {
@@ -110,7 +136,8 @@ final class BrowserWindowSessionRestorationService {
                 pendingPublicationsByWindowID.removeValue(forKey: windowID)
                 continue
             }
-            guard windowState.isIncognito == false,
+            guard pending.isRegistryCommitted,
+                  windowState.isIncognito == false,
                   windowState.isAwaitingInitialSessionResolution == false
             else {
                 continue
@@ -126,19 +153,20 @@ final class BrowserWindowSessionRestorationService {
     /// Cancels deferred publication without allowing a replacement object
     /// that happens to reuse the UUID to consume the original registration.
     func discardRegistration(_ windowState: BrowserWindowState) {
-        guard pendingPublicationsByWindowID[windowState.id]?.windowIdentity
-                == ObjectIdentifier(windowState)
-        else {
-            return
+        if pendingPublicationsByWindowID[windowState.id]?.windowIdentity
+            == ObjectIdentifier(windowState) {
+            pendingPublicationsByWindowID.removeValue(
+                forKey: windowState.id
+            )
         }
-        pendingPublicationsByWindowID.removeValue(forKey: windowState.id)
+        extensionPublication.discardRegistration(windowState)
     }
 
     private func publishOpenedWindows(
         _ windowStates: [BrowserWindowState]
     ) {
         for windowState in windowStates {
-            extensions.notifyWindowOpenedIfLoaded(windowState)
+            extensionPublication.commitRegistration(windowState)
         }
     }
 }

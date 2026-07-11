@@ -373,14 +373,28 @@ final class TabMainFrameIntentLedger {
     }
 
     func departure(of webView: WKWebView) -> PendingDeparture {
-        let webViewID = ObjectIdentifier(webView)
-        let removed = pendingLoadsByWebViewID.removeValue(forKey: webViewID)
-        let wasAuthorityCandidate = authorityCandidateWebViewID == webViewID
-        if wasAuthorityCandidate {
-            authorityCandidateWebViewID = nil
+        departure(of: [webView])
+    }
+
+    func departure(of webViews: [WKWebView]) -> PendingDeparture {
+        var removedLoad = false
+        var wasAuthorityCandidate = false
+        var seen: Set<ObjectIdentifier> = []
+        for webView in webViews {
+            let webViewID = ObjectIdentifier(webView)
+            guard seen.insert(webViewID).inserted else { continue }
+            if let load = pendingLoadsByWebViewID[webViewID],
+               load.webViewReference.matches(webView) {
+                pendingLoadsByWebViewID.removeValue(forKey: webViewID)
+                removedLoad = true
+            }
+            if authorityCandidateWebViewID == webViewID {
+                authorityCandidateWebViewID = nil
+                wasAuthorityCandidate = true
+            }
         }
         return PendingDeparture(
-            removedLoad: removed != nil,
+            removedLoad: removedLoad,
             wasAuthorityCandidate: wasAuthorityCandidate
         )
     }

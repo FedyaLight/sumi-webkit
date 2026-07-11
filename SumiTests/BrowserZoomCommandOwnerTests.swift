@@ -102,9 +102,15 @@ final class BrowserZoomCommandOwnerTests: XCTestCase {
         )
         XCTAssertTrue(host.presentReader(
             html: "<html><body><article>Reader</article></body></html>",
-            sourceURL: tab.url,
-            documentLease: lease,
-            navigate: { _ in XCTFail("Reader navigation was not requested") }
+            sourceDocument: SumiReaderSourceDocument(
+                webView: canonicalWebView,
+                lease: lease,
+                sourceURL: tab.url,
+                remoteResourcePolicy: .denyRemoteResources,
+                currentLease: { lease },
+                routeWebLink: { _, _ in false },
+                routeExternalLink: { _ in }
+            )
         ))
         let windowState = BrowserWindowState()
         let owner = makeOwner(

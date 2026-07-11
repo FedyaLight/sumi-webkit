@@ -17,7 +17,6 @@ enum TabMainFrameLifecycleRoutingResult {
 struct TabMainFrameLifecycleDeparture {
     let removedParticipant: Bool
     let wasAuthoritative: Bool
-    let promotion: TabMainFrameAuthorityPromotion?
 }
 
 enum TabMainFrameLifecycleAbortTransition {
@@ -453,31 +452,37 @@ final class TabMainFrameLifecycleMachine {
 
     func departure(
         of webView: WKWebView,
-        preferredAuthorityWebView: WKWebView?,
         currentIntent: TabMainFrameNavigationIntent
     ) -> TabMainFrameLifecycleDeparture {
-        let webViewID = ObjectIdentifier(webView)
-        let removed = participants.remove(webViewID: webViewID)
-        if let removed {
-            effectClaims.removeParticipant(removed.id)
-        }
+        departure(
+            of: [webView],
+            currentIntent: currentIntent
+        )
+    }
+
+    func departure(
+        of webViews: [WKWebView],
+        currentIntent: TabMainFrameNavigationIntent
+    ) -> TabMainFrameLifecycleDeparture {
+        let departingWebViewIDs = Set(webViews.compactMap { webView in
+            participants.exactEntry(for: webView).map { _ in
+                ObjectIdentifier(webView)
+            }
+        })
+        let removed = participants.removeAll(webViews)
+        removed.forEach { effectClaims.removeParticipant($0.id) }
         guard authorityReducer.removeAuthorityIfMatching(
-            webViewID: webViewID,
+            webViewIDs: departingWebViewIDs,
             revision: currentIntent.revision
         ) else {
             return TabMainFrameLifecycleDeparture(
-                removedParticipant: removed != nil,
-                wasAuthoritative: false,
-                promotion: nil
+                removedParticipant: removed.isEmpty == false,
+                wasAuthoritative: false
             )
         }
         return TabMainFrameLifecycleDeparture(
-            removedParticipant: removed != nil,
-            wasAuthoritative: true,
-            promotion: promoteAuthorityCandidate(
-                preferredWebViewID: preferredAuthorityWebView.map(ObjectIdentifier.init),
-                currentIntent: currentIntent
-            )
+            removedParticipant: removed.isEmpty == false,
+            wasAuthoritative: true
         )
     }
 

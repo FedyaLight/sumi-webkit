@@ -7,8 +7,6 @@ struct TabSuspensionWebViewState: Equatable {
     let isCapturingCamera: Bool
     let isCapturingMicrophone: Bool
     let isFullscreen: Bool
-    let isPictureInPicture: Bool
-    let isPDFDocument: Bool
     let isProtectedFromCompositorMutation: Bool
 
     init(
@@ -17,8 +15,6 @@ struct TabSuspensionWebViewState: Equatable {
         isCapturingCamera: Bool = false,
         isCapturingMicrophone: Bool = false,
         isFullscreen: Bool = false,
-        isPictureInPicture: Bool = false,
-        isPDFDocument: Bool = false,
         isProtectedFromCompositorMutation: Bool = false
     ) {
         self.isLoading = isLoading
@@ -26,15 +22,12 @@ struct TabSuspensionWebViewState: Equatable {
         self.isCapturingCamera = isCapturingCamera
         self.isCapturingMicrophone = isCapturingMicrophone
         self.isFullscreen = isFullscreen
-        self.isPictureInPicture = isPictureInPicture
-        self.isPDFDocument = isPDFDocument
         self.isProtectedFromCompositorMutation = isProtectedFromCompositorMutation
     }
 
     @MainActor
     init(
         webView: WKWebView,
-        tab: Tab,
         isProtectedFromCompositorMutation: (WKWebView) -> Bool
     ) {
         self.init(
@@ -43,8 +36,6 @@ struct TabSuspensionWebViewState: Equatable {
             isCapturingCamera: webView.cameraCaptureState != .none,
             isCapturingMicrophone: webView.microphoneCaptureState != .none,
             isFullscreen: webView.sumiIsInFullscreenElementPresentation,
-            isPictureInPicture: tab.suspensionProtection.hasPictureInPictureVideo,
-            isPDFDocument: tab.suspensionProtection.isPDFDocument,
             isProtectedFromCompositorMutation: isProtectedFromCompositorMutation(webView)
         )
     }
@@ -59,7 +50,6 @@ final class TabSuspensionEligibilityEvaluator {
     }
 
     func evaluateWebViews(
-        tab: Tab,
         liveWebViews: [WKWebView],
         isProtectedFromCompositorMutation: (WKWebView) -> Bool
     ) -> TabSuspensionEligibility {
@@ -67,7 +57,6 @@ final class TabSuspensionEligibilityEvaluator {
             liveWebViews.map {
                 TabSuspensionWebViewState(
                     webView: $0,
-                    tab: tab,
                     isProtectedFromCompositorMutation: isProtectedFromCompositorMutation
                 )
             }
@@ -103,10 +92,6 @@ final class TabSuspensionEligibilityEvaluator {
                 return .ineligible(reason: .microphoneCapture)
             }
             guard !state.isFullscreen else { return .ineligible(reason: .fullscreen) }
-            guard !state.isPictureInPicture else {
-                return .ineligible(reason: .pictureInPicture)
-            }
-            guard !state.isPDFDocument else { return .ineligible(reason: .pdfDocument) }
         }
         return .eligible
     }
@@ -132,13 +117,16 @@ final class TabSuspensionEligibilityEvaluator {
         guard !tab.isLoading else { return .ineligible(reason: .loading) }
         guard !tab.audioState.isPlayingAudio else { return .ineligible(reason: .playingAudio) }
         guard !isRecentlyAudible(tab) else { return .ineligible(reason: .recentlyAudible) }
-        guard tab.suspensionProtection.pageVeto == .none else {
+        switch tab.documentSuspensionDecision {
+        case .awaitingEvidence:
+            return .ineligible(reason: .documentEvidencePending)
+        case .allowed:
+            break
+        case .vetoed(.pageReportedUnableToSuspend):
             return .ineligible(reason: .pageVeto)
-        }
-        guard !tab.suspensionProtection.hasPictureInPictureVideo else {
+        case .vetoed(.pictureInPicture):
             return .ineligible(reason: .pictureInPicture)
-        }
-        guard !tab.suspensionProtection.isPDFDocument else {
+        case .vetoed(.pdfDocument):
             return .ineligible(reason: .pdfDocument)
         }
         return nil

@@ -33,14 +33,20 @@ enum SumiReaderModeService {
             throw ReaderError.unavailable
         }
 
-        let html = readerHTML(for: article, sourceURL: sourceURL)
+        let sourceDocument = readerSourceDocument(
+            tab: tab,
+            webView: webView,
+            documentLease: documentLease,
+            sourceURL: sourceURL
+        )
+        let html = readerHTML(
+            for: article,
+            sourceURL: sourceURL,
+            remoteResourcePolicy: sourceDocument.remoteResourcePolicy
+        )
         guard host.presentReader(
             html: html,
-            sourceURL: sourceURL,
-            documentLease: documentLease,
-            navigate: { [weak tab] destinationURL in
-                tab?.loadURL(destinationURL)
-            }
+            sourceDocument: sourceDocument
         ) else {
             throw ReaderError.unavailable
         }
@@ -75,7 +81,152 @@ enum SumiReaderModeService {
         )
     }
 
-    private static func readerHTML(for article: Article, sourceURL: URL) -> String {
+    private static func readerSourceDocument(
+        tab: Tab,
+        webView: WKWebView,
+        documentLease: TabMainFrameDocumentLease,
+        sourceURL: URL
+    ) -> SumiReaderSourceDocument {
+        let isCurrentDocument: @MainActor () -> Bool = { [weak tab, weak webView] in
+            guard let tab, let webView else { return false }
+            return tab.mainFrameDocumentLease(for: webView) == documentLease
+        }
+        return SumiReaderSourceDocument(
+            webView: webView,
+            lease: documentLease,
+            sourceURL: sourceURL,
+            remoteResourcePolicy: remoteResourcePolicy(
+                tab: tab,
+                webView: webView,
+                sourceURL: sourceURL
+            ),
+            currentLease: { [weak tab, weak webView] in
+                guard let tab, let webView else { return nil }
+                return tab.mainFrameDocumentLease(for: webView)
+            },
+            routeWebLink: { [weak tab, weak webView] destinationURL, behavior in
+                guard let tab, let webView, isCurrentDocument() else {
+                    return false
+                }
+                switch behavior {
+                case .currentTab:
+                    tab.loadURL(
+                        destinationURL,
+                        resolvedWebView: { [weak webView] in webView },
+                        reason: "Reader.current-document-link"
+                    )
+                    return true
+                case .newTab(let selected):
+                    guard let sourceWebView = webView as? FocusableWKWebView else {
+                        return false
+                    }
+                    return tab.linkPresentationCommands.open(
+                        destinationURL,
+                        from: sourceWebView,
+                        disposition: .newTab(selected: selected)
+                    )
+                case .newWindow(let selected):
+                    guard let sourceWebView = webView as? FocusableWKWebView else {
+                        return false
+                    }
+                    return tab.linkPresentationCommands.open(
+                        destinationURL,
+                        from: sourceWebView,
+                        disposition: .newWindow(selected: selected)
+                    )
+                }
+            },
+            routeExternalLink: { [weak tab, weak webView] navigationAction in
+                guard let tab, let webView, isCurrentDocument(),
+                      let bridge = tab.navigationRuntime.navigationDelegateRuntime
+                        .externalSchemePermissionBridge(),
+                      let tabContext = tab.externalSchemePermissionTabContext(
+                          for: webView
+                      ) else {
+                    return
+                }
+                let request = SumiExternalSchemePermissionRequest
+                    .fromSumiNavigationAction(navigationAction)
+                _ = await bridge.evaluate(
+                    request,
+                    tabContext: tabContext,
+                    willOpen: { [weak webView] in
+                        webView?.window?.makeFirstResponder(nil)
+                    }
+                )
+            },
+            isGlanceTrigger: { [weak tab] modifierFlags in
+                tab?.isGlanceTriggerActive(modifierFlags) == true
+            },
+            routeGlance: { [weak tab, weak webView] destinationURL, originRect in
+                guard let tab,
+                      let sourceWebView = webView as? FocusableWKWebView,
+                      isCurrentDocument() else {
+                    return false
+                }
+                return tab.linkPresentationCommands.presentInGlance(
+                    destinationURL,
+                    from: sourceWebView,
+                    originRectInWindow: originRect
+                )
+            }
+        )
+    }
+
+    private static func remoteResourcePolicy(
+        tab: Tab,
+        webView: WKWebView,
+        sourceURL: URL
+    ) -> SumiReaderRemoteResourcePolicy {
+        guard let profile = tab.resolveProfile(),
+              webView.configuration.websiteDataStore === profile.dataStore else {
+            return .denyRemoteResources
+        }
+
+        let context = tab.webViewConfigurationContext()
+        let desiredProtection = context.protectionDesiredAttachmentState(
+            sourceURL
+        )
+        let appliedProtection = context.protectionDecision(
+            sourceURL,
+            profile.id
+        )?.attachmentState
+        guard desiredProtection == (appliedProtection ?? .disabled(
+            siteHost: sourceURL.host,
+            requestedLevel: desiredProtection.requestedLevel
+        )) else {
+            return .denyRemoteResources
+        }
+
+        let desiredSafariBlockers = context.safariBlockerDesiredAttachmentState(
+            sourceURL
+        )
+        let appliedSafariBlockers = context.safariContentBlockerAttachmentState(
+            sourceURL
+        ) ?? .disabled(siteHost: sourceURL.host)
+        guard desiredSafariBlockers.hasSameEffectiveWebViewAttachment(
+            as: appliedSafariBlockers
+        ) else {
+            return .denyRemoteResources
+        }
+
+        // A dedicated Reader content controller is mandatory because the
+        // canonical controller contains scripts with normal-tab authority.
+        // WebKit has no public API to enumerate/copy its attached rule lists,
+        // so active rule-list protection means remote Reader media must remain
+        // fail-closed. Local data/blob media and link navigation still work.
+        guard desiredProtection.isEnabled == false,
+              desiredSafariBlockers.isEnabled == false else {
+            return .denyRemoteResources
+        }
+        return .sourceProfileWithoutRuleLists
+    }
+
+    private static func readerHTML(
+        for article: Article,
+        sourceURL: URL,
+        remoteResourcePolicy: SumiReaderRemoteResourcePolicy
+    ) -> String {
         let source = escaped(sourceURL.absoluteString)
         let title = escaped(article.title)
         let siteName = escaped(article.siteName)
@@ -86,13 +237,16 @@ enum SumiReaderModeService {
             .filter { !$0.isEmpty }
             .joined(separator: " - ")
 
+        let contentSecurityPolicy = readerContentSecurityPolicy(
+            remoteResourcePolicy: remoteResourcePolicy
+        )
         return """
         <!doctype html>
         <html lang="\(escaped(article.language))" data-sumi-reader-mode="true" data-sumi-reader-source-url="\(source)">
         <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
-        <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src http: https: data: blob:; media-src http: https: data: blob:; style-src 'unsafe-inline'; font-src data:;">
+        <meta http-equiv="Content-Security-Policy" content="\(contentSecurityPolicy)">
         <title>\(title)</title>
         <style>
         :root {
@@ -219,6 +373,15 @@ enum SumiReaderModeService {
         """
     }
 
+    static func readerContentSecurityPolicy(
+        remoteResourcePolicy: SumiReaderRemoteResourcePolicy
+    ) -> String {
+        let mediaSources = remoteResourcePolicy.allowsRemoteResources
+            ? "http: https: data: blob:"
+            : "data: blob:"
+        return "default-src 'none'; img-src \(mediaSources); media-src \(mediaSources); style-src 'unsafe-inline'; font-src data:;"
+    }
+
     private static func escaped(_ string: String) -> String {
         string
             .replacingOccurrences(of: "&", with: "&amp;")
@@ -324,7 +487,7 @@ enum SumiReaderModeService {
         const out = document.createElement(tag.toLowerCase());
         if (tag === "A") {
           const href = absolutize(attr(node, "href"));
-          if (href && /^(https?|mailto):/i.test(href)) out.setAttribute("href", href);
+          if (href && /^(https?|mailto|tel):/i.test(href)) out.setAttribute("href", href);
         } else if (tag === "IMG") {
           const src = absolutize(attr(node, "src") || attr(node, "data-src") || attr(node, "data-original") || attr(node, "data-lazy-src"));
           if (!src) return document.createDocumentFragment();

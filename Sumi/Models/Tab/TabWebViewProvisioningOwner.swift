@@ -32,7 +32,7 @@ final class TabWebViewProvisioningOwner {
         currentURL: URL?,
         isExtensionOriginated: Bool,
         reason: String
-    ) -> WKWebView {
+    ) -> FocusableWKWebView {
         let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
         context.preparationRuntime.prepareCreatedFocusableWebView(
             webView,
