@@ -88,7 +88,7 @@ extension ShortcutSidebarRowChrome {
                 alignment: .leading
             )
             .background(displayIsResetHovering ? actionBackground : Color.clear)
-            .clipShape(resetHighlightShape)
+            .clipShape(SidebarRowLayout.leadingActionShape(cornerRadius: rowCornerRadius))
 
             RoundedRectangle(cornerRadius: 2, style: .continuous)
                 .fill(tokens.secondaryText.opacity(displayIsResetHovering ? 0 : 0.3))
@@ -106,16 +106,8 @@ extension ShortcutSidebarRowChrome {
         .padding(.trailing, SidebarRowLayout.changedLauncherResetTrailingGap)
     }
 
-    var resetHighlightShape: some Shape {
-        UnevenRoundedRectangle(
-            cornerRadii: .init(
-                topLeading: 8,
-                bottomLeading: 8,
-                bottomTrailing: 0,
-                topTrailing: 0
-            ),
-            style: .continuous
-        )
+    var rowCornerRadius: CGFloat {
+        sumiSettings.resolvedCornerRadius(SidebarRowLayout.defaultCornerRadius)
     }
 
     @ViewBuilder

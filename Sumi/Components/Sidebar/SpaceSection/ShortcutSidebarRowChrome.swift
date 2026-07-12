@@ -34,7 +34,6 @@ struct ShortcutSidebarRowChrome: View {
     @StateObject var storedFaviconLoader = SidebarStoredFaviconLoader()
 
     var body: some View {
-        let cornerRadius = sumiSettings.resolvedCornerRadius(12)
         HStack(spacing: 0) {
             if runtimeAffordance.usesResetLeadingAction, let onResetToLaunchURL {
                 Button(action: onResetToLaunchURL) {
@@ -97,7 +96,7 @@ struct ShortcutSidebarRowChrome: View {
         }
         .sidebarRowSurface(
             background: backgroundColor,
-            cornerRadius: cornerRadius,
+            cornerRadius: rowCornerRadius,
             tokens: tokens,
             isVisible: drawsRowSurface,
             drawsSelectionShadow: runtimeAffordance.isSelected

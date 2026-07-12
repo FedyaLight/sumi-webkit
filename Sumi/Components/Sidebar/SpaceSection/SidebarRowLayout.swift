@@ -8,6 +8,7 @@ import SwiftUI
 
 enum SidebarRowLayout {
     static let rowHeight: CGFloat = 36
+    static let defaultCornerRadius: CGFloat = 12
     static let selectionZIndex: Double = 1
     static let selectionShadowRadius: CGFloat = 1.5
     static let selectionShadowYOffset: CGFloat = 0.8
@@ -34,6 +35,16 @@ enum SidebarRowLayout {
     static let changedLauncherResetHeight: CGFloat = rowHeight
     static let changedLauncherResetIconLeading: CGFloat = 12
     static let changedLauncherResetTrailingGap: CGFloat = 4
+
+    static func leadingActionShape(cornerRadius: CGFloat) -> UnevenRoundedRectangle {
+        UnevenRoundedRectangle(
+            cornerRadii: .init(
+                topLeading: cornerRadius,
+                bottomLeading: cornerRadius
+            ),
+            style: .continuous
+        )
+    }
 }
 
 struct SidebarFadingRowTitleLabel: View {
