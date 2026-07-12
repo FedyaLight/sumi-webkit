@@ -688,7 +688,7 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
             reason: "ExtensionActionInvocationAdmissionTests"
         )
         let adapter = try XCTUnwrap(
-            harness.manager.adapterResolutionOwner.stableAdapter(for: harness.tab)
+            harness.manager.adapterCatalog.stableAdapter(for: harness.tab)
         )
         harness.manager.adapterStore.removeTabAdapter(for: harness.tab.id)
 

@@ -315,7 +315,7 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
             )
         )
         let replacementAdapter = try XCTUnwrap(
-            harness.extensionManager.adapterResolutionOwner
+            harness.extensionManager.adapterCatalog
                 .publishedNormalWindowAdapter(
                     for: replacementWindow,
                     extensionContext: harness.extensionContext
@@ -359,7 +359,7 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
         let extensionID = "action-owner"
         let harness = try await makeHarness(extensionID: extensionID)
         let sourceTabAdapter = try XCTUnwrap(
-            harness.extensionManager.adapterResolutionOwner.stableAdapter(
+            harness.extensionManager.adapterCatalog.stableAdapter(
                 for: harness.sourceTab
             )
         )
@@ -389,7 +389,7 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
             for: executionProfile.id
         )
         XCTAssertNil(
-            harness.extensionManager.adapterResolutionOwner
+            harness.extensionManager.adapterCatalog
                 .publishedNormalWindowAdapter(
                     for: harness.windowState,
                     extensionContext: profileBContext
@@ -516,7 +516,7 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
         var activeTabWasVisibleAtOpen: [Bool] = []
         harness.extensionManager.testHooks.didOpenTab = { _ in
             guard let window = harness.extensionManager
-                .adapterResolutionOwner.publishedNormalWindowAdapter(
+                .adapterCatalog.publishedNormalWindowAdapter(
                     for: harness.windowState,
                     extensionContext: harness.extensionContext
                 )
@@ -629,7 +629,7 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
             .tabOpenNotificationGeneration
         harness.extensionManager.normalTabClosure.close(tab)
         let adapter = try XCTUnwrap(
-            harness.extensionManager.adapterResolutionOwner
+            harness.extensionManager.adapterCatalog
                 .stableAdapter(for: tab)
         )
         var didCloseCount = 0
@@ -680,7 +680,7 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
             .tabOpenNotificationGeneration
         harness.extensionManager.normalTabClosure.close(tab)
         let adapter = try XCTUnwrap(
-            harness.extensionManager.adapterResolutionOwner
+            harness.extensionManager.adapterCatalog
                 .stableAdapter(for: tab)
         )
         var didCloseCount = 0
@@ -734,7 +734,7 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
         )
         harness.extensionManager.normalTabClosure.close(tab)
         let adapter = try XCTUnwrap(
-            harness.extensionManager.adapterResolutionOwner
+            harness.extensionManager.adapterCatalog
                 .stableAdapter(for: tab)
         )
         harness.extensionManager.normalWindowLifecycle.closed(
@@ -1245,7 +1245,7 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
             )
         )
         _ = try XCTUnwrap(
-            extensionManager.adapterResolutionOwner
+            extensionManager.adapterCatalog
                 .publishedNormalWindowAdapter(
                     for: windowState,
                     extensionContext: extensionContext
@@ -1308,7 +1308,7 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
             )
         )
         let windowAdapter = try XCTUnwrap(
-            harness.extensionManager.adapterResolutionOwner
+            harness.extensionManager.adapterCatalog
                 .publishedNormalWindowAdapter(
                     for: harness.windowState,
                     extensionContext: harness.extensionContext

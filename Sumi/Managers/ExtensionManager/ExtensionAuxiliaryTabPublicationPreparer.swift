@@ -24,7 +24,7 @@ final class ExtensionAuxiliaryTabPublicationPreparer:
     private let profileRuntime: ExtensionProfileRuntime
     private let adapterStore: ExtensionBrowserAdapterStore
     private let controllerBinding: ExtensionControllerAttachmentOwner
-    private let adapterResolution: ExtensionAdapterResolutionOwner
+    private let adapterResolution: ExtensionAdapterCatalog
     private let extensionsLoaded: @MainActor () -> Bool
 
     init(
@@ -32,7 +32,7 @@ final class ExtensionAuxiliaryTabPublicationPreparer:
         profileRuntime: ExtensionProfileRuntime,
         adapterStore: ExtensionBrowserAdapterStore,
         controllerBinding: ExtensionControllerAttachmentOwner,
-        adapterResolution: ExtensionAdapterResolutionOwner,
+        adapterResolution: ExtensionAdapterCatalog,
         extensionsLoaded: @escaping @MainActor () -> Bool
     ) {
         self.runtimeSession = runtimeSession

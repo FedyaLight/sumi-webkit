@@ -253,7 +253,7 @@ final class SafariExtensionAccountForkPipelineTests: XCTestCase {
         /// extension created itself through `tabs.create`).
         @MainActor
         func adapterResolutionDiagnostics(for probedTab: Tab) -> String {
-            let adapter = manager.adapterResolutionOwner.stableAdapter(for: probedTab)
+            let adapter = manager.adapterCatalog.stableAdapter(for: probedTab)
             let adapterWebView = adapter?.webView(for: extensionContext)
             let lookupTab = browserManager.tabManager.tabCollectionMembershipOwner.tab(for: probedTab.id)
             return "adapter=\(adapter == nil ? "nil" : "present") "
@@ -271,7 +271,7 @@ final class SafariExtensionAccountForkPipelineTests: XCTestCase {
         /// and compares each adapter's `webView(for:)` page).
         @MainActor
         var adapterResolutionDiagnostics: String {
-            let adapter = manager.adapterResolutionOwner.stableAdapter(for: tab)
+            let adapter = manager.adapterCatalog.stableAdapter(for: tab)
             let adapterWebView = adapter?.webView(for: extensionContext)
             let eligible = manager.isTabEligibleForCurrentExtensionRuntime(tab)
             let adapterTab = adapter?.tab

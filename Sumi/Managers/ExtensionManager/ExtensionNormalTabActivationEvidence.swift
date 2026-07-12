@@ -31,7 +31,7 @@ final class ExtensionNormalTabActivationValidator {
     private let runtimeSession: ExtensionRuntimeSession
     private let profileRuntime: ExtensionProfileRuntime
     private let adapterStore: ExtensionBrowserAdapterStore
-    private let adapterResolution: ExtensionAdapterResolutionOwner
+    private let adapterResolution: ExtensionAdapterCatalog
     private let normalWindows: ExtensionNormalWindowLifecycle
     private let windowPublications: ExtensionWindowPublicationQuery
     private let runtime: @MainActor () -> ExtensionManagerRuntime
@@ -42,7 +42,7 @@ final class ExtensionNormalTabActivationValidator {
         runtimeSession: ExtensionRuntimeSession,
         profileRuntime: ExtensionProfileRuntime,
         adapterStore: ExtensionBrowserAdapterStore,
-        adapterResolution: ExtensionAdapterResolutionOwner,
+        adapterResolution: ExtensionAdapterCatalog,
         normalWindows: ExtensionNormalWindowLifecycle,
         windowPublications: ExtensionWindowPublicationQuery,
         runtime: @escaping @MainActor () -> ExtensionManagerRuntime,

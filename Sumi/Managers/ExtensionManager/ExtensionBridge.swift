@@ -56,7 +56,26 @@ protocol ExtensionTabCreation: AnyObject {
 
 @available(macOS 15.5, *)
 @MainActor
-protocol ExtensionTabWebViewHosting: AnyObject {
+protocol ExtensionTabLiveWebViewQuery: AnyObject {
+    func extensionLiveWebView(for tab: Tab) -> WKWebView?
+}
+
+@available(macOS 15.5, *)
+@MainActor
+protocol ExtensionTabReloadHosting: AnyObject {
+    func reloadExtensionTab(
+        _ tab: Tab,
+        webView: WKWebView,
+        in windowState: BrowserWindowState?,
+        policy: WebRuntimeMainFrameReloadPolicy
+    ) -> TabMainFrameReloadCommandOutcome
+}
+
+@available(macOS 15.5, *)
+@MainActor
+protocol ExtensionTabWebViewHosting:
+    ExtensionTabLiveWebViewQuery,
+    ExtensionTabReloadHosting {
     func materializeVisibleExtensionTabWebViewIfNeeded(
         _ tab: Tab,
         in windowState: BrowserWindowState
@@ -73,17 +92,11 @@ protocol ExtensionTabWebViewHosting: AnyObject {
         prepareCommittedReplacement: ((WKWebView) -> Void)?,
         validate: ((WKWebView) -> Bool)?
     ) -> WKWebView?
-    func reloadExtensionTab(
-        _ tab: Tab,
-        webView: WKWebView,
-        in windowState: BrowserWindowState?,
-        policy: WebRuntimeMainFrameReloadPolicy
-    ) -> TabMainFrameReloadCommandOutcome
 }
 
 @available(macOS 15.5, *)
 @MainActor
-protocol ExtensionWindowQuery: AnyObject {
+protocol ExtensionWindowQuery: ExtensionTabWindowProjectionQuery {
     var allExtensionWindowStates: [BrowserWindowState] { get }
     var activeExtensionWindowState: BrowserWindowState? { get }
     func extensionWindowState(for windowId: UUID) -> BrowserWindowState?
@@ -102,7 +115,7 @@ protocol ExtensionWindowQuery: AnyObject {
 
 @available(macOS 15.5, *)
 @MainActor
-protocol ExtensionTabQuery: AnyObject {
+protocol ExtensionTabQuery: ExtensionTabPinningQuery {
     func extensionTab(for tabId: UUID) -> Tab?
     func isTransientExtensionTab(_ tab: Tab) -> Bool
     func isAuxiliaryMiniWindowTab(_ tab: Tab) -> Bool
@@ -111,9 +124,16 @@ protocol ExtensionTabQuery: AnyObject {
 
 @available(macOS 15.5, *)
 @MainActor
-protocol ExtensionTabMutation: ExtensionTabCreation {
+protocol ExtensionTabCommandRouting: AnyObject {
+    func selectExtensionTab(_ tab: Tab, in windowState: BrowserWindowState)
     func promoteTransientExtensionTab(_ tab: Tab) -> Bool
 }
+
+@available(macOS 15.5, *)
+@MainActor
+protocol ExtensionTabMutation:
+    ExtensionTabCreation,
+    ExtensionTabCommandRouting {}
 
 @available(macOS 15.5, *)
 @MainActor
@@ -123,7 +143,9 @@ protocol ExtensionWindowActivation: AnyObject {
 
 @available(macOS 15.5, *)
 @MainActor
-protocol ExtensionAuxiliaryWindowControl: AnyObject {
+protocol ExtensionAuxiliaryWindowControl:
+    ExtensionAuxiliaryTabSessionQuery,
+    ExtensionAuxiliaryTabClosing {
     func auxiliaryWindowSession(for tab: Tab) -> AuxiliaryWindowSession?
     func auxiliaryWindowSession(for sessionId: UUID) -> AuxiliaryWindowSession?
     func auxiliaryWindowSession(for window: NSWindow) -> AuxiliaryWindowSession?
@@ -302,7 +324,7 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
             return nil
         }
 
-        let adapter = extensionManager.adapterResolutionOwner.stableAdapter(for: tab)
+        let adapter = extensionManager.adapterCatalog.stableAdapter(for: tab)
         SafariExtensionAutofillFillDiagnostics.recordPopupTabVisibility(
             seesCurrentTab: adapter != nil,
             extensionId: extensionManager.extensionID(for: extensionContext),
@@ -328,7 +350,7 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
             extensionManager.resolvedProfileId(for: $0) == contextProfileId
                 && extensionManager.isTabEligibleForCurrentExtensionRuntime($0)
         }.compactMap {
-            extensionManager.adapterResolutionOwner.stableAdapter(for: $0)
+            extensionManager.adapterCatalog.stableAdapter(for: $0)
         }
     }
 

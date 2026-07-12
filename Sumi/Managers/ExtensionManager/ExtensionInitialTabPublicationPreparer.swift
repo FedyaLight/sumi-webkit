@@ -25,7 +25,7 @@ final class ExtensionInitialTabPublicationPreparer {
         adapterStore: ExtensionBrowserAdapterStore,
         controllerQuery: any ExtensionControllerBindingQuery,
         controllerAttachment: any ExtensionControllerAttaching,
-        adapterResolution: ExtensionAdapterResolutionOwner,
+        adapterResolution: ExtensionAdapterCatalog,
         contextLoading: any ExtensionContentScriptContextLoading,
         windowPublications: ExtensionWindowPublicationQuery,
         events: any ExtensionInitialTabLifecycleEventSink,

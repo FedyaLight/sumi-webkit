@@ -96,7 +96,7 @@ extension ExtensionManager {
             profileRuntime: profileRuntime,
             adapterStore: adapterStore,
             controllerBinding: controllerAttachmentOwner,
-            adapterResolution: adapterResolutionOwner,
+            adapterResolution: adapterCatalog,
             extensionsLoaded: { [weak self] in
                 self?.extensionsLoaded == true
             }
@@ -134,7 +134,7 @@ extension ExtensionManager {
             runtimeSession: runtimeSession,
             profileRuntime: profileRuntime,
             adapterStore: adapterStore,
-            adapterResolution: adapterResolutionOwner,
+            adapterResolution: adapterCatalog,
             normalWindows: normalWindows,
             windowPublications: publications,
             runtime: { [weak self] in self?.runtime ?? .inactive },
@@ -168,7 +168,7 @@ extension ExtensionManager {
             profileRuntime: profileRuntime,
             normalWindows: normalWindows,
             publicationGate: gate,
-            adapterResolution: adapterResolutionOwner,
+            adapterResolution: adapterCatalog,
             controllerBinding: controllerAttachmentOwner,
             tabPublication: normalTabRuntimeBindingOwner,
             isAuxiliarySessionTab: publications.isAuxiliarySessionTab,

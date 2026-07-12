@@ -767,7 +767,7 @@ final class SumiExtensionsModule {
     }
 
     func stableAdapter(for tab: Tab) -> ExtensionTabAdapter? {
-        managerIfLoadedAndEnabled()?.adapterResolutionOwner.stableAdapter(for: tab)
+        managerIfLoadedAndEnabled()?.adapterCatalog.stableAdapter(for: tab)
     }
 
     func setActionAnchorIfLoaded(for extensionId: String, anchorView: NSView) {

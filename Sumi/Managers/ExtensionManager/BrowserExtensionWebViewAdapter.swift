@@ -5,6 +5,7 @@ import WebKit
 @available(macOS 15.5, *)
 @MainActor
 final class BrowserExtensionWebViewAdapter: ExtensionTabWebViewHosting {
+    private let liveWebView: @MainActor (Tab) -> WKWebView?
     private let materializeVisible: @MainActor (
         Tab,
         BrowserWindowState
@@ -26,6 +27,7 @@ final class BrowserExtensionWebViewAdapter: ExtensionTabWebViewHosting {
     ) -> TabMainFrameReloadCommandOutcome
 
     init(
+        liveWebView: @escaping @MainActor (Tab) -> WKWebView?,
         materializeVisible: @escaping @MainActor (
             Tab,
             BrowserWindowState
@@ -46,10 +48,15 @@ final class BrowserExtensionWebViewAdapter: ExtensionTabWebViewHosting {
             WebRuntimeMainFrameReloadPolicy
         ) -> TabMainFrameReloadCommandOutcome
     ) {
+        self.liveWebView = liveWebView
         self.materializeVisible = materializeVisible
         self.windowOwnedWebView = windowOwnedWebView
         self.replaceLiveWebView = replaceLiveWebView
         self.reload = reload
+    }
+
+    func extensionLiveWebView(for tab: Tab) -> WKWebView? {
+        liveWebView(tab)
     }
 
     func materializeVisibleExtensionTabWebViewIfNeeded(

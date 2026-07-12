@@ -33,7 +33,6 @@ final class ExtensionControllerAttachmentOwner: ExtensionControllerBinding {
         let registerTabWithExtensionRuntime: @MainActor (Tab, String) -> Void
         let tabDescription: @MainActor (Tab) -> String
         let webViewDescription: @MainActor (WKWebView) -> String
-        let recordFrameResolution: @MainActor (Bool, WKWebExtensionContext, String) -> Void
         let trace: @MainActor (() -> String) -> Void
     }
 
@@ -127,42 +126,6 @@ final class ExtensionControllerAttachmentOwner: ExtensionControllerBinding {
             profileId
         )
         return true
-    }
-
-    func extensionWebView(
-        for tab: Tab,
-        extensionContext: WKWebExtensionContext
-    ) -> WKWebView? {
-        guard tabMatchesExtensionContext(tab, extensionContext: extensionContext),
-              let webView = resolvedLiveWebView(for: tab)
-        else {
-            dependencies.recordFrameResolution(
-                false,
-                extensionContext,
-                "extensionWebViewMissingLiveTarget"
-            )
-            return nil
-        }
-
-        guard attachExtensionControllerIfNeeded(to: webView, for: tab),
-              let profileId = dependencies.resolvedProfileId(tab),
-              let expectedController = dependencies.profileRuntime.controller(for: profileId),
-              webView.configuration.webExtensionController === expectedController
-        else {
-            dependencies.recordFrameResolution(
-                false,
-                extensionContext,
-                "extensionWebViewControllerMismatch"
-            )
-            return nil
-        }
-
-        dependencies.recordFrameResolution(
-            true,
-            extensionContext,
-            "extensionWebViewReady"
-        )
-        return webView
     }
 
     func ensureExtensionControllerAttachedForTab(
@@ -357,13 +320,6 @@ extension ExtensionControllerAttachmentOwner.Dependencies {
             webViewDescription: { webView in
                 ExtensionRuntimeDiagnostics.objectDescription(webView)
             },
-            recordFrameResolution: { [weak manager] resolved, context, reason in
-                SafariExtensionAutofillFillDiagnostics.recordFrameResolution(
-                    resolved: resolved,
-                    extensionId: manager?.extensionID(for: context),
-                    reason: reason
-                )
-            },
             trace: { [weak manager] message in
                 manager?.runtimeDiagnostics.trace(message())
             }
@@ -402,16 +358,6 @@ extension ExtensionManager {
         for tab: Tab
     ) -> Bool {
         controllerAttachmentOwner.attachExtensionControllerIfNeeded(to: webView, for: tab)
-    }
-
-    func extensionWebView(
-        for tab: Tab,
-        extensionContext: WKWebExtensionContext
-    ) -> WKWebView? {
-        controllerAttachmentOwner.extensionWebView(
-            for: tab,
-            extensionContext: extensionContext
-        )
     }
 
     func ensureExtensionControllerAttachedForTab(

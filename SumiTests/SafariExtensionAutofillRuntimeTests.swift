@@ -108,7 +108,11 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
         let configuration = browserConfiguration.auxiliaryWebViewConfiguration(
             surface: .extensionOptions
         )
-        let tab = makeTab(profileId: profile.id, url: URL(string: "https://example.com")!)
+        let tab = browserManager.tabManager.tabFactory.makeTab(
+            url: URL(string: "https://example.com")!,
+            name: "Test"
+        )
+        tab.profileId = profile.id
         let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
         webView.owningTab = tab
         tab.replaceUntrackedWebView(webView)
@@ -117,9 +121,14 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
             manager: manager,
             profile: profile
         )
-        XCTAssertNil(manager.extensionWebView(for: tab, extensionContext: extensionContext))
+        XCTAssertNil(
+            manager.tabWebViewResolver.extensionWebView(
+                for: tab,
+                extensionContext: extensionContext
+            )
+        )
 
-        let adapter = try XCTUnwrap(manager.adapterResolutionOwner.stableAdapter(for: tab))
+        let adapter = try XCTUnwrap(manager.adapterCatalog.stableAdapter(for: tab))
         manager.extensionsLoaded = true
         tab.extensionPageRuntimeOwner.eligibleGeneration = manager.runtimeSession.tabOpenNotificationGeneration
         XCTAssertNil(adapter.webView(for: extensionContext))
@@ -197,7 +206,7 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
             profileID: profile.id
         )
 
-        let adapter = try XCTUnwrap(manager.adapterResolutionOwner.stableAdapter(for: tab))
+        let adapter = try XCTUnwrap(manager.adapterCatalog.stableAdapter(for: tab))
         XCTAssertTrue(manager.isTabEligibleForCurrentExtensionRuntime(tab))
         XCTAssertNotNil(adapter.url(for: try XCTUnwrap(manager.getExtensionContext(for: installed.id))))
     }
@@ -225,7 +234,12 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
             manager: manager,
             profile: profile
         )
-        XCTAssertNil(manager.extensionWebView(for: tab, extensionContext: extensionContext))
+        XCTAssertNil(
+            manager.tabWebViewResolver.extensionWebView(
+                for: tab,
+                extensionContext: extensionContext
+            )
+        )
     }
 
     func testAutofillPagesHTTPServerServesLoginBasic() async throws {

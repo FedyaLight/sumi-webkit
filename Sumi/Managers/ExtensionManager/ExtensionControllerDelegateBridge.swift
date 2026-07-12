@@ -183,7 +183,7 @@ final class ExtensionControllerDelegateBridge: NSObject, WKWebExtensionControlle
                     extensionContext: extensionContext,
                     reason: "webExtensionController.openNewTabUsing"
                 )
-                completionHandler(manager.adapterResolutionOwner.stableAdapter(for: newTab), nil)
+                completionHandler(manager.adapterCatalog.stableAdapter(for: newTab), nil)
             } catch {
                 completionHandler(
                     nil,

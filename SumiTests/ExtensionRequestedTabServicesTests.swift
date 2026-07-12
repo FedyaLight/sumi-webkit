@@ -599,7 +599,17 @@ final class ExtensionRequestedTabServicesTests:
             harness.manager.adapterStore.tabAdapters[staleTab.id]
         )
         let spaceID = try XCTUnwrap(staleTab.spaceId)
-        let replacementTab = Tab(
+        harness.browserManager.tabManager.tabClosureService.removeTab(
+            staleTab.id
+        )
+        XCTAssertNil(
+            harness.manager.adapterStore.existingTabAdapter(
+                for: staleTab.id
+            )
+        )
+
+        let replacementTab = harness.browserManager.tabManager.tabFactory
+            .makeTab(
             id: staleTab.id,
             url: URL(string: "https://replacement.example/same-id")!,
             name: "Replacement",
@@ -607,26 +617,21 @@ final class ExtensionRequestedTabServicesTests:
             index: staleTab.index
         )
         replacementTab.profileId = harness.profile.id
-        replacementTab.attachBrowserRuntime(
-            TabBrowserRuntimeFactory.make(for: harness.browserManager)
+        harness.browserManager.tabManager.regularTabLifecycleOwner.addTab(
+            replacementTab
         )
 
-        harness.browserManager.tabManager.tabCollectionMembershipOwner
-            .detach(staleTab)
-        var tabsBySpace = harness.browserManager.tabManager
-            .regularTabCollectionStateOwner.tabsBySpaceSnapshot()
-        tabsBySpace[spaceID] = (tabsBySpace[spaceID] ?? []).map {
-            $0 === staleTab ? replacementTab : $0
-        }
-        harness.browserManager.tabManager.regularTabCollectionStateOwner
-            .replaceTabsBySpace(tabsBySpace)
-        harness.browserManager.tabManager.tabCollectionMembershipOwner
-            .attach(replacementTab)
-
         let replacementAdapter = try XCTUnwrap(
-            harness.manager.adapterResolutionOwner.stableAdapter(
+            harness.manager.adapterCatalog.stableAdapter(
                 for: replacementTab
             )
+        )
+        replacementTab.extensionPageRuntimeOwner.eligibleGeneration =
+            harness.manager.runtimeSession.tabOpenNotificationGeneration
+        let replacementWebView = attachUsableExtensionWebView(
+            to: replacementTab,
+            manager: harness.manager,
+            profile: harness.profile
         )
 
         XCTAssertEqual(staleAdapter.tabId, replacementAdapter.tabId)
@@ -639,6 +644,19 @@ final class ExtensionRequestedTabServicesTests:
         )
         XCTAssertNil(staleAdapter.url(for: harness.extensionContext))
         XCTAssertNil(staleAdapter.window(for: harness.extensionContext))
+        XCTAssertNil(
+            harness.manager.tabWebViewResolver.extensionWebView(
+                for: staleTab,
+                extensionContext: harness.extensionContext
+            )
+        )
+        XCTAssertIdentical(
+            harness.manager.tabWebViewResolver.extensionWebView(
+                for: replacementTab,
+                extensionContext: harness.extensionContext
+            ),
+            replacementWebView
+        )
         XCTAssertFalse(
             staleAdapter.shouldGrantPermissionsOnUserGesture(
                 for: harness.extensionContext
@@ -688,7 +706,7 @@ final class ExtensionRequestedTabServicesTests:
         let spaceB: Space
     }
 
-    private struct RequestedPublicationHarness {
+    struct RequestedPublicationHarness {
         let manager: ExtensionManager
         let browserManager: BrowserManager
         let profile: Profile
@@ -699,7 +717,7 @@ final class ExtensionRequestedTabServicesTests:
         let publishedWindow: ExtensionWindowAdapter
     }
 
-    private func makeRequestedPublicationHarness() async throws
+    func makeRequestedPublicationHarness() async throws
         -> RequestedPublicationHarness {
         SafariExtensionLiveWebKitTestLease.holdForProcess()
         let container = try makeTestContainer()
@@ -752,6 +770,7 @@ final class ExtensionRequestedTabServicesTests:
             backing: .buffered,
             defer: false
         )
+        appKitWindow.isReleasedWhenClosed = false
         windowRegistry.bindAppKitWindow(appKitWindow, to: window)
         windowRegistry.register(window)
         windowRegistry.setActive(window)

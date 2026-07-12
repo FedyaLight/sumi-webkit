@@ -50,6 +50,18 @@ normal_window_lifecycle='Sumi/Managers/ExtensionManager/ExtensionNormalWindowLif
 normal_window_projection='Sumi/Managers/ExtensionManager/ExtensionNormalWindowProjectionResolver.swift'
 context_publication_query='Sumi/Managers/ExtensionManager/ExtensionContextPublicationQuery.swift'
 controller_attachment='Sumi/Managers/ExtensionManager/ExtensionControllerAttachmentOwner.swift'
+extension_tab_shell='Sumi/Managers/ExtensionManager/ExtensionTabAdapter.swift'
+extension_tab_evidence='Sumi/Managers/ExtensionManager/ExtensionTabCurrentPublicationEvidence.swift'
+extension_tab_projection='Sumi/Managers/ExtensionManager/ExtensionTabReadProjection.swift'
+extension_tab_commands='Sumi/Managers/ExtensionManager/ExtensionTabCommandMutation.swift'
+extension_tab_webview='Sumi/Managers/ExtensionManager/ExtensionTabWebViewResolver.swift'
+extension_tab_roles=(
+  "$extension_tab_shell"
+  "$extension_tab_evidence"
+  "$extension_tab_projection"
+  "$extension_tab_commands"
+  "$extension_tab_webview"
+)
 window_request_router='Sumi/Managers/ExtensionManager/ExtensionWindowRequestRouter.swift'
 requested_tab_opening='Sumi/Managers/ExtensionManager/ExtensionRequestedTabOpeningService.swift'
 requested_tab_registrar='Sumi/Managers/ExtensionManager/ExtensionCreatedTabRuntimeRegistrar.swift'
@@ -113,6 +125,7 @@ required_files=(
   "$normal_window_projection"
   "$context_publication_query"
   "$controller_attachment"
+  "${extension_tab_roles[@]}"
   "$window_request_router"
   "$requested_tab_opening"
   "$requested_tab_registrar"
@@ -647,21 +660,25 @@ if ! rg -Fq 'childConfiguration.websiteDataStore === profile.dataStore' \
 fi
 
 normal_window_lookup_consumers=(
-  Sumi/Managers/ExtensionManager/ExtensionTabAdapter.swift
+  "$extension_tab_projection"
   Sumi/Managers/ExtensionManager/ExtensionActionPopupPresentation.swift
 )
 raw_normal_window_lookup_hits="$(
-  rg -n '\b(browserRuntimeBridgeOwner\.publishedWindowAdapter|adapterResolutionOwner\.windowAdapter)\b' \
+  rg -n '\b(browserRuntimeBridgeOwner\.publishedWindowAdapter|adapterCatalog\.windowAdapter)\b' \
     "${normal_window_lookup_consumers[@]}" || true
 )"
 fail_matches \
   "normal-window consumer bypassed context-bound published projection" \
   "$raw_normal_window_lookup_hits"
 
-for file in "${normal_window_lookup_consumers[@]}"; do
-  if ! rg -Fq 'publishedNormalWindowAdapter(' "$file"; then
-    printf 'error: context-bound normal-window projection lookup missing: %s\n' \
-      "$file" >&2
+if ! rg -Fq 'publishedNormalWindowAdapter(' \
+    Sumi/Managers/ExtensionManager/ExtensionActionPopupPresentation.swift; then
+  printf 'error: context-bound action-popup window projection missing\n' >&2
+  status=1
+fi
+for boundary in 'publishedWindowAdapter(' 'adapter.represents(window)'; do
+  if ! rg -Fq "$boundary" "$extension_tab_projection"; then
+    printf 'error: exact Tab window projection missing: %s\n' "$boundary" >&2
     status=1
   fi
 done
@@ -671,7 +688,7 @@ for required_projection_boundary in \
   'extensionContext: WKWebExtensionContext' \
   'adapter.represents(windowState)'; do
   if ! rg -Fq "$required_projection_boundary" \
-      Sumi/Managers/ExtensionManager/ExtensionAdapterResolutionOwner.swift; then
+      Sumi/Managers/ExtensionManager/ExtensionAdapterCatalog.swift; then
     printf 'error: published normal-window projection boundary missing: %s\n' \
       "$required_projection_boundary" >&2
     status=1
@@ -700,7 +717,7 @@ for required_exact_context_boundary in \
   if ! rg -Fq "$required_exact_context_boundary" \
       "$context_publication_query" \
       Sumi/Managers/ExtensionManager/ExtensionBridge.swift \
-      Sumi/Managers/ExtensionManager/ExtensionTabAdapter.swift \
+      "$extension_tab_evidence" \
       "$controller_attachment" \
       "$window_request_router"; then
     printf 'error: exact current-context capability boundary missing: %s\n' \
@@ -714,7 +731,7 @@ fuzzy_context_capability_hits="$(
     'profileRuntime\??\.(contextIdentity|profileId)\([[:space:]]*for:[[:space:]]*(extensionContext|context)' \
     "$context_publication_query" \
     Sumi/Managers/ExtensionManager/ExtensionBridge.swift \
-    Sumi/Managers/ExtensionManager/ExtensionTabAdapter.swift \
+    "$extension_tab_evidence" \
     "$controller_attachment" \
     "$window_request_router" || true
 )"
@@ -776,7 +793,7 @@ mini_window_adapter_source="$(
 )"
 mini_window_aggregate_hits="$(
   printf '%s\n' "$mini_window_adapter_source" \
-    | rg -n '\bExtensionManager\b|adapterResolutionOwner|\btabQuery\b' || true
+    | rg -n '\bExtensionManager\b|adapterCatalog|\btabQuery\b' || true
 )"
 fail_matches \
   "mini-window capability reaches through an aggregate or UUID tab query" \
@@ -817,7 +834,7 @@ for required_exact_tab_adapter_boundary in \
   'func prune(liveTabs: [Tab]' \
   'adapter.represents(liveTab)'; do
   if ! rg -Fq "$required_exact_tab_adapter_boundary" \
-      Sumi/Managers/ExtensionManager/ExtensionTabAdapter.swift \
+      "${extension_tab_roles[@]}" \
       "$adapter_store"; then
     printf 'error: exact Tab adapter identity boundary missing: %s\n' \
       "$required_exact_tab_adapter_boundary" >&2
@@ -882,7 +899,7 @@ for required_tab_receipt_boundary in \
 done
 
 for required_auxiliary_visibility_boundary in \
-  'private weak var windowPublications: ExtensionWindowPublicationQuery?' \
+  'private weak var windowPublications:' \
   'windowPublications?.isCommittedAuxiliaryTabAdapter(' \
   'publishedAuxiliaryTabAdapter(' \
   'if tab.isAuxiliaryMiniWindow' \
@@ -890,10 +907,47 @@ for required_auxiliary_visibility_boundary in \
   'adapters.sort {' \
   'focusedExtensionMiniWindowAdapter('; do
   if ! rg -Fq "$required_auxiliary_visibility_boundary" \
-      Sumi/Managers/ExtensionManager/ExtensionTabAdapter.swift \
+      "${extension_tab_roles[@]}" \
       "$window_publication_query" "$auxiliary_publication_query"; then
     printf 'error: auxiliary owner-context visibility/query boundary missing: %s\n' \
       "$required_auxiliary_visibility_boundary" >&2
+    status=1
+  fi
+done
+
+tab_role_aggregate_lines="$({ cat "${extension_tab_roles[@]}"; } | wc -l | tr -d ' ')"
+if (( tab_role_aggregate_lines > 780 )); then
+  printf 'error: Extension Tab shell/evidence/projection/command/WebView aggregate grew beyond 780 LOC (%s)\n' \
+    "$tab_role_aggregate_lines" >&2
+  status=1
+fi
+
+tab_shell_lines="$(wc -l < "$extension_tab_shell" | tr -d ' ')"
+if (( tab_shell_lines > 140 )); then
+  printf 'error: WKWebExtensionTab protocol shell grew beyond 140 LOC (%s)\n' \
+    "$tab_shell_lines" >&2
+  status=1
+fi
+
+tab_role_aggregate_hits="$(
+  rg -n '\bExtensionManager(Runtime)?\b|\bBrowserManager\b|\bstruct (Dependencies|Actions)\b|\bclass [A-Za-z0-9_]*Owner\b|ExtensionNormalTabRuntimeBindingOwner|ExtensionControllerAttachmentOwner' \
+    "${extension_tab_roles[@]}" || true
+)"
+fail_matches \
+  "Extension Tab roles reached through a manager root or aggregate bag" \
+  "$tab_role_aggregate_hits"
+
+if (( $(rg -Fc 'tabIsCurrent(tab)' "$extension_tab_webview") < 2 )); then
+  printf 'error: Extension Tab WebView resolver must revalidate exact Tab identity before and after attachment\n' >&2
+  status=1
+fi
+
+for required_exact_webview_boundary in \
+  'tabs.extensionTab(for: tab.id) === tab' \
+  '(webView as? FocusableWKWebView)?.owningTab === tab'; do
+  if ! rg -Fq "$required_exact_webview_boundary" "$composition"; then
+    printf 'error: exact physical Extension Tab WebView boundary missing: %s\n' \
+      "$required_exact_webview_boundary" >&2
     status=1
   fi
 done

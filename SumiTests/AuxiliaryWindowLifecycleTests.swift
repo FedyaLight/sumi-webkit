@@ -827,7 +827,7 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
             webView.configuration.webExtensionController,
             harness.extensionManager.ensureExtensionController(for: harness.profile.id)
         )
-        XCTAssertNotNil(harness.extensionManager.adapterResolutionOwner.stableAdapter(for: authTab))
+        XCTAssertNotNil(harness.extensionManager.adapterCatalog.stableAdapter(for: authTab))
         XCTAssertTrue(authTab.extensionPageRuntimeOwner.didNotifyOpenToExtensions)
     }
 

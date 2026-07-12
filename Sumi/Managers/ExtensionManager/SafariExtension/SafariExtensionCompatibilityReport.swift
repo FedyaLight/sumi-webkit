@@ -97,7 +97,7 @@ struct SafariCompatibilityReportRuntime {
                     .currentExtensionTabForActiveWindow()
             },
             stableAdapter: { [weak extensionManager] tab in
-                extensionManager?.adapterResolutionOwner.stableAdapter(for: tab)
+                extensionManager?.adapterCatalog.stableAdapter(for: tab)
             }
         )
     }

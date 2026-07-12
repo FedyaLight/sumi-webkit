@@ -77,7 +77,7 @@ for literal in \
 done
 
 raw_adapter_hits="$(
-  rg -n 'adapterResolutionOwner\.windowAdapter|adapterStore\.windowAdapter' \
+  rg -n 'adapterCatalog\.windowAdapter|adapterStore\.windowAdapter' \
     "$router" "$transaction" || true
 )"
 if [[ -n "$raw_adapter_hits" ]]; then

@@ -137,7 +137,7 @@ enum SafariExtensionAutofillInfrastructureClassifier {
             )
         }
 
-        guard extensionManager.adapterResolutionOwner.stableAdapter(for: tab) != nil else {
+        guard extensionManager.adapterCatalog.stableAdapter(for: tab) != nil else {
             return classification(
                 .tabMappingMissing,
                 detail: "No stable WKWebExtensionTab adapter is registered for this tab"
@@ -198,7 +198,10 @@ enum SafariExtensionAutofillInfrastructureClassifier {
             )
         }
 
-        if extensionManager.extensionWebView(for: tab, extensionContext: extensionContext) == nil {
+        if extensionManager.tabWebViewResolver.extensionWebView(
+            for: tab,
+            extensionContext: extensionContext
+        ) == nil {
             return classification(
                 .scriptingExecuteScriptTargetMissing,
                 secondary: [.frameMappingMissing],

@@ -1,5 +1,5 @@
 //
-//  ExtensionAdapterResolutionOwner.swift
+//  ExtensionAdapterCatalog.swift
 //  Sumi
 //
 //  Resolves (and lazily creates) the WKWebExtension window/tab adapter
@@ -12,7 +12,7 @@ import WebKit
 
 @available(macOS 15.5, *)
 @MainActor
-final class ExtensionAdapterResolutionOwner {
+final class ExtensionAdapterCatalog {
     private weak var manager: ExtensionManager?
 
     init(manager: ExtensionManager) {
@@ -113,16 +113,37 @@ final class ExtensionAdapterResolutionOwner {
                 return nil
             }
 
-            return ExtensionTabAdapter(
+            let evidence = ExtensionTabCurrentPublicationEvidence(
                 tab: tab,
+                tabQuery: tabQuery,
+                runtimeSession: manager.runtimeSession,
+                profileID: { [weak manager] tab in
+                    manager?.resolvedProfileId(for: tab)
+                },
+                adapterPublications: manager.adapterStore,
+                windowPublications: manager.windowPublications,
+                contextPublications: manager.contextPublications
+            )
+            let projection = ExtensionTabReadProjection(
+                evidence: evidence,
                 windowQuery: windowQuery,
                 tabQuery: tabQuery,
+                webViews: manager.tabWebViewResolver,
+                auxiliaryWindows: auxiliaryWindows,
+                windowPublications: manager.windowPublications
+            )
+            let commands = ExtensionTabCommandMutation(
+                evidence: evidence,
+                projection: projection,
+                windowQuery: windowQuery,
                 tabMutation: tabMutation,
                 webViewHosting: webViewHosting,
-                auxiliaryWindows: auxiliaryWindows,
-                windowPublications: manager.windowPublications,
-                contextPublications: manager.contextPublications,
-                extensionManager: manager
+                auxiliaryWindows: auxiliaryWindows
+            )
+            return ExtensionTabAdapter(
+                evidence: evidence,
+                projection: projection,
+                commands: commands
             )
         }
     }

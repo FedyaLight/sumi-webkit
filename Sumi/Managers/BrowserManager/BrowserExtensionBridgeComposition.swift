@@ -105,6 +105,20 @@ final class BrowserExtensionBridgeComposition {
         )
 
         let webViews = BrowserExtensionWebViewAdapter(
+            liveWebView: { [webViewOwnershipQuery, tabs] tab in
+                guard tabs.extensionTab(for: tab.id) === tab else {
+                    return nil
+                }
+                if let windowID = webViewOwnershipQuery.primaryWindowID(
+                    for: tab.id
+                ), let webView = webViewOwnershipQuery.webView(
+                    for: tab.id,
+                    in: windowID
+                ), (webView as? FocusableWKWebView)?.owningTab === tab {
+                    return webView
+                }
+                return webViewOwnershipQuery.untrackedOwnedWebView(for: tab)
+            },
             materializeVisible: { [weak browserManager] tab, windowState in
                 browserManager?.materializeVisibleTabWebViewIfNeeded(
                     tab,

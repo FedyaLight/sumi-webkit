@@ -196,7 +196,7 @@ extension ExtensionManager: AuxiliaryWindowExtensionEventHandling {
             },
             makeMiniWindowAdapter: {
                 [weak self] sessionID, tab, window, isPrivate, shouldActivate in
-                self?.adapterResolutionOwner.miniWindowAdapter(
+                self?.adapterCatalog.miniWindowAdapter(
                     for: sessionID,
                     tab: tab,
                     window: window,

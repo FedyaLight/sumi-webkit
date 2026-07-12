@@ -25,7 +25,7 @@ final class ExtensionPageContextMenuItemsOwner {
         guard let manager,
               manager.isTabEligibleForCurrentExtensionRuntime(tab),
               let profileId = manager.resolvedProfileId(for: tab),
-              let tabAdapter = manager.adapterResolutionOwner.stableAdapter(for: tab)
+              let tabAdapter = manager.adapterCatalog.stableAdapter(for: tab)
         else { return [] }
 
         return manager.extensionContexts(for: profileId)

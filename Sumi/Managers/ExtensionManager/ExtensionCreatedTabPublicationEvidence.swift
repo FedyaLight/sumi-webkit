@@ -36,11 +36,11 @@ final class ExtensionCreatedTabAdapterPublication {
     }
 
     private let store: ExtensionBrowserAdapterStore
-    private let resolution: ExtensionAdapterResolutionOwner
+    private let resolution: ExtensionAdapterCatalog
 
     init(
         store: ExtensionBrowserAdapterStore,
-        resolution: ExtensionAdapterResolutionOwner
+        resolution: ExtensionAdapterCatalog
     ) {
         self.store = store
         self.resolution = resolution

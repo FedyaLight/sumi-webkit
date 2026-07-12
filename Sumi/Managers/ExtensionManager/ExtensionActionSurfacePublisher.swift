@@ -131,7 +131,7 @@ extension ExtensionActionSurfacePublisher {
                     .currentExtensionTabForActiveWindow()
             },
             stableAdapter: { [weak manager] tab in
-                manager?.adapterResolutionOwner.stableAdapter(for: tab)
+                manager?.adapterCatalog.stableAdapter(for: tab)
             },
             resolvedProfileId: { [weak manager] profileId in
                 manager?.resolvedProfileId(explicitProfileId: profileId)

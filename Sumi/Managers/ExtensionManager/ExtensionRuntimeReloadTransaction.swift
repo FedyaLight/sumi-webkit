@@ -39,7 +39,7 @@ final class ExtensionRuntimeReloadTransaction {
     private let profileRuntime: ExtensionProfileRuntime
     private let normalWindows: ExtensionNormalWindowLifecycle
     private let publicationGate: ExtensionRuntimePublicationGate
-    private let adapterResolution: ExtensionAdapterResolutionOwner
+    private let adapterResolution: ExtensionAdapterCatalog
     private let controllerBinding: ExtensionControllerAttachmentOwner
     private let tabPublication: ExtensionNormalTabRuntimeBindingOwner
     private let isAuxiliarySessionTab: @MainActor (Tab) -> Bool
@@ -51,7 +51,7 @@ final class ExtensionRuntimeReloadTransaction {
         profileRuntime: ExtensionProfileRuntime,
         normalWindows: ExtensionNormalWindowLifecycle,
         publicationGate: ExtensionRuntimePublicationGate,
-        adapterResolution: ExtensionAdapterResolutionOwner,
+        adapterResolution: ExtensionAdapterCatalog,
         controllerBinding: ExtensionControllerAttachmentOwner,
         tabPublication: ExtensionNormalTabRuntimeBindingOwner,
         isAuxiliarySessionTab: @escaping @MainActor (Tab) -> Bool,

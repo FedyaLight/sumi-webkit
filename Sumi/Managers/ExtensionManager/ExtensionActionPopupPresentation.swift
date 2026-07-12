@@ -140,7 +140,7 @@ enum ExtensionActionPopupPresentation {
             ),
             manager.profileId(for: extensionContext)
                 == sourceReceipt.profileID,
-            let requestedWindow = manager.adapterResolutionOwner
+            let requestedWindow = manager.adapterCatalog
                 .publishedNormalWindowAdapter(
                     for: source.windowState,
                     extensionContext: extensionContext

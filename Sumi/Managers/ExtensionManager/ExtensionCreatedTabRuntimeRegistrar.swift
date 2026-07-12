@@ -14,7 +14,7 @@ final class ExtensionCreatedTabRuntimeRegistrar {
         profileRuntime: ExtensionProfileRuntime,
         adapterStore: ExtensionBrowserAdapterStore,
         controllerBinding: ExtensionControllerAttachmentOwner,
-        adapterResolution: ExtensionAdapterResolutionOwner,
+        adapterResolution: ExtensionAdapterCatalog,
         contextLoading: any ExtensionContentScriptContextLoading,
         publications: ExtensionWindowPublicationQuery,
         publicationAdmission: ExtensionTabPublicationAdmission,

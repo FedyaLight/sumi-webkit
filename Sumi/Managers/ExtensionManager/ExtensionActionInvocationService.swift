@@ -202,7 +202,7 @@ extension ExtensionActionInvocationService.Environment {
             actionPublication: manager.actionSurfacePublisher,
             runtimeSession: manager.runtimeSession,
             stableAdapter: { [weak manager] in
-                manager?.adapterResolutionOwner.stableAdapter(for: $0)
+                manager?.adapterCatalog.stableAdapter(for: $0)
             },
             registerTab: { [weak manager] tab, reason in
                 manager?.registerTabWithExtensionRuntime(tab, reason: reason)

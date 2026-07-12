@@ -56,9 +56,9 @@ final class ExtensionNormalWindowProjectionResolver {
               let controller = manager.profileRuntime
               .controllersByProfile[profileID],
               manager.extensionController(for: selectedTab) === controller,
-              let selectedTabAdapter = manager.adapterResolutionOwner
+              let selectedTabAdapter = manager.adapterCatalog
               .stableAdapter(for: selectedTab),
-              let windowAdapter = manager.adapterResolutionOwner
+              let windowAdapter = manager.adapterCatalog
               .windowAdapter(for: window.id),
               windowAdapter.represents(window)
         else {

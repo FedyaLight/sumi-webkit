@@ -450,14 +450,15 @@ extension AuxiliaryWindowLifecycleTests {
         let replacement = Tab(
             id: reusedID,
             url: URL(string: "https://replacement.example")!,
-            spaceId: harness.sourceTab.spaceId
+            spaceId: harness.sourceTab.spaceId,
+            webViewSessions: harness.browserManager.webViewSessions
         )
         replacement.profileId = harness.profile.id
         harness.browserManager.tabManager.regularTabLifecycleOwner.addTab(
             replacement
         )
         let replacementAdapter = try XCTUnwrap(
-            harness.extensionManager.adapterResolutionOwner
+            harness.extensionManager.adapterCatalog
                 .stableAdapter(for: replacement)
         )
 
@@ -728,7 +729,7 @@ extension AuxiliaryWindowLifecycleTests {
         )
 
         let replacementAdapter = try XCTUnwrap(
-            harness.extensionManager.adapterResolutionOwner.miniWindowAdapter(
+            harness.extensionManager.adapterCatalog.miniWindowAdapter(
                 for: session.id,
                 tab: session.tab,
                 window: NSWindow(),

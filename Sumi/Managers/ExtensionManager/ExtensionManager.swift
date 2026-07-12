@@ -138,7 +138,7 @@ final class ExtensionManager: NSObject, ObservableObject {
         profileRuntime: profileRuntime,
         adapterStore: adapterStore,
         controllerBinding: controllerAttachmentOwner,
-        adapterResolution: adapterResolutionOwner,
+        adapterResolution: adapterCatalog,
         contextLoading: initialDocumentRuntimePreparationOwner,
         publications: windowPublications,
         publicationAdmission: tabPublicationAdmission,
@@ -153,7 +153,7 @@ final class ExtensionManager: NSObject, ObservableObject {
             adapterStore: adapterStore,
             controllerQuery: controllerAttachmentOwner,
             controllerAttachment: controllerAttachmentOwner,
-            adapterResolution: adapterResolutionOwner,
+            adapterResolution: adapterCatalog,
             contextLoading: initialDocumentRuntimePreparationOwner,
             windowPublications: windowPublications,
             events: normalTabRuntimeBindingOwner,
@@ -180,7 +180,7 @@ final class ExtensionManager: NSObject, ObservableObject {
         profileRuntime: profileRuntime,
         runtime: { [weak self] in self?.runtime ?? .inactive },
         hasTabAdapter: { [weak self] tab in
-            self?.adapterResolutionOwner.stableAdapter(for: tab) != nil
+            self?.adapterCatalog.stableAdapter(for: tab) != nil
         }
     )
     #if DEBUG || SUMI_DIAGNOSTICS
@@ -232,7 +232,7 @@ final class ExtensionManager: NSObject, ObservableObject {
     lazy var runtimeLifecycleOwner = ExtensionRuntimeLifecycleOwner(
         dependencies: .live(manager: self)
     )
-    lazy var adapterResolutionOwner = ExtensionAdapterResolutionOwner(
+    lazy var adapterCatalog = ExtensionAdapterCatalog(
         manager: self
     )
     lazy var errorObservationOwner = ExtensionErrorObservationOwner(
@@ -249,6 +249,20 @@ final class ExtensionManager: NSObject, ObservableObject {
     )
     lazy var controllerAttachmentOwner = ExtensionControllerAttachmentOwner(
         dependencies: .live(manager: self)
+    )
+    lazy var tabWebViewResolver = ExtensionTabWebViewResolver(
+        profileRuntime: profileRuntime,
+        contextPublications: contextPublications,
+        controllerAttachment: controllerAttachmentOwner,
+        profileID: { [weak self] tab in
+            self?.resolvedProfileId(for: tab)
+        },
+        tabIsCurrent: { [weak self] tab in
+            self?.extensionTabQuery?.extensionTab(for: tab.id) === tab
+        },
+        liveWebView: { [weak self] tab in
+            self?.extensionWebViewHosting?.extensionLiveWebView(for: tab)
+        }
     )
     lazy var extensionActionInvocation = ExtensionActionInvocationService(
         environment: .makeLive(manager: self)
