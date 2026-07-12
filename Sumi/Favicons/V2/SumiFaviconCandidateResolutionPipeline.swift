@@ -184,7 +184,7 @@ enum SumiFaviconSelectionPolicy {
 
         switch selection.sourceKind {
         case .documentLink, .extensionManifest, .webAppManifest:
-            return !explicitCandidatesCanImprove(
+            return !hasBetterExplicitCandidate(
                 over: selection,
                 candidates: explicitCandidates
             )
@@ -203,11 +203,16 @@ enum SumiFaviconSelectionPolicy {
         lhs.absoluteString.caseInsensitiveCompare(rhs.absoluteString) == .orderedSame
     }
 
-    private static func explicitCandidatesCanImprove(
+    private static func hasBetterExplicitCandidate(
         over selection: SumiStoredFaviconSelection,
         candidates: [SumiFaviconCandidate]
     ) -> Bool {
-        guard selection.payloadKind != .svg else { return false }
+        if selection.payloadKind == .svg {
+            // SVG quality is resolution-independent, so document membership is
+            // the only upgrade signal. A removed source may be a theme variant.
+            return !containsSourceURL(selection.sourceURL, in: candidates)
+        }
+
         let currentPixels = max(selection.pixelWidth ?? 0, selection.pixelHeight ?? 0)
         let targetPixels = max(
             1,
@@ -236,5 +241,12 @@ enum SumiFaviconSelectionPolicy {
                 && type != "image/vnd.microsoft.icon"
                 && ext != "ico"
         }
+    }
+
+    private static func containsSourceURL(
+        _ sourceURL: URL,
+        in candidates: [SumiFaviconCandidate]
+    ) -> Bool {
+        candidates.contains { sameFaviconURL($0.iconURL, sourceURL) }
     }
 }
