@@ -73,9 +73,6 @@ tell application "Finder"
   set current view of theWindow to icon view
   set toolbar visible of theWindow to false
   set statusbar visible of theWindow to false
-  try
-    set pathbar visible of theWindow to false
-  end try
   set bounds of theWindow to {160, 140, 720, 400}
   set theOptions to icon view options of theWindow
   set arrangement of theOptions to not arranged
