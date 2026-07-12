@@ -4,7 +4,6 @@ import WebKit
 @available(macOS 15.5, *)
 enum ExtensionActionRuntimeResolution {
     struct Ready {
-        let extensionRecord: InstalledExtension
         let profileID: UUID
         let context: WKWebExtensionContext
     }
@@ -164,7 +163,6 @@ final class ExtensionActionRuntimeResolver {
         )
         return .ready(
             .init(
-                extensionRecord: extensionRecord,
                 profileID: profileID,
                 context: context
             )

@@ -53,6 +53,12 @@ final class ExtensionBrowserAdapterStore {
         windowAdapters[windowID]
     }
 
+    /// Non-creating identity read for exact-authority revalidation. Consumers
+    /// that need an adapter materialized must resolve through `tabAdapter`.
+    func existingTabAdapter(for tabID: UUID) -> ExtensionTabAdapter? {
+        tabAdapters[tabID]
+    }
+
     func tabAdapter(
         for tab: Tab,
         create: () -> ExtensionTabAdapter?

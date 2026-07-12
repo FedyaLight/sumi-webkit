@@ -155,6 +155,11 @@ final class TabCommittedDocumentRuntime {
         )
     }
 
+    /// Exact canonical-document identity for external admission evidence.
+    var authorityProof: TabCommittedDocumentAuthorityProof {
+        ledger.authorityProof()
+    }
+
     var suspensionDecision: TabDocumentSuspensionDecision {
         ledger.suspensionDecision()
     }

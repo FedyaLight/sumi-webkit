@@ -950,8 +950,10 @@ check_max "TabWebContentRecoveryMarkerLedger methods" \
   "$tab_recovery_marker_ledger_methods" 3
 check_max "TabWebContentRecoveryMarkerLedger stored state" \
   "$(rg --count-matches '^    private (let|var|weak var) [a-zA-Z_]' "$tab_recovery_marker_ledger")" 1
+# 294 → 299: read-only canonical-document authority proof exposed for exact
+# action-invocation admission (no new mutation surface).
 check_max "TabCommittedDocumentRuntime.swift LOC" \
-  "$tab_committed_document_runtime_loc" 294
+  "$tab_committed_document_runtime_loc" 299
 check_max "TabCommittedDocumentRuntime methods" \
   "$tab_committed_document_runtime_methods" 22
 check_max "TabCommittedDocumentRuntime collaborators" \

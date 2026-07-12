@@ -12,6 +12,10 @@ final class TabProfileAssignmentStateMachine {
     private var pendingIntent: DeferredWebViewProfileAssignmentIntent?
     private var settlingIntent: DeferredWebViewProfileAssignmentIntent?
 
+    /// Monotonic read-only revision for external exact-authority evidence.
+    /// Any assignment mutation advances it, so A→B→A churn is observable.
+    var changeRevision: UInt64 { revision }
+
     /// Replaces stable model state outside this transaction. A replacement
     /// tombstones pending evidence; physical settlement cannot be superseded
     /// because its repository lease must finish or roll back first.
@@ -21,7 +25,7 @@ final class TabProfileAssignmentStateMachine {
         guard currentProfileID != profileID || pendingIntent != nil else {
             return true
         }
-        revision &+= 1
+        advanceRevision()
         pendingIntent = nil
         currentProfileID = profileID
         return true
@@ -37,7 +41,7 @@ final class TabProfileAssignmentStateMachine {
             settlingIntent == nil,
             "A profile transition must settle before another transition begins"
         )
-        revision &+= 1
+        advanceRevision()
         let intent = DeferredWebViewProfileAssignmentIntent(
             revision: revision,
             expectedProfileID: currentProfileID,
@@ -121,5 +125,10 @@ final class TabProfileAssignmentStateMachine {
     func abort(_ intent: DeferredWebViewProfileAssignmentIntent) {
         guard pendingIntent == intent else { return }
         pendingIntent = nil
+    }
+
+    private func advanceRevision() {
+        precondition(revision < UInt64.max, "Tab profile-assignment revision exhausted")
+        revision += 1
     }
 }

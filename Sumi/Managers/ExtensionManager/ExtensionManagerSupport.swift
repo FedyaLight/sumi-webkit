@@ -204,6 +204,10 @@ enum BrowserExtensionActionPopupBlocker:
     case runtimeUnavailable
     case runtimeLoadFailed
     case contextUnavailable
+    /// The click's captured authority (context/controller binding, catalog
+    /// record, Tab profile or committed document) was superseded mid-flight;
+    /// the invocation stopped before its next effect.
+    case staleInvocation
 }
 
 /// Precise internal buckets when the generic action-popup runtime gate fails.

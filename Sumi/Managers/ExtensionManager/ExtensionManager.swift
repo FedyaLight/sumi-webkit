@@ -550,6 +550,9 @@ final class ExtensionManager: NSObject, ObservableObject {
                 (@MainActor (String, WKWebExtensionContext) async throws -> Void)?
             var permissionPromptDecision:
                 ((WKWebExtensionContext, [String], String) -> ExtensionPermissionPromptDecision)?
+            /// Fires exactly at the WebKit `performAction` dispatch boundary
+            /// of an admitted action invocation.
+            var didDispatchExtensionAction: ((String) -> Void)?
             var webExtensionDataCleanup: (@MainActor (String) async -> Bool)?
             var didOpenTab: ((UUID) -> Void)?
             var didDeferOpenTab: ((UUID, String) -> Void)?

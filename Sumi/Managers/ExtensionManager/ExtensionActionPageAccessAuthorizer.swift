@@ -1,119 +1,161 @@
 import Foundation
 import WebKit
 
-/// Resolves and persists the page-access decision required by one action click.
+/// Terminal state of one action click's page-access authorization.
+@available(macOS 15.5, *)
+enum ExtensionActionPageAccessOutcome {
+    case authorized
+    case denied
+    /// The invocation authority was superseded; nothing further was mutated,
+    /// persisted or recorded, and the action must not run.
+    case stale
+}
+
+/// Resolves and persists the page-access decision required by one action
+/// click. It accepts only typed invocation evidence: identity comes from the
+/// evidence, effects act only on the captured page URL, and every WebKit
+/// mutation, durable persistence step and diagnostic is separated by an
+/// exact admission barrier so a stale prompt settles without effects.
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionActionPageAccessAuthorizer {
     struct Environment {
         let capabilities: SafariExtensionInstallCapabilityOwner
-        let siteAccess: ExtensionSiteAccessPolicyCoordinator
+        /// Deferred so constructing the invocation boundary for a rejected
+        /// click cannot materialize the runtime bundle's lazy systems.
+        let siteAccess: @MainActor () -> ExtensionSiteAccessPolicyCoordinator?
         let decisions: ExtensionPermissionDecisionStore
-        let stableAdapter: @MainActor (Tab) -> ExtensionTabAdapter?
-        let extensionID: @MainActor (WKWebExtensionContext) -> String?
-        let resolvedProfileID: @MainActor (Tab) -> UUID?
-        let currentProfileID: @MainActor () -> UUID?
         let prompt: @MainActor (
             WKWebExtensionContext, [String], String, String
         ) async -> ExtensionManager.ExtensionPermissionPromptDecision
     }
 
     private let environment: Environment
+    private let admission: ExtensionActionInvocationAdmission
 
-    init(environment: Environment) {
+    init(
+        environment: Environment,
+        admission: ExtensionActionInvocationAdmission
+    ) {
         self.environment = environment
+        self.admission = admission
+    }
+
+    /// Applies the configured host policy using only captured identity. This
+    /// replaces the manager facade that recomputed extension/profile identity
+    /// from mutable context state during the invocation.
+    func applyConfiguredPolicy(
+        evidence: ExtensionActionInvocationEvidence
+    ) -> Bool {
+        guard admission.isCurrent(evidence),
+              let siteAccess = environment.siteAccess(),
+              admission.isCurrent(evidence)
+        else {
+            return false
+        }
+        siteAccess.applyConfiguredSiteAccessPolicy(
+            to: evidence.context,
+            extensionId: evidence.extensionID,
+            profileId: evidence.profileID,
+            webExtension: evidence.context.webExtension,
+            manifest: evidence.installedRecord.manifest
+        )
+        return admission.isCurrent(evidence)
     }
 
     func authorize(
-        context: WKWebExtensionContext,
-        installedExtension: InstalledExtension,
-        tab: Tab
-    ) async -> Bool {
-        let currentURL = tab.url
-        guard Self.isWebURL(currentURL) else { return true }
+        evidence: ExtensionActionInvocationEvidence
+    ) async -> ExtensionActionPageAccessOutcome {
+        guard let page = evidence.page else { return .authorized }
+        let pageURL = page.pageURL
+        guard Self.isWebURL(pageURL) else { return .authorized }
 
-        let adapter = environment.stableAdapter(tab)
-        let manifest = installedExtension.manifest
+        let context = evidence.context
+        let manifest = evidence.installedRecord.manifest
         let permissions = Self.stringArray(from: manifest["permissions"])
         let optionalPermissions = Self.stringArray(from: manifest["optional_permissions"])
         if (permissions + optionalPermissions).contains("activeTab") {
+            // grantActiveTabURLAccess reads the live Tab URL; it may only run
+            // while that URL is still exactly the captured, authorized page.
+            guard admission.isCurrent(evidence),
+                  page.tab.url == pageURL
+            else { return .stale }
             environment.capabilities.grantActiveTabURLAccess(
                 for: context,
-                tab: tab,
+                tab: page.tab,
                 manifest: manifest,
-                extensionId: nil,
-                profileId: nil
+                extensionId: evidence.extensionID,
+                profileId: evidence.profileID
             )
-            return true
+            return .authorized
         }
 
         let status = environment.capabilities.effectivePermissionStatus(
-            for: currentURL,
+            for: pageURL,
             in: context,
-            tab: adapter
+            tab: evidence.adapter
         )
         if environment.capabilities.isGrantedPermissionStatus(status) {
-            return true
+            return .authorized
         }
         if status == .deniedExplicitly {
-            return false
+            return .denied
         }
+        guard admission.isCurrent(evidence) else { return .stale }
         if environment.capabilities.explicitlyGrantURLIfCoveredByGrantedMatchPattern(
-            currentURL,
+            pageURL,
             in: context,
-            tab: adapter
+            tab: evidence.adapter
         ) {
-            return true
+            return .authorized
         }
 
-        let decisionProfileID = tab.profileId
-            ?? environment.resolvedProfileID(tab)
-            ?? environment.currentProfileID()
-        if let extensionID = environment.extensionID(context),
-           let decisionProfileID {
-            switch environment.siteAccess.configuredSiteAccessLevel(
-                for: currentURL,
-                extensionId: extensionID,
-                profileId: decisionProfileID
-            ) {
-            case .allow:
-                environment.siteAccess.grantSiteAccess(
-                    to: currentURL,
-                    in: context,
-                    extensionId: extensionID,
-                    profileId: decisionProfileID,
-                    expirationDate: nil,
-                    persistPolicy: false
-                )
-                return true
-            case .deny:
-                environment.siteAccess.denySiteAccess(
-                    to: currentURL,
-                    in: context,
-                    extensionId: extensionID,
-                    profileId: decisionProfileID,
-                    persistPolicy: false
-                )
-                SafariExtensionAutofillFillDiagnostics.recordHostPermission(
-                    granted: false,
-                    extensionId: installedExtension.id,
-                    reason: "actionClickSiteAccessDenied"
-                )
-                return false
-            case .ask:
-                break
-            }
+        guard let siteAccess = environment.siteAccess() else { return .stale }
+        switch siteAccess.configuredSiteAccessLevel(
+            for: pageURL,
+            extensionId: evidence.extensionID,
+            profileId: evidence.profileID
+        ) {
+        case .allow:
+            guard admission.isCurrent(evidence) else { return .stale }
+            siteAccess.grantSiteAccess(
+                to: pageURL,
+                in: context,
+                extensionId: evidence.extensionID,
+                profileId: evidence.profileID,
+                expirationDate: nil,
+                persistPolicy: false
+            )
+            return .authorized
+        case .deny:
+            guard admission.isCurrent(evidence) else { return .stale }
+            siteAccess.denySiteAccess(
+                to: pageURL,
+                in: context,
+                extensionId: evidence.extensionID,
+                profileId: evidence.profileID,
+                persistPolicy: false
+            )
+            guard admission.isCurrent(evidence) else { return .stale }
+            SafariExtensionAutofillFillDiagnostics.recordHostPermission(
+                granted: false,
+                extensionId: evidence.extensionID,
+                reason: "actionClickSiteAccessDenied"
+            )
+            return .denied
+        case .ask:
+            break
         }
 
         guard Self.requiresCurrentPagePermission(
-            installedExtension,
-            currentURL: currentURL
+            evidence.installedRecord,
+            currentURL: pageURL
         ) else {
-            return true
+            return .authorized
         }
 
-        let host = currentURL.host ?? currentURL.scheme ?? "this site"
-        let pattern = environment.siteAccess.hostMatchPatternString(for: currentURL)
+        let host = pageURL.host ?? pageURL.scheme ?? "this site"
+        let pattern = siteAccess.hostMatchPatternString(for: pageURL)
         let dedupeTargets = pattern.map { [$0] } ?? [host]
         let dedupeKey = environment.decisions.permissionPromptDedupeKey(
             extensionContext: context,
@@ -126,56 +168,79 @@ final class ExtensionActionPageAccessAuthorizer {
             dedupeKey
         )
 
+        // The prompt awaited; nothing below may act on superseded authority.
         switch decision {
         case .allow(let expirationDate):
-            environment.siteAccess.grantSiteAccess(
-                to: currentURL,
+            guard admission.isCurrent(evidence) else { return .stale }
+            siteAccess.grantSiteAccess(
+                to: pageURL,
                 in: context,
-                extensionId: installedExtension.id,
-                profileId: decisionProfileID,
+                extensionId: evidence.extensionID,
+                profileId: evidence.profileID,
                 expirationDate: expirationDate,
-                persistPolicy: true
+                persistPolicy: false
             )
-            if let pattern, let decisionProfileID {
+            if let pattern {
+                guard admission.isCurrent(evidence) else { return .stale }
+                siteAccess.setConfiguredSiteAccess(
+                    .allow,
+                    extensionId: evidence.extensionID,
+                    profileId: evidence.profileID,
+                    matchPatternString: pattern,
+                    expiresAt: expirationDate
+                )
+                guard admission.isCurrent(evidence) else { return .stale }
                 environment.decisions.persistExtensionPermissionDecision(
-                    extensionId: installedExtension.id,
-                    profileId: decisionProfileID,
+                    extensionId: evidence.extensionID,
+                    profileId: evidence.profileID,
                     targetKind: .matchPattern,
                     target: pattern,
                     state: .allowed,
                     expiresAt: expirationDate
                 )
             }
+            guard admission.isCurrent(evidence) else { return .stale }
             SafariExtensionAutofillFillDiagnostics.recordHostPermission(
                 granted: true,
-                extensionId: installedExtension.id,
+                extensionId: evidence.extensionID,
                 reason: "actionClickPromptAllowed"
             )
-            return true
+            return .authorized
         case .deny:
-            environment.siteAccess.denySiteAccess(
-                to: currentURL,
+            guard admission.isCurrent(evidence) else { return .stale }
+            siteAccess.denySiteAccess(
+                to: pageURL,
                 in: context,
-                extensionId: installedExtension.id,
-                profileId: decisionProfileID,
-                persistPolicy: true
+                extensionId: evidence.extensionID,
+                profileId: evidence.profileID,
+                persistPolicy: false
             )
-            if let pattern, let decisionProfileID {
+            if let pattern {
+                guard admission.isCurrent(evidence) else { return .stale }
+                siteAccess.setConfiguredSiteAccess(
+                    .deny,
+                    extensionId: evidence.extensionID,
+                    profileId: evidence.profileID,
+                    matchPatternString: pattern,
+                    expiresAt: nil
+                )
+                guard admission.isCurrent(evidence) else { return .stale }
                 environment.decisions.persistExtensionPermissionDecision(
-                    extensionId: installedExtension.id,
-                    profileId: decisionProfileID,
+                    extensionId: evidence.extensionID,
+                    profileId: evidence.profileID,
                     targetKind: .matchPattern,
                     target: pattern,
                     state: .denied,
                     expiresAt: nil
                 )
             }
+            guard admission.isCurrent(evidence) else { return .stale }
             SafariExtensionAutofillFillDiagnostics.recordHostPermission(
                 granted: false,
-                extensionId: installedExtension.id,
+                extensionId: evidence.extensionID,
                 reason: "actionClickPromptDenied"
             )
-            return false
+            return .denied
         }
     }
 
@@ -223,16 +288,10 @@ extension ExtensionActionPageAccessAuthorizer.Environment {
     static func makeLive(manager: ExtensionManager) -> Self {
         Self(
             capabilities: manager.installCapabilityOwner,
-            siteAccess: manager.runtimeBundle.siteAccessPolicyCoordinator,
+            siteAccess: { [weak manager] in
+                manager?.runtimeBundle.siteAccessPolicyCoordinator
+            },
             decisions: manager.permissionDecisionStore,
-            stableAdapter: { [weak manager] in
-                manager?.adapterResolutionOwner.stableAdapter(for: $0)
-            },
-            extensionID: { [weak manager] in
-                manager?.profileRuntime.extensionId(for: $0)
-            },
-            resolvedProfileID: { [weak manager] in manager?.resolvedProfileId(for: $0) },
-            currentProfileID: { [weak manager] in manager?.profileRuntime.currentProfileId },
             prompt: { [weak manager] context, targets, reason, dedupeKey in
                 await manager?.promptForExtensionPermissionDecision(
                     extensionContext: context,

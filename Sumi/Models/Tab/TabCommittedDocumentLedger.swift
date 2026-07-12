@@ -25,6 +25,15 @@ struct TabCommittedDocumentRollbackSnapshot {
     let preferredAuthorityWebViewID: ObjectIdentifier?
 }
 
+/// Read-only value identity of the canonical committed document. Revision and
+/// document generation are the exact monotonic authority; the navigation
+/// identity of the committed URL disambiguates the pre-first-commit state.
+struct TabCommittedDocumentAuthorityProof: Equatable {
+    let revision: UInt64?
+    let documentGeneration: UInt64?
+    let identity: WebRuntimeNavigationIdentity
+}
+
 /// Owns the durable committed-document truth independently from transient
 /// navigation authority. Replicas survive failed submissions and produce the
 /// only Reader/permission document leases accepted by the Tab.
@@ -110,6 +119,14 @@ final class TabCommittedDocumentLedger {
     init(initialURL: URL) {
         committedPresentationURL = initialURL
         committedIdentityURL = initialURL
+    }
+
+    func authorityProof() -> TabCommittedDocumentAuthorityProof {
+        TabCommittedDocumentAuthorityProof(
+            revision: committedRevision,
+            documentGeneration: committedDocumentGeneration,
+            identity: WebRuntimeNavigationIdentity(committedIdentityURL)
+        )
     }
 
     func recordReplica(_ evidence: TabCommittedDocumentEvidence) {
