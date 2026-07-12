@@ -130,4 +130,106 @@ final class ExtensionBackgroundRuntimeStateOwnerTests: XCTestCase {
         XCTAssertEqual(owner.state(for: wakeKey), .loaded)
         XCTAssertEqual(metricFailures, [true, false])
     }
+
+    func testSupersededWakeCannotCommitStateOrMetricsAfterAwait() async {
+        let owner = ExtensionBackgroundRuntimeStateOwner()
+        let wakeKey = "profile:extension"
+        let wakeStarted = expectation(description: "background wake started")
+        var releaseWake: CheckedContinuation<Void, Never>?
+        var isCurrent = true
+        var metricFailures: [Bool] = []
+
+        let wake = Task { @MainActor in
+            try await owner.ensureBackgroundAvailableIfRequired(
+                wakeKey: wakeKey,
+                hasBackgroundContent: true,
+                reason: .nativeMessaging,
+                trace: { _ in /* no-op */ },
+                isCurrent: { isCurrent },
+                loadBackgroundContent: {
+                    wakeStarted.fulfill()
+                    await withCheckedContinuation { continuation in
+                        releaseWake = continuation
+                    }
+                },
+                recordWakeMetric: { _, _, didFail in
+                    metricFailures.append(didFail)
+                }
+            )
+        }
+
+        await fulfillment(of: [wakeStarted], timeout: 1.0)
+        isCurrent = false
+        releaseWake?.resume()
+
+        do {
+            _ = try await wake.value
+            XCTFail("Superseded wake must fail closed")
+        } catch is CancellationError {
+            // Expected: supersession is not a background-load failure.
+        } catch {
+            XCTFail("Unexpected wake error: \(error)")
+        }
+
+        XCTAssertEqual(owner.state(for: wakeKey), .neverLoaded)
+        XCTAssertEqual(metricFailures, [])
+    }
+
+    func testCurrentWakeSupersedesStaleInFlightWakeForSameKey() async throws {
+        let owner = ExtensionBackgroundRuntimeStateOwner()
+        let wakeKey = "profile:extension"
+        let staleWakeStarted = expectation(description: "stale wake started")
+        var releaseStaleWake: CheckedContinuation<Void, Never>?
+        var staleIsCurrent = true
+        var completedWakes: [String] = []
+
+        let staleWake = Task { @MainActor in
+            try await owner.ensureBackgroundAvailableIfRequired(
+                wakeKey: wakeKey,
+                hasBackgroundContent: true,
+                reason: .nativeMessaging,
+                trace: { _ in /* no-op */ },
+                isCurrent: { staleIsCurrent },
+                loadBackgroundContent: {
+                    staleWakeStarted.fulfill()
+                    await withCheckedContinuation { continuation in
+                        releaseStaleWake = continuation
+                    }
+                },
+                recordWakeMetric: { _, _, _ in
+                    completedWakes.append("stale")
+                }
+            )
+        }
+
+        await fulfillment(of: [staleWakeStarted], timeout: 1.0)
+        staleIsCurrent = false
+
+        let currentDidWake = try await owner.ensureBackgroundAvailableIfRequired(
+            wakeKey: wakeKey,
+            hasBackgroundContent: true,
+            reason: .nativeMessaging,
+            trace: { _ in /* no-op */ },
+            isCurrent: { true },
+            loadBackgroundContent: { /* no-op */ },
+            recordWakeMetric: { _, _, didFail in
+                XCTAssertFalse(didFail)
+                completedWakes.append("current")
+            }
+        )
+        XCTAssertTrue(currentDidWake)
+
+        releaseStaleWake?.resume()
+        do {
+            _ = try await staleWake.value
+            XCTFail("Stale in-flight wake must not complete as current")
+        } catch is CancellationError {
+            // Expected.
+        } catch {
+            XCTFail("Unexpected stale wake error: \(error)")
+        }
+
+        XCTAssertEqual(owner.state(for: wakeKey), .loaded)
+        XCTAssertEqual(completedWakes, ["current"])
+    }
 }

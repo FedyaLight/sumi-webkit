@@ -238,7 +238,7 @@ final class BitwardenNativeMessagingCPUTeardownTests: XCTestCase {
             port: port,
             extensionId: installed.id,
             installedExtensions: [installed],
-            registerHandler: { _ in /* no-op */ },
+            registerHandler: { _ in true },
             completionHandler: { error in
                 connectError = error
                 expectation.fulfill()

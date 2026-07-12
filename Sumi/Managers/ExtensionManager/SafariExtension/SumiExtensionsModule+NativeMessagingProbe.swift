@@ -16,7 +16,7 @@ extension SumiExtensionsModule {
 
         let manager = managerIfLoadedAndEnabled()
         let adapterRegistry =
-            manager?.nativeMessagingRelayOwner.loadedRelay?.diagnosticsAdapterRegistry
+            manager?.loadedNativeMessagingRelayOwner?.loadedRelay?.diagnosticsAdapterRegistry
             ?? SumiNativeMessagingAdapterRegistry.production()
         let report = SafariExtensionNativeMessagingProbeBuilder.build(
             discovered: discovered,

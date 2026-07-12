@@ -79,29 +79,77 @@ final class ExtensionBackgroundWakeCoordinator {
         )
     }
 
+    /// Schedules a native-messaging background wake admitted by exact typed
+    /// callback evidence. The wake key derives only from the captured
+    /// extension/profile identity — never from mutable context identity —
+    /// and the evidence is revalidated when the scheduled task actually
+    /// starts and again immediately before the background load effect.
     func scheduleNativeMessagingBackgroundWake(
-        for extensionContext: WKWebExtensionContext,
+        evidence: ExtensionControllerCallbackEvidence,
+        admission: ExtensionControllerCallbackAdmission,
         operation: String
     ) {
-        let wakeKey = backgroundWakeKey(for: extensionContext)
+        let wakeKey = ExtensionRuntimeResidencyState.scopedKey(
+            extensionId: evidence.extensionID,
+            profileId: evidence.profileID
+        )
         nativeMessagingBackgroundWakeOwner()?.scheduleWake(
             wakeKey: wakeKey,
             operation: operation,
+            isCurrent: { admission.isCurrent(evidence) },
             wake: { [weak self] in
                 guard let self else { return }
-                _ = try await self.ensureBackgroundAvailableIfRequired(
-                    for: extensionContext.webExtension,
-                    context: extensionContext,
-                    reason: .nativeMessaging
+                guard admission.isCurrent(evidence) else { return }
+                _ = try await self.ensureCallbackAdmittedBackgroundAvailable(
+                    wakeKey: wakeKey,
+                    evidence: evidence,
+                    admission: admission
                 )
             },
             logFailure: { [weak self] error, operation in
                 self?.logBackgroundWakeFailure(
                     error,
-                    extensionContext,
+                    evidence.context,
                     .nativeMessaging,
                     operation
                 )
+            }
+        )
+    }
+
+    /// Runs the background-wake state machine for one callback-admitted wake.
+    /// The load closure revalidates the evidence right before the external
+    /// load effect, so a context replaced after the wake task started fails
+    /// closed instead of loading a superseded runtime generation.
+    private func ensureCallbackAdmittedBackgroundAvailable(
+        wakeKey: String,
+        evidence: ExtensionControllerCallbackEvidence,
+        admission: ExtensionControllerCallbackAdmission
+    ) async throws -> Bool {
+        try await backgroundRuntimeStateOwner.ensureBackgroundAvailableIfRequired(
+            wakeKey: wakeKey,
+            hasBackgroundContent: evidence.context.webExtension.hasBackgroundContent,
+            reason: .nativeMessaging,
+            trace: { [trace] in trace($0) },
+            isCurrent: { admission.isCurrent(evidence) },
+            loadBackgroundContent: { [debugBackgroundContentWake] in
+                guard admission.isCurrent(evidence) else {
+                    throw CancellationError()
+                }
+                if let backgroundContentWake = debugBackgroundContentWake() {
+                    try await backgroundContentWake(wakeKey, evidence.context)
+                } else {
+                    try await evidence.context.loadBackgroundContent()
+                }
+            },
+            recordWakeMetric: { [recordRuntimeMetric] duration, reason, didFail in
+                guard admission.isCurrent(evidence) else { return }
+                recordRuntimeMetric(wakeKey) {
+                    $0.backgroundWakeDuration = duration
+                    $0.backgroundWakeCount += 1
+                    $0.lastBackgroundWakeReason = reason
+                    $0.lastBackgroundWakeFailed = didFail
+                }
             }
         )
     }
@@ -148,16 +196,6 @@ extension ExtensionManager {
             for: webExtension,
             context: extensionContext,
             reason: reason
-        )
-    }
-
-    func scheduleNativeMessagingBackgroundWake(
-        for extensionContext: WKWebExtensionContext,
-        operation: String
-    ) {
-        runtimeBundle.backgroundWakeCoordinator.scheduleNativeMessagingBackgroundWake(
-            for: extensionContext,
-            operation: operation
         )
     }
 

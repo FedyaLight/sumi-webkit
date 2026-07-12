@@ -11,6 +11,7 @@ checks=(
   "scripts/check_extension_browser_bridge_architecture.sh"
   "scripts/check_extension_requested_window_transaction.sh"
   "scripts/check_extension_permission_callback_admission.sh"
+  "scripts/check_extension_native_messaging_callback_admission.sh"
   "scripts/check_ddg_vendor_test_boundary.sh"
   "scripts/check_modernization_debt.sh"
   "scripts/check_di_ceremony_debt.sh"

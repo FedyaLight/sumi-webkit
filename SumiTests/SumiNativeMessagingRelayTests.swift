@@ -443,6 +443,7 @@ final class SumiNativeMessagingRelayTests: XCTestCase {
             installedExtensions: [installed],
             registerHandler: { handler in
                 registeredHandlers[portKey] = handler
+                return true
             },
             unregisterHandler: { handler in
                 unregisterCount += 1
@@ -812,7 +813,7 @@ final class SumiNativeMessagingRelayTests: XCTestCase {
             port: port,
             extensionId: installed.id,
             installedExtensions: [installed],
-            registerHandler: { session = $0 },
+            registerHandler: { session = $0; return true },
             completionHandler: { error in
                 connectError = error
                 expectation.fulfill()

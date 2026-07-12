@@ -40,7 +40,8 @@ final class SumiNativeMessagingOneShotRelayFlow {
         loopKey: SumiNativeMessagingRelayLoopGuard.SessionKey,
         loopEvaluation: SumiNativeMessagingRelayLoopGuard.Evaluation,
         logDiagnostic: @escaping @MainActor (SafariExtensionNativeMessagingDiagnostic) -> Void,
-        replyHandler: @escaping (Any?, (any Error)?) -> Void
+        replyHandler: @escaping (Any?, (any Error)?) -> Void,
+        executionAdmission: @escaping @MainActor () -> Bool = { true }
     ) {
         let once = SumiNativeMessagingOneShotReplyHandler(replyHandler)
         let pendingCoordinatorRef = SumiNativeMessagingPendingOneShotCoordinatorRef()
@@ -84,7 +85,8 @@ final class SumiNativeMessagingOneShotRelayFlow {
                     extensionId: extensionId,
                     profileId: profileId
                 )
-            }
+            },
+            executionAdmission: executionAdmission
         )
     }
 }

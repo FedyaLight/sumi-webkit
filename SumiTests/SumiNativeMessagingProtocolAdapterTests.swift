@@ -398,7 +398,7 @@ final class SumiNativeMessagingProtocolAdapterTests: XCTestCase {
             extensionId: installed.id,
             profileId: profileId,
             installedExtensions: [installed],
-            registerHandler: { session = $0 },
+            registerHandler: { session = $0; return true },
             completionHandler: { error in
                 connectError = error
                 expectation.fulfill()

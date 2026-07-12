@@ -278,7 +278,7 @@ extension ExtensionRuntimeStateResetOwner.Dependencies {
                 manager?.runtime ?? .inactive
             },
             loadedNativeMessagingRelay: { [weak manager] in
-                manager?.nativeMessagingRelayOwner.loadedRelay
+                manager?.loadedNativeMessagingRelayOwner?.loadedRelay
             },
             cancelNativeMessagingBackgroundWakeTasks: { [weak manager] extensionId in
                 if let extensionId {

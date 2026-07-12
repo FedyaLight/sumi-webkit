@@ -156,6 +156,7 @@ final class SumiNativeMessagingRelay {
         privateAccessAllowed: Bool? = nil,
         installedExtensions: [InstalledExtension],
         extensionDisplayName: String? = nil,
+        executionAdmission: @escaping @MainActor () -> Bool = { true },
         replyHandler: @escaping (Any?, (any Error)?) -> Void
     ) {
         sendFlow.send(
@@ -170,7 +171,8 @@ final class SumiNativeMessagingRelay {
             evaluatePolicy: evaluatePolicy,
             policyDeniedDiagnostic: policyDeniedDiagnostic,
             launchSessionKey: launchSessionKey,
-            replyHandler: replyHandler
+            replyHandler: replyHandler,
+            executionAdmission: executionAdmission
         )
     }
 
@@ -182,8 +184,9 @@ final class SumiNativeMessagingRelay {
         isPrivateBrowsing: Bool? = nil,
         privateAccessAllowed: Bool? = nil,
         installedExtensions: [InstalledExtension],
-        registerHandler: (SumiNativeMessagingPortSession) -> Void,
+        registerHandler: (SumiNativeMessagingPortSession) -> Bool,
         unregisterHandler: @escaping (SumiNativeMessagingPortSession) -> Void = { _ in },
+        executionAdmission: @escaping @MainActor () -> Bool = { true },
         completionHandler: @escaping ((any Error)?) -> Void
     ) -> SumiNativeMessagingPortSession? {
         portConnectFlow.connect(
@@ -235,7 +238,8 @@ final class SumiNativeMessagingRelay {
             logConnectionDiagnostic: diagnosticsRecorder.makeConnectionLogger(profileId: profileId),
             outcomeForAdapterError: Self.outcome(forAdapterError:),
             launchSessionKey: launchSessionKey,
-            completionHandler: completionHandler
+            completionHandler: completionHandler,
+            executionAdmission: executionAdmission
         )
     }
 

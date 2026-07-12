@@ -6,7 +6,13 @@ final class ExtensionBackgroundRuntimeStateOwner {
     typealias RuntimeState = ExtensionManager.BackgroundRuntimeState
     typealias WakeReason = ExtensionManager.ExtensionBackgroundWakeReason
 
-    private var wakeTasks: [String: Task<Void, Error>] = [:]
+    private struct WakeTask {
+        let token: UUID
+        let task: Task<Void, Error>
+        let isCurrent: @MainActor () -> Bool
+    }
+
+    private var wakeTasks: [String: WakeTask] = [:]
     private var runtimeStatesByWakeKey: [String: RuntimeState] = [:]
 
     func state(for wakeKey: String) -> RuntimeState {
@@ -19,6 +25,7 @@ final class ExtensionBackgroundRuntimeStateOwner {
         hasBackgroundContent: Bool,
         reason: WakeReason,
         trace: (String) -> Void,
+        isCurrent: @escaping @MainActor () -> Bool = { true },
         loadBackgroundContent: @escaping @MainActor () async throws -> Void,
         recordWakeMetric: @escaping @MainActor (
             _ duration: TimeInterval,
@@ -33,10 +40,14 @@ final class ExtensionBackgroundRuntimeStateOwner {
             trace("Skipping required background wake for \(wakeKey): already loaded")
             return false
         case .wakeInFlight:
-            if let existingTask = wakeTasks[wakeKey] {
-                trace("Awaiting required background wake already in flight for \(wakeKey)")
-                try await existingTask.value
-                return false
+            if let existingWake = wakeTasks[wakeKey] {
+                if existingWake.isCurrent() {
+                    trace("Awaiting required background wake already in flight for \(wakeKey)")
+                    try await existingWake.task.value
+                    return false
+                }
+                existingWake.task.cancel()
+                wakeTasks.removeValue(forKey: wakeKey)
             }
             setState(.neverLoaded, for: wakeKey)
         case .neverLoaded, .loadFailed:
@@ -48,6 +59,7 @@ final class ExtensionBackgroundRuntimeStateOwner {
             reason: reason,
             mode: "required",
             trace: trace,
+            isCurrent: isCurrent,
             loadBackgroundContent: loadBackgroundContent,
             recordWakeMetric: recordWakeMetric
         )
@@ -56,7 +68,7 @@ final class ExtensionBackgroundRuntimeStateOwner {
     }
 
     func cancelAndRemoveRuntime(for wakeKey: String) {
-        wakeTasks[wakeKey]?.cancel()
+        wakeTasks[wakeKey]?.task.cancel()
         wakeTasks.removeValue(forKey: wakeKey)
         runtimeStatesByWakeKey.removeValue(forKey: wakeKey)
     }
@@ -66,7 +78,7 @@ final class ExtensionBackgroundRuntimeStateOwner {
     }
 
     func cancelAllWakeTasks() {
-        wakeTasks.values.forEach { $0.cancel() }
+        wakeTasks.values.forEach { $0.task.cancel() }
     }
 
     func removeAll() {
@@ -89,6 +101,7 @@ final class ExtensionBackgroundRuntimeStateOwner {
         reason: WakeReason,
         mode: String,
         trace: (String) -> Void,
+        isCurrent: @escaping @MainActor () -> Bool,
         loadBackgroundContent: @escaping @MainActor () async throws -> Void,
         recordWakeMetric: @escaping @MainActor (
             _ duration: TimeInterval,
@@ -99,15 +112,24 @@ final class ExtensionBackgroundRuntimeStateOwner {
         setState(.wakeInFlight, for: wakeKey)
         trace("Starting \(mode) background wake for \(wakeKey) reason=\(reason.rawValue)")
 
+        let token = UUID()
         let task = Self.detachedMainActorWakeTask { [weak self] in
             guard let self else { return }
             defer {
-                self.wakeTasks.removeValue(forKey: wakeKey)
+                if self.wakeTasks[wakeKey]?.token == token {
+                    self.wakeTasks.removeValue(forKey: wakeKey)
+                }
             }
 
             let wakeStart = CFAbsoluteTimeGetCurrent()
             do {
+                try Task.checkCancellation()
+                guard isCurrent() else { throw CancellationError() }
                 try await loadBackgroundContent()
+                try Task.checkCancellation()
+                guard isCurrent(), self.wakeTasks[wakeKey]?.token == token else {
+                    throw CancellationError()
+                }
                 self.setState(.loaded, for: wakeKey)
                 recordWakeMetric(
                     CFAbsoluteTimeGetCurrent() - wakeStart,
@@ -115,17 +137,27 @@ final class ExtensionBackgroundRuntimeStateOwner {
                     false
                 )
             } catch {
-                self.setState(.loadFailed, for: wakeKey)
-                recordWakeMetric(
-                    CFAbsoluteTimeGetCurrent() - wakeStart,
-                    reason,
-                    true
-                )
+                if self.wakeTasks[wakeKey]?.token == token {
+                    if error is CancellationError || isCurrent() == false {
+                        self.setState(.neverLoaded, for: wakeKey)
+                    } else {
+                        self.setState(.loadFailed, for: wakeKey)
+                        recordWakeMetric(
+                            CFAbsoluteTimeGetCurrent() - wakeStart,
+                            reason,
+                            true
+                        )
+                    }
+                }
                 throw error
             }
         }
 
-        wakeTasks[wakeKey] = task
+        wakeTasks[wakeKey] = WakeTask(
+            token: token,
+            task: task,
+            isCurrent: isCurrent
+        )
         return task
     }
 
@@ -135,7 +167,7 @@ final class ExtensionBackgroundRuntimeStateOwner {
             var drainedTask = false
 
             while true {
-                let tasks = Array(wakeTasks.values)
+                let tasks = wakeTasks.values.map(\.task)
                 guard tasks.isEmpty == false else { return drainedTask }
 
                 drainedTask = true

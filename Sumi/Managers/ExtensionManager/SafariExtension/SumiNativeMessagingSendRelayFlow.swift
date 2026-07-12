@@ -57,7 +57,8 @@ final class SumiNativeMessagingSendRelayFlow {
             _ applicationIdentifier: String?,
             _ hostBundleIdentifier: String
         ) -> SumiCompanionAppLaunchSessionKey,
-        replyHandler: @escaping (Any?, (any Error)?) -> Void
+        replyHandler: @escaping (Any?, (any Error)?) -> Void,
+        executionAdmission: @escaping @MainActor () -> Bool = { true }
     ) {
         SumiNativeMessagingRuntimeCounters.recordSendMessage(
             applicationIdentifier: applicationIdentifier
@@ -160,6 +161,19 @@ final class SumiNativeMessagingSendRelayFlow {
         if extensionsModuleEnabled() == false {
             launchPolicy.clearPendingState()
             loopGuard.clearAll()
+        }
+
+        // Companion-application routing hands the message to an external
+        // backend: revalidate callback authority before that effect.
+        guard executionAdmission() else {
+            replyHandler(
+                nil,
+                SumiNativeMessagingErrorMapper.relayError(
+                    code: .extensionContextMissing,
+                    diagnostic: nil
+                )
+            )
+            return
         }
 
         if companionApplicationRouter.route(
@@ -355,6 +369,19 @@ final class SumiNativeMessagingSendRelayFlow {
             fallbackReason: nil
         )
 
+        // The one-shot relay materializes a pending coordinator and delayed
+        // relay work; revalidate again after the route/diagnostic effects.
+        guard executionAdmission() else {
+            replyHandler(
+                nil,
+                SumiNativeMessagingErrorMapper.relayError(
+                    code: .extensionContextMissing,
+                    diagnostic: nil
+                )
+            )
+            return
+        }
+
         let launchKey = launchSessionKey(
             profileId,
             extensionId,
@@ -374,7 +401,8 @@ final class SumiNativeMessagingSendRelayFlow {
             loopKey: loopKey,
             loopEvaluation: loopEvaluation,
             logDiagnostic: diagnostics.makeConnectionLogger(profileId: profileId),
-            replyHandler: replyHandler
+            replyHandler: replyHandler,
+            executionAdmission: executionAdmission
         )
     }
 }

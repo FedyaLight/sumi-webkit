@@ -228,10 +228,21 @@ final class ExtensionManager: NSObject, ObservableObject {
     )
     lazy var pageNavigationPreparationOwner =
         ExtensionPageNavigationPreparationOwner()
-    lazy var browserRuntimeBridgeOwner = ExtensionBrowserRuntimeBridgeOwner(
-        manager: self,
-        dependencies: .live(manager: self)
-    )
+    private var browserRuntimeBridgeOwnerStorage: ExtensionBrowserRuntimeBridgeOwner?
+    var browserRuntimeBridgeOwner: ExtensionBrowserRuntimeBridgeOwner {
+        if let browserRuntimeBridgeOwnerStorage {
+            return browserRuntimeBridgeOwnerStorage
+        }
+        let bridge = ExtensionBrowserRuntimeBridgeOwner(
+            manager: self,
+            dependencies: .live(manager: self)
+        )
+        browserRuntimeBridgeOwnerStorage = bridge
+        return bridge
+    }
+    var loadedBrowserRuntimeBridgeOwner: ExtensionBrowserRuntimeBridgeOwner? {
+        browserRuntimeBridgeOwnerStorage
+    }
     lazy var runtimeLifecycleOwner = ExtensionRuntimeLifecycleOwner(
         dependencies: .live(manager: self)
     )
@@ -256,11 +267,25 @@ final class ExtensionManager: NSObject, ObservableObject {
     lazy var extensionActionInvocation = ExtensionActionInvocationService(
         environment: .makeLive(manager: self)
     )
-    lazy var nativeMessagingRoutingOwner =
-        ExtensionNativeMessagingRoutingOwner(manager: self)
-    lazy var nativeMessagingRelayOwner = ExtensionNativeMessagingRelayOwner(
-        manager: self
+    lazy var nativeMessageSendSettlement = ExtensionNativeMessageSendSettlement(
+        admission: controllerCallbackAdmission
     )
+    lazy var nativePortConnectionSettlement =
+        ExtensionNativePortConnectionSettlement(
+            admission: controllerCallbackAdmission
+        )
+    private var nativeMessagingRelayOwnerStorage: ExtensionNativeMessagingRelayOwner?
+    var nativeMessagingRelayOwner: ExtensionNativeMessagingRelayOwner {
+        if let nativeMessagingRelayOwnerStorage {
+            return nativeMessagingRelayOwnerStorage
+        }
+        let relayOwner = ExtensionNativeMessagingRelayOwner(manager: self)
+        nativeMessagingRelayOwnerStorage = relayOwner
+        return relayOwner
+    }
+    var loadedNativeMessagingRelayOwner: ExtensionNativeMessagingRelayOwner? {
+        nativeMessagingRelayOwnerStorage
+    }
     lazy var permissionsOriginsCompatibilityPreludeInstallationOwner =
         ExtensionPermissionsOriginsCompatibilityPreludeInstallationOwner(
             isPrivateUserScriptSPIAvailable: {

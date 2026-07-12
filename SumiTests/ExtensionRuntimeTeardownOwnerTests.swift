@@ -31,7 +31,6 @@ final class ExtensionRuntimeTeardownOwnerTests: XCTestCase {
         browserConfiguration.webViewConfiguration.webExtensionController = controller
 
         let anchorView = NSView(frame: NSRect(x: 0, y: 0, width: 32, height: 32))
-        let nativePortKey = ObjectIdentifier(anchorView)
         manager.extensionsLoaded = true
         manager.runtimeSession.runtimeState = .ready
         manager.runtimeSession.allowsRuntimeWithoutEnabledExtensions = true
@@ -57,8 +56,13 @@ final class ExtensionRuntimeTeardownOwnerTests: XCTestCase {
             extensionId: "alpha"
         )
         manager.actionAnchorStore.setAnchor(for: "alpha", anchorView: anchorView)
-        manager.nativeMessagingPortRegistry.nativeMessagePortExtensionIDs[nativePortKey] = "alpha"
-        manager.nativeMessagingPortRegistry.nativeMessagePortProfileIDs[nativePortKey] = profile.id
+        let nativePort = TeardownMockPort()
+        _ = manager.nativeMessagingPortRegistry.register(
+            handler: makePortSession(port: nativePort, extensionId: "alpha"),
+            port: nativePort,
+            extensionId: "alpha",
+            profileId: profile.id
+        )
 
         let generationBeforeTeardown = manager.runtimeSession.extensionLoadGeneration
 
@@ -87,8 +91,8 @@ final class ExtensionRuntimeTeardownOwnerTests: XCTestCase {
             manager.controllerProvisioningOwner.hasExtensionPageUserContentControllers
         )
         XCTAssertTrue(manager.actionAnchorStore.isEmpty)
-        XCTAssertTrue(manager.nativeMessagingPortRegistry.nativeMessagePortExtensionIDs.isEmpty)
-        XCTAssertTrue(manager.nativeMessagingPortRegistry.nativeMessagePortProfileIDs.isEmpty)
+        XCTAssertEqual(manager.nativeMessagingPortRegistry.count, 0)
+        XCTAssertTrue(manager.nativeMessagingPortRegistry.extensionIDs.isEmpty)
         XCTAssertFalse(manager.hasLoadedUserExtensionRuntime)
     }
 
@@ -135,6 +139,26 @@ final class ExtensionRuntimeTeardownOwnerTests: XCTestCase {
         XCTAssertEqual(manager.actionAnchorStore.anchorCount(for: "alpha"), 1)
     }
 
+    private func makePortSession(
+        port: any SumiNativeMessagingPortControlling,
+        extensionId: String
+    ) -> SumiNativeMessagingPortSession {
+        SumiNativeMessagingPortSession(
+            port: port,
+            adapter: nil,
+            extensionId: extensionId,
+            hostBundleIdentifier: "com.example.host",
+            resolverBucket: .explicitApplicationIdentifier,
+            logDiagnostic: { _ in /* no-op */ },
+            companionProtocolErrorProvider: {
+                SumiNativeMessagingErrorMapper.relayError(
+                    code: .companionAppProtocolUnknown,
+                    diagnostic: nil
+                )
+            }
+        )
+    }
+
     private func makeManager(
         profile: Profile,
         browserConfiguration: BrowserConfiguration
@@ -150,5 +174,23 @@ final class ExtensionRuntimeTeardownOwnerTests: XCTestCase {
             extensionPreferences: UserDefaults(suiteName: UUID().uuidString)!
         )
         return (container, manager)
+    }
+}
+
+@MainActor
+private final class TeardownMockPort: SumiNativeMessagingPortControlling {
+    var applicationIdentifier: String?
+    var isDisconnected = false
+    var messageHandler: ((Any?, (any Error)?) -> Void)?
+    var disconnectHandler: (((any Error)?) -> Void)?
+
+    func disconnect() {
+        isDisconnected = true
+        disconnectHandler?(nil)
+    }
+
+    func disconnect(throwing error: (any Error)?) {
+        isDisconnected = true
+        disconnectHandler?(error)
     }
 }

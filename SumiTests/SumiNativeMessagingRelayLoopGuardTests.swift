@@ -440,7 +440,7 @@ final class SumiNativeMessagingRelayLoopGuardTests: XCTestCase {
             port: port,
             extensionId: installed.id,
             installedExtensions: [installed],
-            registerHandler: { session = $0 },
+            registerHandler: { session = $0; return true },
             completionHandler: { error in
                 connectError = error
                 expectation.fulfill()

@@ -260,6 +260,11 @@ final class ExtensionControllerDelegateBridge: NSObject, WKWebExtensionControlle
 
     // MARK: - Native Messaging
 
+    // Both native-messaging callbacks must prove exact controller/context
+    // authority before any counter, diagnostic, wake scheduling, relay
+    // materialization or port registration. A failed capture answers
+    // fail-closed exactly once and creates nothing.
+
     func webExtensionController(
         _ controller: WKWebExtensionController,
         sendMessage message: Any,
@@ -267,18 +272,26 @@ final class ExtensionControllerDelegateBridge: NSObject, WKWebExtensionControlle
         for extensionContext: WKWebExtensionContext,
         replyHandler: @escaping (Any?, (any Error)?) -> Void
     ) {
-        guard let manager else {
+        guard let manager,
+              let evidence = manager.controllerCallbackAdmission.capture(
+                  context: extensionContext,
+                  controller: controller
+              )
+        else {
             replyHandler(
                 nil,
-                ExtensionManagerCallbackError.extensionManagerUnavailable.nsError()
+                SumiNativeMessagingErrorMapper.relayError(
+                    code: .extensionContextMissing,
+                    diagnostic: nil
+                )
             )
             return
         }
-        manager.nativeMessagingRoutingOwner.sendMessage(
+        manager.nativeMessageSendSettlement.sendMessage(
             message,
             toApplicationWithIdentifier: applicationIdentifier,
-            for: extensionContext,
-            controller: controller,
+            evidence: evidence,
+            manager: manager,
             replyHandler: replyHandler
         )
     }
@@ -289,16 +302,25 @@ final class ExtensionControllerDelegateBridge: NSObject, WKWebExtensionControlle
         for extensionContext: WKWebExtensionContext,
         completionHandler: @escaping ((any Error)?) -> Void
     ) {
-        guard let manager else {
+        guard let manager,
+              let evidence = manager.controllerCallbackAdmission.capture(
+                  context: extensionContext,
+                  controller: controller
+              )
+        else {
+            port.disconnect()
             completionHandler(
-                ExtensionManagerCallbackError.extensionManagerUnavailable.nsError()
+                SumiNativeMessagingErrorMapper.relayError(
+                    code: .extensionContextMissing,
+                    diagnostic: nil
+                )
             )
             return
         }
-        manager.nativeMessagingRoutingOwner.connect(
+        manager.nativePortConnectionSettlement.connect(
             using: port,
-            for: extensionContext,
-            controller: controller,
+            evidence: evidence,
+            manager: manager,
             completionHandler: completionHandler
         )
     }

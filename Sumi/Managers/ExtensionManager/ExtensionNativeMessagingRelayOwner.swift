@@ -41,4 +41,13 @@ final class ExtensionNativeMessagingRelayOwner {
     var loadedRelay: SumiNativeMessagingRelay? {
         relayStorage
     }
+
+    #if DEBUG
+        /// Installs a relay with test-controlled launcher/adapters so hosted
+        /// tests can model the external companion-application boundary
+        /// without launching a real application.
+        func installRelayForTesting(_ relay: SumiNativeMessagingRelay) {
+            relayStorage = relay
+        }
+    #endif
 }

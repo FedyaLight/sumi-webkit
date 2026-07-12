@@ -237,7 +237,8 @@ enum SumiNativeMessagingConnection {
         logDiagnostic: @escaping (SafariExtensionNativeMessagingDiagnostic) -> Void,
         replyHandler: @escaping (Any?, (any Error)?) -> Void,
         replyTimeout: Duration = defaultReplyTimeout,
-        registerCoordinator: ((SumiNativeMessagingOnceReplyCoordinator) -> Void)? = nil
+        registerCoordinator: ((SumiNativeMessagingOnceReplyCoordinator) -> Void)? = nil,
+        executionAdmission: @escaping @MainActor () -> Bool = { true }
     ) {
         guard let detail = evaluation.detail else {
             let diagnostic = Self.diagnostic(
@@ -312,10 +313,35 @@ enum SumiNativeMessagingConnection {
         )
 
         coordinator.startRelay(timeout: replyTimeout) { @MainActor in
+            // The relay task starts on a later main-actor turn: revalidate
+            // callback authority before the external launch/relay effect.
+            guard executionAdmission() else {
+                coordinator.complete(
+                    nil,
+                    SumiNativeMessagingErrorMapper.relayError(
+                        code: .extensionContextMissing,
+                        diagnostic: nil
+                    )
+                )
+                return
+            }
             adapter.relayOneShotMessage(
                 request: request,
                 launcher: gatedLauncher
             ) { value, error in
+                // The adapter reply crosses another async boundary; a stale
+                // callback must neither surface a late success nor mutate
+                // loop-guard/diagnostic state.
+                guard executionAdmission() else {
+                    coordinator.complete(
+                        nil,
+                        SumiNativeMessagingErrorMapper.relayError(
+                            code: .extensionContextMissing,
+                            diagnostic: nil
+                        )
+                    )
+                    return
+                }
                 if let error {
                     let nsError = error as NSError
                     let diagnostic = Self.diagnostic(

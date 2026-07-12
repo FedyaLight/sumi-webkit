@@ -87,7 +87,7 @@ final class SumiNativeMessagingPortConnectRelayFlow {
         isPrivateBrowsing: Bool?,
         privateAccessAllowed: Bool?,
         installedExtensions: [InstalledExtension],
-        registerHandler: (SumiNativeMessagingPortSession) -> Void,
+        registerHandler: (SumiNativeMessagingPortSession) -> Bool,
         unregisterHandler: @escaping (SumiNativeMessagingPortSession) -> Void,
         evaluatePolicy: PolicyEvaluator,
         policyDeniedDiagnostic: PolicyDeniedDiagnosticBuilder,
@@ -102,7 +102,8 @@ final class SumiNativeMessagingPortConnectRelayFlow {
             _ applicationIdentifier: String?,
             _ hostBundleIdentifier: String
         ) -> SumiCompanionAppLaunchSessionKey,
-        completionHandler: @escaping ((any Error)?) -> Void
+        completionHandler: @escaping ((any Error)?) -> Void,
+        executionAdmission: @escaping @MainActor () -> Bool = { true }
     ) -> SumiNativeMessagingPortSession? {
         let applicationIdentifier = port.applicationIdentifier
 
@@ -300,6 +301,19 @@ final class SumiNativeMessagingPortConnectRelayFlow {
             nil
         )
 
+        // The port session wires physical port handlers on construction:
+        // revalidate callback authority before creating any session state.
+        guard executionAdmission() else {
+            port.disconnect()
+            completionHandler(
+                SumiNativeMessagingErrorMapper.relayError(
+                    code: .extensionContextMissing,
+                    diagnostic: nil
+                )
+            )
+            return nil
+        }
+
         let session = SumiNativeMessagingPortSession(
             port: port,
             adapter: adapter,
@@ -336,7 +350,33 @@ final class SumiNativeMessagingPortConnectRelayFlow {
         )
         sessionStore.trackPortSession(session)
         SumiNativeMessagingRuntimeCounters.recordPortOpened()
-        registerHandler(session)
+
+        // The registration claim happens before any external connect effect.
+        // A refused claim (stale evidence, reentrant invalidation during
+        // registration) tears the session down and stops the connect tail.
+        guard registerHandler(session) else {
+            sessionStore.teardownPortSession(session)
+            completionHandler(
+                SumiNativeMessagingErrorMapper.relayError(
+                    code: .extensionContextMissing,
+                    diagnostic: nil
+                )
+            )
+            return nil
+        }
+
+        // Registration is an observable mutation; revalidate before the
+        // launcher/adapter connect tail continues.
+        guard executionAdmission() else {
+            sessionStore.teardownPortSession(session)
+            completionHandler(
+                SumiNativeMessagingErrorMapper.relayError(
+                    code: .extensionContextMissing,
+                    diagnostic: nil
+                )
+            )
+            return nil
+        }
 
         guard launcher.urlForApplication(withBundleIdentifier: hostBundleIdentifier) != nil else {
             let diagnostic = SumiNativeMessagingConnection.diagnostic(
@@ -370,6 +410,19 @@ final class SumiNativeMessagingPortConnectRelayFlow {
         )
 
         adapter.connectPort(session: session, launcher: gatedLauncher) { [self] error in
+            // The adapter completion crosses an async boundary; a stale
+            // callback must not settle success or mutate loop-guard state,
+            // and its session must not survive.
+            guard executionAdmission() else {
+                self.sessionStore.teardownPortSession(session)
+                completionHandler(
+                    SumiNativeMessagingErrorMapper.relayError(
+                        code: .extensionContextMissing,
+                        diagnostic: nil
+                    )
+                )
+                return
+            }
             if let error {
                 let nsError = error as NSError
                 self.loopGuard.recordCompanionAppProtocolUnknown(

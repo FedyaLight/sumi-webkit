@@ -35,8 +35,12 @@ for file in "$admission" "$bridge" "$callback_settlement" "$url_settlement" "$ro
 done
 
 # Every permission prompt delegate callback captures typed evidence before
-# routing anything to callback settlement.
-capture_count="$(rg -c 'controllerCallbackAdmission\.capture\(' "$bridge" || true)"
+# routing anything to callback settlement. The count is scoped to the
+# permission-prompt section of the bridge so other callback families
+# (native messaging) can hold their own captures without weakening this
+# guard.
+permission_section="$(awk '/\/\/ MARK: - Permission Prompts/{flag=1; next} /\/\/ MARK: -/{flag=0} flag' "$bridge")"
+capture_count="$(printf '%s\n' "$permission_section" | grep -c 'controllerCallbackAdmission\.capture(' || true)"
 if (( ${capture_count:-0} != 3 )); then
   printf 'error: bridge must capture callback evidence in exactly the three permission callbacks (found %s)\n' \
     "${capture_count:-0}" >&2
