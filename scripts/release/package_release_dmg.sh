@@ -38,6 +38,41 @@ if [[ ! -d "${app_path}" ]]; then
   exit 1
 fi
 
+package_frameworks_dir="${derived_data_path}/Build/Products/${configuration}/PackageFrameworks"
+app_frameworks_dir="${app_path}/Contents/Frameworks"
+shopt -s nullglob
+package_frameworks=("${package_frameworks_dir}"/*.framework)
+if [[ ! -d "${package_frameworks_dir}" || ${#package_frameworks[@]} -eq 0 ]]; then
+  echo "error: Missing Swift package frameworks: ${package_frameworks_dir}" >&2
+  exit 1
+fi
+
+mkdir -p "${app_frameworks_dir}"
+embedded_package_frameworks=()
+for framework_path in "${package_frameworks[@]}"; do
+  framework_name="$(basename "${framework_path}")"
+  embedded_framework_path="${app_frameworks_dir}/${framework_name}"
+  rm -rf "${embedded_framework_path}"
+  ditto "${framework_path}" "${embedded_framework_path}"
+  embedded_package_frameworks+=("${embedded_framework_path}")
+done
+
+signing_cert_dir="$(mktemp -d)"
+(
+  cd "${signing_cert_dir}"
+  codesign -d --extract-certificates "${app_path}"
+)
+signing_identity="$(shasum -a 1 "${signing_cert_dir}/codesign0" | awk '{print $1}')"
+rm -rf "${signing_cert_dir}"
+for framework_path in "${embedded_package_frameworks[@]}"; do
+  codesign --force --sign "${signing_identity}" "${framework_path}"
+done
+codesign \
+  --force \
+  --sign "${signing_identity}" \
+  --preserve-metadata=identifier,entitlements,flags,runtime,requirements \
+  "${app_path}"
+
 info_plist="${app_path}/Contents/Info.plist"
 version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "${info_plist}")"
 build="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "${info_plist}")"
