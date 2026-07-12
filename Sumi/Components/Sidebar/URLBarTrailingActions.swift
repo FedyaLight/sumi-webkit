@@ -121,6 +121,7 @@ extension URLBarView {
                 browserContext: browserContext.hub,
                 windowState: windowState,
                 settings: sumiSettings,
+                windowRegistry: windowRegistry,
                 themeContext: themeContext,
                 currentTab: currentTab,
                 profile: effectiveProfile,

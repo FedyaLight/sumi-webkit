@@ -28,7 +28,6 @@ final class BrowserChromeCommands {
     private func syncPopoverRegistries() {
         let registry = browserManager?.windowRegistry
         downloadsPopoverPresenter.windowRegistry = registry
-        urlBarHubPopoverPresenter.windowRegistry = registry
     }
 
     func showDownloads() {

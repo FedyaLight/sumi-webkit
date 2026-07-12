@@ -9,7 +9,6 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
         static let maximumHeight: CGFloat = 560
     }
 
-    weak var windowRegistry: WindowRegistry?
     private let sidebarRecoveryCoordinator: SidebarHostRecoveryHandling
 
     init(sidebarRecoveryCoordinator: SidebarHostRecoveryHandling = SidebarHostRecoveryCoordinator()) {
@@ -22,6 +21,7 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
         weak var windowState: BrowserWindowState?
         let browserContext: URLBarHubBrowserContext
         weak var settings: SumiSettingsService?
+        let windowRegistry: WindowRegistry
         var themeContext: ResolvedThemeContext
         var currentTab: Tab?
         var profile: Profile?
@@ -32,6 +32,7 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
             windowState: BrowserWindowState,
             browserContext: URLBarHubBrowserContext,
             settings: SumiSettingsService,
+            windowRegistry: WindowRegistry,
             themeContext: ResolvedThemeContext,
             currentTab: Tab?,
             profile: Profile?,
@@ -41,6 +42,7 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
             self.windowState = windowState
             self.browserContext = browserContext
             self.settings = settings
+            self.windowRegistry = windowRegistry
             self.themeContext = themeContext
             self.currentTab = currentTab
             self.profile = profile
@@ -94,6 +96,7 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
         windowState: BrowserWindowState,
         browserContext: URLBarHubBrowserContext,
         settings: SumiSettingsService,
+        windowRegistry: WindowRegistry,
         themeContext: ResolvedThemeContext,
         currentTab: Tab?,
         profile: Profile?,
@@ -104,6 +107,7 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
             windowState: windowState,
             browserContext: browserContext,
             settings: settings,
+            windowRegistry: windowRegistry,
             themeContext: themeContext,
             currentTab: currentTab,
             profile: profile,
@@ -245,7 +249,7 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
         )
         activeSessions[windowState.id] = session
 
-        windowState.shellWindow(in: windowRegistry)?.makeKeyAndOrderFront(nil)
+        windowState.shellWindow(in: registration.windowRegistry)?.makeKeyAndOrderFront(nil)
         popover.show(relativeTo: anchorView.bounds, of: anchorView, preferredEdge: .maxY)
 
         if let pendingSize = pendingContentSizes.removeValue(forKey: windowState.id) {
@@ -291,7 +295,10 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
         )
 
         let anchor = anchors[windowID]?.view
-        let window = anchor?.window ?? session?.windowState.flatMap { windowRegistry?.appKitWindow(for: $0) }
+        let window = anchor?.window
+            ?? session?.windowState.flatMap { windowState in
+                anchors[windowID]?.windowRegistry.appKitWindow(for: windowState)
+            }
         sidebarRecoveryCoordinator.recover(in: window)
         sidebarRecoveryCoordinator.recover(anchor: anchor)
     }
@@ -333,6 +340,7 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
         return URLBarHubPopoverRootView(
             browserContext: browserContext,
             windowState: registration.windowState,
+            windowRegistry: registration.windowRegistry,
             settings: registration.settings ?? SumiSettingsService(),
             themeContext: popoverThemeContext(for: registration, colorScheme: colorScheme),
             colorScheme: colorScheme,
@@ -423,7 +431,9 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
 
     private func popoverAppearance(for registration: AnchorRegistration) -> NSAppearance {
         let windowAppearance = registration.view?.window?.effectiveAppearance
-            ?? registration.windowState.flatMap { windowRegistry?.appKitWindow(for: $0) }?.effectiveAppearance
+            ?? registration.windowState.flatMap {
+                registration.windowRegistry.appKitWindow(for: $0)
+            }?.effectiveAppearance
             ?? NSApplication.shared.effectiveAppearance
         return NSAppearance.sumiChromeAppearance(
             for: popoverColorScheme(for: registration),
@@ -449,7 +459,7 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
         else { return }
 
         let source = windowState.sidebarTransientSessionCoordinator.preparedPresentationSource(
-            window: windowState.shellWindow(in: windowRegistry)
+            window: windowState.shellWindow(in: anchors[windowID]?.windowRegistry)
         )
         let token = windowState.sidebarTransientSessionCoordinator.beginSession(
             kind: .urlHubPopover,
@@ -469,14 +479,14 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
         let windowID = windowState.id
         if let pendingSession = pendingTransientSessions.removeValue(forKey: windowID) {
             pendingSession.source.refresh(
-                window: anchorView.window ?? windowState.shellWindow(in: windowRegistry),
+                window: anchorView.window ?? windowState.shellWindow(in: anchors[windowID]?.windowRegistry),
                 originOwnerView: anchorView
             )
             return pendingSession.token
         }
 
         let source = windowState.sidebarTransientSessionCoordinator.preparedPresentationSource(
-            window: anchorView.window ?? windowState.shellWindow(in: windowRegistry),
+            window: anchorView.window ?? windowState.shellWindow(in: anchors[windowID]?.windowRegistry),
             ownerView: anchorView
         )
         return windowState.sidebarTransientSessionCoordinator.beginSession(
@@ -495,9 +505,10 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
     }
 }
 
-private struct URLBarHubPopoverRootView: View {
+struct URLBarHubPopoverRootView: View {
     let browserContext: URLBarHubBrowserContext?
     let windowState: BrowserWindowState?
+    let windowRegistry: WindowRegistry
     let settings: SumiSettingsService
     let themeContext: ResolvedThemeContext
     let colorScheme: ColorScheme
@@ -519,6 +530,7 @@ private struct URLBarHubPopoverRootView: View {
             )
             .environmentObject(browserContext.extensionSurfaceStore)
             .environment(windowState)
+            .environment(windowRegistry)
             .environment(\.sumiSettings, settings)
             .sumiNativeSurfaceColorScheme(colorScheme, themeContext: themeContext)
         } else {
@@ -532,6 +544,7 @@ struct URLBarHubPopoverAnchorView: NSViewRepresentable {
     let browserContext: URLBarHubBrowserContext
     let windowState: BrowserWindowState
     let settings: SumiSettingsService
+    let windowRegistry: WindowRegistry
     let themeContext: ResolvedThemeContext
     let currentTab: Tab?
     let profile: Profile?
@@ -568,6 +581,7 @@ struct URLBarHubPopoverAnchorView: NSViewRepresentable {
             windowState: windowState,
             browserContext: browserContext,
             settings: settings,
+            windowRegistry: windowRegistry,
             themeContext: themeContext,
             currentTab: currentTab,
             profile: profile,

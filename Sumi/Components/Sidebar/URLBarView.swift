@@ -43,7 +43,7 @@ struct URLBarView: View {
     @EnvironmentObject private var glanceManager: GlanceManager
     @EnvironmentObject var extensionSurfaceStore: BrowserExtensionSurfaceStore
     @Environment(BrowserWindowState.self) var windowState
-    @Environment(WindowRegistry.self) private var windowRegistry
+    @Environment(WindowRegistry.self) var windowRegistry
     @Environment(\.sumiSettings) var sumiSettings
     @Environment(\.resolvedThemeContext) var themeContext
 

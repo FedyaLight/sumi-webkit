@@ -1,3 +1,5 @@
+import AppKit
+import SwiftUI
 import WebKit
 import XCTest
 
@@ -5,6 +7,51 @@ import XCTest
 
 @MainActor
 final class BrowserURLBarContextOwnerTests: XCTestCase {
+    func testURLHubPopoverHostingRootPreservesProductionWindowRegistryAcrossLayoutAndUpdate() throws {
+        removePersistedWindowSession()
+        defer { removePersistedWindowSession() }
+
+        let harness = makeHarness()
+        let registry = try XCTUnwrap(harness.browserManager.windowRegistry)
+        let context = harness.browserManager.urlBarBundle.contextOwner.urlBarHubContext
+        let controller = NSHostingController(
+            rootView: makeURLHubRoot(
+                context: context,
+                windowState: harness.windowState,
+                windowRegistry: registry,
+                profileId: harness.primarySpace.profileId
+            )
+        )
+        let controllerIdentity = ObjectIdentifier(controller)
+
+        let initialSize = controller.view.fittingSize
+
+        XCTAssertGreaterThan(initialSize.width, 1)
+        XCTAssertGreaterThan(initialSize.height, 1)
+        XCTAssertIdentical(controller.rootView.windowRegistry, registry)
+        XCTAssertIdentical(controller.rootView.windowRegistry.activeWindow, harness.windowState)
+
+        let replacementWindow = BrowserWindowState()
+        registry.register(replacementWindow)
+        registry.setActive(replacementWindow)
+        let replacementProfileID = UUID()
+        controller.rootView = makeURLHubRoot(
+            context: context,
+            windowState: replacementWindow,
+            windowRegistry: registry,
+            profileId: replacementProfileID
+        )
+
+        let updatedSize = controller.view.fittingSize
+
+        XCTAssertEqual(ObjectIdentifier(controller), controllerIdentity)
+        XCTAssertGreaterThan(updatedSize.width, 1)
+        XCTAssertGreaterThan(updatedSize.height, 1)
+        XCTAssertIdentical(controller.rootView.windowRegistry, registry)
+        XCTAssertIdentical(controller.rootView.windowRegistry.activeWindow, replacementWindow)
+        XCTAssertEqual(controller.rootView.profileId, replacementProfileID)
+    }
+
     func testNavigationHistorySelectedURLUsesWindowSpaceAndSelectsOpenedTab() {
         removePersistedWindowSession()
         defer { removePersistedWindowSession() }
@@ -197,6 +244,27 @@ final class BrowserURLBarContextOwnerTests: XCTestCase {
             browserManager: browserManager,
             windowState: windowState,
             primarySpace: primarySpace
+        )
+    }
+
+    private func makeURLHubRoot(
+        context: URLBarHubBrowserContext,
+        windowState: BrowserWindowState,
+        windowRegistry: WindowRegistry,
+        profileId: UUID?
+    ) -> URLBarHubPopoverRootView {
+        URLBarHubPopoverRootView(
+            browserContext: context,
+            windowState: windowState,
+            windowRegistry: windowRegistry,
+            settings: SumiSettingsService(),
+            themeContext: .default,
+            colorScheme: .light,
+            currentTab: nil,
+            profile: nil,
+            profileId: profileId,
+            onClose: {},
+            onContentSizeChange: { _ in }
         )
     }
 
