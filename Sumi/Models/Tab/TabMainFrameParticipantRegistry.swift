@@ -11,7 +11,10 @@ final class TabMainFrameParticipantRegistry {
 
     enum Phase: Equatable {
         case active(navigationID: ObjectIdentifier)
-        case completed
+        case completed(
+            navigationID: ObjectIdentifier?,
+            kind: TabMainFrameCompletionKind
+        )
     }
 
     struct Entry {
@@ -88,6 +91,43 @@ final class TabMainFrameParticipantRegistry {
         guard let entry = entriesByWebViewID[webViewID],
               entry.revision == revision,
               entry.phase == .active(navigationID: navigationID) else {
+            return nil
+        }
+        return entry
+    }
+
+    func exactActiveEntry(
+        for webView: WKWebView,
+        navigationID: ObjectIdentifier,
+        navigationLifetime: AnyObject,
+        revision: UInt64
+    ) -> Entry? {
+        guard ObjectIdentifier(navigationLifetime) == navigationID,
+              let entry = exactEntry(for: webView),
+              entry.revision == revision,
+              entry.phase == .active(navigationID: navigationID),
+              entry.navigationIdentityReference?.matches(
+                  navigationLifetime
+              ) == true else {
+            return nil
+        }
+        return entry
+    }
+
+    func exactCompletedEntry(
+        for webView: WKWebView,
+        navigationID: ObjectIdentifier,
+        navigationLifetime: AnyObject,
+        revision: UInt64
+    ) -> Entry? {
+        guard ObjectIdentifier(navigationLifetime) == navigationID,
+              let entry = exactEntry(for: webView),
+              entry.revision == revision,
+              case .completed(let completedNavigationID, _) = entry.phase,
+              completedNavigationID == navigationID,
+              entry.navigationIdentityReference?.matches(
+                  navigationLifetime
+              ) == true else {
             return nil
         }
         return entry
@@ -318,13 +358,15 @@ final class TabMainFrameParticipantRegistry {
     func markTerminalSuccess(
         webView: WKWebView,
         navigationID: ObjectIdentifier,
+        navigationLifetime: AnyObject,
         revision: UInt64,
         terminalURL: URL?
     ) -> Entry? {
         let webViewID = ObjectIdentifier(webView)
-        guard var entry = activeEntry(
-            webViewID: webViewID,
+        guard var entry = exactActiveEntry(
+            for: webView,
             navigationID: navigationID,
+            navigationLifetime: navigationLifetime,
             revision: revision
         ) else {
             return nil
@@ -346,20 +388,22 @@ final class TabMainFrameParticipantRegistry {
     }
 
     func finish(
-        webViewID: ObjectIdentifier,
+        webView: WKWebView,
         navigationID: ObjectIdentifier,
-        revision: UInt64
+        navigationLifetime: AnyObject,
+        revision: UInt64,
+        kind: TabMainFrameCompletionKind
     ) -> Entry? {
-        guard var entry = activeEntry(
-            webViewID: webViewID,
+        let webViewID = ObjectIdentifier(webView)
+        guard var entry = exactActiveEntry(
+            for: webView,
             navigationID: navigationID,
+            navigationLifetime: navigationLifetime,
             revision: revision
         ) else {
             return nil
         }
-        retireNavigationIdentity(of: entry)
-        entry.phase = .completed
-        entry.navigationIdentityReference = nil
+        entry.phase = .completed(navigationID: navigationID, kind: kind)
         entriesByWebViewID[webViewID] = entry
         return entry
     }
@@ -399,8 +443,8 @@ final class TabMainFrameParticipantRegistry {
         switch entry.phase {
         case .active(let navigationID):
             previousNavigationID = navigationID
-        case .completed:
-            previousNavigationID = nil
+        case .completed(let navigationID, _):
+            previousNavigationID = navigationID
         }
         let previousIdentity = entry.navigationIdentityReference
         guard attachNavigationIdentity(
@@ -513,7 +557,7 @@ final class TabMainFrameParticipantRegistry {
                 revision: intent.revision,
                 documentGeneration: documentGeneration,
                 targetURL: candidate.presentationURL,
-                phase: .completed,
+                phase: .completed(navigationID: nil, kind: .document),
                 hasCommittedDocument: true,
                 committedDocumentURL: candidate.committedURL,
                 isPDFResponse: candidate.isPDF
@@ -541,7 +585,14 @@ final class TabMainFrameParticipantRegistry {
     }
 
     func retireNavigationIdentity(of entry: Entry) {
-        guard case .active(let navigationID) = entry.phase,
+        let navigationID: ObjectIdentifier?
+        switch entry.phase {
+        case .active(let activeNavigationID):
+            navigationID = activeNavigationID
+        case .completed(let completedNavigationID, _):
+            navigationID = completedNavigationID
+        }
+        guard let navigationID,
               let reference = entry.navigationIdentityReference,
               reference.resolve() != nil else {
             return

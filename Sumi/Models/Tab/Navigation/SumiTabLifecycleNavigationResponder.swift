@@ -255,75 +255,40 @@ final class SumiTabLifecycleNavigationResponder:
             navigationID: context.navigationID,
             isCurrent: nil
         )
-        guard initialRole.isParticipant else { return }
-
-        if let newURL = webView.url {
-            tab.navigationRuntime.lifecycleNavigationRuntime.applyAdblockZapperRulesAfterNavigation(
-                webView,
-                newURL,
-                tab
+        if initialRole.isParticipant {
+            if let newURL = webView.url {
+                tab.navigationRuntime.lifecycleNavigationRuntime.applyAdblockZapperRulesAfterNavigation(
+                    webView,
+                    newURL,
+                    tab
+                )
+            }
+            tab.mediaRuntime.callbacks.invalidateBackgroundMediaCommand(webView)
+            tab.navigationRuntime.lifecycleNavigationRuntime.loadZoomForTab(
+                tab.id,
+                webView
             )
-        }
-        tab.mediaRuntime.callbacks.invalidateBackgroundMediaCommand(webView)
-        tab.navigationRuntime.lifecycleNavigationRuntime.loadZoomForTab(
-            tab.id,
-            webView
-        )
-        guard lifecycle.role(
-            from: webView,
-            navigationID: context.navigationID,
-            isCurrent: nil
-        ).isParticipant else { return }
-        let role = lifecycle.claimAuthorityForTerminalSuccess(
-            from: webView,
-            navigationID: context.navigationID,
-            terminalURL: webView.url ?? context.url,
-            completesDocumentNavigation: true
-        )
-        guard role.isParticipant else { return }
-        guard role.isAuthority else {
-            lifecycle.finish(
+            guard lifecycle.role(
                 from: webView,
-                navigationID: context.navigationID
-            )
-            return
+                navigationID: context.navigationID,
+                isCurrent: nil
+            ).isParticipant else { return }
+            // A terminal success callback proves the document committed;
+            // compensate missed commit callbacks before terminal settlement.
+            navigationDidCommit(context)
         }
-
-        guard publishAuthorityStartEffectsIfNeeded(
-            context,
-            tab: tab,
-            webView: webView
-        ) != nil else { return }
-        navigationDidCommit(context)
-        guard lifecycle.role(
+        let decision = lifecycle.settleFinish(
             from: webView,
             navigationID: context.navigationID,
-            isCurrent: nil
-        ).isAuthority,
-        lifecycle.claimSharedFinishEffects(
-            from: webView,
-            navigationID: context.navigationID
-        ) else {
-            lifecycle.finish(
-                from: webView,
-                navigationID: context.navigationID
-            )
-            return
-        }
+            navigationLifetime: context.navigationLifetime,
+            terminalURL: webView.url ?? context.url
+        )
+        guard case .publish(let publication) = decision else { return }
 
         TabMainFrameLifecycleReducer.publishFinish(
-            .navigation(
-                webView: webView,
-                navigationID: context.navigationID,
-                targetURL: webView.url ?? context.url ?? tab.url,
-                isPDF: tab.committedDocumentRuntime.lease(for: webView)?.isPDF
-                    ?? false
-            ),
-            tab: tab
-        )
-        lifecycle.finish(
-            from: webView,
-            navigationID: context.navigationID
+            publication,
+            tab: tab,
+            lifecycle: lifecycle
         )
     }
 
@@ -353,42 +318,19 @@ final class SumiTabLifecycleNavigationResponder:
             continuationKind: .sameDocument
         )
         guard beginRole.isParticipant else { return }
-        let role = lifecycle.claimAuthorityForTerminalSuccess(
+        let decision = lifecycle.settleSameDocument(
             from: webView,
             navigationID: context.navigationID,
-            terminalURL: newURL,
-            completesDocumentNavigation: false
+            navigationLifetime: context.navigationLifetime,
+            presentationURL: newURL
         )
-        guard role.isAuthority else {
-            lifecycle.finish(
-                from: webView,
-                navigationID: context.navigationID
-            )
-            return
-        }
+        guard case .publish(let publication) = decision else { return }
 
-        tab.handleSameDocumentNavigation(
-            to: newURL,
-            from: webView,
-            navigationID: context.navigationID
-        )
-        tab.navigationRuntime.historyRecorder.didSameDocumentNavigation(
-            to: newURL,
-            type: navigationType,
-            tab: tab
-        )
-        if tab.navigationRuntime.navigationTransactionOwner.pendingMainFrameNavigationKind == .backForward {
-            tab.scheduleBackForwardSameDocumentSettle(using: webView)
-        } else {
-            tab.navigationRuntime.persistenceCallbacks.scheduleRuntimeStatePersistence(tab)
-            tab.navigationRuntime.webViewRouting.syncTabAcrossWindows(tab.id, webView)
-            tab.navigationRuntime.navigationTransactionOwner.pendingMainFrameNavigationKind = nil
-        }
-
-        tab.navigationRuntime.extensionPropertiesRuntime.notifyTabPropertiesChanged(tab, [.URL])
-        lifecycle.finish(
-            from: webView,
-            navigationID: context.navigationID
+        TabMainFrameLifecycleReducer.publishSameDocument(
+            publication,
+            navigationType: navigationType,
+            tab: tab,
+            lifecycle: lifecycle
         )
     }
 

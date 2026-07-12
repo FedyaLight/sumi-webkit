@@ -241,6 +241,7 @@ allowed_test_transaction_injection_files="$(cat <<'EOF'
 SumiTests/NormalTabInitialDocumentRuntimeHandoffTests.swift
 SumiTests/SumiGPCTests.swift
 SumiTests/SumiReaderPresentationTests.swift
+SumiTests/TabMainFrameFinishSettlementTests.swift
 SumiTests/TabMainFrameRuntimeTransactionTests.swift
 SumiTests/TabNavigationCommandsTests.swift
 SumiTests/TabRuntimeRoutingTests.swift

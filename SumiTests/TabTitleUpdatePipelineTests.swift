@@ -11,7 +11,10 @@ final class TabTitleUpdatePipelineTests: XCTestCase {
             index: 0
         )
 
-        tab.handleSameDocumentNavigation(to: URL(string: "https://example.com/watch?v=2")!)
+        tab.publishSameDocumentPresentation(
+            to: URL(string: "https://example.com/watch?v=2")!,
+            remainsCurrent: { true }
+        )
 
         XCTAssertEqual(tab.name, "Original Title")
         XCTAssertEqual(tab.url.absoluteString, "https://example.com/watch?v=2")
@@ -25,8 +28,9 @@ final class TabTitleUpdatePipelineTests: XCTestCase {
             index: 0
         )
 
-        tab.handleSameDocumentNavigation(
-            to: URL(string: "https://example.com/watch?v=2")!
+        tab.publishSameDocumentPresentation(
+            to: URL(string: "https://example.com/watch?v=2")!,
+            remainsCurrent: { true }
         )
 
         XCTAssertEqual(tab.url.absoluteString, "https://example.com/watch?v=2")

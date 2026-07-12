@@ -105,6 +105,32 @@ tab_main_frame_authority_state_methods="$(
     "$tab_main_frame_authority_state" 2>/dev/null || true
 )"
 tab_main_frame_authority_state_methods="${tab_main_frame_authority_state_methods:-0}"
+tab_main_frame_settlement_files=(
+  "Sumi/Models/Tab/TabMainFrameActiveNavigationSettlement.swift"
+  "Sumi/Models/Tab/TabMainFrameTerminalSettlement.swift"
+  "Sumi/Models/Tab/TabMainFrameSameDocumentSettlement.swift"
+  "Sumi/Models/Tab/TabMainFramePromotionReplaySettlement.swift"
+  "Sumi/Models/Tab/TabMainFrameCompletedAuthorityProof.swift"
+)
+tab_main_frame_settlement_loc=0
+tab_main_frame_settlement_methods=0
+for settlement_file in "${tab_main_frame_settlement_files[@]}"; do
+  tab_main_frame_settlement_loc=$((
+    tab_main_frame_settlement_loc + $(count_lines "$settlement_file")
+  ))
+  settlement_methods="$(
+    rg --count-matches '^\s*(public |private |internal |fileprivate )?func ' \
+      "$settlement_file" 2>/dev/null || true
+  )"
+  tab_main_frame_settlement_methods=$((
+    tab_main_frame_settlement_methods + ${settlement_methods:-0}
+  ))
+done
+retired_terminal_finish_choreography="$(
+  count_matches \
+    'claimAuthorityForTerminalSuccess|claimSharedFinishEffects|reserveTerminalSuccess|finishLifecycle|TabMainFrameCheckpointSettlement' \
+    Sumi SumiTests
+)"
 tab_main_frame_lifecycle_machine="Sumi/Models/Tab/TabMainFrameLifecycleMachine.swift"
 tab_main_frame_lifecycle_machine_loc="$(count_lines "$tab_main_frame_lifecycle_machine")"
 tab_main_frame_lifecycle_machine_methods="$(
@@ -845,30 +871,73 @@ check_max "BrowserManager.swift LOC" "$bm_loc" 200
 check_max "TabManager.swift LOC" "$tm_loc" 220
 check_max "Tab.swift LOC" "$tab_model_loc" 704
 check_max "Tab.swift methods" "$tab_model_methods" 34
+# Exact navigation lifetime and separate same-document publication add two
+# explicit capability operations. The settlement aggregate below prevents the
+# split from hiding net growth behind individually small files.
 check_max "TabMainFrameRuntimeTransaction.swift LOC" \
-  "$tab_main_frame_transaction_loc" 653
+  "$tab_main_frame_transaction_loc" 702
 check_max "TabMainFrameRuntimeTransaction methods" \
-  "$tab_main_frame_transaction_methods" 35
+  "$tab_main_frame_transaction_methods" 37
 check_max "TabMainFrameRuntimeCapabilities.swift LOC" \
-  "$tab_main_frame_capabilities_loc" 111
+  "$tab_main_frame_capabilities_loc" 124
 check_max "TabMainFrameRuntimeCapabilities methods" \
-  "$tab_main_frame_capability_methods" 19
+  "$tab_main_frame_capability_methods" 23
 check_max "TabMainFrameAuthorityReducer.swift LOC" \
   "$tab_main_frame_authority_reducer_loc" 661
 check_max "TabMainFrameAuthorityReducer methods" \
-  "$tab_main_frame_authority_reducer_methods" 24
+  "$tab_main_frame_authority_reducer_methods" 25
 check_max "TabMainFrameAuthorityState.swift LOC" \
-  "$tab_main_frame_authority_state_loc" 107
+  "$tab_main_frame_authority_state_loc" 152
 check_max "TabMainFrameAuthorityState methods" \
-  "$tab_main_frame_authority_state_methods" 8
+  "$tab_main_frame_authority_state_methods" 10
 check_max "TabMainFrameLifecycleMachine.swift LOC" \
-  "$tab_main_frame_lifecycle_machine_loc" 784
+  "$tab_main_frame_lifecycle_machine_loc" 453
 check_max "TabMainFrameLifecycleMachine methods" \
-  "$tab_main_frame_lifecycle_machine_methods" 39
+  "$tab_main_frame_lifecycle_machine_methods" 20
+check_max "Main-frame settlement aggregate LOC" \
+  "$tab_main_frame_settlement_loc" 725
+check_max "Main-frame settlement aggregate methods" \
+  "$tab_main_frame_settlement_methods" 23
+check_max "Lifecycle machine + settlement aggregate LOC" \
+  "$((tab_main_frame_lifecycle_machine_loc + tab_main_frame_settlement_loc))" 1178
+check_max "Lifecycle machine + settlement aggregate methods" \
+  "$((tab_main_frame_lifecycle_machine_methods + tab_main_frame_settlement_methods))" 43
+check_max "Active navigation settlement LOC" \
+  "$(count_lines "${tab_main_frame_settlement_files[0]}")" 238
+check_max "Active navigation settlement methods" \
+  "$(rg --count-matches '^\s*(public |private |internal |fileprivate )?func ' "${tab_main_frame_settlement_files[0]}")" 8
+check_max "Active navigation settlement collaborators" \
+  "$(rg --count-matches '^    private (let|weak var) [a-zA-Z_]' "${tab_main_frame_settlement_files[0]}")" 4
+check_max "Terminal settlement LOC" \
+  "$(count_lines "${tab_main_frame_settlement_files[1]}")" 211
+check_max "Terminal settlement methods" \
+  "$(rg --count-matches '^\s*(public |private |internal |fileprivate )?func ' "${tab_main_frame_settlement_files[1]}")" 6
+check_max "Terminal settlement collaborators" \
+  "$(rg --count-matches '^    private (let|weak var) [a-zA-Z_]' "${tab_main_frame_settlement_files[1]}")" 4
+check_max "Same-document settlement LOC" \
+  "$(count_lines "${tab_main_frame_settlement_files[2]}")" 124
+check_max "Same-document settlement methods" \
+  "$(rg --count-matches '^\s*(public |private |internal |fileprivate )?func ' "${tab_main_frame_settlement_files[2]}")" 3
+check_max "Same-document settlement collaborators" \
+  "$(rg --count-matches '^    private (let|weak var) [a-zA-Z_]' "${tab_main_frame_settlement_files[2]}")" 4
+check_max "Promotion replay settlement LOC" \
+  "$(count_lines "${tab_main_frame_settlement_files[3]}")" 88
+check_max "Promotion replay settlement methods" \
+  "$(rg --count-matches '^\s*(public |private |internal |fileprivate )?func ' "${tab_main_frame_settlement_files[3]}")" 4
+check_max "Promotion replay settlement collaborators" \
+  "$(rg --count-matches '^    private (let|weak var) [a-zA-Z_]' "${tab_main_frame_settlement_files[3]}")" 4
+check_max "Completed authority proof LOC" \
+  "$(count_lines "${tab_main_frame_settlement_files[4]}")" 64
+check_max "Completed authority proof methods" \
+  "$(rg --count-matches '^\s*(public |private |internal |fileprivate )?func ' "${tab_main_frame_settlement_files[4]}")" 2
+check_max "Completed authority proof collaborators" \
+  "$(rg --count-matches '^    private (let|weak var) [a-zA-Z_]' "${tab_main_frame_settlement_files[4]}")" 3
+check_exact "Retired terminal finish choreography" \
+  "$retired_terminal_finish_choreography" 0
 check_max "SumiTabLifecycleNavigationResponder.swift LOC" \
-  "$tab_main_frame_responder_loc" 708
+  "$tab_main_frame_responder_loc" 650
 check_max "TabMainFrameLifecyclePromotionReducer.swift LOC" \
-  "$tab_main_frame_promotion_reducer_loc" 197
+  "$tab_main_frame_promotion_reducer_loc" 286
 check_max "TabMainFrameLoadRuntime.swift LOC" \
   "$tab_main_frame_load_runtime_loc" 302
 check_max "TabMainFrameLoadRuntime methods" \

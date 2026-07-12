@@ -124,29 +124,22 @@ extension Tab {
         }
     }
 
-    func handleSameDocumentNavigation(
+    @discardableResult
+    func publishSameDocumentPresentation(
         to newURL: URL,
-        from webView: WKWebView? = nil,
-        navigationID: ObjectIdentifier? = nil
-    ) {
-        let urlChanged = self.url.absoluteString != newURL.absoluteString
-        if !urlChanged { return }
-
-        if let webView {
-            applyAcceptedMainFrameLifecycleURL(
-                newURL,
-                from: webView,
-                navigationID: navigationID
-            )
-        } else {
-            self.url = newURL
+        remainsCurrent: () -> Bool
+    ) -> Bool {
+        guard self.url.absoluteString != newURL.absoluteString else {
+            return remainsCurrent()
         }
-
-        if urlChanged {
-            applyCachedFaviconOrPlaceholder(for: newURL)
-            refreshFaviconExtensionCache()
-            stateChangeEmitter.postNavigationStateDidChange(for: self)
-        }
+        self.url = newURL
+        guard remainsCurrent() else { return false }
+        applyCachedFaviconOrPlaceholder(for: newURL)
+        guard remainsCurrent() else { return false }
+        refreshFaviconExtensionCache()
+        guard remainsCurrent() else { return false }
+        stateChangeEmitter.postNavigationStateDidChange(for: self)
+        return remainsCurrent()
     }
 
     public func performMainFrameNavigationAfterContentBlockingAssetsIfNeeded(

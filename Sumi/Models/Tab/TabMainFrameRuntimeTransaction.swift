@@ -31,6 +31,10 @@ final class TabMainFrameRuntimeTransaction:
 
     let mainFrameLoads: TabMainFrameLoadRuntime
     private let lifecycle: TabMainFrameLifecycleMachine
+    private let activeNavigation: TabMainFrameActiveNavigationSettlement
+    private let terminal: TabMainFrameTerminalSettlement
+    private let sameDocument: TabMainFrameSameDocumentSettlement
+    private let promotion: TabMainFramePromotionReplaySettlement
     let committedDocumentRuntime: TabCommittedDocumentRuntime
     private let recoveryMarkers: TabWebContentRecoveryMarkerLedger
 
@@ -42,6 +46,10 @@ final class TabMainFrameRuntimeTransaction:
         )
         self.mainFrameLoads = mainFrameLoads
         self.lifecycle = lifecycle
+        self.activeNavigation = lifecycle.activeNavigation
+        self.terminal = lifecycle.terminal
+        self.sameDocument = lifecycle.sameDocument
+        self.promotion = lifecycle.promotion
         self.committedDocumentRuntime = TabCommittedDocumentRuntime(
             initialURL: initialURL,
             evidenceSource: mainFrameLoads
@@ -358,7 +366,7 @@ final class TabMainFrameRuntimeTransaction:
         from webView: WKWebView,
         navigationID: ObjectIdentifier
     ) -> TabMainFrameEffectDecision<TabMainFrameActiveAuthorityLease> {
-        lifecycle.claimTransactionStartEffects(
+        activeNavigation.claimTransactionStartEffects(
             from: webView,
             navigationID: navigationID,
             currentIntent: mainFrameLoads.currentIntent
@@ -369,7 +377,7 @@ final class TabMainFrameRuntimeTransaction:
         from webView: WKWebView,
         navigationID: ObjectIdentifier
     ) -> TabMainFrameEffectDecision<TabMainFrameActiveAuthorityLease> {
-        lifecycle.claimAuthorityTargetPreparation(
+        activeNavigation.claimAuthorityTargetPreparation(
             from: webView,
             navigationID: navigationID,
             currentIntent: mainFrameLoads.currentIntent
@@ -380,7 +388,7 @@ final class TabMainFrameRuntimeTransaction:
         from webView: WKWebView,
         navigationID: ObjectIdentifier
     ) -> TabMainFrameEffectDecision<URL> {
-        lifecycle.claimLocalStartEffects(
+        activeNavigation.claimLocalStartEffects(
             from: webView,
             navigationID: navigationID,
             currentIntent: mainFrameLoads.currentIntent
@@ -388,27 +396,16 @@ final class TabMainFrameRuntimeTransaction:
     }
 
     func remainsCurrent(_ lease: TabMainFrameActiveAuthorityLease) -> Bool {
-        lifecycle.remainsCurrent(
+        activeNavigation.remainsCurrent(
             lease,
             currentIntent: mainFrameLoads.currentIntent
         )
     }
 
-    func claimSharedFinishEffects(
-        from webView: WKWebView,
-        navigationID: ObjectIdentifier
-    ) -> Bool {
-        lifecycle.claimSharedFinishEffects(
-            from: webView,
-            navigationID: navigationID,
-            currentIntent: mainFrameLoads.currentIntent
-        )
-    }
-
-    func claimSharedFinishEffects(
+    func prepareSharedFinishPublication(
         matching continuation: TabMainFrameAuthorityContinuation
-    ) -> Bool {
-        lifecycle.claimPromotedSharedFinishEffects(
+    ) -> TabMainFrameFinishDecision {
+        promotion.finishPublication(
             matching: continuation,
             currentIntent: mainFrameLoads.currentIntent
         )
@@ -417,7 +414,7 @@ final class TabMainFrameRuntimeTransaction:
     func remainsCurrent(
         matching continuation: TabMainFrameAuthorityContinuation
     ) -> Bool {
-        lifecycle.remainsCurrent(
+        promotion.remainsCurrent(
             continuation,
             currentIntent: mainFrameLoads.currentIntent
         )
@@ -430,17 +427,6 @@ final class TabMainFrameRuntimeTransaction:
     ) {
         _ = lifecycle.recordResponse(
             isPDF: isPDF,
-            from: webView,
-            navigationID: navigationID,
-            currentIntent: mainFrameLoads.currentIntent
-        )
-    }
-
-    func finish(
-        from webView: WKWebView,
-        navigationID: ObjectIdentifier?
-    ) {
-        lifecycle.finishLifecycle(
             from: webView,
             navigationID: navigationID,
             currentIntent: mainFrameLoads.currentIntent
@@ -460,7 +446,7 @@ final class TabMainFrameRuntimeTransaction:
         let transition = committedDocumentRuntime.performTransition(
             reason: .documentCommit
         ) {
-            let transition = lifecycle.recordCommit(
+            let transition = activeNavigation.settleCommit(
                 from: webView,
                 navigationID: navigationID,
                 committedURL: committedURL,
@@ -493,39 +479,102 @@ final class TabMainFrameRuntimeTransaction:
     func consumeCommitPublication(
         _ publication: TabMainFrameCommitPublication
     ) -> Bool {
-        lifecycle.consumeCommitPublication(
+        activeNavigation.consumeCommitPublication(
             publication,
             currentIntent: mainFrameLoads.currentIntent
         )
     }
 
-    func claimAuthorityForTerminalSuccess(
+    func settleFinish(
         from webView: WKWebView,
         navigationID: ObjectIdentifier,
-        terminalURL: URL?,
-        completesDocumentNavigation: Bool
-    ) -> TabMainFrameLifecycleRole {
+        navigationLifetime: AnyObject,
+        terminalURL: URL?
+    ) -> TabMainFrameFinishDecision {
         committedDocumentRuntime.performTransition(
             reason: .terminalSuccess
         ) {
-            let transition = lifecycle.claimAuthorityForTerminalSuccess(
+            let settlement = terminal.settleFinish(
                 from: webView,
                 navigationID: navigationID,
+                navigationLifetime: navigationLifetime,
                 terminalURL: terminalURL,
-                completesDocumentNavigation: completesDocumentNavigation,
                 currentIntent: mainFrameLoads.currentIntent
             )
-            if let evidence = transition.evidence {
+            if let evidence = settlement.evidence {
                 committedDocumentRuntime.recordReplica(evidence)
             }
-            if let presentationURL = transition.presentationURLToAdopt {
+            if let presentationURL = settlement.presentationURLToAdopt {
                 committedDocumentRuntime.updatePresentation(
                     presentationURL,
                     on: webView
                 )
+                mainFrameLoads.updateTargetWithinRevision(presentationURL)
             }
-            return transition.role
+            return settlement.decision
         }
+    }
+
+    func consumeFinishPublication(
+        _ publication: TabMainFrameFinishPublication
+    ) -> Bool {
+        terminal.consumeFinishPublication(
+            publication,
+            currentIntent: mainFrameLoads.currentIntent
+        )
+    }
+
+    func remainsCurrent(_ lease: TabMainFrameCompletedAuthorityLease) -> Bool {
+        switch lease.completionKind {
+        case .document:
+            terminal.remainsCurrent(
+                lease,
+                currentIntent: mainFrameLoads.currentIntent
+            )
+        case .sameDocument:
+            sameDocument.remainsCurrent(
+                lease,
+                currentIntent: mainFrameLoads.currentIntent
+            )
+        }
+    }
+
+    func settleSameDocument(
+        from webView: WKWebView,
+        navigationID: ObjectIdentifier,
+        navigationLifetime: AnyObject,
+        presentationURL: URL
+    ) -> TabMainFrameSameDocumentDecision {
+        let decision = sameDocument.settle(
+            from: webView,
+            navigationID: navigationID,
+            navigationLifetime: navigationLifetime,
+            presentationURL: presentationURL,
+            currentIntent: mainFrameLoads.currentIntent
+        )
+        if case .publish = decision {
+            mainFrameLoads.updateTargetWithinRevision(presentationURL)
+            if committedDocumentRuntime.lease(for: webView) != nil {
+                committedDocumentRuntime.performTransition(
+                    reason: .sameDocumentPresentation
+                ) {
+                    committedDocumentRuntime.updatePresentation(
+                        presentationURL,
+                        on: webView
+                    )
+                }
+            }
+        }
+        return decision
+    }
+
+    func consumeSameDocumentPublication(
+        _ publication: TabMainFrameSameDocumentPublication
+    ) -> Bool {
+        sameDocument.consume(
+            publication,
+            currentIntent: mainFrameLoads.currentIntent
+        )
     }
 
     func claimSharedCommitEffects(
@@ -534,7 +583,7 @@ final class TabMainFrameRuntimeTransaction:
         committedDocumentRuntime.performTransition(
             reason: .authorityPromotion
         ) {
-            guard let evidence = lifecycle.claimPromotedSharedCommitEffects(
+            guard let evidence = promotion.claimSharedCommitEffects(
                 matching: continuation,
                 currentIntent: mainFrameLoads.currentIntent
             ) else {
@@ -549,7 +598,7 @@ final class TabMainFrameRuntimeTransaction:
         _ targetURL: URL,
         matching continuation: TabMainFrameAuthorityContinuation
     ) -> Bool {
-        let accepted = lifecycle.acceptPromotedTarget(
+        let accepted = promotion.acceptTarget(
             targetURL,
             matching: continuation,
             currentIntent: mainFrameLoads.currentIntent
@@ -564,7 +613,7 @@ final class TabMainFrameRuntimeTransaction:
         from webView: WKWebView,
         navigationID: ObjectIdentifier?
     ) -> Bool {
-        guard lifecycle.acceptLifecycleTarget(
+        guard activeNavigation.acceptTarget(
             targetURL,
             from: webView,
             navigationID: navigationID,

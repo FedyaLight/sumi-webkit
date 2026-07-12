@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 import WebKit
 
 @MainActor
@@ -56,21 +57,34 @@ enum TabMainFrameLifecycleReducer {
         tab: Tab,
         promotion: any TabMainFramePromotionSettlement
     ) {
+        guard tab.applyPromotedAuthorityURL(
+            continuation.targetURL,
+            matching: continuation
+        ) else { return }
+
         if continuation.needsSharedCommitEffects,
            promotion.claimSharedCommitEffects(
                matching: continuation
            ) {
             let authority = Authority.promotion(continuation)
-            guard authority.applyURL(to: tab) else { return }
             publishCommitEffects(authority, tab: tab) {
                 promotion.remainsCurrent(matching: continuation)
             }
         }
-        if continuation.needsSharedFinishEffects,
-           promotion.claimSharedFinishEffects(
-               matching: continuation
-           ) {
-            publishFinish(.promotion(continuation), tab: tab)
+        guard continuation.needsSharedFinishEffects else { return }
+        guard case .publish(let publication) =
+                promotion.prepareSharedFinishPublication(
+                    matching: continuation
+                ) else {
+            return
+        }
+        guard promotion.consumeFinishPublication(publication) else { return }
+        if tab.url.absoluteString
+            != publication.presentationURL.absoluteString {
+            tab.url = publication.presentationURL
+        }
+        publishFinishEffects(from: publication.webView, tab: tab) {
+            promotion.remainsCurrent(publication.authority)
         }
     }
 
@@ -151,47 +165,122 @@ enum TabMainFrameLifecycleReducer {
     }
 
     static func publishFinish(
-        _ authority: Authority,
-        tab: Tab
+        _ publication: TabMainFrameFinishPublication,
+        tab: Tab,
+        lifecycle: any TabMainFrameLifecycleSettlement
     ) {
-        guard authority.applyURL(to: tab) else { return }
+        guard lifecycle.consumeFinishPublication(publication) else { return }
+        if tab.url.absoluteString
+            != publication.presentationURL.absoluteString {
+            tab.url = publication.presentationURL
+        }
+        publishFinishEffects(from: publication.webView, tab: tab) {
+            lifecycle.remainsCurrent(publication.authority)
+        }
+    }
+
+    static func publishSameDocument(
+        _ publication: TabMainFrameSameDocumentPublication,
+        navigationType: SumiSameDocumentNavigationType,
+        tab: Tab,
+        lifecycle: any TabMainFrameLifecycleSettlement
+    ) {
+        guard lifecycle.consumeSameDocumentPublication(publication) else { return }
+        guard tab.publishSameDocumentPresentation(
+            to: publication.presentationURL,
+            remainsCurrent: {
+                lifecycle.remainsCurrent(publication.authority)
+            }
+        ) else { return }
+        tab.navigationRuntime.historyRecorder.didSameDocumentNavigation(
+            to: publication.presentationURL,
+            type: navigationType,
+            tab: tab
+        )
+        guard lifecycle.remainsCurrent(publication.authority) else { return }
+        if tab.navigationRuntime.navigationTransactionOwner
+            .pendingMainFrameNavigationKind == .backForward {
+            tab.scheduleBackForwardSameDocumentSettle(
+                using: publication.webView
+            )
+            guard lifecycle.remainsCurrent(publication.authority) else {
+                return
+            }
+        } else {
+            tab.navigationRuntime.persistenceCallbacks
+                .scheduleRuntimeStatePersistence(tab)
+            guard lifecycle.remainsCurrent(publication.authority) else {
+                return
+            }
+            tab.navigationRuntime.webViewRouting.syncTabAcrossWindows(
+                tab.id,
+                publication.webView
+            )
+            guard lifecycle.remainsCurrent(publication.authority) else {
+                return
+            }
+            tab.navigationRuntime.navigationTransactionOwner
+                .pendingMainFrameNavigationKind = nil
+        }
+        tab.navigationRuntime.extensionPropertiesRuntime
+            .notifyTabPropertiesChanged(tab, [.URL])
+    }
+
+    private static func publishFinishEffects(
+        from webView: WKWebView,
+        tab: Tab,
+        remainsCurrent: () -> Bool
+    ) {
         StartupPerformanceTrace.firstNavigationFinished()
         tab.loadingState = .didFinish
+        guard remainsCurrent() else { return }
         tab.navigationRuntime.extensionPropertiesRuntime.notifyTabPropertiesChanged(
             tab,
             [.loading]
         )
+        guard remainsCurrent() else { return }
         tab.refreshFaviconExtensionCache()
-        tab.updateNavigationState(from: authority.webView)
+        guard remainsCurrent() else { return }
+        tab.updateNavigationState(from: webView)
+        guard remainsCurrent() else { return }
 
-        let title = authority.webView.title?
+        let title = webView.title?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         tab.navigationRuntime.historyRecorder.updateTitle(title, tab: tab)
+        guard remainsCurrent() else { return }
         tab.navigationRuntime.persistenceCallbacks.scheduleRuntimeStatePersistence(tab)
+        guard remainsCurrent() else { return }
         if tab.navigationRuntime.navigationTransactionOwner.pendingMainFrameNavigationKind
             == .backForward {
-            tab.finishBackForwardNavigationTracking(using: authority.webView)
+            tab.finishBackForwardNavigationTracking(using: webView)
+            guard remainsCurrent() else { return }
             tab.navigationRuntime.webViewRouting.syncTabAcrossWindows(
                 tab.id,
-                authority.webView
+                webView
             )
+            guard remainsCurrent() else { return }
         } else {
             tab.navigationRuntime.navigationTransactionOwner.pendingMainFrameNavigationKind = nil
         }
 
         if tab.audioState.isMuted {
             tab.setMuted(true)
+            guard remainsCurrent() else { return }
         }
         tab.navigationRuntime.extensionPropertiesRuntime.notifyTabPropertiesChanged(
             tab,
             [.URL, .title, .loading]
         )
+        guard remainsCurrent() else { return }
         tab.navigationRuntime.lifecycleNavigationRuntime
             .reconcileDocumentSuspensionState(tab)
+        guard remainsCurrent() else { return }
         tab.mediaRuntime.callbacks.scheduleBackgroundMediaReconcile(
             "navigation-promoted-finish"
         )
+        guard remainsCurrent() else { return }
         tab.navigationRuntime.lifecycleNavigationRuntime.enforceSiteDataPolicyAfterNavigation(tab)
+        guard remainsCurrent() else { return }
         SafariExtensionAutofillFillDiagnostics.endInlineUISession(extensionId: nil)
     }
 }

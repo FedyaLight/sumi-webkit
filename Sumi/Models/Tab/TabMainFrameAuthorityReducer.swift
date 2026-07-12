@@ -129,6 +129,16 @@ final class TabMainFrameAuthorityReducer {
         authorityState.markCompleted()
     }
 
+    func noteTargetMutation(
+        webViewID: ObjectIdentifier,
+        revision: UInt64
+    ) {
+        authorityState.noteTargetMutation(
+            webViewID: webViewID,
+            revision: revision
+        )
+    }
+
     func lifecycleRole(
         for participant: TabMainFrameParticipantRegistry.Entry,
         webViewID: ObjectIdentifier,
@@ -214,47 +224,30 @@ final class TabMainFrameAuthorityReducer {
         return (role, evidence)
     }
 
-    func claimAuthorityForTerminalSuccess(
+    struct TerminalSuccessSettlement {
+        let role: TabMainFrameLifecycleRole
+        let evidence: TabCommittedDocumentEvidence?
+        let presentationURLToAdopt: URL?
+    }
+
+    func settleTerminalSuccess(
         from webView: WKWebView,
         navigationID: ObjectIdentifier,
+        navigationLifetime: AnyObject,
         terminalURL: URL?,
-        completesDocumentNavigation: Bool,
         currentIntent: TabMainFrameNavigationIntent,
         participants: TabMainFrameParticipantRegistry,
         effectClaims: TabMainFrameEffectLedger
-    ) -> TabMainFrameTerminalTransition {
+    ) -> TerminalSuccessSettlement {
         let webViewID = ObjectIdentifier(webView)
-        guard completesDocumentNavigation else {
-            guard let participant = participants.activeEntry(
-                webViewID: webViewID,
-                navigationID: navigationID,
-                revision: currentIntent.revision
-            ) else {
-                return TabMainFrameTerminalTransition(
-                    role: .stale,
-                    evidence: nil,
-                    presentationURLToAdopt: nil
-                )
-            }
-            let role = claimDocumentAuthority(
-                for: participant,
-                webViewID: webViewID,
-                navigationID: navigationID
-            )
-            return TabMainFrameTerminalTransition(
-                role: role,
-                evidence: nil,
-                presentationURLToAdopt: role.isAuthority ? terminalURL : nil
-            )
-        }
-
         guard let participant = participants.markTerminalSuccess(
             webView: webView,
             navigationID: navigationID,
+            navigationLifetime: navigationLifetime,
             revision: currentIntent.revision,
             terminalURL: terminalURL
         ) else {
-            return TabMainFrameTerminalTransition(
+            return TerminalSuccessSettlement(
                 role: .stale,
                 evidence: nil,
                 presentationURLToAdopt: nil
@@ -263,14 +256,14 @@ final class TabMainFrameAuthorityReducer {
         let evidence = participant.committedEvidence(webView: webView)
 
         guard participant.documentGeneration == documentGeneration else {
-            return TabMainFrameTerminalTransition(
+            return TerminalSuccessSettlement(
                 role: .participant,
                 evidence: evidence,
                 presentationURLToAdopt: nil
             )
         }
         if effectClaims.hasPublishedSharedFinish {
-            return TabMainFrameTerminalTransition(
+            return TerminalSuccessSettlement(
                 role: lifecycleRole(
                     for: participant,
                     webViewID: webViewID,
@@ -281,29 +274,28 @@ final class TabMainFrameAuthorityReducer {
             )
         }
         if hasOtherCommittedAuthority(than: webViewID, for: participant) {
-            return TabMainFrameTerminalTransition(
+            return TerminalSuccessSettlement(
                 role: .participant,
                 evidence: evidence,
                 presentationURLToAdopt: nil
             )
         }
-        guard effectClaims.reserveTerminalSuccess(
-            participantID: participant.id
-        ) else {
-            return TabMainFrameTerminalTransition(
-                role: .participant,
-                evidence: evidence,
-                presentationURLToAdopt: nil
-            )
-        }
-        installAuthority(
-            revision: participant.revision,
+        if isExactAuthority(
             webViewID: webViewID,
-            documentGeneration: participant.documentGeneration,
             navigationID: navigationID,
-            hasCommittedDocument: true
-        )
-        return TabMainFrameTerminalTransition(
+            revision: participant.revision
+        ) {
+            markCommitted()
+        } else {
+            installAuthority(
+                revision: participant.revision,
+                webViewID: webViewID,
+                documentGeneration: participant.documentGeneration,
+                navigationID: navigationID,
+                hasCommittedDocument: true
+            )
+        }
+        return TerminalSuccessSettlement(
             role: .authority,
             evidence: evidence,
             presentationURLToAdopt: terminalURL
@@ -485,13 +477,16 @@ final class TabMainFrameAuthorityReducer {
 
         let navigationID: ObjectIdentifier?
         let isCompleted: Bool
+        let completionKind: TabMainFrameCompletionKind?
         switch promotedParticipant.phase {
         case .active(let candidateNavigationID):
             navigationID = candidateNavigationID
             isCompleted = false
-        case .completed:
+            completionKind = nil
+        case .completed(_, let kind):
             navigationID = nil
             isCompleted = true
+            completionKind = kind
         }
         installAuthority(
             revision: currentIntent.revision,
@@ -510,6 +505,7 @@ final class TabMainFrameAuthorityReducer {
             needsSharedCommitEffects: promotedParticipant.hasCommittedDocument
                 && effectClaims.hasPublishedSharedCommit == false,
             needsSharedFinishEffects: isCompleted
+                && completionKind == .document
                 && effectClaims.hasPublishedSharedFinish == false,
             revision: promotedParticipant.revision,
             documentGeneration: promotedParticipant.documentGeneration,
@@ -626,8 +622,8 @@ final class TabMainFrameAuthorityReducer {
         participant: TabMainFrameParticipantRegistry.Entry
     ) -> Bool {
         if continuation.isCompleted {
+            guard case .completed = participant.phase else { return false }
             return continuation.navigationID == nil
-                && participant.phase == .completed
         }
         guard let navigationID = continuation.navigationID else { return false }
         return participant.phase == .active(navigationID: navigationID)
@@ -642,12 +638,16 @@ final class TabMainFrameAuthorityReducer {
     ) -> (recoverability: Int, preference: Int, identity: UInt) {
         let recoverability: Int
         switch candidate.value.phase {
-        case .completed where candidate.value.hasCommittedDocument:
+        case .completed(_, .document)
+            where candidate.value.hasCommittedDocument:
             recoverability = 0
-        case .active where candidate.value.hasCommittedDocument:
+        case .completed(_, .sameDocument)
+            where candidate.value.hasCommittedDocument:
             recoverability = 1
-        case .active:
+        case .active where candidate.value.hasCommittedDocument:
             recoverability = 2
+        case .active:
+            recoverability = 3
         case .completed:
             recoverability = 4
         }

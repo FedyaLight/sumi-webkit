@@ -71,27 +71,34 @@ protocol TabMainFrameLifecycleSettlement: AnyObject {
 
     func remainsCurrent(_ lease: TabMainFrameActiveAuthorityLease) -> Bool
 
-    func claimAuthorityForTerminalSuccess(
+    func settleFinish(
         from webView: WKWebView,
         navigationID: ObjectIdentifier,
-        terminalURL: URL?,
-        completesDocumentNavigation: Bool
-    ) -> TabMainFrameLifecycleRole
+        navigationLifetime: AnyObject,
+        terminalURL: URL?
+    ) -> TabMainFrameFinishDecision
 
-    func claimSharedFinishEffects(
+    func consumeFinishPublication(
+        _ publication: TabMainFrameFinishPublication
+    ) -> Bool
+
+    func remainsCurrent(_ lease: TabMainFrameCompletedAuthorityLease) -> Bool
+
+    func settleSameDocument(
         from webView: WKWebView,
-        navigationID: ObjectIdentifier
+        navigationID: ObjectIdentifier,
+        navigationLifetime: AnyObject,
+        presentationURL: URL
+    ) -> TabMainFrameSameDocumentDecision
+
+    func consumeSameDocumentPublication(
+        _ publication: TabMainFrameSameDocumentPublication
     ) -> Bool
 
     func noteResponse(
         isPDF: Bool,
         from webView: WKWebView,
         navigationID: ObjectIdentifier
-    )
-
-    func finish(
-        from webView: WKWebView,
-        navigationID: ObjectIdentifier?
     )
 }
 
@@ -101,9 +108,15 @@ protocol TabMainFramePromotionSettlement: AnyObject {
         matching continuation: TabMainFrameAuthorityContinuation
     ) -> Bool
 
-    func claimSharedFinishEffects(
+    func prepareSharedFinishPublication(
         matching continuation: TabMainFrameAuthorityContinuation
+    ) -> TabMainFrameFinishDecision
+
+    func consumeFinishPublication(
+        _ publication: TabMainFrameFinishPublication
     ) -> Bool
+
+    func remainsCurrent(_ lease: TabMainFrameCompletedAuthorityLease) -> Bool
 
     func remainsCurrent(
         matching continuation: TabMainFrameAuthorityContinuation

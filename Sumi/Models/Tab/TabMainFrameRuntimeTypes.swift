@@ -30,6 +30,11 @@ struct TabMainFrameActiveAuthorityLease: Equatable {
     let authorityEpoch: UInt64
 }
 
+enum TabMainFrameCompletionKind: Equatable {
+    case document
+    case sameDocument
+}
+
 enum TabMainFrameEffectDecision<Lease> {
     case stale
     case alreadyClaimed(Lease)
@@ -96,6 +101,20 @@ struct TabMainFrameAuthorityContinuation: Equatable {
     }
 }
 
+struct TabMainFrameCompletedAuthorityLease: Equatable {
+    let revision: UInt64
+    let documentGeneration: UInt64
+    let participantID: UUID
+    let webViewID: ObjectIdentifier
+    let navigationID: ObjectIdentifier?
+    let completionKind: TabMainFrameCompletionKind
+    let hasCommittedDocument: Bool
+    let committedDocumentURL: URL?
+    let presentationURL: URL
+    let isPDF: Bool
+    let authorityEpoch: UInt64
+}
+
 struct TabMainFrameCommitPermit: Hashable {
     let id: UUID
 }
@@ -113,6 +132,42 @@ enum TabMainFrameCommitDecision {
     case recordedReplica
     case alreadyPublished
     case publish(TabMainFrameCommitPublication)
+}
+
+struct TabMainFrameFinishPermit: Hashable {
+    let id: UUID
+}
+
+struct TabMainFrameFinishPublication {
+    let webView: WKWebView
+    let presentationURL: URL
+    let isPDF: Bool
+    let authority: TabMainFrameCompletedAuthorityLease
+    let permit: TabMainFrameFinishPermit
+}
+
+enum TabMainFrameFinishDecision {
+    case stale
+    case completedReplica
+    case alreadyPublished
+    case publish(TabMainFrameFinishPublication)
+}
+
+struct TabMainFrameSameDocumentPublication {
+    let webView: WKWebView
+    let presentationURL: URL
+    let authority: TabMainFrameCompletedAuthorityLease
+    let permit: TabMainFrameSameDocumentPermit
+}
+
+struct TabMainFrameSameDocumentPermit: Hashable {
+    let id: UUID
+}
+
+enum TabMainFrameSameDocumentDecision {
+    case stale
+    case completedReplica
+    case publish(TabMainFrameSameDocumentPublication)
 }
 
 struct TabMainFrameDocumentLease: Equatable {

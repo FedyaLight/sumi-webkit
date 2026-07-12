@@ -22,6 +22,10 @@ struct SumiNavigationContext {
         isMainFrame: Bool?,
         webView: WKWebView?
     ) {
+        precondition(
+            ObjectIdentifier(navigationLifetime) == navigationID,
+            "SumiNavigationContext requires one exact navigation identity"
+        )
         self.navigationID = navigationID
         self.navigationLifetime = navigationLifetime
         self.action = action

@@ -319,9 +319,11 @@ final class TabNavigationCommandsTests: XCTestCase {
         ) else {
             return XCTFail("Expected the durable document commit to publish")
         }
-        transaction.finish(
+        _ = transaction.settleFinish(
             from: webView,
-            navigationID: committedNavigationID
+            navigationID: committedNavigationID,
+            navigationLifetime: committedNavigation,
+            terminalURL: nil
         )
         _ = tab.beginMainFrameNavigationIntent(to: firstPendingURL)
         tab.url = firstPendingURL
@@ -395,13 +397,17 @@ final class TabNavigationCommandsTests: XCTestCase {
         ) else {
             return XCTFail("PDF mismatch must remain a non-canonical replica")
         }
-        transaction.finish(
+        _ = transaction.settleFinish(
             from: htmlWebView,
-            navigationID: ObjectIdentifier(htmlNavigation)
+            navigationID: ObjectIdentifier(htmlNavigation),
+            navigationLifetime: htmlNavigation,
+            terminalURL: nil
         )
-        transaction.finish(
+        _ = transaction.settleFinish(
             from: pdfWebView,
-            navigationID: ObjectIdentifier(pdfNavigation)
+            navigationID: ObjectIdentifier(pdfNavigation),
+            navigationLifetime: pdfNavigation,
+            terminalURL: nil
         )
 
         _ = tab.beginMainFrameNavigationIntent(to: pendingURL)

@@ -149,6 +149,69 @@ final class SumiTabLifecycleReentrancyTests: XCTestCase {
         XCTAssertTrue(fixture.runtime.documentSuspensionReconcileTabIds.isEmpty)
     }
 
+    func testFinishTailStopsWhenPersistenceCallbackStartsSuccessorIntent() {
+        let fixture = makeFixture()
+        let successorURL = URL(string: "https://successor.example/persistence")!
+        let properties = NavigationRecordingTabExtensionPropertiesRuntime()
+        fixture.tab.navigationRuntime.extensionPropertiesRuntime = properties.runtime
+        var persistence = TabRuntimePersistenceCallbacks.inactive
+        persistence.scheduleRuntimeStatePersistence = { [weak tab = fixture.tab] _ in
+            _ = tab?.beginMainFrameNavigationIntent(to: successorURL)
+        }
+        fixture.tab.navigationRuntime.persistenceCallbacks = persistence
+        var mediaReconcileReasons: [String] = []
+        var media = TabMediaRuntimeCallbacks.inactive
+        media.scheduleBackgroundMediaReconcile = { reason in
+            mediaReconcileReasons.append(reason)
+        }
+        fixture.tab.mediaRuntime.callbacks = media
+
+        fixture.responder.navigationDidFinish(fixture.context)
+
+        XCTAssertEqual(
+            fixture.tab.mainFrameLoads.currentIntent.targetURL,
+            successorURL
+        )
+        XCTAssertEqual(fixture.tab.loadingState, .didFinish)
+        XCTAssertTrue(fixture.runtime.documentSuspensionReconcileTabIds.isEmpty)
+        XCTAssertTrue(fixture.runtime.siteDataPolicyTabIds.isEmpty)
+        XCTAssertFalse(
+            mediaReconcileReasons.contains("navigation-promoted-finish")
+        )
+        XCTAssertNotEqual(
+            properties.properties.last,
+            [.URL, .title, .loading]
+        )
+    }
+
+    func testFinishTailStopsAfterReentrantFinishLoadingNotification() {
+        let fixture = makeFixture()
+        let successorURL = URL(string: "https://successor.example/finish-loading")!
+        var persistenceScheduleCount = 0
+        var persistence = TabRuntimePersistenceCallbacks.inactive
+        persistence.scheduleRuntimeStatePersistence = { _ in
+            persistenceScheduleCount += 1
+        }
+        fixture.tab.navigationRuntime.persistenceCallbacks = persistence
+        let properties = NavigationRecordingTabExtensionPropertiesRuntime()
+        properties.notifyHook = { [weak tab = fixture.tab] _, _ in
+            guard tab?.loadingState == .didFinish else { return }
+            _ = tab?.beginMainFrameNavigationIntent(to: successorURL)
+        }
+        fixture.tab.navigationRuntime.extensionPropertiesRuntime = properties.runtime
+
+        fixture.responder.navigationDidFinish(fixture.context)
+
+        XCTAssertEqual(
+            fixture.tab.mainFrameLoads.currentIntent.targetURL,
+            successorURL
+        )
+        XCTAssertEqual(fixture.tab.loadingState, .didFinish)
+        XCTAssertEqual(persistenceScheduleCount, 0)
+        XCTAssertTrue(fixture.runtime.documentSuspensionReconcileTabIds.isEmpty)
+        XCTAssertTrue(fixture.runtime.siteDataPolicyTabIds.isEmpty)
+    }
+
     func testDuplicateCommitPublishesSharedEffectsOnce() {
         let fixture = makeFixture()
 
@@ -173,6 +236,99 @@ final class SumiTabLifecycleReentrancyTests: XCTestCase {
             fixture.runtime.documentSuspensionReconcileTabIds,
             [fixture.tab.id]
         )
+    }
+
+    func testDuplicateSameDocumentCallbackPublishesTailOnce() {
+        let fixture = makeFixture()
+        let sameDocumentURL = URL(
+            string: "https://target.example/page#section"
+        )!
+        let webView = fixture.webView as! SumiNavigationURLReportingWebView
+        webView.reportedURL = sameDocumentURL
+        var persistenceCount = 0
+        var persistence = TabRuntimePersistenceCallbacks.inactive
+        persistence.scheduleRuntimeStatePersistence = { _ in
+            persistenceCount += 1
+        }
+        fixture.tab.navigationRuntime.persistenceCallbacks = persistence
+        var syncCount = 0
+        var routing = TabWebViewRoutingRuntime.inactive
+        routing.syncTabAcrossWindows = { _, _ in syncCount += 1 }
+        fixture.tab.navigationRuntime.webViewRouting = routing
+        let context = SumiNavigationContext(
+            navigationID: fixture.context.navigationID,
+            navigationLifetime: fixture.context.navigationLifetime,
+            action: nil,
+            url: sameDocumentURL,
+            isCurrent: true,
+            isMainFrame: true,
+            webView: webView
+        )
+
+        fixture.responder.navigationDidSameDocumentNavigation(
+            type: .anchorNavigation,
+            context: context
+        )
+        fixture.responder.navigationDidSameDocumentNavigation(
+            type: .anchorNavigation,
+            context: context
+        )
+
+        XCTAssertEqual(fixture.tab.url, sameDocumentURL)
+        XCTAssertEqual(persistenceCount, 1)
+        XCTAssertEqual(syncCount, 1)
+    }
+
+    func testSameDocumentTailStopsAfterReentrantStateNotification() {
+        let fixture = makeFixture()
+        let sameDocumentURL = URL(
+            string: "https://target.example/page#reentrant"
+        )!
+        let successorURL = URL(
+            string: "https://successor.example/same-document"
+        )!
+        let webView = fixture.webView as! SumiNavigationURLReportingWebView
+        webView.reportedURL = sameDocumentURL
+        var persistenceCount = 0
+        var persistence = TabRuntimePersistenceCallbacks.inactive
+        persistence.scheduleRuntimeStatePersistence = { _ in
+            persistenceCount += 1
+        }
+        fixture.tab.navigationRuntime.persistenceCallbacks = persistence
+        var syncCount = 0
+        var routing = TabWebViewRoutingRuntime.inactive
+        routing.syncTabAcrossWindows = { _, _ in syncCount += 1 }
+        fixture.tab.navigationRuntime.webViewRouting = routing
+        let observation = NotificationCenter.default.addObserver(
+            forName: .sumiTabNavigationStateDidChange,
+            object: fixture.tab,
+            queue: nil
+        ) { [weak tab = fixture.tab] _ in
+            MainActor.assumeIsolated {
+                _ = tab?.beginMainFrameNavigationIntent(to: successorURL)
+            }
+        }
+        defer { NotificationCenter.default.removeObserver(observation) }
+
+        fixture.responder.navigationDidSameDocumentNavigation(
+            type: .anchorNavigation,
+            context: SumiNavigationContext(
+                navigationID: fixture.context.navigationID,
+                navigationLifetime: fixture.context.navigationLifetime,
+                action: nil,
+                url: sameDocumentURL,
+                isCurrent: true,
+                isMainFrame: true,
+                webView: webView
+            )
+        )
+
+        XCTAssertEqual(
+            fixture.tab.mainFrameLoads.currentIntent.targetURL,
+            successorURL
+        )
+        XCTAssertEqual(persistenceCount, 0)
+        XCTAssertEqual(syncCount, 0)
     }
 
     private func makeFixture() -> Fixture {

@@ -311,7 +311,12 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
             continuationKind: nil
         ), .authority)
         let firstIntent = try XCTUnwrap(tab.mainFrameLoads.currentIntent(matching: firstURL))
-        mainFrameRuntimeTransaction.finish(from: webView, navigationID: firstID)
+        _ = mainFrameRuntimeTransaction.settleFinish(
+            from: webView,
+            navigationID: firstID,
+            navigationLifetime: firstNavigation,
+            terminalURL: nil
+        )
         XCTAssertFalse(mainFrameRuntimeTransaction.role(
             from: webView,
             navigationID: firstID,
@@ -376,13 +381,17 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
                 committedURL: settledURL
             )
         )
-        mainFrameRuntimeTransaction.finish(
+        _ = mainFrameRuntimeTransaction.settleFinish(
             from: authorityWebView,
-            navigationID: authorityID
+            navigationID: authorityID,
+            navigationLifetime: authorityNavigation,
+            terminalURL: nil
         )
-        mainFrameRuntimeTransaction.finish(
+        _ = mainFrameRuntimeTransaction.settleFinish(
             from: hiddenWebView,
-            navigationID: hiddenID
+            navigationID: hiddenID,
+            navigationLifetime: hiddenNavigation,
+            terminalURL: nil
         )
 
         XCTAssertEqual(tab.beginMainFrameLifecycle(
@@ -511,9 +520,11 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
                 committedURL: committedURL
             )
         )
-        mainFrameRuntimeTransaction.finish(
+        _ = mainFrameRuntimeTransaction.settleFinish(
             from: siblingWebView,
-            navigationID: siblingID
+            navigationID: siblingID,
+            navigationLifetime: siblingNavigation,
+            terminalURL: nil
         )
 
         let departure = tab.webViewDidLeaveNavigationRuntime(authorityWebView)
@@ -572,10 +583,17 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
                 committedURL: promotedURL
             )
         )
-        mainFrameRuntimeTransaction.finish(from: firstWebView, navigationID: firstID)
-        mainFrameRuntimeTransaction.finish(
+        _ = mainFrameRuntimeTransaction.settleFinish(
+            from: firstWebView,
+            navigationID: firstID,
+            navigationLifetime: firstNavigation,
+            terminalURL: nil
+        )
+        _ = mainFrameRuntimeTransaction.settleFinish(
             from: promotedWebView,
-            navigationID: promotedID
+            navigationID: promotedID,
+            navigationLifetime: promotedNavigation,
+            terminalURL: nil
         )
 
         let firstDeparture = tab.webViewDidLeaveNavigationRuntime(firstWebView)
@@ -597,7 +615,12 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
                 committedURL: laterURL
             )
         )
-        mainFrameRuntimeTransaction.finish(from: laterWebView, navigationID: laterID)
+        _ = mainFrameRuntimeTransaction.settleFinish(
+            from: laterWebView,
+            navigationID: laterID,
+            navigationLifetime: laterNavigation,
+            terminalURL: nil
+        )
 
         let secondDeparture = tab.webViewDidLeaveNavigationRuntime(promotedWebView)
         XCTAssertEqual(secondDeparture.continuation?.targetURL, laterURL)
@@ -654,9 +677,11 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
             )
         }
         for (webView, navigation) in participants {
-            mainFrameRuntimeTransaction.finish(
+            _ = mainFrameRuntimeTransaction.settleFinish(
                 from: webView,
-                navigationID: ObjectIdentifier(navigation)
+                navigationID: ObjectIdentifier(navigation),
+                navigationLifetime: navigation,
+                terminalURL: nil
             )
         }
 
@@ -942,13 +967,17 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
                 committedURL: targetURL
             )
         )
-        mainFrameRuntimeTransaction.finish(
+        _ = mainFrameRuntimeTransaction.settleFinish(
             from: authorityWebView,
-            navigationID: authorityID
+            navigationID: authorityID,
+            navigationLifetime: authorityNavigation,
+            terminalURL: nil
         )
-        mainFrameRuntimeTransaction.finish(
+        _ = mainFrameRuntimeTransaction.settleFinish(
             from: crashedReplica,
-            navigationID: replicaID
+            navigationID: replicaID,
+            navigationLifetime: replicaNavigation,
+            terminalURL: nil
         )
 
         let recoveryPlan = tab.webContentRecovery.beginRecovery(on: crashedReplica)

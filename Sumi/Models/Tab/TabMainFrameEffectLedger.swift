@@ -26,12 +26,22 @@ final class TabMainFrameEffectLedger {
         case published(SharedCommitIdentity)
     }
 
+    private enum SharedFinishState {
+        case reserved(TabMainFrameFinishPermit, participantID: UUID)
+        case published
+    }
+
+    private enum SameDocumentState {
+        case reserved(TabMainFrameSameDocumentPermit)
+        case published
+    }
+
     private var hasPublishedTransactionStart = false
     private var hasPublishedAuthorityTargetPreparation = false
     private var localStartParticipantIDs = Set<UUID>()
     private var sharedCommitState: SharedCommitState?
-    private(set) var hasPublishedSharedFinish = false
-    private var terminalSuccessParticipantID: UUID?
+    private var sharedFinishState: SharedFinishState?
+    private var sameDocumentStateByParticipantID: [UUID: SameDocumentState] = [:]
 
     var snapshot: Snapshot {
         Snapshot(
@@ -42,6 +52,11 @@ final class TabMainFrameEffectLedger {
 
     var hasPublishedSharedCommit: Bool {
         if case .published = sharedCommitState { return true }
+        return false
+    }
+
+    var hasPublishedSharedFinish: Bool {
+        if case .published = sharedFinishState { return true }
         return false
     }
 
@@ -57,16 +72,15 @@ final class TabMainFrameEffectLedger {
         hasPublishedAuthorityTargetPreparation = false
         localStartParticipantIDs.removeAll()
         sharedCommitState = nil
-        hasPublishedSharedFinish = false
-        terminalSuccessParticipantID = nil
+        sharedFinishState = nil
+        sameDocumentStateByParticipantID.removeAll()
     }
 
     func markRehydrated(identity: SharedCommitIdentity) {
         hasPublishedTransactionStart = true
         hasPublishedAuthorityTargetPreparation = true
         sharedCommitState = .published(identity)
-        hasPublishedSharedFinish = true
-        terminalSuccessParticipantID = nil
+        sharedFinishState = .published
     }
 
     func claimTransactionStart() -> ClaimResult {
@@ -93,6 +107,7 @@ final class TabMainFrameEffectLedger {
 
     func resetLocalStart(participantID: UUID) {
         localStartParticipantIDs.remove(participantID)
+        sameDocumentStateByParticipantID.removeValue(forKey: participantID)
     }
 
     func claimSharedCommit(identity: SharedCommitIdentity) -> Bool {
@@ -137,47 +152,70 @@ final class TabMainFrameEffectLedger {
         return true
     }
 
-    func reserveTerminalSuccess(participantID: UUID) -> Bool {
-        guard terminalSuccessParticipantID == nil
-                || terminalSuccessParticipantID == participantID else {
-            return false
+    func reserveSharedFinish(participantID: UUID) -> TabMainFrameFinishPermit? {
+        switch sharedFinishState {
+        case nil:
+            let permit = TabMainFrameFinishPermit(id: UUID())
+            sharedFinishState = .reserved(permit, participantID: participantID)
+            return permit
+        case .reserved(let permit, let reservedParticipantID)
+            where reservedParticipantID == participantID:
+            return permit
+        case .reserved, .published:
+            return nil
         }
-        terminalSuccessParticipantID = participantID
-        return true
     }
 
-    func claimSharedFinish(
-        isExactAuthority: Bool,
+    func consumeSharedFinish(
+        _ permit: TabMainFrameFinishPermit,
         participantID: UUID
     ) -> Bool {
-        guard isExactAuthority,
-              terminalSuccessParticipantID == nil
-                || terminalSuccessParticipantID == participantID,
-              hasPublishedSharedFinish == false else {
+        guard case .reserved(
+            let reservedPermit,
+            let reservedParticipantID
+        ) = sharedFinishState,
+        reservedPermit == permit,
+        reservedParticipantID == participantID else {
             return false
         }
-        hasPublishedSharedFinish = true
-        terminalSuccessParticipantID = nil
+        sharedFinishState = .published
         return true
     }
 
-    func claimPromotedSharedFinish(
-        isCurrentAuthority: Bool,
-        isCompleted: Bool
+    func reserveSameDocument(
+        participantID: UUID
+    ) -> TabMainFrameSameDocumentPermit? {
+        switch sameDocumentStateByParticipantID[participantID] {
+        case nil:
+            let permit = TabMainFrameSameDocumentPermit(id: UUID())
+            sameDocumentStateByParticipantID[participantID] = .reserved(permit)
+            return permit
+        case .reserved(let permit):
+            return permit
+        case .published:
+            return nil
+        }
+    }
+
+    func consumeSameDocument(
+        _ permit: TabMainFrameSameDocumentPermit,
+        participantID: UUID
     ) -> Bool {
-        guard isCurrentAuthority,
-              isCompleted,
-              hasPublishedSharedFinish == false else {
+        guard case .reserved(let reservedPermit) =
+                sameDocumentStateByParticipantID[participantID],
+              reservedPermit == permit else {
             return false
         }
-        hasPublishedSharedFinish = true
+        sameDocumentStateByParticipantID[participantID] = .published
         return true
     }
 
     func removeParticipant(_ participantID: UUID) {
         localStartParticipantIDs.remove(participantID)
-        if terminalSuccessParticipantID == participantID {
-            terminalSuccessParticipantID = nil
+        sameDocumentStateByParticipantID.removeValue(forKey: participantID)
+        if case .reserved(_, let reservedParticipantID) = sharedFinishState,
+           reservedParticipantID == participantID {
+            sharedFinishState = nil
         }
     }
 }

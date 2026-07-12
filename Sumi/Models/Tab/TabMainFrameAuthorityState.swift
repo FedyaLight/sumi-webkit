@@ -83,6 +83,51 @@ final class TabMainFrameAuthorityState {
             && current.isCompleted == false
     }
 
+    func completedLease(
+        participantID: UUID,
+        webViewID: ObjectIdentifier,
+        navigationID: ObjectIdentifier?,
+        completionKind: TabMainFrameCompletionKind,
+        revision: UInt64,
+        documentGeneration: UInt64,
+        committedDocumentURL: URL?,
+        presentationURL: URL,
+        isPDF: Bool
+    ) -> TabMainFrameCompletedAuthorityLease? {
+        guard let current,
+              current.revision == revision,
+              current.documentGeneration == documentGeneration,
+              current.webViewID == webViewID,
+              current.navigationID == nil,
+              current.isCompleted else {
+            return nil
+        }
+        return TabMainFrameCompletedAuthorityLease(
+            revision: revision,
+            documentGeneration: documentGeneration,
+            participantID: participantID,
+            webViewID: webViewID,
+            navigationID: navigationID,
+            completionKind: completionKind,
+            hasCommittedDocument: current.hasCommittedDocument,
+            committedDocumentURL: committedDocumentURL,
+            presentationURL: presentationURL,
+            isPDF: isPDF,
+            authorityEpoch: epoch
+        )
+    }
+
+    func matches(_ lease: TabMainFrameCompletedAuthorityLease) -> Bool {
+        guard lease.authorityEpoch == epoch,
+              let current else { return false }
+        return current.revision == lease.revision
+            && current.documentGeneration == lease.documentGeneration
+            && current.webViewID == lease.webViewID
+            && current.navigationID == nil
+            && current.hasCommittedDocument == lease.hasCommittedDocument
+            && current.isCompleted
+    }
+
     func matches(epoch expectedEpoch: UInt64) -> Bool {
         epoch == expectedEpoch
     }

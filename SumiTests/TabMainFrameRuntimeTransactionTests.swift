@@ -188,6 +188,14 @@ final class TabMainFrameRuntimeTransactionTests: XCTestCase {
         guard case .publish(let publication) = decision else {
             return XCTFail("Expected exact commit publication")
         }
+        guard case .publish(let finishPublication) = transaction.settleFinish(
+            from: webView,
+            navigationID: navigationID,
+            navigationLifetime: navigation,
+            terminalURL: committedURL
+        ) else {
+            return XCTFail("Expected exact finish publication")
+        }
 
         _ = tab.beginMainFrameNavigationIntent(to: successorURL)
         TabMainFrameLifecycleReducer.publishCommit(
@@ -196,13 +204,9 @@ final class TabMainFrameRuntimeTransactionTests: XCTestCase {
             lifecycle: transaction
         )
         TabMainFrameLifecycleReducer.publishFinish(
-            .navigation(
-                webView: publication.webView,
-                navigationID: publication.authority.navigationID,
-                targetURL: publication.targetURL,
-                isPDF: publication.isPDF
-            ),
-            tab: tab
+            finishPublication,
+            tab: tab,
+            lifecycle: transaction
         )
 
         XCTAssertEqual(tab.url, initialURL)
