@@ -35,8 +35,12 @@ extension Tab {
             },
             remainingOwnedWebViews: { self.webViewSession.allKnownWebViews },
             clearDetachedWebViews: { self.clearAllWebViewOwnership() },
-            removeAllWebViews: { closeActiveFullscreenMedia in
-                cleanupRuntime.removeAllWebViews(self, closeActiveFullscreenMedia)
+            removeAllWebViews: { closeActiveFullscreenMedia, intent in
+                cleanupRuntime.removeAllWebViews(
+                    self,
+                    closeActiveFullscreenMedia,
+                    intent
+                )
             },
             currentPermissionPageId: { self.currentPermissionPageId() },
             profilePartitionId: { self.resolveProfile()?.id.uuidString },

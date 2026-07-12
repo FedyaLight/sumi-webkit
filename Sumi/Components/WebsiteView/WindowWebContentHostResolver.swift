@@ -4,7 +4,7 @@ import SumiWebRuntime
 @MainActor
 final class WindowWebContentHostResolver {
     private let ownershipQuery: WebViewOwnershipQuery
-    private let ownershipService: WebViewOwnershipService
+    private let trackedAdmission: TrackedWebViewAdmissionService
     private let compositorRuntime: WebViewCompositorRuntime
     private let protectionRuntime: WebViewProtectionRuntime
     private let hostRegistry: WindowWebContentHostRegistry
@@ -13,7 +13,7 @@ final class WindowWebContentHostResolver {
 
     init(
         ownershipQuery: WebViewOwnershipQuery,
-        ownershipService: WebViewOwnershipService,
+        trackedAdmission: TrackedWebViewAdmissionService,
         compositorRuntime: WebViewCompositorRuntime,
         protectionRuntime: WebViewProtectionRuntime,
         hostRegistry: WindowWebContentHostRegistry,
@@ -21,7 +21,7 @@ final class WindowWebContentHostResolver {
         windowID: UUID
     ) {
         self.ownershipQuery = ownershipQuery
-        self.ownershipService = ownershipService
+        self.trackedAdmission = trackedAdmission
         self.compositorRuntime = compositorRuntime
         self.protectionRuntime = protectionRuntime
         self.hostRegistry = hostRegistry
@@ -41,7 +41,7 @@ final class WindowWebContentHostResolver {
         }
 
         let webView = ownershipQuery.webView(for: tab.id, in: windowID)
-            ?? ownershipService.webView(for: tab, in: windowID)
+            ?? trackedAdmission.webView(for: tab, in: windowID)
         guard let webView else {
             hostAttachments.clearPaneHost(slot)
             return nil

@@ -11,12 +11,17 @@ transaction="Sumi/Models/Tab/TabConfigurationPolicyTransaction.swift"
 placement_admission="Sumi/Models/Tab/TabConfigurationPolicyPlacementAdmission.swift"
 replacement="Sumi/Models/Tab/TabWebViewReplacementService.swift"
 provisioning="Sumi/Models/Tab/TabWebViewProvisioningOwner.swift"
-ownership="Sumi/Managers/WebViewRuntime/WebViewOwnershipService.swift"
+retired_ownership="Sumi/Managers/WebViewRuntime/WebViewOwnershipService.swift"
+tracked_admission="Sumi/Managers/WebViewRuntime/TrackedWebViewAdmissionService.swift"
+untracked_materialization="Sumi/Managers/WebViewRuntime/UntrackedWebViewMaterializationService.swift"
+extension_replacement="Sumi/Managers/WebViewRuntime/ExtensionTabWebViewReplacementService.swift"
 untracked_installation="Sumi/Managers/WebViewRuntime/UntrackedWebViewInstallationService.swift"
 placement="Sumi/Managers/WebViewRuntime/CanonicalWebViewPlacementService.swift"
 detached_replacement="Sumi/Managers/WebViewRuntime/DetachedWebViewReplacementService.swift"
 detached_cleanup="Sumi/Managers/WebViewRuntime/DetachedWebViewCleanupService.swift"
 pipeline="Sumi/Managers/WebViewRuntime/WebViewReplacementPipeline.swift"
+website_data_cleanup="Sumi/Managers/WebViewRuntime/WebsiteDataCleanupService.swift"
+website_data_gate="Sumi/Managers/WebViewRuntime/WebsiteDataMutationGate.swift"
 tracking_lifecycle="Packages/SumiWebRuntime/Sources/SumiWebRuntime/Owners/WebViewTrackingLifecycleOwner.swift"
 settlement_contract="Packages/SumiWebRuntime/Sources/SumiWebRuntime/Transactions/WebViewReplacementSettlement.swift"
 policy_files=(
@@ -52,6 +57,16 @@ require_pattern() {
   fi
 }
 
+require_multiline_pattern() {
+  local file="$1"
+  local pattern="$2"
+  local message="$3"
+  if [[ ! -f "$file" ]] || ! rg -U -q "$pattern" "$file"; then
+    printf 'error: %s\n' "$message" >&2
+    status=1
+  fi
+}
+
 require_test() {
   local test_name="$1"
   if ! rg -q "func[[:space:]]+${test_name}\\b" SumiTests -g '*.swift'; then
@@ -73,8 +88,24 @@ enforce_max_lines() {
   fi
 }
 
-for file in "${policy_files[@]}" "$provisioning" "$ownership" \
-  "$placement" "$detached_replacement" "$detached_cleanup" "$pipeline"; do
+enforce_max_collaborators() {
+  local file="$1"
+  local maximum="$2"
+  local count
+  count="$(rg -c '^[[:space:]]+private let [A-Za-z0-9_]+' "$file" || true)"
+  count="${count:-0}"
+  if (( count > maximum )); then
+    printf 'error: focused WebView transaction regained a god composition surface: %s (%s > %s collaborators)\n' \
+      "$file" "$count" "$maximum" >&2
+    status=1
+  fi
+}
+
+for file in "${policy_files[@]}" "$provisioning" \
+  "$tracked_admission" "$untracked_materialization" "$extension_replacement" \
+  "$untracked_installation" "$placement" "$detached_replacement" \
+  "$detached_cleanup" "$pipeline" "$website_data_cleanup" \
+  "$website_data_gate"; do
   if [[ ! -f "$file" ]]; then
     printf 'error: configuration-policy architecture file missing: %s\n' \
       "$file" >&2
@@ -83,6 +114,7 @@ for file in "${policy_files[@]}" "$provisioning" "$ownership" \
 done
 
 for retired_path in \
+  "$retired_ownership" \
   Sumi/Models/Tab/TabReloadPolicyStateOwner.swift \
   Sumi/Models/Tab/TabConfigurationPolicyWebViewReplacementOwner.swift \
   Sumi/Models/Tab/TabWebViewReplacementContext.swift \
@@ -93,6 +125,14 @@ for retired_path in \
     status=1
   fi
 done
+
+retired_ownership_hits="$(
+  rg -n '\bWebViewOwnershipService\b|\bownershipService\b' \
+    App Sumi SidebarChrome FloatingBar Settings UI SumiTests \
+    -g '*.swift' || true
+)"
+fail_matches "retired WebView ownership facade/type/property reintroduced" \
+  "$retired_ownership_hits"
 
 retired_hits="$(
   rg -n '\b(TabReloadPolicyStateOwner|TabReloadPolicyRuntime|TabConfigurationPolicyWebViewReplacementOwner|TabWebViewReplacementContextOwner|TabWebViewReplacementContext|previousProtectionState|previousSafariContentBlockerState|restoreReloadPolicy|recordProtectionAttachment|recordSafariContentBlockerAttachment|recordUnknownPhysicalGeneration|noteProtectionAttachmentApplied|noteSafariContentBlockerAttachmentApplied)\b' \
@@ -190,9 +230,21 @@ require_pattern \
   'testFailedCommitValidationRollsBackBeforeRepositoryCommit' \
   "settlement must regress validation failure before repository commit"
 require_pattern \
-  "$ownership" \
+  "$tracked_admission" \
+  'final class TrackedWebViewAdmissionService: AuxiliaryTrackedWebViewPlacing' \
+  "tracked WebView admission must remain a focused explicit capability"
+require_pattern \
+  "$tracked_admission" \
   'func[[:space:]]+registerAuxiliaryTrackedWebView' \
   "auxiliary tracked registration must be an explicit capability"
+require_pattern \
+  "$untracked_materialization" \
+  'final class UntrackedWebViewMaterializationService' \
+  "detached WebView materialization must remain a focused service"
+require_pattern \
+  "$extension_replacement" \
+  'final class ExtensionTabWebViewReplacementService' \
+  "extension-visible WebView replacement must remain a focused transaction"
 require_pattern \
   "$placement" \
   'func[[:space:]]+placeAuxiliaryTracked' \
@@ -234,13 +286,103 @@ require_pattern \
   'final class UntrackedWebViewInstallationService: UntrackedWebViewInstalling' \
   "detached installation must remain an exact transaction service"
 
-ownership_installation_hits="$(
-  rg -n '\b(UntrackedWebViewInstalling|func[[:space:]]+installUntracked)\b' \
-    "$ownership" || true
+focused_web_view_services=(
+  "$tracked_admission"
+  "$untracked_materialization"
+  "$extension_replacement"
+)
+focused_service_escape_hits="$(
+  rg -n '\b(Dependencies|Runtime|Actions|BrowserManager|TabManager|WebViewRuntimeGraph)\b|\.webViewRuntime\b' \
+    "${focused_web_view_services[@]}" || true
 )"
 fail_matches \
-  "WebViewOwnershipService regained detached installation" \
-  "$ownership_installation_hits"
+  "focused WebView transaction regained a dependency bag or composition-root reach-through" \
+  "$focused_service_escape_hits"
+
+direct_bound_tab_hits="$(
+  rg -n '\.boundTab\(' App Sumi -g '*.swift' \
+    | rg -v 'WebViewRuntimeTabRegistry\.swift' || true
+)"
+fail_matches \
+  "runtime Tab identity validation bypassed through the weak index" \
+  "$direct_bound_tab_hits"
+
+optional_assignment_replay_hits="$(
+  rg -n -U 'replaySemanticOperation:[^\n]*\([^\n]*\)[^\n]*=' \
+    "$tracked_admission" || true
+)"
+fail_matches \
+  "tracked replacement semantic replay became optional" \
+  "$optional_assignment_replay_hits"
+
+require_multiline_pattern \
+  "Sumi/Managers/WebViewRuntime/WebViewLifecycleService.swift" \
+  'func[[:space:]]+removeAllWebViews[\s\S]{0,300}guard runtimeTabs\.bind\(tab\)\.isAccepted' \
+  "whole-Tab teardown must validate exact runtime Tab identity before mutation"
+require_multiline_pattern \
+  "Sumi/Managers/WebViewRuntime/WebViewLifecycleService.swift" \
+  'case \.retirement:[\s\S]{0,160}runtimeTabs\.beginRetirement\(tab\)[\s\S]{0,700}runtimeTabs\.finishRetirementIfDrained\(tab\.id\)' \
+  "terminal teardown must tombstone the physical Tab before cleanup and finish exact retirement"
+require_multiline_pattern \
+  "Sumi/Managers/WebViewRuntime/WebViewLifecycleService.swift" \
+  'func[[:space:]]+suspendWebViews[\s\S]{0,180}guard runtimeTabs\.bind\(tab\)\.isAccepted' \
+  "Tab suspension must validate exact runtime Tab identity before mutation"
+require_multiline_pattern \
+  "Sumi/Managers/BrowserManager/BrowserTabManagerWebViewLifecycleFactory.swift" \
+  'removeAllWebViews[\s\S]{0,220}intent:[[:space:]]*\.retirement' \
+  "destructive TabManager cleanup must enter the retirement lifecycle"
+
+for test_name in \
+  testConflictingTabCannotRetireCanonicalWebViews \
+  testConflictingTabCannotSuspendCanonicalWebViews \
+  testSuspensionKeepsBindingAndRetirementUnbindsExactTab \
+  testRepeatedProtectedRetirementKeepsCleanupIdentityUntilResidenceDrains \
+  testRetiredTabCannotRecreateTrackedOrExtensionWebView \
+  testTerminalRuntimeCannotRebindOrRecreateWebViews \
+  testCancellationAfterReleaseStillStopsScheduledReplay \
+  testDirectSameSlotAdmissionRevokesOlderScheduledReplay \
+  testNewerSameSlotDeferralForDifferentProfileSupersedesScheduledReplay \
+  testTrackedAndUntrackedReplacementUseIndependentReplaySlots \
+  testTerminalGateRejectsAdmissionWithoutSchedulingReplay \
+  testTerminalCancellationRevokesRestoreSubmissionAuthority \
+  testWebsiteDataGateDefersBeforeCandidateCreationAndReplaysFreshCandidate \
+  testWebsiteDataGateDefersUntrackedReplacementBeforeCandidateCreation \
+  testReentrantCommittedPreparationSupersedesOuterResult; do
+  require_test "$test_name"
+done
+
+require_pattern \
+  "$website_data_gate" \
+  'case trackedRegistration\(tabID: UUID, windowID: UUID\)' \
+  "tracked registration deferral must retain its own admission key"
+require_pattern \
+  "$website_data_gate" \
+  'case trackedReplacement\(tabID: UUID, windowID: UUID\)' \
+  "tracked replacement deferral must retain its own admission key"
+require_pattern \
+  "$website_data_gate" \
+  'case untrackedReplacement\(tabID: UUID\)' \
+  "detached replacement deferral must retain its own admission key"
+require_multiline_pattern \
+  "$website_data_cleanup" \
+  'func[[:space:]]+deferTrackedWebViewAdmission[\s\S]{0,900}key:[[:space:]]*\.trackedRegistration' \
+  "tracked admission must defer under the trackedRegistration key"
+require_multiline_pattern \
+  "$website_data_cleanup" \
+  'func[[:space:]]+deferTrackedWebViewReplacement[\s\S]{0,900}key:[[:space:]]*\.trackedReplacement' \
+  "tracked replacement must defer under the trackedReplacement key"
+require_multiline_pattern \
+  "$website_data_cleanup" \
+  'func[[:space:]]+deferUntrackedWebViewReplacement[\s\S]{0,700}key:[[:space:]]*\.untrackedReplacement' \
+  "detached replacement must defer under the untrackedReplacement key"
+require_pattern \
+  "Sumi/Managers/WebViewRuntime/WebViewLifecycleService.swift" \
+  'runtimeTabs\.resetForTerminalShutdown\(\)' \
+  "terminal lifecycle must close Tab identity admission before repository drain"
+require_pattern \
+  "$website_data_gate" \
+  'rejectedAfterTerminalShutdown' \
+  "terminal website-data admission must reject rather than silently reopen"
 
 enforce_max_lines "$ledger" 320
 enforce_max_lines "$state" 90
@@ -248,7 +390,9 @@ enforce_max_lines "$tab_boundary" 120
 enforce_max_lines "$transaction" 140
 enforce_max_lines "$placement_admission" 140
 enforce_max_lines "$replacement" 130
-enforce_max_lines "$ownership" 330
+enforce_max_lines "$tracked_admission" 170
+enforce_max_lines "$untracked_materialization" 90
+enforce_max_lines "$extension_replacement" 240
 enforce_max_lines "$untracked_installation" 130
 enforce_max_lines "$placement" 330
 enforce_max_lines "$detached_replacement" 140
@@ -258,14 +402,11 @@ enforce_max_lines "Sumi/Models/Tab/SafariContentBlockerReloadState.swift" 180
 enforce_max_lines "Sumi/Models/Tab/AutoplayReloadState.swift" 140
 enforce_max_lines "Sumi/Models/Tab/TabConfigurationPolicyRebuildService.swift" 140
 
-ownership_collaborators="$(
-  rg -c '^[[:space:]]+private let [A-Za-z0-9_]+' "$ownership" || true
-)"
-if (( ownership_collaborators > 7 )); then
-  printf 'error: WebViewOwnershipService regained a god composition surface (%s > 7 collaborators)\n' \
-    "$ownership_collaborators" >&2
-  status=1
-fi
+enforce_max_collaborators "$tracked_admission" 5
+enforce_max_collaborators "$untracked_materialization" 3
+# Five exact authorities are intentional: Tab identity, residence query,
+# website-data admission, tracked placement, and detached installation.
+enforce_max_collaborators "$extension_replacement" 5
 
 for test_name in \
   testProvisionalWebViewDoesNotChangeCommittedPolicy \
@@ -282,7 +423,7 @@ for test_name in \
   testPlacementAdmissionRejectsWrongCanonicalWebView \
   testParkedNormalWebViewCannotBeReusedAfterAutoplayPolicyChanges \
   testNormalWebViewKeepsExactResolvedProfileDataStore \
-  testCanonicalPlacementRejectsRawNormalWebViewBeforeRepositoryMutation \
+  testTrackedAssignmentRejectsRawWebViewBeforeRepositoryMutation \
   testCanonicalPlacementRejectsPolicyReceiptFromAnotherTab \
   testCanonicalPlacementReturnsProtectedCandidateWithoutMutation \
   testProtectedOccupantRejectsAndCancelsExactPolicyAdmission \

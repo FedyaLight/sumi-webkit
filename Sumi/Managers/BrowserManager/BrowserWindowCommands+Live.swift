@@ -13,8 +13,6 @@ extension BrowserWindowCommands {
                 return BrowserWindowShellService.Context(
                     windowRegistry: browserRuntime.shellRuntime
                         .requireWindowRegistry(),
-                    webViewLifecycle: browserRuntime.shellRuntime
-                        .webViewLifecycle,
                     permissionLifecycleController: browserRuntime
                         .permissionRuntime.permissionLifecycleController,
                     profileManager: browserRuntime.profileManager,

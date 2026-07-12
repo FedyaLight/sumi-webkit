@@ -14,8 +14,11 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
     private func makeUnloadedNormalTabWebView(
         for tab: Tab,
         reason: String
-    ) throws -> WKWebView {
-        let webView = try XCTUnwrap(tab.makeNormalTabWebView(reason: reason))
+    ) throws -> FocusableWKWebView {
+        let webView = try XCTUnwrap(
+            tab.makeNormalTabWebView(reason: reason)
+                as? FocusableWKWebView
+        )
         let admission = try XCTUnwrap(
             tab.configurationPolicyTransaction.preparePlacementAdmission(
                 [webView],
@@ -405,10 +408,11 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         windowState.currentTabId = tab.id
         windowRegistry.register(windowState)
         windowRegistry.setActive(windowState)
-        harness.browserManager.webViewRuntime.ownershipService.assign(
+        harness.browserManager.webViewRuntime.trackedWebViewAdmission.attemptAssignment(
             originalWebView,
             to: tab,
-            in: windowState.id
+            in: windowState.id,
+            replaySemanticOperation: { XCTFail("Unexpected WebView deferral") }
         )
 
         let originalController = try XCTUnwrap(

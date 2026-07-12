@@ -263,10 +263,11 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             manager: manager,
             profile: profile
         )
-        browserManager.testWebViewRuntime().ownershipService.assign(
+        browserManager.testWebViewRuntime().trackedWebViewAdmission.attemptAssignment(
             webView,
             to: tab,
-            in: windowState.id
+            in: windowState.id,
+            replaySemanticOperation: { XCTFail("Unexpected WebView deferral") }
         )
         tab.extensionPageRuntimeOwner.noteCommittedMainDocumentNavigation(to: pageURL)
 

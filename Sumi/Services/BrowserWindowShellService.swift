@@ -15,7 +15,6 @@ final class BrowserWindowShellService {
 
     struct Context {
         let windowRegistry: WindowRegistry
-        let webViewLifecycle: WebViewLifecycleService
         let permissionLifecycleController: SumiPermissionGrantLifecycleController
         let profileManager: ProfileManager
         let tabManager: TabManager
@@ -204,13 +203,6 @@ final class BrowserWindowShellService {
         RuntimeDiagnostics.emit(
             "🔒 [WindowShellService] Closing incognito window: \(windowState.id)"
         )
-
-        for tab in windowState.ephemeralTabs {
-            context.webViewLifecycle.removeAllWebViews(
-                for: tab,
-                closeActiveFullscreenMedia: true
-            )
-        }
 
         for tab in windowState.ephemeralTabs {
             tab.performComprehensiveWebViewCleanup()

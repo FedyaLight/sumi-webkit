@@ -7,7 +7,9 @@ enum BrowserGlanceRuntimeService {
         let splitQuery = browserManager.splitComposition.query
         let emptySplitCreation = browserManager.splitComposition.emptyCreation
         let webViewCompositor = browserManager.webViewRuntime.compositorRuntime
-        let webViewOwnership = browserManager.webViewRuntime.ownershipService
+        let untrackedMaterialization = browserManager.webViewRuntime
+            .untrackedWebViewMaterialization
+        let detachedCleanup = browserManager.webViewRuntime.detachedWebViewCleanup
         let tabBrowserRuntime = TabBrowserRuntimeFactory.make(for: browserManager)
 
         return GlanceManager.Runtime(
@@ -85,12 +87,12 @@ enum BrowserGlanceRuntimeService {
                 )
             },
             previewWebView: { [weak browserManager] in browserManager?.webViewRoutingService.anyLiveWebView(for: $0) },
-            ensurePreviewWebView: { [webViewOwnership] tab, _ in
-                webViewOwnership.ensureUntracked(for: tab)
+            ensurePreviewWebView: { [untrackedMaterialization] tab, _ in
+                untrackedMaterialization.webView(for: tab)
             },
             ownsPreviewWebView: { [weak browserManager] in browserManager?.webViewRoutingService.ownsLiveWebView($1, for: $0) ?? false },
-            releasePreviewWebView: { [webViewOwnership] in
-                webViewOwnership.releaseUntracked(for: $0)
+            releasePreviewWebView: { [detachedCleanup] in
+                detachedCleanup.releaseUntracked(for: $0)
             }
         )
     }

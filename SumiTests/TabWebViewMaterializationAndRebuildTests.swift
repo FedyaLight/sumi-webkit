@@ -93,7 +93,7 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
         let browserManager = makeIsolatedOwnershipBrowserManager()
         let repository = browserManager.webViewSessions
         let webViewRuntime = browserManager.testWebViewRuntime()
-        let ownership = webViewRuntime.ownershipService
+        let replacementService = webViewRuntime.extensionTabWebViewReplacement
         let untrackedInstallation =
             webViewRuntime.untrackedWebViewInstallationService
         let tab = browserManager.tabManager.tabFactory.makeTab(
@@ -110,7 +110,7 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
         var preparationSawCanonicalResidence = false
 
         let replacement = try XCTUnwrap(
-            ownership.replaceLiveWebView(
+            replacementService.replace(
                 for: tab,
                 in: nil,
                 reason: "TabWebViewMaterializationAndRebuildTests.replacement",
@@ -119,7 +119,7 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
                         repository.untrackedWebView(for: tab.id) === webView
                 },
                 validate: { _ in true }
-            )
+            ).committedWebView
         )
 
         XCTAssertTrue(preparationSawCanonicalResidence)
@@ -131,7 +131,9 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
     func testTrackedLiveReplacementRunsRuntimePreparationAfterCanonicalCommit() throws {
         let browserManager = makeIsolatedOwnershipBrowserManager()
         let repository = browserManager.webViewSessions
-        let ownership = browserManager.testWebViewRuntime().ownershipService
+        let runtime = browserManager.testWebViewRuntime()
+        let trackedAdmission = runtime.trackedWebViewAdmission
+        let replacementService = runtime.extensionTabWebViewReplacement
         let tab = browserManager.tabManager.tabFactory.makeTab(
             url: URL(string: "https://example.com/tracked-extension-replacement")!,
             loadsCachedFaviconOnInit: false
@@ -142,11 +144,18 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
         let previous = try XCTUnwrap(
             tab.makeNormalTabWebView(reason: "test.tracked-live-previous")
         )
-        XCTAssertTrue(ownership.assign(previous, to: tab, in: windowID))
+        XCTAssertTrue(
+            trackedAdmission.attemptAssignment(
+                previous,
+                to: tab,
+                in: windowID,
+                replaySemanticOperation: { XCTFail("Unexpected WebView deferral") }
+            ).isAccepted
+        )
         var preparationSawCanonicalResidence = false
 
         let replacement = try XCTUnwrap(
-            ownership.replaceLiveWebView(
+            replacementService.replace(
                 for: tab,
                 in: windowID,
                 reason: "TabWebViewMaterializationAndRebuildTests.trackedReplacement",
@@ -155,7 +164,7 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
                         repository.webView(for: tab.id, in: windowID) === webView
                 },
                 validate: { _ in true }
-            )
+            ).committedWebView
         )
 
         XCTAssertTrue(preparationSawCanonicalResidence)
@@ -164,10 +173,10 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
         XCTAssertNil(repository.residence(of: previous))
     }
 
-    func testCanonicalPlacementRejectsRawNormalWebViewBeforeRepositoryMutation() {
+    func testTrackedAssignmentRejectsRawWebViewBeforeRepositoryMutation() {
         let browserManager = makeIsolatedOwnershipBrowserManager()
         let repository = browserManager.webViewSessions
-        let ownership = browserManager.testWebViewRuntime().ownershipService
+        let trackedAdmission = browserManager.testWebViewRuntime().trackedWebViewAdmission
         let tab = browserManager.tabManager.tabFactory.makeTab(
             loadsCachedFaviconOnInit: false
         )
@@ -180,8 +189,14 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
             configuration: configuration
         )
 
-        XCTAssertFalse(
-            ownership.assign(rawNormalWebView, to: tab, in: UUID())
+        XCTAssertEqual(
+            trackedAdmission.attemptAssignment(
+                rawNormalWebView,
+                to: tab,
+                in: UUID(),
+                replaySemanticOperation: { XCTFail("Unexpected WebView deferral") }
+            ),
+            .rejected(.physicalTabIdentityMismatch)
         )
         XCTAssertNil(repository.residence(of: rawNormalWebView))
         XCTAssertTrue(tab.webViewSession.allKnownWebViews.isEmpty)
@@ -191,7 +206,7 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
     func testCanonicalPlacementRejectsPolicyReceiptFromAnotherTab() throws {
         let browserManager = makeIsolatedOwnershipBrowserManager()
         let repository = browserManager.webViewSessions
-        let ownership = browserManager.testWebViewRuntime().ownershipService
+        let trackedAdmission = browserManager.testWebViewRuntime().trackedWebViewAdmission
         let preparingTab = browserManager.tabManager.tabFactory.makeTab(
             loadsCachedFaviconOnInit: false
         )
@@ -208,14 +223,20 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
         let foreignCandidate = try XCTUnwrap(
             preparingTab.makeNormalTabWebView(
                 reason: "test.foreign-policy-candidate"
-            )
+            ) as? FocusableWKWebView
         )
         let receipt = try XCTUnwrap(
             foreignCandidate.sumiPreparedConfigurationPolicyChange
         )
+        foreignCandidate.owningTab = receivingTab
 
         XCTAssertFalse(
-            ownership.assign(foreignCandidate, to: receivingTab, in: UUID())
+            trackedAdmission.attemptAssignment(
+                foreignCandidate,
+                to: receivingTab,
+                in: UUID(),
+                replaySemanticOperation: { XCTFail("Unexpected WebView deferral") }
+            ).isAccepted
         )
         XCTAssertNil(repository.residence(of: foreignCandidate))
         XCTAssertEqual(receipt.phase, .prepared)
@@ -234,13 +255,15 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
         )
         let sourceWindowID = UUID()
         let targetWindowID = UUID()
-        let candidate = WKWebView()
+        let candidate = FocusableWKWebView()
+        candidate.owningTab = tab
         XCTAssertTrue(
-            runtime.ownershipService.assign(
+            runtime.trackedWebViewAdmission.attemptAssignment(
                 candidate,
                 to: tab,
-                in: sourceWindowID
-            )
+                in: sourceWindowID,
+                replaySemanticOperation: { XCTFail("Unexpected WebView deferral") }
+            ).isAccepted
         )
         let generation = tab.webViewSession.generation
         let protection = runtime.mediaProtectionOwner
@@ -284,7 +307,14 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
         let occupant = try XCTUnwrap(
             tab.makeNormalTabWebView(reason: "test.protected-occupant")
         )
-        XCTAssertTrue(runtime.ownershipService.assign(occupant, to: tab, in: windowID))
+        XCTAssertTrue(
+            runtime.trackedWebViewAdmission.attemptAssignment(
+                occupant,
+                to: tab,
+                in: windowID,
+                replaySemanticOperation: { XCTFail("Unexpected WebView deferral") }
+            ).isAccepted
+        )
         let generation = tab.webViewSession.generation
         let policyRevision = tab.configurationPolicyLedger.revision
         let committedPolicy = tab.configurationPolicyLedger.committedState
@@ -330,13 +360,15 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
         )
         let sourceWindowID = UUID()
         let targetWindowID = UUID()
-        let candidate = WKWebView()
+        let candidate = FocusableWKWebView()
+        candidate.owningTab = tab
         XCTAssertTrue(
-            runtime.ownershipService.assign(
+            runtime.trackedWebViewAdmission.attemptAssignment(
                 candidate,
                 to: tab,
-                in: sourceWindowID
-            )
+                in: sourceWindowID,
+                replaySemanticOperation: { XCTFail("Unexpected WebView deferral") }
+            ).isAccepted
         )
         let generation = tab.webViewSession.generation
         let receipt = tab.configurationPolicyLedger.prepare(
@@ -368,7 +400,7 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
     func testMaterializationCommitsAdditionalCloneThroughExactPlacement() throws {
         let browserManager = makeIsolatedOwnershipBrowserManager()
         let repository = browserManager.webViewSessions
-        let ownership = browserManager.testWebViewRuntime().ownershipService
+        let trackedAdmission = browserManager.testWebViewRuntime().trackedWebViewAdmission
         let tab = browserManager.tabManager.tabFactory.makeTab(
             url: URL(string: "https://example.com/clone-placement")!,
             loadsCachedFaviconOnInit: false
@@ -381,11 +413,11 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
         let cloneWindowID = UUID()
 
         let primary = try XCTUnwrap(
-            ownership.webView(for: tab, in: primaryWindowID)
+            trackedAdmission.webView(for: tab, in: primaryWindowID)
         )
         let committedRevision = tab.configurationPolicyLedger.revision
         let clone = try XCTUnwrap(
-            ownership.webView(for: tab, in: cloneWindowID)
+            trackedAdmission.webView(for: tab, in: cloneWindowID)
         )
 
         XCTAssertFalse(primary === clone)
@@ -406,7 +438,7 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
         let browserManager = makeIsolatedOwnershipBrowserManager()
         let repository = browserManager.webViewSessions
         let webViewRuntime = browserManager.testWebViewRuntime()
-        let ownership = webViewRuntime.ownershipService
+        let detachedReplacement = webViewRuntime.detachedWebViewReplacement
         let untrackedInstallation =
             webViewRuntime.untrackedWebViewInstallationService
         let tab = browserManager.tabManager.tabFactory.makeTab(
@@ -428,7 +460,7 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
         tab.cancelConfigurationPolicy(for: [replacement])
 
         XCTAssertEqual(
-            ownership.replaceDetached(
+            detachedReplacement.replace(
                 previous,
                 with: replacement,
                 for: tab
@@ -497,6 +529,9 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
             uninstallObservationsIfUntracked: { _ in }
         ))
         let service = DetachedWebViewReplacementService(
+            runtimeTabs: WebViewRuntimeTabRegistry(
+                webViewSessions: repository
+            ),
             webViewSessions: repository,
             pipeline: pipeline
         )
@@ -517,7 +552,7 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
         let browserManager = makeIsolatedOwnershipBrowserManager()
         let repository = browserManager.webViewSessions
         let webViewRuntime = browserManager.testWebViewRuntime()
-        let ownership = webViewRuntime.ownershipService
+        let detachedReplacement = webViewRuntime.detachedWebViewReplacement
         let untrackedInstallation =
             webViewRuntime.untrackedWebViewInstallationService
         let receivingTab = browserManager.tabManager.tabFactory.makeTab(
@@ -542,7 +577,7 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
         replacement.sumiPreparedConfigurationPolicyChange = foreignReceipt
 
         XCTAssertEqual(
-            ownership.replaceDetached(
+            detachedReplacement.replace(
                 previous,
                 with: replacement,
                 for: receivingTab

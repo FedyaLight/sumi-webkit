@@ -11,6 +11,7 @@ import WebKit
 @MainActor
 final class WebViewLifecycleService {
     private let webViewSessions: WebViewSessionRepository
+    private let runtimeTabs: WebViewRuntimeTabRegistry
     private let ownershipQuery: WebViewOwnershipQuery
     private let resolveTab: @MainActor (UUID) -> Tab?
     private let processRecovery: WebContentProcessRecoveryService
@@ -29,6 +30,7 @@ final class WebViewLifecycleService {
 
     init(
         webViewSessions: WebViewSessionRepository,
+        runtimeTabs: WebViewRuntimeTabRegistry,
         ownershipQuery: WebViewOwnershipQuery,
         resolveTab: @escaping @MainActor (UUID) -> Tab?,
         processRecovery: WebContentProcessRecoveryService,
@@ -46,6 +48,7 @@ final class WebViewLifecycleService {
         runtimeAssembler: WebViewRuntimeAssembler
     ) {
         self.webViewSessions = webViewSessions
+        self.runtimeTabs = runtimeTabs
         self.ownershipQuery = ownershipQuery
         self.resolveTab = resolveTab
         self.processRecovery = processRecovery
@@ -156,17 +159,35 @@ final class WebViewLifecycleService {
     @discardableResult
     func removeAllWebViews(
         for tab: Tab,
-        closeActiveFullscreenMedia: Bool = false
+        closeActiveFullscreenMedia: Bool = false,
+        intent: TabWebViewTeardownIntent
     ) -> WebViewTabTeardownResult {
-        tabTeardown.removeAllWebViews(
+        switch intent {
+        case .suspension:
+            guard runtimeTabs.bind(tab).isAccepted else { return .none }
+        case .retirement:
+            guard runtimeTabs.beginRetirement(tab) else { return .none }
+        }
+        let result = tabTeardown.removeAllWebViews(
             for: tab,
             closeActiveFullscreenMedia: closeActiveFullscreenMedia
         )
+        if intent == .retirement {
+            websiteDataCleanup.cancelDeferredAdmissions(for: tab.id)
+            if result.isComplete {
+                precondition(
+                    runtimeTabs.finishRetirementIfDrained(tab.id),
+                    "Completed retirement retained a WebView residence"
+                )
+            }
+        }
+        return result
     }
 
     @discardableResult
     func suspendWebViews(for tab: Tab, reason: String) -> Bool {
-        tabTeardown.suspendWebViews(for: tab, reason: reason)
+        guard runtimeTabs.bind(tab).isAccepted else { return false }
+        return tabTeardown.suspendWebViews(for: tab, reason: reason)
     }
 
     func prepareWebKitClose(
@@ -208,6 +229,7 @@ final class WebViewLifecycleService {
     /// Final manager-independent cleanup when the browser runtime disappears
     /// before its windows. No deferred command or detached WebView survives.
     func cleanupAfterBrowserRuntimeDeallocation() {
+        runtimeTabs.resetForTerminalShutdown()
         let entries = webViewSessions.takeAllWebViewsForTerminalShutdown()
 
         replacementPipeline.resetForTerminalShutdown()

@@ -103,7 +103,6 @@ class BrowserManager: ObservableObject {
         splitQuery: splitComposition.query,
         glanceManager: glanceManager,
         webViewSessions: webViewSessions,
-        webViewOwnership: webViewRuntime.ownershipService,
         webViewProtection: webViewRuntime.protectionRuntime,
         webViewCompositor: webViewRuntime.compositorRuntime,
         visibleWebViewPreparation: webViewRuntime.visiblePreparationService,
@@ -120,7 +119,7 @@ class BrowserManager: ObservableObject {
             commands: BrowserWebViewRoutingService.Commands.live(
                 navigationBroadcast: webViewRuntime.navigationBroadcastOwner,
                 processRecovery: webViewRuntime.processRecoveryService,
-                ownership: webViewRuntime.ownershipService,
+                trackedAdmission: webViewRuntime.trackedWebViewAdmission,
                 rebuild: webViewRuntime.rebuildService
             )
         )

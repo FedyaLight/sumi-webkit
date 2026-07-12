@@ -170,6 +170,53 @@ final class WebsiteDataCleanupService: SumiDestructiveBrowsingDataCleanupPrepari
     }
 
     @discardableResult
+    func deferTrackedWebViewAdmission(
+        for tab: Tab,
+        in windowID: UUID,
+        replay: @escaping @MainActor () -> Void
+    ) -> Bool {
+        let semanticRevision = tab.mainFrameLoads.currentIntent.revision
+        guard permitsInternalSubmission(
+            tabID: tab.id,
+            semanticRevision: semanticRevision
+        ) == false else {
+            return false
+        }
+        return deferOrdinaryAdmission(
+            profileID: tab.resolveProfile()?.id ?? tab.profileId,
+            key: .trackedRegistration(tabID: tab.id, windowID: windowID),
+            replay: replay
+        )
+    }
+
+    @discardableResult
+    func deferTrackedWebViewReplacement(
+        for tab: Tab,
+        in windowID: UUID,
+        replay: @escaping @MainActor () -> Void
+    ) -> Bool {
+        return deferOrdinaryAdmission(
+            profileID: tab.resolveProfile()?.id ?? tab.profileId,
+            key: .trackedReplacement(tabID: tab.id, windowID: windowID),
+            replay: replay
+        )
+    }
+
+    /// Extension-driven detached replacement is a distinct semantic command;
+    /// it never inherits restore-navigation authority from the Tab revision.
+    @discardableResult
+    func deferUntrackedWebViewReplacement(
+        for tab: Tab,
+        replay: @escaping @MainActor () -> Void
+    ) -> Bool {
+        deferOrdinaryAdmission(
+            profileID: tab.resolveProfile()?.id ?? tab.profileId,
+            key: .untrackedReplacement(tabID: tab.id),
+            replay: replay
+        )
+    }
+
+    @discardableResult
     func deferMainFrameSubmission(
         for tab: Tab,
         on webView: WKWebView,
@@ -198,6 +245,10 @@ final class WebsiteDataCleanupService: SumiDestructiveBrowsingDataCleanupPrepari
 
     func admissionIsBlocked(profileID: UUID) -> Bool {
         admissionGate.blocksOrdinaryRuntimeAdmission(for: profileID)
+    }
+
+    func cancelDeferredAdmissions(for tabID: UUID) {
+        admissionGate.cancelDeferredAdmissions(forTabID: tabID)
     }
 
     func resetForTerminalShutdown() {

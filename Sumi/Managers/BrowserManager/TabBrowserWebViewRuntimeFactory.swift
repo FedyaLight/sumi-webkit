@@ -13,7 +13,7 @@ enum TabBrowserWebViewRuntimeFactory {
             websiteDataCleanup: webViewRuntime.websiteDataCleanupService,
             compositor: webViewRuntime.compositorRuntime,
             lifecycle: webViewRuntime.lifecycleService,
-            ownership: webViewRuntime.ownershipService
+            detachedCleanup: webViewRuntime.detachedWebViewCleanup
         )
     }
 
@@ -41,7 +41,7 @@ enum TabBrowserWebViewRuntimeFactory {
         let webViewRuntime = browserManager.webViewRuntime
         return .make(
             rebuild: webViewRuntime.rebuildService,
-            ownership: webViewRuntime.ownershipService
+            detachedReplacement: webViewRuntime.detachedWebViewReplacement
         )
     }
 
@@ -70,7 +70,7 @@ enum TabBrowserWebViewRuntimeFactory {
 extension TabWebViewReplacementRuntime {
     static func make(
         rebuild: WebViewRebuildService,
-        ownership: WebViewOwnershipService
+        detachedReplacement: DetachedWebViewReplacementService
     ) -> Self {
         Self(
             rebuildTrackedWebViews: {
@@ -87,7 +87,7 @@ extension TabWebViewReplacementRuntime {
                 )
             },
             commitUntrackedReplacement: { tab, previous, replacement in
-                ownership.replaceDetached(
+                detachedReplacement.replace(
                     previous,
                     with: replacement,
                     for: tab
@@ -105,7 +105,7 @@ extension TabWebViewCleanupRuntime {
         websiteDataCleanup: WebsiteDataCleanupService,
         compositor: WebViewCompositorRuntime,
         lifecycle: WebViewLifecycleService,
-        ownership: WebViewOwnershipService
+        detachedCleanup: DetachedWebViewCleanupService
     ) -> Self {
         Self(
             deferProtectedWebViewCleanup: { webView, tabId, reason in
@@ -134,7 +134,7 @@ extension TabWebViewCleanupRuntime {
                 )
             },
             retireParkedWebView: { tab, webView, reason in
-                ownership.releaseParked(
+                detachedCleanup.releaseParked(
                     webView,
                     for: tab,
                     reason: reason
@@ -149,10 +149,11 @@ extension TabWebViewCleanupRuntime {
             removeWebViewFromContainers: { webView in
                 compositor.removeWebViewFromContainers(webView)
             },
-            removeAllWebViews: { tab, closeActiveFullscreenMedia in
+            removeAllWebViews: { tab, closeActiveFullscreenMedia, intent in
                 lifecycle.removeAllWebViews(
                     for: tab,
-                    closeActiveFullscreenMedia: closeActiveFullscreenMedia
+                    closeActiveFullscreenMedia: closeActiveFullscreenMedia,
+                    intent: intent
                 )
             }
         )

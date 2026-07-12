@@ -7,7 +7,6 @@ final class BrowserShellRuntime {
     private weak var splitQuery: WindowSplitQuery?
     weak var glanceManager: GlanceManager?
     let webViewSessions: WebViewSessionRepository
-    let webViewOwnership: WebViewOwnershipService
     let webViewProtection: WebViewProtectionRuntime
     let webViewCompositor: WebViewCompositorRuntime
     let visibleWebViewPreparation: WebViewVisiblePreparationService
@@ -73,7 +72,6 @@ final class BrowserShellRuntime {
         splitQuery: WindowSplitQuery,
         glanceManager: GlanceManager,
         webViewSessions: WebViewSessionRepository,
-        webViewOwnership: WebViewOwnershipService,
         webViewProtection: WebViewProtectionRuntime,
         webViewCompositor: WebViewCompositorRuntime,
         visibleWebViewPreparation: WebViewVisiblePreparationService,
@@ -83,7 +81,6 @@ final class BrowserShellRuntime {
         self.splitQuery = splitQuery
         self.glanceManager = glanceManager
         self.webViewSessions = webViewSessions
-        self.webViewOwnership = webViewOwnership
         self.webViewProtection = webViewProtection
         self.webViewCompositor = webViewCompositor
         self.visibleWebViewPreparation = visibleWebViewPreparation

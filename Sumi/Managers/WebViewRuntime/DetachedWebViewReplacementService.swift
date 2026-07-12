@@ -17,13 +17,16 @@ enum WebViewDetachedReplacementCommitOutcome: Equatable {
 /// ownership transaction and cleanup settlement pipeline.
 @MainActor
 final class DetachedWebViewReplacementService {
+    private let runtimeTabs: WebViewRuntimeTabRegistry
     private let webViewSessions: WebViewSessionRepository
     private let pipeline: WebViewReplacementPipeline
 
     init(
+        runtimeTabs: WebViewRuntimeTabRegistry,
         webViewSessions: WebViewSessionRepository,
         pipeline: WebViewReplacementPipeline
     ) {
+        self.runtimeTabs = runtimeTabs
         self.webViewSessions = webViewSessions
         self.pipeline = pipeline
     }
@@ -33,6 +36,7 @@ final class DetachedWebViewReplacementService {
         with replacement: WKWebView,
         for tab: Tab
     ) -> WebViewDetachedReplacementCommitOutcome {
+        guard runtimeTabs.bind(tab).isAccepted else { return .rejected }
         tab.webViewSession.requireBacking(by: webViewSessions)
         let snapshot = webViewSessions.snapshot(for: tab.id)
         guard snapshot.windowWebViews.isEmpty else { return .rejected }

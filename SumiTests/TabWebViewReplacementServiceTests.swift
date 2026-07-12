@@ -165,7 +165,7 @@ final class TabWebViewReplacementServiceTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            webViewRuntime.ownershipService.replaceDetached(
+            webViewRuntime.detachedWebViewReplacement.replace(
                 displaced,
                 with: replacement,
                 for: tab
@@ -203,7 +203,8 @@ final class TabWebViewReplacementServiceTests: XCTestCase {
         tab.attachBrowserRuntime(
             TabBrowserRuntimeFactory.make(for: browserManager)
         )
-        let webView = WKWebView()
+        let webView = FocusableWKWebView()
+        webView.owningTab = tab
         let container = NSView()
         let registration = webViewRuntime.compositorRuntime
             .registerContainer(container, for: UUID())
@@ -215,7 +216,7 @@ final class TabWebViewReplacementServiceTests: XCTestCase {
             )
         )
 
-        webViewRuntime.ownershipService.releaseUntracked(for: tab)
+        webViewRuntime.detachedWebViewCleanup.releaseUntracked(for: tab)
 
         XCTAssertNil(tab.resolvedCurrentWebView())
         guard case .pendingCleanup(let lease) =
@@ -247,10 +248,11 @@ final class TabWebViewReplacementServiceTests: XCTestCase {
         tab.attachBrowserRuntime(
             TabBrowserRuntimeFactory.make(for: browserManager)
         )
-        let webView = WKWebView()
+        let webView = FocusableWKWebView()
+        webView.owningTab = tab
         let windowID = UUID()
         let webViewRuntime = browserManager.testWebViewRuntime()
-        let ownership = webViewRuntime.ownershipService
+        let trackedAdmission = webViewRuntime.trackedWebViewAdmission
         XCTAssertEqual(
             webViewRuntime.untrackedWebViewInstallationService.installUntracked(
                 webView,
@@ -258,7 +260,12 @@ final class TabWebViewReplacementServiceTests: XCTestCase {
             ),
             .committed
         )
-        ownership.assign(webView, to: tab, in: windowID)
+        trackedAdmission.attemptAssignment(
+            webView,
+            to: tab,
+            in: windowID,
+            replaySemanticOperation: { XCTFail("Unexpected WebView deferral") }
+        )
         XCTAssertEqual(tab.resolvedPrimaryWindowId(), windowID)
         return (browserManager, tab, webView, windowID)
     }

@@ -305,7 +305,7 @@ final class TabRuntimeRoutingTests: XCTestCase {
             removeWebViewFromContainers: { candidateWebView in
                 removedWebViewFromContainers = candidateWebView === webView
             },
-            removeAllWebViews: { _, _ in
+            removeAllWebViews: { _, _, _ in
                 removeAllWebViewsCallCount += 1
                 return .none
             }

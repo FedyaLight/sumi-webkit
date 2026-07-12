@@ -16,7 +16,8 @@ extension WindowViewBrowserContext {
             splitDrops: browserManager.splitComposition.drops,
             splitDropTargets: browserManager.splitComposition.dropTargets,
             webViewOwnershipQuery: browserManager.webViewRuntime.ownershipQuery,
-            webViewOwnershipService: browserManager.webViewRuntime.ownershipService,
+            trackedWebViewAdmission: browserManager.webViewRuntime
+                .trackedWebViewAdmission,
             webViewCompositorRuntime: browserManager.webViewRuntime.compositorRuntime,
             webViewProtectionRuntime: browserManager.webViewRuntime.protectionRuntime,
             findManager: browserManager.findManager,

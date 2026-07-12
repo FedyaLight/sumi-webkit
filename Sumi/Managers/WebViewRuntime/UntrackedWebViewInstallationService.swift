@@ -27,7 +27,12 @@ final class UntrackedWebViewInstallationService: UntrackedWebViewInstalling {
         _ webView: WKWebView,
         for tab: Tab
     ) -> UntrackedWebViewInstallationOutcome {
-        runtimeTabs.bind(tab)
+        guard runtimeTabs.bind(tab).isAccepted else {
+            return .rejected(
+                .runtimeTabIdentityConflict,
+                webViewDisposition: .callerMustDestroy
+            )
+        }
         let candidateWasCanonical = tab.webViewSession.owns(webView)
         guard query.windowIDs(for: tab.id).isEmpty else {
             return .rejected(

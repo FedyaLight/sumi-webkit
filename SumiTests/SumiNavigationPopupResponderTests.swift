@@ -955,10 +955,12 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
             frame: .zero,
             configuration: sourceConfiguration
         )
-        browserManager.testWebViewRuntime().ownershipService.assign(
+        sourceWebView.owningTab = sourceTab
+        browserManager.testWebViewRuntime().trackedWebViewAdmission.attemptAssignment(
             sourceWebView,
             to: sourceTab,
-            in: windowState.id
+            in: windowState.id,
+            replaySemanticOperation: { XCTFail("Unexpected WebView deferral") }
         )
         await loadPopupDocument(on: sourceWebView, at: sourceTab.url)
         let committedURL = try XCTUnwrap(sourceWebView.committedURL)

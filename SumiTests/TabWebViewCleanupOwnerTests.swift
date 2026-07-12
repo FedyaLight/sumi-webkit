@@ -3,6 +3,7 @@ import XCTest
 
 @testable import Sumi
 import SumiDomain
+import SumiWebRuntime
 
 @MainActor
 final class TabWebViewCleanupOwnerTests: XCTestCase {
@@ -128,6 +129,36 @@ final class TabWebViewCleanupOwnerTests: XCTestCase {
         XCTAssertEqual(events, [.protectedCleanupCheck])
     }
 
+    func testComprehensiveCleanupMarksTeardownAsRetirement() {
+        var receivedIntent: TabWebViewTeardownIntent?
+        let context = makeContext(
+            tabId: UUID(),
+            removeAllWebViews: { _, intent in
+                receivedIntent = intent
+                return .none
+            }
+        )
+
+        TabWebViewCleanupOwner.performComprehensiveCleanup(context: context)
+
+        XCTAssertEqual(receivedIntent, .retirement)
+    }
+
+    func testUnloadMarksTeardownAsSuspension() {
+        var receivedIntent: TabWebViewTeardownIntent?
+        let context = makeContext(
+            tabId: UUID(),
+            removeAllWebViews: { _, intent in
+                receivedIntent = intent
+                return .none
+            }
+        )
+
+        TabWebViewCleanupOwner.unloadWebView(context: context)
+
+        XCTAssertEqual(receivedIntent, .suspension)
+    }
+
     private func makeContext(
         tabId: UUID,
         handlePermissionLifecycleEvent: @escaping TabWebViewCleanupOwner.PermissionLifecycleEventHandler = { _ in /* No-op. */ },
@@ -141,7 +172,11 @@ final class TabWebViewCleanupOwnerTests: XCTestCase {
         unbindAudioState: @escaping (WKWebView) -> Void = { _ in /* No-op. */ },
         removeNavigationStateObservers: @escaping (WKWebView) -> Void = { _ in /* No-op. */ },
         removeNavigationDelegateBundle: @escaping (WKWebView) -> Void = { _ in /* No-op. */ },
-        webViewDidLeaveRuntime: @escaping (WKWebView) -> Void = { _ in /* No-op. */ }
+        webViewDidLeaveRuntime: @escaping (WKWebView) -> Void = { _ in /* No-op. */ },
+        removeAllWebViews: @escaping (
+            Bool,
+            TabWebViewTeardownIntent
+        ) -> WebViewTabTeardownResult = { _, _ in .none }
     ) -> TabWebViewCleanupOwner.Context {
         TabWebViewCleanupOwner.Context(
             tabId: tabId,
@@ -152,7 +187,7 @@ final class TabWebViewCleanupOwnerTests: XCTestCase {
             notifyNowPlayingTabUnloaded: { _ in /* No-op. */ },
             remainingOwnedWebViews: { [] },
             clearDetachedWebViews: { /* No-op. */ },
-            removeAllWebViews: { _ in .none },
+            removeAllWebViews: removeAllWebViews,
             currentPermissionPageId: currentPermissionPageId,
             profilePartitionId: profilePartitionId,
             invalidatePermissionPageForReplacement: { _ in /* No-op. */ },

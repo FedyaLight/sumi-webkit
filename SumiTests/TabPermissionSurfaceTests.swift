@@ -81,10 +81,11 @@ final class TabPermissionSurfaceTests: XCTestCase {
             selecting: tab
         )
         let webView = try makePermissionWebView(for: tab)
-        browserManager.testWebViewRuntime().ownershipService.assign(
+        browserManager.testWebViewRuntime().trackedWebViewAdmission.attemptAssignment(
             webView,
             to: tab,
-            in: windowState.id
+            in: windowState.id,
+            replaySemanticOperation: { XCTFail("Unexpected WebView deferral") }
         )
         let committedURL = try await loadCommittedDocument(
             on: webView,
@@ -241,10 +242,11 @@ final class TabPermissionSurfaceTests: XCTestCase {
         XCTAssertFalse(tab.permissionRequestSurfaceState(for: webView).isVisible)
 
         let webViewRuntime = browserManager.testWebViewRuntime()
-        webViewRuntime.ownershipService.assign(
+        webViewRuntime.trackedWebViewAdmission.attemptAssignment(
             webView,
             to: tab,
-            in: windowState.id
+            in: windowState.id,
+            replaySemanticOperation: { XCTFail("Unexpected WebView deferral") }
         )
 
         let context = try XCTUnwrap(tab.popupPermissionTabContext(for: webView))
@@ -272,31 +274,48 @@ final class TabPermissionSurfaceTests: XCTestCase {
         secondWindow.currentTabId = tab.id
         windowRegistry.register(secondWindow)
 
-        let firstWebView = PermissionCommittedURLWebView()
-        let secondWebView = PermissionCommittedURLWebView()
-        let intent = tab.beginMainFrameNavigationIntent(to: tab.url)
+        let firstWebView = try makePermissionWebView(for: tab)
+        let secondWebView = try makePermissionWebView(for: tab)
+        let runtime = browserManager.testWebViewRuntime()
+        XCTAssertTrue(runtime.trackedWebViewAdmission.attemptAssignment(
+            firstWebView,
+            to: tab,
+            in: firstWindow.id,
+            replaySemanticOperation: {
+                XCTFail("Unexpected WebView deferral")
+            }
+        ).isAccepted)
+        XCTAssertTrue(runtime.trackedWebViewAdmission.attemptAssignment(
+            secondWebView,
+            to: tab,
+            in: secondWindow.id,
+            replaySemanticOperation: {
+                XCTFail("Unexpected WebView deferral")
+            }
+        ).isAccepted)
+        let firstCommittedURL = try await loadCommittedDocument(
+            on: firstWebView,
+            at: tab.url
+        )
+        let secondCommittedURL = try await loadCommittedDocument(
+            on: secondWebView,
+            at: tab.url
+        )
+        XCTAssertEqual(firstCommittedURL, secondCommittedURL)
+        let intent = tab.beginMainFrameNavigationIntent(
+            to: firstCommittedURL
+        )
         let firstNavigation = await bindCommittedDocument(
             on: firstWebView,
             tab: tab,
             intent: intent,
-            committedURL: tab.url
+            committedURL: firstCommittedURL
         )
         let secondNavigation = await bindCommittedDocument(
             on: secondWebView,
             tab: tab,
             intent: intent,
-            committedURL: tab.url
-        )
-        let runtime = browserManager.testWebViewRuntime()
-        runtime.ownershipService.registerAuxiliaryTrackedWebView(
-            firstWebView,
-            for: tab,
-            in: firstWindow.id
-        )
-        runtime.ownershipService.registerAuxiliaryTrackedWebView(
-            secondWebView,
-            for: tab,
-            in: secondWindow.id
+            committedURL: secondCommittedURL
         )
 
         var firstState = tab.permissionRequestSurfaceState(for: firstWebView)
@@ -333,9 +352,19 @@ final class TabPermissionSurfaceTests: XCTestCase {
         let committedURL = URL(string: "https://committed.example/document")!
         let authorityWebView = try makePermissionWebView(for: tab)
         let cloneWebView = try makePermissionWebView(for: tab)
-        let ownership = browserManager.testWebViewRuntime().ownershipService
-        ownership.assign(authorityWebView, to: tab, in: firstWindow.id)
-        ownership.assign(cloneWebView, to: tab, in: secondWindow.id)
+        let trackedAdmission = browserManager.testWebViewRuntime().trackedWebViewAdmission
+        trackedAdmission.attemptAssignment(
+            authorityWebView,
+            to: tab,
+            in: firstWindow.id,
+            replaySemanticOperation: { XCTFail("Unexpected WebView deferral") }
+        )
+        trackedAdmission.attemptAssignment(
+            cloneWebView,
+            to: tab,
+            in: secondWindow.id,
+            replaySemanticOperation: { XCTFail("Unexpected WebView deferral") }
+        )
         let authorityCommittedURL = try await loadCommittedDocument(
             on: authorityWebView,
             at: committedURL
@@ -458,10 +487,11 @@ final class TabPermissionSurfaceTests: XCTestCase {
         let committedURL = URL(string: "https://example.com/document")!
         let presentationURL = URL(string: "https://example.com/document#updated")!
         let webView = try makePermissionWebView(for: tab)
-        browserManager.testWebViewRuntime().ownershipService.assign(
+        browserManager.testWebViewRuntime().trackedWebViewAdmission.attemptAssignment(
             webView,
             to: tab,
-            in: windowState.id
+            in: windowState.id,
+            replaySemanticOperation: { XCTFail("Unexpected WebView deferral") }
         )
         let actualCommittedURL = try await loadCommittedDocument(
             on: webView,
@@ -534,7 +564,12 @@ final class TabPermissionSurfaceTests: XCTestCase {
     private func makePermissionWebView(for tab: Tab) throws -> FocusableWKWebView {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = try XCTUnwrap(tab.resolveProfile()).dataStore
-        return FocusableWKWebView(frame: .zero, configuration: configuration)
+        let webView = FocusableWKWebView(
+            frame: .zero,
+            configuration: configuration
+        )
+        webView.owningTab = tab
+        return webView
     }
 
     @discardableResult

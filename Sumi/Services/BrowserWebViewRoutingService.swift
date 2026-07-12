@@ -278,7 +278,7 @@ extension BrowserWebViewRoutingService.Commands {
     static func live(
         navigationBroadcast: WebViewNavigationBroadcastOwner,
         processRecovery: WebContentProcessRecoveryService,
-        ownership: WebViewOwnershipService,
+        trackedAdmission: TrackedWebViewAdmissionService,
         rebuild: WebViewRebuildService
     ) -> Self {
         Self(
@@ -320,7 +320,7 @@ extension BrowserWebViewRoutingService.Commands {
                 )
             },
             materialize: { tab, windowID in
-                ownership.webView(
+                trackedAdmission.webView(
                     for: tab,
                     in: windowID
                 )

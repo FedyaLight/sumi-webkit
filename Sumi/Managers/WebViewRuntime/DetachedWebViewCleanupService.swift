@@ -5,6 +5,7 @@ import WebKit
 /// its immediate or protection-deferred physical destruction.
 @MainActor
 final class DetachedWebViewCleanupService {
+    private let runtimeTabs: WebViewRuntimeTabRegistry
     private let webViewSessions: WebViewSessionRepository
     private let websiteDataCleanup: WebsiteDataCleanupService
     private let processRecovery: WebContentProcessRecoveryService
@@ -12,12 +13,14 @@ final class DetachedWebViewCleanupService {
     private let protectedCommands: DeferredProtectedCommandScheduler
 
     init(
+        runtimeTabs: WebViewRuntimeTabRegistry,
         webViewSessions: WebViewSessionRepository,
         websiteDataCleanup: WebsiteDataCleanupService,
         processRecovery: WebContentProcessRecoveryService,
         mediaProtection: WebViewMediaProtectionOwner,
         protectedCommands: DeferredProtectedCommandScheduler
     ) {
+        self.runtimeTabs = runtimeTabs
         self.webViewSessions = webViewSessions
         self.websiteDataCleanup = websiteDataCleanup
         self.processRecovery = processRecovery
@@ -26,6 +29,7 @@ final class DetachedWebViewCleanupService {
     }
 
     func releaseUntracked(for tab: Tab) {
+        guard runtimeTabs.bind(tab).isAccepted else { return }
         guard let webView = tab.webViewSession.untrackedWebView else { return }
         guard let lease = webViewSessions.releaseUntrackedAndBeginPendingCleanup(
             webView,
@@ -43,6 +47,7 @@ final class DetachedWebViewCleanupService {
         for tab: Tab,
         reason: String
     ) -> Bool {
+        guard runtimeTabs.bind(tab).isAccepted else { return false }
         guard let lease = webViewSessions.releaseParkedAndBeginPendingCleanup(
             webView,
             for: tab.id

@@ -170,21 +170,27 @@ final class BrowserURLBarContextOwnerTests: XCTestCase {
             activate: false
         )
         harness.windowState.currentTabId = tab.id
-        let webView = EmptyReloadRecordingWebView()
+        let webView = FocusableWKWebView()
+        webView.owningTab = tab
         _ = tab.installNavigationDelegate(on: webView)
-        harness.browserManager.testWebViewRuntime().ownershipService.registerAuxiliaryTrackedWebView(
-            webView,
-            for: tab,
-            in: harness.windowState.id
-        )
+        let admission = harness.browserManager.testWebViewRuntime()
+            .trackedWebViewAdmission.registerAuxiliaryTrackedWebView(
+                webView,
+                for: tab,
+                in: harness.windowState.id
+            )
+        XCTAssertTrue(admission.isAccepted)
+        let previousRevision = tab.mainFrameLoads.currentIntent.revision
 
         harness.browserManager.urlBarBundle.contextOwner
             .navigationToolbarContext(for: harness.windowState)
             .reload(tab)
 
-        XCTAssertEqual(webView.reloadCount, 1)
-        XCTAssertEqual(webView.loadedRequests.map(\.url), [tab.url])
-        XCTAssertTrue(webView.didSubmitFallbackLoad)
+        XCTAssertGreaterThan(
+            tab.mainFrameLoads.currentIntent.revision,
+            previousRevision
+        )
+        XCTAssertEqual(tab.mainFrameLoads.currentIntent.targetURL, tab.url)
         webView.stopLoading()
     }
 
@@ -199,13 +205,17 @@ final class BrowserURLBarContextOwnerTests: XCTestCase {
             activate: false
         )
         harness.windowState.currentTabId = tab.id
-        let webView = EmptyReloadRecordingWebView()
+        let webView = FocusableWKWebView()
+        webView.owningTab = tab
         _ = tab.installNavigationDelegate(on: webView)
-        harness.browserManager.testWebViewRuntime().ownershipService.registerAuxiliaryTrackedWebView(
-            webView,
-            for: tab,
-            in: harness.windowState.id
-        )
+        let admission = harness.browserManager.testWebViewRuntime()
+            .trackedWebViewAdmission.registerAuxiliaryTrackedWebView(
+                webView,
+                for: tab,
+                in: harness.windowState.id
+            )
+        XCTAssertTrue(admission.isAccepted)
+        let previousRevision = tab.mainFrameLoads.currentIntent.revision
 
         let context = harness.browserManager.urlBarBundle.contextOwner.urlBarContext
         let page = try XCTUnwrap(context.activePage(harness.windowState))
@@ -214,9 +224,11 @@ final class BrowserURLBarContextOwnerTests: XCTestCase {
             "BrowserURLBarContextOwnerTests.reload"
         ))
 
-        XCTAssertEqual(webView.reloadCount, 1)
-        XCTAssertEqual(webView.loadedRequests.map(\.url), [tab.url])
-        XCTAssertTrue(webView.didSubmitFallbackLoad)
+        XCTAssertGreaterThan(
+            tab.mainFrameLoads.currentIntent.revision,
+            previousRevision
+        )
+        XCTAssertEqual(tab.mainFrameLoads.currentIntent.targetURL, tab.url)
         webView.stopLoading()
     }
 
@@ -270,25 +282,6 @@ final class BrowserURLBarContextOwnerTests: XCTestCase {
 
     private func removePersistedWindowSession() {
         UserDefaults.standard.removeObject(forKey: BrowserManager.lastWindowSessionKey)
-    }
-}
-
-@MainActor
-private final class EmptyReloadRecordingWebView: WKWebView {
-    private(set) var reloadCount = 0
-    private(set) var loadedRequests: [URLRequest] = []
-    private(set) var didSubmitFallbackLoad = false
-
-    override func reload() -> WKNavigation? {
-        reloadCount += 1
-        return nil
-    }
-
-    override func load(_ request: URLRequest) -> WKNavigation? {
-        loadedRequests.append(request)
-        let navigation = super.load(request)
-        didSubmitFallbackLoad = navigation != nil
-        return navigation
     }
 }
 

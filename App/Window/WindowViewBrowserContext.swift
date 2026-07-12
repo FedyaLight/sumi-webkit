@@ -13,7 +13,7 @@ final class WindowViewBrowserContext {
     let splitDrops: SplitDropService
     let splitDropTargets: SplitDropTargetService
     let webViewOwnershipQuery: WebViewOwnershipQuery
-    let webViewOwnershipService: WebViewOwnershipService
+    let trackedWebViewAdmission: TrackedWebViewAdmissionService
     let webViewCompositorRuntime: WebViewCompositorRuntime
     let webViewProtectionRuntime: WebViewProtectionRuntime
     let findManager: FindManager
@@ -47,7 +47,7 @@ final class WindowViewBrowserContext {
         splitDrops: SplitDropService,
         splitDropTargets: SplitDropTargetService,
         webViewOwnershipQuery: WebViewOwnershipQuery,
-        webViewOwnershipService: WebViewOwnershipService,
+        trackedWebViewAdmission: TrackedWebViewAdmissionService,
         webViewCompositorRuntime: WebViewCompositorRuntime,
         webViewProtectionRuntime: WebViewProtectionRuntime,
         findManager: FindManager,
@@ -79,7 +79,7 @@ final class WindowViewBrowserContext {
         self.splitDrops = splitDrops
         self.splitDropTargets = splitDropTargets
         self.webViewOwnershipQuery = webViewOwnershipQuery
-        self.webViewOwnershipService = webViewOwnershipService
+        self.trackedWebViewAdmission = trackedWebViewAdmission
         self.webViewCompositorRuntime = webViewCompositorRuntime
         self.webViewProtectionRuntime = webViewProtectionRuntime
         self.findManager = findManager

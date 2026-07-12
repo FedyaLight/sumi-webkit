@@ -276,7 +276,7 @@ fail_matches "raw lifecycle settlement operation returned to callback capability
 
 # Tombstones: the split registry/session/owner model must not return.
 legacy_type_hits="$(
-  rg -n '\b(TabWebViewSession|WindowWebViewRegistry|TabWebViewOwnershipOwner)\b' \
+  rg -n '\b(TabWebViewSession|WindowWebViewRegistry|TabWebViewOwnershipOwner|WebViewOwnershipService)\b' \
     "${all_swift_roots[@]}" -g '*.swift' -g '!**/.build/**' || true
 )"
 fail_matches "deleted WebView ownership type reintroduced" "$legacy_type_hits"

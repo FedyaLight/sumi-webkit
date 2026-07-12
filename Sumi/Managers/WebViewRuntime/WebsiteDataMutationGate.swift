@@ -6,6 +6,16 @@ import Foundation
 /// gate so the discovered set can reach a stable fixed point.
 @MainActor
 final class WebsiteDataMutationGate {
+    enum OrdinaryRuntimeAdmissionOutcome: Equatable {
+        case admitted
+        case deferred
+        case rejectedAfterTerminalShutdown
+
+        var preventsImmediateMutation: Bool {
+            self != .admitted
+        }
+    }
+
     struct Lease: Equatable, Sendable {
         let id: UUID
         let profileIDs: Set<UUID>
@@ -19,6 +29,8 @@ final class WebsiteDataMutationGate {
         case spaceProfileAssignment(spaceID: UUID)
         case mainFrameSubmission(tabID: UUID, webViewID: ObjectIdentifier)
         case trackedRegistration(tabID: UUID, windowID: UUID)
+        case trackedReplacement(tabID: UUID, windowID: UUID)
+        case untrackedReplacement(tabID: UUID)
     }
 
     private struct Waiter {
@@ -38,10 +50,16 @@ final class WebsiteDataMutationGate {
         let replay: @MainActor () -> Void
     }
 
+    private struct ScheduledAdmission {
+        let key: DeferredAdmissionKey
+        let admission: DeferredAdmission
+    }
+
     private var activeLease: Lease?
     private var waiters: [Waiter] = []
     private var admissionWaiters: [AdmissionWaiter] = []
     private var deferredAdmissions: [DeferredAdmissionKey: DeferredAdmission] = [:]
+    private var scheduledAdmissions: [UUID: ScheduledAdmission] = [:]
     private var restoreRevisionByTabID: [UUID: UInt64] = [:]
     private var internalSubmissionDepth = 0
     private var admissionGeneration: UInt64 = 0
@@ -156,39 +174,58 @@ final class WebsiteDataMutationGate {
             || restoreRevisionByTabID[tabID] == semanticRevision
     }
 
-    /// Retains only the newest semantic operation for an exact runtime slot.
-    /// Returning `true` means the caller must not perform the physical WebKit
-    /// mutation now; the supplied replay is scheduled once that profile leaves
-    /// the protected website-data transaction.
+    /// Retains only the newest semantic operation for an exact runtime slot,
+    /// or rejects it once the runtime has entered terminal shutdown.
+    func ordinaryRuntimeAdmission(
+        for profileID: UUID?,
+        key: DeferredAdmissionKey,
+        replay: @escaping @MainActor () -> Void
+    ) -> OrdinaryRuntimeAdmissionOutcome {
+        guard isTerminallyShutDown == false else {
+            return .rejectedAfterTerminalShutdown
+        }
+        guard let profileID,
+              blocksOrdinaryRuntimeAdmission(for: profileID) else {
+            revokeDeferredAdmission(for: key)
+            return .admitted
+        }
+        deferredAdmissions[key] = DeferredAdmission(
+            profileID: profileID,
+            replay: replay
+        )
+        return .deferred
+    }
+
+    /// Compatibility for callers whose result surface only distinguishes
+    /// immediate execution from "must not execute now". Terminal rejection is
+    /// deliberately fail-closed and never schedules the replay.
     @discardableResult
     func deferOrdinaryRuntimeAdmission(
         for profileID: UUID?,
         key: DeferredAdmissionKey,
         replay: @escaping @MainActor () -> Void
     ) -> Bool {
-        guard let profileID,
-              blocksOrdinaryRuntimeAdmission(for: profileID) else {
-            return false
-        }
-        deferredAdmissions[key] = DeferredAdmission(
-            profileID: profileID,
+        ordinaryRuntimeAdmission(
+            for: profileID,
+            key: key,
             replay: replay
-        )
-        return true
+        ).preventsImmediateMutation
+    }
+
+    private func revokeDeferredAdmission(for key: DeferredAdmissionKey) {
+        deferredAdmissions.removeValue(forKey: key)
+        scheduledAdmissions = scheduledAdmissions.filter { _, scheduled in
+            scheduled.key != key
+        }
     }
 
     func cancelDeferredAdmissions(forTabID tabID: UUID) {
+        restoreRevisionByTabID.removeValue(forKey: tabID)
         deferredAdmissions = deferredAdmissions.filter { key, _ in
-            switch key {
-            case .webViewRebuild(let candidateTabID),
-                 .webViewMaterialization(let candidateTabID),
-                 .profileAssignment(let candidateTabID),
-                 .mainFrameSubmission(let candidateTabID, _),
-                 .trackedRegistration(let candidateTabID, _):
-                return candidateTabID != tabID
-            case .spaceProfileAssignment:
-                return true
-            }
+            deferredTabID(for: key) != tabID
+        }
+        scheduledAdmissions = scheduledAdmissions.filter { _, scheduled in
+            deferredTabID(for: scheduled.key) != tabID
         }
     }
 
@@ -203,6 +240,7 @@ final class WebsiteDataMutationGate {
         waiters.removeAll()
         admissionWaiters.removeAll()
         deferredAdmissions.removeAll()
+        scheduledAdmissions.removeAll()
         pending.forEach { $0.continuation.resume(returning: nil) }
         pendingAdmissions.forEach { $0.continuation.resume(returning: false) }
     }
@@ -262,10 +300,57 @@ final class WebsiteDataMutationGate {
         let readyKeys = deferredAdmissions.compactMap { key, admission in
             blocksOrdinaryRuntimeAdmission(for: admission.profileID) ? nil : key
         }.sorted(by: deferredAdmissionPrecedes)
-        let ready = readyKeys.compactMap { deferredAdmissions.removeValue(forKey: $0) }
-        guard ready.isEmpty == false else { return }
-        Task { @MainActor in
-            ready.forEach { $0.replay() }
+        let scheduledIDs = readyKeys.compactMap { key -> UUID? in
+            guard let admission = deferredAdmissions.removeValue(forKey: key) else {
+                return nil
+            }
+            let scheduledID = UUID()
+            scheduledAdmissions[scheduledID] = ScheduledAdmission(
+                key: key,
+                admission: admission
+            )
+            return scheduledID
+        }
+        guard scheduledIDs.isEmpty == false else { return }
+        Task { @MainActor [weak self] in
+            scheduledIDs.forEach { self?.replayScheduledAdmission($0) }
+        }
+    }
+
+    private func replayScheduledAdmission(_ scheduledID: UUID) {
+        guard let scheduled = scheduledAdmissions.removeValue(
+            forKey: scheduledID
+        ) else {
+            return
+        }
+        // Moving an admission to the scheduled queue releases its key. A
+        // newer semantic operation can therefore occupy that key before this
+        // task runs; the newer operation must win even when it targets a
+        // different profile.
+        guard deferredAdmissions[scheduled.key] == nil else { return }
+        if blocksOrdinaryRuntimeAdmission(
+            for: scheduled.admission.profileID
+        ) {
+            if deferredAdmissions[scheduled.key] == nil {
+                deferredAdmissions[scheduled.key] = scheduled.admission
+            }
+            return
+        }
+        scheduled.admission.replay()
+    }
+
+    private func deferredTabID(for key: DeferredAdmissionKey) -> UUID? {
+        switch key {
+        case .webViewRebuild(let tabID),
+             .webViewMaterialization(let tabID),
+             .profileAssignment(let tabID),
+             .mainFrameSubmission(let tabID, _),
+             .trackedRegistration(let tabID, _),
+             .trackedReplacement(let tabID, _),
+             .untrackedReplacement(let tabID):
+            return tabID
+        case .spaceProfileAssignment:
+            return nil
         }
     }
 
@@ -295,6 +380,10 @@ final class WebsiteDataMutationGate {
             return (2, tabID.uuidString)
         case .trackedRegistration(let tabID, let windowID):
             return (3, "\(tabID.uuidString).\(windowID.uuidString)")
+        case .trackedReplacement(let tabID, let windowID):
+            return (3, "\(tabID.uuidString).\(windowID.uuidString).replacement")
+        case .untrackedReplacement(let tabID):
+            return (3, "\(tabID.uuidString).untracked-replacement")
         case .mainFrameSubmission(let tabID, let webViewID):
             return (
                 4,

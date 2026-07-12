@@ -47,11 +47,13 @@ final class TabWebKitPermissionUIDelegateOwnerTests: XCTestCase {
         windowRegistry.register(windowState)
         windowRegistry.setActive(windowState)
         let webView = FocusableWKWebView()
-        XCTAssertTrue(browserManager.testWebViewRuntime().ownershipService.assign(
+        webView.owningTab = tab
+        XCTAssertTrue(browserManager.testWebViewRuntime().trackedWebViewAdmission.attemptAssignment(
             webView,
             to: tab,
-            in: windowState.id
-        ))
+            in: windowState.id,
+            replaySemanticOperation: { XCTFail("Unexpected WebView deferral") }
+        ).isAccepted)
         await loadDocument(on: webView, at: tab.url)
         let committedURL = try XCTUnwrap(webView.committedURL)
         let navigation = await bindCommittedDocument(

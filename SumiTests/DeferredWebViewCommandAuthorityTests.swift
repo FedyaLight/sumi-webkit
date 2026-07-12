@@ -38,7 +38,11 @@ final class DeferredWebViewCommandAuthorityTests: XCTestCase {
             windowID: UUID()
         )))
 
-        guard case .removeTrackedWebView(let preparedWebView, let owner)? =
+        guard case .removeTrackedWebView(
+            let preparedWebView,
+            let owner,
+            let preparedTab
+        )? =
                 fixture.authority.prepare(.removeTrackedWebView(
                     webViewID: ObjectIdentifier(webView),
                     tabID: tabID,
@@ -48,6 +52,7 @@ final class DeferredWebViewCommandAuthorityTests: XCTestCase {
         }
         XCTAssertIdentical(preparedWebView, webView)
         XCTAssertEqual(owner, TrackedWebViewOwner(tabID: tabID, windowID: windowID))
+        XCTAssertNil(preparedTab)
     }
 
     func testCloseWebViewFromWebKitRequiresResolvableWebView() {
@@ -395,6 +400,10 @@ private final class DeferredCommandTestTabResolver: DeferredWebViewCommandTabRes
 
     func resolveCollectionTab(with tabID: UUID) -> Tab? {
         tabsByID[tabID]
+    }
+
+    func resolveTabForCleanup(with tabID: UUID) -> Tab? {
+        runtimeTabs.tabForCleanup(tabID) { [tabsByID] in tabsByID[$0] }
     }
 }
 

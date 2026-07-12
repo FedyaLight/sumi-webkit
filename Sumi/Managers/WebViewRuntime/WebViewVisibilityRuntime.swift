@@ -3,7 +3,7 @@ import SumiWebRuntime
 import WebKit
 
 /// Presentation-state operations that do not mutate canonical ownership.
-/// Keeping this below the ownership service prevents a constructor cycle
+/// Keeping this separate from admission and placement prevents a constructor cycle
 /// between registration cleanup, protected-command dispatch, and visibility.
 @MainActor
 final class WebViewVisibilityRuntime {

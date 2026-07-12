@@ -408,7 +408,7 @@ struct WindowView: View {
                 splitDrops: browserContext.splitDrops,
                 splitDropTargets: browserContext.splitDropTargets,
                 webViewOwnershipQuery: browserContext.webViewOwnershipQuery,
-                webViewOwnershipService: browserContext.webViewOwnershipService,
+                trackedWebViewAdmission: browserContext.trackedWebViewAdmission,
                 webViewCompositorRuntime: browserContext.webViewCompositorRuntime,
                 webViewProtectionRuntime: browserContext.webViewProtectionRuntime
             )

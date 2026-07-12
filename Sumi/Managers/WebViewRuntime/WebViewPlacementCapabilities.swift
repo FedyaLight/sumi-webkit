@@ -2,6 +2,7 @@ import Foundation
 import WebKit
 
 enum UntrackedWebViewInstallationRejection: Equatable {
+    case runtimeTabIdentityConflict
     case trackedResidenceExists
     case canonicalPlacement(CanonicalWebViewPlacementRejection)
     case detachedReplacementRejected
@@ -46,10 +47,10 @@ enum UntrackedWebViewInstallationOutcome: Equatable {
 @MainActor
 protocol AuxiliaryTrackedWebViewPlacing: AnyObject {
     func registerAuxiliaryTrackedWebView(
-        _ webView: WKWebView,
+        _ webView: FocusableWKWebView,
         for tab: Tab,
         in windowID: UUID
-    ) -> CanonicalWebViewPlacementOutcome
+    ) -> TrackedWebViewAdmissionOutcome
 }
 
 @MainActor

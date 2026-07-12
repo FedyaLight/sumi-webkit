@@ -45,10 +45,6 @@ final class TabRuntimeTeardownService {
             runtime.notifyTabClosedIfLoaded(tab)
             tab.performComprehensiveWebViewCleanup()
             runtime.webViewLifecycle.unloadTab(tab)
-            runtime.webViewLifecycle.requireRemoveAllWebViews(
-                for: tab,
-                closeActiveFullscreenMedia: true
-            )
             membership.detach(tab)
             NotificationCenter.default.post(
                 name: .sumiTabLifecycleDidChange,

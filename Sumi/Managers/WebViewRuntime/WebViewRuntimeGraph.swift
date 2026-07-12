@@ -100,9 +100,6 @@ final class WebViewRuntimeGraph {
         },
         resolvedTab: { [weak self] tabID in
             guard let self else { return nil }
-            if let tab = self.runtimeTabs.boundTab(tabID) {
-                return tab
-            }
             return self.runtimeTabs.resolve(
                 tabID,
                 resolveRuntimeTab: self.resolveRuntimeTab
@@ -293,8 +290,9 @@ final class WebViewRuntimeGraph {
             trackedRegistration: trackedRegistrationOwner
         )
 
-    private lazy var detachedWebViewReplacement =
+    private(set) lazy var detachedWebViewReplacement =
         DetachedWebViewReplacementService(
+            runtimeTabs: runtimeTabs,
             webViewSessions: webViewSessions,
             pipeline: replacementPipeline
         )
@@ -307,7 +305,8 @@ final class WebViewRuntimeGraph {
             detachedReplacement: detachedWebViewReplacement
         )
 
-    private lazy var detachedWebViewCleanup = DetachedWebViewCleanupService(
+    private(set) lazy var detachedWebViewCleanup = DetachedWebViewCleanupService(
+        runtimeTabs: runtimeTabs,
         webViewSessions: webViewSessions,
         websiteDataCleanup: websiteDataCleanupService,
         processRecovery: processRecoveryService,
@@ -321,15 +320,29 @@ final class WebViewRuntimeGraph {
             planner: webViewCreationPlanner
         )
 
-    private(set) lazy var ownershipService: WebViewOwnershipService = WebViewOwnershipService(
+    private(set) lazy var trackedWebViewAdmission = TrackedWebViewAdmissionService(
         runtimeTabs: runtimeTabs,
         query: ownershipQuery,
         placement: canonicalWebViewPlacement,
         materialization: tabWebViewMaterialization,
-        detachedReplacement: detachedWebViewReplacement,
-        websiteDataCleanup: websiteDataCleanupService,
-        detachedCleanup: detachedWebViewCleanup
+        websiteDataCleanup: websiteDataCleanupService
     )
+
+    private(set) lazy var untrackedWebViewMaterialization =
+        UntrackedWebViewMaterializationService(
+            runtimeTabs: runtimeTabs,
+            query: ownershipQuery,
+            websiteDataCleanup: websiteDataCleanupService
+        )
+
+    private(set) lazy var extensionTabWebViewReplacement =
+        ExtensionTabWebViewReplacementService(
+            runtimeTabs: runtimeTabs,
+            query: ownershipQuery,
+            websiteDataCleanup: websiteDataCleanupService,
+            trackedAdmission: trackedWebViewAdmission,
+            untrackedInstallation: untrackedWebViewInstallationService
+        )
 
     private(set) lazy var protectionRuntime: WebViewProtectionRuntime = WebViewProtectionRuntime(
         mediaProtection: mediaProtectionOwner,
@@ -365,6 +378,7 @@ final class WebViewRuntimeGraph {
 
     private(set) lazy var lifecycleService: WebViewLifecycleService = WebViewLifecycleService(
         webViewSessions: webViewSessions,
+        runtimeTabs: runtimeTabs,
         ownershipQuery: ownershipQuery,
         resolveTab: { [weak self] tabID in
             guard let self else { return nil }
@@ -393,7 +407,7 @@ final class WebViewRuntimeGraph {
             visibility: visibilityRuntime,
             webViewSessions: webViewSessions,
             ownershipQuery: ownershipQuery,
-            ownershipService: ownershipService
+            trackedAdmission: trackedWebViewAdmission
         )
 
     private lazy var tabWebViewRebuild: TabWebViewRebuildService = TabWebViewRebuildService(
@@ -567,12 +581,16 @@ private enum DeferredWebViewCommandAssembly {
                 graph.compositorRuntime.removeWebViewFromContainers(webView)
                 return true
             },
-            cleanupTrackedWebView: { [weak graph] webView, owner in
+            cleanupTrackedWebView: { [weak graph] webView, owner, tab in
                 guard let graph else { return false }
-                graph.lifecycleService.cleanupTrackedWebView(
+                graph.lifecycleService.cleanupUnprotectedTrackedWebView(
                     webView,
-                    owner: owner
+                    owner: owner,
+                    tab: tab
                 )
+                if let tab, graph.runtimeTabs.isRetiring(tab) == false {
+                    graph.visibilityRuntime.refreshPrimaryWebView(for: tab)
+                }
                 return true
             },
             shutdownOwnerlessWebView: {
@@ -586,6 +604,9 @@ private enum DeferredWebViewCommandAssembly {
                     tabId: tabID,
                     runtime: runtimeAssembler.shutdownRuntime()
                 )
+            },
+            finishRetirementIfDrained: { [weak graph] tabID in
+                _ = graph?.runtimeTabs.finishRetirementIfDrained(tabID)
             }
         )
 

@@ -23,7 +23,8 @@ final class BrowserExtensionBridgeComposition {
 
     init(browserManager: BrowserManager) {
         let webViewOwnershipQuery = browserManager.webViewRuntime.ownershipQuery
-        let webViewOwnership = browserManager.webViewRuntime.ownershipService
+        let extensionTabWebViewReplacement = browserManager.webViewRuntime
+            .extensionTabWebViewReplacement
         let windows = BrowserExtensionWindowQueryAdapter(
             windowRegistry: { [weak browserManager] in
                 browserManager?.windowRegistry
@@ -117,21 +118,21 @@ final class BrowserExtensionBridgeComposition {
                 )
             },
             replaceLiveWebView: {
-                [webViewOwnership]
+                [extensionTabWebViewReplacement]
                 tab,
                 windowID,
                 reason,
                 prepareCandidateConfiguration,
                 prepareCommittedReplacement,
                 validate in
-                webViewOwnership.replaceLiveWebView(
+                extensionTabWebViewReplacement.replace(
                     for: tab,
                     in: windowID,
                     reason: reason,
                     prepareCandidateConfiguration: prepareCandidateConfiguration,
                     prepareCommittedReplacement: prepareCommittedReplacement,
                     validate: validate
-                )
+                ).committedWebView
             },
             reload: { [weak browserManager] tab, webView, window, policy in
                 guard let browserManager else { return .failed }
@@ -203,7 +204,6 @@ final class BrowserExtensionBridgeComposition {
             restoration: browserManager.windowSessionBundle.restoreService,
             extensionPublication: browserManager.windowExtensionPublication,
             tabs: browserManager.tabManager,
-            webViews: browserManager.webViewRuntime.lifecycleService,
             ownership: webViewOwnershipQuery,
             registeredWindow: { [weak browserManager] windowID in
                 browserManager?.windowRegistry?.windows[windowID]

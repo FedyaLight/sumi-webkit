@@ -838,10 +838,12 @@ final class SumiReaderPresentationTests: XCTestCase {
             webViewSessions: webViewRuntime.webViewSessions,
             loadsCachedFaviconOnInit: false
         )
-        webViewRuntime.ownershipService.assign(
+        canonicalWebView.owningTab = tab
+        webViewRuntime.trackedWebViewAdmission.attemptAssignment(
             canonicalWebView,
             to: tab,
-            in: windowState.id
+            in: windowState.id,
+            replaySemanticOperation: { XCTFail("Unexpected WebView deferral") }
         )
         browserContext.tabsByID[tab.id] = tab
 
@@ -1166,7 +1168,7 @@ final class SumiReaderPresentationTests: XCTestCase {
             splitDropTargets: browserManager.splitComposition.dropTargets,
             sidebarDragState: browserContext.sidebarDragState,
             webViewOwnershipQuery: webViewRuntime.ownershipQuery,
-            webViewOwnershipService: webViewRuntime.ownershipService,
+            trackedWebViewAdmission: webViewRuntime.trackedWebViewAdmission,
             webViewCompositorRuntime: webViewRuntime.compositorRuntime,
             webViewProtectionRuntime: webViewRuntime.protectionRuntime,
             hoveredLink: .constant(nil),

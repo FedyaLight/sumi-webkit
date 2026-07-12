@@ -44,7 +44,6 @@ final class WebViewProfileAssignmentService {
             return .stale
         }
 
-        tabs.forEach(runtimeTabs.bind)
         return transitions.transition(
             spaceID: space.id,
             to: targetProfile,
@@ -66,7 +65,10 @@ final class WebViewProfileAssignmentService {
         intent: DeferredWebViewProfileAssignmentIntent,
         settlement: @escaping ProfileTransitionService.Settlement = { _ in }
     ) -> TabProfileAssignmentExecutionOutcome {
-        runtimeTabs.bind(tab)
+        guard runtimeTabs.bind(tab).isAccepted else {
+            settlement(.rejected(.stale))
+            return .stale
+        }
         return transitions.transition(
             tab: tab,
             to: targetProfile,

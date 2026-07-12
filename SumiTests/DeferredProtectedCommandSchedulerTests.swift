@@ -192,6 +192,7 @@ private final class SchedulerEffects {
 private final class SchedulerTabResolver: DeferredWebViewCommandTabResolving {
     func resolveRuntimeTab(with _: UUID) -> Tab? { nil }
     func resolveCollectionTab(with _: UUID) -> Tab? { nil }
+    func resolveTabForCleanup(with _: UUID) -> Tab? { nil }
 }
 
 @MainActor
@@ -235,8 +236,9 @@ private final class SchedulerFixture {
             sessions: sessions,
             closeWebView: { _ in false },
             removeFromContainers: effects.removeFromContainers,
-            cleanupTrackedWebView: { _, _ in false },
-            shutdownOwnerlessWebView: { _, _ in }
+            cleanupTrackedWebView: { _, _, _ in false },
+            shutdownOwnerlessWebView: { _, _ in },
+            finishRetirementIfDrained: { _ in }
         )
         let windowMaintenance = DeferredWebViewWindowMaintenanceExecutor(
             cleanupWindow: { _ in false },

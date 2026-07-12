@@ -2,12 +2,6 @@ import Foundation
 import WebKit
 import SumiWebRuntime
 
-enum UntrackedWebViewMaterializationOutcome {
-    case available(WKWebView)
-    case deferred
-    case failed
-}
-
 /// Materializes or adopts one normal-tab WebView for one window. Whole-session
 /// replacement is deliberately delegated to `WebViewReplacementPipeline`.
 @MainActor

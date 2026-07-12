@@ -16,7 +16,7 @@ final class BrowserWindowLifecycleWorkflowTests: XCTestCase {
         let parkedTabID = UUID()
         let untrackedTabID = UUID()
         let pendingTabID = UUID()
-        let tracked = WKWebView()
+        let tracked = FocusableWKWebView()
         let parked = WKWebView()
         let untracked = WKWebView()
         let pending = WKWebView()
@@ -25,6 +25,7 @@ final class BrowserWindowLifecycleWorkflowTests: XCTestCase {
             webViewSessions: repository,
             loadsCachedFaviconOnInit: false
         )
+        tracked.owningTab = trackedTab
         let workflow: BrowserWindowCloseWorkflow
 
         do {
@@ -43,7 +44,7 @@ final class BrowserWindowLifecycleWorkflowTests: XCTestCase {
             )
         }
 
-        webViewRuntime.ownershipService.registerAuxiliaryTrackedWebView(
+        webViewRuntime.trackedWebViewAdmission.registerAuxiliaryTrackedWebView(
             tracked,
             for: trackedTab,
             in: windowState.id
@@ -354,16 +355,16 @@ final class BrowserWindowLifecycleWorkflowTests: XCTestCase {
         XCTAssertNil(releasedRegistry)
     }
 
-    func testWindowRegistryCloseCallbackReceivesRegisteredStateBeforeRemoval() {
+    func testWindowRegistryCloseCallbackReceivesClaimedStateAfterRemoval() {
         let registry = WindowRegistry()
         let windowState = BrowserWindowState()
         var receivedState: BrowserWindowState?
-        var wasStillRegistered = false
+        var wasAlreadyDetached = false
         var events: [String] = []
 
         registry.onWindowClose = { closingState in
             receivedState = closingState
-            wasStillRegistered = registry.windows[closingState.id] === closingState
+            wasAlreadyDetached = registry.windows[closingState.id] == nil
             events.append("close")
         }
         registry.onAllWindowsClosed = { events.append("allClosed") }
@@ -372,7 +373,7 @@ final class BrowserWindowLifecycleWorkflowTests: XCTestCase {
         registry.unregister(windowState.id)
 
         XCTAssertIdentical(receivedState, windowState)
-        XCTAssertTrue(wasStillRegistered)
+        XCTAssertTrue(wasAlreadyDetached)
         XCTAssertEqual(events, ["close", "allClosed"])
         XCTAssertNil(registry.windows[windowState.id])
     }

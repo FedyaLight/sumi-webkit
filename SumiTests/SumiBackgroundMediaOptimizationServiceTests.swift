@@ -179,10 +179,11 @@ private final class BackgroundMediaOptimizationHarness {
     func attach(
         _ tab: Tab,
         windowID: UUID,
-        webView: WKWebView = WKWebView()
+        webView: FocusableWKWebView = FocusableWKWebView()
     ) -> WKWebView {
         tabs.append(tab)
-        webViewRuntime.ownershipService.registerAuxiliaryTrackedWebView(
+        webView.owningTab = tab
+        webViewRuntime.trackedWebViewAdmission.registerAuxiliaryTrackedWebView(
             webView,
             for: tab,
             in: windowID

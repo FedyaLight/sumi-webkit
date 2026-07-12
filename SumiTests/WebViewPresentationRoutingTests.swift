@@ -46,7 +46,7 @@ final class WebViewPresentationRoutingTests: XCTestCase {
             )
         )
         secondWebView.owningTab = harness.sourceTab
-        harness.browserManager.testWebViewRuntime().ownershipService
+        harness.browserManager.testWebViewRuntime().trackedWebViewAdmission
             .registerAuxiliaryTrackedWebView(
                 secondWebView,
                 for: harness.sourceTab,
@@ -101,12 +101,15 @@ final class WebViewPresentationRoutingTests: XCTestCase {
             configuration: WKWebViewConfiguration()
         )
         mismatched.owningTab = mismatchedTab
-        harness.browserManager.testWebViewRuntime().ownershipService
-            .registerAuxiliaryTrackedWebView(
-                mismatched,
-                for: harness.sourceTab,
-                in: secondWindow.id
-            )
+        XCTAssertEqual(
+            harness.browserManager.testWebViewRuntime().trackedWebViewAdmission
+                .registerAuxiliaryTrackedWebView(
+                    mismatched,
+                    for: harness.sourceTab,
+                    in: secondWindow.id
+                ),
+            .rejected(.physicalTabIdentityMismatch)
+        )
         XCTAssertFalse(
             harness.sourceTab.webPageMenuCommands.requestBookmarkEditor(
                 from: mismatched
@@ -244,7 +247,7 @@ final class WebViewPresentationRoutingTests: XCTestCase {
             sources: sources,
             tabs: harness.browserManager.tabManager,
             placement: harness.browserManager.testWebViewRuntime()
-                .ownershipService,
+                .trackedWebViewAdmission,
             selection: BrowserTabSelectionCommand {
                 [weak browserManager = harness.browserManager]
                 tab,
@@ -529,7 +532,7 @@ final class WebViewPresentationRoutingTests: XCTestCase {
             configuration: sourceConfiguration
         )
         sourceWebView.owningTab = sourceTab
-        browserManager.testWebViewRuntime().ownershipService.registerAuxiliaryTrackedWebView(
+        browserManager.testWebViewRuntime().trackedWebViewAdmission.registerAuxiliaryTrackedWebView(
             sourceWebView,
             for: sourceTab,
             in: sourceWindow.id
@@ -919,7 +922,7 @@ final class WebViewPresentationRoutingTests: XCTestCase {
             configuration: sourceConfiguration
         )
         sourceWebView.owningTab = sourceTab
-        browserManager.testWebViewRuntime().ownershipService
+        browserManager.testWebViewRuntime().trackedWebViewAdmission
             .registerAuxiliaryTrackedWebView(
                 sourceWebView,
                 for: sourceTab,
@@ -1022,7 +1025,7 @@ final class WebViewPresentationRoutingTests: XCTestCase {
             configuration: sourceConfiguration
         )
         sourceWebView.owningTab = sourceTab
-        browserManager.testWebViewRuntime().ownershipService.registerAuxiliaryTrackedWebView(
+        browserManager.testWebViewRuntime().trackedWebViewAdmission.registerAuxiliaryTrackedWebView(
             sourceWebView,
             for: sourceTab,
             in: sourceWindow.id
@@ -1081,7 +1084,7 @@ final class WebViewPresentationRoutingTests: XCTestCase {
                 tabs: harness.browserManager.tabManager
             ),
             tabs: harness.browserManager.tabManager,
-            placement: webViews.ownershipService,
+            placement: webViews.trackedWebViewAdmission,
             ownershipQuery: webViews.ownershipQuery,
             sourceResolver: physicalSourceResolver(for: harness),
             lifecycle: webViews.lifecycleService,
@@ -1183,19 +1186,20 @@ private final class ExtensionTabRegistrarSpy: ExtensionCreatedTabRegistering {
 
 @MainActor
 private final class RejectingAuxiliaryTrackedPlacement:
-    AuxiliaryTrackedWebViewPlacing
-{
+    AuxiliaryTrackedWebViewPlacing {
     private(set) var tab: Tab?
     private(set) var webView: FocusableWKWebView?
 
     func registerAuxiliaryTrackedWebView(
-        _ webView: WKWebView,
+        _ webView: FocusableWKWebView,
         for tab: Tab,
         in _: UUID
-    ) -> CanonicalWebViewPlacementOutcome {
+    ) -> TrackedWebViewAdmissionOutcome {
         self.tab = tab
-        self.webView = webView as? FocusableWKWebView
-        return .rejected(.trackedRegistration(.protectedCandidate))
+        self.webView = webView
+        return .placed(
+            .rejected(.trackedRegistration(.protectedCandidate))
+        )
     }
 }
 

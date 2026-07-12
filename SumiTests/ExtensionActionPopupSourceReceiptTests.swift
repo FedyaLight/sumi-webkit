@@ -363,10 +363,11 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
                 reason: "ExtensionActionPopupSourceReceiptTests.atomicGeneration"
             )
         )
-        harness.browserManager.testWebViewRuntime().ownershipService.assign(
+        harness.browserManager.testWebViewRuntime().trackedWebViewAdmission.attemptAssignment(
             backgroundWebView,
             to: backgroundTab,
-            in: harness.windowState.id
+            in: harness.windowState.id,
+            replaySemanticOperation: { XCTFail("Unexpected WebView deferral") }
         )
 
         let oldGeneration = harness.extensionManager.runtimeSession
@@ -706,10 +707,11 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
                 reason: "ExtensionActionPopupSourceReceiptTests.makeHarness"
             )
         )
-        browserManager.testWebViewRuntime().ownershipService.assign(
+        browserManager.testWebViewRuntime().trackedWebViewAdmission.attemptAssignment(
             sourceWebView,
             to: sourceTab,
-            in: windowState.id
+            in: windowState.id,
+            replaySemanticOperation: { XCTFail("Unexpected WebView deferral") }
         )
         extensionManager.reconcileOpenTabsAfterExtensionContextLoad(
             reason: "ExtensionActionPopupSourceReceiptTests.makeHarness",

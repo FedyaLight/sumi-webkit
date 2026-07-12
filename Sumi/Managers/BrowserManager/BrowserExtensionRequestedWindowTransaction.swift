@@ -23,7 +23,6 @@ final class BrowserExtensionRequestedWindowTransaction:
     private weak var extensionPublication:
         WindowExtensionPublicationTransaction?
     private weak var tabs: TabManager?
-    private weak var webViews: WebViewLifecycleService?
     private let ownership: WebViewOwnershipQuery
     private let registeredWindow: @MainActor (UUID) -> BrowserWindowState?
     private let materialize: @MainActor (
@@ -41,7 +40,6 @@ final class BrowserExtensionRequestedWindowTransaction:
         restoration: WindowSessionRestoreService,
         extensionPublication: WindowExtensionPublicationTransaction,
         tabs: TabManager,
-        webViews: WebViewLifecycleService,
         ownership: WebViewOwnershipQuery,
         registeredWindow: @escaping @MainActor (
             UUID
@@ -59,7 +57,6 @@ final class BrowserExtensionRequestedWindowTransaction:
         self.restoration = restoration
         self.extensionPublication = extensionPublication
         self.tabs = tabs
-        self.webViews = webViews
         self.ownership = ownership
         self.registeredWindow = registeredWindow
         self.materialize = materialize
@@ -410,10 +407,6 @@ final class BrowserExtensionRequestedWindowTransaction:
         spaceID: UUID
     ) {
         guard let tabs else { return }
-        webViews?.removeAllWebViews(
-            for: tab,
-            closeActiveFullscreenMedia: true
-        )
         tab.performComprehensiveWebViewCleanup()
         tabs.structuralPersistence.cancelRuntimeStatePersistence(for: tab.id)
         window.currentTabId = nil

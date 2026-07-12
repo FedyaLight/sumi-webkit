@@ -8,18 +8,18 @@ final class WebViewVisiblePreparationService {
     private let visibility: WebViewVisibilityRuntime
     private let webViewSessions: WebViewSessionRepository
     private let ownershipQuery: WebViewOwnershipQuery
-    private let ownershipService: WebViewOwnershipService
+    private let trackedAdmission: TrackedWebViewAdmissionService
 
     init(
         visibility: WebViewVisibilityRuntime,
         webViewSessions: WebViewSessionRepository,
         ownershipQuery: WebViewOwnershipQuery,
-        ownershipService: WebViewOwnershipService
+        trackedAdmission: TrackedWebViewAdmissionService
     ) {
         self.visibility = visibility
         self.webViewSessions = webViewSessions
         self.ownershipQuery = ownershipQuery
-        self.ownershipService = ownershipService
+        self.trackedAdmission = trackedAdmission
     }
 
     @discardableResult
@@ -42,9 +42,9 @@ final class WebViewVisiblePreparationService {
             existingWebView: { [ownershipQuery] tabID, windowID in
                 ownershipQuery.webView(for: tabID, in: windowID)
             },
-            createWebView: { [ownershipService] tabHandle, windowID in
+            createWebView: { [trackedAdmission] tabHandle, windowID in
                 guard let tab = tabHandle.concreteTab else { return nil }
-                return ownershipService.webView(for: tab, in: windowID)
+                return trackedAdmission.webView(for: tab, in: windowID)
             }
         )
     }

@@ -14,19 +14,98 @@ final class WebViewRuntimeGraphTrackedWebViewsTests: XCTestCase {
         )
         let configuration = WKWebViewConfiguration()
         configuration.sumiIsNormalTabWebViewConfiguration = true
-        let webView = WKWebView(frame: .zero, configuration: configuration)
+        let webView = FocusableWKWebView(
+            frame: .zero,
+            configuration: configuration
+        )
+        webView.owningTab = tab
         let windowID = UUID()
 
         XCTAssertEqual(
-            graph.ownershipService.registerAuxiliaryTrackedWebView(
+            graph.trackedWebViewAdmission.registerAuxiliaryTrackedWebView(
                 webView,
                 for: tab,
                 in: windowID
             ),
-            .rejected(.wrongSurfaceFamily)
+            .placed(.rejected(.wrongSurfaceFamily))
         )
         XCTAssertNil(graph.ownershipQuery.webView(for: tab.id, in: windowID))
         XCTAssertFalse(tab.webViewSession.owns(webView))
+    }
+
+    func testAuxiliaryTrackedPlacementRejectsMismatchedPhysicalTabBeforeMutation()
+        throws {
+        let graph = makeTestWebViewRuntimeGraph()
+        let expectedTab = Tab(
+            url: try XCTUnwrap(URL(string: "https://example.com/expected")),
+            webViewSessions: graph.webViewSessions,
+            loadsCachedFaviconOnInit: false
+        )
+        let differentTab = Tab(
+            url: try XCTUnwrap(URL(string: "https://example.com/different")),
+            webViewSessions: graph.webViewSessions,
+            loadsCachedFaviconOnInit: false
+        )
+        let webView = FocusableWKWebView()
+        webView.owningTab = differentTab
+        let windowID = UUID()
+        let generationBeforeAdmission = graph.webViewSessions
+            .residenceGeneration
+
+        XCTAssertEqual(
+            graph.trackedWebViewAdmission.registerAuxiliaryTrackedWebView(
+                webView,
+                for: expectedTab,
+                in: windowID
+            ),
+            .rejected(.physicalTabIdentityMismatch)
+        )
+
+        XCTAssertEqual(
+            graph.webViewSessions.residenceGeneration,
+            generationBeforeAdmission
+        )
+        XCTAssertNil(graph.runtimeTabs.boundTab(expectedTab.id))
+        XCTAssertNil(
+            graph.ownershipQuery.webView(
+                for: expectedTab.id,
+                in: windowID
+            )
+        )
+        XCTAssertFalse(expectedTab.webViewSession.owns(webView))
+    }
+
+    func testTrackedAssignmentRejectsPlainWebViewBeforeMutation() throws {
+        let graph = makeTestWebViewRuntimeGraph()
+        let tab = Tab(
+            url: try XCTUnwrap(URL(string: "https://example.com/plain")),
+            webViewSessions: graph.webViewSessions,
+            loadsCachedFaviconOnInit: false
+        )
+        let webView = WKWebView()
+        let windowID = UUID()
+        let generationBeforeAdmission = graph.webViewSessions
+            .residenceGeneration
+
+        XCTAssertEqual(
+            graph.trackedWebViewAdmission.attemptAssignment(
+                webView,
+                to: tab,
+                in: windowID,
+                replaySemanticOperation: {
+                    XCTFail("Unexpected WebView deferral")
+                }
+            ),
+            .rejected(.physicalTabIdentityMismatch)
+        )
+
+        XCTAssertEqual(
+            graph.webViewSessions.residenceGeneration,
+            generationBeforeAdmission
+        )
+        XCTAssertNil(graph.runtimeTabs.boundTab(tab.id))
+        XCTAssertNil(graph.webViewSessions.residence(of: webView))
+        XCTAssertTrue(tab.webViewSession.allKnownWebViews.isEmpty)
     }
 
     func testUntrackedInstallationReturnsTypedTrackedResidenceRejection()
@@ -37,10 +116,11 @@ final class WebViewRuntimeGraphTrackedWebViewsTests: XCTestCase {
             webViewSessions: graph.webViewSessions,
             loadsCachedFaviconOnInit: false
         )
-        let tracked = WKWebView(frame: .zero)
+        let tracked = FocusableWKWebView()
+        tracked.owningTab = tab
         let windowID = UUID()
         XCTAssertTrue(
-            graph.ownershipService.registerAuxiliaryTrackedWebView(
+            graph.trackedWebViewAdmission.registerAuxiliaryTrackedWebView(
                 tracked,
                 for: tab,
                 in: windowID
@@ -107,9 +187,10 @@ final class WebViewRuntimeGraphTrackedWebViewsTests: XCTestCase {
         )
         tab.replaceUntrackedWebView(WKWebView(frame: .zero))
         let windowId = UUID()
-        let trackedWebView = WKWebView(frame: .zero)
+        let trackedWebView = FocusableWKWebView()
+        trackedWebView.owningTab = tab
 
-        graph.ownershipService.registerAuxiliaryTrackedWebView(
+        graph.trackedWebViewAdmission.registerAuxiliaryTrackedWebView(
             trackedWebView,
             for: tab,
             in: windowId
@@ -133,8 +214,8 @@ final class WebViewRuntimeGraphTrackedWebViewsTests: XCTestCase {
         existing.owningTab = tab
         tab.replaceUntrackedWebView(existing)
 
-        let first = try XCTUnwrap(graph.ownershipService.ensureUntracked(for: tab))
-        let second = try XCTUnwrap(graph.ownershipService.ensureUntracked(for: tab))
+        let first = try XCTUnwrap(graph.untrackedWebViewMaterialization.webView(for: tab))
+        let second = try XCTUnwrap(graph.untrackedWebViewMaterialization.webView(for: tab))
 
         XCTAssertIdentical(first, existing)
         XCTAssertIdentical(first, second)

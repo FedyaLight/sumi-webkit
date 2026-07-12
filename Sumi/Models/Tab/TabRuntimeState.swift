@@ -320,6 +320,12 @@ struct TabPermissionRuntime {
 }
 
 @MainActor
+enum TabWebViewTeardownIntent: Equatable {
+    case suspension
+    case retirement
+}
+
+@MainActor
 struct TabWebViewCleanupRuntime {
     var deferProtectedWebViewCleanup: (WKWebView, UUID, String) -> Bool
     var deferWebsiteDataMutationWebViewMaterialization: (
@@ -337,7 +343,8 @@ struct TabWebViewCleanupRuntime {
     var removeWebViewFromContainers: (WKWebView) -> Void
     var removeAllWebViews: (
         _ tab: Tab,
-        _ closeActiveFullscreenMedia: Bool
+        _ closeActiveFullscreenMedia: Bool,
+        _ intent: TabWebViewTeardownIntent
     ) -> WebViewTabTeardownResult
 
     static let inactive = Self(
@@ -347,7 +354,7 @@ struct TabWebViewCleanupRuntime {
         retireParkedWebView: { _, _, _ in false },
         cleanupUserScripts: { _, _ in /* No-op. */ },
         removeWebViewFromContainers: { _ in /* No-op. */ },
-        removeAllWebViews: { _, _ in .none }
+        removeAllWebViews: { _, _, _ in .none }
     )
 }
 

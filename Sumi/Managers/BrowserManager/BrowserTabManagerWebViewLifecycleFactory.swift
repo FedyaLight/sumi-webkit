@@ -23,9 +23,10 @@ enum BrowserTabManagerWebViewLifecycleFactory {
             },
             requireRemoveAllWebViews: { tab, closeActiveFullscreenMedia in
                 webViewLifecycle.removeAllWebViews(
-                        for: tab,
-                        closeActiveFullscreenMedia: closeActiveFullscreenMedia
-                    )
+                    for: tab,
+                    closeActiveFullscreenMedia: closeActiveFullscreenMedia,
+                    intent: .retirement
+                )
             },
             windowIDsTrackingWebViews: { tabId in
                 ownershipQuery.windowIDs(for: tabId)

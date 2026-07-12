@@ -23,12 +23,18 @@ final class ActivePageBrowserManagerIntegrationTests: XCTestCase {
             webViewSessions: browserManager.webViewSessions,
             loadsCachedFaviconOnInit: false
         )
-        let webView = WKWebView()
+        let webView = FocusableWKWebView()
+        webView.owningTab = tab
         window.ephemeralTabs = [tab]
         window.currentTabId = tab.id
         registry.register(window)
         registry.setActive(window)
-        webViewRuntime.ownershipService.assign(webView, to: tab, in: window.id)
+        webViewRuntime.trackedWebViewAdmission.attemptAssignment(
+            webView,
+            to: tab,
+            in: window.id,
+            replaySemanticOperation: { XCTFail("Unexpected WebView deferral") }
+        )
 
         let page = try XCTUnwrap(
             browserManager.shellRuntime.activePageResolver.resolveActiveWindow()

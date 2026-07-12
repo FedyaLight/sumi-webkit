@@ -139,7 +139,8 @@ enum TabWebViewCleanupOwner {
         let remainingOwnedWebViews: () -> [WKWebView]
         let clearDetachedWebViews: () -> Void
         let removeAllWebViews: (
-            _ closeActiveFullscreenMedia: Bool
+            _ closeActiveFullscreenMedia: Bool,
+            _ intent: TabWebViewTeardownIntent
         ) -> WebViewTabTeardownResult
         let currentPermissionPageId: () -> String
         let profilePartitionId: () -> String?
@@ -192,7 +193,7 @@ enum TabWebViewCleanupOwner {
 
     @MainActor
     static func performComprehensiveCleanup(context: Context) {
-        let teardown = context.removeAllWebViews(true)
+        let teardown = context.removeAllWebViews(true, .retirement)
         let remainingWebViews = uniqueWebViews(context.remainingOwnedWebViews())
         guard teardown.foundWebViews || remainingWebViews.isEmpty == false else { return }
 
@@ -220,7 +221,7 @@ enum TabWebViewCleanupOwner {
     static func unloadWebView(context: Context) {
         context.invalidatePermissionPageForReplacement("normal-tab-webview-unload")
 
-        let teardown = context.removeAllWebViews(true)
+        let teardown = context.removeAllWebViews(true, .suspension)
         let remainingWebViews = uniqueWebViews(context.remainingOwnedWebViews())
 
         guard teardown.foundWebViews || remainingWebViews.isEmpty == false else {

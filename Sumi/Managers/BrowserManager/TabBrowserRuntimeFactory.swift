@@ -39,7 +39,7 @@ enum TabBrowserRuntimeFactory {
         let childTabs = WebKitChildTabOpeningService(
             sources: physicalSources,
             tabs: browserManager.tabManager,
-            placement: webViewRuntime.ownershipService,
+            placement: webViewRuntime.trackedWebViewAdmission,
             selection: BrowserTabSelectionCommand {
                 [weak browserManager] tab, window, loadPolicy in
                 browserManager?.selectTab(
@@ -59,7 +59,7 @@ enum TabBrowserRuntimeFactory {
                 tabs: browserManager.tabManager
             ),
             tabs: browserManager.tabManager,
-            placement: webViewRuntime.ownershipService,
+            placement: webViewRuntime.trackedWebViewAdmission,
             ownershipQuery: webViewRuntime.ownershipQuery,
             sourceResolver: physicalSources,
             lifecycle: webViewRuntime.lifecycleService,
@@ -137,7 +137,6 @@ enum TabBrowserRuntimeFactory {
             extensionPublication: browserManager.windowExtensionPublication,
             profiles: browserManager.profileManager,
             tabs: browserManager.tabManager,
-            webViews: browserManager.webViewRuntime.lifecycleService,
             persistWindow: { [weak browserManager] window in
                 browserManager?.windowSessionBundle.persistence.persist(window)
             },

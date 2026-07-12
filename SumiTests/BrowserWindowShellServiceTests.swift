@@ -116,7 +116,6 @@ final class BrowserWindowShellServiceTests: XCTestCase {
 
         let context = BrowserWindowShellService.Context(
             windowRegistry: harness.windowRegistry,
-            webViewLifecycle: harness.webViewRuntime.lifecycleService,
             permissionLifecycleController: harness.permissionLifecycleController,
             profileManager: harness.profileManager,
             tabManager: harness.tabManager,
@@ -179,7 +178,6 @@ final class BrowserWindowShellServiceTests: XCTestCase {
         }
         let context = BrowserWindowShellService.Context(
             windowRegistry: harness.windowRegistry,
-            webViewLifecycle: harness.webViewRuntime.lifecycleService,
             permissionLifecycleController: harness
                 .permissionLifecycleController,
             profileManager: harness.profileManager,
@@ -287,7 +285,6 @@ final class BrowserWindowShellServiceTests: XCTestCase {
         }
         let context = BrowserWindowShellService.Context(
             windowRegistry: harness.windowRegistry,
-            webViewLifecycle: harness.webViewRuntime.lifecycleService,
             permissionLifecycleController: harness
                 .permissionLifecycleController,
             profileManager: harness.profileManager,
@@ -357,7 +354,6 @@ final class BrowserWindowShellServiceTests: XCTestCase {
         }
         let context = BrowserWindowShellService.Context(
             windowRegistry: harness.windowRegistry,
-            webViewLifecycle: harness.webViewRuntime.lifecycleService,
             permissionLifecycleController: harness
                 .permissionLifecycleController,
             profileManager: harness.profileManager,
@@ -541,7 +537,6 @@ final class BrowserWindowShellServiceTests: XCTestCase {
     ) -> BrowserWindowShellService.Context {
         BrowserWindowShellService.Context(
             windowRegistry: harness.windowRegistry,
-            webViewLifecycle: harness.webViewRuntime.lifecycleService,
             permissionLifecycleController: harness.permissionLifecycleController,
             profileManager: harness.profileManager,
             tabManager: harness.tabManager,

@@ -7,15 +7,10 @@ import XCTest
 
 @MainActor
 final class FocusableWKWebViewOwnershipLifecycleTests: XCTestCase {
-    func testTrackedAssignmentBindsExactTabAndCleanupIsolatesSiblingClone() throws {
+    func testTrackedAssignmentPreservesExactTabAndCleanupIsolatesSiblingClone() throws {
         let repository = WebViewSessionRepository()
         let tab = Tab(
             url: try XCTUnwrap(URL(string: "https://example.com/owned")),
-            webViewSessions: repository,
-            loadsCachedFaviconOnInit: false
-        )
-        let staleTab = Tab(
-            url: try XCTUnwrap(URL(string: "https://example.com/stale")),
             webViewSessions: repository,
             loadsCachedFaviconOnInit: false
         )
@@ -35,11 +30,21 @@ final class FocusableWKWebViewOwnershipLifecycleTests: XCTestCase {
             frame: .zero,
             configuration: WKWebViewConfiguration()
         )
-        retired.owningTab = staleTab
-        sibling.owningTab = staleTab
+        retired.owningTab = tab
+        sibling.owningTab = tab
 
-        graph.ownershipService.assign(retired, to: tab, in: retiredWindowID)
-        graph.ownershipService.assign(sibling, to: tab, in: siblingWindowID)
+        graph.trackedWebViewAdmission.attemptAssignment(
+            retired,
+            to: tab,
+            in: retiredWindowID,
+            replaySemanticOperation: { XCTFail("Unexpected WebView deferral") }
+        )
+        graph.trackedWebViewAdmission.attemptAssignment(
+            sibling,
+            to: tab,
+            in: siblingWindowID,
+            replaySemanticOperation: { XCTFail("Unexpected WebView deferral") }
+        )
 
         XCTAssertIdentical(retired.owningTab, tab)
         XCTAssertIdentical(sibling.owningTab, tab)

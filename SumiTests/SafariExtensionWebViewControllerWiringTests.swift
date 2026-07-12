@@ -55,7 +55,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             profile: profile
         )
         let windowRegistry = WindowRegistry()
-        let webViewOwnership = browserManager.webViewRuntime.ownershipService
+        let trackedAdmission = browserManager.webViewRuntime.trackedWebViewAdmission
         browserManager.windowRegistry = windowRegistry
         let space = browserManager.tabManager.spaceServices.catalog.createSpace(
             name: "Work",
@@ -76,9 +76,10 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
         windowState.currentTabId = tab.id
         let staleWebView = WKWebView()
-        let trackedWebView = WKWebView()
+        let trackedWebView = FocusableWKWebView()
+        trackedWebView.owningTab = tab
         tab.replaceUntrackedWebView(staleWebView)
-        webViewOwnership.registerAuxiliaryTrackedWebView(
+        trackedAdmission.registerAuxiliaryTrackedWebView(
             trackedWebView,
             for: tab,
             in: windowState.id
@@ -552,7 +553,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         windowState.currentTabId = tab.id
 
         let webViewQuery = browserManager.webViewRuntime.ownershipQuery
-        let webViewMaterialization = browserManager.webViewRuntime.ownershipService
+        let webViewMaterialization = browserManager.webViewRuntime.trackedWebViewAdmission
         XCTAssertTrue(
             extensionsModule.needsInitialDocumentExtensionContextLoadIfNeeded(
                 profileId: profile.id

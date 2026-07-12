@@ -260,13 +260,16 @@ final class GlanceManagerTests: XCTestCase {
         let browserManager = makeBrowserManager()
         let sourceTab = makeSourceTab(in: browserManager)
         let (windowRegistry, sourceWindow) = makeRegisteredWindow(in: browserManager, selecting: sourceTab)
-        let webView = WKWebView()
+        let webView = FocusableWKWebView()
+        webView.owningTab = sourceTab
 
-        browserManager.testWebViewRuntime().ownershipService.registerAuxiliaryTrackedWebView(
-            webView,
-            for: sourceTab,
-            in: sourceWindow.id
-        )
+        let admission = browserManager.testWebViewRuntime()
+            .trackedWebViewAdmission.registerAuxiliaryTrackedWebView(
+                webView,
+                for: sourceTab,
+                in: sourceWindow.id
+            )
+        XCTAssertTrue(admission.isAccepted)
 
         XCTAssertTrue(browserManager.webViewCloseRouter.handleWebViewDidClose(webView))
 
@@ -283,13 +286,16 @@ final class GlanceManagerTests: XCTestCase {
         let sourceTab = makeSourceTab(in: browserManager)
         let (windowRegistry, visibleWindow) = makeRegisteredWindow(in: browserManager, selecting: sourceTab)
         let staleOwnerWindowID = UUID()
-        let webView = WKWebView()
+        let webView = FocusableWKWebView()
+        webView.owningTab = sourceTab
 
-        browserManager.testWebViewRuntime().ownershipService.registerAuxiliaryTrackedWebView(
-            webView,
-            for: sourceTab,
-            in: staleOwnerWindowID
-        )
+        let admission = browserManager.testWebViewRuntime()
+            .trackedWebViewAdmission.registerAuxiliaryTrackedWebView(
+                webView,
+                for: sourceTab,
+                in: staleOwnerWindowID
+            )
+        XCTAssertTrue(admission.isAccepted)
 
         XCTAssertTrue(browserManager.webViewCloseRouter.handleWebViewDidClose(webView))
 

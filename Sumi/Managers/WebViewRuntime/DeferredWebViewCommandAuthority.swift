@@ -6,6 +6,7 @@ import WebKit
 protocol DeferredWebViewCommandTabResolving: AnyObject {
     func resolveRuntimeTab(with tabID: UUID) -> Tab?
     func resolveCollectionTab(with tabID: UUID) -> Tab?
+    func resolveTabForCleanup(with tabID: UUID) -> Tab?
 }
 
 /// Resolves app Tabs through the canonical weak runtime registry. The fallback
@@ -32,8 +33,15 @@ final class DeferredWebViewCommandTabResolver: DeferredWebViewCommandTabResolvin
 
     func resolveCollectionTab(with tabID: UUID) -> Tab? {
         guard let tab = resolveCollectionTab(tabID) else { return nil }
-        runtimeTabs.bind(tab)
+        guard runtimeTabs.bind(tab).isAccepted else { return nil }
         return tab
+    }
+
+    func resolveTabForCleanup(with tabID: UUID) -> Tab? {
+        runtimeTabs.tabForCleanup(
+            tabID,
+            resolveRuntimeTab: resolveRuntimeTab
+        )
     }
 }
 
@@ -54,7 +62,11 @@ protocol DeferredWebViewSpaceProfileIntentValidating {
 final class DeferredWebViewCommandAuthority {
     enum PreparedCommand {
         case removeWebViewFromContainers(webView: WKWebView)
-        case removeTrackedWebView(webView: WKWebView, owner: TrackedWebViewOwner)
+        case removeTrackedWebView(
+            webView: WKWebView,
+            owner: TrackedWebViewOwner,
+            tab: Tab?
+        )
         case closeWebViewFromWebKit(webView: WKWebView)
         case cleanupWindow(windowID: UUID)
         case cleanupAllWebViews
@@ -126,7 +138,11 @@ final class DeferredWebViewCommandAuthority {
             let owner = TrackedWebViewOwner(tabID: tabID, windowID: windowID)
             guard webViewSessions.trackedOwner(with: webViewID) == owner,
                   let webView = webViews.resolve(webViewID) else { return nil }
-            return .removeTrackedWebView(webView: webView, owner: owner)
+            return .removeTrackedWebView(
+                webView: webView,
+                owner: owner,
+                tab: tabs.resolveTabForCleanup(with: tabID)
+            )
 
         case .closeWebViewFromWebKit(let webViewID):
             guard let webView = webViews.resolve(webViewID) else { return nil }
@@ -224,7 +240,7 @@ final class DeferredWebViewCommandAuthority {
             return .cleanupTabWebView(
                 webView: webView,
                 tabID: tabID,
-                tab: tabs.resolveRuntimeTab(with: tabID)
+                tab: tabs.resolveTabForCleanup(with: tabID)
             )
 
         case .performFallbackWebViewCleanup(let webViewID, let lease):
@@ -236,7 +252,7 @@ final class DeferredWebViewCommandAuthority {
             return .performFallbackWebViewCleanup(
                 webView: webView,
                 lease: lease,
-                tab: tabs.resolveRuntimeTab(with: lease.tabID)
+                tab: tabs.resolveTabForCleanup(with: lease.tabID)
             )
         }
     }

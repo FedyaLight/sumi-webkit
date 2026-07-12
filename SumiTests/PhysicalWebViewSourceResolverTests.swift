@@ -176,7 +176,7 @@ final class PhysicalWebViewSourceResolverTests: XCTestCase {
         )
         let replacement = makeWebView(profile: profile, tab: fixture.tab)
 
-        browser.testWebViewRuntime().ownershipService.registerAuxiliaryTrackedWebView(
+        browser.testWebViewRuntime().trackedWebViewAdmission.registerAuxiliaryTrackedWebView(
             replacement,
             for: fixture.tab,
             in: window.id
@@ -214,7 +214,7 @@ final class PhysicalWebViewSourceResolverTests: XCTestCase {
             profile: profile
         )
         let webView = makeWebView(profile: profile, tab: tab)
-        browser.testWebViewRuntime().ownershipService.registerAuxiliaryTrackedWebView(
+        browser.testWebViewRuntime().trackedWebViewAdmission.registerAuxiliaryTrackedWebView(
             webView,
             for: tab,
             in: window.id

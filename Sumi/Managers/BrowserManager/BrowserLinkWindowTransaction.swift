@@ -22,7 +22,6 @@ final class BrowserLinkWindowTransaction {
         WindowExtensionPublicationTransaction?
     private weak var profiles: ProfileManager?
     private weak var tabs: TabManager?
-    private weak var webViews: WebViewLifecycleService?
     private let persistWindow: @MainActor (BrowserWindowState) -> Void
     private let materialize: @MainActor (
         Tab,
@@ -35,7 +34,6 @@ final class BrowserLinkWindowTransaction {
         extensionPublication: WindowExtensionPublicationTransaction,
         profiles: ProfileManager,
         tabs: TabManager,
-        webViews: WebViewLifecycleService,
         persistWindow: @escaping @MainActor (BrowserWindowState) -> Void,
         materialize: @escaping @MainActor (
             Tab,
@@ -47,7 +45,6 @@ final class BrowserLinkWindowTransaction {
         self.extensionPublication = extensionPublication
         self.profiles = profiles
         self.tabs = tabs
-        self.webViews = webViews
         self.persistWindow = persistWindow
         self.materialize = materialize
     }
@@ -294,10 +291,6 @@ final class BrowserLinkWindowTransaction {
         from window: BrowserWindowState
     ) {
         guard let tabs else { return }
-        webViews?.removeAllWebViews(
-            for: tab,
-            closeActiveFullscreenMedia: true
-        )
         tab.performComprehensiveWebViewCleanup()
         tabs.structuralPersistence.cancelRuntimeStatePersistence(for: tab.id)
         window.currentTabId = nil

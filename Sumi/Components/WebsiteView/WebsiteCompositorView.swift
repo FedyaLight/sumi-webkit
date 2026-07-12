@@ -39,7 +39,7 @@ final class WindowWebContentController: NSViewController {
     private let browserContext: any WindowWebContentBrowserContext
     private let splitQuery: WindowSplitQuery
     private let webViewOwnershipQuery: WebViewOwnershipQuery
-    private let webViewOwnershipService: WebViewOwnershipService
+    private let trackedWebViewAdmission: TrackedWebViewAdmissionService
     private let webViewCompositorRuntime: WebViewCompositorRuntime
     private let webViewProtectionRuntime: WebViewProtectionRuntime
     private let windowState: BrowserWindowState
@@ -81,7 +81,7 @@ final class WindowWebContentController: NSViewController {
     )
     private lazy var hostResolver = WindowWebContentHostResolver(
         ownershipQuery: webViewOwnershipQuery,
-        ownershipService: webViewOwnershipService,
+        trackedAdmission: trackedWebViewAdmission,
         compositorRuntime: webViewCompositorRuntime,
         protectionRuntime: webViewProtectionRuntime,
         hostRegistry: hostRegistry,
@@ -150,7 +150,7 @@ final class WindowWebContentController: NSViewController {
         splitDropTargets: SplitDropTargetService,
         sidebarDragState: SidebarDragState,
         webViewOwnershipQuery: WebViewOwnershipQuery,
-        webViewOwnershipService: WebViewOwnershipService,
+        trackedWebViewAdmission: TrackedWebViewAdmissionService,
         webViewCompositorRuntime: WebViewCompositorRuntime,
         webViewProtectionRuntime: WebViewProtectionRuntime,
         chromeGeometry: BrowserChromeGeometry,
@@ -159,7 +159,7 @@ final class WindowWebContentController: NSViewController {
         self.browserContext = browserContext
         self.splitQuery = splitQuery
         self.webViewOwnershipQuery = webViewOwnershipQuery
-        self.webViewOwnershipService = webViewOwnershipService
+        self.trackedWebViewAdmission = trackedWebViewAdmission
         self.webViewCompositorRuntime = webViewCompositorRuntime
         self.webViewProtectionRuntime = webViewProtectionRuntime
         self.chromeGeometry = chromeGeometry
@@ -495,7 +495,7 @@ struct TabCompositorWrapper: NSViewControllerRepresentable {
     private let splitDropTargets: SplitDropTargetService
     private let sidebarDragState: SidebarDragState
     let webViewOwnershipQuery: WebViewOwnershipQuery
-    let webViewOwnershipService: WebViewOwnershipService
+    let trackedWebViewAdmission: TrackedWebViewAdmissionService
     let webViewCompositorRuntime: WebViewCompositorRuntime
     let webViewProtectionRuntime: WebViewProtectionRuntime
     @Binding var hoveredLink: String?
@@ -515,7 +515,7 @@ struct TabCompositorWrapper: NSViewControllerRepresentable {
         splitDropTargets: SplitDropTargetService,
         sidebarDragState: SidebarDragState,
         webViewOwnershipQuery: WebViewOwnershipQuery,
-        webViewOwnershipService: WebViewOwnershipService,
+        trackedWebViewAdmission: TrackedWebViewAdmissionService,
         webViewCompositorRuntime: WebViewCompositorRuntime,
         webViewProtectionRuntime: WebViewProtectionRuntime,
         hoveredLink: Binding<String?>,
@@ -537,7 +537,7 @@ struct TabCompositorWrapper: NSViewControllerRepresentable {
             browserContext.currentTab(for: windowState)
         }
         self.webViewOwnershipQuery = webViewOwnershipQuery
-        self.webViewOwnershipService = webViewOwnershipService
+        self.trackedWebViewAdmission = trackedWebViewAdmission
         self.webViewCompositorRuntime = webViewCompositorRuntime
         self.webViewProtectionRuntime = webViewProtectionRuntime
         self._hoveredLink = hoveredLink
@@ -602,7 +602,7 @@ struct TabCompositorWrapper: NSViewControllerRepresentable {
             splitDropTargets: splitDropTargets,
             sidebarDragState: sidebarDragState,
             webViewOwnershipQuery: webViewOwnershipQuery,
-            webViewOwnershipService: webViewOwnershipService,
+            trackedWebViewAdmission: trackedWebViewAdmission,
             webViewCompositorRuntime: webViewCompositorRuntime,
             webViewProtectionRuntime: webViewProtectionRuntime,
             chromeGeometry: chromeGeometry,

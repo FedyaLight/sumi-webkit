@@ -399,7 +399,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             splitDropTargets: browserManager.splitComposition.dropTargets,
             sidebarDragState: browserContext.sidebarDragState,
             webViewOwnershipQuery: webViewRuntime.ownershipQuery,
-            webViewOwnershipService: webViewRuntime.ownershipService,
+            trackedWebViewAdmission: webViewRuntime.trackedWebViewAdmission,
             webViewCompositorRuntime: webViewRuntime.compositorRuntime,
             webViewProtectionRuntime: webViewRuntime.protectionRuntime,
             hoveredLink: .constant(nil),

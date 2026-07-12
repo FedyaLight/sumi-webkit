@@ -113,8 +113,9 @@ final class DeferredWebViewCommandExecutorTests: XCTestCase {
                     effects.removedWebViews.append(webView)
                     return effects.maintenanceSucceeds
                 },
-                cleanupTrackedWebView: { _, _ in false },
-                shutdownOwnerlessWebView: shutdownOwnerlessWebView
+                cleanupTrackedWebView: { _, _, _ in false },
+                shutdownOwnerlessWebView: shutdownOwnerlessWebView,
+                finishRetirementIfDrained: { _ in }
             ),
             windowMaintenance: DeferredWebViewWindowMaintenanceExecutor(
                 cleanupWindow: { _ in false },

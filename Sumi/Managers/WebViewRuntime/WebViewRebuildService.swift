@@ -52,7 +52,7 @@ final class WebViewRebuildService {
         intentRevision existingIntentRevision: UInt64? = nil,
         rebuildKind existingRebuildKind: DeferredWebViewRebuildKind? = nil
     ) -> TabWebViewRebuildResult {
-        runtimeTabs.bind(tab)
+        guard runtimeTabs.bind(tab).isAccepted else { return .failed }
         let rebuildKind = existingRebuildKind
             ?? (url == nil ? .maintenance : .semanticNavigation)
         let targetURL = url ?? tab.url

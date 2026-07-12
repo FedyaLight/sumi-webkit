@@ -345,7 +345,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
 
     private func downloadRetryRuntimeCanResolveWindowOwnedWebView(_ browserManager: BrowserManager) -> Bool {
         let windowRegistry = WindowRegistry()
-        let webViewOwnership = browserManager.webViewRuntime.ownershipService
+        let trackedAdmission = browserManager.webViewRuntime.trackedWebViewAdmission
         browserManager.windowRegistry = windowRegistry
 
         let space = browserManager.tabManager.spaceStateOwner.currentSpace
@@ -362,8 +362,9 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         windowRegistry.register(windowState)
         windowRegistry.setActive(windowState)
 
-        let webView = WKWebView()
-        webViewOwnership.registerAuxiliaryTrackedWebView(
+        let webView = FocusableWKWebView()
+        webView.owningTab = tab
+        trackedAdmission.registerAuxiliaryTrackedWebView(
             webView,
             for: tab,
             in: windowState.id
@@ -384,7 +385,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
 
     private func boostsModuleCanUseAttachedRuntime(_ browserManager: BrowserManager) async -> Bool {
         let windowRegistry = WindowRegistry()
-        let webViewOwnership = browserManager.webViewRuntime.ownershipService
+        let trackedAdmission = browserManager.webViewRuntime.trackedWebViewAdmission
         browserManager.windowRegistry = windowRegistry
 
         let profileId = UUID()
@@ -404,8 +405,10 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         windowRegistry.register(windowState)
         windowRegistry.setActive(windowState)
 
-        webViewOwnership.registerAuxiliaryTrackedWebView(
-            WKWebView(),
+        let webView = FocusableWKWebView()
+        webView.owningTab = tab
+        trackedAdmission.registerAuxiliaryTrackedWebView(
+            webView,
             for: tab,
             in: windowState.id
         )
@@ -656,8 +659,9 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
             loadsCachedFaviconOnInit: false
         )
         let windowID = UUID()
-        let webView = WKWebView()
-        webViewRuntime.ownershipService.registerAuxiliaryTrackedWebView(
+        let webView = FocusableWKWebView()
+        webView.owningTab = tab
+        webViewRuntime.trackedWebViewAdmission.registerAuxiliaryTrackedWebView(
             webView,
             for: tab,
             in: windowID

@@ -8,27 +8,35 @@ import WebKit
 final class DeferredWebViewCleanupExecutor {
     typealias CloseWebView = @MainActor (WKWebView) -> Bool
     typealias RemoveFromContainers = @MainActor (WKWebView) -> Bool
-    typealias CleanupTrackedWebView = @MainActor (WKWebView, TrackedWebViewOwner) -> Bool
+    typealias CleanupTrackedWebView = @MainActor (
+        WKWebView,
+        TrackedWebViewOwner,
+        Tab?
+    ) -> Bool
     typealias ShutdownOwnerlessWebView = @MainActor (WKWebView, UUID) -> Void
+    typealias FinishRetirementIfDrained = @MainActor (UUID) -> Void
 
     private let sessions: WebViewSessionRepository
     private let closeWebView: CloseWebView
     private let removeFromContainers: RemoveFromContainers
     private let cleanupTrackedWebView: CleanupTrackedWebView
     private let shutdownOwnerlessWebView: ShutdownOwnerlessWebView
+    private let finishRetirementIfDrained: FinishRetirementIfDrained
 
     init(
         sessions: WebViewSessionRepository,
         closeWebView: @escaping CloseWebView,
         removeFromContainers: @escaping RemoveFromContainers,
         cleanupTrackedWebView: @escaping CleanupTrackedWebView,
-        shutdownOwnerlessWebView: @escaping ShutdownOwnerlessWebView
+        shutdownOwnerlessWebView: @escaping ShutdownOwnerlessWebView,
+        finishRetirementIfDrained: @escaping FinishRetirementIfDrained
     ) {
         self.sessions = sessions
         self.closeWebView = closeWebView
         self.removeFromContainers = removeFromContainers
         self.cleanupTrackedWebView = cleanupTrackedWebView
         self.shutdownOwnerlessWebView = shutdownOwnerlessWebView
+        self.finishRetirementIfDrained = finishRetirementIfDrained
     }
 
     func removeFromContainers(_ webView: WKWebView) -> DeferredProtectedCommandExecutionOutcome {
@@ -37,9 +45,12 @@ final class DeferredWebViewCleanupExecutor {
 
     func removeTracked(
         _ webView: WKWebView,
-        owner: TrackedWebViewOwner
+        owner: TrackedWebViewOwner,
+        tab: Tab?
     ) -> DeferredProtectedCommandExecutionOutcome {
-        outcome(cleanupTrackedWebView(webView, owner))
+        guard cleanupTrackedWebView(webView, owner, tab) else { return .retry }
+        finishRetirementIfDrained(owner.tabID)
+        return .executed
     }
 
     func closeFromWebKit(_ webView: WKWebView) -> DeferredProtectedCommandExecutionOutcome {
@@ -56,9 +67,10 @@ final class DeferredWebViewCleanupExecutor {
         }
         if let tab {
             tab.cleanupCloneWebView(webView)
-            return .executed
+        } else {
+            shutdownOwnerlessWebView(webView, tabID)
         }
-        shutdownOwnerlessWebView(webView, tabID)
+        finishRetirementIfDrained(tabID)
         return .executed
     }
 
@@ -75,6 +87,7 @@ final class DeferredWebViewCleanupExecutor {
         } else {
             shutdownOwnerlessWebView(webView, lease.tabID)
         }
+        finishRetirementIfDrained(lease.tabID)
         return .executed
     }
 
@@ -204,8 +217,8 @@ final class DeferredWebViewCommandExecutor {
         switch command {
         case .removeWebViewFromContainers(let webView):
             return cleanup.removeFromContainers(webView)
-        case .removeTrackedWebView(let webView, let owner):
-            return cleanup.removeTracked(webView, owner: owner)
+        case .removeTrackedWebView(let webView, let owner, let tab):
+            return cleanup.removeTracked(webView, owner: owner, tab: tab)
         case .closeWebViewFromWebKit(let webView):
             return cleanup.closeFromWebKit(webView)
         case .cleanupWindow(let windowID):
