@@ -66,7 +66,7 @@ final class TabWebViewCleanupOwnerTests: XCTestCase {
                 pageId: "page-1",
                 tabId: tabId.uuidString.lowercased(),
                 profilePartitionId: "profile-1",
-                reason: "normal-tab-webview-cleanup"
+                reason: "normal-tab-last-webview-cleanup"
             )
         )
         XCTAssertIdentical(deferredWebView, webView)

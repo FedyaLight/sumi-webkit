@@ -11,6 +11,7 @@ import SumiWebRuntime
 func makeTestWebViewRuntimeGraph(
     webViewSessions: WebViewSessionRepository = WebViewSessionRepository(),
     resolveRuntimeTab: @escaping @MainActor @Sendable (UUID) -> Tab? = { _ in nil },
+    resolveCollectionTab: (@MainActor (UUID) -> Tab?)? = nil,
     windowServices: WebViewWindowServices? = nil,
     deferredServices: DeferredWebViewServices? = nil,
     visibleContext: WebViewVisibleRuntimeContext? = nil,
@@ -20,6 +21,7 @@ func makeTestWebViewRuntimeGraph(
     WebViewRuntimeGraph(
         webViewSessions: webViewSessions,
         resolveRuntimeTab: resolveRuntimeTab,
+        resolveCollectionTab: resolveCollectionTab ?? resolveRuntimeTab,
         windowServices: windowServices ?? WebViewWindowServices(
             liveWindowIDs: { [] },
             containsWindow: { _ in false },

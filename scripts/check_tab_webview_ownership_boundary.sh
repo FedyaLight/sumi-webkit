@@ -384,7 +384,7 @@ while IFS= read -r match; do
 done <<< "$tracked_package_hits"
 
 # Detached repository mutation normally belongs to WebViewSessionHandle. The
-# protected-command dispatcher is the one identity-checked deferred cleanup seam.
+# deferred command executor is the one authority-checked cleanup seam.
 detached_mutator_pattern='\b(webViewSessions|repository)\.(noteParkedWebView|noteUntrackedWebView|adoptParkedWebViewAsUntracked|clearDetachedWebViews|removeDetachedWebView)\s*\('
 detached_app_hits="$(
   rg -n "$detached_mutator_pattern" "${production_roots[@]}" -g '*.swift' || true
@@ -392,7 +392,7 @@ detached_app_hits="$(
 while IFS= read -r match; do
   [[ -z "$match" ]] && continue
   file="${match%%:*}"
-  if [[ "$file" != "Sumi/Managers/WebViewRuntime/WebViewProtectedCommandDispatchOwner.swift" ]]; then
+  if [[ "$file" != "Sumi/Managers/WebViewRuntime/DeferredWebViewCommandExecutor.swift" ]]; then
     printf 'error: detached repository mutation bypasses WebViewSessionHandle: %s\n' "$match" >&2
     status=1
   fi
@@ -401,7 +401,7 @@ done <<< "$detached_app_hits"
 # Pending-cleanup ownership is a two-step transaction. A focused cleanup
 # service acquires the lease before deferral; the exact lease is consumed only
 # by that cleanup boundary, physical cleanup, or the protected-command
-# dispatcher immediately before shutdown.
+# executor immediately before shutdown.
 pending_cleanup_hits="$(
   rg -n '\bwebViewSessions\.(beginPendingCleanup|consumePendingCleanup)\s*\(' \
     "${production_roots[@]}" -g '*.swift' || true
@@ -410,7 +410,7 @@ while IFS= read -r match; do
   [[ -z "$match" ]] && continue
   file="${match%%:*}"
   case "$file" in
-    Sumi/Managers/WebViewRuntime/DetachedWebViewCleanupService.swift|Sumi/Managers/WebViewRuntime/WebViewPhysicalCleanupService.swift|Sumi/Managers/WebViewRuntime/WebViewProtectedCommandDispatchOwner.swift)
+    Sumi/Managers/WebViewRuntime/DetachedWebViewCleanupService.swift|Sumi/Managers/WebViewRuntime/WebViewPhysicalCleanupService.swift|Sumi/Managers/WebViewRuntime/DeferredWebViewCommandExecutor.swift)
       ;;
     *)
       printf 'error: pending-cleanup lease mutation escaped WebView runtime lifecycle: %s\n' "$match" >&2

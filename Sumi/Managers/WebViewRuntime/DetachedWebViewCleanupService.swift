@@ -9,14 +9,14 @@ final class DetachedWebViewCleanupService {
     private let websiteDataCleanup: WebsiteDataCleanupService
     private let processRecovery: WebContentProcessRecoveryService
     private let mediaProtection: WebViewMediaProtectionOwner
-    private let protectedCommands: WebViewProtectedCommandDispatchOwner
+    private let protectedCommands: DeferredProtectedCommandScheduler
 
     init(
         webViewSessions: WebViewSessionRepository,
         websiteDataCleanup: WebsiteDataCleanupService,
         processRecovery: WebContentProcessRecoveryService,
         mediaProtection: WebViewMediaProtectionOwner,
-        protectedCommands: WebViewProtectedCommandDispatchOwner
+        protectedCommands: DeferredProtectedCommandScheduler
     ) {
         self.webViewSessions = webViewSessions
         self.websiteDataCleanup = websiteDataCleanup

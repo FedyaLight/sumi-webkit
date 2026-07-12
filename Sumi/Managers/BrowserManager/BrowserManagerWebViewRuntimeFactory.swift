@@ -10,6 +10,9 @@ enum BrowserWebViewRuntimeFactory {
         WebViewRuntimeGraph(
             webViewSessions: browserManager.webViewSessions,
             resolveRuntimeTab: runtimeTabResolver(for: browserManager),
+            resolveCollectionTab: { [weak browserManager] tabID in
+                browserManager?.tabManager.tabCollectionMembershipOwner.tab(for: tabID)
+            },
             windowServices: windowServices(for: browserManager),
             deferredServices: deferredServices(for: browserManager),
             visibleContext: visiblePreparationContext(for: browserManager),
@@ -22,10 +25,7 @@ enum BrowserWebViewRuntimeFactory {
         for browserManager: BrowserManager
     ) -> WebViewRuntimeTabRegistry.RuntimeTabResolver {
         { [weak browserManager] tabID in
-            let manager = requireBrowserManager(
-                browserManager,
-                operation: "resolve runtime tab"
-            )
+            guard let manager = browserManager else { return nil }
             if let tab = manager.tabManager.tabCollectionMembershipOwner
                 .tab(for: tabID) {
                 return tab
@@ -105,17 +105,13 @@ enum BrowserWebViewRuntimeFactory {
             },
             executeProfileAssignment: {
                 [weak browserManager]
-                tabID,
+                tab,
                 _,
                 intent in
                 let manager = requireBrowserManager(
                     browserManager,
                     operation: "execute deferred profile assignment"
                 )
-                guard let tab = manager.tabManager.tabCollectionMembershipOwner
-                    .tab(for: tabID) else {
-                    return false
-                }
                 return manager.tabManager.profileAssignments.tabs
                     .executeDeferred(
                         tab: tab,

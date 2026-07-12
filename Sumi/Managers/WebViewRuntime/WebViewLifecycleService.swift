@@ -14,7 +14,7 @@ final class WebViewLifecycleService {
     private let ownershipQuery: WebViewOwnershipQuery
     private let resolveTab: @MainActor (UUID) -> Tab?
     private let processRecovery: WebContentProcessRecoveryService
-    private let deferredProtectedCommands: WebViewDeferredProtectedCommandExecutionOwner
+    private let deferredProtectedCommands: DeferredProtectedCommandScheduler
     private let mediaProtection: WebViewMediaProtectionOwner
     private let websiteDataCleanup: WebsiteDataCleanupService
     private let replacementPipeline: WebViewReplacementPipeline
@@ -32,7 +32,7 @@ final class WebViewLifecycleService {
         ownershipQuery: WebViewOwnershipQuery,
         resolveTab: @escaping @MainActor (UUID) -> Tab?,
         processRecovery: WebContentProcessRecoveryService,
-        deferredProtectedCommands: WebViewDeferredProtectedCommandExecutionOwner,
+        deferredProtectedCommands: DeferredProtectedCommandScheduler,
         mediaProtection: WebViewMediaProtectionOwner,
         websiteDataCleanup: WebsiteDataCleanupService,
         replacementPipeline: WebViewReplacementPipeline,

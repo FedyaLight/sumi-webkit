@@ -9,14 +9,14 @@ final class WebViewPhysicalCleanupService {
     private let webViewSessions: WebViewSessionRepository
     private let processRecovery: WebContentProcessRecoveryService
     private let mediaProtection: WebViewMediaProtectionOwner
-    private let protectedCommands: WebViewProtectedCommandDispatchOwner
+    private let protectedCommands: DeferredProtectedCommandScheduler
     private let runtimeAssembler: WebViewRuntimeAssembler
 
     init(
         webViewSessions: WebViewSessionRepository,
         processRecovery: WebContentProcessRecoveryService,
         mediaProtection: WebViewMediaProtectionOwner,
-        protectedCommands: WebViewProtectedCommandDispatchOwner,
+        protectedCommands: DeferredProtectedCommandScheduler,
         runtimeAssembler: WebViewRuntimeAssembler
     ) {
         self.webViewSessions = webViewSessions

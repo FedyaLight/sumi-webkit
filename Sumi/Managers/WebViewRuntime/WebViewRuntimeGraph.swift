@@ -26,6 +26,7 @@ enum CompositorPaneDestination: String, CaseIterable {
 final class WebViewRuntimeGraph {
     let webViewSessions: WebViewSessionRepository
     fileprivate let resolveRuntimeTab: WebViewRuntimeTabRegistry.RuntimeTabResolver
+    fileprivate let resolveCollectionTab: @MainActor (UUID) -> Tab?
     fileprivate let windowServices: WebViewWindowServices
     fileprivate let deferredServices: DeferredWebViewServices
     fileprivate let visibleContext: WebViewVisibleRuntimeContext
@@ -39,6 +40,7 @@ final class WebViewRuntimeGraph {
     init(
         webViewSessions: WebViewSessionRepository,
         resolveRuntimeTab: @escaping WebViewRuntimeTabRegistry.RuntimeTabResolver,
+        resolveCollectionTab: @escaping @MainActor (UUID) -> Tab?,
         windowServices: WebViewWindowServices,
         deferredServices: DeferredWebViewServices,
         visibleContext: WebViewVisibleRuntimeContext,
@@ -47,6 +49,7 @@ final class WebViewRuntimeGraph {
     ) {
         self.webViewSessions = webViewSessions
         self.resolveRuntimeTab = resolveRuntimeTab
+        self.resolveCollectionTab = resolveCollectionTab
         self.windowServices = windowServices
         self.deferredServices = deferredServices
         self.visibleContext = visibleContext
@@ -155,10 +158,34 @@ final class WebViewRuntimeGraph {
         mediaProtection: mediaProtectionOwner
     )
 
-    let deferredProtectedCommandExecutionOwner = WebViewDeferredProtectedCommandExecutionOwner()
+    private lazy var deferredCommandTabResolver =
+        DeferredWebViewCommandTabResolver(
+            runtimeTabs: runtimeTabs,
+            resolveRuntimeTab: resolveRuntimeTab,
+            resolveCollectionTab: resolveCollectionTab
+        )
 
-    private lazy var protectedCommandDispatchOwner: WebViewProtectedCommandDispatchOwner = WebViewProtectedCommandDispatchOwner(
-        dependencies: .live(graph: self)
+    fileprivate lazy var deferredCommandAuthority = DeferredWebViewCommandAuthority(
+        webViews: runtimeWebViews,
+        webViewSessions: webViewSessions,
+        tabs: deferredCommandTabResolver,
+        tabScopedCleanupValidation: tabScopedCleanupValidationOwner,
+        visibleRuntime: visibleWebViewRuntimeOwner,
+        windows: windowServices,
+        spaceProfileIntents: deferredServices
+    )
+
+    private lazy var deferredCommandExecutor =
+        DeferredWebViewCommandAssembly.makeExecutor(graph: self)
+
+    private lazy var deferredProtectedCommandScheduler = DeferredProtectedCommandScheduler(
+        mediaProtection: mediaProtectionOwner,
+        webViews: runtimeWebViews,
+        authority: deferredCommandAuthority,
+        executor: deferredCommandExecutor,
+        finishCleanupSuppression: { [weak self] webViewIDs in
+            self?.protectionRuntime.finishCleanupSuppression(for: webViewIDs)
+        }
     )
 
     fileprivate lazy var runtimeAssembler: WebViewRuntimeAssembler = WebViewRuntimeAssembler(
@@ -170,7 +197,7 @@ final class WebViewRuntimeGraph {
             webViewSessions: webViewSessions,
             processRecovery: processRecoveryService,
             mediaProtection: mediaProtectionOwner,
-            protectedCommands: protectedCommandDispatchOwner,
+            protectedCommands: deferredProtectedCommandScheduler,
             runtimeAssembler: runtimeAssembler
         )
 
@@ -285,7 +312,7 @@ final class WebViewRuntimeGraph {
         websiteDataCleanup: websiteDataCleanupService,
         processRecovery: processRecoveryService,
         mediaProtection: mediaProtectionOwner,
-        protectedCommands: protectedCommandDispatchOwner
+        protectedCommands: deferredProtectedCommandScheduler
     )
 
     lazy var tabWebViewMaterialization: TabWebViewMaterializationService =
@@ -306,7 +333,7 @@ final class WebViewRuntimeGraph {
 
     private(set) lazy var protectionRuntime: WebViewProtectionRuntime = WebViewProtectionRuntime(
         mediaProtection: mediaProtectionOwner,
-        protectedCommands: protectedCommandDispatchOwner,
+        protectedCommands: deferredProtectedCommandScheduler,
         processRecovery: processRecoveryService,
         webViewSessions: webViewSessions,
         webViews: runtimeWebViews,
@@ -347,7 +374,7 @@ final class WebViewRuntimeGraph {
             )
         },
         processRecovery: processRecoveryService,
-        deferredProtectedCommands: deferredProtectedCommandExecutionOwner,
+        deferredProtectedCommands: deferredProtectedCommandScheduler,
         mediaProtection: mediaProtectionOwner,
         websiteDataCleanup: websiteDataCleanupService,
         replacementPipeline: replacementPipeline,
@@ -527,34 +554,15 @@ private extension WebViewRuntimeAssembler.Dependencies {
     }
 }
 
-private extension WebViewProtectedCommandDispatchOwner.Dependencies {
+private enum DeferredWebViewCommandAssembly {
     @MainActor
-    static func live(graph: WebViewRuntimeGraph) -> Self {
-        Self(
-            mediaProtectionOwner: graph.mediaProtectionOwner,
-            executionOwner: graph.deferredProtectedCommandExecutionOwner,
-            tabScopedCleanupValidationOwner: graph.tabScopedCleanupValidationOwner,
-            webViewSessions: graph.webViewSessions,
-            webViews: graph.runtimeWebViews,
-            resolvedTab: { [weak graph] tabID in
-                guard let graph else { return nil }
-                return graph.runtimeTabs.resolve(
-                    tabID,
-                    resolveRuntimeTab: graph.resolveRuntimeTab
-                )
-            },
-            containsWindow: graph.windowServices.containsWindow,
-            handleWebKitClose: graph.deferredServices.handleWebKitClose,
-            executeProfileAssignment: graph.deferredServices.executeProfileAssignment,
-            validateSpaceProfileAssignment: graph.deferredServices
-                .validateSpaceProfileAssignment,
-            executeSpaceProfileAssignment: graph.deferredServices
-                .executeSpaceProfileAssignment,
-            compositorContainerView: { [weak graph] windowID in
-                graph?.compositorRuntime.containerView(for: windowID)
-            },
-            isRuntimeAvailable: { [weak graph] in graph != nil },
-            removeWebViewFromContainers: { [weak graph] webView in
+    static func makeExecutor(
+        graph: WebViewRuntimeGraph
+    ) -> DeferredWebViewCommandExecutor {
+        let cleanup = DeferredWebViewCleanupExecutor(
+            sessions: graph.webViewSessions,
+            closeWebView: graph.deferredServices.handleWebKitClose,
+            removeFromContainers: { [weak graph] webView in
                 guard let graph else { return false }
                 graph.compositorRuntime.removeWebViewFromContainers(webView)
                 return true
@@ -567,6 +575,21 @@ private extension WebViewProtectedCommandDispatchOwner.Dependencies {
                 )
                 return true
             },
+            shutdownOwnerlessWebView: {
+                [processRecovery = graph.processRecoveryService,
+                 runtimeAssembler = graph.runtimeAssembler]
+                webView,
+                tabID in
+                processRecovery.cancel(webView)
+                SumiWebViewShutdown.perform(
+                    on: webView,
+                    tabId: tabID,
+                    runtime: runtimeAssembler.shutdownRuntime()
+                )
+            }
+        )
+
+        let windowMaintenance = DeferredWebViewWindowMaintenanceExecutor(
             cleanupWindow: { [weak graph] windowID in
                 guard let graph else { return false }
                 graph.lifecycleService.cleanupWindow(windowID)
@@ -577,7 +600,21 @@ private extension WebViewProtectedCommandDispatchOwner.Dependencies {
                 graph.lifecycleService.cleanupAllWebViews()
                 return true
             },
-            rebuildLiveWebViews: {
+            evictHiddenWebViews: { [weak graph] windowID, visibleTabIDs in
+                guard let graph else { return false }
+                graph.visibilityRuntime.evictHiddenWebViewsIfNeeded(
+                    in: windowID,
+                    visibleTabIDs: visibleTabIDs
+                )
+                return true
+            },
+            visibleTabIDs: { [weak graph] windowID in
+                graph?.visibilityRuntime.visibleTabIDs(in: windowID) ?? []
+            }
+        )
+
+        let configuration = DeferredWebViewConfigurationExecutor(
+            rebuild: {
                 [weak graph]
                 tab, preferredPrimaryWindowId, intent in
                 guard let graph else { return .failed }
@@ -591,26 +628,14 @@ private extension WebViewProtectedCommandDispatchOwner.Dependencies {
                     rebuildKind: intent.kind
                 )
             },
-            evictHiddenWebViews: { [weak graph] windowID, visibleTabIDs in
-                guard let graph else { return false }
-                graph.visibilityRuntime.evictHiddenWebViewsIfNeeded(
-                    in: windowID,
-                    visibleTabIDs: visibleTabIDs
-                )
-                return true
-            },
-            visibleTabIDSet: { [weak graph] windowID in
-                graph?.visibilityRuntime.visibleTabIDs(in: windowID) ?? []
-            },
-            performFallbackWebViewCleanup: { [weak graph] webView, tabID in
-                guard let graph else { return false }
-                graph.physicalCleanupService.clean(webView, tabID: tabID)
-                return true
-            },
-            finishCleanupSuppression: { [weak graph] webViewIDs in
-                graph?.protectionRuntime
-                    .finishCleanupSuppression(for: webViewIDs)
-            }
+            assignProfile: graph.deferredServices.executeProfileAssignment,
+            assignSpaceProfile: graph.deferredServices.executeSpaceProfileAssignment
+        )
+
+        return DeferredWebViewCommandExecutor(
+            cleanup: cleanup,
+            windowMaintenance: windowMaintenance,
+            configuration: configuration
         )
     }
 }

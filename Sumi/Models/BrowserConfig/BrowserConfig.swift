@@ -286,6 +286,10 @@ extension WKWebViewConfiguration {
             }
             // WKWebView copies configuration at init; the marker must also be
             // detectable on the live userContentController for materialized views.
+            if let copiedClassification = userContentController
+                .sumiExplicitNormalTabClassification {
+                return copiedClassification
+            }
             return userContentController.sumiNormalTabUserContentController != nil
         }
         set {
@@ -295,6 +299,7 @@ extension WKWebViewConfiguration {
                 newValue,
                 .OBJC_ASSOCIATION_RETAIN_NONATOMIC
             )
+            userContentController.sumiUsesNormalTabSumiUserContentController = newValue
         }
     }
 }

@@ -71,6 +71,24 @@ private enum SumiNormalTabAssociatedKeys {
 
 extension WKUserContentController {
     @MainActor
+    var sumiExplicitNormalTabClassification: Bool? {
+        get {
+            objc_getAssociatedObject(
+                self,
+                &SumiNormalTabAssociatedKeys.marker
+            ) as? Bool
+        }
+        set {
+            objc_setAssociatedObject(
+                self,
+                &SumiNormalTabAssociatedKeys.marker,
+                newValue,
+                .OBJC_ASSOCIATION_RETAIN_NONATOMIC
+            )
+        }
+    }
+
+    @MainActor
     var sumiNormalTabUserScriptsProvider: SumiNormalTabUserScripts? {
         get {
             objc_getAssociatedObject(self, &SumiNormalTabAssociatedKeys.scriptsProvider) as? SumiNormalTabUserScripts
@@ -87,17 +105,8 @@ extension WKUserContentController {
 
     @MainActor
     var sumiUsesNormalTabSumiUserContentController: Bool {
-        get {
-            (objc_getAssociatedObject(self, &SumiNormalTabAssociatedKeys.marker) as? Bool) == true
-        }
-        set {
-            objc_setAssociatedObject(
-                self,
-                &SumiNormalTabAssociatedKeys.marker,
-                newValue,
-                .OBJC_ASSOCIATION_RETAIN_NONATOMIC
-            )
-        }
+        get { sumiExplicitNormalTabClassification == true }
+        set { sumiExplicitNormalTabClassification = newValue }
     }
 
     @MainActor

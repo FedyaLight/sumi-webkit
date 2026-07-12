@@ -25,7 +25,7 @@ struct WebViewWindowServices {
 struct DeferredWebViewServices {
     let handleWebKitClose: @MainActor @Sendable (WKWebView) -> Bool
     let executeProfileAssignment: @MainActor @Sendable (
-        UUID,
+        Tab,
         UUID?,
         DeferredWebViewProfileAssignmentIntent
     ) -> Bool
@@ -35,4 +35,19 @@ struct DeferredWebViewServices {
     let executeSpaceProfileAssignment: @MainActor @Sendable (
         DeferredWebViewSpaceProfileAssignmentIntent
     ) -> Bool
+}
+
+extension WebViewWindowServices: DeferredWebViewCommandWindowQuerying {
+    func containsWindow(with windowID: UUID) -> Bool {
+        containsWindow(windowID)
+    }
+}
+
+extension DeferredWebViewServices:
+    DeferredWebViewSpaceProfileIntentValidating {
+    func isCurrent(
+        _ intent: DeferredWebViewSpaceProfileAssignmentIntent
+    ) -> Bool {
+        validateSpaceProfileAssignment(intent)
+    }
 }

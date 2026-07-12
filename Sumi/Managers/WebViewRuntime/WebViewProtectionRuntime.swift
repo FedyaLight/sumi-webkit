@@ -7,7 +7,7 @@ import WebKit
 @MainActor
 final class WebViewProtectionRuntime {
     private let mediaProtection: WebViewMediaProtectionOwner
-    private let protectedCommands: WebViewProtectedCommandDispatchOwner
+    private let protectedCommands: DeferredProtectedCommandScheduler
     private let processRecovery: WebContentProcessRecoveryService
     private let webViewSessions: WebViewSessionRepository
     private let webViews: WebViewRuntimeWebViewResolver
@@ -16,7 +16,7 @@ final class WebViewProtectionRuntime {
 
     init(
         mediaProtection: WebViewMediaProtectionOwner,
-        protectedCommands: WebViewProtectedCommandDispatchOwner,
+        protectedCommands: DeferredProtectedCommandScheduler,
         processRecovery: WebContentProcessRecoveryService,
         webViewSessions: WebViewSessionRepository,
         webViews: WebViewRuntimeWebViewResolver,
