@@ -60,7 +60,7 @@ final class WebKitChildWindowCloseTransaction: WebKitChildWindowClosing {
                     owner: target.owner
                 )
             } else {
-                tabs?.tabRemovalOwner.removeTab(target.tab.id)
+                tabs?.tabClosureService.removeTab(target.tab.id)
             }
         }
 

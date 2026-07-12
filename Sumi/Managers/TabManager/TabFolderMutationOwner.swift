@@ -16,7 +16,7 @@ final class TabFolderMutationOwner {
         let tabCollectionMembershipOwner: TabCollectionMembershipOwner
         let shortcutTabBindings: ShortcutTabBindingSynchronizer
         let shortcutLiveTabRetirement: ShortcutLiveTabRetirementService
-        let tabRemovalOwner: TabRemovalOwner
+        let tabClosureService: TabClosureService
         let shortcutPinCommandOwner: ShortcutPinCommandOwner
         let runtimePorts: @MainActor () -> RuntimePortRegistry?
         let markFoldersStructurallyDirty: @MainActor (UUID) -> Void
@@ -174,7 +174,7 @@ final class TabFolderMutationOwner {
                 dependencies.runtimePorts()?.captureDeletedShortcutLauncher(pin)
             }
 
-            dependencies.tabRemovalOwner.removeTabs(liveTabsToRemove)
+            dependencies.tabClosureService.removeTabs(liveTabsToRemove)
 
             dependencies.shortcutLiveTabRetirement
                 .finishAfterCurrentBatch(retirement)
@@ -510,7 +510,7 @@ extension TabFolderMutationOwner.Dependencies {
             tabCollectionMembershipOwner: tabManager.tabCollectionMembershipOwner,
             shortcutTabBindings: tabManager.shortcutTabBindings,
             shortcutLiveTabRetirement: tabManager.shortcutLiveTabRetirement,
-            tabRemovalOwner: tabManager.tabRemovalOwner,
+            tabClosureService: tabManager.tabClosureService,
             shortcutPinCommandOwner: tabManager.shortcutPinCommandOwner,
             runtimePorts: { [weak tabManager] in
                 tabManager?.runtimePorts

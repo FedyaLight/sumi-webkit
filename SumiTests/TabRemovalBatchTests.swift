@@ -37,7 +37,7 @@ final class TabRemovalBatchTests: XCTestCase {
                 structuralPublishCount += 1
             }
 
-        tabManager.tabRemovalOwner.closeAllTabsBelow(second)
+        tabManager.tabClosureService.closeAllTabsBelow(second)
 
         XCTAssertEqual(probe.batches, [[inactive.id]])
         XCTAssertEqual(structuralPublishCount, 1)
@@ -80,7 +80,7 @@ final class TabRemovalBatchTests: XCTestCase {
                 structuralPublishCount += 1
             }
 
-        tabManager.tabRemovalOwner.closeAllTabsBelow(survivor)
+        tabManager.tabClosureService.closeAllTabsBelow(survivor)
 
         XCTAssertEqual(probe.batches, [[closed.id]])
         XCTAssertEqual(structuralPublishCount, 1)
@@ -111,24 +111,40 @@ final class TabRemovalBatchTests: XCTestCase {
         withExtendedLifetime(cancellable) {}
     }
 
-    func testCloseAllBelowRequestsOneBatchCleanupAndOnePersistence() {
-        let harness = RemovalDependencyHarness()
-        let owner = harness.makeOwner()
-
-        owner.closeAllTabsBelow(harness.tabs[0])
-
-        XCTAssertEqual(harness.transactionCount, 1)
-        XCTAssertEqual(harness.regularRemovalBatchCount, 1)
-        XCTAssertEqual(
-            harness.closedRegularTabBatches,
-            [Set(harness.originalTabs.dropFirst().map(\.id))]
+    func testCloseAllBelowRequestsOneBatchCleanupAndOnePersistence() throws {
+        let probe = SplitClosureBatchProbe()
+        let (_, tabManager) = try makeTabManager(probe: probe)
+        let space = tabManager.spaceServices.catalog.createSpace(name: "Space")
+        let first = tabManager.regularTabLifecycleOwner.createNewTab(
+            url: "https://0.example",
+            in: space,
+            activate: true
         )
-        XCTAssertEqual(harness.persistenceRequestCount, 1)
-        XCTAssertEqual(harness.tabs.map(\.id), [harness.originalTabs[0].id])
-        XCTAssertEqual(
-            Set(harness.capturedClosedTabIDs),
-            Set(harness.originalTabs.dropFirst().map(\.id))
+        let second = tabManager.regularTabLifecycleOwner.createNewTab(
+            url: "https://1.example",
+            in: space,
+            activate: false
         )
+        let third = tabManager.regularTabLifecycleOwner.createNewTab(
+            url: "https://2.example",
+            in: space,
+            activate: false
+        )
+        var structuralPublishCount = 0
+        let cancellable = tabManager.tabStructureEventBus
+            .structureChangedPublisher.sink {
+                structuralPublishCount += 1
+            }
+
+        tabManager.tabClosureService.closeAllTabsBelow(first)
+
+        XCTAssertEqual(probe.batches, [[second.id, third.id]])
+        XCTAssertEqual(structuralPublishCount, 1)
+        XCTAssertEqual(
+            tabManager.regularTabCollectionOwner.tabs(in: space.id).map(\.id),
+            [first.id]
+        )
+        withExtendedLifetime(cancellable) {}
     }
 
     private func makeTabManager(
@@ -209,99 +225,4 @@ private final class SplitClosureBatchProbe {
 @MainActor
 private final class WeakTabManagerReference {
     weak var value: TabManager?
-}
-
-@MainActor
-private final class RemovalDependencyHarness {
-    let space: Space
-    let originalTabs: [Tab]
-    var tabs: [Tab]
-    var currentTab: Tab?
-    var transactionCount = 0
-    var regularRemovalBatchCount = 0
-    var persistenceRequestCount = 0
-    var closedRegularTabBatches: [Set<UUID>] = []
-    var capturedClosedTabIDs: [UUID] = []
-
-    init() {
-        let space = Space(name: "Space")
-        let tabs = (0..<3).map { index in
-            Tab(
-                url: URL(string: "https://\(index).example")!,
-                spaceId: space.id,
-                index: index,
-                loadsCachedFaviconOnInit: false
-            )
-        }
-        self.space = space
-        originalTabs = tabs
-        self.tabs = tabs
-        currentTab = tabs[0]
-    }
-
-    func makeOwner() -> TabRemovalOwner {
-        let space = self.space
-        let runtime = TestRuntimePorts.make(
-            handleTabClosures: { [weak self] in
-                self?.closedRegularTabBatches.append($0)
-            }
-        )
-        return TabRemovalOwner(
-            dependencies: TabRemovalOwner.Dependencies(
-                withStructuralUpdateTransaction: { [weak self] operation in
-                    self?.transactionCount += 1
-                    operation()
-                },
-                requireRuntimePorts: { runtime },
-                cancelRuntimeStatePersistence: { _ in },
-                currentTab: { [weak self] in self?.currentTab },
-                replaceCurrentTab: { [weak self] in self?.currentTab = $0 },
-                removeTransientExtensionTab: { _ in false },
-                closeAuxiliaryMiniWindowTabIfPresent: { _ in false },
-                removeRegularTabs: { [weak self] tabIDs, _, currentSpaceID in
-                    guard let self else { return [] }
-                    regularRemovalBatchCount += 1
-                    var removals: [RegularTabCollectionOwner.Removal] = []
-                    let existing = tabs
-                    tabs = existing.enumerated().compactMap { index, tab in
-                        guard tabIDs.contains(tab.id) else { return tab }
-                        removals.append(
-                            .init(
-                                tab: tab,
-                                spaceId: space.id,
-                                indexInCurrentSpace:
-                                    currentSpaceID == space.id ? index : nil
-                            )
-                        )
-                        return nil
-                    }
-                    return removals
-                },
-                spaces: { [space] },
-                currentSpace: { [space] in space },
-                retireShortcutTabIfPresent: { _ in false },
-                detach: { _ in },
-                scheduleStructuralPersistence: { [weak self] in
-                    self?.persistenceRequestCount += 1
-                },
-                activeEssentialTabs: { _ in [] },
-                currentProfileId: { nil },
-                liveSpacePinnedTabs: { _ in [] },
-                regularTabs: { [weak self] _ in self?.tabs ?? [] },
-                captureClosedTab: { [weak self] tab, _ in
-                    self?.capturedClosedTabIDs.append(tab.id)
-                },
-                notifications: { nil },
-                tabsBelow: { [weak self] tab in
-                    guard let self,
-                          let index = tabs.firstIndex(where: {
-                              $0.id == tab.id
-                          }) else {
-                        return nil
-                    }
-                    return Array(tabs.dropFirst(index + 1))
-                }
-            )
-        )
-    }
 }

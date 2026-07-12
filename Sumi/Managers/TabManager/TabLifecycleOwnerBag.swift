@@ -34,7 +34,7 @@ final class TabLifecycleOwnerBag {
     lazy var regularTabLifecycleOwner = TabRegularLifecycleOwner(
         dependencies: .live(tabManager: tm)
     )
-    lazy var tabRemovalOwner = TabRemovalOwner(dependencies: .live(tabManager: tm))
+    lazy var tabClosureService = TabClosureService.live(tabManager: tm)
     lazy var activeSelectionOwner = TabActiveSelectionOwner(
         dependencies: .live(tabManager: tm)
     )

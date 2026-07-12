@@ -8,7 +8,8 @@ import SumiWebRuntime
 class TabManager: ObservableObject {
     private static let faviconPresentationRefreshDebounceNanoseconds: UInt64 = 250_000_000
 
-    private(set) var runtimePorts: RuntimePortRegistry?
+    let runtimePortConnection: TabRuntimePortConnection
+    var runtimePorts: RuntimePortRegistry? { runtimePortConnection.current }
     weak var sumiSettings: SumiSettingsService?
     let context: ModelContext
     let structuralSnapshotStore: TabStructuralSnapshotStore
@@ -119,7 +120,7 @@ class TabManager: ObservableObject {
         faviconCapabilities: BrowserFaviconCapabilities = TabDependencyIsolationDefaults.faviconCapabilities,
         visitedLinkStore: any BrowserVisitedLinkStoreManaging = TabDependencyIsolationDefaults.visitedLinkStore
     ) {
-        self.runtimePorts = runtimePorts
+        self.runtimePortConnection = TabRuntimePortConnection(runtimePorts)
         self.context = context
         let stateStore = TabStateStore()
         self.stateStore = stateStore
@@ -181,7 +182,7 @@ class TabManager: ObservableObject {
             // is already deallocating. If the lookup was used, its bag releases
             // the index immediately after this deinit; stateStore removal above
             // already drops the canonical tab graph.
-            runtimePorts = nil
+            runtimePortConnection.detach()
         }
         RuntimeDiagnostics.debug("Cleaned up all tab resources.", category: "TabManager")
     }
@@ -192,7 +193,7 @@ class TabManager: ObservableObject {
 
 extension TabManager {
     func installRuntimePorts(_ ports: RuntimePortRegistry) {
-        runtimePorts = ports
+        runtimePortConnection.attach(ports)
     }
 
     /// Stops work that may resume through BrowserManager-backed ports after
@@ -205,15 +206,10 @@ extension TabManager {
             storeRestore.cancelPendingRestore()
             structuralPersistence.cancelPendingPersistence()
         }
-        runtimePorts = nil
+        runtimePortConnection.detach()
     }
 
     func requireRuntimePorts() -> RuntimePortRegistry {
-        guard let runtimePorts else {
-            preconditionFailure(
-                "TabManager.runtimePorts is nil. BrowserManagerRuntimeWiring.attach(to:) must run before destructive tab operations."
-            )
-        }
-        return runtimePorts
+        runtimePortConnection.requireLease()
     }
 }

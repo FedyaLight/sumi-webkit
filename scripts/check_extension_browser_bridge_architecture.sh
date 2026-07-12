@@ -650,10 +650,10 @@ fi
 
 tab_removal_requested_hits="$(
   rg -n 'discardExtensionRequestedTab|ExtensionRequestedTabDiscard' \
-    Sumi/Managers/TabManager/TabRemovalOwner.swift || true
+    Sumi/Managers/TabManager/TabClosureService.swift || true
 )"
 fail_matches \
-  "requested Tab rollback grew the TabRemovalOwner dependency god" \
+  "requested Tab rollback grew the TabClosureService dependency god" \
   "$tab_removal_requested_hits"
 
 receipt_lines="$(wc -l < "$requested_tab_receipt" | tr -d ' ')"

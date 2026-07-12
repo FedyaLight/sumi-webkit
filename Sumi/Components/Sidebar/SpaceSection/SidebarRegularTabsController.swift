@@ -166,7 +166,7 @@ extension SidebarRegularTabsController.Dependencies {
                 tabManager?.essentialsShortcutPlacementOwner.canAddURL(url, using: context) ?? false
             },
             clearRegularTabs: { [weak tabManager] spaceId in
-                tabManager?.tabRemovalOwner.clearRegularTabs(for: spaceId)
+                tabManager?.tabClosureService.clearRegularTabs(for: spaceId)
             },
             pinTabToSpace: { [weak tabManager] tab, spaceId in
                 tabManager?.shortcutPinCommandOwner.pinTabToSpace(tab, spaceId: spaceId)
@@ -175,7 +175,7 @@ extension SidebarRegularTabsController.Dependencies {
                 tabManager?.shortcutPinCommandOwner.pinTab(tab, context: context)
             },
             closeAllTabsBelow: { [weak tabManager] tab in
-                tabManager?.tabRemovalOwner.closeAllTabsBelow(tab)
+                tabManager?.tabClosureService.closeAllTabsBelow(tab)
             },
             moveTab: { [weak tabManager] tabId, targetSpaceId in
                 tabManager?.sidebarDragRouter.moveTab(tabId, to: targetSpaceId)

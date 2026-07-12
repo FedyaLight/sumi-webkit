@@ -22,7 +22,7 @@ final class ShortcutLiveTabRetirementServiceTests: XCTestCase {
             currentSpaceId: space.id
         )
 
-        tabManager.tabRemovalOwner.removeTab(liveTab.id)
+        tabManager.tabClosureService.removeTab(liveTab.id)
 
         XCTAssertIdentical(
             tabManager.liveShortcutTabs.tab(for: pin.id, in: windowId),
@@ -42,7 +42,7 @@ final class ShortcutLiveTabRetirementServiceTests: XCTestCase {
             currentSpaceId: space.id
         )
 
-        tabManager.tabRemovalOwner.removeTab(liveTab.id)
+        tabManager.tabClosureService.removeTab(liveTab.id)
 
         XCTAssertNil(tabManager.liveShortcutTabs.entry(tabId: liveTab.id))
         XCTAssertEqual(probe.tabClosureBatches, [[liveTab.id]])
@@ -69,7 +69,7 @@ final class ShortcutLiveTabRetirementServiceTests: XCTestCase {
         windowState.currentShortcutPinId = pin.id
         windowState.currentShortcutPinRole = pin.role
 
-        tabManager.tabRemovalOwner.removeTab(liveTab.id)
+        tabManager.tabClosureService.removeTab(liveTab.id)
 
         XCTAssertNil(windowState.currentTabId)
         XCTAssertNil(windowState.currentShortcutPinId)

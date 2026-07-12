@@ -30,7 +30,7 @@ final class TabManagerClearRegularTabsTests: XCTestCase {
         let space = tabManager.spaceServices.catalog.createSpace(name: "S", profileId: UUID())
         let tab = tabManager.regularTabLifecycleOwner.createNewTab(in: space, activate: true)
 
-        tabManager.tabRemovalOwner.removeTab(tab.id)
+        tabManager.tabClosureService.removeTab(tab.id)
 
         XCTAssertEqual(cleanupCalls.count, 1)
         XCTAssertEqual(cleanupCalls.first?.tabId, tab.id)
@@ -47,10 +47,10 @@ final class TabManagerClearRegularTabsTests: XCTestCase {
 
         XCTAssertEqual(tabManager.regularTabCollectionOwner.tabs(in: space).count, 2)
 
-        tabManager.tabRemovalOwner.clearRegularTabs(for: space.id)
+        tabManager.tabClosureService.clearRegularTabs(for: space.id)
         XCTAssertEqual(tabManager.regularTabCollectionOwner.tabs(in: space).count, 1)
 
-        tabManager.tabRemovalOwner.clearRegularTabs(for: space.id)
+        tabManager.tabClosureService.clearRegularTabs(for: space.id)
         XCTAssertEqual(tabManager.regularTabCollectionOwner.tabs(in: space).count, 0)
     }
 
@@ -65,7 +65,7 @@ final class TabManagerClearRegularTabsTests: XCTestCase {
         tabManager.spaceServices.activation.setActiveSpace(spaceA, preferredTab: tabA)
         XCTAssertEqual(tabManager.selectionStateOwner.currentTab?.id, tabA.id)
 
-        tabManager.tabRemovalOwner.clearRegularTabs(for: spaceB.id)
+        tabManager.tabClosureService.clearRegularTabs(for: spaceB.id)
 
         XCTAssertTrue(tabManager.regularTabCollectionOwner.tabs(in: spaceB).isEmpty)
         XCTAssertEqual(tabManager.selectionStateOwner.currentTab?.id, tabA.id)

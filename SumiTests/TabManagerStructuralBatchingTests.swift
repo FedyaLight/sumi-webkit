@@ -333,7 +333,7 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
         XCTAssertIdentical(tabManager.tabCollectionMembershipOwner.tab(for: auxiliary.id), auxiliary)
 
         tabManager.transientWebKitTabLifecycleOwner.removeAuxiliaryMiniWindowTab(auxiliary)
-        tabManager.tabRemovalOwner.removeTab(transientExtension.id)
+        tabManager.tabClosureService.removeTab(transientExtension.id)
 
         XCTAssertNil(tabManager.tabCollectionMembershipOwner.tab(for: auxiliary.id))
         XCTAssertNil(tabManager.tabCollectionMembershipOwner.tab(for: transientExtension.id))
@@ -921,7 +921,7 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
         tabManager.activeSelectionOwner.setActiveTab(first)
         recorder.reset()
 
-        tabManager.tabRemovalOwner.removeTab(first.id)
+        tabManager.tabClosureService.removeTab(first.id)
 
         XCTAssertEqual(recorder.count, 1)
         XCTAssertEqual(tabManager.selectionStateOwner.currentTab?.id, second.id)

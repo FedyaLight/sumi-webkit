@@ -29,7 +29,7 @@ final class BrowserWebKitCloseCommands: BrowserWebKitCloseCommanding {
             return
         }
         target.tab.performComprehensiveWebViewCleanup()
-        tabs?.tabRemovalOwner.removeTab(target.tab.id)
+        tabs?.tabClosureService.removeTab(target.tab.id)
     }
 
     func discardStaleTrackedWebView(

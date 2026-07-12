@@ -36,7 +36,7 @@ enum TabBrowserHostServicesRuntimeFactory {
                 browserManager?.compositorManager.updateTabVisibility()
             },
             removeTab: { [weak browserManager] tabId in
-                browserManager?.tabManager.tabRemovalOwner.removeTab(tabId)
+                browserManager?.tabManager.tabClosureService.removeTab(tabId)
             }
         )
     }

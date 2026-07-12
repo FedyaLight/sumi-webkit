@@ -30,7 +30,7 @@ final class EmptySplitService {
                 )
             },
             removeTab: { tabID in
-                tabManager()?.tabRemovalOwner.removeTab(tabID)
+                tabManager()?.tabClosureService.removeTab(tabID)
             }
         )
     }
@@ -65,7 +65,7 @@ final class EmptySplitService {
             ),
             in: windowState
         ) else {
-            tabManager.tabRemovalOwner.removeTab(placeholder.id)
+            tabManager.tabClosureService.removeTab(placeholder.id)
             return false
         }
         session.register(tabID: placeholder.id, in: windowState.id)

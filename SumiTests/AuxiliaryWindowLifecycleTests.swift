@@ -366,7 +366,7 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
                 .auxiliaryMiniWindowTabsByID.values.first
         )
 
-        harness.browserManager.tabManager.tabRemovalOwner.removeTab(
+        harness.browserManager.tabManager.tabClosureService.removeTab(
             auxiliaryTab.id
         )
 

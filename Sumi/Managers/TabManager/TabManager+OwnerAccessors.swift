@@ -16,7 +16,7 @@ extension TabManager {
     }
     var regularTabCollectionOwner: RegularTabCollectionOwner { structureOwners.regularTabCollectionOwner }
     var regularTabLifecycleOwner: TabRegularLifecycleOwner { lifecycleOwners.regularTabLifecycleOwner }
-    var tabRemovalOwner: TabRemovalOwner { lifecycleOwners.tabRemovalOwner }
+    var tabClosureService: TabClosureService { lifecycleOwners.tabClosureService }
     var activeSelectionOwner: TabActiveSelectionOwner { lifecycleOwners.activeSelectionOwner }
     var regularTabDragService: SidebarRegularTabDragService { structureOwners.regularTabDragService }
     var lazyRestoreCoordinator: TabLazyRestoreCoordinator { structureOwners.lazyRestoreCoordinator }

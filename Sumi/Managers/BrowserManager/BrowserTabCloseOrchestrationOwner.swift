@@ -95,7 +95,7 @@ final class BrowserTabCloseOrchestrationOwner {
             selectTab(fallback, windowState)
             performImmediateVisualHandoffIfPossible(windowState)
         }
-        tabManager.tabRemovalOwner.removeTab(tab.id)
+        tabManager.tabClosureService.removeTab(tab.id)
         windowState.selectionHistory.removeFromRegularTabHistory(tab.id)
 
         if wasCurrent {

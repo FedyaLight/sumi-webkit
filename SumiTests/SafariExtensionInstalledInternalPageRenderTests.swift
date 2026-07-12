@@ -344,7 +344,7 @@ final class SafariExtensionInstalledInternalPageRenderTests: XCTestCase {
         XCTAssertIdentical(tab.webExtensionContextOverride, extensionContext)
         defer {
             tab.performComprehensiveWebViewCleanup()
-            browserManager.tabManager.tabRemovalOwner.removeTab(tab.id)
+            browserManager.tabManager.tabClosureService.removeTab(tab.id)
         }
         XCTAssertFalse(
             tab.isUnloaded,

@@ -180,7 +180,7 @@ enum BrowserUserscriptRuntimeFactory {
         if let windowState {
             browserManager.tabLifecycleService.closeOrchestration.closeTab(tab, in: windowState)
         } else {
-            browserManager.tabManager.tabRemovalOwner.removeTab(tab.id)
+            browserManager.tabManager.tabClosureService.removeTab(tab.id)
         }
     }
 }

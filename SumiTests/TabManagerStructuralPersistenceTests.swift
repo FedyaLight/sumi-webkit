@@ -212,7 +212,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         XCTAssertFalse(storedTab.isPinned)
         XCTAssertFalse(storedTab.isSpacePinned)
 
-        tabManager.tabRemovalOwner.removeTab(tab.id)
+        tabManager.tabClosureService.removeTab(tab.id)
         try await waitForStore(in: container) { context in
             try fetchTab(tab.id, in: context) == nil
         }
