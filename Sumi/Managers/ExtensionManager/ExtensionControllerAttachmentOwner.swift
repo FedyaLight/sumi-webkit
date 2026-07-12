@@ -333,10 +333,17 @@ extension ExtensionControllerAttachmentOwner.Dependencies {
                 )
             },
             liveWebViews: { [weak manager] tab in
-                manager?.liveWebViews(for: tab) ?? []
+                guard let manager else { return [] }
+                return manager.browserContentInventory.liveWebViews(
+                    for: tab,
+                    in: manager.runtime
+                )
             },
             allKnownTabs: { [weak manager] in
-                manager?.allKnownTabs() ?? []
+                guard let manager else { return [] }
+                return manager.browserContentInventory.tabs(
+                    in: manager.runtime
+                )
             },
             tabNeedsExtensionContentScriptRebind: { [weak manager] tab in
                 manager?.tabNeedsExtensionContentScriptRebind(tab) ?? false

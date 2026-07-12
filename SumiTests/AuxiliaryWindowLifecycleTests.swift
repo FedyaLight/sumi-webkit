@@ -467,8 +467,7 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
                 reason: .bulkCleanup
             )
         }
-        let publications = harness.extensionManager
-            .browserRuntimeBridgeOwner.windowPublications
+        let publications = harness.extensionManager.windowPublications
 
         XCTAssertIdentical(
             publications.publishedAuxiliaryWindowAdapters(
@@ -607,7 +606,9 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
             for: harness.profile.id
         )
         XCTAssertTrue(
-            harness.extensionManager.notifyWindowOpened(harness.windowState)
+            harness.extensionManager.normalWindowLifecycle.opened(
+                harness.windowState
+            )
         )
         XCTAssertTrue(
             harness.extensionManager.extensionCreatedTabRegistrar.register(
@@ -652,7 +653,7 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
             ).first
         )
         let mainWindowAdapter = try XCTUnwrap(
-            harness.extensionManager.browserRuntimeBridgeOwner
+            harness.extensionManager.windowPublications
                 .publishedWindowAdapter(
                     for: harness.windowState,
                     profileID: harness.profile.id
@@ -733,7 +734,7 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
             harness.browserManager.auxiliaryWindows.sessions.session(for: popupWebView)
         )
         session.window.makeKeyAndOrderFront(nil)
-        harness.extensionManager.notifyWindowFocused(harness.windowState)
+        harness.extensionManager.focusPublishedWindow(harness.windowState)
 
         let focusedWindow = harness.extensionContext.focusedWindow as? ExtensionMiniWindowAdapter
 
@@ -836,7 +837,9 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
             for: harness.profile.id
         )
         XCTAssertTrue(
-            harness.extensionManager.notifyWindowOpened(harness.windowState)
+            harness.extensionManager.normalWindowLifecycle.opened(
+                harness.windowState
+            )
         )
         XCTAssertTrue(
             harness.extensionManager.extensionCreatedTabRegistrar.register(
@@ -846,7 +849,7 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
             )
         )
         let publishedMainWindow = try XCTUnwrap(
-            harness.extensionManager.browserRuntimeBridgeOwner
+            harness.extensionManager.windowPublications
                 .publishedWindowAdapter(
                     for: harness.windowState,
                     profileID: harness.profile.id
@@ -879,7 +882,7 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
         let window = try XCTUnwrap(completionWindow as? ExtensionWindowAdapter)
         XCTAssertIdentical(window, publishedMainWindow)
         XCTAssertIdentical(
-            harness.extensionManager.browserRuntimeBridgeOwner
+            harness.extensionManager.windowPublications
                 .publishedWindowAdapter(
                     for: harness.windowState,
                     profileID: harness.profile.id

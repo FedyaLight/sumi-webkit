@@ -59,7 +59,13 @@ struct ExtensionRequestedTabWebViewMaterializer {
             return
         }
         guard isActive == false || hasWindowSelection == false else { return }
-        tab.loadWebViewIfNeeded()
+        // The requested-Tab receipt is the sole publisher for this creation
+        // transaction. WebView provisioning still prepares the controller and
+        // data store, but must not independently emit didOpenTab first.
+        _ = tab.ensureUntrackedNormalWebViewOutcome(
+            reason: "ExtensionManager.extensionRequestedOwnedTab",
+            registerTabWithExtensionRuntime: false
+        )
     }
 
     private func prepareNormalTabWebView(

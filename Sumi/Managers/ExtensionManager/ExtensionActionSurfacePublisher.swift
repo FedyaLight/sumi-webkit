@@ -147,7 +147,7 @@ extension ExtensionActionSurfacePublisher {
                 )
             },
             reconcileOpenTabsAfterExtensionContextLoad: { [weak manager] reason in
-                manager?.reconcileOpenTabsAfterExtensionContextLoad(reason: reason)
+                manager?.reloadRuntimePublications(reason: reason)
             }
         )
     }

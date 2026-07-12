@@ -123,7 +123,7 @@ final class ExtensionManager: NSObject, ObservableObject {
         browserContext: { [weak self] in self?.requestedTabTargetQuery },
         profileRuntime: profileRuntime,
         runtime: { [weak self] in self?.runtime ?? .inactive },
-        publications: browserRuntimeBridgeOwner.windowPublications
+        publications: windowPublications
     )
     lazy var requestedTabWebViewMaterializer =
         ExtensionRequestedTabWebViewMaterializer(
@@ -140,9 +140,8 @@ final class ExtensionManager: NSObject, ObservableObject {
         controllerBinding: controllerAttachmentOwner,
         adapterResolution: adapterResolutionOwner,
         contextLoading: initialDocumentRuntimePreparationOwner,
-        publications: browserRuntimeBridgeOwner.windowPublications,
-        publicationAdmission: browserRuntimeBridgeOwner
-            .tabPublicationAdmission,
+        publications: windowPublications,
+        publicationAdmission: tabPublicationAdmission,
         events: normalTabRuntimeBindingOwner,
         extensionsLoaded: { [weak self] in self?.extensionsLoaded == true },
         diagnostics: runtimeDiagnostics
@@ -156,7 +155,7 @@ final class ExtensionManager: NSObject, ObservableObject {
             controllerAttachment: controllerAttachmentOwner,
             adapterResolution: adapterResolutionOwner,
             contextLoading: initialDocumentRuntimePreparationOwner,
-            windowPublications: browserRuntimeBridgeOwner.windowPublications,
+            windowPublications: windowPublications,
             events: normalTabRuntimeBindingOwner,
             extensionsLoaded: {
                 [weak self] in self?.extensionsLoaded == true
@@ -228,21 +227,8 @@ final class ExtensionManager: NSObject, ObservableObject {
     )
     lazy var pageNavigationPreparationOwner =
         ExtensionPageNavigationPreparationOwner()
-    private var browserRuntimeBridgeOwnerStorage: ExtensionBrowserRuntimeBridgeOwner?
-    var browserRuntimeBridgeOwner: ExtensionBrowserRuntimeBridgeOwner {
-        if let browserRuntimeBridgeOwnerStorage {
-            return browserRuntimeBridgeOwnerStorage
-        }
-        let bridge = ExtensionBrowserRuntimeBridgeOwner(
-            manager: self,
-            dependencies: .live(manager: self)
-        )
-        browserRuntimeBridgeOwnerStorage = bridge
-        return bridge
-    }
-    var loadedBrowserRuntimeBridgeOwner: ExtensionBrowserRuntimeBridgeOwner? {
-        browserRuntimeBridgeOwnerStorage
-    }
+    var runtimePublicationComposition:
+        ExtensionRuntimePublicationComposition?
     lazy var runtimeLifecycleOwner = ExtensionRuntimeLifecycleOwner(
         dependencies: .live(manager: self)
     )
@@ -555,6 +541,7 @@ final class ExtensionManager: NSObject, ObservableObject {
             var didDispatchExtensionAction: ((String) -> Void)?
             var webExtensionDataCleanup: (@MainActor (String) async -> Bool)?
             var didOpenTab: ((UUID) -> Void)?
+            var didOpenNormalWindow: ((UUID) -> Void)?
             var didDeferOpenTab: ((UUID, String) -> Void)?
             var didCloseTab: ((UUID) -> Void)?
             var didOpenAuxiliaryWindow: ((UUID) -> Void)?

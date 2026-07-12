@@ -33,14 +33,13 @@ final class ExtensionRuntimeBundle {
                 manager?.extensionID(for: context)
             },
             publishedWindowAdapter: { [weak manager] windowState, profileId in
-                manager?.browserRuntimeBridgeOwner.publishedWindowAdapter(
+                manager?.windowPublications.publishedWindowAdapter(
                     for: windowState,
                     profileID: profileId
                 )
             },
             miniWindowAdapters: { [weak manager] ownerExtensionID, profileID in
-                manager?.browserRuntimeBridgeOwner
-                    .windowPublications.publishedAuxiliaryWindowAdapters(
+                manager?.windowPublications.publishedAuxiliaryWindowAdapters(
                         ownerExtensionID: ownerExtensionID,
                         profileID: profileID
                     ) ?? []
@@ -57,9 +56,9 @@ final class ExtensionRuntimeBundle {
                 manager?.getExtensionContext(for: extensionId, profileId: profileId)
             },
             reconcileOpenTabsAfterExtensionContextLoad: { [weak manager] reason, profileId in
-                manager?.reconcileOpenTabsAfterExtensionContextLoad(
+                manager?.reloadRuntimePublications(
                     reason: reason,
-                    profileId: profileId
+                    profileID: profileId
                 )
             },
             postSiteAccessPoliciesDidChange: { [weak manager] in
@@ -116,7 +115,7 @@ final class ExtensionRuntimeBundle {
                 manager?.extensionRequestedWindowCreation
             },
             publishedWindow: { [weak manager] window, profileID in
-                manager?.browserRuntimeBridgeOwner.publishedWindowAdapter(
+                manager?.windowPublications.publishedWindowAdapter(
                     for: window,
                     profileID: profileID
                 )

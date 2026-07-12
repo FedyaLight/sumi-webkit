@@ -157,7 +157,9 @@ final class ExtensionInitialTabPublicationReceiptTests:
             harness.manager.testHooks.didCloseTab = nil
         }
 
-        XCTAssertTrue(harness.manager.notifyWindowOpened(harness.window))
+        XCTAssertTrue(
+            harness.manager.normalWindowLifecycle.opened(harness.window)
+        )
         harness.manager.registerTabWithExtensionRuntime(
             harness.tab,
             reason: #function

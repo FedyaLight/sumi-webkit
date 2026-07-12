@@ -23,7 +23,8 @@ final class TabNormalWebViewSetupOwner {
         context: TabNormalWebViewRuntimeContext,
         policyTransaction: TabConfigurationPolicyTransaction,
         provisioningOwner: TabWebViewProvisioningOwner,
-        reason: String
+        reason: String,
+        registerTabWithExtensionRuntime: Bool = true
     ) -> TabUntrackedWebViewEnsureOutcome {
         if let currentWebView = context.currentWebView() {
             return .available(currentWebView)
@@ -72,8 +73,9 @@ final class TabNormalWebViewSetupOwner {
         }
 
         if !context.hasCurrentWebView {
+            let setupWebView = context.setupWebView
             if context.deferWebsiteDataMutationWebViewMaterialization(
-                context.setupWebView
+                { setupWebView(registerTabWithExtensionRuntime) }
             ) {
                 return .deferred
             }
@@ -135,7 +137,8 @@ final class TabNormalWebViewSetupOwner {
                 url: context.currentURL()
             )
 
-        if shouldDelayInitialTabRuntimeRegistration == false {
+        if registerTabWithExtensionRuntime,
+           shouldDelayInitialTabRuntimeRegistration == false {
             provisioningOwner.registerTabWithExtensionRuntimeIfNeeded(
                 context: context,
                 reason: reason

@@ -119,7 +119,7 @@ final class ExtensionAuxiliaryTabPublicationReceipt {
             extensionContextBindingGeneration: contextBindingGeneration,
             contextReadiness: .loaded
         )
-        guard tab.extensionPageRuntimeOwner.markDidOpenTab(
+        guard let openClaim = tab.extensionPageRuntimeOwner.reserveDidOpenTab(
             generation: generation,
             committedWindowPrepublication: stateToken
         ) else {
@@ -134,7 +134,11 @@ final class ExtensionAuxiliaryTabPublicationReceipt {
         // close and cannot observe this receipt as merely prepared.
         phase = .committed
         ownerContext.didOpenTab(adapter)
-        return true
+        return isCurrent(runtime: runtime)
+            && tab.extensionPageRuntimeOwner.settleDidOpenTabNotification(
+                openClaim,
+                generation: generation
+            )
     }
 
     @discardableResult

@@ -245,7 +245,9 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
             popover: NSPopover(),
             sourceReceipt: popupSource.receipt
         )
-        harness.extensionManager.notifyWindowClosed(harness.windowState)
+        harness.extensionManager.normalWindowLifecycle.closed(
+            harness.windowState
+        )
         let before = mutationSnapshot(harness)
 
         XCTAssertNil(
@@ -267,6 +269,89 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
             )
         )
         XCTAssertEqual(mutationSnapshot(harness), before)
+    }
+
+    func testStaleNormalWindowCloseCannotRetireReplacementWithSameUUID()
+        async throws {
+        let harness = try await makeHarness(
+            extensionID: "stale-window-close"
+        )
+        let staleWindow = harness.windowState
+        let staleAdapter = try XCTUnwrap(
+            harness.extensionManager.adapterStore.existingWindowAdapter(
+                for: staleWindow.id
+            )
+        )
+
+        harness.extensionManager.normalWindowLifecycle.closed(staleWindow)
+        harness.windowRegistry.unregister(staleWindow.id)
+
+        let replacementWindow = BrowserWindowState(id: staleWindow.id)
+        replacementWindow.tabManager = harness.browserManager.tabManager
+        replacementWindow.currentSpaceId = staleWindow.currentSpaceId
+        replacementWindow.currentProfileId = staleWindow.currentProfileId
+        let replacementShell = NSWindow(
+            contentRect: NSRect(x: 180, y: 160, width: 1200, height: 800),
+            styleMask: [.titled, .closable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        harness.windowRegistry.bindAppKitWindow(
+            replacementShell,
+            to: replacementWindow
+        )
+        XCTAssertEqual(
+            harness.windowRegistry.register(replacementWindow),
+            .registered
+        )
+        harness.browserManager.selectTab(
+            harness.sourceTab,
+            in: replacementWindow
+        )
+        harness.windowRegistry.setActive(replacementWindow)
+        XCTAssertTrue(
+            harness.extensionManager.normalWindowLifecycle.opened(
+                replacementWindow
+            )
+        )
+        let replacementAdapter = try XCTUnwrap(
+            harness.extensionManager.adapterResolutionOwner
+                .publishedNormalWindowAdapter(
+                    for: replacementWindow,
+                    extensionContext: harness.extensionContext
+                )
+        )
+        XCTAssertNotIdentical(replacementAdapter, staleAdapter)
+        XCTAssertTrue(
+            replacementAdapter.tabs(for: harness.extensionContext).contains {
+                ($0 as? ExtensionTabAdapter)?.tabId
+                    == harness.sourceTab.id
+            }
+        )
+
+        harness.extensionManager.normalWindowLifecycle.closed(staleWindow)
+
+        XCTAssertIdentical(
+            harness.extensionManager.adapterStore.existingWindowAdapter(
+                for: replacementWindow.id
+            ),
+            replacementAdapter
+        )
+        XCTAssertIdentical(
+            harness.extensionManager.windowPublications
+                .publishedWindowAdapter(
+                    for: replacementWindow,
+                    profileID: harness.profile.id
+                ),
+            replacementAdapter
+        )
+        XCTAssertTrue(
+            replacementAdapter.tabs(for: harness.extensionContext).contains {
+                ($0 as? ExtensionTabAdapter)?.tabId
+                    == harness.sourceTab.id
+            }
+        )
+        XCTAssertTrue(staleAdapter.tabs(for: harness.extensionContext).isEmpty)
     }
 
     func testCrossProfileSelectionRevokesNormalWindowAdapterProjection()
@@ -322,8 +407,8 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
                 executionProfileID: executionProfile.id
             )
         harness.browserManager.selectTab(executionTab, in: harness.windowState)
-        harness.extensionManager.notifyTabActivated(
-            newTab: executionTab,
+        harness.extensionManager.normalTabActivation.activate(
+            executionTab,
             previous: harness.sourceTab
         )
 
@@ -378,7 +463,9 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
             tab.extensionPageRuntimeOwner.markEligible(for: oldGeneration)
         }
         XCTAssertTrue(
-            harness.extensionManager.notifyWindowOpened(harness.windowState)
+            harness.extensionManager.normalWindowLifecycle.opened(
+                harness.windowState
+            )
         )
 
         let didLoadContext = controller.extensionContexts.contains(
@@ -402,13 +489,18 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
         )
         for tab in expectedTabs {
             XCTAssertTrue(
-                harness.extensionManager.allKnownTabs().contains {
+                harness.extensionManager.browserContentInventory.tabs(
+                    in: harness.extensionManager.runtime
+                ).contains {
                     $0 === tab
                 },
                 "Missing runtime Tab \(tab.id)"
             )
             XCTAssertTrue(
-                harness.extensionManager.liveWebViews(for: tab).contains {
+                harness.extensionManager.browserContentInventory.liveWebViews(
+                    for: tab,
+                    in: harness.extensionManager.runtime
+                ).contains {
                     $0.configuration.webExtensionController === controller
                 },
                 "Missing controller-bound WebView for \(tab.id)"
@@ -445,9 +537,9 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
             )
         }
 
-        harness.extensionManager.reconcileOpenTabsAfterExtensionContextLoad(
+        harness.extensionManager.reloadRuntimePublications(
             reason: "ExtensionActionPopupSourceReceiptTests.atomicGeneration",
-            profileId: harness.profile.id
+            profileID: harness.profile.id
         )
 
         for tab in expectedTabs {
@@ -474,6 +566,391 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
         )
     }
 
+    func testCallbackReloadIsCoalescedAfterCurrentGeneration() async throws {
+        let harness = try await makeHarness(extensionID: "reload-handoff")
+        let generationBeforeReload = harness.extensionManager.runtimeSession
+            .tabOpenNotificationGeneration
+        var sourceOpenCount = 0
+        var requestedNestedReload = false
+        var nestedReloadGeneration: (before: UInt64, after: UInt64)?
+
+        harness.extensionManager.testHooks.didOpenTab = { tabID in
+            guard tabID == harness.sourceTab.id else { return }
+            sourceOpenCount += 1
+            guard requestedNestedReload == false else { return }
+            requestedNestedReload = true
+
+            let before = harness.extensionManager.runtimeSession
+                .tabOpenNotificationGeneration
+            harness.extensionManager.reloadRuntimePublications(
+                reason: "ExtensionActionPopupSourceReceiptTests.nestedReload",
+                profileID: harness.profile.id
+            )
+            nestedReloadGeneration = (
+                before: before,
+                after: harness.extensionManager.runtimeSession
+                    .tabOpenNotificationGeneration
+            )
+        }
+        defer { harness.extensionManager.testHooks.didOpenTab = nil }
+
+        harness.extensionManager.reloadRuntimePublications(
+            reason: "ExtensionActionPopupSourceReceiptTests.reloadHandoff",
+            profileID: harness.profile.id
+        )
+
+        XCTAssertEqual(
+            harness.extensionManager.runtimeSession
+                .tabOpenNotificationGeneration,
+            generationBeforeReload + 2
+        )
+        XCTAssertEqual(
+            nestedReloadGeneration?.before,
+            nestedReloadGeneration?.after,
+            "The callback reload must be deferred, not nested synchronously"
+        )
+        XCTAssertEqual(sourceOpenCount, 2)
+        XCTAssertTrue(
+            harness.extensionManager.normalWindowLifecycle
+                .tabPublicationIsCurrent(
+                    harness.sourceTab,
+                    profileID: harness.profile.id
+                )
+        )
+    }
+
+    func testDidOpenDoesNotSettleAfterAdapterAuthorityChangesInCallback()
+        async throws {
+        let harness = try await makeHarness(
+            extensionID: "open-adapter-reentry"
+        )
+        let tab = harness.sourceTab
+        let generation = harness.extensionManager.runtimeSession
+            .tabOpenNotificationGeneration
+        harness.extensionManager.normalTabClosure.close(tab)
+        let adapter = try XCTUnwrap(
+            harness.extensionManager.adapterResolutionOwner
+                .stableAdapter(for: tab)
+        )
+        var didCloseCount = 0
+        harness.extensionManager.testHooks.didCloseTab = { tabID in
+            guard tabID == tab.id else { return }
+            didCloseCount += 1
+        }
+        harness.extensionManager.testHooks.didOpenTab = { tabID in
+            guard tabID == tab.id else { return }
+            _ = harness.extensionManager.adapterStore.removeTabAdapter(
+                for: tab.id,
+                ifIdenticalTo: adapter
+            )
+        }
+        defer {
+            harness.extensionManager.testHooks.didOpenTab = nil
+            harness.extensionManager.testHooks.didCloseTab = nil
+            harness.extensionManager.adapterStore.tabAdapters[tab.id]
+                = adapter
+        }
+
+        XCTAssertFalse(
+            harness.extensionManager.notifyTabOpened(tab)
+        )
+        XCTAssertFalse(
+            tab.extensionPageRuntimeOwner
+                .hasSettledDidOpenTabNotification(for: generation)
+        )
+        XCTAssertFalse(
+            tab.extensionPageRuntimeOwner.hasAnyDidOpenTabNotification()
+        )
+        XCTAssertEqual(didCloseCount, 1)
+        XCTAssertFalse(
+            harness.extensionContext.openTabs.contains { openTab in
+                (openTab as AnyObject) === adapter
+            }
+        )
+    }
+
+    func testDidOpenDoesNotSettleAfterContextBindingChangesInCallback()
+        async throws {
+        let extensionID = "open-context-reentry"
+        let harness = try await makeHarness(
+            extensionID: extensionID
+        )
+        let tab = harness.sourceTab
+        let generation = harness.extensionManager.runtimeSession
+            .tabOpenNotificationGeneration
+        harness.extensionManager.normalTabClosure.close(tab)
+        let adapter = try XCTUnwrap(
+            harness.extensionManager.adapterResolutionOwner
+                .stableAdapter(for: tab)
+        )
+        var didCloseCount = 0
+        harness.extensionManager.testHooks.didCloseTab = { tabID in
+            guard tabID == tab.id else { return }
+            didCloseCount += 1
+        }
+        harness.extensionManager.testHooks.didOpenTab = { tabID in
+            guard tabID == tab.id else { return }
+            harness.extensionManager.setExtensionContext(
+                harness.extensionContext,
+                extensionId: extensionID,
+                profileId: harness.profile.id
+            )
+        }
+        defer {
+            harness.extensionManager.testHooks.didOpenTab = nil
+            harness.extensionManager.testHooks.didCloseTab = nil
+            harness.extensionManager.adapterStore.tabAdapters[tab.id]
+                = adapter
+        }
+
+        XCTAssertFalse(harness.extensionManager.notifyTabOpened(tab))
+        XCTAssertFalse(
+            tab.extensionPageRuntimeOwner
+                .hasSettledDidOpenTabNotification(for: generation)
+        )
+        XCTAssertFalse(
+            tab.extensionPageRuntimeOwner.hasAnyDidOpenTabNotification()
+        )
+        XCTAssertEqual(didCloseCount, 1)
+    }
+
+    func testDidOpenIsNotEmittedWhenWindowAdmissionLosesTabAuthority()
+        async throws {
+        let harness = try await makeHarness(
+            extensionID: "open-window-admission-reentry"
+        )
+        let tab = harness.sourceTab
+        let selectedTab = harness.browserManager.tabManager
+            .regularTabLifecycleOwner.createNewTab(
+                url: "about:blank",
+                in: harness.browserManager.tabManager.spaceStateOwner
+                    .currentSpace,
+                activate: true
+            )
+        selectedTab.profileId = harness.profile.id
+        harness.browserManager.selectTab(
+            selectedTab,
+            in: harness.windowState
+        )
+        harness.extensionManager.normalTabClosure.close(tab)
+        let adapter = try XCTUnwrap(
+            harness.extensionManager.adapterResolutionOwner
+                .stableAdapter(for: tab)
+        )
+        harness.extensionManager.normalWindowLifecycle.closed(
+            harness.windowState
+        )
+
+        var didOpenCount = 0
+        var didCloseCount = 0
+        harness.extensionManager.testHooks.didOpenNormalWindow = { windowID in
+            guard windowID == harness.windowState.id else { return }
+            _ = harness.extensionManager.adapterStore.removeTabAdapter(
+                for: tab.id,
+                ifIdenticalTo: adapter
+            )
+        }
+        harness.extensionManager.testHooks.didOpenTab = { tabID in
+            guard tabID == tab.id else { return }
+            didOpenCount += 1
+        }
+        harness.extensionManager.testHooks.didCloseTab = { tabID in
+            guard tabID == tab.id else { return }
+            didCloseCount += 1
+        }
+        defer {
+            harness.extensionManager.testHooks.didOpenNormalWindow = nil
+            harness.extensionManager.testHooks.didOpenTab = nil
+            harness.extensionManager.testHooks.didCloseTab = nil
+            harness.extensionManager.adapterStore.tabAdapters[tab.id]
+                = adapter
+        }
+
+        XCTAssertFalse(harness.extensionManager.notifyTabOpened(tab))
+        XCTAssertEqual(didOpenCount, 0)
+        XCTAssertEqual(didCloseCount, 0)
+        XCTAssertFalse(
+            tab.extensionPageRuntimeOwner.hasAnyDidOpenTabNotification()
+        )
+    }
+
+    func testRepeatedCallbackReloadIsBoundedToOneCoalescedReplay()
+        async throws {
+        let harness = try await makeHarness(
+            extensionID: "reload-handoff-bounded"
+        )
+        let generationBeforeReload = harness.extensionManager.runtimeSession
+            .tabOpenNotificationGeneration
+        var sourceOpenCount = 0
+        harness.extensionManager.testHooks.didOpenTab = { tabID in
+            guard tabID == harness.sourceTab.id else { return }
+            sourceOpenCount += 1
+            harness.extensionManager.reloadRuntimePublications(
+                reason: "ExtensionActionPopupSourceReceiptTests.repeatedNestedReload",
+                profileID: harness.profile.id
+            )
+        }
+        defer { harness.extensionManager.testHooks.didOpenTab = nil }
+
+        harness.extensionManager.reloadRuntimePublications(
+            reason: "ExtensionActionPopupSourceReceiptTests.boundedReload",
+            profileID: harness.profile.id
+        )
+
+        XCTAssertEqual(
+            harness.extensionManager.runtimeSession
+                .tabOpenNotificationGeneration,
+            generationBeforeReload + 2
+        )
+        XCTAssertEqual(sourceOpenCount, 2)
+
+        for _ in 0 ..< 8 where sourceOpenCount < 4 {
+            await Task.yield()
+        }
+        XCTAssertEqual(
+            harness.extensionManager.runtimeSession
+                .tabOpenNotificationGeneration,
+            generationBeforeReload + 4
+        )
+        XCTAssertEqual(sourceOpenCount, 4)
+
+        for _ in 0 ..< 8 {
+            await Task.yield()
+        }
+        XCTAssertEqual(
+            harness.extensionManager.runtimeSession
+                .tabOpenNotificationGeneration,
+            generationBeforeReload + 4
+        )
+        XCTAssertEqual(sourceOpenCount, 4)
+    }
+
+    func testSecondReplayRequestContinuesOnLaterMainActorTurn()
+        async throws {
+        let harness = try await makeHarness(
+            extensionID: "reload-handoff-overflow"
+        )
+        let generationBeforeReload = harness.extensionManager.runtimeSession
+            .tabOpenNotificationGeneration
+        var sourceOpenCount = 0
+        var focusCount = 0
+        var activationCount = 0
+        harness.extensionManager.testHooks.didFocusWindow = { windowID in
+            guard windowID == harness.windowState.id else { return }
+            focusCount += 1
+        }
+        harness.extensionManager.testHooks.didActivateTab = { tabID in
+            guard tabID == harness.sourceTab.id else { return }
+            activationCount += 1
+        }
+        harness.extensionManager.testHooks.didOpenTab = { tabID in
+            guard tabID == harness.sourceTab.id else { return }
+            sourceOpenCount += 1
+            guard sourceOpenCount <= 2 else { return }
+            harness.extensionManager.reloadRuntimePublications(
+                reason: "ExtensionActionPopupSourceReceiptTests.overflow",
+                profileID: harness.profile.id
+            )
+        }
+        defer {
+            harness.extensionManager.testHooks.didOpenTab = nil
+            harness.extensionManager.testHooks.didFocusWindow = nil
+            harness.extensionManager.testHooks.didActivateTab = nil
+        }
+
+        harness.extensionManager.reloadRuntimePublications(
+            reason: "ExtensionActionPopupSourceReceiptTests.overflowStart",
+            profileID: harness.profile.id
+        )
+
+        XCTAssertEqual(
+            harness.extensionManager.runtimeSession
+                .tabOpenNotificationGeneration,
+            generationBeforeReload + 2
+        )
+        XCTAssertEqual(sourceOpenCount, 2)
+        XCTAssertEqual(focusCount, 1)
+        XCTAssertEqual(activationCount, 1)
+
+        for _ in 0 ..< 8 where sourceOpenCount < 3 {
+            await Task.yield()
+        }
+
+        XCTAssertEqual(
+            harness.extensionManager.runtimeSession
+                .tabOpenNotificationGeneration,
+            generationBeforeReload + 3
+        )
+        XCTAssertEqual(sourceOpenCount, 3)
+        XCTAssertEqual(focusCount, 2)
+        XCTAssertEqual(activationCount, 2)
+    }
+
+    func testPreHandoffPhysicalTabCloseRetiresExactAdapter()
+        async throws {
+        let harness = try await makeHarness(
+            extensionID: "reload-pre-handoff-close"
+        )
+        let closingTab = harness.sourceTab
+        let closingAdapter = try XCTUnwrap(
+            harness.extensionManager.adapterStore.tabAdapters[closingTab.id]
+        )
+        harness.extensionManager.extensionsLoaded = false
+        var didCloseCount = 0
+        var didReopenCount = 0
+        var closedDuringWindowCallback = false
+        harness.extensionManager.testHooks.didCloseTab = { tabID in
+            if tabID == closingTab.id {
+                didCloseCount += 1
+            }
+        }
+        harness.extensionManager.testHooks.didOpenTab = { tabID in
+            if tabID == closingTab.id {
+                didReopenCount += 1
+            }
+        }
+        harness.extensionManager.testHooks.didOpenNormalWindow = { windowID in
+            guard windowID == harness.windowState.id,
+                  closedDuringWindowCallback == false
+            else {
+                return
+            }
+            closedDuringWindowCallback = true
+            harness.browserManager.tabLifecycleService.closeOrchestration
+                .closeTab(closingTab, in: harness.windowState)
+        }
+        defer {
+            harness.extensionManager.testHooks.didCloseTab = nil
+            harness.extensionManager.testHooks.didOpenTab = nil
+            harness.extensionManager.testHooks.didOpenNormalWindow = nil
+        }
+
+        harness.extensionManager.reloadRuntimePublications(
+            reason: "ExtensionActionPopupSourceReceiptTests.preHandoffClose",
+            allowWhenExtensionsNotLoaded: true,
+            profileID: harness.profile.id
+        )
+
+        XCTAssertTrue(closedDuringWindowCallback)
+        // The physical close happens before browser-event handoff, so this Tab
+        // never publishes in the replacement generation. Its deferred receipt
+        // must retire the exact adapter without emitting an unmatched close.
+        XCTAssertEqual(didCloseCount, 0)
+        XCTAssertEqual(didReopenCount, 0)
+        XCTAssertNil(
+            harness.browserManager.tabManager.tabCollectionMembershipOwner
+                .tab(for: closingTab.id)
+        )
+        XCTAssertNil(
+            harness.extensionManager.adapterStore.tabAdapters[closingTab.id]
+        )
+        XCTAssertFalse(
+            harness.extensionContext.openTabs.contains { openTab in
+                (openTab as AnyObject) === closingAdapter
+            }
+        )
+    }
+
     func testRuntimeReconciliationDoesNotActivateStaleFocusTarget()
         async throws {
         let harness = try await makeHarness(extensionID: "focus-reentry")
@@ -487,12 +964,54 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
             activatedTabIDs.append(tabID)
         }
 
-        harness.extensionManager.reconcileOpenTabsAfterExtensionContextLoad(
+        harness.extensionManager.reloadRuntimePublications(
             reason: "ExtensionActionPopupSourceReceiptTests.focusReentry",
-            profileId: harness.profile.id
+            profileID: harness.profile.id
         )
 
         XCTAssertTrue(activatedTabIDs.isEmpty)
+    }
+
+    func testTabPropertyEventRequiresCurrentOpenPublication() async throws {
+        let harness = try await makeHarness(
+            extensionID: "property-publication-receipt"
+        )
+        let generation = harness.extensionManager.runtimeSession
+            .tabOpenNotificationGeneration
+        XCTAssertTrue(
+            harness.sourceTab.extensionPageRuntimeOwner
+                .hasDidOpenTabNotification(for: generation)
+        )
+        XCTAssertTrue(
+            harness.extensionManager.windowPublications
+                .tabPublicationIsCurrent(
+                    harness.sourceTab,
+                    profileID: harness.profile.id
+                )
+        )
+
+        var changedProperties: [WKWebExtension.TabChangedProperties] = []
+        harness.extensionManager.testHooks.didChangeTabProperties = {
+            tabID, properties in
+            guard tabID == harness.sourceTab.id else { return }
+            changedProperties.append(properties)
+        }
+        harness.sourceTab.name = "Receipt Guard Title"
+        harness.sourceTab.extensionPageRuntimeOwner
+            .clearOpenNotificationGeneration()
+        defer {
+            _ = harness.sourceTab.extensionPageRuntimeOwner.markDidOpenTab(
+                generation: generation
+            )
+            harness.extensionManager.testHooks.didChangeTabProperties = nil
+        }
+
+        harness.extensionManager.notifyTabPropertiesChanged(
+            harness.sourceTab,
+            properties: [.title]
+        )
+
+        XCTAssertTrue(changedProperties.isEmpty)
     }
 
     func testNormalTabCloseClaimsGenerationBeforeReentrantCallbackAndPreservesReplacementAdapter()
@@ -516,7 +1035,7 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
         harness.extensionManager.testHooks.didCloseTab = { tabID in
             guard tabID == harness.sourceTab.id else { return }
             closeCount += 1
-            harness.extensionManager.notifyTabClosed(harness.sourceTab)
+            harness.extensionManager.normalTabClosure.close(harness.sourceTab)
             harness.extensionManager.adapterStore.tabAdapters[
                 harness.sourceTab.id
             ] = replacementAdapter
@@ -531,7 +1050,7 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
             }
         }
 
-        harness.extensionManager.notifyTabClosed(harness.sourceTab)
+        harness.extensionManager.normalTabClosure.close(harness.sourceTab)
 
         XCTAssertEqual(closeCount, 1)
         XCTAssertFalse(
@@ -570,8 +1089,8 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
             harness.extensionManager.testHooks.didDeselectTab = nil
         }
 
-        harness.extensionManager.notifyTabActivated(
-            newTab: harness.sourceTab,
+        harness.extensionManager.normalTabActivation.activate(
+            harness.sourceTab,
             previous: nil
         )
 
@@ -614,8 +1133,8 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
             harness.extensionManager.testHooks.didDeselectTab = nil
         }
 
-        harness.extensionManager.notifyTabActivated(
-            newTab: activatedTab,
+        harness.extensionManager.normalTabActivation.activate(
+            activatedTab,
             previous: harness.sourceTab
         )
 
@@ -713,9 +1232,9 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
             in: windowState.id,
             replaySemanticOperation: { XCTFail("Unexpected WebView deferral") }
         )
-        extensionManager.reconcileOpenTabsAfterExtensionContextLoad(
+        extensionManager.reloadRuntimePublications(
             reason: "ExtensionActionPopupSourceReceiptTests.makeHarness",
-            profileId: profile.id
+            profileID: profile.id
         )
         XCTAssertTrue(
             extensionManager.isTabEligibleForCurrentExtensionRuntime(sourceTab)

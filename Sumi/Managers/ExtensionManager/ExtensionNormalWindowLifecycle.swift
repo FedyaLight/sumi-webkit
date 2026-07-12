@@ -73,19 +73,38 @@ final class ExtensionNormalWindowLifecycle {
 
     private let resolver: ExtensionNormalWindowProjectionResolver
     private let adapterStore: ExtensionBrowserAdapterStore
+    #if DEBUG
+        private let debugDidOpenWindow: @MainActor (UUID) -> Void
+    #endif
     private var phase = Phase.active
     private var lifecycleEpoch: UInt64 = 0
     private var activeAllowsUnloadedRuntime = false
     private var publishedByWindowID: [UUID: PublishedWindow] = [:]
     private var closingWindowIdentityByID: [UUID: ObjectIdentifier] = [:]
 
-    init(
-        resolver: ExtensionNormalWindowProjectionResolver,
-        adapterStore: ExtensionBrowserAdapterStore
-    ) {
-        self.resolver = resolver
-        self.adapterStore = adapterStore
+    var acceptsNewPublications: Bool {
+        phase == .active
     }
+
+    #if DEBUG
+        init(
+            resolver: ExtensionNormalWindowProjectionResolver,
+            adapterStore: ExtensionBrowserAdapterStore,
+            debugDidOpenWindow: @escaping @MainActor (UUID) -> Void = { _ in }
+        ) {
+            self.resolver = resolver
+            self.adapterStore = adapterStore
+            self.debugDidOpenWindow = debugDidOpenWindow
+        }
+    #else
+        init(
+            resolver: ExtensionNormalWindowProjectionResolver,
+            adapterStore: ExtensionBrowserAdapterStore
+        ) {
+            self.resolver = resolver
+            self.adapterStore = adapterStore
+        }
+    #endif
 
     @discardableResult
     func opened(_ window: BrowserWindowState) -> Bool {
@@ -104,6 +123,7 @@ final class ExtensionNormalWindowLifecycle {
     }
 
     func closed(_ window: BrowserWindowState) {
+        guard case .active = phase else { return }
         guard let published = publishedByWindowID[window.id] else {
             removeUnpublishedAdapter(for: window)
             return
@@ -415,6 +435,9 @@ final class ExtensionNormalWindowLifecycle {
         )
         publishedByWindowID[windowID] = published
         projection.controller.didOpenWindow(projection.windowAdapter)
+        #if DEBUG
+            debugDidOpenWindow(windowID)
+        #endif
 
         guard case .active = phase,
               lifecycleEpoch == publicationEpoch,

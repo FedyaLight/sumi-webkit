@@ -98,7 +98,7 @@ final class ExtensionInitialTabPublicationValidator {
                   for: generation
               ),
               evidence.tab.extensionPageRuntimeOwner
-                .hasDidOpenTabNotification(for: generation),
+                .hasSettledDidOpenTabNotification(for: generation),
               let claim = evidence.tab.extensionPageRuntimeOwner
                 .currentOpenPublicationClaim(generation: generation),
               binding.openNotifiedContextReadiness == .loaded,

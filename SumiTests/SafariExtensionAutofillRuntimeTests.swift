@@ -173,8 +173,16 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
         )
         webView.owningTab = tab
         tab.replaceUntrackedWebView(webView)
-        XCTAssertTrue(manager.allKnownTabs().contains { $0 === tab })
-        XCTAssertTrue(manager.liveWebViews(for: tab).contains { $0 === webView })
+        XCTAssertTrue(
+            manager.browserContentInventory.tabs(in: manager.runtime)
+                .contains { $0 === tab }
+        )
+        XCTAssertTrue(
+            manager.browserContentInventory.liveWebViews(
+                for: tab,
+                in: manager.runtime
+            ).contains { $0 === webView }
+        )
         XCTAssertIdentical(
             webView.configuration.webExtensionController,
             manager.extensionController(for: tab)
@@ -184,9 +192,9 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
             tab
         )
 
-        manager.reconcileOpenTabsAfterExtensionContextLoad(
+        manager.reloadRuntimePublications(
             reason: "SafariExtensionAutofillRuntimeTests",
-            profileId: profile.id
+            profileID: profile.id
         )
 
         let adapter = try XCTUnwrap(manager.adapterResolutionOwner.stableAdapter(for: tab))

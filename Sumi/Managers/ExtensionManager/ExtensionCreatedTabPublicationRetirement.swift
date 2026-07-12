@@ -40,12 +40,12 @@ final class ExtensionCreatedTabPublicationRetirement {
                 adapter: evidence.adapter
             )
         }
-        adapters.removeCreatedAdapter(for: evidence)
+        adapters.retireExactAdapter(for: evidence)
     }
 
-    func removeCreatedAdapter(
+    func retireAdapter(
         for evidence: ExtensionCreatedTabPublicationEvidence
     ) {
-        adapters.removeCreatedAdapter(for: evidence)
+        adapters.retireExactAdapter(for: evidence)
     }
 }

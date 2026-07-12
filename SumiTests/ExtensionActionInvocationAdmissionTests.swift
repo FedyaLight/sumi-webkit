@@ -740,7 +740,7 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
         // bridge) must stay cold for a rejected invocation.
         XCTAssertNil(manager.loadedNativeMessagingRelayOwner)
         XCTAssertNil(manager.loadedNativeMessagingBackgroundWakeOwner)
-        XCTAssertNil(manager.loadedBrowserRuntimeBridgeOwner)
+        XCTAssertNil(manager.loadedRuntimePublicationReconciler)
     }
 
     // MARK: - Harness

@@ -276,7 +276,7 @@ enum SafariExtensionAcceptanceMatrixBuilder {
             check: .contentScriptTabReconcileWired,
             passed: wired,
             detail: wired
-                ? "reconcileOpenTabsAfterExtensionContextLoad wired in enable/finalize path"
+                ? "reloadRuntimePublications wired in enable/finalize path"
                 : "Tab reconcile symbols missing from ExtensionManager sources"
         )
     }
@@ -364,7 +364,7 @@ enum SafariExtensionContentScriptProbe {
         guard #available(macOS 15.5, *) else { return false }
         let reconcile:
             @MainActor (ExtensionManager) -> (String, Bool, UUID?) -> Void =
-                ExtensionManager.reconcileOpenTabsAfterExtensionContextLoad
+                ExtensionManager.reloadRuntimePublications
         let finalize:
             @MainActor (ExtensionActionSurfacePublisher) -> (String, UUID?, ExtensionManager.ExtensionBackgroundWakeReason?) async -> Void =
                 ExtensionActionSurfacePublisher.finalizeEnabledExtensionRuntime

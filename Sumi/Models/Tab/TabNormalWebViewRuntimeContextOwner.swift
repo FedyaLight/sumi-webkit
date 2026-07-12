@@ -45,8 +45,12 @@ final class TabNormalWebViewRuntimeContextOwner {
             finishSuspendedRestoreIfNeeded: { [weak tab] in
                 tab?.finishSuspendedRestoreIfNeeded()
             },
-            setupWebView: { [weak tab] in
-                _ = tab?.ensureUntrackedNormalWebView(reason: "TabNormalWebViewRuntimeContext.setupWebView")
+            setupWebView: { [weak tab] registerTabWithExtensionRuntime in
+                _ = tab?.ensureUntrackedNormalWebViewOutcome(
+                    reason: "TabNormalWebViewRuntimeContext.setupWebView",
+                    registerTabWithExtensionRuntime:
+                        registerTabWithExtensionRuntime
+                )
             },
             deferWebsiteDataMutationWebViewMaterialization: { [weak tab] replay in
                 guard let tab else { return false }

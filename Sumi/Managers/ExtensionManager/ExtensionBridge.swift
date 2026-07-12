@@ -256,8 +256,7 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
                 windowState,
                 profileId: contextProfileId
               ),
-              extensionManager.browserRuntimeBridgeOwner
-                .publishedWindowAdapter(
+              extensionManager.windowPublications.publishedWindowAdapter(
                     for: windowState,
                     profileID: contextProfileId
                 ) === self

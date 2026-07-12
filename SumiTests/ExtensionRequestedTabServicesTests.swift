@@ -377,7 +377,7 @@ final class ExtensionRequestedTabServicesTests:
             )
         )
         XCTAssertIdentical(
-            harness.manager.browserRuntimeBridgeOwner.windowPublications
+            harness.manager.windowPublications
                 .publishedWindowAdapter(
                     for: harness.window,
                     profileID: harness.profile.id
@@ -416,7 +416,7 @@ final class ExtensionRequestedTabServicesTests:
             )
         )
         XCTAssertIdentical(
-            harness.manager.browserRuntimeBridgeOwner.windowPublications
+            harness.manager.windowPublications
                 .publishedWindowAdapter(
                     for: harness.window,
                     profileID: harness.profile.id
@@ -804,14 +804,14 @@ final class ExtensionRequestedTabServicesTests:
                 reason: "ExtensionRequestedTabServicesTests.source"
             )
         )
-        XCTAssertTrue(manager.notifyWindowOpened(window))
+        XCTAssertTrue(manager.normalWindowLifecycle.opened(window))
         XCTAssertTrue(
             sourcePublication.publishInitialTab(
                 afterWindowOpened: window
             )
         )
         let publishedWindow = try XCTUnwrap(
-            manager.browserRuntimeBridgeOwner.windowPublications
+            manager.windowPublications
                 .publishedWindowAdapter(
                     for: window,
                     profileID: profile.id

@@ -44,8 +44,7 @@ final class ExtensionAdapterResolutionOwner {
                 tab: tab,
                 window: window,
                 auxiliaryWindows: auxiliaryWindows,
-                windowPublications: manager.browserRuntimeBridgeOwner
-                    .windowPublications,
+                windowPublications: manager.windowPublications,
                 isPrivate: isPrivate,
                 shouldActivateApp: shouldActivateApp
             )
@@ -90,8 +89,7 @@ final class ExtensionAdapterResolutionOwner {
                 for: extensionContext
               )?.profileID,
               manager.windowMatchesProfile(windowState, profileId: profileID),
-              let adapter = manager.browserRuntimeBridgeOwner
-                .publishedWindowAdapter(
+              let adapter = manager.windowPublications.publishedWindowAdapter(
                     for: windowState,
                     profileID: profileID
                 ),
@@ -122,8 +120,7 @@ final class ExtensionAdapterResolutionOwner {
                 tabMutation: tabMutation,
                 webViewHosting: webViewHosting,
                 auxiliaryWindows: auxiliaryWindows,
-                windowPublications: manager.browserRuntimeBridgeOwner
-                    .windowPublications,
+                windowPublications: manager.windowPublications,
                 contextPublications: manager.contextPublications,
                 extensionManager: manager
             )

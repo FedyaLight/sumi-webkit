@@ -86,7 +86,10 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         )
 
         XCTAssertIdentical(manager.resolvedLiveWebView(for: tab), trackedWebView)
-        let liveWebViews = manager.liveWebViews(for: tab)
+        let liveWebViews = manager.browserContentInventory.liveWebViews(
+            for: tab,
+            in: manager.runtime
+        )
         XCTAssertEqual(liveWebViews.count, 1)
         XCTAssertIdentical(liveWebViews.first, trackedWebView)
     }
@@ -309,7 +312,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         manager.testHooks.didActivateTab = { activatedTabIDs.append($0) }
 
         XCTAssertTrue(tab.isEphemeral)
-        manager.notifyTabActivated(newTab: tab, previous: nil)
+        manager.normalTabActivation.activate(tab, previous: nil)
 
         XCTAssertTrue(activatedTabIDs.isEmpty)
     }
@@ -1156,7 +1159,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             TrackedWebViewOwner(tabID: tab.id, windowID: window.id)
         )
         XCTAssertIdentical(
-            manager.browserRuntimeBridgeOwner.publishedWindowAdapter(
+            manager.windowPublications.publishedWindowAdapter(
                 for: window,
                 profileID: profile.id
             ),
@@ -1529,7 +1532,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             tab,
             reason: "SafariExtensionWebViewControllerWiringTests.didCommit"
         )
-        manager.notifyTabActivated(newTab: tab, previous: nil)
+        manager.normalTabActivation.activate(tab, previous: nil)
 
         XCTAssertEqual(
             didOpenCount,

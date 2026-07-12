@@ -15,7 +15,18 @@ fail_matches() {
 }
 
 composition='Sumi/Managers/BrowserManager/BrowserExtensionBridgeComposition.swift'
-runtime_bridge='Sumi/Managers/ExtensionManager/ExtensionBrowserRuntimeBridgeOwner.swift'
+runtime_publication_composition='Sumi/Managers/ExtensionManager/ExtensionManager+RuntimePublicationComposition.swift'
+runtime_publication='Sumi/Managers/ExtensionManager/ExtensionManager+RuntimePublication.swift'
+auxiliary_publication='Sumi/Managers/ExtensionManager/ExtensionManager+AuxiliaryWindowPublication.swift'
+runtime_publication_gate='Sumi/Managers/ExtensionManager/ExtensionRuntimePublicationGate.swift'
+runtime_publication_reconciler='Sumi/Managers/ExtensionManager/ExtensionRuntimePublicationReconciler.swift'
+runtime_publication_replay_scheduler='Sumi/Managers/ExtensionManager/ExtensionRuntimePublicationReplayScheduler.swift'
+deferred_tab_closures='Sumi/Managers/ExtensionManager/ExtensionDeferredTabClosures.swift'
+browser_content_inventory='Sumi/Managers/ExtensionManager/ExtensionBrowserContentInventory.swift'
+runtime_reload_transaction='Sumi/Managers/ExtensionManager/ExtensionRuntimeReloadTransaction.swift'
+runtime_teardown='Sumi/Managers/ExtensionManager/ExtensionRuntimeTeardownOwner.swift'
+runtime_gate_tests='SumiTests/ExtensionRuntimePublicationGateTests.swift'
+content_inventory_tests='SumiTests/ExtensionBrowserContentInventoryTests.swift'
 auxiliary_window_lifecycle='Sumi/Managers/ExtensionManager/ExtensionAuxiliaryWindowLifecycle.swift'
 auxiliary_publication_query='Sumi/Managers/ExtensionManager/ExtensionAuxiliaryWindowPublicationQuery.swift'
 auxiliary_publication_resolver='Sumi/Managers/ExtensionManager/ExtensionAuxiliaryWindowPublicationResolver.swift'
@@ -70,7 +81,17 @@ required_files=(
   Sumi/Managers/ExtensionManager/ExtensionBridge.swift
   Sumi/Managers/ExtensionManager/ExtensionActionPopupPresentation.swift
   Sumi/Managers/ExtensionManager/ExtensionActionPopupSourceReceipt.swift
-  "$runtime_bridge"
+  "$runtime_publication_composition"
+  "$runtime_publication"
+  "$auxiliary_publication"
+  "$runtime_publication_gate"
+  "$runtime_publication_reconciler"
+  "$deferred_tab_closures"
+  "$browser_content_inventory"
+  "$runtime_reload_transaction"
+  "$runtime_teardown"
+  "$runtime_gate_tests"
+  "$content_inventory_tests"
   "$auxiliary_window_lifecycle"
   "$auxiliary_publication_query"
   "$auxiliary_publication_resolver"
@@ -121,6 +142,8 @@ done
 removed_files=(
   Sumi/Managers/BrowserManager/BrowserExtensionBridgeBundle.swift
   Sumi/Managers/ExtensionManager/BrowserExtensionBridgeAdapter.swift
+  Sumi/Managers/ExtensionManager/ExtensionBrowserRuntimeBridgeOwner.swift
+  Sumi/Managers/ExtensionManager/ExtensionManager+BrowserRuntimeEvents.swift
 )
 
 for file in "${removed_files[@]}"; do
@@ -132,10 +155,466 @@ for file in "${removed_files[@]}"; do
 done
 
 legacy_hits="$(
-  rg -n '\b(ExtensionBrowserBridgeContext|BrowserExtensionBridgeAdapter|BrowserExtensionBridgeBundle|browserBridgeContext|extensionBridgeBundle)\b' \
+  rg -n '\b(ExtensionBrowserBridgeContext|BrowserExtensionBridgeAdapter|BrowserExtensionBridgeBundle|ExtensionBrowserRuntimeBridgeOwner|browserBridgeContext|extensionBridgeBundle|browserRuntimeBridgeOwner|browserRuntimeBridgeOwnerStorage|loadedBrowserRuntimeBridgeOwner)\b' \
     App Sumi SumiTests -g '*.swift' || true
 )"
 fail_matches "retired aggregate extension bridge returned" "$legacy_hits"
+
+for required_runtime_composition_boundary in \
+  'var runtimePublicationGate: ExtensionRuntimePublicationGate' \
+  'var normalWindowLifecycle: ExtensionNormalWindowLifecycle' \
+  'var auxiliaryWindowLifecycle: ExtensionAuxiliaryWindowLifecycle' \
+  'var windowPublications: ExtensionWindowPublicationQuery' \
+  'var tabPublicationAdmission: ExtensionTabPublicationAdmission' \
+  'var normalTabActivation: ExtensionNormalTabActivationTransaction' \
+  'var normalTabClosure: ExtensionNormalTabCloseTransaction' \
+  'var runtimeReloadTransaction: ExtensionRuntimeReloadTransaction' \
+  'var runtimePublicationReconciler: ExtensionRuntimePublicationReconciler' \
+  'var loadedRuntimePublicationReconciler:' \
+  'struct ExtensionRuntimePublicationComposition' \
+  'private func prepareRuntimePublicationComposition()' \
+  'guard runtimePublicationComposition == nil else { return }' \
+  'gate: gate' \
+  'runtimePublicationComposition = ExtensionRuntimePublicationComposition('; do
+  if ! rg -Fq "$required_runtime_composition_boundary" \
+      "$runtime_publication_composition"; then
+    printf 'error: exact runtime publication composition missing: %s\n' \
+      "$required_runtime_composition_boundary" >&2
+    status=1
+  fi
+done
+
+if ! rg -Uq \
+    'var runtimePublicationComposition:[[:space:]]*ExtensionRuntimePublicationComposition\?' \
+    Sumi/Managers/ExtensionManager/ExtensionManager.swift; then
+  printf 'error: ExtensionManager lacks one atomic runtime composition state\n' >&2
+  status=1
+fi
+partial_runtime_storage_hits="$(
+  rg -n \
+    'runtimePublicationGateStorage|normalWindowLifecycleStorage|auxiliaryWindowLifecycleStorage|windowPublicationsStorage|tabPublicationAdmissionStorage|normalTabActivationStorage|normalTabClosureStorage|runtimeReloadTransactionStorage|runtimePublicationReconcilerStorage' \
+    App Sumi SumiTests -g '*.swift' || true
+)"
+fail_matches \
+  "runtime publication graph can be represented as partially assembled state" \
+  "$partial_runtime_storage_hits"
+
+replacement_facade_files=(
+  "$runtime_publication_composition"
+  "$runtime_publication"
+  "$auxiliary_publication"
+  "$runtime_publication_gate"
+  "$runtime_publication_reconciler"
+  "$deferred_tab_closures"
+  "$browser_content_inventory"
+)
+replacement_facade_hits="$(
+  rg -n \
+    '^[[:space:]]*(private[[:space:]]+)?(final[[:space:]]+)?(class|struct|enum|protocol)[[:space:]]+[A-Za-z0-9_]*(Owner|Bundle|Services|Bridge)\b|^[[:space:]]*(private[[:space:]]+)?struct[[:space:]]+(Dependencies|Actions)\b' \
+    "${replacement_facade_files[@]}" || true
+)"
+fail_matches \
+  "deleted runtime bridge was replaced by another owner/bundle/closure-bag facade" \
+  "$replacement_facade_hits"
+
+exact_runtime_root_storage_hits="$(
+  rg -n \
+    '^[[:space:]]+private[[:space:]]+(weak[[:space:]]+)?(let|var)[[:space:]]+(manager|extensionManager)\b|^[[:space:]]+private[[:space:]]+(weak[[:space:]]+)?(let|var)[^:]*:[[:space:]]*ExtensionManager\b' \
+    "$runtime_publication_gate" \
+    "$runtime_publication_reconciler" \
+    "$browser_content_inventory" || true
+)"
+fail_matches \
+  "exact runtime publication capability retained ExtensionManager" \
+  "$exact_runtime_root_storage_hits"
+
+composition_forwarders="$(
+  rg -n '^[[:space:]]+func[[:space:]]+' \
+    "$runtime_publication_composition" || true
+)"
+fail_matches \
+  "runtime publication composition grew behavior forwarders" \
+  "$composition_forwarders"
+
+loaded_reconciler_source="$(
+  sed -n \
+    '/var loadedRuntimePublicationReconciler:/,/^    }/p' \
+    "$runtime_publication_composition"
+)"
+if ! printf '%s\n' "$loaded_reconciler_source" \
+    | rg -Fq 'runtimePublicationComposition?.reconciler'; then
+  printf 'error: loaded-only runtime reconciler does not return existing storage\n' >&2
+  status=1
+fi
+loaded_reconciler_materialization_hits="$(
+  printf '%s\n' "$loaded_reconciler_source" \
+    | rg -n 'prepareRuntimePublicationComposition|runtimePublicationReconciler[[:space:]]*$' || true
+)"
+fail_matches \
+  "loaded-only runtime reconciler materializes the cold publication graph" \
+  "$loaded_reconciler_materialization_hits"
+
+if ! rg -Uq \
+    'manager\.loadedRuntimePublicationReconciler\?\.retire\([[:space:]]*runtime:[[:space:]]*manager\.runtime,[[:space:]]*auxiliaryControl:[[:space:]]*manager\.extensionAuxiliaryWindows' \
+    "$runtime_teardown"; then
+  printf 'error: runtime teardown does not use the loaded-only reconciler\n' >&2
+  status=1
+fi
+cold_teardown_materialization_hits="$(
+  rg -n 'manager\.runtimePublicationReconciler\.retire|prepareRuntimePublicationComposition' \
+    "$runtime_teardown" || true
+)"
+fail_matches \
+  "cold runtime teardown materializes the publication graph" \
+  "$cold_teardown_materialization_hits"
+
+for required_gate_boundary in \
+  'var acceptsBrowserEvents: Bool' \
+  'func beginReload() -> ReloadClaim?' \
+  'func reloadIsCurrent(_ claim: ReloadClaim) -> Bool' \
+  'func beginBrowserEventHandoff(_ claim: ReloadClaim) -> Bool' \
+  'func exactTabCloseDisposition() -> ExactTabCloseDisposition' \
+  'func finishReload(' \
+  'func beginTerminalRetirement() -> Bool' \
+  'func finishTerminalRetirement()'; do
+  if ! rg -Fq "$required_gate_boundary" "$runtime_publication_gate"; then
+    printf 'error: runtime publication gate boundary missing: %s\n' \
+      "$required_gate_boundary" >&2
+    status=1
+  fi
+done
+
+for required_gate_usage in \
+  'gate.beginReload()' \
+  'gate.reloadIsCurrent(claim)' \
+  'gate.finishReload(' \
+  'gate.beginTerminalRetirement()' \
+  'gate.finishTerminalRetirement()'; do
+  if ! rg -Fq "$required_gate_usage" \
+      "$runtime_publication_reconciler"; then
+    printf 'error: runtime publication reconciler bypasses gate phase: %s\n' \
+      "$required_gate_usage" >&2
+    status=1
+  fi
+done
+
+for required_reload_claim_route in \
+  'publicationClaim: claim' \
+  'publicationClaim: ExtensionRuntimePublicationGate.ReloadClaim' \
+  'publicationGate.beginBrowserEventHandoff(publicationClaim)' \
+  'during: publicationClaim' \
+  'during claim: ExtensionRuntimePublicationGate.ReloadClaim' \
+  'gate.reloadIsCurrent(claim)'; do
+  if ! rg -Fq "$required_reload_claim_route" \
+      "$runtime_publication_reconciler" \
+      "$runtime_reload_transaction" \
+      Sumi/Managers/ExtensionManager/ExtensionNormalTabRuntimeBindingOwner.swift \
+      "$tab_publication_admission"; then
+    printf 'error: reload-internal Tab publication lost its exact claim: %s\n' \
+      "$required_reload_claim_route" >&2
+    status=1
+  fi
+done
+
+if ! rg -Fq 'guard gate.admitStructuralBrowserEvent() else { return false }' \
+    "$tab_publication_admission"; then
+  printf 'error: normal Tab publication admission bypasses the runtime gate\n' >&2
+  status=1
+fi
+
+for required_coalesced_reload_boundary in \
+  'var canCoalesceReloadRequest: Bool' \
+  'private var pendingReload: ReloadWork?' \
+  'pendingReload = work' \
+  'pendingReload = nil' \
+  'replayScheduler.replaceScheduledReplay' \
+  'replayScheduler.canScheduleReplay' \
+  'takeDeferredStructuralEvent('; do
+  if ! rg -Fq "$required_coalesced_reload_boundary" \
+      "$runtime_publication_gate" \
+      "$runtime_publication_reconciler" \
+      "$runtime_publication_replay_scheduler"; then
+    printf 'error: callback-triggered reload/event reconciliation is lost: %s\n' \
+      "$required_coalesced_reload_boundary" >&2
+    status=1
+  fi
+done
+
+for required_deferred_reload_settlement in \
+  'self.settleDeferredCommit(commit)' \
+  'self?.settleRuntimePublicationCommit(commit)' \
+  'settleRuntimePublicationCommit(commit)'; do
+  if ! rg -Fq "$required_deferred_reload_settlement" \
+      "$runtime_publication_reconciler" \
+      "$runtime_publication_composition" \
+      "$runtime_publication"; then
+    printf 'error: deferred runtime reload loses focus/activation settlement: %s\n' \
+      "$required_deferred_reload_settlement" >&2
+    status=1
+  fi
+done
+
+for required_post_callback_open_authority in \
+  'manager.runtimePublicationGate.reloadIsCurrent(reloadClaim)' \
+  'manager.extensionContextBindingGeneration(for: profileId)' \
+  'manager.profileRuntime.controller(for: profileId) === controller' \
+  'manager.adapterStore.existingTabAdapter(for: tab.id) === adapter' \
+  'manager.resolvedLiveWebView(for: tab) === webView' \
+  'claimDidOpenTabNotificationForClose(' \
+  'manager.windowPublications.tabPublicationIsCurrent('; do
+  if ! rg -Fq "$required_post_callback_open_authority" \
+      Sumi/Managers/ExtensionManager/ExtensionNormalTabRuntimeBindingOwner.swift; then
+    printf 'error: didOpenTab lost exact post-callback authority: %s\n' \
+      "$required_post_callback_open_authority" >&2
+    status=1
+  fi
+done
+
+open_authority_validation_count="$(rg -Fc 'openPublicationRemainsCurrent(' \
+  Sumi/Managers/ExtensionManager/ExtensionNormalTabRuntimeBindingOwner.swift)"
+if (( open_authority_validation_count < 3 )); then
+  printf 'error: didOpenTab authority is not validated before and after callback\n' >&2
+  status=1
+fi
+
+for required_exact_close_boundary in \
+  'private let deferredTabClosures: ExtensionDeferredTabClosures' \
+  'struct ExtensionNormalTabCloseReceipt' \
+  'func deferTabClose(_ tab: Tab) -> Bool' \
+  'drainDeferredTabClosures()' \
+  'manager.runtimePublicationReconciler.deferTabClose(tab)' \
+  'adapter.hasExactTabIdentity(tab)' \
+  'adapterStore.removeTabAdapter('; do
+  if ! rg -Fq "$required_exact_close_boundary" \
+      "$runtime_publication_reconciler" \
+      Sumi/Managers/ExtensionManager/SumiExtensionsModule.swift \
+      Sumi/Managers/ExtensionManager/ExtensionNormalTabCloseTransaction.swift; then
+    printf 'error: exact pre-handoff Tab closure is lost: %s\n' \
+      "$required_exact_close_boundary" >&2
+    status=1
+  fi
+done
+
+detached_close_membership_hits="$(
+  rg -n 'adapter(Resolution)?\.(stableAdapter|represents)|receipt\.adapter\.represents' \
+    Sumi/Managers/ExtensionManager/ExtensionNormalTabCloseTransaction.swift \
+    || true
+)"
+fail_matches \
+  "detached Tab close receipt depends on live collection membership" \
+  "$detached_close_membership_hits"
+
+for requested_tab_single_publisher_boundary in \
+  'registerTabWithExtensionRuntime: false' \
+  'registerTabWithExtensionRuntime: Bool = true'; do
+  if ! rg -Fq "$requested_tab_single_publisher_boundary" \
+      Sumi/Managers/ExtensionManager/ExtensionRequestedTabWebViewMaterializer.swift \
+      Sumi/Models/Tab/TabNormalWebViewSetupOwner.swift; then
+    printf 'error: requested Tab WebView provisioning can publish outside its receipt: %s\n' \
+      "$requested_tab_single_publisher_boundary" >&2
+    status=1
+  fi
+done
+
+unbounded_reload_drain_hits="$(
+  rg -n 'while[[:space:]]+true' "$runtime_publication_reconciler" || true
+)"
+fail_matches \
+  "runtime publication reconciliation can monopolize the main thread" \
+  "$unbounded_reload_drain_hits"
+
+window_batch_finish_line="$(
+  rg -n -m1 'normalWindows\.finishRuntimeReconciliation\(' \
+    "$runtime_reload_transaction" | cut -d: -f1 || true
+)"
+browser_handoff_line="$(
+  rg -n -m1 'publicationGate\.beginBrowserEventHandoff\(' \
+    "$runtime_reload_transaction" | cut -d: -f1 || true
+)"
+if [[ -z "$window_batch_finish_line" || -z "$browser_handoff_line" \
+      || "$window_batch_finish_line" -ge "$browser_handoff_line" ]]; then
+  printf 'error: browser events must remain deferred until every window callback completes\n' >&2
+  status=1
+fi
+
+reload_claim_line="$(
+  rg -n -m1 'gate\.beginReload\(' "$runtime_publication_reconciler" \
+    | cut -d: -f1 || true
+)"
+reload_suspend_line="$(
+  rg -n -m1 'suspendForRuntimeReload\(' "$runtime_publication_reconciler" \
+    | cut -d: -f1 || true
+)"
+retirement_claim_line="$(
+  rg -n -m1 'gate\.beginTerminalRetirement\(' \
+    "$runtime_publication_reconciler" | cut -d: -f1 || true
+)"
+retirement_close_line="$(
+  rg -n -m1 'closeAllForRuntimeTeardown\(' \
+    "$runtime_publication_reconciler" | cut -d: -f1 || true
+)"
+if [[ -z "$reload_claim_line" || -z "$reload_suspend_line" \
+      || "$reload_claim_line" -ge "$reload_suspend_line" ]]; then
+  printf 'error: reload must claim the publication gate before suspending sessions\n' >&2
+  status=1
+fi
+if [[ -z "$retirement_claim_line" || -z "$retirement_close_line" \
+      || "$retirement_claim_line" -ge "$retirement_close_line" ]]; then
+  printf 'error: terminal retirement must claim the gate before close callbacks\n' >&2
+  status=1
+fi
+
+for required_inventory_boundary in \
+  'struct ExtensionBrowserContentInventory' \
+  'func tabs(in runtime: ExtensionManagerRuntime) -> [Tab]' \
+  'func liveWebViews(' \
+  'guard runtime.browserRuntimeAvailable() else { return [] }' \
+  'runtime.primaryTrackedWindowId(tab.id)' \
+  'runtime.untrackedOwnedWebView(tab)' \
+  'runtime.trackedWebViews(tab.id)' \
+  'seen.insert(ObjectIdentifier(webView)).inserted' \
+  'var browserContentInventory: ExtensionBrowserContentInventory { .init() }'; do
+  if ! rg -Fq "$required_inventory_boundary" \
+      "$browser_content_inventory"; then
+    printf 'error: exact browser-content inventory boundary missing: %s\n' \
+      "$required_inventory_boundary" >&2
+    status=1
+  fi
+done
+
+inventory_storage_hits="$(
+  rg -n '^[[:space:]]+private[[:space:]]+(let|var)[[:space:]]+' \
+    "$browser_content_inventory" || true
+)"
+fail_matches "stateless browser-content inventory gained stored state" \
+  "$inventory_storage_hits"
+inventory_materialization_hits="$(
+  rg -n 'prepareRuntimePublicationComposition|runtimePublication(Reconciler|Gate|Lifecycle)' \
+    "$browser_content_inventory" || true
+)"
+fail_matches \
+  "read-only browser-content inventory materializes publication lifecycle" \
+  "$inventory_materialization_hits"
+
+duplicated_inventory_algorithm_hits="$(
+  rg -n 'func[[:space:]]+(allKnownTabs|liveWebViews)\b' \
+    App Sumi -g '*.swift' \
+    -g '!ExtensionBrowserContentInventory.swift' || true
+)"
+fail_matches \
+  "browser-content inventory algorithm was duplicated outside its capability" \
+  "$duplicated_inventory_algorithm_hits"
+
+for required_inventory_consumer in \
+  'contentInventory.tabs(in: runtime)' \
+  'contentInventory.liveWebViews(for: tab, in: runtime)'; do
+  if ! rg -Fq "$required_inventory_consumer" \
+      "$runtime_reload_transaction"; then
+    printf 'error: runtime reload bypasses browser-content inventory: %s\n' \
+      "$required_inventory_consumer" >&2
+    status=1
+  fi
+done
+
+for required_gate_regression in \
+  testActiveGateAcceptsOrdinaryBrowserEvents \
+  testReloadClaimIsExclusiveUntilFinished \
+  testTerminalRetirementInvalidatesInFlightReload \
+  testReloadHandoffAcceptsEventsWithoutAllowingNestedReload \
+  testPreHandoffStructuralEventRequestsFollowUpWithoutAdmission \
+  testAuxiliaryEventRemainsSynchronousAndRequestsFollowUp \
+  testReloadClaimCannotAuthorizeAnotherGate \
+  testInactiveGateBlocksOrdinaryBrowserEvents \
+  testReloadCanReactivateInactiveGate; do
+  if ! rg -Fq "func $required_gate_regression" "$runtime_gate_tests"; then
+    printf 'error: runtime publication gate regression missing: %s\n' \
+      "$required_gate_regression" >&2
+    status=1
+  fi
+done
+
+for required_reentrancy_regression in \
+  testExactTabCloseIsDeferredOnlyBeforeReloadHandoff \
+  testExactTabCloseIsRejectedDuringTerminalRetirement \
+  testRepeatedCallbackReloadIsBoundedToOneCoalescedReplay \
+  testSecondReplayRequestContinuesOnLaterMainActorTurn \
+  testDidOpenDoesNotSettleAfterAdapterAuthorityChangesInCallback \
+  testDidOpenDoesNotSettleAfterContextBindingChangesInCallback \
+  testDidOpenIsNotEmittedWhenWindowAdmissionLosesTabAuthority \
+  testPreHandoffPhysicalTabCloseRetiresExactAdapter; do
+  if ! rg -Fq "func $required_reentrancy_regression" \
+      "$runtime_gate_tests" \
+      SumiTests/ExtensionActionPopupSourceReceiptTests.swift; then
+    printf 'error: runtime reentrancy regression missing: %s\n' \
+      "$required_reentrancy_regression" >&2
+    status=1
+  fi
+done
+
+for required_inventory_regression in \
+  testTabsPreserveRuntimeThenWindowEphemeralOrder \
+  testLiveWebViewsOrderPrimaryThenUntrackedThenRemainingTracked \
+  testTrackedOrderRemainsStableWithoutPrimaryResidence \
+  testUnavailableRuntimeDoesNotReadWebViewProviders; do
+  if ! rg -Fq "func $required_inventory_regression" \
+      "$content_inventory_tests"; then
+    printf 'error: browser-content inventory regression missing: %s\n' \
+      "$required_inventory_regression" >&2
+    status=1
+  fi
+done
+
+if ! rg -Fq \
+    'func testRejectedInvocationDoesNotMaterializeLazyRuntimeSystems' \
+    SumiTests/ExtensionActionInvocationAdmissionTests.swift; then
+  printf 'error: cold rejected-invocation composition regression missing\n' >&2
+  status=1
+fi
+
+for required_publication_lifetime_regression in \
+  testColdRuntimeTeardownDoesNotMaterializePublicationLifecycle \
+  testRetainedPublicationCollaboratorsDoNotRetainExtensionManager \
+  testTerminalRuntimeRetirementRejectsReloadFromAuxiliaryCloseCallback \
+  testStaleNormalWindowCloseCannotRetireReplacementWithSameUUID \
+  testCallbackReloadIsCoalescedAfterCurrentGeneration \
+  testTabPropertyEventRequiresCurrentOpenPublication; do
+  if ! rg -Fq "func $required_publication_lifetime_regression" \
+      SumiTests/ExtensionRuntimeTeardownOwnerTests.swift \
+      "$auxiliary_identity_tests" \
+      SumiTests/ExtensionActionPopupSourceReceiptTests.swift; then
+    printf 'error: runtime publication lifetime regression missing: %s\n' \
+      "$required_publication_lifetime_regression" >&2
+    status=1
+  fi
+done
+
+for required_current_tab_property_boundary in \
+  'runtimePublicationGate.acceptsBrowserEvents' \
+  '.hasSettledDidOpenTabNotification(for: generation)' \
+  'manager.windowPublications.tabPublicationIsCurrent('; do
+  if ! rg -Fq "$required_current_tab_property_boundary" \
+      Sumi/Managers/ExtensionManager/ExtensionNormalTabRuntimeBindingOwner.swift; then
+    printf 'error: Tab property event lacks current open-publication proof: %s\n' \
+      "$required_current_tab_property_boundary" >&2
+    status=1
+  fi
+done
+
+if (( $(rg -c 'runtimePublicationGate\.admitStructuralBrowserEvent\(\)' \
+      Sumi/Managers/ExtensionManager/SumiExtensionsModule.swift || true) < 2 )); then
+  printf 'error: normal open/close routes bypass structural reload admission\n' >&2
+  status=1
+fi
+if ! rg -Fq 'runtimePublicationGate.exactTabCloseDisposition()' \
+    Sumi/Managers/ExtensionManager/SumiExtensionsModule.swift; then
+  printf 'error: normal Tab close bypasses exact reload disposition\n' >&2
+  status=1
+fi
+if ! rg -Fq 'guard case .active = phase else { return }' \
+    "$normal_window_lifecycle"; then
+  printf 'error: normal-window close can interleave with lifecycle batches\n' >&2
+  status=1
+fi
 
 popup_active_lookup_hits="$(
   rg -n '\b(currentExtensionTabForPopup|currentExtensionTabForActiveWindow|activeExtensionWindowState)\b' \
@@ -258,11 +737,14 @@ unused_mutation_hits="$(
 fail_matches "unused broad WebView mutation escaped the bridge split" "$unused_mutation_hits"
 
 direct_auxiliary_window_callbacks="$(
-  rg -n '\b(extensionContext|context)\.did(Open|Close|Focus)Window\b|auxiliaryOwnerExtensionContext' \
-    "$runtime_bridge" || true
+  rg -n '\b(extensionContext|context)\.did(Open|Close|Focus)(Window|Tab)\b|auxiliaryOwnerExtensionContext' \
+    "$runtime_publication_composition" \
+    "$runtime_publication" \
+    "$auxiliary_publication" \
+    "$runtime_publication_reconciler" || true
 )"
 fail_matches \
-  "auxiliary WebKit window lifecycle returned to the runtime bridge" \
+  "WebKit callbacks escaped the exact normal/auxiliary lifecycle transactions" \
   "$direct_auxiliary_window_callbacks"
 
 auxiliary_lifecycle_aggregate_hits="$(
@@ -484,16 +966,26 @@ for required_publication_validation in \
   fi
 done
 
-for required_bridge_delegation in \
+for required_auxiliary_event_delegation in \
   'auxiliaryWindowLifecycle.opened(' \
   'auxiliaryWindowLifecycle.focused(' \
-  'auxiliaryWindowLifecycle.closed(' \
+  'auxiliaryWindowLifecycle.closed('; do
+  if ! rg -Fq "$required_auxiliary_event_delegation" \
+      "$auxiliary_publication"; then
+    printf 'error: exact auxiliary event delegation missing: %s\n' \
+      "$required_auxiliary_event_delegation" >&2
+    status=1
+  fi
+done
+
+for required_reconciliation_delegation in \
   'suspendForRuntimeReload(' \
   'republishAfterRuntimeReload(' \
   'closeAllForRuntimeTeardown('; do
-  if ! rg -Fq "$required_bridge_delegation" "$runtime_bridge"; then
-    printf 'error: auxiliary-window lifecycle delegation missing: %s\n' \
-      "$required_bridge_delegation" >&2
+  if ! rg -Fq "$required_reconciliation_delegation" \
+      "$runtime_publication_reconciler"; then
+    printf 'error: runtime publication reconciliation delegation missing: %s\n' \
+      "$required_reconciliation_delegation" >&2
     status=1
   fi
 done
@@ -713,7 +1205,11 @@ for required_token_regression in \
   testNewSameGenerationPreparationSupersedesOldCommittedRollbackRight \
   testDelegatedClaimCannotCloseLaterSameGenerationOpen \
   testSupersededPreparationHandsOffToExactOrdinaryOpen \
-  testCommittedReceiptHandsOffToExactReentrantReplacementOpen; do
+  testCommittedReceiptHandsOffToExactReentrantReplacementOpen \
+  testOpenPublicationRequiresExactSettlement \
+  testStaleOpenSettlementCannotSettleReplacement \
+  testRetiredOpenAdmissionCannotPublishAnotherGeneration \
+  testWindowPrepublicationRollbackRestoresSettledOpenClaim; do
   if ! rg -Fq "func $required_token_regression" \
       SumiTests/TabExtensionPageRuntimeOwnerTests.swift; then
     printf 'error: exact open-publication token regression missing: %s\n' \
@@ -727,6 +1223,9 @@ for required_prepublication_claim in \
   'state.preparedWindowPrepublicationToken === token' \
   'invalidatePreparedWindowPrepublication()' \
   'TabExtensionOpenPublicationClaim' \
+  'settledOpenPublicationClaimIdentity' \
+  'settleDidOpenTabNotification(' \
+  'retireFutureOpenPublications()' \
   'committedMutationRevision' \
   'supersedingOpenPublicationClaimIdentity'; do
   if ! rg -Fq "$required_prepublication_claim" \
@@ -759,12 +1258,25 @@ if ! rg -Fq 'XCTAssertIdentical(window, publishedMainWindow)' \
   status=1
 fi
 
-runtime_bridge_lines="$(wc -l < "$runtime_bridge" | tr -d ' ')"
-if (( runtime_bridge_lines > 420 )); then
-  printf 'error: extension runtime bridge regained lifecycle responsibility (%s > 420 LOC)\n' \
-    "$runtime_bridge_lines" >&2
-  status=1
-fi
+bounded_runtime_publication_files=(
+  "$runtime_publication_composition:220:exact graph assembly"
+  "$runtime_publication:140:normal publication routing"
+  "$auxiliary_publication:80:auxiliary event routing"
+  "$runtime_publication_gate:190:publication phase gate"
+  "$runtime_publication_reconciler:205:generation replacement and retirement"
+  "$runtime_publication_replay_scheduler:40:one-turn overflow replay scheduling"
+  "$deferred_tab_closures:40:exact deferred Tab identities"
+  "$browser_content_inventory:90:stateless browser-content inventory"
+)
+for bounded in "${bounded_runtime_publication_files[@]}"; do
+  IFS=: read -r file limit responsibility <<< "$bounded"
+  lines="$(wc -l < "$file" | tr -d ' ')"
+  if (( lines > limit )); then
+    printf 'error: %s grew beyond %s responsibility (%s > %s LOC)\n' \
+      "$file" "$responsibility" "$lines" "$limit" >&2
+    status=1
+  fi
+done
 
 auxiliary_lifecycle_lines="$(wc -l < "$auxiliary_window_lifecycle" | tr -d ' ')"
 if (( auxiliary_lifecycle_lines > 270 )); then

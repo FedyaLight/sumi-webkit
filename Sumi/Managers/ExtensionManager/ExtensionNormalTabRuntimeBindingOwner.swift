@@ -59,6 +59,24 @@ final class ExtensionNormalTabRuntimeBindingOwner:
 
     @discardableResult
     func notifyTabOpened(_ tab: Tab) -> Bool {
+        notifyTabOpenedAfterAdmission(tab, reloadClaim: nil)
+    }
+
+    @discardableResult
+    func notifyTabOpened(
+        _ tab: Tab,
+        during reloadClaim: ExtensionRuntimePublicationGate.ReloadClaim
+    ) -> Bool {
+        notifyTabOpenedAfterAdmission(
+            tab,
+            reloadClaim: reloadClaim
+        )
+    }
+
+    private func notifyTabOpenedAfterAdmission(
+        _ tab: Tab,
+        reloadClaim: ExtensionRuntimePublicationGate.ReloadClaim?
+    ) -> Bool {
         guard let manager else { return false }
 
         func deferOpen(_ reason: String) -> Bool {
@@ -108,7 +126,7 @@ final class ExtensionNormalTabRuntimeBindingOwner:
             return deferOpen("initialDocumentContextsNotLoaded")
         }
 
-        guard tabHasUsableWebViewForExtensionOpenNotification(
+        guard let webView = usableWebViewForExtensionOpenNotification(
             tab,
             controller: controller,
             profileId: profileId,
@@ -129,28 +147,96 @@ final class ExtensionNormalTabRuntimeBindingOwner:
         // A lazily restored Tab can materialize after its window entered the
         // registry. Reconcile the exact window projection first so WebKit can
         // never observe didOpenTab before didOpenWindow.
-        guard manager.browserRuntimeBridgeOwner.prepareTabOpen(tab) else {
+        let publicationWasAdmitted = if let reloadClaim {
+            manager.tabPublicationAdmission.prepareTabOpen(
+                tab,
+                during: reloadClaim
+            )
+        } else {
+            manager.tabPublicationAdmission.prepareTabOpen(tab)
+        }
+        guard publicationWasAdmitted else {
             return deferOpen("windowProjectionUnavailable")
         }
 
+        // This is the final in-process boundary before WebKit observes the
+        // Tab. A failed requested-Tab transaction can retire the model while
+        // a later WebView callback still reaches this direct entry point.
+        guard tab.extensionPageRuntimeOwner
+            .canPublishFutureOpenNotification()
+        else {
+            return deferOpen("tabOpenPublicationRetired")
+        }
+
+        let extensionLoadGeneration = manager.runtimeSession
+            .extensionLoadGeneration
+        let openGeneration = manager.runtimeSession
+            .tabOpenNotificationGeneration
+        let contextBindingGeneration = manager
+            .extensionContextBindingGeneration(for: profileId)
+        guard openPublicationRemainsCurrent(
+            tab,
+            manager: manager,
+            reloadClaim: reloadClaim,
+            controller: controller,
+            adapter: adapter,
+            webView: webView,
+            profileId: profileId,
+            extensionLoadGeneration: extensionLoadGeneration,
+            openGeneration: openGeneration,
+            contextBindingGeneration: contextBindingGeneration
+        ) else {
+            return deferOpen("openPublicationChangedDuringAdmission")
+        }
         manager.runtimeDiagnostics.trace(
             "didOpenTab start generation=\(manager.runtimeSession.extensionLoadGeneration) notifyGeneration=\(manager.runtimeSession.tabOpenNotificationGeneration) controller=\(ExtensionRuntimeDiagnostics.objectDescription(controller)) \(manager.runtimeDiagnostics.tabDescription(tab, manager: manager)) adapter=\(ExtensionRuntimeDiagnostics.objectDescription(adapter))"
         )
         tab.extensionPageRuntimeOwner.noteOpenNotification(
-            extensionContextBindingGeneration: manager.extensionContextBindingGeneration(for: profileId),
+            extensionContextBindingGeneration: contextBindingGeneration,
             contextReadiness: .loaded
         )
         // Reserve the generation before the external callback. WebKit may
         // synchronously re-enter registration from didOpenTab.
-        guard tab.extensionPageRuntimeOwner.markDidOpenTab(
-            generation: manager.runtimeSession.tabOpenNotificationGeneration
-        ) else {
+        guard let openClaim = tab.extensionPageRuntimeOwner.reserveDidOpenTab(
+            generation: openGeneration
+        )
+        else {
             return deferOpen("openPublicationClaimAlreadyCurrent")
         }
         controller.didOpenTab(adapter)
         #if DEBUG
             manager.testHooks.didOpenTab?(tab.id)
         #endif
+        guard openPublicationRemainsCurrent(
+                tab,
+                manager: manager,
+                reloadClaim: reloadClaim,
+                controller: controller,
+                adapter: adapter,
+                webView: webView,
+                profileId: profileId,
+                extensionLoadGeneration: extensionLoadGeneration,
+                openGeneration: openGeneration,
+                contextBindingGeneration: contextBindingGeneration
+              ),
+              tab.extensionPageRuntimeOwner.settleDidOpenTabNotification(
+                  openClaim,
+                  generation: openGeneration
+              )
+        else {
+            if tab.extensionPageRuntimeOwner
+                .claimDidOpenTabNotificationForClose(
+                    openClaim,
+                    generation: openGeneration
+                ) {
+                emitDidCloseTab(
+                    tab,
+                    controller: controller,
+                    adapter: adapter
+                )
+            }
+            return deferOpen("openPublicationChangedDuringCallback")
+        }
         SafariExtensionAutofillFillDiagnostics.recordContentScriptInjection(
             injected: true,
             extensionId: nil,
@@ -166,6 +252,12 @@ final class ExtensionNormalTabRuntimeBindingOwner:
     func notifyTabOpenedIfNeeded(_ tab: Tab, reason: String = #function) {
         guard let manager else { return }
         let generation = manager.runtimeSession.tabOpenNotificationGeneration
+        guard canEnterGeneration(tab, generation: generation) else {
+            manager.runtimeDiagnostics.trace(
+                "notifyTabOpenedIfNeeded skip reason=\(reason) because=previousGenerationOpenStillClaimed current=\(generation) open=\(tab.extensionPageRuntimeOwner.currentOpenNotificationGeneration()) \(manager.runtimeDiagnostics.tabDescription(tab, manager: manager))"
+            )
+            return
+        }
         tab.extensionPageRuntimeOwner.prepareGeneration(generation)
 
         guard manager.extensionsLoaded else {
@@ -215,12 +307,24 @@ final class ExtensionNormalTabRuntimeBindingOwner:
         properties: WKWebExtension.TabChangedProperties
     ) {
         guard let manager else { return }
+        guard manager.runtimePublicationGate.acceptsBrowserEvents else {
+            return
+        }
         let generation = manager.runtimeSession.tabOpenNotificationGeneration
+        guard canEnterGeneration(tab, generation: generation) else { return }
         tab.extensionPageRuntimeOwner.prepareGeneration(generation)
 
-        guard isTabEligibleForExtensionRuntime(tab, generation: generation) else {
+        guard isTabEligibleForExtensionRuntime(tab, generation: generation),
+              tab.extensionPageRuntimeOwner
+              .hasSettledDidOpenTabNotification(for: generation),
+              let profileID = manager.resolvedProfileId(for: tab),
+              manager.windowPublications.tabPublicationIsCurrent(
+                  tab,
+                  profileID: profileID
+              )
+        else {
             manager.runtimeDiagnostics.trace(
-                "notifyTabPropertiesChanged skip because=tabNotEligible requested=\(properties.rawValue) generation=\(generation) eligibleGeneration=\(tab.extensionPageRuntimeOwner.currentEligibleGeneration()) \(manager.runtimeDiagnostics.tabDescription(tab, manager: manager))"
+                "notifyTabPropertiesChanged skip because=tabPublicationNotCurrent requested=\(properties.rawValue) generation=\(generation) eligibleGeneration=\(tab.extensionPageRuntimeOwner.currentEligibleGeneration()) \(manager.runtimeDiagnostics.tabDescription(tab, manager: manager))"
             )
             return
         }
@@ -267,7 +371,10 @@ final class ExtensionNormalTabRuntimeBindingOwner:
             return true
         }
 
-        for webView in manager.liveWebViews(for: tab)
+        for webView in manager.browserContentInventory.liveWebViews(
+            for: tab,
+            in: manager.runtime
+        )
             where manager.webViewNeedsExtensionRuntimeRebuild(webView, for: tab) {
             return true
         }
@@ -379,6 +486,12 @@ final class ExtensionNormalTabRuntimeBindingOwner:
     ) {
         guard let manager else { return }
         let generation = manager.runtimeSession.tabOpenNotificationGeneration
+        guard canEnterGeneration(tab, generation: generation) else {
+            manager.runtimeDiagnostics.trace(
+                "registerTabWithExtensionRuntime skip reason=\(reason) because=previousGenerationOpenStillClaimed current=\(generation) open=\(tab.extensionPageRuntimeOwner.currentOpenNotificationGeneration()) \(manager.runtimeDiagnostics.tabDescription(tab, manager: manager))"
+            )
+            return
+        }
         tab.extensionPageRuntimeOwner.prepareGeneration(generation)
 
         guard manager.extensionsLoaded || allowWhenExtensionsNotLoaded else {
@@ -403,6 +516,12 @@ final class ExtensionNormalTabRuntimeBindingOwner:
     ) {
         guard let manager else { return }
         let generation = manager.runtimeSession.tabOpenNotificationGeneration
+        guard canEnterGeneration(tab, generation: generation) else {
+            manager.runtimeDiagnostics.trace(
+                "markTabEligibleAfterCommittedNavigation skip reason=\(reason) because=previousGenerationOpenStillClaimed current=\(generation) open=\(tab.extensionPageRuntimeOwner.currentOpenNotificationGeneration()) \(manager.runtimeDiagnostics.tabDescription(tab, manager: manager))"
+            )
+            return
+        }
         tab.extensionPageRuntimeOwner.prepareGeneration(generation)
 
         guard manager.extensionsLoaded else {
@@ -426,19 +545,30 @@ final class ExtensionNormalTabRuntimeBindingOwner:
         )
     }
 
-    private func tabHasUsableWebViewForExtensionOpenNotification(
+    private func canEnterGeneration(
+        _ tab: Tab,
+        generation: UInt64
+    ) -> Bool {
+        guard tab.extensionPageRuntimeOwner
+            .canPublishFutureOpenNotification() else { return false }
+        let openGeneration = tab.extensionPageRuntimeOwner
+            .currentOpenNotificationGeneration()
+        return openGeneration == 0 || openGeneration == generation
+    }
+
+    private func usableWebViewForExtensionOpenNotification(
         _ tab: Tab,
         controller: WKWebExtensionController,
         profileId: UUID,
         deferOpen: (String) -> Bool
-    ) -> Bool {
-        guard let manager else { return false }
+    ) -> WKWebView? {
+        guard let manager else { return nil }
         guard let webView = manager.resolvedLiveWebView(for: tab) else {
             manager.runtimeDiagnostics.trace(
                 "didOpenTab deferred because=noLiveWebView profile=\(profileId.uuidString) \(manager.runtimeDiagnostics.tabDescription(tab, manager: manager))"
             )
             _ = deferOpen("noLiveWebView")
-            return false
+            return nil
         }
 
         guard manager.attachExtensionControllerIfNeeded(to: webView, for: tab) else {
@@ -446,7 +576,7 @@ final class ExtensionNormalTabRuntimeBindingOwner:
                 "didOpenTab deferred because=controllerAttachFailed webView=\(ExtensionRuntimeDiagnostics.objectDescription(webView)) profile=\(profileId.uuidString) \(manager.runtimeDiagnostics.tabDescription(tab, manager: manager))"
             )
             _ = deferOpen("controllerAttachFailed")
-            return false
+            return nil
         }
 
         guard webView.configuration.webExtensionController === controller else {
@@ -454,10 +584,52 @@ final class ExtensionNormalTabRuntimeBindingOwner:
                 "didOpenTab deferred because=controllerMismatch webView=\(ExtensionRuntimeDiagnostics.objectDescription(webView)) profile=\(profileId.uuidString) \(manager.runtimeDiagnostics.tabDescription(tab, manager: manager))"
             )
             _ = deferOpen("controllerMismatch")
-            return false
+            return nil
         }
 
-        return true
+        return webView
+    }
+
+    private func openPublicationRemainsCurrent(
+        _ tab: Tab,
+        manager: ExtensionManager,
+        reloadClaim: ExtensionRuntimePublicationGate.ReloadClaim?,
+        controller: WKWebExtensionController,
+        adapter: ExtensionTabAdapter,
+        webView: WKWebView,
+        profileId: UUID,
+        extensionLoadGeneration: UInt64,
+        openGeneration: UInt64,
+        contextBindingGeneration: UInt64
+    ) -> Bool {
+        let gateIsCurrent = if let reloadClaim {
+            manager.runtimePublicationGate.reloadIsCurrent(reloadClaim)
+        } else {
+            manager.runtimePublicationGate.acceptsBrowserEvents
+        }
+        return gateIsCurrent
+            && manager.runtimeSession.extensionLoadGeneration
+                == extensionLoadGeneration
+            && manager.runtimeSession.tabOpenNotificationGeneration
+                == openGeneration
+            && manager.extensionContextBindingGeneration(for: profileId)
+                == contextBindingGeneration
+            && manager.profileNeedsInitialDocumentExtensionContextLoad(
+                profileId: profileId
+            ) == false
+            && manager.resolvedProfileId(for: tab) == profileId
+            && manager.profileRuntime.controller(for: profileId) === controller
+            && manager.adapterStore.existingTabAdapter(for: tab.id) === adapter
+            && adapter.represents(tab)
+            && tab.extensionPageRuntimeOwner
+                .canPublishFutureOpenNotification()
+            && tab.extensionPageRuntimeOwner.isEligible(for: openGeneration)
+            && manager.resolvedLiveWebView(for: tab) === webView
+            && webView.configuration.webExtensionController === controller
+            && manager.windowPublications.tabPublicationIsCurrent(
+                tab,
+                profileID: profileId
+            )
     }
 
     private func coalescedTabChangedProperties(
@@ -492,7 +664,10 @@ final class ExtensionNormalTabRuntimeBindingOwner:
 
     private func resolvedLiveURL(for tab: Tab) -> URL? {
         guard let manager else { return tab.url }
-        for webView in manager.liveWebViews(for: tab) {
+        for webView in manager.browserContentInventory.liveWebViews(
+            for: tab,
+            in: manager.runtime
+        ) {
             if let url = webView.url {
                 return url
             }

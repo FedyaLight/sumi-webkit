@@ -63,6 +63,13 @@ final class ExtensionTabAdapter: NSObject, WKWebExtensionTab {
         exactTab === tab && tabQuery?.extensionTab(for: tabId) === tab
     }
 
+    /// Physical identity remains valid after the Tab leaves browser
+    /// collections. Teardown receipts use it to retire the exact adapter
+    /// without granting the detached Tab any live WebExtension capability.
+    func hasExactTabIdentity(_ tab: Tab) -> Bool {
+        exactTab === tab
+    }
+
     func canBeReplaced(by tab: Tab) -> Bool {
         exactTab !== tab && tabQuery?.extensionTab(for: tabId) === tab
     }

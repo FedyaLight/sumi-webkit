@@ -75,7 +75,6 @@ final class ExtensionCreatedTabRuntimeRegistrar {
         let evidence = ExtensionCreatedTabPublicationEvidence(
             base: base,
             adapter: preparedAdapter.adapter,
-            createdAdapter: preparedAdapter.created,
             stateToken: preparation,
             reason: reason
         )
@@ -86,7 +85,10 @@ final class ExtensionCreatedTabRuntimeRegistrar {
             let restored = tab.extensionPageRuntimeOwner
                 .rollbackWindowPrepublication(preparation)
             if restored {
-                adapters.removeCreatedAdapter(preparedAdapter, for: tab)
+                adapters.retireExactAdapter(
+                    preparedAdapter.adapter,
+                    for: tab
+                )
             }
             diagnostics.trace(
                 "registerExtensionCreatedTab rejected reason=\(reason) because=receiptEvidenceStale generation=\(base.generation) rollback=\(restored) \(tabDescription(tab))"

@@ -126,7 +126,7 @@ final class ExtensionCreatedTabPublicationValidator {
               base.tab.extensionPageRuntimeOwner.isEligible(
                   for: currentGeneration
               ), base.tab.extensionPageRuntimeOwner
-                .hasDidOpenTabNotification(for: currentGeneration),
+                .hasSettledDidOpenTabNotification(for: currentGeneration),
               binding.openNotifiedContextReadiness == .loaded,
               binding.openNotifiedContextBindingGeneration
                 == profileRuntime.contextBindingGeneration(

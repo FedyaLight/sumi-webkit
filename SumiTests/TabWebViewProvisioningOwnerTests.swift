@@ -197,7 +197,7 @@ final class TabWebViewProvisioningOwnerTests: XCTestCase {
             deferWebViewUntilProfileAvailable: { false },
             beginSuspendedRestoreIfNeeded: { /* No-op. */ },
             finishSuspendedRestoreIfNeeded: { /* No-op. */ },
-            setupWebView: { /* No-op. */ },
+            setupWebView: { _ in /* No-op. */ },
             deferWebsiteDataMutationWebViewMaterialization: { _ in false },
             adoptParkedWebViewAsCurrent: { _ in /* No-op. */ },
             clearParkedExistingWebView: { /* No-op. */ },

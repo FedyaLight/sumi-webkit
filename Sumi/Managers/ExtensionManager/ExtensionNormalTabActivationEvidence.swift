@@ -170,7 +170,7 @@ final class ExtensionNormalTabActivationValidator {
         guard tab.isEphemeral == false,
               tab.extensionPageRuntimeOwner.isEligible(for: generation),
               tab.extensionPageRuntimeOwner
-                .hasDidOpenTabNotification(for: generation),
+                .hasSettledDidOpenTabNotification(for: generation),
               let profileID = profileRuntime.resolvedProfileId(
                   for: tab,
                   runtime: runtime
@@ -211,7 +211,7 @@ final class ExtensionNormalTabActivationValidator {
         guard evidence.tabIdentity == ObjectIdentifier(tab),
               tab.extensionPageRuntimeOwner.isEligible(for: generation),
               tab.extensionPageRuntimeOwner
-                .hasDidOpenTabNotification(for: generation),
+                .hasSettledDidOpenTabNotification(for: generation),
               profileRuntime.resolvedProfileId(
                   for: tab,
                   runtime: runtime()

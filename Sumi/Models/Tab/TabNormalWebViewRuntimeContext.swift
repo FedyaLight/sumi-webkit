@@ -82,7 +82,7 @@ struct TabNormalWebViewRuntimeContext {
     let deferWebViewUntilProfileAvailable: () -> Bool
     let beginSuspendedRestoreIfNeeded: () -> Void
     let finishSuspendedRestoreIfNeeded: () -> Void
-    let setupWebView: @MainActor @Sendable () -> Void
+    let setupWebView: @MainActor @Sendable (Bool) -> Void
     let deferWebsiteDataMutationWebViewMaterialization: (
         @MainActor @Sendable @escaping () -> Void
     ) -> Bool

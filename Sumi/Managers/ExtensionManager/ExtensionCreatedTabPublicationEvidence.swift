@@ -19,7 +19,6 @@ struct ExtensionCreatedTabPublicationBaseEvidence {
 struct ExtensionCreatedTabPublicationEvidence {
     let base: ExtensionCreatedTabPublicationBaseEvidence
     let adapter: ExtensionTabAdapter
-    let createdAdapter: Bool
     let stateToken: TabExtensionPrepublicationToken
     let reason: String
 
@@ -64,11 +63,20 @@ final class ExtensionCreatedTabAdapterPublication {
         store.tabAdapters[tab.id] === adapter
     }
 
-    func removeCreatedAdapter(for evidence: ExtensionCreatedTabPublicationEvidence) {
-        guard evidence.createdAdapter else { return }
+    func retireExactAdapter(for evidence: ExtensionCreatedTabPublicationEvidence) {
         _ = store.removeTabAdapter(
             for: evidence.tab.id,
             ifIdenticalTo: evidence.adapter
+        )
+    }
+
+    func retireExactAdapter(
+        _ adapter: ExtensionTabAdapter,
+        for tab: Tab
+    ) {
+        _ = store.removeTabAdapter(
+            for: tab.id,
+            ifIdenticalTo: adapter
         )
     }
 

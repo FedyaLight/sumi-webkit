@@ -401,7 +401,7 @@ extension ExtensionManager {
             if let profileId = profileRuntime.currentProfileId {
                 updateWebViewsForProfile(profileId)
             }
-            registerExistingWindowStateIfAttached()
+            publishExistingRuntimeWindowsIfAttached()
         }
     }
 

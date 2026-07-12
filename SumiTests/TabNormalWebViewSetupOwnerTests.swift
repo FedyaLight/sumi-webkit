@@ -31,7 +31,7 @@ final class TabNormalWebViewSetupOwnerTests: XCTestCase {
             deferWebViewUntilProfileAvailable: { false },
             beginSuspendedRestoreIfNeeded: { /* No-op. */ },
             finishSuspendedRestoreIfNeeded: { /* No-op. */ },
-            setupWebView: { /* No-op. */ },
+            setupWebView: { _ in /* No-op. */ },
             deferWebsiteDataMutationWebViewMaterialization: { _ in false },
             adoptParkedWebViewAsCurrent: { webView in
                 adopted = webView
@@ -90,6 +90,7 @@ final class TabNormalWebViewSetupOwnerTests: XCTestCase {
         var retainedReplay: (@MainActor @Sendable () -> Void)?
         let setupReplay = TabNormalWebViewSetupReplayBox()
         var creationCount = 0
+        var registrationCount = 0
         let policyLedger = TabConfigurationPolicyLedger()
         let webViewSession = WebViewSessionHandle(tabID: UUID())
         let policyTransaction = TabConfigurationPolicyTransaction(
@@ -107,7 +108,9 @@ final class TabNormalWebViewSetupOwnerTests: XCTestCase {
             deferWebViewUntilProfileAvailable: { false },
             beginSuspendedRestoreIfNeeded: {},
             finishSuspendedRestoreIfNeeded: {},
-            setupWebView: { setupReplay.run() },
+            setupWebView: { registerTabWithExtensionRuntime in
+                setupReplay.run(registerTabWithExtensionRuntime)
+            },
             deferWebsiteDataMutationWebViewMaterialization: { replay in
                 guard shouldDefer else { return false }
                 retainedReplay = replay
@@ -141,15 +144,19 @@ final class TabNormalWebViewSetupOwnerTests: XCTestCase {
             replaceNormalTabUserScripts: { _, _ in },
             loadMainFrameRequest: { _, _ in },
             applyCachedFaviconOrPlaceholder: { _ in },
-            registerTabWithExtensionRuntimeIfNeeded: { _ in },
+            registerTabWithExtensionRuntimeIfNeeded: { _ in
+                registrationCount += 1
+            },
             scheduleInitialDocumentRuntimeHandoff: { _, _, _, _ in }
         )
-        setupReplay.action = {
+        setupReplay.action = { registerTabWithExtensionRuntime in
             _ = owner.ensureUntrackedNormalWebView(
                 context: context,
                 policyTransaction: policyTransaction,
                 provisioningOwner: TabWebViewProvisioningOwner(),
-                reason: "TabNormalWebViewSetupOwnerTests.replayedMaterialization"
+                reason: "TabNormalWebViewSetupOwnerTests.replayedMaterialization",
+                registerTabWithExtensionRuntime:
+                    registerTabWithExtensionRuntime
             )
         }
 
@@ -157,7 +164,8 @@ final class TabNormalWebViewSetupOwnerTests: XCTestCase {
             context: context,
             policyTransaction: policyTransaction,
             provisioningOwner: TabWebViewProvisioningOwner(),
-            reason: "TabNormalWebViewSetupOwnerTests.deferredMaterialization"
+            reason: "TabNormalWebViewSetupOwnerTests.deferredMaterialization",
+            registerTabWithExtensionRuntime: false
         )
         guard case .deferred = outcome else {
             return XCTFail("Expected website-data admission deferral")
@@ -168,6 +176,7 @@ final class TabNormalWebViewSetupOwnerTests: XCTestCase {
         shouldDefer = false
         retainedReplay?()
         XCTAssertEqual(creationCount, 1)
+        XCTAssertEqual(registrationCount, 0)
         XCTAssertNotNil(currentWebView)
     }
 
@@ -266,9 +275,9 @@ final class TabNormalWebViewSetupOwnerTests: XCTestCase {
 
 @MainActor
 private final class TabNormalWebViewSetupReplayBox {
-    var action: (@MainActor @Sendable () -> Void)?
+    var action: (@MainActor @Sendable (Bool) -> Void)?
 
-    func run() {
-        action?()
+    func run(_ registerTabWithExtensionRuntime: Bool) {
+        action?(registerTabWithExtensionRuntime)
     }
 }

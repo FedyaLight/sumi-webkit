@@ -1,5 +1,4 @@
 import Foundation
-import WebKit
 
 /// Replaces the extension-visible normal-window graph as one ordered batch.
 ///
@@ -39,36 +38,45 @@ final class ExtensionRuntimeReloadTransaction {
     private let runtimeSession: ExtensionRuntimeSession
     private let profileRuntime: ExtensionProfileRuntime
     private let normalWindows: ExtensionNormalWindowLifecycle
+    private let publicationGate: ExtensionRuntimePublicationGate
     private let adapterResolution: ExtensionAdapterResolutionOwner
     private let controllerBinding: ExtensionControllerAttachmentOwner
     private let tabPublication: ExtensionNormalTabRuntimeBindingOwner
     private let isAuxiliarySessionTab: @MainActor (Tab) -> Bool
     private let diagnostics: ExtensionRuntimeDiagnostics
+    private let contentInventory: ExtensionBrowserContentInventory
 
     init(
         runtimeSession: ExtensionRuntimeSession,
         profileRuntime: ExtensionProfileRuntime,
         normalWindows: ExtensionNormalWindowLifecycle,
+        publicationGate: ExtensionRuntimePublicationGate,
         adapterResolution: ExtensionAdapterResolutionOwner,
         controllerBinding: ExtensionControllerAttachmentOwner,
         tabPublication: ExtensionNormalTabRuntimeBindingOwner,
         isAuxiliarySessionTab: @escaping @MainActor (Tab) -> Bool,
-        diagnostics: ExtensionRuntimeDiagnostics
+        diagnostics: ExtensionRuntimeDiagnostics,
+        contentInventory: ExtensionBrowserContentInventory = .init()
     ) {
         self.runtimeSession = runtimeSession
         self.profileRuntime = profileRuntime
         self.normalWindows = normalWindows
+        self.publicationGate = publicationGate
         self.adapterResolution = adapterResolution
         self.controllerBinding = controllerBinding
         self.tabPublication = tabPublication
         self.isAuxiliarySessionTab = isAuxiliarySessionTab
         self.diagnostics = diagnostics
+        self.contentInventory = contentInventory
     }
 
     /// Closes the old WebKit graph, settles every new Tab binding while normal
     /// windows are unavailable, republishes complete windows, and only then
     /// emits the new generation's Tab events.
-    func reload(_ request: Request) -> Commit? {
+    func reload(
+        _ request: Request,
+        publicationClaim: ExtensionRuntimePublicationGate.ReloadClaim
+    ) -> Commit? {
         guard request.extensionsLoaded
             || request.allowWhenExtensionsNotLoaded
         else {
@@ -76,7 +84,7 @@ final class ExtensionRuntimeReloadTransaction {
         }
 
         let oldGeneration = runtimeSession.tabOpenNotificationGeneration
-        let oldTabs = allKnownTabs(in: request.runtime)
+        let oldTabs = normalBrowserTabs(in: request.runtime)
         guard let token = normalWindows.beginRuntimeReconciliation(
             allowWhenExtensionsNotLoaded:
                 request.allowWhenExtensionsNotLoaded,
@@ -130,7 +138,7 @@ final class ExtensionRuntimeReloadTransaction {
             return nil
         }
 
-        let tabs = allKnownTabs(in: request.runtime)
+        let tabs = normalBrowserTabs(in: request.runtime)
         diagnostics.trace(
             "extensionRuntimeReload start reason=\(request.reason) generation=\(generation) tabs=\(tabs.count) allowWhenNotLoaded=\(request.allowWhenExtensionsNotLoaded)"
         )
@@ -150,6 +158,9 @@ final class ExtensionRuntimeReloadTransaction {
         else {
             return nil
         }
+        guard publicationGate.beginBrowserEventHandoff(publicationClaim) else {
+            return nil
+        }
 
         for tab in preparedTabs {
             guard runtimeSession.tabOpenNotificationGeneration == generation
@@ -161,7 +172,10 @@ final class ExtensionRuntimeReloadTransaction {
             else {
                 continue
             }
-            _ = tabPublication.notifyTabOpened(tab)
+            _ = tabPublication.notifyTabOpened(
+                tab,
+                during: publicationClaim
+            )
         }
 
         guard runtimeSession.tabOpenNotificationGeneration == generation
@@ -194,7 +208,7 @@ final class ExtensionRuntimeReloadTransaction {
         _ runtime: ExtensionManagerRuntime
     ) -> RetirementOutcome {
         let generation = runtimeSession.tabOpenNotificationGeneration
-        let tabs = allKnownTabs(in: runtime)
+        let tabs = normalBrowserTabs(in: runtime)
         let didRetire = normalWindows.closeAllForRuntimeTeardown(
             closePublishedTabs: { [weak self] in
                 self?.closePublishedTabs(
@@ -269,7 +283,11 @@ final class ExtensionRuntimeReloadTransaction {
             else {
                 continue
             }
-            controller.didCloseTab(adapter, windowIsClosing: false)
+            tabPublication.emitDidCloseTab(
+                tab,
+                controller: controller,
+                adapter: adapter
+            )
         }
     }
 
@@ -289,7 +307,7 @@ final class ExtensionRuntimeReloadTransaction {
                   let controller = profileRuntime.controller(for: profileID),
                   controllerBinding.extensionController(for: tab) === controller,
                   adapterResolution.stableAdapter(for: tab) != nil,
-                  liveWebViews(for: tab, runtime: runtime).contains(
+                  contentInventory.liveWebViews(for: tab, in: runtime).contains(
                       where: {
                           $0.configuration.webExtensionController === controller
                       }
@@ -341,31 +359,11 @@ final class ExtensionRuntimeReloadTransaction {
         profileRuntime.resolvedProfileId(for: tab, runtime: runtime)
     }
 
-    private func allKnownTabs(in runtime: ExtensionManagerRuntime) -> [Tab] {
-        (runtime.allTabs()
-            + runtime.allWindowStates().flatMap(\.ephemeralTabs))
-            .filter { isAuxiliarySessionTab($0) == false }
-    }
-
-    private func liveWebViews(
-        for tab: Tab,
-        runtime: ExtensionManagerRuntime
-    ) -> [WKWebView] {
-        guard runtime.browserRuntimeAvailable() else { return [] }
-
-        var webViews: [WKWebView] = []
-        if let primaryWindowID = runtime.primaryTrackedWindowId(tab.id),
-           let webView = runtime.windowOwnedWebView(tab, primaryWindowID) {
-            webViews.append(webView)
-        }
-        if let webView = runtime.untrackedOwnedWebView(tab) {
-            webViews.append(webView)
-        }
-        webViews.append(contentsOf: runtime.trackedWebViews(tab.id))
-
-        var seen = Set<ObjectIdentifier>()
-        return webViews.filter { webView in
-            seen.insert(ObjectIdentifier(webView)).inserted
+    private func normalBrowserTabs(
+        in runtime: ExtensionManagerRuntime
+    ) -> [Tab] {
+        contentInventory.tabs(in: runtime).filter {
+            isAuxiliarySessionTab($0) == false
         }
     }
 }

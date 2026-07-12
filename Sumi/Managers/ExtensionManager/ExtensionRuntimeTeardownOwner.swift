@@ -37,8 +37,10 @@ final class ExtensionRuntimeTeardownOwner {
             .cancelDeferredTabNotificationTasks()
         manager.cancelNativeMessagingBackgroundWakeTasks()
         manager.backgroundRuntimeStateOwner.cancelAllWakeTasks()
-        manager.loadedBrowserRuntimeBridgeOwner?
-            .closePublishedWindowsForRuntimeTeardown()
+        manager.loadedRuntimePublicationReconciler?.retire(
+            runtime: manager.runtime,
+            auxiliaryControl: manager.extensionAuxiliaryWindows
+        )
 
         let uiStateIDs = removeUIState ? manager.actionAnchorStore.extensionIDs : []
         let loadedIDs = manager.allLoadedExtensionIDs()

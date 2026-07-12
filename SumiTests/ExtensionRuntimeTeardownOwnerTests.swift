@@ -12,6 +12,51 @@ final class ExtensionRuntimeTeardownOwnerTests: XCTestCase {
         case failed
     }
 
+    func testColdRuntimeTeardownDoesNotMaterializePublicationLifecycle()
+        throws {
+        let fixture = try makeManager(
+            profile: Profile(name: "Cold Teardown Profile"),
+            browserConfiguration: BrowserConfiguration()
+        )
+        let manager = fixture.manager
+        XCTAssertNil(manager.loadedRuntimePublicationReconciler)
+
+        manager.tearDownExtensionRuntime(
+            reason: "ExtensionRuntimeTeardownOwnerTests.cold",
+            removeUIState: true,
+            releaseController: true
+        )
+
+        XCTAssertNil(manager.loadedRuntimePublicationReconciler)
+    }
+
+    func testRetainedPublicationCollaboratorsDoNotRetainExtensionManager()
+        throws {
+        let container = try ModelContainer(
+            for: SumiStartupPersistence.schema,
+            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
+        )
+        var manager: ExtensionManager? = ExtensionManager(
+            context: container.mainContext,
+            initialProfile: Profile(name: "Publication Lifetime Profile"),
+            browserConfiguration: BrowserConfiguration(),
+            extensionPreferences: UserDefaults(
+                suiteName: UUID().uuidString
+            )!
+        )
+        weak var weakManager = manager
+        let reconciler = try XCTUnwrap(
+            manager?.runtimePublicationReconciler
+        )
+        let publications = try XCTUnwrap(manager?.windowPublications)
+        let admission = try XCTUnwrap(manager?.tabPublicationAdmission)
+
+        manager = nil
+
+        XCTAssertNil(weakManager)
+        withExtendedLifetime((reconciler, publications, admission)) {}
+    }
+
     func testFullRuntimeTeardownReleasesControllerAndClearsBookkeeping() throws {
         let profile = Profile(name: "Teardown Profile")
         let browserConfiguration = BrowserConfiguration()

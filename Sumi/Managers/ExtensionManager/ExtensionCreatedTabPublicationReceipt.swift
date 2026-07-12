@@ -51,16 +51,17 @@ final class ExtensionCreatedTabPublicationReceipt {
                 evidence.base.contextBindingGeneration,
             contextReadiness: .loaded
         )
-        guard evidence.tab.extensionPageRuntimeOwner.markDidOpenTab(
-            generation: evidence.generation,
-            committedWindowPrepublication: evidence.stateToken
-        ) else {
+        guard let openClaim = evidence.tab.extensionPageRuntimeOwner
+            .reserveDidOpenTab(
+                generation: evidence.generation,
+                committedWindowPrepublication: evidence.stateToken
+            ) else {
             _ = evidence.tab.extensionPageRuntimeOwner
                 .abortCommittedWindowPrepublicationBeforeOpen(
                     evidence.stateToken
-                )
+            )
             phase = .finished
-            retirement.removeCreatedAdapter(for: evidence)
+            retirement.retireAdapter(for: evidence)
             return false
         }
 
@@ -68,6 +69,11 @@ final class ExtensionCreatedTabPublicationReceipt {
         retirement.emitOpen(evidence)
 
         if validator.capturedOpenIsCurrent(evidence, runtime: runtime),
+           evidence.tab.extensionPageRuntimeOwner
+            .settleDidOpenTabNotification(
+                openClaim,
+                generation: evidence.generation
+            ),
            evidence.tab.extensionPageRuntimeOwner
             .finishCommittedWindowPrepublication(
                 evidence.stateToken,
@@ -89,6 +95,7 @@ final class ExtensionCreatedTabPublicationReceipt {
             evidence
         )
         phase = .finished
+        evidence.tab.extensionPageRuntimeOwner.retireFutureOpenPublications()
         retirement.balanceOpen(
             evidence,
             adapterStillOpen: adapterStillOpen
@@ -106,7 +113,7 @@ final class ExtensionCreatedTabPublicationReceipt {
             .rollbackWindowPrepublication(evidence.stateToken)
         phase = .finished
         if restored {
-            retirement.removeCreatedAdapter(for: evidence)
+            retirement.retireAdapter(for: evidence)
         }
         return restored
     }

@@ -161,11 +161,13 @@ final class ExtensionAuxiliaryWindowLifecycle {
     func republishAfterRuntimeReload(
         _ sessions: [AuxiliaryWindowSession],
         runtime: ExtensionManagerRuntime,
-        control: (any ExtensionAuxiliaryWindowControl)?
+        control: (any ExtensionAuxiliaryWindowControl)?,
+        continuingWhile shouldContinue: @MainActor () -> Bool = { true }
     ) {
         guard let control else { return }
         for session in sessions {
-            guard control.auxiliaryWindowSession(for: session.id)
+            guard shouldContinue(),
+                  control.auxiliaryWindowSession(for: session.id)
                     === session else {
                 continue
             }
@@ -175,6 +177,7 @@ final class ExtensionAuxiliaryWindowLifecycle {
                 control: control,
                 shouldFocus: NSApp.keyWindow === session.window
             )
+            guard shouldContinue() else { return }
             if reopened == false,
                control.auxiliaryWindowSession(for: session.id) === session {
                 control.closeAuxiliaryWindowSession(session)

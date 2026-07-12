@@ -290,8 +290,9 @@ final class SumiExtensionsModule {
         else {
             return .notParticipating
         }
-        guard let publication = manager.browserRuntimeBridgeOwner
-            .publishWindow(windowState)
+        guard manager.runtimePublicationGate.admitStructuralBrowserEvent(),
+              let publication = manager.normalWindowLifecycle
+              .publication(for: windowState)
         else {
             return .suppressed
         }
@@ -309,11 +310,16 @@ final class SumiExtensionsModule {
     }
 
     func notifyWindowClosedIfLoaded(_ windowState: BrowserWindowState) {
-        managerIfLoadedAndEnabled()?.notifyWindowClosed(windowState)
+        guard let manager = managerIfLoadedAndEnabled(),
+              manager.runtimePublicationGate.admitStructuralBrowserEvent()
+        else {
+            return
+        }
+        manager.normalWindowLifecycle.closed(windowState)
     }
 
     func notifyWindowFocusedIfLoaded(_ windowState: BrowserWindowState) {
-        managerIfLoadedAndEnabled()?.notifyWindowFocused(windowState)
+        managerIfLoadedAndEnabled()?.focusPublishedWindow(windowState)
     }
 
     func switchProfileIfLoaded(_ profile: Profile) {
@@ -321,14 +327,24 @@ final class SumiExtensionsModule {
     }
 
     func notifyTabActivatedIfLoaded(newTab: Tab, previous: Tab?) {
-        managerIfLoadedAndEnabled()?.notifyTabActivated(
-            newTab: newTab,
-            previous: previous
-        )
+        guard let manager = managerIfLoadedAndEnabled(),
+              manager.runtimePublicationGate.acceptsBrowserEvents
+        else {
+            return
+        }
+        manager.normalTabActivation.activate(newTab, previous: previous)
     }
 
     func notifyTabClosedIfLoaded(_ tab: Tab) {
-        managerIfLoadedAndEnabled()?.notifyTabClosed(tab)
+        guard let manager = managerIfLoadedAndEnabled() else { return }
+        switch manager.runtimePublicationGate.exactTabCloseDisposition() {
+        case .perform:
+            manager.normalTabClosure.close(tab)
+        case .deferUntilReloadHandoff:
+            _ = manager.runtimePublicationReconciler.deferTabClose(tab)
+        case .reject:
+            break
+        }
     }
 
     func notifyTabPropertiesChangedIfLoaded(

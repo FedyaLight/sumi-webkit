@@ -93,10 +93,11 @@ final class ExtensionInitialTabPublicationReceipt:
                 evidence.contextBindingGeneration,
             contextReadiness: .loaded
         )
-        guard evidence.tab.extensionPageRuntimeOwner.markDidOpenTab(
-            generation: evidence.tabGeneration,
-            committedWindowPrepublication: evidence.stateToken
-        ) else {
+        guard let openClaim = evidence.tab.extensionPageRuntimeOwner
+            .reserveDidOpenTab(
+                generation: evidence.tabGeneration,
+                committedWindowPrepublication: evidence.stateToken
+            ) else {
             _ = evidence.tab.extensionPageRuntimeOwner
                 .abortCommittedWindowPrepublicationBeforeOpen(
                     evidence.stateToken
@@ -111,7 +112,12 @@ final class ExtensionInitialTabPublicationReceipt:
         phase = .publishedByReceipt
         retirement.emitOpen(evidence)
 
-        if validator.capturedOpenIsCurrent(evidence) {
+        if validator.capturedOpenIsCurrent(evidence),
+           evidence.tab.extensionPageRuntimeOwner
+            .settleDidOpenTabNotification(
+                openClaim,
+                generation: evidence.tabGeneration
+            ) {
             diagnostics.trace(
                 "initialTabWindowPublication committed reason=\(evidence.reason) generation=\(evidence.tabGeneration) tab=\(evidence.tab.id.uuidString.prefix(8)) window=\(evidence.window.id.uuidString.prefix(8))"
             )

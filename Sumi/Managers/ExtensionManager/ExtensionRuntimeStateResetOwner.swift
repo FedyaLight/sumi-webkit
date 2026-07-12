@@ -318,7 +318,13 @@ extension ExtensionRuntimeStateResetOwner.Dependencies {
                     .removeAllExtensionPageUserContentControllers()
             },
             pruneRuntimeAdapters: { [weak manager] in
-                manager?.pruneRuntimeAdapters()
+                guard let manager else { return }
+                let runtime = manager.runtime
+                let windows = runtime.allWindowStates()
+                manager.adapterStore.prune(
+                    liveTabs: manager.browserContentInventory.tabs(in: runtime),
+                    liveWindowIDs: Set(windows.map(\.id))
+                )
             },
             hasEnabledInstalledExtensions: { [weak manager] in
                 manager?.hasEnabledInstalledExtensions ?? false
@@ -327,10 +333,17 @@ extension ExtensionRuntimeStateResetOwner.Dependencies {
                 manager?.extensionsLoaded ?? false
             },
             allKnownTabs: { [weak manager] in
-                manager?.allKnownTabs() ?? []
+                guard let manager else { return [] }
+                return manager.browserContentInventory.tabs(
+                    in: manager.runtime
+                )
             },
             liveWebViews: { [weak manager] tab in
-                manager?.liveWebViews(for: tab) ?? []
+                guard let manager else { return [] }
+                return manager.browserContentInventory.liveWebViews(
+                    for: tab,
+                    in: manager.runtime
+                )
             },
             tabDescription: { [weak manager] tab in
                 manager?.runtimeDiagnostics.tabDescription(tab, manager: manager) ?? "tab=\(tab.id.uuidString.prefix(8))"

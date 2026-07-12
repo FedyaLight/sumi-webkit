@@ -430,13 +430,15 @@ extension Tab {
 
     /// Single create-policy path for pre-window / untracked normal-tab WebViews.
     func ensureUntrackedNormalWebViewOutcome(
-        reason: String = "Tab.ensureUntrackedNormalWebView"
+        reason: String = "Tab.ensureUntrackedNormalWebView",
+        registerTabWithExtensionRuntime: Bool = true
     ) -> TabUntrackedWebViewEnsureOutcome {
         normalWebViewSetupOwner.ensureUntrackedNormalWebView(
             context: normalWebViewRuntimeContext(),
             policyTransaction: configurationPolicyTransaction,
             provisioningOwner: webViewProvisioningOwner,
-            reason: reason
+            reason: reason,
+            registerTabWithExtensionRuntime: registerTabWithExtensionRuntime
         )
     }
 
