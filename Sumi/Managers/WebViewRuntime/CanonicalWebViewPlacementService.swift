@@ -156,8 +156,11 @@ final class CanonicalWebViewPlacementService {
             let survivingCanonicalIDs = expectedWebViewIDs.subtracting([
                 ObjectIdentifier(webView),
             ])
+            let activeCanonicalIDs = survivingCanonicalIDs.subtracting(
+                snapshot.parkedWebView.map { [ObjectIdentifier($0)] } ?? []
+            )
             let role: TabConfigurationPolicyLedger.CommitRole =
-                survivingCanonicalIDs.isEmpty
+                activeCanonicalIDs.isEmpty
                     ? .canonicalGeneration
                     : .additionalClone
             guard let prepared = tab.configurationPolicyTransaction

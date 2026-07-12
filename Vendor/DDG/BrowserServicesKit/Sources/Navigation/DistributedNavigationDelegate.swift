@@ -108,7 +108,7 @@ public final class DistributedNavigationDelegate: NSObject {
     public override init() {
         dispatchPrecondition(condition: .onQueue(.main))
         super.init()
-#if !_MAIN_FRAME_NAVIGATION_ENABLED
+#if !_MAIN_FRAME_NAVIGATION_ENABLED || compiler(<6.4)
         _=WKWebView.swizzleLoadMethodOnce
 #endif
         _=WKNavigationAction.swizzleRequestOnce
@@ -269,7 +269,7 @@ private extension DistributedNavigationDelegate {
         // only handled for main-frame navigations:
         // get WKNavigation associated with the WKNavigationAction
         // it is not `current` yet, unless it‘s a server-redirect
-#if _MAIN_FRAME_NAVIGATION_ENABLED
+#if _MAIN_FRAME_NAVIGATION_ENABLED && compiler(>=6.4)
         let wkNavigation = wkNavigationAction.webKitMainFrameNavigation
 #else
         let wkNavigation = webView.expectedMainFrameNavigation(for: wkNavigationAction)

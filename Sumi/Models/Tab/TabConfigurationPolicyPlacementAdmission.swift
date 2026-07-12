@@ -88,7 +88,11 @@ extension TabConfigurationPolicyTransaction {
         )
         switch admission.role {
         case .canonicalGeneration:
-            guard currentWebViewIDs == admission.candidateIDs else {
+            let activeWebViewIDs = currentWebViewIDs.subtracting(
+                webViewSession.parkedWebView
+                    .map { [ObjectIdentifier($0)] } ?? []
+            )
+            guard activeWebViewIDs == admission.candidateIDs else {
                 return false
             }
         case .additionalClone:

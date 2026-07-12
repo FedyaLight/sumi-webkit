@@ -76,7 +76,7 @@ extension WKWebView {
 
 #endif
 
-#if !_MAIN_FRAME_NAVIGATION_ENABLED
+#if !_MAIN_FRAME_NAVIGATION_ENABLED || compiler(<6.4)
 
     static let swizzleLoadMethodOnce: Void = {
         var selectors = [
@@ -172,7 +172,7 @@ extension WKWebView {
 
 }
 
-#if !_MAIN_FRAME_NAVIGATION_ENABLED
+#if !_MAIN_FRAME_NAVIGATION_ENABLED || compiler(<6.4)
 struct WeakWKNavigationBox {
     weak var ref: WKNavigation?
 }

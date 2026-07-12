@@ -677,7 +677,9 @@ private extension SplitShortcutServicesTests {
     ) -> SplitShortcutFocusService {
         SplitShortcutFocusService(
             runtimeLease: runtimeLease ?? makeRuntimeLease(fixture),
-            selectTabWithoutPersistence: applySelection,
+            selectTabWithoutPersistence: { tab, windowState in
+                Self.applySelection(tab, to: windowState)
+            },
             refreshCompositor: { _ in /* No-op. */ },
             persistWindowSession: { _ in fixture.probe.sessionWrites += 1 }
         )
@@ -705,7 +707,9 @@ private extension SplitShortcutServicesTests {
         WindowSplitPresentationSynchronizer(
             tabManager: { fixture.tabManager },
             windows: { fixture.windowStates },
-            selectTabWithoutPersistence: applySelection,
+            selectTabWithoutPersistence: { tab, windowState in
+                Self.applySelection(tab, to: windowState)
+            },
             refreshCompositor: { _ in /* No-op. */ },
             scheduleWindowSession: { _ in
                 fixture.probe.sessionWrites += 1
@@ -732,7 +736,9 @@ private extension SplitShortcutServicesTests {
     ) -> ShortcutHostedSplitUnloadService {
         ShortcutHostedSplitUnloadService(
             runtimeLease: runtimeLease ?? makeRuntimeLease(fixture),
-            selectTabWithoutPersistence: applySelection,
+            selectTabWithoutPersistence: { tab, windowState in
+                Self.applySelection(tab, to: windowState)
+            },
             showEmptyStateWithoutPersistence: showEmptyState,
             performImmediateVisualHandoff: { _ in
                 fixture.probe.visualTeardownOrder.append("handoff")
@@ -763,7 +769,7 @@ private extension SplitShortcutServicesTests {
         return cancellable
     }
 
-    func applySelection(_ tab: Tab, to windowState: BrowserWindowState) {
+    static func applySelection(_ tab: Tab, to windowState: BrowserWindowState) {
         _ = WindowTabSelectionStateApplicator.apply(
             tab,
             to: windowState,

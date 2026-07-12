@@ -21,9 +21,11 @@ import WebKit
 extension WKNavigationResponse {
 
     @nonobjc public var webKitMainFrameNavigation: WKNavigation? {
+#if _MAIN_FRAME_NAVIGATION_ENABLED && compiler(>=6.4)
         if #available(macOS 27.0, *) {
             return mainFrameNavigation
         }
+#endif
         return nil
     }
 

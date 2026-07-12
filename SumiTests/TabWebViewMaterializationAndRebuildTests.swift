@@ -45,6 +45,11 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
                 reason: "TabWebViewMaterializationAndRebuildTests.parked"
             )
         )
+        // Parked staging belongs to the normal surface family but is not an
+        // active policy candidate. Explicitly abandon its provisional receipt
+        // before placing it outside the canonical generation.
+        tab.cancelConfigurationPolicy(for: [parked])
+        XCTAssertNil(parked.sumiPreparedConfigurationPolicyChange)
         tab.parkExistingWebView(parked)
         let windowID = UUID()
         let created = try XCTUnwrap(
@@ -57,6 +62,8 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
         XCTAssertFalse(created === parked)
         XCTAssertIdentical(repository.webView(for: tab.id, in: windowID), created)
         XCTAssertIdentical(tab.webViewSession.primaryWebView, created)
+        XCTAssertEqual(tab.configurationPolicyLedger.revision, 1)
+        XCTAssertNotEqual(tab.configurationPolicyLedger.committedState, .unknown)
     }
 
     func testAdoptingUntrackedPrimaryReschedulesInitialDocumentForTrackedResidence() {

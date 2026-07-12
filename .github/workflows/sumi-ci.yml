@@ -15,9 +15,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Sumi uses the Swift language mode shipped with Xcode 26. Pin an image-
-  # provided stable toolchain instead of macos-15's legacy Xcode 16.4 default.
-  DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+  # Keep CI on the stable SDK used by Sumi and the vendored Navigation module.
+  DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
   XCODE_PROJECT: Sumi.xcodeproj
   XCODE_SCHEME: Sumi
   XCODE_CONFIGURATION: Debug
@@ -28,7 +27,7 @@ env:
 jobs:
   build-and-test:
     name: Build and PR smoke tests
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 60
 
     steps:
