@@ -86,6 +86,16 @@ tab_manager_coupling="$(
   count_matches_in_glob 'browserContext\.tabManager\.' "$SPACE_SECTION_DIR" '*View.swift'
 )"
 
+shortcut_split_row_manager_hits="$(
+  rg -n '\bTabManager\b|browserContext\.tabManager' \
+    "$SPACE_SECTION_DIR/ShortcutHostedSplitGroupRow.swift" || true
+)"
+if [[ -n "$shortcut_split_row_manager_hits" ]]; then
+  printf 'error: shortcut-hosted split row regained TabManager coupling:\n%s\n' \
+    "$shortcut_split_row_manager_hits" >&2
+  failures=$((failures + 1))
+fi
+
 printf '%s\n' 'Sidebar view coupling freeze'
 printf '%s\n' '----------------------------'
 check_max "SpacesSideBarView @ObservedObject" "$observed_objects" "$MAX_SPACES_SIDEBAR_OBSERVED_OBJECTS"

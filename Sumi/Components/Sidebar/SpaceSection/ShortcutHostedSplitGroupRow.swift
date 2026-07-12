@@ -5,7 +5,6 @@ struct ShortcutHostedSplitGroupRow: View {
     let group: SplitGroup
     let items: [SplitGroupSidebarItem]
     let spaceId: UUID
-    let tabManager: TabManager
     let splitLayout: SplitLayoutService
     let emptySplitCreation: EmptySplitCreationWorkflow
     let isAppKitInteractionEnabled: Bool
@@ -25,7 +24,6 @@ struct ShortcutHostedSplitGroupRow: View {
         group: SplitGroup,
         items: [SplitGroupSidebarItem],
         spaceId: UUID,
-        tabManager: TabManager,
         splitLayout: SplitLayoutService,
         emptySplitCreation: EmptySplitCreationWorkflow,
         isAppKitInteractionEnabled: Bool,
@@ -42,7 +40,6 @@ struct ShortcutHostedSplitGroupRow: View {
         self.group = group
         self.items = items
         self.spaceId = spaceId
-        self.tabManager = tabManager
         self.splitLayout = splitLayout
         self.emptySplitCreation = emptySplitCreation
         self.isAppKitInteractionEnabled = isAppKitInteractionEnabled

@@ -154,7 +154,6 @@ extension SpaceView {
                 group: group,
                 items: items,
                 spaceId: space.id,
-                tabManager: browserContext.tabManager,
                 splitLayout: browserContext.splitLayout,
                 emptySplitCreation: browserContext.emptySplitCreation,
                 isAppKitInteractionEnabled: isInteractive,
