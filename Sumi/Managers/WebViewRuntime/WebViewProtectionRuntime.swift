@@ -10,6 +10,7 @@ final class WebViewProtectionRuntime {
     private let protectedCommands: WebViewProtectedCommandDispatchOwner
     private let processRecovery: WebContentProcessRecoveryService
     private let webViewSessions: WebViewSessionRepository
+    private let webViews: WebViewRuntimeWebViewResolver
     private let visibleRuntime: VisibleWebViewRuntimeOwner
     private let websiteDataCleanup: WebsiteDataCleanupService
 
@@ -18,6 +19,7 @@ final class WebViewProtectionRuntime {
         protectedCommands: WebViewProtectedCommandDispatchOwner,
         processRecovery: WebContentProcessRecoveryService,
         webViewSessions: WebViewSessionRepository,
+        webViews: WebViewRuntimeWebViewResolver,
         visibleRuntime: VisibleWebViewRuntimeOwner,
         websiteDataCleanup: WebsiteDataCleanupService
     ) {
@@ -25,6 +27,7 @@ final class WebViewProtectionRuntime {
         self.protectedCommands = protectedCommands
         self.processRecovery = processRecovery
         self.webViewSessions = webViewSessions
+        self.webViews = webViews
         self.visibleRuntime = visibleRuntime
         self.websiteDataCleanup = websiteDataCleanup
     }
@@ -130,11 +133,7 @@ final class WebViewProtectionRuntime {
     }
 
     func resolveWebView(with identifier: ObjectIdentifier) -> WKWebView? {
-        if let webView = webViewSessions.webView(with: identifier) {
-            mediaProtection.note(webView)
-            return webView
-        }
-        return mediaProtection.resolveWeakWebView(with: identifier)
+        webViews.resolve(identifier)
     }
 
     func flush(for webViewID: ObjectIdentifier) {

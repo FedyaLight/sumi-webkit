@@ -811,7 +811,7 @@ final class DeferredProtectedCommandTests: XCTestCase {
             canPerformFallbackWebViewCleanup: canPerformFallbackWebViewCleanup,
             resolveTab: resolveTab,
             isSpaceProfileAssignmentValid: { _ in false },
-            hasTabManager: { true },
+            isRuntimeAvailable: { true },
             hasCleanupWindowTarget: { _ in true },
             hasTrackedWebViews: { true },
             hasWindow: { _ in true }

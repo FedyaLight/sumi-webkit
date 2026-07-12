@@ -7,6 +7,7 @@ cd "$repo_root"
 checks=(
   "scripts/check_adblock_update_architecture.sh"
   "scripts/check_protection_architecture.sh"
+  "scripts/check_protected_command_dispatch_boundary.sh"
   "scripts/check_auxiliary_window_architecture.sh"
   "scripts/check_extension_browser_bridge_architecture.sh"
   "scripts/check_extension_requested_window_transaction.sh"

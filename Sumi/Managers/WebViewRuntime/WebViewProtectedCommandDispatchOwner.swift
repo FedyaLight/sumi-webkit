@@ -14,7 +14,7 @@ final class WebViewProtectedCommandDispatchOwner {
         let executionOwner: WebViewDeferredProtectedCommandExecutionOwner
         let tabScopedCleanupValidationOwner: WebViewTabScopedCleanupValidationOwner
         let webViewSessions: WebViewSessionRepository
-        let resolveWebView: @MainActor (ObjectIdentifier) -> WKWebView?
+        let webViews: WebViewRuntimeWebViewResolver
         let resolvedTab: @MainActor (UUID) -> Tab?
         let containsWindow: @MainActor (UUID) -> Bool
         let handleWebKitClose: @MainActor (WKWebView) -> Bool
@@ -30,18 +30,19 @@ final class WebViewProtectedCommandDispatchOwner {
             DeferredWebViewSpaceProfileAssignmentIntent
         ) -> Bool
         let compositorContainerView: @MainActor (UUID) -> NSView?
-        let removeWebViewFromContainers: @MainActor (WKWebView) -> Void
-        let cleanupTrackedWebView: @MainActor (WKWebView, TrackedWebViewOwner) -> Void
-        let cleanupWindow: @MainActor (UUID) -> Void
-        let cleanupAllWebViews: @MainActor () -> Void
+        let isRuntimeAvailable: @MainActor () -> Bool
+        let removeWebViewFromContainers: @MainActor (WKWebView) -> Bool
+        let cleanupTrackedWebView: @MainActor (WKWebView, TrackedWebViewOwner) -> Bool
+        let cleanupWindow: @MainActor (UUID) -> Bool
+        let cleanupAllWebViews: @MainActor () -> Bool
         let rebuildLiveWebViews: @MainActor (
             Tab,
             UUID?,
             DeferredWebViewRebuildIntent
         ) -> TabWebViewRebuildResult
-        let evictHiddenWebViews: @MainActor (UUID, Set<UUID>) -> Void
+        let evictHiddenWebViews: @MainActor (UUID, Set<UUID>) -> Bool
         let visibleTabIDSet: @MainActor (UUID) -> Set<UUID>
-        let performFallbackWebViewCleanup: @MainActor (WKWebView, UUID) -> Void
+        let performFallbackWebViewCleanup: @MainActor (WKWebView, UUID) -> Bool
         let finishCleanupSuppression: @MainActor ([ObjectIdentifier]) -> Void
     }
 
@@ -104,7 +105,7 @@ final class WebViewProtectedCommandDispatchOwner {
     private func executionRuntime() -> WebViewDeferredProtectedCommandExecutionOwner.Runtime {
         let validationContext = WebViewDeferredProtectedCommandExecutionOwner.ValidationContext(
             resolveWebView: { [dependencies] webViewID in
-                dependencies.resolveWebView(webViewID)
+                dependencies.webViews.resolve(webViewID)
             },
             resolveTrackedOwner: { [dependencies] webViewID in
                 dependencies.webViewSessions.trackedOwner(with: webViewID)
@@ -129,9 +130,7 @@ final class WebViewProtectedCommandDispatchOwner {
             isSpaceProfileAssignmentValid: { [dependencies] intent in
                 dependencies.validateSpaceProfileAssignment(intent)
             },
-            hasTabManager: {
-                true
-            },
+            isRuntimeAvailable: dependencies.isRuntimeAvailable,
             hasCleanupWindowTarget: { [dependencies] windowID in
                 dependencies.webViewSessions.trackedWebViews(in: windowID).isEmpty == false
                     || dependencies.compositorContainerView(windowID) != nil
@@ -158,29 +157,29 @@ final class WebViewProtectedCommandDispatchOwner {
     func execute(_ command: DeferredWebViewCommand) -> Bool {
         switch command {
         case .removeWebViewFromContainers(let webViewID):
-            guard let webView = dependencies.resolveWebView(webViewID) else {
+            guard let webView = dependencies.webViews.resolve(webViewID) else {
                 return false
             }
-            dependencies.removeWebViewFromContainers(webView)
+            return dependencies.removeWebViewFromContainers(webView)
         case .removeTrackedWebView(let webViewID, let tabID, let windowID):
-            guard let webView = dependencies.resolveWebView(webViewID) else {
+            guard let webView = dependencies.webViews.resolve(webViewID) else {
                 return false
             }
-            dependencies.cleanupTrackedWebView(
+            return dependencies.cleanupTrackedWebView(
                 webView,
                 TrackedWebViewOwner(tabID: tabID, windowID: windowID)
             )
         case .closeWebViewFromWebKit(let webViewID):
-            guard let webView = dependencies.resolveWebView(webViewID) else {
+            guard let webView = dependencies.webViews.resolve(webViewID) else {
                 return false
             }
             guard dependencies.handleWebKitClose(webView) else {
                 return false
             }
         case .cleanupWindow(let windowID):
-            dependencies.cleanupWindow(windowID)
+            return dependencies.cleanupWindow(windowID)
         case .cleanupAllWebViews:
-            dependencies.cleanupAllWebViews()
+            return dependencies.cleanupAllWebViews()
         case .rebuildLiveWebViews(
             let tabID,
             let preferredPrimaryWindowID,
@@ -213,7 +212,7 @@ final class WebViewProtectedCommandDispatchOwner {
             let windowID,
             let intent
         ):
-            guard let webView = dependencies.resolveWebView(webViewID),
+            guard let webView = dependencies.webViews.resolve(webViewID),
                   dependencies.webViewSessions.trackedOwner(with: webViewID)
                     == TrackedWebViewOwner(tabID: tabID, windowID: windowID),
                   let tab = resolvedTab(with: tabID),
@@ -242,7 +241,7 @@ final class WebViewProtectedCommandDispatchOwner {
             let windowID,
             let intent
         ):
-            guard let webView = dependencies.resolveWebView(webViewID),
+            guard let webView = dependencies.webViews.resolve(webViewID),
                   dependencies.webViewSessions.trackedOwner(with: webViewID)
                     == TrackedWebViewOwner(tabID: tabID, windowID: windowID),
                   let tab = resolvedTab(with: tabID),
@@ -273,22 +272,22 @@ final class WebViewProtectedCommandDispatchOwner {
             guard dependencies.containsWindow(windowID) else {
                 return false
             }
-            dependencies.evictHiddenWebViews(
+            return dependencies.evictHiddenWebViews(
                 windowID,
                 dependencies.visibleTabIDSet(windowID)
             )
         case .cleanupTabWebView(let webViewID, let tabID):
-            guard let webView = dependencies.resolveWebView(webViewID) else {
+            guard let webView = dependencies.webViews.resolve(webViewID) else {
                 return false
             }
             _ = dependencies.webViewSessions.removeDetachedWebView(webView, for: tabID)
             if let tab = resolvedTab(with: tabID) {
                 tab.cleanupCloneWebView(webView)
             } else {
-                dependencies.performFallbackWebViewCleanup(webView, tabID)
+                return dependencies.performFallbackWebViewCleanup(webView, tabID)
             }
         case .performFallbackWebViewCleanup(let webViewID, let lease):
-            guard let webView = dependencies.resolveWebView(webViewID) else {
+            guard let webView = dependencies.webViews.resolve(webViewID) else {
                 return false
             }
             guard dependencies.webViewSessions.consumePendingCleanup(
@@ -300,7 +299,10 @@ final class WebViewProtectedCommandDispatchOwner {
             if let tab = resolvedTab(with: lease.tabID) {
                 tab.cleanupCloneWebView(webView)
             } else {
-                dependencies.performFallbackWebViewCleanup(webView, lease.tabID)
+                return dependencies.performFallbackWebViewCleanup(
+                    webView,
+                    lease.tabID
+                )
             }
         }
 
@@ -315,7 +317,7 @@ final class WebViewProtectedCommandDispatchOwner {
         -> WebViewTabScopedCleanupValidationOwner.Context {
         WebViewTabScopedCleanupValidationOwner.Context(
             resolveWebView: { [dependencies] webViewID in
-                dependencies.resolveWebView(webViewID)
+                dependencies.webViews.resolve(webViewID)
             },
             residence: { [dependencies] webView in
                 dependencies.webViewSessions.residence(of: webView)

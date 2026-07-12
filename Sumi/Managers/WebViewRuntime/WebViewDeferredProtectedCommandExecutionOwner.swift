@@ -43,7 +43,7 @@ final class WebViewDeferredProtectedCommandExecutionOwner {
         let isSpaceProfileAssignmentValid: (
             DeferredWebViewSpaceProfileAssignmentIntent
         ) -> Bool
-        let hasTabManager: () -> Bool
+        let isRuntimeAvailable: () -> Bool
         let hasCleanupWindowTarget: (UUID) -> Bool
         let hasTrackedWebViews: () -> Bool
         let hasWindow: (UUID) -> Bool
@@ -217,10 +217,10 @@ final class WebViewDeferredProtectedCommandExecutionOwner {
         case .closeWebViewFromWebKit(let webViewID):
             return context.resolveWebView(webViewID) != nil
         case .cleanupWindow(let windowID):
-            return context.hasTabManager()
+            return context.isRuntimeAvailable()
                 && context.hasCleanupWindowTarget(windowID)
         case .cleanupAllWebViews:
-            return context.hasTabManager()
+            return context.isRuntimeAvailable()
                 && context.hasTrackedWebViews()
         case .rebuildLiveWebViews(let tabID, _, let intent):
             guard let tab = context.resolveTab(tabID) else { return false }
@@ -267,7 +267,7 @@ final class WebViewDeferredProtectedCommandExecutionOwner {
                 targetURL: intent.targetURL
             )
         case .evictHiddenWebViews(let windowID):
-            return context.hasTabManager()
+            return context.isRuntimeAvailable()
                 && context.hasWindow(windowID)
         case .cleanupTabWebView(let webViewID, let tabID):
             return context.canCleanUpDetachedWebView(webViewID, tabID)

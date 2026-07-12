@@ -150,6 +150,11 @@ final class WebViewRuntimeGraph {
 
     let mediaProtectionOwner = WebViewMediaProtectionOwner()
 
+    lazy var runtimeWebViews = WebViewRuntimeWebViewResolver(
+        sessions: webViewSessions,
+        mediaProtection: mediaProtectionOwner
+    )
+
     let deferredProtectedCommandExecutionOwner = WebViewDeferredProtectedCommandExecutionOwner()
 
     private lazy var protectedCommandDispatchOwner: WebViewProtectedCommandDispatchOwner = WebViewProtectedCommandDispatchOwner(
@@ -304,6 +309,7 @@ final class WebViewRuntimeGraph {
         protectedCommands: protectedCommandDispatchOwner,
         processRecovery: processRecoveryService,
         webViewSessions: webViewSessions,
+        webViews: runtimeWebViews,
         visibleRuntime: visibleWebViewRuntimeOwner,
         websiteDataCleanup: websiteDataCleanupService
     )
@@ -529,9 +535,7 @@ private extension WebViewProtectedCommandDispatchOwner.Dependencies {
             executionOwner: graph.deferredProtectedCommandExecutionOwner,
             tabScopedCleanupValidationOwner: graph.tabScopedCleanupValidationOwner,
             webViewSessions: graph.webViewSessions,
-            resolveWebView: { [weak graph] webViewID in
-                graph?.protectionRuntime.resolveWebView(with: webViewID)
-            },
+            webViews: graph.runtimeWebViews,
             resolvedTab: { [weak graph] tabID in
                 guard let graph else { return nil }
                 return graph.runtimeTabs.resolve(
@@ -549,20 +553,29 @@ private extension WebViewProtectedCommandDispatchOwner.Dependencies {
             compositorContainerView: { [weak graph] windowID in
                 graph?.compositorRuntime.containerView(for: windowID)
             },
+            isRuntimeAvailable: { [weak graph] in graph != nil },
             removeWebViewFromContainers: { [weak graph] webView in
-                graph?.compositorRuntime.removeWebViewFromContainers(webView)
+                guard let graph else { return false }
+                graph.compositorRuntime.removeWebViewFromContainers(webView)
+                return true
             },
             cleanupTrackedWebView: { [weak graph] webView, owner in
-                graph?.lifecycleService.cleanupTrackedWebView(
+                guard let graph else { return false }
+                graph.lifecycleService.cleanupTrackedWebView(
                     webView,
                     owner: owner
                 )
+                return true
             },
             cleanupWindow: { [weak graph] windowID in
-                graph?.lifecycleService.cleanupWindow(windowID)
+                guard let graph else { return false }
+                graph.lifecycleService.cleanupWindow(windowID)
+                return true
             },
             cleanupAllWebViews: { [weak graph] in
-                graph?.lifecycleService.cleanupAllWebViews()
+                guard let graph else { return false }
+                graph.lifecycleService.cleanupAllWebViews()
+                return true
             },
             rebuildLiveWebViews: {
                 [weak graph]
@@ -579,16 +592,20 @@ private extension WebViewProtectedCommandDispatchOwner.Dependencies {
                 )
             },
             evictHiddenWebViews: { [weak graph] windowID, visibleTabIDs in
-                graph?.visibilityRuntime.evictHiddenWebViewsIfNeeded(
+                guard let graph else { return false }
+                graph.visibilityRuntime.evictHiddenWebViewsIfNeeded(
                     in: windowID,
                     visibleTabIDs: visibleTabIDs
                 )
+                return true
             },
             visibleTabIDSet: { [weak graph] windowID in
                 graph?.visibilityRuntime.visibleTabIDs(in: windowID) ?? []
             },
             performFallbackWebViewCleanup: { [weak graph] webView, tabID in
-                graph?.physicalCleanupService.clean(webView, tabID: tabID)
+                guard let graph else { return false }
+                graph.physicalCleanupService.clean(webView, tabID: tabID)
+                return true
             },
             finishCleanupSuppression: { [weak graph] webViewIDs in
                 graph?.protectionRuntime
