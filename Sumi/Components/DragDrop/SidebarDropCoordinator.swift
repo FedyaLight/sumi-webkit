@@ -61,7 +61,8 @@ enum SidebarDropCoordinator {
     static func performDrop(
         pasteboard: NSPasteboard,
         resolution: SidebarDropResolution,
-        browserManager: BrowserManager,
+        sourceInventory: any SidebarDragSourceInventorying,
+        dragOperations: any SidebarDragOperationExecuting,
         urlDropService: SidebarURLDropService,
         windowState: BrowserWindowState?
     ) -> Bool {
@@ -73,15 +74,24 @@ enum SidebarDropCoordinator {
                 pasteboard: pasteboard,
                 windowState: windowState
             ),
-                  let payload = browserManager.tabManager.sidebarDragRouter.resolveSidebarDragPayload(for: draggedItem) else {
+                  let payload = dragOperations.resolveSidebarDragPayload(for: draggedItem) else {
                 return false
             }
 
-            let operationIndex = resolvedOperationIndex(
-                for: resolution,
-                payload: payload,
-                scope: scope,
-                browserManager: browserManager
+            let sourceIdentities = sourceInventory.sourceIdentities(for: scope)
+            let sourceIndex = sourceIdentities.flatMap {
+                SidebarDragSourceMembership.sourceIndex(
+                    in: $0,
+                    sourceItemId: scope.sourceItemId,
+                    payload: payload
+                )
+            }
+            let operationIndex = SidebarDropProjection.operationIndex(
+                visualIndex: resolution.slot.visualIndex,
+                sourceContainer: scope.sourceContainer,
+                targetContainer: resolution.slot.asDragContainer,
+                sourceIndex: sourceIndex,
+                sourceItemCount: sourceIdentities?.count
             )
 
             let operation = DragOperation(
@@ -92,7 +102,7 @@ enum SidebarDropCoordinator {
                 toIndex: operationIndex
             )
 
-            return browserManager.tabManager.sidebarDragRouter.performSidebarDragOperation(operation)
+            return dragOperations.performSidebarDragOperation(operation)
         }
 
         guard let droppedURL = pasteboard.sumiDroppedURL,
@@ -105,157 +115,5 @@ enum SidebarDropCoordinator {
             in: windowState,
             at: resolution.slot
         )
-    }
-
-    @MainActor
-    private static func resolvedOperationIndex(
-        for resolution: SidebarDropResolution,
-        payload: DragOperation.Payload,
-        scope: SidebarDragScope,
-        browserManager: BrowserManager
-    ) -> Int {
-        let visualIndex = resolution.slot.visualIndex
-        guard scope.sourceContainer == resolution.slot.asDragContainer else {
-            return visualIndex
-        }
-
-        let sourceIndex = sourceIndex(
-            for: payload,
-            scope: scope,
-            browserManager: browserManager
-        )
-        let projectedVisualIndex = clampedProjectedVisualIndex(
-            visualIndex,
-            sourceIndex: sourceIndex,
-            scope: scope,
-            browserManager: browserManager
-        )
-        return SidebarDropProjection.modelInsertionIndex(
-            fromProjectedIndex: projectedVisualIndex,
-            sourceIndex: sourceIndex
-        )
-    }
-
-    @MainActor
-    private static func clampedProjectedVisualIndex(
-        _ visualIndex: Int,
-        sourceIndex: Int?,
-        scope: SidebarDragScope,
-        browserManager: BrowserManager
-    ) -> Int {
-        guard sourceIndex != nil,
-              let itemCount = sourceContainerItemCount(
-                for: scope,
-                browserManager: browserManager
-              ) else {
-            return visualIndex
-        }
-
-        return max(0, min(visualIndex, max(itemCount - 1, 0)))
-    }
-
-    @MainActor
-    private static func sourceContainerItemCount(
-        for scope: SidebarDragScope,
-        browserManager: BrowserManager
-    ) -> Int? {
-        let tabManager = browserManager.tabManager
-
-        switch scope.sourceContainer {
-        case .essentials:
-            return tabManager.shortcutPinCollectionStateOwner.essentialPins(for: scope.profileId).count
-
-        case .spacePinned(let spaceId):
-            return tabManager.splitGroupSidebarOrdering
-                .topLevelItems(for: spaceId).count
-
-        case .spaceRegular(let spaceId):
-            return tabManager.regularTabCollectionOwner.tabs(in: spaceId).count
-
-        case .folder(let folderId):
-            guard let spaceId = tabManager.folderCollectionStateOwner.spaceId(for: folderId) else {
-                return nil
-            }
-            return tabManager.spacePinnedStructureOwner.folderChildVisualItems(for: folderId, in: spaceId).count
-
-        case .none:
-            return nil
-        }
-    }
-
-    @MainActor
-    private static func sourceIndex(
-        for payload: DragOperation.Payload,
-        scope: SidebarDragScope,
-        browserManager: BrowserManager
-    ) -> Int? {
-        let tabManager = browserManager.tabManager
-        let sourceItemId = scope.sourceItemId
-
-        switch scope.sourceContainer {
-        case .essentials:
-            return tabManager.shortcutPinCollectionStateOwner.essentialPins(for: scope.profileId)
-                .firstIndex { $0.id == sourceItemId || payload.matchesShortcutPinId($0.id) }
-
-        case .spacePinned(let spaceId):
-            return tabManager.splitGroupSidebarOrdering.topLevelItems(for: spaceId)
-                .firstIndex { item in
-                    switch item {
-                    case .folder(let folderId):
-                        return folderId == sourceItemId
-                    case .shortcut(let pinId):
-                        return pinId == sourceItemId || payload.matchesShortcutPinId(pinId)
-                    case .splitGroup(let groupId):
-                        return groupId == sourceItemId || payload.matchesSplitGroupId(groupId)
-                    }
-                }
-
-        case .spaceRegular(let spaceId):
-            return tabManager.regularTabCollectionOwner.tabs(in: spaceId).firstIndex { $0.id == sourceItemId }
-
-        case .folder(let folderId):
-            guard let spaceId = tabManager.folderCollectionStateOwner.spaceId(for: folderId) else {
-                return nil
-            }
-            return tabManager.spacePinnedStructureOwner.folderChildVisualItems(for: folderId, in: spaceId)
-                .firstIndex { item in
-                    switch item {
-                    case .folder(let childFolderId):
-                        return childFolderId == sourceItemId || payload.matchesFolderId(childFolderId)
-                    case .shortcut(let pinId):
-                        return pinId == sourceItemId || payload.matchesShortcutPinId(pinId)
-                    case .splitGroup(let groupId):
-                        return groupId == sourceItemId || payload.matchesSplitGroupId(groupId)
-                    }
-                }
-
-        case .none:
-            return nil
-        }
-    }
-}
-
-@MainActor
-private extension DragOperation.Payload {
-    func matchesShortcutPinId(_ pinId: UUID) -> Bool {
-        switch self {
-        case .pin(let pin):
-            return pin.id == pinId
-        case .tab(let tab):
-            return tab.shortcutPinId == pinId
-        case .folder,
-             .splitGroup:
-            return false
-        }
-    }
-
-    func matchesSplitGroupId(_ groupId: UUID) -> Bool {
-        guard case .splitGroup(let group) = self else { return false }
-        return group.id == groupId
-    }
-
-    func matchesFolderId(_ folderId: UUID) -> Bool {
-        guard case .folder(let folder) = self else { return false }
-        return folder.id == folderId
     }
 }

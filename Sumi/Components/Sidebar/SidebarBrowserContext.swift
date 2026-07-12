@@ -107,6 +107,14 @@ struct SidebarBrowserContext {
             ),
             shortcutInsertion: shortcutInsertion
         )
+        let dragSourceInventory = SidebarDragSourceInventory(
+            essentialPins: tabManager.shortcutPinCollectionStateOwner,
+            splitOrdering: tabManager.splitGroupSidebarOrdering,
+            regularTabs: tabManager.regularTabCollectionOwner,
+            folders: tabManager.folderCollectionStateOwner,
+            spacePinned: tabManager.spacePinnedStructureOwner
+        )
+        let dragOperations = tabManager.sidebarDragRouter
         return SidebarBrowserContext(
             tabManager: browserManager.tabManager,
             profileManager: browserManager.profileManager,
@@ -209,12 +217,13 @@ struct SidebarBrowserContext {
             savedSidebarWidth: { [weak browserManager] windowState in
                 browserManager?.chromeBundle.sidebarPresentationOwner.savedSidebarWidth(for: windowState) ?? BrowserWindowState.sidebarDefaultWidth
             },
-            performDrop: { [weak browserManager, urlDropService] pasteboard, resolution, windowState in
-                guard let browserManager else { return false }
+            performDrop: { [weak dragOperations, urlDropService, dragSourceInventory] pasteboard, resolution, windowState in
+                guard let dragOperations else { return false }
                 return SidebarDropCoordinator.performDrop(
                     pasteboard: pasteboard,
                     resolution: resolution,
-                    browserManager: browserManager,
+                    sourceInventory: dragSourceInventory,
+                    dragOperations: dragOperations,
                     urlDropService: urlDropService,
                     windowState: windowState
                 )

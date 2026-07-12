@@ -23,6 +23,7 @@ checks=(
   "scripts/check_safari_extension_clean_import.sh"
   "scripts/check_settings_browser_manager_boundary.sh"
   "scripts/check_sidebar_browser_manager_boundary.sh"
+  "scripts/check_sidebar_drop_coordinator_boundary.sh"
   "scripts/check_tab_webview_ownership_boundary.sh"
   "scripts/check_tab_configuration_policy_architecture.sh"
   "scripts/check_webview_interaction_state_boundary.sh"
