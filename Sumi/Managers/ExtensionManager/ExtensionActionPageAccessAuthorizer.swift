@@ -8,7 +8,7 @@ final class ExtensionActionPageAccessAuthorizer {
     struct Environment {
         let capabilities: SafariExtensionInstallCapabilityOwner
         let siteAccess: ExtensionSiteAccessPolicyCoordinator
-        let decisions: ExtensionPermissionDecisionStoreOwner
+        let decisions: ExtensionPermissionDecisionStore
         let stableAdapter: @MainActor (Tab) -> ExtensionTabAdapter?
         let extensionID: @MainActor (WKWebExtensionContext) -> String?
         let resolvedProfileID: @MainActor (Tab) -> UUID?
@@ -224,7 +224,7 @@ extension ExtensionActionPageAccessAuthorizer.Environment {
         Self(
             capabilities: manager.installCapabilityOwner,
             siteAccess: manager.runtimeBundle.siteAccessPolicyCoordinator,
-            decisions: manager.permissionDecisionStoreOwner,
+            decisions: manager.permissionDecisionStore,
             stableAdapter: { [weak manager] in
                 manager?.adapterResolutionOwner.stableAdapter(for: $0)
             },

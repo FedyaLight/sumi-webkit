@@ -393,7 +393,9 @@ final class SafariExtensionInstallCapabilityOwner {
             if isGrantedPermissionStatus(extensionContext.permissionStatus(for: pattern)) {
                 grantedPatterns.insert(pattern)
             } else if let tab,
-                      isGrantedPermissionStatus(extensionContext.permissionStatus(for: pattern, in: tab)) {
+                      isGrantedPermissionStatus(
+                          extensionContext.permissionStatus(for: pattern, in: tab)
+                      ) {
                 tabScopedGrantedPatterns.insert(pattern)
             }
         }
@@ -407,10 +409,7 @@ final class SafariExtensionInstallCapabilityOwner {
             return true
         }
 
-        guard tabScopedGrantedPatterns.contains(where: { $0.matches(url) }) else {
-            return false
-        }
-        return true
+        return tabScopedGrantedPatterns.contains(where: { $0.matches(url) })
     }
 
     private func grantNativeMessagingPermissionIfDeclared(
@@ -688,15 +687,4 @@ extension ExtensionManager {
         )
     }
 
-    func explicitlyGrantURLIfCoveredByGrantedMatchPattern(
-        _ url: URL,
-        in extensionContext: WKWebExtensionContext,
-        tab: (any WKWebExtensionTab)? = nil
-    ) -> Bool {
-        installCapabilityOwner.explicitlyGrantURLIfCoveredByGrantedMatchPattern(
-            url,
-            in: extensionContext,
-            tab: tab
-        )
-    }
 }

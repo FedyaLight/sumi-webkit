@@ -71,6 +71,10 @@ final class ExtensionControllerDelegateBridge: NSObject, WKWebExtensionControlle
 
     // MARK: - Permission Prompts
 
+    // Every permission callback must prove it came from the exact currently
+    // bound controller/context pair before any lookup, prompt scheduling or
+    // mutation. A failed capture answers fail-closed exactly once.
+
     func webExtensionController(
         _ controller: WKWebExtensionController,
         promptForPermissions permissions: Set<WKWebExtension.Permission>,
@@ -78,14 +82,19 @@ final class ExtensionControllerDelegateBridge: NSObject, WKWebExtensionControlle
         for extensionContext: WKWebExtensionContext,
         completionHandler: @escaping (Set<WKWebExtension.Permission>, Date?) -> Void
     ) {
-        guard let manager else {
+        guard let manager,
+              let evidence = manager.controllerCallbackAdmission.capture(
+                  context: extensionContext,
+                  controller: controller
+              )
+        else {
             completionHandler([], nil)
             return
         }
-        manager.permissionDelegateCallbackOwner.promptForPermissions(
+        manager.permissionCallbackSettlement.promptForPermissions(
             permissions,
             in: tab,
-            for: extensionContext,
+            evidence: evidence,
             manager: manager,
             completionHandler: completionHandler
         )
@@ -98,14 +107,19 @@ final class ExtensionControllerDelegateBridge: NSObject, WKWebExtensionControlle
         for extensionContext: WKWebExtensionContext,
         completionHandler: @escaping (Set<WKWebExtension.MatchPattern>, Date?) -> Void
     ) {
-        guard let manager else {
+        guard let manager,
+              let evidence = manager.controllerCallbackAdmission.capture(
+                  context: extensionContext,
+                  controller: controller
+              )
+        else {
             completionHandler([], nil)
             return
         }
-        manager.permissionDelegateCallbackOwner.promptForPermissionMatchPatterns(
+        manager.permissionCallbackSettlement.promptForPermissionMatchPatterns(
             matchPatterns,
             in: tab,
-            for: extensionContext,
+            evidence: evidence,
             manager: manager,
             completionHandler: completionHandler
         )
@@ -118,14 +132,19 @@ final class ExtensionControllerDelegateBridge: NSObject, WKWebExtensionControlle
         for extensionContext: WKWebExtensionContext,
         completionHandler: @escaping (Set<URL>, Date?) -> Void
     ) {
-        guard let manager else {
+        guard let manager,
+              let evidence = manager.controllerCallbackAdmission.capture(
+                  context: extensionContext,
+                  controller: controller
+              )
+        else {
             completionHandler([], nil)
             return
         }
-        manager.permissionDelegateCallbackOwner.promptForPermissionToAccess(
+        manager.urlPermissionCallbackSettlement.promptForPermissionToAccess(
             urls,
             in: tab,
-            for: extensionContext,
+            evidence: evidence,
             manager: manager,
             completionHandler: completionHandler
         )

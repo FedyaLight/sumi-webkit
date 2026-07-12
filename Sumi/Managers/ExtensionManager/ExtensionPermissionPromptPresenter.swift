@@ -4,7 +4,7 @@ import WebKit
 
 @available(macOS 15.5, *)
 @MainActor
-final class ExtensionPermissionPromptPresentationOwner {
+final class ExtensionPermissionPromptPresenter {
     private typealias PromptDecision = ExtensionManager.ExtensionPermissionPromptDecision
     private typealias PromptDecisionOperation = @MainActor () async -> PromptDecision
     private typealias PromptQueueOperation = @MainActor () async -> Void
@@ -152,7 +152,8 @@ extension ExtensionManager {
         extensionContext: WKWebExtensionContext,
         targets: [String],
         reason: String,
-        dedupeKey: String? = nil
+        dedupeKey: String? = nil,
+        extensionIdentifier: String? = nil
     ) async -> ExtensionPermissionPromptDecision {
         #if DEBUG
             if let permissionPromptDecision = testHooks.permissionPromptDecision {
@@ -160,7 +161,7 @@ extension ExtensionManager {
             }
         #endif
 
-        return await extensionPermissionPromptPresentationOwner.promptForDecision(
+        return await permissionPromptPresenter.promptForDecision(
             extensionContext: extensionContext,
             targets: targets,
             reason: reason,
@@ -168,7 +169,7 @@ extension ExtensionManager {
                 extensionContext: extensionContext,
                 targets: targets
             ),
-            extensionIdentifier: extensionID(for: extensionContext)
+            extensionIdentifier: extensionIdentifier ?? extensionID(for: extensionContext)
         )
     }
 }

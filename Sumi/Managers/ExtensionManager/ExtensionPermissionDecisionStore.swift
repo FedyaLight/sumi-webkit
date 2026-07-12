@@ -6,7 +6,7 @@ import WebKit
 /// expiry, persistence, replay onto loaded contexts, and prompt dedupe keys.
 @available(macOS 15.5, *)
 @MainActor
-final class ExtensionPermissionDecisionStoreOwner {
+final class ExtensionPermissionDecisionStore {
     private static let log = Logger.sumi(category: "Extensions")
 
     private weak var manager: ExtensionManager?
@@ -105,6 +105,30 @@ final class ExtensionPermissionDecisionStoreOwner {
             ?? "unknown-profile"
         let extensionKey = manager?.extensionID(for: extensionContext)
             ?? extensionContext.uniqueIdentifier
+        return permissionPromptDedupeKey(
+            profileKey: profileKey,
+            extensionKey: extensionKey,
+            targets: targets
+        )
+    }
+
+    func permissionPromptDedupeKey(
+        profileID: UUID,
+        extensionID: String,
+        targets: [String]
+    ) -> String {
+        permissionPromptDedupeKey(
+            profileKey: profileID.uuidString.lowercased(),
+            extensionKey: extensionID,
+            targets: targets
+        )
+    }
+
+    private func permissionPromptDedupeKey(
+        profileKey: String,
+        extensionKey: String,
+        targets: [String]
+    ) -> String {
         let targetKey = targets
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
             .filter { $0.isEmpty == false }
@@ -217,7 +241,7 @@ extension ExtensionManager {
         targetKind: ExtensionPermissionTargetKind,
         target: String
     ) -> ExtensionStoredPermissionDecision? {
-        permissionDecisionStoreOwner.storedExtensionPermissionDecision(
+        permissionDecisionStore.storedExtensionPermissionDecision(
             extensionId: extensionId,
             profileId: profileId,
             targetKind: targetKind,
@@ -233,7 +257,7 @@ extension ExtensionManager {
         state: ExtensionStoredPermissionState,
         expiresAt: Date?
     ) {
-        permissionDecisionStoreOwner.persistExtensionPermissionDecision(
+        permissionDecisionStore.persistExtensionPermissionDecision(
             extensionId: extensionId,
             profileId: profileId,
             targetKind: targetKind,
@@ -248,7 +272,7 @@ extension ExtensionManager {
         extensionId: String,
         profileId: UUID
     ) {
-        permissionDecisionStoreOwner.applyStoredExtensionPermissionDecisions(
+        permissionDecisionStore.applyStoredExtensionPermissionDecisions(
             to: extensionContext,
             extensionId: extensionId,
             profileId: profileId
@@ -259,8 +283,20 @@ extension ExtensionManager {
         extensionContext: WKWebExtensionContext,
         targets: [String]
     ) -> String {
-        permissionDecisionStoreOwner.permissionPromptDedupeKey(
+        permissionDecisionStore.permissionPromptDedupeKey(
             extensionContext: extensionContext,
+            targets: targets
+        )
+    }
+
+    func permissionPromptDedupeKey(
+        profileID: UUID,
+        extensionID: String,
+        targets: [String]
+    ) -> String {
+        permissionDecisionStore.permissionPromptDedupeKey(
+            profileID: profileID,
+            extensionID: extensionID,
             targets: targets
         )
     }

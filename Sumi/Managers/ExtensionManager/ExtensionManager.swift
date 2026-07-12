@@ -220,7 +220,7 @@ final class ExtensionManager: NSObject, ObservableObject {
         preferences: extensionPreferences,
         currentProfileId: { [weak self] in self?.profileRuntime.currentProfileId }
     )
-    lazy var permissionDecisionStoreOwner = ExtensionPermissionDecisionStoreOwner(
+    lazy var permissionDecisionStore = ExtensionPermissionDecisionStore(
         manager: self
     )
     lazy var pageResolutionOwner = ExtensionPageResolutionOwner(
@@ -359,10 +359,19 @@ final class ExtensionManager: NSObject, ObservableObject {
     let optionsWindows = ExtensionOptionsWindowService()
     let adapterStore = ExtensionBrowserAdapterStore()
     let nativeMessagingPortRegistry = ExtensionNativeMessagingPortRegistry()
-    let extensionPermissionPromptPresentationOwner =
-        ExtensionPermissionPromptPresentationOwner()
-    let permissionDelegateCallbackOwner =
-        ExtensionPermissionDelegateCallbackOwner()
+    let permissionPromptPresenter = ExtensionPermissionPromptPresenter()
+    lazy var controllerCallbackAdmission = ExtensionControllerCallbackAdmission(
+        profileRuntime: profileRuntime,
+        runtimeSession: runtimeSession
+    )
+    lazy var permissionCallbackSettlement =
+        ExtensionPermissionCallbackSettlement(
+            admission: controllerCallbackAdmission
+        )
+    lazy var urlPermissionCallbackSettlement =
+        ExtensionURLPermissionCallbackSettlement(
+            admission: controllerCallbackAdmission
+        )
 
     nonisolated static let maxLiveExtensionContexts = 8
     init(
