@@ -341,6 +341,19 @@ public enum DeferredProtectedCommandSchedulingOutcome: Equatable {
     }
 }
 
+/// The executor's final disposition for a command already removed from its
+/// protected-source queue.
+public enum DeferredProtectedCommandExecutionOutcome: Equatable {
+    /// The command's effect completed and the command is consumed.
+    case executed
+    /// The target became invalid after queue validation; the command is
+    /// consumed and reported through the command dropper.
+    case invalidTarget
+    /// Execution could not complete for a transient reason. Guaranteed work
+    /// is restored through the queue's normal dominance rules.
+    case retry
+}
+
 public struct DeferredProtectedCommandBuffer {
     /// Memory-shedding threshold for replaceable maintenance work, not a hard
     /// correctness bound. Commands with guaranteed delivery may temporarily

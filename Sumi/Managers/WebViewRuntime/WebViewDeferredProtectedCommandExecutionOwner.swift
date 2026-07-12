@@ -22,7 +22,9 @@ final class WebViewDeferredProtectedCommandExecutionOwner {
         WebViewPendingCleanupLease
     ) -> Bool
     typealias TabResolver = (UUID) -> Tab?
-    typealias CommandExecutor = (DeferredWebViewCommand) -> Bool
+    typealias CommandExecutor = (
+        DeferredWebViewCommand
+    ) -> DeferredProtectedCommandExecutionOutcome
     typealias CleanupSuppressionFinisher = ([ObjectIdentifier]) -> Void
 
     private var retryAttemptsBySourceWebViewID: [ObjectIdentifier: Int] = [:]
@@ -145,24 +147,27 @@ final class WebViewDeferredProtectedCommandExecutionOwner {
                 },
                 didPruneStaleWebViewIDs: runtime.finishCleanupSuppression,
                 executeCommand: { [weak self] command in
-                    guard let self else { return false }
-                    let didExecute = runtime.executeCommand(command)
+                    guard let self else { return .invalidTarget }
+                    let outcome = runtime.executeCommand(command)
                     RuntimeDiagnostics.protectedWebViewTrace(
                         "executeDeferredCommand sourceWebView=\(webViewID) command={\(command.debugSummary)}"
                     )
-                    if didExecute {
+                    switch outcome {
+                    case .executed:
                         clearRetryState(for: webViewID)
-                        return true
+                    case .invalidTarget:
+                        break
+                    case .retry:
+                        scheduleRetry(
+                            for: webViewID,
+                            mediaProtectionOwner: mediaProtectionOwner,
+                            runtime: runtime
+                        )
+                        RuntimeDiagnostics.protectedWebViewTrace(
+                            "retainDeferredCommandAfterExecutionFailure sourceWebView=\(webViewID) command={\(command.debugSummary)}"
+                        )
                     }
-                    scheduleRetry(
-                        for: webViewID,
-                        mediaProtectionOwner: mediaProtectionOwner,
-                        runtime: runtime
-                    )
-                    RuntimeDiagnostics.protectedWebViewTrace(
-                        "retainDeferredCommandAfterExecutionFailure sourceWebView=\(webViewID) command={\(command.debugSummary)}"
-                    )
-                    return false
+                    return outcome
                 }
             )
             if mediaProtectionOwner.hasDeferredProtectedCommands(for: webViewID) == false {

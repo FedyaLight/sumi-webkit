@@ -145,7 +145,7 @@ final class WebViewProtectedCommandDispatchOwner {
         return WebViewDeferredProtectedCommandExecutionOwner.Runtime(
             validationContext: validationContext,
             executeCommand: { [weak self] command in
-                self?.execute(command) ?? false
+                self?.execute(command) ?? .invalidTarget
             },
             finishCleanupSuppression: { [dependencies] webViewIDs in
                 dependencies.finishCleanupSuppression(webViewIDs)
@@ -153,59 +153,64 @@ final class WebViewProtectedCommandDispatchOwner {
         )
     }
 
-    @discardableResult
-    func execute(_ command: DeferredWebViewCommand) -> Bool {
+    func execute(
+        _ command: DeferredWebViewCommand
+    ) -> DeferredProtectedCommandExecutionOutcome {
         switch command {
         case .removeWebViewFromContainers(let webViewID):
             guard let webView = dependencies.webViews.resolve(webViewID) else {
-                return false
+                return .invalidTarget
             }
-            return dependencies.removeWebViewFromContainers(webView)
+            return executionOutcome(
+                dependencies.removeWebViewFromContainers(webView)
+            )
         case .removeTrackedWebView(let webViewID, let tabID, let windowID):
             guard let webView = dependencies.webViews.resolve(webViewID) else {
-                return false
+                return .invalidTarget
             }
-            return dependencies.cleanupTrackedWebView(
+            return executionOutcome(dependencies.cleanupTrackedWebView(
                 webView,
                 TrackedWebViewOwner(tabID: tabID, windowID: windowID)
-            )
+            ))
         case .closeWebViewFromWebKit(let webViewID):
             guard let webView = dependencies.webViews.resolve(webViewID) else {
-                return false
+                return .invalidTarget
             }
             guard dependencies.handleWebKitClose(webView) else {
-                return false
+                return .retry
             }
         case .cleanupWindow(let windowID):
-            return dependencies.cleanupWindow(windowID)
+            return executionOutcome(dependencies.cleanupWindow(windowID))
         case .cleanupAllWebViews:
-            return dependencies.cleanupAllWebViews()
+            return executionOutcome(dependencies.cleanupAllWebViews())
         case .rebuildLiveWebViews(
             let tabID,
             let preferredPrimaryWindowID,
             let intent
         ):
             guard let tab = resolvedTab(with: tabID) else {
-                return false
+                return .invalidTarget
             }
             let result = dependencies.rebuildLiveWebViews(
                 tab,
                 preferredPrimaryWindowID,
                 intent
             )
-            return result != .failed
+            return executionOutcome(result != .failed)
         case .assignProfile(
             let tabID,
             let preferredPrimaryWindowID,
             let intent
         ):
-            return dependencies.executeProfileAssignment(
+            return executionOutcome(dependencies.executeProfileAssignment(
                 tabID,
                 preferredPrimaryWindowID,
                 intent
-            )
+            ))
         case .assignSpaceProfile(let intent):
-            return dependencies.executeSpaceProfileAssignment(intent)
+            return executionOutcome(
+                dependencies.executeSpaceProfileAssignment(intent)
+            )
         case .synchronizeTrackedNavigation(
             let webViewID,
             let tabID,
@@ -220,7 +225,7 @@ final class WebViewProtectedCommandDispatchOwner {
                       revision: intent.revision,
                       targetURL: intent.targetURL
                   ) else {
-                return false
+                return .invalidTarget
             }
             let claim = tab.performDeferredMainFrameNavigation(
                 on: webView,
@@ -231,9 +236,11 @@ final class WebViewProtectedCommandDispatchOwner {
             }
             switch claim {
             case .claimed, .alreadyScheduled:
-                return true
-            case .submissionFailed, .stale:
-                return false
+                return .executed
+            case .submissionFailed:
+                return .retry
+            case .stale:
+                return .invalidTarget
             }
         case .reloadTrackedNavigation(
             let webViewID,
@@ -249,7 +256,7 @@ final class WebViewProtectedCommandDispatchOwner {
                       revision: intent.revision,
                       targetURL: intent.targetURL
                   ) else {
-                return false
+                return .invalidTarget
             }
             let claim = tab.performDeferredMainFrameNavigation(
                 on: webView,
@@ -264,49 +271,59 @@ final class WebViewProtectedCommandDispatchOwner {
             }
             switch claim {
             case .claimed, .alreadyScheduled:
-                return true
-            case .submissionFailed, .stale:
-                return false
+                return .executed
+            case .submissionFailed:
+                return .retry
+            case .stale:
+                return .invalidTarget
             }
         case .evictHiddenWebViews(let windowID):
             guard dependencies.containsWindow(windowID) else {
-                return false
+                return .invalidTarget
             }
-            return dependencies.evictHiddenWebViews(
+            return executionOutcome(dependencies.evictHiddenWebViews(
                 windowID,
                 dependencies.visibleTabIDSet(windowID)
-            )
+            ))
         case .cleanupTabWebView(let webViewID, let tabID):
             guard let webView = dependencies.webViews.resolve(webViewID) else {
-                return false
+                return .invalidTarget
             }
             _ = dependencies.webViewSessions.removeDetachedWebView(webView, for: tabID)
             if let tab = resolvedTab(with: tabID) {
                 tab.cleanupCloneWebView(webView)
             } else {
-                return dependencies.performFallbackWebViewCleanup(webView, tabID)
+                return executionOutcome(
+                    dependencies.performFallbackWebViewCleanup(webView, tabID)
+                )
             }
         case .performFallbackWebViewCleanup(let webViewID, let lease):
             guard let webView = dependencies.webViews.resolve(webViewID) else {
-                return false
+                return .invalidTarget
             }
             guard dependencies.webViewSessions.consumePendingCleanup(
                 of: webView,
                 lease: lease
             ) else {
-                return false
+                return .retry
             }
             if let tab = resolvedTab(with: lease.tabID) {
                 tab.cleanupCloneWebView(webView)
             } else {
-                return dependencies.performFallbackWebViewCleanup(
+                return executionOutcome(dependencies.performFallbackWebViewCleanup(
                     webView,
                     lease.tabID
-                )
+                ))
             }
         }
 
-        return true
+        return .executed
+    }
+
+    private func executionOutcome(
+        _ didExecute: Bool
+    ) -> DeferredProtectedCommandExecutionOutcome {
+        didExecute ? .executed : .retry
     }
 
     private func resolvedTab(with tabID: UUID) -> Tab? {

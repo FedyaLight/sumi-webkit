@@ -234,6 +234,9 @@ public final class WebViewProtectedCommandOwner {
 
     public typealias CommandValidator = (DeferredWebViewCommand) -> Bool
     public typealias CommandDropper = (DeferredWebViewCommand, ObjectIdentifier, String) -> Void
+    public typealias CommandExecutor = (
+        DeferredWebViewCommand
+    ) -> DeferredProtectedCommandExecutionOutcome
     public typealias WebViewResolver = (ObjectIdentifier) -> WKWebView?
 
     private var activeHistorySwipeProtections: [ObjectIdentifier: HistorySwipeProtectionContext] = [:]
@@ -531,7 +534,7 @@ public final class WebViewProtectedCommandOwner {
         isCommandValid: CommandValidator,
         dropCommand: CommandDropper,
         didPruneStaleWebViewIDs: ([ObjectIdentifier]) -> Void,
-        executeCommand: (DeferredWebViewCommand) -> Bool
+        executeCommand: CommandExecutor
     ) -> Int {
         guard isProtected(webViewID) == false else { return 0 }
         didPruneStaleWebViewIDs(
@@ -560,7 +563,19 @@ public final class WebViewProtectedCommandOwner {
             guard let command = deferredProtectedWebViewCommands.popFirstCommand(
                 for: webViewID
             ) else { continue }
-            guard executeCommand(command) else {
+
+            switch executeCommand(command) {
+            case .executed:
+                executedCommandCount += 1
+
+            case .invalidTarget:
+                dropCommand(command, webViewID, "flush.execution.invalidTarget")
+
+            case .retry:
+                guard command.requiresGuaranteedDelivery else {
+                    dropCommand(command, webViewID, "flush.retry.replaceable")
+                    continue
+                }
                 let supersededCommands = deferredProtectedWebViewCommands
                     .restoreFirstCommandIfNoNewerCommandExists(
                     command,
@@ -575,7 +590,6 @@ public final class WebViewProtectedCommandOwner {
                 }
                 return executedCommandCount
             }
-            executedCommandCount += 1
         }
         return executedCommandCount
     }

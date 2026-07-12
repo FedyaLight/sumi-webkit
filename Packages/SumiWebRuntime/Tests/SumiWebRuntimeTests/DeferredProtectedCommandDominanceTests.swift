@@ -430,7 +430,7 @@ final class DeferredProtectedCommandDominanceTests: XCTestCase {
             didPruneStaleWebViewIDs: { _ in /* no-op */ },
             executeCommand: {
                 executedCommands.append($0)
-                return true
+                return .executed
             }
         ), 1)
         guard case .cleanupWindow(let executedWindowID) = executedCommands.first else {

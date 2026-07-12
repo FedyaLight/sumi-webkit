@@ -677,7 +677,7 @@ final class SumiWebRuntimeSmokeTests: XCTestCase {
             didPruneStaleWebViewIDs: { _ in },
             executeCommand: {
                 executedCommands.append($0)
-                return true
+                return .executed
             }
         ), 0)
         XCTAssertTrue(executedCommands.isEmpty)
@@ -692,7 +692,7 @@ final class SumiWebRuntimeSmokeTests: XCTestCase {
             didPruneStaleWebViewIDs: { _ in },
             executeCommand: {
                 executedCommands.append($0)
-                return true
+                return .executed
             }
         ), 1)
         guard executedCommands.count == 1,
@@ -775,7 +775,7 @@ final class SumiWebRuntimeSmokeTests: XCTestCase {
             isCommandValid: { _ in true },
             dropCommand: { _, _, _ in },
             didPruneStaleWebViewIDs: { _ in },
-            executeCommand: { _ in false }
+            executeCommand: { _ in .retry }
         ), 0)
         XCTAssertTrue(media.hasDeferredProtectedCommands(for: webViewID))
 
@@ -785,8 +785,171 @@ final class SumiWebRuntimeSmokeTests: XCTestCase {
             isCommandValid: { _ in true },
             dropCommand: { _, _, _ in },
             didPruneStaleWebViewIDs: { _ in },
-            executeCommand: { _ in true }
+            executeCommand: { _ in .executed }
         ), 1)
+        XCTAssertFalse(media.hasDeferredProtectedCommands(for: webViewID))
+    }
+
+    @MainActor
+    func testInvalidTargetExecutionDropsCommandAndContinuesFlushing() {
+        let media = WebViewMediaProtectionOwner()
+        let webView = WKWebView()
+        let webViewID = ObjectIdentifier(webView)
+        let windowID = UUID()
+        let lease = media.beginVisualHandoffProtection(for: webView)
+        var droppedReasons: [String] = []
+
+        for command in [
+            DeferredWebViewCommand.removeWebViewFromContainers(webViewID: webViewID),
+            .cleanupWindow(windowID: windowID),
+        ] {
+            XCTAssertEqual(media.enqueueDeferredCommandIfNeeded(
+                command,
+                for: webView,
+                reason: "test.execution-outcome",
+                resolveWebView: { $0 == webViewID ? webView : nil },
+                isCommandValid: { _ in true },
+                dropCommand: { _, _, reason in droppedReasons.append(reason) },
+                didPruneStaleWebViewIDs: { _ in }
+            ), .scheduled)
+        }
+        _ = media.finishVisualHandoffProtection(lease)
+
+        var executionCount = 0
+        XCTAssertEqual(media.executeDeferredCommandsIfUnprotected(
+            for: webViewID,
+            resolveWebView: { $0 == webViewID ? webView : nil },
+            isCommandValid: { _ in true },
+            dropCommand: { _, _, reason in droppedReasons.append(reason) },
+            didPruneStaleWebViewIDs: { _ in },
+            executeCommand: { _ in
+                executionCount += 1
+                return executionCount == 1 ? .invalidTarget : .executed
+            }
+        ), 1)
+
+        XCTAssertEqual(executionCount, 2)
+        XCTAssertEqual(droppedReasons, ["flush.execution.invalidTarget"])
+        XCTAssertFalse(media.hasDeferredProtectedCommands(for: webViewID))
+    }
+
+    @MainActor
+    func testRetryRestorationPreservesQueuedDominator() {
+        let media = WebViewMediaProtectionOwner()
+        let webView = WKWebView()
+        let webViewID = ObjectIdentifier(webView)
+        let tabID = UUID()
+        let windowID = UUID()
+        let navigation = DeferredWebViewCommand.synchronizeTrackedNavigation(
+            webViewID: webViewID,
+            tabID: tabID,
+            windowID: windowID,
+            intent: DeferredWebViewNavigationIntent(
+                revision: 1,
+                targetURL: URL(string: "https://example.com/retry")!
+            )
+        )
+        let initialLease = media.beginVisualHandoffProtection(for: webView)
+        var droppedCommands: [(DeferredWebViewCommand, String)] = []
+        XCTAssertEqual(media.enqueueDeferredCommandIfNeeded(
+            navigation,
+            for: webView,
+            reason: "test.retry-dominance",
+            resolveWebView: { $0 == webViewID ? webView : nil },
+            isCommandValid: { _ in true },
+            dropCommand: { droppedCommands.append(($0, $2)) },
+            didPruneStaleWebViewIDs: { _ in }
+        ), .scheduled)
+        _ = media.finishVisualHandoffProtection(initialLease)
+
+        XCTAssertEqual(media.executeDeferredCommandsIfUnprotected(
+            for: webViewID,
+            resolveWebView: { $0 == webViewID ? webView : nil },
+            isCommandValid: { _ in true },
+            dropCommand: { droppedCommands.append(($0, $2)) },
+            didPruneStaleWebViewIDs: { _ in },
+            executeCommand: { _ in
+                let retryLease = media.beginVisualHandoffProtection(for: webView)
+                XCTAssertEqual(media.enqueueDeferredCommandIfNeeded(
+                    .cleanupWindow(windowID: windowID),
+                    for: webView,
+                    reason: "test.retry-dominator",
+                    resolveWebView: { $0 == webViewID ? webView : nil },
+                    isCommandValid: { _ in true },
+                    dropCommand: { droppedCommands.append(($0, $2)) },
+                    didPruneStaleWebViewIDs: { _ in }
+                ), .scheduled)
+                _ = media.finishVisualHandoffProtection(retryLease)
+                return .retry
+            }
+        ), 0)
+
+        XCTAssertEqual(droppedCommands.count, 1)
+        XCTAssertEqual(droppedCommands[0].1, "flush.restore.superseded")
+        guard case .synchronizeTrackedNavigation = droppedCommands[0].0 else {
+            return XCTFail("Expected the retried narrow command to be superseded")
+        }
+        XCTAssertTrue(media.hasDeferredProtectedCommands(for: webViewID))
+
+        var executedCommands: [DeferredWebViewCommand] = []
+        XCTAssertEqual(media.executeDeferredCommandsIfUnprotected(
+            for: webViewID,
+            resolveWebView: { $0 == webViewID ? webView : nil },
+            isCommandValid: { _ in true },
+            dropCommand: { _, _, _ in },
+            didPruneStaleWebViewIDs: { _ in },
+            executeCommand: {
+                executedCommands.append($0)
+                return .executed
+            }
+        ), 1)
+        guard executedCommands.count == 1,
+              case .cleanupWindow(let executedWindowID) = executedCommands[0]
+        else {
+            return XCTFail("Expected the queued dominator to execute")
+        }
+        XCTAssertEqual(executedWindowID, windowID)
+        XCTAssertFalse(media.hasDeferredProtectedCommands(for: webViewID))
+    }
+
+    @MainActor
+    func testRetryDoesNotPromoteReplaceableMaintenanceToGuaranteedWork() {
+        let media = WebViewMediaProtectionOwner()
+        let webView = WKWebView()
+        let webViewID = ObjectIdentifier(webView)
+        let lease = media.beginVisualHandoffProtection(for: webView)
+        let command = DeferredWebViewCommand.rebuildLiveWebViews(
+            tabID: UUID(),
+            preferredPrimaryWindowID: nil,
+            intent: DeferredWebViewRebuildIntent(
+                revision: 1,
+                targetURL: URL(string: "https://example.com/maintenance")!,
+                configuration: .normal,
+                kind: .maintenance
+            )
+        )
+        XCTAssertEqual(media.enqueueDeferredCommandIfNeeded(
+            command,
+            for: webView,
+            reason: "test.retry-replaceable",
+            resolveWebView: { $0 == webViewID ? webView : nil },
+            isCommandValid: { _ in true },
+            dropCommand: { _, _, _ in },
+            didPruneStaleWebViewIDs: { _ in }
+        ), .scheduled)
+        _ = media.finishVisualHandoffProtection(lease)
+
+        var droppedReasons: [String] = []
+        XCTAssertEqual(media.executeDeferredCommandsIfUnprotected(
+            for: webViewID,
+            resolveWebView: { $0 == webViewID ? webView : nil },
+            isCommandValid: { _ in true },
+            dropCommand: { _, _, reason in droppedReasons.append(reason) },
+            didPruneStaleWebViewIDs: { _ in },
+            executeCommand: { _ in .retry }
+        ), 0)
+
+        XCTAssertEqual(droppedReasons, ["flush.retry.replaceable"])
         XCTAssertFalse(media.hasDeferredProtectedCommands(for: webViewID))
     }
 
@@ -828,7 +991,7 @@ final class SumiWebRuntimeSmokeTests: XCTestCase {
             didPruneStaleWebViewIDs: { _ in },
             executeCommand: {
                 executedCommands.append($0)
-                return true
+                return .executed
             }
         ), 0)
         XCTAssertEqual(validationCount, 2)
@@ -847,7 +1010,7 @@ final class SumiWebRuntimeSmokeTests: XCTestCase {
             didPruneStaleWebViewIDs: { _ in },
             executeCommand: {
                 executedCommands.append($0)
-                return true
+                return .executed
             }
         ), 1)
         XCTAssertEqual(executedCommands.count, 1)

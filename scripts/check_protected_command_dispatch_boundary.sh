@@ -10,13 +10,25 @@ dispatch='Sumi/Managers/WebViewRuntime/WebViewProtectedCommandDispatchOwner.swif
 execution='Sumi/Managers/WebViewRuntime/WebViewDeferredProtectedCommandExecutionOwner.swift'
 graph='Sumi/Managers/WebViewRuntime/WebViewRuntimeGraph.swift'
 resolver='Sumi/Managers/WebViewRuntime/WebViewRuntimeWebViewResolver.swift'
+command='Packages/SumiWebRuntime/Sources/SumiWebRuntime/Commands/DeferredWebViewCommand.swift'
+queue='Packages/SumiWebRuntime/Sources/SumiWebRuntime/Commands/WebViewProtectedCommandOwner.swift'
 
-for file in "$dispatch" "$execution" "$graph" "$resolver"; do
+for file in "$dispatch" "$execution" "$graph" "$resolver" "$command" "$queue"; do
   [[ -f "$file" ]] || {
     printf 'error: protected-command boundary file missing: %s\n' "$file" >&2
     exit 1
   }
 done
+
+if ! rg -q 'enum DeferredProtectedCommandExecutionOutcome' "$command"; then
+  printf 'error: deferred command execution lost typed outcome\n' >&2
+  exit 1
+fi
+if rg -U -n 'executeCommand:[^\n]*\(DeferredWebViewCommand\)[[:space:]]*->[[:space:]]*Bool' \
+  "$execution" "$queue"; then
+  printf 'error: deferred command execution regressed to ambiguous Bool\n' >&2
+  exit 1
+fi
 
 if rg -n '\bhasTabManager\b' "$dispatch" "$execution" "$graph"; then
   printf 'error: deferred-command validation regained fake TabManager liveness\n' >&2

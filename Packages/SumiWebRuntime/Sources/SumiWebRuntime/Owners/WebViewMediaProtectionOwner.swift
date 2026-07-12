@@ -288,7 +288,7 @@ public final class WebViewMediaProtectionOwner {
         isCommandValid: WebViewProtectedCommandOwner.CommandValidator,
         dropCommand: WebViewProtectedCommandOwner.CommandDropper,
         didPruneStaleWebViewIDs: ([ObjectIdentifier]) -> Void,
-        executeCommand: (DeferredWebViewCommand) -> Bool
+        executeCommand: WebViewProtectedCommandOwner.CommandExecutor
     ) -> Int {
         protectedCommandOwner.executeDeferredCommandsIfUnprotected(
             for: webViewID,

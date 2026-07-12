@@ -819,7 +819,9 @@ final class DeferredProtectedCommandTests: XCTestCase {
 
         return WebViewDeferredProtectedCommandExecutionOwner.Runtime(
             validationContext: validationContext,
-            executeCommand: executeCommand,
+            executeCommand: {
+                executeCommand($0) ? .executed : .retry
+            },
             finishCleanupSuppression: { _ in /* No-op. */ }
         )
     }
