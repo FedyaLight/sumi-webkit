@@ -433,7 +433,7 @@ extension Tab {
         reason: String = "Tab.ensureUntrackedNormalWebView",
         registerTabWithExtensionRuntime: Bool = true
     ) -> TabUntrackedWebViewEnsureOutcome {
-        normalWebViewSetupOwner.ensureUntrackedNormalWebView(
+        normalWebViewSetup.ensureUntrackedNormalWebView(
             context: normalWebViewRuntimeContext(),
             policyTransaction: configurationPolicyTransaction,
             provisioningOwner: webViewProvisioningOwner,

@@ -51,7 +51,7 @@ final class UntrackedWebViewMaterializationService {
         switch tab.ensureUntrackedNormalWebViewOutcome(
             reason: "UntrackedWebViewMaterializationService.materialize"
         ) {
-        case .available(let webView):
+        case .available(let webView), .superseded(let webView):
             return .available(webView)
         case .deferred:
             return .deferred

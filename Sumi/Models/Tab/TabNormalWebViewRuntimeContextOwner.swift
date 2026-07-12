@@ -57,9 +57,6 @@ final class TabNormalWebViewRuntimeContextOwner {
                 return tab.navigationRuntime.webViewCleanupRuntime
                     .deferWebsiteDataMutationWebViewMaterialization(tab, replay)
             },
-            adoptParkedWebViewAsCurrent: { [weak tab] webView in
-                tab?.adoptParkedWebViewAsCurrent(webView)
-            },
             clearParkedExistingWebView: { [weak tab] in
                 tab?.clearParkedExistingWebView()
             },
@@ -70,9 +67,6 @@ final class TabNormalWebViewRuntimeContextOwner {
                     webView,
                     reason
                 )
-            },
-            replaceUntrackedWebView: { [weak tab] webView in
-                tab?.replaceUntrackedWebView(webView)
             },
             cleanupCloneWebView: { [weak tab] webView in
                 tab?.cleanupCloneWebView(webView)

@@ -24,6 +24,7 @@ struct TabBrowserRuntime {
     var lifecycleNavigationRuntime: TabLifecycleNavigationRuntime
     var permissionRuntime: TabPermissionRuntime
     var webViewCleanupRuntime: TabWebViewCleanupRuntime
+    var untrackedWebViewInstallation: (any UntrackedWebViewInstalling)?
     var normalWebViewExtensionRuntime: TabNormalWebViewExtensionRuntime
     var navigationDelegateRuntime: TabNavigationDelegateRuntime
     var faviconExtensionRuntime: TabFaviconExtensionRuntime
@@ -59,6 +60,7 @@ struct TabBrowserRuntime {
         lifecycleNavigationRuntime: .inactive,
         permissionRuntime: .inactive,
         webViewCleanupRuntime: .inactive,
+        untrackedWebViewInstallation: nil,
         normalWebViewExtensionRuntime: .inactive,
         navigationDelegateRuntime: .inactive,
         faviconExtensionRuntime: .inactive,

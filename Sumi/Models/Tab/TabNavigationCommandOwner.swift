@@ -46,7 +46,7 @@ final class TabNavigationCommandOwner {
             switch tab.ensureUntrackedNormalWebViewOutcome(
                 reason: "Tab.loadURL.initial"
             ) {
-            case .available:
+            case .available, .superseded:
                 break
             case .deferred:
                 tab.applyCachedFaviconOrPlaceholder(for: newURL)

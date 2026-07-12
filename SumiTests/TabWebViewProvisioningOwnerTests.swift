@@ -78,9 +78,7 @@ final class TabWebViewProvisioningOwnerTests: XCTestCase {
         let owner = TabWebViewProvisioningOwner()
         var capturedOptions: CreatedWebViewPreparationOptions?
         var capturedReason: String?
-        var didReplaceWebView = false
         let context = makeContext(
-            replaceUntrackedWebView: { _ in didReplaceWebView = true },
             preparationRuntime: makePreparationRuntime(
                 prepareCreatedFocusableWebView: { _, _, reason, options in
                     capturedReason = reason
@@ -97,10 +95,6 @@ final class TabWebViewProvisioningOwnerTests: XCTestCase {
             reason: "test.popup"
         )
 
-        XCTAssertFalse(
-            didReplaceWebView,
-            "Phase 6: popup construction must not silently install Tab ownership"
-        )
         XCTAssertEqual(capturedReason, "test.popup")
         XCTAssertEqual(capturedOptions?.installFaviconRuntime, false)
         XCTAssertEqual(capturedOptions?.prepareExtensionRuntime, true)
@@ -177,7 +171,6 @@ final class TabWebViewProvisioningOwnerTests: XCTestCase {
     private func makeContext(
         profileId: @escaping () -> UUID? = { nil },
         resolveProfile: @escaping () -> Profile? = { nil },
-        replaceUntrackedWebView: @escaping (WKWebView) -> Void = { _ in /* No-op. */ },
         configurationContext: @escaping () -> TabWebViewConfigurationContext = { .empty },
         configurationRuntime: TabNormalWebViewConfigurationRuntime? = nil,
         preparationRuntime: TabNormalWebViewPreparationRuntime? = nil,
@@ -199,10 +192,8 @@ final class TabWebViewProvisioningOwnerTests: XCTestCase {
             finishSuspendedRestoreIfNeeded: { /* No-op. */ },
             setupWebView: { _ in /* No-op. */ },
             deferWebsiteDataMutationWebViewMaterialization: { _ in false },
-            adoptParkedWebViewAsCurrent: { _ in /* No-op. */ },
             clearParkedExistingWebView: { /* No-op. */ },
             retireParkedWebView: { _, _ in false },
-            replaceUntrackedWebView: replaceUntrackedWebView,
             cleanupCloneWebView: { _ in /* No-op. */ },
             configurationContext: configurationContext,
             configurationRuntime: configurationRuntime ?? makeConfigurationRuntime(),

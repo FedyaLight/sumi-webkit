@@ -398,6 +398,33 @@ while IFS= read -r match; do
   fi
 done <<< "$detached_app_hits"
 
+# Detached residence publication must enter through the exact installation or
+# replacement authority. Tab setup/context may prepare candidates, but may not
+# carry raw handle mutation capabilities.
+raw_detached_handle_mutation_hits="$(
+  rg -n '\.(replaceUntracked|adoptParkedAsUntracked)\s*\(' \
+    "${production_roots[@]}" -g '*.swift' || true
+)"
+while IFS= read -r match; do
+  [[ -z "$match" ]] && continue
+  file="${match%%:*}"
+  if [[ "$file" != "Sumi/Managers/WebViewRuntime/CanonicalWebViewPlacementService.swift" ]]; then
+    printf 'error: detached handle mutation escaped canonical placement authority: %s\n' \
+      "$match" >&2
+    status=1
+  fi
+done <<< "$raw_detached_handle_mutation_hits"
+
+setup_context_mutation_hits="$(
+  rg -n '\b(adoptParkedWebViewAsCurrent|replaceUntrackedWebView)\b' \
+    Sumi/Models/Tab/TabNormalWebViewRuntimeContext.swift \
+    Sumi/Models/Tab/TabNormalWebViewRuntimeContextOwner.swift \
+    Sumi/Models/Tab/TabNormalWebViewSetupService.swift || true
+)"
+fail_matches \
+  "normal WebView setup regained raw detached residence mutation" \
+  "$setup_context_mutation_hits"
+
 # Pending-cleanup ownership is a two-step transaction. A focused cleanup
 # service acquires the lease before deferral; the exact lease is consumed only
 # by that cleanup boundary, physical cleanup, or the protected-command

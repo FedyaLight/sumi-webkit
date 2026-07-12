@@ -409,7 +409,7 @@ for requested_tab_single_publisher_boundary in \
   'registerTabWithExtensionRuntime: Bool = true'; do
   if ! rg -Fq "$requested_tab_single_publisher_boundary" \
       Sumi/Managers/ExtensionManager/ExtensionRequestedTabWebViewMaterializer.swift \
-      Sumi/Models/Tab/TabNormalWebViewSetupOwner.swift; then
+      Sumi/Models/Tab/TabNormalWebViewSetupService.swift; then
     printf 'error: requested Tab WebView provisioning can publish outside its receipt: %s\n' \
       "$requested_tab_single_publisher_boundary" >&2
     status=1

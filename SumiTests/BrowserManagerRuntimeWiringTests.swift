@@ -889,6 +889,48 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         XCTAssertEqual(automaticCleanupService.schedules.count, 1)
     }
 
+    func testRetainedAttachedTabDoesNotRetainBrowserRuntimeRoots() throws {
+        var browserManager: BrowserManager? = BrowserManager(
+            startupPersistence: BrowserManagerStartupPersistence(
+                container: try makeInMemoryStartupContainer()
+            )
+        )
+        var windowRegistry: WindowRegistry? = WindowRegistry()
+        browserManager?.windowRegistry = windowRegistry
+
+        let tab: Tab
+        let installation: UntrackedWebViewInstallationService
+        do {
+            let manager = try XCTUnwrap(browserManager)
+            tab = Tab(
+                webViewSessions: manager.webViewSessions,
+                loadsCachedFaviconOnInit: false
+            )
+            tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: manager))
+            installation = manager.webViewRuntime
+                .untrackedWebViewInstallationService
+        }
+        weak var releasedBrowserManager = browserManager
+        weak var releasedWindowRegistry = windowRegistry
+
+        browserManager = nil
+        windowRegistry = nil
+
+        XCTAssertNil(releasedBrowserManager)
+        XCTAssertNil(releasedWindowRegistry)
+        XCTAssertTrue(tab.hasBrowserRuntime)
+
+        let lateCandidate = WKWebView()
+        XCTAssertEqual(
+            installation.installUntracked(lateCandidate, for: tab),
+            .rejected(
+                .runtimeTabIdentityConflict,
+                webViewDisposition: .callerMustDestroy
+            )
+        )
+        XCTAssertNil(tab.webViewSession.residence(of: lateCandidate))
+    }
+
     func testNativeSurfaceViewModelsUseInjectedFaviconService() throws {
         let injectedPartition = SumiFaviconPartition(
             profileIdentifier: "injected-view-models",

@@ -5,6 +5,101 @@ import XCTest
 
 @MainActor
 final class WebViewRuntimeGraphTrackedWebViewsTests: XCTestCase {
+    func testDetachedInstallationRejectsSameIDTabBeforeResidenceMutation()
+        throws {
+        let graph = makeTestWebViewRuntimeGraph()
+        let tabID = UUID()
+        let canonical = Tab(
+            id: tabID,
+            webViewSessions: graph.webViewSessions,
+            loadsCachedFaviconOnInit: false
+        )
+        let conflicting = Tab(
+            id: tabID,
+            webViewSessions: graph.webViewSessions,
+            loadsCachedFaviconOnInit: false
+        )
+        XCTAssertEqual(graph.runtimeTabs.bind(canonical), .bound)
+        let candidate = WKWebView()
+        let generation = graph.webViewSessions.residenceGeneration
+
+        XCTAssertEqual(
+            graph.untrackedWebViewInstallationService.installUntracked(
+                candidate,
+                for: conflicting
+            ),
+            .rejected(
+                .runtimeTabIdentityConflict,
+                webViewDisposition: .callerMustDestroy
+            )
+        )
+        XCTAssertEqual(graph.webViewSessions.residenceGeneration, generation)
+        XCTAssertNil(graph.webViewSessions.residence(of: candidate))
+        XCTAssertIdentical(graph.runtimeTabs.boundTab(tabID), canonical)
+    }
+
+    func testSameIDConflictPreservesAlreadyCanonicalCandidate() {
+        let graph = makeTestWebViewRuntimeGraph()
+        let tabID = UUID()
+        let canonical = Tab(
+            id: tabID,
+            webViewSessions: graph.webViewSessions,
+            loadsCachedFaviconOnInit: false
+        )
+        let conflicting = Tab(
+            id: tabID,
+            webViewSessions: graph.webViewSessions,
+            loadsCachedFaviconOnInit: false
+        )
+        XCTAssertEqual(graph.runtimeTabs.bind(canonical), .bound)
+        let candidate = WKWebView()
+        conflicting.webViewSession.park(candidate)
+        let generation = graph.webViewSessions.residenceGeneration
+
+        XCTAssertEqual(
+            graph.untrackedWebViewInstallationService.installUntracked(
+                candidate,
+                for: conflicting
+            ),
+            .rejected(
+                .runtimeTabIdentityConflict,
+                webViewDisposition: .remainsCanonical
+            )
+        )
+        XCTAssertEqual(graph.webViewSessions.residenceGeneration, generation)
+        XCTAssertEqual(
+            graph.webViewSessions.residence(of: candidate),
+            .parked(tabID: tabID)
+        )
+        XCTAssertIdentical(canonical.webViewSession.parkedWebView, candidate)
+        XCTAssertIdentical(graph.runtimeTabs.boundTab(tabID), canonical)
+    }
+
+    func testDetachedInstallationCannotRecreateRetiredResidence() {
+        let graph = makeTestWebViewRuntimeGraph()
+        let tab = Tab(
+            webViewSessions: graph.webViewSessions,
+            loadsCachedFaviconOnInit: false
+        )
+        XCTAssertEqual(graph.runtimeTabs.bind(tab), .bound)
+        XCTAssertTrue(graph.runtimeTabs.beginRetirement(tab))
+        XCTAssertTrue(graph.runtimeTabs.finishRetirementIfDrained(tab.id))
+        let candidate = WKWebView()
+
+        XCTAssertEqual(
+            graph.untrackedWebViewInstallationService.installUntracked(
+                candidate,
+                for: tab
+            ),
+            .rejected(
+                .runtimeTabIdentityConflict,
+                webViewDisposition: .callerMustDestroy
+            )
+        )
+        XCTAssertNil(graph.webViewSessions.residence(of: candidate))
+        XCTAssertTrue(tab.webViewSession.allKnownWebViews.isEmpty)
+    }
+
     func testAuxiliaryTrackedPlacementReturnsTypedWrongFamilyRejection() throws {
         let graph = makeTestWebViewRuntimeGraph()
         let tab = Tab(

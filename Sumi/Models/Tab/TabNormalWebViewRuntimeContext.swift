@@ -86,10 +86,8 @@ struct TabNormalWebViewRuntimeContext {
     let deferWebsiteDataMutationWebViewMaterialization: (
         @MainActor @Sendable @escaping () -> Void
     ) -> Bool
-    let adoptParkedWebViewAsCurrent: (WKWebView) -> Void
     let clearParkedExistingWebView: () -> Void
     let retireParkedWebView: (WKWebView, String) -> Bool
-    let replaceUntrackedWebView: (WKWebView) -> Void
     let cleanupCloneWebView: (WKWebView) -> Void
     let configurationContext: () -> TabWebViewConfigurationContext
     let configurationRuntime: TabNormalWebViewConfigurationRuntime

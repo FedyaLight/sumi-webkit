@@ -66,7 +66,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     let webViewRebuildEpoch = TabWebViewRebuildEpoch()
     let committedDocumentRuntime: TabCommittedDocumentRuntime
     let webViewConfigurationOwner = TabWebViewConfigurationOwner()
-    let normalWebViewSetupOwner = TabNormalWebViewSetupOwner()
+    let normalWebViewSetup = TabNormalWebViewSetupService()
     let webViewProvisioningOwner = TabWebViewProvisioningOwner()
     lazy var normalWebViewRuntimeContextOwner = TabNormalWebViewRuntimeContextOwner(tab: self)
     private let closeLifecycleOwner = TabCloseLifecycleOwner()
@@ -417,6 +417,10 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         navigationRuntime.lifecycleNavigationRuntime = runtime.lifecycleNavigationRuntime
         navigationRuntime.permissionRuntime = runtime.permissionRuntime
         navigationRuntime.webViewCleanupRuntime = runtime.webViewCleanupRuntime
+        normalWebViewSetup.attach(
+            to: self,
+            installation: runtime.untrackedWebViewInstallation
+        )
         navigationRuntime.normalWebViewExtensionRuntime = runtime.normalWebViewExtensionRuntime
         navigationRuntime.navigationDelegateRuntime = runtime.navigationDelegateRuntime
         navigationRuntime.faviconExtensionRuntime = runtime.faviconExtensionRuntime
@@ -574,17 +578,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
 
     func clearParkedExistingWebView() {
         webViewSession.clearParked()
-    }
-
-    func adoptParkedWebViewAsCurrent(_ webView: WKWebView) {
-        precondition(
-            webViewSession.adoptParkedAsUntracked(webView),
-            "Only this tab's parked WebView can be adopted"
-        )
-    }
-
-    func replaceUntrackedWebView(_ webView: WKWebView) {
-        webViewSession.replaceUntracked(with: webView)
     }
 
     public func clearCurrentWebViewOwnership() {

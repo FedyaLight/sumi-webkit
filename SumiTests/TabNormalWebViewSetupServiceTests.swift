@@ -6,26 +6,34 @@ import XCTest
 @testable import Sumi
 
 @MainActor
-final class TabNormalWebViewSetupOwnerTests: XCTestCase {
+final class TabNormalWebViewSetupServiceTests: XCTestCase {
     func testEnsureUntrackedNormalWebViewAdoptsCompatibleParkedWebView() {
-        let owner = TabNormalWebViewSetupOwner()
-        let parkedWebView = WKWebView(frame: .zero)
-        var current: WKWebView?
-        var adopted: WKWebView?
+        let graph = makeTestWebViewRuntimeGraph()
+        let tab = Tab(
+            webViewSessions: graph.webViewSessions,
+            loadsCachedFaviconOnInit: false
+        )
+        let setup = TabNormalWebViewSetupService()
+        setup.attach(
+            to: tab,
+            installation: graph.untrackedWebViewInstallationService
+        )
+        let configuration = WKWebViewConfiguration()
+        configuration.sumiIsNormalTabWebViewConfiguration = true
+        let parkedWebView = WKWebView(
+            frame: .zero,
+            configuration: configuration
+        )
+        tab.webViewSession.park(parkedWebView)
         var didMakeNormal = false
         let profile = Profile(name: "Ensure Parked Profile")
-        let policyLedger = TabConfigurationPolicyLedger()
-        let policyTransaction = TabConfigurationPolicyTransaction(
-            policyLedger: policyLedger,
-            webViewSession: WebViewSessionHandle(tabID: UUID())
-        )
 
         let context = TabNormalWebViewRuntimeContext(
-            tabId: UUID(),
+            tabId: tab.id,
             currentURL: { URL(string: "https://example.com/parked")! },
             isPopupHost: { false },
-            currentWebView: { current },
-            parkedWebView: { parkedWebView },
+            currentWebView: { tab.webViewSession.currentWebView },
+            parkedWebView: { tab.webViewSession.parkedWebView },
             profileId: { profile.id },
             resolveProfile: { profile },
             deferWebViewUntilProfileAvailable: { false },
@@ -33,15 +41,8 @@ final class TabNormalWebViewSetupOwnerTests: XCTestCase {
             finishSuspendedRestoreIfNeeded: { /* No-op. */ },
             setupWebView: { _ in /* No-op. */ },
             deferWebsiteDataMutationWebViewMaterialization: { _ in false },
-            adoptParkedWebViewAsCurrent: { webView in
-                adopted = webView
-                current = webView
-            },
             clearParkedExistingWebView: { /* No-op. */ },
             retireParkedWebView: { _, _ in false },
-            replaceUntrackedWebView: { webView in
-                current = webView
-            },
             cleanupCloneWebView: { _ in /* No-op. */ },
             configurationContext: { .empty },
             configurationRuntime: TabNormalWebViewConfigurationRuntime(
@@ -69,21 +70,113 @@ final class TabNormalWebViewSetupOwnerTests: XCTestCase {
             scheduleInitialDocumentRuntimeHandoff: { _, _, _, _ in /* No-op. */ }
         )
 
-        let ensured = owner.ensureUntrackedNormalWebView(
+        let ensured = setup.ensureUntrackedNormalWebView(
             context: context,
-            policyTransaction: policyTransaction,
+            policyTransaction: tab.configurationPolicyTransaction,
             provisioningOwner: TabWebViewProvisioningOwner(),
-            reason: "TabNormalWebViewSetupOwnerTests.parkedReuse"
+            reason: "TabNormalWebViewSetupServiceTests.parkedReuse"
         )
 
         XCTAssertIdentical(ensured.webView, parkedWebView)
-        XCTAssertIdentical(adopted, parkedWebView)
-        XCTAssertIdentical(current, parkedWebView)
+        XCTAssertIdentical(tab.webViewSession.untrackedWebView, parkedWebView)
+        XCTAssertNil(tab.webViewSession.parkedWebView)
+        XCTAssertEqual(
+            graph.webViewSessions.residence(of: parkedWebView),
+            .untracked(tabID: tab.id)
+        )
+        XCTAssertIdentical(graph.runtimeTabs.boundTab(tab.id), tab)
         XCTAssertFalse(didMakeNormal)
     }
 
+    func testRegistrationReentrancyCannotHandoffReplacementWebView() {
+        let setup = TabNormalWebViewSetupService()
+        let tab = Tab()
+        let parkedWebView = WKWebView()
+        let replacementWebView = WKWebView()
+        let profile = Profile(name: "Registration Reentrancy")
+        let policyTransaction = TabConfigurationPolicyTransaction(
+            policyLedger: TabConfigurationPolicyLedger(),
+            webViewSession: WebViewSessionHandle(tabID: UUID())
+        )
+        var currentWebView: WKWebView?
+        var handoffCount = 0
+        var beginRestoreCount = 0
+        var finishRestoreCount = 0
+        setup.attach(
+            to: tab,
+            installation: TabNormalWebViewTestInstaller { webView, installedTab in
+                XCTAssertIdentical(installedTab, tab)
+                currentWebView = webView
+                return .committed
+            }
+        )
+        let context = TabNormalWebViewRuntimeContext(
+            tabId: tab.id,
+            currentURL: { URL(string: "file:///tmp/reentrant.html")! },
+            isPopupHost: { false },
+            currentWebView: { currentWebView },
+            parkedWebView: { parkedWebView },
+            profileId: { profile.id },
+            resolveProfile: { profile },
+            deferWebViewUntilProfileAvailable: { false },
+            beginSuspendedRestoreIfNeeded: { beginRestoreCount += 1 },
+            finishSuspendedRestoreIfNeeded: { finishRestoreCount += 1 },
+            setupWebView: { _ in },
+            deferWebsiteDataMutationWebViewMaterialization: { _ in false },
+            clearParkedExistingWebView: {},
+            retireParkedWebView: { _, _ in false },
+            cleanupCloneWebView: { _ in },
+            configurationContext: { .empty },
+            configurationRuntime: TabNormalWebViewConfigurationRuntime(
+                normalTabWebViewConfiguration: { _, _, _, _ in
+                    Self.preparedConfiguration(for: profile)
+                },
+                auxiliaryOverrideConfiguration: { _, _ in nil },
+                applyWebViewConfigurationOverride: { _, _, _ in },
+                canReuseAsNormalTabWebView: { webView, _, _, _ in
+                    webView === parkedWebView
+                }
+            ),
+            preparationRuntime: TabNormalWebViewPreparationRuntime(
+                prepareCreatedFocusableWebView: { _, _, _, _ in },
+                prepareAssignedWebView: { _ in },
+                prepareReusedOrExternallyCreatedWebView: { _ in },
+                applyOwnedWebViewNavPreferences: { _ in }
+            ),
+            normalTabUserScriptsProvider: { _, _ in SumiNormalTabUserScripts() },
+            replaceNormalTabUserScripts: { _, _ in },
+            loadMainFrameRequest: { _, _ in
+                XCTFail("Stale setup must not load a replacement WebView")
+            },
+            applyCachedFaviconOrPlaceholder: { _ in },
+            registerTabWithExtensionRuntimeIfNeeded: { _ in
+                currentWebView = replacementWebView
+            },
+            scheduleInitialDocumentRuntimeHandoff: { _, _, _, _ in
+                handoffCount += 1
+            }
+        )
+
+        let outcome = setup.ensureUntrackedNormalWebView(
+            context: context,
+            policyTransaction: policyTransaction,
+            provisioningOwner: TabWebViewProvisioningOwner(),
+            reason: "test.registration-reentrancy"
+        )
+
+        guard case .superseded(let current) = outcome else {
+            return XCTFail("Reentrant replacement must supersede stale setup")
+        }
+        XCTAssertIdentical(current, replacementWebView)
+        XCTAssertIdentical(currentWebView, replacementWebView)
+        XCTAssertEqual(handoffCount, 0)
+        XCTAssertEqual(beginRestoreCount, 1)
+        XCTAssertEqual(finishRestoreCount, 1)
+    }
+
     func testWebsiteDataMutationDefersPhysicalMaterializationAndRetainsReplay() {
-        let owner = TabNormalWebViewSetupOwner()
+        let setup = TabNormalWebViewSetupService()
+        let tab = Tab()
         let profile = Profile(name: "Deferred Materialization")
         var currentWebView: WKWebView?
         var shouldDefer = true
@@ -91,14 +184,19 @@ final class TabNormalWebViewSetupOwnerTests: XCTestCase {
         let setupReplay = TabNormalWebViewSetupReplayBox()
         var creationCount = 0
         var registrationCount = 0
-        let policyLedger = TabConfigurationPolicyLedger()
-        let webViewSession = WebViewSessionHandle(tabID: UUID())
-        let policyTransaction = TabConfigurationPolicyTransaction(
-            policyLedger: policyLedger,
-            webViewSession: webViewSession
+        let webViewSession = tab.webViewSession
+        let policyTransaction = tab.configurationPolicyTransaction
+        setup.attach(
+            to: tab,
+            installation: TabNormalWebViewTestInstaller { webView, installedTab in
+                XCTAssertIdentical(installedTab, tab)
+                currentWebView = webView
+                webViewSession.replaceUntracked(with: webView)
+                return .committed
+            }
         )
         let context = TabNormalWebViewRuntimeContext(
-            tabId: UUID(),
+            tabId: tab.id,
             currentURL: { URL(string: "https://example.com/deferred-materialization")! },
             isPopupHost: { false },
             currentWebView: { webViewSession.currentWebView },
@@ -116,13 +214,8 @@ final class TabNormalWebViewSetupOwnerTests: XCTestCase {
                 retainedReplay = replay
                 return true
             },
-            adoptParkedWebViewAsCurrent: { _ in },
             clearParkedExistingWebView: {},
             retireParkedWebView: { _, _ in false },
-            replaceUntrackedWebView: { webView in
-                currentWebView = webView
-                webViewSession.replaceUntracked(with: webView)
-            },
             cleanupCloneWebView: { _ in },
             configurationContext: { .empty },
             configurationRuntime: TabNormalWebViewConfigurationRuntime(
@@ -150,21 +243,21 @@ final class TabNormalWebViewSetupOwnerTests: XCTestCase {
             scheduleInitialDocumentRuntimeHandoff: { _, _, _, _ in }
         )
         setupReplay.action = { registerTabWithExtensionRuntime in
-            _ = owner.ensureUntrackedNormalWebView(
+            _ = setup.ensureUntrackedNormalWebView(
                 context: context,
                 policyTransaction: policyTransaction,
                 provisioningOwner: TabWebViewProvisioningOwner(),
-                reason: "TabNormalWebViewSetupOwnerTests.replayedMaterialization",
+                reason: "TabNormalWebViewSetupServiceTests.replayedMaterialization",
                 registerTabWithExtensionRuntime:
                     registerTabWithExtensionRuntime
             )
         }
 
-        let outcome = owner.ensureUntrackedNormalWebView(
+        let outcome = setup.ensureUntrackedNormalWebView(
             context: context,
             policyTransaction: policyTransaction,
             provisioningOwner: TabWebViewProvisioningOwner(),
-            reason: "TabNormalWebViewSetupOwnerTests.deferredMaterialization",
+            reason: "TabNormalWebViewSetupServiceTests.deferredMaterialization",
             registerTabWithExtensionRuntime: false
         )
         guard case .deferred = outcome else {
@@ -181,10 +274,10 @@ final class TabNormalWebViewSetupOwnerTests: XCTestCase {
     }
 
     func testInitialNormalTabRuntimeRegistrationDelaysForInitialHTTPDocuments() throws {
-        let owner = TabNormalWebViewSetupOwner()
+        let setup = TabNormalWebViewSetupService()
 
         XCTAssertTrue(
-            owner.shouldDelayInitialTabRuntimeRegistration(
+            setup.shouldDelayInitialTabRuntimeRegistration(
                 isPopupHost: false,
                 hasExistingWebView: false,
                 didCreateAuxiliaryOverrideWebView: false,
@@ -193,7 +286,7 @@ final class TabNormalWebViewSetupOwnerTests: XCTestCase {
         )
 
         XCTAssertTrue(
-            owner.shouldDelayInitialTabRuntimeRegistration(
+            setup.shouldDelayInitialTabRuntimeRegistration(
                 isPopupHost: false,
                 hasExistingWebView: false,
                 didCreateAuxiliaryOverrideWebView: false,
@@ -203,11 +296,11 @@ final class TabNormalWebViewSetupOwnerTests: XCTestCase {
     }
 
     func testInitialNormalTabRuntimeRegistrationDoesNotDelayForNonInitialNormalDocuments() throws {
-        let owner = TabNormalWebViewSetupOwner()
+        let setup = TabNormalWebViewSetupService()
         let url = try XCTUnwrap(URL(string: "https://example.com/start"))
 
         XCTAssertFalse(
-            owner.shouldDelayInitialTabRuntimeRegistration(
+            setup.shouldDelayInitialTabRuntimeRegistration(
                 isPopupHost: true,
                 hasExistingWebView: false,
                 didCreateAuxiliaryOverrideWebView: false,
@@ -215,7 +308,7 @@ final class TabNormalWebViewSetupOwnerTests: XCTestCase {
             )
         )
         XCTAssertFalse(
-            owner.shouldDelayInitialTabRuntimeRegistration(
+            setup.shouldDelayInitialTabRuntimeRegistration(
                 isPopupHost: false,
                 hasExistingWebView: true,
                 didCreateAuxiliaryOverrideWebView: false,
@@ -223,7 +316,7 @@ final class TabNormalWebViewSetupOwnerTests: XCTestCase {
             )
         )
         XCTAssertFalse(
-            owner.shouldDelayInitialTabRuntimeRegistration(
+            setup.shouldDelayInitialTabRuntimeRegistration(
                 isPopupHost: false,
                 hasExistingWebView: false,
                 didCreateAuxiliaryOverrideWebView: true,
@@ -233,10 +326,10 @@ final class TabNormalWebViewSetupOwnerTests: XCTestCase {
     }
 
     func testInitialNormalTabRuntimeRegistrationDoesNotDelayForNonWebURLs() throws {
-        let owner = TabNormalWebViewSetupOwner()
+        let setup = TabNormalWebViewSetupService()
 
         XCTAssertFalse(
-            owner.shouldDelayInitialTabRuntimeRegistration(
+            setup.shouldDelayInitialTabRuntimeRegistration(
                 isPopupHost: false,
                 hasExistingWebView: false,
                 didCreateAuxiliaryOverrideWebView: false,
@@ -244,7 +337,7 @@ final class TabNormalWebViewSetupOwnerTests: XCTestCase {
             )
         )
         XCTAssertFalse(
-            owner.shouldDelayInitialTabRuntimeRegistration(
+            setup.shouldDelayInitialTabRuntimeRegistration(
                 isPopupHost: false,
                 hasExistingWebView: false,
                 didCreateAuxiliaryOverrideWebView: false,
@@ -279,5 +372,23 @@ private final class TabNormalWebViewSetupReplayBox {
 
     func run(_ registerTabWithExtensionRuntime: Bool) {
         action?(registerTabWithExtensionRuntime)
+    }
+}
+
+@MainActor
+private final class TabNormalWebViewTestInstaller: UntrackedWebViewInstalling {
+    private let install: (WKWebView, Tab) -> UntrackedWebViewInstallationOutcome
+
+    init(
+        install: @escaping (WKWebView, Tab) -> UntrackedWebViewInstallationOutcome
+    ) {
+        self.install = install
+    }
+
+    func installUntracked(
+        _ webView: WKWebView,
+        for tab: Tab
+    ) -> UntrackedWebViewInstallationOutcome {
+        install(webView, tab)
     }
 }

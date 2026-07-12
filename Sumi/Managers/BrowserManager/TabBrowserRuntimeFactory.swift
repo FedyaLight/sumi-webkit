@@ -98,6 +98,8 @@ enum TabBrowserRuntimeFactory {
                 visibility: webViewRuntime.visibilityRuntime
             ),
             webViewCleanupRuntime: TabBrowserWebViewRuntimeFactory.cleanupRuntime(for: browserManager),
+            untrackedWebViewInstallation:
+                webViewRuntime.untrackedWebViewInstallationService,
             normalWebViewExtensionRuntime: TabBrowserExtensionRuntimeFactory.normalWebViewExtensionRuntime(for: browserManager),
             navigationDelegateRuntime: TabBrowserNavigationRuntimeFactory.navigationDelegateRuntime(for: browserManager),
             faviconExtensionRuntime: TabBrowserExtensionRuntimeFactory.faviconExtensionRuntime(for: browserManager),

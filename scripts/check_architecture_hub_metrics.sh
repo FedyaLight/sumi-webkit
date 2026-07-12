@@ -871,6 +871,10 @@ check_max "BrowserManager.swift LOC" "$bm_loc" 200
 check_max "TabManager.swift LOC" "$tm_loc" 220
 check_max "Tab.swift LOC" "$tab_model_loc" 704
 check_max "Tab.swift methods" "$tab_model_methods" 34
+check_max "TabNormalWebViewSetupService.swift LOC" \
+  "$(count_lines Sumi/Models/Tab/TabNormalWebViewSetupService.swift)" 300
+check_max "Normal WebView setup stored runtime state" \
+  "$(count_matches '^    private (weak )?var ' Sumi/Models/Tab/TabNormalWebViewSetupService.swift)" 2
 # Exact navigation lifetime and separate same-document publication add two
 # explicit capability operations. The settlement aggregate below prevents the
 # split from hiding net growth behind individually small files.
