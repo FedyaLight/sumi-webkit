@@ -51,6 +51,10 @@ final class SumiPermissionPersistenceAuthority: @unchecked Sendable {
 
     private static let log = Logger.sumi(category: "PermissionPersistence")
     private static let coalescingDelay: DispatchTimeInterval = .milliseconds(200)
+    private static let bootstrapLoadingQueue = DispatchQueue(
+        label: "com.sumi.permissions.persistence.bootstrap-load",
+        qos: .userInitiated
+    )
 
     private struct WriteCandidate {
         var envelope: SumiPermissionPersistenceEnvelope
@@ -81,6 +85,7 @@ final class SumiPermissionPersistenceAuthority: @unchecked Sendable {
         userDefaults: UserDefaults?,
         legacyAntiAbuseStorageKey: String = defaultLegacyAntiAbuseStorageKey,
         storageDirectory: URL? = nil,
+        bootstrapLoadObserver: (@Sendable () -> Void)? = nil,
         publishingFaultInjector: SumiPermissionCanonicalSnapshotPublisher.FaultInjector? = nil
     ) {
         let fileURL = storageDirectory?.appendingPathComponent(
@@ -97,23 +102,23 @@ final class SumiPermissionPersistenceAuthority: @unchecked Sendable {
         self.userDefaults = userDefaults
         self.legacyAntiAbuseStorageKey = legacyAntiAbuseStorageKey
 
-        // The stores expose synchronous initial snapshots, so startup waits for
-        // loading; scheduling it keeps the actual defaults/file I/O off main.
-        let loadedStateBox = SumiPermissionLoadedStateBox()
-        let loadedStateReady = DispatchSemaphore(value: 0)
-        let userDefaultsReference = SumiPermissionUserDefaultsReference(value: userDefaults)
-        ioQueue.async {
-            loadedStateBox.value = SumiPermissionSnapshotLoader.load(
+        let loaded = if fileURL == nil, userDefaults == nil {
+            SumiPermissionPersistenceLoadedState(
+                generation: 0,
+                antiAbuseEvents: [],
+                siteActivityRecordsById: [:],
+                outcome: .missing,
+                needsCanonicalWrite: false,
+                shouldRetireLegacyPersistence: false
+            )
+        } else {
+            Self.loadBootstrapState(
                 fileURL: fileURL,
                 legacyDirectoryURL: storageDirectory,
-                userDefaults: userDefaultsReference.value,
-                legacyAntiAbuseStorageKey: legacyAntiAbuseStorageKey
+                userDefaults: userDefaults,
+                legacyAntiAbuseStorageKey: legacyAntiAbuseStorageKey,
+                observer: bootstrapLoadObserver
             )
-            loadedStateReady.signal()
-        }
-        loadedStateReady.wait()
-        guard let loaded = loadedStateBox.value else {
-            preconditionFailure("Permission persistence loading did not produce a snapshot")
         }
         generation = loaded.generation
         antiAbuseEvents = loaded.antiAbuseEvents
@@ -130,6 +135,35 @@ final class SumiPermissionPersistenceAuthority: @unchecked Sendable {
                 scheduleWriteLocked()
             }
         }
+    }
+
+    /// The stores expose synchronous initial snapshots, so startup waits for
+    /// this directly submitted work item. Unlike a semaphore, waiting on the
+    /// item lets libdispatch donate priority while all load I/O stays off main.
+    private static func loadBootstrapState(
+        fileURL: URL?,
+        legacyDirectoryURL: URL?,
+        userDefaults: UserDefaults?,
+        legacyAntiAbuseStorageKey: String,
+        observer: (@Sendable () -> Void)?
+    ) -> SumiPermissionPersistenceLoadedState {
+        let loadedStateBox = SumiPermissionLoadedStateBox()
+        let userDefaultsReference = SumiPermissionUserDefaultsReference(value: userDefaults)
+        let work = DispatchWorkItem(qos: .userInitiated, flags: .enforceQoS) {
+            observer?()
+            loadedStateBox.value = SumiPermissionSnapshotLoader.load(
+                fileURL: fileURL,
+                legacyDirectoryURL: legacyDirectoryURL,
+                userDefaults: userDefaultsReference.value,
+                legacyAntiAbuseStorageKey: legacyAntiAbuseStorageKey
+            )
+        }
+        bootstrapLoadingQueue.async(execute: work)
+        work.wait()
+        guard let loaded = loadedStateBox.value else {
+            preconditionFailure("Permission persistence loading did not produce a snapshot")
+        }
+        return loaded
     }
 
     var persistenceDiagnostics: SumiPermissionPersistenceDiagnostics {
