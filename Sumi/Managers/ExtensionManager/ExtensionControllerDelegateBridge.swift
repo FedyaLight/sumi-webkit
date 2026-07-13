@@ -27,14 +27,14 @@ final class ExtensionControllerDelegateBridge: NSObject, WKWebExtensionControlle
         _ controller: WKWebExtensionController,
         focusedWindowFor extensionContext: WKWebExtensionContext
     ) -> (any WKWebExtensionWindow)? {
-        manager?.runtimeBundle.windowFocusResolutionOwner.focusedWindow(for: extensionContext)
+        manager?.windowVisibilityResolver.focusedWindow(for: extensionContext)
     }
 
     func webExtensionController(
         _ controller: WKWebExtensionController,
         openWindowsFor extensionContext: WKWebExtensionContext
     ) -> [any WKWebExtensionWindow] {
-        manager?.runtimeBundle.windowFocusResolutionOwner.openWindows(for: extensionContext) ?? []
+        manager?.windowVisibilityResolver.openWindows(for: extensionContext) ?? []
     }
 
     // MARK: - Actions
@@ -163,6 +163,16 @@ final class ExtensionControllerDelegateBridge: NSObject, WKWebExtensionControlle
                 completionHandler(
                     nil,
                     ExtensionManagerCallbackError.extensionManagerUnavailable.nsError()
+                )
+                return
+            }
+            guard manager.attachedBrowserManager != nil,
+                  manager.controllerRuntimeComposition != nil
+            else {
+                completionHandler(
+                    nil,
+                    ExtensionManagerCallbackError.browserManagerUnavailable
+                        .nsError()
                 )
                 return
             }

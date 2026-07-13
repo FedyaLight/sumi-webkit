@@ -8,11 +8,12 @@ struct ExtensionNormalTabRuntimeComposition {
     let tabLifecycleEvents: ExtensionTabLifecycleEmitter
     let preparedTabs: ExtensionPreparedNormalTabQuery
     let publishedTabs: ExtensionPublishedNormalTabQuery
-    let tabProfiles: ExtensionTabProfileResolution
-    let existingControllers: ExtensionExistingTabControllerQuery
     let deferredTabRegistration: ExtensionDeferredTabRegistration
     let tabOpening: ExtensionNormalTabOpenTransaction
     let tabRegistration: ExtensionNormalTabRegistration
+    let liveWebViewPreparation: ExtensionLiveWebViewRuntimePreparation
+    let requestedTabWebViewMaterializer:
+        ExtensionRequestedTabWebViewMaterializer
     let tabProperties: ExtensionTabPropertyPublisher
     let tabRebind: ExtensionTabLifecycleRebindTransaction
 }
@@ -30,21 +31,15 @@ enum ExtensionNormalTabRuntimeAssembler {
         publications: ExtensionWindowPublicationQuery
     ) -> ExtensionNormalTabRuntimeComposition {
         guard let tabs = manager.extensionTabQuery,
-              let liveWebViews = manager.extensionWebViewHosting
+              let liveWebViews = manager.extensionWebViewHosting,
+              let controllerRuntime = manager.controllerRuntimeComposition
         else {
             preconditionFailure(
                 "Normal Tab runtime composition requires an attached browser bridge"
             )
         }
-        let tabProfiles = ExtensionTabProfileResolution(
-            profileRuntime: manager.profileRuntime,
-            windowProfiles: manager.extensionWindowQuery
-                as? any ExtensionTabWindowProfileQuery
-        )
-        let existingControllers = ExtensionExistingTabControllerQuery(
-            profileRuntime: manager.profileRuntime,
-            profiles: tabProfiles
-        )
+        let tabProfiles = controllerRuntime.profiles
+        let existingControllers = controllerRuntime.controllers
         let preparedTabs = ExtensionPreparedNormalTabQuery(
             runtimeSession: manager.runtimeSession,
             tabs: tabs
@@ -89,7 +84,7 @@ enum ExtensionNormalTabRuntimeAssembler {
                 adapters: manager.adapterStore,
                 adapterResolver: manager.adapterCatalog,
                 controllers: existingControllers,
-                controllerAttachment: manager.controllerAttachmentOwner,
+                controllerAdmission: controllerRuntime.admission,
                 liveWebViews: liveWebViews,
                 contextReadiness: contexts,
                 deferredRegistration: deferred,
@@ -111,7 +106,7 @@ enum ExtensionNormalTabRuntimeAssembler {
                 adapters: manager.adapterStore,
                 adapterResolver: manager.adapterCatalog,
                 controllers: existingControllers,
-                controllerAttachment: manager.controllerAttachmentOwner,
+                controllerAdmission: controllerRuntime.admission,
                 liveWebViews: liveWebViews,
                 contextReadiness: contexts,
                 deferredRegistration: deferred,
@@ -125,14 +120,30 @@ enum ExtensionNormalTabRuntimeAssembler {
             runtimeSession: manager.runtimeSession,
             tabs: tabs,
             preparedTabs: preparedTabs,
-            controllers: manager.controllerAttachmentOwner,
+            controllers: controllerRuntime.repair,
             opening: opening,
             diagnostics: manager.runtimeDiagnostics
         )
         deferred.bind(resumer: registration)
-        manager.webViewRuntimePreparationOwner.bind(
-            tabRegistration: registration
+        let liveWebViewPreparation = ExtensionLiveWebViewRuntimePreparation(
+            profiles: tabProfiles,
+            controllers: existingControllers,
+            admission: controllerRuntime.admission,
+            tabRegistration: registration,
+            diagnostics: manager.runtimeDiagnostics
         )
+        let requestedTabWebViewMaterializer =
+            ExtensionRequestedTabWebViewMaterializer(
+                runtimeSession: manager.runtimeSession,
+                browserContext: liveWebViews,
+                configurationPreparation:
+                    manager.webViewConfigurationPreparation,
+                livePreparation: liveWebViewPreparation,
+                profiles: tabProfiles,
+                controllers: existingControllers,
+                webViews: controllerRuntime.webViews,
+                controllerAdmission: controllerRuntime.admission
+            )
         #if DEBUG
             let properties = ExtensionTabPropertyPublisher(
                 publishedTabs: publishedTabs,
@@ -161,8 +172,8 @@ enum ExtensionNormalTabRuntimeAssembler {
             adapters: manager.adapterStore,
             adapterResolver: manager.adapterCatalog,
             controllers: existingControllers,
-            controllerPreparation: manager.controllerAttachmentOwner,
-            rebuildQuery: manager.controllerAttachmentOwner,
+            controllerPreparation: controllerRuntime.repair,
+            rebuildQuery: controllerRuntime.mismatch,
             liveWebViews: liveWebViews,
             contextReadiness: contexts,
             deferredRegistration: deferred,
@@ -173,11 +184,12 @@ enum ExtensionNormalTabRuntimeAssembler {
             tabLifecycleEvents: events,
             preparedTabs: preparedTabs,
             publishedTabs: publishedTabs,
-            tabProfiles: tabProfiles,
-            existingControllers: existingControllers,
             deferredTabRegistration: deferred,
             tabOpening: opening,
             tabRegistration: registration,
+            liveWebViewPreparation: liveWebViewPreparation,
+            requestedTabWebViewMaterializer:
+                requestedTabWebViewMaterializer,
             tabProperties: properties,
             tabRebind: rebind
         )
@@ -210,6 +222,17 @@ extension ExtensionManager {
     var normalTabRegistration: ExtensionNormalTabRegistration {
         _ = runtimePublicationGate
         return normalTabRuntimeComposition!.tabRegistration
+    }
+
+    var liveWebViewRuntimePreparation: ExtensionLiveWebViewRuntimePreparation {
+        _ = runtimePublicationGate
+        return normalTabRuntimeComposition!.liveWebViewPreparation
+    }
+
+    var requestedTabWebViewMaterializer:
+        ExtensionRequestedTabWebViewMaterializer {
+        _ = runtimePublicationGate
+        return normalTabRuntimeComposition!.requestedTabWebViewMaterializer
     }
 
     var tabPropertyPublisher: ExtensionTabPropertyPublisher {

@@ -55,21 +55,26 @@ protocol ExtensionTabControllerQuery: AnyObject {
 
 @available(macOS 15.5, *)
 @MainActor
-final class ExtensionExistingTabControllerQuery:
+final class ExtensionExistingExactTabControllerQuery:
     ExtensionTabControllerQuery {
+    private weak var tabs: (any ExtensionTabQuery)?
     private weak var profileRuntime: ExtensionProfileRuntime?
     private weak var profiles: (any ExtensionTabProfileResolving)?
 
     init(
+        tabs: any ExtensionTabQuery,
         profileRuntime: ExtensionProfileRuntime,
         profiles: any ExtensionTabProfileResolving
     ) {
+        self.tabs = tabs
         self.profileRuntime = profileRuntime
         self.profiles = profiles
     }
 
     func existingController(for tab: Tab) -> WKWebExtensionController? {
-        guard let profileID = profiles?.profileID(for: tab) else { return nil }
+        guard tabs?.extensionTab(for: tab.id) === tab,
+              let profileID = profiles?.profileID(for: tab)
+        else { return nil }
         return profileRuntime?.controller(for: profileID)
     }
 }

@@ -533,7 +533,7 @@ extension AuxiliaryWindowLifecycleTests {
         )
 
         XCTAssertTrue(
-            harness.extensionManager.runtimeBundle.windowFocusResolutionOwner
+            harness.extensionManager.windowVisibilityResolver
                 .miniWindowAdapters(
                     ownerExtensionID: ownerExtensionID,
                     profileId: harness.profile.id
@@ -689,7 +689,7 @@ extension AuxiliaryWindowLifecycleTests {
             publishedAdapter
         )
         XCTAssertIdentical(
-            harness.extensionManager.runtimeBundle.windowFocusResolutionOwner
+            harness.extensionManager.windowVisibilityResolver
                 .miniWindowAdapters(
                     ownerExtensionID: ownerExtensionID,
                     profileId: harness.profile.id

@@ -1,6 +1,6 @@
 import AppKit
-import SwiftData
 import SumiWebRuntime
+import SwiftData
 import WebKit
 import XCTest
 
@@ -23,6 +23,8 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             allowWithoutEnabledExtensions: true
         )
         let expectedController = manager.ensureExtensionController(for: profile.id)
+        let browserManager = makeBrowserManager(profile: profile)
+        manager.attach(browserManager: browserManager)
 
         let configuration = browserConfiguration.auxiliaryWebViewConfiguration(
             surface: .extensionOptions
@@ -32,12 +34,23 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             profileId: profile.id,
             reason: "SafariExtensionWebViewControllerWiringTests"
         )
-        let tab = makeTab(profileId: profile.id, url: URL(string: "about:blank")!)
+        let tab = makeTab(
+            profileId: profile.id,
+            url: URL(string: "about:blank")!,
+            browserManager: browserManager
+        )
         let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
         webView.owningTab = tab
         tab.replaceUntrackedWebView(webView)
 
-        XCTAssertTrue(manager.attachExtensionControllerIfNeeded(to: webView, for: tab))
+        XCTAssertTrue(
+            manager.webViewControllerAdmission.admit(
+                expectedController,
+                profileID: profile.id,
+                to: webView,
+                for: tab
+            ).isUsable
+        )
         XCTAssertIdentical(
             webView.configuration.webExtensionController,
             expectedController
@@ -85,7 +98,10 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             in: windowState.id
         )
 
-        XCTAssertIdentical(manager.resolvedLiveWebView(for: tab), trackedWebView)
+        XCTAssertIdentical(
+            manager.exactExtensionTabWebViews.liveWebView(for: tab),
+            trackedWebView
+        )
         let liveWebViews = manager.browserContentInventory.liveWebViews(
             for: tab,
             in: manager.runtime
@@ -154,6 +170,10 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             manager: manager,
             profile: profile
         )
+        XCTAssertTrue(extensionContext.isLoaded)
+        XCTAssertNil(manager.controllerRuntimeComposition)
+        XCTAssertNil(manager.runtimePublicationComposition)
+        XCTAssertNil(manager.normalTabRuntimeComposition)
         XCTAssertNil(
             manager.tabWebViewResolver.extensionWebView(
                 for: tab,
@@ -162,18 +182,53 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         )
     }
 
-    func testWebViewBindingPolicyOnlyLateBindsBlankTargets() {
-        XCTAssertTrue(
-            ExtensionRuntimeWebViewBindingPolicy.canLateBindController(currentURL: nil)
+    func testColdInstallActivationDoesNotMaterializeBrowserRuntime() async throws {
+        let container = try makeTestContainer()
+        let profile = Profile(name: "Cold install activation")
+        let manager = makeManager(
+            context: container.mainContext,
+            profile: profile
+        ).manager
+        let extensionContext = try await makeLoadedExtensionContext(
+            manager: manager,
+            profile: profile
+        )
+
+        await ExtensionInstallRuntimeActivator(manager: manager).activate(
+            .init(
+                profileId: profile.id,
+                extensionContext: extensionContext,
+                installedExtensionId: "cold-install-activation",
+                operation: .install
+            )
+        )
+
+        XCTAssertTrue(extensionContext.isLoaded)
+        XCTAssertNil(manager.controllerRuntimeComposition)
+        XCTAssertNil(manager.runtimePublicationComposition)
+        XCTAssertNil(manager.normalTabRuntimeComposition)
+    }
+
+    func testWebViewBindingPolicyRequiresControllerBeforeCreation() {
+        let expected = WKWebExtensionController(
+            configuration: .init(identifier: UUID())
+        )
+        XCTAssertFalse(
+            ExtensionRuntimeWebViewBindingPolicy.needsRuntimeRebuild(
+                currentController: expected,
+                expectedController: expected
+            )
         )
         XCTAssertTrue(
-            ExtensionRuntimeWebViewBindingPolicy.canLateBindController(
-                currentURL: URL(string: "about:blank")
+            ExtensionRuntimeWebViewBindingPolicy.needsRuntimeRebuild(
+                currentController: nil,
+                expectedController: expected
             )
         )
         XCTAssertFalse(
-            ExtensionRuntimeWebViewBindingPolicy.canLateBindController(
-                currentURL: URL(string: "https://example.com")
+            ExtensionRuntimeWebViewBindingPolicy.needsRuntimeRebuild(
+                currentController: nil,
+                expectedController: nil
             )
         )
     }
@@ -281,13 +336,13 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         manager.runtimeSession.tabOpenNotificationGeneration = 7
 
         let browserManager = makeBrowserManager(profile: ephemeralProfile)
+        manager.attach(browserManager: browserManager)
 
         let tab = makeTab(
             profileId: ephemeralProfile.id,
             url: URL(string: "https://example.com")!,
             browserManager: browserManager
         )
-        tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
         tab.extensionPageRuntimeOwner.eligibleGeneration = manager.runtimeSession.tabOpenNotificationGeneration
 
         XCTAssertTrue(ephemeralProfile.isEphemeral)
@@ -1313,6 +1368,86 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
                 URL(string: "https://two.example")!
             )
         )
+    }
+
+    func testColdExtensionRequestedWindowFailsWithoutMaterializingBrowserRuntime()
+        throws {
+        let container = try makeTestContainer()
+        let profile = Profile(name: "Cold requested window")
+        let manager = makeManager(
+            context: container.mainContext,
+            profile: profile
+        ).manager
+        let controller = manager.ensureExtensionController(for: profile.id)
+        var callbackCount = 0
+        var completionWindow: (any WKWebExtensionWindow)?
+        var completionError: (any Error)?
+
+        manager.openExtensionWindowUsingTabURLs(
+            [URL(string: "https://example.com")!],
+            controller: controller,
+            completionHandler: { window, error in
+                callbackCount += 1
+                completionWindow = window
+                completionError = error
+            }
+        )
+
+        XCTAssertEqual(callbackCount, 1)
+        XCTAssertNil(completionWindow)
+        XCTAssertEqual(
+            (completionError as NSError?)?.code,
+            ExtensionManagerCallbackError.browserManagerUnavailable.code
+        )
+        XCTAssertNil(manager.controllerRuntimeComposition)
+        XCTAssertNil(manager.runtimePublicationComposition)
+        XCTAssertNil(manager.normalTabRuntimeComposition)
+    }
+
+    func testReleasedBrowserAttachmentRejectsReloadAndWindowRequest() throws {
+        let container = try makeTestContainer()
+        let profile = Profile(name: "Released browser attachment")
+        let manager = makeManager(
+            context: container.mainContext,
+            profile: profile
+        ).manager
+        var browserManager: BrowserManager? = makeSafariExtensionTestBrowserManager(
+            profile: profile,
+            retainUntilTestTeardown: false
+        )
+        weak var releasedBrowserManager = browserManager
+        manager.attach(browserManager: try XCTUnwrap(browserManager))
+
+        XCTAssertNotNil(manager.controllerRuntimeComposition)
+        XCTAssertNil(manager.runtimePublicationComposition)
+        browserManager = nil
+        XCTAssertNil(releasedBrowserManager)
+
+        manager.reloadRuntimePublications(
+            reason: #function,
+            allowWhenExtensionsNotLoaded: true,
+            profileID: profile.id
+        )
+
+        let controller = manager.ensureExtensionController(for: profile.id)
+        var callbackCount = 0
+        var completionError: (any Error)?
+        manager.openExtensionWindowUsingTabURLs(
+            [URL(string: "https://example.com")!],
+            controller: controller,
+            completionHandler: { _, error in
+                callbackCount += 1
+                completionError = error
+            }
+        )
+
+        XCTAssertEqual(callbackCount, 1)
+        XCTAssertEqual(
+            (completionError as NSError?)?.code,
+            ExtensionManagerCallbackError.browserManagerUnavailable.code
+        )
+        XCTAssertNil(manager.runtimePublicationComposition)
+        XCTAssertNil(manager.normalTabRuntimeComposition)
     }
 
     func testExtensionRequestedInternalTabRendersThroughSumiWebViewPath() async throws {

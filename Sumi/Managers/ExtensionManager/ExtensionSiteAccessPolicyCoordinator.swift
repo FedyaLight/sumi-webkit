@@ -348,6 +348,47 @@ final class ExtensionSiteAccessPolicyCoordinator {
     }
 }
 
+@available(macOS 15.5, *)
+extension ExtensionSiteAccessPolicyCoordinator {
+    convenience init(manager: ExtensionManager) {
+        self.init(
+            siteAccessPolicyStore: manager.siteAccessPolicyStore,
+            installCapabilityOwner: manager.installCapabilityOwner,
+            installedExtensions: { [weak manager] in
+                manager?.installedExtensionCollection.records ?? []
+            },
+            loadedExtensionManifests: { [weak manager] in
+                manager?.runtimeSession.loadedExtensionManifests ?? [:]
+            },
+            getExtensionContext: { [weak manager] extensionId, profileId in
+                manager?.getExtensionContext(
+                    for: extensionId,
+                    profileId: profileId
+                )
+            },
+            reconcileOpenTabsAfterExtensionContextLoad: {
+                [weak manager] reason, profileId in
+                guard manager?.attachedBrowserManager != nil,
+                      manager?.controllerRuntimeComposition != nil
+                else {
+                    return
+                }
+                manager?.reloadRuntimePublications(
+                    reason: reason,
+                    profileID: profileId
+                )
+            },
+            postSiteAccessPoliciesDidChange: { [weak manager] in
+                guard let manager else { return }
+                NotificationCenter.default.post(
+                    name: .sumiExtensionSiteAccessPoliciesDidChange,
+                    object: manager
+                )
+            }
+        )
+    }
+}
+
 // MARK: - ExtensionManager facade
 
 @available(macOS 15.5, *)
@@ -357,7 +398,7 @@ extension ExtensionManager {
         extensionId: String,
         profileId: UUID
     ) -> SafariExtensionSiteAccessPolicy {
-        runtimeBundle.siteAccessPolicyCoordinator.siteAccessPolicy(
+        siteAccessPolicyCoordinator.siteAccessPolicy(
             extensionId: extensionId,
             profileId: profileId
         )
@@ -367,7 +408,7 @@ extension ExtensionManager {
         extensionIds: [String],
         profileId: UUID
     ) -> [String: SafariExtensionSiteAccessPolicy] {
-        runtimeBundle.siteAccessPolicyCoordinator.siteAccessPolicySnapshot(
+        siteAccessPolicyCoordinator.siteAccessPolicySnapshot(
             extensionIds: extensionIds,
             profileId: profileId
         )
@@ -376,7 +417,7 @@ extension ExtensionManager {
     func siteAccessPolicySnapshot(
         profileId: UUID
     ) -> [String: SafariExtensionSiteAccessPolicy] {
-        runtimeBundle.siteAccessPolicyCoordinator.siteAccessPolicySnapshot(profileId: profileId)
+        siteAccessPolicyCoordinator.siteAccessPolicySnapshot(profileId: profileId)
     }
 
     func setDefaultSiteAccess(
@@ -384,7 +425,7 @@ extension ExtensionManager {
         extensionId: String,
         profileId: UUID
     ) {
-        runtimeBundle.siteAccessPolicyCoordinator.setDefaultSiteAccess(
+        siteAccessPolicyCoordinator.setDefaultSiteAccess(
             access,
             extensionId: extensionId,
             profileId: profileId
@@ -396,7 +437,7 @@ extension ExtensionManager {
         extensionId: String,
         profileId: UUID
     ) -> SafariExtensionSiteAccessPolicy {
-        runtimeBundle.siteAccessPolicyCoordinator.seedSafariAppExtensionDefaultAccessIfNeeded(
+        siteAccessPolicyCoordinator.seedSafariAppExtensionDefaultAccessIfNeeded(
             extensionId: extensionId,
             profileId: profileId
         )
@@ -407,7 +448,7 @@ extension ExtensionManager {
         extensionId: String,
         profileId: UUID
     ) {
-        runtimeBundle.siteAccessPolicyCoordinator.setPrivateBrowsingAccess(
+        siteAccessPolicyCoordinator.setPrivateBrowsingAccess(
             isAllowed,
             extensionId: extensionId,
             profileId: profileId
@@ -421,7 +462,7 @@ extension ExtensionManager {
         matchPatternString: String,
         expiresAt: Date? = nil
     ) {
-        runtimeBundle.siteAccessPolicyCoordinator.setConfiguredSiteAccess(
+        siteAccessPolicyCoordinator.setConfiguredSiteAccess(
             access,
             extensionId: extensionId,
             profileId: profileId,
@@ -436,7 +477,7 @@ extension ExtensionManager {
         profileId: UUID,
         url: URL
     ) {
-        runtimeBundle.siteAccessPolicyCoordinator.setCurrentSiteAccess(
+        siteAccessPolicyCoordinator.setCurrentSiteAccess(
             access,
             extensionId: extensionId,
             profileId: profileId,
@@ -449,7 +490,7 @@ extension ExtensionManager {
         extensionId: String,
         profileId: UUID
     ) -> SafariExtensionSiteAccessLevel {
-        runtimeBundle.siteAccessPolicyCoordinator.configuredSiteAccessLevel(
+        siteAccessPolicyCoordinator.configuredSiteAccessLevel(
             for: url,
             extensionId: extensionId,
             profileId: profileId
@@ -461,7 +502,7 @@ extension ExtensionManager {
         extensionId: String,
         profileId: UUID
     ) -> SafariExtensionSiteAccessLevel {
-        runtimeBundle.siteAccessPolicyCoordinator.configuredSiteAccessLevel(
+        siteAccessPolicyCoordinator.configuredSiteAccessLevel(
             for: matchPattern,
             extensionId: extensionId,
             profileId: profileId
@@ -475,7 +516,7 @@ extension ExtensionManager {
         webExtension: WKWebExtension,
         manifest: [String: Any]? = nil
     ) {
-        runtimeBundle.siteAccessPolicyCoordinator.applyConfiguredSiteAccessPolicy(
+        siteAccessPolicyCoordinator.applyConfiguredSiteAccessPolicy(
             to: extensionContext,
             extensionId: extensionId,
             profileId: profileId,
@@ -495,7 +536,7 @@ extension ExtensionManager {
     }
 
     func hostMatchPatternString(for url: URL) -> String? {
-        runtimeBundle.siteAccessPolicyCoordinator.hostMatchPatternString(for: url)
+        siteAccessPolicyCoordinator.hostMatchPatternString(for: url)
     }
 
     func grantSiteAccess(
@@ -506,7 +547,7 @@ extension ExtensionManager {
         expirationDate: Date? = nil,
         persistPolicy: Bool = true
     ) {
-        runtimeBundle.siteAccessPolicyCoordinator.grantSiteAccess(
+        siteAccessPolicyCoordinator.grantSiteAccess(
             to: url,
             in: extensionContext,
             extensionId: extensionId,
@@ -523,7 +564,7 @@ extension ExtensionManager {
         profileId: UUID?,
         persistPolicy: Bool = true
     ) {
-        runtimeBundle.siteAccessPolicyCoordinator.denySiteAccess(
+        siteAccessPolicyCoordinator.denySiteAccess(
             to: url,
             in: extensionContext,
             extensionId: extensionId,

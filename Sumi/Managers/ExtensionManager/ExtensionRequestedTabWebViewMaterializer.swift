@@ -4,38 +4,51 @@ import WebKit
 @available(macOS 15.5, *)
 @MainActor
 struct ExtensionRequestedTabWebViewMaterializer {
-    private let browserContext: @MainActor () -> (any ExtensionTabWebViewHosting)?
-    private let profileRuntime: ExtensionProfileRuntime
-    private let runtime: @MainActor () -> ExtensionManagerRuntime
-    private let runtimePreparation: any ExtensionWebViewRuntimePreparing
-    private let controllerBinding: any ExtensionControllerBinding
+    private weak var runtimeSession: ExtensionRuntimeSession?
+    private weak var browserContext: (any ExtensionTabWebViewHosting)?
+    private let configurationPreparation:
+        any ExtensionWebViewConfigurationPreparing
+    private weak var livePreparation:
+        (any ExtensionLiveWebViewRuntimePreparing)?
+    private let profiles: any ExtensionTabProfileResolving
+    private let controllers: any ExtensionTabControllerQuery
+    private let webViews: ExtensionExactTabWebViewQuery
+    private let controllerAdmission: any ExtensionWebViewControllerAdmitting
 
     init(
-        browserContext: @escaping @MainActor () -> (any ExtensionTabWebViewHosting)?,
-        profileRuntime: ExtensionProfileRuntime,
-        runtime: @escaping @MainActor () -> ExtensionManagerRuntime,
-        runtimePreparation: any ExtensionWebViewRuntimePreparing,
-        controllerBinding: any ExtensionControllerBinding
+        runtimeSession: ExtensionRuntimeSession,
+        browserContext: any ExtensionTabWebViewHosting,
+        configurationPreparation: any ExtensionWebViewConfigurationPreparing,
+        livePreparation: any ExtensionLiveWebViewRuntimePreparing,
+        profiles: any ExtensionTabProfileResolving,
+        controllers: any ExtensionTabControllerQuery,
+        webViews: ExtensionExactTabWebViewQuery,
+        controllerAdmission: any ExtensionWebViewControllerAdmitting
     ) {
+        self.runtimeSession = runtimeSession
         self.browserContext = browserContext
-        self.profileRuntime = profileRuntime
-        self.runtime = runtime
-        self.runtimePreparation = runtimePreparation
-        self.controllerBinding = controllerBinding
+        self.configurationPreparation = configurationPreparation
+        self.livePreparation = livePreparation
+        self.profiles = profiles
+        self.controllers = controllers
+        self.webViews = webViews
+        self.controllerAdmission = controllerAdmission
     }
 
     func materializeNormalTabIfNeeded(
         _ tab: Tab,
         targetWindow: BrowserWindowState?
     ) {
-        guard tab.webExtensionContextOverride == nil,
+        guard let runtimeSession,
+              let livePreparation,
+              tab.webExtensionContextOverride == nil,
               tab.requiresPrimaryWebView
         else {
             return
         }
 
         if let targetWindow {
-            browserContext()?
+            browserContext?
                 .materializeVisibleExtensionTabWebViewIfNeeded(
                     tab,
                     in: targetWindow
@@ -43,8 +56,10 @@ struct ExtensionRequestedTabWebViewMaterializer {
         }
         prepareNormalTabWebView(
             tab,
-            targetWindow: targetWindow
+            targetWindow: targetWindow,
+            livePreparation: livePreparation
         )
+        withExtendedLifetime(runtimeSession) {}
     }
 
     func materializeExtensionOwnedTabIfNeeded(
@@ -52,7 +67,8 @@ struct ExtensionRequestedTabWebViewMaterializer {
         isActive: Bool,
         hasWindowSelection: Bool
     ) {
-        guard tab.webExtensionContextOverride != nil,
+        guard let runtimeSession,
+              tab.webExtensionContextOverride != nil,
               ExtensionUtils.isExtensionOwnedURL(tab.url),
               tab.isUnloaded
         else {
@@ -66,24 +82,25 @@ struct ExtensionRequestedTabWebViewMaterializer {
             reason: "ExtensionManager.extensionRequestedOwnedTab",
             registerTabWithExtensionRuntime: false
         )
+        withExtendedLifetime(runtimeSession) {}
     }
 
     private func prepareNormalTabWebView(
         _ tab: Tab,
-        targetWindow: BrowserWindowState?
+        targetWindow: BrowserWindowState?,
+        livePreparation: any ExtensionLiveWebViewRuntimePreparing
     ) {
         let currentWebView: WKWebView?
         if let targetWindow {
-            currentWebView = browserContext()?
+            currentWebView = browserContext?
                 .extensionWindowOwnedWebView(for: tab, in: targetWindow.id)
         } else {
-            currentWebView = controllerBinding
-                .ownedUntrackedCurrentWebView(for: tab)
+            currentWebView = webViews.untrackedWebView(for: tab)
         }
 
         if let currentWebView,
-           normalTabWebViewIsUsable(currentWebView, for: tab) {
-            runtimePreparation.prepareWebViewForExtensionRuntime(
+           committedNormalTabWebViewIsUsable(currentWebView, for: tab) {
+            livePreparation.prepareWebViewForExtensionRuntime(
                 currentWebView,
                 currentURL: tab.url,
                 reason: "ExtensionManager.extensionRequestedNormalTab"
@@ -92,12 +109,12 @@ struct ExtensionRequestedTabWebViewMaterializer {
         }
 
         let reason = "ExtensionManager.extensionRequestedNormalTab.replacement"
-        _ = browserContext()?.replaceExtensionLiveWebView(
+        _ = browserContext?.replaceExtensionLiveWebView(
             for: tab,
             in: targetWindow,
             reason: reason,
             prepareCandidateConfiguration: { configuration, profileID in
-                runtimePreparation.prepareWebViewConfigForExtensionRuntime(
+                configurationPreparation.prepareWebViewConfigForExtensionRuntime(
                     configuration,
                     profileId: profileID,
                     reason: "\(reason).configuration"
@@ -105,7 +122,7 @@ struct ExtensionRequestedTabWebViewMaterializer {
             },
             prepareCommittedReplacement: { [weak tab] webView in
                 guard let tab else { return }
-                runtimePreparation.prepareWebViewForExtensionRuntime(
+                livePreparation.prepareWebViewForExtensionRuntime(
                     webView,
                     currentURL: tab.url,
                     reason: reason
@@ -113,7 +130,7 @@ struct ExtensionRequestedTabWebViewMaterializer {
             },
             validate: { [weak tab] webView in
                 guard let tab else { return false }
-                return normalTabWebViewIsUsable(
+                return preparedNormalTabWebViewIsUsable(
                     webView,
                     for: tab
                 )
@@ -121,23 +138,43 @@ struct ExtensionRequestedTabWebViewMaterializer {
         )
     }
 
-    private func normalTabWebViewIsUsable(
+    private func committedNormalTabWebViewIsUsable(
         _ webView: WKWebView,
         for tab: Tab
     ) -> Bool {
-        guard let expectedController = controllerBinding
-            .extensionController(for: tab),
-              controllerBinding.attachExtensionControllerIfNeeded(
+        guard let profileID = profiles.profileID(for: tab),
+              let expectedController = controllers.existingController(for: tab),
+              controllerAdmission.admit(
+                  expectedController,
+                  profileID: profileID,
                   to: webView,
                   for: tab
-              )
+              ).isUsable
         else {
             return false
         }
         return webView.configuration.webExtensionController === expectedController
     }
 
-    private func resolvedProfileId(for tab: Tab) -> UUID? {
-        profileRuntime.resolvedProfileId(for: tab, runtime: runtime())
+    /// Replacement validation runs before the candidate becomes the Tab's
+    /// canonical residence. Its authority is the exact creation transaction,
+    /// so it validates immutable construction evidence without weakening the
+    /// committed-WebView binder.
+    private func preparedNormalTabWebViewIsUsable(
+        _ webView: WKWebView,
+        for tab: Tab
+    ) -> Bool {
+        guard webViews.isCanonical(tab),
+              (webView as? FocusableWKWebView)?.owningTab === tab,
+              let profileID = profiles.profileID(for: tab),
+              let controller = controllers.existingController(for: tab),
+              webView.configuration.webExtensionController === controller,
+              webViews.isCanonical(tab),
+              profiles.profileID(for: tab) == profileID,
+              controllers.existingController(for: tab) === controller,
+              (webView as? FocusableWKWebView)?.owningTab === tab,
+              webView.configuration.webExtensionController === controller
+        else { return false }
+        return true
     }
 }

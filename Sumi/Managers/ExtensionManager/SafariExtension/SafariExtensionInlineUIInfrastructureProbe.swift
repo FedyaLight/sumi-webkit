@@ -17,7 +17,7 @@ struct SafariExtensionInlineUIInfrastructureProbeResult: Equatable, Sendable {
     /// inside WKWebView's compositor and are not affected by the container's AppKit clipping.
     let clipsToBoundsAffectsInPageExtensionOverlays: Bool
     let masksToBoundsOnRoundedViewport: Bool
-    let lateBindBlocksLoadedPages: Bool
+    let requiresControllerBeforeWebViewCreation: Bool
     let inlineUINavigationResponderWired: Bool
     let detail: String
 }
@@ -29,10 +29,9 @@ enum SafariExtensionInlineUIInfrastructureProbe {
         "layer?.masksToBounds = radius > 0",
     ]
 
-    static let lateBindRequiredSymbols: [String] = [
-        "func canLateBindExtensionController(to webView: WKWebView) -> Bool",
+    static let preconfiguredControllerRequiredSymbols: [String] = [
         "enum ExtensionRuntimeWebViewBindingPolicy",
-        "normalizedURL.isEmpty || normalizedURL == \"about:blank\"",
+        "return expectedController != nil",
         "func needsContentScriptRebind(_ tab: Tab) -> Bool",
     ]
 
@@ -96,23 +95,25 @@ enum SafariExtensionInlineUIInfrastructureProbe {
             navigationBundle.isInstalled(on: webView)
                 && navigationBundle.hasInlineUIExtensionResourceResponderInChain()
 
-        let lateBindBlocksLoadedPages: Bool
+        let requiresControllerBeforeWebViewCreation: Bool
         if #available(macOS 15.5, *) {
-            lateBindBlocksLoadedPages =
-                ExtensionRuntimeWebViewBindingPolicy.canLateBindController(
-                    currentURL: URL(string: "about:blank")
+            let controller = WKWebExtensionController(
+                configuration: .init(identifier: UUID())
+            )
+            requiresControllerBeforeWebViewCreation =
+                ExtensionRuntimeWebViewBindingPolicy.needsRuntimeRebuild(
+                    currentController: nil,
+                    expectedController: controller
                 )
-                && ExtensionRuntimeWebViewBindingPolicy.canLateBindController(
-                    currentURL: URL(string: "https://example.com")
-                ) == false
         } else {
-            lateBindBlocksLoadedPages = false
+            requiresControllerBeforeWebViewCreation = false
         }
 
         return result(
             clipsToBoundsOnTabContainer: container.clipsToBounds,
             masksToBoundsOnRoundedViewport: container.layer?.masksToBounds == true,
-            lateBindBlocksLoadedPages: lateBindBlocksLoadedPages,
+            requiresControllerBeforeWebViewCreation:
+                requiresControllerBeforeWebViewCreation,
             inlineUINavigationResponderWired: inlineUINavigationResponderWired
         )
     }
@@ -132,8 +133,8 @@ enum SafariExtensionInlineUIInfrastructureProbe {
         let clipsToBoundsOnTabContainer =
             tabContainerRequiredSymbols.allSatisfy { container?.contains($0) == true }
         let masksToBoundsOnRoundedViewport = clipsToBoundsOnTabContainer
-        let lateBindBlocksLoadedPages =
-            lateBindRequiredSymbols.allSatisfy { symbol in
+        let requiresControllerBeforeWebViewCreation =
+            preconfiguredControllerRequiredSymbols.allSatisfy { symbol in
                 profiles?.contains(symbol) == true
                     || normalTabRuntimeBinding?.contains(symbol) == true
                     || webViewBindingPolicy?.contains(symbol) == true
@@ -145,7 +146,8 @@ enum SafariExtensionInlineUIInfrastructureProbe {
         return result(
             clipsToBoundsOnTabContainer: clipsToBoundsOnTabContainer,
             masksToBoundsOnRoundedViewport: masksToBoundsOnRoundedViewport,
-            lateBindBlocksLoadedPages: lateBindBlocksLoadedPages,
+            requiresControllerBeforeWebViewCreation:
+                requiresControllerBeforeWebViewCreation,
             inlineUINavigationResponderWired: inlineUINavigationResponderWired
         )
     }
@@ -153,7 +155,7 @@ enum SafariExtensionInlineUIInfrastructureProbe {
     private static func result(
         clipsToBoundsOnTabContainer: Bool,
         masksToBoundsOnRoundedViewport: Bool,
-        lateBindBlocksLoadedPages: Bool,
+        requiresControllerBeforeWebViewCreation: Bool,
         inlineUINavigationResponderWired: Bool
     ) -> SafariExtensionInlineUIInfrastructureProbeResult {
         var detailParts: [String] = []
@@ -163,8 +165,8 @@ enum SafariExtensionInlineUIInfrastructureProbe {
         if masksToBoundsOnRoundedViewport {
             detailParts.append("roundedViewportMasksToBounds")
         }
-        if lateBindBlocksLoadedPages {
-            detailParts.append("lateBindBlankOnly")
+        if requiresControllerBeforeWebViewCreation {
+            detailParts.append("controllerRequiredBeforeWebViewCreation")
         }
         if inlineUINavigationResponderWired == false {
             detailParts.append("inlineUINavigationResponderMissing")
@@ -174,7 +176,8 @@ enum SafariExtensionInlineUIInfrastructureProbe {
             clipsToBoundsOnTabContainer: clipsToBoundsOnTabContainer,
             clipsToBoundsAffectsInPageExtensionOverlays: false,
             masksToBoundsOnRoundedViewport: masksToBoundsOnRoundedViewport,
-            lateBindBlocksLoadedPages: lateBindBlocksLoadedPages,
+            requiresControllerBeforeWebViewCreation:
+                requiresControllerBeforeWebViewCreation,
             inlineUINavigationResponderWired: inlineUINavigationResponderWired,
             detail: detailParts.isEmpty ? "inlineUIInfrastructureProbePassed" : detailParts.joined(separator: ",")
         )

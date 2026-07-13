@@ -4,8 +4,15 @@ import WebKit
 
 @available(macOS 15.5, *)
 @MainActor
-final class BrowserExtensionWebViewAdapter: ExtensionTabWebViewHosting {
+final class BrowserExtensionWebViewAdapter:
+    ExtensionTabWebViewHosting,
+    ExtensionTabWebViewResidenceQuery,
+    ExtensionTabWebViewRebuilding {
     private let liveWebView: @MainActor (Tab) -> WKWebView?
+    private let liveWebViews: @MainActor (Tab) -> [WKWebView]
+    private let untrackedWebView: @MainActor (Tab) -> WKWebView?
+    private let rebuildLiveWebViews:
+        @MainActor (Tab, String) -> ExtensionTabWebViewRebuildSubmissionOutcome
     private let materializeVisible: @MainActor (
         Tab,
         BrowserWindowState
@@ -28,6 +35,12 @@ final class BrowserExtensionWebViewAdapter: ExtensionTabWebViewHosting {
 
     init(
         liveWebView: @escaping @MainActor (Tab) -> WKWebView?,
+        liveWebViews: @escaping @MainActor (Tab) -> [WKWebView],
+        untrackedWebView: @escaping @MainActor (Tab) -> WKWebView?,
+        rebuildLiveWebViews: @escaping @MainActor (
+            Tab,
+            String
+        ) -> ExtensionTabWebViewRebuildSubmissionOutcome,
         materializeVisible: @escaping @MainActor (
             Tab,
             BrowserWindowState
@@ -49,6 +62,9 @@ final class BrowserExtensionWebViewAdapter: ExtensionTabWebViewHosting {
         ) -> TabMainFrameReloadCommandOutcome
     ) {
         self.liveWebView = liveWebView
+        self.liveWebViews = liveWebViews
+        self.untrackedWebView = untrackedWebView
+        self.rebuildLiveWebViews = rebuildLiveWebViews
         self.materializeVisible = materializeVisible
         self.windowOwnedWebView = windowOwnedWebView
         self.replaceLiveWebView = replaceLiveWebView
@@ -57,6 +73,22 @@ final class BrowserExtensionWebViewAdapter: ExtensionTabWebViewHosting {
 
     func extensionLiveWebView(for tab: Tab) -> WKWebView? {
         liveWebView(tab)
+    }
+
+    func extensionLiveWebViews(for tab: Tab) -> [WKWebView] {
+        liveWebViews(tab)
+    }
+
+    func extensionUntrackedWebView(for tab: Tab) -> WKWebView? {
+        untrackedWebView(tab)
+    }
+
+    @discardableResult
+    func rebuildExtensionLiveWebViews(
+        for tab: Tab,
+        reason: String
+    ) -> ExtensionTabWebViewRebuildSubmissionOutcome {
+        rebuildLiveWebViews(tab, reason)
     }
 
     func materializeVisibleExtensionTabWebViewIfNeeded(

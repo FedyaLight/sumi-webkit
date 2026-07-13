@@ -49,7 +49,7 @@ auxiliary_identity_tests='SumiTests/AuxiliaryWindowAdapterIdentityTests.swift'
 normal_window_lifecycle='Sumi/Managers/ExtensionManager/ExtensionNormalWindowLifecycle.swift'
 normal_window_projection='Sumi/Managers/ExtensionManager/ExtensionNormalWindowProjectionResolver.swift'
 context_publication_query='Sumi/Managers/ExtensionManager/ExtensionContextPublicationQuery.swift'
-controller_attachment='Sumi/Managers/ExtensionManager/ExtensionControllerAttachmentOwner.swift'
+controller_attachment='Sumi/Managers/ExtensionManager/ExtensionControllerRuntimeAssembler.swift'
 extension_tab_shell='Sumi/Managers/ExtensionManager/ExtensionTabAdapter.swift'
 extension_tab_evidence='Sumi/Managers/ExtensionManager/ExtensionTabCurrentPublicationEvidence.swift'
 extension_tab_projection='Sumi/Managers/ExtensionManager/ExtensionTabReadProjection.swift'
@@ -728,7 +728,6 @@ for required_exact_context_boundary in \
   'profileRuntime?.exactContextIdentity(for: context)' \
   'private weak var contextPublications: ExtensionContextPublicationQuery?' \
   'contextPublications?.currentIdentity(' \
-  'dependencies.contextPublications' \
   'profileRuntime.exactContextIdentity('; do
   if ! rg -Fq "$required_exact_context_boundary" \
       "$context_publication_query" \
@@ -953,7 +952,7 @@ fail_matches \
   "Extension Tab roles reached through a manager root or aggregate bag" \
   "$tab_role_aggregate_hits"
 
-if (( $(rg -Fc 'tabIsCurrent(tab)' "$extension_tab_webview") < 2 )); then
+if (( $(rg -Fc 'webViews?.isCanonical(tab) == true' "$extension_tab_webview") < 2 )); then
   printf 'error: Extension Tab WebView resolver must revalidate exact Tab identity before and after attachment\n' >&2
   status=1
 fi

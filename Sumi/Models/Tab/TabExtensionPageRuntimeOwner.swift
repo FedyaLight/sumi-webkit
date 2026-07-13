@@ -112,6 +112,21 @@ final class TabExtensionOpenPublicationClaim {
     }
 }
 
+/// Opaque snapshot authorizing one exact open-publication invalidation after a
+/// synchronous external callback. Exact token identities and phases also
+/// protect window-publication state that does not yet have an open claim.
+struct TabExtensionOpenPublicationInvalidationWitness {
+    fileprivate let sourceIdentity: ObjectIdentifier
+    fileprivate let generation: UInt64
+    fileprivate let claimIdentity: ObjectIdentifier?
+    fileprivate let preparedTokenIdentity: ObjectIdentifier?
+    fileprivate let preparedTokenPhase: TabExtensionPrepublicationPhase?
+    fileprivate let committedTokenIdentity: ObjectIdentifier?
+    fileprivate let committedTokenPhase: TabExtensionPrepublicationPhase?
+    fileprivate let awaitingTokenIdentity: ObjectIdentifier?
+    fileprivate let awaitingTokenPhase: TabExtensionPrepublicationPhase?
+}
+
 struct TabExtensionPageIdentity: Equatable, Sendable {
     let tabId: String
     let pageGeneration: String
@@ -229,6 +244,54 @@ final class TabExtensionPageRuntimeOwner {
         state.committedWindowPrepublicationToken = nil
         state.openPublicationClaim = nil
         state.settledOpenPublicationClaimIdentity = nil
+    }
+
+    func openPublicationInvalidationWitness()
+        -> TabExtensionOpenPublicationInvalidationWitness {
+        TabExtensionOpenPublicationInvalidationWitness(
+            sourceIdentity: ObjectIdentifier(self),
+            generation: state.didReportOpenForGeneration,
+            claimIdentity: state.openPublicationClaim.map(ObjectIdentifier.init),
+            preparedTokenIdentity: state.preparedWindowPrepublicationToken
+                .map(ObjectIdentifier.init),
+            preparedTokenPhase: state.preparedWindowPrepublicationToken?.phase,
+            committedTokenIdentity: state.committedWindowPrepublicationToken
+                .map(ObjectIdentifier.init),
+            committedTokenPhase: state.committedWindowPrepublicationToken?.phase,
+            awaitingTokenIdentity: state.awaitingSupersedingOpenToken
+                .map(ObjectIdentifier.init),
+            awaitingTokenPhase: state.awaitingSupersedingOpenToken?.phase
+        )
+    }
+
+    /// Invalidates only the exact publication state observed immediately
+    /// before a transaction crossed an external synchronous boundary.
+    @discardableResult
+    func invalidateOpenPublication(
+        ifCurrent witness: TabExtensionOpenPublicationInvalidationWitness
+    ) -> Bool {
+        guard witness.sourceIdentity == ObjectIdentifier(self),
+              witness.generation == state.didReportOpenForGeneration,
+              witness.claimIdentity
+                == state.openPublicationClaim.map(ObjectIdentifier.init),
+              witness.preparedTokenIdentity
+                == state.preparedWindowPrepublicationToken
+                    .map(ObjectIdentifier.init),
+              witness.preparedTokenPhase
+                == state.preparedWindowPrepublicationToken?.phase,
+              witness.committedTokenIdentity
+                == state.committedWindowPrepublicationToken
+                    .map(ObjectIdentifier.init),
+              witness.committedTokenPhase
+                == state.committedWindowPrepublicationToken?.phase,
+              witness.awaitingTokenIdentity
+                == state.awaitingSupersedingOpenToken
+                    .map(ObjectIdentifier.init),
+              witness.awaitingTokenPhase
+                == state.awaitingSupersedingOpenToken?.phase
+        else { return false }
+        clearOpenNotificationGeneration()
+        return true
     }
 
     func prepareGeneration(_ generation: UInt64) {

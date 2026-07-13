@@ -16,7 +16,8 @@ final class ExtensionAuxiliaryTabPublicationReceipt {
     private let runtimeSession: ExtensionRuntimeSession
     private let profileRuntime: ExtensionProfileRuntime
     private let adapterStore: ExtensionBrowserAdapterStore
-    private let controllerBinding: ExtensionControllerAttachmentOwner
+    private let controllers: any ExtensionTabControllerQuery
+    private let webViews: ExtensionExactTabWebViewQuery
     private let extensionsLoaded: @MainActor () -> Bool
     private let tab: Tab
     private let webView: WKWebView
@@ -37,7 +38,8 @@ final class ExtensionAuxiliaryTabPublicationReceipt {
         runtimeSession: ExtensionRuntimeSession,
         profileRuntime: ExtensionProfileRuntime,
         adapterStore: ExtensionBrowserAdapterStore,
-        controllerBinding: ExtensionControllerAttachmentOwner,
+        controllers: any ExtensionTabControllerQuery,
+        webViews: ExtensionExactTabWebViewQuery,
         extensionsLoaded: @escaping @MainActor () -> Bool,
         tab: Tab,
         webView: WKWebView,
@@ -56,7 +58,8 @@ final class ExtensionAuxiliaryTabPublicationReceipt {
         self.runtimeSession = runtimeSession
         self.profileRuntime = profileRuntime
         self.adapterStore = adapterStore
-        self.controllerBinding = controllerBinding
+        self.controllers = controllers
+        self.webViews = webViews
         self.extensionsLoaded = extensionsLoaded
         self.tab = tab
         self.webView = webView
@@ -199,8 +202,8 @@ final class ExtensionAuxiliaryTabPublicationReceipt {
                 === ownerContext
             && profileRuntime.contextBindingGeneration(for: profileID)
                 == contextBindingGeneration
-            && controllerBinding.extensionController(for: tab) === controller
-            && controllerBinding.ownedUntrackedCurrentWebView(for: tab)
+            && controllers.existingController(for: tab) === controller
+            && webViews.untrackedWebView(for: tab)
                 === webView
             && webView.configuration.webExtensionController === controller
             && adapterStore.tabAdapters[tab.id] === adapter

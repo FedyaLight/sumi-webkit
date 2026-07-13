@@ -94,7 +94,8 @@ extension XCTestCase {
         moduleRegistry: SumiModuleRegistry? = nil,
         extensionsModule: SumiExtensionsModule? = nil,
         profile: Profile? = nil,
-        windowRegistry: WindowRegistry? = nil
+        windowRegistry: WindowRegistry? = nil,
+        retainUntilTestTeardown: Bool = true
     ) -> BrowserManager {
         let startupPersistence: BrowserManagerStartupPersistence
         do {
@@ -150,20 +151,22 @@ extension XCTestCase {
             browserManager.profileManager.profiles = [profile]
             browserManager.currentProfile = profile
         }
-        let teardownBox = SafariExtensionBrowserManagerTeardownBox(
-            browserManager: browserManager,
-            windowRegistry: windowRegistry
-        )
-        addTeardownBlock { @MainActor in
-            guard let browserManager = teardownBox.browserManager else { return }
-            if #available(macOS 15.5, *),
-               let extensionManager = browserManager.optionalModules.extensions
-               .managerIfLoadedAndEnabled() {
-                await extensionManager.drainExtensionRuntimeTasksForTests()
+        if retainUntilTestTeardown {
+            let teardownBox = SafariExtensionBrowserManagerTeardownBox(
+                browserManager: browserManager,
+                windowRegistry: windowRegistry
+            )
+            addTeardownBlock { @MainActor in
+                guard let browserManager = teardownBox.browserManager else { return }
+                if #available(macOS 15.5, *),
+                   let extensionManager = browserManager.optionalModules.extensions
+                   .managerIfLoadedAndEnabled() {
+                    await extensionManager.drainExtensionRuntimeTasksForTests()
+                }
+                await browserManager.drainBrowserRuntimeTasksForTests(cancel: true)
+                teardownBox.browserManager = nil
+                teardownBox.windowRegistry = nil
             }
-            await browserManager.drainBrowserRuntimeTasksForTests(cancel: true)
-            teardownBox.browserManager = nil
-            teardownBox.windowRegistry = nil
         }
         return browserManager
     }

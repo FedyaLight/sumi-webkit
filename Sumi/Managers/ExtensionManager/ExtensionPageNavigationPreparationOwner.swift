@@ -85,7 +85,8 @@ final class ExtensionPageNavigationPreparationOwner {
         let previousExtensionContext = tab.webExtensionContextOverride
         tab.webExtensionContextOverride = nil
 
-        guard let currentWebView = manager.resolvedLiveWebView(for: tab),
+        guard let currentWebView = manager.exactExtensionTabWebViews
+            .liveWebView(for: tab),
               currentWebView.configuration.sumiIsNormalTabWebViewConfiguration == false
         else {
             return .notNeeded
@@ -125,7 +126,8 @@ final class ExtensionPageNavigationPreparationOwner {
         configuration: WKWebViewConfiguration,
         manager: ExtensionManager
     ) -> Bool {
-        guard let currentWebView = manager.resolvedLiveWebView(for: tab) else {
+        guard let currentWebView = manager.exactExtensionTabWebViews
+            .liveWebView(for: tab) else {
             return false
         }
         return currentWebView.configuration !== configuration

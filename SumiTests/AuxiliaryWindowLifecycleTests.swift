@@ -593,7 +593,7 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
         XCTAssertNotNil(focusedMiniWindow)
         XCTAssertEqual(
             focusedMiniWindow?.sessionId,
-            harness.extensionManager.runtimeBundle.windowFocusResolutionOwner.miniWindowAdapters(
+            harness.extensionManager.windowVisibilityResolver.miniWindowAdapters(
                 ownerExtensionID: "adapter-owner",
                 profileId: harness.profile.id
             ).first?.sessionId
@@ -647,7 +647,7 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
             openWindowsFor: harness.extensionContext
         )
         let ownerMiniWindowAdapter = try XCTUnwrap(
-            harness.extensionManager.runtimeBundle.windowFocusResolutionOwner.miniWindowAdapters(
+            harness.extensionManager.windowVisibilityResolver.miniWindowAdapters(
                 ownerExtensionID: "adapter-owner",
                 profileId: harness.profile.id
             ).first
@@ -773,7 +773,7 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
         )
 
         let sourceMiniWindow = try XCTUnwrap(
-            harness.extensionManager.runtimeBundle.windowFocusResolutionOwner.miniWindowAdapters(
+            harness.extensionManager.windowVisibilityResolver.miniWindowAdapters(
                 ownerExtensionID: "adapter-owner",
                 profileId: harness.profile.id
             ).first

@@ -10,8 +10,9 @@ import WebKit
 final class ExtensionInitialTabPublicationPreparer {
     private let runtimeSession: ExtensionRuntimeSession
     private let profileRuntime: ExtensionProfileRuntime
-    private let controllerQuery: any ExtensionControllerBindingQuery
-    private let controllerAttachment: any ExtensionControllerAttaching
+    private let controllerQuery: any ExtensionTabControllerQuery
+    private let webViews: ExtensionExactTabWebViewQuery
+    private let controllerAdmission: any ExtensionWebViewControllerAdmitting
     private let contextLoading: any ExtensionContentScriptContextLoading
     private let windowPublications: ExtensionWindowPublicationQuery
     private let adapters: ExtensionCreatedTabAdapterPublication
@@ -23,8 +24,9 @@ final class ExtensionInitialTabPublicationPreparer {
         runtimeSession: ExtensionRuntimeSession,
         profileRuntime: ExtensionProfileRuntime,
         adapterStore: ExtensionBrowserAdapterStore,
-        controllerQuery: any ExtensionControllerBindingQuery,
-        controllerAttachment: any ExtensionControllerAttaching,
+        controllerQuery: any ExtensionTabControllerQuery,
+        webViews: ExtensionExactTabWebViewQuery,
+        controllerAdmission: any ExtensionWebViewControllerAdmitting,
         adapterResolution: ExtensionAdapterCatalog,
         contextLoading: any ExtensionContentScriptContextLoading,
         windowPublications: ExtensionWindowPublicationQuery,
@@ -35,7 +37,8 @@ final class ExtensionInitialTabPublicationPreparer {
         self.runtimeSession = runtimeSession
         self.profileRuntime = profileRuntime
         self.controllerQuery = controllerQuery
-        self.controllerAttachment = controllerAttachment
+        self.webViews = webViews
+        self.controllerAdmission = controllerAdmission
         self.contextLoading = contextLoading
         self.windowPublications = windowPublications
         self.events = events
@@ -69,12 +72,14 @@ final class ExtensionInitialTabPublicationPreparer {
               ),
               let profile = runtime.profile(windowProfileID),
               webView.configuration.websiteDataStore === profile.dataStore,
-              controllerQuery.resolvedLiveWebView(for: tab) === webView,
-              controllerAttachment.attachExtensionControllerIfNeeded(
+              webViews.liveWebView(for: tab) === webView,
+              let controller = controllerQuery.existingController(for: tab),
+              controllerAdmission.admit(
+                  controller,
+                  profileID: windowProfileID,
                   to: webView,
                   for: tab
-              ),
-              let controller = controllerQuery.extensionController(for: tab),
+              ).isUsable,
               profileRuntime.controller(for: windowProfileID) === controller,
               webView.configuration.webExtensionController === controller,
               exactResidenceMatches(
@@ -118,6 +123,7 @@ final class ExtensionInitialTabPublicationPreparer {
             runtimeSession: runtimeSession,
             profileRuntime: profileRuntime,
             controllerQuery: controllerQuery,
+            webViews: webViews,
             contextLoading: contextLoading,
             windowRegistry: windowRegistry,
             windowPublications: windowPublications,

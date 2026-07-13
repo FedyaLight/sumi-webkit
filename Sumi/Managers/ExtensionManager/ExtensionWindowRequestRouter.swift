@@ -349,6 +349,31 @@ final class ExtensionWindowRequestRouter {
 }
 
 @available(macOS 15.5, *)
+extension ExtensionWindowRequestRouter {
+    convenience init(manager: ExtensionManager) {
+        self.init(
+            profileRuntime: manager.profileRuntime,
+            targetResolver: manager.requestedTabTargetResolver,
+            loadResolver: manager.requestedTabLoadResolver,
+            contextPreloader: manager.requestedTabContextPreloader,
+            tabOpening: manager.requestedTabOpening,
+            windowQuery: { [weak manager] in
+                manager?.extensionWindowQuery
+            },
+            windowCreation: { [weak manager] in
+                manager?.extensionRequestedWindowCreation
+            },
+            publishedWindow: { [weak manager] window, profileID in
+                manager?.windowPublications.publishedWindowAdapter(
+                    for: window,
+                    profileID: profileID
+                )
+            }
+        )
+    }
+}
+
+@available(macOS 15.5, *)
 @MainActor
 extension ExtensionManager {
     func openExtensionWindowUsingTabURLs(
@@ -377,7 +402,25 @@ extension ExtensionManager {
             (any Error)?
         ) -> Void
     ) {
-        runtimeBundle.windowRequests.open(
+        guard tabURLs.count <= 1 else {
+            completionHandler(
+                nil,
+                ExtensionManagerCallbackError
+                    .multipleWindowTabsUnsupported.nsError()
+            )
+            return
+        }
+        guard attachedBrowserManager != nil,
+              controllerRuntimeComposition != nil
+        else {
+            completionHandler(
+                nil,
+                ExtensionManagerCallbackError.browserManagerUnavailable
+                    .nsError()
+            )
+            return
+        }
+        extensionWindowRequestRouter.open(
             tabURLs: tabURLs,
             controller: controller,
             extensionContext: extensionContext,

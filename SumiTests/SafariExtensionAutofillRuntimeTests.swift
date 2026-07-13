@@ -194,7 +194,7 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
         )
         XCTAssertIdentical(
             webView.configuration.webExtensionController,
-            manager.extensionController(for: tab)
+            manager.existingTabControllers.existingController(for: tab)
         )
         XCTAssertIdentical(
             manager.extensionWindowQuery?.currentExtensionTab(in: windowState),

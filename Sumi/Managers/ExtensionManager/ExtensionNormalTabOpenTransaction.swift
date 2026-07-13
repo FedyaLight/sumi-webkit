@@ -49,7 +49,8 @@ final class ExtensionNormalTabOpenTransaction: ExtensionNormalTabOpening {
     private weak var adapters: ExtensionBrowserAdapterStore?
     private weak var adapterResolver: (any ExtensionTabAdapterResolving)?
     private weak var controllers: (any ExtensionTabControllerQuery)?
-    private weak var controllerAttachment: (any ExtensionControllerAttaching)?
+    private weak var controllerAdmission:
+        (any ExtensionWebViewControllerAdmitting)?
     private weak var liveWebViews: (any ExtensionTabLiveWebViewQuery)?
     private weak var contextReadiness: (any ExtensionInitialDocumentReadiness)?
     private weak var deferredRegistration:
@@ -70,7 +71,7 @@ final class ExtensionNormalTabOpenTransaction: ExtensionNormalTabOpening {
         adapters: ExtensionBrowserAdapterStore,
         adapterResolver: any ExtensionTabAdapterResolving,
         controllers: any ExtensionTabControllerQuery,
-        controllerAttachment: any ExtensionControllerAttaching,
+        controllerAdmission: any ExtensionWebViewControllerAdmitting,
         liveWebViews: any ExtensionTabLiveWebViewQuery,
         contextReadiness: any ExtensionInitialDocumentReadiness,
         deferredRegistration: any ExtensionDeferredTabRegistrationScheduling,
@@ -88,7 +89,7 @@ final class ExtensionNormalTabOpenTransaction: ExtensionNormalTabOpening {
         self.adapters = adapters
         self.adapterResolver = adapterResolver
         self.controllers = controllers
-        self.controllerAttachment = controllerAttachment
+        self.controllerAdmission = controllerAdmission
         self.liveWebViews = liveWebViews
         self.contextReadiness = contextReadiness
         self.deferredRegistration = deferredRegistration
@@ -123,7 +124,7 @@ final class ExtensionNormalTabOpenTransaction: ExtensionNormalTabOpening {
 
         guard let runtimeSession,
               let profileRuntime,
-              let controllerAttachment,
+              let controllerAdmission,
               let admission,
               tabs?.extensionTab(for: tab.id) === tab,
               let controller = controllers?.existingController(for: tab),
@@ -159,10 +160,12 @@ final class ExtensionNormalTabOpenTransaction: ExtensionNormalTabOpening {
 
         guard let webView = liveWebViews?.extensionLiveWebView(for: tab),
               (webView as? FocusableWKWebView)?.owningTab === tab,
-              controllerAttachment.attachExtensionControllerIfNeeded(
+              controllerAdmission.admit(
+                  controller,
+                  profileID: profileID,
                   to: webView,
                   for: tab
-              ),
+              ).isUsable,
               liveWebViews?.extensionLiveWebView(for: tab) === webView,
               (webView as? FocusableWKWebView)?.owningTab === tab,
               webView.configuration.webExtensionController === controller

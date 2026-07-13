@@ -132,19 +132,13 @@ final class ExtensionManager: NSObject, ObservableObject {
         runtime: { [weak self] in self?.runtime ?? .inactive },
         publications: windowPublications
     )
-    lazy var requestedTabWebViewMaterializer =
-        ExtensionRequestedTabWebViewMaterializer(
-            browserContext: { [weak self] in self?.extensionWebViewHosting },
-            profileRuntime: profileRuntime,
-            runtime: { [weak self] in self?.runtime ?? .inactive },
-            runtimePreparation: webViewRuntimePreparationOwner,
-            controllerBinding: controllerAttachmentOwner
-        )
     lazy var extensionCreatedTabRegistrar = ExtensionCreatedTabRuntimeRegistrar(
         runtimeSession: runtimeSession,
         profileRuntime: profileRuntime,
         adapterStore: adapterStore,
-        controllerBinding: controllerAttachmentOwner,
+        controllers: existingTabControllers,
+        webViews: exactExtensionTabWebViews,
+        controllerAdmission: webViewControllerAdmission,
         adapterResolution: adapterCatalog,
         contextLoading: initialDocumentRuntimePreparationOwner,
         publications: windowPublications,
@@ -158,8 +152,9 @@ final class ExtensionManager: NSObject, ObservableObject {
             runtimeSession: runtimeSession,
             profileRuntime: profileRuntime,
             adapterStore: adapterStore,
-            controllerQuery: controllerAttachmentOwner,
-            controllerAttachment: controllerAttachmentOwner,
+            controllerQuery: existingTabControllers,
+            webViews: exactExtensionTabWebViews,
+            controllerAdmission: webViewControllerAdmission,
             adapterResolution: adapterCatalog,
             contextLoading: initialDocumentRuntimePreparationOwner,
             windowPublications: windowPublications,
@@ -217,7 +212,14 @@ final class ExtensionManager: NSObject, ObservableObject {
     lazy var actionSurfacePublisher = ExtensionActionSurfacePublisher(
         manager: self
     )
-    lazy var runtimeBundle = ExtensionRuntimeBundle(manager: self)
+    lazy var windowVisibilityResolver =
+        ExtensionWindowVisibilityResolver(manager: self)
+    lazy var siteAccessPolicyCoordinator =
+        ExtensionSiteAccessPolicyCoordinator(manager: self)
+    lazy var backgroundWakeCoordinator =
+        ExtensionBackgroundWakeCoordinator(manager: self)
+    lazy var extensionWindowRequestRouter =
+        ExtensionWindowRequestRouter(manager: self)
 
     lazy var toolbarPinningOwner = ExtensionToolbarPinningOwner(
         manager: self
@@ -238,6 +240,8 @@ final class ExtensionManager: NSObject, ObservableObject {
         ExtensionRuntimePublicationComposition?
     var normalTabRuntimeComposition:
         ExtensionNormalTabRuntimeComposition?
+    var controllerRuntimeComposition:
+        ExtensionControllerRuntimeComposition?
     lazy var runtimeLifecycleOwner = ExtensionRuntimeLifecycleOwner(
         dependencies: .live(manager: self)
     )
@@ -256,23 +260,39 @@ final class ExtensionManager: NSObject, ObservableObject {
     lazy var contextResidencyOwner = ExtensionContextResidencyOwner(
         dependencies: .live(manager: self)
     )
-    lazy var controllerAttachmentOwner = ExtensionControllerAttachmentOwner(
-        dependencies: .live(manager: self)
-    )
-    lazy var tabWebViewResolver = ExtensionTabWebViewResolver(
-        profileRuntime: profileRuntime,
-        contextPublications: contextPublications,
-        controllerAttachment: controllerAttachmentOwner,
-        profileID: { [weak self] tab in
-            self?.resolvedProfileId(for: tab)
-        },
-        tabIsCurrent: { [weak self] tab in
-            self?.extensionTabQuery?.extensionTab(for: tab.id) === tab
-        },
-        liveWebView: { [weak self] tab in
-            self?.extensionWebViewHosting?.extensionLiveWebView(for: tab)
-        }
-    )
+    private let unattachedTabWebViewResolver =
+        ExtensionUnavailableTabWebViewProjection()
+
+    var tabWebViewResolver: any ExtensionTabWebViewProjectionQuery {
+        controllerRuntimeComposition?.tabWebViewResolver
+            ?? unattachedTabWebViewResolver
+    }
+
+    var extensionTabProfiles: ExtensionTabProfileResolution {
+        controllerRuntimeComposition!.profiles
+    }
+    var existingTabControllers: ExtensionExistingExactTabControllerQuery {
+        controllerRuntimeComposition!.controllers
+    }
+    var exactExtensionTabWebViews: ExtensionExactTabWebViewQuery {
+        controllerRuntimeComposition!.webViews
+    }
+    var webViewControllerAdmission: ExtensionWebViewControllerAdmission {
+        controllerRuntimeComposition!.admission
+    }
+    var webViewControllerMismatch: ExtensionWebViewControllerMismatchQuery {
+        controllerRuntimeComposition!.mismatch
+    }
+    var tabWebViewRuntimeRepair: ExtensionTabWebViewRuntimeRepair {
+        controllerRuntimeComposition!.repair
+    }
+    var profileWebViewRuntimeReconciler:
+        ExtensionProfileWebViewRuntimeReconciler {
+        controllerRuntimeComposition!.reconciler
+    }
+    var contextTabCompatibility: ExtensionContextTabCompatibilityQuery {
+        controllerRuntimeComposition!.contextCompatibility
+    }
     lazy var extensionActionInvocation = ExtensionActionInvocationService(
         environment: .makeLive(manager: self)
     )
@@ -327,9 +347,26 @@ final class ExtensionManager: NSObject, ObservableObject {
     lazy var deferredRuntimeOwnerStore = ExtensionDeferredRuntimeOwnerStore(manager: self)
     let runtimeDiagnostics = ExtensionRuntimeDiagnostics()
     lazy var controllerDelegateBridge = ExtensionControllerDelegateBridge(manager: self)
-    lazy var webViewRuntimePreparationOwner = ExtensionWebViewRuntimePreparationOwner(
-        dependencies: .live(manager: self)
-    )
+    lazy var webViewConfigurationPreparation =
+        ExtensionWebViewConfigurationPreparation(
+            provisioning: controllerProvisioningOwner,
+            preludes:
+                permissionsOriginsCompatibilityPreludeInstallationOwner,
+            resolveProfileID: { [weak self] explicitProfileID in
+                guard let self else { return nil }
+                return self.profileRuntime.resolvedProfileId(
+                    explicitProfileId: explicitProfileID,
+                    runtime: self.runtime
+                )
+            },
+            requestRuntime: { [weak self] profileID in
+                _ = self?.requestExtensionRuntime(
+                    reason: .webViewConfiguration,
+                    profileId: profileID
+                )
+            },
+            diagnostics: runtimeDiagnostics
+        )
     lazy var actionPopupSessionOwner = ExtensionActionPopupSessionOwner(manager: self)
     lazy var keyboardCommandDispatchOwner = ExtensionKeyboardCommandDispatchOwner(
         manager: self
@@ -351,6 +388,7 @@ final class ExtensionManager: NSObject, ObservableObject {
     }
 
     weak var extensionWindowQuery: (any ExtensionWindowQuery)?
+    weak var attachedBrowserManager: BrowserManager?
     weak var extensionTabQuery: (any ExtensionTabQuery)?
     weak var requestedTabTargetQuery: (any ExtensionTabTargetQuery)?
     weak var extensionTabMutation: (any ExtensionTabMutation)?

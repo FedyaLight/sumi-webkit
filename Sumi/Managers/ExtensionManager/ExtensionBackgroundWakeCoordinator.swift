@@ -181,6 +181,49 @@ final class ExtensionBackgroundWakeCoordinator {
     }
 }
 
+@available(macOS 15.5, *)
+extension ExtensionBackgroundWakeCoordinator {
+    convenience init(manager: ExtensionManager) {
+        self.init(
+            backgroundRuntimeStateOwner: manager.backgroundRuntimeStateOwner,
+            nativeMessagingBackgroundWakeOwner: { [weak manager] in
+                manager?.nativeMessagingBackgroundWakeOwner
+            },
+            contextIdentity: { [weak manager] context in
+                manager?.contextIdentity(for: context)
+            },
+            resolvedProfileId: { [weak manager] profileID in
+                manager?.resolvedProfileId(explicitProfileId: profileID)
+            },
+            recordRuntimeMetric: { [weak manager] extensionID, update in
+                manager?.runtimeSession.recordRuntimeMetric(
+                    for: extensionID,
+                    update: update
+                )
+            },
+            trace: { [weak manager] message in
+                manager?.runtimeDiagnostics.trace(message)
+            },
+            logBackgroundWakeFailure: {
+                [weak manager] error, context, reason, operation in
+                manager?.logBackgroundWakeFailure(
+                    error,
+                    extensionContext: context,
+                    reason: reason,
+                    operation: operation
+                )
+            },
+            debugBackgroundContentWake: { [weak manager] in
+                #if DEBUG
+                    manager?.testHooks.backgroundContentWake
+                #else
+                    nil
+                #endif
+            }
+        )
+    }
+}
+
 // MARK: - ExtensionManager facade
 
 @available(macOS 15.5, *)
@@ -192,7 +235,7 @@ extension ExtensionManager {
         context extensionContext: WKWebExtensionContext,
         reason: ExtensionBackgroundWakeReason
     ) async throws -> Bool {
-        try await runtimeBundle.backgroundWakeCoordinator.ensureBackgroundAvailableIfRequired(
+        try await backgroundWakeCoordinator.ensureBackgroundAvailableIfRequired(
             for: webExtension,
             context: extensionContext,
             reason: reason
@@ -220,7 +263,7 @@ extension ExtensionManager {
         for extensionId: String,
         profileId: UUID? = nil
     ) -> BackgroundRuntimeState {
-        runtimeBundle.backgroundWakeCoordinator.backgroundRuntimeState(
+        backgroundWakeCoordinator.backgroundRuntimeState(
             for: extensionId,
             profileId: profileId
         )

@@ -4,9 +4,6 @@ import Foundation
 @MainActor
 enum BrowserExtensionManagerRuntimeFactory {
     static func runtime(for browserManager: BrowserManager) -> ExtensionManagerRuntime {
-        let ownershipQuery = browserManager.webViewRuntime.ownershipQuery
-        let rebuild = browserManager.webViewRuntime.rebuildService
-        let websiteDataCleanup = browserManager.webViewRuntime.websiteDataCleanupService
         return ExtensionManagerRuntime(
             currentProfile: { [weak browserManager] in
                 browserManager?.currentProfile
@@ -40,20 +37,27 @@ enum BrowserExtensionManagerRuntimeFactory {
             primaryTrackedWindowId: { [weak browserManager] tabId in
                 browserManager?.webViewRoutingService.primaryTrackedWindowId(for: tabId)
             },
-            untrackedOwnedWebView: { [ownershipQuery] tab in
-                ownershipQuery.untrackedOwnedWebView(for: tab)
+            untrackedOwnedWebView: { [weak browserManager] tab in
+                browserManager?.webViewRuntime.ownershipQuery
+                    .untrackedOwnedWebView(for: tab)
             },
-            trackedWebViews: { [ownershipQuery] tabId in
-                ownershipQuery.trackedWebViews(for: tabId)
+            trackedWebViews: { [weak browserManager] tabId in
+                browserManager?.webViewRuntime.ownershipQuery
+                    .trackedWebViews(for: tabId) ?? []
             },
-            rebuildLiveWebViews: { [rebuild] tab in
-                rebuild.rebuildLiveWebViews(for: tab)
+            rebuildLiveWebViews: { [weak browserManager] tab in
+                browserManager?.webViewRuntime.rebuildService
+                    .rebuildLiveWebViews(for: tab)
             },
-            websiteDataMutationAdmissionIsBlocked: { [websiteDataCleanup] profileID in
-                websiteDataCleanup.admissionIsBlocked(profileID: profileID)
+            websiteDataMutationAdmissionIsBlocked: { [weak browserManager] profileID in
+                browserManager?.webViewRuntime.websiteDataCleanupService
+                    .admissionIsBlocked(profileID: profileID) ?? false
             },
-            waitForWebsiteDataMutationAdmission: { [websiteDataCleanup] profileID in
-                await websiteDataCleanup.waitForAdmission(profileID: profileID)
+            waitForWebsiteDataMutationAdmission: { [weak browserManager] profileID in
+                guard let browserManager else { return true }
+                return await browserManager.webViewRuntime
+                    .websiteDataCleanupService
+                    .waitForAdmission(profileID: profileID)
             },
             browserRuntimeAvailable: { [weak browserManager] in
                 browserManager != nil

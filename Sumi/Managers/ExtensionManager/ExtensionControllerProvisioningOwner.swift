@@ -12,7 +12,17 @@ import WebKit
 
 @available(macOS 15.5, *)
 @MainActor
-final class ExtensionControllerProvisioningOwner {
+protocol ExtensionWebViewConfigurationProvisioning: AnyObject {
+    func ensureExtensionController(
+        for profileId: UUID
+    ) -> WKWebExtensionController
+    func websiteDataStore(for profileId: UUID) -> WKWebsiteDataStore
+}
+
+@available(macOS 15.5, *)
+@MainActor
+final class ExtensionControllerProvisioningOwner:
+    ExtensionWebViewConfigurationProvisioning {
     struct Dependencies {
         let browserConfiguration: BrowserConfiguration
         let profileRuntime: ExtensionProfileRuntime
@@ -21,7 +31,6 @@ final class ExtensionControllerProvisioningOwner {
         let assignControllerDelegate: @MainActor (WKWebExtensionController) -> Void
         let isControllerRegistered: @MainActor (WKWebExtensionController) -> Bool
         let profileIdForController: @MainActor (WKWebExtensionController) -> UUID?
-        let updateWebViewsForProfile: @MainActor (UUID) -> Void
         let traceControllerBinding:
             @MainActor (String, UUID?, WKWebExtensionController, WKWebViewConfiguration?) -> Void
         let controllerDescription: @MainActor (WKWebExtensionController?) -> String
@@ -105,7 +114,6 @@ final class ExtensionControllerProvisioningOwner {
         dependencies.trace {
             "ensureExtensionController profile=\(profileId.uuidString) controller=\(self.dependencies.controllerDescription(controller))"
         }
-        dependencies.updateWebViewsForProfile(profileId)
         verifyExtensionStorage(profileId: profileId)
         return controller
     }
@@ -115,13 +123,6 @@ final class ExtensionControllerProvisioningOwner {
             for: profileId,
             runtime: dependencies.runtime()
         )
-    }
-
-    func canLateBindExtensionController(to webView: WKWebView) -> Bool {
-        webView.configuration.webExtensionController == nil
-            && ExtensionRuntimeWebViewBindingPolicy.canLateBindController(
-                currentURL: webView.url
-            )
     }
 
     func removeAllExtensionPageUserContentControllers() {
@@ -238,9 +239,6 @@ extension ExtensionControllerProvisioningOwner.Dependencies {
             profileIdForController: { [weak manager] controller in
                 manager?.profileId(for: controller)
             },
-            updateWebViewsForProfile: { [weak manager] profileId in
-                manager?.updateWebViewsForProfile(profileId)
-            },
             traceControllerBinding: { [weak manager] phase, profileId, controller, configuration in
                 manager?.runtimeDiagnostics.traceNativeMessagingContextBinding(
                     phase: phase,
@@ -273,10 +271,6 @@ extension ExtensionManager {
         for profileId: UUID
     ) -> WKWebsiteDataStore {
         controllerProvisioningOwner.websiteDataStore(for: profileId)
-    }
-
-    func canLateBindExtensionController(to webView: WKWebView) -> Bool {
-        controllerProvisioningOwner.canLateBindExtensionController(to: webView)
     }
 
     func extensionControllerIdentifier(for profileId: UUID) -> UUID {

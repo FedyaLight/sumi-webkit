@@ -23,7 +23,9 @@ final class ExtensionAuxiliaryTabPublicationPreparer:
     private let runtimeSession: ExtensionRuntimeSession
     private let profileRuntime: ExtensionProfileRuntime
     private let adapterStore: ExtensionBrowserAdapterStore
-    private let controllerBinding: ExtensionControllerAttachmentOwner
+    private let controllers: any ExtensionTabControllerQuery
+    private let webViews: ExtensionExactTabWebViewQuery
+    private let controllerAdmission: any ExtensionWebViewControllerAdmitting
     private let adapterResolution: ExtensionAdapterCatalog
     private let extensionsLoaded: @MainActor () -> Bool
 
@@ -31,14 +33,18 @@ final class ExtensionAuxiliaryTabPublicationPreparer:
         runtimeSession: ExtensionRuntimeSession,
         profileRuntime: ExtensionProfileRuntime,
         adapterStore: ExtensionBrowserAdapterStore,
-        controllerBinding: ExtensionControllerAttachmentOwner,
+        controllers: any ExtensionTabControllerQuery,
+        webViews: ExtensionExactTabWebViewQuery,
+        controllerAdmission: any ExtensionWebViewControllerAdmitting,
         adapterResolution: ExtensionAdapterCatalog,
         extensionsLoaded: @escaping @MainActor () -> Bool
     ) {
         self.runtimeSession = runtimeSession
         self.profileRuntime = profileRuntime
         self.adapterStore = adapterStore
-        self.controllerBinding = controllerBinding
+        self.controllers = controllers
+        self.webViews = webViews
+        self.controllerAdmission = controllerAdmission
         self.adapterResolution = adapterResolution
         self.extensionsLoaded = extensionsLoaded
     }
@@ -65,13 +71,15 @@ final class ExtensionAuxiliaryTabPublicationPreparer:
                 == ownerExtensionID,
               profileRuntime.contexts(for: profileID)[ownerExtensionID]
                 === ownerContext,
-              controllerBinding.ownedUntrackedCurrentWebView(for: tab)
+              webViews.untrackedWebView(for: tab)
                 === webView,
-              controllerBinding.attachExtensionControllerIfNeeded(
+              let controller = controllers.existingController(for: tab),
+              controllerAdmission.admit(
+                  controller,
+                  profileID: profileID,
                   to: webView,
                   for: tab
-              ),
-              let controller = controllerBinding.extensionController(for: tab),
+              ).isUsable,
               profileRuntime.controller(for: profileID) === controller,
               webView.configuration.webExtensionController === controller
         else {
@@ -99,7 +107,8 @@ final class ExtensionAuxiliaryTabPublicationPreparer:
             runtimeSession: runtimeSession,
             profileRuntime: profileRuntime,
             adapterStore: adapterStore,
-            controllerBinding: controllerBinding,
+            controllers: controllers,
+            webViews: webViews,
             extensionsLoaded: extensionsLoaded,
             tab: tab,
             webView: webView,

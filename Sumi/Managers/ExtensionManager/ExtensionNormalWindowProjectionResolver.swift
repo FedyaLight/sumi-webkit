@@ -60,7 +60,8 @@ final class ExtensionNormalWindowProjectionResolver {
               manager.preparedExtensionTabs.containsPreparedTab(selectedTab),
               let controller = manager.profileRuntime
               .controllersByProfile[profileID],
-              manager.extensionController(for: selectedTab) === controller,
+              manager.existingTabControllers
+                .existingController(for: selectedTab) === controller,
               let selectedTabAdapter = manager.adapterCatalog
               .stableAdapter(for: selectedTab),
               let windowAdapter = manager.adapterCatalog
@@ -110,7 +111,8 @@ final class ExtensionNormalWindowProjectionResolver {
               manager.preparedExtensionTabs.containsPreparedTab(selectedTab),
               manager.profileRuntime.controllersByProfile[projection.profileID]
                 === projection.controller,
-              manager.extensionController(for: selectedTab)
+              manager.existingTabControllers
+                .existingController(for: selectedTab)
                 === projection.controller,
               manager.adapterStore.existingWindowAdapter(for: window.id)
                 === projection.windowAdapter,

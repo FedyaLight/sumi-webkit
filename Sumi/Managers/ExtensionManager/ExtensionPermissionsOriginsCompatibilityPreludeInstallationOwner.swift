@@ -3,7 +3,17 @@ import WebKit
 
 @available(macOS 15.5, *)
 @MainActor
-final class ExtensionPermissionsOriginsCompatibilityPreludeInstallationOwner {
+protocol ExtensionPreludeInstalling: AnyObject {
+    func installPreludes(
+        into userContentController: WKUserContentController,
+        profileId: UUID
+    )
+}
+
+@available(macOS 15.5, *)
+@MainActor
+final class ExtensionPermissionsOriginsCompatibilityPreludeInstallationOwner:
+    ExtensionPreludeInstalling {
     struct PreludeTarget {
         let extensionId: String
         let isLoaded: Bool

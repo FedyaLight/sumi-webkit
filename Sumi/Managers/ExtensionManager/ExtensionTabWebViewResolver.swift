@@ -9,25 +9,23 @@ import WebKit
 final class ExtensionTabWebViewResolver: ExtensionTabWebViewProjectionQuery {
     private weak var profileRuntime: ExtensionProfileRuntime?
     private weak var contextPublications: ExtensionContextPublicationQuery?
-    private weak var controllerAttachment: (any ExtensionControllerAttaching)?
-    private let profileID: @MainActor (Tab) -> UUID?
-    private let tabIsCurrent: @MainActor (Tab) -> Bool
-    private let liveWebView: @MainActor (Tab) -> WKWebView?
+    private weak var profiles: (any ExtensionTabProfileResolving)?
+    private weak var webViews: ExtensionExactTabWebViewQuery?
+    private weak var controllerAdmission:
+        (any ExtensionWebViewControllerAdmitting)?
 
     init(
         profileRuntime: ExtensionProfileRuntime,
         contextPublications: ExtensionContextPublicationQuery,
-        controllerAttachment: any ExtensionControllerAttaching,
-        profileID: @escaping @MainActor (Tab) -> UUID?,
-        tabIsCurrent: @escaping @MainActor (Tab) -> Bool,
-        liveWebView: @escaping @MainActor (Tab) -> WKWebView?
+        profiles: any ExtensionTabProfileResolving,
+        webViews: ExtensionExactTabWebViewQuery,
+        controllerAdmission: any ExtensionWebViewControllerAdmitting
     ) {
         self.profileRuntime = profileRuntime
         self.contextPublications = contextPublications
-        self.controllerAttachment = controllerAttachment
-        self.profileID = profileID
-        self.tabIsCurrent = tabIsCurrent
-        self.liveWebView = liveWebView
+        self.profiles = profiles
+        self.webViews = webViews
+        self.controllerAdmission = controllerAdmission
     }
 
     func extensionWebView(
@@ -38,27 +36,45 @@ final class ExtensionTabWebViewResolver: ExtensionTabWebViewProjectionQuery {
               let identity = contextPublications?.currentIdentity(
                 for: extensionContext
               ),
-              tabIsCurrent(tab),
+              webViews?.isCanonical(tab) == true,
               tab.isEphemeral == false,
-              profileID(tab) == identity.profileID,
-              let webView = liveWebView(tab),
-              controllerAttachment?.attachExtensionControllerIfNeeded(
-                to: webView,
-                for: tab
-              ) == true,
+              profiles?.profileID(for: tab) == identity.profileID,
+              let controller = profileRuntime.controller(
+                for: identity.profileID
+              ),
+              let webView = webViews?.liveWebView(for: tab),
+              controllerAdmission?.admit(
+                  controller,
+                  profileID: identity.profileID,
+                  to: webView,
+                  for: tab
+              ).isUsable == true,
               contextPublications?.isCurrent(
                 extensionContext,
                 extensionID: identity.extensionID,
                 profileID: identity.profileID
               ) == true,
-              tabIsCurrent(tab),
-              profileID(tab) == identity.profileID,
-              liveWebView(tab) === webView,
-              let controller = profileRuntime.controller(for: identity.profileID),
+              webViews?.isCanonical(tab) == true,
+              profiles?.profileID(for: tab) == identity.profileID,
+              webViews?.liveWebView(for: tab) === webView,
               webView.configuration.webExtensionController === controller
         else {
             return nil
         }
         return webView
+    }
+}
+
+/// Preserves the read-only projection contract before the browser bridge is
+/// attached. It owns no runtime state and performs no work.
+@available(macOS 15.5, *)
+@MainActor
+final class ExtensionUnavailableTabWebViewProjection:
+    ExtensionTabWebViewProjectionQuery {
+    func extensionWebView(
+        for tab: Tab,
+        extensionContext: WKWebExtensionContext
+    ) -> WKWebView? {
+        nil
     }
 }

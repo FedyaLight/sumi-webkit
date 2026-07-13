@@ -31,7 +31,7 @@ final class ExtensionNativeMessageSendSettlement {
         )
 
         if manager.nativeMessagingRelayOwner.extensionsModuleEnabledForCallbacks {
-            manager.runtimeBundle.backgroundWakeCoordinator
+            manager.backgroundWakeCoordinator
                 .scheduleNativeMessagingBackgroundWake(
                     evidence: evidence,
                     admission: admission,

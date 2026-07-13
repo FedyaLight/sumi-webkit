@@ -17,10 +17,27 @@ visibility='Sumi/Managers/ExtensionManager/ExtensionPreparedTabVisibility.swift'
 bridge='Sumi/Managers/ExtensionManager/ExtensionBridge.swift'
 composition='Sumi/Managers/ExtensionManager/ExtensionManager+RuntimePublicationComposition.swift'
 assembler='Sumi/Managers/ExtensionManager/ExtensionNormalTabRuntimeAssembler.swift'
-controller='Sumi/Managers/ExtensionManager/ExtensionControllerAttachmentOwner.swift'
-webview_preparation='Sumi/Managers/ExtensionManager/ExtensionWebViewRuntimePreparationOwner.swift'
+controller='Sumi/Managers/ExtensionManager/ExtensionWebViewControllerAdmission.swift'
+cold_webview_preparation='Sumi/Managers/ExtensionManager/ExtensionWebViewConfigurationPreparation.swift'
+live_webview_preparation='Sumi/Managers/ExtensionManager/ExtensionLiveWebViewRuntimePreparation.swift'
+requested_webview_materializer='Sumi/Managers/ExtensionManager/ExtensionRequestedTabWebViewMaterializer.swift'
+old_webview_preparation='Sumi/Managers/ExtensionManager/ExtensionWebViewRuntimePreparationOwner.swift'
 
 status=0
+
+if [[ -e "$old_webview_preparation" ]] \
+    || rg -n '\bExtensionWebViewRuntimePreparationOwner\b' Sumi >/dev/null; then
+  echo 'error: combined WebView runtime preparation owner returned' >&2
+  status=1
+fi
+
+for preparation in \
+  "$cold_webview_preparation" "$live_webview_preparation"; do
+  if [[ ! -f "$preparation" ]]; then
+    echo "error: split WebView runtime preparation role missing: $preparation" >&2
+    status=1
+  fi
+done
 
 if [[ -e "$old" ]]; then
   echo 'error: normal Tab runtime god-object returned' >&2
@@ -96,8 +113,16 @@ if [[ -z "$published_last" || -z "$cache_first" ]] || (( published_last >= cache
 fi
 
 if rg -n 'tabNeedsExtensionContentScriptRebind|registerTabWithExtensionRuntime' \
-    "$controller" "$webview_preparation" >/dev/null; then
+    "$controller" "$cold_webview_preparation" \
+    "$live_webview_preparation" >/dev/null; then
   echo 'error: controller/WebView closure cycle into normal Tab runtime returned' >&2
+  status=1
+fi
+if rg -n '\bfunc bind\b|\brepair\?*\.repair\(' \
+    "$live_webview_preparation" >/dev/null \
+    || ! rg -Fq 'let liveWebViewPreparation: ExtensionLiveWebViewRuntimePreparation' \
+      "$assembler"; then
+  echo 'error: live WebView preparation is not an atomic normal-runtime leaf' >&2
   status=1
 fi
 
@@ -124,15 +149,40 @@ if (( composition_refs > 2 )); then
   echo 'error: normal Tab lifetime composition escaped its builder/store boundary' >&2
   status=1
 fi
-assembler_lines="$(wc -l < "$assembler" | tr -d ' ')"
-if (( assembler_lines > 240 )); then
-  echo "error: normal Tab assembler grew beyond 240 LOC ($assembler_lines)" >&2
+assembler_lines="$(
+  sed -n '/enum ExtensionNormalTabRuntimeAssembler {/,/^}/p' "$assembler" \
+    | wc -l | tr -d ' '
+)"
+if (( assembler_lines > 180 )); then
+  echo "error: normal Tab composition root grew beyond 180 LOC ($assembler_lines)" >&2
   status=1
 fi
 composition_fields="$(sed -n '/struct ExtensionNormalTabRuntimeComposition {/,/^}/p' "$assembler" | rg -c '^    let ' || true)"
 composition_fields="${composition_fields:-0}"
 if (( composition_fields > 10 )); then
   echo "error: normal Tab lifetime composition grew beyond 10 leaves ($composition_fields)" >&2
+  status=1
+fi
+
+if rg -n '@MainActor \(\) -> \(any Extension(TabWebViewHosting|LiveWebViewRuntimePreparing)\)\?' \
+    "$requested_webview_materializer" >/dev/null \
+    || rg -n 'func bind\(tabRegistration:' "$live_webview_preparation" >/dev/null; then
+  echo 'error: normal Tab WebView roles regained late-bound closure wiring' >&2
+  status=1
+fi
+if ! rg -Fq 'private weak var browserContext:' "$requested_webview_materializer" \
+    || ! rg -Fq 'private weak var livePreparation:' "$requested_webview_materializer" \
+    || ! rg -Fq 'let requestedTabWebViewMaterializer:' "$assembler"; then
+  echo 'error: requested Tab WebView materializer escaped typed normal-runtime composition' >&2
+  status=1
+fi
+materializer_constructions="$(
+  rg -n 'ExtensionRequestedTabWebViewMaterializer\(' \
+    Sumi/Managers/ExtensionManager | wc -l | tr -d ' '
+)"
+materializer_constructions="${materializer_constructions:-0}"
+if (( materializer_constructions != 1 )); then
+  echo "error: requested Tab WebView materializer must have one composition root ($materializer_constructions)" >&2
   status=1
 fi
 
@@ -147,6 +197,23 @@ for role_cap in "${role_caps[@]}"; do
   lines="$(wc -l < "$role" | tr -d ' ')"
   if (( lines > cap )); then
     echo "error: $role grew beyond $cap LOC ($lines)" >&2
+    status=1
+  fi
+done
+
+for preparation_class in \
+  'ExtensionWebViewConfigurationPreparation' \
+  'ExtensionLiveWebViewRuntimePreparation'; do
+  preparation_file="$cold_webview_preparation"
+  if [[ "$preparation_class" == 'ExtensionLiveWebViewRuntimePreparation' ]]; then
+    preparation_file="$live_webview_preparation"
+  fi
+  preparation_body="$(
+    sed -n "/final class $preparation_class:/,/^}/p" "$preparation_file"
+  )"
+  if rg -n '\bExtensionManager(Runtime)?\b|\bBrowserManager\b|\bstruct (Dependencies|Actions)\b|\bclass [A-Za-z0-9_]*Owner\b' \
+      <<<"$preparation_body" >/dev/null; then
+    echo "error: split WebView preparation reached through a root/bag/Owner: $preparation_class" >&2
     status=1
   fi
 done

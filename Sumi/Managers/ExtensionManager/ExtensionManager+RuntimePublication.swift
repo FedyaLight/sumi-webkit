@@ -26,6 +26,15 @@ extension ExtensionManager {
         allowWhenExtensionsNotLoaded: Bool = false,
         profileID: UUID? = nil
     ) {
+        // Runtime publication is a browser-attached capability. Install and
+        // enable flows also run while ExtensionManager is intentionally cold;
+        // they may load WebKit contexts, but must not assemble a browser graph.
+        guard attachedBrowserManager != nil,
+              controllerRuntimeComposition != nil
+        else {
+            return
+        }
+
         let loaded = extensionsLoaded
         guard loaded || allowWhenExtensionsNotLoaded else { return }
 

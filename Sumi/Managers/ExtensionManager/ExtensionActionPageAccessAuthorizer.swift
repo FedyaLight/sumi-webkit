@@ -289,7 +289,7 @@ extension ExtensionActionPageAccessAuthorizer.Environment {
         Self(
             capabilities: manager.installCapabilityOwner,
             siteAccess: { [weak manager] in
-                manager?.runtimeBundle.siteAccessPolicyCoordinator
+                manager?.siteAccessPolicyCoordinator
             },
             decisions: manager.permissionDecisionStore,
             prompt: { [weak manager] context, targets, reason, dedupeKey in

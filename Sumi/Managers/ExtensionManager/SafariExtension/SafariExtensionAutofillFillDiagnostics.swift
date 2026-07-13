@@ -479,10 +479,10 @@ enum SafariExtensionAutofillFillDiagnostics {
                 inRoundedViewportContainer: true
             )
         }
-        if probe.lateBindBlocksLoadedPages {
+        if probe.requiresControllerBeforeWebViewCreation {
             record(
                 .webKitPlatformLimitation,
-                note: "lateBindBlocksLoadedPages"
+                note: "controllerRequiredBeforeWebViewCreation"
             )
         }
     }

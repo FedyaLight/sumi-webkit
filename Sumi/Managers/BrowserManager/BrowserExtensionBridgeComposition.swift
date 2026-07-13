@@ -61,6 +61,12 @@ final class BrowserExtensionBridgeComposition {
                 browserManager?.tabManager.tabCollectionMembershipOwner
                     .tab(for: tabID)
             },
+            allTabs: { [weak browserManager] in
+                guard let browserManager else { return [] }
+                return browserManager.tabManager.tabCollectionMembershipOwner
+                    .allTabs()
+                    + windows.allExtensionWindowStates.flatMap(\.ephemeralTabs)
+            },
             windows: {
                 windows.allExtensionWindowStates
             },
@@ -118,6 +124,41 @@ final class BrowserExtensionBridgeComposition {
                     return webView
                 }
                 return webViewOwnershipQuery.untrackedOwnedWebView(for: tab)
+            },
+            liveWebViews: { [webViewOwnershipQuery, tabs] tab in
+                guard tabs.extensionTab(for: tab.id) === tab else { return [] }
+                var candidates = webViewOwnershipQuery.trackedLiveWebViews(
+                    for: tab
+                )
+                if let untracked = webViewOwnershipQuery
+                    .untrackedOwnedWebView(for: tab) {
+                    candidates.append(untracked)
+                }
+                var seen = Set<ObjectIdentifier>()
+                return candidates.filter { webView in
+                    (webView as? FocusableWKWebView)?.owningTab === tab
+                        && seen.insert(ObjectIdentifier(webView)).inserted
+                }
+            },
+            untrackedWebView: { [webViewOwnershipQuery, tabs] tab in
+                guard tabs.extensionTab(for: tab.id) === tab else { return nil }
+                return webViewOwnershipQuery.untrackedOwnedWebView(for: tab)
+            },
+            rebuildLiveWebViews: { [weak browserManager, tabs] tab, reason in
+                guard tabs.extensionTab(for: tab.id) === tab,
+                      let manager = browserManager
+                else { return .failed }
+                switch manager.webViewRuntime.rebuildService
+                    .rebuildLiveWebViewsResult(for: tab, reason: reason) {
+                case .committed:
+                    return .committed
+                case .deferred:
+                    return .deferred
+                case .noLiveWindows:
+                    return .noLiveWindows
+                case .failed:
+                    return .failed
+                }
             },
             materializeVisible: { [weak browserManager] tab, windowState in
                 browserManager?.materializeVisibleTabWebViewIfNeeded(

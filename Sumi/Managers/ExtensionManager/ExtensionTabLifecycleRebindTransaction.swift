@@ -1,19 +1,6 @@
 import Foundation
 import WebKit
 
-@available(macOS 15.5, *)
-@MainActor
-protocol ExtensionControllerRuntimeRebuildQuery: AnyObject {
-    func webViewNeedsExtensionRuntimeRebuild(
-        _ webView: WKWebView,
-        for tab: Tab
-    ) -> Bool
-}
-
-@available(macOS 15.5, *)
-extension ExtensionControllerAttachmentOwner:
-    ExtensionControllerRuntimeRebuildQuery {}
-
 /// Performs the exact close -> controller reconciliation -> open sequence
 /// needed before an injectable committed navigation. The open claim is
 /// tombstoned before WebKit receives didCloseTab.
@@ -123,7 +110,7 @@ final class ExtensionTabLifecycleRebindTransaction {
               let profileID = profiles?.profileID(for: tab)
         else { return }
 
-        controllerPreparation?.ensureExtensionControllerAttachedForTab(
+        controllerPreparation?.repair(
             tab,
             reason: reason,
             allowWhenExtensionsNotLoaded: false

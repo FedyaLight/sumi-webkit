@@ -17,9 +17,6 @@ struct ExtensionRuntimePublicationComposition {
     let reconciler: ExtensionRuntimePublicationReconciler
 }
 
-/// Composition root for the extension-visible browser graph. Each stored node
-/// has one runtime responsibility; there is deliberately no replacement
-/// bridge, service bundle, or closure-bag facade.
 @available(macOS 15.5, *)
 @MainActor
 extension ExtensionManager {
@@ -104,7 +101,9 @@ extension ExtensionManager {
             runtimeSession: runtimeSession,
             profileRuntime: profileRuntime,
             adapterStore: adapterStore,
-            controllerBinding: controllerAttachmentOwner,
+            controllers: existingTabControllers,
+            webViews: exactExtensionTabWebViews,
+            controllerAdmission: webViewControllerAdmission,
             adapterResolution: adapterCatalog,
             extensionsLoaded: { [weak self] in
                 self?.extensionsLoaded == true
@@ -187,7 +186,8 @@ extension ExtensionManager {
             normalWindows: normalWindows,
             publicationGate: gate,
             adapterResolution: adapterCatalog,
-            controllerBinding: controllerAttachmentOwner,
+            controllers: existingTabControllers,
+            controllerReconciler: profileWebViewRuntimeReconciler,
             tabPublication: tabOpening,
             tabEvents: tabLifecycleEvents,
             isAuxiliarySessionTab: publications.isAuxiliarySessionTab,

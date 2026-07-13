@@ -187,6 +187,7 @@ extension ExtensionRequestedTabServicesTests {
         var currentTab: Tab? = original
         let tabs = BrowserExtensionTabQueryAdapter(
             regularTab: { _ in currentTab },
+            allTabs: { [original, replacement] },
             windows: { [] },
             isTransient: { _ in false },
             isAuxiliaryMiniWindow: { _ in false },
@@ -363,15 +364,32 @@ extension ExtensionRequestedTabServicesTests {
         manager?.attach(browserManager: browserManager)
         _ = manager?.normalTabRegistration
         let composition = try XCTUnwrap(manager?.normalTabRuntimeComposition)
+        let materializer = composition.requestedTabWebViewMaterializer
+        let space = browserManager.tabManager.spaceStateOwner.firstSpace(
+            forProfile: profile.id
+        ) ?? browserManager.tabManager.spaceServices.catalog.createSpace(
+            name: "Released manager materializer",
+            profileId: profile.id
+        )
+        let materializerProbe = browserManager.tabManager
+            .regularTabLifecycleOwner.createNewTab(
+                url: "https://released-materializer.example",
+                in: space,
+                activate: false
+            )
+        materializerProbe.profileId = profile.id
+        materializerProbe.attachBrowserRuntime(
+            TabBrowserRuntimeFactory.make(for: browserManager)
+        )
+        XCTAssertNil(materializerProbe.resolvedCurrentWebView())
         let retainedLeaves: [AnyObject] = [
             composition.tabLifecycleEvents,
             composition.preparedTabs,
             composition.publishedTabs,
-            composition.tabProfiles,
-            composition.existingControllers,
             composition.deferredTabRegistration,
             composition.tabOpening,
             composition.tabRegistration,
+            composition.liveWebViewPreparation,
             composition.tabProperties,
             composition.tabRebind,
         ]
@@ -386,6 +404,11 @@ extension ExtensionRequestedTabServicesTests {
         manager = nil
 
         XCTAssertNil(releasedManager)
+        materializer.materializeNormalTabIfNeeded(
+            materializerProbe,
+            targetWindow: nil
+        )
+        XCTAssertNil(materializerProbe.resolvedCurrentWebView())
         XCTAssertFalse(composition.preparedTabs.containsPreparedTab(probeTab))
         composition.tabRegistration.register(
             probeTab,

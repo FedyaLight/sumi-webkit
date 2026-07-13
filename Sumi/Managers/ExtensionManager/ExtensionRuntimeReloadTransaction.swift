@@ -40,7 +40,8 @@ final class ExtensionRuntimeReloadTransaction {
     private let normalWindows: ExtensionNormalWindowLifecycle
     private let publicationGate: ExtensionRuntimePublicationGate
     private let adapterResolution: ExtensionAdapterCatalog
-    private let controllerBinding: ExtensionControllerAttachmentOwner
+    private let controllers: any ExtensionTabControllerQuery
+    private let controllerReconciler: ExtensionProfileWebViewRuntimeReconciler
     private let tabPublication: any ExtensionNormalTabOpening
     private let tabEvents: any ExtensionTabLifecycleEventSink
     private let isAuxiliarySessionTab: @MainActor (Tab) -> Bool
@@ -53,7 +54,8 @@ final class ExtensionRuntimeReloadTransaction {
         normalWindows: ExtensionNormalWindowLifecycle,
         publicationGate: ExtensionRuntimePublicationGate,
         adapterResolution: ExtensionAdapterCatalog,
-        controllerBinding: ExtensionControllerAttachmentOwner,
+        controllers: any ExtensionTabControllerQuery,
+        controllerReconciler: ExtensionProfileWebViewRuntimeReconciler,
         tabPublication: any ExtensionNormalTabOpening,
         tabEvents: any ExtensionTabLifecycleEventSink,
         isAuxiliarySessionTab: @escaping @MainActor (Tab) -> Bool,
@@ -65,7 +67,8 @@ final class ExtensionRuntimeReloadTransaction {
         self.normalWindows = normalWindows
         self.publicationGate = publicationGate
         self.adapterResolution = adapterResolution
-        self.controllerBinding = controllerBinding
+        self.controllers = controllers
+        self.controllerReconciler = controllerReconciler
         self.tabPublication = tabPublication
         self.tabEvents = tabEvents
         self.isAuxiliarySessionTab = isAuxiliarySessionTab
@@ -125,10 +128,11 @@ final class ExtensionRuntimeReloadTransaction {
                 )
                 return nil
             }
-            controllerBinding.updateWebViewsForProfile(
-                profileID,
+            controllerReconciler.reconcile(
+                profileID: profileID,
                 allowWhenExtensionsNotLoaded:
-                    request.allowWhenExtensionsNotLoaded
+                    request.allowWhenExtensionsNotLoaded,
+                reason: request.reason
             )
         }
 
@@ -264,7 +268,7 @@ final class ExtensionRuntimeReloadTransaction {
                 .hasDidOpenTabNotification(for: generation),
                 let profileID = resolvedProfileID(for: tab, runtime: runtime),
                 let controller = profileRuntime.controller(for: profileID),
-                controllerBinding.extensionController(for: tab) === controller,
+                controllers.existingController(for: tab) === controller,
                 let adapter = adapterResolution.stableAdapter(for: tab),
                 profileRuntime.contexts(for: profileID).values.contains(
                     where: { context in
@@ -308,7 +312,7 @@ final class ExtensionRuntimeReloadTransaction {
             guard tab.isEphemeral == false,
                   let profileID = resolvedProfileID(for: tab, runtime: runtime),
                   let controller = profileRuntime.controller(for: profileID),
-                  controllerBinding.extensionController(for: tab) === controller,
+                  controllers.existingController(for: tab) === controller,
                   adapterResolution.stableAdapter(for: tab) != nil,
                   contentInventory.liveWebViews(for: tab, in: runtime).contains(
                       where: {

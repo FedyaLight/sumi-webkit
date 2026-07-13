@@ -64,6 +64,18 @@ extension AuxiliaryWindowLifecycleTests {
                     .tabAdapters[session.tab.id] else {
                 return XCTFail("Prepared auxiliary publication is missing")
             }
+            let browserTabs = harness.browserManager
+                .extensionBridgeComposition.tabs
+            XCTAssertIdentical(
+                browserTabs.extensionTab(for: session.tab.id),
+                session.tab
+            )
+            XCTAssertTrue(browserTabs.isAuxiliaryMiniWindowTab(session.tab))
+            XCTAssertIdentical(
+                harness.extensionManager.existingTabControllers
+                    .existingController(for: session.tab),
+                configuration.webExtensionController
+            )
             XCTAssertTrue(harness.extensionContext.openWindows.contains {
                 ($0 as AnyObject) === windowAdapter
             })

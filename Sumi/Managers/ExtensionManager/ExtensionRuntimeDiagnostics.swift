@@ -154,7 +154,8 @@ final class ExtensionRuntimeDiagnostics {
         )
             .map { Self.objectDescription($0) }
             .joined(separator: ",")
-        let resolvedURL = manager.resolvedLiveWebView(for: tab)?.url?.absoluteString
+        let resolvedURL = manager.exactExtensionTabWebViews
+            .liveWebView(for: tab)?.url?.absoluteString
             ?? tab.url.absoluteString
         return "tab=\(tab.id.uuidString.prefix(8)) url=\(resolvedURL) webViews=[\(webViews)]"
     }

@@ -256,6 +256,10 @@ final class SafariExtensionAccountForkPipelineTests: XCTestCase {
             let adapter = manager.adapterCatalog.stableAdapter(for: probedTab)
             let adapterWebView = adapter?.webView(for: extensionContext)
             let lookupTab = browserManager.tabManager.tabCollectionMembershipOwner.tab(for: probedTab.id)
+            let tabMatchesContext = manager.contextTabCompatibility.matches(
+                probedTab,
+                context: extensionContext
+            )
             return "adapter=\(adapter == nil ? "nil" : "present") "
                 + "adapterTabMatches=\(adapter?.tab === probedTab) "
                 + "tabManagerLookup=\(lookupTab == nil ? "nil" : (lookupTab === probedTab ? "match" : "OTHER")) "
@@ -263,7 +267,7 @@ final class SafariExtensionAccountForkPipelineTests: XCTestCase {
                 + "tabEligible=\(manager.preparedExtensionTabs.containsPreparedTab(probedTab)) "
                 + "resolvedProfile=\(String(describing: manager.resolvedProfileId(for: probedTab))) "
                 + "controllerAttached=\(probedTab.resolvedCurrentWebView()?.configuration.webExtensionController != nil) "
-                + "tabMatchesContext=\(manager.tabMatchesExtensionContext(probedTab, extensionContext: extensionContext))"
+                + "tabMatchesContext=\(tabMatchesContext)"
         }
 
         /// Snapshot of the adapter state WebKit consults when resolving the
@@ -279,6 +283,15 @@ final class SafariExtensionAccountForkPipelineTests: XCTestCase {
             let containingSpaces = browserManager.tabManager.regularTabCollectionStateOwner.tabsBySpaceSnapshot()
                 .filter { _, tabs in tabs.contains(where: { $0 === tab }) }
                 .keys
+            let resolvedLiveWebView = manager.exactExtensionTabWebViews
+                .liveWebView(for: tab)
+            let resolvedLiveWebViewDescription = resolvedLiveWebView == nil
+                ? "nil"
+                : (resolvedLiveWebView === webView ? "harnessWebView" : "OTHER")
+            let tabMatchesContext = manager.contextTabCompatibility.matches(
+                tab,
+                context: extensionContext
+            )
             return "adapter=\(adapter == nil ? "nil" : "present") "
                 + "adapterTab=\(adapterTab == nil ? "nil" : (adapterTab === tab ? "harnessTab" : "OTHER")) "
                 + "tabManagerLookup=\(lookupTab == nil ? "nil" : (lookupTab === tab ? "harnessTab" : "OTHER")) "
@@ -294,8 +307,8 @@ final class SafariExtensionAccountForkPipelineTests: XCTestCase {
                 + "owningTabMatches=\((webView as? FocusableWKWebView)?.owningTab === tab) "
                 + "resolvedProfile=\(String(describing: manager.resolvedProfileId(for: tab))) "
                 + "controllerAttached=\(webView.configuration.webExtensionController != nil) "
-                + "tabMatchesContext=\(manager.tabMatchesExtensionContext(tab, extensionContext: extensionContext)) "
-                + "resolvedLiveWebView=\(manager.resolvedLiveWebView(for: tab) == nil ? "nil" : (manager.resolvedLiveWebView(for: tab) === webView ? "harnessWebView" : "OTHER")) "
+                + "tabMatchesContext=\(tabMatchesContext) "
+                + "resolvedLiveWebView=\(resolvedLiveWebViewDescription) "
                 + "contextProfile=\(String(describing: manager.profileId(for: extensionContext))) "
                 + controllerIdentityDiagnostics
         }

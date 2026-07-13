@@ -8,7 +8,9 @@ import WebKit
 final class ExtensionCreatedTabPublicationValidator {
     private let runtimeSession: ExtensionRuntimeSession
     private let profileRuntime: ExtensionProfileRuntime
-    private let controllerBinding: ExtensionControllerAttachmentOwner
+    private let controllers: any ExtensionTabControllerQuery
+    private let webViews: ExtensionExactTabWebViewQuery
+    private let controllerAdmission: any ExtensionWebViewControllerAdmitting
     private let contextLoading: any ExtensionContentScriptContextLoading
     private let publications: ExtensionWindowPublicationQuery
     private let adapters: ExtensionCreatedTabAdapterPublication
@@ -17,7 +19,9 @@ final class ExtensionCreatedTabPublicationValidator {
     init(
         runtimeSession: ExtensionRuntimeSession,
         profileRuntime: ExtensionProfileRuntime,
-        controllerBinding: ExtensionControllerAttachmentOwner,
+        controllers: any ExtensionTabControllerQuery,
+        webViews: ExtensionExactTabWebViewQuery,
+        controllerAdmission: any ExtensionWebViewControllerAdmitting,
         contextLoading: any ExtensionContentScriptContextLoading,
         publications: ExtensionWindowPublicationQuery,
         adapters: ExtensionCreatedTabAdapterPublication,
@@ -25,7 +29,9 @@ final class ExtensionCreatedTabPublicationValidator {
     ) {
         self.runtimeSession = runtimeSession
         self.profileRuntime = profileRuntime
-        self.controllerBinding = controllerBinding
+        self.controllers = controllers
+        self.webViews = webViews
+        self.controllerAdmission = controllerAdmission
         self.contextLoading = contextLoading
         self.publications = publications
         self.adapters = adapters
@@ -44,14 +50,16 @@ final class ExtensionCreatedTabPublicationValidator {
               ), contextLoading.profileHasLoadedContentScriptContexts(
                   profileId: profileID
               ), let dataStore = runtime.profile(profileID)?.dataStore,
-              let webView = controllerBinding.resolvedLiveWebView(for: tab),
+              let webView = webViews.liveWebView(for: tab),
               webView.configuration.websiteDataStore === dataStore,
-              controllerBinding.attachExtensionControllerIfNeeded(
+              let controller = controllers.existingController(for: tab),
+              controllerAdmission.admit(
+                  controller,
+                  profileID: profileID,
                   to: webView,
                   for: tab
-              ), let controller = controllerBinding.extensionController(
-                  for: tab
-              ), profileRuntime.controller(for: profileID) === controller,
+              ).isUsable,
+              profileRuntime.controller(for: profileID) === controller,
               webView.configuration.webExtensionController === controller
         else {
             return nil
@@ -113,9 +121,9 @@ final class ExtensionCreatedTabPublicationValidator {
                   profileId: base.profileID
               ), let currentController = profileRuntime.controller(
                   for: base.profileID
-              ), controllerBinding.extensionController(for: base.tab)
+              ), controllers.existingController(for: base.tab)
                 === currentController,
-              controllerBinding.resolvedLiveWebView(for: base.tab)
+              webViews.liveWebView(for: base.tab)
                 === base.webView,
               base.webView.configuration.webExtensionController
                 === currentController,
@@ -172,9 +180,9 @@ final class ExtensionCreatedTabPublicationValidator {
             && contextLoading.profileHasLoadedContentScriptContexts(
                 profileId: base.profileID
             )
-            && controllerBinding.extensionController(for: base.tab)
+            && controllers.existingController(for: base.tab)
                 === base.controller
-            && controllerBinding.resolvedLiveWebView(for: base.tab)
+            && webViews.liveWebView(for: base.tab)
                 === base.webView
             && base.webView.configuration.webExtensionController
                 === base.controller

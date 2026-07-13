@@ -123,7 +123,8 @@ enum SafariExtensionAutofillInfrastructureClassifier {
             )
         }
 
-        if extensionManager.tabMatchesExtensionContext(tab, extensionContext: extensionContext) == false {
+        if extensionManager.contextTabCompatibility
+            .matches(tab, context: extensionContext) == false {
             return classification(
                 .targetWebViewWrongProfileController,
                 detail: "Tab profile does not match extension context profile"
@@ -164,7 +165,8 @@ enum SafariExtensionAutofillInfrastructureClassifier {
             )
         }
 
-        guard let webView = extensionManager.resolvedLiveWebView(for: tab) else {
+        guard let webView = extensionManager.exactExtensionTabWebViews
+            .liveWebView(for: tab) else {
             return classification(
                 .targetWebViewMissingExtensionController,
                 detail: "Tab has no live WKWebView for extension targeting"
@@ -187,15 +189,9 @@ enum SafariExtensionAutofillInfrastructureClassifier {
         }
 
         if webView.configuration.webExtensionController == nil {
-            if extensionManager.canLateBindExtensionController(to: webView) == false {
-                return classification(
-                    .targetWebViewMissingExtensionController,
-                    detail: "WKWebView on a loaded page cannot late-bind WKWebExtensionController"
-                )
-            }
             return classification(
                 .targetWebViewMissingExtensionController,
-                detail: "WKWebView is not configured with WKWebExtensionController"
+                detail: "WKWebView was not created with WKWebExtensionController"
             )
         }
 

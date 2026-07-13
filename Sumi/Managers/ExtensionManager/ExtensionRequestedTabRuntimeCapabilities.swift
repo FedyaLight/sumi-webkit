@@ -3,42 +3,23 @@ import WebKit
 
 @available(macOS 15.5, *)
 @MainActor
-protocol ExtensionWebViewRuntimePreparing: AnyObject {
+protocol ExtensionWebViewConfigurationPreparing: AnyObject {
     func prepareWebViewConfigForExtensionRuntime(
         _ configuration: WKWebViewConfiguration,
         profileId: UUID?,
         reason: String
     )
 
+}
+
+@available(macOS 15.5, *)
+@MainActor
+protocol ExtensionLiveWebViewRuntimePreparing: AnyObject {
     func prepareWebViewForExtensionRuntime(
         _ webView: WKWebView,
         currentURL: URL?,
         reason: String
     )
-}
-
-@available(macOS 15.5, *)
-@MainActor
-protocol ExtensionControllerBindingQuery: AnyObject {
-    func extensionController(for tab: Tab) -> WKWebExtensionController?
-    func resolvedLiveWebView(for tab: Tab) -> WKWebView?
-}
-
-@available(macOS 15.5, *)
-@MainActor
-protocol ExtensionControllerAttaching: AnyObject {
-    func attachExtensionControllerIfNeeded(
-        to webView: WKWebView,
-        for tab: Tab
-    ) -> Bool
-}
-
-@available(macOS 15.5, *)
-@MainActor
-protocol ExtensionControllerBinding:
-    ExtensionControllerBindingQuery,
-    ExtensionControllerAttaching {
-    func ownedUntrackedCurrentWebView(for tab: Tab) -> WKWebView?
 }
 
 @available(macOS 15.5, *)

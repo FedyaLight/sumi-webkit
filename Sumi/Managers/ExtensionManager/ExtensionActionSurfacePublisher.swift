@@ -147,6 +147,11 @@ extension ExtensionActionSurfacePublisher {
                 )
             },
             reconcileOpenTabsAfterExtensionContextLoad: { [weak manager] reason in
+                guard manager?.attachedBrowserManager != nil,
+                      manager?.controllerRuntimeComposition != nil
+                else {
+                    return
+                }
                 manager?.reloadRuntimePublications(reason: reason)
             }
         )

@@ -1,5 +1,5 @@
 //
-//  ExtensionWindowFocusResolutionOwner.swift
+//  ExtensionWindowVisibilityResolver.swift
 //  Sumi
 //
 //  Owns resolving which browser windows an extension context can see:
@@ -13,7 +13,7 @@ import WebKit
 
 @available(macOS 15.5, *)
 @MainActor
-final class ExtensionWindowFocusResolutionOwner {
+final class ExtensionWindowVisibilityResolver {
     private let windowQuery: @MainActor () -> (any ExtensionWindowQuery)?
     private let auxiliaryWindows:
         @MainActor () -> (any ExtensionAuxiliaryWindowControl)?
@@ -169,5 +169,37 @@ final class ExtensionWindowFocusResolutionOwner {
         }
 
         return adapters
+    }
+}
+
+@available(macOS 15.5, *)
+extension ExtensionWindowVisibilityResolver {
+    convenience init(manager: ExtensionManager) {
+        self.init(
+            windowQuery: { [weak manager] in
+                manager?.extensionWindowQuery
+            },
+            auxiliaryWindows: { [weak manager] in
+                manager?.extensionAuxiliaryWindows
+            },
+            profileIdForContext: { [weak manager] context in
+                manager?.profileId(for: context)
+            },
+            extensionIDForContext: { [weak manager] context in
+                manager?.extensionID(for: context)
+            },
+            publishedWindowAdapter: { [weak manager] windowState, profileId in
+                manager?.windowPublications.publishedWindowAdapter(
+                    for: windowState,
+                    profileID: profileId
+                )
+            },
+            miniWindowAdapters: { [weak manager] ownerExtensionID, profileID in
+                manager?.windowPublications.publishedAuxiliaryWindowAdapters(
+                    ownerExtensionID: ownerExtensionID,
+                    profileID: profileID
+                ) ?? []
+            }
+        )
     }
 }

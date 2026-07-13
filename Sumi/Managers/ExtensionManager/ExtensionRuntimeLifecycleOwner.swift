@@ -23,7 +23,7 @@ final class ExtensionRuntimeLifecycleOwner {
         let runtimeInitializationTask: @MainActor () -> Task<Void, Never>?
         let cancelRuntimeInitializationTask: @MainActor () -> Void
         let ensureExtensionController: @MainActor (UUID) -> WKWebExtensionController
-        let updateWebViewsForProfile: @MainActor (UUID) -> Void
+        let reconcileProfileWebViewRuntime: @MainActor (UUID) -> Void
         let unloadExtensionContextsForInactiveProfiles: @MainActor (UUID) -> Void
         let clearActionPopupAnchors: @MainActor (UUID) -> Void
         let reloadPinnedToolbarExtensionsForCurrentProfile: @MainActor () -> Void
@@ -73,7 +73,7 @@ final class ExtensionRuntimeLifecycleOwner {
 
         Task { @MainActor [weak self] in
             guard let self else { return }
-            self.dependencies.updateWebViewsForProfile(profileId)
+            self.dependencies.reconcileProfileWebViewRuntime(profileId)
             self.dependencies.refreshActionSurfaceStateForCurrentProfile()
         }
     }
@@ -139,8 +139,12 @@ final class ExtensionRuntimeLifecycleOwner {
         }
 
         if dependencies.runtimeState() == .ready, forceReload == false {
-            if let profileId = resolvedProfileId ?? dependencies.currentProfileId() {
-                dependencies.updateWebViewsForProfile(profileId)
+            // Configuration demand can originate inside a WebView rebuild.
+            // Re-entering reconciliation here would recursively submit the
+            // same rebuild while its replacement is still being prepared.
+            if reason != .webViewConfiguration,
+               let profileId = resolvedProfileId ?? dependencies.currentProfileId() {
+                dependencies.reconcileProfileWebViewRuntime(profileId)
             }
             return controller
         }
@@ -313,8 +317,11 @@ extension ExtensionRuntimeLifecycleOwner.Dependencies {
                 }
                 return manager.ensureExtensionController(for: profileId)
             },
-            updateWebViewsForProfile: { [weak manager] profileId in
-                manager?.updateWebViewsForProfile(profileId)
+            reconcileProfileWebViewRuntime: { [weak manager] profileId in
+                manager?.controllerRuntimeComposition?.reconciler.reconcile(
+                    profileID: profileId,
+                    reason: "ExtensionRuntimeLifecycle"
+                )
             },
             unloadExtensionContextsForInactiveProfiles: { [weak manager] profileId in
                 manager?.unloadExtensionContextsForInactiveProfiles(keepingProfileId: profileId)
@@ -377,13 +384,36 @@ extension ExtensionRuntimeLifecycleOwner.Dependencies {
 @MainActor
 extension ExtensionManager {
     func attach(browserManager: BrowserManager) {
+        if let attachedBrowserManager {
+            precondition(
+                attachedBrowserManager === browserManager,
+                "ExtensionManager cannot move between browser runtimes"
+            )
+            return
+        }
+        precondition(
+            controllerRuntimeComposition == nil,
+            "ExtensionManager supports one browser runtime attachment"
+        )
+        attachedBrowserManager = browserManager
         let bridge = browserManager.extensionBridgeComposition
         extensionWindowQuery = bridge.windows
         extensionTabQuery = bridge.tabs
-        controllerAttachmentOwner.bind(
-            tabQuery: bridge.tabs,
-            liveWebViews: bridge.webViews
-        )
+        controllerRuntimeComposition = ExtensionControllerRuntimeAssembler
+            .assemble(
+                tabs: bridge.tabs,
+                inventory: bridge.tabs,
+                selectedWebViews: bridge.webViews,
+                residences: bridge.webViews,
+                rebuilder: bridge.webViews,
+                windowProfiles: bridge.windows,
+                runtimeSession: runtimeSession,
+                profileRuntime: profileRuntime,
+                contexts: contextPublications,
+                preludeInstaller:
+                    permissionsOriginsCompatibilityPreludeInstallationOwner,
+                diagnostics: runtimeDiagnostics
+            )
         requestedTabTargetQuery = bridge.requestedTabTargets
         extensionTabMutation = bridge.tabMutation
         extensionWindowActivation = bridge.windowActivation
@@ -392,7 +422,6 @@ extension ExtensionManager {
         extensionWindowPresentation = bridge.presentation
         extensionRequestedWindowCreation = bridge.requestedWindows
         runtime = BrowserExtensionManagerRuntimeFactory.runtime(for: browserManager)
-
         if runtime.activeWindowState() == nil,
            let currentProfile = runtime.currentProfile() {
             switchProfile(profileId: currentProfile.id)
@@ -403,7 +432,10 @@ extension ExtensionManager {
                 "attach browserManager controller=\(ExtensionRuntimeDiagnostics.objectDescription(controller)) windows=\(runtime.allWindowStates().count) tabs=\(runtime.allTabs().count)"
             )
             if let profileId = profileRuntime.currentProfileId {
-                updateWebViewsForProfile(profileId)
+                profileWebViewRuntimeReconciler.reconcile(
+                    profileID: profileId,
+                    reason: "ExtensionManager.attach"
+                )
             }
             publishExistingRuntimeWindowsIfAttached()
         }

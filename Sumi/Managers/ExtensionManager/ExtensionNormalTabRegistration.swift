@@ -3,15 +3,16 @@ import Foundation
 @available(macOS 15.5, *)
 @MainActor
 protocol ExtensionTabControllerPreparing: AnyObject {
-    func ensureExtensionControllerAttachedForTab(
+    @discardableResult
+    func repair(
         _ tab: Tab,
         reason: String,
         allowWhenExtensionsNotLoaded: Bool
-    )
+    ) -> ExtensionTabWebViewRuntimeRepairOutcome
 }
 
 @available(macOS 15.5, *)
-extension ExtensionControllerAttachmentOwner: ExtensionTabControllerPreparing {}
+extension ExtensionTabWebViewRuntimeRepair: ExtensionTabControllerPreparing {}
 
 /// Owns generation preparation and eligibility for an exact normal Tab. It
 /// delegates controller mutation and WebKit publication to their transactions.
@@ -58,7 +59,7 @@ final class ExtensionNormalTabRegistration: ExtensionDeferredTabRuntimeResuming 
         else { return }
 
         tab.extensionPageRuntimeOwner.markEligible(for: generation)
-        controllers?.ensureExtensionControllerAttachedForTab(
+        controllers?.repair(
             tab,
             reason: reason,
             allowWhenExtensionsNotLoaded: allowWhenExtensionsNotLoaded
@@ -80,7 +81,7 @@ final class ExtensionNormalTabRegistration: ExtensionDeferredTabRuntimeResuming 
         tab.extensionPageRuntimeOwner.prepareGeneration(generation)
         guard runtimeSession.extensionsLoaded else { return }
         tab.extensionPageRuntimeOwner.markEligible(for: generation)
-        controllers?.ensureExtensionControllerAttachedForTab(
+        controllers?.repair(
             tab,
             reason: reason,
             allowWhenExtensionsNotLoaded: false

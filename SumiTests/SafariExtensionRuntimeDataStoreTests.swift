@@ -17,7 +17,6 @@ final class SafariExtensionRuntimeDataStoreTests: XCTestCase {
             context: container.mainContext,
             initialProfile: profile
         )
-
         _ = manager.requestExtensionRuntime(
             reason: .attach,
             allowWithoutEnabledExtensions: true
@@ -46,11 +45,8 @@ final class SafariExtensionRuntimeDataStoreTests: XCTestCase {
             context: container.mainContext,
             initialProfile: profile
         )
-
-        _ = manager.requestExtensionRuntime(
-            reason: .webViewConfiguration,
-            allowWithoutEnabledExtensions: true
-        )
+        XCTAssertNil(manager.controllerRuntimeComposition)
+        XCTAssertNil(manager.extensionController)
 
         let configuration = BrowserConfiguration.shared.auxiliaryWebViewConfiguration(
             surface: .extensionOptions
@@ -61,8 +57,85 @@ final class SafariExtensionRuntimeDataStoreTests: XCTestCase {
             reason: "SafariExtensionRuntimeDataStoreTests"
         )
 
+        XCTAssertNil(manager.controllerRuntimeComposition)
+        XCTAssertNotNil(manager.extensionController)
+        XCTAssertNotNil(configuration.webExtensionController)
         XCTAssertIdentical(configuration.websiteDataStore, profile.dataStore)
         XCTAssertTrue(configuration.websiteDataStore.isPersistent)
+    }
+
+    func testReadyConfigurationDemandDoesNotReenterWebViewReconciliation() throws {
+        let container = try ModelContainer(
+            for: SumiStartupPersistence.schema,
+            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
+        )
+        let profile = Profile(name: "Ready Configuration Demand")
+        let browserManager = makeSafariExtensionTestBrowserManager(
+            profile: profile
+        )
+        let manager = ExtensionManager(
+            context: container.mainContext,
+            initialProfile: profile
+        )
+        manager.attach(browserManager: browserManager)
+        manager.runtimeSession.runtimeState = .ready
+        let reconciler = manager.profileWebViewRuntimeReconciler
+        let initialCount = reconciler.reconciliationRequestCount
+
+        _ = manager.requestExtensionRuntime(
+            reason: .webViewConfiguration,
+            allowWithoutEnabledExtensions: true,
+            profileId: profile.id
+        )
+
+        XCTAssertEqual(reconciler.reconciliationRequestCount, initialCount)
+
+        _ = manager.requestExtensionRuntime(
+            reason: .refresh,
+            allowWithoutEnabledExtensions: true,
+            profileId: profile.id
+        )
+
+        XCTAssertEqual(
+            reconciler.reconciliationRequestCount,
+            initialCount + 1
+        )
+    }
+
+    func testRepeatedAttachmentToSameBrowserKeepsControllerRuntimeIdentity() throws {
+        let container = try ModelContainer(
+            for: SumiStartupPersistence.schema,
+            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
+        )
+        let profile = Profile(name: "Repeated Attachment")
+        let browserManager = makeSafariExtensionTestBrowserManager(
+            profile: profile
+        )
+        let manager = ExtensionManager(
+            context: container.mainContext,
+            initialProfile: profile
+        )
+        manager.attach(browserManager: browserManager)
+        let composition = try XCTUnwrap(manager.controllerRuntimeComposition)
+
+        manager.attach(browserManager: browserManager)
+
+        let repeated = try XCTUnwrap(manager.controllerRuntimeComposition)
+        XCTAssertIdentical(repeated.profiles, composition.profiles)
+        XCTAssertIdentical(repeated.controllers, composition.controllers)
+        XCTAssertIdentical(repeated.webViews, composition.webViews)
+        XCTAssertIdentical(repeated.admission, composition.admission)
+        XCTAssertIdentical(repeated.mismatch, composition.mismatch)
+        XCTAssertIdentical(repeated.repair, composition.repair)
+        XCTAssertIdentical(repeated.reconciler, composition.reconciler)
+        XCTAssertIdentical(
+            repeated.contextCompatibility,
+            composition.contextCompatibility
+        )
+        XCTAssertIdentical(
+            repeated.tabWebViewResolver,
+            composition.tabWebViewResolver
+        )
     }
 
     func testPrepareWebViewConfigurationPreservesEphemeralProfileDataStore() throws {

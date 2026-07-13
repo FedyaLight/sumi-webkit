@@ -9,7 +9,8 @@ import WebKit
 final class ExtensionInitialTabPublicationValidator {
     private let runtimeSession: ExtensionRuntimeSession
     private let profileRuntime: ExtensionProfileRuntime
-    private let controllerQuery: any ExtensionControllerBindingQuery
+    private let controllerQuery: any ExtensionTabControllerQuery
+    private let webViews: ExtensionExactTabWebViewQuery
     private let contextLoading: any ExtensionContentScriptContextLoading
     private let windowRegistry: any ExtensionWindowQuery
     private let windowPublications: ExtensionWindowPublicationQuery
@@ -19,7 +20,8 @@ final class ExtensionInitialTabPublicationValidator {
     init(
         runtimeSession: ExtensionRuntimeSession,
         profileRuntime: ExtensionProfileRuntime,
-        controllerQuery: any ExtensionControllerBindingQuery,
+        controllerQuery: any ExtensionTabControllerQuery,
+        webViews: ExtensionExactTabWebViewQuery,
         contextLoading: any ExtensionContentScriptContextLoading,
         windowRegistry: any ExtensionWindowQuery,
         windowPublications: ExtensionWindowPublicationQuery,
@@ -29,6 +31,7 @@ final class ExtensionInitialTabPublicationValidator {
         self.runtimeSession = runtimeSession
         self.profileRuntime = profileRuntime
         self.controllerQuery = controllerQuery
+        self.webViews = webViews
         self.contextLoading = contextLoading
         self.windowRegistry = windowRegistry
         self.windowPublications = windowPublications
@@ -87,9 +90,9 @@ final class ExtensionInitialTabPublicationValidator {
               let controller = profileRuntime.controller(
                   for: evidence.profileID
               ),
-              controllerQuery.extensionController(for: evidence.tab)
+              controllerQuery.existingController(for: evidence.tab)
                 === controller,
-              controllerQuery.resolvedLiveWebView(for: evidence.tab)
+              webViews.liveWebView(for: evidence.tab)
                 === evidence.webView,
               evidence.webView.configuration.webExtensionController
                 === controller,
@@ -169,9 +172,9 @@ final class ExtensionInitialTabPublicationValidator {
             )
             && profileRuntime.controller(for: evidence.profileID)
                 === evidence.controller
-            && controllerQuery.extensionController(for: evidence.tab)
+            && controllerQuery.existingController(for: evidence.tab)
                 === evidence.controller
-            && controllerQuery.resolvedLiveWebView(for: evidence.tab)
+            && webViews.liveWebView(for: evidence.tab)
                 === evidence.webView
             && evidence.webView.configuration.webExtensionController
                 === evidence.controller

@@ -62,6 +62,32 @@ protocol ExtensionTabLiveWebViewQuery: AnyObject {
 
 @available(macOS 15.5, *)
 @MainActor
+protocol ExtensionTabWebViewResidenceQuery: AnyObject {
+    func extensionLiveWebViews(for tab: Tab) -> [WKWebView]
+    func extensionUntrackedWebView(for tab: Tab) -> WKWebView?
+}
+
+@available(macOS 15.5, *)
+@MainActor
+enum ExtensionTabWebViewRebuildSubmissionOutcome: Equatable {
+    case committed
+    case deferred
+    case noLiveWindows
+    case failed
+}
+
+@available(macOS 15.5, *)
+@MainActor
+protocol ExtensionTabWebViewRebuilding: AnyObject {
+    @discardableResult
+    func rebuildExtensionLiveWebViews(
+        for tab: Tab,
+        reason: String
+    ) -> ExtensionTabWebViewRebuildSubmissionOutcome
+}
+
+@available(macOS 15.5, *)
+@MainActor
 protocol ExtensionTabReloadHosting: AnyObject {
     func reloadExtensionTab(
         _ tab: Tab,
@@ -111,6 +137,12 @@ protocol ExtensionWindowQuery: ExtensionTabWindowProjectionQuery {
     func currentExtensionTabForActiveWindow() -> Tab?
     func tabsForExtensionWindow(_ windowState: BrowserWindowState) -> [Tab]
     func preferredExtensionWindowState(containing tab: Tab) -> BrowserWindowState?
+}
+
+@available(macOS 15.5, *)
+@MainActor
+protocol ExtensionTabInventory: AnyObject {
+    var allExtensionTabs: [Tab] { get }
 }
 
 @available(macOS 15.5, *)

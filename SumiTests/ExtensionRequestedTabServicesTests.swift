@@ -45,10 +45,18 @@ final class ExtensionRequestedTabServicesTests:
         let browserManager = makeSafariExtensionTestBrowserManager(profile: profile)
         manager.attach(browserManager: browserManager)
         let materializer = manager.requestedTabWebViewMaterializer
-        let tab = browserManager.tabManager.tabFactory.makeTab(
-            url: URL(string: "https://example.com")!,
-            name: "Extension requested"
+        let space = browserManager.tabManager.spaceStateOwner.firstSpace(
+            forProfile: profile.id
+        ) ?? browserManager.tabManager.spaceServices.catalog.createSpace(
+            name: "Extension requested",
+            profileId: profile.id
         )
+        let tab = browserManager.tabManager.regularTabLifecycleOwner
+            .createNewTab(
+                url: "https://example.com",
+                in: space,
+                activate: true
+            )
         tab.profileId = profile.id
         tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
 
@@ -60,7 +68,7 @@ final class ExtensionRequestedTabServicesTests:
         let materializedWebView = try XCTUnwrap(tab.resolvedCurrentWebView())
         XCTAssertNil(tab.resolvedPrimaryWindowId())
         XCTAssertIdentical(
-            manager.ownedUntrackedCurrentWebView(for: tab),
+            manager.exactExtensionTabWebViews.untrackedWebView(for: tab),
             materializedWebView
         )
         XCTAssertIdentical(
@@ -205,7 +213,8 @@ final class ExtensionRequestedTabServicesTests:
                 .webViewRuntime.ownershipQuery.webView(
                     for: tab.id,
                     in: harness.window.id
-                ) === harness.manager.resolvedLiveWebView(for: tab)
+                ) === harness.manager.exactExtensionTabWebViews
+                    .liveWebView(for: tab)
         }
         harness.manager.testHooks.didActivateTab = { tabID in
             guard tabID != harness.sourceTab.id else { return }
@@ -455,7 +464,9 @@ final class ExtensionRequestedTabServicesTests:
             )
         )
         let sourceWebView = try XCTUnwrap(
-            harness.manager.resolvedLiveWebView(for: harness.sourceTab)
+            harness.manager.exactExtensionTabWebViews.liveWebView(
+                for: harness.sourceTab
+            )
         )
         let originalURL = harness.sourceTab.url
         let originalFrame = appKitWindow.frame

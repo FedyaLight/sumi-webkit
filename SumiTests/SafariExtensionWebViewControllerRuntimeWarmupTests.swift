@@ -1090,9 +1090,18 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         )
         let controllerA = manager.ensureExtensionController(for: profileA.id)
         let controllerB = manager.ensureExtensionController(for: profileB.id)
+        let browserManager = makeBrowserManager(profile: profileA)
+        manager.attach(browserManager: browserManager)
 
         let pageURL = URL(string: "http://127.0.0.1:8765/login-basic.html")!
-        let tab = makeTab(profileId: profileA.id, url: pageURL)
+        let tab = makeTab(
+            profileId: profileA.id,
+            url: pageURL,
+            browserManager: browserManager
+        )
+        tab.attachBrowserRuntime(
+            TabBrowserRuntimeFactory.make(for: browserManager)
+        )
         tab.extensionPageRuntimeOwner.openNotifiedDocumentSequence = 0
         tab.extensionPageRuntimeOwner.openNotifiedContextBindingGeneration = 0
         tab.extensionPageRuntimeOwner.noteCommittedMainDocumentNavigation(to: pageURL)
@@ -1117,14 +1126,14 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         XCTAssertEqual(manager.resolvedProfileId(for: tab), profileA.id)
         XCTAssertIdentical(manager.profileRuntime.controllersByProfile[profileA.id], controllerA)
         XCTAssertIdentical(manager.profileRuntime.controllersByProfile[profileB.id], controllerB)
-        XCTAssertIdentical(manager.extensionController(for: tab), controllerA)
+        XCTAssertIdentical(
+            manager.existingTabControllers.existingController(for: tab),
+            controllerA
+        )
 
         XCTAssertTrue(
-            manager.webViewNeedsExtensionRuntimeRebuild(
-                currentController: currentController,
-                currentURL: pageURL,
-                for: tab
-            )
+            manager.webViewControllerMismatch
+                .webViewNeedsExtensionRuntimeRebuild(webView, for: tab)
         )
     }
 
@@ -1194,7 +1203,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         XCTAssertNotEqual(baseURL.host, otherBaseURL.host)
     }
 
-    func testPrepareWebViewForExtensionRuntimeAttachesControllerOnBlankWebView() throws {
+    func testPrepareWebViewForExtensionRuntimePreservesPreconfiguredController() throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Profile A")
         let browserConfiguration = BrowserConfiguration()
@@ -1208,6 +1217,8 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             allowWithoutEnabledExtensions: true
         )
         let expectedController = manager.ensureExtensionController(for: profile.id)
+        let browserManager = makeBrowserManager(profile: profile)
+        manager.attach(browserManager: browserManager)
 
         let configuration = browserConfiguration.auxiliaryWebViewConfiguration(
             surface: .extensionOptions
@@ -1217,9 +1228,14 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             profileId: profile.id,
             reason: "SafariExtensionWebViewControllerWiringTests"
         )
-        let tab = makeTab(profileId: profile.id, url: URL(string: "about:blank")!)
+        let tab = makeTab(
+            profileId: profile.id,
+            url: URL(string: "about:blank")!,
+            browserManager: browserManager
+        )
         let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
         webView.owningTab = tab
+        tab.replaceUntrackedWebView(webView)
 
         manager.prepareWebViewForExtensionRuntime(
             webView,

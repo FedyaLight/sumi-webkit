@@ -350,7 +350,8 @@ final class ExtensionActionPopupSessionOwner: NSObject, NSPopoverDelegate {
         guard let manager,
               let tab = manager.extensionWindowQuery?
                 .currentExtensionTabForActiveWindow(),
-              let webView = manager.resolvedLiveWebView(for: tab),
+              let webView = manager.exactExtensionTabWebViews
+                .liveWebView(for: tab),
               let window = webView.window,
               webView.superview != nil
         else {

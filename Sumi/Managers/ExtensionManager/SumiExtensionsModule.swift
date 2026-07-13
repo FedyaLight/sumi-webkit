@@ -445,7 +445,8 @@ final class SumiExtensionsModule {
         else {
             return .suppressed
         }
-        guard manager.extensionController(for: tab) != nil else {
+        guard manager.existingTabControllers
+            .existingController(for: tab) != nil else {
             return .notParticipating
         }
         guard manager.profileNeedsInitialDocumentExtensionContextLoad(
