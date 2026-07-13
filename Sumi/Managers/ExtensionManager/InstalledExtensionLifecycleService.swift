@@ -10,6 +10,8 @@ final class InstalledExtensionLifecycleService {
         let modelContext: ModelContext
         let metadataStore: ExtensionInstallationMetadataStore
         let installedRecords: InstalledExtensionCollection
+        let volatileRecords: ExtensionVolatileInstallationRecordReconciler
+        let packageMaintenance: ExtensionPackageMaintenance
         let runtimeAccess: ExtensionRuntimeAccess
         let enabledRuntimeActivation: ExtensionEnabledRuntimeActivation
         let runtimeRecovery: ExtensionRuntimeRecovery
@@ -40,6 +42,7 @@ final class InstalledExtensionLifecycleService {
         }
         defer { _ = environment.mutationRegistry.finish(mutationLease) }
         environment.loadRegistry.invalidate(extensionId: extensionID)
+        try environment.volatileRecords.reconcile(extensionID)
 
         guard let entity = try environment.metadataStore.extensionEntity(for: extensionID) else {
             throw ExtensionError.installationFailed(
@@ -171,6 +174,7 @@ final class InstalledExtensionLifecycleService {
         mutationLease: ExtensionRuntimeMutationLease,
         releaseRuntimeIfIdle: Bool
     ) async throws -> Bool {
+        try environment.volatileRecords.reconcile(extensionID)
         let entity = try environment.metadataStore.extensionEntity(
             for: extensionID
         )
@@ -319,25 +323,37 @@ final class InstalledExtensionLifecycleService {
             )
             try validate(mutationLease)
 
+            var copiedPackageURL: URL?
             if let entity = try environment.metadataStore.extensionEntity(
                 for: extensionID
             ) {
                 let sourceKind =
                     WebExtensionSourceKind(rawValue: entity.sourceKindRawValue)
                     ?? .directory
-                let packageURL = URL(
-                    fileURLWithPath: entity.packagePath,
-                    isDirectory: true
-                )
-                if sourceKind == .directory,
-                   FileManager.default.fileExists(atPath: packageURL.path) {
-                    try FileManager.default.removeItem(at: packageURL)
+                if sourceKind == .directory {
+                    copiedPackageURL = URL(
+                        fileURLWithPath: entity.packagePath,
+                        isDirectory: true
+                    )
                 }
                 environment.modelContext.delete(entity)
                 try environment.modelContext.save()
             }
 
             publish { $0.remove(id: extensionID) }
+            if let copiedPackageURL,
+               FileManager.default.fileExists(atPath: copiedPackageURL.path) {
+                do {
+                    let quarantined = try environment.packageMaintenance
+                        .quarantinePackage(copiedPackageURL)
+                    environment.packageMaintenance
+                        .deleteQuarantinedPackages([quarantined])
+                } catch {
+                    ExtensionManager.logger.error(
+                        "Uninstalled extension metadata but left its package for startup cleanup: \(error.localizedDescription, privacy: .public)"
+                    )
+                }
+            }
             let shouldReleaseRuntime = hasEnabledExtensions == false
             _ = environment.mutationRegistry.finish(mutationLease)
             if shouldReleaseRuntime {
@@ -396,6 +412,16 @@ extension InstalledExtensionLifecycleService.Environment {
             modelContext: manager.context,
             metadataStore: manager.installationMetadataStore,
             installedRecords: manager.installedExtensionCollection,
+            volatileRecords: ExtensionVolatileInstallationRecordReconciler(
+                persistence: manager.installationMetadataStore,
+                installedRecords: manager.installedExtensionCollection
+            ),
+            packageMaintenance: ExtensionPackageMaintenance(
+                layout: ExtensionPackageLayout(
+                    extensionsRoot: ExtensionUtils.extensionsDirectory()
+                ),
+                activeGenerations: manager.activePackageGenerations
+            ),
             runtimeAccess: manager.extensionRuntimeAccess,
             enabledRuntimeActivation: manager.enabledRuntimeActivation,
             runtimeRecovery: manager.runtimeRecovery,

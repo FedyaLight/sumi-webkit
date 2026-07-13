@@ -11,6 +11,20 @@ import WebKit
 enum SafariAppExtensionRuntimeLoadSource: String, Codable, Sendable, Equatable {
     case copiedPackage
     case originalAppexBundle
+
+    static func installedSource(
+        for extensionID: String?,
+        in records: [InstalledExtension]
+    ) -> Self? {
+        guard let extensionID,
+              let installed = records.first(where: { $0.id == extensionID })
+        else {
+            return nil
+        }
+        return installed.sourceKind == .safariAppExtension
+            ? .originalAppexBundle
+            : .copiedPackage
+    }
 }
 
 enum SafariAppExtensionResources {

@@ -26,9 +26,27 @@ final class ExtensionInstallationMetadataStore {
         24 * 60 * 60
 
     private let context: ModelContext
+    private let packageLayout: ExtensionPackageLayout
+    private let packageMaintenance: ExtensionPackageMaintenance
+    private let legacyBackupRecovery: LegacyExtensionBackupRecovery
 
-    init(context: ModelContext) {
+    init(
+        context: ModelContext,
+        activePackageGenerations: ExtensionPackageGenerationRegistry = .init(),
+        extensionsDirectory: URL = ExtensionUtils.extensionsDirectory()
+    ) {
+        let packageLayout = ExtensionPackageLayout(
+            extensionsRoot: extensionsDirectory
+        )
         self.context = context
+        self.packageLayout = packageLayout
+        self.packageMaintenance = ExtensionPackageMaintenance(
+            layout: packageLayout,
+            activeGenerations: activePackageGenerations
+        )
+        self.legacyBackupRecovery = LegacyExtensionBackupRecovery(
+            layout: packageLayout
+        )
     }
 
     func persist(record: InstalledExtension) throws {
@@ -36,6 +54,42 @@ final class ExtensionInstallationMetadataStore {
             update(existing, from: record)
         } else {
             context.insert(ExtensionEntity(record: record))
+        }
+        try context.save()
+    }
+
+    func persistedInstallationIdentities() throws
+        -> [ExtensionInstallationPersistedIdentity] {
+        try context.fetch(FetchDescriptor<ExtensionEntity>()).map {
+            ExtensionInstallationPersistedIdentity(
+                extensionID: $0.id,
+                sourceBundlePath: $0.sourceBundlePath,
+                sourceKind: WebExtensionSourceKind(
+                    rawValue: $0.sourceKindRawValue
+                ) ?? .directory,
+                safariRuntimeIdentity: $0.safariRuntimeIdentity ??
+                    SafariWebExtensionRuntimeIdentity.composedIdentifier(
+                        sourceKind: WebExtensionSourceKind(
+                            rawValue: $0.sourceKindRawValue
+                        ) ?? .directory,
+                        sourceBundlePath: $0.sourceBundlePath
+                    )
+            )
+        }
+    }
+
+    func restore(
+        originalRecord: InstalledExtension?,
+        extensionID: String
+    ) throws {
+        if let entity = try extensionEntity(for: extensionID) {
+            if let originalRecord {
+                update(entity, from: originalRecord)
+            } else {
+                context.delete(entity)
+            }
+        } else if let originalRecord {
+            context.insert(ExtensionEntity(record: originalRecord))
         }
         try context.save()
     }
@@ -69,7 +123,18 @@ final class ExtensionInstallationMetadataStore {
             )
         }
 
-        return URL(fileURLWithPath: packagePath, isDirectory: true)
+        let packageURL = URL(
+            fileURLWithPath: packagePath,
+            isDirectory: true
+        )
+        switch packageLayout.packageRootKind(packageURL) {
+        case .managedGeneration, .legacyDirect:
+            return packageURL
+        case .stagingTransaction, .outsideLayout:
+            throw ExtensionError.installationFailed(
+                "Installed extension package is outside browser-owned storage"
+            )
+        }
     }
 
     func extensionResourcesRoot(for entity: ExtensionEntity) throws -> URL {
@@ -99,9 +164,27 @@ final class ExtensionInstallationMetadataStore {
         var loadedRecords: [InstalledExtension] = []
         var enabledEntitiesToLoad: [ExtensionEntity] = []
         var didMutatePersistence = false
+        var recoveredQuarantineURLs: [URL] = []
+        var deferredPackagePaths: Set<String> = []
 
         for entity in entities {
             let sourceKind = WebExtensionSourceKind(rawValue: entity.sourceKindRawValue) ?? .directory
+            let recovery = legacyBackupRecovery.recover(
+                .init(
+                    extensionID: entity.id,
+                    packagePath: entity.packagePath,
+                    manifestRootFingerprint: entity.manifestRootFingerprint,
+                    sourceKind: sourceKind
+                )
+            )
+            recoveredQuarantineURLs += recovery.quarantinedURLs
+            guard recovery.validationDisposition == .proceed else {
+                deferredPackagePaths.insert(entity.packagePath)
+                Self.logger.error(
+                    "Deferred ambiguous legacy package recovery for \(entity.id, privacy: .public)"
+                )
+                continue
+            }
             let packageURL: URL
             do {
                 packageURL = try extensionResourcesRoot(
@@ -152,6 +235,8 @@ final class ExtensionInstallationMetadataStore {
 
         cleanupOrphanedExtensionPackages(
             referencedPackagePaths: Set(loadedRecords.map(\.packagePath))
+                .union(deferredPackagePaths),
+            recoveredQuarantineURLs: recoveredQuarantineURLs
         )
 
         if didMutatePersistence {
@@ -190,6 +275,9 @@ final class ExtensionInstallationMetadataStore {
         entity.sourcePathFingerprint = record.sourcePathFingerprint
         entity.manifestRootFingerprint = record.manifestRootFingerprint
         entity.sourceBundlePath = record.sourceBundlePath
+        if entity.safariRuntimeIdentity == nil {
+            entity.safariRuntimeIdentity = record.safariRuntimeIdentity
+        }
         entity.optionsPagePath = record.optionsPagePath
         entity.defaultPopupPath = record.defaultPopupPath
         entity.hasBackground = record.hasBackground
@@ -234,6 +322,7 @@ final class ExtensionInstallationMetadataStore {
             sourcePathFingerprint: record.sourcePathFingerprint,
             manifestRootFingerprint: record.manifestRootFingerprint,
             sourceBundlePath: record.sourceBundlePath,
+            safariRuntimeIdentity: record.safariRuntimeIdentity,
             optionsPagePath: record.optionsPagePath,
             defaultPopupPath: record.defaultPopupPath,
             hasBackground: record.hasBackground,
@@ -325,6 +414,11 @@ final class ExtensionInstallationMetadataStore {
                 fileAt: extensionRoot.appendingPathComponent("manifest.json")
             ),
             sourceBundlePath: sourceBundlePath,
+            safariRuntimeIdentity: existingEntity?.safariRuntimeIdentity
+                ?? SafariWebExtensionRuntimeIdentity.composedIdentifier(
+                    sourceKind: sourceKind,
+                    sourceBundlePath: sourceBundlePath
+                ),
             optionsPagePath: optionsPagePath,
             defaultPopupPath: defaultPopupPath,
             hasBackground: backgroundModel != .none,
@@ -353,6 +447,7 @@ final class ExtensionInstallationMetadataStore {
             || entity.sourcePathFingerprint != refreshedRecord.sourcePathFingerprint
             || entity.manifestRootFingerprint != refreshedRecord.manifestRootFingerprint
             || entity.sourceBundlePath != refreshedRecord.sourceBundlePath
+            || entity.safariRuntimeIdentity != refreshedRecord.safariRuntimeIdentity
             || entity.optionsPagePath != refreshedRecord.optionsPagePath
             || entity.defaultPopupPath != refreshedRecord.defaultPopupPath
             || entity.hasBackground != refreshedRecord.hasBackground
@@ -405,75 +500,28 @@ final class ExtensionInstallationMetadataStore {
         )
     }
 
-    private nonisolated func cleanupOrphanedExtensionPackages(
-        referencedPackagePaths: Set<String>
+    private func cleanupOrphanedExtensionPackages(
+        referencedPackagePaths: Set<String>,
+        recoveredQuarantineURLs: [URL]
     ) {
-        guard !referencedPackagePaths.isEmpty else { return }
         guard ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil else {
             return
         }
-        guard Self.shouldRunOrphanedExtensionPackageCleanup() else { return }
+        guard Self.shouldRunOrphanedExtensionPackageCleanup() else {
+            packageMaintenance.deleteQuarantinedPackages(
+                recoveredQuarantineURLs
+            )
+            return
+        }
         UserDefaults.standard.set(
             Date(),
             forKey: Self.orphanedExtensionCleanupDefaultsKey
         )
-
-        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 30) {
-            let fileManager = FileManager.default
-            let extensionsDirectory = ExtensionUtils.extensionsDirectory()
-            let referencedPaths = Set(referencedPackagePaths.map {
-                URL(fileURLWithPath: $0).standardizedFileURL.path
-            })
-            let packageDirectories: [URL]
-            do {
-                packageDirectories = try fileManager.contentsOfDirectory(
-                    at: extensionsDirectory,
-                    includingPropertiesForKeys: [.isDirectoryKey],
-                    options: [.skipsHiddenFiles]
-                )
-            } catch {
-                guard !Self.isMissingFileError(error) else { return }
-                Self.logger.error(
-                    "Failed to enumerate extension packages for orphan cleanup: \(error.localizedDescription, privacy: .public)"
-                )
-                return
-            }
-
-            for packageDirectory in packageDirectories {
-                guard UUID(uuidString: packageDirectory.lastPathComponent) != nil else {
-                    continue
-                }
-                let isDirectory: Bool
-                do {
-                    isDirectory = try packageDirectory.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true
-                } catch {
-                    Self.logger.debug(
-                        "Skipping unreadable extension package during orphan cleanup \(packageDirectory.path, privacy: .public): \(error.localizedDescription, privacy: .public)"
-                    )
-                    continue
-                }
-                guard isDirectory else {
-                    continue
-                }
-                guard referencedPaths.contains(packageDirectory.standardizedFileURL.path) == false else {
-                    continue
-                }
-                do {
-                    try fileManager.removeItem(at: packageDirectory)
-                } catch {
-                    Self.logger.error(
-                        "Failed to remove orphaned extension package \(packageDirectory.path, privacy: .public): \(error.localizedDescription, privacy: .public)"
-                    )
-                }
-            }
-        }
-    }
-
-    nonisolated private static func isMissingFileError(_ error: Error) -> Bool {
-        let nsError = error as NSError
-        guard nsError.domain == NSCocoaErrorDomain else { return false }
-        return nsError.code == NSFileNoSuchFileError
-            || nsError.code == NSFileReadNoSuchFileError
+        let orphaned = packageMaintenance.quarantineOrphans(
+            referencedPackagePaths: referencedPackagePaths
+        )
+        let quarantined = Array(Set(orphaned + recoveredQuarantineURLs))
+        packageMaintenance.deleteQuarantinedPackages(quarantined)
     }
 
     nonisolated private static func shouldRunOrphanedExtensionPackageCleanup() -> Bool {
@@ -486,6 +534,10 @@ final class ExtensionInstallationMetadataStore {
         return Date().timeIntervalSince(lastRun) >= orphanedExtensionCleanupInterval
     }
 }
+
+@available(macOS 15.5, *)
+extension ExtensionInstallationMetadataStore:
+    ExtensionInstallationRecordPersisting {}
 
 // MARK: - ExtensionManager facade
 

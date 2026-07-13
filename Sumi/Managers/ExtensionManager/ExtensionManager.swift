@@ -113,6 +113,7 @@ final class ExtensionManager: NSObject, ObservableObject {
     let context: ModelContext
     let browserConfiguration: BrowserConfiguration
     let moduleRegistry: SumiModuleRegistry
+    let activePackageGenerations: ExtensionPackageGenerationRegistry
     let installationMetadataStore: ExtensionInstallationMetadataStore
     let siteAccessPolicyStore: SafariExtensionSiteAccessPolicyStore
     let extensionPreferences: UserDefaults
@@ -279,8 +280,8 @@ final class ExtensionManager: NSObject, ObservableObject {
     lazy var installedExtensionLifecycle = InstalledExtensionLifecycleService(
         environment: .makeLive(manager: self)
     )
-    lazy var extensionInstaller = ExtensionInstallationService(
-        environment: .makeLive(manager: self)
+    lazy var extensionInstaller = ExtensionInstallationService.makeLive(
+        manager: self
     )
     lazy var actionPopupAnchorResolver = ExtensionActionPopupAnchorResolver(
         manager: self
@@ -636,8 +637,11 @@ final class ExtensionManager: NSObject, ObservableObject {
         self.browserConfiguration = browserConfiguration ?? .shared
         self.moduleRegistry = moduleRegistry
         self.extensionPreferences = extensionPreferences
+        let activePackageGenerations = ExtensionPackageGenerationRegistry()
+        self.activePackageGenerations = activePackageGenerations
         self.installationMetadataStore = ExtensionInstallationMetadataStore(
-            context: context
+            context: context,
+            activePackageGenerations: activePackageGenerations
         )
         self.siteAccessPolicyStore = SafariExtensionSiteAccessPolicyStore(
             preferences: extensionPreferences

@@ -99,6 +99,15 @@ final class ExtensionRuntimeRecoveryTests:
                 "manifest.json"
             )
         )
+        let originalPackageURL = URL(
+            fileURLWithPath: fixture.installed.packagePath,
+            isDirectory: true
+        )
+        let originalManifest = try Data(
+            contentsOf: originalPackageURL.appendingPathComponent(
+                "manifest.json"
+            )
+        )
         fixture.manager.testHooks.beforePersistInstalledRecord = { _ in
             fixture.unloadFault.controllerToFail = controllerA
             throw RecoveryError.injectedPersistenceFailure
@@ -122,19 +131,35 @@ final class ExtensionRuntimeRecoveryTests:
             )
         }
 
-        XCTAssertEqual(
-            try Data(
-                contentsOf: URL(
-                    fileURLWithPath: fixture.installed.packagePath,
-                    isDirectory: true
-                ).appendingPathComponent("manifest.json")
-            ),
-            candidateManifest
-        )
         let candidateEntity = try XCTUnwrap(
             fixture.manager.installationMetadataStore.extensionEntity(
                 for: fixture.installed.id
             )
+        )
+        let candidatePackageURL = URL(
+            fileURLWithPath: candidateEntity.packagePath,
+            isDirectory: true
+        )
+        XCTAssertNotEqual(
+            candidatePackageURL.standardizedFileURL,
+            originalPackageURL.standardizedFileURL
+        )
+        XCTAssertEqual(
+            try Data(
+                contentsOf: candidatePackageURL.appendingPathComponent(
+                    "manifest.json"
+                )
+            ),
+            candidateManifest
+        )
+        XCTAssertEqual(
+            try Data(
+                contentsOf: originalPackageURL.appendingPathComponent(
+                    "manifest.json"
+                )
+            ),
+            originalManifest,
+            "The live runtime generation must remain byte-for-byte intact"
         )
         XCTAssertEqual(candidateEntity.name, replacementName)
         XCTAssertEqual(candidateEntity.version, replacementVersion)

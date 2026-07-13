@@ -8,6 +8,7 @@ final class InstalledExtensionCatalog {
     struct Environment {
         let metadataStore: ExtensionInstallationMetadataStore
         let installedRecords: InstalledExtensionCollection
+        let volatileRecords: ExtensionVolatileInstallationRecordReconciler
         let liveContextCount: @MainActor () -> Int
         let markCatalogLoaded: @MainActor () -> Void
         let trace: @MainActor (String) -> Void
@@ -31,6 +32,14 @@ final class InstalledExtensionCatalog {
             )
         }
 
+        do {
+            try environment.volatileRecords.reconcileAll()
+        } catch {
+            trace(
+                "loadInstalledExtensionMetadata deferred: volatile candidate persistence failed: \(error.localizedDescription)"
+            )
+            return []
+        }
         trace(
             "loadInstalledExtensionMetadata start installedContexts=\(environment.liveContextCount())"
         )
@@ -65,6 +74,10 @@ extension InstalledExtensionCatalog.Environment {
         Self(
             metadataStore: manager.installationMetadataStore,
             installedRecords: manager.installedExtensionCollection,
+            volatileRecords: ExtensionVolatileInstallationRecordReconciler(
+                persistence: manager.installationMetadataStore,
+                installedRecords: manager.installedExtensionCollection
+            ),
             liveContextCount: { [weak manager] in
                 manager?.profileRuntime.contextsForCurrentProfile().count ?? 0
             },

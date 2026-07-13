@@ -70,8 +70,10 @@ final class ExtensionNativePortConnectionSettlement {
             phase: "delegateConnectNative",
             extensionId: extensionId,
             profileId: profileId,
-            loadSource: manager.installedExtensionCollection
-                .nativeMessagingLoadSource(for: extensionId),
+            loadSource: SafariAppExtensionRuntimeLoadSource.installedSource(
+                for: extensionId,
+                in: manager.installedExtensionCollection.records
+            ),
             webExtension: evidence.context.webExtension,
             extensionContext: evidence.context,
             controller: evidence.controller,

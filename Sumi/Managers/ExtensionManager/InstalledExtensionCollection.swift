@@ -5,11 +5,17 @@ import Foundation
 @available(macOS 15.5, *)
 @MainActor
 final class InstalledExtensionCollection: ObservableObject {
+    enum RecordDurability: Equatable {
+        case durable
+        case volatileExactRuntime
+    }
+
     @Published private(set) var records: [InstalledExtension] = []
     private var didChangeRecords: (() -> Void)?
     // Tombstoned per-extension mutation revisions: entries survive removal so
     // remove/re-add cannot revive authority captured against an older record.
     private var recordRevisionsByID: [String: UInt64] = [:]
+    private var durabilityByID: [String: RecordDurability] = [:]
 
     func connectRecordChanges(_ handler: @escaping () -> Void) {
         precondition(
@@ -26,12 +32,25 @@ final class InstalledExtensionCollection: ObservableObject {
         recordRevisionsByID[id] ?? 0
     }
 
-    func upsert(_ record: InstalledExtension) {
+    func recordDurability(for id: String) -> RecordDurability? {
+        durabilityByID[id]
+    }
+
+    func markRecordDurable(_ id: String) {
+        guard records.contains(where: { $0.id == id }) else { return }
+        durabilityByID[id] = .durable
+    }
+
+    func upsert(
+        _ record: InstalledExtension,
+        durability: RecordDurability = .durable
+    ) {
         if let index = records.firstIndex(where: { $0.id == record.id }) {
             records[index] = record
         } else {
             records.append(record)
         }
+        durabilityByID[record.id] = durability
         bumpRecordRevision(record.id)
         sortRecords()
         notifyRecordChanges()
@@ -41,8 +60,10 @@ final class InstalledExtensionCollection: ObservableObject {
         guard records.indices.contains(index) else { return }
         let previousID = records[index].id
         records[index] = record
+        durabilityByID[record.id] = .durable
         bumpRecordRevision(previousID)
         if record.id != previousID {
+            durabilityByID.removeValue(forKey: previousID)
             bumpRecordRevision(record.id)
         }
         notifyRecordChanges()
@@ -52,6 +73,7 @@ final class InstalledExtensionCollection: ObservableObject {
         let originalCount = records.count
         records.removeAll { $0.id == id }
         guard records.count != originalCount else { return }
+        durabilityByID.removeValue(forKey: id)
         bumpRecordRevision(id)
         notifyRecordChanges()
     }
@@ -78,25 +100,16 @@ final class InstalledExtensionCollection: ObservableObject {
             }
         }
         self.records = records
+        durabilityByID = Dictionary(
+            records.map { ($0.id, .durable) },
+            uniquingKeysWith: { _, current in current }
+        )
         notifyRecordChanges()
     }
 
     func sort() {
         sortRecords()
         notifyRecordChanges()
-    }
-
-    func nativeMessagingLoadSource(
-        for extensionID: String?
-    ) -> SafariAppExtensionRuntimeLoadSource? {
-        guard let extensionID,
-              let installed = records.first(where: { $0.id == extensionID })
-        else {
-            return nil
-        }
-        return installed.sourceKind == .safariAppExtension
-            ? .originalAppexBundle
-            : .copiedPackage
     }
 
     private func bumpRecordRevision(_ id: String) {
@@ -124,6 +137,7 @@ final class InstalledExtensionCollection: ObservableObject {
             && lhs.sourcePathFingerprint == rhs.sourcePathFingerprint
             && lhs.manifestRootFingerprint == rhs.manifestRootFingerprint
             && lhs.sourceBundlePath == rhs.sourceBundlePath
+            && lhs.safariRuntimeIdentity == rhs.safariRuntimeIdentity
     }
 
     private func sortRecords() {

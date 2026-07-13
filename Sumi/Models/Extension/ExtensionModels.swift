@@ -75,6 +75,7 @@ final class ExtensionEntity {
     var sourcePathFingerprint: String
     var manifestRootFingerprint: String
     var sourceBundlePath: String
+    var safariRuntimeIdentity: String?
     var optionsPagePath: String?
     var defaultPopupPath: String?
 
@@ -105,6 +106,7 @@ final class ExtensionEntity {
         self.sourcePathFingerprint = record.sourcePathFingerprint
         self.manifestRootFingerprint = record.manifestRootFingerprint
         self.sourceBundlePath = record.sourceBundlePath
+        self.safariRuntimeIdentity = record.safariRuntimeIdentity
         self.optionsPagePath = record.optionsPagePath
         self.defaultPopupPath = record.defaultPopupPath
         self.hasBackground = record.hasBackground
@@ -137,6 +139,7 @@ struct InstalledExtensionRecord {
     let sourcePathFingerprint: String
     let manifestRootFingerprint: String
     let sourceBundlePath: String
+    let safariRuntimeIdentity: String?
     let optionsPagePath: String?
     let defaultPopupPath: String?
 
@@ -166,6 +169,7 @@ struct InstalledExtensionRecord {
         sourcePathFingerprint: String,
         manifestRootFingerprint: String,
         sourceBundlePath: String,
+        safariRuntimeIdentity: String? = nil,
         optionsPagePath: String?,
         defaultPopupPath: String?,
         hasBackground: Bool,
@@ -192,6 +196,7 @@ struct InstalledExtensionRecord {
         self.sourcePathFingerprint = sourcePathFingerprint
         self.manifestRootFingerprint = manifestRootFingerprint
         self.sourceBundlePath = sourceBundlePath
+        self.safariRuntimeIdentity = safariRuntimeIdentity
         self.optionsPagePath = optionsPagePath
         self.defaultPopupPath = defaultPopupPath
         self.hasBackground = hasBackground
@@ -240,6 +245,7 @@ struct InstalledExtensionRecord {
             sourcePathFingerprint: entity.sourcePathFingerprint,
             manifestRootFingerprint: entity.manifestRootFingerprint,
             sourceBundlePath: entity.sourceBundlePath,
+            safariRuntimeIdentity: entity.safariRuntimeIdentity,
             optionsPagePath: entity.optionsPagePath,
             defaultPopupPath: entity.defaultPopupPath,
             hasBackground: entity.hasBackground,

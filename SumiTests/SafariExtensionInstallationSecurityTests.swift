@@ -112,13 +112,6 @@ final class SafariExtensionInstallationSecurityTests: XCTestCase {
             initialProfile: Profile(name: "Legitimate ID Profile")
         )
         let extensionId = "addon-\(UUID().uuidString)@example.com"
-        let expectedDirectory = try ExtensionUtils.extensionDirectory(
-            forExtensionID: extensionId,
-            under: ExtensionUtils.extensionsDirectory()
-        )
-        addTeardownBlock {
-            try? FileManager.default.removeItem(at: expectedDirectory)
-        }
         let source = try makeUnpackedExtension(
             name: "LegitimateGeckoID",
             geckoId: extensionId
@@ -130,10 +123,18 @@ final class SafariExtensionInstallationSecurityTests: XCTestCase {
         )
 
         XCTAssertEqual(installed.id, extensionId)
+        let installedPackage = URL(
+            fileURLWithPath: installed.packagePath,
+            isDirectory: true
+        )
+        addTeardownBlock {
+            try? FileManager.default.removeItem(at: installedPackage)
+        }
         XCTAssertEqual(
-            URL(fileURLWithPath: installed.packagePath, isDirectory: true)
-                .standardizedFileURL.path,
-            expectedDirectory.standardizedFileURL.path
+            ExtensionPackageLayout(
+                extensionsRoot: ExtensionUtils.extensionsDirectory()
+            ).packageRootKind(installedPackage),
+            .managedGeneration
         )
     }
 
