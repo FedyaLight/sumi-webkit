@@ -136,7 +136,7 @@ final class BrowserWorkspaceThemeEditorOwner {
     private func makeWorkspaceThemePickerPopoverRuntime() -> WorkspaceThemePickerPopoverRuntime {
         WorkspaceThemePickerPopoverRuntime(
             settings: { [weak self] in
-                self?.settings() ?? SumiSettingsService()
+                self?.settings()
             },
             previewDraft: { [weak self] sessionID in
                 self?.previewWorkspaceThemePickerDraft(sessionID: sessionID)

@@ -460,13 +460,16 @@ final class SidebarContextMenuController {
         if let windowState,
            let window = ownerView.window {
             let globalScheme: ColorScheme = window.effectiveAppearance.name == .darkAqua ? .dark : .light
-            let settings = windowState.tabManager?.runtimePorts?.settings
-                ?? windowState.tabManager?.sumiSettings
-                ?? SumiSettingsService()
-            let themeContext = windowState.resolvedThemeContext(global: globalScheme, settings: settings)
-            let colorScheme = themeContext.nativeSurfaceColorScheme
-            let appearance = NSAppearance.sumiChromeAppearance(for: colorScheme, fallback: window.effectiveAppearance)
-            menu.sumiApplyAppearance(appearance)
+            if let settings = windowState.tabManager?.runtimePorts?.settings
+                ?? windowState.tabManager?.sumiSettings {
+                let themeContext = windowState.resolvedThemeContext(global: globalScheme, settings: settings)
+                let colorScheme = themeContext.nativeSurfaceColorScheme
+                let appearance = NSAppearance.sumiChromeAppearance(
+                    for: colorScheme,
+                    fallback: window.effectiveAppearance
+                )
+                menu.sumiApplyAppearance(appearance)
+            }
         }
         observeMenuEndTracking(for: menu, sessionID: sessionID)
         let point = ownerView.convert(event.locationInWindow, from: nil)

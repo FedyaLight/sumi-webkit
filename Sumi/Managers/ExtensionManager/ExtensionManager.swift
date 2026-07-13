@@ -675,7 +675,7 @@ final class ExtensionManager: NSObject, ObservableObject {
         context: ModelContext,
         initialProfile: Profile?,
         browserConfiguration: BrowserConfiguration? = nil,
-        moduleRegistry: SumiModuleRegistry = .shared,
+        moduleRegistry: SumiModuleRegistry = .unavailable(),
         extensionPreferences: UserDefaults = .standard
     ) {
         let signpostState = PerformanceTrace.beginInterval("ExtensionManager.init")

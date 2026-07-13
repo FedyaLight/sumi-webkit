@@ -10,6 +10,27 @@ import SumiDomain
 @MainActor
 @Observable
 class SumiSettingsService {
+    enum Availability: Equatable {
+        case available
+        case unavailable
+    }
+
+    static let unavailable: SumiSettingsService = {
+        let defaults = UserDefaults(
+            suiteName: "Sumi.UnavailableSettings.\(UUID().uuidString)"
+        )!
+        return SumiSettingsService(
+            userDefaults: defaults,
+            energySaverSystemMonitor: SumiUnavailableEnergySaverSystemMonitor(),
+            nowPlayingController: SumiUnavailableNowPlayingController(),
+            downloadApplicationsStore: SumiDownloadApplicationsStore(
+                fileURL: URL(fileURLWithPath: "/dev/null")
+            ),
+            availability: .unavailable
+        )
+    }()
+
+    let availability: Availability
     private let nowPlayingController: any SumiNativeNowPlayingFeatureControlling
 
     // MARK: - Domain stores (Phase 5F)
@@ -293,8 +314,10 @@ class SumiSettingsService {
             SumiEnergySaverSystemMonitor(),
         nowPlayingController: any SumiNativeNowPlayingFeatureControlling =
             SumiNativeNowPlayingController(),
-        downloadApplicationsStore: SumiDownloadApplicationsStore = SumiDownloadApplicationsStore()
+        downloadApplicationsStore: SumiDownloadApplicationsStore = SumiDownloadApplicationsStore(),
+        availability: Availability = .available
     ) {
+        self.availability = availability
         self.nowPlayingController = nowPlayingController
 
         // Register default values
@@ -415,23 +438,34 @@ extension Notification.Name {
         Notification.Name("SumiBrowsingDataRetentionChanged")
 }
 
-// MARK: - Environment Key
-private struct SumiSettingsServiceKey: @MainActor EnvironmentKey {
-    static var defaultValue: SumiSettingsService {
-        // SwiftUI's EnvironmentKey.defaultValue witness is synchronous and
-        // nonisolated even though all app access to this key is UI/main-actor
-        // bound. Keep the fallback construction on the main actor without
-        // making SumiSettingsService Sendable or eager.
-        MainActor.assumeIsolated {
-            SumiSettingsService()
-        }
-    }
+@MainActor
+private final class SumiUnavailableNowPlayingController: SumiNativeNowPlayingFeatureControlling {
+    func setFeatureEnabled(_ enabled: Bool) {}
 }
 
+@MainActor
+private final class SumiUnavailableEnergySaverSystemMonitor: SumiEnergySaverSystemMonitoring {
+    let snapshot = SumiEnergySaverSystemSnapshot(
+        batteryPercentage: nil,
+        isUsingBatteryPower: false,
+        isLowPowerModeEnabled: false,
+        thermalState: .nominal
+    )
+
+    func addObserver(
+        _ observer: @escaping @MainActor (SumiEnergySaverSystemSnapshot) -> Void
+    ) -> UUID {
+        UUID()
+    }
+
+    func removeObserver(_ token: UUID) {}
+}
+
+// MARK: - Environment Key
 extension EnvironmentValues {
-    @MainActor
-    var sumiSettings: SumiSettingsService {
-        get { self[SumiSettingsServiceKey.self] }
-        set { self[SumiSettingsServiceKey.self] = newValue }
+    @Entry var sumiSettings = defaultSumiSettings
+
+    private static let defaultSumiSettings = MainActor.assumeIsolated {
+        SumiSettingsService.unavailable
     }
 }

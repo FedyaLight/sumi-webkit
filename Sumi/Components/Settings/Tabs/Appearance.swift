@@ -25,6 +25,7 @@ struct SettingsAppearanceTab: View {
                     Toggle("", isOn: boostsModuleEnabledBinding)
                         .labelsHidden()
                         .toggleStyle(.switch)
+                        .disabled(boostsModule == nil)
                 }
 
                 SettingsDivider()
@@ -118,16 +119,17 @@ struct SettingsAppearanceTab: View {
             }
         }
         .onAppear {
-            cachedBoostsModuleEnabled = boostsModule.isEnabled
+            cachedBoostsModuleEnabled = boostsModule?.isEnabled
         }
     }
 
     private var boostsModuleEnabledBinding: Binding<Bool> {
         Binding(
             get: {
-                cachedBoostsModuleEnabled ?? boostsModule.isEnabled
+                cachedBoostsModuleEnabled ?? boostsModule?.isEnabled ?? false
             },
             set: { isEnabled in
+                guard let boostsModule else { return }
                 boostsModule.setEnabled(isEnabled)
                 cachedBoostsModuleEnabled = isEnabled
             }

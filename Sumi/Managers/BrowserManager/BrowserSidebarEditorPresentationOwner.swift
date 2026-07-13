@@ -3,7 +3,7 @@ import Foundation
 @MainActor
 final class BrowserSidebarEditorPresentationOwner {
     private let sidebarPosition: @MainActor () -> SidebarPosition
-    private let settings: @MainActor () -> SumiSettingsService
+    private let settings: @MainActor () -> SumiSettingsService?
     private let profiles: @MainActor () -> [Profile]
     private let windowRegistry: @MainActor () -> WindowRegistry?
     private let renameSpace: @MainActor (UUID, String) throws -> Void
@@ -19,7 +19,7 @@ final class BrowserSidebarEditorPresentationOwner {
 
     init(
         sidebarPosition: @escaping @MainActor () -> SidebarPosition,
-        settings: @escaping @MainActor () -> SumiSettingsService,
+        settings: @escaping @MainActor () -> SumiSettingsService?,
         profiles: @escaping @MainActor () -> [Profile],
         windowRegistry: @escaping @MainActor () -> WindowRegistry?,
         sidebarHostRecoveryCoordinator: @escaping @MainActor () -> SidebarHostRecoveryHandling,
@@ -74,6 +74,7 @@ final class BrowserSidebarEditorPresentationOwner {
         themeContext: ResolvedThemeContext,
         source: SidebarTransientPresentationSource
     ) {
+        guard let settings = settings() else { return }
         syncPresenterRegistries()
         spaceEditorPopoverPresenter.present(
             space: space,
@@ -82,7 +83,7 @@ final class BrowserSidebarEditorPresentationOwner {
             presentationContext: SpaceEditorPopoverPresentationContext(
                 sidebarPosition: sidebarPosition(),
                 profiles: profiles(),
-                settings: settings(),
+                settings: settings,
                 commit: { [weak self] session in
                     self?.commitSpaceEditorSession(session)
                 }
@@ -97,6 +98,7 @@ final class BrowserSidebarEditorPresentationOwner {
         themeContext: ResolvedThemeContext,
         source: SidebarTransientPresentationSource
     ) {
+        guard let settings = settings() else { return }
         syncPresenterRegistries()
         folderEditorPopoverPresenter.present(
             folder: folder,
@@ -104,7 +106,7 @@ final class BrowserSidebarEditorPresentationOwner {
             themeContext: themeContext,
             presentationContext: FolderEditorPopoverPresentationContext(
                 sidebarPosition: sidebarPosition(),
-                settings: settings(),
+                settings: settings,
                 commit: { [weak self] session in
                     self?.commitFolderEditorSession(session)
                 }
@@ -119,6 +121,7 @@ final class BrowserSidebarEditorPresentationOwner {
         themeContext: ResolvedThemeContext,
         source: SidebarTransientPresentationSource
     ) {
+        guard let settings = settings() else { return }
         syncPresenterRegistries()
         folderSearchPopoverPresenter.present(
             request: request,
@@ -126,7 +129,7 @@ final class BrowserSidebarEditorPresentationOwner {
             themeContext: themeContext,
             presentationContext: FolderSearchPopoverPresentationContext(
                 sidebarPosition: sidebarPosition(),
-                settings: settings()
+                settings: settings
             ),
             source: source
         )
@@ -151,6 +154,7 @@ final class BrowserSidebarEditorPresentationOwner {
         themeContext: ResolvedThemeContext,
         source: SidebarTransientPresentationSource
     ) {
+        guard let settings = settings() else { return }
         syncPresenterRegistries()
         shortcutEditorPopoverPresenter.present(
             pin: pin,
@@ -158,7 +162,7 @@ final class BrowserSidebarEditorPresentationOwner {
             themeContext: themeContext,
             presentationContext: ShortcutEditorPopoverPresentationContext(
                 sidebarPosition: sidebarPosition(),
-                settings: settings(),
+                settings: settings,
                 commit: { [weak self] session in
                     self?.commitShortcutEditorSession(session)
                 }

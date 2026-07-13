@@ -64,7 +64,7 @@ extension XCTestCase {
         context: ModelContext,
         initialProfile: Profile?,
         browserConfiguration: BrowserConfiguration? = nil,
-        moduleRegistry: SumiModuleRegistry = .shared,
+        moduleRegistry: SumiModuleRegistry = .unavailable(),
         extensionPreferences: UserDefaults? = nil
     ) -> ExtensionManager {
         let manager = ExtensionManager(

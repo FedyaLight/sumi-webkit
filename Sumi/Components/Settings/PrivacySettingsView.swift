@@ -40,9 +40,17 @@ struct PrivacySettingsView: View {
                         }
                     }
 
-                    AdblockProtectionSettingsView(
-                        coordinator: protectionCoordinator
-                    )
+                    if let protectionCoordinator {
+                        AdblockProtectionSettingsView(
+                            coordinator: protectionCoordinator
+                        )
+                    } else {
+                        SettingsSection(title: "Adblock & Protection") {
+                            Text("Protection settings are unavailable outside the browser runtime.")
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
 
                     GlobalPrivacyControlSettingsView(isGPCEnabled: $settings.isGPCEnabled)
 

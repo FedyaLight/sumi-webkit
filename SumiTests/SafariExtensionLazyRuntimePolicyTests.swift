@@ -22,9 +22,8 @@ final class SafariExtensionLazyRuntimePolicyTests: XCTestCase {
     func testDetachedDelegateModuleStateUsesInjectedRegistry() throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Scoped Delegate")
-        let sharedEnabled = SumiModuleRegistry.shared.isEnabled(.extensions)
         let registry = makeScopedModuleRegistry()
-        registry.setEnabled(!sharedEnabled, for: .extensions)
+        registry.enable(.extensions)
 
         let manager = ExtensionManager(
             context: container.mainContext,
@@ -34,14 +33,13 @@ final class SafariExtensionLazyRuntimePolicyTests: XCTestCase {
 
         XCTAssertEqual(
             manager.nativeMessagingRelayOwner.extensionsModuleEnabledForCallbacks,
-            !sharedEnabled
+            true
         )
     }
 
     func testExtensionsModuleDefaultFactoryPassesScopedRegistryToManager() throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Scoped Module")
-        let sharedEnabled = SumiModuleRegistry.shared.isEnabled(.extensions)
         let registry = makeScopedModuleRegistry()
         registry.enable(.extensions)
         let module = SumiExtensionsModule(
@@ -51,11 +49,11 @@ final class SafariExtensionLazyRuntimePolicyTests: XCTestCase {
         )
 
         let manager = try XCTUnwrap(module.managerIfEnabled())
-        registry.setEnabled(!sharedEnabled, for: .extensions)
+        registry.disable(.extensions)
 
         XCTAssertEqual(
             manager.nativeMessagingRelayOwner.extensionsModuleEnabledForCallbacks,
-            !sharedEnabled
+            false
         )
     }
 

@@ -20,7 +20,7 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
         weak var view: NSView?
         weak var windowState: BrowserWindowState?
         let browserContext: URLBarHubBrowserContext
-        weak var settings: SumiSettingsService?
+        let settings: SumiSettingsService
         let windowRegistry: WindowRegistry
         var themeContext: ResolvedThemeContext
         var currentTab: Tab?
@@ -341,7 +341,7 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
             browserContext: browserContext,
             windowState: registration.windowState,
             windowRegistry: registration.windowRegistry,
-            settings: registration.settings ?? SumiSettingsService(),
+            settings: registration.settings,
             themeContext: popoverThemeContext(for: registration, colorScheme: colorScheme),
             colorScheme: colorScheme,
             currentTab: registration.currentTab,

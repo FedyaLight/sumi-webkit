@@ -47,8 +47,12 @@ struct SumiApp: App {
         let updaterService = SumiUpdaterService()
         let defaultBrowserService = SumiDefaultBrowserService()
         let webViewSessions = WebViewSessionRepository()
+        let moduleRegistry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: .standard)
+        )
         let browserManager = BrowserManager(
             webViewSessions: webViewSessions,
+            moduleRegistry: moduleRegistry,
             startupPersistence: SumiStartupPersistenceComposition.browserManagerStartupPersistence,
             browserConfiguration: BrowserConfiguration.shared,
             nowPlayingController: nowPlayingController,

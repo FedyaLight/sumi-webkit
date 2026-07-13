@@ -52,8 +52,6 @@ enum BrowserCompositionRoot {
                     userDefaults: moduleRegistry.userDefaults
                 )
             )
-        SumiProtectionCoordinator.bindShared(resolvedProtection)
-
         return AssembledModules(
             adBlockingModule: resolvedAdBlocking,
             protectionCoordinator: resolvedProtection,

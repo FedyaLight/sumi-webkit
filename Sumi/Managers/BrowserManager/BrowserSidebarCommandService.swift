@@ -65,7 +65,7 @@ final class BrowserSidebarCommandService {
                 browserManager?.sumiSettings?.sidebarPosition ?? .left
             },
             settings: { [weak browserManager] in
-                browserManager?.sumiSettings ?? SumiSettingsService()
+                browserManager?.sumiSettings
             },
             profiles: { [weak browserManager] in
                 browserManager?.profileManager.profiles ?? []

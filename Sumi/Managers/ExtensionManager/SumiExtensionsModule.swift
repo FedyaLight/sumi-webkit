@@ -80,7 +80,7 @@ final class SumiExtensionsModule {
     }()
 
     init(
-        moduleRegistry: SumiModuleRegistry = .shared,
+        moduleRegistry: SumiModuleRegistry = .unavailable(),
         context: ModelContext? = nil,
         browserConfiguration: BrowserConfiguration? = nil,
         initialProfileProvider: @escaping @MainActor () -> Profile? = { nil },

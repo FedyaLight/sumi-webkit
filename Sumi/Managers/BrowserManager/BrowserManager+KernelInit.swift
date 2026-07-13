@@ -12,7 +12,7 @@ import SumiWebRuntime
 extension BrowserManager {
     convenience init(
         webViewSessions: WebViewSessionRepository,
-        moduleRegistry: SumiModuleRegistry = .shared,
+        moduleRegistry: SumiModuleRegistry = .unavailable(),
         startupPersistence: BrowserManagerStartupPersistence = .production,
         windowSessionSnapshotStore: WindowSessionSnapshotStore = WindowSessionSnapshotStore(
             key: BrowserManager.lastWindowSessionKey

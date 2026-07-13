@@ -3,6 +3,32 @@ import XCTest
 
 final class WorkspaceThemePickerPopoverPresenterTests: XCTestCase {
     @MainActor
+    func testUnavailableRuntimeFinalizesWithoutPresentingPopover() {
+        let presenter = WorkspaceThemePickerPopoverPresenter()
+        let windowState = BrowserWindowState()
+        let session = WorkspaceThemePickerSession(
+            spaceId: UUID(),
+            hostWindowID: windowState.id,
+            originalTheme: .default
+        )
+        var finalizedSessionID: UUID?
+
+        presenter.present(
+            session,
+            in: windowState,
+            runtime: WorkspaceThemePickerPopoverRuntime(
+                settings: { nil },
+                previewDraft: { _ in },
+                finalizeDismiss: { finalizedSessionID = $0.id }
+            )
+        )
+
+        XCTAssertFalse(presenter.hasActiveSession)
+        XCTAssertFalse(session.commitsOnDismiss)
+        XCTAssertEqual(finalizedSessionID, session.id)
+    }
+
+    @MainActor
     func testContentSizeMatchesCurrentThemePickerPanel() {
         XCTAssertEqual(
             WorkspaceThemePickerPopoverPresenter.Metrics.contentSize.width,

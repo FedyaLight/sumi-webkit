@@ -5,16 +5,6 @@ import OSLog
 
 @MainActor
 final class SumiProtectionCoordinator {
-    /// Process-scoped settings/env fallback. Must be bound to BrowserManager's
-    /// coordinator via `bindShared` — never constructs its own ad-blocking runtime.
-    private(set) static var shared: SumiProtectionCoordinator!
-
-    /// Installs the BrowserManager-owned coordinator as the process SoT for
-    /// EnvironmentKey / settings fallbacks. Idempotent for the same instance.
-    static func bindShared(_ coordinator: SumiProtectionCoordinator) {
-        shared = coordinator
-    }
-
     let settings: SumiProtectionSettings
     private let adBlockingModule: SumiAdBlockingModule
     private let attachmentService: ProtectionAttachmentService

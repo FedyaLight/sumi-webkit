@@ -1,3 +1,4 @@
+import SwiftUI
 import XCTest
 
 @testable import Sumi
@@ -23,6 +24,31 @@ final class SettingsModuleToggleTests: XCTestCase {
             model.setEnabled(false)
             XCTAssertFalse(registry.isEnabled(descriptor.moduleID))
         }
+    }
+
+    @MainActor
+    func testRuntimeEnvironmentDefaultsDoNotConstructLiveAuthorities() {
+        let environment = EnvironmentValues()
+
+        XCTAssertNil(environment.sumiModuleRegistry)
+        XCTAssertNil(environment.sumiProtectionCoordinator)
+        XCTAssertNil(environment.sumiExtensionsModule)
+        XCTAssertNil(environment.sumiBoostsModule)
+        XCTAssertEqual(environment.sumiSettings.availability, .unavailable)
+    }
+
+    @MainActor
+    func testUnavailableModuleRegistryRemainsDisabledAndDoesNotPersistMutations() {
+        let registry = SumiModuleRegistry.unavailable()
+
+        registry.enable(.extensions)
+
+        XCTAssertFalse(registry.isEnabled(.extensions))
+        XCTAssertNil(
+            registry.userDefaults.object(
+                forKey: "settings.modules.extensions.enabled"
+            )
+        )
     }
 
     private var moduleToggleDescriptors: [SumiSettingsModuleToggleDescriptor] {

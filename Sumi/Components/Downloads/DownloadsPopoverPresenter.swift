@@ -27,7 +27,7 @@ final class DownloadsPopoverPresenter: NSObject, NSPopoverDelegate {
         weak var view: NSView?
         weak var windowState: BrowserWindowState?
         weak var downloadManager: DownloadManager?
-        weak var settings: SumiSettingsService?
+        let settings: SumiSettingsService
         var themeContext: ResolvedThemeContext
 
         init(
@@ -297,11 +297,10 @@ final class DownloadsPopoverPresenter: NSObject, NSPopoverDelegate {
         downloadManager: DownloadManager,
         contentSize: NSSize
     ) -> AnyView {
-        let settings = registration.settings ?? SumiSettingsService()
         let colorScheme = popoverColorScheme(for: registration)
         return AnyView(
             DownloadsPopoverView(downloadManager: downloadManager)
-                .environment(\.sumiSettings, settings)
+                .environment(\.sumiSettings, registration.settings)
                 .sumiNativeSurfaceColorScheme(
                     colorScheme,
                     themeContext: popoverThemeContext(for: registration, colorScheme: colorScheme)

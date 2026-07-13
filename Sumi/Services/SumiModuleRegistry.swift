@@ -12,11 +12,9 @@ enum SumiModuleID: String, CaseIterable, Codable, Hashable, Identifiable, Sendab
 
 @MainActor
 final class SumiModuleSettingsStore {
-    static let standard = SumiModuleSettingsStore(userDefaults: .standard)
-
     let userDefaults: UserDefaults
 
-    init(userDefaults: UserDefaults = .standard) {
+    init(userDefaults: UserDefaults) {
         self.userDefaults = userDefaults
     }
 
@@ -35,23 +33,44 @@ final class SumiModuleSettingsStore {
 
 @MainActor
 final class SumiModuleRegistry {
-    static let shared = SumiModuleRegistry()
+    enum Availability: Equatable {
+        case available
+        case unavailable
+    }
 
     private let settingsStore: SumiModuleSettingsStore
+    private let availability: Availability
 
     var userDefaults: UserDefaults {
         settingsStore.userDefaults
     }
 
-    init(settingsStore: SumiModuleSettingsStore = .standard) {
+    init(
+        settingsStore: SumiModuleSettingsStore,
+        availability: Availability = .available
+    ) {
         self.settingsStore = settingsStore
+        self.availability = availability
+    }
+
+    static func unavailable() -> SumiModuleRegistry {
+        SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(
+                userDefaults: UserDefaults(
+                    suiteName: "Sumi.UnavailableModules.\(UUID().uuidString)"
+                )!
+            ),
+            availability: .unavailable
+        )
     }
 
     func isEnabled(_ moduleID: SumiModuleID) -> Bool {
-        settingsStore.isEnabled(moduleID)
+        guard availability == .available else { return false }
+        return settingsStore.isEnabled(moduleID)
     }
 
     func setEnabled(_ isEnabled: Bool, for moduleID: SumiModuleID) {
+        guard availability == .available else { return }
         settingsStore.setEnabled(isEnabled, for: moduleID)
     }
 

@@ -1,49 +1,10 @@
 import SwiftUI
 
-private struct SumiModuleRegistryEnvironmentKey: EnvironmentKey {
-    static let defaultValue = MainActor.assumeIsolated { SumiModuleRegistry.shared }
-}
-
-private struct SumiProtectionCoordinatorEnvironmentKey: EnvironmentKey {
-    static let defaultValue: SumiProtectionCoordinator = MainActor.assumeIsolated {
-        // Bound via `SumiProtectionCoordinator.bindShared` before UI reads this key.
-        SumiProtectionCoordinator.shared!
-    }
-}
-
-private struct SumiExtensionsModuleEnvironmentKey: EnvironmentKey {
-    static let defaultValue = MainActor.assumeIsolated { SumiExtensionsModule() }
-}
-
-private struct SumiBoostsModuleEnvironmentKey: EnvironmentKey {
-    static let defaultValue = MainActor.assumeIsolated {
-        SumiBoostsModule(
-            moduleRegistry: .shared,
-            storeFactory: { SumiBoostStore() }
-        )
-    }
-}
-
 extension EnvironmentValues {
-    var sumiModuleRegistry: SumiModuleRegistry {
-        get { self[SumiModuleRegistryEnvironmentKey.self] }
-        set { self[SumiModuleRegistryEnvironmentKey.self] = newValue }
-    }
-
-    var sumiProtectionCoordinator: SumiProtectionCoordinator {
-        get { self[SumiProtectionCoordinatorEnvironmentKey.self] }
-        set { self[SumiProtectionCoordinatorEnvironmentKey.self] = newValue }
-    }
-
-    var sumiExtensionsModule: SumiExtensionsModule {
-        get { self[SumiExtensionsModuleEnvironmentKey.self] }
-        set { self[SumiExtensionsModuleEnvironmentKey.self] = newValue }
-    }
-
-    var sumiBoostsModule: SumiBoostsModule {
-        get { self[SumiBoostsModuleEnvironmentKey.self] }
-        set { self[SumiBoostsModuleEnvironmentKey.self] = newValue }
-    }
+    @Entry var sumiModuleRegistry: SumiModuleRegistry?
+    @Entry var sumiProtectionCoordinator: SumiProtectionCoordinator?
+    @Entry var sumiExtensionsModule: SumiExtensionsModule?
+    @Entry var sumiBoostsModule: SumiBoostsModule?
 }
 
 struct SumiSettingsModuleToggleDescriptor: Identifiable, Equatable {
@@ -99,25 +60,28 @@ struct SumiSettingsModuleToggleGate<EnabledContent: View>: View {
                 descriptor: descriptor,
                 isEnabled: isEnabledBinding
             )
+            .disabled(injectedIsEnabled == nil)
 
             if effectiveIsEnabled {
                 enabledContent()
             }
         }
         .onAppear {
-            cachedIsEnabled = model.isEnabled
+            cachedIsEnabled = injectedIsEnabled
         }
     }
 
-    private var model: SumiSettingsModuleToggleModel {
-        SumiSettingsModuleToggleModel(
-            descriptor: descriptor,
-            registry: moduleRegistry
-        )
+    private var injectedIsEnabled: Bool? {
+        if descriptor.moduleID == .extensions {
+            return extensionsModule?.isEnabled
+        }
+        return moduleRegistry.map {
+            SumiSettingsModuleToggleModel(descriptor: descriptor, registry: $0).isEnabled
+        }
     }
 
     private var effectiveIsEnabled: Bool {
-        cachedIsEnabled ?? model.isEnabled
+        cachedIsEnabled ?? injectedIsEnabled ?? false
     }
 
     private var isEnabledBinding: Binding<Bool> {
@@ -132,9 +96,12 @@ struct SumiSettingsModuleToggleGate<EnabledContent: View>: View {
 
     private func setModuleEnabled(_ isEnabled: Bool) {
         if descriptor.moduleID == .extensions {
-            extensionsModule.setEnabled(isEnabled)
-        } else {
-            model.setEnabled(isEnabled)
+            extensionsModule?.setEnabled(isEnabled)
+        } else if let moduleRegistry {
+            SumiSettingsModuleToggleModel(
+                descriptor: descriptor,
+                registry: moduleRegistry
+            ).setEnabled(isEnabled)
         }
     }
 }

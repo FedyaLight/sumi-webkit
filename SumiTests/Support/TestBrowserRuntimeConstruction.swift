@@ -19,7 +19,7 @@ extension BrowserManager {
     }
 
     convenience init(
-        moduleRegistry: SumiModuleRegistry = .shared,
+        moduleRegistry: SumiModuleRegistry = .unavailable(),
         startupPersistence: BrowserManagerStartupPersistence = .production,
         windowSessionSnapshotStore: WindowSessionSnapshotStore = WindowSessionSnapshotStore(
             key: BrowserManager.lastWindowSessionKey
