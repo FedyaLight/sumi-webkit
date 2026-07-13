@@ -284,7 +284,10 @@ final class BrowserWindowChromeTests: XCTestCase {
             windowRegistry: windowRegistry
         )
 
-        windowRegistry.onWindowClose = { closedWindowIds.append($0.id) }
+        installWindowRegistryTestEventSink(
+            on: windowRegistry,
+            closeWindow: { closedWindowIds.append($0.id) }
+        )
         windowRegistry.register(windowState)
         windowRegistry.setActive(windowState)
         coordinator.attach(to: window)

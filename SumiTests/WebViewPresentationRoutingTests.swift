@@ -401,32 +401,37 @@ final class WebViewPresentationRoutingTests: XCTestCase {
     }
 
     func testNewWindowLinkCopiesSourceProfileAndSpaceBeforeOpeningTab() throws {
-        let harness = try makeRegularHarness()
-        defer { closePublishedShells(in: harness.windowRegistry) }
-        let existingWindowIDs = Set(harness.windowRegistry.windows.keys)
         let targetURL = try XCTUnwrap(URL(string: "https://target.example/window"))
-        let restoration = harness.browserManager.windowSessionBundle.restoration
+        var existingWindowIDs: Set<UUID> = []
         var observedPreparedWindow = false
         var selectedTabAtRegistration: UUID?
         var initialTabAtRegistration: Tab?
         var profileAtRegistration: UUID?
         var spaceAtRegistration: UUID?
-        harness.windowRegistry.prepareWindowRegistration = { [weak restoration] windowState in
-            if existingWindowIDs.contains(windowState.id) == false {
-                observedPreparedWindow = true
-                selectedTabAtRegistration = windowState.currentTabId
-                initialTabAtRegistration = windowState.currentTabId.flatMap {
-                    harness.browserManager.tabManager
-                        .tabCollectionMembershipOwner.tab(for: $0)
+        let harness = try makeRegularHarness { browserManager, windowRegistry in
+            existingWindowIDs = Set(windowRegistry.windows.keys)
+            let restoration = browserManager.windowSessionBundle.restoration
+            installWindowRegistryTestEventSink(
+                on: windowRegistry,
+                prepareWindowRegistration: { [weak restoration] windowState in
+                    if existingWindowIDs.contains(windowState.id) == false {
+                        observedPreparedWindow = true
+                        selectedTabAtRegistration = windowState.currentTabId
+                        initialTabAtRegistration = windowState.currentTabId.flatMap {
+                            browserManager.tabManager
+                                .tabCollectionMembershipOwner.tab(for: $0)
+                        }
+                        profileAtRegistration = windowState.currentProfileId
+                        spaceAtRegistration = windowState.currentSpaceId
+                    }
+                    restoration?.prepareRegistration(windowState)
+                },
+                publishWindowRegistration: { [weak restoration] windowState in
+                    restoration?.commitRegistration(windowState)
                 }
-                profileAtRegistration = windowState.currentProfileId
-                spaceAtRegistration = windowState.currentSpaceId
-            }
-            restoration?.prepareRegistration(windowState)
+            )
         }
-        harness.windowRegistry.publishWindowRegistration = { [weak restoration] windowState in
-            restoration?.commitRegistration(windowState)
-        }
+        defer { closePublishedShells(in: harness.windowRegistry) }
 
         XCTAssertTrue(harness.sourceTab.linkPresentationCommands.open(
             targetURL,
@@ -493,10 +498,6 @@ final class WebViewPresentationRoutingTests: XCTestCase {
         sourceWindow.tabManager = browserManager.tabManager
         windowRegistry.register(sourceWindow)
         windowRegistry.setActive(sourceWindow)
-        installRegistrationRestoration(
-            from: browserManager,
-            on: windowRegistry
-        )
 
         let sourceTab = browserManager.tabLifecycleService.opening.openNewTab(
             url: "https://private-source.example",
@@ -512,18 +513,21 @@ final class WebViewPresentationRoutingTests: XCTestCase {
         let restoration = browserManager.windowSessionBundle.restoration
         var initialTabAtRegistration: Tab?
         var profileAtRegistration: Profile?
-        windowRegistry.prepareWindowRegistration = { [weak restoration] window in
-            if existingWindowIDs.contains(window.id) == false {
-                initialTabAtRegistration = window.ephemeralTabs.first {
-                    $0.id == window.currentTabId
+        installWindowRegistryTestEventSink(
+            on: windowRegistry,
+            prepareWindowRegistration: { [weak restoration] window in
+                if existingWindowIDs.contains(window.id) == false {
+                    initialTabAtRegistration = window.ephemeralTabs.first {
+                        $0.id == window.currentTabId
+                    }
+                    profileAtRegistration = window.ephemeralProfile
                 }
-                profileAtRegistration = window.ephemeralProfile
+                restoration?.prepareRegistration(window)
+            },
+            publishWindowRegistration: { [weak restoration] window in
+                restoration?.commitRegistration(window)
             }
-            restoration?.prepareRegistration(window)
-        }
-        windowRegistry.publishWindowRegistration = { [weak restoration] window in
-            restoration?.commitRegistration(window)
-        }
+        )
 
         let sourceConfiguration = WKWebViewConfiguration()
         sourceConfiguration.websiteDataStore = sourceProfile.dataStore
@@ -588,9 +592,32 @@ final class WebViewPresentationRoutingTests: XCTestCase {
 
     func testWebKitChildWindowPublishesExactTrackedChildBeforeRegistration()
         throws {
-        let harness = try makeRegularHarness()
+        var existingWindowIDs: Set<UUID> = []
+        var selectedAtRegistration: UUID?
+        var trackedAtRegistration: WKWebView?
+        let harness = try makeRegularHarness { browserManager, windowRegistry in
+            existingWindowIDs = Set(windowRegistry.windows.keys)
+            let restoration = browserManager.windowSessionBundle.restoration
+            installWindowRegistryTestEventSink(
+                on: windowRegistry,
+                prepareWindowRegistration: { [weak restoration] window in
+                    if existingWindowIDs.contains(window.id) == false,
+                       let tabID = window.currentTabId {
+                        selectedAtRegistration = tabID
+                        trackedAtRegistration = browserManager
+                            .testWebViewRuntime().ownershipQuery.webView(
+                                for: tabID,
+                                in: window.id
+                            )
+                    }
+                    restoration?.prepareRegistration(window)
+                },
+                publishWindowRegistration: { [weak restoration] window in
+                    restoration?.commitRegistration(window)
+                }
+            )
+        }
         defer { closePublishedShells(in: harness.windowRegistry) }
-        let existingWindowIDs = Set(harness.windowRegistry.windows.keys)
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = harness.sourceProfile.dataStore
         configuration.userContentController.addUserScript(
@@ -603,24 +630,6 @@ final class WebViewPresentationRoutingTests: XCTestCase {
         let targetURL = try XCTUnwrap(
             URL(string: "https://target.example/webkit-child")
         )
-        let restoration = harness.browserManager.windowSessionBundle.restoration
-        var selectedAtRegistration: UUID?
-        var trackedAtRegistration: WKWebView?
-        harness.windowRegistry.prepareWindowRegistration = { [weak restoration] window in
-            if existingWindowIDs.contains(window.id) == false,
-               let tabID = window.currentTabId {
-                selectedAtRegistration = tabID
-                trackedAtRegistration = harness.browserManager
-                    .testWebViewRuntime().ownershipQuery.webView(
-                        for: tabID,
-                        in: window.id
-                    )
-            }
-            restoration?.prepareRegistration(window)
-        }
-        harness.windowRegistry.publishWindowRegistration = { [weak restoration] window in
-            restoration?.commitRegistration(window)
-        }
 
         let childWebView = harness.sourceTab.navigationRuntime
             .webKitChildWindowOpening?.open(
@@ -735,23 +744,31 @@ final class WebViewPresentationRoutingTests: XCTestCase {
 
     func testExtensionWebKitChildWindowPublishesRegistryThenWindowThenExactTab()
         throws {
-        let harness = try makeRegularHarness()
-        defer { closePublishedShells(in: harness.windowRegistry) }
         let events = ChildWindowPublicationEvents()
-        let probe = ChildWindowExtensionPublicationProbe(
-            registry: harness.windowRegistry,
-            events: events,
-            preparation: .prepared
-        )
-        let publication = WindowExtensionPublicationTransaction(
-            preparation: probe,
-            publication: probe
-        )
-        installExtensionPublication(
-            publication,
-            events: events,
-            in: harness
-        )
+        var capturedProbe: ChildWindowExtensionPublicationProbe?
+        var capturedPublication: WindowExtensionPublicationTransaction?
+        let harness = try makeRegularHarness { browserManager, windowRegistry in
+            let probe = ChildWindowExtensionPublicationProbe(
+                registry: windowRegistry,
+                events: events,
+                preparation: .prepared
+            )
+            let publication = WindowExtensionPublicationTransaction(
+                preparation: probe,
+                publication: probe
+            )
+            capturedProbe = probe
+            capturedPublication = publication
+            self.installExtensionPublication(
+                publication,
+                events: events,
+                browserManager: browserManager,
+                windowRegistry: windowRegistry
+            )
+        }
+        defer { closePublishedShells(in: harness.windowRegistry) }
+        let probe = try XCTUnwrap(capturedProbe)
+        let publication = try XCTUnwrap(capturedPublication)
         let opening = makeChildWindowOpening(
             for: harness,
             extensionPublication: publication
@@ -781,26 +798,31 @@ final class WebViewPresentationRoutingTests: XCTestCase {
 
     func testExtensionWebKitChildWindowRejectsSuppressedProjectionAndRollsBack()
         throws {
-        let harness = try makeRegularHarness()
+        let events = ChildWindowPublicationEvents()
+        var capturedPublication: WindowExtensionPublicationTransaction?
+        let harness = try makeRegularHarness { browserManager, windowRegistry in
+            let probe = ChildWindowExtensionPublicationProbe(
+                registry: windowRegistry,
+                events: events,
+                preparation: .suppressed
+            )
+            let publication = WindowExtensionPublicationTransaction(
+                preparation: probe,
+                publication: probe
+            )
+            capturedPublication = publication
+            self.installExtensionPublication(
+                publication,
+                events: events,
+                browserManager: browserManager,
+                windowRegistry: windowRegistry
+            )
+        }
         defer { closePublishedShells(in: harness.windowRegistry) }
         let sourceShell = bindSourceShell(in: harness)
         let initialWindowIDs = Set(harness.windowRegistry.windows.keys)
         let initialTabIDs = regularTabIDs(in: harness)
-        let events = ChildWindowPublicationEvents()
-        let probe = ChildWindowExtensionPublicationProbe(
-            registry: harness.windowRegistry,
-            events: events,
-            preparation: .suppressed
-        )
-        let publication = WindowExtensionPublicationTransaction(
-            preparation: probe,
-            publication: probe
-        )
-        installExtensionPublication(
-            publication,
-            events: events,
-            in: harness
-        )
+        let publication = try XCTUnwrap(capturedPublication)
         let opening = makeChildWindowOpening(
             for: harness,
             extensionPublication: publication
@@ -830,24 +852,32 @@ final class WebViewPresentationRoutingTests: XCTestCase {
 
     func testOrdinaryWebKitChildWindowAllowsSuppressedExtensionProjection()
         throws {
-        let harness = try makeRegularHarness()
+        let events = ChildWindowPublicationEvents()
+        var capturedProbe: ChildWindowExtensionPublicationProbe?
+        var capturedPublication: WindowExtensionPublicationTransaction?
+        let harness = try makeRegularHarness { browserManager, windowRegistry in
+            let probe = ChildWindowExtensionPublicationProbe(
+                registry: windowRegistry,
+                events: events,
+                preparation: .suppressed
+            )
+            let publication = WindowExtensionPublicationTransaction(
+                preparation: probe,
+                publication: probe
+            )
+            capturedProbe = probe
+            capturedPublication = publication
+            self.installExtensionPublication(
+                publication,
+                events: events,
+                browserManager: browserManager,
+                windowRegistry: windowRegistry
+            )
+        }
         defer { closePublishedShells(in: harness.windowRegistry) }
         let initialWindowIDs = Set(harness.windowRegistry.windows.keys)
-        let events = ChildWindowPublicationEvents()
-        let probe = ChildWindowExtensionPublicationProbe(
-            registry: harness.windowRegistry,
-            events: events,
-            preparation: .suppressed
-        )
-        let publication = WindowExtensionPublicationTransaction(
-            preparation: probe,
-            publication: probe
-        )
-        installExtensionPublication(
-            publication,
-            events: events,
-            in: harness
-        )
+        let probe = try XCTUnwrap(capturedProbe)
+        let publication = try XCTUnwrap(capturedPublication)
         let opening = makeChildWindowOpening(
             for: harness,
             extensionPublication: publication
@@ -973,7 +1003,9 @@ final class WebViewPresentationRoutingTests: XCTestCase {
         )
     }
 
-    private func makeRegularHarness() throws -> RegularHarness {
+    private func makeRegularHarness(
+        installEventSink: ((BrowserManager, WindowRegistry) -> Void)? = nil
+    ) throws -> RegularHarness {
         let browserManager = try makeBrowserManager()
         let windowRegistry = WindowRegistry()
         let sourceProfile = Profile(name: "Source Profile")
@@ -1007,10 +1039,14 @@ final class WebViewPresentationRoutingTests: XCTestCase {
         sourceWindow.currentSpaceId = sourceSpace.id
         windowRegistry.register(sourceWindow)
         windowRegistry.setActive(sourceWindow)
-        installRegistrationRestoration(
-            from: browserManager,
-            on: windowRegistry
-        )
+        if let installEventSink {
+            installEventSink(browserManager, windowRegistry)
+        } else {
+            installRegistrationRestoration(
+                from: browserManager,
+                on: windowRegistry
+            )
+        }
 
         let sourceTab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://source.example",
@@ -1110,20 +1146,22 @@ final class WebViewPresentationRoutingTests: XCTestCase {
     private func installExtensionPublication(
         _ publication: WindowExtensionPublicationTransaction,
         events: ChildWindowPublicationEvents,
-        in harness: RegularHarness
+        browserManager: BrowserManager,
+        windowRegistry: WindowRegistry
     ) {
-        let restoration = harness.browserManager.windowSessionBundle.restoration
-        harness.windowRegistry.prepareWindowRegistration = {
-            [weak restoration] window in
-            restoration?.prepareRegistration(window)
-            publication.prepareRegistration(window)
-        }
-        harness.windowRegistry.publishWindowRegistration = {
-            [weak restoration] window in
-            events.values.append("registry")
-            publication.commitRegistration(window)
-            restoration?.commitRegistration(window)
-        }
+        let restoration = browserManager.windowSessionBundle.restoration
+        installWindowRegistryTestEventSink(
+            on: windowRegistry,
+            prepareWindowRegistration: { [weak restoration] window in
+                restoration?.prepareRegistration(window)
+                publication.prepareRegistration(window)
+            },
+            publishWindowRegistration: { [weak restoration] window in
+                events.values.append("registry")
+                publication.commitRegistration(window)
+                restoration?.commitRegistration(window)
+            }
+        )
     }
 
     private func regularTabIDs(in harness: RegularHarness) -> Set<UUID> {
@@ -1146,12 +1184,15 @@ final class WebViewPresentationRoutingTests: XCTestCase {
         on windowRegistry: WindowRegistry
     ) {
         let restoration = browserManager.windowSessionBundle.restoration
-        windowRegistry.prepareWindowRegistration = { [weak restoration] windowState in
-            restoration?.prepareRegistration(windowState)
-        }
-        windowRegistry.publishWindowRegistration = { [weak restoration] windowState in
-            restoration?.commitRegistration(windowState)
-        }
+        installWindowRegistryTestEventSink(
+            on: windowRegistry,
+            prepareWindowRegistration: { [weak restoration] windowState in
+                restoration?.prepareRegistration(windowState)
+            },
+            publishWindowRegistration: { [weak restoration] windowState in
+                restoration?.commitRegistration(windowState)
+            }
+        )
     }
 
     private func webViewConfiguration(

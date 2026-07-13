@@ -12,10 +12,13 @@ final class WindowSessionReopenServiceTests: XCTestCase {
         let snapshot = archivedWindowSnapshot(profileID: UUID())
         var events: [String] = []
         var registeredProfileID: UUID?
-        windowRegistry.prepareWindowRegistration = { windowState in
-            events.append("register")
-            registeredProfileID = windowState.currentProfileId
-        }
+        installWindowRegistryTestEventSink(
+            on: windowRegistry,
+            prepareWindowRegistration: { windowState in
+                events.append("register")
+                registeredProfileID = windowState.currentProfileId
+            }
+        )
 
         let service = WindowSessionReopenService(
             windowRegistry: { windowRegistry },
@@ -170,15 +173,18 @@ final class WindowSessionReopenServiceTests: XCTestCase {
         var publishedWindowIDs: [UUID] = []
         var closedWindowIDs: [UUID] = []
         var allWindowsClosedCount = 0
-        windowRegistry.publishWindowRegistration = {
-            publishedWindowIDs.append($0.id)
-        }
-        windowRegistry.onWindowClose = {
-            closedWindowIDs.append($0.id)
-        }
-        windowRegistry.onAllWindowsClosed = {
-            allWindowsClosedCount += 1
-        }
+        installWindowRegistryTestEventSink(
+            on: windowRegistry,
+            publishWindowRegistration: {
+                publishedWindowIDs.append($0.id)
+            },
+            closeWindow: {
+                closedWindowIDs.append($0.id)
+            },
+            closeAllWindows: {
+                allWindowsClosedCount += 1
+            }
+        )
         let service = WindowSessionReopenService(
             windowRegistry: { windowRegistry },
             createRestoredWindow: { _ in
@@ -205,9 +211,10 @@ final class WindowSessionReopenServiceTests: XCTestCase {
         let provisionalWindow = BrowserWindowState()
         let snapshot = archivedWindowSnapshot()
         var closedWindowIDs: [UUID] = []
-        windowRegistry.onWindowClose = {
-            closedWindowIDs.append($0.id)
-        }
+        installWindowRegistryTestEventSink(
+            on: windowRegistry,
+            closeWindow: { closedWindowIDs.append($0.id) }
+        )
         let service = WindowSessionReopenService(
             windowRegistry: { windowRegistry },
             createRestoredWindow: { receivedSnapshot in

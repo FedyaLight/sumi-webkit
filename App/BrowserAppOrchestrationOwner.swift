@@ -18,11 +18,15 @@ final class BrowserAppOrchestrationOwner {
     private var applicationLifecycleController: BrowserApplicationLifecycleController?
     private var mouseCommandRouter: BrowserMouseCommandRouter?
     private var externalURLTabOpening: ExternalURLTabOpeningService?
+    private var windowRegistryEventSinkReceipt:
+        WindowRegistry.EventSinkInstallationReceipt?
     private var didSetup = false
 
     @discardableResult
     func setupIfNeeded(dependencies: Dependencies) -> Bool {
-        guard !didSetup else { return false }
+        guard !didSetup,
+              dependencies.windowRegistry.canInstallEventSink
+        else { return false }
         didSetup = true
 
         let appDelegate = dependencies.appDelegate
@@ -114,13 +118,19 @@ final class BrowserAppOrchestrationOwner {
             siteDataPolicy: browserManager.dataServices.siteDataPolicyEnforcementService,
             profiles: browserManager.profileManager
         )
-        BrowserWindowRegistryBinding.install(
+        let eventSinkReceipt = BrowserWindowRegistryBinding.install(
             registration: windowSession.restoration,
             closing: windowCloseWorkflow,
             activity: windowSession.activation,
             allWindowsClosed: allWindowsClosedWorkflow,
             on: windowRegistry
         )
+        precondition(
+            eventSinkReceipt.map(windowRegistry.validatesEventSinkInstallation)
+                == true,
+            "WindowRegistry event sink preflight and installation must be atomic on MainActor"
+        )
+        windowRegistryEventSinkReceipt = eventSinkReceipt
 
         Task { @MainActor [browserManager] in
             await browserManager.privacyBundle.automaticDataCleanupOwner.runAutomaticPermissionCleanupIfNeeded(

@@ -41,9 +41,12 @@ final class BrowserWindowShellServiceTests: XCTestCase {
         registry.mainAppKitWindowProvider = { nil }
         registry.bindAppKitWindow(window, to: windowState)
         XCTAssertEqual(registry.register(windowState), .registered)
-        registry.onActiveWindowChange = { activatedWindow in
-            registry.unregister(activatedWindow.id)
-        }
+        installWindowRegistryTestEventSink(
+            on: registry,
+            activateWindow: { activatedWindow in
+                registry.unregister(activatedWindow.id)
+            }
+        )
         defer { window.close() }
 
         XCTAssertFalse(
@@ -110,9 +113,13 @@ final class BrowserWindowShellServiceTests: XCTestCase {
         let service = BrowserWindowShellService()
         var factoryWindowStates: [BrowserWindowState] = []
         var registeredWindowHadNSWindow: Bool?
-        harness.windowRegistry.prepareWindowRegistration = { windowState in
-            registeredWindowHadNSWindow = harness.windowRegistry.appKitWindow(for: windowState) != nil
-        }
+        installWindowRegistryTestEventSink(
+            on: harness.windowRegistry,
+            prepareWindowRegistration: { windowState in
+                registeredWindowHadNSWindow = harness.windowRegistry
+                    .appKitWindow(for: windowState) != nil
+            }
+        )
 
         let context = BrowserWindowShellService.Context(
             windowRegistry: harness.windowRegistry,
@@ -151,31 +158,34 @@ final class BrowserWindowShellServiceTests: XCTestCase {
         var events: [String] = []
         var registeredState: BrowserWindowState?
         var activeState: BrowserWindowState?
-        harness.windowRegistry.prepareWindowRegistration = { windowState in
-            events.append("register")
-            registeredState = windowState
-            XCTAssertEqual(windowState.restoredSessionWindowId, archiveID)
-            XCTAssertEqual(windowState.currentProfileId, profileID)
-            XCTAssertTrue(windowState.isAwaitingInitialSessionResolution)
-            XCTAssertNotNil(
-                harness.windowRegistry.appKitWindow(for: windowState),
-                "The AppKit shell must be bound before registry publication"
-            )
-            windowState.isAwaitingInitialSessionResolution = false
-        }
-        harness.windowRegistry.onActiveWindowChange = { windowState in
-            events.append("active")
-            activeState = windowState
-            XCTAssertFalse(windowState.isAwaitingInitialSessionResolution)
-        }
-        harness.windowRegistry.publishWindowRegistration = { windowState in
-            events.append("publish")
-            XCTAssertIdentical(registeredState, windowState)
-            XCTAssertIdentical(
-                harness.windowRegistry.windows[windowState.id],
-                windowState
-            )
-        }
+        installWindowRegistryTestEventSink(
+            on: harness.windowRegistry,
+            prepareWindowRegistration: { windowState in
+                events.append("register")
+                registeredState = windowState
+                XCTAssertEqual(windowState.restoredSessionWindowId, archiveID)
+                XCTAssertEqual(windowState.currentProfileId, profileID)
+                XCTAssertTrue(windowState.isAwaitingInitialSessionResolution)
+                XCTAssertNotNil(
+                    harness.windowRegistry.appKitWindow(for: windowState),
+                    "The AppKit shell must be bound before registry publication"
+                )
+                windowState.isAwaitingInitialSessionResolution = false
+            },
+            publishWindowRegistration: { windowState in
+                events.append("publish")
+                XCTAssertIdentical(registeredState, windowState)
+                XCTAssertIdentical(
+                    harness.windowRegistry.windows[windowState.id],
+                    windowState
+                )
+            },
+            activateWindow: { windowState in
+                events.append("active")
+                activeState = windowState
+                XCTAssertFalse(windowState.isAwaitingInitialSessionResolution)
+            }
+        )
         let context = BrowserWindowShellService.Context(
             windowRegistry: harness.windowRegistry,
             permissionLifecycleController: harness
@@ -226,15 +236,18 @@ final class BrowserWindowShellServiceTests: XCTestCase {
         let service = BrowserWindowShellService()
         var events: [String] = []
         var preparedWindow: BrowserWindowState?
-        harness.windowRegistry.prepareWindowRegistration = { _ in
-            events.append("register")
-        }
-        harness.windowRegistry.onWindowClose = { _ in
-            XCTFail("Rejected publication is not a user-visible window close")
-        }
-        harness.windowRegistry.publishWindowRegistration = { _ in
-            XCTFail("Rejected provisional state must never be published")
-        }
+        installWindowRegistryTestEventSink(
+            on: harness.windowRegistry,
+            prepareWindowRegistration: { _ in
+                events.append("register")
+            },
+            publishWindowRegistration: { _ in
+                XCTFail("Rejected provisional state must never be published")
+            },
+            closeWindow: { _ in
+                XCTFail("Rejected publication is not a user-visible window close")
+            }
+        )
         let context = makeContext(harness: harness) { _, _ in /* No-op. */ }
 
         let result = service.createNewWindow(
@@ -271,18 +284,21 @@ final class BrowserWindowShellServiceTests: XCTestCase {
         let service = BrowserWindowShellService()
         var events: [String] = []
         var rejectedWindow: BrowserWindowState?
-        harness.windowRegistry.prepareWindowRegistration = { _ in
-            events.append("registry-prepare")
-        }
-        harness.windowRegistry.publishWindowRegistration = { _ in
-            events.append("registry-publish")
-        }
-        harness.windowRegistry.onWindowClose = { _ in
-            XCTFail("A validator-rejected registration is not a user-visible close")
-        }
-        harness.windowRegistry.onActiveWindowChange = { _ in
-            XCTFail("A validator-rejected registration must never activate")
-        }
+        installWindowRegistryTestEventSink(
+            on: harness.windowRegistry,
+            prepareWindowRegistration: { _ in
+                events.append("registry-prepare")
+            },
+            publishWindowRegistration: { _ in
+                events.append("registry-publish")
+            },
+            closeWindow: { _ in
+                XCTFail("A validator-rejected registration is not a user-visible close")
+            },
+            activateWindow: { _ in
+                XCTFail("A validator-rejected registration must never activate")
+            }
+        )
         let context = BrowserWindowShellService.Context(
             windowRegistry: harness.windowRegistry,
             permissionLifecycleController: harness
@@ -349,9 +365,12 @@ final class BrowserWindowShellServiceTests: XCTestCase {
         let harness = try makeHarness()
         let service = BrowserWindowShellService()
         var events: [String] = []
-        harness.windowRegistry.prepareWindowRegistration = { _ in
-            XCTFail("A rejected preparation must never enter WindowRegistry")
-        }
+        installWindowRegistryTestEventSink(
+            on: harness.windowRegistry,
+            prepareWindowRegistration: { _ in
+                XCTFail("A rejected preparation must never enter WindowRegistry")
+            }
+        )
         let context = BrowserWindowShellService.Context(
             windowRegistry: harness.windowRegistry,
             permissionLifecycleController: harness

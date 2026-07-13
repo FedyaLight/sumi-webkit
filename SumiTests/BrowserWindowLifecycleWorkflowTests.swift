@@ -362,12 +362,15 @@ final class BrowserWindowLifecycleWorkflowTests: XCTestCase {
         var wasAlreadyDetached = false
         var events: [String] = []
 
-        registry.onWindowClose = { closingState in
-            receivedState = closingState
-            wasAlreadyDetached = registry.windows[closingState.id] == nil
-            events.append("close")
-        }
-        registry.onAllWindowsClosed = { events.append("allClosed") }
+        installWindowRegistryTestEventSink(
+            on: registry,
+            closeWindow: { closingState in
+                receivedState = closingState
+                wasAlreadyDetached = registry.windows[closingState.id] == nil
+                events.append("close")
+            },
+            closeAllWindows: { events.append("allClosed") }
+        )
         registry.register(windowState)
 
         registry.unregister(windowState.id)

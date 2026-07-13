@@ -20,6 +20,28 @@ class WindowRegistry {
         case rejectedDuringPublication
     }
 
+    /// Immutable application lifecycle boundary installed once by the app
+    /// composition root. Event order is part of the registry contract:
+    /// prepare precedes public registration, publish precedes awaiter/focus
+    /// delivery, close observes an already-detached window, all-windows-closed
+    /// follows close, and any focused-window promotion is delivered last.
+    struct EventSink {
+        let prepareWindowRegistration: @MainActor (BrowserWindowState) -> Void
+        let publishWindowRegistration: @MainActor (BrowserWindowState) -> Void
+        let closeWindow: @MainActor (BrowserWindowState) -> Void
+        let activateWindow: @MainActor (BrowserWindowState) -> Void
+        let changeWindowVisibility: @MainActor (BrowserWindowState) -> Void
+        let closeAllWindows: @MainActor () -> Void
+    }
+
+    struct EventSinkInstallationReceipt: Equatable {
+        fileprivate let registryIdentity: ObjectIdentifier
+
+        func belongs(to registry: WindowRegistry) -> Bool {
+            registryIdentity == ObjectIdentifier(registry)
+        }
+    }
+
     private struct WindowAwaiter {
         let existingWindowIDs: Set<UUID>
         let continuation: CheckedContinuation<BrowserWindowState?, Never>
@@ -38,6 +60,12 @@ class WindowRegistry {
     @ObservationIgnored
     private var windowAwaiters: [UUID: WindowAwaiter] = [:]
 
+    @ObservationIgnored
+    private var eventSink: EventSink?
+
+    @ObservationIgnored
+    private var eventSinkInstallationReceipt: EventSinkInstallationReceipt?
+
     /// Phase 6A: AppKit NSWindow handles keyed by window id (weak). SoT for shell lookup.
     @ObservationIgnored
     private var shells: [UUID: BrowserWindowShell] = [:]
@@ -55,31 +83,34 @@ class WindowRegistry {
         return _windows[id]
     }
 
-    /// Callback for window cleanup (set by whoever needs to clean up resources)
-    @ObservationIgnored
-    var onWindowClose: ((BrowserWindowState) -> Void)?
+    var canInstallEventSink: Bool {
+        eventSink == nil
+    }
 
-    /// Callback for post-registration setup (e.g., setting TabManager reference)
-    @ObservationIgnored
-    var prepareWindowRegistration: ((BrowserWindowState) -> Void)?
+    var hasInstalledEventSink: Bool {
+        eventSink != nil
+    }
 
-    /// Callback after a prepared window has passed validation and entered the
-    /// public registry. Extension lifecycle publication belongs here, not in
-    /// the provisional restoration callback above.
-    @ObservationIgnored
-    var publishWindowRegistration: ((BrowserWindowState) -> Void)?
+    /// Installs the application lifecycle sink exactly once. A rejected second
+    /// installation cannot replace any callback and returns no authority.
+    @discardableResult
+    func installEventSink(
+        _ sink: EventSink
+    ) -> EventSinkInstallationReceipt? {
+        guard eventSink == nil else { return nil }
+        let receipt = EventSinkInstallationReceipt(
+            registryIdentity: ObjectIdentifier(self)
+        )
+        eventSink = sink
+        eventSinkInstallationReceipt = receipt
+        return receipt
+    }
 
-    /// Callback when active window changes
-    @ObservationIgnored
-    var onActiveWindowChange: ((BrowserWindowState) -> Void)?
-
-    /// Callback when an AppKit window visibility signal changes.
-    @ObservationIgnored
-    var onWindowVisibilityChange: ((BrowserWindowState) -> Void)?
-
-    /// Called after the last window is removed from the registry (e.g. to reset single global session restore).
-    @ObservationIgnored
-    var onAllWindowsClosed: (() -> Void)?
+    func validatesEventSinkInstallation(
+        _ receipt: EventSinkInstallationReceipt
+    ) -> Bool {
+        eventSinkInstallationReceipt == receipt && receipt.belongs(to: self)
+    }
 
     @ObservationIgnored
     var keyAppKitWindowProvider: () -> NSWindow? = { NSApp.keyWindow }
@@ -116,7 +147,7 @@ class WindowRegistry {
         }
 
         provisionalWindows[window.id] = window
-        prepareWindowRegistration?(window)
+        eventSink?.prepareWindowRegistration(window)
         return .registered
     }
 
@@ -136,7 +167,7 @@ class WindowRegistry {
 
         provisionalWindows.removeValue(forKey: window.id)
         _windows[window.id] = window
-        publishWindowRegistration?(window)
+        eventSink?.publishWindowRegistration(window)
         guard _windows[window.id] === window,
               validatePublication(window),
               _windows[window.id] === window
@@ -164,7 +195,7 @@ class WindowRegistry {
         }
 
         if activeWindowId == window.id {
-            onActiveWindowChange?(window)
+            eventSink?.activateWindow(window)
         }
         RuntimeDiagnostics.emit {
             "🪟 [WindowRegistry] Registered window: \(window.id)"
@@ -190,10 +221,10 @@ class WindowRegistry {
 
         // External cleanup observes the window as already detached. Reentrant
         // unregister therefore cannot duplicate close/all-windows callbacks.
-        onWindowClose?(closingWindow)
+        eventSink?.closeWindow(closingWindow)
 
         if windows.isEmpty {
-            onAllWindowsClosed?()
+            eventSink?.closeAllWindows()
         }
 
         // AppKit focus/key-window state owns active-window selection. Closing
@@ -202,7 +233,7 @@ class WindowRegistry {
         if wasActive, activeWindowId == nil {
             if let focusedWindow = focusedRegisteredWindow() {
                 activeWindowId = focusedWindow.id
-                onActiveWindowChange?(focusedWindow)
+                eventSink?.activateWindow(focusedWindow)
             }
         }
 
@@ -265,14 +296,14 @@ class WindowRegistry {
         guard activeWindowId != registeredWindow.id else { return }
 
         activeWindowId = registeredWindow.id
-        onActiveWindowChange?(registeredWindow)
+        eventSink?.activateWindow(registeredWindow)
         RuntimeDiagnostics.emit {
             "🪟 [WindowRegistry] Active window: \(registeredWindow.id)"
         }
     }
 
     func notifyWindowVisibilityChanged(_ window: BrowserWindowState) {
-        onWindowVisibilityChange?(window)
+        eventSink?.changeWindowVisibility(window)
     }
 
     private func focusedRegisteredWindow() -> BrowserWindowState? {

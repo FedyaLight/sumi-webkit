@@ -51,12 +51,19 @@ final class BrowserAppOrchestrationOwnerTests: XCTestCase {
 
         harness.owner.setupIfNeeded(dependencies: harness.dependencies)
 
-        XCTAssertNotNil(harness.windowRegistry.prepareWindowRegistration)
-        XCTAssertNotNil(harness.windowRegistry.publishWindowRegistration)
-        XCTAssertNotNil(harness.windowRegistry.onWindowClose)
-        XCTAssertNotNil(harness.windowRegistry.onActiveWindowChange)
-        XCTAssertNotNil(harness.windowRegistry.onWindowVisibilityChange)
-        XCTAssertNotNil(harness.windowRegistry.onAllWindowsClosed)
+        XCTAssertTrue(harness.windowRegistry.hasInstalledEventSink)
+    }
+
+    func testSetupRejectsPreinstalledRegistrySinkBeforeMutatingAppGraph() {
+        let harness = makeHarness()
+        installWindowRegistryTestEventSink(on: harness.windowRegistry)
+
+        XCTAssertFalse(
+            harness.owner.setupIfNeeded(dependencies: harness.dependencies)
+        )
+        XCTAssertNil(harness.appDelegate.windowRegistry)
+        XCTAssertNil(harness.browserManager.windowRegistry)
+        XCTAssertEqual(harness.startUpdaterCallCount(), 0)
     }
 
     func testSetupRestoresExistingAndFutureWindowRegistrations() {

@@ -274,12 +274,15 @@ final class ShortcutPhysicalSourceRoutingTests: XCTestCase {
         on registry: WindowRegistry
     ) {
         let restoration = browser.windowSessionBundle.restoration
-        registry.prepareWindowRegistration = { [weak restoration] window in
-            restoration?.prepareRegistration(window)
-        }
-        registry.publishWindowRegistration = { [weak restoration] window in
-            restoration?.commitRegistration(window)
-        }
+        installWindowRegistryTestEventSink(
+            on: registry,
+            prepareWindowRegistration: { [weak restoration] window in
+                restoration?.prepareRegistration(window)
+            },
+            publishWindowRegistration: { [weak restoration] window in
+                restoration?.commitRegistration(window)
+            }
+        )
     }
 
     private func closePublishedShells(in registry: WindowRegistry) {

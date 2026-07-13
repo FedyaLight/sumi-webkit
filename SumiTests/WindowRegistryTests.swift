@@ -3,11 +3,57 @@ import XCTest
 
 @MainActor
 final class WindowRegistryTests: XCTestCase {
+    func testEventSinkInstallsOnceAndDefinesLifecycleOrder() throws {
+        let registry = WindowRegistry()
+        let otherRegistry = WindowRegistry()
+        let window = BrowserWindowState()
+        var events: [String] = []
+        let firstSink = WindowRegistry.EventSink(
+            prepareWindowRegistration: { _ in events.append("prepare") },
+            publishWindowRegistration: { _ in events.append("publish") },
+            closeWindow: { _ in events.append("close") },
+            activateWindow: { _ in events.append("activate") },
+            changeWindowVisibility: { _ in events.append("visibility") },
+            closeAllWindows: { events.append("all-closed") }
+        )
+        let replacementSink = WindowRegistry.EventSink(
+            prepareWindowRegistration: { _ in events.append("replacement") },
+            publishWindowRegistration: { _ in events.append("replacement") },
+            closeWindow: { _ in events.append("replacement") },
+            activateWindow: { _ in events.append("replacement") },
+            changeWindowVisibility: { _ in events.append("replacement") },
+            closeAllWindows: { events.append("replacement") }
+        )
+
+        let receipt = try XCTUnwrap(registry.installEventSink(firstSink))
+
+        XCTAssertTrue(registry.hasInstalledEventSink)
+        XCTAssertFalse(registry.canInstallEventSink)
+        XCTAssertTrue(registry.validatesEventSinkInstallation(receipt))
+        XCTAssertTrue(receipt.belongs(to: registry))
+        XCTAssertFalse(receipt.belongs(to: otherRegistry))
+        XCTAssertNil(registry.installEventSink(replacementSink))
+
+        registry.setActive(window)
+        XCTAssertEqual(registry.register(window), .registered)
+        registry.notifyWindowVisibilityChanged(window)
+        registry.unregister(window.id)
+
+        XCTAssertEqual(
+            events,
+            ["prepare", "publish", "activate", "visibility", "close", "all-closed"]
+        )
+        XCTAssertFalse(events.contains("replacement"))
+    }
+
     func testRegisteringSameObjectTwiceIsIdempotent() {
         let registry = WindowRegistry()
         let window = BrowserWindowState()
         var registrationCount = 0
-        registry.prepareWindowRegistration = { _ in registrationCount += 1 }
+        installWindowRegistryTestEventSink(
+            on: registry,
+            prepareWindowRegistration: { _ in registrationCount += 1 }
+        )
 
         let firstResult = registry.register(window)
         let secondResult = registry.register(window)
@@ -24,7 +70,10 @@ final class WindowRegistryTests: XCTestCase {
         let registeredWindow = BrowserWindowState(id: sharedID)
         let conflictingWindow = BrowserWindowState(id: sharedID)
         var registrationCount = 0
-        registry.prepareWindowRegistration = { _ in registrationCount += 1 }
+        installWindowRegistryTestEventSink(
+            on: registry,
+            prepareWindowRegistration: { _ in registrationCount += 1 }
+        )
 
         XCTAssertEqual(registry.register(registeredWindow), .registered)
         let result = registry.register(conflictingWindow)
@@ -119,10 +168,15 @@ final class WindowRegistryTests: XCTestCase {
         let registry = WindowRegistry()
         let rejected = BrowserWindowState()
         XCTAssertEqual(registry.beginRegistration(rejected), .registered)
-        registry.publishWindowRegistration = { candidate in
-            XCTAssertIdentical(candidate, rejected)
-            registry.unregister(candidate.id)
-        }
+        var shouldRejectPublication = true
+        installWindowRegistryTestEventSink(
+            on: registry,
+            publishWindowRegistration: { candidate in
+                guard shouldRejectPublication else { return }
+                XCTAssertIdentical(candidate, rejected)
+                registry.unregister(candidate.id)
+            }
+        )
 
         let awaitedWindowTask = Task { @MainActor in
             await registry.awaitNextRegisteredWindow(
@@ -135,7 +189,7 @@ final class WindowRegistryTests: XCTestCase {
         XCTAssertFalse(registry.commitRegistration(rejected))
         XCTAssertNil(registry.windows[rejected.id])
 
-        registry.publishWindowRegistration = nil
+        shouldRejectPublication = false
         let accepted = BrowserWindowState()
         registry.register(accepted)
         let awaitedWindow = await awaitedWindowTask.value
@@ -187,8 +241,11 @@ final class WindowRegistryTests: XCTestCase {
         var closedWindowIds: [UUID] = []
         var allWindowsClosedCount = 0
 
-        registry.onWindowClose = { closedWindowIds.append($0.id) }
-        registry.onAllWindowsClosed = { allWindowsClosedCount += 1 }
+        installWindowRegistryTestEventSink(
+            on: registry,
+            closeWindow: { closedWindowIds.append($0.id) },
+            closeAllWindows: { allWindowsClosedCount += 1 }
+        )
         registry.register(window)
         registry.setActive(window)
 
@@ -207,15 +264,18 @@ final class WindowRegistryTests: XCTestCase {
         var closeCount = 0
         var allWindowsClosedCount = 0
         var didRequestReentrantClose = false
-        registry.onWindowClose = { closingWindow in
-            closeCount += 1
-            XCTAssertIdentical(closingWindow, window)
-            if didRequestReentrantClose == false {
-                didRequestReentrantClose = true
-                registry.unregister(closingWindow.id)
-            }
-        }
-        registry.onAllWindowsClosed = { allWindowsClosedCount += 1 }
+        installWindowRegistryTestEventSink(
+            on: registry,
+            closeWindow: { closingWindow in
+                closeCount += 1
+                XCTAssertIdentical(closingWindow, window)
+                if didRequestReentrantClose == false {
+                    didRequestReentrantClose = true
+                    registry.unregister(closingWindow.id)
+                }
+            },
+            closeAllWindows: { allWindowsClosedCount += 1 }
+        )
         registry.register(window)
 
         registry.unregister(window.id)
@@ -234,7 +294,10 @@ final class WindowRegistryTests: XCTestCase {
         registry.register(closingWindow)
         registry.register(survivingWindow)
         registry.setActive(closingWindow)
-        registry.onActiveWindowChange = { activatedWindowIds.append($0.id) }
+        installWindowRegistryTestEventSink(
+            on: registry,
+            activateWindow: { activatedWindowIds.append($0.id) }
+        )
 
         registry.unregister(closingWindow.id)
 
@@ -262,7 +325,10 @@ final class WindowRegistryTests: XCTestCase {
         registry.register(closingWindow)
         registry.register(survivingWindow)
         registry.setActive(closingWindow)
-        registry.onActiveWindowChange = { activatedWindowIds.append($0.id) }
+        installWindowRegistryTestEventSink(
+            on: registry,
+            activateWindow: { activatedWindowIds.append($0.id) }
+        )
 
         registry.unregister(closingWindow.id)
 
@@ -279,7 +345,10 @@ final class WindowRegistryTests: XCTestCase {
 
         registry.register(previousWindow)
         registry.setActive(previousWindow)
-        registry.onActiveWindowChange = { activatedWindowIds.append($0.id) }
+        installWindowRegistryTestEventSink(
+            on: registry,
+            activateWindow: { activatedWindowIds.append($0.id) }
+        )
 
         registry.setActive(pendingWindow)
 
@@ -298,7 +367,10 @@ final class WindowRegistryTests: XCTestCase {
         let registry = WindowRegistry()
         let window = BrowserWindowState()
         var activatedWindowIds: [UUID] = []
-        registry.onActiveWindowChange = { activatedWindowIds.append($0.id) }
+        installWindowRegistryTestEventSink(
+            on: registry,
+            activateWindow: { activatedWindowIds.append($0.id) }
+        )
 
         registry.setActive(window)
 
@@ -317,7 +389,10 @@ final class WindowRegistryTests: XCTestCase {
         let registry = WindowRegistry()
         let window = BrowserWindowState()
         var activatedWindowIds: [UUID] = []
-        registry.onActiveWindowChange = { activatedWindowIds.append($0.id) }
+        installWindowRegistryTestEventSink(
+            on: registry,
+            activateWindow: { activatedWindowIds.append($0.id) }
+        )
         registry.register(window)
 
         registry.setActive(window)
@@ -331,8 +406,11 @@ final class WindowRegistryTests: XCTestCase {
         let window = BrowserWindowState()
         var closeCount = 0
         var allWindowsClosedCount = 0
-        registry.onWindowClose = { _ in closeCount += 1 }
-        registry.onAllWindowsClosed = { allWindowsClosedCount += 1 }
+        installWindowRegistryTestEventSink(
+            on: registry,
+            closeWindow: { _ in closeCount += 1 },
+            closeAllWindows: { allWindowsClosedCount += 1 }
+        )
         XCTAssertEqual(registry.beginRegistration(window), .registered)
 
         XCTAssertTrue(registry.rollbackProvisionalRegistration(window))
@@ -346,7 +424,10 @@ final class WindowRegistryTests: XCTestCase {
         let registry = WindowRegistry()
         let window = BrowserWindowState()
         var closeCount = 0
-        registry.onWindowClose = { _ in closeCount += 1 }
+        installWindowRegistryTestEventSink(
+            on: registry,
+            closeWindow: { _ in closeCount += 1 }
+        )
         registry.register(window)
 
         XCTAssertFalse(registry.rollbackProvisionalRegistration(window))
@@ -389,8 +470,11 @@ final class WindowRegistryTests: XCTestCase {
         let impostor = BrowserWindowState(id: sharedID)
         var closed: [UUID] = []
         var allClosedCount = 0
-        registry.onWindowClose = { closed.append($0.id) }
-        registry.onAllWindowsClosed = { allClosedCount += 1 }
+        installWindowRegistryTestEventSink(
+            on: registry,
+            closeWindow: { closed.append($0.id) },
+            closeAllWindows: { allClosedCount += 1 }
+        )
         registry.register(committed)
 
         XCTAssertFalse(registry.discardRejectedRegistration(impostor))

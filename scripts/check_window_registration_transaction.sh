@@ -33,8 +33,28 @@ require_pattern "$registry" 'func commitRegistration\(' \
   'WindowRegistry lost registration commit entry point'
 require_pattern "$registry" 'func rollbackProvisionalRegistration\(' \
   'WindowRegistry lost exact provisional rollback entry point'
-require_pattern "$registry" 'var publishWindowRegistration:' \
-  'WindowRegistry lost post-validation publication boundary'
+require_pattern "$registry" 'struct EventSink' \
+  'WindowRegistry lost its typed lifecycle event sink'
+require_pattern "$registry" 'func installEventSink\(' \
+  'WindowRegistry lost one-time event sink installation'
+require_pattern "$registry" 'struct EventSinkInstallationReceipt:' \
+  'WindowRegistry lost typed installation evidence'
+
+if rg -q 'var (prepareWindowRegistration|publishWindowRegistration|onWindowClose|onActiveWindowChange|onWindowVisibilityChange|onAllWindowsClosed):' \
+    "$registry"; then
+  printf 'error: independently overwritable WindowRegistry callback slots resurfaced\n' >&2
+  status=1
+fi
+
+production_sink_installers="$(
+  rg -n '\.installEventSink\(' App Sumi -g '*.swift' || true
+)"
+if [[ "$(wc -l <<< "$production_sink_installers" | tr -d ' ')" != "1" ]] \
+    || [[ "$production_sink_installers" != "$bindings:"* ]]; then
+  printf 'error: production must install the WindowRegistry event sink exactly once\n%s\n' \
+    "$production_sink_installers" >&2
+  status=1
+fi
 
 if rg -q 'rollbackRegistration\(' Sumi App -g '*.swift'; then
   printf 'error: committed-capable window registration rollback resurfaced\n' >&2
@@ -61,7 +81,7 @@ fi
 commit_body="$(
   sed -n '/^    func commitRegistration(/,/^    }$/p' "$registry"
 )"
-publication_line="$(rg -n 'publishWindowRegistration\?\(' <<< "$commit_body" | cut -d: -f1 | head -1)"
+publication_line="$(rg -n 'eventSink\?\.publishWindowRegistration\(' <<< "$commit_body" | cut -d: -f1 | head -1)"
 awaiter_line="$(rg -n 'continuation\.resume\(returning: window\)' <<< "$commit_body" | cut -d: -f1 | head -1)"
 if [[ -z "$publication_line" || -z "$awaiter_line" ]] \
     || (( publication_line >= awaiter_line )); then
@@ -85,6 +105,8 @@ require_pattern "$bindings" 'prepareRegistration\(windowState\)' \
   'window registry restoration must run during provisional preparation'
 require_pattern "$bindings" 'commitRegistration\(windowState\)' \
   'extension window lifecycle must publish only after registry commit'
+require_pattern "$bindings" 'WindowRegistry\.EventSink\(' \
+  'browser workflows must be installed through one immutable event sink'
 require_pattern "$browser_manager" 'lazy var windowExtensionPublication' \
   'BrowserManager lost its explicit cross-window extension publication transaction'
 require_pattern "$session_bundle" \
