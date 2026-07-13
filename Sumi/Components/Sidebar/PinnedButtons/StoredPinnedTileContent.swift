@@ -8,6 +8,7 @@ import SwiftUI
 struct StoredPinnedTileContent: View {
     @ObservedObject var pin: ShortcutPin
     let faviconPartition: SumiFaviconPartition
+    let faviconImageReader: any BrowserFaviconImageReading
     let presentationState: ShortcutPresentationState
     let essentialRuntimeState: SumiEssentialRuntimeState?
     let accessibilityID: String
@@ -20,10 +21,16 @@ struct StoredPinnedTileContent: View {
 
     var body: some View {
         let resolvedTitle = pin.preferredDisplayTitle
-        let resolvedFavicon = currentLoadedStoredFavicon ?? pin.storedFaviconImage(partition: faviconPartition)
+        let resolvedFavicon = currentLoadedStoredFavicon ?? pin.storedFaviconImage(
+            partition: faviconPartition,
+            imageReader: faviconImageReader
+        )
         let glyphText = pin.glyphText
         let resolvedChromeTemplateSystemImageName = currentLoadedStoredFavicon == nil
-            ? (pin.chromeTemplateSystemImageName ?? pin.storedChromeTemplateSystemImageName(for: faviconPartition))
+            ? (pin.chromeTemplateSystemImageName ?? pin.storedChromeTemplateSystemImageName(
+                for: faviconPartition,
+                imageReader: faviconImageReader
+            ))
             : nil
         PinnedTabView(
             tabIcon: resolvedFavicon,
@@ -50,7 +57,8 @@ struct StoredPinnedTileContent: View {
             action: onActivate,
             onUnload: onUnload,
             accentSourceURL: pin.launchURL,
-            accentSourcePartition: faviconPartition
+            accentSourcePartition: faviconPartition,
+            faviconImageReader: faviconImageReader
         )
         .task(id: storedFaviconLoadKey) {
             await loadStoredFavicon()
@@ -78,6 +86,7 @@ struct StoredPinnedTileContent: View {
         await storedFaviconLoader.load(
             launchURL: pin.launchURL,
             partition: faviconPartition,
+            imageReader: faviconImageReader,
             isCurrentLaunchURL: { pin.launchURL == $0 }
         )
     }

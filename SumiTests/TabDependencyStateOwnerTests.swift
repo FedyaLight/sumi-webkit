@@ -13,25 +13,6 @@ final class TabDependencyStateOwnerTests: XCTestCase {
         assertServices(owner, identicalTo: fallback)
     }
 
-    func testUsesInjectedDataServicesProviderWhenAvailable() {
-        let fallback = makeServices()
-        let injected = makeServices()
-        let owner = makeOwner(fallback: fallback)
-
-        owner.attachDataServicesProvider { injected.dataServices }
-
-        assertServices(owner, identicalTo: injected)
-    }
-
-    func testFallsBackWhenInjectedDataServicesProviderReturnsNil() {
-        let fallback = makeServices()
-        let owner = makeOwner(fallback: fallback)
-
-        owner.attachDataServicesProvider { nil }
-
-        assertServices(owner, identicalTo: fallback)
-    }
-
     private func makeOwner(fallback: Services) -> TabDependencyStateOwner {
         TabDependencyStateOwner(
             faviconService: fallback.faviconService,
@@ -73,14 +54,6 @@ final class TabDependencyStateOwnerTests: XCTestCase {
                 liveDiscovery: faviconCapabilities,
                 localIconIngestion: faviconCapabilities,
                 prefetch: faviconCapabilities
-            )
-        }
-
-        var dataServices: TabDependencyDataServices {
-            TabDependencyDataServices(
-                faviconService: faviconService,
-                faviconCapabilities: capabilityBundle,
-                visitedLinkStore: visitedLinkStore
             )
         }
     }

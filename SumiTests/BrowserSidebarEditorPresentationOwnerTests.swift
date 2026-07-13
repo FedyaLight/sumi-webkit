@@ -119,7 +119,8 @@ final class SidebarEditorPresentationOwnerTests: XCTestCase {
                 spy.events.append(
                     .updateShortcutPin(pin.id, title, launchURL, iconAsset)
                 )
-            }
+            },
+            faviconImageReader: TabDependencyIsolationDefaults.faviconCapabilities.images
         )
     }
 

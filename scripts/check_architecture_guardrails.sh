@@ -42,6 +42,7 @@ checks=(
   "scripts/check_tab_suspension_architecture.sh"
   "scripts/check_background_media_lifecycle_boundary.sh"
   "scripts/check_tab_persistence_architecture.sh"
+  "scripts/check_favicon_production_ownership.sh"
   "scripts/check_window_registration_transaction.sh"
   "scripts/check_split_architecture.sh"
   "scripts/check_startup_persistence_boundary.sh"

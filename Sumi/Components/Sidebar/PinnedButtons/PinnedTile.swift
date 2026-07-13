@@ -8,6 +8,7 @@ import SwiftUI
 struct PinnedTile: View {
     @ObservedObject var pin: ShortcutPin
     let faviconPartition: SumiFaviconPartition
+    let faviconImageReader: any BrowserFaviconImageReading
     let presentationState: ShortcutPresentationState
     let liveTab: Tab?
     let essentialRuntimeState: SumiEssentialRuntimeState?
@@ -24,6 +25,7 @@ struct PinnedTile: View {
                 LivePinnedTileContent(
                     pin: pin,
                     faviconPartition: faviconPartition,
+                    faviconImageReader: faviconImageReader,
                     liveTab: liveTab,
                     presentationState: presentationState,
                     essentialRuntimeState: essentialRuntimeState,
@@ -38,6 +40,7 @@ struct PinnedTile: View {
                 StoredPinnedTileContent(
                     pin: pin,
                     faviconPartition: faviconPartition,
+                    faviconImageReader: faviconImageReader,
                     presentationState: presentationState,
                     essentialRuntimeState: essentialRuntimeState,
                     accessibilityID: accessibilityID,

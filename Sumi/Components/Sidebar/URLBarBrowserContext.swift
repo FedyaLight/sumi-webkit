@@ -51,6 +51,7 @@ struct URLBarHubBrowserContext {
     let siteDataPolicyStore: any BrowserSiteDataPolicyStoring
     let siteDataPolicyEnforcementService: any BrowserSiteDataPolicyEnforcing
     let faviconService: any BrowserFaviconServicing
+    let faviconImageReader: any BrowserFaviconImageReading
     let protectionSettingsChanges: AnyPublisher<Void, Never>
     let protectionSitePolicyChanges: AnyPublisher<Void, Never>
     let blockedPopupChanges: AnyPublisher<Void, Never>

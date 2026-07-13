@@ -141,7 +141,8 @@ final class SumiCommandsBrowserContextTests: XCTestCase {
             recentlyClosedManager: RecentlyClosedManager(),
             historyManager: try makeHistoryManager(),
             bookmarkManager: makeBookmarkManager(),
-            faviconService: FakeCommandFaviconService()
+            faviconService: FakeCommandFaviconService(),
+            faviconImageReader: TabDependencyIsolationDefaults.faviconCapabilities.images
         )
     }
 

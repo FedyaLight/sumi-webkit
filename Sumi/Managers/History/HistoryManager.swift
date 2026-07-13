@@ -57,15 +57,6 @@ final class HistoryManager: ObservableObject {
 
     var currentProfileId: UUID?
 
-    convenience init(context: ModelContext, profileId: UUID? = nil) {
-        self.init(
-            context: context,
-            profileId: profileId,
-            faviconCleaner: SumiFaviconProductionSystem.current,
-            visitedLinkStore: SharedVisitedLinkStoreComposition.provider
-        )
-    }
-
     init(
         context: ModelContext,
         profileId: UUID? = nil,

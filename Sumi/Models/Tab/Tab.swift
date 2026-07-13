@@ -440,9 +440,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         navigationRuntime.webViewReplacementRuntime =
             runtime.webViewReplacementRuntime
         navigationRuntime.webViewRouting.bindWebViewSession(webViewSession)
-        dependencyStateOwner.attachDataServicesProvider { [weak self] in
-            self?.browserRuntime.dataServices()
-        }
         sumiSettings = runtime.settings()
     }
 

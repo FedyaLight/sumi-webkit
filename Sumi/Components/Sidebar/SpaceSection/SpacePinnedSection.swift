@@ -154,6 +154,7 @@ extension SpaceView {
                 splitLayout: browserContext.splitLayout,
                 emptySplitCreation: browserContext.emptySplitCreation,
                 isAppKitInteractionEnabled: isInteractive,
+                faviconImageReader: browserContext.faviconImageReader,
                 accessibilityID: "shortcut-host-split-row-\(group.id.uuidString)",
                 onActivateMember: { memberID in
                     browserContext.commands.focusSplitGroup(
@@ -419,6 +420,7 @@ extension SpaceView {
                     for: pin,
                     currentSpaceID: windowState.currentSpaceId
                 ),
+                faviconImageReader: browserContext.faviconImageReader,
                 runtimeAffordance: selection.runtimeAffordance(
                     for: pin,
                     in: windowState

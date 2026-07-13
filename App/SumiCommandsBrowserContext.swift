@@ -88,6 +88,7 @@ struct SumiCommandsBrowserRuntime {
     let historyManager: HistoryManager
     let bookmarkManager: SumiBookmarkManager
     let faviconService: any BrowserFaviconServicing
+    let faviconImageReader: any BrowserFaviconImageReading
 #if DEBUG
     var extensionDiagnostics: (any SumiCommandExtensionDiagnosticsRouting)?
 #endif
@@ -107,6 +108,7 @@ final class SumiCommandsBrowserContext {
     let historyManager: HistoryManager
     let bookmarkManager: SumiBookmarkManager
     let faviconService: any BrowserFaviconServicing
+    let faviconImageReader: any BrowserFaviconImageReading
 
     init(runtime: SumiCommandsBrowserRuntime) {
         self.pageState = runtime.pageState
@@ -117,6 +119,7 @@ final class SumiCommandsBrowserContext {
         self.historyManager = runtime.historyManager
         self.bookmarkManager = runtime.bookmarkManager
         self.faviconService = runtime.faviconService
+        self.faviconImageReader = runtime.faviconImageReader
 #if DEBUG
         self.extensionDiagnostics = runtime.extensionDiagnostics
 #endif
@@ -130,7 +133,8 @@ final class SumiCommandsBrowserContext {
         recentlyClosedManager: RecentlyClosedManager,
         historyManager: HistoryManager,
         bookmarkManager: SumiBookmarkManager,
-        faviconService: any BrowserFaviconServicing
+        faviconService: any BrowserFaviconServicing,
+        faviconImageReader: any BrowserFaviconImageReading
     ) {
         self.pageState = pageState
         self.browserActions = browserActions
@@ -140,6 +144,7 @@ final class SumiCommandsBrowserContext {
         self.historyManager = historyManager
         self.bookmarkManager = bookmarkManager
         self.faviconService = faviconService
+        self.faviconImageReader = faviconImageReader
     }
 
     var currentProfile: Profile? {

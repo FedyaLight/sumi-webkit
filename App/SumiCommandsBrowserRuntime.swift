@@ -20,6 +20,7 @@ extension SumiCommandsBrowserRuntime {
             historyManager: browserManager.historyManager,
             bookmarkManager: browserManager.bookmarkManager,
             faviconService: browserManager.dataServices.faviconService,
+            faviconImageReader: browserManager.dataServices.faviconCapabilities.images,
             extensionDiagnostics: adapter
         )
 #else
@@ -31,7 +32,8 @@ extension SumiCommandsBrowserRuntime {
             recentlyClosedManager: browserManager.recentlyClosedManager,
             historyManager: browserManager.historyManager,
             bookmarkManager: browserManager.bookmarkManager,
-            faviconService: browserManager.dataServices.faviconService
+            faviconService: browserManager.dataServices.faviconService,
+            faviconImageReader: browserManager.dataServices.faviconCapabilities.images
         )
 #endif
     }

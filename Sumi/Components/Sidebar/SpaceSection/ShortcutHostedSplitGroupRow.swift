@@ -8,6 +8,7 @@ struct ShortcutHostedSplitGroupRow: View {
     let splitLayout: SplitLayoutService
     let emptySplitCreation: EmptySplitCreationWorkflow
     let isAppKitInteractionEnabled: Bool
+    let faviconImageReader: any BrowserFaviconImageReading
     let accessibilityID: String
     let onActivateMember: (SplitMemberID) -> Void
     let onRestoreShortcutMember: (SplitMemberID) -> Void
@@ -27,6 +28,7 @@ struct ShortcutHostedSplitGroupRow: View {
         splitLayout: SplitLayoutService,
         emptySplitCreation: EmptySplitCreationWorkflow,
         isAppKitInteractionEnabled: Bool,
+        faviconImageReader: any BrowserFaviconImageReading,
         accessibilityID: String,
         onActivateMember: @escaping (SplitMemberID) -> Void,
         onRestoreShortcutMember: @escaping (SplitMemberID) -> Void,
@@ -43,6 +45,7 @@ struct ShortcutHostedSplitGroupRow: View {
         self.splitLayout = splitLayout
         self.emptySplitCreation = emptySplitCreation
         self.isAppKitInteractionEnabled = isAppKitInteractionEnabled
+        self.faviconImageReader = faviconImageReader
         self.accessibilityID = accessibilityID
         self.onActivateMember = onActivateMember
         self.onRestoreShortcutMember = onRestoreShortcutMember
@@ -59,6 +62,7 @@ struct ShortcutHostedSplitGroupRow: View {
             spaceId: spaceId,
             currentTabId: windowState.currentTabId,
             isAppKitInteractionEnabled: isAppKitInteractionEnabled,
+            faviconImageReader: faviconImageReader,
             splitLayout: splitLayout,
             emptySplitCreation: emptySplitCreation,
             segmentAction: { item in
@@ -116,7 +120,10 @@ struct ShortcutHostedSplitGroupRow: View {
                     fallbackSpaceId: spaceId
                 ),
                 previewKind: .row,
-                previewIcon: item.tab?.favicon ?? pin.storedFavicon,
+                previewIcon: item.tab?.favicon ?? pin.storedFaviconImage(
+                    partition: .regular(pin.executionProfileId ?? pin.profileId),
+                    imageReader: faviconImageReader
+                ),
                 exclusionZones: [.trailingStrip(32)],
                 onActivate: { onActivateMember(item.id) },
                 isEnabled: isAppKitInteractionEnabled

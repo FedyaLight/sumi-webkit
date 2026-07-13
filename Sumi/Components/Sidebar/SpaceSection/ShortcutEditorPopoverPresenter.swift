@@ -5,6 +5,7 @@ import SwiftUI
 struct ShortcutEditorPopoverPresentationContext {
     let sidebarPosition: SidebarPosition
     let settings: SumiSettingsService
+    let faviconImageReader: any BrowserFaviconImageReading
     let commit: @MainActor (ShortcutLinkEditorSession) -> Void
 }
 
@@ -81,6 +82,7 @@ final class ShortcutEditorPopoverPresenter: NSObject, NSPopoverDelegate {
         let hostingController = NSHostingController(
             rootView: ShortcutLinkEditorSheet(
                 session: editorSession,
+                faviconImageReader: presentationContext.faviconImageReader,
                 onDone: { [weak self] in
                     self?.closeActive(committing: true)
                 },

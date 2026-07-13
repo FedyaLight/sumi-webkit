@@ -255,6 +255,7 @@ final class RegularSplitSegmentResolverTests: XCTestCase {
         let source = resolver.dragSource(
             for: item,
             in: group,
+            faviconImageReader: TabDependencyIsolationDefaults.faviconCapabilities.images,
             shortcutPin: { _ in nil },
             onActivateMember: {}
         )
@@ -289,6 +290,7 @@ final class RegularSplitSegmentResolverTests: XCTestCase {
         let source = resolver.dragSource(
             for: item,
             in: group,
+            faviconImageReader: TabDependencyIsolationDefaults.faviconCapabilities.images,
             shortcutPin: { $0 == pinID ? pin : nil },
             onActivateMember: {}
         )

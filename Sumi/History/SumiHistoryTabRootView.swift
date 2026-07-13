@@ -405,7 +405,11 @@ private struct HistoryRow: View {
     }
 
     private var favicon: some View {
-        HistoryFaviconView(url: item.url, partition: viewModel.faviconPartition)
+        HistoryFaviconView(
+            url: item.url,
+            partition: viewModel.faviconPartition,
+            imageReader: viewModel.faviconImageReader
+        )
             .frame(width: RowLayout.faviconSize, height: RowLayout.faviconSize)
     }
 
@@ -478,6 +482,7 @@ private struct HistoryRow: View {
 private struct HistoryFaviconView: View {
     let url: URL
     let partition: SumiFaviconPartition
+    let imageReader: any BrowserFaviconImageReading
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
     @State private var image: NSImage?
@@ -511,14 +516,16 @@ private struct HistoryFaviconView: View {
         let cachedImage = TabFaviconStore.getCachedImage(
             forDocumentURL: url,
             partition: partition,
-            context: .historyBookmarkRow
+            context: .historyBookmarkRow,
+            imageReader: imageReader
         )
         image = cachedImage
         let loadedImage = await TabFaviconStore.loadCachedDisplayImage(
             forDocumentURL: url,
             partition: partition,
             context: .historyBookmarkRow,
-            priority: .historyBookmarkVisibleRow
+            priority: .historyBookmarkVisibleRow,
+            imageReader: imageReader
         )
         guard !Task.isCancelled else { return }
         image = loadedImage ?? cachedImage

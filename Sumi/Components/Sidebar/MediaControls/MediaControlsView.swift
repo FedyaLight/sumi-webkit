@@ -12,15 +12,18 @@ struct MediaControlsView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     @StateObject private var mediaStore: SumiBackgroundMediaCardStore
+    private let faviconImageReader: any BrowserFaviconImageReading
     private let configureMediaStore: (SumiBackgroundMediaCardStore, BrowserWindowState) -> Void
 
     init(
         nowPlayingController: any SumiNativeNowPlayingRuntimeControlling,
+        faviconImageReader: any BrowserFaviconImageReading,
         configureMediaStore: @escaping (SumiBackgroundMediaCardStore, BrowserWindowState) -> Void
     ) {
         _mediaStore = StateObject(
             wrappedValue: SumiBackgroundMediaCardStore(controller: nowPlayingController)
         )
+        self.faviconImageReader = faviconImageReader
         self.configureMediaStore = configureMediaStore
     }
 
@@ -29,6 +32,7 @@ struct MediaControlsView: View {
             if windowState.isSidebarVisible, let cardState = mediaStore.cardState {
                 SumiBackgroundMediaCardView(
                     cardState: cardState,
+                    faviconImageReader: faviconImageReader,
                     onFocus: mediaStore.activateSource,
                     onPlayPause: { Task { await mediaStore.togglePlayPause() } },
                     onToggleMute: { Task { await mediaStore.toggleMute() } }
@@ -84,6 +88,7 @@ private struct SumiBackgroundMediaCardView: View {
     private static let controlRoutingPriorityBoost = 50
 
     let cardState: SumiBackgroundMediaCardState
+    let faviconImageReader: any BrowserFaviconImageReading
     let onFocus: () -> Void
     let onPlayPause: () -> Void
     let onToggleMute: () -> Void
@@ -248,7 +253,10 @@ private struct SumiBackgroundMediaCardView: View {
 
     private var focusButton: some View {
         Button(action: onFocus) {
-            SumiMediaSourceIconView(cardState: cardState)
+            SumiMediaSourceIconView(
+                cardState: cardState,
+                faviconImageReader: faviconImageReader
+            )
                 .frame(width: 26, height: 26)
                 .background(
                     controlBackground,
@@ -310,6 +318,7 @@ private struct SumiMediaSourceIconView: View {
     }
 
     let cardState: SumiBackgroundMediaCardState
+    let faviconImageReader: any BrowserFaviconImageReading
 
     @State private var loadedFavicon: LoadedFavicon?
     @State private var refreshID = UUID()
@@ -352,7 +361,7 @@ private struct SumiMediaSourceIconView: View {
     private var displayedFavicon: NSImage? {
         guard let source = cardState.faviconSource else { return nil }
 
-        if let image = Self.cachedFavicon(for: source) {
+        if let image = cachedFavicon(for: source) {
             return image
         }
 
@@ -379,7 +388,7 @@ private struct SumiMediaSourceIconView: View {
             return
         }
 
-        if let cachedImage = Self.cachedFavicon(for: source) {
+        if let cachedImage = cachedFavicon(for: source) {
             loadedFavicon = LoadedFavicon(source: source, image: cachedImage)
             return
         }
@@ -388,7 +397,8 @@ private struct SumiMediaSourceIconView: View {
             forDocumentURL: source.documentURL,
             partition: source.partition,
             context: .tabSidebar,
-            priority: .visibleSidebarOrTabStrip
+            priority: .visibleSidebarOrTabStrip,
+            imageReader: faviconImageReader
         )
 
         guard !Task.isCancelled else { return }
@@ -401,11 +411,12 @@ private struct SumiMediaSourceIconView: View {
     }
 
     @MainActor
-    private static func cachedFavicon(for source: SumiBackgroundMediaFaviconSource) -> NSImage? {
+    private func cachedFavicon(for source: SumiBackgroundMediaFaviconSource) -> NSImage? {
         TabFaviconStore.getCachedImage(
             forDocumentURL: source.documentURL,
             partition: source.partition,
-            context: .tabSidebar
+            context: .tabSidebar,
+            imageReader: faviconImageReader
         )
     }
 }

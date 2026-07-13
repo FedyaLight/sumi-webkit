@@ -248,6 +248,7 @@ struct TabFolderBodyListView: View {
                 splitLayout: browserContext.splitLayout,
                 emptySplitCreation: browserContext.emptySplitCreation,
                 isAppKitInteractionEnabled: isInteractive,
+                faviconImageReader: browserContext.faviconImageReader,
                 accessibilityID: "folder-shortcut-host-split-row-\(group.id.uuidString)",
                 onActivateMember: { memberID in
                     browserContext.commands.focusSplitGroup(
@@ -312,6 +313,7 @@ struct TabFolderBodyListView: View {
                     selection: selection,
                     windowState: windowState
                 ).faviconPartition(for: pin),
+                faviconImageReader: browserContext.faviconImageReader,
                 runtimeAffordance: TabFolderShortcutPresentationOwner(
                     pinProjection: pinProjection,
                     selection: selection,

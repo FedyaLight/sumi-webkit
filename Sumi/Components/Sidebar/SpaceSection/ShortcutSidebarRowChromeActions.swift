@@ -148,7 +148,8 @@ extension ShortcutSidebarRowChrome {
     var currentCachedStoredFavicon: Image? {
         currentLoadedStoredFavicon ?? ShortcutPin.cachedLaunchFavicon(
             for: pin.launchURL,
-            partition: faviconPartition
+            partition: faviconPartition,
+            imageReader: faviconImageReader
         )
     }
 
@@ -168,6 +169,7 @@ extension ShortcutSidebarRowChrome {
         await storedFaviconLoader.load(
             launchURL: pin.launchURL,
             partition: faviconPartition,
+            imageReader: faviconImageReader,
             isCurrentLaunchURL: { pin.launchURL == $0 }
         )
     }

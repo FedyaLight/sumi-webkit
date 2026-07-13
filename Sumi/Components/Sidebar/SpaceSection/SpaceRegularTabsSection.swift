@@ -225,6 +225,7 @@ extension SpaceView {
                             spaceId: space.id,
                             currentTabId: windowState.currentTabId,
                             isAppKitInteractionEnabled: isInteractive,
+                            faviconImageReader: browserContext.faviconImageReader,
                             splitLayout: browserContext.splitLayout,
                             emptySplitCreation: browserContext.emptySplitCreation,
                             segmentAction: { item in
@@ -376,6 +377,7 @@ extension SpaceView {
         regularSplitSegmentResolver.dragSource(
             for: item,
             in: group,
+            faviconImageReader: browserContext.faviconImageReader,
             shortcutPin: { regularTabs.shortcutPin(by: $0) },
             onActivateMember: {
                 browserContext.commands.focusSplitGroup(

@@ -12,6 +12,7 @@ struct SplitGroupSidebarRow: View {
     let spaceId: UUID
     let currentTabId: UUID?
     let isAppKitInteractionEnabled: Bool
+    let faviconImageReader: any BrowserFaviconImageReading
     let splitLayout: SplitLayoutService
     let emptySplitCreation: EmptySplitCreationWorkflow
     let segmentAction: (SplitGroupSidebarItem) -> SplitGroupSidebarSegmentAction?
@@ -51,6 +52,7 @@ struct SplitGroupSidebarRow: View {
                         isDeparting: isDeparting(item),
                         segmentAction: segmentAction(item),
                         isAppKitInteractionEnabled: isAppKitInteractionEnabled && !isDeparting(item),
+                        faviconImageReader: faviconImageReader,
                         dragSourceConfiguration: dragSource(item),
                         contextMenuEntries: {
                             item.tab.map(splitContextMenuEntries) ?? []

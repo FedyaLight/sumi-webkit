@@ -208,7 +208,7 @@ struct BrowserManagerDataServices {
         siteDataPolicyStore: any BrowserSiteDataPolicyStoring,
         siteDataPolicyEnforcementService: any BrowserSiteDataPolicyEnforcing,
         faviconService: any BrowserFaviconServicing,
-        faviconCapabilities: BrowserFaviconCapabilities = Self.productionFaviconCapabilities,
+        faviconCapabilities: BrowserFaviconCapabilities,
         visitedLinkStore: any BrowserVisitedLinkStoreManaging,
         historyFaviconCleaner: any HistoryFaviconCleaning,
         historyVisitedLinkStore: any HistoryVisitedLinkStoring,
@@ -232,40 +232,50 @@ struct BrowserManagerDataServices {
         self.privacyService = privacyService
     }
 
-    private static var productionFaviconSystem: SumiFaviconSystem {
-        SumiFaviconProductionSystem.current
-    }
-
-    static var productionFaviconService: any BrowserFaviconServicing {
-        productionFaviconSystem
-    }
-
-    static var productionFaviconCapabilities: BrowserFaviconCapabilities {
-        productionFaviconSystem.capabilities
-    }
-
     static var productionVisitedLinkStore: any BrowserVisitedLinkStoreManaging {
         SharedVisitedLinkStoreComposition.provider
     }
 
-    static var production: Self {
+    static func production(faviconSystem: SumiFaviconSystem) -> Self {
+        make(
+            faviconService: faviconSystem,
+            faviconCapabilities: faviconSystem.capabilities,
+            historyFaviconCleaner: faviconSystem,
+            browsingDataFaviconCleaner: faviconSystem
+        )
+    }
+
+    static func unavailable() -> Self {
+        make(
+            faviconService: TabDependencyIsolationDefaults.faviconService,
+            faviconCapabilities: TabDependencyIsolationDefaults.faviconCapabilities,
+            historyFaviconCleaner: TabDependencyIsolationDefaults.historyFaviconCleaner,
+            browsingDataFaviconCleaner: TabDependencyIsolationDefaults.browsingDataFaviconCleaner
+        )
+    }
+
+    private static func make(
+        faviconService: any BrowserFaviconServicing,
+        faviconCapabilities: BrowserFaviconCapabilities,
+        historyFaviconCleaner: any HistoryFaviconCleaning,
+        browsingDataFaviconCleaner: any SumiBrowsingDataFaviconCleaning
+    ) -> Self {
         let websiteDataCleanupService = SumiWebsiteDataCleanupService()
         let siteDataPolicyStore = SumiSiteDataPolicyStore()
-        let faviconSystem = productionFaviconSystem
         let visitedLinkStore = SharedVisitedLinkStoreComposition.provider
         let basicAuthCredentialStore = BasicAuthCredentialStore()
         return BrowserManagerDataServices(
             websiteDataCleanupService: websiteDataCleanupService,
             browsingDataCleanupService: SumiBrowsingDataCleanupService(
                 websiteDataCleanupService: websiteDataCleanupService,
-                faviconCacheCleaner: faviconSystem,
+                faviconCacheCleaner: browsingDataFaviconCleaner,
                 appResidueCleaner: SumiBrowsingDataAppResidueCleaner(),
                 basicAuthCredentialStore: basicAuthCredentialStore,
                 visitedLinkStore: visitedLinkStore
             ),
             automaticBrowsingDataCleanupService: SumiAutomaticBrowsingDataCleanupService(
                 websiteDataCleanupService: websiteDataCleanupService,
-                faviconCacheCleaner: faviconSystem,
+                faviconCacheCleaner: browsingDataFaviconCleaner,
                 basicAuthCredentialStore: basicAuthCredentialStore
             ),
             siteDataPolicyStore: siteDataPolicyStore,
@@ -273,15 +283,15 @@ struct BrowserManagerDataServices {
                 policyStore: siteDataPolicyStore,
                 cleanupService: websiteDataCleanupService
             ),
-            faviconService: faviconSystem,
-            faviconCapabilities: faviconSystem.capabilities,
+            faviconService: faviconService,
+            faviconCapabilities: faviconCapabilities,
             visitedLinkStore: visitedLinkStore,
-            historyFaviconCleaner: faviconSystem,
+            historyFaviconCleaner: historyFaviconCleaner,
             historyVisitedLinkStore: visitedLinkStore,
             privacyService: BrowserPrivacyService(
                 cleanupService: websiteDataCleanupService,
                 faviconInvalidator: { domain, profile in
-                    faviconSystem.invalidateSite(domain: domain, profile: profile)
+                    faviconService.invalidateSite(domain: domain, profile: profile)
                 }
             )
         )

@@ -5,6 +5,7 @@ struct URLBarSiteDataDetailsView: View {
 
     let currentTab: Tab?
     let profile: Profile?
+    let faviconImageReader: any BrowserFaviconImageReading
     let onBack: () -> Void
     let onClose: () -> Void
     let onDidMutate: () -> Void
@@ -156,6 +157,7 @@ struct URLBarSiteDataDetailsView: View {
                             summary: model.summary(for: entry),
                             policyState: model.policyState(for: entry),
                             isDeleting: model.deletingHosts.contains(entry.domain),
+                            faviconImageReader: faviconImageReader,
                             onDelete: {
                                 pendingDeletionEntry = entry
                             },
@@ -316,6 +318,7 @@ struct URLBarSiteDataEntryRow: View {
     let summary: String
     let policyState: SumiSiteDataPolicyState
     let isDeleting: Bool
+    let faviconImageReader: any BrowserFaviconImageReading
     let onDelete: () -> Void
     let onToggleBlockStorage: () -> Void
     let onToggleDeleteOnClose: () -> Void
@@ -378,7 +381,10 @@ struct URLBarSiteDataEntryRow: View {
 
     private var titleArea: some View {
         HStack(spacing: 10) {
-            URLBarSiteDataFavicon(domain: entry.domain)
+            URLBarSiteDataFavicon(
+                domain: entry.domain,
+                imageReader: faviconImageReader
+            )
 
             VStack(alignment: .leading, spacing: 2) {
                 URLBarFadingText(
@@ -446,6 +452,7 @@ struct URLBarSiteDataActionButton: View {
 
 struct URLBarSiteDataFavicon: View {
     let domain: String
+    let imageReader: any BrowserFaviconImageReading
 
     var body: some View {
         Group {
@@ -469,16 +476,11 @@ struct URLBarSiteDataFavicon: View {
         guard !normalizedDomain.isEmpty else { return nil }
 
         if let url = URL(string: "https://\(normalizedDomain)"),
-           let key = SumiFaviconResolver.cacheKey(for: url),
-           let image = Tab.getCachedFavicon(for: key) {
-            return image
-        }
-
-        if let url = URL(string: "https://\(normalizedDomain)"),
            let image = TabFaviconStore.getCachedImage(
             forDocumentURL: url,
             partition: .regular(nil),
-            context: .historyBookmarkRow
+            context: .historyBookmarkRow,
+            imageReader: imageReader
            ) {
             return Image(nsImage: image)
         }

@@ -267,11 +267,13 @@ final class HistoryBoundedQueryTests: XCTestCase {
 
     func testHistoryDeleteReloadsVisitedLinksOnlyForCurrentProfile() async throws {
         let harness = try makeHarness()
+        let provider = SharedVisitedLinkStoreComposition.provider
         let historyManager = HistoryManager(
             context: ModelContext(harness.container),
-            profileId: harness.profileID
+            profileId: harness.profileID,
+            faviconCleaner: TabDependencyIsolationDefaults.historyFaviconCleaner,
+            visitedLinkStore: provider
         )
-        let provider = SharedVisitedLinkStoreComposition.provider
         let currentStore = FakeVisitedLinkStore()
         let otherStore = FakeVisitedLinkStore()
         let otherProfileID = UUID()

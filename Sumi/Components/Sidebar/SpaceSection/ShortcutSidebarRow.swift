@@ -10,6 +10,7 @@ struct ShortcutSidebarRow: View {
     @ObservedObject var pin: ShortcutPin
     var liveTab: Tab?
     let faviconPartition: SumiFaviconPartition
+    let faviconImageReader: any BrowserFaviconImageReading
     let runtimeAffordance: SumiLauncherRuntimeAffordanceState
     var accessibilityID: String?
     var contextMenuEntries: () -> [SidebarContextMenuEntry] = { [] }
@@ -28,6 +29,7 @@ struct ShortcutSidebarRow: View {
                     pin: pin,
                     liveTab: liveTab,
                     faviconPartition: faviconPartition,
+                    faviconImageReader: faviconImageReader,
                     runtimeAffordance: runtimeAffordance,
                     accessibilityID: accessibilityID,
                     contextMenuEntries: contextMenuEntries,
@@ -43,6 +45,7 @@ struct ShortcutSidebarRow: View {
                 ShortcutSidebarStoredRowContent(
                     pin: pin,
                     faviconPartition: faviconPartition,
+                    faviconImageReader: faviconImageReader,
                     runtimeAffordance: runtimeAffordance,
                     accessibilityID: accessibilityID,
                     contextMenuEntries: contextMenuEntries,
@@ -63,6 +66,7 @@ private struct ShortcutSidebarLiveRowContent: View {
     @ObservedObject var pin: ShortcutPin
     @ObservedObject var liveTab: Tab
     let faviconPartition: SumiFaviconPartition
+    let faviconImageReader: any BrowserFaviconImageReading
     let runtimeAffordance: SumiLauncherRuntimeAffordanceState
     var accessibilityID: String?
     var contextMenuEntries: () -> [SidebarContextMenuEntry]
@@ -79,6 +83,7 @@ private struct ShortcutSidebarLiveRowContent: View {
             pin: pin,
             liveTab: liveTab,
             faviconPartition: faviconPartition,
+            faviconImageReader: faviconImageReader,
             resolvedTitle: pin.resolvedDisplayTitle(liveTab: liveTab),
             runtimeAffordance: runtimeAffordance,
             accessibilityID: accessibilityID,
@@ -97,6 +102,7 @@ private struct ShortcutSidebarLiveRowContent: View {
 private struct ShortcutSidebarStoredRowContent: View {
     @ObservedObject var pin: ShortcutPin
     let faviconPartition: SumiFaviconPartition
+    let faviconImageReader: any BrowserFaviconImageReading
     let runtimeAffordance: SumiLauncherRuntimeAffordanceState
     var accessibilityID: String?
     var contextMenuEntries: () -> [SidebarContextMenuEntry]
@@ -113,6 +119,7 @@ private struct ShortcutSidebarStoredRowContent: View {
             pin: pin,
             liveTab: nil,
             faviconPartition: faviconPartition,
+            faviconImageReader: faviconImageReader,
             resolvedTitle: pin.preferredDisplayTitle,
             runtimeAffordance: runtimeAffordance,
             accessibilityID: accessibilityID,
@@ -127,4 +134,3 @@ private struct ShortcutSidebarStoredRowContent: View {
         )
     }
 }
-

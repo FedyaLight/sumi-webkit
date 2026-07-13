@@ -1,3 +1,4 @@
+import AppKit
 import Combine
 import Foundation
 import SwiftData
@@ -761,6 +762,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
                 siteDataPolicyStore: try makeSiteDataPolicyStore(),
                 siteDataPolicyEnforcementService: siteDataPolicyService,
                 faviconService: faviconService,
+                faviconCapabilities: faviconService.capabilities,
                 visitedLinkStore: visitedLinkStore,
                 historyFaviconCleaner: faviconService,
                 historyVisitedLinkStore: visitedLinkStore,
@@ -779,6 +781,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         )
         tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
         XCTAssertIdentical(tab.faviconService as AnyObject, faviconService)
+        XCTAssertIdentical(tab.faviconCapabilities.images as AnyObject, faviconService)
         XCTAssertIdentical(tab.visitedLinkStore as AnyObject, visitedLinkStore)
 
         browserManager.dataServices.siteDataPolicyEnforcementService.enforceBlockStorageIfNeeded(
@@ -865,6 +868,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
                 siteDataPolicyStore: try makeSiteDataPolicyStore(),
                 siteDataPolicyEnforcementService: FakeBrowserSiteDataPolicyService(),
                 faviconService: faviconService,
+                faviconCapabilities: faviconService.capabilities,
                 visitedLinkStore: visitedLinkStore,
                 historyFaviconCleaner: faviconService,
                 historyVisitedLinkStore: visitedLinkStore,
@@ -966,6 +970,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
                 siteDataPolicyStore: try makeSiteDataPolicyStore(),
                 siteDataPolicyEnforcementService: FakeBrowserSiteDataPolicyService(),
                 faviconService: faviconService,
+                faviconCapabilities: faviconService.capabilities,
                 visitedLinkStore: visitedLinkStore,
                 historyFaviconCleaner: faviconService,
                 historyVisitedLinkStore: visitedLinkStore,
@@ -986,6 +991,8 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
 
         XCTAssertEqual(historyViewModel.faviconPartition, injectedPartition)
         XCTAssertEqual(bookmarksViewModel.faviconPartition, injectedPartition)
+        XCTAssertIdentical(historyViewModel.faviconImageReader as AnyObject, faviconService)
+        XCTAssertIdentical(bookmarksViewModel.faviconImageReader as AnyObject, faviconService)
         XCTAssertEqual(
             faviconService.partitionProfileIds,
             [initialProfile.id, initialProfile.id, initialProfile.id]
@@ -1372,7 +1379,15 @@ private final class FakeWebsiteDataCleanupService: SumiWebsiteDataCleanupServici
 }
 
 @MainActor
-private final class FakeBrowserFaviconService: BrowserFaviconServicing, HistoryFaviconCleaning, SumiBrowsingDataFaviconCleaning {
+private final class FakeBrowserFaviconService:
+    BrowserFaviconServicing,
+    BrowserFaviconImageReading,
+    BrowserFaviconLiveDiscoveryIngesting,
+    BrowserFaviconLocalIconIngesting,
+    BrowserFaviconPrefetchScheduling,
+    HistoryFaviconCleaning,
+    SumiBrowsingDataFaviconCleaning
+{
     private(set) var partitionProfileIds: [UUID?] = []
     private(set) var invalidatedSites: [(domain: String, profileId: UUID?)] = []
     private(set) var syncedShortcutPinURLs: [[URL]] = []
@@ -1386,6 +1401,45 @@ private final class FakeBrowserFaviconService: BrowserFaviconServicing, HistoryF
     init(partitionToReturn: SumiFaviconPartition? = nil) {
         self.partitionToReturn = partitionToReturn
     }
+
+    var capabilities: BrowserFaviconCapabilities {
+        BrowserFaviconCapabilities(
+            images: self,
+            liveDiscovery: self,
+            localIconIngestion: self,
+            prefetch: self
+        )
+    }
+
+    nonisolated func cachedPreparedImage(for _: SumiPreparedFaviconRequest) -> NSImage? { nil }
+    nonisolated func cachedSelection(
+        for _: URL,
+        partition _: SumiFaviconPartition
+    ) -> SumiStoredFaviconSelection? { nil }
+    nonisolated func preparedImage(
+        for _: SumiPreparedFaviconRequest,
+        priority _: SumiFaviconFetchPriority,
+        scheduleFetchOnMiss _: Bool
+    ) async -> NSImage? { nil }
+    func ingestVisibleTabDiscovery(
+        links _: [SumiFaviconDiscoveredLink],
+        documentURL _: URL,
+        baseURL _: URL?,
+        partition _: SumiFaviconPartition,
+        webView _: WKWebView?,
+        aliasPageURLs _: [URL]
+    ) async -> NSImage? { nil }
+    nonisolated func ingestLocalExtensionIcon(
+        fileURL _: URL,
+        documentURL _: URL,
+        partition _: SumiFaviconPartition,
+        context _: SumiFaviconDisplayContext
+    ) async -> NSImage? { nil }
+    nonisolated func scheduleColdFetch(
+        for _: URL,
+        partition _: SumiFaviconPartition,
+        priority _: SumiFaviconFetchPriority
+    ) {}
 
     func partition(profile: Profile?) -> SumiFaviconPartition {
         partitionProfileIds.append(profile?.id)

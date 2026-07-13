@@ -273,6 +273,7 @@ enum SpaceSidebarTransitionSnapshotBuilder {
                 spaceInventory: inventory.snapshot(for: sourceSpace.id),
                 selection: selection,
                 pinProjection: pinProjection,
+                imageReader: browserContext.faviconImageReader,
                 windowState: windowState
             )
             : nil
@@ -322,12 +323,14 @@ enum SpaceSidebarTransitionSnapshotBuilder {
                     spaceInventory: projection,
                     selection: selection,
                     pinProjection: pinProjection,
+                    imageReader: browserContext.faviconImageReader,
                     windowState: windowState
                 ),
             pinnedItems: pinnedItemsSnapshot(
                 projection: projection,
                 selection: selection,
                 pinProjection: pinProjection,
+                imageReader: browserContext.faviconImageReader,
                 windowState: windowState
             ),
             regularTabs: regularTabs,
@@ -392,6 +395,7 @@ enum SpaceSidebarTransitionSnapshotBuilder {
         spaceInventory: SidebarSpaceInventorySnapshot?,
         selection: SidebarWindowSelectionQuery,
         pinProjection: SidebarPinFolderProjection,
+        imageReader: any BrowserFaviconImageReading,
         windowState: BrowserWindowState
     ) -> EssentialsSnapshot {
         EssentialsSnapshot(
@@ -404,6 +408,7 @@ enum SpaceSidebarTransitionSnapshotBuilder {
                         inventory: spaceInventory,
                         selection: selection,
                         pinProjection: pinProjection,
+                        imageReader: imageReader,
                         windowState: windowState
                     )
                 }
@@ -417,6 +422,7 @@ enum SpaceSidebarTransitionSnapshotBuilder {
         let inventory: SidebarSpaceInventorySnapshot
         let selection: SidebarWindowSelectionQuery
         let pinProjection: SidebarPinFolderProjection
+        let imageReader: any BrowserFaviconImageReading
         let windowState: BrowserWindowState
     }
 
@@ -424,6 +430,7 @@ enum SpaceSidebarTransitionSnapshotBuilder {
         projection: SidebarSpaceInventorySnapshot?,
         selection: SidebarWindowSelectionQuery,
         pinProjection: SidebarPinFolderProjection,
+        imageReader: any BrowserFaviconImageReading,
         windowState: BrowserWindowState
     ) -> [SpacePinnedItemSnapshot] {
         guard let projection else { return [] }
@@ -438,6 +445,7 @@ enum SpaceSidebarTransitionSnapshotBuilder {
             inventory: projection,
             selection: selection,
             pinProjection: pinProjection,
+            imageReader: imageReader,
             windowState: windowState
         )
 
@@ -464,6 +472,7 @@ enum SpaceSidebarTransitionSnapshotBuilder {
                             inventory: projection,
                             selection: selection,
                             pinProjection: pinProjection,
+                            imageReader: imageReader,
                             windowState: windowState
                         )
                     )
@@ -585,6 +594,7 @@ enum SpaceSidebarTransitionSnapshotBuilder {
                         inventory: context.inventory,
                         selection: context.selection,
                         pinProjection: context.pinProjection,
+                        imageReader: context.imageReader,
                         windowState: context.windowState
                     )
                 )
@@ -651,6 +661,7 @@ enum SpaceSidebarTransitionSnapshotBuilder {
                             inventory: context.inventory,
                             selection: context.selection,
                             pinProjection: context.pinProjection,
+                            imageReader: context.imageReader,
                             windowState: context.windowState
                         )
                     )
@@ -694,6 +705,7 @@ enum SpaceSidebarTransitionSnapshotBuilder {
         inventory: SidebarSpaceInventorySnapshot?,
         selection: SidebarWindowSelectionQuery,
         pinProjection: SidebarPinFolderProjection,
+        imageReader: any BrowserFaviconImageReading,
         windowState: BrowserWindowState
     ) -> SpaceShortcutSnapshot {
         let presentationState = selection.presentationState(for: pin, in: windowState)
@@ -715,7 +727,8 @@ enum SpaceSidebarTransitionSnapshotBuilder {
             icon: shortcutIcon(
                 for: pin,
                 liveTab: liveTab,
-                faviconPartition: faviconPartition
+                faviconPartition: faviconPartition,
+                imageReader: imageReader
             ),
             accentSource: SpaceShortcutSnapshotAccentSource(
                 launchURL: pin.launchURL,
@@ -765,7 +778,8 @@ enum SpaceSidebarTransitionSnapshotBuilder {
     private static func shortcutIcon(
         for pin: ShortcutPin,
         liveTab: Tab?,
-        faviconPartition: SumiFaviconPartition
+        faviconPartition: SumiFaviconPartition,
+        imageReader: any BrowserFaviconImageReading
     ) -> SpaceSidebarSnapshotIcon {
         if let iconAsset = pin.iconAsset {
             if SumiPersistentGlyph.presentsAsEmoji(iconAsset) {
@@ -781,7 +795,8 @@ enum SpaceSidebarTransitionSnapshotBuilder {
 
             if let cachedFavicon = ShortcutPin.cachedLaunchFavicon(
                 for: pin.launchURL,
-                partition: faviconPartition
+                partition: faviconPartition,
+                imageReader: imageReader
             ) {
                 return .image(cachedFavicon)
             }
@@ -793,10 +808,18 @@ enum SpaceSidebarTransitionSnapshotBuilder {
             return .system(SumiPersistentGlyph.launcherSystemImageFallback)
         }
 
-        if let systemName = pin.storedChromeTemplateSystemImageName(for: faviconPartition) {
+        if let systemName = pin.storedChromeTemplateSystemImageName(
+            for: faviconPartition,
+            imageReader: imageReader
+        ) {
             return .system(systemName)
         }
 
-        return .image(pin.storedFaviconImage(partition: faviconPartition))
+        return .image(
+            pin.storedFaviconImage(
+                partition: faviconPartition,
+                imageReader: imageReader
+            )
+        )
     }
 }

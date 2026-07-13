@@ -105,6 +105,7 @@ struct RegularSplitSegmentResolver {
     func dragSource(
         for item: SplitGroupSidebarItem,
         in group: SplitGroup,
+        faviconImageReader: any BrowserFaviconImageReading,
         shortcutPin: (UUID) -> ShortcutPin?,
         onActivateMember: @escaping () -> Void
     ) -> SidebarDragSourceConfiguration? {
@@ -123,7 +124,10 @@ struct RegularSplitSegmentResolver {
                 ),
                 sourceZone: sourceZone(for: pin),
                 previewKind: .row,
-                previewIcon: item.tab?.favicon ?? pin.storedFavicon,
+                previewIcon: item.tab?.favicon ?? pin.storedFaviconImage(
+                    partition: .regular(pin.executionProfileId ?? pin.profileId),
+                    imageReader: faviconImageReader
+                ),
                 exclusionZones: [.trailingStrip(32)],
                 onActivate: onActivateMember,
                 isEnabled: isInteractive

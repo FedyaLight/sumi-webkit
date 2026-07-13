@@ -191,7 +191,10 @@ struct SpacesSideBarView: View {
                     }
 
                     if shouldMountMiniPlayer {
-                        MediaControlsView(nowPlayingController: chromeModel.nowPlayingController) { mediaStore, windowState in
+                        MediaControlsView(
+                            nowPlayingController: chromeModel.nowPlayingController,
+                            faviconImageReader: browserContext.faviconImageReader
+                        ) { mediaStore, windowState in
                             browserContext.configureMediaStore(mediaStore, windowState)
                         }
                             .environment(windowState)

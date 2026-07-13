@@ -7,6 +7,7 @@ import SumiDomain
 struct BookmarksPageBrowserContext {
     let bookmarkManager: SumiBookmarkManager
     let faviconService: any BrowserFaviconServicing
+    let faviconImageReader: any BrowserFaviconImageReading
     let currentProfile: () -> Profile?
     let currentProfileUpdates: AnyPublisher<Profile?, Never>
     let currentTab: (BrowserWindowState) -> Tab?
@@ -79,6 +80,10 @@ final class SumiBookmarksPageViewModel: ObservableObject {
 
     var faviconPartition: SumiFaviconPartition {
         faviconService.partition(profile: browserContext.currentProfile())
+    }
+
+    var faviconImageReader: any BrowserFaviconImageReading {
+        browserContext.faviconImageReader
     }
 
     var selectionCount: Int {

@@ -304,6 +304,7 @@ struct URLBarHubPopover: View {
                 model: siteDataDetailsModel,
                 currentTab: currentTab,
                 profile: activeProfile,
+                faviconImageReader: browserContext.faviconImageReader,
                 onBack: {
                     navigation.setMode(.controls, direction: .backward)
                 },

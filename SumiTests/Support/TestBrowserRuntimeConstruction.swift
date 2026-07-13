@@ -31,7 +31,7 @@ extension BrowserManager {
         extensionsModule: SumiExtensionsModule? = nil,
         boostsModule: SumiBoostsModule? = nil,
         browsingDataCleanupService: SumiBrowsingDataCleanupService? = nil,
-        dataServices: BrowserManagerDataServices = .production,
+        dataServices: BrowserManagerDataServices = .unavailable(),
         nowPlayingController: any SumiNativeNowPlayingRuntimeControlling = SumiNativeNowPlayingController(),
         systemPermissionService: (any SumiSystemPermissionService)? = nil,
         permissionCoordinator: (any SumiPermissionCoordinating)? = nil,

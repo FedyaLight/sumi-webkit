@@ -7,6 +7,7 @@ import SumiDomain
 struct HistoryPageBrowserContext {
     let historyManager: HistoryManager
     let faviconService: any BrowserFaviconServicing
+    let faviconImageReader: any BrowserFaviconImageReading
     let currentProfile: () -> Profile?
     let currentProfileUpdates: AnyPublisher<Profile?, Never>
     let nativeModalPresentationUpdates: AnyPublisher<Void, Never>
@@ -101,6 +102,10 @@ final class HistoryPageViewModel: ObservableObject {
 
     var faviconPartition: SumiFaviconPartition {
         faviconService.partition(profile: browserContext.currentProfile())
+    }
+
+    var faviconImageReader: any BrowserFaviconImageReading {
+        browserContext.faviconImageReader
     }
 
     var selectionCount: Int {

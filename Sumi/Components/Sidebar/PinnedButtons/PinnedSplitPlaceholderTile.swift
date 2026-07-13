@@ -8,6 +8,7 @@ import SwiftUI
 struct PinnedSplitPlaceholderTile: View {
     @ObservedObject var pin: ShortcutPin
     let faviconPartition: SumiFaviconPartition
+    let faviconImageReader: any BrowserFaviconImageReading
     let isSelected: Bool
     let accessibilityID: String
     let isAppKitInteractionEnabled: Bool
@@ -20,9 +21,15 @@ struct PinnedSplitPlaceholderTile: View {
     @StateObject private var storedFaviconLoader = SidebarStoredFaviconLoader()
 
     var body: some View {
-        let resolvedFavicon = currentLoadedStoredFavicon ?? pin.storedFaviconImage(partition: faviconPartition)
+        let resolvedFavicon = currentLoadedStoredFavicon ?? pin.storedFaviconImage(
+            partition: faviconPartition,
+            imageReader: faviconImageReader
+        )
         let resolvedChromeTemplateSystemImageName = currentLoadedStoredFavicon == nil
-            ? pin.storedChromeTemplateSystemImageName(for: faviconPartition)
+            ? pin.storedChromeTemplateSystemImageName(
+                for: faviconPartition,
+                imageReader: faviconImageReader
+            )
             : nil
 
         PinnedTileVisual(
@@ -33,7 +40,8 @@ struct PinnedSplitPlaceholderTile: View {
             showsSplitGroupOutline: true,
             faviconOpacity: 1,
             accentSourceURL: pin.launchURL,
-            accentSourcePartition: faviconPartition
+            accentSourcePartition: faviconPartition,
+            faviconImageReader: faviconImageReader
         )
         .frame(maxWidth: .infinity)
         .frame(height: PinnedTileMetrics.height)
@@ -94,6 +102,7 @@ struct PinnedSplitPlaceholderTile: View {
         await storedFaviconLoader.load(
             launchURL: pin.launchURL,
             partition: faviconPartition,
+            imageReader: faviconImageReader,
             isCurrentLaunchURL: { pin.launchURL == $0 }
         )
     }

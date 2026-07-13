@@ -84,19 +84,22 @@ struct SumiHistoryCommands: Commands {
                                 SumiCommandMenuLabels.site(
                                     SumiCommandMenuLabels.recentlyClosedTitle(for: item),
                                     url: tab.url,
-                                    partition: faviconPartition
+                                    partition: faviconPartition,
+                                    imageReader: browserContext.faviconImageReader
                                 )
                             case .shortcutLiveInstance(let shortcut):
                                 SumiCommandMenuLabels.site(
                                     SumiCommandMenuLabels.recentlyClosedTitle(for: item),
                                     url: shortcut.url,
-                                    partition: faviconPartition
+                                    partition: faviconPartition,
+                                    imageReader: browserContext.faviconImageReader
                                 )
                             case .shortcutLauncher(let shortcut):
                                 SumiCommandMenuLabels.site(
                                     SumiCommandMenuLabels.recentlyClosedTitle(for: item),
                                     url: shortcut.pin.launchURL,
-                                    partition: faviconPartition
+                                    partition: faviconPartition,
+                                    imageReader: browserContext.faviconImageReader
                                 )
                             case .window:
                                 SumiCommandMenuLabels.system(
@@ -129,7 +132,8 @@ struct SumiHistoryCommands: Commands {
                         SumiCommandMenuLabels.site(
                             visit.displayTitle,
                             url: visit.url,
-                            partition: faviconPartition
+                            partition: faviconPartition,
+                            imageReader: browserContext.faviconImageReader
                         )
                     }
                 }

@@ -62,6 +62,7 @@ struct SidebarBrowserContext {
     let downloadsPopoverPresenter: DownloadsPopoverPresenter
     let glanceManager: GlanceManager
     let extensionSurfaceStore: BrowserExtensionSurfaceStore
+    let faviconImageReader: any BrowserFaviconImageReading
     let presentationActions: SidebarBrowserPresentationActions
     let headerContext: (BrowserWindowState) -> SidebarHeaderBrowserContext
     let isTransitioningProfile: () -> Bool
@@ -88,6 +89,7 @@ struct SidebarBrowserContext {
             downloadsPopoverPresenter: browserManager.chromeBundle.commands.downloadsPopoverPresenter,
             glanceManager: browserManager.glanceManager,
             extensionSurfaceStore: browserManager.optionalModules.extensions.surfaceStore,
+            faviconImageReader: browserManager.dataServices.faviconCapabilities.images,
             presentationActions: SidebarBrowserPresentationActions(
                 showShortcutEditor: { [weak browserManager] pin, windowState, themeContext, source in
                     browserManager?.sidebarCommandService.editorPresentation.showShortcutEditor(

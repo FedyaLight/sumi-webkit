@@ -298,7 +298,12 @@ final class SearchManagerHistorySuggestionTests: XCTestCase {
         )
         let context = ModelContext(container)
         let profileID = UUID()
-        let historyManager = HistoryManager(context: context, profileId: profileID)
+        let historyManager = HistoryManager(
+            context: context,
+            profileId: profileID,
+            faviconCleaner: TabDependencyIsolationDefaults.historyFaviconCleaner,
+            visitedLinkStore: TabDependencyIsolationDefaults.historyVisitedLinkStore
+        )
         let searchManager = SearchManager(
             suggestionDataProvider: StaticSearchSuggestionDataProvider(payload: suggestionPayload)
         )

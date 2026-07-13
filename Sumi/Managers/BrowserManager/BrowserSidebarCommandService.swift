@@ -101,7 +101,8 @@ final class BrowserSidebarCommandService {
                     launchURL: launchURL,
                     iconAsset: .some(iconAsset)
                 )
-            }
+            },
+            faviconImageReader: browserManager.dataServices.faviconCapabilities.images
         )
     }
 

@@ -10,6 +10,7 @@ struct ShortcutSidebarRowChrome: View {
     let pin: ShortcutPin
     let liveTab: Tab?
     let faviconPartition: SumiFaviconPartition
+    let faviconImageReader: any BrowserFaviconImageReading
     let resolvedTitle: String
     let runtimeAffordance: SumiLauncherRuntimeAffordanceState
     var accessibilityID: String?

@@ -133,15 +133,6 @@ enum TabBrowserHostServicesRuntimeFactory {
         )
     }
 
-    static func dataServices(
-        for browserManager: BrowserManager
-    ) -> TabDependencyDataServices? {
-        TabDependencyDataServices(
-            faviconService: browserManager.dataServices.faviconService,
-            faviconCapabilities: browserManager.dataServices.faviconCapabilities,
-            visitedLinkStore: browserManager.dataServices.visitedLinkStore
-        )
-    }
 }
 
 @MainActor

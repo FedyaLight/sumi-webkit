@@ -115,9 +115,6 @@ enum TabBrowserRuntimeFactory {
             webViewConfigurationContext: { [weak browserManager] in
                 browserManager.map { TabBrowserWebViewRuntimeFactory.configurationContext(for: $0) } ?? .empty
             },
-            dataServices: { [weak browserManager] in
-                browserManager.flatMap { TabBrowserHostServicesRuntimeFactory.dataServices(for: $0) }
-            },
             currentProfileUpdates: { [weak browserManager] in
                 browserManager?.$currentProfile.eraseToAnyPublisher()
             },

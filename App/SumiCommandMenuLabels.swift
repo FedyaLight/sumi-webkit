@@ -28,12 +28,19 @@ enum SumiCommandMenuLabels {
     static func site(
         _ title: String,
         url: URL?,
-        partition: SumiFaviconPartition = .regular(nil)
+        partition: SumiFaviconPartition = .regular(nil),
+        imageReader: any BrowserFaviconImageReading
     ) -> some View {
         Label {
             Text(title)
         } icon: {
-            menuIcon(SumiFaviconResolver.menuImage(for: url, partition: partition))
+            menuIcon(
+                SumiFaviconResolver.menuImage(
+                    for: url,
+                    partition: partition,
+                    imageReader: imageReader
+                )
+            )
         }
     }
 

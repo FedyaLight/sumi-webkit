@@ -190,36 +190,42 @@ final class ShortcutPin: NSObject, ObservableObject, Identifiable {
 
     static func cachedLaunchFavicon(
         for url: URL,
-        partition: SumiFaviconPartition = .regular(nil)
+        partition: SumiFaviconPartition = .regular(nil),
+        imageReader: any BrowserFaviconImageReading
     ) -> Image? {
         guard let image = TabFaviconStore.getCachedImage(
             forDocumentURL: url,
             partition: partition,
-            context: .pinnedLauncher
+            context: .pinnedLauncher,
+            imageReader: imageReader
         ) else {
             return nil
         }
         return Image(nsImage: image)
     }
 
-    var storedFavicon: Image {
-        storedFaviconImage(partition: .regular(executionProfileId ?? profileId))
-    }
-
-    func storedFaviconImage(partition: SumiFaviconPartition) -> Image {
+    func storedFaviconImage(
+        partition: SumiFaviconPartition,
+        imageReader: any BrowserFaviconImageReading
+    ) -> Image {
         if let cached = Self.cachedLaunchFavicon(
             for: launchURL,
-            partition: partition
+            partition: partition,
+            imageReader: imageReader
         ) {
             return cached
         }
         return Image(systemName: SumiPersistentGlyph.launcherSystemImageFallback)
     }
 
-    func hasStoredFaviconPlaceholder(partition: SumiFaviconPartition) -> Bool {
+    func hasStoredFaviconPlaceholder(
+        partition: SumiFaviconPartition,
+        imageReader: any BrowserFaviconImageReading
+    ) -> Bool {
         Self.cachedLaunchFavicon(
             for: launchURL,
-            partition: partition
+            partition: partition,
+            imageReader: imageReader
         ) == nil
     }
 
@@ -243,15 +249,17 @@ final class ShortcutPin: NSObject, ObservableObject, Identifiable {
         return SumiPersistentGlyph.resolvedLauncherSystemImageName(iconAsset)
     }
 
-    var storedChromeTemplateSystemImageName: String? {
-        storedChromeTemplateSystemImageName(for: .regular(executionProfileId ?? profileId))
-    }
-
-    func storedChromeTemplateSystemImageName(for partition: SumiFaviconPartition) -> String? {
+    func storedChromeTemplateSystemImageName(
+        for partition: SumiFaviconPartition,
+        imageReader: any BrowserFaviconImageReading
+    ) -> String? {
         if SumiSurface.isSettingsSurfaceURL(launchURL) {
             return SumiSurface.settingsTabFaviconSystemImageName
         }
-        if hasStoredFaviconPlaceholder(partition: partition) {
+        if hasStoredFaviconPlaceholder(
+            partition: partition,
+            imageReader: imageReader
+        ) {
             return SumiPersistentGlyph.launcherSystemImageFallback
         }
         return nil

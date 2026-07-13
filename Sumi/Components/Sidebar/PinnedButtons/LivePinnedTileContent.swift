@@ -9,6 +9,7 @@ import SumiDomain
 struct LivePinnedTileContent: View {
     @ObservedObject var pin: ShortcutPin
     let faviconPartition: SumiFaviconPartition
+    let faviconImageReader: any BrowserFaviconImageReading
     @ObservedObject var liveTab: Tab
     let presentationState: ShortcutPresentationState
     let essentialRuntimeState: SumiEssentialRuntimeState?
@@ -55,7 +56,8 @@ struct LivePinnedTileContent: View {
             action: onActivate,
             onUnload: onUnload,
             accentSourceURL: pin.launchURL,
-            accentSourcePartition: faviconPartition
+            accentSourcePartition: faviconPartition,
+            faviconImageReader: faviconImageReader
         )
         .task(id: storedFaviconLoadKey) {
             await loadStoredFavicon()
@@ -98,7 +100,8 @@ struct LivePinnedTileContent: View {
     private var currentCachedStoredFavicon: Image? {
         currentLoadedStoredFavicon ?? ShortcutPin.cachedLaunchFavicon(
             for: pin.launchURL,
-            partition: faviconPartition
+            partition: faviconPartition,
+            imageReader: faviconImageReader
         )
     }
 
@@ -118,6 +121,7 @@ struct LivePinnedTileContent: View {
         await storedFaviconLoader.load(
             launchURL: pin.launchURL,
             partition: faviconPartition,
+            imageReader: faviconImageReader,
             isCurrentLaunchURL: { pin.launchURL == $0 }
         )
     }

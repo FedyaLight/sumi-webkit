@@ -160,6 +160,7 @@ enum WebsiteViewContextFactory {
         HistoryPageBrowserContext(
             historyManager: browserManager.historyManager,
             faviconService: browserManager.dataServices.faviconService,
+            faviconImageReader: browserManager.dataServices.faviconCapabilities.images,
             currentProfile: { [weak browserManager] in
                 browserManager?.currentProfile
             },
@@ -208,6 +209,7 @@ enum WebsiteViewContextFactory {
         BookmarksPageBrowserContext(
             bookmarkManager: browserManager.bookmarkManager,
             faviconService: browserManager.dataServices.faviconService,
+            faviconImageReader: browserManager.dataServices.faviconCapabilities.images,
             currentProfile: { [weak browserManager] in
                 browserManager?.currentProfile
             },

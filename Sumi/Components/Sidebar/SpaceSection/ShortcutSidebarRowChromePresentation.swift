@@ -32,7 +32,10 @@ extension ShortcutSidebarRowChrome {
         if let liveTab, !liveTab.faviconIsTemplateGlobePlaceholder {
             return liveTab.favicon
         }
-        return pin.storedFaviconImage(partition: faviconPartition)
+        return pin.storedFaviconImage(
+            partition: faviconPartition,
+            imageReader: faviconImageReader
+        )
     }
 
     var chromeTemplateSystemImageName: String? {
@@ -51,7 +54,10 @@ extension ShortcutSidebarRowChrome {
         if currentLoadedStoredFavicon != nil {
             return nil
         }
-        return pin.storedChromeTemplateSystemImageName(for: faviconPartition)
+        return pin.storedChromeTemplateSystemImageName(
+            for: faviconPartition,
+            imageReader: faviconImageReader
+        )
     }
 
     @ViewBuilder

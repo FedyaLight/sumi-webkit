@@ -104,7 +104,12 @@ final class SumiBookmarksSurfaceTests: XCTestCase {
         browserManager.modelContext = context
         browserManager.profileManager.profiles = [profile]
         browserManager.currentProfile = profile
-        browserManager.historyManager = HistoryManager(context: context, profileId: profile.id)
+        browserManager.historyManager = HistoryManager(
+            context: context,
+            profileId: profile.id,
+            faviconCleaner: TabDependencyIsolationDefaults.historyFaviconCleaner,
+            visitedLinkStore: TabDependencyIsolationDefaults.historyVisitedLinkStore
+        )
         browserManager.recentlyClosedManager = RecentlyClosedManager()
         browserManager.lastSessionWindowsStore = LastSessionWindowsStore()
         browserManager.bookmarkManager = makeBookmarkManager()

@@ -938,7 +938,10 @@ final class SumiFaviconV2PipelineRegressionTests: XCTestCase {
         let pageURL = try XCTUnwrap(URL(string: "webkit-extension://ext-test/onboarding.html"))
         XCTAssertNotNil(SumiFaviconLookupKey.cacheKey(for: pageURL))
 
-        let runtime = SumiFaviconRuntime(rootDirectory: directory.appendingPathComponent("store", isDirectory: true))
+        let runtime = SumiFaviconRuntime(
+            rootDirectory: directory.appendingPathComponent("store", isDirectory: true),
+            fetcher: RoutingFaviconNetworkFetcher(responses: [:])
+        )
         let partition = SumiFaviconPartition.regular(UUID())
         let image = await runtime.payloadIngestion.ingestLocalExtensionIcon(
             fileURL: iconURL,
@@ -986,7 +989,10 @@ final class SumiFaviconV2PipelineRegressionTests: XCTestCase {
 
         // Use an isolated runtime rooted in a temp directory instead of the
         // shared system so this test does not persist blobs across runs.
-        let runtime = SumiFaviconRuntime(rootDirectory: directory)
+        let runtime = SumiFaviconRuntime(
+            rootDirectory: directory,
+            fetcher: RoutingFaviconNetworkFetcher(responses: [:])
+        )
         try runtime.payloadIngestion.storeExternalPayload(
             imageData,
             faviconURL: pageURL.appendingPathComponent("favicon.png"),
@@ -1567,68 +1573,78 @@ final class SumiFaviconV2PipelineRegressionTests: XCTestCase {
         )
     }
 
-    /// Regression: launcher UI omits `imageReader:` and must hit the
-    /// production favicon system — not `TabDependencyIsolationDefaults` NoOp.
-    func testLauncherCacheHelpersDefaultToProductionFaviconServiceNotNoOp() async throws {
-        let host = "launcher-default-\(UUID().uuidString.lowercased()).example"
-        let launchURL = try XCTUnwrap(URL(string: "https://\(host)/app"))
-        let partition = SumiFaviconPartition.regular(nil)
-        let production = SumiFaviconProductionSystem.current.runtime
+    func testExplicitFaviconRootsDoNotShareStoredState() throws {
+        let firstDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SumiFaviconRootA-\(UUID().uuidString)", isDirectory: true)
+        let secondDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SumiFaviconRootB-\(UUID().uuidString)", isDirectory: true)
         defer {
-            production.maintenance.invalidateSite(domain: host, partition: partition)
+            removeFaviconTestDirectories([firstDirectory, secondDirectory])
         }
 
-        try production.payloadIngestion.storeExternalPayload(
+        let launchURL = try XCTUnwrap(URL(string: "https://root-isolation.example/app"))
+        let partition = SumiFaviconPartition.regular(nil)
+        let firstRoot = SumiFaviconSystem(
+            rootDirectory: firstDirectory,
+            fetcher: RoutingFaviconNetworkFetcher(responses: [:])
+        )
+        let secondRoot = SumiFaviconSystem(
+            rootDirectory: secondDirectory,
+            fetcher: RoutingFaviconNetworkFetcher(responses: [:])
+        )
+
+        try firstRoot.runtime.payloadIngestion.storeExternalPayload(
             SumiFaviconTestImages.pngData(width: 32, height: 32),
             faviconURL: launchURL.appendingPathComponent("favicon.png"),
             documentURL: launchURL,
             partition: partition
         )
 
-        // Warm prepared cache through the same production runtime the UI defaults to.
-        let warmed = await production.images.preparedImage(
-            for: SumiPreparedFaviconRequest(
-                pageURL: launchURL,
-                partition: partition,
-                context: .pinnedLauncher,
-                backingScale: SumiFaviconPresentationMetrics.defaultBackingScale()
-            ),
-            priority: .pinnedLauncher,
-            scheduleFetchOnMiss: false
-        )
-        XCTAssertNotNil(warmed)
+        XCTAssertNotNil(firstRoot.runtime.images.cachedSelection(for: launchURL, partition: partition))
+        XCTAssertNil(secondRoot.runtime.images.cachedSelection(for: launchURL, partition: partition))
+    }
 
-        let cachedViaDefault = TabFaviconStore.getCachedImage(
-            forDocumentURL: launchURL,
-            partition: partition,
+    func testUnavailableFaviconCompositionFailsClosedWithoutPersistentWork() async throws {
+        let unavailable = BrowserManagerDataServices.unavailable()
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SumiUnavailableFavicon-\(UUID().uuidString)", isDirectory: true)
+        let pageURL = try XCTUnwrap(URL(string: "https://unavailable.example/page"))
+        let request = SumiPreparedFaviconRequest(
+            pageURL: pageURL,
+            partition: .regular(nil),
+            context: .pinnedLauncher,
+            backingScale: SumiFaviconPresentationMetrics.defaultBackingScale()
+        )
+
+        unavailable.faviconCapabilities.prefetch.scheduleColdFetch(
+            for: pageURL,
+            partition: .regular(nil),
+            priority: .pinnedLauncher
+        )
+        let preparedImage = await unavailable.faviconCapabilities.images.preparedImage(
+            for: request,
+            priority: .pinnedLauncher,
+            scheduleFetchOnMiss: true
+        )
+        XCTAssertNil(preparedImage)
+        let localImage = await unavailable.faviconCapabilities.localIconIngestion.ingestLocalExtensionIcon(
+            fileURL: directory.appendingPathComponent("missing.png"),
+            documentURL: pageURL,
+            partition: .regular(nil),
             context: .pinnedLauncher
         )
-        XCTAssertNotNil(
-            cachedViaDefault,
-            "TabFaviconStore default must resolve production cache for launcher reads"
+        XCTAssertNil(localImage)
+        let discoveredImage = await unavailable.faviconCapabilities.liveDiscovery.ingestVisibleTabDiscovery(
+            links: [],
+            documentURL: pageURL,
+            baseURL: pageURL,
+            partition: .regular(nil),
+            webView: nil,
+            aliasPageURLs: []
         )
-
-        let loadedViaDefault = await TabFaviconStore.loadCachedLauncherImage(
-            forDocumentURL: launchURL,
-            partition: partition
-        )
-        XCTAssertNotNil(
-            loadedViaDefault,
-            "loadCachedLauncherImage default must resolve production cache"
-        )
-
-        XCTAssertNotNil(
-            ShortcutPin.cachedLaunchFavicon(for: launchURL, partition: partition),
-            "ShortcutPin.cachedLaunchFavicon must not silently fall through NoOp defaults"
-        )
-
-        let loader = SidebarStoredFaviconLoader()
-        await loader.load(
-            launchURL: launchURL,
-            partition: partition,
-            isCurrentLaunchURL: { $0 == launchURL }
-        )
-        XCTAssertNotNil(loader.image(for: launchURL))
+        XCTAssertNil(discoveredImage)
+        await unavailable.faviconService.drainRuntimeTasksForTests(cancel: false)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: directory.path))
     }
 
     func testLauncherFaviconAliasesRemainPartitionIsolated() async throws {
@@ -1998,6 +2014,26 @@ final class FaviconURLNormalizationRegressionTests: XCTestCase {
 
         XCTAssertEqual(SumiFaviconCanonicalURL.pageURL(first).absoluteString, "https://example.com/path")
         XCTAssertEqual(SumiFaviconCanonicalURL.pageKey(for: first), SumiFaviconCanonicalURL.pageKey(for: second))
+    }
+}
+
+private func removeFaviconTestDirectories(
+    _ directories: [URL],
+    file: StaticString = #filePath,
+    line: UInt = #line
+) {
+    for directory in directories {
+        do {
+            try FileManager.default.removeItem(at: directory)
+        } catch let error as CocoaError where error.code == .fileNoSuchFile {
+            continue
+        } catch {
+            XCTFail(
+                "Failed to remove favicon test directory \(directory.path): \(error)",
+                file: file,
+                line: line
+            )
+        }
     }
 }
 

@@ -115,6 +115,7 @@ final class BrowserURLBarHubContextOwner {
             siteDataPolicyStore: dataServices.siteDataPolicyStore,
             siteDataPolicyEnforcementService: dataServices.siteDataPolicyEnforcementService,
             faviconService: dataServices.faviconService,
+            faviconImageReader: dataServices.faviconCapabilities.images,
             protectionSettingsChanges: protectionCoordinator.settings.changesPublisher,
             protectionSitePolicyChanges: protectionCoordinator.sitePolicyChangesPublisher(),
             blockedPopupChanges: permissionContextOwner.blockedPopupChanges,

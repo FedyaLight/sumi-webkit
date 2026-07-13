@@ -836,6 +836,7 @@ private final class TestSidebarBrowserContextHarness {
             downloadsPopoverPresenter: downloadsPopoverPresenter,
             glanceManager: glanceManager,
             extensionSurfaceStore: extensionSurfaceStore,
+            faviconImageReader: TabDependencyIsolationDefaults.faviconCapabilities.images,
             presentationActions: SidebarBrowserPresentationActions(
                 showShortcutEditor: { _, _, _, _ in /* No-op. */ },
                 showFolderEditor: { _, _, _, _ in /* No-op. */ },

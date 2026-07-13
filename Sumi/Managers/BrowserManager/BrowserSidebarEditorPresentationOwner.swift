@@ -12,6 +12,7 @@ final class BrowserSidebarEditorPresentationOwner {
     private let renameFolder: @MainActor (UUID, String) -> Void
     private let updateFolderIcon: @MainActor (UUID, String) -> Void
     private let updateShortcutPin: @MainActor (ShortcutPin, String, URL, String?) -> Void
+    private let faviconImageReader: any BrowserFaviconImageReading
     private let folderEditorPopoverPresenter: FolderEditorPopoverPresenter
     private let folderSearchPopoverPresenter: FolderSearchPopoverPresenter
     private let spaceEditorPopoverPresenter: SpaceEditorPopoverPresenter
@@ -29,6 +30,7 @@ final class BrowserSidebarEditorPresentationOwner {
         renameFolder: @escaping @MainActor (UUID, String) -> Void,
         updateFolderIcon: @escaping @MainActor (UUID, String) -> Void,
         updateShortcutPin: @escaping @MainActor (ShortcutPin, String, URL, String?) -> Void,
+        faviconImageReader: any BrowserFaviconImageReading,
         folderEditorPopoverPresenter: FolderEditorPopoverPresenter? = nil,
         folderSearchPopoverPresenter: FolderSearchPopoverPresenter? = nil,
         spaceEditorPopoverPresenter: SpaceEditorPopoverPresenter? = nil,
@@ -44,6 +46,7 @@ final class BrowserSidebarEditorPresentationOwner {
         self.renameFolder = renameFolder
         self.updateFolderIcon = updateFolderIcon
         self.updateShortcutPin = updateShortcutPin
+        self.faviconImageReader = faviconImageReader
         let recovery = sidebarHostRecoveryCoordinator()
         self.folderEditorPopoverPresenter = folderEditorPopoverPresenter
             ?? FolderEditorPopoverPresenter(sidebarRecoveryCoordinator: recovery)
@@ -163,6 +166,7 @@ final class BrowserSidebarEditorPresentationOwner {
             presentationContext: ShortcutEditorPopoverPresentationContext(
                 sidebarPosition: sidebarPosition(),
                 settings: settings,
+                faviconImageReader: faviconImageReader,
                 commit: { [weak self] session in
                     self?.commitShortcutEditorSession(session)
                 }

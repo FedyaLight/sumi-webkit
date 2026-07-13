@@ -201,6 +201,7 @@ final class FolderSearchCandidateBuilderTests: XCTestCase {
             selection: roles.selection,
             windowState: windowState,
             liveFolderProvider: liveProvider,
+            faviconImageReader: TabDependencyIsolationDefaults.faviconCapabilities.images,
             actions: FolderSearchActivationActions(
                 activateShortcut: { _ in },
                 activateLiveItem: { _ in },

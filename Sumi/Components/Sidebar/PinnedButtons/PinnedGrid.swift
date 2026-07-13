@@ -207,6 +207,7 @@ struct PinnedGrid: View {
                     for: pin,
                     currentSpaceID: windowState.currentSpaceId
                 ),
+                faviconImageReader: browserContext.faviconImageReader,
                 isSelected: isSplitPlaceholderSelected(placeholderGroup, pin: pin),
                 accessibilityID: "essential-split-placeholder-\(pin.id.uuidString)",
                 isAppKitInteractionEnabled: isAppKitInteractionEnabled,
@@ -240,6 +241,7 @@ struct PinnedGrid: View {
                     for: pin,
                     currentSpaceID: windowState.currentSpaceId
                 ),
+                faviconImageReader: browserContext.faviconImageReader,
                 presentationState: presentationState,
                 liveTab: liveTab,
                 essentialRuntimeState: essentialRuntimeState(pin),

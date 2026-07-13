@@ -67,11 +67,19 @@ struct SumiApp: App {
         let permissionSiteActivityStore = SumiPermissionSiteActivityStore(
             persistenceAuthority: permissionPersistenceAuthority
         )
+        let faviconSystem = SumiFaviconSystem(
+            rootDirectory: SumiApplicationSupportDirectory.appRootURL()
+                .appendingPathComponent("Favicons/v2", isDirectory: true),
+            fetcher: SumiFaviconNetworkClient()
+        )
         let browserManager = BrowserManager(
             webViewSessions: webViewSessions,
             moduleRegistry: moduleRegistry,
             startupPersistence: SumiStartupPersistenceComposition.browserManagerStartupPersistence,
             browserConfiguration: BrowserConfiguration.shared,
+            dataServices: BrowserManagerDataServices.production(
+                faviconSystem: faviconSystem
+            ),
             nowPlayingController: nowPlayingController,
             permissionSiteActivityStore: permissionSiteActivityStore,
             externalAppResolver: SumiNSWorkspaceExternalAppResolver(),

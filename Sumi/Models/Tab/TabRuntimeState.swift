@@ -38,7 +38,6 @@ struct TabBrowserRuntime {
     var webKitUIRuntime: TabWebKitUIRuntime
     var webViewReplacementRuntime: TabWebViewReplacementRuntime
     var webViewConfigurationContext: () -> TabWebViewConfigurationContext
-    var dataServices: () -> TabDependencyDataServices?
     var currentProfileUpdates: () -> AnyPublisher<Profile?, Never>?
     var settings: () -> SumiSettingsService?
 
@@ -72,7 +71,6 @@ struct TabBrowserRuntime {
         webKitUIRuntime: .inactive,
         webViewReplacementRuntime: .inactive,
         webViewConfigurationContext: { .empty },
-        dataServices: { nil },
         currentProfileUpdates: { nil },
         settings: { nil }
     )

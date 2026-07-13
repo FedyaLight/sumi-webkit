@@ -31,6 +31,7 @@ struct PinnedTabView: View {
     var onUnload: () -> Void
     var accentSourceURL: URL?
     var accentSourcePartition: SumiFaviconPartition?
+    var faviconImageReader: (any BrowserFaviconImageReading)?
 
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sumiSettings) var sumiSettings
@@ -49,7 +50,8 @@ struct PinnedTabView: View {
                 isHovered: displayIsHovered,
                 showsSplitGroupOutline: showsSplitGroupOutline,
                 accentSourceURL: accentSourceURL ?? liveTab?.url,
-                accentSourcePartition: accentSourcePartition
+                accentSourcePartition: accentSourcePartition,
+                faviconImageReader: faviconImageReader
             )
 
             if supportsActionButton {
@@ -223,6 +225,7 @@ struct PinnedTileVisual: View {
     var faviconOpacity: Double = 1
     var accentSourceURL: URL?
     var accentSourcePartition: SumiFaviconPartition?
+    var faviconImageReader: (any BrowserFaviconImageReading)?
 
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
@@ -343,7 +346,8 @@ struct PinnedTileVisual: View {
               glyphText == nil,
               chromeTemplateSystemImageName == nil,
               let accentSourceURL,
-              let accentSourcePartition
+              let accentSourcePartition,
+              let faviconImageReader
         else { return }
 
         if let cached = PinnedTileAccentResolver.cachedAccent(
@@ -357,7 +361,8 @@ struct PinnedTileVisual: View {
         let cachedImage = TabFaviconStore.getCachedImage(
             forDocumentURL: accentSourceURL,
             partition: accentSourcePartition,
-            context: .pinnedLauncher
+            context: .pinnedLauncher,
+            imageReader: faviconImageReader
         )
         let image: NSImage?
         if let cachedImage {
@@ -365,7 +370,8 @@ struct PinnedTileVisual: View {
         } else {
             image = await TabFaviconStore.loadCachedLauncherImage(
                 forDocumentURL: accentSourceURL,
-                partition: accentSourcePartition
+                partition: accentSourcePartition,
+                imageReader: faviconImageReader
             )
         }
 

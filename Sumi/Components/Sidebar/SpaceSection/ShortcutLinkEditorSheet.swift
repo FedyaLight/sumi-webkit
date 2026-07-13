@@ -64,6 +64,7 @@ final class ShortcutLinkEditorSession: ObservableObject, Identifiable {
 
 struct ShortcutLinkEditorSheet: View {
     @ObservedObject var session: ShortcutLinkEditorSession
+    let faviconImageReader: any BrowserFaviconImageReading
     let onDone: () -> Void
     let onCancel: () -> Void
 
@@ -74,6 +75,7 @@ struct ShortcutLinkEditorSheet: View {
             HStack(spacing: 8) {
                 ShortcutLinkEditorIconButton(
                     pin: session.pin,
+                    faviconImageReader: faviconImageReader,
                     iconAsset: $session.iconAsset
                 )
 
@@ -127,6 +129,7 @@ struct ShortcutLinkEditorSheet: View {
 
 private struct ShortcutLinkEditorIconButton: View {
     let pin: ShortcutPin
+    let faviconImageReader: any BrowserFaviconImageReading
     @Binding var iconAsset: String?
 
     @Environment(\.sumiSettings) private var sumiSettings
@@ -137,7 +140,11 @@ private struct ShortcutLinkEditorIconButton: View {
         Button {
             toggleIconPicker()
         } label: {
-            ShortcutLinkEditorIcon(pin: pin, iconAsset: iconAsset)
+            ShortcutLinkEditorIcon(
+                pin: pin,
+                iconAsset: iconAsset,
+                faviconImageReader: faviconImageReader
+            )
                 .frame(width: 26, height: 26)
         }
         .buttonStyle(.plain)
@@ -165,6 +172,7 @@ private struct ShortcutLinkEditorIconButton: View {
 private struct ShortcutLinkEditorIcon: View {
     let pin: ShortcutPin
     let iconAsset: String?
+    let faviconImageReader: any BrowserFaviconImageReading
 
     var body: some View {
         ZStack {
@@ -185,12 +193,18 @@ private struct ShortcutLinkEditorIcon: View {
             Image(systemName: SumiPersistentGlyph.resolvedLauncherSystemImageName(iconAsset))
                 .font(.system(size: 17, weight: .medium))
                 .symbolRenderingMode(.monochrome)
-        } else if let templateName = pin.storedChromeTemplateSystemImageName {
+        } else if let templateName = pin.storedChromeTemplateSystemImageName(
+            for: .regular(pin.executionProfileId ?? pin.profileId),
+            imageReader: faviconImageReader
+        ) {
             Image(systemName: templateName)
                 .font(.system(size: 17, weight: .medium))
                 .symbolRenderingMode(.monochrome)
         } else {
-            pin.storedFavicon
+            pin.storedFaviconImage(
+                partition: .regular(pin.executionProfileId ?? pin.profileId),
+                imageReader: faviconImageReader
+            )
                 .resizable()
                 .scaledToFit()
                 .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))

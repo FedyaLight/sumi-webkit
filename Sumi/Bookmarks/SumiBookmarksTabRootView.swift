@@ -332,7 +332,8 @@ struct SumiBookmarksTabRootView: View {
                                 )
                             },
                             searchActive: !viewModel.searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                            faviconPartition: viewModel.faviconPartition
+                            faviconPartition: viewModel.faviconPartition,
+                            faviconImageReader: viewModel.faviconImageReader
                         )
                     }
                 }
@@ -375,6 +376,7 @@ private struct SumiBookmarkEntityRow: View {
     let newFolder: () -> Void
     let searchActive: Bool
     let faviconPartition: SumiFaviconPartition
+    let faviconImageReader: any BrowserFaviconImageReading
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
     @Environment(\.nativeSurfaceHoverUpdatesEnabled) private var hoverUpdatesEnabled
@@ -458,7 +460,8 @@ private struct SumiBookmarkEntityRow: View {
         return TabFaviconStore.getCachedImage(
             forDocumentURL: url,
             partition: faviconPartition,
-            context: .historyBookmarkRow
+            context: .historyBookmarkRow,
+            imageReader: faviconImageReader
         )
     }
 
@@ -474,7 +477,8 @@ private struct SumiBookmarkEntityRow: View {
             forDocumentURL: url,
             partition: faviconPartition,
             context: .historyBookmarkRow,
-            priority: .historyBookmarkVisibleRow
+            priority: .historyBookmarkVisibleRow,
+            imageReader: faviconImageReader
         )
         guard !Task.isCancelled else { return }
         faviconImage = loadedImage ?? cachedFaviconImage

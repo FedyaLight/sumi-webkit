@@ -309,7 +309,8 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
             webViewSessions: webViewSessions,
             startupPersistence: BrowserManagerStartupPersistence(
                 container: try makeInMemoryStartupModelContainer()
-            )
+            ),
+            dataServices: .unavailable()
         )
         let tabManager = browserManager.tabManager
         tabManager.sumiSettings = settings

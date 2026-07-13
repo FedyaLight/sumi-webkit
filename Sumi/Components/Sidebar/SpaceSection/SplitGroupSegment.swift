@@ -13,6 +13,7 @@ struct SplitGroupSegment: View {
     let isDeparting: Bool
     let segmentAction: SplitGroupSidebarSegmentAction?
     let isAppKitInteractionEnabled: Bool
+    let faviconImageReader: any BrowserFaviconImageReading
     let dragSourceConfiguration: SidebarDragSourceConfiguration?
     let contextMenuEntries: () -> [SidebarContextMenuEntry]
     let onActivate: () -> Void
@@ -73,7 +74,10 @@ struct SplitGroupSegment: View {
         if let tab = item.tab {
             SidebarTabFaviconView(tab: tab, size: 16)
         } else if let pin = item.pin {
-            pin.storedFavicon
+            pin.storedFaviconImage(
+                partition: .regular(pin.executionProfileId ?? pin.profileId),
+                imageReader: faviconImageReader
+            )
                 .resizable()
                 .scaledToFit()
                 .frame(width: 16, height: 16)

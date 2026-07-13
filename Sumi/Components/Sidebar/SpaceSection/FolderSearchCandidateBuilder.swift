@@ -44,6 +44,7 @@ struct FolderSearchCandidateBuilder {
     let selection: SidebarWindowSelectionQuery
     let windowState: BrowserWindowState
     let liveFolderProvider: FolderSearchLiveFolderProviding
+    let faviconImageReader: any BrowserFaviconImageReading
     let actions: FolderSearchActivationActions
 
     init(
@@ -51,12 +52,14 @@ struct FolderSearchCandidateBuilder {
         selection: SidebarWindowSelectionQuery,
         windowState: BrowserWindowState,
         liveFolderProvider: FolderSearchLiveFolderProviding,
+        faviconImageReader: any BrowserFaviconImageReading,
         actions: FolderSearchActivationActions
     ) {
         self.inventory = inventory
         self.selection = selection
         self.windowState = windowState
         self.liveFolderProvider = liveFolderProvider
+        self.faviconImageReader = faviconImageReader
         self.actions = actions
     }
 
@@ -149,7 +152,10 @@ struct FolderSearchCandidateBuilder {
             kind: .shortcut(pin.id),
             title: title,
             secondaryText: secondaryText,
-            icon: pin.storedFavicon,
+            icon: pin.storedFaviconImage(
+                partition: .regular(pin.executionProfileId ?? pin.profileId),
+                imageReader: faviconImageReader
+            ),
             searchText: FolderSearchMatcher.searchText(
                 components: [title, host, urlString] + folderPath
             ),
@@ -199,7 +205,12 @@ struct FolderSearchCandidateBuilder {
             ),
             title: title,
             secondaryText: secondaryText(host: host, folderPath: folderPath),
-            icon: item.tab?.favicon ?? item.pin?.storedFavicon ?? Image(systemName: "square.split.2x2"),
+            icon: item.tab?.favicon ?? item.pin.map {
+                $0.storedFaviconImage(
+                    partition: .regular($0.executionProfileId ?? $0.profileId),
+                    imageReader: faviconImageReader
+                )
+            } ?? Image(systemName: "square.split.2x2"),
             searchText: FolderSearchMatcher.searchText(
                 components: [title, host, urlString] + folderPath
             ),

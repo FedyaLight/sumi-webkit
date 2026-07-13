@@ -145,7 +145,8 @@ private struct SumiBookmarkCommandItem: View {
                 SumiCommandMenuLabels.site(
                     SumiCommandMenuLabels.bookmarkTitle(for: entity),
                     url: entity.url,
-                    partition: faviconPartition
+                    partition: faviconPartition,
+                    imageReader: browserContext.faviconImageReader
                 )
             }
             .disabled(entity.url == nil)

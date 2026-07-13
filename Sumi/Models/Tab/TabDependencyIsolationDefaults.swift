@@ -4,15 +4,15 @@ import WebKit
 
 /// Isolation defaults for `Tab` / `TabManager` construction only.
 ///
-/// Composition roots (`BrowserManagerDataServices.production`) inject real services.
+/// Composition roots inject real services.
 /// Tests may inject fakes or rely on these no-ops.
-///
-/// Do **not** use these as defaults on static UI helpers (`TabFaviconStore`,
-/// `SumiFaviconResolver`): launcher/history/bookmark call sites omit the service
-/// argument and must resolve through the production favicon system.
 @MainActor
 enum TabDependencyIsolationDefaults {
-    static let faviconService: any BrowserFaviconServicing = NoOpBrowserFaviconService()
+    private static let faviconAuthority = NoOpBrowserFaviconService()
+
+    static let faviconService: any BrowserFaviconServicing = faviconAuthority
+    static let historyFaviconCleaner: any HistoryFaviconCleaning = faviconAuthority
+    static let browsingDataFaviconCleaner: any SumiBrowsingDataFaviconCleaning = faviconAuthority
     static let faviconCapabilities: BrowserFaviconCapabilities = {
         let noOp = NoOpBrowserFaviconCapabilities()
         return BrowserFaviconCapabilities(
@@ -22,16 +22,29 @@ enum TabDependencyIsolationDefaults {
             prefetch: noOp
         )
     }()
-    static let visitedLinkStore: any BrowserVisitedLinkStoreManaging = NoOpBrowserVisitedLinkStore()
+    private static let visitedLinkAuthority = NoOpBrowserVisitedLinkStore()
+    static let visitedLinkStore: any BrowserVisitedLinkStoreManaging = visitedLinkAuthority
+    static let historyVisitedLinkStore: any HistoryVisitedLinkStoring = visitedLinkAuthority
 }
 
 @MainActor
-private final class NoOpBrowserFaviconService: BrowserFaviconServicing {
+private final class NoOpBrowserFaviconService:
+    BrowserFaviconServicing,
+    HistoryFaviconCleaning,
+    SumiBrowsingDataFaviconCleaning
+{
     func partition(profile: Profile?) -> SumiFaviconPartition { .regular(profile?.id) }
     func invalidateSite(domain _: String, profile _: Profile?) {}
     func syncShortcutPins(_ _: [ShortcutPin]) {}
     func syncBookmarks(_ _: [SumiBookmark], partition _: SumiFaviconPartition) {}
     func clearFaviconPartition(for _: Profile) {}
+    func burnAfterHistoryClear(savedLogins _: Set<String>) async {}
+    func burnDomains(
+        _ _: Set<String>,
+        remainingHistoryHosts _: Set<String>,
+        savedLogins _: Set<String>
+    ) async {}
+    func invalidateSite(domain _: String, partition _: SumiFaviconPartition) {}
 
 #if DEBUG
     func drainRuntimeTasksForTests(cancel _: Bool) async {}
@@ -77,7 +90,10 @@ private final class NoOpBrowserFaviconCapabilities:
 }
 
 @MainActor
-private final class NoOpBrowserVisitedLinkStore: BrowserVisitedLinkStoreManaging {
+private final class NoOpBrowserVisitedLinkStore:
+    BrowserVisitedLinkStoreManaging,
+    HistoryVisitedLinkStoring
+{
     func replaceVisitedLinks(_ _: [URL], for _: UUID) {}
     func applyStore(to _: WKWebViewConfiguration, for _: Profile) {}
     func applyStore(to _: WKWebViewConfiguration, profileId _: UUID) {}

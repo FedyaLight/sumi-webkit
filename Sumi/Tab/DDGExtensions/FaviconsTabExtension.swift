@@ -32,9 +32,9 @@ final class FaviconsTabExtension {
     init(
         scriptsPublisher: some Publisher<SumiFaviconUserScripts, Never>,
         tab: Tab,
-        faviconService: any BrowserFaviconServicing = TabDependencyIsolationDefaults.faviconService,
-        imageReader: any BrowserFaviconImageReading = TabDependencyIsolationDefaults.faviconCapabilities.images,
-        liveDiscovery: any BrowserFaviconLiveDiscoveryIngesting = TabDependencyIsolationDefaults.faviconCapabilities.liveDiscovery
+        faviconService: any BrowserFaviconServicing,
+        imageReader: any BrowserFaviconImageReading,
+        liveDiscovery: any BrowserFaviconLiveDiscoveryIngesting
     ) {
         self.tab = tab
         self.faviconService = faviconService

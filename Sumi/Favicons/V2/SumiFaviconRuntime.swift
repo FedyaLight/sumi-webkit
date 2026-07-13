@@ -13,7 +13,7 @@ final class SumiFaviconRuntime: @unchecked Sendable {
 
     init(
         rootDirectory: URL,
-        fetcher: any SumiFaviconNetworkFetching = SumiFaviconNetworkClient(),
+        fetcher: any SumiFaviconNetworkFetching,
         notificationCenter: NotificationCenter = .default
     ) {
         let blobStorage = SumiFaviconBlobStorage(rootDirectory: rootDirectory)

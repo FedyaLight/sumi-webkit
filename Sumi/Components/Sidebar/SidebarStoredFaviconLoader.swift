@@ -43,11 +43,13 @@ final class SidebarStoredFaviconLoader: ObservableObject {
     func load(
         launchURL: URL,
         partition: SumiFaviconPartition,
+        imageReader: any BrowserFaviconImageReading,
         isCurrentLaunchURL: (URL) -> Bool
     ) async {
         guard let image = await TabFaviconStore.loadCachedLauncherImage(
             forDocumentURL: launchURL,
-            partition: partition
+            partition: partition,
+            imageReader: imageReader
         ),
               !Task.isCancelled,
               isCurrentLaunchURL(launchURL)

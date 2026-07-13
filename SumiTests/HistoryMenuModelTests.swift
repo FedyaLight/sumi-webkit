@@ -151,8 +151,8 @@ final class HistoryMenuModelTests: XCTestCase {
         openURLsInNewWindow: @escaping ([URL]) -> Void = { _ in /* No-op. */ }
     ) -> SumiNavigationHistoryContext {
         SumiNavigationHistoryContext(
-            faviconService: BrowserManagerDataServices.productionFaviconService,
-            faviconImageReader: BrowserManagerDataServices.productionFaviconCapabilities.images,
+            faviconService: TabDependencyIsolationDefaults.faviconService,
+            faviconImageReader: TabDependencyIsolationDefaults.faviconCapabilities.images,
             openURLInCurrentTab: openURLInCurrentTab,
             openURLInNewTab: openURLInNewTab,
             openURLsInNewWindow: openURLsInNewWindow
