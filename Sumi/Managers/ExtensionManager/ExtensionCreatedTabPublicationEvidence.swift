@@ -9,9 +9,12 @@ struct ExtensionCreatedTabPublicationBaseEvidence {
     let dataStore: WKWebsiteDataStore
     let profileID: UUID
     let controller: WKWebExtensionController
-    let generation: UInt64
-    let extensionLoadGeneration: UInt64
+    let runtimePublication: ExtensionRuntimePublicationEvidence
     let contextBindingGeneration: UInt64
+
+    var generation: ExtensionTabPublicationRevision {
+        runtimePublication.tabPublication
+    }
 }
 
 @available(macOS 15.5, *)
@@ -23,7 +26,9 @@ struct ExtensionCreatedTabPublicationEvidence {
     let reason: String
 
     var tab: Tab { base.tab }
-    var generation: UInt64 { base.generation }
+    var generation: ExtensionTabPublicationRevision {
+        base.runtimePublication.tabPublication
+    }
 }
 
 /// Exact adapter materialization/removal for one requested-Tab transaction.

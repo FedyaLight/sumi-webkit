@@ -534,7 +534,7 @@ final class ExtensionRuntimeRecoveryTests:
         let retirement = ExtensionContextRetirement(
             profileRuntime: manager.profileRuntime,
             backgroundRuntimeState: manager.backgroundRuntimeStateOwner,
-            runtimeSession: manager.runtimeSession,
+            runtimeResidency: manager.runtimeResidency,
             errorObservation: manager.contextErrorObservation,
             diagnostics: manager.runtimeDiagnostics,
             unloadContext: { controller, context in
@@ -547,7 +547,8 @@ final class ExtensionRuntimeRecoveryTests:
             mutationRegistry: manager.runtimeMutationRegistry,
             loadRegistry: manager.contextLoadRegistry,
             contextRetirement: retirement,
-            runtimeSession: manager.runtimeSession,
+            runtimeCatalog: manager.runtimeCatalog,
+            runtimeResidency: manager.runtimeResidency,
             sourceCache: manager.webExtensionRuntimeSourceCache,
             errorObservation: manager.contextErrorObservation,
             nativeMessagingPorts: manager.nativeMessagingPortRegistry,

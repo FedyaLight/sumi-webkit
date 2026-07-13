@@ -174,7 +174,7 @@ final class ExtensionActionInvocationAdmission {
             && lhs.extensionID == rhs.extensionID
             && lhs.controllerBindingRevision == rhs.controllerBindingRevision
             && lhs.contextBindingRevision == rhs.contextBindingRevision
-            && lhs.extensionLoadGeneration == rhs.extensionLoadGeneration
+            && lhs.extensionLoadRevision == rhs.extensionLoadRevision
     }
 
     private func replacingAdapterAuthority(

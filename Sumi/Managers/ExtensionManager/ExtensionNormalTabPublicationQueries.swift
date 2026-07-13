@@ -84,33 +84,34 @@ final class ExtensionExistingExactTabControllerQuery:
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionPreparedNormalTabQuery: ExtensionPreparedTabQuery {
-    private weak var runtimeSession: ExtensionRuntimeSession?
+    private weak var tabPublicationRevisions:
+        ExtensionTabPublicationRevisionAuthority?
     private weak var tabs: (any ExtensionTabQuery)?
 
     init(
-        runtimeSession: ExtensionRuntimeSession,
+        tabPublicationRevisions: ExtensionTabPublicationRevisionAuthority,
         tabs: any ExtensionTabQuery
     ) {
-        self.runtimeSession = runtimeSession
+        self.tabPublicationRevisions = tabPublicationRevisions
         self.tabs = tabs
     }
 
     func containsPreparedTab(_ tab: Tab) -> Bool {
-        guard let generation = runtimeSession?.tabOpenNotificationGeneration
+        guard let generation = tabPublicationRevisions?.issue()
         else { return false }
         return tab.isEphemeral == false
             && tabs?.extensionTab(for: tab.id) === tab
             && tab.extensionPageRuntimeOwner.canPublishFutureOpenNotification()
             && tab.extensionPageRuntimeOwner.isEligible(for: generation)
     }
-
 }
 
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionPublishedNormalTabQuery: ExtensionPublishedTabQuery {
     private weak var prepared: (any ExtensionPreparedTabQuery)?
-    private weak var runtimeSession: ExtensionRuntimeSession?
+    private weak var tabPublicationRevisions:
+        ExtensionTabPublicationRevisionAuthority?
     private weak var publicationGate: ExtensionRuntimePublicationGate?
     private weak var profiles: (any ExtensionTabProfileResolving)?
     private weak var adapters: ExtensionBrowserAdapterStore?
@@ -118,14 +119,14 @@ final class ExtensionPublishedNormalTabQuery: ExtensionPublishedTabQuery {
 
     init(
         prepared: any ExtensionPreparedTabQuery,
-        runtimeSession: ExtensionRuntimeSession,
+        tabPublicationRevisions: ExtensionTabPublicationRevisionAuthority,
         publicationGate: ExtensionRuntimePublicationGate,
         profiles: any ExtensionTabProfileResolving,
         adapters: ExtensionBrowserAdapterStore,
         windows: any ExtensionTabPublicationEvidenceQuery
     ) {
         self.prepared = prepared
-        self.runtimeSession = runtimeSession
+        self.tabPublicationRevisions = tabPublicationRevisions
         self.publicationGate = publicationGate
         self.profiles = profiles
         self.adapters = adapters
@@ -135,7 +136,7 @@ final class ExtensionPublishedNormalTabQuery: ExtensionPublishedTabQuery {
     func containsPublishedTab(_ tab: Tab) -> Bool {
         guard prepared?.containsPreparedTab(tab) == true,
               publicationGate?.acceptsBrowserEvents == true,
-              let generation = runtimeSession?.tabOpenNotificationGeneration,
+              let generation = tabPublicationRevisions?.issue(),
               tab.extensionPageRuntimeOwner
               .hasSettledDidOpenTabNotification(for: generation),
               let profileID = profiles?.profileID(for: tab),

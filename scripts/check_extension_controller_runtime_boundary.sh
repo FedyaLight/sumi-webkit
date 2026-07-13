@@ -415,8 +415,9 @@ repair_fixture_body="$(
     SumiTests/ExtensionControllerRuntimeBoundaryTests.swift
 )"
 for proof in \
-  'runtimeSession.tabOpenNotificationGeneration = 77' \
-  'runtimeSession.extensionsLoaded = true' \
+  'let tabPublicationRevisions =' \
+  'let runtimeLoadStatus = ExtensionRuntimeLoadStatusAuthority()' \
+  'runtimeLoadStatus.markExtensionsLoaded()' \
   'establishSettledOpen(' \
   'repair.repair('; do
   if ! rg -Fq "$proof" <<<"$repair_fixture_body"; then
@@ -478,11 +479,11 @@ materializer_body="$(
   sed -n '/struct ExtensionRequestedTabWebViewMaterializer {/,/^}/p' \
     "$requested_materializer"
 )"
-if ! rg -Fq 'private weak var runtimeSession: ExtensionRuntimeSession?' \
+retired_runtime_session='ExtensionRuntime''Session'
+if rg -n "$retired_runtime_session|runtimeSession|ExtensionRuntime[A-Za-z]+Authority" \
     <<<"$materializer_body" \
-    || ! rg -Fq 'guard let runtimeSession,' <<<"$materializer_body" \
     || rg -Fq 'preconditionFailure(' <<<"$materializer_body"; then
-  echo 'error: retained requested-Tab materializer can outlive runtime authority' >&2
+  echo 'error: retained requested-Tab materializer regained aggregate runtime authority' >&2
   status=1
 fi
 

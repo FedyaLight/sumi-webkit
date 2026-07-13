@@ -4,7 +4,6 @@ import WebKit
 @available(macOS 15.5, *)
 @MainActor
 struct ExtensionRequestedTabWebViewMaterializer {
-    private weak var runtimeSession: ExtensionRuntimeSession?
     private weak var browserContext: (any ExtensionTabWebViewHosting)?
     private let configurationPreparation:
         any ExtensionWebViewConfigurationPreparing
@@ -16,7 +15,6 @@ struct ExtensionRequestedTabWebViewMaterializer {
     private let controllerAdmission: any ExtensionWebViewControllerAdmitting
 
     init(
-        runtimeSession: ExtensionRuntimeSession,
         browserContext: any ExtensionTabWebViewHosting,
         configurationPreparation: any ExtensionWebViewConfigurationPreparing,
         livePreparation: any ExtensionLiveWebViewRuntimePreparing,
@@ -25,7 +23,6 @@ struct ExtensionRequestedTabWebViewMaterializer {
         webViews: ExtensionExactTabWebViewQuery,
         controllerAdmission: any ExtensionWebViewControllerAdmitting
     ) {
-        self.runtimeSession = runtimeSession
         self.browserContext = browserContext
         self.configurationPreparation = configurationPreparation
         self.livePreparation = livePreparation
@@ -39,8 +36,7 @@ struct ExtensionRequestedTabWebViewMaterializer {
         _ tab: Tab,
         targetWindow: BrowserWindowState?
     ) {
-        guard let runtimeSession,
-              let livePreparation,
+        guard let livePreparation,
               tab.webExtensionContextOverride == nil,
               tab.requiresPrimaryWebView
         else {
@@ -59,7 +55,6 @@ struct ExtensionRequestedTabWebViewMaterializer {
             targetWindow: targetWindow,
             livePreparation: livePreparation
         )
-        withExtendedLifetime(runtimeSession) {}
     }
 
     func materializeExtensionOwnedTabIfNeeded(
@@ -67,8 +62,7 @@ struct ExtensionRequestedTabWebViewMaterializer {
         isActive: Bool,
         hasWindowSelection: Bool
     ) {
-        guard let runtimeSession,
-              tab.webExtensionContextOverride != nil,
+        guard tab.webExtensionContextOverride != nil,
               ExtensionUtils.isExtensionOwnedURL(tab.url),
               tab.isUnloaded
         else {
@@ -82,7 +76,6 @@ struct ExtensionRequestedTabWebViewMaterializer {
             reason: "ExtensionManager.extensionRequestedOwnedTab",
             registerTabWithExtensionRuntime: false
         )
-        withExtendedLifetime(runtimeSession) {}
     }
 
     private func prepareNormalTabWebView(

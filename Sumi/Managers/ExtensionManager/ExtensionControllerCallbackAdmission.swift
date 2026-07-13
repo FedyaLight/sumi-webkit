@@ -12,7 +12,7 @@ struct ExtensionControllerCallbackEvidence {
     let extensionID: String
     let controllerBindingRevision: UInt64
     let contextBindingRevision: UInt64
-    let extensionLoadGeneration: UInt64
+    let extensionLoadRevision: ExtensionLoadRevision
 }
 
 /// Captures and revalidates exact WebKit callback authority. It deliberately
@@ -21,14 +21,14 @@ struct ExtensionControllerCallbackEvidence {
 @MainActor
 final class ExtensionControllerCallbackAdmission {
     private let profileRuntime: ExtensionProfileRuntime
-    private let runtimeSession: ExtensionRuntimeSession
+    private let extensionLoadRevisions: ExtensionLoadRevisionAuthority
 
     init(
         profileRuntime: ExtensionProfileRuntime,
-        runtimeSession: ExtensionRuntimeSession
+        extensionLoadRevisions: ExtensionLoadRevisionAuthority
     ) {
         self.profileRuntime = profileRuntime
-        self.runtimeSession = runtimeSession
+        self.extensionLoadRevisions = extensionLoadRevisions
     }
 
     func capture(
@@ -55,13 +55,12 @@ final class ExtensionControllerCallbackAdmission {
                 extensionId: identity.extensionId,
                 profileId: identity.profileId
             ),
-            extensionLoadGeneration: runtimeSession.extensionLoadGeneration
+            extensionLoadRevision: extensionLoadRevisions.issue()
         )
     }
 
     func isCurrent(_ evidence: ExtensionControllerCallbackEvidence) -> Bool {
-        runtimeSession.extensionLoadGeneration
-            == evidence.extensionLoadGeneration
+        extensionLoadRevisions.isCurrent(evidence.extensionLoadRevision)
             && profileRuntime.controllerBindingRevision(
                 for: evidence.profileID
             ) == evidence.controllerBindingRevision

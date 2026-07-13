@@ -20,14 +20,14 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
             allowWithoutEnabledExtensions: true
         )
 
-        manager.runtimeSession.runtimeState = .idle
+        manager.runtimeLifecycle.reset(extensionSupportAvailable: true)
         let reusedController = manager.runtimeDemandCoordinator.request(
             reason: .install,
             allowWithoutEnabledExtensions: true,
             profileId: profile.id
         )
         XCTAssertIdentical(reusedController, initialController)
-        XCTAssertEqual(manager.runtimeSession.runtimeState, .ready)
+        XCTAssertEqual(manager.runtimeLifecycle.state, .ready)
     }
 
     func testProfileExtensionRuntimeReadinessTracksMissingContextsPerProfile() async throws {

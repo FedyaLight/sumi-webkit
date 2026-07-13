@@ -1,6 +1,6 @@
+@testable import Sumi
 import SwiftData
 import XCTest
-@testable import Sumi
 
 @available(macOS 15.5, *)
 @MainActor
@@ -15,9 +15,9 @@ final class InstalledExtensionCatalogTests: XCTestCase {
         let revision = harness.manager.installedExtensionCollection.recordRevision(
             for: existing.id
         )
-        harness.manager.extensionsLoaded = true
+        harness.manager.markExtensionRuntimePublicationReady()
         harness.manager.pinnedToolbarExtensionIDsByProfile[harness.profileKey] = [
-            existing.id
+            existing.id,
         ]
 
         let enabled = harness.manager.installedExtensionCatalog.publish(
@@ -58,7 +58,7 @@ final class InstalledExtensionCatalogTests: XCTestCase {
         let enabled = makeRecord(id: "enabled-extension")
         let disabled = makeRecord(id: "disabled-extension", isEnabled: false)
         harness.manager.pinnedToolbarExtensionIDsByProfile[harness.profileKey] = [
-            disabled.id
+            disabled.id,
         ]
         let enabledEntity = ExtensionEntity(record: enabled)
 
@@ -112,7 +112,7 @@ final class InstalledExtensionCatalogTests: XCTestCase {
             for: exactLiveRecord.id
         )
         harness.manager.pinnedToolbarExtensionIDsByProfile[harness.profileKey] = [
-            exactLiveRecord.id
+            exactLiveRecord.id,
         ]
         let persistence = FailingCatalogPersistence()
         var didPublishReadiness = false
@@ -166,7 +166,7 @@ final class InstalledExtensionCatalogTests: XCTestCase {
         let harness = try makeHarness()
         let existing = makeRecord(id: "removed-extension")
         harness.manager.installedExtensionCollection.setAll([existing])
-        harness.manager.extensionsLoaded = false
+        harness.manager.resetExtensionRuntimePublicationReadiness()
         harness.manager.pinnedToolbarExtensionIDsByProfile[harness.profileKey] = [existing.id]
 
         let enabled = harness.manager.installedExtensionCatalog.publish(
@@ -205,7 +205,7 @@ final class InstalledExtensionCatalogTests: XCTestCase {
         )
         // Construction performs a real successful empty load. Reset readiness
         // so each test can establish the pre-publication state it owns.
-        manager.extensionsLoaded = false
+        manager.resetExtensionRuntimePublicationReadiness()
         return Harness(
             manager: manager,
             profileKey: ExtensionManager.pinnedToolbarProfileKey(for: profile.id)

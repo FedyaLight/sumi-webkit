@@ -184,7 +184,7 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
         harness.manager.testHooks.didDispatchExtensionAction = { _ in dispatches += 1 }
         harness.manager.testHooks.permissionPromptDecision = {
             [manager = harness.manager] _, _, _ in
-            manager.runtimeSession.extensionLoadGeneration += 1
+            manager.extensionLoadRevisions.advance()
             return .allow(expirationDate: nil)
         }
         defer { clearHooks(harness) }
@@ -956,7 +956,7 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
         let retirement = ExtensionContextRetirement(
             profileRuntime: harness.manager.profileRuntime,
             backgroundRuntimeState: harness.manager.backgroundRuntimeStateOwner,
-            runtimeSession: harness.manager.runtimeSession,
+            runtimeResidency: harness.manager.runtimeResidency,
             errorObservation: harness.manager.contextErrorObservation,
             diagnostics: harness.manager.runtimeDiagnostics,
             actionPopups: harness.manager.actionPopupRuntimeRetirement,
@@ -1091,8 +1091,7 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
 
         @MainActor
         func actionPopupMetricCount() -> Int {
-            let metrics = manager.runtimeSession
-                .runtimeMetricsByExtensionID[extensionID]
+            let metrics = manager.runtimeMetrics.metrics(for: extensionID)
             guard let metrics, metrics.lastBackgroundWakeReason == .actionPopup
             else {
                 return 0
@@ -1146,7 +1145,7 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
                 ),
                 admission: boundary.invocation,
                 actionPublication: manager.actionSurfacePublisher,
-                runtimeSession: manager.runtimeSession,
+                runtimeMetrics: manager.runtimeMetrics,
                 stableAdapter: { [weak manager] in
                     manager?.adapterCatalog.stableAdapter(for: $0)
                 },

@@ -22,7 +22,10 @@ final class ExtensionControllerCallbackAdmissionTests: XCTestCase {
         XCTAssertEqual(evidence.extensionID, harness.extensionID)
         XCTAssertEqual(evidence.controllerBindingRevision, 1)
         XCTAssertEqual(evidence.contextBindingRevision, 1)
-        XCTAssertEqual(evidence.extensionLoadGeneration, 7)
+        XCTAssertEqual(
+            evidence.extensionLoadRevision,
+            harness.extensionLoadRevisions.issue()
+        )
         XCTAssertTrue(harness.admission.isCurrent(evidence))
     }
 
@@ -175,7 +178,10 @@ final class ExtensionControllerCallbackAdmissionTests: XCTestCase {
 
         harness.profileRuntime.replaceContexts([:])
 
-        XCTAssertEqual(harness.runtimeSession.extensionLoadGeneration, 7)
+        XCTAssertEqual(
+            harness.extensionLoadRevisions.issue(),
+            evidence.extensionLoadRevision
+        )
         XCTAssertFalse(harness.admission.isCurrent(evidence))
         XCTAssertEqual(
             harness.profileRuntime.contextBindingRevision(
@@ -317,7 +323,7 @@ final class ExtensionControllerCallbackAdmissionTests: XCTestCase {
             )
         )
 
-        harness.runtimeSession.extensionLoadGeneration = 8
+        harness.extensionLoadRevisions.advance()
 
         XCTAssertFalse(harness.admission.isCurrent(evidence))
         XCTAssertTrue(
@@ -334,7 +340,7 @@ final class ExtensionControllerCallbackAdmissionTests: XCTestCase {
 
     private struct Harness {
         let profileRuntime: ExtensionProfileRuntime
-        let runtimeSession: ExtensionRuntimeSession
+        let extensionLoadRevisions: ExtensionLoadRevisionAuthority
         let admission: ExtensionControllerCallbackAdmission
         let profileID: UUID
         let extensionID: String
@@ -358,14 +364,13 @@ final class ExtensionControllerCallbackAdmissionTests: XCTestCase {
             extensionId: extensionID,
             profileId: profileID
         )
-        let runtimeSession = ExtensionRuntimeSession()
-        runtimeSession.extensionLoadGeneration = 7
+        let extensionLoadRevisions = ExtensionLoadRevisionAuthority()
         return Harness(
             profileRuntime: profileRuntime,
-            runtimeSession: runtimeSession,
+            extensionLoadRevisions: extensionLoadRevisions,
             admission: ExtensionControllerCallbackAdmission(
                 profileRuntime: profileRuntime,
-                runtimeSession: runtimeSession
+                extensionLoadRevisions: extensionLoadRevisions
             ),
             profileID: profileID,
             extensionID: extensionID,

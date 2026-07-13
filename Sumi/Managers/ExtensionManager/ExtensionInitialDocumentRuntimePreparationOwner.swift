@@ -4,8 +4,7 @@ import WebKit
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionInitialDocumentRuntimePreparationOwner:
-    ExtensionContentScriptContextLoading
-{
+    ExtensionContentScriptContextLoading {
     private weak var manager: ExtensionManager?
 
     private var contentScriptContextLoadTasksByProfile: [UUID: Task<Void, Never>] = [:]
@@ -244,7 +243,7 @@ final class ExtensionInitialDocumentRuntimePreparationOwner:
     ) -> Bool {
         guard let manager else { return false }
         let manifest =
-            manager.runtimeSession.loadedExtensionManifests[installedExtension.id]
+            manager.runtimeCatalog.manifest(for: installedExtension.id)
             ?? installedExtension.manifest
         let permissions = Self.manifestStringArray(from: manifest["permissions"])
         return permissions.contains("nativeMessaging")
@@ -311,7 +310,7 @@ extension ExtensionManager {
             .scheduleDeferredTabNotificationAfterContextLoad(
                 tab,
                 profileId: profileId,
-                extensionLoadGeneration: runtimeSession.extensionLoadGeneration,
+                extensionLoadRevision: extensionLoadRevisions.issue(),
                 reason: reason
             )
     }

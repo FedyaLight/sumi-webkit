@@ -7,7 +7,7 @@ import XCTest
 @MainActor
 final class ExtensionNormalWindowLifecycleTests: XCTestCase {
     func testTabCloseClaimIsExactAndRejectsNestedClose() {
-        let generation: UInt64 = 41
+        let generation = ExtensionTabPublicationRevision(generation: 41)
         let firstTab = Tab(url: URL(string: "https://first.example")!)
         let secondTab = Tab(url: URL(string: "https://second.example")!)
         for tab in [firstTab, secondTab] {

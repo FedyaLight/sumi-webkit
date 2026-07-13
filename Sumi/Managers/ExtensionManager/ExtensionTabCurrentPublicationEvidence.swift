@@ -37,7 +37,8 @@ final class ExtensionTabCurrentPublicationEvidence {
     private weak var exactTab: Tab?
     private weak var adapter: ExtensionTabAdapter?
     private weak var tabQuery: (any ExtensionTabQuery)?
-    private weak var runtimeSession: ExtensionRuntimeSession?
+    private weak var tabPublicationRevisions:
+        ExtensionTabPublicationRevisionAuthority?
     private let profileID: @MainActor (Tab) -> UUID?
     private weak var adapterPublications:
         (any ExtensionTabAdapterPublicationQuery)?
@@ -49,7 +50,7 @@ final class ExtensionTabCurrentPublicationEvidence {
     init(
         tab: Tab,
         tabQuery: any ExtensionTabQuery,
-        runtimeSession: ExtensionRuntimeSession,
+        tabPublicationRevisions: ExtensionTabPublicationRevisionAuthority,
         profileID: @escaping @MainActor (Tab) -> UUID?,
         adapterPublications: any ExtensionTabAdapterPublicationQuery,
         windowPublications: any ExtensionTabPublicationEvidenceQuery,
@@ -58,7 +59,7 @@ final class ExtensionTabCurrentPublicationEvidence {
         tabID = tab.id
         exactTab = tab
         self.tabQuery = tabQuery
-        self.runtimeSession = runtimeSession
+        self.tabPublicationRevisions = tabPublicationRevisions
         self.profileID = profileID
         self.adapterPublications = adapterPublications
         self.windowPublications = windowPublications
@@ -156,7 +157,7 @@ final class ExtensionTabCurrentPublicationEvidence {
 
     private func tabIsEligible(_ tab: Tab) -> Bool {
         guard tab.isEphemeral == false,
-              let generation = runtimeSession?.tabOpenNotificationGeneration
+              let generation = tabPublicationRevisions?.issue()
         else {
             return false
         }

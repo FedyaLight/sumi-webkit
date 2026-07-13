@@ -278,7 +278,7 @@ final class ExtensionPermissionCallbackAdmissionTests: XCTestCase {
         let permission = WKWebExtension.Permission(rawValue: "cookies")
         harness.manager.testHooks.permissionPromptDecision = {
             [manager = harness.manager] _, _, _ in
-            manager.runtimeSession.extensionLoadGeneration += 1
+            manager.extensionLoadRevisions.advance()
             return .allow(expirationDate: nil)
         }
         defer { harness.manager.testHooks.permissionPromptDecision = nil }

@@ -382,9 +382,9 @@ final class ExtensionContextRetirementTests: XCTestCase {
             context: context,
             profileRuntime: profileRuntime,
             backgroundState: ExtensionBackgroundRuntimeStateOwner(),
-            runtimeSession: ExtensionRuntimeSession(),
+            runtimeResidency: ExtensionRuntimeResidencyAuthority(),
             errorObservation: ExtensionContextErrorObservation(
-                recordRuntimeMetric: { _, _ in },
+                recordErrorUpdateDuration: { _, _ in },
                 trace: { _ in }
             ),
             diagnostics: ExtensionRuntimeDiagnostics()
@@ -400,7 +400,7 @@ private struct Fixture {
     let context: WKWebExtensionContext
     let profileRuntime: ExtensionProfileRuntime
     let backgroundState: ExtensionBackgroundRuntimeStateOwner
-    let runtimeSession: ExtensionRuntimeSession
+    let runtimeResidency: ExtensionRuntimeResidencyAuthority
     let errorObservation: ExtensionContextErrorObservation
     let diagnostics: ExtensionRuntimeDiagnostics
 
@@ -413,7 +413,7 @@ private struct Fixture {
         ExtensionContextRetirement(
             profileRuntime: profileRuntime,
             backgroundRuntimeState: backgroundState,
-            runtimeSession: runtimeSession,
+            runtimeResidency: runtimeResidency,
             errorObservation: errorObservation,
             diagnostics: diagnostics,
             unloadContext: unload

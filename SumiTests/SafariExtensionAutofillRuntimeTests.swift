@@ -129,8 +129,8 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
         )
 
         let adapter = try XCTUnwrap(manager.adapterCatalog.stableAdapter(for: tab))
-        manager.extensionsLoaded = true
-        tab.extensionPageRuntimeOwner.eligibleGeneration = manager.runtimeSession.tabOpenNotificationGeneration
+        manager.markExtensionRuntimePublicationReady()
+        tab.extensionPageRuntimeOwner.markEligible(for: manager.tabPublicationRevisions.issue())
         XCTAssertNil(adapter.webView(for: extensionContext))
     }
 
@@ -154,7 +154,7 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
         )
         _ = try await manager.installedExtensionLifecycle.enable(installed.id)
         await manager.ensureContentScriptContextsLoaded(for: profile.id)
-        manager.extensionsLoaded = true
+        manager.markExtensionRuntimePublicationReady()
 
         let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://example.com",
@@ -228,7 +228,7 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
             profileId: profile.id,
             url: URL(string: "https://example.com")!
         )
-        tab.extensionPageRuntimeOwner.eligibleGeneration = manager.runtimeSession.tabOpenNotificationGeneration
+        tab.extensionPageRuntimeOwner.markEligible(for: manager.tabPublicationRevisions.issue())
 
         let extensionContext = try await makeLoadedExtensionContext(
             manager: manager,
@@ -271,8 +271,7 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
             allowWithoutEnabledExtensions: true
         )
         _ = manager.ensureExtensionController(for: profile.id)
-        manager.extensionsLoaded = true
-        manager.runtimeSession.tabOpenNotificationGeneration = 4
+        manager.markExtensionRuntimePublicationReady()
 
         let browserManager = BrowserManager()
         manager.attach(browserManager: browserManager)

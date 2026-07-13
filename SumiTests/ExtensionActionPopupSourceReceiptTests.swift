@@ -203,8 +203,7 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
             replaySemanticOperation: { XCTFail("Unexpected WebView deferral") }
         )
 
-        let oldGeneration = harness.extensionManager.runtimeSession
-            .tabOpenNotificationGeneration
+        let oldGeneration = harness.extensionManager.tabPublicationRevisions.issue()
         let expectedTabs = [harness.sourceTab, backgroundTab]
         for tab in expectedTabs {
             tab.extensionPageRuntimeOwner.prepareGeneration(oldGeneration)
@@ -317,11 +316,13 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
 
     func testCallbackReloadIsCoalescedAfterCurrentGeneration() async throws {
         let harness = try await makeHarness(extensionID: "reload-handoff")
-        let generationBeforeReload = harness.extensionManager.runtimeSession
-            .tabOpenNotificationGeneration
+        let generationBeforeReload = harness.extensionManager.tabPublicationRevisions.issue()
         var sourceOpenCount = 0
         var requestedNestedReload = false
-        var nestedReloadGeneration: (before: UInt64, after: UInt64)?
+        var nestedReloadGeneration: (
+            before: ExtensionTabPublicationRevision,
+            after: ExtensionTabPublicationRevision
+        )?
 
         harness.extensionManager.testHooks.didOpenTab = { tabID in
             guard tabID == harness.sourceTab.id else { return }
@@ -329,16 +330,14 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
             guard requestedNestedReload == false else { return }
             requestedNestedReload = true
 
-            let before = harness.extensionManager.runtimeSession
-                .tabOpenNotificationGeneration
+            let before = harness.extensionManager.tabPublicationRevisions.issue()
             harness.extensionManager.reloadRuntimePublications(
                 reason: "ExtensionActionPopupSourceReceiptTests.nestedReload",
                 profileID: harness.profile.id
             )
             nestedReloadGeneration = (
                 before: before,
-                after: harness.extensionManager.runtimeSession
-                    .tabOpenNotificationGeneration
+                after: harness.extensionManager.tabPublicationRevisions.issue()
             )
         }
         defer { harness.extensionManager.testHooks.didOpenTab = nil }
@@ -349,9 +348,8 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            harness.extensionManager.runtimeSession
-                .tabOpenNotificationGeneration,
-            generationBeforeReload + 2
+            harness.extensionManager.tabPublicationRevisions.issue().generation,
+            generationBeforeReload.generation + 2
         )
         XCTAssertEqual(
             nestedReloadGeneration?.before,
@@ -374,8 +372,7 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
             extensionID: "open-adapter-reentry"
         )
         let tab = harness.sourceTab
-        let generation = harness.extensionManager.runtimeSession
-            .tabOpenNotificationGeneration
+        let generation = harness.extensionManager.tabPublicationRevisions.issue()
         try retireCurrentOpenForRepublication(
             harness: harness,
             tab: tab,
@@ -429,8 +426,7 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
             extensionID: extensionID
         )
         let tab = harness.sourceTab
-        let generation = harness.extensionManager.runtimeSession
-            .tabOpenNotificationGeneration
+        let generation = harness.extensionManager.tabPublicationRevisions.issue()
         try retireCurrentOpenForRepublication(
             harness: harness,
             tab: tab,
@@ -536,8 +532,7 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
         let harness = try await makeHarness(
             extensionID: "reload-handoff-bounded"
         )
-        let generationBeforeReload = harness.extensionManager.runtimeSession
-            .tabOpenNotificationGeneration
+        let generationBeforeReload = harness.extensionManager.tabPublicationRevisions.issue()
         var sourceOpenCount = 0
         harness.extensionManager.testHooks.didOpenTab = { tabID in
             guard tabID == harness.sourceTab.id else { return }
@@ -555,29 +550,26 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            harness.extensionManager.runtimeSession
-                .tabOpenNotificationGeneration,
-            generationBeforeReload + 2
+            harness.extensionManager.tabPublicationRevisions.issue().generation,
+            generationBeforeReload.generation + 2
         )
         XCTAssertEqual(sourceOpenCount, 2)
 
-        for _ in 0 ..< 8 where sourceOpenCount < 4 {
+        for _ in 0..<8 where sourceOpenCount < 4 {
             await Task.yield()
         }
         XCTAssertEqual(
-            harness.extensionManager.runtimeSession
-                .tabOpenNotificationGeneration,
-            generationBeforeReload + 4
+            harness.extensionManager.tabPublicationRevisions.issue().generation,
+            generationBeforeReload.generation + 4
         )
         XCTAssertEqual(sourceOpenCount, 4)
 
-        for _ in 0 ..< 8 {
+        for _ in 0..<8 {
             await Task.yield()
         }
         XCTAssertEqual(
-            harness.extensionManager.runtimeSession
-                .tabOpenNotificationGeneration,
-            generationBeforeReload + 4
+            harness.extensionManager.tabPublicationRevisions.issue().generation,
+            generationBeforeReload.generation + 4
         )
         XCTAssertEqual(sourceOpenCount, 4)
     }
@@ -587,8 +579,7 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
         let harness = try await makeHarness(
             extensionID: "reload-handoff-overflow"
         )
-        let generationBeforeReload = harness.extensionManager.runtimeSession
-            .tabOpenNotificationGeneration
+        let generationBeforeReload = harness.extensionManager.tabPublicationRevisions.issue()
         var sourceOpenCount = 0
         var focusCount = 0
         var activationCount = 0
@@ -621,22 +612,20 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            harness.extensionManager.runtimeSession
-                .tabOpenNotificationGeneration,
-            generationBeforeReload + 2
+            harness.extensionManager.tabPublicationRevisions.issue().generation,
+            generationBeforeReload.generation + 2
         )
         XCTAssertEqual(sourceOpenCount, 2)
         XCTAssertEqual(focusCount, 1)
         XCTAssertEqual(activationCount, 1)
 
-        for _ in 0 ..< 8 where sourceOpenCount < 3 {
+        for _ in 0..<8 where sourceOpenCount < 3 {
             await Task.yield()
         }
 
         XCTAssertEqual(
-            harness.extensionManager.runtimeSession
-                .tabOpenNotificationGeneration,
-            generationBeforeReload + 3
+            harness.extensionManager.tabPublicationRevisions.issue().generation,
+            generationBeforeReload.generation + 3
         )
         XCTAssertEqual(sourceOpenCount, 3)
         XCTAssertEqual(focusCount, 2)
@@ -669,7 +658,7 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
                 replacementTab.id
             ]
         )
-        harness.extensionManager.extensionsLoaded = false
+        harness.extensionManager.resetExtensionRuntimePublicationReadiness()
         var didCloseCount = 0
         var didReopenCount = 0
         var closedDuringWindowCallback = false
@@ -759,7 +748,7 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
         let closingAdapter = try XCTUnwrap(
             harness.extensionManager.adapterStore.tabAdapters[closingTab.id]
         )
-        harness.extensionManager.extensionsLoaded = false
+        harness.extensionManager.resetExtensionRuntimePublicationReadiness()
 
         var firstReceipt: ExtensionNormalTabCloseReceipt?
         var secondReceipt: ExtensionNormalTabCloseReceipt?
@@ -833,8 +822,9 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
         var activatedTabIDs: [UUID] = []
         harness.extensionManager.testHooks.didFocusWindow = { windowID in
             guard windowID == harness.windowState.id else { return }
-            harness.extensionManager.runtimeSession
-                .tabOpenNotificationGeneration &+= 1
+            _ = harness.extensionManager.tabPublicationRevisions.advance(
+                ifCurrent: harness.extensionManager.tabPublicationRevisions.issue()
+            )
         }
         harness.extensionManager.testHooks.didActivateTab = { tabID in
             activatedTabIDs.append(tabID)
@@ -852,8 +842,7 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
         let harness = try await makeHarness(
             extensionID: "property-publication-receipt"
         )
-        let generation = harness.extensionManager.runtimeSession
-            .tabOpenNotificationGeneration
+        let generation = harness.extensionManager.tabPublicationRevisions.issue()
         XCTAssertTrue(
             harness.sourceTab.extensionPageRuntimeOwner
                 .hasDidOpenTabNotification(for: generation)
@@ -1021,8 +1010,9 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
         var deselected: [UUID] = []
         harness.extensionManager.testHooks.didActivateTab = { tabID in
             activated.append(tabID)
-            harness.extensionManager.runtimeSession
-                .tabOpenNotificationGeneration &+= 1
+            _ = harness.extensionManager.tabPublicationRevisions.advance(
+                ifCurrent: harness.extensionManager.tabPublicationRevisions.issue()
+            )
         }
         harness.extensionManager.testHooks.didSelectTab = {
             selected.append($0)
@@ -1068,8 +1058,9 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
         }
         harness.extensionManager.testHooks.didSelectTab = { tabID in
             selected.append(tabID)
-            harness.extensionManager.runtimeSession
-                .tabOpenNotificationGeneration &+= 1
+            _ = harness.extensionManager.tabPublicationRevisions.advance(
+                ifCurrent: harness.extensionManager.tabPublicationRevisions.issue()
+            )
         }
         harness.extensionManager.testHooks.didDeselectTab = {
             deselected.append($0)
@@ -1131,8 +1122,9 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
             try XCTUnwrap(extensionsModule.managerIfEnabled()),
             extensionManager
         )
-        extensionManager.runtimeSession.allowsRuntimeWithoutEnabledExtensions = true
-        extensionManager.extensionsLoaded = true
+        extensionManager.runtimeDemand
+            .recordRuntimeDemandWithoutEnabledExtensions()
+        extensionManager.markExtensionRuntimePublicationReady()
         extensionManager.installedExtensionCollection.upsert(
             makeInstalledExtension(extensionID: extensionID),
             durability: .volatileExactRuntime
@@ -1285,8 +1277,7 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
         )
         XCTAssertTrue(
             tab.extensionPageRuntimeOwner.hasDidOpenTabNotification(
-                for: harness.extensionManager.runtimeSession
-                    .tabOpenNotificationGeneration
+                for: harness.extensionManager.tabPublicationRevisions.issue()
             )
         )
         return tab
@@ -1295,7 +1286,7 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
     private func retireCurrentOpenForRepublication(
         harness: Harness,
         tab: Tab,
-        generation: UInt64
+        generation: ExtensionTabPublicationRevision
     ) throws {
         let controller = try XCTUnwrap(
             harness.extensionManager.profileRuntime.controller(
@@ -1356,5 +1347,4 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
             manifest: [:]
         )
     }
-
 }

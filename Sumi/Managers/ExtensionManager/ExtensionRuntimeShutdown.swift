@@ -37,7 +37,9 @@ final class ExtensionRuntimeShutdown {
     private let bookkeepingReset: ExtensionRuntimeBookkeepingReset
     private let controllerRelease: ExtensionControllerRuntimeRelease
     private let profileRuntime: ExtensionProfileRuntime
-    private let runtimeSession: ExtensionRuntimeSession
+    private let runtimeLifecycle: ExtensionRuntimeLifecycleAuthority
+    private let runtimeCatalog: ExtensionRuntimeCatalog
+    private let extensionLoadRevisions: ExtensionLoadRevisionAuthority
     private let sourceCache: WebExtensionRuntimeSourceCache
     private let errorObservation: ExtensionContextErrorObservation
     private let optionsWindows: ExtensionOptionsWindowService
@@ -52,7 +54,9 @@ final class ExtensionRuntimeShutdown {
         bookkeepingReset: ExtensionRuntimeBookkeepingReset,
         controllerRelease: ExtensionControllerRuntimeRelease,
         profileRuntime: ExtensionProfileRuntime,
-        runtimeSession: ExtensionRuntimeSession,
+        runtimeLifecycle: ExtensionRuntimeLifecycleAuthority,
+        runtimeCatalog: ExtensionRuntimeCatalog,
+        extensionLoadRevisions: ExtensionLoadRevisionAuthority,
         sourceCache: WebExtensionRuntimeSourceCache,
         errorObservation: ExtensionContextErrorObservation,
         optionsWindows: ExtensionOptionsWindowService,
@@ -66,7 +70,9 @@ final class ExtensionRuntimeShutdown {
         self.bookkeepingReset = bookkeepingReset
         self.controllerRelease = controllerRelease
         self.profileRuntime = profileRuntime
-        self.runtimeSession = runtimeSession
+        self.runtimeLifecycle = runtimeLifecycle
+        self.runtimeCatalog = runtimeCatalog
+        self.extensionLoadRevisions = extensionLoadRevisions
         self.sourceCache = sourceCache
         self.errorObservation = errorObservation
         self.optionsWindows = optionsWindows
@@ -125,8 +131,7 @@ final class ExtensionRuntimeShutdown {
         let knownExtensionIDs = allKnownExtensionIDs()
         let hasLoadedRuntime = knownExtensionIDs.isEmpty == false
             || profileRuntime.controllersByProfile.isEmpty == false
-            || runtimeSession.runtimeState == .loading
-            || runtimeSession.runtimeState == .ready
+            || runtimeLifecycle.isReadyOrLoading
         let inventory = ExtensionBrowserContentInventory()
         let rebuildPlan = ExtensionRuntimeTabRebuildPlan.capture(
             hasLoadedUserRuntime: hasLoadedRuntime,
@@ -136,7 +141,7 @@ final class ExtensionRuntimeShutdown {
         )
 
         diagnostics.trace("runtimeShutdown start reason=\(reason)")
-        runtimeSession.extensionLoadGeneration &+= 1
+        extensionLoadRevisions.advance()
         activityCancellation.cancel(
             reason: reason,
             resources: activityResources
@@ -241,7 +246,7 @@ final class ExtensionRuntimeShutdown {
         var identifiers = Set(
             profileRuntime.contextsByProfile.values.flatMap(\.keys)
         )
-        identifiers.formUnion(runtimeSession.loadedExtensionManifests.keys)
+        identifiers.formUnion(runtimeCatalog.extensionIDs)
         identifiers.formUnion(sourceCache.extensionIDs)
         identifiers.formUnion(optionsWindows.extensionIDs)
         identifiers.formUnion(nativeMessagingPorts.extensionIDs)
@@ -280,7 +285,7 @@ extension ExtensionManager {
         )
         if result.completed {
             actionStatesByExtensionID.removeAll()
-            extensionsLoaded = false
+            resetExtensionRuntimePublicationReadiness()
         }
         return result
     }

@@ -23,7 +23,7 @@ protocol ExtensionDeferredTabRegistrationScheduling: AnyObject {
     func scheduleDeferredTabNotificationAfterContextLoad(
         _ tab: Tab,
         profileId: UUID,
-        extensionLoadGeneration: UInt64,
+        extensionLoadRevision: ExtensionLoadRevision,
         reason: String
     ) -> Task<Void, Never>
 }
@@ -39,7 +39,7 @@ final class ExtensionDeferredTabRegistration:
         let task: Task<Void, Never>
     }
 
-    private weak var runtimeSession: ExtensionRuntimeSession?
+    private weak var extensionLoadRevisions: ExtensionLoadRevisionAuthority?
     private weak var tabs: (any ExtensionTabQuery)?
     private weak var profiles: (any ExtensionTabProfileResolving)?
     private weak var contextLoading:
@@ -48,12 +48,12 @@ final class ExtensionDeferredTabRegistration:
     private var entriesByTabID: [UUID: Entry] = [:]
 
     init(
-        runtimeSession: ExtensionRuntimeSession,
+        extensionLoadRevisions: ExtensionLoadRevisionAuthority,
         tabs: any ExtensionTabQuery,
         profiles: any ExtensionTabProfileResolving,
         contextLoading: any ExtensionInitialDocumentContextLoading
     ) {
-        self.runtimeSession = runtimeSession
+        self.extensionLoadRevisions = extensionLoadRevisions
         self.tabs = tabs
         self.profiles = profiles
         self.contextLoading = contextLoading
@@ -68,7 +68,7 @@ final class ExtensionDeferredTabRegistration:
     func scheduleDeferredTabNotificationAfterContextLoad(
         _ tab: Tab,
         profileId: UUID,
-        extensionLoadGeneration: UInt64,
+        extensionLoadRevision: ExtensionLoadRevision,
         reason: String
     ) -> Task<Void, Never> {
         let tabID = tab.id
@@ -81,8 +81,9 @@ final class ExtensionDeferredTabRegistration:
                 }
             }
             guard Task.isCancelled == false,
-                  self.runtimeSession?.extensionLoadGeneration
-                    == extensionLoadGeneration,
+                  self.extensionLoadRevisions?.isCurrent(
+                      extensionLoadRevision
+                  ) == true,
                   self.tabs?.extensionTab(for: tabID) === tab,
                   self.profiles?.profileID(for: tab) == profileId
             else { return }
@@ -91,8 +92,9 @@ final class ExtensionDeferredTabRegistration:
                 .ensureInitialExtensionContextsLoaded(for: profileId)
 
             guard Task.isCancelled == false,
-                  self.runtimeSession?.extensionLoadGeneration
-                    == extensionLoadGeneration,
+                  self.extensionLoadRevisions?.isCurrent(
+                      extensionLoadRevision
+                  ) == true,
                   self.tabs?.extensionTab(for: tabID) === tab,
                   self.profiles?.profileID(for: tab) == profileId
             else { return }

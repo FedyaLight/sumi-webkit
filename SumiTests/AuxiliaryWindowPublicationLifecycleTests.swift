@@ -86,8 +86,7 @@ extension AuxiliaryWindowLifecycleTests {
             XCTAssertFalse(
                 session.tab.extensionPageRuntimeOwner
                     .hasDidOpenTabNotification(
-                        for: harness.extensionManager.runtimeSession
-                            .tabOpenNotificationGeneration
+                        for: harness.extensionManager.tabPublicationRevisions.issue()
                     )
             )
         }
@@ -313,5 +312,4 @@ extension AuxiliaryWindowLifecycleTests {
 
         XCTAssertEqual(closedTabCount, 0)
     }
-
 }

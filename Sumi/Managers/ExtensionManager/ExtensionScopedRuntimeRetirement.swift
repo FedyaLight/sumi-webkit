@@ -60,7 +60,8 @@ final class ExtensionScopedRuntimeRetirement {
     private let mutationRegistry: ExtensionRuntimeMutationRegistry
     private let loadRegistry: ExtensionContextLoadRegistry
     private let contextRetirement: ExtensionContextRetirement
-    private let runtimeSession: ExtensionRuntimeSession
+    private let runtimeCatalog: ExtensionRuntimeCatalog
+    private let runtimeResidency: ExtensionRuntimeResidencyAuthority
     private let sourceCache: WebExtensionRuntimeSourceCache
     private let errorObservation: ExtensionContextErrorObservation
     private let nativeMessagingPorts: ExtensionNativeMessagingPortRegistry
@@ -73,7 +74,8 @@ final class ExtensionScopedRuntimeRetirement {
         mutationRegistry: ExtensionRuntimeMutationRegistry,
         loadRegistry: ExtensionContextLoadRegistry,
         contextRetirement: ExtensionContextRetirement,
-        runtimeSession: ExtensionRuntimeSession,
+        runtimeCatalog: ExtensionRuntimeCatalog,
+        runtimeResidency: ExtensionRuntimeResidencyAuthority,
         sourceCache: WebExtensionRuntimeSourceCache,
         errorObservation: ExtensionContextErrorObservation,
         nativeMessagingPorts: ExtensionNativeMessagingPortRegistry,
@@ -85,7 +87,8 @@ final class ExtensionScopedRuntimeRetirement {
         self.mutationRegistry = mutationRegistry
         self.loadRegistry = loadRegistry
         self.contextRetirement = contextRetirement
-        self.runtimeSession = runtimeSession
+        self.runtimeCatalog = runtimeCatalog
+        self.runtimeResidency = runtimeResidency
         self.sourceCache = sourceCache
         self.errorObservation = errorObservation
         self.nativeMessagingPorts = nativeMessagingPorts
@@ -232,18 +235,9 @@ final class ExtensionScopedRuntimeRetirement {
         errorObservation.removeLoggedErrorFingerprints(
             forExtensionID: extensionID
         )
-        runtimeSession.loadedExtensionManifests.removeValue(
-            forKey: extensionID
-        )
+        runtimeCatalog.retire(extensionID: extensionID)
         sourceCache.remove(extensionID: extensionID)
-        runtimeSession.lastExtensionLoadErrors =
-            runtimeSession.lastExtensionLoadErrors.filter {
-                ExtensionRuntimeResidencyState.parseScopedKey($0.key)?
-                    .extensionId != extensionID
-            }
-        runtimeSession.extensionRuntimeResidencyState.remove(
-            extensionId: extensionID
-        )
+        runtimeResidency.retire(extensionID: extensionID)
 
         diagnostics.trace(
             "scopedRuntimeRetirement complete extensionId=\(extensionID) "

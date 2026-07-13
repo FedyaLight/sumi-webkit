@@ -41,7 +41,8 @@ protocol ExtensionNormalTabOpening: AnyObject {
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionNormalTabOpenTransaction: ExtensionNormalTabOpening {
-    private weak var runtimeSession: ExtensionRuntimeSession?
+    private weak var runtimePublicationEvidence:
+        ExtensionRuntimePublicationEvidenceIssuer?
     private weak var publicationGate: ExtensionRuntimePublicationGate?
     private weak var profileRuntime: ExtensionProfileRuntime?
     private weak var profiles: (any ExtensionTabProfileResolving)?
@@ -63,7 +64,8 @@ final class ExtensionNormalTabOpenTransaction: ExtensionNormalTabOpening {
     private let didDeferOpen: ((UUID, String) -> Void)?
 
     init(
-        runtimeSession: ExtensionRuntimeSession,
+        runtimePublicationEvidence:
+            ExtensionRuntimePublicationEvidenceIssuer,
         publicationGate: ExtensionRuntimePublicationGate,
         profileRuntime: ExtensionProfileRuntime,
         profiles: any ExtensionTabProfileResolving,
@@ -81,7 +83,7 @@ final class ExtensionNormalTabOpenTransaction: ExtensionNormalTabOpening {
         diagnostics: ExtensionRuntimeDiagnostics,
         didDeferOpen: ((UUID, String) -> Void)? = nil
     ) {
-        self.runtimeSession = runtimeSession
+        self.runtimePublicationEvidence = runtimePublicationEvidence
         self.publicationGate = publicationGate
         self.profileRuntime = profileRuntime
         self.profiles = profiles
@@ -122,7 +124,7 @@ final class ExtensionNormalTabOpenTransaction: ExtensionNormalTabOpening {
             return false
         }
 
-        guard let runtimeSession,
+        guard let runtimePublicationEvidence,
               let profileRuntime,
               let controllerAdmission,
               let admission,
@@ -151,8 +153,8 @@ final class ExtensionNormalTabOpenTransaction: ExtensionNormalTabOpening {
                 .scheduleDeferredTabNotificationAfterContextLoad(
                     tab,
                     profileId: profileID,
-                    extensionLoadGeneration:
-                        runtimeSession.extensionLoadGeneration,
+                    extensionLoadRevision:
+                        runtimePublicationEvidence.issue().extensionLoad,
                     reason: "notifyTabOpened"
                 )
             return deferOpen("initialDocumentContextsNotLoaded")
@@ -182,8 +184,8 @@ final class ExtensionNormalTabOpenTransaction: ExtensionNormalTabOpening {
         guard tab.extensionPageRuntimeOwner.canPublishFutureOpenNotification()
         else { return deferOpen("tabOpenPublicationRetired") }
 
-        let extensionLoadGeneration = runtimeSession.extensionLoadGeneration
-        let openGeneration = runtimeSession.tabOpenNotificationGeneration
+        let runtimePublication = runtimePublicationEvidence.issue()
+        let openGeneration = runtimePublication.tabPublication
         let contextBindingGeneration = profileRuntime
             .contextBindingGeneration(for: profileID)
         guard remainsCurrent(
@@ -193,8 +195,7 @@ final class ExtensionNormalTabOpenTransaction: ExtensionNormalTabOpening {
             adapter: adapter,
             webView: webView,
             profileID: profileID,
-            extensionLoadGeneration: extensionLoadGeneration,
-            openGeneration: openGeneration,
+            runtimePublication: runtimePublication,
             contextBindingGeneration: contextBindingGeneration
         ) else {
             return deferOpen("openPublicationChangedDuringAdmission")
@@ -224,8 +225,7 @@ final class ExtensionNormalTabOpenTransaction: ExtensionNormalTabOpening {
                 adapter: adapter,
                 webView: webView,
                 profileID: profileID,
-                extensionLoadGeneration: extensionLoadGeneration,
-                openGeneration: openGeneration,
+                runtimePublication: runtimePublication,
                 contextBindingGeneration: contextBindingGeneration
               ),
               tab.extensionPageRuntimeOwner.settleDidOpenTabNotification(
@@ -266,11 +266,10 @@ final class ExtensionNormalTabOpenTransaction: ExtensionNormalTabOpening {
         adapter: ExtensionTabAdapter,
         webView: WKWebView,
         profileID: UUID,
-        extensionLoadGeneration: UInt64,
-        openGeneration: UInt64,
+        runtimePublication: ExtensionRuntimePublicationEvidence,
         contextBindingGeneration: UInt64
     ) -> Bool {
-        guard let runtimeSession,
+        guard let runtimePublicationEvidence,
               let publicationGate,
               let profileRuntime,
               let adapters
@@ -281,8 +280,7 @@ final class ExtensionNormalTabOpenTransaction: ExtensionNormalTabOpening {
             publicationGate.acceptsBrowserEvents
         }
         return gateIsCurrent
-            && runtimeSession.extensionLoadGeneration == extensionLoadGeneration
-            && runtimeSession.tabOpenNotificationGeneration == openGeneration
+            && runtimePublicationEvidence.isCurrent(runtimePublication)
             && profileRuntime.contextBindingGeneration(for: profileID)
                 == contextBindingGeneration
             && contextReadiness?
@@ -295,7 +293,9 @@ final class ExtensionNormalTabOpenTransaction: ExtensionNormalTabOpening {
             && adapters.existingTabAdapter(for: tab.id) === adapter
             && adapter.represents(tab)
             && tab.extensionPageRuntimeOwner.canPublishFutureOpenNotification()
-            && tab.extensionPageRuntimeOwner.isEligible(for: openGeneration)
+            && tab.extensionPageRuntimeOwner.isEligible(
+                for: runtimePublication.tabPublication
+            )
             && liveWebViews?.extensionLiveWebView(for: tab) === webView
             && (webView as? FocusableWKWebView)?.owningTab === tab
             && webView.configuration.webExtensionController === controller

@@ -10,7 +10,7 @@ struct ExtensionNormalWindowProjection {
     let selectedTabIdentity: ObjectIdentifier
     let selectedTabID: UUID
     let profileID: UUID
-    let tabGeneration: UInt64
+    let runtimePublication: ExtensionRuntimePublicationEvidence
     let controller: WKWebExtensionController
     let windowAdapter: ExtensionWindowAdapter
     let selectedTabAdapter: ExtensionTabAdapter
@@ -20,7 +20,7 @@ struct ExtensionNormalWindowProjection {
     ) -> Bool {
         windowIdentity == other.windowIdentity
             && profileID == other.profileID
-            && tabGeneration == other.tabGeneration
+            && runtimePublication == other.runtimePublication
             && controller === other.controller
             && windowAdapter === other.windowAdapter
     }
@@ -79,8 +79,7 @@ final class ExtensionNormalWindowProjectionResolver {
             selectedTabIdentity: ObjectIdentifier(selectedTab),
             selectedTabID: selectedTabID,
             profileID: profileID,
-            tabGeneration: manager.runtimeSession
-                .tabOpenNotificationGeneration,
+            runtimePublication: manager.runtimePublicationEvidence.issue(),
             controller: controller,
             windowAdapter: windowAdapter,
             selectedTabAdapter: selectedTabAdapter
@@ -95,8 +94,9 @@ final class ExtensionNormalWindowProjectionResolver {
         guard projection.windowIdentity == ObjectIdentifier(window),
               let manager,
               manager.extensionsLoaded || allowWhenExtensionsNotLoaded,
-              manager.runtimeSession.tabOpenNotificationGeneration
-                == projection.tabGeneration,
+              manager.runtimePublicationEvidence.isCurrent(
+                  projection.runtimePublication
+              ),
               let windowQuery = manager.extensionWindowQuery,
               windowQuery.extensionWindowState(for: window.id) === window,
               window.currentTabId == projection.selectedTabID,

@@ -7,7 +7,9 @@ import WebKit
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionTabLifecycleRebindTransaction {
-    private weak var runtimeSession: ExtensionRuntimeSession?
+    private weak var runtimePublicationEvidence:
+        ExtensionRuntimePublicationEvidenceIssuer?
+    private weak var runtimeLoadStatus: ExtensionRuntimeLoadStatusAuthority?
     private weak var profileRuntime: ExtensionProfileRuntime?
     private weak var tabs: (any ExtensionTabQuery)?
     private weak var profiles: (any ExtensionTabProfileResolving)?
@@ -26,7 +28,9 @@ final class ExtensionTabLifecycleRebindTransaction {
     private let events: ExtensionTabLifecycleEmitter
 
     init(
-        runtimeSession: ExtensionRuntimeSession,
+        runtimePublicationEvidence:
+            ExtensionRuntimePublicationEvidenceIssuer,
+        runtimeLoadStatus: ExtensionRuntimeLoadStatusAuthority,
         profileRuntime: ExtensionProfileRuntime,
         tabs: any ExtensionTabQuery,
         profiles: any ExtensionTabProfileResolving,
@@ -41,7 +45,8 @@ final class ExtensionTabLifecycleRebindTransaction {
         registration: ExtensionNormalTabRegistration,
         events: ExtensionTabLifecycleEmitter
     ) {
-        self.runtimeSession = runtimeSession
+        self.runtimePublicationEvidence = runtimePublicationEvidence
+        self.runtimeLoadStatus = runtimeLoadStatus
         self.profileRuntime = profileRuntime
         self.tabs = tabs
         self.profiles = profiles
@@ -80,7 +85,7 @@ final class ExtensionTabLifecycleRebindTransaction {
     }
 
     func reconcileOnUserGestureIfNeeded(_ tab: Tab, reason: String) {
-        guard runtimeSession?.extensionsLoaded == true,
+        guard runtimeLoadStatus?.extensionsLoaded == true,
               tab.isEphemeral == false,
               needsContentScriptRebind(tab)
         else { return }
@@ -92,7 +97,7 @@ final class ExtensionTabLifecycleRebindTransaction {
         destinationURL: URL,
         reason: String
     ) {
-        guard runtimeSession?.extensionsLoaded == true,
+        guard runtimeLoadStatus?.extensionsLoaded == true,
               tabs?.extensionTab(for: tab.id) === tab,
               tab.isEphemeral == false,
               ExtensionContentScriptBindingPolicy
@@ -104,7 +109,7 @@ final class ExtensionTabLifecycleRebindTransaction {
     }
 
     func rebindBeforeCommittedNavigation(_ tab: Tab, reason: String) {
-        guard let runtimeSession,
+        guard let runtimePublicationEvidence,
               let profileRuntime,
               tabs?.extensionTab(for: tab.id) === tab,
               let profileID = profiles?.profileID(for: tab)
@@ -123,8 +128,8 @@ final class ExtensionTabLifecycleRebindTransaction {
                 .scheduleDeferredTabNotificationAfterContextLoad(
                     tab,
                     profileId: profileID,
-                    extensionLoadGeneration:
-                        runtimeSession.extensionLoadGeneration,
+                    extensionLoadRevision:
+                        runtimePublicationEvidence.issue().extensionLoad,
                     reason: reason
                 )
             return
@@ -137,8 +142,8 @@ final class ExtensionTabLifecycleRebindTransaction {
            let controller = controllers?.existingController(for: tab),
            let adapter = adapterResolver?.stableAdapter(for: tab),
            adapter.represents(tab) {
-            let extensionLoadGeneration = runtimeSession.extensionLoadGeneration
-            let openGeneration = runtimeSession.tabOpenNotificationGeneration
+            let runtimePublication = runtimePublicationEvidence.issue()
+            let openGeneration = runtimePublication.tabPublication
             let contextGeneration = profileRuntime
                 .contextBindingGeneration(for: profileID)
             if tab.extensionPageRuntimeOwner
@@ -150,10 +155,9 @@ final class ExtensionTabLifecycleRebindTransaction {
                     controller: controller,
                     adapter: adapter
                 )
-                guard runtimeSession.extensionLoadGeneration
-                        == extensionLoadGeneration,
-                      runtimeSession.tabOpenNotificationGeneration
-                        == openGeneration,
+                guard runtimePublicationEvidence.isCurrent(
+                          runtimePublication
+                      ),
                       tabs?.extensionTab(for: tab.id) === tab,
                       profiles?.profileID(for: tab) == profileID,
                       profileRuntime.contextBindingGeneration(for: profileID)

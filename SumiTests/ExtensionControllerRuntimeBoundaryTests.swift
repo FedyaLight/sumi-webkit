@@ -409,9 +409,9 @@ final class ExtensionControllerRuntimeBoundaryTests: XCTestCase {
         }
         let mismatch = ControllerRuntimeMismatchQuery(result: false)
         let rebuilder = ControllerRuntimeRebuilder()
-        let runtimeSession = ExtensionRuntimeSession()
+        let runtimeLoadStatus = ExtensionRuntimeLoadStatusAuthority()
         let repair = ExtensionTabWebViewRuntimeRepair(
-            runtimeSession: runtimeSession,
+            runtimeLoadStatus: runtimeLoadStatus,
             tabs: tabs,
             profiles: profiles,
             profileRuntime: profileRuntime,
@@ -431,7 +431,7 @@ final class ExtensionControllerRuntimeBoundaryTests: XCTestCase {
         XCTAssertIdentical(tabs.canonical, replacement)
         XCTAssertEqual(admission.callCount, 1)
         XCTAssertEqual(rebuilder.callCount, 0)
-        withExtendedLifetime(runtimeSession) {}
+        withExtendedLifetime(runtimeLoadStatus) {}
     }
 
     func testRuntimeRepairPreservesCommittedSubmissionOutcome() {
@@ -455,12 +455,13 @@ final class ExtensionControllerRuntimeBoundaryTests: XCTestCase {
         let tabID = UUID()
         let canonical = makeTab(id: tabID, profileID: profileID)
         let replacement = makeTab(id: tabID, profileID: profileID)
-        let runtimeSession = ExtensionRuntimeSession()
-        runtimeSession.tabOpenNotificationGeneration = 91
-        runtimeSession.extensionsLoaded = true
+        let tabPublicationRevisions =
+            ExtensionTabPublicationRevisionAuthority()
+        let runtimeLoadStatus = ExtensionRuntimeLoadStatusAuthority()
+        runtimeLoadStatus.markExtensionsLoaded()
         establishSettledOpen(
             on: replacement,
-            generation: runtimeSession.tabOpenNotificationGeneration
+            generation: tabPublicationRevisions.issue()
         )
         let tabs = ControllerRuntimeTabQuery(canonical: canonical)
         let profiles = ControllerRuntimeProfileQuery(profileID: profileID)
@@ -487,7 +488,7 @@ final class ExtensionControllerRuntimeBoundaryTests: XCTestCase {
         )
         let mismatch = ControllerRuntimeMismatchQuery(result: true)
         let repair = ExtensionTabWebViewRuntimeRepair(
-            runtimeSession: runtimeSession,
+            runtimeLoadStatus: runtimeLoadStatus,
             tabs: tabs,
             profiles: profiles,
             profileRuntime: profileRuntime,
@@ -510,20 +511,21 @@ final class ExtensionControllerRuntimeBoundaryTests: XCTestCase {
         XCTAssertEqual(
             replacement.extensionPageRuntimeOwner
                 .currentOpenNotificationGeneration(),
-            91
+            tabPublicationRevisions.issue()
         )
-        withExtendedLifetime((admission, mismatch, runtimeSession)) {}
+        withExtendedLifetime((admission, mismatch, runtimeLoadStatus)) {}
     }
 
     func testRuntimeRepairPreservesReentrantNewerOpenOnSameTab() {
         let profileID = UUID()
         let tab = makeTab(id: UUID(), profileID: profileID)
-        let runtimeSession = ExtensionRuntimeSession()
-        runtimeSession.tabOpenNotificationGeneration = 77
-        runtimeSession.extensionsLoaded = true
+        let tabPublicationRevisions =
+            ExtensionTabPublicationRevisionAuthority()
+        let runtimeLoadStatus = ExtensionRuntimeLoadStatusAuthority()
+        runtimeLoadStatus.markExtensionsLoaded()
         establishSettledOpen(
             on: tab,
-            generation: runtimeSession.tabOpenNotificationGeneration
+            generation: tabPublicationRevisions.issue()
         )
         let tabs = ControllerRuntimeTabQuery(canonical: tab)
         let profiles = ControllerRuntimeProfileQuery(profileID: profileID)
@@ -541,8 +543,10 @@ final class ExtensionControllerRuntimeBoundaryTests: XCTestCase {
         let rebuilder = ControllerRuntimeRebuilder(
             outcome: .deferred,
             onSubmit: {
-                runtimeSession.tabOpenNotificationGeneration = 78
-                self.establishSettledOpen(on: tab, generation: 78)
+                let generation = tabPublicationRevisions.advance(
+                    ifCurrent: tabPublicationRevisions.issue()
+                )!
+                self.establishSettledOpen(on: tab, generation: generation)
             }
         )
         let admission = makeAdmission(
@@ -553,7 +557,7 @@ final class ExtensionControllerRuntimeBoundaryTests: XCTestCase {
         )
         let mismatch = ControllerRuntimeMismatchQuery(result: true)
         let repair = ExtensionTabWebViewRuntimeRepair(
-            runtimeSession: runtimeSession,
+            runtimeLoadStatus: runtimeLoadStatus,
             tabs: tabs,
             profiles: profiles,
             profileRuntime: profileRuntime,
@@ -571,11 +575,13 @@ final class ExtensionControllerRuntimeBoundaryTests: XCTestCase {
         XCTAssertEqual(rebuilder.callCount, 1)
         XCTAssertEqual(
             tab.extensionPageRuntimeOwner.currentOpenNotificationGeneration(),
-            78
+            tabPublicationRevisions.issue()
         )
         XCTAssertTrue(
             tab.extensionPageRuntimeOwner
-                .hasSettledDidOpenTabNotification(for: 78)
+                .hasSettledDidOpenTabNotification(
+                    for: tabPublicationRevisions.issue()
+                )
         )
         withExtendedLifetime((admission, mismatch)) {}
     }
@@ -584,9 +590,10 @@ final class ExtensionControllerRuntimeBoundaryTests: XCTestCase {
         throws {
         let profileID = UUID()
         let tab = makeTab(id: UUID(), profileID: profileID)
-        let runtimeSession = ExtensionRuntimeSession()
-        runtimeSession.tabOpenNotificationGeneration = 77
-        runtimeSession.extensionsLoaded = true
+        let tabPublicationRevisions =
+            ExtensionTabPublicationRevisionAuthority()
+        let runtimeLoadStatus = ExtensionRuntimeLoadStatusAuthority()
+        runtimeLoadStatus.markExtensionsLoaded()
         let tabs = ControllerRuntimeTabQuery(canonical: tab)
         let profiles = ControllerRuntimeProfileQuery(profileID: profileID)
         let profileRuntime = ExtensionProfileRuntime(initialProfileId: profileID)
@@ -604,9 +611,13 @@ final class ExtensionControllerRuntimeBoundaryTests: XCTestCase {
         let rebuilder = ControllerRuntimeRebuilder(
             outcome: .deferred,
             onSubmit: {
-                runtimeSession.tabOpenNotificationGeneration = 78
+                let generation = tabPublicationRevisions.advance(
+                    ifCurrent: tabPublicationRevisions.issue()
+                )!
                 newerPreparation = tab.extensionPageRuntimeOwner
-                    .prepareForWindowPrepublication(generation: 78)
+                    .prepareForWindowPrepublication(
+                        generation: generation
+                    )
             }
         )
         let admission = makeAdmission(
@@ -617,7 +628,7 @@ final class ExtensionControllerRuntimeBoundaryTests: XCTestCase {
         )
         let mismatch = ControllerRuntimeMismatchQuery(result: true)
         let repair = ExtensionTabWebViewRuntimeRepair(
-            runtimeSession: runtimeSession,
+            runtimeLoadStatus: runtimeLoadStatus,
             tabs: tabs,
             profiles: profiles,
             profileRuntime: profileRuntime,
@@ -655,12 +666,15 @@ final class ExtensionControllerRuntimeBoundaryTests: XCTestCase {
             profiles: profiles
         )
         let repair = ControllerRuntimeRepairCounter()
-        let runtimeSession = ExtensionRuntimeSession()
-        runtimeSession.extensionsLoaded = true
+        let tabPublicationRevisions =
+            ExtensionTabPublicationRevisionAuthority()
+        let runtimeLoadStatus = ExtensionRuntimeLoadStatusAuthority()
+        runtimeLoadStatus.markExtensionsLoaded()
         let preparedTabs = NeverPreparedControllerRuntimeTabQuery()
         let opening = RejectingControllerRuntimeOpening()
         let registration = ExtensionNormalTabRegistration(
-            runtimeSession: runtimeSession,
+            tabPublicationRevisions: tabPublicationRevisions,
+            runtimeLoadStatus: runtimeLoadStatus,
             tabs: tabs,
             preparedTabs: preparedTabs,
             controllers: repair,
@@ -739,7 +753,8 @@ final class ExtensionControllerRuntimeBoundaryTests: XCTestCase {
         )
         var profileRuntime: ExtensionProfileRuntime? =
             ExtensionProfileRuntime(initialProfileId: profileID)
-        var runtimeSession: ExtensionRuntimeSession? = ExtensionRuntimeSession()
+        var runtimeLoadStatus: ExtensionRuntimeLoadStatusAuthority? =
+            ExtensionRuntimeLoadStatusAuthority()
         var contexts: ExtensionContextPublicationQuery? =
             ExtensionContextPublicationQuery(profileRuntime: profileRuntime!)
         var residence: ControllerRuntimeWebViewResidence? =
@@ -759,7 +774,7 @@ final class ExtensionControllerRuntimeBoundaryTests: XCTestCase {
             residences: residence!,
             rebuilder: rebuilder!,
             windowProfiles: nil,
-            runtimeSession: runtimeSession!,
+            runtimeLoadStatus: runtimeLoadStatus!,
             profileRuntime: profileRuntime!,
             contexts: contexts!,
             preludeInstaller: preludeInstaller!,
@@ -767,7 +782,7 @@ final class ExtensionControllerRuntimeBoundaryTests: XCTestCase {
         )
         weak let releasedTabs = tabs
         weak let releasedProfileRuntime = profileRuntime
-        weak let releasedRuntimeSession = runtimeSession
+        weak let releasedRuntimeLoadStatus = runtimeLoadStatus
         weak let releasedContexts = contexts
         weak let releasedResidence = residence
         weak let releasedRebuilder = rebuilder
@@ -775,7 +790,7 @@ final class ExtensionControllerRuntimeBoundaryTests: XCTestCase {
 
         tabs = nil
         profileRuntime = nil
-        runtimeSession = nil
+        runtimeLoadStatus = nil
         contexts = nil
         residence = nil
         rebuilder = nil
@@ -783,7 +798,7 @@ final class ExtensionControllerRuntimeBoundaryTests: XCTestCase {
 
         XCTAssertNil(releasedTabs)
         XCTAssertNil(releasedProfileRuntime)
-        XCTAssertNil(releasedRuntimeSession)
+        XCTAssertNil(releasedRuntimeLoadStatus)
         XCTAssertNil(releasedContexts)
         XCTAssertNil(releasedResidence)
         XCTAssertNil(releasedRebuilder)
@@ -834,12 +849,13 @@ final class ExtensionControllerRuntimeBoundaryTests: XCTestCase {
     ) {
         let profileID = UUID()
         let tab = makeTab(id: UUID(), profileID: profileID)
-        let runtimeSession = ExtensionRuntimeSession()
-        runtimeSession.tabOpenNotificationGeneration = 77
-        runtimeSession.extensionsLoaded = true
+        let tabPublicationRevisions =
+            ExtensionTabPublicationRevisionAuthority()
+        let runtimeLoadStatus = ExtensionRuntimeLoadStatusAuthority()
+        runtimeLoadStatus.markExtensionsLoaded()
         establishSettledOpen(
             on: tab,
-            generation: runtimeSession.tabOpenNotificationGeneration,
+            generation: tabPublicationRevisions.issue(),
             file: file,
             line: line
         )
@@ -865,7 +881,7 @@ final class ExtensionControllerRuntimeBoundaryTests: XCTestCase {
         )
         let mismatch = ControllerRuntimeMismatchQuery(result: true)
         let repair = ExtensionTabWebViewRuntimeRepair(
-            runtimeSession: runtimeSession,
+            runtimeLoadStatus: runtimeLoadStatus,
             tabs: tabs,
             profiles: profiles,
             profileRuntime: profileRuntime,
@@ -885,11 +901,11 @@ final class ExtensionControllerRuntimeBoundaryTests: XCTestCase {
             file: file,
             line: line
         )
-        withExtendedLifetime((admission, mismatch, runtimeSession)) {}
+        withExtendedLifetime((admission, mismatch, runtimeLoadStatus)) {}
         XCTAssertEqual(rebuilder.callCount, 1, file: file, line: line)
         XCTAssertEqual(
             tab.extensionPageRuntimeOwner.currentOpenNotificationGeneration(),
-            0,
+            nil,
             file: file,
             line: line
         )
@@ -897,7 +913,7 @@ final class ExtensionControllerRuntimeBoundaryTests: XCTestCase {
 
     private func establishSettledOpen(
         on tab: Tab,
-        generation: UInt64,
+        generation: ExtensionTabPublicationRevision,
         file: StaticString = #filePath,
         line: UInt = #line
     ) {

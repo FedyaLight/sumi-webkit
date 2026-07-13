@@ -17,10 +17,8 @@ final class ExtensionContextErrorObservation {
         }
     }
 
-    private let recordRuntimeMetric: @MainActor (
-        String,
-        (inout ExtensionManager.ExtensionRuntimeMetrics) -> Void
-    ) -> Void
+    private let recordErrorUpdateDuration:
+        @MainActor (String, TimeInterval) -> Void
     private let trace: @MainActor (String) -> Void
     private let isEnabled: @MainActor () -> Bool
     private var entries:
@@ -29,16 +27,14 @@ final class ExtensionContextErrorObservation {
         [ExtensionRuntimeResidencyState.ScopedKey: String] = [:]
 
     init(
-        recordRuntimeMetric: @escaping @MainActor (
-            String,
-            (inout ExtensionManager.ExtensionRuntimeMetrics) -> Void
-        ) -> Void,
+        recordErrorUpdateDuration:
+            @escaping @MainActor (String, TimeInterval) -> Void,
         trace: @escaping @MainActor (String) -> Void,
         isEnabled: @escaping @MainActor () -> Bool = {
             ExtensionManager.shouldObserveExtensionErrors
         }
     ) {
-        self.recordRuntimeMetric = recordRuntimeMetric
+        self.recordErrorUpdateDuration = recordErrorUpdateDuration
         self.trace = trace
         self.isEnabled = isEnabled
     }
@@ -143,10 +139,10 @@ final class ExtensionContextErrorObservation {
 
         let updateStart = CFAbsoluteTimeGetCurrent()
         defer {
-            recordRuntimeMetric(key.extensionId) {
-                $0.errorUpdateDuration =
-                    CFAbsoluteTimeGetCurrent() - updateStart
-            }
+            recordErrorUpdateDuration(
+                key.extensionId,
+                CFAbsoluteTimeGetCurrent() - updateStart
+            )
         }
 
         let errors = context.errors

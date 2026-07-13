@@ -13,7 +13,8 @@ final class ExtensionAuxiliaryTabPublicationReceipt {
         case finished
     }
 
-    private let runtimeSession: ExtensionRuntimeSession
+    private let runtimePublicationEvidence:
+        ExtensionRuntimePublicationEvidenceIssuer
     private let profileRuntime: ExtensionProfileRuntime
     private let adapterStore: ExtensionBrowserAdapterStore
     private let controllers: any ExtensionTabControllerQuery
@@ -27,15 +28,15 @@ final class ExtensionAuxiliaryTabPublicationReceipt {
     let ownerContext: WKWebExtensionContext
     private let controller: WKWebExtensionController
     let adapter: ExtensionTabAdapter
-    let generation: UInt64
-    private let extensionLoadGeneration: UInt64
+    private let runtimePublication: ExtensionRuntimePublicationEvidence
     private let contextBindingGeneration: UInt64
     private let createdAdapter: Bool
     private let stateToken: TabExtensionPrepublicationToken
     private var phase = Phase.prepared
 
     init(
-        runtimeSession: ExtensionRuntimeSession,
+        runtimePublicationEvidence:
+            ExtensionRuntimePublicationEvidenceIssuer,
         profileRuntime: ExtensionProfileRuntime,
         adapterStore: ExtensionBrowserAdapterStore,
         controllers: any ExtensionTabControllerQuery,
@@ -49,13 +50,12 @@ final class ExtensionAuxiliaryTabPublicationReceipt {
         ownerContext: WKWebExtensionContext,
         controller: WKWebExtensionController,
         adapter: ExtensionTabAdapter,
-        generation: UInt64,
-        extensionLoadGeneration: UInt64,
+        runtimePublication: ExtensionRuntimePublicationEvidence,
         contextBindingGeneration: UInt64,
         createdAdapter: Bool,
         stateToken: TabExtensionPrepublicationToken
     ) {
-        self.runtimeSession = runtimeSession
+        self.runtimePublicationEvidence = runtimePublicationEvidence
         self.profileRuntime = profileRuntime
         self.adapterStore = adapterStore
         self.controllers = controllers
@@ -69,8 +69,7 @@ final class ExtensionAuxiliaryTabPublicationReceipt {
         self.ownerContext = ownerContext
         self.controller = controller
         self.adapter = adapter
-        self.generation = generation
-        self.extensionLoadGeneration = extensionLoadGeneration
+        self.runtimePublication = runtimePublication
         self.contextBindingGeneration = contextBindingGeneration
         self.createdAdapter = createdAdapter
         self.stateToken = stateToken
@@ -78,6 +77,9 @@ final class ExtensionAuxiliaryTabPublicationReceipt {
 
     var isPrepared: Bool { phase == .prepared }
     var isCommitted: Bool { phase == .committed }
+    var generation: ExtensionTabPublicationRevision {
+        runtimePublication.tabPublication
+    }
 
     func represents(tab: Tab, webView: WKWebView) -> Bool {
         self.tab === tab && self.webView === webView
@@ -189,9 +191,7 @@ final class ExtensionAuxiliaryTabPublicationReceipt {
         runtime: ExtensionManagerRuntime
     ) -> Bool {
         extensionsLoaded()
-            && runtimeSession.extensionLoadGeneration
-                == extensionLoadGeneration
-            && runtimeSession.tabOpenNotificationGeneration == generation
+            && runtimePublicationEvidence.isCurrent(runtimePublication)
             && profileRuntime.resolvedProfileId(for: tab, runtime: runtime)
                 == profileID
             && runtime.profile(profileID)?.dataStore === dataStore

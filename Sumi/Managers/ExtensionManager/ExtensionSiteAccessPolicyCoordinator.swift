@@ -10,7 +10,8 @@ final class ExtensionSiteAccessPolicyCoordinator {
     private let siteAccessPolicyStore: SafariExtensionSiteAccessPolicyStore
     private let policyApplicator: ExtensionSiteAccessPolicyApplicator
     private let installedExtensions: @MainActor () -> [InstalledExtension]
-    private let loadedExtensionManifests: @MainActor () -> [String: [String: Any]]
+    private let loadedExtensionManifest:
+        @MainActor (String) -> [String: Any]?
     private let getExtensionContext: @MainActor (String, UUID) -> WKWebExtensionContext?
     private let reconcileOpenTabsAfterExtensionContextLoad: @MainActor (String, UUID) -> Void
     private let postSiteAccessPoliciesDidChange: @MainActor () -> Void
@@ -19,7 +20,8 @@ final class ExtensionSiteAccessPolicyCoordinator {
         siteAccessPolicyStore: SafariExtensionSiteAccessPolicyStore,
         policyApplicator: ExtensionSiteAccessPolicyApplicator = .init(),
         installedExtensions: @escaping @MainActor () -> [InstalledExtension],
-        loadedExtensionManifests: @escaping @MainActor () -> [String: [String: Any]],
+        loadedExtensionManifest:
+            @escaping @MainActor (String) -> [String: Any]?,
         getExtensionContext: @escaping @MainActor (String, UUID) -> WKWebExtensionContext?,
         reconcileOpenTabsAfterExtensionContextLoad: @escaping @MainActor (String, UUID) -> Void,
         postSiteAccessPoliciesDidChange: @escaping @MainActor () -> Void
@@ -27,7 +29,7 @@ final class ExtensionSiteAccessPolicyCoordinator {
         self.siteAccessPolicyStore = siteAccessPolicyStore
         self.policyApplicator = policyApplicator
         self.installedExtensions = installedExtensions
-        self.loadedExtensionManifests = loadedExtensionManifests
+        self.loadedExtensionManifest = loadedExtensionManifest
         self.getExtensionContext = getExtensionContext
         self.reconcileOpenTabsAfterExtensionContextLoad = reconcileOpenTabsAfterExtensionContextLoad
         self.postSiteAccessPoliciesDidChange = postSiteAccessPoliciesDidChange
@@ -339,7 +341,7 @@ final class ExtensionSiteAccessPolicyCoordinator {
             extensionId: extensionId,
             profileId: profileId,
             webExtension: extensionContext.webExtension,
-            manifest: loadedExtensionManifests()[extensionId]
+            manifest: loadedExtensionManifest(extensionId)
                 ?? installedExtensions()
                 .first { $0.id == extensionId }?.manifest
         )
@@ -373,8 +375,8 @@ extension ExtensionSiteAccessPolicyCoordinator {
             installedExtensions: { [weak manager] in
                 manager?.installedExtensionCollection.records ?? []
             },
-            loadedExtensionManifests: { [weak manager] in
-                manager?.runtimeSession.loadedExtensionManifests ?? [:]
+            loadedExtensionManifest: { [weak manager] extensionID in
+                manager?.runtimeCatalog.manifest(for: extensionID)
             },
             getExtensionContext: { [weak manager] extensionId, profileId in
                 manager?.getExtensionContext(

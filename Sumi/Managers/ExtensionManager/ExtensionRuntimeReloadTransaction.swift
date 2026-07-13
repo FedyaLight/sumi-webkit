@@ -24,7 +24,7 @@ final class ExtensionRuntimeReloadTransaction {
     }
 
     struct Commit {
-        let generation: UInt64
+        let runtimePublication: ExtensionRuntimePublicationEvidence
         let preparedTabCount: Int
         let activeWindow: BrowserWindowState?
         let activeTab: Tab?
@@ -35,7 +35,8 @@ final class ExtensionRuntimeReloadTransaction {
         let tab: Tab
     }
 
-    private let runtimeSession: ExtensionRuntimeSession
+    private let runtimePublicationEvidence:
+        ExtensionRuntimePublicationEvidenceIssuer
     private let profileRuntime: ExtensionProfileRuntime
     private let normalWindows: ExtensionNormalWindowLifecycle
     private let publicationGate: ExtensionRuntimePublicationGate
@@ -49,7 +50,8 @@ final class ExtensionRuntimeReloadTransaction {
     private let contentInventory: ExtensionBrowserContentInventory
 
     init(
-        runtimeSession: ExtensionRuntimeSession,
+        runtimePublicationEvidence:
+            ExtensionRuntimePublicationEvidenceIssuer,
         profileRuntime: ExtensionProfileRuntime,
         normalWindows: ExtensionNormalWindowLifecycle,
         publicationGate: ExtensionRuntimePublicationGate,
@@ -62,7 +64,7 @@ final class ExtensionRuntimeReloadTransaction {
         diagnostics: ExtensionRuntimeDiagnostics,
         contentInventory: ExtensionBrowserContentInventory = .init()
     ) {
-        self.runtimeSession = runtimeSession
+        self.runtimePublicationEvidence = runtimePublicationEvidence
         self.profileRuntime = profileRuntime
         self.normalWindows = normalWindows
         self.publicationGate = publicationGate
@@ -89,7 +91,8 @@ final class ExtensionRuntimeReloadTransaction {
             return nil
         }
 
-        let oldGeneration = runtimeSession.tabOpenNotificationGeneration
+        let oldRuntimePublication = runtimePublicationEvidence.issue()
+        let oldGeneration = oldRuntimePublication.tabPublication
         let oldTabs = normalBrowserTabs(in: request.runtime)
         guard let token = normalWindows.beginRuntimeReconciliation(
             allowWhenExtensionsNotLoaded:
@@ -107,7 +110,7 @@ final class ExtensionRuntimeReloadTransaction {
 
         // A WebKit close callback may synchronously start another lifecycle
         // operation. Never overwrite a generation chosen by that operation.
-        guard runtimeSession.tabOpenNotificationGeneration == oldGeneration
+        guard runtimePublicationEvidence.isCurrent(oldRuntimePublication)
         else {
             _ = normalWindows.finishRuntimeReconciliation(
                 token,
@@ -116,11 +119,19 @@ final class ExtensionRuntimeReloadTransaction {
             return nil
         }
 
-        let generation = oldGeneration &+ 1
-        runtimeSession.tabOpenNotificationGeneration = generation
+        guard let runtimePublication = runtimePublicationEvidence
+            .advanceTabPublication(ifCurrent: oldRuntimePublication)
+        else {
+            _ = normalWindows.finishRuntimeReconciliation(
+                token,
+                republishing: []
+            )
+            return nil
+        }
+        let generation = runtimePublication.tabPublication
 
         for profileID in profileIDsToUpdate(for: request) {
-            guard runtimeSession.tabOpenNotificationGeneration == generation
+            guard runtimePublicationEvidence.isCurrent(runtimePublication)
             else {
                 _ = normalWindows.finishRuntimeReconciliation(
                     token,
@@ -136,7 +147,7 @@ final class ExtensionRuntimeReloadTransaction {
             )
         }
 
-        guard runtimeSession.tabOpenNotificationGeneration == generation
+        guard runtimePublicationEvidence.isCurrent(runtimePublication)
         else {
             _ = normalWindows.finishRuntimeReconciliation(
                 token,
@@ -157,7 +168,7 @@ final class ExtensionRuntimeReloadTransaction {
         )
         let windows = request.windowQuery?.allExtensionWindowStates ?? []
 
-        guard runtimeSession.tabOpenNotificationGeneration == generation,
+        guard runtimePublicationEvidence.isCurrent(runtimePublication),
               normalWindows.finishRuntimeReconciliation(
                   token,
                   republishing: windows
@@ -170,7 +181,7 @@ final class ExtensionRuntimeReloadTransaction {
         }
 
         for tab in preparedTabs {
-            guard runtimeSession.tabOpenNotificationGeneration == generation
+            guard runtimePublicationEvidence.isCurrent(runtimePublication)
             else {
                 return nil
             }
@@ -185,7 +196,7 @@ final class ExtensionRuntimeReloadTransaction {
             )
         }
 
-        guard runtimeSession.tabOpenNotificationGeneration == generation
+        guard runtimePublicationEvidence.isCurrent(runtimePublication)
         else {
             return nil
         }
@@ -202,7 +213,7 @@ final class ExtensionRuntimeReloadTransaction {
             "extensionRuntimeReload complete reason=\(request.reason) generation=\(generation) preparedTabs=\(preparedTabs.count)"
         )
         return Commit(
-            generation: generation,
+            runtimePublication: runtimePublication,
             preparedTabCount: preparedTabs.count,
             activeWindow: activeWindow,
             activeTab: activeTab
@@ -214,7 +225,7 @@ final class ExtensionRuntimeReloadTransaction {
     func retireRuntime(
         _ runtime: ExtensionManagerRuntime
     ) -> RetirementOutcome {
-        let generation = runtimeSession.tabOpenNotificationGeneration
+        let generation = runtimePublicationEvidence.issue().tabPublication
         let tabs = normalBrowserTabs(in: runtime)
         let didRetire = normalWindows.closeAllForRuntimeTeardown(
             closePublishedTabs: { [weak self] in
@@ -235,8 +246,9 @@ final class ExtensionRuntimeReloadTransaction {
         after commit: Commit,
         windowQuery: (any ExtensionWindowQuery)?
     ) -> ActivationTarget? {
-        guard runtimeSession.tabOpenNotificationGeneration
-                == commit.generation,
+        guard runtimePublicationEvidence.isCurrent(
+                  commit.runtimePublication
+              ),
               let expectedWindow = commit.activeWindow,
               let expectedTab = commit.activeTab,
               let windowQuery,
@@ -249,7 +261,7 @@ final class ExtensionRuntimeReloadTransaction {
               ),
               activeTab === expectedTab,
               activeTab.extensionPageRuntimeOwner.isEligible(
-                  for: commit.generation
+                  for: commit.runtimePublication.tabPublication
               ),
               normalWindows.prepareTabActivation(activeTab)
         else {
@@ -260,7 +272,7 @@ final class ExtensionRuntimeReloadTransaction {
 
     private func closePublishedTabs(
         _ tabs: [Tab],
-        generation: UInt64,
+        generation: ExtensionTabPublicationRevision,
         runtime: ExtensionManagerRuntime
     ) {
         for tab in tabs {
@@ -300,7 +312,7 @@ final class ExtensionRuntimeReloadTransaction {
 
     private func prepareTabs(
         _ tabs: [Tab],
-        generation: UInt64,
+        generation: ExtensionTabPublicationRevision,
         runtime: ExtensionManagerRuntime,
         windowQuery: (any ExtensionWindowQuery)?
     ) -> [Tab] {

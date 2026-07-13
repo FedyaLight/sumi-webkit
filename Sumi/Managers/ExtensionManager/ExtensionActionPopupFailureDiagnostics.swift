@@ -237,12 +237,10 @@ extension ExtensionActionPopupFailureDiagnostics {
                 )
             },
             lastExtensionLoadError: { [weak manager] extensionId, profileId in
-                manager?.runtimeSession.lastExtensionLoadErrors[
-                    ExtensionRuntimeResidencyState.scopedKey(
-                        extensionId: extensionId,
-                        profileId: profileId
-                    )
-                ]
+                manager?.runtimeCatalog.loadError(
+                    extensionID: extensionId,
+                    profileID: profileId
+                )
             },
             extensionSnapshot: { [weak manager] extensionId, profileId in
                 manager?.profileRuntimeStateOwner.extensionSnapshot(
@@ -257,7 +255,7 @@ extension ExtensionActionPopupFailureDiagnostics {
                 manager?.profileRuntime.currentProfileId
             },
             runtimeState: { [weak manager] in
-                manager?.runtimeSession.runtimeState ?? .unavailable
+                manager?.runtimeLifecycle.state ?? .unavailable
             }
         )
     }

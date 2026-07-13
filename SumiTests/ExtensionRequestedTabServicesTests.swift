@@ -243,16 +243,14 @@ final class ExtensionRequestedTabServicesTests:
         XCTAssertNotNil(tab.shortcutPinId)
         XCTAssertTrue(
             tab.extensionPageRuntimeOwner.hasDidOpenTabNotification(
-                for: harness.manager.runtimeSession
-                    .tabOpenNotificationGeneration
+                for: harness.manager.tabPublicationRevisions.issue()
             )
         )
     }
 
     func testDidOpenReentrancyFailureDiscardsTabAdapterAndEligibilityWithoutSelection() async throws {
         let harness = try await makeRequestedPublicationHarness()
-        let originalGeneration = harness.manager.runtimeSession
-            .tabOpenNotificationGeneration
+        let originalGeneration = harness.manager.tabPublicationRevisions.issue()
         var rejectedTab: Tab?
         var rejectedAdapter: ExtensionTabAdapter?
         var lifecycleEvents: [String] = []
@@ -270,7 +268,9 @@ final class ExtensionRequestedTabServicesTests:
             lifecycleEvents.append("didOpen")
             harness.browserManager.selectTab(tab, in: harness.window)
             XCTAssertEqual(harness.window.currentTabId, tab.id)
-            harness.manager.runtimeSession.tabOpenNotificationGeneration &+= 1
+            _ = harness.manager.tabPublicationRevisions.advance(
+                ifCurrent: harness.manager.tabPublicationRevisions.issue()
+            )
         }
         harness.manager.testHooks.didCloseTab = { tabID in
             guard tabID != harness.sourceTab.id else { return }
@@ -307,7 +307,7 @@ final class ExtensionRequestedTabServicesTests:
                 .tab(for: tab.id)
         )
         XCTAssertNil(harness.manager.adapterStore.tabAdapters[tab.id])
-        XCTAssertEqual(tab.extensionPageRuntimeOwner.currentEligibleGeneration(), 0)
+        XCTAssertNil(tab.extensionPageRuntimeOwner.currentEligibleGeneration())
         XCTAssertFalse(tab.extensionPageRuntimeOwner.hasAnyDidOpenTabNotification())
         XCTAssertFalse(tab.isPinned)
         XCTAssertFalse(
@@ -316,8 +316,8 @@ final class ExtensionRequestedTabServicesTests:
             }
         )
         XCTAssertEqual(
-            harness.manager.runtimeSession.tabOpenNotificationGeneration,
-            originalGeneration + 1
+            harness.manager.tabPublicationRevisions.issue().generation,
+            originalGeneration.generation + 1
         )
     }
 
@@ -330,7 +330,9 @@ final class ExtensionRequestedTabServicesTests:
             guard tabID != harness.sourceTab.id else { return }
             rejectedTabID = tabID
             lifecycleEvents.append("didOpen")
-            harness.manager.runtimeSession.tabOpenNotificationGeneration &+= 1
+            _ = harness.manager.tabPublicationRevisions.advance(
+                ifCurrent: harness.manager.tabPublicationRevisions.issue()
+            )
         }
         harness.manager.testHooks.didCloseTab = { tabID in
             guard tabID != harness.sourceTab.id else { return }
@@ -640,8 +642,9 @@ final class ExtensionRequestedTabServicesTests:
                 for: replacementTab
             )
         )
-        replacementTab.extensionPageRuntimeOwner.eligibleGeneration =
-            harness.manager.runtimeSession.tabOpenNotificationGeneration
+        replacementTab.extensionPageRuntimeOwner.markEligible(
+            for: harness.manager.tabPublicationRevisions.issue()
+        )
         let replacementWebView = attachUsableExtensionWebView(
             to: replacementTab,
             manager: harness.manager,

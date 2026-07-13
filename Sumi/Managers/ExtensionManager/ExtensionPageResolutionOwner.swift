@@ -56,7 +56,7 @@ final class ExtensionPageResolutionOwner {
             fileURLWithPath: installedExtension.packagePath,
             isDirectory: true
         ).resolvingSymlinksInPath().standardizedFileURL
-        let manifest = manager.runtimeSession.loadedExtensionManifests[extensionId]
+        let manifest = manager.runtimeCatalog.manifest(for: extensionId)
             ?? installedExtension.manifest
 
         let pagePath: String?

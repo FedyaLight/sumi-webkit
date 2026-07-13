@@ -120,7 +120,8 @@ final class ExtensionAdapterCatalog {
             let evidence = ExtensionTabCurrentPublicationEvidence(
                 tab: tab,
                 tabQuery: tabQuery,
-                runtimeSession: manager.runtimeSession,
+                tabPublicationRevisions:
+                    manager.tabPublicationRevisions,
                 profileID: { [weak manager] tab in
                     manager?.resolvedProfileId(for: tab)
                 },

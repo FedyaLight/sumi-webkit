@@ -16,8 +16,7 @@ struct ExtensionNormalTabActivationEvidence {
     let activated: TabEvidence
     let previous: TabEvidence?
     let controller: WKWebExtensionController
-    let extensionLoadGeneration: UInt64
-    let tabGeneration: UInt64
+    let runtimePublication: ExtensionRuntimePublicationEvidence
     let contextBindingGeneration: UInt64
     let windowPublication: (any BrowserWindowExtensionPublication)?
 }
@@ -28,7 +27,8 @@ struct ExtensionNormalTabActivationEvidence {
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionNormalTabActivationValidator {
-    private let runtimeSession: ExtensionRuntimeSession
+    private let runtimePublicationEvidence:
+        ExtensionRuntimePublicationEvidenceIssuer
     private let profileRuntime: ExtensionProfileRuntime
     private let adapterStore: ExtensionBrowserAdapterStore
     private let adapterResolution: ExtensionAdapterCatalog
@@ -39,7 +39,8 @@ final class ExtensionNormalTabActivationValidator {
     private let extensionsLoaded: @MainActor () -> Bool
 
     init(
-        runtimeSession: ExtensionRuntimeSession,
+        runtimePublicationEvidence:
+            ExtensionRuntimePublicationEvidenceIssuer,
         profileRuntime: ExtensionProfileRuntime,
         adapterStore: ExtensionBrowserAdapterStore,
         adapterResolution: ExtensionAdapterCatalog,
@@ -49,7 +50,7 @@ final class ExtensionNormalTabActivationValidator {
         windowQuery: @escaping @MainActor () -> (any ExtensionWindowQuery)?,
         extensionsLoaded: @escaping @MainActor () -> Bool
     ) {
-        self.runtimeSession = runtimeSession
+        self.runtimePublicationEvidence = runtimePublicationEvidence
         self.profileRuntime = profileRuntime
         self.adapterStore = adapterStore
         self.adapterResolution = adapterResolution
@@ -71,8 +72,8 @@ final class ExtensionNormalTabActivationValidator {
             return nil
         }
 
-        let extensionLoadGeneration = runtimeSession.extensionLoadGeneration
-        let tabGeneration = runtimeSession.tabOpenNotificationGeneration
+        let runtimePublication = runtimePublicationEvidence.issue()
+        let tabGeneration = runtimePublication.tabPublication
         let currentRuntime = runtime()
         guard let activated = prepareTabEvidence(
                   tab,
@@ -122,8 +123,7 @@ final class ExtensionNormalTabActivationValidator {
             activated: activated,
             previous: previousEvidence,
             controller: controller,
-            extensionLoadGeneration: extensionLoadGeneration,
-            tabGeneration: tabGeneration,
+            runtimePublication: runtimePublication,
             contextBindingGeneration: profileRuntime
                 .contextBindingGeneration(for: activated.profileID),
             windowPublication: publication
@@ -132,10 +132,9 @@ final class ExtensionNormalTabActivationValidator {
 
     func isCurrent(_ evidence: ExtensionNormalTabActivationEvidence) -> Bool {
         guard extensionsLoaded(),
-              runtimeSession.extensionLoadGeneration
-                == evidence.extensionLoadGeneration,
-              runtimeSession.tabOpenNotificationGeneration
-                == evidence.tabGeneration,
+              runtimePublicationEvidence.isCurrent(
+                  evidence.runtimePublication
+              ),
               profileRuntime.contextBindingGeneration(
                   for: evidence.activated.profileID
               ) == evidence.contextBindingGeneration,
@@ -143,7 +142,7 @@ final class ExtensionNormalTabActivationValidator {
                 === evidence.controller,
               tabEvidenceIsCurrent(
                   evidence.activated,
-                  generation: evidence.tabGeneration,
+                  generation: evidence.runtimePublication.tabPublication,
                   controller: evidence.controller
               ), evidence.windowPublication?.isCurrent()
                 ?? normalWindows.tabPublicationIsCurrent(
@@ -157,14 +156,14 @@ final class ExtensionNormalTabActivationValidator {
         guard let previous = evidence.previous else { return true }
         return tabEvidenceIsCurrent(
             previous,
-            generation: evidence.tabGeneration,
+            generation: evidence.runtimePublication.tabPublication,
             controller: evidence.controller
         )
     }
 
     private func prepareTabEvidence(
         _ tab: Tab,
-        generation: UInt64,
+        generation: ExtensionTabPublicationRevision,
         runtime: ExtensionManagerRuntime
     ) -> ExtensionNormalTabActivationEvidence.TabEvidence? {
         guard tab.isEphemeral == false,
@@ -204,7 +203,7 @@ final class ExtensionNormalTabActivationValidator {
 
     private func tabEvidenceIsCurrent(
         _ evidence: ExtensionNormalTabActivationEvidence.TabEvidence,
-        generation: UInt64,
+        generation: ExtensionTabPublicationRevision,
         controller: WKWebExtensionController
     ) -> Bool {
         let tab = evidence.tab

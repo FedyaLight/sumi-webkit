@@ -255,7 +255,7 @@ final class ExtensionActionPopupSessionLedgerTests: XCTestCase {
                 extensionID: "popup-session-ledger",
                 controllerBindingRevision: 1,
                 contextBindingRevision: 1,
-                extensionLoadGeneration: 1
+                extensionLoadRevision: ExtensionLoadRevision(generation: 1)
             ),
             installedRecordRevision: 1,
             invocation: nil

@@ -107,10 +107,11 @@ final class ExtensionInitialTabPublicationReceiptTests:
             harness.manager.adapterStore.tabAdapters[harness.tab.id]
         )
         let profileID = harness.profileID
-        let nextGeneration =
-            harness.manager.runtimeSession.tabOpenNotificationGeneration + 1
-        harness.manager.runtimeSession.tabOpenNotificationGeneration =
-            nextGeneration
+        let nextGeneration = try XCTUnwrap(
+            harness.manager.tabPublicationRevisions.advance(
+                ifCurrent: harness.manager.tabPublicationRevisions.issue()
+            )
+        )
         harness.tab.extensionPageRuntimeOwner.prepareGeneration(
             nextGeneration
         )

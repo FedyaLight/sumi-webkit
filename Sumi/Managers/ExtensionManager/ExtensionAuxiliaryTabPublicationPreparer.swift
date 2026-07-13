@@ -20,7 +20,8 @@ protocol ExtensionAuxiliaryTabPublicationPreparing: AnyObject {
 @MainActor
 final class ExtensionAuxiliaryTabPublicationPreparer:
     ExtensionAuxiliaryTabPublicationPreparing {
-    private let runtimeSession: ExtensionRuntimeSession
+    private let runtimePublicationEvidence:
+        ExtensionRuntimePublicationEvidenceIssuer
     private let profileRuntime: ExtensionProfileRuntime
     private let adapterStore: ExtensionBrowserAdapterStore
     private let controllers: any ExtensionTabControllerQuery
@@ -30,7 +31,8 @@ final class ExtensionAuxiliaryTabPublicationPreparer:
     private let extensionsLoaded: @MainActor () -> Bool
 
     init(
-        runtimeSession: ExtensionRuntimeSession,
+        runtimePublicationEvidence:
+            ExtensionRuntimePublicationEvidenceIssuer,
         profileRuntime: ExtensionProfileRuntime,
         adapterStore: ExtensionBrowserAdapterStore,
         controllers: any ExtensionTabControllerQuery,
@@ -39,7 +41,7 @@ final class ExtensionAuxiliaryTabPublicationPreparer:
         adapterResolution: ExtensionAdapterCatalog,
         extensionsLoaded: @escaping @MainActor () -> Bool
     ) {
-        self.runtimeSession = runtimeSession
+        self.runtimePublicationEvidence = runtimePublicationEvidence
         self.profileRuntime = profileRuntime
         self.adapterStore = adapterStore
         self.controllers = controllers
@@ -86,7 +88,8 @@ final class ExtensionAuxiliaryTabPublicationPreparer:
             return nil
         }
 
-        let generation = runtimeSession.tabOpenNotificationGeneration
+        let runtimePublication = runtimePublicationEvidence.issue()
+        let generation = runtimePublication.tabPublication
         let previousAdapter = adapterStore.tabAdapters[tab.id]
         let stateToken = tab.extensionPageRuntimeOwner
             .prepareForWindowPrepublication(generation: generation)
@@ -104,7 +107,7 @@ final class ExtensionAuxiliaryTabPublicationPreparer:
         }
 
         return ExtensionAuxiliaryTabPublicationReceipt(
-            runtimeSession: runtimeSession,
+            runtimePublicationEvidence: runtimePublicationEvidence,
             profileRuntime: profileRuntime,
             adapterStore: adapterStore,
             controllers: controllers,
@@ -118,8 +121,7 @@ final class ExtensionAuxiliaryTabPublicationPreparer:
             ownerContext: ownerContext,
             controller: controller,
             adapter: adapter,
-            generation: generation,
-            extensionLoadGeneration: runtimeSession.extensionLoadGeneration,
+            runtimePublication: runtimePublication,
             contextBindingGeneration: profileRuntime
                 .contextBindingGeneration(for: profileID),
             createdAdapter: previousAdapter == nil,

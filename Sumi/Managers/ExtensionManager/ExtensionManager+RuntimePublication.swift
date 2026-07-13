@@ -82,7 +82,7 @@ extension ExtensionManager {
 
         let windows = windowQuery.allExtensionWindowStates
         runtimeDiagnostics.trace(
-            "registerExistingWindowState start generation=\(runtimeSession.extensionLoadGeneration) windows=\(windows.count) controller=\(ExtensionRuntimeDiagnostics.objectDescription(extensionController))"
+            "registerExistingWindowState start generation=\(extensionLoadRevisions.issue().generation) windows=\(windows.count) controller=\(ExtensionRuntimeDiagnostics.objectDescription(extensionController))"
         )
         for windowState in windows {
             _ = normalWindowLifecycle.opened(windowState)
@@ -91,7 +91,7 @@ extension ExtensionManager {
             focusPublishedWindow(activeWindow)
         }
         runtimeDiagnostics.trace(
-            "registerExistingWindowState complete generation=\(runtimeSession.extensionLoadGeneration) windows=\(windows.count)"
+            "registerExistingWindowState complete generation=\(extensionLoadRevisions.issue().generation) windows=\(windows.count)"
         )
     }
 }

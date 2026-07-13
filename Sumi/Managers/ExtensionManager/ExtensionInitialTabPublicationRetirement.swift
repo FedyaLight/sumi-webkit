@@ -33,7 +33,7 @@ final class ExtensionInitialTabPublicationRetirement {
         let revoked = evidence.tab.extensionPageRuntimeOwner
             .revokeCommittedWindowPrepublication(
                 evidence.stateToken,
-                openGeneration: evidence.tabGeneration
+                openGeneration: evidence.tabRevision
             )
         guard revoked else { return false }
 
@@ -55,7 +55,7 @@ final class ExtensionInitialTabPublicationRetirement {
               evidence.tab.extensionPageRuntimeOwner
                 .claimDidOpenTabNotificationForClose(
                     delegated.claim,
-                    generation: delegated.generation
+                    generation: delegated.runtimePublication.tabPublication
                 )
         else {
             return false

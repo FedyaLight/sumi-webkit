@@ -237,8 +237,7 @@ extension AuxiliaryWindowLifecycleTests {
             harness.browserManager.auxiliaryWindows.sessions
                 .session(for: webView)
         )
-        let generation = harness.extensionManager.runtimeSession
-            .tabOpenNotificationGeneration
+        let generation = harness.extensionManager.tabPublicationRevisions.issue()
         var attemptedReload = false
         var publicationChangedDuringReloadAttempt = false
         var openedTabIDs: [UUID] = []
@@ -302,8 +301,7 @@ extension AuxiliaryWindowLifecycleTests {
         XCTAssertTrue(attemptedReload)
         XCTAssertFalse(publicationChangedDuringReloadAttempt)
         XCTAssertEqual(
-            harness.extensionManager.runtimeSession
-                .tabOpenNotificationGeneration,
+            harness.extensionManager.tabPublicationRevisions.issue(),
             generation,
             "A reload rejected by terminal retirement must not choose a new generation"
         )

@@ -19,7 +19,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             allowWithoutEnabledExtensions: true
         )
         _ = manager.ensureExtensionController(for: profile.id)
-        manager.extensionsLoaded = true
+        manager.markExtensionRuntimePublicationReady()
 
         let browserManager = makeBrowserManager(
             profile: profile
@@ -48,7 +48,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             profileId: profile.id,
             browserManager: browserManager
         )
-        tab.extensionPageRuntimeOwner.eligibleGeneration = manager.runtimeSession.tabOpenNotificationGeneration
+        tab.extensionPageRuntimeOwner.markEligible(for: manager.tabPublicationRevisions.issue())
 
         XCTAssertFalse(manager.profileHasLoadedContentScriptContexts(profileId: profile.id))
         XCTAssertFalse(manager.normalTabOpening.publishOpen(tab))
@@ -78,7 +78,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             allowWithoutEnabledExtensions: true
         )
         _ = manager.ensureExtensionController(for: profile.id)
-        manager.extensionsLoaded = true
+        manager.markExtensionRuntimePublicationReady()
 
         let browserManager = makeBrowserManager(profile: profile)
         manager.attach(browserManager: browserManager)
@@ -128,7 +128,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             profileId: profile.id,
             browserManager: browserManager
         )
-        tab.extensionPageRuntimeOwner.eligibleGeneration = manager.runtimeSession.tabOpenNotificationGeneration
+        tab.extensionPageRuntimeOwner.markEligible(for: manager.tabPublicationRevisions.issue())
         attachUsableExtensionWebView(
             to: tab,
             manager: manager,
@@ -170,7 +170,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             allowWithoutEnabledExtensions: true
         )
         _ = manager.ensureExtensionController(for: profile.id)
-        manager.extensionsLoaded = true
+        manager.markExtensionRuntimePublicationReady()
 
         let browserManager = makeBrowserManager(profile: profile)
         manager.attach(browserManager: browserManager)
@@ -194,7 +194,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             profileId: profile.id,
             browserManager: browserManager
         )
-        tab.extensionPageRuntimeOwner.eligibleGeneration = manager.runtimeSession.tabOpenNotificationGeneration
+        tab.extensionPageRuntimeOwner.markEligible(for: manager.tabPublicationRevisions.issue())
 
         XCTAssertTrue(manager.profileHasLoadedContentScriptContexts(profileId: profile.id))
         XCTAssertFalse(manager.normalTabOpening.publishOpen(tab))
@@ -223,7 +223,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             allowWithoutEnabledExtensions: true
         )
         _ = manager.ensureExtensionController(for: profile.id)
-        manager.extensionsLoaded = true
+        manager.markExtensionRuntimePublicationReady()
 
         let browserManager = makeBrowserManager(profile: profile)
         let windowRegistry = WindowRegistry()
@@ -254,7 +254,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             activate: false
         )
         tab.profileId = profile.id
-        tab.extensionPageRuntimeOwner.eligibleGeneration = manager.runtimeSession.tabOpenNotificationGeneration
+        tab.extensionPageRuntimeOwner.markEligible(for: manager.tabPublicationRevisions.issue())
         let webView = attachUsableExtensionWebView(
             to: tab,
             manager: manager,
@@ -291,7 +291,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             allowWithoutEnabledExtensions: true
         )
         let controller = manager.ensureExtensionController(for: profile.id)
-        manager.extensionsLoaded = true
+        manager.markExtensionRuntimePublicationReady()
 
         let browserManager = makeBrowserManager(
             profile: profile
@@ -378,7 +378,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             allowWithoutEnabledExtensions: true
         )
         let controller = manager.ensureExtensionController(for: profile.id)
-        manager.extensionsLoaded = true
+        manager.markExtensionRuntimePublicationReady()
 
         let browserManager = makeBrowserManager(
             profile: profile
@@ -460,7 +460,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             allowWithoutEnabledExtensions: true
         )
         let controller = manager.ensureExtensionController(for: profile.id)
-        manager.extensionsLoaded = true
+        manager.markExtensionRuntimePublicationReady()
 
         let registry = SumiModuleRegistry(
             settingsStore: SumiModuleSettingsStore(
@@ -577,11 +577,10 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             .neverLoaded
         )
 
-        manager.extensionsLoaded = true
-        manager.runtimeSession.tabOpenNotificationGeneration = 17
+        manager.markExtensionRuntimePublicationReady()
         let pageURL = URL(string: "http://127.0.0.1:8765/login-basic.html")!
         let tab = makeTab(profileId: profile.id, url: pageURL)
-        tab.extensionPageRuntimeOwner.eligibleGeneration = manager.runtimeSession.tabOpenNotificationGeneration
+        tab.extensionPageRuntimeOwner.markEligible(for: manager.tabPublicationRevisions.issue())
         tab.extensionPageRuntimeOwner.openNotifiedDocumentSequence = 0
         tab.extensionPageRuntimeOwner.openNotifiedContextBindingGeneration = 0
         tab.extensionPageRuntimeOwner.noteCommittedMainDocumentNavigation(to: pageURL)
@@ -740,12 +739,13 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             .loaded
         )
         XCTAssertEqual(
-            manager.runtimeSession.runtimeMetricsByExtensionID[
+            manager.runtimeMetrics.metrics(
+                for:
                 ExtensionRuntimeResidencyState.scopedKey(
                     extensionId: installed.id,
                     profileId: profile.id
                 )
-            ]?.lastBackgroundWakeReason,
+            )?.lastBackgroundWakeReason,
             .nativeMessaging
         )
     }
@@ -840,7 +840,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             extensionId: installed.id,
             profileId: profile.id
         )
-        manager.extensionsLoaded = true
+        manager.markExtensionRuntimePublicationReady()
 
         let tabWithController = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://example.com/with-controller",
@@ -904,8 +904,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             allowWithoutEnabledExtensions: true
         )
         _ = manager.ensureExtensionController(for: profile.id)
-        manager.extensionsLoaded = true
-        manager.runtimeSession.tabOpenNotificationGeneration = 21
+        manager.markExtensionRuntimePublicationReady()
 
         let browserManager = makeBrowserManager(profile: profile)
         manager.attach(browserManager: browserManager)
@@ -935,8 +934,9 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         webView.owningTab = tab
         tab.replaceUntrackedWebView(webView)
 
-        tab.extensionPageRuntimeOwner.eligibleGeneration = manager.runtimeSession
-            .tabOpenNotificationGeneration
+        tab.extensionPageRuntimeOwner.markEligible(
+            for: manager.tabPublicationRevisions.issue()
+        )
         XCTAssertTrue(manager.normalTabOpening.publishOpen(tab))
         tab.extensionPageRuntimeOwner.noteCommittedMainDocumentNavigation(to: pageURL)
 
@@ -984,7 +984,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             allowWithoutEnabledExtensions: true
         )
         let controller = manager.ensureExtensionController(for: profile.id)
-        manager.extensionsLoaded = true
+        manager.markExtensionRuntimePublicationReady()
         _ = controller
 
         let browserManager = makeBrowserManager(profile: profile)
@@ -1007,8 +1007,9 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             manager: manager,
             profile: profile
         )
-        tab.extensionPageRuntimeOwner.eligibleGeneration = manager.runtimeSession
-            .tabOpenNotificationGeneration
+        tab.extensionPageRuntimeOwner.markEligible(
+            for: manager.tabPublicationRevisions.issue()
+        )
         XCTAssertTrue(manager.normalTabOpening.publishOpen(tab))
         tab.extensionPageRuntimeOwner.noteCommittedMainDocumentNavigation(to: pageURL)
 
@@ -1210,5 +1211,4 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             expectedController
         )
     }
-
 }

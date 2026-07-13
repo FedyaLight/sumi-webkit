@@ -8,8 +8,7 @@ import XCTest
 @MainActor
 final class SumiExtensionsModuleResidentDemandTests: XCTestCase {
     func testResidentEnabledCatalogPreparesNormalTabWithoutColdStoreLookup()
-        throws
-    {
+        throws {
         let fixture = try makeFixture(hasEnabledExtension: true)
         defer {
             _ = fixture.manager.shutDownExtensionRuntime(reason: #function)
@@ -47,12 +46,10 @@ final class SumiExtensionsModuleResidentDemandTests: XCTestCase {
     }
 
     func testResidentCatalogWithoutEnabledExtensionsSkipsNormalTabRegistration()
-        throws
-    {
+        throws {
         let fixture = try makeFixture(hasEnabledExtension: false)
         let tab = Tab(loadsCachedFaviconOnInit: false)
-        let generation = fixture.manager.runtimeSession
-            .tabOpenNotificationGeneration
+        let generation = fixture.manager.tabPublicationRevisions.issue()
 
         fixture.module.registerTabWithExtensionRuntimeIfLoaded(
             tab,

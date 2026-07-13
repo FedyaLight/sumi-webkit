@@ -27,7 +27,7 @@ extension ExtensionActionInvocationService {
             ),
             admission: admission,
             actionPublication: manager.actionSurfacePublisher,
-            runtimeSession: manager.runtimeSession,
+            runtimeMetrics: manager.runtimeMetrics,
             stableAdapter: { [weak manager] in
                 manager?.adapterCatalog.stableAdapter(for: $0)
             },

@@ -55,7 +55,7 @@ enum ExtensionControllerRuntimeAssembler {
         residences: any ExtensionTabWebViewResidenceQuery,
         rebuilder: any ExtensionTabWebViewRebuilding,
         windowProfiles: (any ExtensionTabWindowProfileQuery)?,
-        runtimeSession: ExtensionRuntimeSession,
+        runtimeLoadStatus: ExtensionRuntimeLoadStatusAuthority,
         profileRuntime: ExtensionProfileRuntime,
         contexts: ExtensionContextPublicationQuery,
         preludeInstaller: any ExtensionPreludeInstalling,
@@ -88,7 +88,7 @@ enum ExtensionControllerRuntimeAssembler {
             profileRuntime: profileRuntime
         )
         let repair = ExtensionTabWebViewRuntimeRepair(
-            runtimeSession: runtimeSession,
+            runtimeLoadStatus: runtimeLoadStatus,
             tabs: tabs,
             profiles: profiles,
             profileRuntime: profileRuntime,

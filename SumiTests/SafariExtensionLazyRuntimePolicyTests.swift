@@ -257,11 +257,13 @@ final class SafariExtensionLazyRuntimePolicyTests: XCTestCase {
             manager.getExtensionContext(for: installed.id, profileId: profile.id)
         )
 
-        let generationBeforeQuiesce = manager.runtimeSession.extensionLoadGeneration
+        let generationBeforeQuiesce = manager.extensionLoadRevisions.issue()
         XCTAssertTrue(
             manager.quiesceForWebsiteDataMutation(profileIDs: [profile.id])
         )
-        XCTAssertGreaterThan(manager.runtimeSession.extensionLoadGeneration, generationBeforeQuiesce)
+        XCTAssertFalse(
+            manager.extensionLoadRevisions.isCurrent(generationBeforeQuiesce)
+        )
         XCTAssertNil(
             manager.getExtensionContext(for: installed.id, profileId: profile.id)
         )

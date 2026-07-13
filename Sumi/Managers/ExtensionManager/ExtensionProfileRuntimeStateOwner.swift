@@ -91,7 +91,7 @@ struct ExtensionProfileRuntimeStateOwner {
             for: profileId,
             hasEnabledExtensionDemand: enabledExtensionIDs.isEmpty == false,
             enabledExtensionIDs: enabledExtensionIDs,
-            globalRuntimeReady: manager.runtimeSession.runtimeState == .ready
+            globalRuntimeReady: manager.runtimeLifecycle.isReady
         )
     }
 

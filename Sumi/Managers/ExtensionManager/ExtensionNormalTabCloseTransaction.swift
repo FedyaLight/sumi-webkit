@@ -13,7 +13,8 @@ final class ExtensionNormalTabCloseTransaction {
         let controller: ObjectIdentifier
     }
 
-    private let runtimeSession: ExtensionRuntimeSession
+    private let tabPublicationRevisions:
+        ExtensionTabPublicationRevisionAuthority
     private let adapterStore: ExtensionBrowserAdapterStore
     private let windowPublications: ExtensionWindowPublicationQuery
     private let preparedTabVisibility: ExtensionPreparedTabVisibility
@@ -21,13 +22,13 @@ final class ExtensionNormalTabCloseTransaction {
     private var inFlightCloses: Set<InFlightClose> = []
 
     init(
-        runtimeSession: ExtensionRuntimeSession,
+        tabPublicationRevisions: ExtensionTabPublicationRevisionAuthority,
         adapterStore: ExtensionBrowserAdapterStore,
         windowPublications: ExtensionWindowPublicationQuery,
         preparedTabVisibility: ExtensionPreparedTabVisibility,
         events: any ExtensionTabLifecycleEventSink
     ) {
-        self.runtimeSession = runtimeSession
+        self.tabPublicationRevisions = tabPublicationRevisions
         self.adapterStore = adapterStore
         self.windowPublications = windowPublications
         self.preparedTabVisibility = preparedTabVisibility
@@ -45,7 +46,7 @@ final class ExtensionNormalTabCloseTransaction {
         }
         tab.extensionPageRuntimeOwner.retireFutureOpenPublications()
 
-        let generation = runtimeSession.tabOpenNotificationGeneration
+        let generation = tabPublicationRevisions.issue()
         let openClaim = tab.extensionPageRuntimeOwner.isEligible(for: generation)
             ? tab.extensionPageRuntimeOwner
                 .currentOpenPublicationClaim(generation: generation)

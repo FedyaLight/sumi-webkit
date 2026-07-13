@@ -7,7 +7,8 @@ import WebKit
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionInitialTabPublicationValidator {
-    private let runtimeSession: ExtensionRuntimeSession
+    private let runtimePublicationEvidence:
+        ExtensionRuntimePublicationEvidenceIssuer
     private let profileRuntime: ExtensionProfileRuntime
     private let controllerQuery: any ExtensionTabControllerQuery
     private let webViews: ExtensionExactTabWebViewQuery
@@ -18,7 +19,8 @@ final class ExtensionInitialTabPublicationValidator {
     private let extensionsLoaded: @MainActor () -> Bool
 
     init(
-        runtimeSession: ExtensionRuntimeSession,
+        runtimePublicationEvidence:
+            ExtensionRuntimePublicationEvidenceIssuer,
         profileRuntime: ExtensionProfileRuntime,
         controllerQuery: any ExtensionTabControllerQuery,
         webViews: ExtensionExactTabWebViewQuery,
@@ -28,7 +30,7 @@ final class ExtensionInitialTabPublicationValidator {
         adapters: ExtensionCreatedTabAdapterPublication,
         extensionsLoaded: @escaping @MainActor () -> Bool
     ) {
-        self.runtimeSession = runtimeSession
+        self.runtimePublicationEvidence = runtimePublicationEvidence
         self.profileRuntime = profileRuntime
         self.controllerQuery = controllerQuery
         self.webViews = webViews
@@ -60,7 +62,7 @@ final class ExtensionInitialTabPublicationValidator {
             && evidence.tab.extensionPageRuntimeOwner
                 .isCommittedWindowPrepublicationCurrent(
                     evidence.stateToken,
-                    generation: evidence.tabGeneration
+                    generation: evidence.tabRevision
                 )
             && adapterIsOpenInProfileContexts(evidence)
     }
@@ -71,7 +73,8 @@ final class ExtensionInitialTabPublicationValidator {
     func currentGenerationOpenEvidence(
         _ evidence: ExtensionInitialTabPublicationEvidence
     ) -> ExtensionInitialTabDelegatedOpenEvidence? {
-        let generation = runtimeSession.tabOpenNotificationGeneration
+        let runtimePublication = runtimePublicationEvidence.issue()
+        let generation = runtimePublication.tabPublication
         let binding = evidence.tab.extensionPageRuntimeOwner
             .documentBindingSnapshot()
         guard extensionsLoaded(),
@@ -114,7 +117,7 @@ final class ExtensionInitialTabPublicationValidator {
             return nil
         }
         return ExtensionInitialTabDelegatedOpenEvidence(
-            generation: generation,
+            runtimePublication: runtimePublication,
             controller: controller,
             claim: claim
         )
@@ -127,7 +130,7 @@ final class ExtensionInitialTabPublicationValidator {
         guard let current = currentGenerationOpenEvidence(evidence) else {
             return false
         }
-        return current.generation == delegated.generation
+        return current.runtimePublication == delegated.runtimePublication
             && current.controller === delegated.controller
             && current.claim === delegated.claim
     }
@@ -157,10 +160,9 @@ final class ExtensionInitialTabPublicationValidator {
         _ evidence: ExtensionInitialTabPublicationEvidence
     ) -> Bool {
         extensionsLoaded()
-            && runtimeSession.extensionLoadGeneration
-                == evidence.extensionLoadGeneration
-            && runtimeSession.tabOpenNotificationGeneration
-                == evidence.tabGeneration
+            && runtimePublicationEvidence.isCurrent(
+                evidence.runtimePublication
+            )
             && profileRuntime.contextBindingGeneration(
                 for: evidence.profileID
             ) == evidence.contextBindingGeneration
@@ -180,7 +182,7 @@ final class ExtensionInitialTabPublicationValidator {
                 === evidence.controller
             && adapters.isCurrent(evidence.adapter, for: evidence.tab)
             && evidence.tab.extensionPageRuntimeOwner.isEligible(
-                for: evidence.tabGeneration
+                for: evidence.tabRevision
             )
             && physicalResidenceIsExact(evidence)
     }

@@ -17,6 +17,8 @@ final class ExtensionRuntimeLoader {
     private let metadataStore: ExtensionInstallationMetadataStore
     private let installedRecords: InstalledExtensionCollection
     private let runtimeAccess: ExtensionRuntimeAccess
+    private let runtimeCatalog: ExtensionRuntimeCatalog
+    private let runtimeMetrics: ExtensionRuntimeMetricsAuthority
     private let authority: ExtensionLoadedContextAuthority
     private let rollback: ExtensionRuntimeRollback
     private let contextLoader: ExtensionContextLoader
@@ -28,6 +30,8 @@ final class ExtensionRuntimeLoader {
         metadataStore: ExtensionInstallationMetadataStore,
         installedRecords: InstalledExtensionCollection,
         runtimeAccess: ExtensionRuntimeAccess,
+        runtimeCatalog: ExtensionRuntimeCatalog,
+        runtimeMetrics: ExtensionRuntimeMetricsAuthority,
         authority: ExtensionLoadedContextAuthority,
         rollback: ExtensionRuntimeRollback,
         contextLoader: ExtensionContextLoader,
@@ -38,6 +42,8 @@ final class ExtensionRuntimeLoader {
         self.metadataStore = metadataStore
         self.installedRecords = installedRecords
         self.runtimeAccess = runtimeAccess
+        self.runtimeCatalog = runtimeCatalog
+        self.runtimeMetrics = runtimeMetrics
         self.authority = authority
         self.rollback = rollback
         self.contextLoader = contextLoader
@@ -151,10 +157,10 @@ final class ExtensionRuntimeLoader {
                     sourceKind
                 )
             )
-            runtimeAccess.runtimeSession.recordRuntimeMetric(for: entity.id) {
-                $0.manifestValidationDuration =
-                    CFAbsoluteTimeGetCurrent() - validationStart
-            }
+            runtimeMetrics.recordManifestValidationDuration(
+                CFAbsoluteTimeGetCurrent() - validationStart,
+                for: entity.id
+            )
 
             let loaded = try await contextLoader.load(
                 .init(
@@ -172,17 +178,15 @@ final class ExtensionRuntimeLoader {
             loadedContext = loaded
             try authority.validate(loaded)
 
-            runtimeAccess.clearExtensionLoadError(
-                entity.id,
-                resolvedProfileID
+            runtimeCatalog.clearLoadError(
+                extensionID: entity.id,
+                profileID: resolvedProfileID
             )
             try await finalizer.finalize(loaded, activation: activation)
             try authority.validate(loaded)
 
             guard metadataCommit == .refreshFromManifest else {
-                runtimeAccess.runtimeSession.loadedExtensionManifests[
-                    entity.id
-                ] = manifest
+                runtimeCatalog.recordManifest(manifest, for: entity.id)
                 try finalizer.settlePublication(loaded)
                 return nil
             }
@@ -194,9 +198,7 @@ final class ExtensionRuntimeLoader {
             try authority.validate(loaded)
             metadataStore.update(entity, from: refreshed)
             try modelContext.save()
-            runtimeAccess.runtimeSession.loadedExtensionManifests[
-                entity.id
-            ] = manifest
+            runtimeCatalog.recordManifest(manifest, for: entity.id)
             installedRecords.upsert(refreshed)
             try finalizer.settlePublication(loaded)
             return refreshed
@@ -211,10 +213,10 @@ final class ExtensionRuntimeLoader {
                 }
             }
             if !(error is CancellationError), authority.isCurrent(claim) {
-                runtimeAccess.recordExtensionLoadError(
+                runtimeCatalog.recordLoadError(
                     error,
-                    entity.id,
-                    resolvedProfileID
+                    extensionID: entity.id,
+                    profileID: resolvedProfileID
                 )
             }
             throw error

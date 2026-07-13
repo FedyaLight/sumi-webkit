@@ -30,7 +30,7 @@ extension ExtensionManager {
                 residences: bridge.webViews,
                 rebuilder: bridge.webViews,
                 windowProfiles: bridge.windows,
-                runtimeSession: runtimeSession,
+                runtimeLoadStatus: runtimeLoadStatus,
                 profileRuntime: profileRuntime,
                 contexts: contextPublications,
                 preludeInstaller:

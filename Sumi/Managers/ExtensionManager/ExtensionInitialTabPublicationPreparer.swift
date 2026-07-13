@@ -8,7 +8,8 @@ import WebKit
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionInitialTabPublicationPreparer {
-    private let runtimeSession: ExtensionRuntimeSession
+    private let runtimePublicationEvidence:
+        ExtensionRuntimePublicationEvidenceIssuer
     private let profileRuntime: ExtensionProfileRuntime
     private let controllerQuery: any ExtensionTabControllerQuery
     private let webViews: ExtensionExactTabWebViewQuery
@@ -21,7 +22,8 @@ final class ExtensionInitialTabPublicationPreparer {
     private let diagnostics: ExtensionRuntimeDiagnostics
 
     init(
-        runtimeSession: ExtensionRuntimeSession,
+        runtimePublicationEvidence:
+            ExtensionRuntimePublicationEvidenceIssuer,
         profileRuntime: ExtensionProfileRuntime,
         adapterStore: ExtensionBrowserAdapterStore,
         controllerQuery: any ExtensionTabControllerQuery,
@@ -34,7 +36,7 @@ final class ExtensionInitialTabPublicationPreparer {
         extensionsLoaded: @escaping @MainActor () -> Bool,
         diagnostics: ExtensionRuntimeDiagnostics
     ) {
-        self.runtimeSession = runtimeSession
+        self.runtimePublicationEvidence = runtimePublicationEvidence
         self.profileRuntime = profileRuntime
         self.controllerQuery = controllerQuery
         self.webViews = webViews
@@ -92,7 +94,8 @@ final class ExtensionInitialTabPublicationPreparer {
         }
 
         let dataStore = profile.dataStore
-        let generation = runtimeSession.tabOpenNotificationGeneration
+        let runtimePublication = runtimePublicationEvidence.issue()
+        let generation = runtimePublication.tabPublication
         let stateToken = tab.extensionPageRuntimeOwner
             .prepareForWindowPrepublication(generation: generation)
         guard let preparedAdapter = adapters.prepare(for: tab) else {
@@ -109,8 +112,7 @@ final class ExtensionInitialTabPublicationPreparer {
             profile: profile,
             dataStore: dataStore,
             profileID: windowProfileID,
-            extensionLoadGeneration: runtimeSession.extensionLoadGeneration,
-            tabGeneration: generation,
+            runtimePublication: runtimePublication,
             contextBindingGeneration: profileRuntime
                 .contextBindingGeneration(for: windowProfileID),
             controller: controller,
@@ -120,7 +122,7 @@ final class ExtensionInitialTabPublicationPreparer {
             reason: reason
         )
         let validator = ExtensionInitialTabPublicationValidator(
-            runtimeSession: runtimeSession,
+            runtimePublicationEvidence: runtimePublicationEvidence,
             profileRuntime: profileRuntime,
             controllerQuery: controllerQuery,
             webViews: webViews,

@@ -140,9 +140,7 @@ final class ExtensionScopedRuntimeRetirementTests: XCTestCase {
             fixture.webExtension
         )
         XCTAssertNotNil(
-            fixture.runtimeSession.loadedExtensionManifests[
-                fixture.extensionID
-            ]
+            fixture.runtimeCatalog.manifest(for: fixture.extensionID)
         )
         XCTAssertEqual(
             fixture.actionAnchors.anchorCount(for: fixture.extensionID),
@@ -175,7 +173,7 @@ final class ExtensionScopedRuntimeRetirementTests: XCTestCase {
         let contextRetirement = ExtensionContextRetirement(
             profileRuntime: fixture.profileRuntime,
             backgroundRuntimeState: fixture.backgroundRuntimeState,
-            runtimeSession: fixture.runtimeSession,
+            runtimeResidency: fixture.runtimeResidency,
             errorObservation: fixture.errorObservation,
             diagnostics: ExtensionRuntimeDiagnostics(),
             unloadContext: { _, _ in },
@@ -469,17 +467,19 @@ final class ExtensionScopedRuntimeRetirementTests: XCTestCase {
             sourceKey
         )
         XCTAssertEqual(
-            fixture.runtimeSession.loadedExtensionManifests[
-                fixture.extensionID
-            ]?["manifest_version"] as? Int,
+            fixture.runtimeCatalog.manifest(
+                for: fixture.extensionID
+            )?["manifest_version"] as? Int,
             3
         )
         XCTAssertNotNil(
-            fixture.runtimeSession.lastExtensionLoadErrors[key.rawValue]
+            fixture.runtimeCatalog.loadError(
+                extensionID: fixture.extensionID,
+                profileID: profileID
+            )
         )
         XCTAssertTrue(
-            fixture.runtimeSession.extensionRuntimeResidencyState
-                .liveContextKeys.contains(key)
+            fixture.runtimeResidency.liveContextKeys.contains(key)
         )
         XCTAssertTrue(fixture.errorObservation.hasLoggedErrorFingerprints)
         XCTAssertIdentical(
@@ -543,9 +543,10 @@ final class ExtensionScopedRuntimeRetirementTests: XCTestCase {
             )
         )
         _ = try await fixture.seedRuntimeBookkeeping()
-        fixture.runtimeSession.loadedExtensionManifests["unrelated"] = [
-            "manifest_version": 3
-        ]
+        fixture.runtimeCatalog.recordManifest(
+            ["manifest_version": 3],
+            for: "unrelated"
+        )
         let expectedBindings = Dictionary(
             uniqueKeysWithValues: fixture.profileIDs.map { profileID in
                 (
@@ -610,22 +611,16 @@ final class ExtensionScopedRuntimeRetirementTests: XCTestCase {
         )
         XCTAssertNil(fixture.sourceCache.entry(for: fixture.extensionID))
         XCTAssertNil(
-            fixture.runtimeSession.loadedExtensionManifests[
-                fixture.extensionID
-            ]
+            fixture.runtimeCatalog.manifest(for: fixture.extensionID)
         )
         XCTAssertNotNil(
-            fixture.runtimeSession.loadedExtensionManifests["unrelated"]
+            fixture.runtimeCatalog.manifest(for: "unrelated")
+        )
+        XCTAssertFalse(
+            fixture.runtimeCatalog.hasLoadErrors(for: fixture.extensionID)
         )
         XCTAssertTrue(
-            fixture.runtimeSession.lastExtensionLoadErrors.keys.allSatisfy {
-                ExtensionRuntimeResidencyState.parseScopedKey($0)?
-                    .extensionId != fixture.extensionID
-            }
-        )
-        XCTAssertTrue(
-            fixture.runtimeSession.extensionRuntimeResidencyState
-                .liveContextKeys.allSatisfy {
+            fixture.runtimeResidency.liveContextKeys.allSatisfy {
                     $0.extensionId != fixture.extensionID
                 }
         )
@@ -752,9 +747,7 @@ final class ExtensionScopedRuntimeRetirementTests: XCTestCase {
             sourceKey
         )
         XCTAssertNotNil(
-            fixture.runtimeSession.loadedExtensionManifests[
-                fixture.extensionID
-            ]
+            fixture.runtimeCatalog.manifest(for: fixture.extensionID)
         )
         XCTAssertTrue(
             fixture.nativeMessagingWakes.runtimeTasksForDrain().isEmpty
@@ -867,9 +860,7 @@ final class ExtensionScopedRuntimeRetirementTests: XCTestCase {
             sourceKey
         )
         XCTAssertNotNil(
-            fixture.runtimeSession.loadedExtensionManifests[
-                fixture.extensionID
-            ]
+            fixture.runtimeCatalog.manifest(for: fixture.extensionID)
         )
         XCTAssertTrue(
             fixture.nativeMessagingWakes.runtimeTasksForDrain().isEmpty
@@ -1014,7 +1005,7 @@ final class ExtensionScopedRuntimeRetirementTests: XCTestCase {
         let contextRetirement = ExtensionContextRetirement(
             profileRuntime: fixture.profileRuntime,
             backgroundRuntimeState: fixture.backgroundRuntimeState,
-            runtimeSession: fixture.runtimeSession,
+            runtimeResidency: fixture.runtimeResidency,
             errorObservation: fixture.errorObservation,
             diagnostics: ExtensionRuntimeDiagnostics(),
             unloadContext: { _, _ in },
@@ -1084,9 +1075,10 @@ private final class ScopedRetirementFixture {
     private let sourceMutationRegistry = ExtensionRuntimeMutationRegistry()
     private let sourceLoadRegistry = ExtensionContextLoadRegistry()
     let backgroundRuntimeState = ExtensionBackgroundRuntimeStateOwner()
-    let runtimeSession = ExtensionRuntimeSession()
+    let runtimeCatalog = ExtensionRuntimeCatalog()
+    let runtimeResidency = ExtensionRuntimeResidencyAuthority()
     let errorObservation = ExtensionContextErrorObservation(
-        recordRuntimeMetric: { _, _ in },
+        recordErrorUpdateDuration: { _, _ in },
         trace: { _ in }
     )
     let nativeMessagingPorts = ExtensionNativeMessagingPortRegistry()
@@ -1169,7 +1161,7 @@ private final class ScopedRetirementFixture {
         let contextRetirement = ExtensionContextRetirement(
             profileRuntime: profileRuntime,
             backgroundRuntimeState: backgroundRuntimeState,
-            runtimeSession: runtimeSession,
+            runtimeResidency: runtimeResidency,
             errorObservation: errorObservation,
             diagnostics: ExtensionRuntimeDiagnostics(),
             unloadContext: unload,
@@ -1180,7 +1172,8 @@ private final class ScopedRetirementFixture {
             mutationRegistry: mutationRegistry,
             loadRegistry: loadRegistry,
             contextRetirement: contextRetirement,
-            runtimeSession: runtimeSession,
+            runtimeCatalog: runtimeCatalog,
+            runtimeResidency: runtimeResidency,
             sourceCache: sourceCache,
             errorObservation: errorObservation,
             nativeMessagingPorts: nativeMessagingPorts,
@@ -1243,21 +1236,26 @@ private final class ScopedRetirementFixture {
         let sourceKey = try XCTUnwrap(
             sourceCache.entry(for: extensionID)?.key
         )
-        runtimeSession.loadedExtensionManifests[extensionID] = [
-            "manifest_version": 3
-        ]
+        runtimeCatalog.recordManifest(
+            ["manifest_version": 3],
+            for: extensionID
+        )
         for profileID in profileIDs {
             let key = ExtensionRuntimeResidencyState.ScopedKey(
                 profileId: profileID,
                 extensionId: extensionID
             )
-            runtimeSession.lastExtensionLoadErrors[key.rawValue] = NSError(
-                domain: "ExtensionScopedRuntimeRetirementTests",
-                code: 1
+            runtimeCatalog.recordLoadError(
+                NSError(
+                    domain: "ExtensionScopedRuntimeRetirementTests",
+                    code: 1
+                ),
+                extensionID: extensionID,
+                profileID: profileID
             )
-            runtimeSession.extensionRuntimeResidencyState.touch(
-                extensionId: extensionID,
-                profileId: profileID
+            runtimeResidency.touch(
+                extensionID: extensionID,
+                profileID: profileID
             )
         }
         return sourceKey

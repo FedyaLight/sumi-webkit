@@ -18,7 +18,7 @@ final class ExtensionContextRetirement {
 
     private let profileRuntime: ExtensionProfileRuntime
     private let backgroundRuntimeState: ExtensionBackgroundRuntimeStateOwner
-    private let runtimeSession: ExtensionRuntimeSession
+    private let runtimeResidency: ExtensionRuntimeResidencyAuthority
     private let errorObservation: ExtensionContextErrorObservation
     private let diagnostics: ExtensionRuntimeDiagnostics
     private let actionPopups: ExtensionActionPopupRuntimeRetirement?
@@ -35,7 +35,7 @@ final class ExtensionContextRetirement {
     init(
         profileRuntime: ExtensionProfileRuntime,
         backgroundRuntimeState: ExtensionBackgroundRuntimeStateOwner,
-        runtimeSession: ExtensionRuntimeSession,
+        runtimeResidency: ExtensionRuntimeResidencyAuthority,
         errorObservation: ExtensionContextErrorObservation,
         diagnostics: ExtensionRuntimeDiagnostics,
         actionPopups: ExtensionActionPopupRuntimeRetirement? = nil,
@@ -54,7 +54,7 @@ final class ExtensionContextRetirement {
     ) {
         self.profileRuntime = profileRuntime
         self.backgroundRuntimeState = backgroundRuntimeState
-        self.runtimeSession = runtimeSession
+        self.runtimeResidency = runtimeResidency
         self.errorObservation = errorObservation
         self.diagnostics = diagnostics
         self.actionPopups = actionPopups
@@ -201,9 +201,9 @@ final class ExtensionContextRetirement {
             return .superseded
         }
 
-        runtimeSession.extensionRuntimeResidencyState.remove(
-            extensionId: key.extensionId,
-            profileId: key.profileId
+        runtimeResidency.remove(
+            extensionID: key.extensionId,
+            profileID: key.profileId
         )
         backgroundRuntimeState.removeRuntimeState(
             for: ExtensionRuntimeResidencyState.scopedKey(

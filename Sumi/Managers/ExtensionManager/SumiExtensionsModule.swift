@@ -827,8 +827,10 @@ final class SumiExtensionsModule {
                 cachedManager.installedExtensionCollection.records.contains(
                     where: \.isEnabled
                 )
-                || cachedManager.runtimeSession
-                .allowsRuntimeWithoutEnabledExtensions
+                || cachedManager.runtimeDemand.admitsRuntime(
+                    hasEnabledExtensions: false,
+                    allowWithoutEnabledExtensions: false
+                )
             return hasRuntimeDemand ? cachedManager : nil
         }
         guard hasEnabledPersistedExtensions() else { return nil }

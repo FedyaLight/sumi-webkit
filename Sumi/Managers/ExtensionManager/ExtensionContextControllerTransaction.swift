@@ -16,7 +16,7 @@ final class ExtensionContextControllerTransaction {
     private let profileRuntime: ExtensionProfileRuntime
     private let rollback: ExtensionRuntimeRollback
     private let errorObservation: ExtensionContextErrorObservation
-    private let runtimeSession: ExtensionRuntimeSession
+    private let runtimeMetrics: ExtensionRuntimeMetricsAuthority
     private let diagnostics: ExtensionRuntimeDiagnostics
     private let expectedControllerDelegate: ExtensionControllerDelegateBridge
     private let controllerDelegateReadiness:
@@ -29,7 +29,7 @@ final class ExtensionContextControllerTransaction {
         profileRuntime: ExtensionProfileRuntime,
         rollback: ExtensionRuntimeRollback,
         errorObservation: ExtensionContextErrorObservation,
-        runtimeSession: ExtensionRuntimeSession,
+        runtimeMetrics: ExtensionRuntimeMetricsAuthority,
         diagnostics: ExtensionRuntimeDiagnostics,
         expectedControllerDelegate: ExtensionControllerDelegateBridge,
         controllerDelegateReadiness:
@@ -41,7 +41,7 @@ final class ExtensionContextControllerTransaction {
         self.profileRuntime = profileRuntime
         self.rollback = rollback
         self.errorObservation = errorObservation
-        self.runtimeSession = runtimeSession
+        self.runtimeMetrics = runtimeMetrics
         self.diagnostics = diagnostics
         self.expectedControllerDelegate = expectedControllerDelegate
         self.controllerDelegateReadiness = controllerDelegateReadiness
@@ -109,10 +109,10 @@ final class ExtensionContextControllerTransaction {
                 controllerBinding
             )
             if request.operation.recordsRuntimeMetrics {
-                runtimeSession.recordRuntimeMetric(for: request.extensionId) {
-                    $0.contextLoadDuration =
-                        CFAbsoluteTimeGetCurrent() - contextLoadStart
-                }
+                runtimeMetrics.recordContextLoadDuration(
+                    CFAbsoluteTimeGetCurrent() - contextLoadStart,
+                    for: request.extensionId
+                )
             }
             diagnostics.traceNativeMessagingContextBinding(
                 phase: request.operation.afterControllerLoadPhase,

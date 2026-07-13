@@ -12,7 +12,7 @@ final class ExtensionNormalTabCloseReceipt {
     }
 
     let tab: Tab
-    let generation: UInt64
+    let generation: ExtensionTabPublicationRevision
     let storedAdapter: ExtensionTabAdapter?
     let published: Publication?
     let implicit: Publication?
@@ -21,7 +21,7 @@ final class ExtensionNormalTabCloseReceipt {
 
     init(
         tab: Tab,
-        generation: UInt64,
+        generation: ExtensionTabPublicationRevision,
         storedAdapter: ExtensionTabAdapter?,
         published: Publication?,
         implicit: Publication?,

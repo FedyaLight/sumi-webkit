@@ -78,7 +78,7 @@ final class SafariExtensionRuntimeDataStoreTests: XCTestCase {
             initialProfile: profile
         )
         manager.attach(browserManager: browserManager)
-        manager.runtimeSession.runtimeState = .ready
+        manager.runtimeLifecycle.updateReadiness(isReady: true)
         let reconciler = manager.profileWebViewRuntimeReconciler
         let initialCount = reconciler.reconciliationRequestCount
 

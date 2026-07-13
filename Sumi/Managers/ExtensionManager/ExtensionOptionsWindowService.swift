@@ -161,7 +161,8 @@ final class ExtensionOptionsWindowService {
             fileURLWithPath: installedExtension.packagePath,
             isDirectory: true
         ).resolvingSymlinksInPath().standardizedFileURL
-        let manifest = manager.runtimeSession.loadedExtensionManifests[extensionId] ?? installedExtension.manifest
+        let manifest = manager.runtimeCatalog.manifest(for: extensionId)
+            ?? installedExtension.manifest
 
         let sdkURL = extensionContext.optionsPageURL
         let manifestURL = manager.computeOptionsPageURL(for: extensionContext)

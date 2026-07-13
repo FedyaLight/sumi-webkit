@@ -33,7 +33,7 @@ final class ExtensionProfileRuntimeTransition {
 
     private let installedExtensions: InstalledExtensionCollection
     private let profileRuntime: ExtensionProfileRuntime
-    private let runtimeSession: ExtensionRuntimeSession
+    private let runtimeLifecycle: ExtensionRuntimeLifecycleAuthority
     private let browserConfiguration: BrowserConfiguration
     private let controllerProvisioning: any ExtensionControllerProvisioning
     private let inactiveContextRetirement:
@@ -50,7 +50,7 @@ final class ExtensionProfileRuntimeTransition {
     init(
         installedExtensions: InstalledExtensionCollection,
         profileRuntime: ExtensionProfileRuntime,
-        runtimeSession: ExtensionRuntimeSession,
+        runtimeLifecycle: ExtensionRuntimeLifecycleAuthority,
         browserConfiguration: BrowserConfiguration,
         controllerProvisioning: any ExtensionControllerProvisioning,
         inactiveContextRetirement: any ExtensionInactiveProfileContextRetiring,
@@ -62,7 +62,7 @@ final class ExtensionProfileRuntimeTransition {
     ) {
         self.installedExtensions = installedExtensions
         self.profileRuntime = profileRuntime
-        self.runtimeSession = runtimeSession
+        self.runtimeLifecycle = runtimeLifecycle
         self.browserConfiguration = browserConfiguration
         self.controllerProvisioning = controllerProvisioning
         self.inactiveContextRetirement = inactiveContextRetirement
@@ -102,8 +102,7 @@ final class ExtensionProfileRuntimeTransition {
         let runtimeInitialized = profileRuntime.activateProfile(
             profileID,
             hasExtensionDemand: hasEnabledExtensionDemand,
-            runtimeIsReadyOrLoading: runtimeSession.runtimeState == .ready
-                || runtimeSession.runtimeState == .loading
+            runtimeIsReadyOrLoading: runtimeLifecycle.isReadyOrLoading
         )
         actionAnchors.clearAnchors(notMatching: profileID)
         toolbarProfiles.reloadPinnedToolbarExtensionsForCurrentProfile()
@@ -120,13 +119,9 @@ final class ExtensionProfileRuntimeTransition {
             for: profileID,
             hasEnabledExtensionDemand: hasEnabledExtensionDemand,
             enabledExtensionIDs: enabledExtensionIDs,
-            globalRuntimeReady: runtimeSession.runtimeState == .ready
+            globalRuntimeReady: runtimeLifecycle.isReady
         )
-        if runtimeSession.runtimeState != .failed {
-            runtimeSession.runtimeState = readiness.isProfileReady
-                ? .ready
-                : .loading
-        }
+        runtimeLifecycle.updateReadiness(isReady: readiness.isProfileReady)
         inactiveContextRetirement.unloadExtensionContextsForInactiveProfiles(
             keepingProfileId: profileID
         )

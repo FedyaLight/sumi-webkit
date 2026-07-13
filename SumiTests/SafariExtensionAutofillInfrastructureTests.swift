@@ -94,7 +94,7 @@ final class SafariExtensionAutofillInfrastructureTests: XCTestCase {
         )
         let browserManager = makeSafariExtensionTestBrowserManager(profile: profile)
         manager.attach(browserManager: browserManager)
-        manager.extensionsLoaded = true
+        manager.markExtensionRuntimePublicationReady()
         let installed = try await installProbeExtension(manager: manager)
         let tab = browserManager.tabManager.tabFactory.makeTab(
             url: URL(string: "http://127.0.0.1/login-form.html")!,
@@ -129,7 +129,7 @@ final class SafariExtensionAutofillInfrastructureTests: XCTestCase {
             allowWithoutEnabledExtensions: true
         )
         _ = manager.ensureExtensionController(for: profile.id)
-        manager.extensionsLoaded = true
+        manager.markExtensionRuntimePublicationReady()
 
         let installed = try await installProbeExtension(manager: manager)
         _ = try await manager.installedExtensionLifecycle.enable(installed.id)
@@ -153,7 +153,7 @@ final class SafariExtensionAutofillInfrastructureTests: XCTestCase {
         )
         tab.profileId = profile.id
         tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
-        tab.extensionPageRuntimeOwner.eligibleGeneration = manager.runtimeSession.tabOpenNotificationGeneration
+        tab.extensionPageRuntimeOwner.markEligible(for: manager.tabPublicationRevisions.issue())
         _ = manager.adapterCatalog.stableAdapter(for: tab)
 
         let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
@@ -189,7 +189,7 @@ final class SafariExtensionAutofillInfrastructureTests: XCTestCase {
             allowWithoutEnabledExtensions: true
         )
         let expectedController = manager.ensureExtensionController(for: profile.id)
-        manager.extensionsLoaded = true
+        manager.markExtensionRuntimePublicationReady()
 
         let installed = try await installProbeExtension(manager: manager)
         _ = try await manager.installedExtensionLifecycle.enable(installed.id)
@@ -219,7 +219,7 @@ final class SafariExtensionAutofillInfrastructureTests: XCTestCase {
         )
         tab.profileId = profile.id
         tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
-        tab.extensionPageRuntimeOwner.eligibleGeneration = manager.runtimeSession.tabOpenNotificationGeneration
+        tab.extensionPageRuntimeOwner.markEligible(for: manager.tabPublicationRevisions.issue())
 
         let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
         webView.owningTab = tab

@@ -74,7 +74,7 @@ final class ExtensionInitialTabPublicationReceipt:
             evidence,
             requiresPublishedWindow: true
         ), evidence.tab.extensionPageRuntimeOwner
-            .hasDidOpenTabNotification(for: evidence.tabGeneration) == false
+            .hasDidOpenTabNotification(for: evidence.tabRevision) == false
         else {
             return false
         }
@@ -95,7 +95,7 @@ final class ExtensionInitialTabPublicationReceipt:
         )
         guard let openClaim = evidence.tab.extensionPageRuntimeOwner
             .reserveDidOpenTab(
-                generation: evidence.tabGeneration,
+                generation: evidence.tabRevision,
                 committedWindowPrepublication: evidence.stateToken,
                 publisher: evidence.controller,
                 adapter: evidence.adapter
@@ -118,10 +118,10 @@ final class ExtensionInitialTabPublicationReceipt:
            evidence.tab.extensionPageRuntimeOwner
             .settleDidOpenTabNotification(
                 openClaim,
-                generation: evidence.tabGeneration
+                generation: evidence.tabRevision
             ) {
             diagnostics.trace(
-                "initialTabWindowPublication committed reason=\(evidence.reason) generation=\(evidence.tabGeneration) tab=\(evidence.tab.id.uuidString.prefix(8)) window=\(evidence.window.id.uuidString.prefix(8))"
+                "initialTabWindowPublication committed reason=\(evidence.reason) generation=\(evidence.tabRevision.generation) tab=\(evidence.tab.id.uuidString.prefix(8)) window=\(evidence.window.id.uuidString.prefix(8))"
             )
             return true
         }
@@ -137,7 +137,7 @@ final class ExtensionInitialTabPublicationReceipt:
             validator: validator
         )
         diagnostics.trace(
-            "initialTabWindowPublication rejected reason=\(evidence.reason) because=postCallbackStateChanged generation=\(evidence.tabGeneration) tab=\(evidence.tab.id.uuidString.prefix(8)) window=\(evidence.window.id.uuidString.prefix(8))"
+            "initialTabWindowPublication rejected reason=\(evidence.reason) because=postCallbackStateChanged generation=\(evidence.tabRevision.generation) tab=\(evidence.tab.id.uuidString.prefix(8)) window=\(evidence.window.id.uuidString.prefix(8))"
         )
         return false
     }
@@ -172,7 +172,7 @@ final class ExtensionInitialTabPublicationReceipt:
         )
         if revoked {
             diagnostics.trace(
-                "initialTabWindowPublication revoked reason=\(evidence.reason) generation=\(evidence.tabGeneration) tab=\(evidence.tab.id.uuidString.prefix(8)) window=\(evidence.window.id.uuidString.prefix(8))"
+                "initialTabWindowPublication revoked reason=\(evidence.reason) generation=\(evidence.tabRevision.generation) tab=\(evidence.tab.id.uuidString.prefix(8)) window=\(evidence.window.id.uuidString.prefix(8))"
             )
         }
         return revoked

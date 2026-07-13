@@ -103,7 +103,7 @@ final class ExtensionCreatedTabPublicationReceipt {
             adapterStillOpen: adapterStillOpen
         )
         diagnostics.trace(
-            "registerExtensionCreatedTab rejected reason=\(evidence.reason) because=postCallbackStateChanged generation=\(evidence.generation) tab=\(evidence.tab.id.uuidString.prefix(8))"
+            "registerExtensionCreatedTab rejected reason=\(evidence.reason) because=postCallbackStateChanged generation=\(evidence.generation.generation) tab=\(evidence.tab.id.uuidString.prefix(8))"
         )
         return false
     }
@@ -128,7 +128,7 @@ final class ExtensionCreatedTabPublicationReceipt {
     private func finish(reason completion: String) {
         phase = .finished
         diagnostics.trace(
-            "registerExtensionCreatedTab committed reason=\(evidence.reason) because=\(completion) generation=\(evidence.tab.extensionPageRuntimeOwner.currentOpenNotificationGeneration()) tab=\(evidence.tab.id.uuidString.prefix(8))"
+            "registerExtensionCreatedTab committed reason=\(evidence.reason) because=\(completion) generation=\(String(describing: evidence.tab.extensionPageRuntimeOwner.currentOpenNotificationGeneration()?.generation)) tab=\(evidence.tab.id.uuidString.prefix(8))"
         )
     }
 }

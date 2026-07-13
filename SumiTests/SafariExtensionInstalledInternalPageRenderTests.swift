@@ -153,8 +153,11 @@ final class SafariExtensionInstalledInternalPageRenderTests: XCTestCase {
             extensionId: extensionId,
             profileId: profile.id
         )
-        manager.runtimeSession.loadedExtensionManifests[extensionId] = webExtension.manifest
-        manager.extensionsLoaded = true
+        manager.runtimeCatalog.recordManifest(
+            webExtension.manifest,
+            for: extensionId
+        )
+        manager.markExtensionRuntimePublicationReady()
 
         try controller.load(extensionContext)
         defer {

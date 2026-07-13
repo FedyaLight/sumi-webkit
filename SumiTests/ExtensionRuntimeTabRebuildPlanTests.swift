@@ -61,8 +61,7 @@ final class ExtensionRuntimeTabRebuildPlanTests: XCTestCase {
         assertRuntimeStateCleared(on: tab)
     }
 
-    func testSameUUIDReplacementRejectsStaleCandidateWithoutClearingOrRebuild()
-    {
+    func testSameUUIDReplacementRejectsStaleCandidateWithoutClearingOrRebuild() {
         let candidate = makeCandidateTab()
         let replacement = Tab(
             id: candidate.id,
@@ -91,7 +90,7 @@ final class ExtensionRuntimeTabRebuildPlanTests: XCTestCase {
                     tabID: candidate.id,
                     tabIdentity: ObjectIdentifier(candidate),
                     outcome: .staleTab
-                )
+                ),
             ]
         )
         XCTAssertIdentical(tracedTab, candidate)
@@ -177,7 +176,9 @@ final class ExtensionRuntimeTabRebuildPlanTests: XCTestCase {
         tab.extensionPageRuntimeOwner.documentSequence = 9
         tab.extensionPageRuntimeOwner.committedMainDocumentURL = tab.url
         tab.extensionPageRuntimeOwner.openNotifiedDocumentSequence = 9
-        tab.extensionPageRuntimeOwner.lastOpenNotificationGeneration = 23
+        tab.extensionPageRuntimeOwner.markDidOpenTab(
+            generation: ExtensionTabPublicationRevision(generation: 23)
+        )
         return tab
     }
 
@@ -234,7 +235,7 @@ final class ExtensionRuntimeTabRebuildPlanTests: XCTestCase {
         )
         XCTAssertEqual(
             tab.extensionPageRuntimeOwner.currentOpenNotificationGeneration(),
-            23,
+            ExtensionTabPublicationRevision(generation: 23),
             file: file,
             line: line
         )
@@ -262,9 +263,8 @@ final class ExtensionRuntimeTabRebuildPlanTests: XCTestCase {
             file: file,
             line: line
         )
-        XCTAssertEqual(
+        XCTAssertNil(
             tab.extensionPageRuntimeOwner.currentOpenNotificationGeneration(),
-            0,
             file: file,
             line: line
         )

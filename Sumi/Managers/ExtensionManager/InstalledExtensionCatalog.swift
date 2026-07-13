@@ -89,7 +89,7 @@ extension InstalledExtensionCatalog.Environment {
                 manager?.profileRuntime.contextsForCurrentProfile().count ?? 0
             },
             markCatalogLoaded: { [weak manager] in
-                manager?.extensionsLoaded = true
+                manager?.markExtensionRuntimePublicationReady()
             },
             trace: { [weak manager] message in
                 manager?.runtimeDiagnostics.trace(message)

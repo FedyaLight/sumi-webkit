@@ -7,20 +7,23 @@ import Foundation
 final class ExtensionControllerRuntimeRelease {
     private let browserConfiguration: BrowserConfiguration
     private let profileRuntime: ExtensionProfileRuntime
-    private let runtimeSession: ExtensionRuntimeSession
+    private let runtimeLifecycle: ExtensionRuntimeLifecycleAuthority
+    private let runtimeDemand: ExtensionRuntimeDemandAuthority
     private let controllerDelegateReadiness:
         ExtensionControllerDelegateReadiness
 
     init(
         browserConfiguration: BrowserConfiguration,
         profileRuntime: ExtensionProfileRuntime,
-        runtimeSession: ExtensionRuntimeSession,
+        runtimeLifecycle: ExtensionRuntimeLifecycleAuthority,
+        runtimeDemand: ExtensionRuntimeDemandAuthority,
         controllerDelegateReadiness:
             ExtensionControllerDelegateReadiness
     ) {
         self.browserConfiguration = browserConfiguration
         self.profileRuntime = profileRuntime
-        self.runtimeSession = runtimeSession
+        self.runtimeLifecycle = runtimeLifecycle
+        self.runtimeDemand = runtimeDemand
         self.controllerDelegateReadiness = controllerDelegateReadiness
     }
 
@@ -32,8 +35,9 @@ final class ExtensionControllerRuntimeRelease {
         }
         profileRuntime.replaceControllers([:])
         profileRuntime.removeAllWebsiteDataStores()
-        runtimeSession.allowsRuntimeWithoutEnabledExtensions = false
-        runtimeSession.runtimeState =
-            isExtensionSupportAvailable ? .idle : .unavailable
+        runtimeDemand.reset()
+        runtimeLifecycle.reset(
+            extensionSupportAvailable: isExtensionSupportAvailable
+        )
     }
 }

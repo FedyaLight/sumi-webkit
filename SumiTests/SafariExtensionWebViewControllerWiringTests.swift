@@ -352,7 +352,6 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             context: container.mainContext,
             profile: ephemeralProfile
         ).manager
-        manager.runtimeSession.tabOpenNotificationGeneration = 7
 
         let browserManager = makeBrowserManager(profile: ephemeralProfile)
         manager.attach(browserManager: browserManager)
@@ -362,7 +361,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             url: URL(string: "https://example.com")!,
             browserManager: browserManager
         )
-        tab.extensionPageRuntimeOwner.eligibleGeneration = manager.runtimeSession.tabOpenNotificationGeneration
+        tab.extensionPageRuntimeOwner.markEligible(for: manager.tabPublicationRevisions.issue())
 
         XCTAssertTrue(ephemeralProfile.isEphemeral)
         XCTAssertTrue(tab.isEphemeral)
@@ -381,8 +380,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             allowWithoutEnabledExtensions: true
         )
         _ = manager.ensureExtensionController(for: ephemeralProfile.id)
-        manager.extensionsLoaded = true
-        manager.runtimeSession.tabOpenNotificationGeneration = 9
+        manager.markExtensionRuntimePublicationReady()
 
         let browserManager = makeBrowserManager(profile: ephemeralProfile)
         manager.attach(browserManager: browserManager)
@@ -393,7 +391,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             browserManager: browserManager
         )
         tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
-        tab.extensionPageRuntimeOwner.eligibleGeneration = manager.runtimeSession.tabOpenNotificationGeneration
+        tab.extensionPageRuntimeOwner.markEligible(for: manager.tabPublicationRevisions.issue())
 
         var activatedTabIDs: [UUID] = []
         manager.testHooks.didActivateTab = { activatedTabIDs.append($0) }
@@ -418,8 +416,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             allowWithoutEnabledExtensions: true
         )
         _ = manager.ensureExtensionController(for: profile.id)
-        manager.extensionsLoaded = true
-        manager.runtimeSession.tabOpenNotificationGeneration = 3
+        manager.markExtensionRuntimePublicationReady()
 
         let browserManager = makeBrowserManager(profile: profile)
         manager.attach(browserManager: browserManager)
@@ -430,7 +427,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             activate: false
         )
         tab.profileId = profile.id
-        tab.extensionPageRuntimeOwner.eligibleGeneration = manager.runtimeSession.tabOpenNotificationGeneration
+        tab.extensionPageRuntimeOwner.markEligible(for: manager.tabPublicationRevisions.issue())
 
         let configuration = browserConfiguration.auxiliaryWebViewConfiguration(
             surface: .extensionOptions
@@ -476,7 +473,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             name: "WebViewWiringExtension"
         )
         _ = try await manager.installedExtensionLifecycle.enable(installed.id)
-        manager.extensionsLoaded = true
+        manager.markExtensionRuntimePublicationReady()
 
         let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
             url: "about:blank",
@@ -528,7 +525,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             extensionId: installed.id,
             profileId: profile.id
         )
-        manager.extensionsLoaded = true
+        manager.markExtensionRuntimePublicationReady()
 
         XCTAssertFalse(manager.profileHasLoadedContentScriptContexts(profileId: profile.id))
 
@@ -619,7 +616,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             extensionId: installed.id,
             profileId: profile.id
         )
-        manager.extensionsLoaded = true
+        manager.markExtensionRuntimePublicationReady()
 
         var backgroundWakeCount = 0
         let backgroundWakeExpectation = expectation(
@@ -867,8 +864,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             allowWithoutEnabledExtensions: true
         )
         _ = manager.ensureExtensionController(for: profile.id)
-        manager.extensionsLoaded = true
-        manager.runtimeSession.tabOpenNotificationGeneration = 11
+        manager.markExtensionRuntimePublicationReady()
 
         let browserManager = makeBrowserManager(
             profile: profile
@@ -907,8 +903,9 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
                 webExtensionContextOverride: extensionContext
             )
         targetTab.profileId = profile.id
-        targetTab.extensionPageRuntimeOwner.eligibleGeneration =
-            manager.runtimeSession.tabOpenNotificationGeneration
+        targetTab.extensionPageRuntimeOwner.markEligible(
+            for: manager.tabPublicationRevisions.issue()
+        )
         let adapter = try XCTUnwrap(manager.adapterCatalog.stableAdapter(for: targetTab))
         let activation = expectation(description: "hidden extension tab activation rejected")
         var activationError: NSError?
@@ -1708,8 +1705,8 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             "Commit and activation callbacks must not duplicate the extension-created internal tab"
         )
         XCTAssertEqual(
-            tab.extensionPageRuntimeOwner.lastOpenNotificationGeneration,
-            manager.runtimeSession.tabOpenNotificationGeneration
+            tab.extensionPageRuntimeOwner.currentOpenNotificationGeneration(),
+            manager.tabPublicationRevisions.issue()
         )
         XCTAssertEqual(
             tab.extensionPageRuntimeOwner.openNotifiedDocumentSequence,
@@ -1730,8 +1727,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             allowWithoutEnabledExtensions: true
         )
         _ = manager.ensureExtensionController(for: profile.id)
-        manager.extensionsLoaded = true
-        manager.runtimeSession.tabOpenNotificationGeneration = 9
+        manager.markExtensionRuntimePublicationReady()
 
         let browserManager = makeBrowserManager(profile: profile)
         manager.attach(browserManager: browserManager)
@@ -1774,8 +1770,8 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
 
         wait(for: [didOpenExpectation], timeout: 2)
         XCTAssertEqual(
-            tab.extensionPageRuntimeOwner.lastOpenNotificationGeneration,
-            manager.runtimeSession.tabOpenNotificationGeneration
+            tab.extensionPageRuntimeOwner.currentOpenNotificationGeneration(),
+            manager.tabPublicationRevisions.issue()
         )
         XCTAssertTrue(tab.extensionPageRuntimeOwner.didNotifyOpenToExtensions)
     }
@@ -1792,8 +1788,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             allowWithoutEnabledExtensions: true
         )
         _ = manager.ensureExtensionController(for: profile.id)
-        manager.extensionsLoaded = true
-        manager.runtimeSession.tabOpenNotificationGeneration = 11
+        manager.markExtensionRuntimePublicationReady()
 
         let browserManager = makeBrowserManager(profile: profile)
         manager.attach(browserManager: browserManager)
@@ -1860,7 +1855,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
             allowWithoutEnabledExtensions: true
         )
         let expectedController = manager.ensureExtensionController(for: profile.id)
-        manager.extensionsLoaded = true
+        manager.markExtensionRuntimePublicationReady()
 
         let browserManager = makeBrowserManager(profile: profile)
         manager.attach(browserManager: browserManager)

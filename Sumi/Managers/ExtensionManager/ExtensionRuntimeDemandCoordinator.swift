@@ -14,27 +14,27 @@ enum ExtensionRuntimeDemandReason: String {
 final class ExtensionRuntimeDemandCoordinator {
     private let installedExtensions: InstalledExtensionCollection
     private let profileRuntime: ExtensionProfileRuntime
-    private let runtimeSession: ExtensionRuntimeSession
+    private let runtimeLifecycle: ExtensionRuntimeLifecycleAuthority
+    private let runtimeDemand: ExtensionRuntimeDemandAuthority
     private let controllerProvisioning: any ExtensionControllerProvisioning
     private let runtimeProfileID: @MainActor () -> UUID?
-    private let extensionSupportAvailable: Bool
     private let diagnostics: ExtensionRuntimeDiagnostics
 
     init(
         installedExtensions: InstalledExtensionCollection,
         profileRuntime: ExtensionProfileRuntime,
-        runtimeSession: ExtensionRuntimeSession,
+        runtimeLifecycle: ExtensionRuntimeLifecycleAuthority,
+        runtimeDemand: ExtensionRuntimeDemandAuthority,
         controllerProvisioning: any ExtensionControllerProvisioning,
         runtimeProfileID: @escaping @MainActor () -> UUID?,
-        extensionSupportAvailable: Bool,
         diagnostics: ExtensionRuntimeDiagnostics
     ) {
         self.installedExtensions = installedExtensions
         self.profileRuntime = profileRuntime
-        self.runtimeSession = runtimeSession
+        self.runtimeLifecycle = runtimeLifecycle
+        self.runtimeDemand = runtimeDemand
         self.controllerProvisioning = controllerProvisioning
         self.runtimeProfileID = runtimeProfileID
-        self.extensionSupportAvailable = extensionSupportAvailable
         self.diagnostics = diagnostics
     }
 
@@ -46,10 +46,7 @@ final class ExtensionRuntimeDemandCoordinator {
     ) -> WKWebExtensionController? {
         PerformanceTrace.emitEvent("ExtensionManager.lazyRuntimeRequested")
 
-        guard extensionSupportAvailable else {
-            runtimeSession.runtimeState = .unavailable
-            return nil
-        }
+        guard runtimeLifecycle.state != .unavailable else { return nil }
 
         // One catalog snapshot governs this entire admission. A concurrent
         // install/disable cannot change the meaning halfway through it.
@@ -57,9 +54,10 @@ final class ExtensionRuntimeDemandCoordinator {
         let enabledExtensionIDs = Set(
             catalogSnapshot.lazy.filter(\.isEnabled).map(\.id)
         )
-        guard enabledExtensionIDs.isEmpty == false
-            || allowWithoutEnabledExtensions
-            || runtimeSession.allowsRuntimeWithoutEnabledExtensions
+        guard runtimeDemand.admitsRuntime(
+            hasEnabledExtensions: enabledExtensionIDs.isEmpty == false,
+            allowWithoutEnabledExtensions: allowWithoutEnabledExtensions
+        )
         else {
             return nil
         }
@@ -70,7 +68,7 @@ final class ExtensionRuntimeDemandCoordinator {
         guard let resolvedProfileID else { return nil }
 
         if allowWithoutEnabledExtensions {
-            runtimeSession.allowsRuntimeWithoutEnabledExtensions = true
+            runtimeDemand.recordRuntimeDemandWithoutEnabledExtensions()
         }
 
         let controller = controllerProvisioning.ensureExtensionController(
@@ -80,26 +78,25 @@ final class ExtensionRuntimeDemandCoordinator {
             for: resolvedProfileID,
             hasEnabledExtensionDemand: enabledExtensionIDs.isEmpty == false,
             enabledExtensionIDs: enabledExtensionIDs,
-            globalRuntimeReady: runtimeSession.runtimeState == .ready
+            globalRuntimeReady: runtimeLifecycle.isReady
         )
-        switch runtimeSession.runtimeState {
+        switch runtimeLifecycle.state {
         case .loading:
             return controller
         case .ready:
             guard readiness.isProfileReady else {
-                runtimeSession.runtimeState = .loading
+                runtimeLifecycle.beginLoading()
                 return controller
             }
             return controller
         case .idle, .unavailable, .failed:
-            runtimeSession.runtimeState = .loading
+            runtimeLifecycle.beginLoading()
         }
 
-        runtimeSession.runtimeState = readiness.isProfileReady ? .ready : .loading
+        runtimeLifecycle.updateReadiness(isReady: readiness.isProfileReady)
         diagnostics.trace(
             "lazyRuntime controller-only reason=\(reason.rawValue) profileId=\(resolvedProfileID.uuidString) loadedContexts=\(profileRuntime.countLoadedExtensionContexts())"
         )
         return controller
     }
-
 }

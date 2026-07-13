@@ -11,6 +11,9 @@ preparation='Sumi/Managers/ExtensionManager/ExtensionContextPreparation.swift'
 source_cache='Sumi/Managers/ExtensionManager/WebExtensionRuntimeSourceCache.swift'
 storage='Sumi/Managers/ExtensionManager/WebExtensionRuntimeStoragePreparation.swift'
 authority='Sumi/Managers/ExtensionManager/ExtensionLoadedContextAuthority.swift'
+delegate_readiness='Sumi/Managers/ExtensionManager/ExtensionControllerDelegateReadiness.swift'
+controller_provisioning='Sumi/Managers/ExtensionManager/ExtensionControllerProvisioningOwner.swift'
+controller_release='Sumi/Managers/ExtensionManager/ExtensionControllerRuntimeRelease.swift'
 diagnostics='Sumi/Managers/ExtensionManager/ExtensionRuntimeDiagnostics.swift'
 manager='Sumi/Managers/ExtensionManager/ExtensionManager.swift'
 
@@ -21,6 +24,7 @@ required_files=(
   "$source_cache"
   "$storage"
   "$authority"
+  "$delegate_readiness"
 )
 for file in "${required_files[@]}"; do
   [[ -f "$file" ]] || {
@@ -87,6 +91,7 @@ done
 for required_transaction_call in \
   'profileRuntime.setContext(' \
   'controller.load(context)' \
+  'controllerDelegateReadiness.controllerDidBecomeReady(' \
   'rollback.rollBack(' \
   'rollbackResult.externalStateDisposition != .rollbackAllowed'; do
   if ! rg -Fq "$required_transaction_call" "$transaction"; then
@@ -95,6 +100,40 @@ for required_transaction_call in \
     exit 1
   fi
 done
+
+load_line="$(rg -n -F 'try controller.load(context)' "$transaction" | cut -d: -f1)"
+readiness_line="$(rg -n -F 'controllerDelegateReadiness.controllerDidBecomeReady(' "$transaction" | cut -d: -f1)"
+if [[ -z "$load_line" || -z "$readiness_line" ]] \
+    || (( readiness_line <= load_line )); then
+  printf 'error: controller delegate receipt is not consumed after successful WebKit load\n' >&2
+  exit 1
+fi
+for readiness_proof in \
+  'pendingByProfile[receipt.profileID] = receipt' \
+  'lhs.revision == rhs.revision' \
+  'lhs.controller === rhs.controller' \
+  'profileRuntime.isCurrent(receipt)' \
+  'pendingByProfile.removeAll()'; do
+  if ! rg -Fq "$readiness_proof" "$delegate_readiness"; then
+    printf 'error: controller delegate readiness lost exact proof: %s\n' \
+      "$readiness_proof" >&2
+    exit 1
+  fi
+done
+if ! rg -Fq 'controllerDelegateReadiness.controllerInstalled(' \
+    "$controller_provisioning" \
+    || ! rg -Fq 'controllerDelegateReadiness.cancelAll()' \
+      "$controller_release"; then
+  printf 'error: controller delegate receipt lost provisioning/release boundary\n' >&2
+  exit 1
+fi
+cancel_line="$(rg -n -F 'controllerDelegateReadiness.cancelAll()' "$controller_release" | cut -d: -f1)"
+release_line="$(rg -n -F 'webExtensionController = nil' "$controller_release" | cut -d: -f1)"
+if [[ -z "$cancel_line" || -z "$release_line" ]] \
+    || (( cancel_line >= release_line )); then
+  printf 'error: pending delegate receipts are not cancelled before controller release\n' >&2
+  exit 1
+fi
 
 for disposition in \
   rollbackAllowed \
@@ -123,7 +162,8 @@ if rg -n '\bmanager\b|ExtensionManager' <<<"$diagnostic_body"; then
 fi
 
 if rg -n 'Timer|Task\.sleep|asyncAfter|DispatchSource' \
-    "$loader" "$transaction" "$source_cache" "$storage"; then
+    "$loader" "$transaction" "$source_cache" "$storage" \
+    "$delegate_readiness" "$controller_provisioning"; then
   printf 'error: context-load path gained polling/timer idle work\n' >&2
   exit 1
 fi
@@ -142,6 +182,11 @@ required_regressions=(
   'SumiTests/ExtensionRuntimeTransactionFailureTests.swift|testReplacementBindingPropagatesExternalPreservationAuthority'
   'SumiTests/ExtensionRuntimeTransactionFailureTests.swift|testSiblingBindingPropagatesActiveBindingPreservationAuthority'
   'SumiTests/ExtensionRuntimeTransactionFailureTests.swift|testCompetingMutationPropagatesTransactionPreservationAuthority'
+  'SumiTests/ExtensionControllerDelegateReadinessTests.swift|testImmediateReadinessBindsInstalledController'
+  'SumiTests/ExtensionControllerDelegateReadinessTests.swift|testCancellationRejectsPendingReadiness'
+  'SumiTests/ExtensionControllerDelegateReadinessTests.swift|testNewControllerSupersedesPendingControllerForProfile'
+  'SumiTests/ExtensionRuntimeTransactionFailureTests.swift|testSuccessfulWebKitLoadConsumesDelegateReceiptOnce'
+  'SumiTests/ExtensionRuntimeTransactionFailureTests.swift|testRolledBackWebKitLoadPreservesDelegateReceiptWithoutBinding'
   'SumiTests/ExtensionRuntimeRecoveryTests.swift|testFailedEnableWithUnloadFailurePreservesEnabledLiveBinding'
   'SumiTests/ExtensionRuntimeRecoveryTests.swift|testNonQuiescentPackageReplacementPreservesCandidateAndLiveRuntime'
 )

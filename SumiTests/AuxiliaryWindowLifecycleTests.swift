@@ -467,8 +467,7 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
     }
 
     func testClosingFocusedPopupRestoresPreviousPopupForSameExtension()
-        async throws
-    {
+        async throws {
         let harness = try await makeExtensionHarness(
             ownerExtensionID: "adapter-owner"
         )
@@ -784,7 +783,8 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
         XCTAssertNil(harness.browserManager.auxiliaryWindows.sessions.session(for: authTab))
         XCTAssertEqual(harness.windowState.currentTabId, authTab.id)
 
-        harness.extensionManager.runtimeSession.allowsRuntimeWithoutEnabledExtensions = true
+        harness.extensionManager.runtimeDemand
+            .recordRuntimeDemandWithoutEnabledExtensions()
         let webView = try XCTUnwrap(authTab.resolvedAssignedWebView() ?? authTab.resolvedCurrentWebView())
         harness.extensionManager.prepareWebViewForExtensionRuntime(
             webView,
@@ -1061,9 +1061,11 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
         extensionsModule.attach(runtime: BrowserExtensionsModuleRuntimeFactory.runtime(for: browserManager))
         extensionManager.attach(browserManager: browserManager)
         XCTAssertIdentical(extensionsModule.managerIfEnabled(), extensionManager)
-        extensionManager.runtimeSession.allowsRuntimeWithoutEnabledExtensions =
-            allowNormalTabRuntimeWithoutInstalledExtensions
-        extensionManager.extensionsLoaded = true
+        if allowNormalTabRuntimeWithoutInstalledExtensions {
+            extensionManager.runtimeDemand
+                .recordRuntimeDemandWithoutEnabledExtensions()
+        }
+        extensionManager.markExtensionRuntimePublicationReady()
 
         let space = Space(name: "Primary", profileId: profile.id)
         browserManager.tabManager.spaceStateOwner.replaceSpaces([space])
@@ -1255,8 +1257,7 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
 
 @MainActor
 private final class AuxiliaryWindowPermissionStub:
-    AuxiliaryWindowPermissionHandling
-{
+    AuxiliaryWindowPermissionHandling {
     func evaluatePopupPermission(
         _ request: SumiPopupPermissionRequest,
         tabContext: SumiPopupPermissionTabContext

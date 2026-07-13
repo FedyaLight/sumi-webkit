@@ -41,12 +41,12 @@ enum ExtensionNormalTabRuntimeAssembler {
         let tabProfiles = controllerRuntime.profiles
         let existingControllers = controllerRuntime.controllers
         let preparedTabs = ExtensionPreparedNormalTabQuery(
-            runtimeSession: manager.runtimeSession,
+            tabPublicationRevisions: manager.tabPublicationRevisions,
             tabs: tabs
         )
         let publishedTabs = ExtensionPublishedNormalTabQuery(
             prepared: preparedTabs,
-            runtimeSession: manager.runtimeSession,
+            tabPublicationRevisions: manager.tabPublicationRevisions,
             publicationGate: gate,
             profiles: tabProfiles,
             adapters: manager.adapterStore,
@@ -69,14 +69,15 @@ enum ExtensionNormalTabRuntimeAssembler {
         #endif
         let contexts = manager.initialDocumentRuntimePreparationOwner
         let deferred = ExtensionDeferredTabRegistration(
-            runtimeSession: manager.runtimeSession,
+            extensionLoadRevisions: manager.extensionLoadRevisions,
             tabs: tabs,
             profiles: tabProfiles,
             contextLoading: contexts
         )
         #if DEBUG
             let opening = ExtensionNormalTabOpenTransaction(
-                runtimeSession: manager.runtimeSession,
+                runtimePublicationEvidence:
+                    manager.runtimePublicationEvidence,
                 publicationGate: gate,
                 profileRuntime: manager.profileRuntime,
                 profiles: tabProfiles,
@@ -98,7 +99,8 @@ enum ExtensionNormalTabRuntimeAssembler {
             )
         #else
             let opening = ExtensionNormalTabOpenTransaction(
-                runtimeSession: manager.runtimeSession,
+                runtimePublicationEvidence:
+                    manager.runtimePublicationEvidence,
                 publicationGate: gate,
                 profileRuntime: manager.profileRuntime,
                 profiles: tabProfiles,
@@ -117,7 +119,8 @@ enum ExtensionNormalTabRuntimeAssembler {
             )
         #endif
         let registration = ExtensionNormalTabRegistration(
-            runtimeSession: manager.runtimeSession,
+            tabPublicationRevisions: manager.tabPublicationRevisions,
+            runtimeLoadStatus: manager.runtimeLoadStatus,
             tabs: tabs,
             preparedTabs: preparedTabs,
             controllers: controllerRuntime.repair,
@@ -134,7 +137,6 @@ enum ExtensionNormalTabRuntimeAssembler {
         )
         let requestedTabWebViewMaterializer =
             ExtensionRequestedTabWebViewMaterializer(
-                runtimeSession: manager.runtimeSession,
                 browserContext: liveWebViews,
                 configurationPreparation:
                     manager.webViewConfigurationPreparation,
@@ -165,7 +167,9 @@ enum ExtensionNormalTabRuntimeAssembler {
             )
         #endif
         let rebind = ExtensionTabLifecycleRebindTransaction(
-            runtimeSession: manager.runtimeSession,
+            runtimePublicationEvidence:
+                manager.runtimePublicationEvidence,
+            runtimeLoadStatus: manager.runtimeLoadStatus,
             profileRuntime: manager.profileRuntime,
             tabs: tabs,
             profiles: tabProfiles,

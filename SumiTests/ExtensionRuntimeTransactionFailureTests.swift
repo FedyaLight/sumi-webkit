@@ -194,7 +194,7 @@ final class ExtensionRuntimeTransactionFailureTests:
             profileRuntime: manager.profileRuntime,
             rollback: manager.runtimeRollback,
             errorObservation: manager.contextErrorObservation,
-            runtimeSession: manager.runtimeSession,
+            runtimeMetrics: manager.runtimeMetrics,
             diagnostics: manager.runtimeDiagnostics,
             expectedControllerDelegate: manager.controllerDelegateBridge,
             controllerDelegateReadiness:
@@ -209,7 +209,7 @@ final class ExtensionRuntimeTransactionFailureTests:
             sourceCache: manager.webExtensionRuntimeSourceCache,
             contextPreparation: preparation,
             storagePlanner: manager.webExtensionStorageCleanupPlanner,
-            runtimeSession: manager.runtimeSession,
+            runtimeMetrics: manager.runtimeMetrics,
             diagnostics: manager.runtimeDiagnostics,
             expectedControllerDelegate: manager.controllerDelegateBridge,
             controllerTransaction: transaction

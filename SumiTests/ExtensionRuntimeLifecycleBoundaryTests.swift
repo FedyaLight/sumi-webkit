@@ -12,16 +12,16 @@ final class ExtensionRuntimeLifecycleBoundaryTests: XCTestCase {
 
         XCTAssertNil(harness.coordinator.request(reason: .install))
         XCTAssertEqual(harness.provisioning.ensureCount, 0)
-        XCTAssertEqual(harness.session.runtimeState, .idle)
-        XCTAssertFalse(harness.session.extensionsLoaded)
+        XCTAssertEqual(harness.lifecycle.state, .idle)
+        XCTAssertFalse(harness.loadStatus.extensionsLoaded)
     }
 
     func testNoDemandDoesNotSuspendExistingRuntimePublication() {
         let harness = DemandHarness(profileID: UUID())
-        harness.session.extensionsLoaded = true
+        harness.loadStatus.markExtensionsLoaded()
 
         XCTAssertNil(harness.coordinator.request(reason: .install))
-        XCTAssertTrue(harness.session.extensionsLoaded)
+        XCTAssertTrue(harness.loadStatus.extensionsLoaded)
         XCTAssertEqual(harness.provisioning.ensureCount, 0)
     }
 
@@ -40,13 +40,13 @@ final class ExtensionRuntimeLifecycleBoundaryTests: XCTestCase {
             )
         )
         XCTAssertEqual(harness.provisioning.ensureCount, 0)
-        XCTAssertEqual(harness.session.runtimeState, .unavailable)
-        XCTAssertFalse(harness.session.extensionsLoaded)
+        XCTAssertEqual(harness.lifecycle.state, .unavailable)
+        XCTAssertFalse(harness.loadStatus.extensionsLoaded)
     }
 
     func testDemandWithoutAnyProfilePreservesFailedStateAndDoesNotProvision() {
         let harness = DemandHarness(profileID: nil)
-        harness.session.runtimeState = .failed
+        harness.lifecycle.markFailed()
 
         XCTAssertNil(
             harness.coordinator.request(
@@ -55,8 +55,8 @@ final class ExtensionRuntimeLifecycleBoundaryTests: XCTestCase {
             )
         )
         XCTAssertEqual(harness.provisioning.ensureCount, 0)
-        XCTAssertEqual(harness.session.runtimeState, .failed)
-        XCTAssertFalse(harness.session.extensionsLoaded)
+        XCTAssertEqual(harness.lifecycle.state, .failed)
+        XCTAssertFalse(harness.loadStatus.extensionsLoaded)
     }
 
     func testExplicitDemandIsStickyAndReusesLoadingController() throws {
@@ -69,7 +69,7 @@ final class ExtensionRuntimeLifecycleBoundaryTests: XCTestCase {
                 profileId: profileID
             )
         )
-        harness.session.runtimeState = .loading
+        harness.lifecycle.beginLoading()
 
         let reused = try XCTUnwrap(
             harness.coordinator.request(
@@ -81,8 +81,8 @@ final class ExtensionRuntimeLifecycleBoundaryTests: XCTestCase {
         XCTAssertIdentical(reused, initial)
         XCTAssertEqual(harness.provisioning.ensureCount, 2)
         XCTAssertEqual(harness.provisioning.createdControllerCount, 1)
-        XCTAssertEqual(harness.session.runtimeState, .loading)
-        XCTAssertFalse(harness.session.extensionsLoaded)
+        XCTAssertEqual(harness.lifecycle.state, .loading)
+        XCTAssertFalse(harness.loadStatus.extensionsLoaded)
     }
 
     func testABATransitionRejectsStaleImmediateSettlementAndRebindsBaseConfiguration()
@@ -90,8 +90,8 @@ final class ExtensionRuntimeLifecycleBoundaryTests: XCTestCase {
         let profileA = UUID()
         let profileB = UUID()
         let profileRuntime = ExtensionProfileRuntime(initialProfileId: profileA)
-        let session = ExtensionRuntimeSession()
-        session.runtimeState = .ready
+        let lifecycle = ExtensionRuntimeLifecycleAuthority()
+        lifecycle.updateReadiness(isReady: true)
         let provisioning = ControllerProvisioningProbe(
             profileRuntime: profileRuntime
         )
@@ -106,7 +106,7 @@ final class ExtensionRuntimeLifecycleBoundaryTests: XCTestCase {
         let transition = ExtensionProfileRuntimeTransition(
             installedExtensions: InstalledExtensionCollection(),
             profileRuntime: profileRuntime,
-            runtimeSession: session,
+            runtimeLifecycle: lifecycle,
             browserConfiguration: browserConfiguration,
             controllerProvisioning: provisioning,
             inactiveContextRetirement: retirement,
@@ -146,8 +146,8 @@ final class ExtensionRuntimeLifecycleBoundaryTests: XCTestCase {
         let profileA = UUID()
         let profileB = UUID()
         let profileRuntime = ExtensionProfileRuntime(initialProfileId: profileA)
-        let session = ExtensionRuntimeSession()
-        session.runtimeState = .ready
+        let lifecycle = ExtensionRuntimeLifecycleAuthority()
+        lifecycle.updateReadiness(isReady: true)
         let installed = InstalledExtensionCollection()
         installed.connectRecordChanges {}
         installed.upsert(makeInstalledExtension(id: "enabled-runtime"))
@@ -158,7 +158,7 @@ final class ExtensionRuntimeLifecycleBoundaryTests: XCTestCase {
         let transition = ExtensionProfileRuntimeTransition(
             installedExtensions: installed,
             profileRuntime: profileRuntime,
-            runtimeSession: session,
+            runtimeLifecycle: lifecycle,
             browserConfiguration: browserConfiguration,
             controllerProvisioning: provisioning,
             inactiveContextRetirement: InactiveContextRetirementProbe(),
@@ -172,7 +172,7 @@ final class ExtensionRuntimeLifecycleBoundaryTests: XCTestCase {
         _ = transition.switchProfile(profileID: profileB)
 
         XCTAssertEqual(profileRuntime.currentProfileId, profileB)
-        XCTAssertEqual(session.runtimeState, .loading)
+        XCTAssertEqual(lifecycle.state, .loading)
         XCTAssertIdentical(
             browserConfiguration.webViewConfiguration.webExtensionController,
             provisioning.controllersByProfile[profileB]
@@ -182,8 +182,8 @@ final class ExtensionRuntimeLifecycleBoundaryTests: XCTestCase {
     func testDeferredTransitionDoesNotRetainTransitionRole() async {
         let profileID = UUID()
         let profileRuntime = ExtensionProfileRuntime(initialProfileId: profileID)
-        let session = ExtensionRuntimeSession()
-        session.runtimeState = .ready
+        let lifecycle = ExtensionRuntimeLifecycleAuthority()
+        lifecycle.updateReadiness(isReady: true)
         let provisioning = ControllerProvisioningProbe(
             profileRuntime: profileRuntime
         )
@@ -192,7 +192,7 @@ final class ExtensionRuntimeLifecycleBoundaryTests: XCTestCase {
             ExtensionProfileRuntimeTransition(
                 installedExtensions: InstalledExtensionCollection(),
                 profileRuntime: profileRuntime,
-                runtimeSession: session,
+                runtimeLifecycle: lifecycle,
                 browserConfiguration: BrowserConfiguration(),
                 controllerProvisioning: provisioning,
                 inactiveContextRetirement: InactiveContextRetirementProbe(),
@@ -216,8 +216,8 @@ final class ExtensionRuntimeLifecycleBoundaryTests: XCTestCase {
     func testImmediateSettlementCancelsDeferredDuplicate() async {
         let profileID = UUID()
         let profileRuntime = ExtensionProfileRuntime(initialProfileId: profileID)
-        let session = ExtensionRuntimeSession()
-        session.runtimeState = .ready
+        let lifecycle = ExtensionRuntimeLifecycleAuthority()
+        lifecycle.updateReadiness(isReady: true)
         let provisioning = ControllerProvisioningProbe(
             profileRuntime: profileRuntime
         )
@@ -226,7 +226,7 @@ final class ExtensionRuntimeLifecycleBoundaryTests: XCTestCase {
         let transition = ExtensionProfileRuntimeTransition(
             installedExtensions: InstalledExtensionCollection(),
             profileRuntime: profileRuntime,
-            runtimeSession: session,
+            runtimeLifecycle: lifecycle,
             browserConfiguration: BrowserConfiguration(),
             controllerProvisioning: provisioning,
             inactiveContextRetirement: InactiveContextRetirementProbe(),
@@ -254,8 +254,8 @@ final class ExtensionRuntimeLifecycleBoundaryTests: XCTestCase {
         XCTAssertTrue(
             fixture.residency.settleLoadedContext(fixture.loadedContext)
         )
-        XCTAssertTrue(fixture.session.extensionsLoaded)
-        XCTAssertEqual(fixture.session.runtimeState, .ready)
+        XCTAssertTrue(fixture.loadStatus.extensionsLoaded)
+        XCTAssertEqual(fixture.lifecycle.state, .ready)
     }
 
     func testSupersededLoadedContextDoesNotPublishRuntime() async throws {
@@ -274,8 +274,8 @@ final class ExtensionRuntimeLifecycleBoundaryTests: XCTestCase {
         XCTAssertFalse(
             fixture.residency.settleLoadedContext(fixture.loadedContext)
         )
-        XCTAssertFalse(fixture.session.extensionsLoaded)
-        XCTAssertEqual(fixture.session.runtimeState, .loading)
+        XCTAssertFalse(fixture.loadStatus.extensionsLoaded)
+        XCTAssertEqual(fixture.lifecycle.state, .loading)
     }
 
     private func makeResidencySettlementFixture(
@@ -320,8 +320,11 @@ final class ExtensionRuntimeLifecycleBoundaryTests: XCTestCase {
             extensionId: extensionID,
             profileId: profileID
         )
-        let runtimeSession = ExtensionRuntimeSession()
-        runtimeSession.runtimeState = .loading
+        let runtimeLifecycle = ExtensionRuntimeLifecycleAuthority()
+        runtimeLifecycle.beginLoading()
+        let runtimeLoadStatus = ExtensionRuntimeLoadStatusAuthority()
+        let runtimeResidency = ExtensionRuntimeResidencyAuthority()
+        let extensionLoadRevisions = ExtensionLoadRevisionAuthority()
         let installedExtensions = InstalledExtensionCollection()
         installedExtensions.connectRecordChanges {}
         installedExtensions.upsert(makeInstalledExtension(id: extensionID))
@@ -330,9 +333,9 @@ final class ExtensionRuntimeLifecycleBoundaryTests: XCTestCase {
         let contextRetirement = ExtensionContextRetirement(
             profileRuntime: profileRuntime,
             backgroundRuntimeState: ExtensionBackgroundRuntimeStateOwner(),
-            runtimeSession: runtimeSession,
+            runtimeResidency: runtimeResidency,
             errorObservation: ExtensionContextErrorObservation(
-                recordRuntimeMetric: { _, _ in },
+                recordErrorUpdateDuration: { _, _ in },
                 trace: { _ in },
                 isEnabled: { false }
             ),
@@ -343,7 +346,9 @@ final class ExtensionRuntimeLifecycleBoundaryTests: XCTestCase {
         let residency = ExtensionContextResidencyOwner(
             dependencies: .init(
                 profileRuntime: profileRuntime,
-                runtimeSession: runtimeSession,
+                runtimeResidency: runtimeResidency,
+                runtimeLifecycle: runtimeLifecycle,
+                extensionLoadRevisions: extensionLoadRevisions,
                 installedExtensions: installedExtensions,
                 contextLoadRegistry: contextLoadRegistry,
                 contextRetirement: contextRetirement,
@@ -361,7 +366,7 @@ final class ExtensionRuntimeLifecycleBoundaryTests: XCTestCase {
                 extensionEntity: { _ in nil },
                 loadEnabledExtension: { _, _ in },
                 markRuntimePublicationReady: {
-                    runtimeSession.extensionsLoaded = true
+                    runtimeLoadStatus.markExtensionsLoaded()
                 },
                 trace: { _ in }
             )
@@ -370,7 +375,8 @@ final class ExtensionRuntimeLifecycleBoundaryTests: XCTestCase {
             extensionID: extensionID,
             profileID: profileID,
             profileRuntime: profileRuntime,
-            session: runtimeSession,
+            lifecycle: runtimeLifecycle,
+            loadStatus: runtimeLoadStatus,
             controller: controller,
             loadedContext: ExtensionLoadedContext(
                 context: context,
@@ -431,7 +437,8 @@ private struct ResidencySettlementFixture {
     let extensionID: String
     let profileID: UUID
     let profileRuntime: ExtensionProfileRuntime
-    let session: ExtensionRuntimeSession
+    let lifecycle: ExtensionRuntimeLifecycleAuthority
+    let loadStatus: ExtensionRuntimeLoadStatusAuthority
     let controller: WKWebExtensionController
     let loadedContext: ExtensionLoadedContext
     let residency: ExtensionContextResidencyOwner
@@ -440,7 +447,9 @@ private struct ResidencySettlementFixture {
 @available(macOS 15.5, *)
 @MainActor
 private struct DemandHarness {
-    let session: ExtensionRuntimeSession
+    let lifecycle: ExtensionRuntimeLifecycleAuthority
+    let loadStatus: ExtensionRuntimeLoadStatusAuthority
+    let demand: ExtensionRuntimeDemandAuthority
     let provisioning: ControllerProvisioningProbe
     let coordinator: ExtensionRuntimeDemandCoordinator
 
@@ -451,19 +460,26 @@ private struct DemandHarness {
         let profileRuntime = ExtensionProfileRuntime(
             initialProfileId: profileID
         )
-        let session = ExtensionRuntimeSession()
+        let lifecycle = ExtensionRuntimeLifecycleAuthority()
+        let loadStatus = ExtensionRuntimeLoadStatusAuthority()
+        let demand = ExtensionRuntimeDemandAuthority()
         let provisioning = ControllerProvisioningProbe(
             profileRuntime: profileRuntime
         )
-        self.session = session
+        if extensionSupportAvailable == false {
+            lifecycle.markUnavailable()
+        }
+        self.lifecycle = lifecycle
+        self.loadStatus = loadStatus
+        self.demand = demand
         self.provisioning = provisioning
         coordinator = ExtensionRuntimeDemandCoordinator(
             installedExtensions: InstalledExtensionCollection(),
             profileRuntime: profileRuntime,
-            runtimeSession: session,
+            runtimeLifecycle: lifecycle,
+            runtimeDemand: demand,
             controllerProvisioning: provisioning,
             runtimeProfileID: { nil },
-            extensionSupportAvailable: extensionSupportAvailable,
             diagnostics: ExtensionRuntimeDiagnostics()
         )
     }

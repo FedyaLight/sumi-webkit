@@ -11,7 +11,7 @@ extension ExtensionRequestedTabServicesTests {
         let harness = try await makeRequestedPublicationHarness()
         let manager = harness.manager
         let tab = harness.sourceTab
-        let generation = manager.runtimeSession.tabOpenNotificationGeneration
+        let generation = manager.tabPublicationRevisions.issue()
         let adapter = try XCTUnwrap(
             manager.adapterStore.existingTabAdapter(for: tab.id)
         )
@@ -167,22 +167,31 @@ extension ExtensionRequestedTabServicesTests {
             name: "Replacement"
         )
         replacement.profileId = profileID
-        replacement.extensionPageRuntimeOwner.prepareGeneration(7)
-        replacement.extensionPageRuntimeOwner.markEligible(for: 7)
+        let tabPublicationRevision = ExtensionTabPublicationRevision(
+            generation: 7
+        )
+        replacement.extensionPageRuntimeOwner.prepareGeneration(
+            tabPublicationRevision
+        )
+        replacement.extensionPageRuntimeOwner.markEligible(
+            for: tabPublicationRevision
+        )
         let replacementClaim = try XCTUnwrap(
             replacement.extensionPageRuntimeOwner.reserveDidOpenTab(
-                generation: 7
+                generation: tabPublicationRevision
             )
         )
         XCTAssertTrue(
             replacement.extensionPageRuntimeOwner.settleDidOpenTabNotification(
                 replacementClaim,
-                generation: 7
+                generation: tabPublicationRevision
             )
         )
         XCTAssertTrue(
             replacement.extensionPageRuntimeOwner
-                .hasSettledDidOpenTabNotification(for: 7)
+                .hasSettledDidOpenTabNotification(
+                    for: tabPublicationRevision
+                )
         )
         var currentTab: Tab? = original
         let tabs = BrowserExtensionTabQueryAdapter(
@@ -199,10 +208,9 @@ extension ExtensionRequestedTabServicesTests {
             onStart: { loadStarted.fulfill() }
         )
         let resumer = RecordingDeferredTabResumer()
-        let session = ExtensionRuntimeSession()
-        session.extensionLoadGeneration = 19
+        let extensionLoadRevisions = ExtensionLoadRevisionAuthority()
         let registration = ExtensionDeferredTabRegistration(
-            runtimeSession: session,
+            extensionLoadRevisions: extensionLoadRevisions,
             tabs: tabs,
             profiles: profiles,
             contextLoading: loader
@@ -213,7 +221,7 @@ extension ExtensionRequestedTabServicesTests {
             .scheduleDeferredTabNotificationAfterContextLoad(
                 original,
                 profileId: profileID,
-                extensionLoadGeneration: 19,
+                extensionLoadRevision: extensionLoadRevisions.issue(),
                 reason: #function
             )
         await fulfillment(of: [loadStarted], timeout: 1)
@@ -291,7 +299,7 @@ extension ExtensionRequestedTabServicesTests {
         let harness = try await makeRequestedPublicationHarness()
         let manager = harness.manager
         let tab = harness.sourceTab
-        let generation = manager.runtimeSession.tabOpenNotificationGeneration
+        let generation = manager.tabPublicationRevisions.issue()
         var lifecycleOrder: [String] = []
         var didReenter = false
         manager.testHooks.didCloseTab = { tabID in

@@ -6,7 +6,8 @@ import WebKit
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionCreatedTabPublicationValidator {
-    private let runtimeSession: ExtensionRuntimeSession
+    private let runtimePublicationEvidence:
+        ExtensionRuntimePublicationEvidenceIssuer
     private let profileRuntime: ExtensionProfileRuntime
     private let controllers: any ExtensionTabControllerQuery
     private let webViews: ExtensionExactTabWebViewQuery
@@ -17,7 +18,8 @@ final class ExtensionCreatedTabPublicationValidator {
     private let extensionsLoaded: @MainActor () -> Bool
 
     init(
-        runtimeSession: ExtensionRuntimeSession,
+        runtimePublicationEvidence:
+            ExtensionRuntimePublicationEvidenceIssuer,
         profileRuntime: ExtensionProfileRuntime,
         controllers: any ExtensionTabControllerQuery,
         webViews: ExtensionExactTabWebViewQuery,
@@ -27,7 +29,7 @@ final class ExtensionCreatedTabPublicationValidator {
         adapters: ExtensionCreatedTabAdapterPublication,
         extensionsLoaded: @escaping @MainActor () -> Bool
     ) {
-        self.runtimeSession = runtimeSession
+        self.runtimePublicationEvidence = runtimePublicationEvidence
         self.profileRuntime = profileRuntime
         self.controllers = controllers
         self.webViews = webViews
@@ -71,8 +73,7 @@ final class ExtensionCreatedTabPublicationValidator {
             dataStore: dataStore,
             profileID: profileID,
             controller: controller,
-            generation: runtimeSession.tabOpenNotificationGeneration,
-            extensionLoadGeneration: runtimeSession.extensionLoadGeneration,
+            runtimePublication: runtimePublicationEvidence.issue(),
             contextBindingGeneration: profileRuntime
                 .contextBindingGeneration(for: profileID)
         )
@@ -107,7 +108,8 @@ final class ExtensionCreatedTabPublicationValidator {
         runtime: ExtensionManagerRuntime
     ) -> Bool {
         let base = evidence.base
-        let currentGeneration = runtimeSession.tabOpenNotificationGeneration
+        let currentRuntimePublication = runtimePublicationEvidence.issue()
+        let currentGeneration = currentRuntimePublication.tabPublication
         let binding = base.tab.extensionPageRuntimeOwner
             .documentBindingSnapshot()
         guard extensionsLoaded(),
@@ -135,7 +137,9 @@ final class ExtensionCreatedTabPublicationValidator {
                   for: currentGeneration
               ), base.tab.extensionPageRuntimeOwner
                 .hasSettledDidOpenTabNotification(for: currentGeneration),
-              binding.openNotifiedContextReadiness == .loaded,
+              runtimePublicationEvidence.isCurrent(
+                  currentRuntimePublication
+              ), binding.openNotifiedContextReadiness == .loaded,
               binding.openNotifiedContextBindingGeneration
                 == profileRuntime.contextBindingGeneration(
                     for: base.profileID
@@ -163,10 +167,9 @@ final class ExtensionCreatedTabPublicationValidator {
     ) -> Bool {
         let base = evidence.base
         return extensionsLoaded()
-            && runtimeSession.extensionLoadGeneration
-                == base.extensionLoadGeneration
-            && runtimeSession.tabOpenNotificationGeneration
-                == base.generation
+            && runtimePublicationEvidence.isCurrent(
+                base.runtimePublication
+            )
             && profileRuntime.resolvedProfileId(
                 for: base.tab,
                 runtime: runtime

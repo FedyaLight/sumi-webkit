@@ -12,20 +12,23 @@ struct ExtensionInitialTabPublicationEvidence {
     let profile: Profile
     let dataStore: WKWebsiteDataStore
     let profileID: UUID
-    let extensionLoadGeneration: UInt64
-    let tabGeneration: UInt64
+    let runtimePublication: ExtensionRuntimePublicationEvidence
     let contextBindingGeneration: UInt64
     let controller: WKWebExtensionController
     let adapter: ExtensionTabAdapter
     let createdAdapter: Bool
     let stateToken: TabExtensionPrepublicationToken
     let reason: String
+
+    var tabRevision: ExtensionTabPublicationRevision {
+        runtimePublication.tabPublication
+    }
 }
 
 @available(macOS 15.5, *)
 @MainActor
 struct ExtensionInitialTabDelegatedOpenEvidence {
-    let generation: UInt64
+    let runtimePublication: ExtensionRuntimePublicationEvidence
     let controller: WKWebExtensionController
     let claim: TabExtensionOpenPublicationClaim
 }

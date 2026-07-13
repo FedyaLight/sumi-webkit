@@ -388,7 +388,7 @@ enum SafariExtensionCompatibilityReportBuilder {
         guard isEnabled else { return .disabled }
 
         if let extensionManager {
-            switch extensionManager.runtimeSession.runtimeState {
+            switch extensionManager.runtimeLifecycle.state {
             case .failed:
                 return .runtimeLoadFailed
             case .unavailable:

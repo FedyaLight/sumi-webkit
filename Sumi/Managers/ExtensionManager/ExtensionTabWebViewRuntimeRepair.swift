@@ -75,7 +75,7 @@ enum ExtensionTabWebViewRuntimeRepairOutcome: Equatable {
 @MainActor
 final class ExtensionTabWebViewRuntimeRepair:
     ExtensionTabWebViewRuntimeRepairing {
-    private weak var runtimeSession: ExtensionRuntimeSession?
+    private weak var runtimeLoadStatus: ExtensionRuntimeLoadStatusAuthority?
     private weak var tabs: (any ExtensionTabQuery)?
     private weak var profiles: (any ExtensionTabProfileResolving)?
     private weak var profileRuntime: ExtensionProfileRuntime?
@@ -86,7 +86,7 @@ final class ExtensionTabWebViewRuntimeRepair:
     private let diagnostics: ExtensionRuntimeDiagnostics
 
     init(
-        runtimeSession: ExtensionRuntimeSession,
+        runtimeLoadStatus: ExtensionRuntimeLoadStatusAuthority,
         tabs: any ExtensionTabQuery,
         profiles: any ExtensionTabProfileResolving,
         profileRuntime: ExtensionProfileRuntime,
@@ -96,7 +96,7 @@ final class ExtensionTabWebViewRuntimeRepair:
         rebuilder: any ExtensionTabWebViewRebuilding,
         diagnostics: ExtensionRuntimeDiagnostics
     ) {
-        self.runtimeSession = runtimeSession
+        self.runtimeLoadStatus = runtimeLoadStatus
         self.tabs = tabs
         self.profiles = profiles
         self.profileRuntime = profileRuntime
@@ -114,7 +114,7 @@ final class ExtensionTabWebViewRuntimeRepair:
         allowWhenExtensionsNotLoaded: Bool = false
     ) -> ExtensionTabWebViewRuntimeRepairOutcome {
         guard isCurrent(tab),
-              runtimeSession?.extensionsLoaded == true
+              runtimeLoadStatus?.extensionsLoaded == true
                 || allowWhenExtensionsNotLoaded,
               let profileID = profiles?.profileID(for: tab),
               let controller = profileRuntime?.controller(for: profileID)

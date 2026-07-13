@@ -5,7 +5,9 @@ import Foundation
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionRuntimeBookkeepingReset {
-    private let runtimeSession: ExtensionRuntimeSession
+    private let runtimeCatalog: ExtensionRuntimeCatalog
+    private let runtimeResidency: ExtensionRuntimeResidencyAuthority
+    private let runtimeMetrics: ExtensionRuntimeMetricsAuthority
     private let sourceCache: WebExtensionRuntimeSourceCache
     private let backgroundRuntimeState: ExtensionBackgroundRuntimeStateOwner
     private let errorObservation: ExtensionContextErrorObservation
@@ -20,7 +22,9 @@ final class ExtensionRuntimeBookkeepingReset {
     private let actionPopupInvocations: ExtensionActionPopupInvocationLedger
 
     init(
-        runtimeSession: ExtensionRuntimeSession,
+        runtimeCatalog: ExtensionRuntimeCatalog,
+        runtimeResidency: ExtensionRuntimeResidencyAuthority,
+        runtimeMetrics: ExtensionRuntimeMetricsAuthority,
         sourceCache: WebExtensionRuntimeSourceCache,
         backgroundRuntimeState: ExtensionBackgroundRuntimeStateOwner,
         errorObservation: ExtensionContextErrorObservation,
@@ -34,7 +38,9 @@ final class ExtensionRuntimeBookkeepingReset {
         actionPopupAnchors: ExtensionActionPopupAnchorStore,
         actionPopupInvocations: ExtensionActionPopupInvocationLedger
     ) {
-        self.runtimeSession = runtimeSession
+        self.runtimeCatalog = runtimeCatalog
+        self.runtimeResidency = runtimeResidency
+        self.runtimeMetrics = runtimeMetrics
         self.sourceCache = sourceCache
         self.backgroundRuntimeState = backgroundRuntimeState
         self.errorObservation = errorObservation
@@ -58,11 +64,10 @@ final class ExtensionRuntimeBookkeepingReset {
         actionPopupAnchors.removeAll()
         actionPopupInvocations.removeAll()
 
-        runtimeSession.loadedExtensionManifests.removeAll()
+        runtimeCatalog.reset()
         sourceCache.removeAll()
-        runtimeSession.lastExtensionLoadErrors.removeAll()
-        runtimeSession.extensionRuntimeResidencyState.removeAll()
-        runtimeSession.runtimeMetricsByExtensionID.removeAll()
+        runtimeResidency.reset()
+        runtimeMetrics.reset()
         backgroundRuntimeState.removeAll()
         recentTabRequests.removeAll()
         permissionPreludes.clearInstallations()

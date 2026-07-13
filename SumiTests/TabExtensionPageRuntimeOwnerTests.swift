@@ -9,22 +9,22 @@ final class TabExtensionPageRuntimeOwnerTests: XCTestCase {
         owner.lastReportedURL = URL(string: "https://old.example")
         XCTAssertTrue(owner.recordReportedLoadingCompleteIfChanged(true))
         owner.lastReportedTitle = "Old"
-        owner.markEligible(for: 3)
+        owner.markEligible(for: revision(3))
         owner.noteCommittedMainDocumentNavigation(to: URL(string: "https://example.com")!)
         owner.noteOpenNotification(
             extensionContextBindingGeneration: 7,
             contextReadiness: .missing
         )
-        owner.markDidOpenTab(generation: 3)
+        owner.markDidOpenTab(generation: revision(3))
 
-        owner.prepareGeneration(4)
+        owner.prepareGeneration(revision(4))
 
-        XCTAssertEqual(owner.controllerGeneration, 4)
+        XCTAssertEqual(owner.currentPreparedGeneration(), revision(4))
         XCTAssertNil(owner.lastReportedURL)
         XCTAssertFalse(owner.hasReportedLoadingComplete)
         XCTAssertNil(owner.lastReportedTitle)
-        XCTAssertEqual(owner.lastOpenNotificationGeneration, 0)
-        XCTAssertEqual(owner.eligibleGeneration, 0)
+        XCTAssertNil(owner.currentOpenNotificationGeneration())
+        XCTAssertNil(owner.currentEligibleGeneration())
         XCTAssertNil(owner.openNotifiedDocumentSequence)
         XCTAssertNil(owner.openNotifiedContextBindingGeneration)
         XCTAssertEqual(owner.openNotifiedContextReadiness, .notNotified)
@@ -63,18 +63,21 @@ final class TabExtensionPageRuntimeOwnerTests: XCTestCase {
             extensionContextBindingGeneration: 11,
             contextReadiness: .loaded
         )
-        owner.markDidOpenTab(generation: 5)
+        owner.markDidOpenTab(generation: revision(5))
 
         XCTAssertEqual(owner.openNotifiedDocumentSequence, owner.documentSequence)
         XCTAssertEqual(owner.openNotifiedContextBindingGeneration, 11)
         XCTAssertEqual(owner.openNotifiedContextReadiness, .loaded)
-        XCTAssertEqual(owner.lastOpenNotificationGeneration, 5)
+        XCTAssertEqual(
+            owner.currentOpenNotificationGeneration(),
+            revision(5)
+        )
         XCTAssertTrue(owner.didNotifyOpenToExtensions)
         XCTAssertTrue(owner.hasOpenNotificationForCurrentDocumentWithLoadedContexts(
-            generation: 5
+            generation: revision(5)
         ))
         XCTAssertFalse(owner.hasOpenNotificationForCurrentDocumentWithLoadedContexts(
-            generation: 4
+            generation: revision(4)
         ))
     }
 
@@ -149,107 +152,110 @@ final class TabExtensionPageRuntimeOwnerTests: XCTestCase {
 
     func testDidNotifyOpenSetterOnlyClearsGenerationForFalseCompatibilityWrite() {
         let owner = TabExtensionPageRuntimeOwner()
-        owner.markDidOpenTab(generation: 7)
+        owner.markDidOpenTab(generation: revision(7))
 
         owner.didNotifyOpenToExtensions = true
 
-        XCTAssertEqual(owner.lastOpenNotificationGeneration, 7)
+        XCTAssertEqual(
+            owner.currentOpenNotificationGeneration(),
+            revision(7)
+        )
 
         owner.didNotifyOpenToExtensions = false
 
-        XCTAssertEqual(owner.lastOpenNotificationGeneration, 0)
+        XCTAssertNil(owner.currentOpenNotificationGeneration())
         XCTAssertFalse(owner.didNotifyOpenToExtensions)
     }
 
     func testEligibilityIsOwnedByRuntimeGeneration() {
         let owner = TabExtensionPageRuntimeOwner()
 
-        XCTAssertFalse(owner.isEligible(for: 2))
+        XCTAssertFalse(owner.isEligible(for: revision(2)))
 
-        owner.markEligible(for: 2)
+        owner.markEligible(for: revision(2))
 
-        XCTAssertTrue(owner.isEligible(for: 2))
-        XCTAssertFalse(owner.isEligible(for: 3))
+        XCTAssertTrue(owner.isEligible(for: revision(2)))
+        XCTAssertFalse(owner.isEligible(for: revision(3)))
     }
 
     func testOpenPublicationRequiresExactSettlement() throws {
         let owner = TabExtensionPageRuntimeOwner()
-        owner.prepareGeneration(13)
-        owner.markEligible(for: 13)
-        XCTAssertTrue(owner.markDidOpenTab(generation: 13))
+        owner.prepareGeneration(revision(13))
+        owner.markEligible(for: revision(13))
+        XCTAssertTrue(owner.markDidOpenTab(generation: revision(13)))
         let claim = try XCTUnwrap(
-            owner.currentOpenPublicationClaim(generation: 13)
+            owner.currentOpenPublicationClaim(generation: revision(13))
         )
 
-        XCTAssertTrue(owner.hasDidOpenTabNotification(for: 13))
-        XCTAssertFalse(owner.hasSettledDidOpenTabNotification(for: 13))
+        XCTAssertTrue(owner.hasDidOpenTabNotification(for: revision(13)))
+        XCTAssertFalse(owner.hasSettledDidOpenTabNotification(for: revision(13)))
         XCTAssertTrue(
-            owner.settleDidOpenTabNotification(claim, generation: 13)
+            owner.settleDidOpenTabNotification(claim, generation: revision(13))
         )
-        XCTAssertTrue(owner.hasSettledDidOpenTabNotification(for: 13))
+        XCTAssertTrue(owner.hasSettledDidOpenTabNotification(for: revision(13)))
     }
 
     func testStaleOpenSettlementCannotSettleReplacement() throws {
         let owner = TabExtensionPageRuntimeOwner()
-        owner.prepareGeneration(17)
-        owner.markEligible(for: 17)
-        XCTAssertTrue(owner.markDidOpenTab(generation: 17))
+        owner.prepareGeneration(revision(17))
+        owner.markEligible(for: revision(17))
+        XCTAssertTrue(owner.markDidOpenTab(generation: revision(17)))
         let staleClaim = try XCTUnwrap(
-            owner.currentOpenPublicationClaim(generation: 17)
+            owner.currentOpenPublicationClaim(generation: revision(17))
         )
         XCTAssertTrue(
             owner.claimDidOpenTabNotificationForClose(
                 staleClaim,
-                generation: 17
+                generation: revision(17)
             )
         )
-        XCTAssertTrue(owner.markDidOpenTab(generation: 17))
+        XCTAssertTrue(owner.markDidOpenTab(generation: revision(17)))
         let replacementClaim = try XCTUnwrap(
-            owner.currentOpenPublicationClaim(generation: 17)
+            owner.currentOpenPublicationClaim(generation: revision(17))
         )
 
         XCTAssertFalse(
-            owner.settleDidOpenTabNotification(staleClaim, generation: 17)
+            owner.settleDidOpenTabNotification(staleClaim, generation: revision(17))
         )
-        XCTAssertFalse(owner.hasSettledDidOpenTabNotification(for: 17))
+        XCTAssertFalse(owner.hasSettledDidOpenTabNotification(for: revision(17)))
         XCTAssertTrue(
             owner.settleDidOpenTabNotification(
                 replacementClaim,
-                generation: 17
+                generation: revision(17)
             )
         )
-        XCTAssertTrue(owner.hasSettledDidOpenTabNotification(for: 17))
+        XCTAssertTrue(owner.hasSettledDidOpenTabNotification(for: revision(17)))
     }
 
     func testRetiredOpenAdmissionCannotPublishAnotherGeneration() {
         let owner = TabExtensionPageRuntimeOwner()
-        owner.prepareGeneration(19)
-        owner.markEligible(for: 19)
+        owner.prepareGeneration(revision(19))
+        owner.markEligible(for: revision(19))
         owner.retireFutureOpenPublications()
 
         XCTAssertFalse(owner.canPublishFutureOpenNotification())
-        XCTAssertFalse(owner.markDidOpenTab(generation: 19))
+        XCTAssertFalse(owner.markDidOpenTab(generation: revision(19)))
     }
 
     func testWindowPrepublicationRollbackRestoresSettledOpenClaim() throws {
         let owner = TabExtensionPageRuntimeOwner()
-        owner.prepareGeneration(23)
-        owner.markEligible(for: 23)
-        XCTAssertTrue(owner.markDidOpenTab(generation: 23))
+        owner.prepareGeneration(revision(23))
+        owner.markEligible(for: revision(23))
+        XCTAssertTrue(owner.markDidOpenTab(generation: revision(23)))
         let claim = try XCTUnwrap(
-            owner.currentOpenPublicationClaim(generation: 23)
+            owner.currentOpenPublicationClaim(generation: revision(23))
         )
         XCTAssertTrue(
-            owner.settleDidOpenTabNotification(claim, generation: 23)
+            owner.settleDidOpenTabNotification(claim, generation: revision(23))
         )
 
-        let token = owner.prepareForWindowPrepublication(generation: 29)
-        XCTAssertFalse(owner.hasSettledDidOpenTabNotification(for: 29))
+        let token = owner.prepareForWindowPrepublication(generation: revision(29))
+        XCTAssertFalse(owner.hasSettledDidOpenTabNotification(for: revision(29)))
         XCTAssertTrue(owner.rollbackWindowPrepublication(token))
 
-        XCTAssertTrue(owner.hasSettledDidOpenTabNotification(for: 23))
+        XCTAssertTrue(owner.hasSettledDidOpenTabNotification(for: revision(23)))
         XCTAssertIdentical(
-            owner.currentOpenPublicationClaim(generation: 23),
+            owner.currentOpenPublicationClaim(generation: revision(23)),
             claim
         )
     }
@@ -261,23 +267,23 @@ final class TabExtensionPageRuntimeOwnerTests: XCTestCase {
             extensionContextBindingGeneration: 1,
             contextReadiness: .loaded
         )
-        owner.markDidOpenTab(generation: 9)
+        owner.markDidOpenTab(generation: revision(9))
 
         XCTAssertTrue(owner.hasOpenNotificationForCurrentDocumentWithLoadedContexts(
-            generation: 9
+            generation: revision(9)
         ))
 
         owner.invalidatePageForWebViewReplacement()
 
         XCTAssertFalse(owner.hasOpenNotificationForCurrentDocumentWithLoadedContexts(
-            generation: 9
+            generation: revision(9)
         ))
         XCTAssertEqual(owner.committedMainDocumentURL, URL(string: "https://example.com/one")!)
     }
 
     func testCommittedWindowPrepublicationRevokeRestoresExactSnapshot() throws {
         let owner = TabExtensionPageRuntimeOwner()
-        let token = owner.prepareForWindowPrepublication(generation: 17)
+        let token = owner.prepareForWindowPrepublication(generation: revision(17))
         XCTAssertTrue(
             owner.commitWindowPrepublication(
                 token,
@@ -286,38 +292,38 @@ final class TabExtensionPageRuntimeOwnerTests: XCTestCase {
         )
         XCTAssertTrue(
             owner.markDidOpenTab(
-                generation: 17,
+                generation: revision(17),
                 committedWindowPrepublication: token
             )
         )
         let claim = try XCTUnwrap(
-            owner.currentOpenPublicationClaim(generation: 17)
+            owner.currentOpenPublicationClaim(generation: revision(17))
         )
         XCTAssertTrue(
-            owner.settleDidOpenTabNotification(claim, generation: 17)
+            owner.settleDidOpenTabNotification(claim, generation: revision(17))
         )
-        XCTAssertTrue(owner.hasSettledDidOpenTabNotification(for: 17))
+        XCTAssertTrue(owner.hasSettledDidOpenTabNotification(for: revision(17)))
 
         XCTAssertTrue(
             owner.revokeCommittedWindowPrepublication(
                 token,
-                openGeneration: 17
+                openGeneration: revision(17)
             )
         )
-        XCTAssertEqual(owner.controllerGeneration, 0)
-        XCTAssertEqual(owner.currentEligibleGeneration(), 0)
-        XCTAssertEqual(owner.currentOpenNotificationGeneration(), 0)
+        XCTAssertNil(owner.currentPreparedGeneration())
+        XCTAssertNil(owner.currentEligibleGeneration())
+        XCTAssertNil(owner.currentOpenNotificationGeneration())
         XCTAssertFalse(
             owner.revokeCommittedWindowPrepublication(
                 token,
-                openGeneration: 17
+                openGeneration: revision(17)
             )
         )
     }
 
     func testNewPublisherMakesOldWindowPrepublicationTokenStale() {
         let owner = TabExtensionPageRuntimeOwner()
-        let token = owner.prepareForWindowPrepublication(generation: 23)
+        let token = owner.prepareForWindowPrepublication(generation: revision(23))
         XCTAssertTrue(
             owner.commitWindowPrepublication(
                 token,
@@ -326,40 +332,40 @@ final class TabExtensionPageRuntimeOwnerTests: XCTestCase {
         )
         XCTAssertTrue(
             owner.markDidOpenTab(
-                generation: 23,
+                generation: revision(23),
                 committedWindowPrepublication: token
             )
         )
 
-        let originalClaim = owner.currentOpenPublicationClaim(generation: 23)
+        let originalClaim = owner.currentOpenPublicationClaim(generation: revision(23))
         XCTAssertNotNil(originalClaim)
         XCTAssertTrue(
             owner.claimDidOpenTabNotificationForClose(
                 originalClaim!,
-                generation: 23
+                generation: revision(23)
             )
         )
         owner.noteOpenNotification(
             extensionContextBindingGeneration: 1,
             contextReadiness: .loaded
         )
-        XCTAssertTrue(owner.markDidOpenTab(generation: 23))
+        XCTAssertTrue(owner.markDidOpenTab(generation: revision(23)))
 
         XCTAssertFalse(
             owner.revokeCommittedWindowPrepublication(
                 token,
-                openGeneration: 23
+                openGeneration: revision(23)
             )
         )
-        XCTAssertTrue(owner.hasDidOpenTabNotification(for: 23))
+        XCTAssertTrue(owner.hasDidOpenTabNotification(for: revision(23)))
     }
 
     func testPreexistingOpenIsNotClaimedByWindowPrepublicationToken() {
         let owner = TabExtensionPageRuntimeOwner()
-        owner.prepareGeneration(29)
-        owner.markEligible(for: 29)
-        owner.markDidOpenTab(generation: 29)
-        let token = owner.prepareForWindowPrepublication(generation: 29)
+        owner.prepareGeneration(revision(29))
+        owner.markEligible(for: revision(29))
+        owner.markDidOpenTab(generation: revision(29))
+        let token = owner.prepareForWindowPrepublication(generation: revision(29))
 
         XCTAssertTrue(
             owner.commitWindowPrepublication(
@@ -370,25 +376,25 @@ final class TabExtensionPageRuntimeOwnerTests: XCTestCase {
         XCTAssertFalse(
             owner.revokeCommittedWindowPrepublication(
                 token,
-                openGeneration: 29
+                openGeneration: revision(29)
             )
         )
-        XCTAssertTrue(owner.hasDidOpenTabNotification(for: 29))
+        XCTAssertTrue(owner.hasDidOpenTabNotification(for: revision(29)))
     }
 
     func testSameGenerationPublisherInvalidatesPreparedWindowPrepublication() {
         let owner = TabExtensionPageRuntimeOwner()
-        let token = owner.prepareForWindowPrepublication(generation: 31)
+        let token = owner.prepareForWindowPrepublication(generation: revision(31))
 
         owner.noteOpenNotification(
             extensionContextBindingGeneration: 7,
             contextReadiness: .loaded
         )
-        owner.markDidOpenTab(generation: 31)
+        owner.markDidOpenTab(generation: revision(31))
 
         XCTAssertFalse(owner.canCommitWindowPrepublication(token))
         XCTAssertFalse(owner.rollbackWindowPrepublication(token))
-        XCTAssertTrue(owner.hasDidOpenTabNotification(for: 31))
+        XCTAssertTrue(owner.hasDidOpenTabNotification(for: revision(31)))
         XCTAssertEqual(
             owner.documentBindingSnapshot()
                 .openNotifiedContextBindingGeneration,
@@ -398,49 +404,49 @@ final class TabExtensionPageRuntimeOwnerTests: XCTestCase {
 
     func testReplacementPreparationOwnsOriginalRollbackPoint() {
         let owner = TabExtensionPageRuntimeOwner()
-        owner.controllerGeneration = 3
-        owner.eligibleGeneration = 3
-        let first = owner.prepareForWindowPrepublication(generation: 37)
+        owner.prepareGeneration(revision(3))
+        owner.markEligible(for: revision(3))
+        let first = owner.prepareForWindowPrepublication(generation: revision(37))
         let replacement = owner.prepareForWindowPrepublication(
-            generation: 37
+            generation: revision(37)
         )
 
         XCTAssertFalse(owner.canCommitWindowPrepublication(first))
         XCTAssertFalse(owner.rollbackWindowPrepublication(first))
         XCTAssertTrue(owner.rollbackWindowPrepublication(replacement))
-        XCTAssertEqual(owner.controllerGeneration, 3)
-        XCTAssertEqual(owner.currentEligibleGeneration(), 3)
+        XCTAssertEqual(owner.currentPreparedGeneration(), revision(3))
+        XCTAssertEqual(owner.currentEligibleGeneration(), revision(3))
     }
 
     func testNewGenerationOpenCannotBeRevokedByOldCommittedToken() {
         let owner = TabExtensionPageRuntimeOwner()
-        let token = owner.prepareForWindowPrepublication(generation: 41)
+        let token = owner.prepareForWindowPrepublication(generation: revision(41))
         XCTAssertTrue(
             owner.commitWindowPrepublication(token, willEmitOpen: true)
         )
         XCTAssertTrue(
             owner.markDidOpenTab(
-                generation: 41,
+                generation: revision(41),
                 committedWindowPrepublication: token
             )
         )
 
-        owner.prepareGeneration(43)
-        owner.markEligible(for: 43)
-        owner.markDidOpenTab(generation: 43)
+        owner.prepareGeneration(revision(43))
+        owner.markEligible(for: revision(43))
+        owner.markDidOpenTab(generation: revision(43))
 
         XCTAssertFalse(
             owner.revokeCommittedWindowPrepublication(
                 token,
-                openGeneration: 41
+                openGeneration: revision(41)
             )
         )
-        XCTAssertTrue(owner.hasDidOpenTabNotification(for: 43))
+        XCTAssertTrue(owner.hasDidOpenTabNotification(for: revision(43)))
     }
 
     func testCommittedTokenPageMutationCannotRestoreStaleSnapshot() {
         let owner = TabExtensionPageRuntimeOwner()
-        let token = owner.prepareForWindowPrepublication(generation: 47)
+        let token = owner.prepareForWindowPrepublication(generation: revision(47))
         XCTAssertTrue(
             owner.commitWindowPrepublication(token, willEmitOpen: true)
         )
@@ -450,7 +456,7 @@ final class TabExtensionPageRuntimeOwnerTests: XCTestCase {
         )
         XCTAssertTrue(
             owner.markDidOpenTab(
-                generation: 47,
+                generation: revision(47),
                 committedWindowPrepublication: token
             )
         )
@@ -462,7 +468,7 @@ final class TabExtensionPageRuntimeOwnerTests: XCTestCase {
         XCTAssertTrue(
             owner.revokeCommittedWindowPrepublication(
                 token,
-                openGeneration: 47
+                openGeneration: revision(47)
             )
         )
         XCTAssertEqual(owner.committedMainDocumentURL, newerURL)
@@ -473,7 +479,7 @@ final class TabExtensionPageRuntimeOwnerTests: XCTestCase {
 
     func testNewSameGenerationPreparationSupersedesOldCommittedRollbackRight() {
         let owner = TabExtensionPageRuntimeOwner()
-        let oldToken = owner.prepareForWindowPrepublication(generation: 53)
+        let oldToken = owner.prepareForWindowPrepublication(generation: revision(53))
         XCTAssertTrue(
             owner.commitWindowPrepublication(oldToken, willEmitOpen: true)
         )
@@ -483,12 +489,12 @@ final class TabExtensionPageRuntimeOwnerTests: XCTestCase {
         )
         XCTAssertTrue(
             owner.markDidOpenTab(
-                generation: 53,
+                generation: revision(53),
                 committedWindowPrepublication: oldToken
             )
         )
-        let claim = owner.currentOpenPublicationClaim(generation: 53)
-        let newToken = owner.prepareForWindowPrepublication(generation: 53)
+        let claim = owner.currentOpenPublicationClaim(generation: revision(53))
+        let newToken = owner.prepareForWindowPrepublication(generation: revision(53))
 
         XCTAssertNotNil(claim)
         XCTAssertTrue(
@@ -500,27 +506,27 @@ final class TabExtensionPageRuntimeOwnerTests: XCTestCase {
         XCTAssertFalse(
             owner.revokeCommittedWindowPrepublication(
                 oldToken,
-                openGeneration: 53
+                openGeneration: revision(53)
             )
         )
-        XCTAssertTrue(owner.hasDidOpenTabNotification(for: 53))
+        XCTAssertTrue(owner.hasDidOpenTabNotification(for: revision(53)))
     }
 
     func testDelegatedClaimCannotCloseLaterSameGenerationOpen() {
         let owner = TabExtensionPageRuntimeOwner()
-        owner.prepareGeneration(59)
-        owner.markEligible(for: 59)
+        owner.prepareGeneration(revision(59))
+        owner.markEligible(for: revision(59))
         owner.noteOpenNotification(
             extensionContextBindingGeneration: 7,
             contextReadiness: .loaded
         )
-        XCTAssertTrue(owner.markDidOpenTab(generation: 59))
-        let delegated = owner.currentOpenPublicationClaim(generation: 59)
+        XCTAssertTrue(owner.markDidOpenTab(generation: revision(59)))
+        let delegated = owner.currentOpenPublicationClaim(generation: revision(59))
         XCTAssertNotNil(delegated)
         XCTAssertTrue(
             owner.claimDidOpenTabNotificationForClose(
                 delegated!,
-                generation: 59
+                generation: revision(59)
             )
         )
 
@@ -528,31 +534,31 @@ final class TabExtensionPageRuntimeOwnerTests: XCTestCase {
             extensionContextBindingGeneration: 7,
             contextReadiness: .loaded
         )
-        XCTAssertTrue(owner.markDidOpenTab(generation: 59))
-        let replacement = owner.currentOpenPublicationClaim(generation: 59)
+        XCTAssertTrue(owner.markDidOpenTab(generation: revision(59)))
+        let replacement = owner.currentOpenPublicationClaim(generation: revision(59))
 
         XCTAssertNotNil(replacement)
         XCTAssertFalse(delegated === replacement)
         XCTAssertFalse(
             owner.claimDidOpenTabNotificationForClose(
                 delegated!,
-                generation: 59
+                generation: revision(59)
             )
         )
-        XCTAssertTrue(owner.hasDidOpenTabNotification(for: 59))
+        XCTAssertTrue(owner.hasDidOpenTabNotification(for: revision(59)))
     }
 
     func testSupersededPreparationHandsOffToExactOrdinaryOpen() {
         let owner = TabExtensionPageRuntimeOwner()
-        let token = owner.prepareForWindowPrepublication(generation: 61)
+        let token = owner.prepareForWindowPrepublication(generation: revision(61))
 
-        owner.markEligible(for: 61)
+        owner.markEligible(for: revision(61))
         owner.noteOpenNotification(
             extensionContextBindingGeneration: 11,
             contextReadiness: .loaded
         )
-        XCTAssertTrue(owner.markDidOpenTab(generation: 61))
-        let claim = owner.currentOpenPublicationClaim(generation: 61)
+        XCTAssertTrue(owner.markDidOpenTab(generation: revision(61)))
+        let claim = owner.currentOpenPublicationClaim(generation: revision(61))
 
         XCTAssertNotNil(claim)
         XCTAssertTrue(
@@ -562,12 +568,12 @@ final class TabExtensionPageRuntimeOwnerTests: XCTestCase {
             )
         )
         XCTAssertFalse(owner.rollbackWindowPrepublication(token))
-        XCTAssertTrue(owner.hasDidOpenTabNotification(for: 61))
+        XCTAssertTrue(owner.hasDidOpenTabNotification(for: revision(61)))
     }
 
     func testCommittedReceiptHandsOffToExactReentrantReplacementOpen() {
         let owner = TabExtensionPageRuntimeOwner()
-        let token = owner.prepareForWindowPrepublication(generation: 67)
+        let token = owner.prepareForWindowPrepublication(generation: revision(67))
         XCTAssertTrue(
             owner.commitWindowPrepublication(token, willEmitOpen: true)
         )
@@ -577,26 +583,26 @@ final class TabExtensionPageRuntimeOwnerTests: XCTestCase {
         )
         XCTAssertTrue(
             owner.markDidOpenTab(
-                generation: 67,
+                generation: revision(67),
                 committedWindowPrepublication: token
             )
         )
-        let original = owner.currentOpenPublicationClaim(generation: 67)
+        let original = owner.currentOpenPublicationClaim(generation: revision(67))
         XCTAssertNotNil(original)
         XCTAssertTrue(
             owner.claimDidOpenTabNotificationForClose(
                 original!,
-                generation: 67
+                generation: revision(67)
             )
         )
 
-        owner.markEligible(for: 67)
+        owner.markEligible(for: revision(67))
         owner.noteOpenNotification(
             extensionContextBindingGeneration: 13,
             contextReadiness: .loaded
         )
-        XCTAssertTrue(owner.markDidOpenTab(generation: 67))
-        let replacement = owner.currentOpenPublicationClaim(generation: 67)
+        XCTAssertTrue(owner.markDidOpenTab(generation: revision(67)))
+        let replacement = owner.currentOpenPublicationClaim(generation: revision(67))
 
         XCTAssertNotNil(replacement)
         XCTAssertTrue(
@@ -608,22 +614,22 @@ final class TabExtensionPageRuntimeOwnerTests: XCTestCase {
         XCTAssertFalse(
             owner.revokeCommittedWindowPrepublication(
                 token,
-                openGeneration: 67
+                openGeneration: revision(67)
             )
         )
-        XCTAssertTrue(owner.hasDidOpenTabNotification(for: 67))
+        XCTAssertTrue(owner.hasDidOpenTabNotification(for: revision(67)))
     }
 
     func testEligibilityAndBindingPreparationRemainRollbackCapableWithoutOpen() {
         let owner = TabExtensionPageRuntimeOwner()
-        owner.controllerGeneration = 5
-        owner.eligibleGeneration = 5
-        let token = owner.prepareForWindowPrepublication(generation: 71)
+        owner.prepareGeneration(revision(5))
+        owner.markEligible(for: revision(5))
+        let token = owner.prepareForWindowPrepublication(generation: revision(71))
 
         // Ordinary registration reaches eligibility and document binding before
         // controller attachment. If attachment fails, no open is reserved and
         // the surrounding receipt must still be able to roll back exactly.
-        owner.markEligible(for: 71)
+        owner.markEligible(for: revision(71))
         owner.noteOpenNotification(
             extensionContextBindingGeneration: 17,
             contextReadiness: .loaded
@@ -631,27 +637,27 @@ final class TabExtensionPageRuntimeOwnerTests: XCTestCase {
 
         XCTAssertTrue(owner.canCommitWindowPrepublication(token))
         XCTAssertTrue(owner.rollbackWindowPrepublication(token))
-        XCTAssertEqual(owner.controllerGeneration, 5)
-        XCTAssertEqual(owner.currentEligibleGeneration(), 5)
+        XCTAssertEqual(owner.currentPreparedGeneration(), revision(5))
+        XCTAssertEqual(owner.currentEligibleGeneration(), revision(5))
         XCTAssertNil(owner.openNotifiedContextBindingGeneration)
         XCTAssertFalse(owner.hasAnyDidOpenTabNotification())
     }
 
     func testPendingHandoffTracksRepeatedExactCloseAndReopenUntilSettlement() {
         let owner = TabExtensionPageRuntimeOwner()
-        let token = owner.prepareForWindowPrepublication(generation: 73)
+        let token = owner.prepareForWindowPrepublication(generation: revision(73))
 
         owner.noteOpenNotification(
             extensionContextBindingGeneration: 19,
             contextReadiness: .loaded
         )
-        XCTAssertTrue(owner.markDidOpenTab(generation: 73))
-        let first = owner.currentOpenPublicationClaim(generation: 73)
+        XCTAssertTrue(owner.markDidOpenTab(generation: revision(73)))
+        let first = owner.currentOpenPublicationClaim(generation: revision(73))
         XCTAssertNotNil(first)
         XCTAssertTrue(
             owner.claimDidOpenTabNotificationForClose(
                 first!,
-                generation: 73
+                generation: revision(73)
             )
         )
 
@@ -659,13 +665,13 @@ final class TabExtensionPageRuntimeOwnerTests: XCTestCase {
             extensionContextBindingGeneration: 19,
             contextReadiness: .loaded
         )
-        XCTAssertTrue(owner.markDidOpenTab(generation: 73))
-        let second = owner.currentOpenPublicationClaim(generation: 73)
+        XCTAssertTrue(owner.markDidOpenTab(generation: revision(73)))
+        let second = owner.currentOpenPublicationClaim(generation: revision(73))
         XCTAssertNotNil(second)
         XCTAssertTrue(
             owner.claimDidOpenTabNotificationForClose(
                 second!,
-                generation: 73
+                generation: revision(73)
             )
         )
 
@@ -673,8 +679,8 @@ final class TabExtensionPageRuntimeOwnerTests: XCTestCase {
             extensionContextBindingGeneration: 19,
             contextReadiness: .loaded
         )
-        XCTAssertTrue(owner.markDidOpenTab(generation: 73))
-        let third = owner.currentOpenPublicationClaim(generation: 73)
+        XCTAssertTrue(owner.markDidOpenTab(generation: revision(73)))
+        let third = owner.currentOpenPublicationClaim(generation: revision(73))
 
         XCTAssertNotNil(third)
         XCTAssertFalse(first === second)
@@ -686,6 +692,11 @@ final class TabExtensionPageRuntimeOwnerTests: XCTestCase {
             )
         )
         XCTAssertFalse(owner.rollbackWindowPrepublication(token))
-        XCTAssertTrue(owner.hasDidOpenTabNotification(for: 73))
+        XCTAssertTrue(owner.hasDidOpenTabNotification(for: revision(73)))
+    }
+
+    private func revision(_ generation: UInt64)
+        -> ExtensionTabPublicationRevision {
+        ExtensionTabPublicationRevision(generation: generation)
     }
 }

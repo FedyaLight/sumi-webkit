@@ -15,7 +15,7 @@ final class ExtensionContextLoader {
     private let sourceCache: WebExtensionRuntimeSourceCache
     private let contextPreparation: ExtensionContextPreparation
     private let storagePlanner: WebExtensionStorageCleanupPlanner
-    private let runtimeSession: ExtensionRuntimeSession
+    private let runtimeMetrics: ExtensionRuntimeMetricsAuthority
     private let diagnostics: ExtensionRuntimeDiagnostics
     private let expectedControllerDelegate: ExtensionControllerDelegateBridge
     private let controllerTransaction: ExtensionContextControllerTransaction
@@ -30,7 +30,7 @@ final class ExtensionContextLoader {
         sourceCache: WebExtensionRuntimeSourceCache,
         contextPreparation: ExtensionContextPreparation,
         storagePlanner: WebExtensionStorageCleanupPlanner,
-        runtimeSession: ExtensionRuntimeSession,
+        runtimeMetrics: ExtensionRuntimeMetricsAuthority,
         diagnostics: ExtensionRuntimeDiagnostics,
         expectedControllerDelegate: ExtensionControllerDelegateBridge,
         controllerTransaction: ExtensionContextControllerTransaction
@@ -43,7 +43,7 @@ final class ExtensionContextLoader {
         self.sourceCache = sourceCache
         self.contextPreparation = contextPreparation
         self.storagePlanner = storagePlanner
-        self.runtimeSession = runtimeSession
+        self.runtimeMetrics = runtimeMetrics
         self.diagnostics = diagnostics
         self.expectedControllerDelegate = expectedControllerDelegate
         self.controllerTransaction = controllerTransaction
@@ -103,10 +103,10 @@ final class ExtensionContextLoader {
             "\(request.operation.runtimeTraceOperation) webExtension source=\(source.loadSource.rawValue) packagePath=\(request.packageRoot.path) sourceBundlePath=\(request.sourceBundlePath)"
         )
         if request.operation.recordsRuntimeMetrics {
-            runtimeSession.recordRuntimeMetric(for: request.extensionId) {
-                $0.webExtensionCreationDuration =
-                    CFAbsoluteTimeGetCurrent() - webExtensionStart
-            }
+            runtimeMetrics.recordWebExtensionCreationDuration(
+                CFAbsoluteTimeGetCurrent() - webExtensionStart,
+                for: request.extensionId
+            )
         }
 
         let prepared = contextPreparation.prepare(

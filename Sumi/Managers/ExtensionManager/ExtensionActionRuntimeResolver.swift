@@ -20,6 +20,8 @@ final class ExtensionActionRuntimeResolver {
     struct Environment {
         let installedExtensions: InstalledExtensionCollection
         let runtimeAccess: ExtensionRuntimeAccess
+        let runtimeLifecycle: ExtensionRuntimeLifecycleAuthority
+        let runtimeCatalog: ExtensionRuntimeCatalog
         let anchorStore: ExtensionActionPopupAnchorStore
         let anchorResolution: ExtensionActionPopupAnchorResolver
         let profileTransition: ExtensionProfileRuntimeTransition
@@ -137,9 +139,9 @@ final class ExtensionActionRuntimeResolver {
                 profileID: profileID,
                 extensionRecord: extensionRecord,
                 bucket: bucket,
-                error: environment.runtimeAccess.lastExtensionLoadError(
-                    extensionID,
-                    profileID
+                error: environment.runtimeCatalog.loadError(
+                    extensionID: extensionID,
+                    profileID: profileID
                 )
             )
             trace(
@@ -173,7 +175,7 @@ final class ExtensionActionRuntimeResolver {
     }
 
     private var runtimeState: ExtensionManager.ExtensionRuntimeState {
-        environment.runtimeAccess.runtimeSession.runtimeState
+        environment.runtimeLifecycle.state
     }
 
     private var currentProfileID: UUID? {
@@ -234,9 +236,9 @@ final class ExtensionActionRuntimeResolver {
                 profileID: profileID,
                 extensionRecord: extensionRecord,
                 bucket: bucket,
-                error: environment.runtimeAccess.lastExtensionLoadError(
-                    extensionID,
-                    profileID
+                error: environment.runtimeCatalog.loadError(
+                    extensionID: extensionID,
+                    profileID: profileID
                 )
             )
         )
@@ -285,9 +287,10 @@ extension ExtensionActionRuntimeResolver.Environment {
             runtimeAccess: ExtensionRuntimeAccess(
                 profileRuntime: manager.profileRuntime,
                 controllerProvisioningOwner: manager.controllerProvisioningOwner,
-                runtimeSession: manager.runtimeSession,
                 runtime: { [weak manager] in manager?.runtime ?? .inactive }
             ),
+            runtimeLifecycle: manager.runtimeLifecycle,
+            runtimeCatalog: manager.runtimeCatalog,
             anchorStore: manager.actionPopupAnchorStore,
             anchorResolution: manager.actionPopupAnchorResolver,
             profileTransition: manager.profileRuntimeTransition,

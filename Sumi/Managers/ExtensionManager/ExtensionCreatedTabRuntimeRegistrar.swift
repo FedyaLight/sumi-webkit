@@ -10,7 +10,8 @@ final class ExtensionCreatedTabRuntimeRegistrar {
     private let diagnostics: ExtensionRuntimeDiagnostics
 
     init(
-        runtimeSession: ExtensionRuntimeSession,
+        runtimePublicationEvidence:
+            ExtensionRuntimePublicationEvidenceIssuer,
         profileRuntime: ExtensionProfileRuntime,
         adapterStore: ExtensionBrowserAdapterStore,
         controllers: any ExtensionTabControllerQuery,
@@ -30,7 +31,7 @@ final class ExtensionCreatedTabRuntimeRegistrar {
         )
         self.adapters = adapters
         validator = ExtensionCreatedTabPublicationValidator(
-            runtimeSession: runtimeSession,
+            runtimePublicationEvidence: runtimePublicationEvidence,
             profileRuntime: profileRuntime,
             controllers: controllers,
             webViews: webViews,

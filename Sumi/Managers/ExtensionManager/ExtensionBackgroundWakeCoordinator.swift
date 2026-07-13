@@ -11,7 +11,7 @@ final class ExtensionBackgroundWakeCoordinator {
     private let nativeMessagingBackgroundWakeOwner: @MainActor () -> ExtensionNativeMessagingBackgroundWakeOwner?
     private let contextIdentity: @MainActor (WKWebExtensionContext) -> (extensionId: String, profileId: UUID)?
     private let resolvedProfileId: @MainActor (UUID?) -> UUID?
-    private let recordRuntimeMetric: @MainActor (String, (inout ExtensionManager.ExtensionRuntimeMetrics) -> Void) -> Void
+    private let runtimeMetrics: ExtensionRuntimeMetricsAuthority
     private let trace: @MainActor (String) -> Void
     private let logBackgroundWakeFailure: @MainActor (
         Error,
@@ -28,7 +28,7 @@ final class ExtensionBackgroundWakeCoordinator {
         nativeMessagingBackgroundWakeOwner: @escaping @MainActor () -> ExtensionNativeMessagingBackgroundWakeOwner?,
         contextIdentity: @escaping @MainActor (WKWebExtensionContext) -> (extensionId: String, profileId: UUID)?,
         resolvedProfileId: @escaping @MainActor (UUID?) -> UUID?,
-        recordRuntimeMetric: @escaping @MainActor (String, (inout ExtensionManager.ExtensionRuntimeMetrics) -> Void) -> Void,
+        runtimeMetrics: ExtensionRuntimeMetricsAuthority,
         trace: @escaping @MainActor (String) -> Void,
         logBackgroundWakeFailure: @escaping @MainActor (
             Error,
@@ -43,7 +43,7 @@ final class ExtensionBackgroundWakeCoordinator {
         self.nativeMessagingBackgroundWakeOwner = nativeMessagingBackgroundWakeOwner
         self.contextIdentity = contextIdentity
         self.resolvedProfileId = resolvedProfileId
-        self.recordRuntimeMetric = recordRuntimeMetric
+        self.runtimeMetrics = runtimeMetrics
         self.trace = trace
         self.logBackgroundWakeFailure = logBackgroundWakeFailure
         self.debugBackgroundContentWake = debugBackgroundContentWake
@@ -70,13 +70,13 @@ final class ExtensionBackgroundWakeCoordinator {
                     try await extensionContext.loadBackgroundContent()
                 }
             },
-            recordWakeMetric: { [recordRuntimeMetric] duration, reason, didFail in
-                recordRuntimeMetric(wakeKey) {
-                    $0.backgroundWakeDuration = duration
-                    $0.backgroundWakeCount += 1
-                    $0.lastBackgroundWakeReason = reason
-                    $0.lastBackgroundWakeFailed = didFail
-                }
+            recordWakeMetric: { [runtimeMetrics] duration, reason, didFail in
+                runtimeMetrics.recordBackgroundWake(
+                    duration: duration,
+                    reason: reason,
+                    didFail: didFail,
+                    for: wakeKey
+                )
             }
         )
     }
@@ -144,14 +144,14 @@ final class ExtensionBackgroundWakeCoordinator {
                     try await evidence.context.loadBackgroundContent()
                 }
             },
-            recordWakeMetric: { [recordRuntimeMetric] duration, reason, didFail in
+            recordWakeMetric: { [runtimeMetrics] duration, reason, didFail in
                 guard admission.isCurrent(evidence) else { return }
-                recordRuntimeMetric(wakeKey) {
-                    $0.backgroundWakeDuration = duration
-                    $0.backgroundWakeCount += 1
-                    $0.lastBackgroundWakeReason = reason
-                    $0.lastBackgroundWakeFailed = didFail
-                }
+                runtimeMetrics.recordBackgroundWake(
+                    duration: duration,
+                    reason: reason,
+                    didFail: didFail,
+                    for: wakeKey
+                )
             }
         )
     }
@@ -197,12 +197,7 @@ extension ExtensionBackgroundWakeCoordinator {
             resolvedProfileId: { [weak manager] profileID in
                 manager?.resolvedProfileId(explicitProfileId: profileID)
             },
-            recordRuntimeMetric: { [weak manager] extensionID, update in
-                manager?.runtimeSession.recordRuntimeMetric(
-                    for: extensionID,
-                    update: update
-                )
-            },
+            runtimeMetrics: manager.runtimeMetrics,
             trace: { [weak manager] message in
                 manager?.runtimeDiagnostics.trace(message)
             },

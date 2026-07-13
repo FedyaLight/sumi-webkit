@@ -211,7 +211,7 @@ fi
 unguarded_metric="$(
   awk '
     /admission\.isCurrent\(evidence\)/ { guard_line = NR }
-    /recordRuntimeMetric\(/ {
+    /runtimeMetrics\.recordBackgroundWakeInvocation\(/ {
       if (guard_line == 0 || NR - guard_line > 8) {
         printf "%d:%s\n", NR, $0
       }
@@ -225,7 +225,7 @@ dispatch_probe_line="$(rg -n 'actionDispatchProbe\(extensionID\)' "$service" | h
 post_dispatch_admission_line="$(awk -v probe="$dispatch_probe_line" '
   NR > probe && /admission\.isCurrent\(evidence\)/ { print NR; exit }
 ' "$service")"
-metric_line="$(rg -n 'recordRuntimeMetric\(' "$service" | head -1 | cut -d: -f1)"
+metric_line="$(rg -n 'runtimeMetrics\.recordBackgroundWakeInvocation\(' "$service" | head -1 | cut -d: -f1)"
 if [[ -z "${dispatch_line:-}" || -z "${dispatch_probe_line:-}" \
    || -z "${post_dispatch_admission_line:-}" || -z "${metric_line:-}" ]] \
   || (( dispatch_line >= dispatch_probe_line \

@@ -143,7 +143,7 @@ final class ExtensionNativeMessagingSendCallbackAdmissionTests:
         let collector = await dispatchSend(harness: harness)
         XCTAssertEqual(adapter.oneShotRequestCount, 1)
 
-        harness.manager.runtimeSession.extensionLoadGeneration += 1
+        harness.manager.extensionLoadRevisions.advance()
         adapter.completeHeldOneShotReplies(value: ["secret": true])
         await drainMainActorTurns()
 

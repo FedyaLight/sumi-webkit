@@ -25,12 +25,17 @@ final class ExtensionManager: NSObject, ObservableObject {
     @Published private(set) var isExtensionSupportAvailable =
         ExtensionUtils.isExtensionSupportAvailable
     var extensionsLoaded: Bool {
-        get { runtimeSession.extensionsLoaded }
-        set {
-            guard runtimeSession.extensionsLoaded != newValue else { return }
-            objectWillChange.send()
-            runtimeSession.extensionsLoaded = newValue
-        }
+        runtimeLoadStatus.extensionsLoaded
+    }
+
+    func markExtensionRuntimePublicationReady() {
+        guard runtimeLoadStatus.markExtensionsLoaded() else { return }
+        objectWillChange.send()
+    }
+
+    func resetExtensionRuntimePublicationReadiness() {
+        guard runtimeLoadStatus.reset() else { return }
+        objectWillChange.send()
     }
     @Published var pinnedToolbarExtensionIDs: [String] = []
 
@@ -115,7 +120,7 @@ final class ExtensionManager: NSObject, ObservableObject {
         publications: windowPublications
     )
     lazy var extensionCreatedTabRegistrar = ExtensionCreatedTabRuntimeRegistrar(
-        runtimeSession: runtimeSession,
+        runtimePublicationEvidence: runtimePublicationEvidence,
         profileRuntime: profileRuntime,
         adapterStore: adapterStore,
         controllers: existingTabControllers,
@@ -131,7 +136,7 @@ final class ExtensionManager: NSObject, ObservableObject {
     )
     lazy var initialTabPublicationPreparer =
         ExtensionInitialTabPublicationPreparer(
-            runtimeSession: runtimeSession,
+            runtimePublicationEvidence: runtimePublicationEvidence,
             profileRuntime: profileRuntime,
             adapterStore: adapterStore,
             controllerQuery: existingTabControllers,
@@ -179,7 +184,6 @@ final class ExtensionManager: NSObject, ObservableObject {
     lazy var extensionRuntimeAccess = ExtensionRuntimeAccess(
         profileRuntime: profileRuntime,
         controllerProvisioningOwner: controllerProvisioningOwner,
-        runtimeSession: runtimeSession,
         runtime: { [weak self] in self?.runtime ?? .inactive }
     )
     lazy var contextControllerTransaction =
@@ -188,7 +192,7 @@ final class ExtensionManager: NSObject, ObservableObject {
             profileRuntime: profileRuntime,
             rollback: runtimeRollback,
             errorObservation: contextErrorObservation,
-            runtimeSession: runtimeSession,
+            runtimeMetrics: runtimeMetrics,
             diagnostics: runtimeDiagnostics,
             expectedControllerDelegate: controllerDelegateBridge,
             controllerDelegateReadiness:
@@ -210,7 +214,7 @@ final class ExtensionManager: NSObject, ObservableObject {
         sourceCache: webExtensionRuntimeSourceCache,
         contextPreparation: contextPreparation,
         storagePlanner: webExtensionStorageCleanupPlanner,
-        runtimeSession: runtimeSession,
+        runtimeMetrics: runtimeMetrics,
         diagnostics: runtimeDiagnostics,
         expectedControllerDelegate: controllerDelegateBridge,
         controllerTransaction: contextControllerTransaction
@@ -229,6 +233,8 @@ final class ExtensionManager: NSObject, ObservableObject {
         metadataStore: installationMetadataStore,
         installedRecords: installedExtensionCollection,
         runtimeAccess: extensionRuntimeAccess,
+        runtimeCatalog: runtimeCatalog,
+        runtimeMetrics: runtimeMetrics,
         authority: loadedContextAuthority,
         rollback: runtimeRollback,
         contextLoader: extensionContextLoader,
@@ -328,18 +334,18 @@ final class ExtensionManager: NSObject, ObservableObject {
     lazy var runtimeDemandCoordinator = ExtensionRuntimeDemandCoordinator(
         installedExtensions: installedExtensionCollection,
         profileRuntime: profileRuntime,
-        runtimeSession: runtimeSession,
+        runtimeLifecycle: runtimeLifecycle,
+        runtimeDemand: runtimeDemand,
         controllerProvisioning: controllerProvisioningOwner,
         runtimeProfileID: { [weak self] in
             self?.runtime.currentProfile()?.id
         },
-        extensionSupportAvailable: isExtensionSupportAvailable,
         diagnostics: runtimeDiagnostics
     )
     lazy var profileRuntimeTransition = ExtensionProfileRuntimeTransition(
         installedExtensions: installedExtensionCollection,
         profileRuntime: profileRuntime,
-        runtimeSession: runtimeSession,
+        runtimeLifecycle: runtimeLifecycle,
         browserConfiguration: browserConfiguration,
         controllerProvisioning: controllerProvisioningOwner,
         inactiveContextRetirement: contextResidencyOwner,
@@ -360,10 +366,10 @@ final class ExtensionManager: NSObject, ObservableObject {
         manager: self
     )
     lazy var contextErrorObservation = ExtensionContextErrorObservation(
-        recordRuntimeMetric: { [runtimeSession] extensionId, update in
-            runtimeSession.recordRuntimeMetric(
-                for: extensionId,
-                update: update
+        recordErrorUpdateDuration: { [runtimeMetrics] extensionID, duration in
+            runtimeMetrics.recordErrorUpdateDuration(
+                duration,
+                for: extensionID
             )
         },
         trace: { [runtimeDiagnostics] message in
@@ -373,7 +379,7 @@ final class ExtensionManager: NSObject, ObservableObject {
     lazy var contextRetirement = ExtensionContextRetirement(
         profileRuntime: profileRuntime,
         backgroundRuntimeState: backgroundRuntimeStateOwner,
-        runtimeSession: runtimeSession,
+        runtimeResidency: runtimeResidency,
         errorObservation: contextErrorObservation,
         diagnostics: runtimeDiagnostics,
         actionPopups: actionPopupRuntimeRetirement
@@ -394,7 +400,8 @@ final class ExtensionManager: NSObject, ObservableObject {
         mutationRegistry: runtimeMutationRegistry,
         loadRegistry: contextLoadRegistry,
         contextRetirement: contextRetirement,
-        runtimeSession: runtimeSession,
+        runtimeCatalog: runtimeCatalog,
+        runtimeResidency: runtimeResidency,
         sourceCache: webExtensionRuntimeSourceCache,
         errorObservation: contextErrorObservation,
         nativeMessagingPorts: nativeMessagingPortRegistry,
@@ -599,7 +606,20 @@ final class ExtensionManager: NSObject, ObservableObject {
     weak var extensionRequestedWindowCreation:
         (any ExtensionRequestedWindowCreating)?
     var runtime = ExtensionManagerRuntime.inactive
-    let runtimeSession = ExtensionRuntimeSession()
+    let runtimeLifecycle = ExtensionRuntimeLifecycleAuthority()
+    let runtimeDemand = ExtensionRuntimeDemandAuthority()
+    let runtimeLoadStatus = ExtensionRuntimeLoadStatusAuthority()
+    let runtimeCatalog = ExtensionRuntimeCatalog()
+    let runtimeResidency = ExtensionRuntimeResidencyAuthority()
+    let runtimeMetrics = ExtensionRuntimeMetricsAuthority()
+    let extensionLoadRevisions = ExtensionLoadRevisionAuthority()
+    let tabPublicationRevisions =
+        ExtensionTabPublicationRevisionAuthority()
+    lazy var runtimePublicationEvidence =
+        ExtensionRuntimePublicationEvidenceIssuer(
+            extensionLoadRevisions: extensionLoadRevisions,
+            tabPublicationRevisions: tabPublicationRevisions
+        )
     let webExtensionStorageCleanupPlanner: WebExtensionStorageCleanupPlanner
     let backgroundRuntimeStateOwner = ExtensionBackgroundRuntimeStateOwner()
     lazy var runtimeActivityCancellation = ExtensionRuntimeActivityCancellation(
@@ -609,7 +629,9 @@ final class ExtensionManager: NSObject, ObservableObject {
         diagnostics: runtimeDiagnostics
     )
     lazy var runtimeBookkeepingReset = ExtensionRuntimeBookkeepingReset(
-        runtimeSession: runtimeSession,
+        runtimeCatalog: runtimeCatalog,
+        runtimeResidency: runtimeResidency,
+        runtimeMetrics: runtimeMetrics,
         sourceCache: webExtensionRuntimeSourceCache,
         backgroundRuntimeState: backgroundRuntimeStateOwner,
         errorObservation: contextErrorObservation,
@@ -626,7 +648,8 @@ final class ExtensionManager: NSObject, ObservableObject {
     lazy var controllerRuntimeRelease = ExtensionControllerRuntimeRelease(
         browserConfiguration: browserConfiguration,
         profileRuntime: profileRuntime,
-        runtimeSession: runtimeSession,
+        runtimeLifecycle: runtimeLifecycle,
+        runtimeDemand: runtimeDemand,
         controllerDelegateReadiness:
             controllerDelegateBindingReadiness
     )
@@ -637,7 +660,9 @@ final class ExtensionManager: NSObject, ObservableObject {
         bookkeepingReset: runtimeBookkeepingReset,
         controllerRelease: controllerRuntimeRelease,
         profileRuntime: profileRuntime,
-        runtimeSession: runtimeSession,
+        runtimeLifecycle: runtimeLifecycle,
+        runtimeCatalog: runtimeCatalog,
+        extensionLoadRevisions: extensionLoadRevisions,
         sourceCache: webExtensionRuntimeSourceCache,
         errorObservation: contextErrorObservation,
         optionsWindows: optionsWindows,
@@ -681,7 +706,7 @@ final class ExtensionManager: NSObject, ObservableObject {
     let permissionPromptPresenter = ExtensionPermissionPromptPresenter()
     lazy var controllerCallbackAdmission = ExtensionControllerCallbackAdmission(
         profileRuntime: profileRuntime,
-        runtimeSession: runtimeSession
+        extensionLoadRevisions: extensionLoadRevisions
     )
     lazy var permissionCallbackSettlement =
         ExtensionPermissionCallbackSettlement(
@@ -739,8 +764,8 @@ final class ExtensionManager: NSObject, ObservableObject {
         _ = deferredRuntimeOwnerStore
 
         guard isExtensionSupportAvailable else {
-            extensionsLoaded = true
-            runtimeSession.runtimeState = .unavailable
+            markExtensionRuntimePublicationReady()
+            runtimeLifecycle.markUnavailable()
             return
         }
 

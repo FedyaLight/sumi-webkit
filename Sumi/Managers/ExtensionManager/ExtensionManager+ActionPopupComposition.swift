@@ -28,7 +28,7 @@ extension ExtensionManager {
     func makeActionPopupTelemetry() -> ExtensionActionPopupTelemetry {
         ExtensionActionPopupTelemetry(
             manifest: { [weak self] extensionID in
-                self?.runtimeSession.loadedExtensionManifests[extensionID] ?? [:]
+                self?.runtimeCatalog.manifest(for: extensionID) ?? [:]
             },
             existingAdapter: { [weak self] tabID in
                 self?.adapterStore.existingTabAdapter(for: tabID)

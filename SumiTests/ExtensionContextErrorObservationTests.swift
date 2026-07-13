@@ -201,14 +201,14 @@ final class ExtensionContextErrorObservationTests: XCTestCase {
 private final class ErrorObservationRecorder {
     private(set) var metricUpdateCount = 0
     private(set) var traces: [String] = []
-    private var metrics = ExtensionManager.ExtensionRuntimeMetrics()
+    private(set) var lastDuration: TimeInterval?
 
     func makeObservation() -> ExtensionContextErrorObservation {
         ExtensionContextErrorObservation(
-            recordRuntimeMetric: { [weak self] _, update in
+            recordErrorUpdateDuration: { [weak self] _, duration in
                 guard let self else { return }
                 self.metricUpdateCount += 1
-                update(&self.metrics)
+                self.lastDuration = duration
             },
             trace: { [weak self] message in
                 self?.traces.append(message)

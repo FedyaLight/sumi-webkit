@@ -17,7 +17,7 @@ final class ExtensionActionInvocationService {
         let pageAccess: ExtensionActionPageAccessAuthorizer
         let admission: ExtensionActionInvocationAdmission
         let actionPublication: ExtensionActionSurfacePublisher
-        let runtimeSession: ExtensionRuntimeSession
+        let runtimeMetrics: ExtensionRuntimeMetricsAuthority
         let stableAdapter: @MainActor (Tab) -> ExtensionTabAdapter?
         let registerTab: @MainActor (Tab, String) -> Void
         let actionDispatchProbe: @MainActor (String) -> Void
@@ -196,12 +196,10 @@ final class ExtensionActionInvocationService {
             actionDispatch.cancel(popupRegistration)
             return Self.staleResult()
         }
-        environment.runtimeSession.recordRuntimeMetric(
+        environment.runtimeMetrics.recordBackgroundWakeInvocation(
+            reason: .actionPopup,
             for: extensionID
-        ) { metrics in
-            metrics.lastBackgroundWakeReason = .actionPopup
-            metrics.backgroundWakeCount += 1
-        }
+        )
         return presentsPopup ? .openedPopup : .performedAction
     }
 

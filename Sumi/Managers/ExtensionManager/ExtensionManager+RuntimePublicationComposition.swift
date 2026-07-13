@@ -98,7 +98,7 @@ extension ExtensionManager {
             )
         #endif
         let auxiliaryTabPublication = ExtensionAuxiliaryTabPublicationPreparer(
-            runtimeSession: runtimeSession,
+            runtimePublicationEvidence: runtimePublicationEvidence,
             profileRuntime: profileRuntime,
             adapterStore: adapterStore,
             controllers: existingTabControllers,
@@ -148,7 +148,7 @@ extension ExtensionManager {
         let tabLifecycleEvents = normalTabs.tabLifecycleEvents
         let tabOpening = normalTabs.tabOpening
         let activationValidator = ExtensionNormalTabActivationValidator(
-            runtimeSession: runtimeSession,
+            runtimePublicationEvidence: runtimePublicationEvidence,
             profileRuntime: profileRuntime,
             adapterStore: adapterStore,
             adapterResolution: adapterCatalog,
@@ -173,14 +173,14 @@ extension ExtensionManager {
             )
         #endif
         let closure = ExtensionNormalTabCloseTransaction(
-            runtimeSession: runtimeSession,
+            tabPublicationRevisions: tabPublicationRevisions,
             adapterStore: adapterStore,
             windowPublications: publications,
             preparedTabVisibility: preparedTabVisibility,
             events: tabLifecycleEvents
         )
         let reload = ExtensionRuntimeReloadTransaction(
-            runtimeSession: runtimeSession,
+            runtimePublicationEvidence: runtimePublicationEvidence,
             profileRuntime: profileRuntime,
             normalWindows: normalWindows,
             publicationGate: gate,

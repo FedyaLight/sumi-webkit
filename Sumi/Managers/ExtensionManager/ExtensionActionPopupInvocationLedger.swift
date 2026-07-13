@@ -52,7 +52,7 @@ final class ExtensionActionPopupInvocationLedger {
         let extensionID: String
         let controllerBindingRevision: UInt64
         let contextBindingRevision: UInt64
-        let extensionLoadGeneration: UInt64
+        let extensionLoadRevision: ExtensionLoadRevision
         let installedRecordRevision: UInt64
         var target: ExtensionActionPopupInvocationTarget
         let registeredAt: TimeInterval
@@ -140,7 +140,7 @@ final class ExtensionActionPopupInvocationLedger {
             extensionID: binding.extensionID,
             controllerBindingRevision: binding.controllerBindingRevision,
             contextBindingRevision: binding.contextBindingRevision,
-            extensionLoadGeneration: binding.extensionLoadGeneration,
+            extensionLoadRevision: binding.extensionLoadRevision,
             installedRecordRevision: evidence.request.installedRecordRevision,
             target: target,
             registeredAt: now(),
@@ -220,6 +220,6 @@ final class ExtensionActionPopupInvocationLedger {
             && lhs.extensionID == rhs.extensionID
             && lhs.controllerBindingRevision == rhs.controllerBindingRevision
             && lhs.contextBindingRevision == rhs.contextBindingRevision
-            && lhs.extensionLoadGeneration == rhs.extensionLoadGeneration
+            && lhs.extensionLoadRevision == rhs.extensionLoadRevision
     }
 }
