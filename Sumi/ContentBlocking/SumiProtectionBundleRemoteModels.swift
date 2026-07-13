@@ -3,6 +3,7 @@ import SumiDomain
 
 enum SumiRemoteAdblockBundleCache {
     static let metadataFileName = "remote-release.json"
+    static let unavailableMarkerFileName = "remote-bundle-unavailable.json"
 
     static func defaultRootDirectory() -> URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
@@ -14,6 +15,15 @@ enum SumiRemoteAdblockBundleCache {
         rootDirectory
             .appendingPathComponent(profileId, isDirectory: true)
             .appendingPathComponent(SumiAdblockNativeRuleBundle.directoryName, isDirectory: true)
+    }
+
+    static func unavailableMarkerURL(
+        profileId: String,
+        rootDirectory: URL = defaultRootDirectory()
+    ) -> URL {
+        rootDirectory
+            .appendingPathComponent(profileId, isDirectory: true)
+            .appendingPathComponent(unavailableMarkerFileName)
     }
 }
 
@@ -52,6 +62,14 @@ enum SumiProtectionBundleRemoteUpdateError: Error, LocalizedError, Equatable {
     case bundleMetadataMismatch(String)
     case cacheCommitFailed(String)
     case cacheRollbackFailed(commit: String, rollback: String)
+    case cacheTransactionStateInvalid(String)
+    case cacheQuarantineFailed(String)
+    case cacheUnavailable(
+        transactionId: String,
+        current: String,
+        previous: String,
+        recovery: String?
+    )
     case httpStatus(Int, String)
 
     var errorDescription: String? {
@@ -104,6 +122,18 @@ enum SumiProtectionBundleRemoteUpdateError: Error, LocalizedError, Equatable {
             return "Remote bundle cache commit failed: \(detail)"
         case .cacheRollbackFailed(let commit, let rollback):
             return "Remote bundle cache commit failed: \(commit); rollback failed: \(rollback)"
+        case .cacheTransactionStateInvalid(let phase):
+            return "Remote bundle cache transaction cannot continue from phase \(phase)."
+        case .cacheQuarantineFailed(let detail):
+            return "Remote bundle cache quarantine or cleanup failed: \(detail)"
+        case .cacheUnavailable(
+            let transactionId,
+            let current,
+            let previous,
+            let recovery
+        ):
+            let recoveryDetail = recovery.map { "; recovery=\($0)" } ?? ""
+            return "Remote bundle cache is unavailable after transaction \(transactionId): current=\(current); previous=\(previous)\(recoveryDetail)"
         case .httpStatus(let status, let url):
             return "Bundle update request failed with HTTP \(status): \(url)"
         }

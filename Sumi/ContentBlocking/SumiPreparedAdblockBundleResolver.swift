@@ -218,6 +218,25 @@ struct SumiPreparedAdblockBundleResolver: @unchecked Sendable {
             return nil
         }
 
+        if source == .remoteReleaseBundle {
+            let unavailableMarker = bundleURL.deletingLastPathComponent()
+                .appendingPathComponent(
+                    SumiRemoteAdblockBundleCache.unavailableMarkerFileName
+                )
+            if fileManager.fileExists(atPath: unavailableMarker.path) {
+                searchedPaths.append(
+                    searchPath(
+                        source: source,
+                        bundleURL: bundleURL,
+                        exists: bundleDirectoryExists(bundleURL),
+                        rejectionReason:
+                            "Remote bundle cache is fail-closed unavailable after rollback validation failed."
+                    )
+                )
+                return nil
+            }
+        }
+
         let exists = bundleDirectoryExists(bundleURL)
         guard exists else {
             searchedPaths.append(

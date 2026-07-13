@@ -694,21 +694,38 @@ private final class FailSecondBundleValidation: SumiProtectionBundlePayloadValid
     private var validationCount = 0
 
     func validateBundle(
-        at _: URL,
-        expectedIdentity _: SumiProtectionBundleIdentity
-    ) throws {
+        at _: URL
+    ) throws -> SumiProtectionBundleValidationReceipt {
         validationCount += 1
-        if validationCount == 2 {
+        if validationCount == 3 {
             throw TestError.publicationFailed
         }
+        return SumiProtectionBundleValidationReceipt(
+            identity: SumiProtectionBundleIdentity(
+                profileId: "profile",
+                bundleId: "bundle",
+                generationId: "generation"
+            ),
+            payloadFingerprint: validationCount == 1
+                ? "candidate"
+                : "previous"
+        )
     }
 }
 
 private struct AcceptBundleValidation: SumiProtectionBundlePayloadValidating {
     func validateBundle(
-        at _: URL,
-        expectedIdentity _: SumiProtectionBundleIdentity
-    ) throws {}
+        at _: URL
+    ) throws -> SumiProtectionBundleValidationReceipt {
+        SumiProtectionBundleValidationReceipt(
+            identity: SumiProtectionBundleIdentity(
+                profileId: "profile",
+                bundleId: "older-bundle",
+                generationId: "older-generation"
+            ),
+            payloadFingerprint: "accepted"
+        )
+    }
 }
 
 private func XCTAssertThrowsErrorAsync(

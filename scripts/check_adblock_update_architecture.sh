@@ -53,9 +53,11 @@ check_max_lines Sumi/ContentBlocking/ContentBlockingTaskRegistry.swift 100
 check_max_lines Sumi/ContentBlocking/SumiAdBlockingModule.swift 200
 check_max_lines Sumi/ContentBlocking/SumiProtectionBundleRemoteUpdater.swift 160
 check_max_lines Sumi/ContentBlocking/SumiProtectionBundleReleaseValidator.swift 220
-check_max_lines Sumi/ContentBlocking/SumiProtectionBundleCacheTransaction.swift 270
+check_max_lines Sumi/ContentBlocking/SumiProtectionBundleCache.swift 200
+check_max_lines Sumi/ContentBlocking/SumiProtectionBundleCacheTransaction.swift 570
+check_max_lines Sumi/ContentBlocking/SumiProtectionBundleQuarantine.swift 250
 check_max_lines Sumi/ContentBlocking/SumiAdblockNativeRuleBundle.swift 190
-check_max_lines Sumi/ContentBlocking/SumiAdblockNativeBundleReader.swift 260
+check_max_lines Sumi/ContentBlocking/SumiAdblockNativeBundleReader.swift 290
 check_max_lines Sumi/ContentBlocking/SumiAdblockNativeGenerationProjector.swift 210
 check_max_lines Sumi/ContentBlocking/SumiPreparedAdblockBundleResolver.swift 330
 check_max_lines Sumi/ContentBlocking/SumiContentBlockingService.swift 360
@@ -79,7 +81,9 @@ focused_files=(
   Sumi/ContentBlocking/ContentBlockingTaskRegistry.swift
   Sumi/ContentBlocking/SumiProtectionBundleRemoteUpdater.swift
   Sumi/ContentBlocking/SumiProtectionBundleReleaseValidator.swift
+  Sumi/ContentBlocking/SumiProtectionBundleCache.swift
   Sumi/ContentBlocking/SumiProtectionBundleCacheTransaction.swift
+  Sumi/ContentBlocking/SumiProtectionBundleQuarantine.swift
   Sumi/ContentBlocking/SumiAdblockNativeRuleBundle.swift
   Sumi/ContentBlocking/SumiAdblockNativeBundleReader.swift
   Sumi/ContentBlocking/SumiAdblockNativeGenerationProjector.swift
@@ -129,6 +133,7 @@ fi
 
 rg -q 'ContentBlockingItemExchange\.swap' Sumi/ContentBlocking/AdblockGenerationArchive.swift
 rg -q 'ContentBlockingItemExchange\.swap' Sumi/ContentBlocking/SumiProtectionBundleCacheTransaction.swift
+rg -q 'unavailableMarkerFileName' Sumi/ContentBlocking/SumiPreparedAdblockBundleResolver.swift
 rg -q 'previousGenerationId' Sumi/ContentBlocking/AdblockGenerationRetention.swift
 rg -q 'mutationGate\.stop\(\)' Sumi/ContentBlocking/AdblockRuleListRuntime.swift
 rg -q 'cache\.commit\(' Sumi/ContentBlocking/SumiProtectionBundleRemoteUpdater.swift
@@ -140,6 +145,29 @@ rg -q 'stagePreparedContentBlockingUpdate' Sumi/ContentBlocking/AdblockRuleListP
 rg -q 'publishStagedContentBlockingUpdate' Sumi/ContentBlocking/AdblockRuleListPublication.swift
 rg -q 'private var runtimeLevel = SumiProtectionLevel\.off' Sumi/ContentBlocking/SumiAdBlockingModule.swift
 rg -q 'ruleProvider\.setRuntimeLevel\(level\)' Sumi/ContentBlocking/ProtectionAttachmentService.swift
+
+rollback_transaction=Sumi/ContentBlocking/SumiProtectionBundleCacheTransaction.swift
+rollback_marker_line="$(rg -n 'try quarantineIO\.publishUnavailableMarker' "$rollback_transaction" | head -1 | cut -d: -f1)"
+rollback_swap_line="$(rg -n 'ContentBlockingItemExchange\.swap\(destination, stagedBundleURL\)' "$rollback_transaction" | tail -1 | cut -d: -f1)"
+restored_phase_line="$(rg -n 'phase = \.revalidatingRestored' "$rollback_transaction" | cut -d: -f1)"
+restored_receipt_line="$(rg -n 'restoredReceipt == previousReceipt' "$rollback_transaction" | cut -d: -f1)"
+post_restore_quarantine_line="$(awk -v start="$restored_receipt_line" 'NR > start && /try quarantine\(/ { print NR; exit }' "$rollback_transaction")"
+
+if [[ -z "$rollback_marker_line" || -z "$rollback_swap_line" || -z "$restored_phase_line" || -z "$restored_receipt_line" || -z "$post_restore_quarantine_line" ]] \
+  || (( rollback_marker_line >= rollback_swap_line )) \
+  || (( rollback_swap_line >= restored_phase_line )) \
+  || (( restored_phase_line >= restored_receipt_line )) \
+  || (( restored_receipt_line >= post_restore_quarantine_line )); then
+  echo "error: protection rollback must swap back, revalidate the exact restored receipt, then quarantine" >&2
+  exit 1
+fi
+
+if rg -n 'precondition|preconditionFailure|fatalError|try\?' \
+  Sumi/ContentBlocking/SumiProtectionBundleCacheTransaction.swift \
+  Sumi/ContentBlocking/SumiProtectionBundleQuarantine.swift >/dev/null; then
+  echo "error: protection rollback corruption and forensic cleanup must use typed failures" >&2
+  exit 1
+fi
 
 if rg -n '\b(setPreparedBundleRuntimeEnabled|func setEnabled\(_ isEnabled: Bool\))' \
   Sumi/ContentBlocking/SumiAdBlockingModule.swift \

@@ -235,7 +235,10 @@ final class AdblockPreparedBundleInstaller {
             return .embeddedBundleManifestRead
         }
         switch error {
-        case .missingManifest, .unsupportedSchemaVersion, .unsupportedNativeCSSSafetyPolicyVersion:
+        case .missingManifest,
+             .unsupportedSchemaVersion,
+             .unsupportedNativeCSSSafetyPolicyVersion,
+             .manifestChangedDuringValidation:
             return .embeddedBundleManifestRead
         case .missingShard, .emptyShard, .invalidShardPath:
             return .embeddedBundleMissingShard

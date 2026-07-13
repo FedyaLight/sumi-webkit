@@ -147,6 +147,44 @@ struct SumiAdblockNativeBundleReader: @unchecked Sendable {
         )
     }
 
+    /// Validates every declared shard and fingerprints the exact manifest and
+    /// shard bytes that were validated. Callers can compare this receipt after
+    /// a filesystem exchange before treating the destination as active.
+    func validatedPayloadFingerprint(
+        from bundle: SumiAdblockNativeRuleBundle
+    ) throws -> String {
+        let manifestURL = bundle.directoryURL.appendingPathComponent(
+            SumiAdblockNativeRuleBundle.manifestFileName
+        )
+        let manifestData = try Data(contentsOf: manifestURL)
+        let reloadedManifest = try JSONDecoder().decode(
+            SumiAdblockNativeRuleBundleManifest.self,
+            from: manifestData
+        )
+        guard reloadedManifest == bundle.manifest else {
+            throw SumiAdblockNativeRuleBundleError
+                .manifestChangedDuringValidation
+        }
+
+        var components = [fingerprintComponent(
+            path: SumiAdblockNativeRuleBundle.manifestFileName,
+            data: manifestData
+        )]
+        for shard in bundle.manifest.shards.sorted(by: {
+            $0.relativePath < $1.relativePath
+        }) {
+            components.append(
+                fingerprintComponent(
+                    path: shard.relativePath,
+                    data: try verifiedShardData(shard, in: bundle)
+                )
+            )
+        }
+        return SHA256.hash(data: Data(components.joined(separator: "\n").utf8))
+            .map { String(format: "%02x", $0) }
+            .joined()
+    }
+
     private func verifiedShardData(
         _ shard: SumiAdblockNativeRuleBundleManifest.Shard,
         in bundle: SumiAdblockNativeRuleBundle
@@ -222,6 +260,13 @@ struct SumiAdblockNativeBundleReader: @unchecked Sendable {
         URL(fileURLWithPath: shard.relativePath)
             .deletingPathExtension()
             .lastPathComponent
+    }
+
+    private func fingerprintComponent(path: String, data: Data) -> String {
+        let digest = SHA256.hash(data: data)
+            .map { String(format: "%02x", $0) }
+            .joined()
+        return "\(path.utf8.count):\(path):\(data.count):\(digest)"
     }
 
     private func shardSort(

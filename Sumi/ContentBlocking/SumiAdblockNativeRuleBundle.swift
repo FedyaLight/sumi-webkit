@@ -11,6 +11,7 @@ enum SumiAdblockNativeRuleBundleError: Error, LocalizedError, Equatable {
     case shardSizeMismatch(path: String, expected: Int, actual: Int)
     case invalidShardJSON(String)
     case unsupportedNativeCSSSafetyPolicyVersion(String?)
+    case manifestChangedDuringValidation
 
     var errorDescription: String? {
         switch self {
@@ -32,6 +33,8 @@ enum SumiAdblockNativeRuleBundleError: Error, LocalizedError, Equatable {
             return "Embedded Adblock bundle shard JSON is invalid: \(path)"
         case .unsupportedNativeCSSSafetyPolicyVersion(let version):
             return "Embedded Adblock bundle native CSS safety policy is unsupported: \(version ?? "missing")"
+        case .manifestChangedDuringValidation:
+            return "Embedded Adblock bundle manifest changed while its payload was being validated."
         }
     }
 }
