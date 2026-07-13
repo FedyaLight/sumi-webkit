@@ -64,15 +64,26 @@ struct ExtensionProfileRuntimeState {
         _ context: WKWebExtensionContext,
         extensionId: String,
         profileId: UUID
-    ) -> UInt64 {
+    ) -> ExtensionContextBindingReceipt {
         var contexts = contextsByProfile[profileId] ?? [:]
         contexts[extensionId] = context
         contextsByProfile[profileId] = contexts
-        _ = bumpContextBindingRevision(
+        let bindingRevision = bumpContextBindingRevision(
             extensionId: extensionId,
             profileId: profileId
         )
-        return bumpContextBindingGeneration(for: profileId)
+        _ = bumpContextBindingGeneration(for: profileId)
+        return ExtensionContextBindingReceipt(
+            key: .init(profileId: profileId, extensionId: extensionId),
+            contextIdentifier: ObjectIdentifier(context),
+            bindingRevision: bindingRevision,
+            controllerIdentifier: controllersByProfile[profileId].map(
+                ObjectIdentifier.init
+            ),
+            controllerBindingRevision: controllerBindingRevision(
+                for: profileId
+            )
+        )
     }
 
     mutating func removeContext(

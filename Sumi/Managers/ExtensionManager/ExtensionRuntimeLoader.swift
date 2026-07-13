@@ -19,7 +19,7 @@ final class ExtensionRuntimeLoader {
     private let runtimeAccess: ExtensionRuntimeAccess
     private let authority: ExtensionLoadedContextAuthority
     private let rollback: ExtensionRuntimeRollback
-    private let contextLoader: ExtensionRuntimeContextLoader
+    private let contextLoader: ExtensionContextLoader
     private let finalizer: ExtensionLoadedContextFinalizer
     private let diagnostics: ExtensionRuntimeDiagnostics
 
@@ -30,7 +30,7 @@ final class ExtensionRuntimeLoader {
         runtimeAccess: ExtensionRuntimeAccess,
         authority: ExtensionLoadedContextAuthority,
         rollback: ExtensionRuntimeRollback,
-        contextLoader: ExtensionRuntimeContextLoader,
+        contextLoader: ExtensionContextLoader,
         finalizer: ExtensionLoadedContextFinalizer,
         diagnostics: ExtensionRuntimeDiagnostics
     ) {
@@ -126,7 +126,7 @@ final class ExtensionRuntimeLoader {
         )
         defer { _ = authority.finish(claim) }
 
-        var loadedContext: ExtensionRuntimeContextLoader.LoadedContext?
+        var loadedContext: ExtensionLoadedContext?
         do {
             let sourceKind =
                 WebExtensionSourceKind(rawValue: entity.sourceKindRawValue)
@@ -201,7 +201,7 @@ final class ExtensionRuntimeLoader {
         } catch {
             if let loadedContext {
                 let rollbackResult = rollback.rollBack(loadedContext)
-                if rollbackResult.exactRollbackCompleted == false {
+                if rollbackResult.externalStateDisposition != .rollbackAllowed {
                     throw ExtensionRuntimeTransactionFailure(
                         operationError: error,
                         rollback: rollbackResult

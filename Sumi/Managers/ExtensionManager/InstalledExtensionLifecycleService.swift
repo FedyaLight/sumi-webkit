@@ -100,10 +100,20 @@ final class InstalledExtensionLifecycleService {
             return refreshed
         } catch let enableError {
             guard wasEnabled == false else { throw enableError }
-            if enableError is ExtensionRuntimeTransactionFailure {
-                throw ExtensionError.installationFailed(
-                    "Enable failed and the new WebKit context could not be unloaded; enabled persistence was preserved to match the live runtime. Original error: \(enableError.localizedDescription)"
-                )
+            if let transactionFailure =
+                enableError as? ExtensionRuntimeTransactionFailure {
+                switch transactionFailure.rollback.externalStateDisposition {
+                case .rollbackAllowed:
+                    break
+                case .preserveForExactRuntime,
+                     .preserveForReplacement,
+                     .preserveForActiveBinding,
+                     .preserveForCompetingTransaction,
+                     .preserveUntilSharedCleanup:
+                    throw ExtensionError.installationFailed(
+                        "Enable failed after a WebKit runtime authority retained the extension; enabled persistence was preserved to match that authority. Original error: \(enableError.localizedDescription)"
+                    )
+                }
             }
             do {
                 try restorePersistedRecord(

@@ -228,17 +228,19 @@ final class ExtensionInstallationService {
                     _ = environment.mutationRegistry.finish(mutationLease)
                 }
             }
-            var runtimeRollbackPermitsExternalStateRollback =
+            var externalStateDisposition =
                 (error as? ExtensionRuntimeTransactionFailure)?
-                    .rollback.permitsExternalStateRollback ?? true
+                    .rollback.externalStateDisposition
+                    ?? .rollbackAllowed
             var recoveryFailures: [String] = []
             if let runtimeActivation {
-                runtimeRollbackPermitsExternalStateRollback = environment
+                externalStateDisposition = environment
                     .runtimeActivation
                     .rollback(runtimeActivation)
-                    .permitsExternalStateRollback
+                    .externalStateDisposition
             }
-            if runtimeRollbackPermitsExternalStateRollback {
+            switch externalStateDisposition {
+            case .rollbackAllowed:
                 transaction.rollback()
                 if didAttemptPersistence, let extensionID {
                     do {
@@ -252,25 +254,23 @@ final class ExtensionInstallationService {
                         )
                     }
                 }
-            }
-            if runtimeRollbackPermitsExternalStateRollback,
-               didRetirePreviousRuntime,
-               shouldRestoreRuntime,
-               let existingEntity,
-               let mutationLease {
-                do {
-                    try await environment.runtimeRecovery.recoverEnabledRuntime(
-                        from: existingEntity,
-                        profileIDs: previousRuntimeProfileIDs,
-                        mutationLease: mutationLease
-                    )
-                } catch {
-                    recoveryFailures.append(
-                        "previous runtime recovery failed: \(error.localizedDescription)"
-                    )
+                if didRetirePreviousRuntime,
+                   shouldRestoreRuntime,
+                   let existingEntity,
+                   let mutationLease {
+                    do {
+                        try await environment.runtimeRecovery.recoverEnabledRuntime(
+                            from: existingEntity,
+                            profileIDs: previousRuntimeProfileIDs,
+                            mutationLease: mutationLease
+                        )
+                    } catch {
+                        recoveryFailures.append(
+                            "previous runtime recovery failed: \(error.localizedDescription)"
+                        )
+                    }
                 }
-            }
-            if runtimeRollbackPermitsExternalStateRollback == false {
+            case .preserveForExactRuntime:
                 if let candidateRecord {
                     do {
                         try environment.metadataStore.persist(
@@ -283,14 +283,23 @@ final class ExtensionInstallationService {
                         )
                     }
                     publish(candidateRecord)
-                    transaction.commit()
                 }
+                transaction.commit()
                 throw ExtensionError.installationFailed(
-                    "Installation failed and the new WebKit context could not be unloaded; the installed package and candidate metadata were preserved to keep the live runtime coherent"
+                    "Installation failed after the new WebKit runtime became authoritative; its installed package and candidate metadata were preserved"
                         + (recoveryFailures.isEmpty
                             ? ""
                             : ". Recovery issues: "
                                 + recoveryFailures.joined(separator: "; "))
+                        + ". Original error: \(error.localizedDescription)"
+                )
+            case .preserveForReplacement,
+                 .preserveForActiveBinding,
+                 .preserveForCompetingTransaction,
+                 .preserveUntilSharedCleanup:
+                transaction.commit()
+                throw ExtensionError.installationFailed(
+                    "Installation failed after another runtime authority acquired the extension; installed package bytes were preserved without overwriting its metadata"
                         + ". Original error: \(error.localizedDescription)"
                 )
             }
@@ -425,46 +434,47 @@ final class ExtensionInstallationService {
             defer {
                 _ = environment.mutationRegistry.finish(mutationLease)
             }
-            var runtimeRollbackPermitsExternalStateRollback =
+            var externalStateDisposition =
                 (error as? ExtensionRuntimeTransactionFailure)?
-                    .rollback.permitsExternalStateRollback ?? true
+                    .rollback.externalStateDisposition
+                    ?? .rollbackAllowed
             var recoveryFailures: [String] = []
             if let runtimeActivation {
-                runtimeRollbackPermitsExternalStateRollback = environment
+                externalStateDisposition = environment
                     .runtimeActivation
                     .rollback(runtimeActivation)
-                    .permitsExternalStateRollback
+                    .externalStateDisposition
             }
-            if runtimeRollbackPermitsExternalStateRollback,
-               didAttemptPersistence {
-                do {
-                    try rollbackPersistedRecord(
-                        extensionID: extensionID,
-                        originalRecord: originalRecord
-                    )
-                } catch {
-                    recoveryFailures.append(
-                        "metadata rollback failed: \(error.localizedDescription)"
-                    )
+            switch externalStateDisposition {
+            case .rollbackAllowed:
+                if didAttemptPersistence {
+                    do {
+                        try rollbackPersistedRecord(
+                            extensionID: extensionID,
+                            originalRecord: originalRecord
+                        )
+                    } catch {
+                        recoveryFailures.append(
+                            "metadata rollback failed: \(error.localizedDescription)"
+                        )
+                    }
                 }
-            }
-            if runtimeRollbackPermitsExternalStateRollback,
-               didRetirePreviousRuntime,
-               shouldRestoreRuntime,
-               let existingEntity {
-                do {
-                    try await environment.runtimeRecovery.recoverEnabledRuntime(
-                        from: existingEntity,
-                        profileIDs: previousRuntimeProfileIDs,
-                        mutationLease: mutationLease
-                    )
-                } catch {
-                    recoveryFailures.append(
-                        "previous runtime recovery failed: \(error.localizedDescription)"
-                    )
+                if didRetirePreviousRuntime,
+                   shouldRestoreRuntime,
+                   let existingEntity {
+                    do {
+                        try await environment.runtimeRecovery.recoverEnabledRuntime(
+                            from: existingEntity,
+                            profileIDs: previousRuntimeProfileIDs,
+                            mutationLease: mutationLease
+                        )
+                    } catch {
+                        recoveryFailures.append(
+                            "previous runtime recovery failed: \(error.localizedDescription)"
+                        )
+                    }
                 }
-            }
-            if runtimeRollbackPermitsExternalStateRollback == false {
+            case .preserveForExactRuntime:
                 if let candidateRecord {
                     do {
                         try environment.metadataStore.persist(
@@ -479,11 +489,19 @@ final class ExtensionInstallationService {
                     publish(candidateRecord)
                 }
                 throw ExtensionError.installationFailed(
-                    "Safari extension activation failed and its WebKit context could not be unloaded; candidate metadata was preserved to keep the live runtime coherent"
+                    "Safari extension activation failed after the new WebKit runtime became authoritative; candidate metadata was preserved"
                         + (recoveryFailures.isEmpty
                             ? ""
                             : ". Recovery issues: "
                                 + recoveryFailures.joined(separator: "; "))
+                        + ". Original error: \(error.localizedDescription)"
+                )
+            case .preserveForReplacement,
+                 .preserveForActiveBinding,
+                 .preserveForCompetingTransaction,
+                 .preserveUntilSharedCleanup:
+                throw ExtensionError.installationFailed(
+                    "Safari extension activation failed after another runtime authority acquired the extension; its metadata was left untouched"
                         + ". Original error: \(error.localizedDescription)"
                 )
             }

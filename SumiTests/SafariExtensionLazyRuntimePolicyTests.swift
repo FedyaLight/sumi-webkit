@@ -236,7 +236,9 @@ final class SafariExtensionLazyRuntimePolicyTests: XCTestCase {
         try await manager.installedExtensionLifecycle.disable(installed.id)
 
         XCTAssertEqual(manager.countLoadedExtensionContexts(), 0)
-        XCTAssertNil(manager.runtimeSession.cachedWebExtensionsByID[installed.id])
+        XCTAssertNil(
+            manager.webExtensionRuntimeSourceCache.entry(for: installed.id)
+        )
     }
 
     func testWebsiteDataMutationQuiescesTargetProfileAndReloadsOnlyOnDemand() async throws {

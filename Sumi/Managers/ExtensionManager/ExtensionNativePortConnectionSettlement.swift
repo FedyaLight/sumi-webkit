@@ -76,7 +76,10 @@ final class ExtensionNativePortConnectionSettlement {
             extensionContext: evidence.context,
             controller: evidence.controller,
             configuration: evidence.context.webViewConfiguration,
-            manager: manager
+            profileController: manager.profileRuntime.controller(
+                for: profileId
+            ),
+            expectedControllerDelegate: manager.controllerDelegateBridge
         )
         #if DEBUG || SUMI_DIAGNOSTICS
             if RuntimeDiagnostics.isVerboseEnabled {

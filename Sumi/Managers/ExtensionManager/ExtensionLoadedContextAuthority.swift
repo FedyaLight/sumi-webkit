@@ -1,6 +1,103 @@
 import Foundation
 import WebKit
 
+@available(macOS 15.5, *)
+enum ExternalStateRollbackDisposition: Equatable {
+    case rollbackAllowed
+    case preserveForExactRuntime
+    case preserveForReplacement
+    case preserveForActiveBinding
+    case preserveForCompetingTransaction
+    case preserveUntilSharedCleanup
+}
+
+/// Owns admission and revocation for extension context load claims without
+/// depending on WebKit controllers, bound contexts, or rollback machinery.
+/// Source preparation can therefore validate publication authority without
+/// forcing the destructive runtime graph to initialize.
+@available(macOS 15.5, *)
+@MainActor
+final class ExtensionContextLoadAdmission {
+    private let mutationRegistry: ExtensionRuntimeMutationRegistry
+    private let loadRegistry: ExtensionContextLoadRegistry
+
+    init(
+        mutationRegistry: ExtensionRuntimeMutationRegistry,
+        loadRegistry: ExtensionContextLoadRegistry
+    ) {
+        self.mutationRegistry = mutationRegistry
+        self.loadRegistry = loadRegistry
+    }
+
+    func beginLoad(
+        extensionID: String,
+        profileID: UUID,
+        mutationLease: ExtensionRuntimeMutationLease?
+    ) throws -> ExtensionContextLoadClaim {
+        guard mutationRegistry.admitsLoad(
+            extensionID: extensionID,
+            lease: mutationLease
+        ) else {
+            throw CancellationError()
+        }
+        return loadRegistry.begin(
+            for: .init(profileId: profileID, extensionId: extensionID)
+        )
+    }
+
+    func beginIfIdle(
+        for key: ExtensionRuntimeResidencyState.ScopedKey,
+        mutationLease: ExtensionRuntimeMutationLease?
+    ) throws -> ExtensionContextLoadClaim {
+        guard mutationRegistry.admitsLoad(
+            extensionID: key.extensionId,
+            lease: mutationLease
+        ), let claim = loadRegistry.beginIfIdle(for: key)
+        else {
+            throw CancellationError()
+        }
+        return claim
+    }
+
+    func validate(
+        _ claim: ExtensionContextLoadClaim,
+        mutationLease: ExtensionRuntimeMutationLease?
+    ) throws {
+        try Task.checkCancellation()
+        guard loadRegistry.isCurrent(claim),
+              mutationRegistry.admitsLoad(
+                  extensionID: claim.key.extensionId,
+                  lease: mutationLease
+              )
+        else {
+            throw CancellationError()
+        }
+    }
+
+    func isCurrent(_ claim: ExtensionContextLoadClaim) -> Bool {
+        loadRegistry.isCurrent(claim)
+    }
+
+    @discardableResult
+    func finish(_ claim: ExtensionContextLoadClaim) -> Bool {
+        loadRegistry.finishIfCurrent(claim)
+    }
+
+    func hasCompetingClaim(for claim: ExtensionContextLoadClaim) -> Bool {
+        loadRegistry.hasCompetingClaim(for: claim)
+    }
+
+    func hasCompetingMutation(
+        extensionID: String,
+        excluding lease: ExtensionRuntimeMutationLease?
+    ) -> Bool {
+        mutationRegistry.hasCompetingScopedMutation(
+            extensionID: extensionID,
+            excluding: lease
+        )
+    }
+}
+
 /// Owns claim, lease, and exact-binding authority for a loaded extension
 /// context transaction. Loading, finalization, recovery, and rollback share
 /// this one source of truth instead of each reconstructing admission checks.
@@ -43,13 +140,24 @@ final class ExtensionLoadedContextAuthority {
             exactDisposition.completed
         }
 
-        var permitsExternalStateRollback: Bool {
-            exactRollbackCompleted
-                && (
-                    sharedCleanupDisposition == .completed
-                        || sharedCleanupDisposition
-                            == .supersededWithoutCompetingAuthority
-                )
+        var externalStateDisposition: ExternalStateRollbackDisposition {
+            switch exactDisposition {
+            case .exactBindingRemaining, .exactContextStillLoaded:
+                return .preserveForExactRuntime
+            case .replacementPresent:
+                return .preserveForReplacement
+            case .retired:
+                switch sharedCleanupDisposition {
+                case .notAttempted:
+                    return .preserveUntilSharedCleanup
+                case .completed, .supersededWithoutCompetingAuthority:
+                    return .rollbackAllowed
+                case .preservedForActiveBindings:
+                    return .preserveForActiveBinding
+                case .preservedForCompetingTransaction:
+                    return .preserveForCompetingTransaction
+                }
+            }
         }
 
         func withSharedCleanupDisposition(
@@ -65,20 +173,33 @@ final class ExtensionLoadedContextAuthority {
     }
 
     private let profileRuntime: ExtensionProfileRuntime
-    private let mutationRegistry: ExtensionRuntimeMutationRegistry
-    private let loadRegistry: ExtensionContextLoadRegistry
+    private let admission: ExtensionContextLoadAdmission
     private let contextRetirement: ExtensionContextRetirement
 
     init(
+        profileRuntime: ExtensionProfileRuntime,
+        admission: ExtensionContextLoadAdmission,
+        contextRetirement: ExtensionContextRetirement
+    ) {
+        self.profileRuntime = profileRuntime
+        self.admission = admission
+        self.contextRetirement = contextRetirement
+    }
+
+    convenience init(
         profileRuntime: ExtensionProfileRuntime,
         mutationRegistry: ExtensionRuntimeMutationRegistry,
         loadRegistry: ExtensionContextLoadRegistry,
         contextRetirement: ExtensionContextRetirement
     ) {
-        self.profileRuntime = profileRuntime
-        self.mutationRegistry = mutationRegistry
-        self.loadRegistry = loadRegistry
-        self.contextRetirement = contextRetirement
+        self.init(
+            profileRuntime: profileRuntime,
+            admission: ExtensionContextLoadAdmission(
+                mutationRegistry: mutationRegistry,
+                loadRegistry: loadRegistry
+            ),
+            contextRetirement: contextRetirement
+        )
     }
 
     func beginLoad(
@@ -86,14 +207,10 @@ final class ExtensionLoadedContextAuthority {
         profileID: UUID,
         mutationLease: ExtensionRuntimeMutationLease?
     ) throws -> ExtensionContextLoadClaim {
-        guard mutationRegistry.admitsLoad(
+        try admission.beginLoad(
             extensionID: extensionID,
-            lease: mutationLease
-        ) else {
-            throw CancellationError()
-        }
-        return loadRegistry.begin(
-            for: .init(profileId: profileID, extensionId: extensionID)
+            profileID: profileID,
+            mutationLease: mutationLease
         )
     }
 
@@ -101,18 +218,15 @@ final class ExtensionLoadedContextAuthority {
         extensionID: String,
         profileID: UUID,
         mutationLease: ExtensionRuntimeMutationLease?
-    ) throws -> ExtensionRuntimeContextLoader.LoadedContext {
+    ) throws -> ExtensionLoadedContext {
         let key = ExtensionRuntimeResidencyState.ScopedKey(
             profileId: profileID,
             extensionId: extensionID
         )
-        guard mutationRegistry.admitsLoad(
-            extensionID: extensionID,
-            lease: mutationLease
-        ), let claim = loadRegistry.beginIfIdle(for: key)
-        else {
-            throw CancellationError()
-        }
+        let claim = try admission.beginIfIdle(
+            for: key,
+            mutationLease: mutationLease
+        )
 
         do {
             guard let receipt = profileRuntime.contextBindingReceipt(
@@ -126,7 +240,7 @@ final class ExtensionLoadedContextAuthority {
                     "The recovered extension context is not loaded in its authoritative controller"
                 )
             }
-            let loadedContext = ExtensionRuntimeContextLoader.LoadedContext(
+            let loadedContext = ExtensionLoadedContext(
                 context: context,
                 controller: controller,
                 bindingReceipt: receipt,
@@ -136,13 +250,13 @@ final class ExtensionLoadedContextAuthority {
             try validate(loadedContext)
             return loadedContext
         } catch {
-            _ = loadRegistry.finishIfCurrent(claim)
+            _ = admission.finish(claim)
             throw error
         }
     }
 
     func validate(
-        _ loadedContext: ExtensionRuntimeContextLoader.LoadedContext
+        _ loadedContext: ExtensionLoadedContext
     ) throws {
         try validate(
             loadedContext.loadClaim,
@@ -164,23 +278,15 @@ final class ExtensionLoadedContextAuthority {
         _ claim: ExtensionContextLoadClaim,
         mutationLease: ExtensionRuntimeMutationLease?
     ) throws {
-        try Task.checkCancellation()
-        guard loadRegistry.isCurrent(claim),
-              mutationRegistry.admitsLoad(
-                  extensionID: claim.key.extensionId,
-                  lease: mutationLease
-              )
-        else {
-            throw CancellationError()
-        }
+        try admission.validate(claim, mutationLease: mutationLease)
     }
 
     func isCurrent(_ claim: ExtensionContextLoadClaim) -> Bool {
-        loadRegistry.isCurrent(claim)
+        admission.isCurrent(claim)
     }
 
     func sharedCleanupBlocker(
-        for loadedContext: ExtensionRuntimeContextLoader.LoadedContext
+        for loadedContext: ExtensionLoadedContext
     ) -> SharedCleanupBlocker {
         let extensionID = loadedContext.bindingReceipt.key.extensionId
         if profileRuntime.contextsByProfile.values.contains(where: {
@@ -188,10 +294,10 @@ final class ExtensionLoadedContextAuthority {
         }) {
             return .activeBinding
         }
-        if loadRegistry.hasCompetingClaim(for: loadedContext.loadClaim) {
+        if admission.hasCompetingClaim(for: loadedContext.loadClaim) {
             return .competingLoad
         }
-        if mutationRegistry.hasCompetingScopedMutation(
+        if admission.hasCompetingMutation(
             extensionID: extensionID,
             excluding: loadedContext.mutationLease
         ) {
@@ -202,18 +308,18 @@ final class ExtensionLoadedContextAuthority {
 
     @discardableResult
     func finish(
-        _ loadedContext: ExtensionRuntimeContextLoader.LoadedContext
+        _ loadedContext: ExtensionLoadedContext
     ) -> Bool {
-        loadRegistry.finishIfCurrent(loadedContext.loadClaim)
+        admission.finish(loadedContext.loadClaim)
     }
 
     @discardableResult
     func finish(_ claim: ExtensionContextLoadClaim) -> Bool {
-        loadRegistry.finishIfCurrent(claim)
+        admission.finish(claim)
     }
 
     func rollback(
-        _ loadedContext: ExtensionRuntimeContextLoader.LoadedContext
+        _ loadedContext: ExtensionLoadedContext
     ) -> RollbackResult {
         rollback(
             context: loadedContext.context,
@@ -258,17 +364,31 @@ final class ExtensionLoadedContextAuthority {
     }
 }
 
-/// Signals that the exact failed WebKit context or its exact binding could not
-/// be retired. A surviving replacement or sibling profile is not this error.
+/// Carries the exact runtime rollback result whenever external package or
+/// metadata rollback must be deferred to a surviving runtime authority.
 @available(macOS 15.5, *)
 struct ExtensionRuntimeTransactionFailure: LocalizedError {
     let operationError: any Error
     let rollback: ExtensionLoadedContextAuthority.RollbackResult
 
     var errorDescription: String? {
-        "\(operationError.localizedDescription). Runtime rollback "
+        let reason: String
+        switch rollback.externalStateDisposition {
+        case .rollbackAllowed:
+            reason = "external package and metadata rollback is allowed"
+        case .preserveForExactRuntime:
+            reason = "the failed exact runtime is still bound or loaded"
+        case .preserveForReplacement:
+            reason = "a replacement runtime owns the extension state"
+        case .preserveForActiveBinding:
+            reason = "another active profile binding owns the extension state"
+        case .preserveForCompetingTransaction:
+            reason = "a competing runtime transaction may own the extension state"
+        case .preserveUntilSharedCleanup:
+            reason = "shared runtime cleanup has not completed"
+        }
+        return "\(operationError.localizedDescription). Runtime rollback "
             + "finished with \(String(describing: rollback.outcome)); "
-            + "the failed exact context remains for "
-            + "\(rollback.key.rawValue)"
+            + "\(reason) for \(rollback.key.rawValue)"
     }
 }

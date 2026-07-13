@@ -16,12 +16,10 @@ import WebKit
 @MainActor
 final class ExtensionManager: NSObject, ObservableObject {
     static let logger = Logger.sumi(category: "Extensions")
-    static let safariWebExtensionURLScheme = "safari-web-extension"
-    static let registerSafariWebExtensionURLScheme: Void = {
-        WKWebExtension.MatchPattern.registerCustomURLScheme(
-            safariWebExtensionURLScheme
-        )
-    }()
+    static let safariWebExtensionURLScheme =
+        ExtensionContextPreparation.webExtensionURLScheme
+    static let registerSafariWebExtensionURLScheme =
+        ExtensionContextPreparation.registerWebExtensionURLScheme
     @Published var actionStatesByExtensionID:
         [String: BrowserExtensionActionSurfaceState] = [:]
     @Published private(set) var isExtensionSupportAvailable =
@@ -62,12 +60,6 @@ final class ExtensionManager: NSObject, ObservableObject {
         var lastBackgroundWakeReason: ExtensionBackgroundWakeReason?
         var lastBackgroundWakeFailed = false
         var errorUpdateDuration: TimeInterval = 0
-    }
-
-    struct WebExtensionRuntimeSourceKey: Equatable {
-        let sourceKind: WebExtensionSourceKind
-        let sourceBundlePath: String
-        let packageRootPath: String
     }
 
     enum ExtensionRuntimeState: String, Codable, CaseIterable {
@@ -200,8 +192,36 @@ final class ExtensionManager: NSObject, ObservableObject {
         runtimeSession: runtimeSession,
         runtime: { [weak self] in self?.runtime ?? .inactive }
     )
-    lazy var runtimeContextLoader = ExtensionRuntimeContextLoader(
-        manager: self
+    lazy var contextControllerTransaction =
+        ExtensionContextControllerTransaction(
+            authority: loadedContextAuthority,
+            profileRuntime: profileRuntime,
+            rollback: runtimeRollback,
+            errorObservation: contextErrorObservation,
+            runtimeSession: runtimeSession,
+            diagnostics: runtimeDiagnostics,
+            expectedControllerDelegate: controllerDelegateBridge,
+            debugBeforeControllerLoad: { [weak self] in
+                self?.currentBeforeControllerLoadHook()
+            }
+        )
+    lazy var extensionContextLoader = ExtensionContextLoader(
+        authority: loadedContextAuthority,
+        profileRuntime: profileRuntime,
+        controllerProvisioning: controllerProvisioningOwner,
+        waitForWebsiteDataMutationAdmission: { [weak self] profileID in
+            guard let self else { return false }
+            return await self.runtime.waitForWebsiteDataMutationAdmission(
+                profileID
+            )
+        },
+        sourceCache: webExtensionRuntimeSourceCache,
+        contextPreparation: contextPreparation,
+        storagePlanner: webExtensionStorageCleanupPlanner,
+        runtimeSession: runtimeSession,
+        diagnostics: runtimeDiagnostics,
+        expectedControllerDelegate: controllerDelegateBridge,
+        controllerTransaction: contextControllerTransaction
     )
     lazy var installRuntimeActivation = ExtensionInstallRuntimeActivator(
         manager: self
@@ -219,7 +239,7 @@ final class ExtensionManager: NSObject, ObservableObject {
         runtimeAccess: extensionRuntimeAccess,
         authority: loadedContextAuthority,
         rollback: runtimeRollback,
-        contextLoader: runtimeContextLoader,
+        contextLoader: extensionContextLoader,
         finalizer: loadedContextFinalizer,
         diagnostics: runtimeDiagnostics
     )
@@ -228,7 +248,7 @@ final class ExtensionManager: NSObject, ObservableObject {
             runtimeAccess: extensionRuntimeAccess,
             authority: loadedContextAuthority,
             rollback: runtimeRollback,
-            contextLoader: runtimeContextLoader,
+            contextLoader: extensionContextLoader,
             activation: installRuntimeActivation
         )
     lazy var enabledRuntimeActivation = ExtensionEnabledRuntimeActivation(
@@ -288,7 +308,21 @@ final class ExtensionManager: NSObject, ObservableObject {
         currentProfileId: { [weak self] in self?.profileRuntime.currentProfileId }
     )
     lazy var permissionDecisionStore = ExtensionPermissionDecisionStore(
-        manager: self
+        preferences: extensionPreferences,
+        profileRuntime: profileRuntime
+    )
+    lazy var contextPreparation = ExtensionContextPreparation(
+        siteAccessPolicyStore: siteAccessPolicyStore,
+        capabilities: installCapabilityOwner,
+        installedExtensions: installedExtensionCollection,
+        permissionDecisions: permissionDecisionStore,
+        siteAccessPolicyDidPersist: { [weak self] in
+            guard let self else { return }
+            NotificationCenter.default.post(
+                name: .sumiExtensionSiteAccessPoliciesDidChange,
+                object: self
+            )
+        }
     )
     lazy var pageResolutionOwner = ExtensionPageResolutionOwner(
         manager: self
@@ -325,18 +359,24 @@ final class ExtensionManager: NSObject, ObservableObject {
         errorObservation: contextErrorObservation,
         diagnostics: runtimeDiagnostics
     )
+    lazy var contextLoadAdmission = ExtensionContextLoadAdmission(
+        mutationRegistry: runtimeMutationRegistry,
+        loadRegistry: contextLoadRegistry
+    )
     lazy var loadedContextAuthority = ExtensionLoadedContextAuthority(
         profileRuntime: profileRuntime,
-        mutationRegistry: runtimeMutationRegistry,
-        loadRegistry: contextLoadRegistry,
+        admission: contextLoadAdmission,
         contextRetirement: contextRetirement
     )
+    lazy var webExtensionRuntimeSourceCache =
+        WebExtensionRuntimeSourceCache(admission: contextLoadAdmission)
     lazy var scopedRuntimeRetirement = ExtensionScopedRuntimeRetirement(
         profileRuntime: profileRuntime,
         mutationRegistry: runtimeMutationRegistry,
         loadRegistry: contextLoadRegistry,
         contextRetirement: contextRetirement,
         runtimeSession: runtimeSession,
+        sourceCache: webExtensionRuntimeSourceCache,
         errorObservation: contextErrorObservation,
         nativeMessagingPorts: nativeMessagingPortRegistry,
         optionsWindows: optionsWindows,
@@ -502,6 +542,7 @@ final class ExtensionManager: NSObject, ObservableObject {
     )
     lazy var runtimeBookkeepingReset = ExtensionRuntimeBookkeepingReset(
         runtimeSession: runtimeSession,
+        sourceCache: webExtensionRuntimeSourceCache,
         backgroundRuntimeState: backgroundRuntimeStateOwner,
         errorObservation: contextErrorObservation,
         recentTabRequests: recentExtensionTabRequests,
@@ -525,6 +566,7 @@ final class ExtensionManager: NSObject, ObservableObject {
         controllerRelease: controllerRuntimeRelease,
         profileRuntime: profileRuntime,
         runtimeSession: runtimeSession,
+        sourceCache: webExtensionRuntimeSourceCache,
         errorObservation: contextErrorObservation,
         optionsWindows: optionsWindows,
         actionAnchors: actionAnchorStore,
@@ -718,11 +760,23 @@ final class ExtensionManager: NSObject, ObservableObject {
         RuntimeDiagnostics.isVerboseEnabled
     }
 
+    private func currentBeforeControllerLoadHook()
+        -> ExtensionContextControllerTransaction.BeforeControllerLoad? {
+        #if DEBUG
+            return testHooks.beforeControllerLoad
+        #else
+            return nil
+        #endif
+    }
+
     #if DEBUG
         struct TestHooks {
             var beforePersistInstalledRecord: ((InstalledExtension) throws -> Void)?
             var beforeControllerLoad:
-                ((String, ExtensionManager.WebExtensionStorageSnapshot) throws -> Void)?
+                (@MainActor (
+                    String,
+                    ExtensionManager.WebExtensionStorageSnapshot
+                ) throws -> Void)?
             var backgroundContentWake:
                 (@MainActor (String, WKWebExtensionContext) async throws -> Void)?
             var permissionPromptDecision:

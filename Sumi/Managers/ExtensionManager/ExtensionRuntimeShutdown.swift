@@ -38,6 +38,7 @@ final class ExtensionRuntimeShutdown {
     private let controllerRelease: ExtensionControllerRuntimeRelease
     private let profileRuntime: ExtensionProfileRuntime
     private let runtimeSession: ExtensionRuntimeSession
+    private let sourceCache: WebExtensionRuntimeSourceCache
     private let errorObservation: ExtensionContextErrorObservation
     private let optionsWindows: ExtensionOptionsWindowService
     private let actionAnchors: ExtensionActionAnchorStore
@@ -52,6 +53,7 @@ final class ExtensionRuntimeShutdown {
         controllerRelease: ExtensionControllerRuntimeRelease,
         profileRuntime: ExtensionProfileRuntime,
         runtimeSession: ExtensionRuntimeSession,
+        sourceCache: WebExtensionRuntimeSourceCache,
         errorObservation: ExtensionContextErrorObservation,
         optionsWindows: ExtensionOptionsWindowService,
         actionAnchors: ExtensionActionAnchorStore,
@@ -65,6 +67,7 @@ final class ExtensionRuntimeShutdown {
         self.controllerRelease = controllerRelease
         self.profileRuntime = profileRuntime
         self.runtimeSession = runtimeSession
+        self.sourceCache = sourceCache
         self.errorObservation = errorObservation
         self.optionsWindows = optionsWindows
         self.actionAnchors = actionAnchors
@@ -239,7 +242,7 @@ final class ExtensionRuntimeShutdown {
             profileRuntime.contextsByProfile.values.flatMap(\.keys)
         )
         identifiers.formUnion(runtimeSession.loadedExtensionManifests.keys)
-        identifiers.formUnion(runtimeSession.cachedWebExtensionsByID.keys)
+        identifiers.formUnion(sourceCache.extensionIDs)
         identifiers.formUnion(optionsWindows.extensionIDs)
         identifiers.formUnion(nativeMessagingPorts.extensionIDs)
         identifiers.formUnion(errorObservation.observedExtensionIDs)

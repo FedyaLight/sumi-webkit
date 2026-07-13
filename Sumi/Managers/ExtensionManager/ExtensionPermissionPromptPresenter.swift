@@ -161,14 +161,17 @@ extension ExtensionManager {
             }
         #endif
 
+        guard let resolvedDedupeKey = dedupeKey ?? permissionPromptDedupeKey(
+            extensionContext: extensionContext,
+            targets: targets
+        ) else {
+            return .deny
+        }
         return await permissionPromptPresenter.promptForDecision(
             extensionContext: extensionContext,
             targets: targets,
             reason: reason,
-            dedupeKey: dedupeKey ?? permissionPromptDedupeKey(
-                extensionContext: extensionContext,
-                targets: targets
-            ),
+            dedupeKey: resolvedDedupeKey,
             extensionIdentifier: extensionIdentifier ?? extensionID(for: extensionContext)
         )
     }

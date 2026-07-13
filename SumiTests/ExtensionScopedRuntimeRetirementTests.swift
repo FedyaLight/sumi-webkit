@@ -122,7 +122,7 @@ final class ExtensionScopedRuntimeRetirementTests: XCTestCase {
             for: fixture.extensionID,
             anchorView: anchor
         )
-        _ = fixture.seedRuntimeBookkeeping()
+        _ = try await fixture.seedRuntimeBookkeeping()
 
         let result = fixture.retirement { _, _ in
             XCTFail("Rollback cleanup must not retire a concurrent load")
@@ -135,9 +135,8 @@ final class ExtensionScopedRuntimeRetirementTests: XCTestCase {
 
         XCTAssertEqual(result.completionStatus, .rejected)
         XCTAssertIdentical(
-            fixture.runtimeSession.cachedWebExtensionsByID[
-                fixture.extensionID
-            ],
+            fixture.sourceCache.entry(for: fixture.extensionID)?
+                .resolution.webExtension,
             fixture.webExtension
         )
         XCTAssertNotNil(
@@ -197,7 +196,7 @@ final class ExtensionScopedRuntimeRetirementTests: XCTestCase {
             authority: authority,
             retirement: retirement
         )
-        let loadedContext = ExtensionRuntimeContextLoader.LoadedContext(
+        let loadedContext = ExtensionLoadedContext(
             context: failedContext,
             controller: failedController,
             bindingReceipt: receipt,
@@ -213,7 +212,10 @@ final class ExtensionScopedRuntimeRetirementTests: XCTestCase {
             result.sharedCleanupDisposition,
             .preservedForActiveBindings
         )
-        XCTAssertFalse(result.permitsExternalStateRollback)
+        XCTAssertEqual(
+            result.externalStateDisposition,
+            .preserveForActiveBinding
+        )
         XCTAssertNotNil(
             fixture.profileRuntime.contexts(for: siblingProfileID)[
                 fixture.extensionID
@@ -247,7 +249,7 @@ final class ExtensionScopedRuntimeRetirementTests: XCTestCase {
             result.sharedCleanupDisposition,
             .supersededWithoutCompetingAuthority
         )
-        XCTAssertTrue(result.permitsExternalStateRollback)
+        XCTAssertEqual(result.externalStateDisposition, .rollbackAllowed)
         XCTAssertTrue(fixture.mutationRegistry.finish(terminalLease))
     }
 
@@ -284,8 +286,47 @@ final class ExtensionScopedRuntimeRetirementTests: XCTestCase {
             result.sharedCleanupDisposition,
             .preservedForCompetingTransaction
         )
-        XCTAssertFalse(result.permitsExternalStateRollback)
+        XCTAssertEqual(
+            result.externalStateDisposition,
+            .preserveForCompetingTransaction
+        )
         XCTAssertTrue(fixture.mutationRegistry.finish(replacementMutation))
+    }
+
+    func testCompetingLoadWithoutBindingBlocksExternalRollback()
+        async throws {
+        let fixture = try await makeFixture(extensionID: "load-rollback")
+        let profileID = try XCTUnwrap(fixture.profileIDs.first)
+        let mutationLease = try XCTUnwrap(
+            fixture.mutationRegistry.begin(
+                extensionID: fixture.extensionID,
+                operation: .install
+            )
+        )
+        let transaction = try makeRollbackTransaction(
+            fixture: fixture,
+            profileID: profileID,
+            mutationLease: mutationLease
+        )
+        _ = fixture.loadRegistry.begin(
+            for: .init(
+                profileId: UUID(),
+                extensionId: fixture.extensionID
+            )
+        )
+
+        let result = transaction.rollback.rollBack(transaction.loadedContext)
+
+        XCTAssertEqual(result.exactDisposition, .retired)
+        XCTAssertEqual(
+            result.sharedCleanupDisposition,
+            .preservedForCompetingTransaction
+        )
+        XCTAssertEqual(
+            result.externalStateDisposition,
+            .preserveForCompetingTransaction
+        )
+        XCTAssertTrue(fixture.mutationRegistry.finish(mutationLease))
     }
 
     func testDisableClearsActionAnchorsButPackageReplacementPreservesThem()
@@ -383,7 +424,7 @@ final class ExtensionScopedRuntimeRetirementTests: XCTestCase {
                 profileId: profileID
             )
         )
-        let sourceKey = fixture.seedRuntimeBookkeeping()
+        let sourceKey = try await fixture.seedRuntimeBookkeeping()
         fixture.errorObservation.seedLoggedErrorFingerprintForTesting(
             "fingerprint",
             extensionId: fixture.extensionID,
@@ -419,15 +460,12 @@ final class ExtensionScopedRuntimeRetirementTests: XCTestCase {
             context
         )
         XCTAssertIdentical(
-            fixture.runtimeSession.cachedWebExtensionsByID[
-                fixture.extensionID
-            ],
+            fixture.sourceCache.entry(for: fixture.extensionID)?
+                .resolution.webExtension,
             fixture.webExtension
         )
         XCTAssertEqual(
-            fixture.runtimeSession.cachedWebExtensionRuntimeSourceKeysByID[
-                fixture.extensionID
-            ],
+            fixture.sourceCache.entry(for: fixture.extensionID)?.key,
             sourceKey
         )
         XCTAssertEqual(
@@ -504,7 +542,7 @@ final class ExtensionScopedRuntimeRetirementTests: XCTestCase {
                 profileId: fixture.profileIDs[1]
             )
         )
-        _ = fixture.seedRuntimeBookkeeping()
+        _ = try await fixture.seedRuntimeBookkeeping()
         fixture.runtimeSession.loadedExtensionManifests["unrelated"] = [
             "manifest_version": 3
         ]
@@ -570,16 +608,7 @@ final class ExtensionScopedRuntimeRetirementTests: XCTestCase {
             fixture.actionAnchors.anchorCount(for: fixture.extensionID),
             0
         )
-        XCTAssertNil(
-            fixture.runtimeSession.cachedWebExtensionsByID[
-                fixture.extensionID
-            ]
-        )
-        XCTAssertNil(
-            fixture.runtimeSession.cachedWebExtensionRuntimeSourceKeysByID[
-                fixture.extensionID
-            ]
-        )
+        XCTAssertNil(fixture.sourceCache.entry(for: fixture.extensionID))
         XCTAssertNil(
             fixture.runtimeSession.loadedExtensionManifests[
                 fixture.extensionID
@@ -644,7 +673,7 @@ final class ExtensionScopedRuntimeRetirementTests: XCTestCase {
                 profileId: failingProfileID
             )
         )
-        let sourceKey = fixture.seedRuntimeBookkeeping()
+        let sourceKey = try await fixture.seedRuntimeBookkeeping()
         fixture.seedNativeMessagingWake(profileID: successfulProfileID)
         let loopGuardKey = fixture.seedNativeMessagingLoopGuard(
             profileID: failingProfileID
@@ -714,15 +743,12 @@ final class ExtensionScopedRuntimeRetirementTests: XCTestCase {
             1
         )
         XCTAssertIdentical(
-            fixture.runtimeSession.cachedWebExtensionsByID[
-                fixture.extensionID
-            ],
+            fixture.sourceCache.entry(for: fixture.extensionID)?
+                .resolution.webExtension,
             fixture.webExtension
         )
         XCTAssertEqual(
-            fixture.runtimeSession.cachedWebExtensionRuntimeSourceKeysByID[
-                fixture.extensionID
-            ],
+            fixture.sourceCache.entry(for: fixture.extensionID)?.key,
             sourceKey
         )
         XCTAssertNotNil(
@@ -775,7 +801,7 @@ final class ExtensionScopedRuntimeRetirementTests: XCTestCase {
                 profileId: profileID
             )
         )
-        let sourceKey = fixture.seedRuntimeBookkeeping()
+        let sourceKey = try await fixture.seedRuntimeBookkeeping()
         fixture.seedNativeMessagingWake(profileID: profileID)
         let loopGuardKey = fixture.seedNativeMessagingLoopGuard(
             profileID: profileID
@@ -832,15 +858,12 @@ final class ExtensionScopedRuntimeRetirementTests: XCTestCase {
             1
         )
         XCTAssertIdentical(
-            fixture.runtimeSession.cachedWebExtensionsByID[
-                fixture.extensionID
-            ],
+            fixture.sourceCache.entry(for: fixture.extensionID)?
+                .resolution.webExtension,
             fixture.webExtension
         )
         XCTAssertEqual(
-            fixture.runtimeSession.cachedWebExtensionRuntimeSourceKeysByID[
-                fixture.extensionID
-            ],
+            fixture.sourceCache.entry(for: fixture.extensionID)?.key,
             sourceKey
         )
         XCTAssertNotNil(
@@ -975,7 +998,7 @@ final class ExtensionScopedRuntimeRetirementTests: XCTestCase {
         mutationLease: ExtensionRuntimeMutationLease
     ) throws -> (
         rollback: ExtensionRuntimeRollback,
-        loadedContext: ExtensionRuntimeContextLoader.LoadedContext
+        loadedContext: ExtensionLoadedContext
     ) {
         let context = try XCTUnwrap(fixture.contextsByProfile[profileID])
         let controller = try XCTUnwrap(
@@ -1013,7 +1036,7 @@ final class ExtensionScopedRuntimeRetirementTests: XCTestCase {
                 authority: authority,
                 retirement: runtimeRetirement
             ),
-            ExtensionRuntimeContextLoader.LoadedContext(
+            ExtensionLoadedContext(
                 context: context,
                 controller: controller,
                 bindingReceipt: receipt,
@@ -1058,6 +1081,8 @@ private final class ScopedRetirementFixture {
     let contextsByProfile: [UUID: WKWebExtensionContext]
     let mutationRegistry = ExtensionRuntimeMutationRegistry()
     let loadRegistry = ExtensionContextLoadRegistry()
+    private let sourceMutationRegistry = ExtensionRuntimeMutationRegistry()
+    private let sourceLoadRegistry = ExtensionContextLoadRegistry()
     let backgroundRuntimeState = ExtensionBackgroundRuntimeStateOwner()
     let runtimeSession = ExtensionRuntimeSession()
     let errorObservation = ExtensionContextErrorObservation(
@@ -1071,6 +1096,22 @@ private final class ScopedRetirementFixture {
     let nativeMessagingWakes = ExtensionNativeMessagingBackgroundWakeOwner()
     let nativeMessagingLoopGuard: SumiNativeMessagingRelayLoopGuard
     let nativeMessagingRelay: SumiNativeMessagingRelay
+
+    private lazy var sourceAdmission = ExtensionContextLoadAdmission(
+        mutationRegistry: sourceMutationRegistry,
+        loadRegistry: sourceLoadRegistry
+    )
+    lazy var sourceCache = WebExtensionRuntimeSourceCache(
+        admission: sourceAdmission,
+        makeSource: { [webExtension] sourceKind, _, _ in
+            WebExtensionRuntimeSourceCache.Resolution(
+                webExtension: webExtension,
+                loadSource: sourceKind == .safariAppExtension
+                    ? .originalAppexBundle
+                    : .copiedPackage
+            )
+        }
+    )
 
     var resources: ExtensionScopedRuntimeRetirement.Resources {
         .init(
@@ -1140,6 +1181,7 @@ private final class ScopedRetirementFixture {
             loadRegistry: loadRegistry,
             contextRetirement: contextRetirement,
             runtimeSession: runtimeSession,
+            sourceCache: sourceCache,
             errorObservation: errorObservation,
             nativeMessagingPorts: nativeMessagingPorts,
             optionsWindows: optionsWindows,
@@ -1178,16 +1220,29 @@ private final class ScopedRetirementFixture {
     }
 
     @discardableResult
-    func seedRuntimeBookkeeping()
-        -> ExtensionManager.WebExtensionRuntimeSourceKey {
-        let sourceKey = ExtensionManager.WebExtensionRuntimeSourceKey(
+    func seedRuntimeBookkeeping() async throws
+        -> WebExtensionRuntimeSourceKey {
+        let claim = sourceLoadRegistry.begin(
+            for: .init(
+                profileId: profileIDs[0],
+                extensionId: extensionID
+            )
+        )
+        defer { _ = sourceLoadRegistry.finishIfCurrent(claim) }
+        _ = try await sourceCache.resolve(
+            extensionID: extensionID,
             sourceKind: .directory,
             sourceBundlePath: "/tmp/source",
-            packageRootPath: "/tmp/package"
+            packageRoot: URL(
+                fileURLWithPath: "/tmp/package",
+                isDirectory: true
+            ),
+            claim: claim,
+            mutationLease: nil
         )
-        runtimeSession.cachedWebExtensionsByID[extensionID] = webExtension
-        runtimeSession.cachedWebExtensionRuntimeSourceKeysByID[extensionID] =
-            sourceKey
+        let sourceKey = try XCTUnwrap(
+            sourceCache.entry(for: extensionID)?.key
+        )
         runtimeSession.loadedExtensionManifests[extensionID] = [
             "manifest_version": 3
         ]

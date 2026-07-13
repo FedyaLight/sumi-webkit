@@ -523,6 +523,7 @@ final class ExtensionRuntimeRecoveryTests:
             loadRegistry: manager.contextLoadRegistry,
             contextRetirement: retirement,
             runtimeSession: manager.runtimeSession,
+            sourceCache: manager.webExtensionRuntimeSourceCache,
             errorObservation: manager.contextErrorObservation,
             nativeMessagingPorts: manager.nativeMessagingPortRegistry,
             optionsWindows: manager.optionsWindows,

@@ -54,7 +54,10 @@ final class ExtensionNativeMessageSendSettlement {
             extensionContext: evidence.context,
             controller: evidence.controller,
             configuration: evidence.context.webViewConfiguration,
-            manager: manager
+            profileController: manager.profileRuntime.controller(
+                for: profileId
+            ),
+            expectedControllerDelegate: manager.controllerDelegateBridge
         )
         let messageShape = SafariExtensionNativeMessagingRoutingProbe
             .sanitizedMessageShape(for: message)

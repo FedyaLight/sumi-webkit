@@ -246,7 +246,11 @@ extension ExtensionControllerProvisioningOwner.Dependencies {
                     profileId: profileId,
                     controller: controller,
                     configuration: configuration,
-                    manager: manager
+                    profileController: profileId.flatMap {
+                        manager?.profileRuntime.controller(for: $0)
+                    },
+                    expectedControllerDelegate:
+                        manager?.controllerDelegateBridge
                 )
             },
             controllerDescription: { controller in

@@ -9,14 +9,15 @@ import WebKit
 final class ExtensionPermissionDecisionStore {
     private static let log = Logger.sumi(category: "Extensions")
 
-    private weak var manager: ExtensionManager?
+    private let preferences: UserDefaults
+    private let profileRuntime: ExtensionProfileRuntime
 
-    init(manager: ExtensionManager) {
-        self.manager = manager
-    }
-
-    private var preferences: UserDefaults {
-        manager?.extensionPreferences ?? .standard
+    init(
+        preferences: UserDefaults,
+        profileRuntime: ExtensionProfileRuntime
+    ) {
+        self.preferences = preferences
+        self.profileRuntime = profileRuntime
     }
 
     func storedExtensionPermissionDecision(
@@ -100,14 +101,15 @@ final class ExtensionPermissionDecisionStore {
     func permissionPromptDedupeKey(
         extensionContext: WKWebExtensionContext,
         targets: [String]
-    ) -> String {
-        let profileKey = manager?.profileId(for: extensionContext)?.uuidString.lowercased()
-            ?? "unknown-profile"
-        let extensionKey = manager?.extensionID(for: extensionContext)
-            ?? extensionContext.uniqueIdentifier
+    ) -> String? {
+        guard let identity = profileRuntime.exactContextIdentity(
+            for: extensionContext
+        ) else {
+            return nil
+        }
         return permissionPromptDedupeKey(
-            profileKey: profileKey,
-            extensionKey: extensionKey,
+            profileKey: identity.profileId.uuidString.lowercased(),
+            extensionKey: identity.extensionId,
             targets: targets
         )
     }
@@ -282,7 +284,7 @@ extension ExtensionManager {
     func permissionPromptDedupeKey(
         extensionContext: WKWebExtensionContext,
         targets: [String]
-    ) -> String {
+    ) -> String? {
         permissionDecisionStore.permissionPromptDedupeKey(
             extensionContext: extensionContext,
             targets: targets

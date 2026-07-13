@@ -1143,15 +1143,17 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         let webExtension = try await WKWebExtension(resourceBaseURL: directoryURL)
         let extensionContext = WKWebExtensionContext(for: webExtension)
         let otherExtensionContext = WKWebExtensionContext(for: webExtension)
-        ExtensionRuntimeContextLoader.configureContextIdentity(
+        ExtensionContextPreparation.configureIdentity(
             extensionContext,
-            extensionId: extensionId,
-            profileId: profile.id
+            extensionID: extensionId,
+            profileID: profile.id,
+            runtimeIdentifier: extensionId
         )
-        ExtensionRuntimeContextLoader.configureContextIdentity(
+        ExtensionContextPreparation.configureIdentity(
             otherExtensionContext,
-            extensionId: extensionId,
-            profileId: otherProfile.id
+            extensionID: extensionId,
+            profileID: otherProfile.id,
+            runtimeIdentifier: extensionId
         )
 
         let baseURL = try XCTUnwrap(extensionContext.baseURL)

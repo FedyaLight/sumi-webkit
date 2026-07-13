@@ -199,7 +199,10 @@ final class ExtensionContextRetirementTests: XCTestCase {
         XCTAssertEqual(result.exactDisposition, .replacementPresent)
         XCTAssertTrue(result.exactRollbackCompleted)
         XCTAssertEqual(result.sharedCleanupDisposition, .notAttempted)
-        XCTAssertFalse(result.permitsExternalStateRollback)
+        XCTAssertEqual(
+            result.externalStateDisposition,
+            .preserveForReplacement
+        )
         XCTAssertIdentical(
             fixture.profileRuntime.contexts(for: fixture.profileID)[
                 fixture.extensionID
@@ -239,7 +242,43 @@ final class ExtensionContextRetirementTests: XCTestCase {
         XCTAssertEqual(result.exactDisposition, .exactContextStillLoaded)
         XCTAssertFalse(result.exactRollbackCompleted)
         XCTAssertEqual(result.sharedCleanupDisposition, .notAttempted)
-        XCTAssertFalse(result.permitsExternalStateRollback)
+        XCTAssertEqual(
+            result.externalStateDisposition,
+            .preserveForExactRuntime
+        )
+    }
+
+    func testExactRetirementRequiresSharedCleanupBeforeExternalRollback()
+        async throws {
+        let fixture = try await makeFixture(loadIntoController: false)
+        let receipt = try XCTUnwrap(
+            fixture.profileRuntime.contextBindingReceipt(
+                extensionId: fixture.extensionID,
+                profileId: fixture.profileID
+            )
+        )
+        let controller = try XCTUnwrap(
+            fixture.profileRuntime.controller(for: fixture.profileID)
+        )
+        let authority = ExtensionLoadedContextAuthority(
+            profileRuntime: fixture.profileRuntime,
+            mutationRegistry: ExtensionRuntimeMutationRegistry(),
+            loadRegistry: ExtensionContextLoadRegistry(),
+            contextRetirement: fixture.retirement { _, _ in }
+        )
+
+        let result = authority.rollback(
+            context: fixture.context,
+            controller: controller,
+            receipt: receipt
+        )
+
+        XCTAssertEqual(result.exactDisposition, .retired)
+        XCTAssertEqual(result.sharedCleanupDisposition, .notAttempted)
+        XCTAssertEqual(
+            result.externalStateDisposition,
+            .preserveUntilSharedCleanup
+        )
     }
 
     func testReentrantRetirementDoesNotUnloadSameBindingTwice()

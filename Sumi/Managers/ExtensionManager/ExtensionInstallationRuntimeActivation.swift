@@ -10,7 +10,7 @@ final class ExtensionInstallationRuntimeActivation {
         case directory
         case safariAppExtension
 
-        var contextLoadOperation: ExtensionRuntimeContextLoader.Operation {
+        var contextLoadOperation: ExtensionContextLoadOperation {
             switch self {
             case .directory: .install
             case .safariAppExtension: .safariEnable
@@ -26,21 +26,20 @@ final class ExtensionInstallationRuntimeActivation {
     }
 
     struct Transaction {
-        fileprivate let loadedContext:
-            ExtensionRuntimeContextLoader.LoadedContext
+        fileprivate let loadedContext: ExtensionLoadedContext
     }
 
     private let runtimeAccess: ExtensionRuntimeAccess
     private let authority: ExtensionLoadedContextAuthority
     private let rollback: ExtensionRuntimeRollback
-    private let contextLoader: ExtensionRuntimeContextLoader
+    private let contextLoader: ExtensionContextLoader
     private let activation: ExtensionInstallRuntimeActivator
 
     init(
         runtimeAccess: ExtensionRuntimeAccess,
         authority: ExtensionLoadedContextAuthority,
         rollback: ExtensionRuntimeRollback,
-        contextLoader: ExtensionRuntimeContextLoader,
+        contextLoader: ExtensionContextLoader,
         activation: ExtensionInstallRuntimeActivator
     ) {
         self.runtimeAccess = runtimeAccess

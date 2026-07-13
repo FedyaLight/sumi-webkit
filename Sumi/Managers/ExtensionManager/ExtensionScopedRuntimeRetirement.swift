@@ -61,6 +61,7 @@ final class ExtensionScopedRuntimeRetirement {
     private let loadRegistry: ExtensionContextLoadRegistry
     private let contextRetirement: ExtensionContextRetirement
     private let runtimeSession: ExtensionRuntimeSession
+    private let sourceCache: WebExtensionRuntimeSourceCache
     private let errorObservation: ExtensionContextErrorObservation
     private let nativeMessagingPorts: ExtensionNativeMessagingPortRegistry
     private let optionsWindows: ExtensionOptionsWindowService
@@ -73,6 +74,7 @@ final class ExtensionScopedRuntimeRetirement {
         loadRegistry: ExtensionContextLoadRegistry,
         contextRetirement: ExtensionContextRetirement,
         runtimeSession: ExtensionRuntimeSession,
+        sourceCache: WebExtensionRuntimeSourceCache,
         errorObservation: ExtensionContextErrorObservation,
         nativeMessagingPorts: ExtensionNativeMessagingPortRegistry,
         optionsWindows: ExtensionOptionsWindowService,
@@ -84,6 +86,7 @@ final class ExtensionScopedRuntimeRetirement {
         self.loadRegistry = loadRegistry
         self.contextRetirement = contextRetirement
         self.runtimeSession = runtimeSession
+        self.sourceCache = sourceCache
         self.errorObservation = errorObservation
         self.nativeMessagingPorts = nativeMessagingPorts
         self.optionsWindows = optionsWindows
@@ -232,12 +235,7 @@ final class ExtensionScopedRuntimeRetirement {
         runtimeSession.loadedExtensionManifests.removeValue(
             forKey: extensionID
         )
-        runtimeSession.cachedWebExtensionsByID.removeValue(
-            forKey: extensionID
-        )
-        runtimeSession.cachedWebExtensionRuntimeSourceKeysByID.removeValue(
-            forKey: extensionID
-        )
+        sourceCache.remove(extensionID: extensionID)
         runtimeSession.lastExtensionLoadErrors =
             runtimeSession.lastExtensionLoadErrors.filter {
                 ExtensionRuntimeResidencyState.parseScopedKey($0.key)?

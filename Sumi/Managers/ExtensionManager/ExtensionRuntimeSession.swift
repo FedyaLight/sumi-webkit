@@ -1,12 +1,8 @@
 import Foundation
-import WebKit
 
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionRuntimeSession {
-    var cachedWebExtensionsByID: [String: WKWebExtension] = [:]
-    var cachedWebExtensionRuntimeSourceKeysByID:
-        [String: ExtensionManager.WebExtensionRuntimeSourceKey] = [:]
     var lastExtensionLoadErrors: [String: Error] = [:]
     var extensionRuntimeResidencyState = ExtensionRuntimeResidencyState()
     var runtimeState: ExtensionManager.ExtensionRuntimeState = .idle

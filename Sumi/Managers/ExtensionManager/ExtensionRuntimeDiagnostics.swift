@@ -26,16 +26,13 @@ final class ExtensionRuntimeDiagnostics {
         controller: WKWebExtensionController? = nil,
         configuration: WKWebViewConfiguration? = nil,
         webView: WKWebView? = nil,
-        manager: ExtensionManager?
+        profileController: WKWebExtensionController?,
+        expectedControllerDelegate:
+            (any WKWebExtensionControllerDelegate)?
     ) {
         #if DEBUG || SUMI_DIAGNOSTICS
-            guard RuntimeDiagnostics.isVerboseEnabled,
-                  let manager
-            else { return }
+            guard RuntimeDiagnostics.isVerboseEnabled else { return }
 
-            let profileController = profileId.flatMap {
-                manager.profileRuntime.controllersByProfile[$0]
-            }
             let effectiveController = controller ?? configuration?.webExtensionController
                 ?? webView?.configuration.webExtensionController
                 ?? extensionContext?.webViewConfiguration?.webExtensionController
@@ -62,10 +59,12 @@ final class ExtensionRuntimeDiagnostics {
             }()
             let nativeMessagingGranted: String = {
                 guard let extensionContext else { return "-" }
+                let status = extensionContext.permissionStatus(
+                    for: .nativeMessaging
+                )
                 return String(
-                    manager.isGrantedPermissionStatus(
-                        extensionContext.permissionStatus(for: .nativeMessaging)
-                    )
+                    status == .grantedExplicitly
+                        || status == .grantedImplicitly
                 )
             }()
             let unsupportedNativeMessaging: String = {
@@ -80,9 +79,11 @@ final class ExtensionRuntimeDiagnostics {
             let webViewController = webView?.configuration.webExtensionController
             let contextConfigurationController =
                 extensionContext?.webViewConfiguration?.webExtensionController
-            let delegateIsSumiControllerBridge: Bool = {
-                guard let delegateObject else { return false }
-                return delegateObject === manager.controllerDelegateBridge
+            let delegateIsExpected: Bool = {
+                guard let delegateObject,
+                      let expectedControllerDelegate
+                else { return false }
+                return delegateObject === expectedControllerDelegate as AnyObject
             }()
             let controllerIsProfile: Bool = {
                 guard let effectiveController, let profileController else { return false }
@@ -120,7 +121,7 @@ final class ExtensionRuntimeDiagnostics {
                 nativeMessagingGranted=\(nativeMessagingGranted) \
                 unsupportedNativeMessaging=\(unsupportedNativeMessaging) \
                 delegate=\(delegateObject.map { String(describing: type(of: $0)) } ?? "nil") \
-                delegateIsSumiBridge=\(delegateIsSumiControllerBridge) \
+                delegateIsExpected=\(delegateIsExpected) \
                 delegateSend=\(delegateRespondsToSend) \
                 delegateConnect=\(delegateRespondsToConnect) \
                 contextConfigControllerMatches=\(contextConfigurationControllerMatches) \
@@ -138,7 +139,9 @@ final class ExtensionRuntimeDiagnostics {
                 extensionContext,
                 controller,
                 configuration,
-                webView
+                webView,
+                profileController,
+                expectedControllerDelegate
             )
         #endif
     }

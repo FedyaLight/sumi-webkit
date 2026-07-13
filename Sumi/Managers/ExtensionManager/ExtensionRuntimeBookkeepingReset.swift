@@ -6,6 +6,7 @@ import Foundation
 @MainActor
 final class ExtensionRuntimeBookkeepingReset {
     private let runtimeSession: ExtensionRuntimeSession
+    private let sourceCache: WebExtensionRuntimeSourceCache
     private let backgroundRuntimeState: ExtensionBackgroundRuntimeStateOwner
     private let errorObservation: ExtensionContextErrorObservation
     private let recentTabRequests: ExtensionRecentTabRequestHistory
@@ -18,6 +19,7 @@ final class ExtensionRuntimeBookkeepingReset {
 
     init(
         runtimeSession: ExtensionRuntimeSession,
+        sourceCache: WebExtensionRuntimeSourceCache,
         backgroundRuntimeState: ExtensionBackgroundRuntimeStateOwner,
         errorObservation: ExtensionContextErrorObservation,
         recentTabRequests: ExtensionRecentTabRequestHistory,
@@ -29,6 +31,7 @@ final class ExtensionRuntimeBookkeepingReset {
         actionAnchors: ExtensionActionAnchorStore
     ) {
         self.runtimeSession = runtimeSession
+        self.sourceCache = sourceCache
         self.backgroundRuntimeState = backgroundRuntimeState
         self.errorObservation = errorObservation
         self.recentTabRequests = recentTabRequests
@@ -48,8 +51,7 @@ final class ExtensionRuntimeBookkeepingReset {
         }
 
         runtimeSession.loadedExtensionManifests.removeAll()
-        runtimeSession.cachedWebExtensionsByID.removeAll()
-        runtimeSession.cachedWebExtensionRuntimeSourceKeysByID.removeAll()
+        sourceCache.removeAll()
         runtimeSession.lastExtensionLoadErrors.removeAll()
         runtimeSession.extensionRuntimeResidencyState.removeAll()
         runtimeSession.runtimeMetricsByExtensionID.removeAll()

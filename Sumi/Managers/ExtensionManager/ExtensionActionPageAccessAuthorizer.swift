@@ -157,10 +157,12 @@ final class ExtensionActionPageAccessAuthorizer {
         let host = pageURL.host ?? pageURL.scheme ?? "this site"
         let pattern = siteAccess.hostMatchPatternString(for: pageURL)
         let dedupeTargets = pattern.map { [$0] } ?? [host]
-        let dedupeKey = environment.decisions.permissionPromptDedupeKey(
+        guard let dedupeKey = environment.decisions.permissionPromptDedupeKey(
             extensionContext: context,
             targets: dedupeTargets
-        )
+        ) else {
+            return .stale
+        }
         let decision = await environment.prompt(
             context,
             [host],

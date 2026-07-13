@@ -9,7 +9,7 @@ final class ExtensionLoadedContextFinalizer {
         case background(ExtensionManager.ExtensionBackgroundWakeReason?)
         case safariAppExtension
 
-        var loadOperation: ExtensionRuntimeContextLoader.Operation {
+        var loadOperation: ExtensionContextLoadOperation {
             switch self {
             case .background:
                 return .loadEnabled
@@ -39,7 +39,7 @@ final class ExtensionLoadedContextFinalizer {
     }
 
     func finalize(
-        _ loadedContext: ExtensionRuntimeContextLoader.LoadedContext,
+        _ loadedContext: ExtensionLoadedContext,
         activation: Activation
     ) async throws {
         try authority.validate(loadedContext)

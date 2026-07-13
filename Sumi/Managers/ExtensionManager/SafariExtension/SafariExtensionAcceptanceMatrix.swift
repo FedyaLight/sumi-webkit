@@ -367,7 +367,7 @@ enum SafariExtensionContentScriptProbe {
                 ExtensionManager.reloadRuntimePublications
         let finalize:
             @MainActor (ExtensionActionSurfacePublisher) -> (
-                ExtensionRuntimeContextLoader.LoadedContext,
+                ExtensionLoadedContext,
                 ExtensionManager.ExtensionBackgroundWakeReason?
             ) async throws -> Void =
                 ExtensionActionSurfacePublisher.finalizeEnabledExtensionRuntime

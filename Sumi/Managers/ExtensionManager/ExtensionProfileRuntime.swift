@@ -49,6 +49,25 @@ final class ExtensionProfileRuntime {
         state.controllerBindingRevision(for: profileId)
     }
 
+    func controllerBindingSnapshot(
+        for profileID: UUID
+    ) -> ExtensionControllerBindingSnapshot? {
+        guard let controller = state.controller(for: profileID) else {
+            return nil
+        }
+        return ExtensionControllerBindingSnapshot(
+            profileID: profileID,
+            controller: controller,
+            revision: state.controllerBindingRevision(for: profileID)
+        )
+    }
+
+    func isCurrent(_ snapshot: ExtensionControllerBindingSnapshot) -> Bool {
+        state.controller(for: snapshot.profileID) === snapshot.controller
+            && state.controllerBindingRevision(for: snapshot.profileID)
+                == snapshot.revision
+    }
+
     func controllerForCurrentProfile() -> WKWebExtensionController? {
         guard let currentProfileId else { return nil }
         return state.controller(for: currentProfileId)
@@ -70,11 +89,12 @@ final class ExtensionProfileRuntime {
         state.contexts(for: profileId)
     }
 
+    @discardableResult
     func setContext(
         _ context: WKWebExtensionContext,
         extensionId: String,
         profileId: UUID
-    ) -> UInt64 {
+    ) -> ExtensionContextBindingReceipt {
         state.setContext(
             context,
             extensionId: extensionId,

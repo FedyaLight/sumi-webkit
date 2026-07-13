@@ -18,7 +18,7 @@ final class ExtensionRuntimeRollback {
     }
 
     func rollBack(
-        _ loadedContext: ExtensionRuntimeContextLoader.LoadedContext
+        _ loadedContext: ExtensionLoadedContext
     ) -> ExtensionLoadedContextAuthority.RollbackResult {
         let contextRollback = authority.rollback(loadedContext)
         guard contextRollback.exactRollbackCompleted else {

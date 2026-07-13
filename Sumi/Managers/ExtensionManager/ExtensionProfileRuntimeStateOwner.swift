@@ -136,21 +136,25 @@ extension ExtensionManager {
         profileRuntimeStateOwner.contexts(for: profileId)
     }
 
+    @discardableResult
     func setExtensionContext(
         _ context: WKWebExtensionContext,
         extensionId: String,
         profileId: UUID
-    ) {
-        let generation = profileRuntime.setContext(
+    ) -> ExtensionContextBindingReceipt {
+        let receipt = profileRuntime.setContext(
             context,
             extensionId: extensionId,
             profileId: profileId
         )
         traceExtensionContextBindingGeneration(
             profileId: profileId,
-            generation: generation,
+            generation: profileRuntime.contextBindingGeneration(
+                for: profileId
+            ),
             reason: "setExtensionContext"
         )
+        return receipt
     }
 
     func extensionContextBindingGeneration(for profileId: UUID) -> UInt64 {

@@ -87,7 +87,7 @@ final class ExtensionActionSurfacePublisher {
     /// After context load, seed action state and optionally wake background for explicit
     /// lifecycle events such as user-enabled extension activation.
     func finalizeEnabledExtensionRuntime(
-        _ loadedContext: ExtensionRuntimeContextLoader.LoadedContext,
+        _ loadedContext: ExtensionLoadedContext,
         backgroundWakeReason: ExtensionManager.ExtensionBackgroundWakeReason? = nil
     ) async throws {
         try validate(loadedContext)
@@ -124,13 +124,13 @@ final class ExtensionActionSurfacePublisher {
     }
 
     private func validate(
-        _ loadedContext: ExtensionRuntimeContextLoader.LoadedContext
+        _ loadedContext: ExtensionLoadedContext
     ) throws {
         try authority.validate(loadedContext)
     }
 
     private func isCurrent(
-        _ loadedContext: ExtensionRuntimeContextLoader.LoadedContext
+        _ loadedContext: ExtensionLoadedContext
     ) -> Bool {
         do {
             try authority.validate(loadedContext)

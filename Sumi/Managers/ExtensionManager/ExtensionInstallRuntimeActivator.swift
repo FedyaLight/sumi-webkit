@@ -26,7 +26,7 @@ final class ExtensionInstallRuntimeActivator {
     }
 
     struct Request {
-        let loadedContext: ExtensionRuntimeContextLoader.LoadedContext
+        let loadedContext: ExtensionLoadedContext
         let installedExtensionId: String
         let operation: Operation
     }
@@ -79,13 +79,13 @@ final class ExtensionInstallRuntimeActivator {
     }
 
     private func validate(
-        _ loadedContext: ExtensionRuntimeContextLoader.LoadedContext
+        _ loadedContext: ExtensionLoadedContext
     ) throws {
         try authority.validate(loadedContext)
     }
 
     private func isCurrent(
-        _ loadedContext: ExtensionRuntimeContextLoader.LoadedContext
+        _ loadedContext: ExtensionLoadedContext
     ) -> Bool {
         do {
             try authority.validate(loadedContext)

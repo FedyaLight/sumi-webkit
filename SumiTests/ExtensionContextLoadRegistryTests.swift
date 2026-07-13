@@ -140,16 +140,10 @@ final class ExtensionContextLoadRegistryTests: XCTestCase {
         let profileID = UUID()
         let extensionID = "bound-extension"
         let runtime = ExtensionProfileRuntime(initialProfileId: profileID)
-        _ = runtime.setContext(
+        let receipt = runtime.setContext(
             context,
             extensionId: extensionID,
             profileId: profileID
-        )
-        let receipt = try XCTUnwrap(
-            runtime.contextBindingReceipt(
-                extensionId: extensionID,
-                profileId: profileID
-            )
         )
 
         let removal = try XCTUnwrap(runtime.removeContext(ifCurrent: receipt))
@@ -172,16 +166,10 @@ final class ExtensionContextLoadRegistryTests: XCTestCase {
         let profileID = UUID()
         let extensionID = "bound-extension"
         let runtime = ExtensionProfileRuntime(initialProfileId: profileID)
-        _ = runtime.setContext(
+        let receipt = runtime.setContext(
             context,
             extensionId: extensionID,
             profileId: profileID
-        )
-        let receipt = try XCTUnwrap(
-            runtime.contextBindingReceipt(
-                extensionId: extensionID,
-                profileId: profileID
-            )
         )
         _ = runtime.setContext(
             replacement,
@@ -196,49 +184,80 @@ final class ExtensionContextLoadRegistryTests: XCTestCase {
         )
     }
 
-    func testSameObjectRebindingAndABARejectOldBindingReceipt() async throws {
+    func testSetContextReturnsExactAtomicBindingReceipt() async throws {
+        let context = try await makeExtensionContext()
+        let profileID = UUID()
+        let extensionID = "atomically-bound-extension"
+        let runtime = ExtensionProfileRuntime(initialProfileId: profileID)
+        let controller = WKWebExtensionController(
+            configuration: .init(identifier: UUID())
+        )
+        runtime.setController(controller, for: profileID)
+
+        let receipt = runtime.setContext(
+            context,
+            extensionId: extensionID,
+            profileId: profileID
+        )
+
+        XCTAssertEqual(
+            receipt.key,
+            scopedKey(profileID: profileID, extensionID: extensionID)
+        )
+        XCTAssertEqual(receipt.contextIdentifier, ObjectIdentifier(context))
+        XCTAssertEqual(
+            receipt.controllerIdentifier,
+            ObjectIdentifier(controller)
+        )
+        XCTAssertEqual(
+            receipt.controllerBindingRevision,
+            runtime.controllerBindingRevision(for: profileID)
+        )
+        XCTAssertTrue(runtime.isCurrent(receipt))
+        XCTAssertIdentical(runtime.context(ifCurrent: receipt), context)
+        XCTAssertIdentical(runtime.controller(ifCurrent: receipt), controller)
+        XCTAssertEqual(
+            runtime.contextBindingReceipt(
+                extensionId: extensionID,
+                profileId: profileID
+            ),
+            receipt
+        )
+    }
+
+    func testReturnedReceiptRejectsSameObjectAndABARebinding() async throws {
         let context = try await makeExtensionContext()
         let replacement = WKWebExtensionContext(for: context.webExtension)
         let profileID = UUID()
         let extensionID = "bound-extension"
         let runtime = ExtensionProfileRuntime(initialProfileId: profileID)
-        _ = runtime.setContext(
+        let firstReceipt = runtime.setContext(
             context,
             extensionId: extensionID,
             profileId: profileID
         )
-        let firstReceipt = try XCTUnwrap(
-            runtime.contextBindingReceipt(
-                extensionId: extensionID,
-                profileId: profileID
-            )
-        )
 
-        _ = runtime.setContext(
+        let reboundReceipt = runtime.setContext(
             context,
             extensionId: extensionID,
             profileId: profileID
         )
         XCTAssertNil(runtime.removeContext(ifCurrent: firstReceipt))
 
-        let reboundReceipt = try XCTUnwrap(
-            runtime.contextBindingReceipt(
-                extensionId: extensionID,
-                profileId: profileID
-            )
-        )
         _ = runtime.setContext(
             replacement,
             extensionId: extensionID,
             profileId: profileID
         )
-        _ = runtime.setContext(
+        let abaReceipt = runtime.setContext(
             context,
             extensionId: extensionID,
             profileId: profileID
         )
 
         XCTAssertNil(runtime.removeContext(ifCurrent: reboundReceipt))
+        XCTAssertNotEqual(reboundReceipt, abaReceipt)
+        XCTAssertTrue(runtime.isCurrent(abaReceipt))
         XCTAssertIdentical(
             runtime.contexts(for: profileID)[extensionID],
             context
@@ -257,16 +276,10 @@ final class ExtensionContextLoadRegistryTests: XCTestCase {
             configuration: .init(identifier: UUID())
         )
         runtime.setController(controller, for: profileID)
-        _ = runtime.setContext(
+        let receipt = runtime.setContext(
             context,
             extensionId: extensionID,
             profileId: profileID
-        )
-        let receipt = try XCTUnwrap(
-            runtime.contextBindingReceipt(
-                extensionId: extensionID,
-                profileId: profileID
-            )
         )
 
         runtime.setController(replacement, for: profileID)
