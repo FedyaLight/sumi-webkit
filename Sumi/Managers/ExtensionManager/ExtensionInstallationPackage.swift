@@ -6,7 +6,7 @@ import Foundation
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionInstallationPackage {
-    enum Ownership: CaseIterable {
+    enum Ownership: CaseIterable, Sendable {
         case copiedDirectory
         case externalSafariBundle
     }
@@ -14,6 +14,7 @@ final class ExtensionInstallationPackage {
     struct Materialized {
         let root: URL
         let manifest: [String: Any]
+        let manifestFingerprint: String
     }
 
     private enum Backing {
@@ -56,8 +57,9 @@ final class ExtensionInstallationPackage {
     static func prepare(
         source: ExtensionInstallSourceResolver.ResolvedInstallSource,
         extensionsDirectory: URL,
-        activeGenerations: ExtensionPackageGenerationRegistry
-    ) throws -> ExtensionInstallationPackage {
+        activeGenerations: ExtensionPackageGenerationRegistry,
+        fileExecutor: ExtensionPackageFileExecutor = .init()
+    ) async throws -> ExtensionInstallationPackage {
         let policy = WebExtensionManifestValidationPolicy.forSourceKind(
             source.sourceKind
         )
@@ -70,8 +72,12 @@ final class ExtensionInstallationPackage {
                     "Installed Safari app extension bundle is unavailable"
                 )
             }
-            let manifest = try ExtensionUtils.validateManifest(
-                at: source.resourcesURL.appendingPathComponent("manifest.json"),
+            let manifestURL = source.resourcesURL.appendingPathComponent(
+                "manifest.json"
+            )
+            let manifestData = try Data(contentsOf: manifestURL)
+            let manifest = try validateManifest(
+                data: manifestData,
                 policy: policy
             )
             try ExtensionInstallSourceResolver.validateMV3Requirements(
@@ -94,8 +100,7 @@ final class ExtensionInstallationPackage {
                     bundleIdentifier: bundleIdentifier,
                     safariRuntimeIdentity: safariRuntimeIdentity,
                     manifestFingerprint: ExtensionUtils.fingerprint(
-                        fileAt: source.resourcesURL
-                            .appendingPathComponent("manifest.json")
+                        data: manifestData
                     ),
                     manifestPolicy: policy
                 )
@@ -104,18 +109,16 @@ final class ExtensionInstallationPackage {
 
         let transaction = ExtensionPackageInstallTransaction(
             extensionsDirectory: extensionsDirectory,
-            activeGenerations: activeGenerations
+            activeGenerations: activeGenerations,
+            fileExecutor: fileExecutor
         )
         do {
-            try transaction.stage(resourcesAt: source.resourcesURL)
-            let manifest = try ExtensionUtils.validateManifest(
-                at: transaction.stagedPackageRoot
-                    .appendingPathComponent("manifest.json"),
-                policy: policy
+            let stagedManifest = try await transaction.stage(
+                resourcesAt: source.resourcesURL
             )
-            try ExtensionInstallSourceResolver.validateMV3Requirements(
-                manifest: manifest,
-                baseURL: transaction.stagedPackageRoot
+            let manifest = try validateManifest(
+                data: stagedManifest.data,
+                policy: policy
             )
             return ExtensionInstallationPackage(
                 ownership: .copiedDirectory,
@@ -124,16 +127,13 @@ final class ExtensionInstallationPackage {
                 runtimeOperation: .directory,
                 backing: .copied(
                     transaction: transaction,
-                    manifestFingerprint: ExtensionUtils.fingerprint(
-                        fileAt: transaction.stagedPackageRoot
-                            .appendingPathComponent("manifest.json")
-                    ),
+                    manifestFingerprint: stagedManifest.fingerprint,
                     manifestPolicy: policy
                 )
             )
         } catch let preparationError {
             do {
-                try transaction.rollback()
+                try await transaction.rollback()
             } catch let rollbackError {
                 throw ExtensionError.installationFailed(
                     "Package preparation failed: "
@@ -146,7 +146,7 @@ final class ExtensionInstallationPackage {
         }
     }
 
-    func materialize(extensionID _: String) throws -> Materialized {
+    func materialize(extensionID _: String) async throws -> Materialized {
         switch backing {
         case .external(
             let root,
@@ -168,36 +168,15 @@ final class ExtensionInstallationPackage {
                 )
             }
             let manifestURL = root.appendingPathComponent("manifest.json")
-            guard ExtensionUtils.fingerprint(fileAt: manifestURL)
+            let manifestData = try Data(contentsOf: manifestURL)
+            guard ExtensionUtils.fingerprint(data: manifestData)
                     == manifestFingerprint else {
                 throw ExtensionError.installationFailed(
                     "The Safari extension manifest changed during installation"
                 )
             }
-            let currentManifest = try ExtensionUtils.validateManifest(
-                at: manifestURL,
-                policy: manifestPolicy
-            )
-            try ExtensionInstallSourceResolver.validateMV3Requirements(
-                manifest: currentManifest,
-                baseURL: root
-            )
-            return Materialized(root: root, manifest: currentManifest)
-        case .copied(
-            let transaction,
-            let manifestFingerprint,
-            let manifestPolicy
-        ):
-            let root = try transaction.installStagedPackage()
-            let manifestURL = root.appendingPathComponent("manifest.json")
-            guard ExtensionUtils.fingerprint(fileAt: manifestURL)
-                    == manifestFingerprint else {
-                throw ExtensionError.installationFailed(
-                    "The staged extension manifest changed during installation"
-                )
-            }
-            let currentManifest = try ExtensionUtils.validateManifest(
-                at: manifestURL,
+            let currentManifest = try Self.validateManifest(
+                data: manifestData,
                 policy: manifestPolicy
             )
             try ExtensionInstallSourceResolver.validateMV3Requirements(
@@ -206,19 +185,52 @@ final class ExtensionInstallationPackage {
             )
             return Materialized(
                 root: root,
-                manifest: currentManifest
+                manifest: currentManifest,
+                manifestFingerprint: manifestFingerprint
+            )
+        case .copied(
+            let transaction,
+            let manifestFingerprint,
+            let manifestPolicy
+        ):
+            let materialized = try await transaction.materialize(
+                expectedManifestFingerprint: manifestFingerprint
+            )
+            let currentManifest = try Self.validateManifest(
+                data: materialized.manifestData,
+                policy: manifestPolicy
+            )
+            return Materialized(
+                root: materialized.root,
+                manifest: currentManifest,
+                manifestFingerprint: materialized.manifestFingerprint
             )
         }
     }
 
-    func commit() {
+    func commit() async {
         guard case .copied(let transaction, _, _) = backing else { return }
-        transaction.commit()
+        await transaction.commit()
     }
 
-    func rollback() throws {
+    func rollback() async throws {
         guard case .copied(let transaction, _, _) = backing else { return }
-        try transaction.rollback()
+        try await transaction.rollback()
+    }
+
+    private static func validateManifest(
+        data: Data,
+        policy: WebExtensionManifestValidationPolicy
+    ) throws -> [String: Any] {
+        guard let manifest = try JSONSerialization.jsonObject(with: data)
+                as? [String: Any] else {
+            throw ExtensionError.invalidManifest("Invalid JSON structure")
+        }
+        try ExtensionUtils.validateManifestContents(
+            manifest,
+            policy: policy
+        )
+        return manifest
     }
 }
 

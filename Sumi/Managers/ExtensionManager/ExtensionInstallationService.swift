@@ -16,6 +16,7 @@ final class ExtensionInstallationService {
     private let sourceAdmission: ExtensionInstallationAdmission
     private let activePackageGenerations: ExtensionPackageGenerationRegistry
     private let packageMaintenance: ExtensionPackageMaintenance
+    private let packageFileExecutor: ExtensionPackageFileExecutor
     private let requestRuntimeForInstallation: @MainActor () async -> Void
     private let removeStoredData: @MainActor (
         String, WebExtensionStorageCleanupPlanner.CleanupMode
@@ -40,6 +41,7 @@ final class ExtensionInstallationService {
         sourceAdmission: ExtensionInstallationAdmission,
         activePackageGenerations: ExtensionPackageGenerationRegistry,
         packageMaintenance: ExtensionPackageMaintenance,
+        packageFileExecutor: ExtensionPackageFileExecutor = .init(),
         requestRuntimeForInstallation: @escaping @MainActor () async -> Void,
         removeStoredData: @escaping @MainActor (
             String, WebExtensionStorageCleanupPlanner.CleanupMode
@@ -63,6 +65,7 @@ final class ExtensionInstallationService {
         self.sourceAdmission = sourceAdmission
         self.activePackageGenerations = activePackageGenerations
         self.packageMaintenance = packageMaintenance
+        self.packageFileExecutor = packageFileExecutor
         self.requestRuntimeForInstallation = requestRuntimeForInstallation
         self.removeStoredData = removeStoredData
         self.hasStoredDataCandidate = hasStoredDataCandidate
@@ -118,10 +121,11 @@ final class ExtensionInstallationService {
             await requestRuntimeForInstallation()
         }
 
-        let package = try ExtensionInstallationPackage.prepare(
+        let package = try await ExtensionInstallationPackage.prepare(
             source: source,
             extensionsDirectory: ExtensionUtils.extensionsDirectory(),
-            activeGenerations: activePackageGenerations
+            activeGenerations: activePackageGenerations,
+            fileExecutor: packageFileExecutor
         )
         let identity: ExtensionInstallationIdentityResolver.Resolution
         do {
@@ -130,7 +134,10 @@ final class ExtensionInstallationService {
                 package: package
             )
         } catch {
-            throw compensateUnusedPackage(package, originalError: error)
+            throw await compensateUnusedPackage(
+                package,
+                originalError: error
+            )
         }
 
         let existingEntity: ExtensionEntity?
@@ -142,14 +149,17 @@ final class ExtensionInstallationService {
                 nil
             }
         } catch {
-            throw compensateUnusedPackage(package, originalError: error)
+            throw await compensateUnusedPackage(
+                package,
+                originalError: error
+            )
         }
 
         guard let mutationLease = mutationRegistry.begin(
             extensionID: identity.extensionID,
             operation: .install
         ) else {
-            throw compensateUnusedPackage(
+            throw await compensateUnusedPackage(
                 package,
                 originalError: ExtensionError.installationFailed(
                     "Another lifecycle operation is already running for this extension"
@@ -182,7 +192,7 @@ final class ExtensionInstallationService {
                 )
             }
 
-            let materialized = try package.materialize(
+            let materialized = try await package.materialize(
                 extensionID: identity.extensionID
             )
             let record = try metadataStore.makeInstalledRecord(
@@ -193,6 +203,7 @@ final class ExtensionInstallationService {
                 sourceKind: source.sourceKind,
                 sourceBundlePath: source.sourceBundlePath.path,
                 sourceFingerprintURL: source.sourceFingerprintURL,
+                manifestRootFingerprint: materialized.manifestFingerprint,
                 existingEntity: existingEntity
             )
             candidateRecord = record
@@ -227,7 +238,7 @@ final class ExtensionInstallationService {
                 record,
                 replacing: recordSnapshot
             )
-            package.commit()
+            await package.commit()
             if let activation {
                 runtimeActivation.finish(activation)
             }
@@ -314,9 +325,9 @@ final class ExtensionInstallationService {
     private func compensateUnusedPackage(
         _ package: ExtensionInstallationPackage,
         originalError: any Error
-    ) -> any Error {
+    ) async -> any Error {
         do {
-            try package.rollback()
+            try await package.rollback()
             return originalError
         } catch {
             return ExtensionError.installationFailed(

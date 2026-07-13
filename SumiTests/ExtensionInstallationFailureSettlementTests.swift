@@ -399,11 +399,11 @@ private final class SettlementPackage:
         self.events = events
     }
 
-    func commit() {
+    func commit() async {
         events.values.append("package.commit")
     }
 
-    func rollback() throws {
+    func rollback() async throws {
         events.values.append("package.rollback")
         if let rollbackError { throw rollbackError }
     }

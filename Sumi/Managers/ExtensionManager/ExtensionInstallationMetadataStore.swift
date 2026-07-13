@@ -365,6 +365,7 @@ final class ExtensionInstallationMetadataStore {
         sourceKind: WebExtensionSourceKind,
         sourceBundlePath: String,
         sourceFingerprintURL: URL,
+        manifestRootFingerprint: String? = nil,
         existingEntity: ExtensionEntity?
     ) throws -> InstalledExtension {
         let installDate = existingEntity?.installDate ?? Date()
@@ -410,9 +411,10 @@ final class ExtensionInstallationMetadataStore {
             backgroundModel: backgroundModel,
             incognitoMode: incognitoMode,
             sourcePathFingerprint: ExtensionUtils.normalizePathFingerprint(sourceFingerprintURL),
-            manifestRootFingerprint: ExtensionUtils.fingerprint(
-                fileAt: extensionRoot.appendingPathComponent("manifest.json")
-            ),
+            manifestRootFingerprint: manifestRootFingerprint
+                ?? ExtensionUtils.fingerprint(
+                    fileAt: extensionRoot.appendingPathComponent("manifest.json")
+                ),
             sourceBundlePath: sourceBundlePath,
             safariRuntimeIdentity: existingEntity?.safariRuntimeIdentity
                 ?? SafariWebExtensionRuntimeIdentity.composedIdentifier(
@@ -590,6 +592,7 @@ extension ExtensionManager {
         sourceKind: WebExtensionSourceKind,
         sourceBundlePath: String,
         sourceFingerprintURL: URL,
+        manifestRootFingerprint: String? = nil,
         existingEntity: ExtensionEntity?
     ) throws -> InstalledExtension {
         try installationMetadataStore.makeInstalledRecord(
@@ -600,6 +603,7 @@ extension ExtensionManager {
             sourceKind: sourceKind,
             sourceBundlePath: sourceBundlePath,
             sourceFingerprintURL: sourceFingerprintURL,
+            manifestRootFingerprint: manifestRootFingerprint,
             existingEntity: existingEntity
         )
     }

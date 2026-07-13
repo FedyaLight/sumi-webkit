@@ -6,7 +6,7 @@ import XCTest
 @MainActor
 final class ExtensionInstallationPackageIntegrityTests: XCTestCase {
     func testCopiedManifestDriftBeforeMaterializationIsRejectedAndReversible()
-        throws {
+        async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(
             UUID().uuidString,
             isDirectory: true
@@ -19,7 +19,7 @@ final class ExtensionInstallationPackageIntegrityTests: XCTestCase {
         )
         try writeManifest(name: "Original", at: source)
         let resolved = try ExtensionInstallSourceResolver.resolve(at: source)
-        let package = try ExtensionInstallationPackage.prepare(
+        let package = try await ExtensionInstallationPackage.prepare(
             source: resolved,
             extensionsDirectory: extensions,
             activeGenerations: ExtensionPackageGenerationRegistry()
@@ -33,10 +33,19 @@ final class ExtensionInstallationPackageIntegrityTests: XCTestCase {
         )
         try writeManifest(name: "Changed", at: staged)
 
-        XCTAssertThrowsError(
-            try package.materialize(extensionID: "integrity.example")
-        )
-        try package.rollback()
+        do {
+            _ = try await package.materialize(extensionID: "integrity.example")
+            XCTFail("Expected changed manifest to be rejected")
+        } catch let error as ExtensionError {
+            XCTAssertTrue(
+                error.localizedDescription.contains(
+                    "manifest changed during installation"
+                )
+            )
+        } catch {
+            XCTFail("Expected ExtensionError, got \(error)")
+        }
+        try await package.rollback()
 
         XCTAssertTrue(
             try FileManager.default.contentsOfDirectory(

@@ -31,6 +31,7 @@ extension ExtensionInstallationService {
                 ),
                 activeGenerations: manager.activePackageGenerations
             ),
+            packageFileExecutor: ExtensionPackageFileExecutor(),
             requestRuntimeForInstallation: { [weak manager] in
                 _ = await manager?.runtimeLifecycleOwner
                     .requestExtensionRuntimeAndWait(

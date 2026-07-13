@@ -4,8 +4,8 @@ import Foundation
 @MainActor
 protocol ExtensionInstallationPackageSettling: AnyObject {
     var ownership: ExtensionInstallationPackage.Ownership { get }
-    func commit()
-    func rollback() throws
+    func commit() async
+    func rollback() async throws
 }
 
 @available(macOS 15.5, *)
@@ -99,7 +99,7 @@ final class ExtensionInstallationFailureSettlement {
         switch resolution.package {
         case .rollback:
             do {
-                try context.package.rollback()
+                try await context.package.rollback()
             } catch {
                 didRestorePackage = false
                 recoveryFailures.append(
@@ -107,7 +107,7 @@ final class ExtensionInstallationFailureSettlement {
                 )
             }
         case .preserve:
-            context.package.commit()
+            await context.package.commit()
         case .none:
             break
         }

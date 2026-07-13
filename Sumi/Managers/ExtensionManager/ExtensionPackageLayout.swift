@@ -2,8 +2,8 @@ import Foundation
 
 /// Canonical filesystem layout for browser-owned extension packages.
 /// SwiftData's `packagePath` is the only durable pointer to a generation.
-struct ExtensionPackageLayout {
-    enum PackageRootKind: Equatable {
+struct ExtensionPackageLayout: Sendable {
+    enum PackageRootKind: Equatable, Sendable {
         case managedGeneration
         case stagingTransaction
         case legacyDirect
@@ -149,7 +149,7 @@ struct ExtensionPackageLayout {
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionPackageGenerationRegistry {
-    struct Claim: Hashable {
+    struct Claim: Hashable, Sendable {
         fileprivate let path: String
         fileprivate let nonce: UUID
     }
