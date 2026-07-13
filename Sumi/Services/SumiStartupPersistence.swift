@@ -6,6 +6,7 @@
 
 import AppKit
 import Combine
+import CoreData
 import CoreServices
 import Darwin
 import OSLog
@@ -45,6 +46,7 @@ enum SumiStartupMigrationPlan: SchemaMigrationPlan {
 @MainActor
 final class SumiStartupPersistence {
     static let shared = SumiStartupPersistence()
+    private let lifetimeLock: SumiStartupStoreIO.LifetimeLock?
     private let containerResult: Result<ModelContainer, Error>
 
     var container: ModelContainer {
@@ -58,6 +60,7 @@ final class SumiStartupPersistence {
     // MARK: - Constants
     nonisolated private static let log = Logger.sumi(category: "StartupPersistence")
     nonisolated private static let storeFileName = "default.store"
+    nonisolated private static let quarantineDirectoryName = "StartupPersistenceQuarantine"
 
     static let schema = Schema(versionedSchema: SumiStartupSchemaV1.self)
     static let migrationPlan: (any SchemaMigrationPlan.Type) = SumiStartupMigrationPlan.self
@@ -71,10 +74,21 @@ final class SumiStartupPersistence {
         appSupportURL.appendingPathComponent(storeFileName, isDirectory: false)
     }
 
+    nonisolated private static var quarantineRootURL: URL {
+        appSupportURL.appendingPathComponent(quarantineDirectoryName, isDirectory: true)
+    }
+
     // MARK: - Init
     private init() {
-        self.containerResult = Result {
-            try Self.makePersistentContainerForStartup()
+        do {
+            let lifetimeLock = try SumiStartupStoreIO.LifetimeLock(storeURL: Self.storeURL)
+            self.lifetimeLock = lifetimeLock
+            self.containerResult = Result {
+                try Self.makePersistentContainerForStartup()
+            }
+        } catch {
+            self.lifetimeLock = nil
+            self.containerResult = .failure(StartupPersistenceError.storeLockUnavailable(error))
         }
         if case .failure(let error) = containerResult {
             Self.log.fault(
@@ -89,17 +103,31 @@ final class SumiStartupPersistence {
 
     static func makePersistentContainerForStartup() throws -> ModelContainer {
         try makePersistentContainerForStartup(
-            openPersistentContainer: Self.openPersistentContainer,
-            resetPersistentStore: Self.resetPersistentStore
+            storeURL: Self.storeURL,
+            quarantineRootURL: Self.quarantineRootURL,
+            openPersistentContainer: Self.openPersistentContainer
         )
     }
 
-    static func makePersistentContainerForStartup(
-        openPersistentContainer: () throws -> ModelContainer,
-        resetPersistentStore: () throws -> Void
-    ) throws -> ModelContainer {
+    static func makePersistentContainerForStartup<Container>(
+        storeURL: URL,
+        quarantineRootURL: URL,
+        performRecoveryOperation: SumiStartupStoreRecovery.RecoveryOperationRunner = { _, operation in
+            try operation()
+        },
+        openPersistentContainer: (URL) throws -> Container
+    ) throws -> Container {
         do {
-            let resolvedContainer = try openPersistentContainer()
+            try SumiStartupStoreRecovery.resumeInterruptedTransition(
+                at: storeURL,
+                perform: performRecoveryOperation
+            )
+        } catch {
+            throw StartupPersistenceError.interruptedRecoveryFailed(error)
+        }
+
+        do {
+            let resolvedContainer = try openPersistentContainer(storeURL)
             Self.log.info("SwiftData container initialized successfully.")
             return resolvedContainer
         } catch {
@@ -123,35 +151,100 @@ final class SumiStartupPersistence {
                 )
                 throw StartupPersistenceError.migrationOrSchemaMismatch(error)
 
-            case .resettableLocalStore:
-                Self.log.fault(
-                    "SwiftData container initialization failed for the local store. Removing local store files and reopening once. error=\(String(describing: error), privacy: .public)"
+            case .localStoreCorruption:
+                return try recoverCorruptStore(
+                    at: storeURL,
+                    quarantineRootURL: quarantineRootURL,
+                    initialError: error,
+                    performRecoveryOperation: performRecoveryOperation,
+                    openPersistentContainer: openPersistentContainer
                 )
-                do {
-                    try resetPersistentStore()
-                } catch let resetError {
-                    Self.log.fault(
-                        "Failed to remove local store files after startup failure: \(String(describing: resetError), privacy: .public)"
-                    )
-                    throw StartupPersistenceError.resetFailed(
-                        initialError: error,
-                        resetError: resetError
-                    )
-                }
 
-                do {
-                    let resolvedContainer = try openPersistentContainer()
-                    Self.log.notice("Recreated SwiftData store after startup open failure.")
-                    return resolvedContainer
-                } catch let reopenError {
-                    Self.log.fault(
-                        "Failed to reopen SwiftData container after recreating local store files. initial=\(String(describing: error), privacy: .public) reopen=\(String(describing: reopenError), privacy: .public)"
-                    )
-                    throw StartupPersistenceError.reopenFailed(
-                        initialError: error,
-                        reopenError: reopenError
-                    )
-                }
+            case .unclassified:
+                Self.log.fault(
+                    "SwiftData container initialization failed for an unclassified reason. Local store files were not removed. error=\(String(describing: error), privacy: .public)"
+                )
+                throw StartupPersistenceError.unclassified(error)
+            }
+        }
+    }
+
+    private static func recoverCorruptStore<Container>(
+        at storeURL: URL,
+        quarantineRootURL: URL,
+        initialError: Error,
+        performRecoveryOperation: SumiStartupStoreRecovery.RecoveryOperationRunner,
+        openPersistentContainer: (URL) throws -> Container
+    ) throws -> Container {
+        Self.log.fault(
+            "SwiftData reported structured SQLite corruption. Preserving the store family before recovery. error=\(String(describing: initialError), privacy: .public)"
+        )
+
+        let quarantine: SumiStartupStoreRecovery.Quarantine
+        do {
+            quarantine = try SumiStartupStoreRecovery.quarantine(
+                storeURL: storeURL,
+                quarantineRootURL: quarantineRootURL,
+                failure: initialError,
+                perform: performRecoveryOperation
+            )
+        } catch let preservationError {
+            throw StartupPersistenceError.preservationFailed(
+                initialError: initialError,
+                preservationError: preservationError
+            )
+        }
+
+        do {
+            try SumiStartupStoreRecovery.restorePreservedFamily(
+                from: quarantine,
+                to: storeURL,
+                perform: performRecoveryOperation
+            )
+        } catch let preparationError {
+            throw StartupPersistenceError.recoveryPreparationFailed(
+                initialError: initialError,
+                preparationError: preparationError
+            )
+        }
+
+        do {
+            let recoveredContainer = try openPersistentContainer(storeURL)
+            Self.log.notice("Opened SwiftData from the preserved store-family copy.")
+            return recoveredContainer
+        } catch let recoveryError {
+            let recoveryDiagnostics = Self.classifyStoreOpenFailure(recoveryError)
+            guard recoveryDiagnostics.authorizesStoreReplacement else {
+                throw StartupPersistenceError.recoveryOpenFailed(
+                    initialError: initialError,
+                    recoveryError: recoveryError
+                )
+            }
+
+            do {
+                try SumiStartupStoreRecovery.prepareFreshStore(
+                    at: storeURL,
+                    preserving: quarantine,
+                    perform: performRecoveryOperation
+                )
+            } catch let preparationError {
+                throw StartupPersistenceError.freshStorePreparationFailed(
+                    initialError: initialError,
+                    preparationError: preparationError
+                )
+            }
+
+            do {
+                let freshContainer = try openPersistentContainer(storeURL)
+                Self.log.notice(
+                    "Created a fresh SwiftData store after preserving the corrupt store family at \(quarantine.directoryURL.path, privacy: .public)."
+                )
+                return freshContainer
+            } catch let freshStoreError {
+                throw StartupPersistenceError.freshStoreOpenFailed(
+                    initialError: initialError,
+                    freshStoreError: freshStoreError
+                )
             }
         }
     }
@@ -164,8 +257,8 @@ final class SumiStartupPersistence {
         )
     }
 
-    private static func openPersistentContainer() throws -> ModelContainer {
-        let config = ModelConfiguration(url: Self.storeURL)
+    private static func openPersistentContainer(at storeURL: URL) throws -> ModelContainer {
+        let config = ModelConfiguration(url: storeURL)
         return try makeContainer(configuration: config)
     }
 
@@ -174,14 +267,15 @@ final class SumiStartupPersistence {
         case diskSpace
         case permissionDenied
         case migrationOrSchemaMismatch
-        case resettableLocalStore
+        case localStoreCorruption
+        case unclassified
     }
 
     struct StoreOpenFailureDiagnostics: Equatable {
         let reason: StoreOpenFailureReason
 
-        var shouldResetLocalStore: Bool {
-            reason == .resettableLocalStore
+        var authorizesStoreReplacement: Bool {
+            reason == .localStoreCorruption
         }
     }
 
@@ -189,47 +283,72 @@ final class SumiStartupPersistence {
         case diskSpace(Error)
         case permissionDenied(Error)
         case migrationOrSchemaMismatch(Error)
-        case resetFailed(initialError: Error, resetError: Error)
-        case reopenFailed(initialError: Error, reopenError: Error)
+        case unclassified(Error)
+        case preservationFailed(initialError: Error, preservationError: Error)
+        case recoveryPreparationFailed(initialError: Error, preparationError: Error)
+        case recoveryOpenFailed(initialError: Error, recoveryError: Error)
+        case freshStorePreparationFailed(initialError: Error, preparationError: Error)
+        case freshStoreOpenFailed(initialError: Error, freshStoreError: Error)
+        case interruptedRecoveryFailed(Error)
+        case storeLockUnavailable(Error)
     }
 
     nonisolated static func classifyStoreOpenFailure(_ error: Error) -> StoreOpenFailureDiagnostics {
-        let ns = error as NSError
-        let domain = ns.domain
-        let code = ns.code
-        let desc = Self.errorDescriptionTree(error)
-        let lower = (desc + " " + domain).lowercased()
+        let errors = Self.errorTree(error)
+        let lower = errors
+            .flatMap { [$0.localizedDescription, $0.domain] }
+            .joined(separator: " ")
+            .lowercased()
 
-        if domain == NSPOSIXErrorDomain && code == 28 {
+        if errors.contains(where: Self.isDiskSpaceError) {
             return StoreOpenFailureDiagnostics(reason: .diskSpace)
         }
         if lower.contains("no space left") || lower.contains("disk full") {
             return StoreOpenFailureDiagnostics(reason: .diskSpace)
         }
 
-        if domain == NSPOSIXErrorDomain && (code == 1 || code == 13) {
-            return StoreOpenFailureDiagnostics(reason: .permissionDenied)
-        }
-        if domain == NSCocoaErrorDomain
-            && (code == NSFileReadNoPermissionError || code == NSFileWriteNoPermissionError) {
+        if errors.contains(where: Self.isPermissionError) {
             return StoreOpenFailureDiagnostics(reason: .permissionDenied)
         }
         if lower.contains("permission denied") || lower.contains("operation not permitted") {
             return StoreOpenFailureDiagnostics(reason: .permissionDenied)
         }
 
-        if Self.isMigrationOrSchemaMismatch(domain: domain, code: code, lowercasedDescription: lower) {
+        if errors.contains(where: Self.isMigrationOrSchemaMismatch)
+            || Self.descriptionIndicatesMigrationOrSchemaMismatch(lower) {
             return StoreOpenFailureDiagnostics(reason: .migrationOrSchemaMismatch)
         }
 
-        return StoreOpenFailureDiagnostics(reason: .resettableLocalStore)
+        if errors.contains(where: Self.isSQLiteCorruption) {
+            return StoreOpenFailureDiagnostics(reason: .localStoreCorruption)
+        }
+
+        return StoreOpenFailureDiagnostics(reason: .unclassified)
     }
 
-    nonisolated private static func isMigrationOrSchemaMismatch(
-        domain: String,
-        code: Int,
-        lowercasedDescription: String
-    ) -> Bool {
+    nonisolated private static func isDiskSpaceError(_ error: NSError) -> Bool {
+        if error.domain == NSPOSIXErrorDomain && error.code == ENOSPC {
+            return true
+        }
+        if error.domain == NSCocoaErrorDomain && error.code == NSFileWriteOutOfSpaceError {
+            return true
+        }
+        return error.domain == NSSQLiteErrorDomain && Self.primarySQLiteCode(error.code) == 13
+    }
+
+    nonisolated private static func isPermissionError(_ error: NSError) -> Bool {
+        if error.domain == NSPOSIXErrorDomain && (error.code == EPERM || error.code == EACCES) {
+            return true
+        }
+        if error.domain == NSCocoaErrorDomain
+            && (error.code == NSFileReadNoPermissionError || error.code == NSFileWriteNoPermissionError) {
+            return true
+        }
+        guard error.domain == NSSQLiteErrorDomain else { return false }
+        return [3, 8].contains(Self.primarySQLiteCode(error.code))
+    }
+
+    nonisolated private static func isMigrationOrSchemaMismatch(_ error: NSError) -> Bool {
         let migrationRelatedCocoaCodes: Set<Int> = [
             134100,
             134110,
@@ -240,15 +359,24 @@ final class SumiStartupPersistence {
             134160,
             134170,
         ]
-        if domain == NSCocoaErrorDomain && migrationRelatedCocoaCodes.contains(code) {
-            return true
-        }
+        return error.domain == NSCocoaErrorDomain && migrationRelatedCocoaCodes.contains(error.code)
+    }
 
-        return lowercasedDescription.contains("migration")
-            || lowercasedDescription.contains("missing mapping model")
-            || lowercasedDescription.contains("incompatible version hash")
-            || lowercasedDescription.contains("store is incompatible")
-            || lowercasedDescription.contains("schema does not match")
+    nonisolated private static func descriptionIndicatesMigrationOrSchemaMismatch(_ description: String) -> Bool {
+        description.contains("migration")
+            || description.contains("missing mapping model")
+            || description.contains("incompatible version hash")
+            || description.contains("store is incompatible")
+            || description.contains("schema does not match")
+    }
+
+    nonisolated private static func isSQLiteCorruption(_ error: NSError) -> Bool {
+        guard error.domain == NSSQLiteErrorDomain else { return false }
+        return [11, 26].contains(Self.primarySQLiteCode(error.code))
+    }
+
+    nonisolated private static func primarySQLiteCode(_ code: Int) -> Int {
+        code & 0xFF
     }
 
     private static func startupFailureMessage(for error: Error) -> String {
@@ -259,10 +387,22 @@ final class SumiStartupPersistence {
             return "Sumi could not open the local browser store because store file access was denied."
         case StartupPersistenceError.migrationOrSchemaMismatch:
             return "Sumi could not open the local browser store because its schema does not match this app version."
-        case StartupPersistenceError.resetFailed:
-            return "Sumi could not remove the failed local browser store."
-        case StartupPersistenceError.reopenFailed:
-            return "Sumi could not open or recreate the local browser store."
+        case StartupPersistenceError.unclassified:
+            return "Sumi could not safely classify the local browser store failure. Browser data was not removed."
+        case StartupPersistenceError.preservationFailed:
+            return "Sumi could not safely preserve the damaged local browser store. Browser data was not removed."
+        case StartupPersistenceError.recoveryPreparationFailed:
+            return "Sumi preserved the damaged browser store but could not prepare its recovery copy."
+        case StartupPersistenceError.recoveryOpenFailed:
+            return "Sumi preserved the damaged browser store, but its recovery copy could not be opened safely."
+        case StartupPersistenceError.freshStorePreparationFailed:
+            return "Sumi preserved the damaged browser store but could not prepare a new local store."
+        case StartupPersistenceError.freshStoreOpenFailed:
+            return "Sumi preserved the damaged browser store but could not create a new local store."
+        case StartupPersistenceError.interruptedRecoveryFailed:
+            return "Sumi could not safely complete an interrupted browser store recovery."
+        case StartupPersistenceError.storeLockUnavailable:
+            return "Sumi could not lock the browser store. Another Sumi process may be using it. Browser data was not changed."
         default:
             return "Sumi could not open the local browser store: \(error)"
         }
@@ -287,8 +427,8 @@ final class SumiStartupPersistence {
         Darwin.exit(EXIT_FAILURE)
     }
 
-    nonisolated private static func errorDescriptionTree(_ error: Error) -> String {
-        var parts: [String] = []
+    nonisolated private static func errorTree(_ error: Error) -> [NSError] {
+        var errors: [NSError] = []
         var visited = Set<ObjectIdentifier>()
 
         func append(_ error: Error) {
@@ -296,49 +436,29 @@ final class SumiStartupPersistence {
             let identity = ObjectIdentifier(ns)
             guard !visited.contains(identity) else { return }
             visited.insert(identity)
+            errors.append(ns)
 
-            parts.append(ns.localizedDescription)
-            parts.append(ns.domain)
-            parts.append(String(ns.code))
-            for value in ns.userInfo.values {
+            for key in [NSUnderlyingErrorKey, NSMultipleUnderlyingErrorsKey, NSDetailedErrorsKey] {
+                guard let value = ns.userInfo[key] else { continue }
                 switch value {
                 case let nested as NSError:
                     append(nested)
                 case let nested as Error:
                     append(nested)
+                case let nested as [Any]:
+                    for value in nested {
+                        if let nestedError = value as? Error {
+                            append(nestedError)
+                        }
+                    }
                 default:
-                    parts.append(String(describing: value))
+                    continue
                 }
             }
         }
 
         append(error)
-        return parts.joined(separator: " ")
-    }
-
-    nonisolated private static func resetPersistentStore() throws {
-        let fm = FileManager.default
-        let base = Self.storeURL
-        let files = [base] + Self.sidecarURLs(for: base)
-        for file in files where fm.fileExists(atPath: file.path) {
-            do {
-                try fm.removeItem(at: file)
-            } catch {
-                Self.log.error(
-                    "Failed to remove \(file.lastPathComponent, privacy: .public): \(String(describing: error), privacy: .public)"
-                )
-                throw error
-            }
-        }
-    }
-
-    // MARK: - Helpers
-    nonisolated private static func sidecarURLs(for base: URL) -> [URL] {
-        // SQLite commonly uses -wal and -shm sidecars when WAL journaling is active
-        // Compose manually to append -wal/-shm
-        let walURL = URL(fileURLWithPath: base.path + "-wal")
-        let shmURL = URL(fileURLWithPath: base.path + "-shm")
-        return [walURL, shmURL]
+        return errors
     }
 }
 
