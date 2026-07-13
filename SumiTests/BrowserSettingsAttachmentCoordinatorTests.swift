@@ -105,7 +105,7 @@ final class BrowserSettingsAttachmentCoordinatorTests: XCTestCase {
 
     @MainActor
     private final class Harness {
-        let downloadManager = DownloadManager()
+        let downloadManager = DownloadManager.unavailable()
         let tabSuspension = TabSuspensionController(memoryMonitor: nil)
         let backgroundMedia = SumiBackgroundMediaOptimizationService()
         let startupSessionRestore: BrowserStartupSessionRestoreOwner

@@ -14,7 +14,16 @@ enum BrowserManagerRuntimeWiring {
         browserManager.tabManager.runtimePortsAttachmentOwner.attach(runtimePortRegistry)
         // Live Folders runtime attaches only when the module is enabled (W4/R9),
         // via OptionalModuleHost.attachEnabled.
-        browserManager.downloadManager.retryRuntime = BrowserDownloadRetryRuntimeFactory.runtime(for: browserManager)
+        precondition(
+            browserManager.downloadManager.attachRetryTransport(
+                BrowserWebKitDownloadRetryTransport(
+                    shellRuntime: browserManager.shellRuntime,
+                    webViewRouting: browserManager.webViewRoutingService,
+                    transportFactory: browserManager.downloadTransportFactory
+                )
+            ),
+            "Download retry transport must be attached exactly once"
+        )
         browserManager.optionalModules.attachEnabled(into: browserManager)
         browserManager.glanceManager.attach(
             runtime: BrowserGlanceRuntimeService.runtime(for: browserManager)

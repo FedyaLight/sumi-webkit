@@ -1,6 +1,5 @@
 import Combine
 import Foundation
-import WebKit
 
 final class DownloadProgress: Progress, @unchecked Sendable {
     private enum Constants {
@@ -14,15 +13,6 @@ final class DownloadProgress: Progress, @unchecked Sendable {
     override init(parent parentProgressOrNil: Progress?, userInfo userInfoOrNil: [ProgressUserInfoKey: Any]? = nil) {
         super.init(parent: parentProgressOrNil, userInfo: userInfoOrNil)
         configureDefaults()
-    }
-
-    @MainActor
-    init(download: WKDownload) {
-        super.init(parent: nil, userInfo: nil)
-        configureDefaults()
-        fileDownloadingSourceURL = download.originalRequest?.url
-
-        bind(to: download.progress)
     }
 
     init(sourceProgress: Progress, sourceURL: URL?) {

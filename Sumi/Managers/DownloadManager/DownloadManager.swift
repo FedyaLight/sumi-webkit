@@ -1,48 +1,53 @@
 import AppKit
 import Combine
 import Foundation
-import UniformTypeIdentifiers
-import WebKit
 
 @MainActor
-final class DownloadManager: ObservableObject {
-    struct RetryRuntime {
-        let activeWindow: @MainActor () -> BrowserWindowState?
-        let currentTab: @MainActor (BrowserWindowState) -> Tab?
-        let windowOwnedWebView: @MainActor (Tab, UUID) -> WKWebView?
+final class DownloadManager: ObservableObject, DownloadListCoordinatorEventSink {
+    @Published private(set) var items: [DownloadItem]
+    @Published private(set) var activeDownloadCount: Int
+    @Published private(set) var combinedProgressFraction: Double?
 
-        static let empty = RetryRuntime(
-            activeWindow: { nil },
-            currentTab: { _ in nil },
-            windowOwnedWebView: { _, _ in nil }
+    private let coordinator: DownloadListCoordinator?
+    private let workspace: (any DownloadWorkspaceOpening)?
+    private let orphanCleaner: (any DownloadOrphanCleaning)?
+    private var didPerformStartupMaintenance = false
+    private var retryTransport: (any DownloadRetryTransportStarting)?
+
+    weak var settings: SumiSettingsService? {
+        didSet { coordinator?.settings = settings }
+    }
+
+    init(
+        coordinator: DownloadListCoordinator?,
+        workspace: (any DownloadWorkspaceOpening)?,
+        orphanCleaner: (any DownloadOrphanCleaning)?
+    ) {
+        self.coordinator = coordinator
+        self.workspace = workspace
+        self.orphanCleaner = orphanCleaner
+        self.items = coordinator?.items ?? []
+        self.activeDownloadCount = coordinator?.activeCount ?? 0
+        self.combinedProgressFraction = coordinator?.combinedProgressFraction
+
+        if let coordinator {
+            precondition(
+                coordinator.attachEventSink(self),
+                "Download coordinator event sink must be attached exactly once"
+            )
+        }
+    }
+
+    static func unavailable() -> DownloadManager {
+        DownloadManager(
+            coordinator: nil,
+            workspace: nil,
+            orphanCleaner: nil
         )
     }
 
-    @Published private(set) var items: [DownloadItem] = []
-    @Published private(set) var activeDownloadCount: Int = 0
-    @Published private(set) var combinedProgressFraction: Double?
-
-    private let coordinator: DownloadListCoordinator
-    weak var settings: SumiSettingsService? {
-        didSet {
-            coordinator.settings = settings
-        }
-    }
-    var retryRuntime: RetryRuntime = .empty
-
-    init() {
-        DownloadFileUtilities.removeOrphanedIncompleteDownloads()
-        self.coordinator = DownloadListCoordinator()
-        self.items = coordinator.items
-        self.activeDownloadCount = coordinator.activeCount
-        self.combinedProgressFraction = coordinator.combinedProgressFraction
-
-        coordinator.onChange = { [weak self] in
-            self?.publishCoordinatorState()
-        }
-        coordinator.onFinish = { [weak self] item in
-            self?.openCompletedDownloadIfNeeded(item)
-        }
+    var isAvailable: Bool {
+        coordinator != nil
     }
 
     var hasActiveDownloads: Bool {
@@ -54,23 +59,46 @@ final class DownloadManager: ObservableObject {
     }
 
     @discardableResult
+    func attachRetryTransport(
+        _ transport: any DownloadRetryTransportStarting
+    ) -> Bool {
+        guard retryTransport == nil else { return false }
+        retryTransport = transport
+        return true
+    }
+
+    func performStartupMaintenance() async {
+        guard !didPerformStartupMaintenance,
+              let settings,
+              let orphanCleaner
+        else { return }
+        didPerformStartupMaintenance = true
+        await orphanCleaner.removeOrphanedDownloads(
+            preference: settings.downloadsDestinationPreference
+        )
+    }
+
+    @discardableResult
     func addDownload(
-        _ download: WKDownload,
+        transport: any DownloadTransport,
         originalURL: URL,
         suggestedFilename: String,
         openIntent: SumiDownloadOpenIntent? = nil,
         promptRequest: SumiDownloadPromptRequest? = nil,
         flyAnimationOriginalRect: NSRect? = nil
-    ) -> DownloadItem {
+    ) -> DownloadItem? {
+        guard let coordinator else {
+            transport.cancel()
+            return nil
+        }
         let item = coordinator.start(
-            download: download,
+            transport: transport,
             originalURL: originalURL,
             suggestedFilename: suggestedFilename,
             openIntent: openIntent,
             promptRequest: promptRequest,
             flyAnimationOriginalRect: flyAnimationOriginalRect
         )
-        publishCoordinatorState()
         return item
     }
 
@@ -80,273 +108,113 @@ final class DownloadManager: ObservableObject {
         mimeType _: String?,
         originatingURL: URL
     ) {
-        let destinationURL = DownloadFileUtilities.uniqueDestination(for: suggestedFilename)
-        let tempURL = DownloadFileUtilities.incompleteURL(for: destinationURL)
-        let progress = DownloadProgress(totalUnitCount: max(Int64(data.count), 1))
-        progress.fileDownloadingSourceURL = originatingURL
-        progress.fileURL = tempURL
-        let item = DownloadItem(
-            downloadURL: originatingURL,
-            fileName: destinationURL.lastPathComponent,
-            destinationURL: destinationURL,
-            tempURL: tempURL,
-            state: .downloading,
-            progress: progress,
-            completedUnitCount: 0,
-            totalUnitCount: progress.totalUnitCount
+        guard let coordinator else { return }
+        _ = coordinator.save(
+            data: data,
+            originalURL: originatingURL,
+            suggestedFilename: suggestedFilename
         )
-        coordinator.track(item, progress: progress)
-        publishCoordinatorState()
-
-        let writeTask = Task.detached(priority: .utility) {
-            do {
-                try data.write(to: tempURL, options: .atomic)
-                let finalURL = try SumiDownloadCompletionService.finalizeDownloadedFile(
-                    temporaryURL: tempURL,
-                    destinationURL: destinationURL,
-                    sourceURL: originatingURL
-                )
-                return Result<URL, Error>.success(finalURL)
-            } catch {
-                DownloadFileUtilities.removeItemIfPresent(
-                    at: tempURL,
-                    context: "remove failed data download temp file"
-                )
-                return Result<URL, Error>.failure(error)
-            }
-        }
-
-        Task { @MainActor [weak self] in
-            let result = await writeTask.value
-            if case .success = result {
-                progress.markCompleted(byteCount: Int64(data.count))
-                self?.coordinator.didUpdateProgress(progress, for: item)
-            }
-            self?.finishDownloadedData(item, result: result)
-        }
-    }
-
-    func beginExternalDownload(
-        originalURL: URL,
-        suggestedFilename: String,
-        sourceProgress: Progress?,
-        flyAnimationOriginalRect: NSRect? = nil
-    ) -> DownloadItem {
-        let destinationURL = DownloadFileUtilities.uniqueDestination(for: suggestedFilename)
-        let progress = sourceProgress.map {
-            DownloadProgress(sourceProgress: $0, sourceURL: originalURL)
-        } ?? DownloadProgress(totalUnitCount: -1)
-        progress.fileDownloadingSourceURL = originalURL
-        configureSystemPresentation(
-            progress: progress,
-            destinationURL: destinationURL,
-            flyAnimationOriginalRect: flyAnimationOriginalRect
-        )
-
-        let item = DownloadItem(
-            downloadURL: originalURL,
-            fileName: destinationURL.lastPathComponent,
-            destinationURL: destinationURL,
-            state: .downloading,
-            progress: progress,
-            completedUnitCount: progress.completedUnitCount,
-            totalUnitCount: progress.totalUnitCount
-        )
-        coordinator.track(item, progress: progress)
-        publishCoordinatorState()
-        return item
-    }
-
-    func finishExternalDownload(
-        _ item: DownloadItem,
-        temporaryURL: URL,
-        response _: URLResponse?,
-        completion: ((Result<URL, Error>) -> Void)? = nil
-    ) {
-        let destinationURL = item.destinationURL ?? DownloadFileUtilities.uniqueDestination(for: item.fileName)
-        let progress = item.progress
-        let sourceURL = item.downloadURL
-        let moveTask = Task.detached(priority: .utility) {
-            do {
-                let finalURL = try SumiDownloadCompletionService.finalizeDownloadedFile(
-                    temporaryURL: temporaryURL,
-                    destinationURL: destinationURL,
-                    sourceURL: sourceURL
-                )
-                return Result<URL, Error>.success(finalURL)
-            } catch {
-                return Result<URL, Error>.failure(error)
-            }
-        }
-
-        Task { @MainActor [weak self] in
-            let result = await moveTask.value
-            if case .success(let finalURL) = result {
-                let byteCount = DownloadFileUtilities.fileSize(for: finalURL)
-                progress?.markCompleted(byteCount: byteCount)
-                if let progress {
-                    self?.coordinator.didUpdateProgress(progress, for: item)
-                }
-            }
-            self?.finishDownloadedData(item, result: result)
-            completion?(result)
-        }
-    }
-
-    func failExternalDownload(_ item: DownloadItem?, error: Error) {
-        guard let item else { return }
-        coordinator.didFail(
-            item,
-            error: .failed(message: error.localizedDescription, resumeData: nil, isRetryable: false)
-        )
-        publishCoordinatorState()
-    }
-
-    func cancelExternalDownload(_ item: DownloadItem?) {
-        guard let item else { return }
-        coordinator.didFail(item, error: .cancelled)
-        publishCoordinatorState()
     }
 
     func cancel(_ item: DownloadItem) {
-        coordinator.cancel(item)
+        coordinator?.cancel(item)
     }
 
     func retry(_ item: DownloadItem) {
-        guard item.canRetry || item.state == .failed else { return }
-        guard let webView = retryWebView() else {
-            item.error = .failed(
-                message: "Open a browser tab to retry this download.",
-                resumeData: item.error?.resumeData,
-                isRetryable: item.error?.resumeData != nil
+        guard item.canRetry || item.state == .failed,
+              let coordinator,
+              let receipt = coordinator.makeRetryReceipt(for: item)
+        else { return }
+        guard let retryTransport else {
+            coordinator.failRetry(
+                receipt,
+                item: item,
+                message: "Open a browser tab to retry this download."
             )
-            publishCoordinatorState()
             return
         }
 
-        let resumeData = item.error?.resumeData
-        coordinator.prepareRetry(item)
-        let callback: @MainActor @Sendable (WKDownload) -> Void = { [weak self, weak webView] download in
-            guard let self else { return }
-            withExtendedLifetime(webView) {
-                self.coordinator.attach(download: download, to: item)
-                self.publishCoordinatorState()
+        let started = retryTransport.startRetry(
+            DownloadRetryRequest(
+                sourceURL: item.downloadURL,
+                resumeData: item.error?.resumeData
+            )
+        ) { [weak self, weak item] transport in
+            guard let self, let item,
+                  self.coordinator?.attachRetry(
+                    transport: transport,
+                    to: item,
+                    receipt: receipt
+                  ) == true
+            else {
+                transport.cancel()
+                return
             }
         }
-
-        if let resumeData {
-            webView.resumeDownload(fromResumeData: resumeData, completionHandler: callback)
-        } else {
-            webView.startDownload(using: URLRequest(url: item.downloadURL), completionHandler: callback)
+        if !started {
+            coordinator.failRetry(
+                receipt,
+                item: item,
+                message: "Open a browser tab to retry this download."
+            )
         }
     }
 
     func open(_ item: DownloadItem) {
-        guard let url = item.localURL,
-              FileManager.default.fileExists(atPath: url.path)
-        else { return }
-        guard SumiDownloadSafety.confirmOpeningIfNeeded(url: url, sourceURL: item.downloadURL) else { return }
-        NSWorkspace.shared.open(url)
+        guard let url = item.localURL else { return }
+        workspace?.openDownloadedFile(at: url, sourceURL: item.downloadURL)
     }
 
     func reveal(_ item: DownloadItem) {
-        guard let url = item.destinationURL,
-              FileManager.default.fileExists(atPath: url.path)
-        else { return }
-        NSWorkspace.shared.activateFileViewerSelecting([url])
+        guard let url = item.destinationURL else { return }
+        workspace?.revealDownloadedFile(at: url)
     }
 
     func openDownloadsFolder() {
-        DownloadFileUtilities.openDownloadsFolder()
+        workspace?.openDownloadsFolder(
+            preference: settings?.downloadsDestinationPreference
+                ?? SumiDownloadDestinationPreference(
+                    alwaysAskWhereToSave: false,
+                    customDirectoryURL: nil
+                )
+        )
     }
 
     func clearInactiveDownloads() {
-        coordinator.clearInactiveDownloads()
-        publishCoordinatorState()
+        coordinator?.clearInactiveDownloads()
     }
 
-    fileprivate func finishDownloadedData(_ item: DownloadItem, result: Result<URL, Error>) {
-        switch result {
-        case .success(let destinationURL):
-            coordinator.didFinish(item, finalURL: destinationURL)
-        case .failure(let error):
-            coordinator.didFail(item, error: .moveFailed(message: error.localizedDescription))
-        }
-        publishCoordinatorState()
+    private func openCompletedDownloadIfNeeded(_ item: DownloadItem) {
+        guard let intent = item.openIntent, let url = item.localURL else { return }
+        workspace?.openDownloadedFileIfSafe(
+            at: url,
+            intent: intent
+        )
     }
 
-    func openCompletedDownloadIfNeeded(_ item: DownloadItem) {
-        guard let intent = item.openIntent,
-              let url = item.localURL,
-              FileManager.default.fileExists(atPath: url.path),
-              !isCurrentApplication(url),
-              !SumiDownloadSafety.requiresOpeningConfirmation(forFileAt: url)
+    func downloadListCoordinatorDidChange(
+        _ coordinator: DownloadListCoordinator
+    ) {
+        guard let ownedCoordinator = self.coordinator,
+              ownedCoordinator === coordinator
         else { return }
-
-        switch intent {
-        case .systemDefault:
-            NSWorkspace.shared.open(url)
-        case .application(let applicationURL):
-            guard !isCurrentApplication(applicationURL) else { return }
-            let configuration = NSWorkspace.OpenConfiguration()
-            NSWorkspace.shared.open(
-                [url],
-                withApplicationAt: applicationURL,
-                configuration: configuration,
-                completionHandler: nil
-            )
-        }
+        publishCoordinatorState()
     }
 
-    private func isCurrentApplication(_ url: URL) -> Bool {
-        let bundleURL = Bundle.main.bundleURL.standardizedFileURL
-        let standardizedURL = url.standardizedFileURL
-        return standardizedURL == bundleURL
-            || standardizedURL.path.hasPrefix(bundleURL.path + "/")
-    }
-
-    private func retryWebView() -> WKWebView? {
-        guard let activeWindow = retryRuntime.activeWindow(),
-              let currentTab = retryRuntime.currentTab(activeWindow)
-        else {
-            return nil
-        }
-
-        return retryRuntime.windowOwnedWebView(currentTab, activeWindow.id)
+    func downloadListCoordinator(
+        _ coordinator: DownloadListCoordinator,
+        didFinish item: DownloadItem
+    ) {
+        guard let ownedCoordinator = self.coordinator,
+              ownedCoordinator === coordinator
+        else { return }
+        openCompletedDownloadIfNeeded(item)
     }
 
     private func publishCoordinatorState() {
+        guard let coordinator else { return }
         items = coordinator.items
-        publishDerivedState()
-    }
-
-    private func publishDerivedState() {
-        activeDownloadCount = items.filter(\.isActive).count
-        combinedProgressFraction = {
-            let active = items.filter(\.isActive)
-            guard !active.isEmpty else { return nil }
-            var total: Int64 = 0
-            var completed: Int64 = 0
-            for item in active where item.totalUnitCount > 0 {
-                total += item.totalUnitCount
-                completed += max(item.completedUnitCount, 0)
-            }
-            guard total > 0 else { return -1 }
-            return min(max(Double(completed) / Double(total), 0), 1)
-        }()
-    }
-
-    private func configureSystemPresentation(
-        progress: DownloadProgress,
-        destinationURL: URL,
-        flyAnimationOriginalRect: NSRect?
-    ) {
-        guard let flyAnimationOriginalRect else { return }
-
-        let fileType = UTType(filenameExtension: destinationURL.pathExtension) ?? .data
-        let icon = NSWorkspace.shared.icon(for: fileType)
-        progress.flyToImage = icon
-        progress.fileIcon = icon
-        progress.fileIconOriginalRect = flyAnimationOriginalRect
+        activeDownloadCount = coordinator.activeCount
+        combinedProgressFraction = coordinator.combinedProgressFraction
     }
 }

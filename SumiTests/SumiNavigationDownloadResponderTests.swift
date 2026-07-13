@@ -87,9 +87,16 @@ final class SumiNavigationDownloadResponderTests: SumiNavigationResponderTestCas
     }
 
     func testDownloadResponderRequestsDownloadForDownloadNavigationAction() async {
+        let managerHarness = DownloadTestHarness()
+        let settings = SumiSettingsService(userDefaults: TestDefaultsHarness().defaults)
+        managerHarness.manager.settings = settings
         let tab = Tab(url: URL(string: "https://example.com")!)
         let sourceWebView = FocusableWKWebView()
-        let responder = SumiDownloadsNavigationResponder(tab: tab, downloadManager: nil)
+        let responder = SumiDownloadsNavigationResponder(
+            tab: tab,
+            downloadManager: managerHarness.manager,
+            transportFactory: SumiWebKitDownloadTransportFactory()
+        )
         let adapter = SumiNavigationResponderAdapter(target: responder)
         var preferences = NavigationPreferences.default
 
@@ -116,7 +123,11 @@ final class SumiNavigationDownloadResponderTests: SumiNavigationResponderTestCas
             makeMouseEvent(type: .leftMouseDown, modifierFlags: [.option]),
             kind: .primaryMouseDown
         )
-        let responder = SumiDownloadsNavigationResponder(tab: tab, downloadManager: nil)
+        let responder = SumiDownloadsNavigationResponder(
+            tab: tab,
+            downloadManager: nil,
+            transportFactory: nil
+        )
         let adapter = SumiNavigationResponderAdapter(target: responder)
         var preferences = NavigationPreferences.default
 
@@ -149,7 +160,11 @@ final class SumiNavigationDownloadResponderTests: SumiNavigationResponderTestCas
             kind: .primaryMouseDown
         )
         let adapter = SumiNavigationResponderAdapter(
-            target: SumiDownloadsNavigationResponder(tab: tab, downloadManager: nil)
+            target: SumiDownloadsNavigationResponder(
+                tab: tab,
+                downloadManager: nil,
+                transportFactory: nil
+            )
         )
         var preferences = NavigationPreferences.default
 
@@ -170,7 +185,11 @@ final class SumiNavigationDownloadResponderTests: SumiNavigationResponderTestCas
     func testDownloadResponderContinuesForRegularNavigationAction() async {
         let tab = Tab(url: URL(string: "https://example.com")!)
         let sourceWebView = FocusableWKWebView()
-        let responder = SumiDownloadsNavigationResponder(tab: tab, downloadManager: nil)
+        let responder = SumiDownloadsNavigationResponder(
+            tab: tab,
+            downloadManager: nil,
+            transportFactory: nil
+        )
         let adapter = SumiNavigationResponderAdapter(target: responder)
         var preferences = NavigationPreferences.default
 
@@ -187,8 +206,15 @@ final class SumiNavigationDownloadResponderTests: SumiNavigationResponderTestCas
     }
 
     func testDownloadResponderRequestsDownloadForUnshowableResponse() async {
+        let managerHarness = DownloadTestHarness()
+        let settings = SumiSettingsService(userDefaults: TestDefaultsHarness().defaults)
+        managerHarness.manager.settings = settings
         let tab = Tab(url: URL(string: "https://example.com")!)
-        let responder = SumiDownloadsNavigationResponder(tab: tab, downloadManager: nil)
+        let responder = SumiDownloadsNavigationResponder(
+            tab: tab,
+            downloadManager: managerHarness.manager,
+            transportFactory: SumiWebKitDownloadTransportFactory()
+        )
         let adapter = SumiNavigationResponderAdapter(target: responder)
         let response = URLResponse(
             url: URL(string: "https://example.com/file.bin")!,
@@ -209,9 +235,35 @@ final class SumiNavigationDownloadResponderTests: SumiNavigationResponderTestCas
         XCTAssertEqual(policy, .download)
     }
 
+    func testDownloadResponderFailsClosedWhenCompositionIsUnavailable() async {
+        let tab = Tab(url: URL(string: "https://example.com")!)
+        let responder = SumiDownloadsNavigationResponder(
+            tab: tab,
+            downloadManager: DownloadManager.unavailable(),
+            transportFactory: nil
+        )
+        let adapter = SumiNavigationResponderAdapter(target: responder)
+        var preferences = NavigationPreferences.default
+
+        let policy = await adapter.decidePolicy(
+            for: navigationAction(
+                url: URL(string: "https://example.com/file.zip")!,
+                navigationType: .linkActivated(isMiddleClick: false),
+                shouldDownload: true
+            ),
+            preferences: &preferences
+        )
+
+        XCTAssertEqual(policy?.isCancel, true)
+    }
+
     func testDownloadResponderCancelsSessionRestorationCacheDownloadResponse() async {
         let tab = Tab(url: URL(string: "https://example.com")!)
-        let responder = SumiDownloadsNavigationResponder(tab: tab, downloadManager: nil)
+        let responder = SumiDownloadsNavigationResponder(
+            tab: tab,
+            downloadManager: nil,
+            transportFactory: nil
+        )
         let adapter = SumiNavigationResponderAdapter(target: responder)
         var preferences = NavigationPreferences.default
         let sourceWebView = FocusableWKWebView()

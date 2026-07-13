@@ -1,11 +1,24 @@
 import Foundation
 
 final class DownloadFilePresenter {
-    private var source: DispatchSourceFileSystemObject?
+    private let url: URL
+    private let onDeleted: @Sendable () -> Void
+    private var fileSource: DispatchSourceFileSystemObject?
+    private var directorySource: DispatchSourceFileSystemObject?
 
     init(url: URL, onDeleted: @escaping @Sendable () -> Void) {
-        guard FileManager.default.fileExists(atPath: url.path) else { return }
+        self.url = url
+        self.onDeleted = onDeleted
+        attachFileSourceIfPresent()
+        if fileSource == nil {
+            attachDirectorySource()
+        }
+    }
 
+    private func attachFileSourceIfPresent() {
+        guard fileSource == nil,
+              FileManager.default.fileExists(atPath: url.path)
+        else { return }
         let descriptor = open(url.path, O_EVTONLY)
         guard descriptor >= 0 else { return }
 
@@ -18,11 +31,33 @@ final class DownloadFilePresenter {
         source.setCancelHandler {
             close(descriptor)
         }
-        self.source = source
+        fileSource = source
+        source.resume()
+        directorySource?.cancel()
+        directorySource = nil
+    }
+
+    private func attachDirectorySource() {
+        let descriptor = open(url.deletingLastPathComponent().path, O_EVTONLY)
+        guard descriptor >= 0 else { return }
+
+        let source = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: descriptor,
+            eventMask: [.write, .rename, .delete],
+            queue: .main
+        )
+        source.setEventHandler { [weak self] in
+            self?.attachFileSourceIfPresent()
+        }
+        source.setCancelHandler {
+            close(descriptor)
+        }
+        directorySource = source
         source.resume()
     }
 
     deinit {
-        source?.cancel()
+        fileSource?.cancel()
+        directorySource?.cancel()
     }
 }

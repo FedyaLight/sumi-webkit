@@ -35,6 +35,7 @@ class BrowserManager: ObservableObject {
     let tabManager: TabManager
     let profileManager: ProfileManager
     let downloadManager: DownloadManager
+    let downloadTransportFactory: any DownloadWebKitTransportAdapting
     let authenticationManager: AuthenticationManager
     var historyManager: HistoryManager
     var bookmarkManager: SumiBookmarkManager
@@ -164,6 +165,7 @@ class BrowserManager: ObservableObject {
         self.optionalModules = graph.optionalModules
         self.tabManager = graph.tabManager
         self.downloadManager = graph.downloadManager
+        self.downloadTransportFactory = graph.downloadTransportFactory
         self.authenticationManager = graph.authenticationManager
         self.historyManager = graph.historyManager
         self.bookmarkManager = graph.bookmarkManager

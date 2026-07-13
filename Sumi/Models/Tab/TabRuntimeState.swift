@@ -375,13 +375,15 @@ struct TabNormalWebViewExtensionRuntime {
 struct TabNavigationDelegateRuntime {
     var externalSchemePermissionBridge: () -> SumiExternalSchemePermissionBridge?
     var downloadManager: () -> DownloadManager?
+    var downloadTransportFactory: () -> (any DownloadWebKitTransportAdapting)?
     var autoplayPolicy: @MainActor (URL?, Profile?) -> SumiAutoplayPolicy = {
         _, _ in .default
     }
 
     static let inactive = Self(
         externalSchemePermissionBridge: { nil },
-        downloadManager: { nil }
+        downloadManager: { nil },
+        downloadTransportFactory: { nil }
     )
 }
 

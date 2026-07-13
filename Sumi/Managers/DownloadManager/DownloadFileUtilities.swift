@@ -1,8 +1,6 @@
-import AppKit
 import Foundation
 import OSLog
 import UniformTypeIdentifiers
-import WebKit
 
 enum DownloadsDirectoryResolver {
     static func resolvedDownloadsDirectory(fileManager: FileManager = .default) -> URL {
@@ -118,56 +116,6 @@ enum DownloadFileUtilities {
             }
             counter += 1
         }
-    }
-
-    static func incompleteURL(for destinationURL: URL, fileManager: FileManager = .default) -> URL {
-        let ext = destinationURL.pathExtension
-        let incompleteExtension = ext.isEmpty ? incompleteDownloadExtension : "\(ext).\(incompleteDownloadExtension)"
-        let desired = destinationURL.deletingPathExtension().appendingPathExtension(incompleteExtension)
-        return uniqueURL(for: desired, fileManager: fileManager)
-    }
-
-    static func removeOrphanedIncompleteDownloads(fileManager: FileManager = .default) {
-        let directory = DownloadsDirectoryResolver.resolvedDownloadsDirectory(fileManager: fileManager)
-        let urls: [URL]
-        do {
-            urls = try fileManager.contentsOfDirectory(
-                at: directory,
-                includingPropertiesForKeys: [.isDirectoryKey],
-                options: [.skipsHiddenFiles]
-            )
-        } catch {
-            logFileOperationFailure(
-                "list incomplete downloads",
-                url: directory,
-                error: error
-            )
-            return
-        }
-
-        for url in urls where url.pathExtension == incompleteDownloadExtension {
-            do {
-                let isDirectory = try url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory ?? false
-                guard !isDirectory else { continue }
-                try fileManager.removeItem(at: url)
-            } catch {
-                logFileOperationFailure(
-                    "remove orphaned incomplete download",
-                    url: url,
-                    error: error
-                )
-            }
-        }
-    }
-
-    static func openDownloadsFolder(selecting itemToSelect: URL? = nil) {
-        let folder = DownloadsDirectoryResolver.resolvedDownloadsDirectory()
-        if let itemToSelect,
-           FileManager.default.fileExists(atPath: itemToSelect.path) {
-            NSWorkspace.shared.activateFileViewerSelecting([itemToSelect])
-            return
-        }
-        NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: folder.path)
     }
 
     static func ensureDirectoryExists(

@@ -167,6 +167,9 @@ enum TabBrowserNavigationRuntimeFactory {
             downloadManager: { [weak browserManager] in
                 browserManager?.downloadManager
             },
+            downloadTransportFactory: { [weak browserManager] in
+                browserManager?.downloadTransportFactory
+            },
             autoplayPolicy: { [weak browserManager] url, profile in
                 browserManager?.permissionRuntime.autoplayStore.effectivePolicy(
                     for: url,
@@ -354,11 +357,13 @@ extension TabNavigationDelegateRuntime {
     static func make(
         externalSchemePermissionBridge: @escaping () -> SumiExternalSchemePermissionBridge?,
         downloadManager: @escaping () -> DownloadManager?,
+        downloadTransportFactory: @escaping () -> (any DownloadWebKitTransportAdapting)?,
         autoplayPolicy: @escaping @MainActor (URL?, Profile?) -> SumiAutoplayPolicy
     ) -> Self {
         Self(
             externalSchemePermissionBridge: externalSchemePermissionBridge,
             downloadManager: downloadManager,
+            downloadTransportFactory: downloadTransportFactory,
             autoplayPolicy: autoplayPolicy
         )
     }

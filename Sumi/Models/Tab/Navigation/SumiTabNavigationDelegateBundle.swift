@@ -55,7 +55,9 @@ final class SumiTabNavigationDelegateAdapter {
         self.externalSchemeAdapter = SumiNavigationResponderAdapter(target: externalScheme)
         self.downloads = SumiDownloadsNavigationResponder(
             tab: tab,
-            downloadManager: tab.navigationRuntime.navigationDelegateRuntime.downloadManager()
+            downloadManager: tab.navigationRuntime.navigationDelegateRuntime.downloadManager(),
+            transportFactory: tab.navigationRuntime.navigationDelegateRuntime
+                .downloadTransportFactory()
         )
         self.downloadsAdapter = SumiNavigationResponderAdapter(target: downloads)
         self.scriptAttachment = SumiTabScriptAttachmentNavigationResponder(tab: tab)

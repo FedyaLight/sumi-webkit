@@ -18,7 +18,7 @@ final class DownloadsPopoverStateTests: XCTestCase {
     }
 
     func testDownloadsButtonStateDefaultsToVisibleInactiveManagerState() {
-        let manager = DownloadManager()
+        let manager = DownloadManager.unavailable()
 
         XCTAssertFalse(manager.hasActiveDownloads)
         XCTAssertFalse(manager.hasInactiveDownloads)
@@ -27,7 +27,7 @@ final class DownloadsPopoverStateTests: XCTestCase {
     }
 
     func testRetryableFailedItemStateIsIndependentFromPopoverListState() {
-        let manager = DownloadManager()
+        let manager = DownloadManager.unavailable()
         let item = DownloadItem(
             downloadURL: URL(string: "https://example.com/retry.bin")!,
             fileName: "retry.bin",
@@ -40,19 +40,21 @@ final class DownloadsPopoverStateTests: XCTestCase {
     }
 
     func testClearInactiveAvailabilityTracksCurrentSessionItems() {
-        let manager = DownloadManager()
-        let active = manager.beginExternalDownload(
+        let harness = DownloadTestHarness()
+        let manager = harness.manager
+        let transport = TestDownloadTransport(totalUnitCount: -1)
+        let active = manager.addDownload(
+            transport: transport,
             originalURL: URL(string: "https://example.com/active.bin")!,
-            suggestedFilename: "active.bin",
-            sourceProgress: Progress(totalUnitCount: -1)
-        )
+            suggestedFilename: "active.bin"
+        )!
 
         XCTAssertFalse(manager.hasInactiveDownloads)
 
         manager.clearInactiveDownloads()
         XCTAssertEqual(manager.items.map(\.id), [active.id])
 
-        manager.failExternalDownload(active, error: URLError(.networkConnectionLost))
+        transport.fail()
 
         XCTAssertTrue(manager.hasInactiveDownloads)
 
@@ -63,17 +65,12 @@ final class DownloadsPopoverStateTests: XCTestCase {
     }
 
     func testPopoverContentSizeUsesSingleSlotForEmptyAndOneItemList() {
-        let emptyManager = DownloadManager()
+        let emptyManager = DownloadManager.unavailable()
         let presenter = DownloadsPopoverPresenter()
 
         XCTAssertEqual(presenter.contentSize(for: emptyManager).height, 122)
 
-        let oneItemManager = DownloadManager()
-        _ = oneItemManager.beginExternalDownload(
-            originalURL: URL(string: "https://example.com/active.bin")!,
-            suggestedFilename: "active.bin",
-            sourceProgress: Progress(totalUnitCount: 100)
-        )
+        let oneItemManager = makeManager(itemCount: 1)
 
         let oneItemHeight = presenter.contentSize(for: oneItemManager).height
 
@@ -83,30 +80,9 @@ final class DownloadsPopoverStateTests: XCTestCase {
 
     func testPopoverContentSizeGrowsAndCapsListHeight() {
         let presenter = DownloadsPopoverPresenter()
-        let oneItemManager = DownloadManager()
-        _ = oneItemManager.beginExternalDownload(
-            originalURL: URL(string: "https://example.com/one.bin")!,
-            suggestedFilename: "one.bin",
-            sourceProgress: Progress(totalUnitCount: 100)
-        )
-
-        let twoItemManager = DownloadManager()
-        for index in 0..<2 {
-            _ = twoItemManager.beginExternalDownload(
-                originalURL: URL(string: "https://example.com/two-\(index).bin")!,
-                suggestedFilename: "two-\(index).bin",
-                sourceProgress: Progress(totalUnitCount: 100)
-            )
-        }
-
-        let cappedManager = DownloadManager()
-        for index in 0..<20 {
-            _ = cappedManager.beginExternalDownload(
-                originalURL: URL(string: "https://example.com/capped-\(index).bin")!,
-                suggestedFilename: "capped-\(index).bin",
-                sourceProgress: Progress(totalUnitCount: 100)
-            )
-        }
+        let oneItemManager = makeManager(itemCount: 1)
+        let twoItemManager = makeManager(itemCount: 2)
+        let cappedManager = makeManager(itemCount: 20)
 
         XCTAssertGreaterThan(
             presenter.contentSize(for: twoItemManager).height,
@@ -152,5 +128,17 @@ final class DownloadsPopoverStateTests: XCTestCase {
         XCTAssertFalse(windowState.isSidebarVisible)
         XCTAssertEqual(windowState.sidebarWidth, 250)
         XCTAssertEqual(windowState.savedSidebarWidth, 300)
+    }
+
+    private func makeManager(itemCount: Int) -> DownloadManager {
+        let harness = DownloadTestHarness()
+        for index in 0..<itemCount {
+            _ = harness.manager.addDownload(
+                transport: TestDownloadTransport(),
+                originalURL: URL(string: "https://example.com/item-\(index).bin")!,
+                suggestedFilename: "item-\(index).bin"
+            )
+        }
+        return harness.manager
     }
 }

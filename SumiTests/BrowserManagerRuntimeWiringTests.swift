@@ -32,7 +32,11 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         XCTAssertNotNil(browserManager.tabManager.runtimePorts)
         XCTAssertTrue(tabManagerRuntimeCanPrepareCreatedTabs(browserManager))
         XCTAssertTrue(splitServicesCanUseLiveRuntime(browserManager))
-        XCTAssertTrue(downloadRetryRuntimeCanResolveWindowOwnedWebView(browserManager))
+        XCTAssertFalse(
+            browserManager.downloadManager.attachRetryTransport(
+                TestDownloadRetryTransport()
+            )
+        )
         let boostsRuntimeAttached = await boostsModuleCanUseAttachedRuntime(browserManager)
         XCTAssertTrue(boostsRuntimeAttached)
         XCTAssertTrue(auxiliaryWindowServicesCanOpenPopup(browserManager))
@@ -340,46 +344,6 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
             activate: false
         )
         return tab.hasBrowserRuntime && tab.sumiSettings === browserManager.sumiSettings
-    }
-
-    private func downloadRetryRuntimeCanResolveWindowOwnedWebView(_ browserManager: BrowserManager) -> Bool {
-        let windowRegistry = WindowRegistry()
-        let trackedAdmission = browserManager.webViewRuntime.trackedWebViewAdmission
-        browserManager.windowRegistry = windowRegistry
-
-        let space = browserManager.tabManager.spaceStateOwner.currentSpace
-            ?? browserManager.tabManager.spaceServices.catalog.createSpace(name: "Download Runtime Wiring")
-        let tab = browserManager.tabManager.regularTabLifecycleOwner.createNewTab(
-            url: "https://example.com/download",
-            in: space,
-            activate: true
-        )
-        let windowState = BrowserWindowState()
-        windowState.tabManager = browserManager.tabManager
-        windowState.currentSpaceId = space.id
-        windowState.currentTabId = tab.id
-        windowRegistry.register(windowState)
-        windowRegistry.setActive(windowState)
-
-        let webView = FocusableWKWebView()
-        webView.owningTab = tab
-        trackedAdmission.registerAuxiliaryTrackedWebView(
-            webView,
-            for: tab,
-            in: windowState.id
-        )
-
-        guard let activeWindow = browserManager.downloadManager.retryRuntime.activeWindow(),
-              let currentTab = browserManager.downloadManager.retryRuntime.currentTab(activeWindow),
-              let resolvedWebView = browserManager.downloadManager.retryRuntime
-                .windowOwnedWebView(currentTab, activeWindow.id)
-        else {
-            return false
-        }
-
-        return activeWindow === windowState
-            && currentTab === tab
-            && resolvedWebView === webView
     }
 
     private func boostsModuleCanUseAttachedRuntime(_ browserManager: BrowserManager) async -> Bool {

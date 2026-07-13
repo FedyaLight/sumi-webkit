@@ -2,7 +2,6 @@ import AppKit
 import Combine
 import Foundation
 import UniformTypeIdentifiers
-import WebKit
 
 enum DownloadState: String, Codable, Equatable {
     case pending

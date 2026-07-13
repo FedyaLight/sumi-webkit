@@ -20,6 +20,7 @@ struct BrowserKernelGraph {
     let optionalModules: OptionalModuleHost
     let tabManager: TabManager
     let downloadManager: DownloadManager
+    let downloadTransportFactory: any DownloadWebKitTransportAdapting
     let authenticationManager: AuthenticationManager
     let historyManager: HistoryManager
     let bookmarkManager: SumiBookmarkManager

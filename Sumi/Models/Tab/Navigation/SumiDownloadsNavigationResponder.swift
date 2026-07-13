@@ -7,13 +7,19 @@ import WebKit
 final class SumiDownloadsNavigationResponder: SumiNavigationActionSourceWebViewResponding, SumiNavigationResponseResponding, SumiNavigationDownloadResponding {
     private weak var tab: Tab?
     private weak var downloadManager: DownloadManager?
+    private let transportFactory: (any DownloadWebKitTransportAdapting)?
     private var isRestoringSessionState = false
     private var pendingOpenIntents: [SumiDownloadIntentKey: SumiDownloadOpenIntent] = [:]
     private var pendingPromptRequests: [SumiDownloadIntentKey: SumiDownloadPromptRequest] = [:]
 
-    init(tab: Tab, downloadManager: DownloadManager?) {
+    init(
+        tab: Tab,
+        downloadManager: DownloadManager?,
+        transportFactory: (any DownloadWebKitTransportAdapting)?
+    ) {
         self.tab = tab
         self.downloadManager = downloadManager
+        self.transportFactory = transportFactory
     }
 
     func decidePolicy(
@@ -152,9 +158,14 @@ final class SumiDownloadsNavigationResponder: SumiNavigationActionSourceWebViewR
         openIntent: SumiDownloadOpenIntent?,
         promptRequest: SumiDownloadPromptRequest?
     ) {
-        guard let wkDownload = download.webKitDownload,
-              let downloadManager
-        else { return }
+        guard let wkDownload = download.webKitDownload else { return }
+        guard let downloadManager,
+              downloadManager.isAvailable,
+              let transportFactory
+        else {
+            wkDownload.cancel(nil)
+            return
+        }
 
         let suggestedFilename = DownloadFileUtilities.suggestedFilename(
             response: response,
@@ -163,7 +174,7 @@ final class SumiDownloadsNavigationResponder: SumiNavigationActionSourceWebViewR
         )
 
         _ = downloadManager.addDownload(
-            wkDownload,
+            transport: transportFactory.makeTransport(for: wkDownload),
             originalURL: originalURL,
             suggestedFilename: suggestedFilename,
             openIntent: openIntent,
@@ -217,8 +228,11 @@ final class SumiDownloadsNavigationResponder: SumiNavigationActionSourceWebViewR
         origin: SumiDownloadOrigin,
         identity: SumiDownloadContentIdentity
     ) -> SumiDownloadResolvedAction {
-        guard let settings = downloadManager?.settings else {
-            return origin == .normalNavigation ? .navigate : .saveFile
+        guard let downloadManager, downloadManager.isAvailable,
+              transportFactory != nil,
+              let settings = downloadManager.settings
+        else {
+            return origin == .normalNavigation ? .navigate : .cancel
         }
         let handler = settings.downloadApplicationsStore.record(for: identity.contentType)
         let resolved = SumiDownloadPolicyResolver.resolve(

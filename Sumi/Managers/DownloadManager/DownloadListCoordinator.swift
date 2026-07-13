@@ -1,45 +1,63 @@
 import AppKit
-import Combine
 import Foundation
-import WebKit
 
-struct DownloadDestinationReservation: Equatable {
-    let fileName: String
-    let destinationURL: URL
-    let tempURL: URL
+struct DownloadRetryReceipt: Equatable {
+    let id: UUID
+    let itemID: UUID
 }
 
 @MainActor
-final class DownloadListCoordinator {
-    private var tasks: [UUID: SumiWebKitDownloadTask] = [:]
-    private var progressSubscriptions: [UUID: AnyCancellable] = [:]
-    private var reservedDestinationPaths: Set<String> = []
+protocol DownloadListCoordinatorEventSink: AnyObject {
+    func downloadListCoordinatorDidChange(
+        _ coordinator: DownloadListCoordinator
+    )
+    func downloadListCoordinator(
+        _ coordinator: DownloadListCoordinator,
+        didFinish item: DownloadItem
+    )
+}
+
+@MainActor
+final class DownloadListCoordinator: DownloadTransactionDelegate {
+    private let transactionFactory: DownloadTransactionFactory
+    private let promptPresenter: any DownloadPromptPresenting
+    private var transactions: [UUID: DownloadTransaction] = [:]
+    private var pendingRetryReceipts: [UUID: DownloadRetryReceipt] = [:]
+    private weak var eventSink: (any DownloadListCoordinatorEventSink)?
+    private var didAttachEventSink = false
+
     weak var settings: SumiSettingsService?
+    private(set) var items: [DownloadItem] = []
 
-    private(set) var items: [DownloadItem]
-    var onChange: (() -> Void)?
-    var onFinish: ((DownloadItem) -> Void)?
-
-    init() {
-        self.items = []
+    init(
+        transactionFactory: DownloadTransactionFactory,
+        promptPresenter: any DownloadPromptPresenting
+    ) {
+        self.transactionFactory = transactionFactory
+        self.promptPresenter = promptPresenter
     }
 
-    var activeItems: [DownloadItem] {
-        items.filter(\.isActive)
+    @discardableResult
+    func attachEventSink(
+        _ eventSink: any DownloadListCoordinatorEventSink
+    ) -> Bool {
+        guard !didAttachEventSink else { return false }
+        didAttachEventSink = true
+        self.eventSink = eventSink
+        return true
     }
 
     var activeCount: Int {
-        activeItems.count
+        items.filter(\.isActive).count
     }
 
     var combinedProgressFraction: Double? {
-        let active = activeItems
+        let active = items.filter(\.isActive)
         guard !active.isEmpty else { return nil }
 
         var knownCompleted: Int64 = 0
         var knownTotal: Int64 = 0
         var hasIndeterminate = false
-
         for item in active {
             if item.totalUnitCount > 0 {
                 knownCompleted += max(item.completedUnitCount, 0)
@@ -48,14 +66,13 @@ final class DownloadListCoordinator {
                 hasIndeterminate = true
             }
         }
-
         guard knownTotal > 0 else { return -1 }
         if hasIndeterminate, knownCompleted == 0 { return -1 }
         return min(max(Double(knownCompleted) / Double(knownTotal), 0), 1)
     }
 
     func start(
-        download: WKDownload,
+        transport: any DownloadTransport,
         originalURL: URL,
         suggestedFilename: String,
         openIntent: SumiDownloadOpenIntent?,
@@ -64,43 +81,293 @@ final class DownloadListCoordinator {
     ) -> DownloadItem {
         let item = DownloadItem(
             downloadURL: originalURL,
-            fileName: DownloadFileUtilities.sanitizedFilename(suggestedFilename),
+            fileName: initialFilename(suggestedFilename),
             openIntent: openIntent,
             promptRequest: promptRequest
         )
-        upsert(item)
-        attach(download: download, to: item, flyAnimationOriginalRect: flyAnimationOriginalRect)
-        notify()
+        insert(item)
+        let transaction = transactionFactory.makeTransportTransaction(
+            itemID: item.id,
+            transport: transport,
+            sourceURL: originalURL,
+            suggestedFilename: suggestedFilename,
+            promptRequest: promptRequest,
+            flyAnimationOriginalRect: flyAnimationOriginalRect,
+            delegate: self
+        )
+        transactions[item.id] = transaction
+        transaction.start()
         return item
     }
 
-    func attach(download: WKDownload, to item: DownloadItem, flyAnimationOriginalRect: NSRect? = nil) {
-        let task = SumiWebKitDownloadTask(
-            download: download,
-            item: item,
-            coordinator: self,
-            flyAnimationOriginalRect: flyAnimationOriginalRect
+    func save(
+        data: Data,
+        originalURL: URL,
+        suggestedFilename: String
+    ) -> DownloadItem {
+        let item = DownloadItem(
+            downloadURL: originalURL,
+            fileName: initialFilename(suggestedFilename)
         )
-        tasks[item.id] = task
-        task.start()
-    }
-
-    func track(_ item: DownloadItem, progress: DownloadProgress) {
-        item.progress = progress
-        mirrorProgress(progress, to: item)
-        item.state = .downloading
-        upsert(item)
-        observeRuntimeProgress(progress, for: item)
-        notify()
+        insert(item)
+        let transaction = transactionFactory.makeDataTransaction(
+            itemID: item.id,
+            data: data,
+            sourceURL: originalURL,
+            suggestedFilename: suggestedFilename,
+            delegate: self
+        )
+        transactions[item.id] = transaction
+        transaction.start()
+        return item
     }
 
     func cancel(_ item: DownloadItem) {
-        tasks[item.id]?.cancel()
+        transactions[item.id]?.cancel()
     }
 
-    func prepareRetry(_ item: DownloadItem) {
-        releaseReservation(for: item)
-        progressSubscriptions[item.id] = nil
+    func makeRetryReceipt(for item: DownloadItem) -> DownloadRetryReceipt? {
+        guard item.state == .failed else { return nil }
+        let receipt = DownloadRetryReceipt(id: UUID(), itemID: item.id)
+        pendingRetryReceipts[item.id] = receipt
+        return receipt
+    }
+
+    func attachRetry(
+        transport: any DownloadTransport,
+        to item: DownloadItem,
+        receipt: DownloadRetryReceipt
+    ) -> Bool {
+        guard receipt.itemID == item.id,
+              pendingRetryReceipts[item.id] == receipt,
+              item.state == .failed
+        else {
+            return false
+        }
+        pendingRetryReceipts[item.id] = nil
+
+        let previous = transactions[item.id]
+        let inheritedReservation = previous?.takeReservationForRetry()
+        previous?.invalidate(
+            preservingReservation: inheritedReservation != nil
+        )
+        prepareItemForRetry(item)
+
+        let transaction = transactionFactory.makeTransportTransaction(
+            itemID: item.id,
+            transport: transport,
+            sourceURL: item.downloadURL,
+            suggestedFilename: item.fileName,
+            promptRequest: nil,
+            flyAnimationOriginalRect: nil,
+            inheritedReservation: inheritedReservation,
+            delegate: self
+        )
+        transactions[item.id] = transaction
+        transaction.start()
+        return true
+    }
+
+    func failRetry(
+        _ receipt: DownloadRetryReceipt,
+        item: DownloadItem,
+        message: String
+    ) {
+        guard pendingRetryReceipts[item.id] == receipt else { return }
+        pendingRetryReceipts[item.id] = nil
+        item.error = .failed(
+            message: message,
+            resumeData: item.error?.resumeData,
+            isRetryable: item.error?.resumeData != nil
+        )
+        notify()
+    }
+
+    func clearInactiveDownloads() {
+        let inactiveIDs = Set(items.filter { !$0.isActive }.map(\.id))
+        guard !inactiveIDs.isEmpty else { return }
+
+        for itemID in inactiveIDs {
+            pendingRetryReceipts[itemID] = nil
+            transactions[itemID]?.discardTemporaryFile()
+            transactions[itemID]?.invalidate()
+            transactions[itemID] = nil
+        }
+        items.removeAll { inactiveIDs.contains($0.id) }
+        notify()
+    }
+
+    func downloadTransactionDidBegin(
+        _ transaction: DownloadTransaction,
+        progress: DownloadProgress,
+        snapshot: DownloadProgressSnapshot
+    ) {
+        guard let item = currentItem(for: transaction) else { return }
+        item.progress = progress
+        item.state = .downloading
+        apply(snapshot, to: item)
+        notify()
+    }
+
+    func downloadTransaction(
+        _ transaction: DownloadTransaction,
+        destinationPreferenceFor _: URL
+    ) -> SumiDownloadDestinationPreference? {
+        guard isCurrent(transaction) else { return nil }
+        return settings?.downloadsDestinationPreference
+            ?? SumiDownloadDestinationPreference(
+                alwaysAskWhereToSave: false,
+                customDirectoryURL: nil
+            )
+    }
+
+    func downloadTransaction(
+        _ transaction: DownloadTransaction,
+        resolvePrompt request: SumiDownloadPromptRequest,
+        response: URLResponse,
+        suggestedFilename: String,
+        sourceURL: URL,
+        window: NSWindow?
+    ) async -> DownloadPromptDecision? {
+        guard isCurrent(transaction) else { return nil }
+        let decision = await promptPresenter.resolve(
+            request: request,
+            response: response,
+            suggestedFilename: suggestedFilename,
+            sourceURL: sourceURL,
+            window: window
+        )
+        guard isCurrent(transaction) else { return nil }
+        return decision
+    }
+
+    func downloadTransaction(
+        _ transaction: DownloadTransaction,
+        didResolvePrompt decision: DownloadPromptDecision
+    ) {
+        guard let item = currentItem(for: transaction) else { return }
+        item.promptRequest = nil
+        if case .downloadThenOpen(let intent) = decision.action {
+            item.openIntent = intent
+        }
+        guard decision.shouldPersist,
+              let contentType = decision.identity.contentType
+        else { return }
+
+        let handler: SumiContentHandlerKind
+        switch decision.action {
+        case .downloadThenOpen:
+            handler = .useSystemDefault
+        case .saveFile:
+            handler = .saveFile
+        default:
+            return
+        }
+        settings?.downloadApplicationsStore.upsert(
+            SumiContentHandlerRecord(
+                contentType: contentType,
+                displayName: decision.identity.displayName,
+                handler: handler,
+                applicationURL: nil
+            )
+        )
+    }
+
+    func downloadTransaction(
+        _ transaction: DownloadTransaction,
+        didChoose reservation: DownloadDestinationReservation,
+        response: URLResponse?
+    ) {
+        guard let item = currentItem(for: transaction) else { return }
+        item.fileName = reservation.fileName
+        item.destinationURL = reservation.destinationURL
+        item.tempURL = reservation.tempURL
+        item.state = .downloading
+        if let response, response.expectedContentLength > 0,
+           item.totalUnitCount <= 0 {
+            item.totalUnitCount = response.expectedContentLength
+        }
+        notify()
+    }
+
+    func downloadTransaction(
+        _ transaction: DownloadTransaction,
+        didUpdate snapshot: DownloadProgressSnapshot
+    ) {
+        guard let item = currentItem(for: transaction), item.isActive else {
+            return
+        }
+        apply(snapshot, to: item)
+        notify()
+    }
+
+    func downloadTransaction(
+        _ transaction: DownloadTransaction,
+        didFinish file: DownloadFinalizedFile
+    ) {
+        guard let item = currentItem(for: transaction) else { return }
+        item.destinationURL = file.url
+        item.tempURL = nil
+        item.fileName = file.url.lastPathComponent
+        if let byteCount = file.byteCount {
+            item.totalUnitCount = max(item.totalUnitCount, byteCount)
+            item.completedUnitCount = max(item.completedUnitCount, byteCount)
+        } else {
+            item.completedUnitCount = max(
+                item.completedUnitCount,
+                item.totalUnitCount
+            )
+        }
+        item.state = .completed
+        item.error = nil
+        item.progress = nil
+        pendingRetryReceipts[item.id] = nil
+        notify()
+        eventSink?.downloadListCoordinator(self, didFinish: item)
+    }
+
+    func downloadTransaction(
+        _ transaction: DownloadTransaction,
+        didFail error: DownloadError
+    ) {
+        guard let item = currentItem(for: transaction) else { return }
+        item.state = error == .cancelled ? .cancelled : .failed
+        item.error = error
+        item.progress = nil
+        pendingRetryReceipts[item.id] = nil
+        notify()
+    }
+
+    private func currentItem(
+        for transaction: DownloadTransaction
+    ) -> DownloadItem? {
+        guard isCurrent(transaction) else { return nil }
+        return items.first { $0.id == transaction.itemID }
+    }
+
+    private func isCurrent(_ transaction: DownloadTransaction) -> Bool {
+        transactions[transaction.itemID] === transaction
+    }
+
+    private func apply(
+        _ snapshot: DownloadProgressSnapshot,
+        to item: DownloadItem
+    ) {
+        item.completedUnitCount = snapshot.completedUnitCount
+        item.totalUnitCount = snapshot.totalUnitCount
+        item.throughput = snapshot.throughput
+        item.estimatedTimeRemaining = snapshot.estimatedTimeRemaining
+    }
+
+    private func insert(_ item: DownloadItem) {
+        items.insert(item, at: 0)
+        items.sort { lhs, rhs in
+            if lhs.added != rhs.added { return lhs.added > rhs.added }
+            return lhs.id.uuidString < rhs.id.uuidString
+        }
+    }
+
+    private func prepareItemForRetry(_ item: DownloadItem) {
         item.state = .pending
         item.error = nil
         item.progress = nil
@@ -110,232 +377,16 @@ final class DownloadListCoordinator {
         }
         item.throughput = nil
         item.estimatedTimeRemaining = nil
-        upsert(item)
-        notify()
     }
 
-    func didAttachProgress(_ progress: DownloadProgress, for item: DownloadItem) {
-        item.progress = progress
-        mirrorProgress(progress, to: item)
-        item.state = .downloading
-        notify()
-    }
-
-    func reserveDestination(
-        for item: DownloadItem,
-        response: URLResponse?,
-        suggestedFilename: String
-    ) async -> DownloadDestinationReservation? {
-        if let destinationURL = item.destinationURL,
-           let tempURL = item.tempURL,
-           !reservedDestinationPaths.contains(destinationURL.path) {
-            reservedDestinationPaths.insert(destinationURL.path)
-            return DownloadDestinationReservation(
-                fileName: destinationURL.lastPathComponent,
-                destinationURL: destinationURL,
-                tempURL: tempURL
-            )
-        }
-
-        let responseFilename = DownloadFileUtilities.suggestedFilename(
-            response: response,
-            requestURL: item.downloadURL,
-            fallback: suggestedFilename.isEmpty ? item.fileName : suggestedFilename
+    private func initialFilename(_ suggestedFilename: String) -> String {
+        let trimmed = suggestedFilename.trimmingCharacters(
+            in: .whitespacesAndNewlines
         )
-        let cleanName = DownloadFileUtilities.sanitizedFilename(responseFilename)
-        guard let destinationURL = await chooseDestination(for: cleanName) else {
-            return nil
-        }
-        reservedDestinationPaths.insert(destinationURL.path)
-
-        return DownloadDestinationReservation(
-            fileName: destinationURL.lastPathComponent,
-            destinationURL: destinationURL,
-            tempURL: DownloadFileUtilities.incompleteURL(for: destinationURL)
-        )
-    }
-
-    func didChooseDestination(
-        _ reservation: DownloadDestinationReservation,
-        for item: DownloadItem,
-        response: URLResponse?
-    ) {
-        item.fileName = reservation.fileName
-        item.destinationURL = reservation.destinationURL
-        item.tempURL = reservation.tempURL
-        item.state = .downloading
-        if let response, response.expectedContentLength > 0 {
-            item.totalUnitCount = response.expectedContentLength
-        }
-        notify()
-    }
-
-    func didUpdateProgress(_ progress: Progress, for item: DownloadItem) {
-        if let downloadProgress = progress as? DownloadProgress {
-            item.progress = downloadProgress
-        }
-        item.state = .downloading
-        mirrorProgress(progress, to: item)
-        notify()
-    }
-
-    func didFinish(_ item: DownloadItem, finalURL: URL) {
-        let reservedDestinationURL = item.destinationURL
-        item.destinationURL = finalURL
-        item.tempURL = nil
-        item.fileName = finalURL.lastPathComponent
-        item.completedUnitCount = max(item.completedUnitCount, item.totalUnitCount)
-        if item.totalUnitCount <= 0,
-           let size = DownloadFileUtilities.fileSize(for: finalURL) {
-            item.totalUnitCount = size
-            item.completedUnitCount = size
-        }
-        item.state = .completed
-        item.error = nil
-        item.progress = nil
-        tasks[item.id] = nil
-        progressSubscriptions[item.id] = nil
-        releaseReservation(for: reservedDestinationURL)
-        notify()
-        onFinish?(item)
-    }
-
-    func didFail(_ item: DownloadItem, error: DownloadError) {
-        switch error {
-        case .cancelled:
-            item.state = .cancelled
-        case .failed, .moveFailed:
-            item.state = .failed
-        }
-        item.error = error
-        item.progress = nil
-        tasks[item.id] = nil
-        progressSubscriptions[item.id] = nil
-        releaseReservation(for: item)
-        notify()
-    }
-
-    func clearInactiveDownloads() {
-        let inactiveIDs = Set(items.filter { !$0.isActive }.map(\.id))
-        guard !inactiveIDs.isEmpty else { return }
-
-        for item in items where inactiveIDs.contains(item.id) {
-            tasks[item.id] = nil
-            progressSubscriptions[item.id] = nil
-            releaseReservation(for: item)
-            cleanupTemporaryFile(for: item)
-        }
-
-        items.removeAll { inactiveIDs.contains($0.id) }
-        notify()
-    }
-
-    private func upsert(_ item: DownloadItem) {
-        if items.contains(where: { $0.id == item.id }) == false {
-            items.insert(item, at: 0)
-        }
-        sortItems()
-    }
-
-    private func mirrorProgress(_ progress: Progress, to item: DownloadItem) {
-        item.totalUnitCount = progress.totalUnitCount
-        item.completedUnitCount = progress.completedUnitCount
-        item.throughput = progress.throughput
-        item.estimatedTimeRemaining = progress.estimatedTimeRemaining
-    }
-
-    private func observeRuntimeProgress(_ progress: DownloadProgress, for item: DownloadItem) {
-        progressSubscriptions[item.id] = Publishers.CombineLatest(
-            progress.publisher(for: \.totalUnitCount),
-            progress.publisher(for: \.completedUnitCount)
-        )
-        .dropFirst()
-        .throttle(for: .milliseconds(200), scheduler: DispatchQueue.main, latest: true)
-        .sink { [weak self, weak item] _, _ in
-            Task { @MainActor in
-                guard let self, let item else { return }
-                self.didUpdateProgress(progress, for: item)
-            }
-        }
-    }
-
-    private func sortItems() {
-        items.sort { lhs, rhs in
-            if lhs.added != rhs.added {
-                return lhs.added > rhs.added
-            }
-            return lhs.id.uuidString < rhs.id.uuidString
-        }
-    }
-
-    private func uniqueReservedDestination(for filename: String) -> URL {
-        let directory = SumiDownloadDestinationResolver.defaultDirectory(
-            preference: settings?.downloadsDestinationPreference
-                ?? SumiDownloadDestinationPreference(alwaysAskWhereToSave: false, customDirectoryURL: nil)
-        )
-        DownloadFileUtilities.ensureDirectoryExists(
-            directory,
-            context: "reserved download destination"
-        )
-
-        let cleanName = DownloadFileUtilities.sanitizedFilename(filename)
-        let desired = directory.appendingPathComponent(cleanName)
-        guard FileManager.default.fileExists(atPath: desired.path) || reservedDestinationPaths.contains(desired.path) else {
-            return desired
-        }
-
-        let ext = desired.pathExtension
-        let base = desired.deletingPathExtension().lastPathComponent
-        var counter = 1
-        while true {
-            let name = ext.isEmpty ? "\(base) \(counter)" : "\(base) \(counter).\(ext)"
-            let candidate = directory.appendingPathComponent(name)
-            if !FileManager.default.fileExists(atPath: candidate.path),
-               !reservedDestinationPaths.contains(candidate.path) {
-                return candidate
-            }
-            counter += 1
-        }
-    }
-
-    private func chooseDestination(for filename: String) async -> URL? {
-        guard settings?.downloadsAlwaysAskWhereToSave == true else {
-            return uniqueReservedDestination(for: filename)
-        }
-
-        let panel = NSSavePanel()
-        panel.nameFieldStringValue = filename
-        panel.canCreateDirectories = true
-        panel.directoryURL = settings?.resolvedDownloadsDirectoryURL()
-            ?? DownloadsDirectoryResolver.resolvedDownloadsDirectory()
-        let response = await withCheckedContinuation { continuation in
-            panel.begin { result in
-                continuation.resume(returning: result)
-            }
-        }
-        guard response == .OK, let url = panel.url else { return nil }
-        return url
-    }
-
-    private func releaseReservation(for item: DownloadItem) {
-        releaseReservation(for: item.destinationURL)
-    }
-
-    private func releaseReservation(for destinationURL: URL?) {
-        if let destinationURL {
-            reservedDestinationPaths.remove(destinationURL.path)
-        }
-    }
-
-    private func cleanupTemporaryFile(for item: DownloadItem) {
-        guard !item.isActive, item.state != .completed, let tempURL = item.tempURL else { return }
-        DownloadFileUtilities.removeItemIfPresent(
-            at: tempURL,
-            context: "remove inactive download temp file"
-        )
+        return trimmed.isEmpty ? "download" : trimmed
     }
 
     private func notify() {
-        onChange?()
+        eventSink?.downloadListCoordinatorDidChange(self)
     }
 }

@@ -58,6 +58,9 @@ final class BrowserAppOrchestrationOwner {
         browserManager.sumiSettings = settingsManager
         browserManager.keyboardShortcutManager = keyboardShortcutManager
         browserManager.windowShellContentViewFactory = dependencies.windowShellContentViewFactory
+        Task { [downloadManager = browserManager.downloadManager] in
+            await downloadManager.performStartupMaintenance()
+        }
 
         let mouseCommandRouter = BrowserMouseCommandRouter(
             floatingBar: { [weak browserManager] in

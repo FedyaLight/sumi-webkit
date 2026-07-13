@@ -121,7 +121,8 @@ final class SumiNavigationResponderTests: SumiNavigationResponderTestCase {
         )
         tab.navigationRuntime.navigationDelegateRuntime = TabNavigationDelegateRuntime(
             externalSchemePermissionBridge: { bridge },
-            downloadManager: { nil }
+            downloadManager: { nil },
+            downloadTransportFactory: { nil }
         )
         let responder = SumiExternalSchemeNavigationResponder(
             tab: tab,

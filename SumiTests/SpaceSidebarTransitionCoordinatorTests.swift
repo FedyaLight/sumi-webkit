@@ -785,7 +785,7 @@ private final class TestSidebarBrowserContextHarness {
 
     private let browserManager: BrowserManager
     private let liveFolderManager: SumiLiveFolderManager
-    private let downloadManager = DownloadManager()
+    private let downloadManager = DownloadManager.unavailable()
     private let downloadsPopoverPresenter = DownloadsPopoverPresenter()
     private let glanceManager = GlanceManager()
     private let extensionSurfaceStore = BrowserExtensionSurfaceStore(extensionManager: nil)

@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import SwiftData
 import SumiWebRuntime
@@ -97,6 +98,7 @@ enum BrowserCompositionRoot {
     struct AssembledSessionManagers {
         let tabManager: TabManager
         let downloadManager: DownloadManager
+        let downloadTransportFactory: any DownloadWebKitTransportAdapting
         let authenticationManager: AuthenticationManager
         let historyManager: HistoryManager
         let bookmarkManager: SumiBookmarkManager
@@ -128,6 +130,28 @@ enum BrowserCompositionRoot {
         initialProfile: Profile?
     ) -> AssembledSessionManagers {
         let lastSessionWindowsStore = LastSessionWindowsStore()
+        let downloadFileManager = FileManager.default
+        let downloadDestinationAllocator = SumiDownloadDestinationAllocator(
+            fileManager: downloadFileManager
+        )
+        let downloadTransactionFactory = DownloadTransactionFactory(
+            destinations: downloadDestinationAllocator,
+            finalizer: SumiDownloadFileFinalizer(fileManager: downloadFileManager),
+            progressPublisher: SumiDownloadProgressPublisher()
+        )
+        let downloadManager = DownloadManager(
+            coordinator: DownloadListCoordinator(
+                transactionFactory: downloadTransactionFactory,
+                promptPresenter: SumiDownloadPromptPresenter()
+            ),
+            workspace: SumiDownloadWorkspace(
+                workspace: .shared,
+                fileManager: downloadFileManager
+            ),
+            orphanCleaner: SumiDownloadOrphanCleaner(
+                fileManager: downloadFileManager
+            )
+        )
         return AssembledSessionManagers(
             tabManager: TabManager(
                 context: modelContext,
@@ -138,7 +162,8 @@ enum BrowserCompositionRoot {
                 faviconCapabilities: dataServices.faviconCapabilities,
                 visitedLinkStore: dataServices.visitedLinkStore
             ),
-            downloadManager: DownloadManager(),
+            downloadManager: downloadManager,
+            downloadTransportFactory: SumiWebKitDownloadTransportFactory(),
             authenticationManager: AuthenticationManager(),
             historyManager: HistoryManager(
                 context: modelContext,
@@ -321,6 +346,7 @@ enum BrowserCompositionRoot {
             ),
             tabManager: session.tabManager,
             downloadManager: session.downloadManager,
+            downloadTransportFactory: session.downloadTransportFactory,
             authenticationManager: session.authenticationManager,
             historyManager: session.historyManager,
             bookmarkManager: session.bookmarkManager,

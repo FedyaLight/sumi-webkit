@@ -1,4 +1,3 @@
-import CoreServices
 import UniformTypeIdentifiers
 import XCTest
 
@@ -7,9 +6,10 @@ import XCTest
 @MainActor
 final class DownloadManagerTests: XCTestCase {
     func testDefaultDownloadsDirectoryUsesTestIsolationUnderXCTest() {
-        let directory = DownloadsDirectoryResolver.resolvedDownloadsDirectory()
-
-        XCTAssertEqual(directory.lastPathComponent, "SumiDownloads")
+        XCTAssertEqual(
+            DownloadsDirectoryResolver.resolvedDownloadsDirectory().lastPathComponent,
+            "SumiDownloads"
+        )
     }
 
     func testTestIsolationIgnoresPersistedDownloadsSettings() {
@@ -17,8 +17,8 @@ final class DownloadManagerTests: XCTestCase {
         defer { harness.reset() }
         let userDownloadsURL = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
             .appendingPathComponent("Downloads", isDirectory: true)
-
         let settings = SumiSettingsService(userDefaults: harness.defaults)
+
         settings.downloadsAlwaysAskWhereToSave = true
         settings.setDownloadsDirectory(userDownloadsURL)
 
@@ -28,44 +28,295 @@ final class DownloadManagerTests: XCTestCase {
         XCTAssertEqual(settings.downloadsDirectoryDisplayName, "SumiDownloads")
     }
 
-    func testSaveDownloadedDataCreatesCompletedItem() throws {
-        let manager = DownloadManager()
-        let sourceURL = URL(string: "https://example.com/report.txt")!
+    func testTransportSuccessCompletesOneTransaction() async throws {
+        let harness = DownloadTestHarness()
+        let transport = TestDownloadTransport()
+        let sourceURL = URL(string: "https://example.com/archive.zip")!
+        let item = try XCTUnwrap(harness.manager.addDownload(
+            transport: transport,
+            originalURL: sourceURL,
+            suggestedFilename: "archive.zip"
+        ))
 
-        manager.saveDownloadedData(
+        let temporaryURL = await transport.chooseDestination(filename: "archive.zip")
+        XCTAssertEqual(temporaryURL, item.tempURL)
+        XCTAssertEqual(transport.startCount, 1)
+        XCTAssertEqual(item.state, .downloading)
+
+        transport.finish()
+        try await waitForState(.completed, item: item)
+
+        XCTAssertEqual(item.destinationURL?.lastPathComponent, "archive.zip")
+        XCTAssertEqual(harness.finalizer.finalizeCount, 1)
+        XCTAssertEqual(harness.manager.activeDownloadCount, 0)
+        XCTAssertEqual(harness.destinations.released.count, 1)
+    }
+
+    func testDataSaveUsesSameTransactionAndFinalizationPorts() async throws {
+        let harness = DownloadTestHarness()
+
+        harness.manager.saveDownloadedData(
             Data("report".utf8),
             suggestedFilename: "report.txt",
             mimeType: "text/plain",
-            originatingURL: sourceURL
+            originatingURL: URL(string: "https://example.com/report.txt")!
         )
+        let item = try XCTUnwrap(harness.manager.items.first)
+        try await waitForState(.completed, item: item)
 
-        let item = try waitForCompletedItem(in: manager)
-        XCTAssertEqual(item.state, .completed)
-        XCTAssertEqual(item.downloadURL, sourceURL)
-        XCTAssertEqual(manager.activeDownloadCount, 0)
-        XCTAssertNil(manager.combinedProgressFraction)
-        XCTAssertTrue(FileManager.default.fileExists(atPath: try XCTUnwrap(item.destinationURL).path))
-        XCTAssertNil(item.progress)
+        XCTAssertEqual(harness.destinations.reserveCount, 1)
+        XCTAssertEqual(harness.finalizer.finalizeCount, 1)
+        XCTAssertEqual(item.completedUnitCount, 6)
     }
 
-    func testSaveDownloadedDataAppliesWebDownloadQuarantine() throws {
-        let manager = DownloadManager()
-        let sourceURL = URL(string: "https://example.com/report.txt")!
+    func testCompletedDownloadActionsRouteThroughWorkspacePort() async throws {
+        let harness = DownloadTestHarness()
+        let transport = TestDownloadTransport()
+        let item = try XCTUnwrap(harness.manager.addDownload(
+            transport: transport,
+            originalURL: URL(string: "https://example.com/open.txt")!,
+            suggestedFilename: "open.txt",
+            openIntent: .systemDefault
+        ))
+        _ = await transport.chooseDestination(filename: "open.txt")
+        transport.finish()
+        try await waitForState(.completed, item: item)
 
-        manager.saveDownloadedData(
-            Data("report".utf8),
-            suggestedFilename: "quarantine-\(UUID().uuidString).txt",
-            mimeType: "text/plain",
-            originatingURL: sourceURL
+        harness.manager.open(item)
+        harness.manager.reveal(item)
+        harness.manager.openDownloadsFolder()
+        let destinationURL = try XCTUnwrap(item.destinationURL)
+
+        XCTAssertEqual(harness.workspace.automaticallyOpened, [destinationURL])
+        XCTAssertEqual(harness.workspace.opened, [destinationURL])
+        XCTAssertEqual(harness.workspace.revealed, [destinationURL])
+        XCTAssertEqual(harness.workspace.folderOpenCount, 1)
+    }
+
+    func testCancellationWaitsForTransportAndRejectsLaterFinish() async throws {
+        let harness = DownloadTestHarness()
+        let transport = TestDownloadTransport()
+        let item = try XCTUnwrap(harness.manager.addDownload(
+            transport: transport,
+            originalURL: URL(string: "https://example.com/cancel.bin")!,
+            suggestedFilename: "cancel.bin"
+        ))
+        _ = await transport.chooseDestination(filename: "cancel.bin")
+
+        harness.manager.cancel(item)
+        XCTAssertEqual(transport.cancelCount, 1)
+        XCTAssertEqual(item.state, .downloading)
+
+        transport.finishCancellation()
+        try await waitForState(.cancelled, item: item)
+        transport.finish()
+
+        XCTAssertEqual(item.state, .cancelled)
+        XCTAssertEqual(harness.finalizer.finalizeCount, 0)
+        XCTAssertEqual(harness.progress.publications.first?.stopCount, 1)
+    }
+
+    func testTransportFailurePreservesResumeDataAndRetryability() throws {
+        let harness = DownloadTestHarness()
+        let transport = TestDownloadTransport()
+        let item = try XCTUnwrap(harness.manager.addDownload(
+            transport: transport,
+            originalURL: URL(string: "https://example.com/failure.bin")!,
+            suggestedFilename: "failure.bin"
+        ))
+        let resumeData = Data([1, 2, 3])
+
+        transport.fail(resumeData: resumeData)
+
+        XCTAssertEqual(item.state, .failed)
+        XCTAssertEqual(item.error?.resumeData, resumeData)
+        XCTAssertTrue(item.canRetry)
+        XCTAssertEqual(harness.finalizer.finalizeCount, 0)
+    }
+
+    func testFinalizerFailureBecomesMoveFailureAndRemovesTemporaryFile() async throws {
+        let finalizer = TestDownloadFinalizer(outcome: .failure("disk full"))
+        let harness = DownloadTestHarness(finalizer: finalizer)
+        let transport = TestDownloadTransport()
+        let item = try XCTUnwrap(harness.manager.addDownload(
+            transport: transport,
+            originalURL: URL(string: "https://example.com/finalize.bin")!,
+            suggestedFilename: "finalize.bin"
+        ))
+        let destination = await transport.chooseDestination(filename: "finalize.bin")
+        let temporaryURL = try XCTUnwrap(destination)
+
+        transport.finish()
+        try await waitForState(.failed, item: item)
+
+        XCTAssertEqual(item.error?.errorDescription, "disk full")
+        XCTAssertEqual(finalizer.finalizeCount, 1)
+        try await waitUntil { finalizer.removedURLs.contains(temporaryURL) }
+    }
+
+    func testDestinationAllocatorAvoidsDiskAndInFlightCollisions() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("DownloadCollision-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock {
+            if FileManager.default.fileExists(atPath: directory.path) {
+                try FileManager.default.removeItem(at: directory)
+            }
+        }
+        try Data().write(to: directory.appendingPathComponent("report.txt"))
+        let fileManager = TestDownloadAllocationFileManager()
+        let allocator = SumiDownloadDestinationAllocator(fileManager: fileManager)
+        let preference = SumiDownloadDestinationPreference(
+            alwaysAskWhereToSave: false,
+            customDirectoryURL: directory
+        )
+        let request = DownloadDestinationRequest(
+            suggestedFilename: "report.txt",
+            response: nil,
+            sourceURL: URL(string: "https://example.com/report.txt")!,
+            preference: preference
         )
 
-        let item = try waitForCompletedItem(in: manager)
-        let destinationURL = try XCTUnwrap(item.destinationURL)
-        let properties = try destinationURL
-            .resourceValues(forKeys: [.quarantinePropertiesKey])
-            .quarantineProperties
+        let firstReservation = await allocator.reserve(request)
+        let secondReservation = await allocator.reserve(request)
+        let first = try XCTUnwrap(firstReservation)
+        let second = try XCTUnwrap(secondReservation)
 
-        XCTAssertEqual(properties?[kLSQuarantineTypeKey as String] as? String, kLSQuarantineTypeWebDownload as String)
+        XCTAssertEqual(first.fileName, "report 1.txt")
+        XCTAssertEqual(second.fileName, "report 2.txt")
+        XCTAssertNotEqual(first.tempURL, second.tempURL)
+
+        try Data([1]).write(to: first.tempURL)
+        let renewedReservation = await allocator.renewTemporaryDestination(
+            for: first
+        )
+        let renewed = try XCTUnwrap(renewedReservation)
+        XCTAssertNotEqual(renewed.tempURL, first.tempURL)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: renewed.tempURL.path))
+
+        allocator.release(first)
+        let thirdReservation = await allocator.reserve(request)
+        let third = try XCTUnwrap(thirdReservation)
+        XCTAssertEqual(third.fileName, "report 3.txt")
+        XCTAssertGreaterThan(fileManager.recordedFilesystemAccessCount, 0)
+        XCTAssertFalse(fileManager.accessedFromMainThread)
+
+        allocator.release(renewed)
+        allocator.release(second)
+        allocator.release(third)
+    }
+
+    func testRetryTransportIsAttachedOnceAndFirstAttachmentRetainsAuthority() throws {
+        let harness = DownloadTestHarness()
+        let firstRetry = TestDownloadRetryTransport()
+        let duplicateRetry = TestDownloadRetryTransport()
+
+        XCTAssertTrue(harness.manager.attachRetryTransport(firstRetry))
+        XCTAssertFalse(harness.manager.attachRetryTransport(duplicateRetry))
+
+        let transport = TestDownloadTransport()
+        let item = try XCTUnwrap(harness.manager.addDownload(
+            transport: transport,
+            originalURL: URL(string: "https://example.com/retry-once.bin")!,
+            suggestedFilename: "retry-once.bin"
+        ))
+        transport.fail(resumeData: Data([1]))
+
+        harness.manager.retry(item)
+
+        XCTAssertEqual(firstRetry.requests.count, 1)
+        XCTAssertTrue(duplicateRetry.requests.isEmpty)
+        XCTAssertEqual(firstRetry.transport.startCount, 1)
+    }
+
+    func testOrphanCleanupWaitsForSettingsAndRunsOnceWithExactPreference() async {
+        let destinations = TestDownloadDestinationAllocator()
+        let progress = TestDownloadProgressPublisher()
+        let cleaner = TestDownloadOrphanCleaner()
+        let coordinator = DownloadListCoordinator(
+            transactionFactory: DownloadTransactionFactory(
+                destinations: destinations,
+                finalizer: TestDownloadFinalizer(),
+                progressPublisher: progress
+            ),
+            promptPresenter: TestDownloadPromptPresenter()
+        )
+        let manager = DownloadManager(
+            coordinator: coordinator,
+            workspace: TestDownloadWorkspace(),
+            orphanCleaner: cleaner
+        )
+
+        XCTAssertEqual(cleaner.callCount, 0)
+        XCTAssertTrue(progress.publications.isEmpty)
+
+        await manager.performStartupMaintenance()
+        XCTAssertEqual(cleaner.callCount, 0)
+
+        let defaultsHarness = TestDefaultsHarness()
+        defer { defaultsHarness.reset() }
+        let settings = SumiSettingsService(userDefaults: defaultsHarness.defaults)
+        let directory = URL(fileURLWithPath: "/tmp/attached-downloads", isDirectory: true)
+        settings.setDownloadsDirectory(directory)
+        manager.settings = settings
+
+        await manager.performStartupMaintenance()
+        XCTAssertEqual(cleaner.callCount, 1)
+        XCTAssertEqual(cleaner.preferences, [settings.downloadsDestinationPreference])
+
+        await manager.performStartupMaintenance()
+
+        XCTAssertEqual(cleaner.callCount, 1)
+        XCTAssertTrue(progress.publications.isEmpty)
+    }
+
+    func testOrphanCleanerRemovesOnlyIncompleteFilesAtLifecycleDirectory() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("DownloadOrphans-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock {
+            if FileManager.default.fileExists(atPath: directory.path) {
+                try FileManager.default.removeItem(at: directory)
+            }
+        }
+        let orphan = directory.appendingPathComponent("partial.bin.sumiload")
+        let completed = directory.appendingPathComponent("completed.bin")
+        try Data([1]).write(to: orphan)
+        try Data([2]).write(to: completed)
+
+        await SumiDownloadOrphanCleaner(fileManager: .default).removeOrphanedDownloads(
+            preference: SumiDownloadDestinationPreference(
+                alwaysAskWhereToSave: false,
+                customDirectoryURL: directory
+            )
+        )
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: orphan.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: completed.path))
+    }
+
+    func testUnavailableCompositionFailsClosedAndIsInert() async {
+        let manager = DownloadManager.unavailable()
+        let transport = TestDownloadTransport()
+
+        XCTAssertFalse(manager.isAvailable)
+        XCTAssertNil(manager.addDownload(
+            transport: transport,
+            originalURL: URL(string: "https://example.com/unavailable.bin")!,
+            suggestedFilename: "unavailable.bin"
+        ))
+        manager.saveDownloadedData(
+            Data([1]),
+            suggestedFilename: "ignored.bin",
+            mimeType: nil,
+            originatingURL: URL(string: "https://example.com/ignored.bin")!
+        )
+        await manager.performStartupMaintenance()
+
+        XCTAssertEqual(transport.cancelCount, 1)
+        XCTAssertTrue(manager.items.isEmpty)
+        XCTAssertEqual(manager.activeDownloadCount, 0)
+        XCTAssertNil(manager.combinedProgressFraction)
     }
 
     func testDangerousDownloadTypesAreNotAutoOpenedByPolicy() {
@@ -73,7 +324,6 @@ final class DownloadManagerTests: XCTestCase {
             mimeType: nil,
             filename: "Invoice.app"
         )
-
         let resolved = SumiDownloadPolicyResolver.resolve(
             origin: .responseForcedDownload,
             identity: identity,
@@ -90,152 +340,23 @@ final class DownloadManagerTests: XCTestCase {
         XCTAssertEqual(resolved, .prompt(canPersistChoice: false))
     }
 
-    func testNewManagerStartsWithEmptySessionAfterPreviousCompletedDownload() throws {
-        let firstManager = DownloadManager()
-        let sourceURL = URL(string: "https://example.com/session.txt")!
-
-        firstManager.saveDownloadedData(
-            Data("session".utf8),
-            suggestedFilename: "session-\(UUID().uuidString).txt",
-            mimeType: "text/plain",
-            originatingURL: sourceURL
-        )
-
-        let item = try waitForCompletedItem(in: firstManager)
-        let destinationURL = try XCTUnwrap(item.destinationURL)
-
-        let secondManager = DownloadManager()
-
-        XCTAssertTrue(secondManager.items.isEmpty)
-        XCTAssertTrue(FileManager.default.fileExists(atPath: destinationURL.path))
+    private func waitForState(
+        _ state: DownloadState,
+        item: DownloadItem,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) async throws {
+        try await waitUntil(file: file, line: line) { item.state == state }
     }
 
-    func testExternalDownloadLifecycleUsesRuntimeProgress() throws {
-        let manager = DownloadManager()
-        let sourceURL = URL(string: "https://example.com/archive.zip")!
-        let sourceProgress = Progress(totalUnitCount: 100)
-        let temporaryURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString)
-            .appendingPathExtension("tmp")
-        try Data(repeating: 1, count: 100).write(to: temporaryURL)
-
-        let item = manager.beginExternalDownload(
-            originalURL: sourceURL,
-            suggestedFilename: "archive.zip",
-            sourceProgress: sourceProgress
-        )
-
-        XCTAssertNotNil(item.progress)
-        XCTAssertEqual(item.statusText, "Starting download…")
-        XCTAssertEqual(manager.activeDownloadCount, 1)
-
-        sourceProgress.completedUnitCount = 100
-        RunLoop.main.run(until: Date().addingTimeInterval(0.25))
-
-        XCTAssertEqual(item.statusText, "Finishing download…")
-
-        manager.finishExternalDownload(item, temporaryURL: temporaryURL, response: nil)
-        let completed = try waitForCompletedItem(in: manager)
-
-        XCTAssertEqual(completed.state, .completed)
-        XCTAssertNil(completed.progress)
-        XCTAssertTrue(FileManager.default.fileExists(atPath: try XCTUnwrap(completed.destinationURL).path))
-    }
-
-    func testClearInactiveDownloadsRemovesHistoryButKeepsActiveAndFiles() throws {
-        let manager = DownloadManager()
-        let completedSourceURL = URL(string: "https://example.com/clear-complete.txt")!
-        manager.saveDownloadedData(
-            Data("complete".utf8),
-            suggestedFilename: "clear-complete-\(UUID().uuidString).txt",
-            mimeType: "text/plain",
-            originatingURL: completedSourceURL
-        )
-        let completed = try waitForCompletedItem(in: manager)
-        let completedURL = try XCTUnwrap(completed.destinationURL)
-        let active = manager.beginExternalDownload(
-            originalURL: URL(string: "https://example.com/active.bin")!,
-            suggestedFilename: "active-\(UUID().uuidString).bin",
-            sourceProgress: Progress(totalUnitCount: -1)
-        )
-
-        XCTAssertTrue(manager.hasInactiveDownloads)
-
-        manager.clearInactiveDownloads()
-
-        XCTAssertEqual(manager.items.map(\.id), [active.id])
-        XCTAssertFalse(manager.hasInactiveDownloads)
-        XCTAssertEqual(manager.activeDownloadCount, 1)
-        XCTAssertTrue(FileManager.default.fileExists(atPath: completedURL.path))
-    }
-
-    func testRetryRequiresWindowOwnedWebViewAndDoesNotCreateTabWebView() {
-        let manager = DownloadManager()
-        let windowState = BrowserWindowState()
-        let tab = Tab(
-            url: URL(string: "https://example.com/download")!,
-            loadsCachedFaviconOnInit: false
-        )
-        let item = DownloadItem(
-            downloadURL: URL(string: "https://example.com/file.zip")!,
-            fileName: "file.zip",
-            state: .failed,
-            error: .failed(message: "network", resumeData: nil, isRetryable: true)
-        )
-        manager.retryRuntime = DownloadManager.RetryRuntime(
-            activeWindow: { windowState },
-            currentTab: { _ in tab },
-            windowOwnedWebView: { _, _ in nil }
-        )
-
-        manager.retry(item)
-
-        XCTAssertNil(tab.resolvedCurrentWebView())
-        XCTAssertEqual(item.state, .failed)
-        XCTAssertEqual(
-            item.error?.errorDescription,
-            "Open a browser tab to retry this download."
-        )
-    }
-
-    func testStartupRemovesOrphanedIncompleteDownloads() throws {
-        let directory = DownloadsDirectoryResolver.resolvedDownloadsDirectory()
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let orphanURL = directory
-            .appendingPathComponent("orphan-\(UUID().uuidString).txt")
-            .appendingPathExtension(DownloadFileUtilities.incompleteDownloadExtension)
-        try Data("orphan".utf8).write(to: orphanURL)
-
-        XCTAssertTrue(FileManager.default.fileExists(atPath: orphanURL.path))
-
-        _ = DownloadManager()
-
-        XCTAssertFalse(FileManager.default.fileExists(atPath: orphanURL.path))
-    }
-
-    func testUniqueDestinationAvoidsExistingFiles() throws {
-        let filename = "collision-\(UUID().uuidString).txt"
-        let first = DownloadFileUtilities.uniqueDestination(for: filename)
-        try FileManager.default.createDirectory(
-            at: first.deletingLastPathComponent(),
-            withIntermediateDirectories: true
-        )
-        try Data("first".utf8).write(to: first)
-
-        let second = DownloadFileUtilities.uniqueDestination(for: filename)
-
-        XCTAssertNotEqual(first, second)
-        XCTAssertEqual(second.lastPathComponent, first.deletingPathExtension().lastPathComponent + " 1.txt")
-    }
-
-    private func waitForCompletedItem(in manager: DownloadManager) throws -> DownloadItem {
-        let deadline = Date().addingTimeInterval(2)
-        while Date() < deadline {
-            if let item = manager.items.first, item.state == .completed {
-                return item
-            }
-            RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+    private func waitUntil(
+        file: StaticString = #filePath,
+        line: UInt = #line,
+        _ condition: () -> Bool
+    ) async throws {
+        for _ in 0..<1_000 where !condition() {
+            await Task.yield()
         }
-        return try XCTUnwrap(manager.items.first)
+        XCTAssertTrue(condition(), file: file, line: line)
     }
 }
